@@ -4,6 +4,7 @@
 
 #include "editor/include/editor_ui.h"
 #include "runtime/engine.h"
+#include "runtime/core/log/logger.h"
 namespace kpengine
 {
     namespace editor
@@ -28,7 +29,6 @@ namespace kpengine
         {
             assert(engine_);
             assert(editor_ui);
-
             while (true)
             {
                 if(!editor_ui->Render())

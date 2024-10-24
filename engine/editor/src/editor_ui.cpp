@@ -15,7 +15,7 @@ namespace kpengine
         {
             ui_components_.push_back(new EditorTextComponent("hello world, hello world"));
             ui_components_.push_back(new EditorTooltipComponent("welcome"));
-            EditorButtonComponent* button = new EditorButtonComponent("Button");
+            EditorButtonComponent* button = new EditorButtonComponent("按钮");
             button->BindClickEvent([](){std::cout << "click" << std::endl;});
             ui_components_.push_back(button);
 
@@ -50,7 +50,12 @@ namespace kpengine
             ImGuiIO &io = ImGui::GetIO();
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
-            io.Fonts->AddFontFromFileTTF("c:/windows/Fonts/simhei.ttf", 13.0f, nullptr, io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+            ImFont* font = io.Fonts->AddFontFromFileTTF("c:/windows/Fonts/msyh.ttc",
+             24.0f,
+            nullptr,
+            io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+
+            IM_ASSERT(font != nullptr);
             // Setup Dear ImGui style
             ImGui::StyleColorsDark();
 
@@ -79,10 +84,6 @@ namespace kpengine
                 return false;
             }
             glfwPollEvents();
-            if (glfwGetWindowAttrib(window_, GLFW_ICONIFIED) != 0)
-            {
-                ImGui_ImplGlfw_Sleep(10);
-            }
 
             // Start the Dear ImGui frame
             ImGui_ImplOpenGL3_NewFrame();
@@ -91,8 +92,9 @@ namespace kpengine
 
             // kpengine::ui::RenderUI();
 
-            ImGui::Begin("new window");
+            ImGui::Begin("新的窗口");
 
+            //render component
             for (int i = 0; i < ui_components_.size(); i++)
             {
                 ui_components_[i]->Render();
