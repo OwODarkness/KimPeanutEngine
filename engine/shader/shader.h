@@ -2,17 +2,22 @@
 #define KPENGINE_SHADER_H
 
 #include <string>
-
+#include <filesystem>
 namespace kpengine
 {
+    const std::filesystem::path shader_directory_path = "../../engine/shader";
+
     class ShaderHelper
     {
     public:
-        ShaderHelper(std::string vertex_shader_path, std::string fragment_shader_path);
+        
+        ShaderHelper() = delete;
+        ShaderHelper(const ShaderHelper& ) = delete;
+        explicit ShaderHelper(std::string vertex_shader_path, std::string fragment_shader_path);
 
         void Initialize();
 
-        bool ExtractShaderCodeFromFile(const std::string &file_path, std::string &out_code);
+        bool ExtractShaderCodeFromFile(std::filesystem::path file_path, std::string &out_code);
 
         inline unsigned int GetShaderProgram() const { return shader_program_handle_; }
 

@@ -1,11 +1,12 @@
 #include "shader.h"
 
 #include <fstream>
+#include<iostream>
 
-#include <GLFW/glfw3.h>
 #include <glad/glad.h>
-
+#include <GLFW/glfw3.h>
 #include "runtime/core/log/logger.h"
+
 namespace kpengine
 {
 
@@ -20,7 +21,8 @@ namespace kpengine
         char info_log[512];
         // compile vertex shader
         std::string vertex_shader_code = "";
-        if (!ExtractShaderCodeFromFile(vertex_shader_path_, vertex_shader_code))
+        std::filesystem::path abs_vertex_shader_path = shader_directory_path / vertex_shader_path_;
+        if (!ExtractShaderCodeFromFile(abs_vertex_shader_path, vertex_shader_code))
         {
             return;
         }
@@ -33,12 +35,13 @@ namespace kpengine
         if (!bsucceed)
         {
             glGetShaderInfoLog(vertex_shader, 512, nullptr, info_log);
-            KP_LOG("ShaderLog", LOG_LEVEL_ERROR, info_log);
+            KP_LOG("VertexShaderLog", LOG_LEVEL_ERROR, info_log);
         }
 
         // compile fragment_shader_code
         std::string fragment_shader_code = "";
-        if (!ExtractShaderCodeFromFile(fragment_shader_path_, fragment_shader_code))
+        std::filesystem::path abs_fragment_shader_path = shader_directory_path / fragment_shader_path_;
+        if (!ExtractShaderCodeFromFile(abs_fragment_shader_path, fragment_shader_code))
         {
             return;
         }
@@ -50,7 +53,7 @@ namespace kpengine
         if (!bsucceed)
         {
             glGetShaderInfoLog(fragment_shader, 512, nullptr, info_log);
-            KP_LOG("ShaderLog", LOG_LEVEL_ERROR, info_log);
+            KP_LOG("FragmentShaderLog", LOG_LEVEL_ERROR, info_log);
         }
 
         shader_program_handle_ = glCreateProgram();
@@ -61,20 +64,25 @@ namespace kpengine
         if (!bsucceed)
         {
             glGetProgramInfoLog(shader_program_handle_, 512, nullptr, info_log);
-            KP_LOG("ShaderLog", LOG_LEVEL_ERROR, info_log);
+            KP_LOG("ShaderLinkLog", LOG_LEVEL_ERROR, info_log);
+        }
+        else
+        {
+            KP_LOG("ShaderLinkLog", LOG_LEVEL_DISPLAY, "shader link successful");
         }
 
         glDeleteShader(vertex_shader);
         glDeleteShader(fragment_shader);
     }
 
-    bool ShaderHelper::ExtractShaderCodeFromFile(const std::string &file_path, std::string &out_code)
+    bool ShaderHelper::ExtractShaderCodeFromFile(std::filesystem::path file_path, std::string &out_code)
     {
         std::ifstream ifs;
         ifs.open(file_path, std::ios_base::in);
         if (!ifs.is_open())
         {
-            KP_LOG("ShaderLog", LOG_LEVEL_ERROR, "Failed to open shader file {:%s}", file_path);
+
+            KP_LOG("ShaderLog", LOG_LEVEL_ERROR, "Failed to open shader file %s", file_path.c_str());
             return false;
         }
         else

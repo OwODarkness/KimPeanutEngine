@@ -4,7 +4,6 @@ namespace kpengine{
     Mesh::Mesh(std::vector<Vertex> verticles, std::vector<unsigned> indices):
     verticles_(verticles),indices_(indices)
     {
-
     }
 
     Mesh::~Mesh()
@@ -36,5 +35,10 @@ namespace kpengine{
         glBindVertexArray(0);
     }
 
-
+    void Mesh::Draw()
+    {
+        glBindVertexArray(vao_);
+        glDrawElements(GL_TRIANGLES, indices_.size(), GL_UNSIGNED_INT, 0);
+        glBindVertexArray(0);
+    }
 }

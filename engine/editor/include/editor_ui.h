@@ -15,35 +15,20 @@ namespace ui{
     
     class EditorUIComponent;
 
-    struct WindowInitInfo{
 
-        static WindowInitInfo GetDefaultWindowInfo()
-        {
-            WindowInitInfo window_info;
-            window_info.width = 1280;
-            window_info.height = 720;
-            return window_info;
-        }
-
-        int width;
-        int height;
-    };
 
     class EditorUI{
     public:
         EditorUI();
         virtual ~EditorUI();
 
-        void Initialize(WindowInitInfo window_info);
+        void Initialize();
         bool Render();
         void Close();
 
     private:
-        static void GLFWErrorCallback(int error, const char* desc);
 
     private:
-        struct GLFWwindow* window_;
-        ImVec4 clear_color_;
         std::vector<EditorUIComponent*> ui_components_;
     };
     

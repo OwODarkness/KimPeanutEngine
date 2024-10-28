@@ -19,7 +19,7 @@ class Mesh{
 public:
     Mesh(std::vector<Vertex> verticles, std::vector<unsigned> indices);
     void Initialize();
-
+    void Draw();
     virtual ~Mesh();
 private:
     std::vector<Vertex> verticles_;

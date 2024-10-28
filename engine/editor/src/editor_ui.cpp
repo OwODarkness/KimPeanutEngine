@@ -30,20 +30,10 @@ namespace kpengine
             }
         }
 
-        void EditorUI::Initialize(WindowInitInfo window_info)
+        void EditorUI::Initialize()
         {
-            glfwSetErrorCallback(&EditorUI::GLFWErrorCallback);
-
-            glfwInit();
-            glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-            glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
-            glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
-            window_ = glfwCreateWindow(window_info.width, window_info.height, "KimPeanut Engine", nullptr, nullptr);
-            glfwMakeContextCurrent(window_);
-            glfwSwapInterval(1);
-            gladLoadGL();
-
+          
+ 
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
 
@@ -60,10 +50,9 @@ namespace kpengine
             ImGui::StyleColorsDark();
 
             ImGui_ImplGlfw_InitForOpenGL(window_, true);
-            const char *glsl_version = "#version 130";
+            const char *glsl_version = "#version 330";
             ImGui_ImplOpenGL3_Init(glsl_version);
 
-            clear_color_ = ImVec4(0.45f, 0.55f, 0.60f, 1.00f);
         }
 
         void EditorUI::Close()
@@ -73,17 +62,11 @@ namespace kpengine
             ImGui_ImplGlfw_Shutdown();
             ImGui::DestroyContext();
 
-            glfwDestroyWindow(window_);
-            glfwTerminate();
         }
 
         bool EditorUI::Render()
         {
-            if (glfwWindowShouldClose(window_))
-            {
-                return false;
-            }
-            glfwPollEvents();
+
 
             // Start the Dear ImGui frame
             ImGui_ImplOpenGL3_NewFrame();
@@ -117,12 +100,7 @@ namespace kpengine
             return true;
         }
 
-        void EditorUI::GLFWErrorCallback(int error, const char *desc)
-        {
-
-            fprintf(stderr, "GLFW Error %d: %s\n", error, desc);
-        }
-
+ 
         void RenderUI()
         {
             // 创建一个设置窗口
