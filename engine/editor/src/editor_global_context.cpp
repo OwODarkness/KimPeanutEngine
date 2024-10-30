@@ -1,19 +1,17 @@
 #include "editor_global_context.h"
-#include "window_system.h"
+#include "runtime/core/system/window_system.h"
 namespace kpengine{
     namespace editor{
         EditorContext global_editor_context;
 
 
-        void EditorContext::Initialize()
+        void EditorContext::Initialize(const EditorContextInitInfo& init_info)
         {
-            window_system = new kpengine::WindowSystem();
-            window_system->Initialize(kpengine::WindowInitInfo::GetDefaultWindowInfo());
+            window_system_ = init_info.window_system;
         }
 
         void EditorContext::Clear()
         {
-            delete window_system;
         }
     }
 }

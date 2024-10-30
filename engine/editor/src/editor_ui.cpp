@@ -7,19 +7,17 @@
 #include "editor/include/editor_ui_component/editor_text_component.h"
 #include "editor/include/editor_ui_component/editor_tooltip_component.h"
 #include "editor/include/editor_ui_component/editor_button_component.h"
+#include "editor/include/editor_ui_component/editor_menubar_component.h"
+
+#include "shader/shader.h"
+#include "runtime/core/base/Mesh.h"
+#include "runtime/render/frame_buffer.h"
 namespace kpengine
 {
     namespace ui
     {
         EditorUI::EditorUI()
         {
-            ui_components_.push_back(new EditorTextComponent("hello world, hello world"));
-            ui_components_.push_back(new EditorTooltipComponent("welcome"));
-            EditorButtonComponent* button = new EditorButtonComponent("按钮");
-            button->BindClickEvent([](){std::cout << "click" << std::endl;});
-            ui_components_.push_back(button);
-
-
         }
         EditorUI::~EditorUI()
         {
@@ -28,30 +26,58 @@ namespace kpengine
                 delete ui_components_[i];
                 ui_components_[i] = nullptr;
             }
+           delete main_menubar_;
         }
 
-        void EditorUI::Initialize()
+        void EditorUI::Initialize(GLFWwindow *window)
         {
-          
- 
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
-
+            ImGui::StyleColorsDark();
+            // Setup Dear ImGui style
+            ImGui_ImplGlfw_InitForOpenGL(window, true);
+            const char *glsl_version = "#version 330";
+            ImGui_ImplOpenGL3_Init(glsl_version);
             ImGuiIO &io = ImGui::GetIO();
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
-            ImFont* font = io.Fonts->AddFontFromFileTTF("c:/windows/Fonts/msyh.ttc",
-             24.0f,
-            nullptr,
-            io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+            //ImFont *font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\simhei.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesChineseFull());
+            //IM_ASSERT(font != nullptr);
 
-            IM_ASSERT(font != nullptr);
-            // Setup Dear ImGui style
-            ImGui::StyleColorsDark();
 
-            ImGui_ImplGlfw_InitForOpenGL(window_, true);
-            const char *glsl_version = "#version 330";
-            ImGui_ImplOpenGL3_Init(glsl_version);
+
+
+            ui_components_.push_back(new EditorTextComponent("hello imgui"));
+            ui_components_.push_back(new EditorTooltipComponent("welcome"));
+            EditorButtonComponent *button = new EditorButtonComponent("button");
+            button->BindClickEvent([]()
+                                   { std::cout << "click" << std::endl; });
+            ui_components_.push_back(button);
+
+            //menu init
+            std::vector<Menu> menus;
+            menus.push_back({"File", {{"Open Project", "Ctrl+O"}, {"New Project", "Ctrl+N"}, {"Exit"}}});
+            menus.push_back({"Edit", {{"Setting"}}});
+            menus.push_back({"Window"});
+            menus.push_back({"Tools"});
+            main_menubar_ = new EditorMenuBarComponent(menus);
+        
+            shader = new kpengine::ShaderHelper("normal.vs", "normal.fs");
+            shader->Initialize();
+
+            std::vector<Vertex> verticles = {
+                {{0.5, -0.5, 0}},
+                {{-0.5, -0.5, 0}},
+                {{0, 0.5, 0}}
+            };
+            std::vector<unsigned int> indices= {0, 1, 2};
+            mesh = new kpengine::Mesh(verticles, indices);
+            mesh->Initialize();
+
+            int window_width, window_height;
+            glfwGetWindowSize(window, &window_width, &window_height);
+            frame_buffer = std::make_shared<FrameBuffer>(window_width, window_height);
+            frame_buffer->Initialize();
 
         }
 
@@ -61,74 +87,68 @@ namespace kpengine
             ImGui_ImplOpenGL3_Shutdown();
             ImGui_ImplGlfw_Shutdown();
             ImGui::DestroyContext();
-
         }
 
-        bool EditorUI::Render()
+        void EditorUI::BeginDraw()
         {
-
-
-            // Start the Dear ImGui frame
             ImGui_ImplOpenGL3_NewFrame();
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
 
-            // kpengine::ui::RenderUI();
+            MainMenuBarRender();
+        }
 
-            ImGui::Begin("新的窗口");
+        void EditorUI::EndDraw()
+        {
+            ImGui::Render();
+            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        
+        }
 
-            //render component
+        bool EditorUI::Render()
+        {
+            // Start the Dear ImGui frame
+
+
+            ImGui::Begin("new window");
+            // render component
             for (int i = 0; i < ui_components_.size(); i++)
             {
                 ui_components_[i]->Render();
             }
-
             ImGui::End();
 
-            // Rendering
-            ImGui::Render();
-            int display_w, display_h;
-            glfwGetFramebufferSize(window_, &display_w, &display_h);
-            glViewport(0, 0, display_w, display_h);
-            glClearColor(clear_color_.x * clear_color_.w, clear_color_.y * clear_color_.w, clear_color_.z * clear_color_.w, clear_color_.w);
-            glClear(GL_COLOR_BUFFER_BIT);
 
-            ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+            frame_buffer->BindFrameBuffer();
+            shader->UseProgram();
+            mesh->Draw();
+            ImGui::Begin("Scene");
+            {
+                
+                ImGui::BeginChild("Render");
+                float width = ImGui::GetContentRegionAvail().x;
+                float height = ImGui::GetContentRegionAvail().y;
+                ImGui::Image(
+                    (ImTextureID)frame_buffer->GetTexture(),
+                    ImGui::GetContentRegionAvail(),
+                    ImVec2(0, 1),
+                    ImVec2(1, 0)
+                );
+                ImGui::EndChild();
+            }
+            ImGui::End();
+            frame_buffer->UnBindFrameBuffer();
 
-            glfwSwapBuffers(window_);
 
             return true;
         }
 
- 
-        void RenderUI()
+
+        void EditorUI::MainMenuBarRender()
         {
-            // 创建一个设置窗口
-
-            ImGui::Begin("设置拖拽按钮");
-            // 按钮在单击时返回true（大多数小部件在编辑/激活时返回true）
-
-            ImGui::Text("This is a text");
-            ImGui::Text("hello world %d", 123);
-            ImGui::TextColored(ImVec4(1, 1, 0, 1), "hello");
-            ImGui::TextDisabled("text disabled");
-            ImGui::TextWrapped("text wrapped");
-            ImGui::LabelText("label", "context");
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::SetTooltip("hip1");
-            }
-            ImGui::BulletText("123123");
-
-            float data[] = {1, 2, 3, 4, 5};
-            if (ImGui::IsItemHovered())
-            {
-                ImGui::SetTooltip("hip");
-            }
-            ImGui::PlotLines("Curve", data, sizeof(data));
-
-            ImGui::End();
+            ImGui::BeginMainMenuBar();
+            main_menubar_->Render();
+            ImGui::EndMainMenuBar();
         }
-
     }
 }

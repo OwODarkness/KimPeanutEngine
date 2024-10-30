@@ -4,7 +4,13 @@
 namespace kpengine{
 namespace runtime{
     class Engine{
-        
+        public:
+        Engine() = default;
+
+        void Initialize();
+
+        bool Tick();
+
     };
 }
 }

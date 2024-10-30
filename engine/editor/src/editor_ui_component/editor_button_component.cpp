@@ -1,4 +1,4 @@
-#include "editor/include/editor_ui_component/editor_button_component.h"
+#include "editor_button_component.h"
 
 namespace kpengine
 {

@@ -3,18 +3,22 @@
 
 
 namespace kpengine{
+    class WindowSystem;
+
+
 namespace editor{
 
+    struct EditorContextInitInfo{
+        WindowSystem* window_system;
+    };
 
     class EditorContext{
-
-
     public:
-        void Initialize();
+        void Initialize(const EditorContextInitInfo& init_info);
 
         void Clear();
 
-        class kpengine::WindowSystem* window_system{nullptr};
+        WindowSystem* window_system_{nullptr};
     };
 
     extern EditorContext global_editor_context;

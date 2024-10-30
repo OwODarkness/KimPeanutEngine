@@ -1,3 +1,4 @@
+#Editor CMakeListsts.txt
 file(GLOB EDITOR_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
 file(GLOB EDITOR_UICOMPONENT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/editor_ui_component/*.cpp")
 

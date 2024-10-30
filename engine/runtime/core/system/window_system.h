@@ -34,11 +34,18 @@ namespace kpengine
 
         static void OnErrorCallback(int error_code, const char* msg);
 
+        static void OnFrameBufferSizeCallback(struct GLFWwindow*window, int width, int height);
+
         bool ShouldClose() const;
 
         void PollEvents() const;
+
+        void Update();
+
+        struct GLFWwindow* GetOpenGLWndow() const{return window_;}
     private:
        struct GLFWwindow* window_;
+
        
     };
 }
