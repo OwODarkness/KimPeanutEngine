@@ -8,7 +8,7 @@ namespace kpengine{
         void Engine::Initialize()
         {
             global_runtime_context.Initialize();
-            
+            KP_LOG("EngineLog", LOG_LEVEL_DISPLAY, "Engine Initialize Successfully");
         }
 
         bool Engine::Tick()

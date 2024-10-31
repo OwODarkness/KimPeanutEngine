@@ -12,9 +12,7 @@
 
 
 namespace kpengine{
-    class Mesh;
-    class ShaderHelper;
-    class FrameBuffer;
+
 namespace ui{
     
     class EditorUIComponent;
@@ -38,9 +36,6 @@ namespace ui{
         std::vector<EditorUIComponent*> ui_components_;
         EditorUIComponent* main_menubar_;
 
-        Mesh* mesh;
-        ShaderHelper* shader;
-        std::shared_ptr<FrameBuffer> frame_buffer;  
     };
     
 }

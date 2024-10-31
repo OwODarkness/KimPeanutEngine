@@ -15,13 +15,12 @@ namespace kpengine{
 
             virtual void Render() override;
 
-            bool ShouldResize(float new_width, float new_height);
 
             void SetTitle(const std::string & title);
         private:
             std::shared_ptr<FrameBuffer> scene_;
-            float width_;
-            float height_;
+            int width_;
+            int height_;
             std::string title_{"scene"};
 
         };

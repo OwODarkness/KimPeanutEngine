@@ -9,9 +9,7 @@
 #include "editor/include/editor_ui_component/editor_button_component.h"
 #include "editor/include/editor_ui_component/editor_menubar_component.h"
 
-#include "shader/shader.h"
-#include "runtime/core/base/Mesh.h"
-#include "runtime/render/frame_buffer.h"
+
 namespace kpengine
 {
     namespace ui
@@ -62,22 +60,8 @@ namespace kpengine
             menus.push_back({"Tools"});
             main_menubar_ = new EditorMenuBarComponent(menus);
         
-            shader = new kpengine::ShaderHelper("normal.vs", "normal.fs");
-            shader->Initialize();
 
-            std::vector<Vertex> verticles = {
-                {{0.5, -0.5, 0}},
-                {{-0.5, -0.5, 0}},
-                {{0, 0.5, 0}}
-            };
-            std::vector<unsigned int> indices= {0, 1, 2};
-            mesh = new kpengine::Mesh(verticles, indices);
-            mesh->Initialize();
 
-            int window_width, window_height;
-            glfwGetWindowSize(window, &window_width, &window_height);
-            frame_buffer = std::make_shared<FrameBuffer>(window_width, window_height);
-            frame_buffer->Initialize();
 
         }
 
@@ -117,27 +101,6 @@ namespace kpengine
                 ui_components_[i]->Render();
             }
             ImGui::End();
-
-
-            frame_buffer->BindFrameBuffer();
-            shader->UseProgram();
-            mesh->Draw();
-            ImGui::Begin("Scene");
-            {
-                
-                ImGui::BeginChild("Render");
-                float width = ImGui::GetContentRegionAvail().x;
-                float height = ImGui::GetContentRegionAvail().y;
-                ImGui::Image(
-                    (ImTextureID)frame_buffer->GetTexture(),
-                    ImGui::GetContentRegionAvail(),
-                    ImVec2(0, 1),
-                    ImVec2(1, 0)
-                );
-                ImGui::EndChild();
-            }
-            ImGui::End();
-            frame_buffer->UnBindFrameBuffer();
 
 
             return true;

@@ -6,6 +6,7 @@
 namespace kpengine
 {
     class WindowSystem;
+    class SceneSystem;
     namespace runtime
     {
         class RuntimeContext
@@ -18,6 +19,7 @@ namespace kpengine
             void Clear();
 
             std::shared_ptr<WindowSystem> window_system_;
+            std::shared_ptr<SceneSystem> scene_system_;
         };
 
         extern RuntimeContext global_runtime_context;

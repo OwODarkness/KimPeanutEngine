@@ -1,6 +1,8 @@
 #include "window_system.h"
 #include "runtime/core/log/logger.h"
-
+#include "runtime/runtime_global_context.h"
+#include "runtime/core/system/scene_system.h"
+#include "runtime/render/frame_buffer.h"
 namespace kpengine
 {
     WindowSystem::WindowSystem()
@@ -73,6 +75,7 @@ namespace kpengine
 
     void WindowSystem::OnFrameBufferSizeCallback(struct GLFWwindow*window, int width, int height)
     {
+        runtime::global_runtime_context.scene_system_->scene_->ReSizeFrameBuffer(width, height);
         glViewport(0, 0, width, height);
     }
 }

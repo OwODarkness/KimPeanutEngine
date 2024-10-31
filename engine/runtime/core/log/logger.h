@@ -52,8 +52,9 @@ namespace kpengine
                 if (err == 0)
                 {
 
-                    std::cout << log_name << ": "
+                    std::cout 
                               << "[" << std::put_time(&local_time, "%Y-%m-%d %H:%M:%S") << "] "
+                              << log_name << ": "
                               << "[" << magic_enum::enum_name(level) << "] ";
                     std::printf(msg.c_str(), std::forward<Args>(args)...) ;
                     std::cout << std::endl;

@@ -4,6 +4,7 @@
 
 #include "editor/include/editor_ui.h"
 #include "editor/include/editor_global_context.h"
+#include "editor/include/editor_scene_manager.h"
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
 #include "runtime/engine.h"
@@ -27,14 +28,16 @@ namespace kpengine
         {
             engine_ = engine;
 
-             editor::EditorContextInitInfo global_editor_context_init_info{runtime::global_runtime_context.window_system_.get()};
+             editor::EditorContextInitInfo global_editor_context_init_info{
+                runtime::global_runtime_context.window_system_.get(),
+                runtime::global_runtime_context.scene_system_.get()};
 
             editor::global_editor_context.Initialize(global_editor_context_init_info);
 
             editor_ui = std::make_shared<kpengine::ui::EditorUI>();
             editor_ui->Initialize(global_editor_context.window_system_->GetOpenGLWndow());
 
-
+            KP_LOG("EditorLog", LOG_LEVEL_DISPLAY, "Editor Initialize Successfully");
         }
 
         void Editor::Run()
@@ -44,6 +47,7 @@ namespace kpengine
             while (true)
             {
                 editor_ui->BeginDraw();
+                global_editor_context.editor_scene_manager_->Tick();
                 {
                     editor_ui->Render();
                 }
