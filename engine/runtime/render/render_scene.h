@@ -1,16 +1,15 @@
-#ifndef RUNTIME_SCENE_SYSTEM_H
-#define RUNTIME_SCENE_SYSTEM_H
+#ifndef RUNTIME_RENDER_SCENE_H
+#define RUNTIME_RENDER_SCENE_H
 
 #include <memory>
-#include <vector>
-
 
 namespace kpengine{
     class FrameBuffer;
     class RenderObject;
-    class SceneSystem{
+
+    class RenderScene{
     public:
-        SceneSystem() = default;
+        RenderScene() = default;
 
         void Initialize();
 

@@ -1,8 +1,6 @@
 #ifndef KPENGINE_EDITOR_WINDOW_SYSTEM_H
 #define KPENGINE_EDITOR_WINDOW_SYSTEM_H
 
-#include <functional>
-
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
@@ -40,7 +38,7 @@ namespace kpengine
 
         void PollEvents() const;
 
-        void Update();
+        void Tick();
 
         struct GLFWwindow* GetOpenGLWndow() const{return window_;}
     private:

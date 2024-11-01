@@ -4,13 +4,13 @@
 
 namespace kpengine{
     class WindowSystem;
-    class SceneSystem;
+    class RenderSystem;
 namespace editor{
     class EditorSceneManager;
 
     struct EditorContextInitInfo{
         WindowSystem* window_system;
-        SceneSystem* scene_system;
+        RenderSystem* render_system;
     };
 
     class EditorContext{
@@ -20,7 +20,7 @@ namespace editor{
         void Clear();
 
         WindowSystem* window_system_{nullptr};
-        SceneSystem* scene_system_{nullptr};
+        RenderSystem* render_system_{nullptr};
         
         EditorSceneManager* editor_scene_manager_;
     };

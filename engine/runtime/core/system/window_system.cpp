@@ -1,7 +1,8 @@
 #include "window_system.h"
 #include "runtime/core/log/logger.h"
 #include "runtime/runtime_global_context.h"
-#include "runtime/core/system/scene_system.h"
+#include "runtime/core/system/render_system.h"
+#include "runtime/render/render_scene.h"
 #include "runtime/render/frame_buffer.h"
 namespace kpengine
 {
@@ -52,7 +53,7 @@ namespace kpengine
         glfwPollEvents();
     }
 
-    void WindowSystem::Update()
+    void WindowSystem::Tick()
     {
 
         glfwSwapBuffers(window_);
@@ -75,7 +76,7 @@ namespace kpengine
 
     void WindowSystem::OnFrameBufferSizeCallback(struct GLFWwindow*window, int width, int height)
     {
-        runtime::global_runtime_context.scene_system_->scene_->ReSizeFrameBuffer(width, height);
+        runtime::global_runtime_context.render_system_->GetRenderScene()->scene_->ReSizeFrameBuffer(width, height);
         glViewport(0, 0, width, height);
     }
 }

@@ -7,6 +7,7 @@
 #include "editor/include/editor_scene_manager.h"
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
+#include "runtime/core/system/render_system.h"
 #include "runtime/engine.h"
 #include "runtime/core/log/logger.h"
 
@@ -30,7 +31,7 @@ namespace kpengine
 
              editor::EditorContextInitInfo global_editor_context_init_info{
                 runtime::global_runtime_context.window_system_.get(),
-                runtime::global_runtime_context.scene_system_.get()};
+                runtime::global_runtime_context.render_system_.get()};
 
             editor::global_editor_context.Initialize(global_editor_context_init_info);
 

@@ -11,6 +11,9 @@ class RenderCamera{
 
     void Move(const glm::vec3& delta);
 
+    //(theta, fhi)
+    void Rotate(const glm::vec2& delta);
+
     glm::vec3 GetPosition() const{return position_;}
 
     glm::mat4x4 GetViewMatrix();
@@ -22,8 +25,11 @@ public:
     float speed_ = 1.f;
     float aspect_;
     float fov_{89.f};
-
     static glm::vec3 up_;
+    float pitch_ = 0.f;
+    float yaw_ = -90.f;
+    const float pitch_min_ = -89.f;
+    const float pitch_max_ = 89.f;
 };
 }
 
