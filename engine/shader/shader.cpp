@@ -10,8 +10,9 @@
 namespace kpengine
 {
 
-    ShaderHelper::ShaderHelper(std::string vertex_shader_path, std::string fragment_shader_path) : vertex_shader_path_(vertex_shader_path),
-                                                                                                   fragment_shader_path_(fragment_shader_path)
+    ShaderHelper::ShaderHelper(std::string vertex_shader_path, std::string fragment_shader_path) : 
+    vertex_shader_path_(vertex_shader_path),
+                                                                                                 fragment_shader_path_(fragment_shader_path)
     {
     }
 

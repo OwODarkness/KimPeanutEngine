@@ -4,9 +4,7 @@
 #include <memory>
 
 namespace kpengine{
-    class FrameBuffer;
-    class Mesh;
-    class ShaderHelper;
+    class SceneSystem;
 namespace ui{
     class EditorSceneComponent;
 }
@@ -14,13 +12,11 @@ namespace editor{
     class EditorSceneManager{
     public:
         EditorSceneManager() = default;
-        void Initialize(FrameBuffer* scene);
+        void Initialize(SceneSystem* scene_system);
         void Tick();
         void Close();
     public:
-        FrameBuffer* scene_;
-        Mesh* mesh;
-        ShaderHelper* shader;
+        SceneSystem* scene_system_;
     private:
         std::shared_ptr<ui::EditorSceneComponent> scene_ui_;
     };

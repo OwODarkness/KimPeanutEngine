@@ -1,5 +1,5 @@
-#ifndef KPENGINE_RUNTIME_MESH_H
-#define KPENGINE_RUNTIME_MESH_H
+#ifndef KPENGINE_RUNTIME_RENDER_MESH_H
+#define KPENGINE_RUNTIME_RENDER_MESH_H
 
 #include <vector>
 
@@ -13,12 +13,12 @@ struct Vertex{
     glm::vec2 tex_coord;
 };
 
-class Mesh{
+class RenderMesh{
 public:
-    Mesh(std::vector<Vertex> verticles, std::vector<unsigned> indices);
+    RenderMesh(std::vector<Vertex> verticles, std::vector<unsigned> indices);
     void Initialize();
     void Draw();
-    virtual ~Mesh();
+    virtual ~RenderMesh();
 private:
     std::vector<Vertex> verticles_;
     std::vector<unsigned> indices_; 

@@ -3,13 +3,14 @@
 #include <string>
 #include <iostream>
 #include <cstdio>
+#include <cmath>
 
 #include "editor/include/editor_ui_component/editor_text_component.h"
 #include "editor/include/editor_ui_component/editor_tooltip_component.h"
 #include "editor/include/editor_ui_component/editor_button_component.h"
 #include "editor/include/editor_ui_component/editor_menubar_component.h"
-
-
+#include "editor/include/editor_ui_component/editor_window_component.h"
+#include "editor/include/editor_ui_component/eidtor_plot_component.h"
 namespace kpengine
 {
     namespace ui
@@ -19,12 +20,9 @@ namespace kpengine
         }
         EditorUI::~EditorUI()
         {
-            for (int i = 0; i < ui_components_.size(); i++)
-            {
-                delete ui_components_[i];
-                ui_components_[i] = nullptr;
-            }
+
            delete main_menubar_;
+           delete window_component_;
         }
 
         void EditorUI::Initialize(GLFWwindow *window)
@@ -42,16 +40,14 @@ namespace kpengine
             //ImFont *font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\simhei.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesChineseFull());
             //IM_ASSERT(font != nullptr);
 
-
-
-
-            ui_components_.push_back(new EditorTextComponent("hello imgui"));
-            ui_components_.push_back(new EditorTooltipComponent("welcome"));
+            window_component_ = new EditorWindowComponent("window");
+            window_component_->AddComponent(new EditorTextComponent("hello imgui"));
+            window_component_->AddComponent(new EditorTooltipComponent("welcome"));
             EditorButtonComponent *button = new EditorButtonComponent("button");
             button->BindClickEvent([]()
                                    { std::cout << "click" << std::endl; });
-            ui_components_.push_back(button);
-
+            window_component_->AddComponent(button);
+            window_component_->AddComponent(new EditorPlotComponent([](float x){return std::sin(x);}, 0, 10));
             //menu init
             std::vector<Menu> menus;
             menus.push_back({"File", {{"Open Project", "Ctrl+O"}, {"New Project", "Ctrl+N"}, {"Exit"}}});
@@ -60,9 +56,6 @@ namespace kpengine
             menus.push_back({"Tools"});
             main_menubar_ = new EditorMenuBarComponent(menus);
         
-
-
-
         }
 
         void EditorUI::Close()
@@ -93,16 +86,7 @@ namespace kpengine
         {
             // Start the Dear ImGui frame
 
-
-            ImGui::Begin("new window");
-            // render component
-            for (int i = 0; i < ui_components_.size(); i++)
-            {
-                ui_components_[i]->Render();
-            }
-            ImGui::End();
-
-
+            window_component_->Render();
             return true;
         }
 

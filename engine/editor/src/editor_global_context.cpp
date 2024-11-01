@@ -13,7 +13,7 @@ namespace kpengine{
             scene_system_ = init_info.scene_system;
 
             editor_scene_manager_ = new EditorSceneManager();
-            editor_scene_manager_->Initialize(scene_system_->scene_.get());
+            editor_scene_manager_->Initialize(scene_system_);
         }
 
         void EditorContext::Clear()

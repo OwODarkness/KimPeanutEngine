@@ -1,17 +1,17 @@
-#include "Mesh.h"
+#include "render_mesh.h"
 #include <glad/glad.h>
 namespace kpengine{
-    Mesh::Mesh(std::vector<Vertex> verticles, std::vector<unsigned> indices):
+   RenderMesh::RenderMesh(std::vector<Vertex> verticles, std::vector<unsigned> indices):
     verticles_(verticles),indices_(indices)
     {
     }
 
-    Mesh::~Mesh()
+    RenderMesh::~RenderMesh()
     {
         
     }
 
-    void Mesh::Initialize()
+    void RenderMesh::Initialize()
     {
         glGenVertexArrays(1, &vao_);
         glGenBuffers(1, &vbo_);
@@ -35,7 +35,7 @@ namespace kpengine{
         glBindVertexArray(0);
     }
 
-    void Mesh::Draw()
+    void RenderMesh::Draw()
     {
         glBindVertexArray(vao_);
         glDrawElements(GL_TRIANGLES, indices_.size(), GL_UNSIGNED_INT, 0);

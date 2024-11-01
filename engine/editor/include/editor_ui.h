@@ -1,8 +1,6 @@
 #ifndef KPENGINE_EDITOR_EDITOR_UI_H
 #define KPENGINE_EDITOR_EDITOR_UI_H
 
-#include <vector>
-#include <memory>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -16,8 +14,7 @@ namespace kpengine{
 namespace ui{
     
     class EditorUIComponent;
-
-
+    class EditorWindowComponent;
 
     class EditorUI{
     public:
@@ -33,9 +30,8 @@ namespace ui{
     private:
 
     private:
-        std::vector<EditorUIComponent*> ui_components_;
         EditorUIComponent* main_menubar_;
-
+        EditorWindowComponent* window_component_;
     };
     
 }
