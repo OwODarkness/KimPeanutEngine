@@ -10,7 +10,7 @@ namespace kpengine{
         render_scene_->Initialize();
     }
 
-    void RenderSystem::Tick()
+    void RenderSystem::Tick(float DeltaTime)
     {
         render_scene_->Render();
     }

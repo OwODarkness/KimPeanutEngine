@@ -44,8 +44,10 @@ namespace kpengine
             return;
         }
 
+        glfwSetWindowUserPointer(window_, this);
         glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
-
+        glfwSetMouseButtonCallback(window_, &WindowSystem::OnMouseButtonCallback);
+        glfwSetKeyCallback(window_, &WindowSystem::OnKeyCallback);
     }
 
     void WindowSystem::PollEvents() const
@@ -53,7 +55,7 @@ namespace kpengine
         glfwPollEvents();
     }
 
-    void WindowSystem::Tick()
+    void WindowSystem::Tick(float DeltaTime)
     {
 
         glfwSwapBuffers(window_);
@@ -74,9 +76,48 @@ namespace kpengine
         fprintf(stderr, "GLFW Error %d: %s\n", error_code, msg);
     }
 
-    void WindowSystem::OnFrameBufferSizeCallback(struct GLFWwindow*window, int width, int height)
+    void WindowSystem::OnFrameBufferSizeCallback(GLFWwindow*window, int width, int height)
     {
         runtime::global_runtime_context.render_system_->GetRenderScene()->scene_->ReSizeFrameBuffer(width, height);
         glViewport(0, 0, width, height);
+    }
+
+    void WindowSystem::OnMouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
+    {
+        WindowSystem* window_system = static_cast<WindowSystem*>(glfwGetWindowUserPointer(window));
+        window_system->MouseButtonExec(button, action, mods);
+
+    }
+
+    void WindowSystem::OnKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
+    {
+        WindowSystem* window_system = static_cast<WindowSystem*>(glfwGetWindowUserPointer(window));
+        window_system->KeyExec(key, scancode, action, mods);
+    }
+
+    void WindowSystem::RegisterOnMouseButtionFunc(MouseButtonFuncType func)
+    {
+        button_func_group_.push_back(func);
+    }
+
+    void WindowSystem::RegisterOnKeyFunc(KeyFuncType func)
+    {
+        key_func_group_.push_back(func);
+    }
+
+    void WindowSystem::MouseButtonExec(int code, int action, int mods)
+    {
+        for(auto& func: button_func_group_)
+        {
+            func(code, action, mods);
+        }
+    }
+
+    void WindowSystem::KeyExec(int key, int code, int action,int mods)
+    {
+        for(auto& func : key_func_group_)
+        {
+            func(key, code, action, mods);
+        }
     }
 }

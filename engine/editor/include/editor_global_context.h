@@ -7,6 +7,7 @@ namespace kpengine{
     class RenderSystem;
 namespace editor{
     class EditorSceneManager;
+    class EditorInputManager;
 
     struct EditorContextInitInfo{
         WindowSystem* window_system;
@@ -23,6 +24,7 @@ namespace editor{
         RenderSystem* render_system_{nullptr};
         
         EditorSceneManager* editor_scene_manager_;
+        EditorInputManager* editor_input_manager_;
     };
 
     extern EditorContext global_editor_context;

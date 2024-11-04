@@ -10,7 +10,7 @@ namespace kpengine{
     public:
         RenderSystem() = default;
         void Initialize();
-        void Tick();
+        void Tick(float DeltaTime);
         std::shared_ptr<RenderScene> GetRenderScene() const{return render_scene_;}
     private:
         std::shared_ptr<RenderScene> render_scene_;

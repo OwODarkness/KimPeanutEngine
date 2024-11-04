@@ -7,6 +7,7 @@
 namespace kpengine{
     namespace runtime{
         constexpr float fps_alpha = 1.f / 100.f;
+
         void Engine::Initialize()
         {
             global_runtime_context.Initialize();
@@ -19,10 +20,9 @@ namespace kpengine{
             {
                 return false;
             }
-            CalculateDeltaTime();
-            global_runtime_context.window_system_->Tick();
-            global_runtime_context.render_system_->Tick();
-            std::cout << fps << std::endl;
+            float delta_time = CalculateDeltaTime();
+            global_runtime_context.window_system_->Tick(delta_time);
+            global_runtime_context.render_system_->Tick(delta_time);
             return true;
         }
 
