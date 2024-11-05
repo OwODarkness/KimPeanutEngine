@@ -65,6 +65,10 @@ namespace kpengine
         void KeyExec(int key, int code, int action, int mods);
         void CursorPosExec(double xpos, double ypos);
 
+    public:
+        int width_;
+        int height_;
+
     private:
        struct GLFWwindow* window_;
 

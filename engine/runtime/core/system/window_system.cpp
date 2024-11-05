@@ -29,6 +29,8 @@ namespace kpengine
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
+        width_ = window_info.width;
+        height_ = window_info.height;
         window_ = glfwCreateWindow(window_info.width, window_info.height, "KimPeanut Engine", nullptr, nullptr);
         if (window_ == nullptr)
         {
@@ -58,7 +60,6 @@ namespace kpengine
 
     void WindowSystem::Tick(float DeltaTime)
     {
-
         glfwSwapBuffers(window_);
         PollEvents();
 
@@ -81,6 +82,9 @@ namespace kpengine
     {
         runtime::global_runtime_context.render_system_->GetRenderScene()->scene_->ReSizeFrameBuffer(width, height);
         glViewport(0, 0, width, height);
+        WindowSystem* widnow_system = static_cast<WindowSystem*>(glfwGetWindowUserPointer(window));
+        widnow_system->width_ = width;
+        widnow_system->height_ = height;
     }
 
     void WindowSystem::OnMouseButtonCallback(GLFWwindow* window, int button, int action, int mods)

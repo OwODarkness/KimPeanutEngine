@@ -4,7 +4,7 @@
 #include <GLFW/glfw3.h>
 
 #include "runtime/core/log/logger.h"
-
+#include "runtime/runtime_global_context.h"
 namespace kpengine
 {
 
@@ -48,11 +48,16 @@ namespace kpengine
             KP_LOG("FrameBuffer", LOG_LEVEL_ERROR, "Frame buffer is not complete");
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        glEnable(GL_DEPTH_TEST);
+
     }
 
     void FrameBuffer::BindFrameBuffer()
     {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
+        glClearColor(0.f, 0.f, 0.f, 1.0f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
     }
 
     void FrameBuffer::UnBindFrameBuffer()

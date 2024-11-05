@@ -17,6 +17,10 @@ namespace kpengine{
         {
             ImGui::Begin(title_.c_str());
             {
+                pos_x = ImGui::GetWindowPos().x;
+                pos_y = ImGui::GetWindowPos().y;
+                width_ = (int)ImGui::GetContentRegionAvail().x;
+                height_ = (int)ImGui::GetContentRegionAvail().y;
                 ImGui::BeginChild("render target");
                 ImGui::Image(
                     (ImTextureID)scene_->GetTexture(),

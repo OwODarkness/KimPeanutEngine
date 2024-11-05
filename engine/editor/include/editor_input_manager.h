@@ -38,8 +38,8 @@ namespace kpengine
             double last_cursor_xpos_;
             double last_cursor_ypos_;
             unsigned int editor_command_{0};
-
             std::shared_ptr<RenderCamera> camera_;
+            bool is_first_cursor = true;
         };
     }
 }

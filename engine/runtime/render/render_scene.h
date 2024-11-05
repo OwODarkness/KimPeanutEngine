@@ -19,7 +19,6 @@ namespace kpengine{
 
         void EndDraw();
 
-        
     public:
         std::shared_ptr<FrameBuffer> scene_;//frame buffer
 

@@ -44,34 +44,30 @@ namespace kpengine
 
         void EditorInputManager::HandleInput()
         {
-            float camera_move_z = 0.f;
-            float camera_move_x = 0.f;
-            float camera_move_y = 0.f;
             if (static_cast<unsigned int>(EditorCommand::CAMERA_FORWARD) & editor_command_)
             {
-                camera_move_z += -1.f;
+                camera_->MoveForward(1.f);
             }
             if (static_cast<unsigned int>(EditorCommand::CAMERA_BACKWARD) & editor_command_)
             {
-                camera_move_z += 1.f;
+                camera_->MoveForward(-1.f);
             } 
             if (static_cast<unsigned int>(EditorCommand::CAMERA_RIGHT) & editor_command_)
             {
-                camera_move_x += 1.f;
+                camera_->MoveRight(1.f);
             }
             if (static_cast<unsigned int>(EditorCommand::CAMERA_LEFT) & editor_command_)
             {
-                camera_move_x += -1.f;
+                camera_->MoveRight(-1.f);
             }
             if (static_cast<unsigned int>(EditorCommand::CAMERA_UP) & editor_command_)
             {
-                camera_move_y += 1.f;
+                camera_->MoveUp(1.f);
             }
             if (static_cast<unsigned int>(EditorCommand::CAMERA_DOWN) & editor_command_)
             {
-                camera_move_y += -1.f;
+                camera_->MoveUp(-1.f);
             }
-            camera_->Move(glm::vec3(camera_move_x, camera_move_y, camera_move_z));
             
         }
 
@@ -143,13 +139,15 @@ namespace kpengine
 
         void EditorInputManager::CursorPosCallback(double xpos, double ypos)
         {
+
+            if(!is_first_cursor)
+            {
             double delta_x = xpos - last_cursor_xpos_;
             double delta_y = ypos - last_cursor_ypos_;
+            camera_->Rotate(glm::vec2(-delta_y , delta_x));
 
-            float yaw_delta = delta_x > 0.f ? 1.f : -1.f;
-            float pitch_delta = delta_y > 0.f ? -1.f : 1.f;
-            
-            camera_->Rotate(glm::vec2(pitch_delta, yaw_delta));
+            }
+            is_first_cursor = false;
             //std::cout << "delta_x:" << delta_x << " delta_y:" << delta_y << std::endl;
             last_cursor_xpos_ = xpos;
             last_cursor_ypos_ = ypos;

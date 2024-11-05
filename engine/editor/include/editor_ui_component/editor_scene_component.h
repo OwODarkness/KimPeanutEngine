@@ -19,10 +19,13 @@ namespace kpengine{
             void SetTitle(const std::string & title);
         private:
             std::shared_ptr<FrameBuffer> scene_;
+
+            std::string title_{"scene"};
+        public:
             int width_;
             int height_;
-            std::string title_{"scene"};
-
+            float pos_x;
+            float pos_y;
         };
     }
 }
