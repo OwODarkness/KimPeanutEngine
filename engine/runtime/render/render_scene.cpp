@@ -13,7 +13,7 @@ namespace kpengine{
         scene_ = std::make_shared<FrameBuffer>(1280, 720);
         scene_->Initialize();
 
-        render_object_ = test::GetRenderObjectCube();
+        render_object_ = test::GetRenderObjectTriangle();
         render_object_->Initialize();
     }
 

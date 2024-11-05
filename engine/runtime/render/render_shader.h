@@ -1,5 +1,5 @@
-#ifndef KPENGINE_SHADER_H
-#define KPENGINE_SHADER_H
+#ifndef KPENGINE_RUNTIME_RENDER_SHADER_H
+#define KPENGINE_RUNTIME_RENDER_SHADER_H
 
 #include <string>
 #include <filesystem>
@@ -7,13 +7,13 @@ namespace kpengine
 {
     const std::filesystem::path shader_directory_path = "../../engine/shader";
 
-    class ShaderHelper
+    class RenderShader
     {
     public:
         
-        ShaderHelper() = delete;
-        ShaderHelper(const ShaderHelper& ) = delete;
-        explicit ShaderHelper(std::string vertex_shader_path, std::string fragment_shader_path);
+       RenderShader() = delete;
+        RenderShader(const RenderShader& ) = delete;
+        explicit RenderShader(std::string vertex_shader_path, std::string fragment_shader_path);
 
         void Initialize();
 

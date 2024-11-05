@@ -48,6 +48,7 @@ namespace kpengine
         glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
         glfwSetMouseButtonCallback(window_, &WindowSystem::OnMouseButtonCallback);
         glfwSetKeyCallback(window_, &WindowSystem::OnKeyCallback);
+        glfwSetCursorPosCallback(window_, &WindowSystem::OnCursorPosCallback);
     }
 
     void WindowSystem::PollEvents() const
@@ -95,6 +96,12 @@ namespace kpengine
         window_system->KeyExec(key, scancode, action, mods);
     }
 
+    void WindowSystem::OnCursorPosCallback(GLFWwindow* window, double xpos, double ypos)
+    {
+        WindowSystem* window_system = static_cast<WindowSystem*>(glfwGetWindowUserPointer(window));
+        window_system->CursorPosExec(xpos, ypos);
+    }
+
     void WindowSystem::RegisterOnMouseButtionFunc(MouseButtonFuncType func)
     {
         button_func_group_.push_back(func);
@@ -103,6 +110,11 @@ namespace kpengine
     void WindowSystem::RegisterOnKeyFunc(KeyFuncType func)
     {
         key_func_group_.push_back(func);
+    }
+
+    void WindowSystem::RegisterOnCursorPosFunc(CursorPosFuncType func)
+    {
+        cursor_pos_func_group_.push_back(func);
     }
 
     void WindowSystem::MouseButtonExec(int code, int action, int mods)
@@ -118,6 +130,14 @@ namespace kpengine
         for(auto& func : key_func_group_)
         {
             func(key, code, action, mods);
+        }
+    }
+
+    void WindowSystem::CursorPosExec(double xpos, double ypos)
+    {
+        for(auto& func : cursor_pos_func_group_)
+        {
+            func(xpos, ypos);
         }
     }
 }

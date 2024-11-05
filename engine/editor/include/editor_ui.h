@@ -1,5 +1,5 @@
-#ifndef KPENGINE_EDITOR_EDITOR_UI_H
-#define KPENGINE_EDITOR_EDITOR_UI_H
+#ifndef KPENGINE_EDITOR_UI_H
+#define KPENGINE_EDITOR_UI_H
 
 
 #include <glad/glad.h>

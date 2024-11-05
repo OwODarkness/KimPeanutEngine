@@ -1,11 +1,11 @@
-#ifndef RUNTIME_RENDER_OBJECT_H
-#define RUNTIME_RENDER_OBJECT_J
+#ifndef KPENGINE_RUNTIME_RENDER_OBJECT_H
+#define KPENGINE_RUNTIME_RENDER_OBJECT_J
 
 #include <string>
 
 namespace kpengine{
     class RenderMesh;
-    class ShaderHelper;
+    class RenderShader;
     
     class RenderObject{
     public:
@@ -13,10 +13,10 @@ namespace kpengine{
         ~RenderObject();
         void Initialize();
         void Render();
-        inline ShaderHelper* GetShader() const {return shader_helper_;}
+        inline RenderShader* GetShader() const {return shader_helper_;}
     private:
         RenderMesh* mesh_;
-        ShaderHelper* shader_helper_;
+        RenderShader* shader_helper_;
     
     };
 }

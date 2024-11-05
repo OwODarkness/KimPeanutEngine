@@ -1,5 +1,5 @@
-#ifndef KPENGINE_EDITOR_EDITOR_TEXT_COMPONENT_H
-#define KPENGINE_EDITOR_EDITOR_TEXT_COMPONENT_H
+#ifndef KPENGINE_EDITOR_TEXT_COMPONENT_H
+#define KPENGINE_EDITOR_TEXT_COMPONENT_H
 
 #include <string>
 #include "editor/include/editor_ui_component.h"

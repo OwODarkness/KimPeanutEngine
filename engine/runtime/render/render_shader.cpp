@@ -1,4 +1,4 @@
-#include "shader.h"
+#include "render_shader.h"
 
 #include <fstream>
 #include<iostream>
@@ -10,13 +10,13 @@
 namespace kpengine
 {
 
-    ShaderHelper::ShaderHelper(std::string vertex_shader_path, std::string fragment_shader_path) : 
+    RenderShader::RenderShader(std::string vertex_shader_path, std::string fragment_shader_path) : 
     vertex_shader_path_(vertex_shader_path),
                                                                                                  fragment_shader_path_(fragment_shader_path)
     {
     }
 
-    void ShaderHelper::Initialize()
+    void RenderShader::Initialize()
     {
         int bsucceed = 0;
         char info_log[512];
@@ -76,7 +76,7 @@ namespace kpengine
         glDeleteShader(fragment_shader);
     }
 
-    bool ShaderHelper::ExtractShaderCodeFromFile(std::filesystem::path file_path, std::string &out_code)
+    bool RenderShader::ExtractShaderCodeFromFile(std::filesystem::path file_path, std::string &out_code)
     {
         std::ifstream ifs;
         ifs.open(file_path, std::ios_base::in);
@@ -98,35 +98,35 @@ namespace kpengine
         return true;
     }
 
-    void ShaderHelper::UseProgram()
+    void RenderShader::UseProgram()
     {
         glUseProgram(shader_program_handle_);
     }
 
-    void ShaderHelper::SetBool(const std::string &name, bool value) const
+    void RenderShader::SetBool(const std::string &name, bool value) const
     {
         glUniform1i(glGetUniformLocation(shader_program_handle_, name.c_str()), value);
     }
-    void ShaderHelper::SetInt(const std::string &name, int value) const
+    void RenderShader::SetInt(const std::string &name, int value) const
     {
         glUniform1i(glGetUniformLocation(shader_program_handle_, name.c_str()), value);
     }
-    void ShaderHelper::SetFloat(const std::string &name, float value) const
+    void RenderShader::SetFloat(const std::string &name, float value) const
     {
         glUniform1f(glGetUniformLocation(shader_program_handle_, name.c_str()), value);
     }
 
-    void ShaderHelper::SetMat(const std::string &name, const float *value) const
+    void RenderShader::SetMat(const std::string &name, const float *value) const
     {
         glUniformMatrix4fv(glGetUniformLocation(shader_program_handle_, name.c_str()), 1, GL_FALSE, value);
     }
 
-    void ShaderHelper::SetVec3(const std::string &name, const float *value) const
+    void RenderShader::SetVec3(const std::string &name, const float *value) const
     {
         glUniform3f(glGetUniformLocation(shader_program_handle_, name.c_str()), value[0], value[1], value[2]);
     }
 
-    void ShaderHelper::SetVec3(const std::string &name, float r, float g, float b) const
+    void RenderShader::SetVec3(const std::string &name, float r, float g, float b) const
     {
         glUniform3f(glGetUniformLocation(shader_program_handle_, name.c_str()), r, g, b);
     }

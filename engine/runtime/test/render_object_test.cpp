@@ -8,9 +8,10 @@ namespace kpengine
         std::shared_ptr<RenderObject> GetRenderObjectTriangle()
         {
             std::vector<Vertex> verticles = {
-                {{0.5, -0.5, 0}},
-                {{-0.5, -0.5, 0}},
-                {{0, 0.5, 0}}};
+                {{0.5, -0.5, 0}, {}, {1.f, 0.f}},
+                {{-0.5, -0.5, 0}, {}, {0.f, 0.f}},
+                {{0, 0.5, 0}, {}, {0.f, 1.f}}
+                };
             std::vector<unsigned int> indices = {0, 1, 2};
 
             return std::make_shared<RenderObject>(new kpengine::RenderMesh(verticles, indices), "normal.vs", "normal.fs");

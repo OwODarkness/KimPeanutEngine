@@ -1,5 +1,5 @@
-#ifndef KPENGINE_EDITOR_EDITOR_H
-#define KPENGINE_EDITOR_EDITOR_H
+#ifndef KPENGINE_EDITOR_H
+#define KPENGINE_EDITOR_H
 
 #include <memory>
 

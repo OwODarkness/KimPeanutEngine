@@ -1,5 +1,6 @@
 #include "render_camera.h"
 
+#include <iostream>
 #include <cmath>
 #include <algorithm>
 
@@ -10,18 +11,20 @@ namespace kpengine
     glm::vec3 RenderCamera::up_{0.f, 1.f, 0.f};
     void RenderCamera::Move(const glm::vec3 &delta)
     {
-        position_ += delta * speed_;
-        
+        position_ += delta * move_speed_;
+        //std::cout << delta.x << " " << delta.y << " " << delta.z << std::endl;
     }
 
     void RenderCamera::Rotate(const glm::vec2& delta)
     {
-        int delta_pitch = delta.x;
-        int delta_yaw = delta.y;
+        float delta_pitch = delta.x * rotate_speed;
+        float delta_yaw = delta.y * rotate_speed;
 
         yaw_ += delta_yaw;
         pitch_ = std::clamp(delta_pitch + pitch_, pitch_min_, pitch_max_);
     
+        //std::cout << "yaw:" << yaw_ << " pitch:" << pitch_ << std::endl;
+
         glm::vec3 tmp_dir = glm::vec3(1);
         tmp_dir.x = std::cos(pitch_) * std::cos(yaw_);
         tmp_dir.y = std::sin(pitch_);

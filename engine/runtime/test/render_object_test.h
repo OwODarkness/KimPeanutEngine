@@ -1,5 +1,5 @@
-#ifndef TEST_RENDER_OBJECT_H
-#define TEST_RENDER_OBJECT_H
+#ifndef KPENGINE_TEST_RENDER_OBJECT_H
+#define KPENGINE_TEST_RENDER_OBJECT_H
 
 #include <memory>
 

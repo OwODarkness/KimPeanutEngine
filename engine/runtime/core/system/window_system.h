@@ -1,11 +1,13 @@
-#ifndef KPENGINE_EDITOR_WINDOW_SYSTEM_H
-#define KPENGINE_EDITOR_WINDOW_SYSTEM_H
+#ifndef KPENGINE_RUNTIME_WINDOW_SYSTEM_H
+#define KPENGINE_RUNTIME_WINDOW_SYSTEM_H
 
 #include <functional>
 #include <vector>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
+struct GLFWwinodw;
 
 namespace kpengine
 {
@@ -35,11 +37,13 @@ namespace kpengine
 
         static void OnErrorCallback(int error_code, const char* msg);
 
-        static void OnMouseButtonCallback(struct GLFWwindow* window, int button, int action, int mods);
+        static void OnMouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
 
-        static void OnFrameBufferSizeCallback(struct GLFWwindow*window, int width, int height);
+        static void OnFrameBufferSizeCallback(GLFWwindow*window, int width, int height);
 
-        static void OnKeyCallback(struct GLFWwindow* window, int key, int scancode, int action, int mods);
+        static void OnKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+
+        static void OnCursorPosCallback(GLFWwindow* window, double xpos, double ypos);
 
         bool ShouldClose() const;
 
@@ -49,21 +53,25 @@ namespace kpengine
 
         struct GLFWwindow* GetOpenGLWndow() const{return window_;}
 
-        using MouseButtonFuncType = std::function<void(int code, int action, int mods)>;
-        using KeyFuncType = std::function<void(int key, int code, int action, int mods)>;
-
+        using MouseButtonFuncType = std::function<void(int , int , int)>;
+        using KeyFuncType = std::function<void(int, int, int, int)>;
+        using CursorPosFuncType = std::function<void(double, double)>;
 
         void RegisterOnMouseButtionFunc(MouseButtonFuncType func);
         void RegisterOnKeyFunc(KeyFuncType func);
+        void RegisterOnCursorPosFunc(CursorPosFuncType func);
 
         void MouseButtonExec(int code, int action, int mods);
         void KeyExec(int key, int code, int action, int mods);
+        void CursorPosExec(double xpos, double ypos);
 
     private:
        struct GLFWwindow* window_;
 
         std::vector<MouseButtonFuncType> button_func_group_;
         std::vector<KeyFuncType> key_func_group_;
+        std::vector<CursorPosFuncType> cursor_pos_func_group_;
+
     };
 }
 
