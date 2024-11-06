@@ -15,6 +15,8 @@ namespace editor{
         void Initialize();
         void Tick();
         void Close();
+        bool IsCursorInScene(float cursor_x, float cursor_y);
+        bool IsSCeneFocus() const;
     private:
         std::shared_ptr<ui::EditorSceneComponent> scene_ui_;
     };

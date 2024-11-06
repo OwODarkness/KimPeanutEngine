@@ -15,10 +15,12 @@ namespace kpengine{
     {
         //TODO 
         //Initialize render_scene, render_camera
-        render_scene_ = std::make_shared<RenderScene>();
-        render_scene_->Initialize();
 
         render_camera_ = std::make_shared<RenderCamera>();
+
+        render_scene_ = std::make_shared<RenderScene>();
+        render_scene_->Initialize(render_camera_);
+
     }
 
     void RenderSystem::Tick(float DeltaTime)

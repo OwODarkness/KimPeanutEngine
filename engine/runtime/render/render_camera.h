@@ -28,7 +28,7 @@ public:
     glm::mat4x4 GetProjectionMatrix();
 
 private:
-    glm::vec3 position_{0.f, 0.f, 2.f};
+    glm::vec3 position_{0.f, 0.8f, 2.f};
     glm::vec3 direction_{0.f, 0.f, -1.f};
 public:
     float move_speed_ = 0.05f;

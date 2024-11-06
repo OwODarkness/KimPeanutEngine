@@ -26,6 +26,8 @@ namespace kpengine{
             int height_;
             float pos_x;
             float pos_y;
+
+            bool is_scene_window_focus;
         };
     }
 }

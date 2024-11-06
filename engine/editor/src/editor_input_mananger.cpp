@@ -3,10 +3,12 @@
 #include <iostream>
 
 #include "editor/include/editor_global_context.h"
-// #include "editor/include/editor_scene_manager.h"
+#include "editor/include/editor_scene_manager.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/system/window_system.h"
 #include "runtime/render/render_camera.h"
+#include "editor/include/editor_ui_component/editor_scene_component.h"
+
 namespace kpengine
 {
     namespace editor
@@ -74,7 +76,11 @@ namespace kpengine
         void EditorInputManager::KeyCallback(int key, int code, int action, int mods)
         {
             // std::cout << "Test__key:" << key << " code:" << code << " action:" << action << " mods:" << mods << std::endl;
-
+            bool is_focus = global_editor_context.editor_scene_manager_->IsSCeneFocus();
+            if(!is_focus)
+            {
+                return ;
+            }
             if (GLFW_PRESS == action)
             {
                 switch (key)
@@ -139,7 +145,11 @@ namespace kpengine
 
         void EditorInputManager::CursorPosCallback(double xpos, double ypos)
         {
-
+            bool is_focus = global_editor_context.editor_scene_manager_->IsSCeneFocus();
+            if(!is_focus)
+            {
+                return ;
+            }
             if(!is_first_cursor)
             {
             double delta_x = xpos - last_cursor_xpos_;
@@ -151,6 +161,8 @@ namespace kpengine
             //std::cout << "delta_x:" << delta_x << " delta_y:" << delta_y << std::endl;
             last_cursor_xpos_ = xpos;
             last_cursor_ypos_ = ypos;
+
+            
         }
     }
 }

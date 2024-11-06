@@ -14,8 +14,10 @@ public:
 
     inline unsigned int GetTexture() const {return texture_handle_;}
 private:
-    std::string image_path_;
     unsigned int texture_handle_;
+public:
+    std::string image_path_;
+
 };
 }
 

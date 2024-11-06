@@ -17,13 +17,13 @@ struct Vertex{
 
 class RenderMesh{
 public:
-    RenderMesh(std::vector<Vertex> verticles, std::vector<unsigned> indices);
+    RenderMesh(std::vector<Vertex> verticles, std::vector<unsigned int> indices, std::shared_ptr<RenderMaterial> material);
     void Initialize(std::shared_ptr<RenderShader> shader_helper);
     void Draw();
     virtual ~RenderMesh();
 private:
     std::vector<Vertex> verticles_;
-    std::vector<unsigned> indices_; 
+    std::vector<unsigned int> indices_; 
     std::shared_ptr<RenderMaterial> material_;
     std::shared_ptr<RenderShader> shader_helper_;
     unsigned int vbo_;

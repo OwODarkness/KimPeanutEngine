@@ -26,6 +26,7 @@ namespace kpengine{
 
         int width = 0, height = 0, nr_channels = 0;
         std::filesystem::path image_full_path = texture_directory_path / image_path_;
+        stbi_set_flip_vertically_on_load(true);
         unsigned char* image_data = stbi_load(image_full_path.generic_string().c_str(), &width, &height, &nr_channels, 0);
 
         if(!image_data)

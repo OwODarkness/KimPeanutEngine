@@ -60,12 +60,11 @@ namespace kpengine
 
     void WindowSystem::Tick(float DeltaTime)
     {
-        glfwSwapBuffers(window_);
         PollEvents();
+        glfwSwapBuffers(window_);
 
         glClearColor(0.1f, 0.1f, 0.1f, 1.f);
         glClear(GL_COLOR_BUFFER_BIT);
-
     }
 
     bool WindowSystem::ShouldClose() const

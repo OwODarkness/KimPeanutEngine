@@ -22,5 +22,21 @@ namespace kpengine
         {
             scene_ui_.reset();
         }
+
+        bool EditorSceneManager::IsCursorInScene(float cursor_x, float cursor_y)
+        {
+            bool is_inside_x_bounding = cursor_x >= scene_ui_->pos_x && cursor_x <= scene_ui_->pos_x + scene_ui_->width_;
+            bool is_inside_y_bounding = cursor_y >= scene_ui_->pos_y && cursor_y <= scene_ui_->pos_y + scene_ui_->height_;
+            if(is_inside_x_bounding && is_inside_y_bounding)
+            {
+                return true;
+            }
+            return false;
+        }
+
+        bool EditorSceneManager::IsSCeneFocus() const
+        {
+            return scene_ui_->is_scene_window_focus;
+        }
     }
 }

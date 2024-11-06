@@ -1,12 +1,15 @@
 #include "render_mesh.h"
+
 #include <glad/glad.h>
+#include <iostream>
+
 
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_material.h"
 #include "runtime/render/render_texture.h"
 namespace kpengine{
-   RenderMesh::RenderMesh(std::vector<Vertex> verticles, std::vector<unsigned> indices):
-    verticles_(verticles),indices_(indices)
+   RenderMesh::RenderMesh(std::vector<Vertex> verticles, std::vector<unsigned> indices, std::shared_ptr<RenderMaterial> material):
+    verticles_(verticles),indices_(indices), material_(material)
     {
     }
 
@@ -41,22 +44,37 @@ namespace kpengine{
 
         glBindVertexArray(0);
 
-        material_ = std::make_shared<RenderMaterial>();
-        std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture>("container.png");
-        texture->Initialize();
-        material_->base_color_ = texture;
-
-
     }
 
     void RenderMesh::Draw()
     {
         glBindVertexArray(vao_);
-        glDrawElements(GL_TRIANGLES, indices_.size(), GL_UNSIGNED_INT, 0);
+        glDrawElements(GL_TRIANGLES, (GLsizei)indices_.size(), GL_UNSIGNED_INT, 0);
 
-        glActiveTexture(GL_TEXTURE0);
-        shader_helper_->SetInt("texture1", 0);
-        glBindTexture(GL_TEXTURE_2D, material_->base_color_->GetTexture());
+        shader_helper_->SetFloat("material.diffuse", material_->diffuse);
+        shader_helper_->SetFloat("material.specular", material_->specular);
+        int count = 0;
+        std::string texture_prefix = "";
+        std::string texture_id = "";
+        for(int i = 0;i<material_->diffuse_textures_.size();i++)
+        {
+            glActiveTexture(GL_TEXTURE0 + count);
+            glBindTexture(GL_TEXTURE_2D, material_->diffuse_textures_[i]->GetTexture());
+            texture_prefix = "material.diffuse_texture_";
+            texture_id = std::to_string(count);           
+            shader_helper_->SetInt( texture_prefix + texture_id, count);
+            count++;
+        }
+
+        for(int i = 0;i<material_->specular_textures_.size();i++)
+        {
+            glActiveTexture(GL_TEXTURE0 + count);
+            glBindTexture(GL_TEXTURE_2D, material_->specular_textures_[i]->GetTexture());
+            texture_prefix = "material.specular_texture_";
+            texture_id = std::to_string(count);           
+            shader_helper_->SetInt( texture_prefix + texture_id, count);
+            count++;
+        }
 
         glBindVertexArray(0);
 
