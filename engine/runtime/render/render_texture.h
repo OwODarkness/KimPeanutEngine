@@ -4,7 +4,7 @@
 #include <string>
 #include <filesystem>
 namespace kpengine{
-    const std::filesystem::path texture_directory_path = "../../engine/asset/texture";
+    const std::filesystem::path texture_directory_path = "../../engine/asset/texture/";
 
 class RenderTexture{
 public:

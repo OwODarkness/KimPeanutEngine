@@ -44,38 +44,40 @@ namespace kpengine{
 
         glBindVertexArray(0);
 
+
     }
 
     void RenderMesh::Draw()
     {
-        glBindVertexArray(vao_);
-        glDrawElements(GL_TRIANGLES, (GLsizei)indices_.size(), GL_UNSIGNED_INT, 0);
+
 
         shader_helper_->SetFloat("material.diffuse", material_->diffuse);
         shader_helper_->SetFloat("material.specular", material_->specular);
-        int count = 0;
+
         std::string texture_prefix = "";
         std::string texture_id = "";
-        for(int i = 0;i<material_->diffuse_textures_.size();i++)
+
+        int diffuse_texture_num = material_->diffuse_textures_.size();
+
+        for(int i = 0;i<diffuse_texture_num;i++)
         {
-            glActiveTexture(GL_TEXTURE0 + count);
+            glActiveTexture(GL_TEXTURE0 + i);
             glBindTexture(GL_TEXTURE_2D, material_->diffuse_textures_[i]->GetTexture());
             texture_prefix = "material.diffuse_texture_";
-            texture_id = std::to_string(count);           
-            shader_helper_->SetInt( texture_prefix + texture_id, count);
-            count++;
+            texture_id = std::to_string(i);           
+            shader_helper_->SetInt( texture_prefix + texture_id, i);
         }
 
         for(int i = 0;i<material_->specular_textures_.size();i++)
         {
-            glActiveTexture(GL_TEXTURE0 + count);
+            glActiveTexture(GL_TEXTURE0 + diffuse_texture_num + i);
             glBindTexture(GL_TEXTURE_2D, material_->specular_textures_[i]->GetTexture());
             texture_prefix = "material.specular_texture_";
-            texture_id = std::to_string(count);           
-            shader_helper_->SetInt( texture_prefix + texture_id, count);
-            count++;
+            texture_id = std::to_string(i);           
+            shader_helper_->SetInt( texture_prefix + texture_id, diffuse_texture_num + i);
         }
-
+        glBindVertexArray(vao_);
+        glDrawElements(GL_TRIANGLES, (GLsizei)indices_.size(), GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
 
     }

@@ -4,6 +4,8 @@ file(GLOB RUNTIME_SYSTEM_SRC "${CMAKE_CURRENT_SOURCE_DIR}/core/system/*.cpp")
 file(GLOB RUNTIME_RENDER_SRC "${CMAKE_CURRENT_SOURCE_DIR}/render/*.cpp")
 file(GLOB RUNTIME_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp")
 
+
+
 #file(GLOB RUNTIME_MATH_SRC "${CMAKE_CURRENT_SOURCE_DIR}/core/math/*.cpp")
 add_library(RuntimeLib STATIC 
     ${RUNTIME_SRC}  

@@ -15,6 +15,6 @@ void main()
 {
     gl_Position = projection* view*model* vec4(in_location, 1.f);
     frag_position = vec3(model * vec4(in_location, 1.f)); 
-    out_normal = in_normal;
+    out_normal = mat3(transpose(inverse(model))) * in_normal;
     out_texcoord = in_texcoord;
 }

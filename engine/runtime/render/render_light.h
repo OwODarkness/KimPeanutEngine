@@ -6,7 +6,7 @@
 namespace kpengine{
 
     struct PointLight{
-        glm::vec3 position{1.f, 1.f, 1.f};
+        glm::vec3 position{3.f, 3.f, 3.f};
         glm::vec3 color{1.f, 1.f, 1.f};
     };
 

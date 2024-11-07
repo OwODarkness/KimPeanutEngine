@@ -22,8 +22,7 @@ namespace kpengine
         char info_log[512];
         // compile vertex shader
         std::string vertex_shader_code = "";
-        std::filesystem::path abs_vertex_shader_path = shader_directory_path / vertex_shader_path_;
-        if (!ExtractShaderCodeFromFile(abs_vertex_shader_path, vertex_shader_code))
+        if (!ExtractShaderCodeFromFile(vertex_shader_path_, vertex_shader_code))
         {
             return;
         }
@@ -41,8 +40,7 @@ namespace kpengine
 
         // compile fragment_shader_code
         std::string fragment_shader_code = "";
-        std::filesystem::path abs_fragment_shader_path = shader_directory_path / fragment_shader_path_;
-        if (!ExtractShaderCodeFromFile(abs_fragment_shader_path, fragment_shader_code))
+        if (!ExtractShaderCodeFromFile(fragment_shader_path_, fragment_shader_code))
         {
             return;
         }
@@ -76,7 +74,7 @@ namespace kpengine
         glDeleteShader(fragment_shader);
     }
 
-    bool RenderShader::ExtractShaderCodeFromFile(std::filesystem::path file_path, std::string &out_code)
+    bool RenderShader::ExtractShaderCodeFromFile(const std::string& file_path, std::string &out_code)
     {
         std::ifstream ifs;
         ifs.open(file_path, std::ios_base::in);

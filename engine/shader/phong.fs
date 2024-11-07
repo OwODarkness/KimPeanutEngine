@@ -33,15 +33,17 @@ void main()
     vec3 light_dir = normalize(point_light.position - frag_position);
     vec3 normal = normalize(out_normal);
 
+    vec3 ambient_res = ambient  * vec3(texture(material.diffuse_texture_0, out_texcoord));
+
     float diff = max(dot(normal, light_dir),  0);
-    vec3 diffuse_res = material.diffuse * diff * point_light.color; 
+    vec3 diffuse_res =  diff * point_light.color  * vec3(texture(material.diffuse_texture_0, out_texcoord)); 
 
     vec3 view_dir = normalize(view_position - frag_position);
-    vec3 reflect_dir = reflect(-light_dir, normal);
+    vec3 reflect_dir = reflect(-light_dir, normal) ;
 
     float spec = pow(max(dot(view_dir, reflect_dir), 0.f), 32);
-    vec3 specular_res = material.specular *  spec * point_light.color;
+    vec3 specular_res = material.specular *  spec * point_light.color   * vec3(texture(material.diffuse_texture_0, out_texcoord));
 
-    out_frag_color = vec4(ambient + diffuse_res + specular_res, 1 ) * texture(material.diffuse_texture_0, out_texcoord);
-    //vec4(1.0f, 0.f, 0.f, 1.f);
+    out_frag_color = vec4(ambient_res + diffuse_res + specular_res, 1 );
+    
 }

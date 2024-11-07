@@ -6,6 +6,8 @@
 #include <glad/glad.h>
 
 #include "runtime/core/log/logger.h"
+#include "platform/path/path.h"
+
 
 namespace kpengine{
     RenderTexture::RenderTexture(const std::string& image_path):
@@ -25,15 +27,15 @@ namespace kpengine{
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
         int width = 0, height = 0, nr_channels = 0;
-        std::filesystem::path image_full_path = texture_directory_path / image_path_;
         stbi_set_flip_vertically_on_load(true);
-        unsigned char* image_data = stbi_load(image_full_path.generic_string().c_str(), &width, &height, &nr_channels, 0);
-
+        unsigned char* image_data = stbi_load(image_path_.c_str(), &width, &height, &nr_channels, 0);
         if(!image_data)
         {
-            KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", image_full_path.generic_string().c_str());
-            image_full_path = texture_directory_path / "default.jpg";
-            image_data = stbi_load(image_full_path.generic_string().c_str(), &width, &height, &nr_channels, 0);
+            KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", image_path_.c_str());
+            image_path_ = (texture_directory_path / "default.jpg").generic_string();
+            std::cout << image_path_ << " " << GetTextureDirectory() + "default.jpg" << std::endl;
+            
+            image_data = stbi_load(image_path_.c_str(), &width, &height, &nr_channels, 0);
         }
         
         int color_format = 0;

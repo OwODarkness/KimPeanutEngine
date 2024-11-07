@@ -1,11 +1,13 @@
 #include "render_object_test.h"
 
 #include <memory>
-
 #include "runtime/render/render_mesh.h"
 #include "runtime/render/render_object.h"
 #include "runtime/render/render_material.h"
 #include "runtime/render/render_texture.h"
+#include "runtime/render/model_loader.h"
+#include "platform/path/path.h"
+
 namespace kpengine
 {
     namespace test
@@ -26,8 +28,8 @@ namespace kpengine
             std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMesh>(verticles, indices, material);
             
             meshes.push_back(mesh);
-            
-            return std::make_shared<RenderObject>(meshes, "phong.vs", "phong.fs");
+            const std::string shader_dir = kpengine::GetShaderDirectory();
+            return std::make_shared<RenderObject>(meshes, shader_dir + "phong.vs", shader_dir + "phong.fs");
         }
 
         std::shared_ptr<RenderObject> GetRenderObjectRectangle()
@@ -46,8 +48,9 @@ namespace kpengine
             std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMesh>(verticles, indices, material);
             
             meshes.push_back(mesh);
-            
-            return std::make_shared<RenderObject>(meshes, "phong.vs", "phong.fs");
+            const std::string shader_dir = kpengine::GetShaderDirectory();
+
+            return std::make_shared<RenderObject>(meshes, shader_dir + "phong.vs", shader_dir + "phong.fs");
         }
 
         std::shared_ptr<RenderObject> GetRenderObjectCube()
@@ -117,8 +120,28 @@ namespace kpengine
             std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMesh>(verticles, indices, material);
             
             meshes.push_back(mesh);
+            const std::string shader_dir = kpengine::GetShaderDirectory();
             
-            return std::make_shared<RenderObject>(meshes, "phong.vs", "phong.fs");
+            return std::make_shared<RenderObject>(meshes, shader_dir+"phong.vs", shader_dir+"phong.fs");
+        }
+
+        std::shared_ptr<RenderObject> GetRenderObjectModel()
+        {
+            std::vector<std::shared_ptr<RenderMesh>> meshes;
+            ModelLoader* model_loader = new ModelLoader();
+            //meshes = model_loader->Load(GetModelDirectory() + "nanosuit/nanosuit.obj");
+            //meshes = model_loader->Load(GetModelDirectory() + "bunny/venusm.obj");
+            //meshes = model_loader->Load(GetModelDirectory() + "bunny/stanford-bunny.obj");
+meshes = model_loader->Load(GetModelDirectory() + "bunny/dragon.ply");
+            delete model_loader;
+            const std::string shader_dir = kpengine::GetShaderDirectory();
+
+            std::shared_ptr<RenderObject> render_object = std::make_shared<RenderObject>(meshes, shader_dir + "phong.vs", shader_dir + "normal.fs");
+            //render_object->SetScale({0.1f, 0.1f, 0.1f});
+            //render_object->SetScale({0.001f, 0.001f, 0.001f});
+            render_object->SetScale({10.f, 10.f, 10.f});
+
+            return render_object;
         }
     }
 }

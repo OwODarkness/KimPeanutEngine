@@ -6,11 +6,11 @@
 #include <memory>
 #include <filesystem>
 
-struct aiNode;
-struct aiScene;
-struct aiMaterial;
+#include <assimp/scene.h>
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+
 namespace kpengine{
-    const std::filesystem::path model_directory_path = "../../engine/asset/model";
 
     class RenderMesh;
     class RenderTexture;
