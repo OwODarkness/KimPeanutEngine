@@ -21,8 +21,8 @@ namespace kpengine
             std::vector<unsigned int> indices = {0, 1, 2};
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             
-            std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture>("default.jpg");
+            std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
             std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMesh>(verticles, indices, material);
@@ -41,8 +41,8 @@ namespace kpengine
                 {{0.5, 0.5, 0}}};
             std::vector<unsigned int> indices = {0, 1, 2, 2, 3, 0};
             std::vector<std::shared_ptr<RenderMesh>> meshes;
-            std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture>("default.jpg");
+            std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
             std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMesh>(verticles, indices, material);
@@ -113,8 +113,8 @@ namespace kpengine
                 30, 31, 32, 33, 34, 35  // Top face
             };
             std::vector<std::shared_ptr<RenderMesh>> meshes;
-            std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture>("default.jpg");
+            std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
             std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMesh>(verticles, indices, material);
@@ -125,23 +125,38 @@ namespace kpengine
             return std::make_shared<RenderObject>(meshes, shader_dir+"phong.vs", shader_dir+"phong.fs");
         }
 
-        std::shared_ptr<RenderObject> GetRenderObjectModel()
+        std::shared_ptr<RenderObject> GetRenderObjectModel(const std::string& model_dir)
         {
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             ModelLoader* model_loader = new ModelLoader();
-            //meshes = model_loader->Load(GetModelDirectory() + "nanosuit/nanosuit.obj");
-            //meshes = model_loader->Load(GetModelDirectory() + "bunny/venusm.obj");
-            //meshes = model_loader->Load(GetModelDirectory() + "bunny/stanford-bunny.obj");
-meshes = model_loader->Load(GetModelDirectory() + "bunny/dragon.ply");
+            meshes = model_loader->Load(model_dir);
             delete model_loader;
             const std::string shader_dir = kpengine::GetShaderDirectory();
 
-            std::shared_ptr<RenderObject> render_object = std::make_shared<RenderObject>(meshes, shader_dir + "phong.vs", shader_dir + "normal.fs");
-            //render_object->SetScale({0.1f, 0.1f, 0.1f});
-            //render_object->SetScale({0.001f, 0.001f, 0.001f});
-            render_object->SetScale({10.f, 10.f, 10.f});
-
-            return render_object;
+            return std::make_shared<RenderObject>(meshes, shader_dir + "phong.vs", shader_dir + "phong.fs");
         }
+
+        std::shared_ptr<RenderObject> GetRenderObjectBunny()
+        {
+            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "bunny/stanford-bunny.obj");
+            render_object->SetScale({10.f, 10.f, 10.f});
+            return render_object;
+        } 
+
+
+        std::shared_ptr<RenderObject> GetRenderObjectTeapot()
+        {
+            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "bunny/teapot.obj");
+            render_object->SetScale({0.1f, 0.1f, 0.1f});
+            return render_object;
+        } 
+
+
+                std::shared_ptr<RenderObject> GetRenderObjectVenusm()
+        {
+            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "bunny/venusm.obj");
+            render_object->SetScale({0.001f, 0.001f, 0.001f});
+            return render_object;
+        } 
     }
 }

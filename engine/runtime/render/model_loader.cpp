@@ -4,6 +4,7 @@
 #include "runtime/render/render_material.h"
 #include "runtime/render/render_texture.h"
 #include "runtime/core/log/logger.h"
+#include "platform/path/path.h"
 
 namespace kpengine
 {
@@ -43,7 +44,7 @@ namespace kpengine
 
         std::vector<Vertex> vertices;
         std::vector<unsigned int> indices;
-        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
+        std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
 
         for (unsigned int i = 0; i < mesh->mNumVertices; i++)
         {
@@ -77,7 +78,7 @@ namespace kpengine
         else
         {
             
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture>("");
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
         }
@@ -107,7 +108,7 @@ namespace kpengine
 
             if (false == is_texture_cached)
             {
-                std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture>(file_path.C_Str());
+                std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(file_path.C_Str());
                 texture->Initialize();
                 textures.push_back(texture);
                 textures_cached.push_back(texture);

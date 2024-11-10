@@ -16,11 +16,17 @@ namespace kpengine{
 
     }
 
-    void RenderTexture::Initialize()
+    RenderTexture2D::RenderTexture2D(const std::string &image_path):RenderTexture(image_path)
+    {
+
+    }
+
+
+    void RenderTexture2D::Initialize()
     {
         glGenTextures(1, &texture_handle_);
         glBindTexture(GL_TEXTURE_2D, texture_handle_);
-
+        
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
@@ -32,9 +38,7 @@ namespace kpengine{
         if(!image_data)
         {
             KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", image_path_.c_str());
-            image_path_ = (texture_directory_path / "default.jpg").generic_string();
-            std::cout << image_path_ << " " << GetTextureDirectory() + "default.jpg" << std::endl;
-            
+            image_path_ = GetTextureDirectory() + "default.jpg";
             image_data = stbi_load(image_path_.c_str(), &width, &height, &nr_channels, 0);
         }
         
@@ -51,9 +55,18 @@ namespace kpengine{
         {
             color_format = GL_RGBA;
         }
-
         glTexImage2D(GL_TEXTURE_2D, 0, color_format, width, height, 0, color_format, GL_UNSIGNED_BYTE, image_data);
         glGenerateMipmap(GL_TEXTURE_2D);
         stbi_image_free(image_data);
+    }
+
+    RenderTextureCubeMap::RenderTextureCubeMap(const std::string &image_path):RenderTexture(image_path)
+    {
+
+    }
+
+    void RenderTextureCubeMap::Initialize()
+    {
+        
     }
 }
