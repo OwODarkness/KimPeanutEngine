@@ -138,14 +138,16 @@ namespace kpengine
                 "front.jpg",
                 "back.jpg"
             };
-            std::shared_ptr<RenderTextureCubeMap> cube_map = std::make_shared<RenderTextureCubeMap>(GetTextureDirectory() + "skybox", faces);
+            std::shared_ptr<RenderTextureCubeMap> cube_map = std::make_shared<RenderTextureCubeMap>(GetTextureDirectory() + "skybox/lake", faces);
             cube_map->Initialize();
             std::shared_ptr<RenderMaterialSkyBox> material = std::make_shared<RenderMaterialSkyBox>();
             material->cube_map_texture_ = cube_map;
             meshes.push_back(std::make_shared<SkyBox>(material));
 
             const std::string shader_dir = kpengine::GetShaderDirectory();
-            return std::make_shared<RenderObject>(meshes, shader_dir+"skybox.vs", shader_dir+"skybox.fs");
+            std::shared_ptr<RenderObject> res = std::make_shared<RenderObject>(meshes, shader_dir+"skybox.vs", shader_dir+"skybox.fs");
+            res->is_view_translation_disabled = true;
+            return res;
         }
 
         std::shared_ptr<RenderObject> GetRenderObjectModel(const std::string& model_dir)

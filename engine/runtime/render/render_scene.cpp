@@ -20,9 +20,9 @@ namespace kpengine
     {
         scene_ = std::make_shared<FrameBuffer>(1280, 720);
         scene_->Initialize();
-
+        render_objects_.push_back(test::GetRenderObjectSkyBox());
+        
         render_objects_.push_back(test::GetRenderObjectTeapot());
-        render_objects_.push_back(test::GetRenderObjectBunny());
 
         for (int i = 0; i < render_objects_.size(); i++)
         {

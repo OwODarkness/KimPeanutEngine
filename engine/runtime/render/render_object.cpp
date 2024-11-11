@@ -47,9 +47,15 @@ namespace kpengine
         std::shared_ptr<RenderCamera> render_camera = runtime::global_runtime_context.render_system_->GetRenderCamera();
         glm::mat4 view_transform = render_camera->GetViewMatrix();
         glm::mat4 projection_transform = render_camera->GetProjectionMatrix();
+
+        if(is_view_translation_disabled)
+        {
+            view_transform = glm::mat4(glm::mat3(view_transform));
+        }
+
+
         shader_helper_->SetMat("view", glm::value_ptr(view_transform));
         shader_helper_->SetMat("projection", glm::value_ptr(projection_transform));
-
         for (std::shared_ptr<RenderMesh> &mesh : meshes_)
         {
             mesh->Draw();

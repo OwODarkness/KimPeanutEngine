@@ -44,8 +44,8 @@ protected:
 class SkyBox : public RenderMesh{
 public:
     SkyBox(std::shared_ptr<RenderMaterial> material);
-    void Initialize(std::shared_ptr<RenderShader> shader_helper) override;
-    void Draw() override;
+    virtual void Initialize(std::shared_ptr<RenderShader> shader_helper) override;
+    virtual void Draw() override;
 
 };
 }

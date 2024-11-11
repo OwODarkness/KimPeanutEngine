@@ -26,6 +26,8 @@ namespace kpengine{
         glm::vec3 location_{0.f, 0.f, 0.f};
         glm::vec3 rotation_{0.f, 0.f, 0.f};
         glm::vec3 scale_{1.f, 1.f, 1.f};
+    public:
+        bool is_view_translation_disabled = false;
     };
 }
 

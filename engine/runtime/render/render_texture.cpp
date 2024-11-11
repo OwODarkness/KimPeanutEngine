@@ -65,6 +65,7 @@ namespace kpengine
 
     void RenderTextureCubeMap::Initialize()
     {
+
         glGenTextures(1, &texture_handle_);
         glBindTexture(GL_TEXTURE_CUBE_MAP, texture_handle_);
 
@@ -75,30 +76,16 @@ namespace kpengine
              
             std::string item_path = image_path_ + '/' + face_names_[i];
             unsigned char *image_data = stbi_load(item_path.c_str(), &width, &height, &nr_channels, 0);
-
-            int color_format = 0;
-            if (nr_channels == 1)
-            {
-                color_format = GL_RED;
-            }
-            else if (nr_channels == 3)
-            {
-                color_format = GL_RGB;
-            }
-            else if (nr_channels == 4)
-            {
-                color_format = GL_RGBA;
-            }
-
             if(image_data)
             {
-                glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, color_format, width, height, 0, color_format, GL_UNSIGNED_BYTE, image_data);
+                glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image_data);
+                stbi_image_free(image_data);
             }
             else
             {
                 KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", item_path.c_str());
+                stbi_image_free(image_data);
             }
-            stbi_image_free(image_data);
         }
 
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);

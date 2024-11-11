@@ -79,32 +79,77 @@ namespace kpengine
         glDeleteBuffers(1, &ebo_);
     }
 
-    SkyBox::SkyBox(std::shared_ptr<RenderMaterial> material) : RenderMesh({{{-1, 1, -1}}, {{-1, -1, -1}}, {{1, -1, -1}}, {{1, -1, -1}}, {{1, 1, -1}}, {{-1, 1, -1}}, {{-1, -1, 1}}, {{-1, -1, -1}}, {{-1, 1, -1}}, {{-1, 1, -1}}, {{-1, 1, 1}}, {{-1, -1, 1}}, {{1, -1, -1}}, {{1, -1, 1}}, {{1, 1, 1}}, {{1, 1, 1}}, {{1, 1, -1}}, {{1, -1, -1}}, {{-1, -1, 1}}, {{-1, 1, 1}}, {{1, 1, 1}}, {{1, 1, 1}}, {{1, -1, 1}}, {{-1, -1, 1}}, {{-1, 1, -1}}, {{1, 1, -1}}, {{1, 1, 1}}, {{1, 1, 1}}, {{-1, 1, 1}}, {{-1, 1, -1}}, {{-1, -1, -1}}, {{-1, -1, 1}}, {{1, -1, -1}}, {{1, -1, -1}}, {{-1, -1, 1}}, {{1, -1, 1}}},
-                                                                          {}, material)
+    SkyBox::SkyBox(std::shared_ptr<RenderMaterial> material) : RenderMesh({}, {}, material)
     {
     }
 
     void SkyBox::Initialize(std::shared_ptr<RenderShader> shader_helper)
     {
+        float skyboxVertices[] = {
+            // positions
+            -1.0f, 1.0f, -1.0f,
+            -1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+            1.0f, 1.0f, -1.0f,
+            -1.0f, 1.0f, -1.0f,
+
+            -1.0f, -1.0f, 1.0f,
+            -1.0f, -1.0f, -1.0f,
+            -1.0f, 1.0f, -1.0f,
+            -1.0f, 1.0f, -1.0f,
+            -1.0f, 1.0f, 1.0f,
+            -1.0f, -1.0f, 1.0f,
+
+            1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+
+            -1.0f, -1.0f, 1.0f,
+            -1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f,
+            1.0f, -1.0f, 1.0f,
+            -1.0f, -1.0f, 1.0f,
+
+            -1.0f, 1.0f, -1.0f,
+            1.0f, 1.0f, -1.0f,
+            1.0f, 1.0f, 1.0f,
+            1.0f, 1.0f, 1.0f,
+            -1.0f, 1.0f, 1.0f,
+            -1.0f, 1.0f, -1.0f,
+
+            -1.0f, -1.0f, -1.0f,
+            -1.0f, -1.0f, 1.0f,
+            1.0f, -1.0f, -1.0f,
+            1.0f, -1.0f, -1.0f,
+            -1.0f, -1.0f, 1.0f,
+            1.0f, -1.0f, 1.0f};
+
         RenderMesh::Initialize(shader_helper);
         glBindVertexArray(vao_);
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
-        glBufferData(GL_ARRAY_BUFFER, verticles_.size() * sizeof(Vertex), &verticles_[0], GL_STATIC_DRAW);
-
+        glBufferData(GL_ARRAY_BUFFER, sizeof(skyboxVertices), &skyboxVertices, GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)(0));
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)(0));
 
         glBindVertexArray(0);
     }
 
     void SkyBox::Draw()
     {
-        glDepthMask(GL_FALSE);
-        material_->Render(shader_helper_.get());
+        glDepthFunc(GL_LEQUAL);
+
         glBindVertexArray(vao_);
+        material_->Render(shader_helper_.get());
+
         glDrawArrays(GL_TRIANGLES, 0, 36);
         glBindVertexArray(0);
-        glDepthMask(GL_TRUE);
+
+        glDepthFunc(GL_LESS);
     }
 }
