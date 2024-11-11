@@ -2,7 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_SCENE_H
 
 #include <memory>
-
+#include <vector>
 #include "runtime/render/render_light.h"
 
 namespace kpengine{
@@ -24,7 +24,7 @@ namespace kpengine{
     public:
         std::shared_ptr<FrameBuffer> scene_;//frame buffer
 
-        std::shared_ptr<RenderObject> render_object_;
+        std::vector<std::shared_ptr<RenderObject>> render_objects_;
 
         std::shared_ptr<RenderCamera> render_camera_;
 

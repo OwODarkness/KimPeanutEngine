@@ -1,6 +1,7 @@
 #include "render_object_test.h"
 
-#include <memory>
+#include <vector>
+
 #include "runtime/render/render_mesh.h"
 #include "runtime/render/render_object.h"
 #include "runtime/render/render_material.h"
@@ -25,7 +26,7 @@ namespace kpengine
             std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
-            std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMesh>(verticles, indices, material);
+            std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMeshStandard>(verticles, indices, material);
             
             meshes.push_back(mesh);
             const std::string shader_dir = kpengine::GetShaderDirectory();
@@ -45,7 +46,7 @@ namespace kpengine
             std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
-            std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMesh>(verticles, indices, material);
+            std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMeshStandard>(verticles, indices, material);
             
             meshes.push_back(mesh);
             const std::string shader_dir = kpengine::GetShaderDirectory();
@@ -117,12 +118,34 @@ namespace kpengine
             std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
-            std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMesh>(verticles, indices, material);
+            std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMeshStandard>(verticles, indices, material);
             
             meshes.push_back(mesh);
             const std::string shader_dir = kpengine::GetShaderDirectory();
             
             return std::make_shared<RenderObject>(meshes, shader_dir+"phong.vs", shader_dir+"phong.fs");
+        }
+
+
+        std::shared_ptr<RenderObject> GetRenderObjectSkyBox()
+        {
+            std::vector<std::shared_ptr<RenderMesh>> meshes;
+            std::vector<std::string> faces{
+                "right.jpg",
+                "left.jpg",
+                "top.jpg",
+                "bottom.jpg",
+                "front.jpg",
+                "back.jpg"
+            };
+            std::shared_ptr<RenderTextureCubeMap> cube_map = std::make_shared<RenderTextureCubeMap>(GetTextureDirectory() + "skybox", faces);
+            cube_map->Initialize();
+            std::shared_ptr<RenderMaterialSkyBox> material = std::make_shared<RenderMaterialSkyBox>();
+            material->cube_map_texture_ = cube_map;
+            meshes.push_back(std::make_shared<SkyBox>(material));
+
+            const std::string shader_dir = kpengine::GetShaderDirectory();
+            return std::make_shared<RenderObject>(meshes, shader_dir+"skybox.vs", shader_dir+"skybox.fs");
         }
 
         std::shared_ptr<RenderObject> GetRenderObjectModel(const std::string& model_dir)
@@ -132,7 +155,6 @@ namespace kpengine
             meshes = model_loader->Load(model_dir);
             delete model_loader;
             const std::string shader_dir = kpengine::GetShaderDirectory();
-
             return std::make_shared<RenderObject>(meshes, shader_dir + "phong.vs", shader_dir + "phong.fs");
         }
 
@@ -148,6 +170,8 @@ namespace kpengine
         {
             std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "bunny/teapot.obj");
             render_object->SetScale({0.1f, 0.1f, 0.1f});
+            //render_object->SetLocation({13.f, 13.f, 13.f});
+
             return render_object;
         } 
 

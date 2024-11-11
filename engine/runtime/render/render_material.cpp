@@ -39,6 +39,7 @@ namespace kpengine
 
     void RenderMaterialSkyBox::Render(RenderShader* shader_helper)
     {
-
+        glBindTexture(GL_TEXTURE_CUBE_MAP, cube_map_texture_->GetTexture());
+        shader_helper->SetInt("skybox", cube_map_texture_->GetTexture());
     }
 }

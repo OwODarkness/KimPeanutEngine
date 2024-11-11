@@ -83,7 +83,7 @@ namespace kpengine
             material->diffuse_textures_.push_back(texture);
         }
 
-        return std::make_shared<RenderMesh>(vertices, indices, material);
+        return std::make_shared<RenderMeshStandard>(vertices, indices, material);
     }
 
     void ModelLoader::ProcessTexture(aiMaterial *material, aiTextureType assimp_texture_type, std::vector<std::shared_ptr<RenderTexture>> &textures)

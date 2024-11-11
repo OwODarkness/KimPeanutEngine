@@ -67,7 +67,7 @@ namespace kpengine
         }
         else
         {
-            KP_LOG("ShaderLinkLog", LOG_LEVEL_DISPLAY, "shader link successful");
+            KP_LOG("ShaderLinkLog", LOG_LEVEL_DISPLAY, "shader link successfully");
         }
 
         glDeleteShader(vertex_shader);

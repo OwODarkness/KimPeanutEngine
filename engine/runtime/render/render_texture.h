@@ -33,9 +33,11 @@ namespace kpengine
     class RenderTextureCubeMap: public RenderTexture
     {
     public:
-        RenderTextureCubeMap(const std::string &image_path);
+        RenderTextureCubeMap(const std::string &image_directory, const std::vector<std::string>& face_names);
 
         virtual void Initialize() override;
+    private:
+        std::vector<std::string> face_names_;
     };
 
 }

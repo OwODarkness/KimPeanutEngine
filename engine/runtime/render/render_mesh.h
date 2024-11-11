@@ -18,18 +18,36 @@ struct Vertex{
 class RenderMesh{
 public:
     RenderMesh(std::vector<Vertex> verticles, std::vector<unsigned int> indices, std::shared_ptr<RenderMaterial> material);
-    void Initialize(std::shared_ptr<RenderShader> shader_helper);
-    void Draw();
+    virtual void Initialize(std::shared_ptr<RenderShader> shader_helper);
+    virtual void Draw();
     virtual ~RenderMesh();
-private:
+protected:
     std::vector<Vertex> verticles_;
     std::vector<unsigned int> indices_; 
     std::shared_ptr<RenderMaterial> material_;
     std::shared_ptr<RenderShader> shader_helper_;
     unsigned int vbo_;
     unsigned int vao_;
-    unsigned int ebo_;
 };  
+
+class RenderMeshStandard : public RenderMesh{
+public:
+    RenderMeshStandard(std::vector<Vertex> verticles, std::vector<unsigned int> indices, std::shared_ptr<RenderMaterial> material);
+    virtual void Initialize(std::shared_ptr<RenderShader> shader_helper) override;
+    virtual void Draw() override;
+    virtual ~RenderMeshStandard();
+protected:
+    unsigned int ebo_;
+
+};
+
+class SkyBox : public RenderMesh{
+public:
+    SkyBox(std::shared_ptr<RenderMaterial> material);
+    void Initialize(std::shared_ptr<RenderShader> shader_helper) override;
+    void Draw() override;
+
+};
 }
 
 
