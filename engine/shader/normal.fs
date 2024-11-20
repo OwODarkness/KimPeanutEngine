@@ -33,5 +33,12 @@ void main()
     vec3 light_dir = normalize(point_light.position - frag_position);
     vec3 normal = normalize(out_normal);
 
-    out_frag_color = vec4(normal * 0.5 + 0.5, 1);
+
+    float dist = distance(view_position, frag_position);
+        out_frag_color = vec4(normal * 0.5 + 0.5, 1);
+
+
+    //
+
+    //out_frag_color = vec4()
 }

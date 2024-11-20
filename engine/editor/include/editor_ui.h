@@ -32,6 +32,7 @@ namespace ui{
     private:
         EditorUIComponent* main_menubar_;
         EditorWindowComponent* window_component_;
+        int x = 0;
     };
     
 }

@@ -15,6 +15,16 @@ namespace kpengine{
             std::string content_;
             ImVec4 color_;
         };
+
+        class EditorDynamicTextComponent: public EditorTextComponent{ 
+        public:
+        
+            EditorDynamicTextComponent(int* text_ref ,ImVec4 color = ImVec4(1.f, 1.f, 1.f, 1.f));
+            
+            virtual void Render() override;
+        public:
+            int* text_ref_;
+        };
     }
 }
 

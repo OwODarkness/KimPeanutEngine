@@ -10,8 +10,9 @@ namespace kpengine
     void RenderMaterialStanard::Render(RenderShader *shader_helper)
     {
 
-        shader_helper->SetFloat("material.diffuse", diffuse);
-        shader_helper->SetFloat("material.specular", specular);
+        //shader_helper->SetFloat("material.diffuse", diffuse);
+        //shader_helper->SetFloat("material.specular", specular);
+        shader_helper->SetFloat("material.shininess", shininess);
 
         std::string texture_prefix = "";
         std::string texture_id = "";
@@ -34,6 +35,13 @@ namespace kpengine
             texture_prefix = "material.specular_texture_";
             texture_id = std::to_string(i);
             shader_helper->SetInt(texture_prefix + texture_id, diffuse_texture_num + i);
+        }
+
+        if(emmision_texture)
+        {
+            glActiveTexture(GL_TEXTURE0 + diffuse_texture_num + specular_textures_.size());
+            glBindTexture(GL_TEXTURE_2D, emmision_texture->GetTexture());
+            shader_helper->SetInt("material.emission_texture", diffuse_texture_num + specular_textures_.size());
         }
     }
 

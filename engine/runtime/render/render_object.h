@@ -7,27 +7,59 @@
 
 #include <glm/glm.hpp>
 
-namespace kpengine{
+namespace kpengine
+{
+
+    struct Transformation
+    {
+        glm::vec3 location{0.f, 0.f, 0.f};
+        glm::vec3 rotation{0.f, 0.f, 0.f};
+        glm::vec3 scale{1.f, 1.f, 1.f};
+    };
+
     class RenderMesh;
     class RenderShader;
 
-    class RenderObject{
+    class RenderObject
+    {
     public:
-         RenderObject(std::vector<std::shared_ptr<RenderMesh>> meshes,const std::string vertex_shader_path,const std::string fragment_shader_path);
-        void Initialize();
-        void Render();
-        void SetLocation(const glm::vec3& location);
-        void SetScale(const glm::vec3& scale);
-        inline  std::shared_ptr<RenderShader> GetShader() const {return shader_helper_;}
-    private:
+        RenderObject(std::vector<std::shared_ptr<RenderMesh>> meshes, const std::string vertex_shader_path, const std::string fragment_shader_path);
+        RenderObject(std::vector<std::shared_ptr<RenderMesh>> meshes, std::shared_ptr<RenderShader> shader_helper);
+
+        virtual void Initialize();
+        virtual void Render();
+        virtual void SetLocation(const glm::vec3 &location);
+        virtual void SetScale(const glm::vec3 &scale);
+        inline std::shared_ptr<RenderShader> GetShader() const { return shader_helper_; }
+
+    protected:
         std::vector<std::shared_ptr<RenderMesh>> meshes_;
         std::shared_ptr<RenderShader> shader_helper_;
+    };
 
-        glm::vec3 location_{0.f, 0.f, 0.f};
-        glm::vec3 rotation_{0.f, 0.f, 0.f};
-        glm::vec3 scale_{1.f, 1.f, 1.f};
+    class RenderSingleObject : public RenderObject
+    {
     public:
-        bool is_view_translation_disabled = false;
+        RenderSingleObject(std::vector<std::shared_ptr<RenderMesh>> meshes, const std::string vertex_shader_path, const std::string fragment_shader_path);
+        RenderSingleObject(std::vector<std::shared_ptr<RenderMesh>> meshes, std::shared_ptr<RenderShader> shader_helper);
+        virtual void Render() override;
+        virtual void SetLocation(const glm::vec3 &location) override;
+        virtual void SetScale(const glm::vec3 &scale) override;
+
+    protected:
+        Transformation transformation_;
+    };
+
+    class RenderMultipleObject: public RenderObject
+    {
+    public:
+        virtual void Initialize() override;
+
+        RenderMultipleObject(std::vector<std::shared_ptr<RenderMesh>> meshes, const std::string vertex_shader_path, const std::string fragment_shader_path);
+        RenderMultipleObject(std::vector<std::shared_ptr<RenderMesh>> meshes, std::shared_ptr<RenderShader> shader_helper);
+        virtual void Render() override;
+        std::vector<Transformation> transformations_;
+        std::vector<glm::mat4> model_matrices;
     };
 }
 

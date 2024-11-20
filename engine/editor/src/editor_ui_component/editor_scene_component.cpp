@@ -1,5 +1,11 @@
 #include "editor_scene_component.h"
+
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+
 #include "runtime/render/frame_buffer.h"
+#include "editor/include/editor_global_context.h"
+#include "runtime/core/system/window_system.h"
 namespace kpengine{
     namespace ui{
         EditorSceneComponent::EditorSceneComponent(FrameBuffer* scene):
@@ -35,14 +41,12 @@ namespace kpengine{
                 is_scene_window_focus = ImGui::IsWindowFocused();
                 if(is_scene_window_focus)
                 {
-                    ImGui::SetNextFrameWantCaptureMouse(true);
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_None);
+                    glfwSetInputMode(editor::global_editor_context.window_system_->GetOpenGLWndow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    
                 }
                 else
                 {
-                    ImGui::SetNextFrameWantCaptureMouse(false);
-
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_Arrow);
+                    glfwSetInputMode(editor::global_editor_context.window_system_->GetOpenGLWndow(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 }
                 ImGui::EndChild();
             }

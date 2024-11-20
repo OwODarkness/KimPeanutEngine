@@ -17,6 +17,8 @@ namespace runtime{
 
         void CalculateFPS(float delta_time);
 
+        inline int GetFPS() const {return fps;} 
+
         private:
         std::chrono::steady_clock::time_point last_time{std::chrono::steady_clock::now()};
         int frame_count = 0;

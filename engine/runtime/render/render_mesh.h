@@ -23,9 +23,10 @@ public:
     virtual ~RenderMesh();
 protected:
     std::vector<Vertex> verticles_;
-    std::vector<unsigned int> indices_; 
     std::shared_ptr<RenderMaterial> material_;
     std::shared_ptr<RenderShader> shader_helper_;
+public:
+    std::vector<unsigned int> indices_; 
     unsigned int vbo_;
     unsigned int vao_;
 };  

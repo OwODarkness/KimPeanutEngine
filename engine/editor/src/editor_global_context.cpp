@@ -13,6 +13,7 @@ namespace kpengine{
         {
             window_system_ = init_info.window_system;
             render_system_ = init_info.render_system;
+            runtime_engine_ = init_info.runtime_engine;
 
             editor_scene_manager_ = new EditorSceneManager();
             editor_scene_manager_->Initialize();

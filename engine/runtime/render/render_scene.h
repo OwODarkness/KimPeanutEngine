@@ -29,8 +29,11 @@ namespace kpengine{
         std::shared_ptr<RenderCamera> render_camera_;
 
         AmbientLight ambient_light_;
-
+        DirectionalLight directional_light_;
         PointLight point_light_;
+        SpotLight spot_light_;
+    private:
+        unsigned int ubo_matrices_;
     };
 }
 

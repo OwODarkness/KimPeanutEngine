@@ -23,9 +23,10 @@ namespace kpengine{
             public:
         std::vector<std::shared_ptr<RenderTexture>> diffuse_textures_;
         std::vector<std::shared_ptr<RenderTexture>>  specular_textures_;
-        float diffuse{0.5f};
-        float specular{1.f};
-        float shiness = 32.f;
+        std::shared_ptr<RenderTexture> emmision_texture;
+        float kd{0.5f};
+        float ks{1.f};
+        float shininess = 32.f;
     };
 
     class RenderMaterialSkyBox: public RenderMaterial{

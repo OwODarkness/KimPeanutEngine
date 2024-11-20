@@ -5,6 +5,11 @@
 namespace kpengine{
     class WindowSystem;
     class RenderSystem;
+
+namespace runtime{
+    class Engine;
+}
+
 namespace editor{
     class EditorSceneManager;
     class EditorInputManager;
@@ -12,6 +17,7 @@ namespace editor{
     struct EditorContextInitInfo{
         WindowSystem* window_system;
         RenderSystem* render_system;
+        runtime::Engine* runtime_engine;
     };
 
     class EditorContext{
@@ -22,7 +28,8 @@ namespace editor{
 
         WindowSystem* window_system_{nullptr};
         RenderSystem* render_system_{nullptr};
-        
+        runtime::Engine* runtime_engine_{nullptr}; 
+
         EditorSceneManager* editor_scene_manager_;
         EditorInputManager* editor_input_manager_;
     };

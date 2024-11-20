@@ -148,6 +148,7 @@ namespace kpengine
             bool is_focus = global_editor_context.editor_scene_manager_->IsSCeneFocus();
             if(!is_focus)
             {
+                is_first_cursor = true;
                 return ;
             }
             if(!is_first_cursor)

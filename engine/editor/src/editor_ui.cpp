@@ -11,6 +11,10 @@
 #include "editor/include/editor_ui_component/editor_menubar_component.h"
 #include "editor/include/editor_ui_component/editor_window_component.h"
 #include "editor/include/editor_ui_component/eidtor_plot_component.h"
+#include "editor/include/editor_global_context.h"
+#include "runtime/engine.h"
+
+
 namespace kpengine
 {
     namespace ui
@@ -48,6 +52,12 @@ namespace kpengine
                                    { std::cout << "click" << std::endl; });
             window_component_->AddComponent(button);
             window_component_->AddComponent(new EditorPlotComponent([](float x){return std::sin(x);}, 0, 10));
+           
+
+            window_component_->AddComponent(new EditorDynamicTextComponent(&x));
+
+            //window_component_->AddComponent(new EditorTextComponent("hello imgui"));
+            
             //menu init
             std::vector<Menu> menus;
             menus.push_back({"File", {{"Open Project", "Ctrl+O"}, {"New Project", "Ctrl+N"}, {"Exit"}}});
@@ -85,7 +95,7 @@ namespace kpengine
         bool EditorUI::Render()
         {
             // Start the Dear ImGui frame
-
+            x = editor::global_editor_context.runtime_engine_->GetFPS();
             window_component_->Render();
             return true;
         }
@@ -95,6 +105,7 @@ namespace kpengine
         {
             ImGui::BeginMainMenuBar();
             main_menubar_->Render();
+            
             ImGui::EndMainMenuBar();
         }
     }
