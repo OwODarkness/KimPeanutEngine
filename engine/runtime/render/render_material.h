@@ -26,7 +26,7 @@ namespace kpengine{
         std::shared_ptr<RenderTexture> emmision_texture;
         float kd{0.5f};
         float ks{1.f};
-        float shininess = 32.f;
+        float shininess = 70.f;
     };
 
     class RenderMaterialSkyBox: public RenderMaterial{

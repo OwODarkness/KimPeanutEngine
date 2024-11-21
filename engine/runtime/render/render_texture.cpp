@@ -41,6 +41,7 @@ namespace kpengine
         else if (nr_channels == 3)
         {
             color_format = GL_RGB;
+
         }
         else if (nr_channels == 4)
         {

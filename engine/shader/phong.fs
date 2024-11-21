@@ -75,9 +75,10 @@ vec3 CalculatePointRender(PointLight light)
     vec3 diffuse_render = light.diffuse * diff  * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
 
     vec3 view_direction = normalize(view_position - frag_position);
-    vec3 reflect_direction = reflect(-light_direction, normal);
 
-    float spec = pow(max(dot(view_direction, reflect_direction), 0.f), material.shininess);
+    vec3 halfway_direction = normalize(view_direction + light_direction);
+
+    float spec = pow(max(dot(normal, halfway_direction), 0.f), material.shininess);
     vec3 specular_render = light.specular * spec  * vec3(texture(material.specular_texture_0, out_texcoord)) * light_color ;
 
     float distance    = length(light.position - frag_position);
@@ -98,9 +99,9 @@ vec3 CalculateDirectionalLightRender(DirectionalLight light)
     vec3 diffuse_render = light.diffuse * diff * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
 
     vec3 view_direction = normalize(view_position - frag_position);
-    vec3 reflect_direction = reflect(-light_direction, normal);
+    vec3 halfway_direction = normalize(view_direction + light_direction);
 
-    float spec = pow(max(dot(view_direction, reflect_direction), 0.f), material.shininess);
+    float spec = pow(max(dot(normal, halfway_direction), 0.f), material.shininess);
     vec3 specular_render = light.specular * spec  * vec3(texture(material.specular_texture_0, out_texcoord)) * light_color ;
     return vec3(ambient_render + diffuse_render + specular_render);  
 }
@@ -121,16 +122,16 @@ vec3 CalculateSpotLightRender(SpotLight light)
     vec3 diffuse_render = light.diffuse * diff * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
 
     vec3 view_direction = normalize(view_position - frag_position);
-    vec3 reflect_direction = reflect(-light_direction, normal);
+    vec3 halfway_direction = normalize(view_direction + light_direction);
 
-    float spec = pow(max(dot(view_direction, reflect_direction), 0.f), material.shininess);
+    float spec = pow(max(dot(normal, halfway_direction), 0.f), material.shininess);
     vec3 specular_render = light.specular * spec  * vec3(texture(material.specular_texture_0, out_texcoord)) * light_color ;
     
-    float distance    = length(light.position - frag_position);
+    float distance = length(light.position - frag_position);
     float attenuation = 1.0 / (light.constant + light.linear * distance + 
                 light.quadratic * (distance * distance));
         
-        return  vec3(attenuation *ambient_render + intensity * attenuation *diffuse_render + intensity * attenuation *specular_render);  
+    return  vec3(attenuation *ambient_render + intensity * attenuation *diffuse_render + intensity * attenuation *specular_render);  
 
 }
 

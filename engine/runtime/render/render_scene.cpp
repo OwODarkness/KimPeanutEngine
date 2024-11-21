@@ -25,7 +25,9 @@ namespace kpengine
         scene_->Initialize();
          
          render_objects_.push_back(test::GetRenderObjectFloor());
-         render_objects_.push_back(test::GetRenderObjectCube());
+        //  std::shared_ptr<RenderObject> cube = test::GetRenderObjectCube();
+        //  cube->SetLocation(glm::vec3(0.f, 0.1f, 0.f));
+        //  render_objects_.push_back(cube);
          //render_objects_.push_back(test::GetRenderObjectSkyBox());
          //
         // render_objects_.push_back(test::GetRenderObjectBunny());
@@ -56,10 +58,12 @@ namespace kpengine
         glBindBufferRange(GL_UNIFORM_BUFFER, 0, ubo_matrices_, 0, 2 * sizeof(glm::mat4));
 
         directional_light_.color = glm::vec3(0.);
-        spot_light_.cutoff = std::cos(glm::radians(12.5));
-        spot_light_.outer_cutoff = std::cos(glm::radians(17.5));
+        spot_light_.color = glm::vec3(0.f);
+        spot_light_.cutoff = (float)std::cos(glm::radians(12.5));
+        spot_light_.outer_cutoff = (float)std::cos(glm::radians(17.5));
 
-        point_light_.color = glm::vec3(0.f, 0.f, 0.f);
+        //point_light_.color = glm::vec3(0.f, 0.f, 0.f);
+        
     }
 
     void RenderScene::Render()
