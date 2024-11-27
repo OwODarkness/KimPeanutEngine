@@ -5,6 +5,11 @@
 
 namespace kpengine{
 
+enum class CameraType: unsigned int{
+    CAMREA_PERSPECTIVE,
+    CAMERA_ORTHOGONAL
+};
+
 class RenderCamera{
 
 public:
@@ -32,7 +37,7 @@ public:
 private:
     glm::vec3 position_{0.f, 0.8f, 2.f};
     glm::vec3 direction_{0.f, 0.f, -1.f};
-public:
+    
     float move_speed_ = 0.05f;
     float rotate_speed_ = 0.3f;
     float aspect_ {4.f/3.f};
@@ -44,6 +49,8 @@ public:
     float z_far = 100.f;
     const float pitch_min_ = -89.f;
     const float pitch_max_ = 89.f;
+
+    CameraType camera_type_ = CameraType::CAMREA_PERSPECTIVE;
 };
 }
 

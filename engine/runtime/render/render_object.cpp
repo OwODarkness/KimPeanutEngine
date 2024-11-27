@@ -10,6 +10,7 @@
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_mesh.h"
 #include "runtime/runtime_global_context.h"
+#include "platform/path/path.h"
 
 namespace kpengine
 {
@@ -27,7 +28,7 @@ namespace kpengine
 
         for (std::shared_ptr<RenderMesh> &mesh : meshes_)
         {
-            mesh->Initialize(shader_helper_);
+            mesh->Initialize();
         }
     }
 
@@ -38,17 +39,23 @@ namespace kpengine
     {
     }
 
-    void RenderObject::Render()
+    void RenderObject::Render(std::shared_ptr<RenderShader> shader)
     {
     }
 
     RenderSingleObject::RenderSingleObject(std::vector<std::shared_ptr<RenderMesh>> meshes, const std::string vertex_shader_path, const std::string fragment_shader_path) : RenderObject(meshes, vertex_shader_path, fragment_shader_path)
     {
+
     }
     RenderSingleObject::RenderSingleObject(std::vector<std::shared_ptr<RenderMesh>> meshes, std::shared_ptr<RenderShader> shader_helper) : RenderObject(meshes, shader_helper)
     {
     }
 
+    void RenderSingleObject::Initialize()
+    {
+        RenderObject::Initialize();
+
+    }
     void RenderSingleObject::SetLocation(const glm::vec3 &location)
     {
         transformation_.location = location;
@@ -58,17 +65,17 @@ namespace kpengine
         transformation_.scale = scale;
     }
 
-    void RenderSingleObject::Render()
+    void RenderSingleObject::Render(std::shared_ptr<RenderShader> shader)
     {
-        shader_helper_->UseProgram();
         glm::mat4 transform = glm::mat4(1);
-        transform = glm::scale(transform, transformation_.scale);
         transform = glm::translate(transform, transformation_.location);
-        shader_helper_->SetMat("model", glm::value_ptr(transform));
+        transform = glm::scale(transform, transformation_.scale);
+
+        shader->SetMat("model", glm::value_ptr(transform));
 
         for (std::shared_ptr<RenderMesh> &mesh : meshes_)
         {
-            mesh->Draw();
+            mesh->Draw(shader);
         }
     }
 
@@ -125,16 +132,14 @@ namespace kpengine
         // location
     }
 
-    void RenderMultipleObject::Render()
+    void RenderMultipleObject::Render(std::shared_ptr<RenderShader> shader)
     {
-
-        shader_helper_->UseProgram();
         for (std::shared_ptr<RenderMesh> &mesh : meshes_)
         {
             glBindVertexArray(mesh->vao_);
             glDrawElementsInstanced(GL_TRIANGLES, (GLsizei)mesh->indices_.size(), GL_UNSIGNED_INT, 0, transformations_.size());
             glBindVertexArray(0);
-            //mesh->Draw();
+            // mesh->Draw();
         }
 
         // for (int i = 0; i < transformations_.size(); i++)

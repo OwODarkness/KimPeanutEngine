@@ -20,7 +20,7 @@ namespace kpengine{
         public:
         virtual void Render(RenderShader* shader_helper) override;
     
-            public:
+        public:
         std::vector<std::shared_ptr<RenderTexture>> diffuse_textures_;
         std::vector<std::shared_ptr<RenderTexture>>  specular_textures_;
         std::shared_ptr<RenderTexture> emmision_texture;

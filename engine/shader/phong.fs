@@ -52,6 +52,7 @@ struct SpotLight{
 in vec3 out_normal;
 in vec2 out_texcoord;
 in vec3 frag_position;
+in vec4 frag_pos_light_space;
 
 out vec4 out_frag_color;
 
@@ -61,6 +62,38 @@ uniform SpotLight spot_light;
 uniform vec3 ambient;
 uniform Material material;
 uniform vec3 view_position;
+uniform sampler2D shadow_map;
+
+
+float CalculateShadowValue(vec4 light_space)
+{
+    vec3 proj_coords = light_space.xyz / light_space.w;
+    proj_coords = proj_coords * 0.5 + 0.5;
+    if(proj_coords.z > 1.f)
+    {
+        return 0.f;
+    }
+    float current_depth = proj_coords.z;
+
+    vec3 normal = normalize(out_normal);
+    vec3 lightdir = normalize(directional_light.direction);
+
+    float bias = max(0.5 * dot(normal, lightdir),  0.005f);
+    float shadow = 0.f;
+
+    vec2 texture_size = 1.f / textureSize(shadow_map, 0);
+    for(int x = -1;x<=1;x++)
+    {
+        for(int y = -1;y<=1;y++)
+        {
+            float pcf = texture(shadow_map, proj_coords.xy + vec2(x, y) * texture_size).r;
+            shadow += current_depth - bias > pcf ? 1: 0;
+        }
+    }
+    shadow/= 9.f;
+
+    return shadow;
+}
 
 
 vec3 CalculatePointRender(PointLight light)
@@ -84,7 +117,7 @@ vec3 CalculatePointRender(PointLight light)
     float distance    = length(light.position - frag_position);
     float attenuation = 1.0 / (light.constant + light.linear * distance + 
                 light.quadratic * (distance * distance));
-    return attenuation * vec3(ambient_render+ diffuse_render + specular_render);   
+    return attenuation * vec3( diffuse_render + specular_render);   
 }
 
 vec3 CalculateDirectionalLightRender(DirectionalLight light)
@@ -103,7 +136,7 @@ vec3 CalculateDirectionalLightRender(DirectionalLight light)
 
     float spec = pow(max(dot(normal, halfway_direction), 0.f), material.shininess);
     vec3 specular_render = light.specular * spec  * vec3(texture(material.specular_texture_0, out_texcoord)) * light_color ;
-    return vec3(ambient_render + diffuse_render + specular_render);  
+    return vec3(diffuse_render + specular_render);  
 }
 
 vec3 CalculateSpotLightRender(SpotLight light)
@@ -131,7 +164,7 @@ vec3 CalculateSpotLightRender(SpotLight light)
     float attenuation = 1.0 / (light.constant + light.linear * distance + 
                 light.quadratic * (distance * distance));
         
-    return  vec3(attenuation *ambient_render + intensity * attenuation *diffuse_render + intensity * attenuation *specular_render);  
+    return  vec3( intensity * attenuation *diffuse_render + intensity * attenuation *specular_render);  
 
 }
 
@@ -140,7 +173,10 @@ void main()
     vec3 point_light_res = CalculatePointRender(point_light);
     vec3 directional_light_res = CalculateDirectionalLightRender(directional_light);
     vec3 spot_light_res = CalculateSpotLightRender(spot_light);
-    out_frag_color = vec4(point_light_res + directional_light_res + spot_light_res, 1 );
+    vec3 light_res =  point_light_res + directional_light_res + spot_light_res;
+    float shadow = CalculateShadowValue(frag_pos_light_space);
+    vec3 ambient_res = ambient * vec3(texture(material.diffuse_texture_0, out_texcoord));
+    out_frag_color = vec4((1 - shadow) * light_res + ambient_res , 1 );
 
     // if(gl_FragCoord.x < 600)
     //     out_frag_color = vec4(ambient_res + diffuse_res + specular_res, 1 );

@@ -15,7 +15,7 @@ namespace kpengine
     void RenderCamera::MoveForward(float delta)
     {
         position_ += direction_ * delta * move_speed_;
-        //std::cout << "(" << position_.x << " ," << position_.y << " ," << position_.z << ")" << std::endl;
+        // std::cout << "(" << position_.x << " ," << position_.y << " ," << position_.z << ")" << std::endl;
     }
 
     void RenderCamera::MoveRight(float delta)
@@ -28,15 +28,15 @@ namespace kpengine
         position_ += up_ * delta * move_speed_;
     }
 
-    void RenderCamera::Rotate(const glm::vec2& delta)
+    void RenderCamera::Rotate(const glm::vec2 &delta)
     {
         float delta_pitch = delta.x * rotate_speed_;
         float delta_yaw = delta.y * rotate_speed_;
 
         yaw_ += delta_yaw;
         pitch_ = std::clamp(delta_pitch + pitch_, pitch_min_, pitch_max_);
-    
-        //std::cout << "yaw:" << yaw_ << " pitch:" << pitch_ << std::endl;
+
+        // std::cout << "yaw:" << yaw_ << " pitch:" << pitch_ << std::endl;
 
         glm::vec3 tmp_dir = glm::vec3(1);
         float radians_pitch = glm::radians(pitch_);
@@ -54,9 +54,16 @@ namespace kpengine
 
     glm::mat4x4 RenderCamera::GetProjectionMatrix()
     {
-        const int kwidth = runtime::global_runtime_context.window_system_->width_;
-        const int kheight = runtime::global_runtime_context.window_system_->height_;
-        aspect_ = kwidth / kheight;
-        return glm::perspective(glm::radians(fov_), aspect_, z_near, z_far);
+        if (CameraType::CAMREA_PERSPECTIVE == camera_type_)
+        {
+            const int kwidth = runtime::global_runtime_context.window_system_->width_;
+            const int kheight = runtime::global_runtime_context.window_system_->height_;
+            aspect_ = (float)(kwidth / kheight);
+            return glm::perspective(glm::radians(fov_), aspect_, z_near, z_far);
+        }
+        else
+        {
+            return glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, z_near, z_far);
+        }
     }
 }

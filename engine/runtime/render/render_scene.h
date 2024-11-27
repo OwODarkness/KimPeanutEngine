@@ -9,6 +9,10 @@ namespace kpengine{
     class FrameBuffer;
     class RenderObject;
     class RenderCamera;
+    class RenderShader;
+    class ShadowMaker;
+    class SkyBox;
+
     class RenderScene{
     public:
         RenderScene() = default;
@@ -20,7 +24,10 @@ namespace kpengine{
         void Render();
 
         void EndDraw();
-
+    private:
+        void ConfigurePointLightInfo(std::shared_ptr<RenderShader> shader);
+        void ConfigureSpotLightInfo(std::shared_ptr<RenderShader> shader);
+        void ConfigureDirectionalLightInfo(std::shared_ptr<RenderShader> shader);
     public:
         std::shared_ptr<FrameBuffer> scene_;//frame buffer
 
@@ -32,6 +39,11 @@ namespace kpengine{
         DirectionalLight directional_light_;
         PointLight point_light_;
         SpotLight spot_light_;
+
+        std::shared_ptr<ShadowMaker> shadow_maker_;
+
+        std::shared_ptr<RenderObject> skybox;
+
     private:
         unsigned int ubo_matrices_;
     };

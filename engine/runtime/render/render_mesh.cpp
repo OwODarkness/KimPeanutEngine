@@ -19,28 +19,25 @@ namespace kpengine
         glDeleteBuffers(1, &vbo_);
     }
 
-    void RenderMesh::Initialize(std::shared_ptr<RenderShader> shader_helper)
+    void RenderMesh::Initialize()
     {
-
-        assert(shader_helper);
-        shader_helper_ = shader_helper;
-
         glGenVertexArrays(1, &vao_);
         glGenBuffers(1, &vbo_);
     }
 
-    void RenderMesh::Draw()
+    void RenderMesh::Draw(std::shared_ptr<RenderShader> shader_helper)
     {
     }
+
 
     RenderMeshStandard::RenderMeshStandard(std::vector<Vertex> verticles, std::vector<unsigned int> indices, std::shared_ptr<RenderMaterial> material) : RenderMesh(verticles, indices, material)
     {
     }
 
-    void RenderMeshStandard::Initialize(std::shared_ptr<RenderShader> shader_helper)
+    void RenderMeshStandard::Initialize()
     {
 
-        RenderMesh::Initialize(shader_helper);
+        RenderMesh::Initialize();
 
         glGenBuffers(1, &ebo_);
 
@@ -66,9 +63,9 @@ namespace kpengine
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
     }
 
-    void RenderMeshStandard::Draw()
+    void RenderMeshStandard::Draw(std::shared_ptr<RenderShader> shader_helper)
     {
-        material_->Render(shader_helper_.get());
+        material_->Render(shader_helper.get());
         glBindVertexArray(vao_);
         glDrawElements(GL_TRIANGLES, (GLsizei)indices_.size(), GL_UNSIGNED_INT, 0);
         glBindVertexArray(0);
@@ -83,7 +80,7 @@ namespace kpengine
     {
     }
 
-    void SkyBox::Initialize(std::shared_ptr<RenderShader> shader_helper)
+    void SkyBox::Initialize()
     {
         float skyboxVertices[] = {
             // positions
@@ -129,7 +126,7 @@ namespace kpengine
             -1.0f, -1.0f, 1.0f,
             1.0f, -1.0f, 1.0f};
 
-        RenderMesh::Initialize(shader_helper);
+        RenderMesh::Initialize();
         glBindVertexArray(vao_);
 
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
@@ -140,13 +137,12 @@ namespace kpengine
         glBindVertexArray(0);
     }
 
-    void SkyBox::Draw()
+    void SkyBox::Draw(std::shared_ptr<RenderShader> shader_helper)
     {
         glDepthFunc(GL_LEQUAL);
 
         glBindVertexArray(vao_);
-        material_->Render(shader_helper_.get());
-
+        material_->Render(shader_helper.get());
         glDrawArrays(GL_TRIANGLES, 0, 36);
         glBindVertexArray(0);
 
