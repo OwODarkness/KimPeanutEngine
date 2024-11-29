@@ -10,9 +10,10 @@
 namespace kpengine
 {
 
-    RenderShader::RenderShader(const std::string& vertex_shader_path,const std::string& fragment_shader_path) : 
+    RenderShader::RenderShader(const std::string& vertex_shader_path,const std::string& fragment_shader_path, const std::string& geometry_shader_path) : 
     vertex_shader_path_(vertex_shader_path),
-    fragment_shader_path_(fragment_shader_path)
+    fragment_shader_path_(fragment_shader_path),
+    geometry_shader_path_(geometry_shader_path)
     {
     }
 
@@ -55,9 +56,35 @@ namespace kpengine
             KP_LOG("FragmentShaderLog", LOG_LEVEL_ERROR, info_log);
         }
 
+        //compile geometry shader code
+        unsigned int geomery_shader;
+        if(geometry_shader_path_.size() != 0)
+        {
+            std::string geometry_shader_code = "";
+            if(!ExtractShaderCodeFromFile(geometry_shader_path_, geometry_shader_code))
+            {
+                return ;
+            }
+            const char* geometry_shader_code_c = geometry_shader_code.c_str();
+            geomery_shader = glCreateShader(GL_GEOMETRY_SHADER);
+            glShaderSource(geomery_shader, 1, &geometry_shader_code_c, nullptr);
+            glCompileShader(geomery_shader);
+            if(!bsucceed)
+            {
+                glGetShaderInfoLog(geomery_shader, 512, nullptr, info_log);
+                KP_LOG("GeometryShaderLog", LOG_LEVEL_ERROR, info_log);
+            }
+        }
+
         shader_program_handle_ = glCreateProgram();
         glAttachShader(shader_program_handle_, vertex_shader);
         glAttachShader(shader_program_handle_, fragment_shader);
+
+        if(geometry_shader_path_.size()!= 0)
+        {
+            glAttachShader(shader_program_handle_, geomery_shader);
+        }
+
         glLinkProgram(shader_program_handle_);
         glGetProgramiv(shader_program_handle_, GL_LINK_STATUS, &bsucceed);
         if (!bsucceed)
@@ -67,7 +94,9 @@ namespace kpengine
         }
         else
         {
-            KP_LOG("ShaderLinkLog", LOG_LEVEL_DISPLAY, "shader link successfully");
+            std::string shader_name = vertex_shader_path_;
+            int index = shader_name.find_last_of('/');
+            KP_LOG("ShaderLinkLog", LOG_LEVEL_DISPLAY, shader_name.substr(index+1, shader_name.size() - index - 4)+ " shader link successfully");
         }
 
         glDeleteShader(vertex_shader);

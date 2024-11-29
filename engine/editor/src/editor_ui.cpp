@@ -12,6 +12,7 @@
 #include "editor/include/editor_ui_component/editor_window_component.h"
 #include "editor/include/editor_ui_component/eidtor_plot_component.h"
 #include "editor/include/editor_global_context.h"
+#include "editor/include/editor_ui_component/editor_container_component.h"
 #include "runtime/engine.h"
 
 
@@ -53,10 +54,10 @@ namespace kpengine
             window_component_->AddComponent(button);
             window_component_->AddComponent(new EditorPlotComponent([](float x){return std::sin(x);}, 0, 10));
            
-
-            window_component_->AddComponent(new EditorDynamicTextComponent(&x));
-
-            //window_component_->AddComponent(new EditorTextComponent("hello imgui"));
+            EditorContainerComponent* container = new EditorContainerComponent();
+            container->AddComponent(new EditorTextComponent("FPS: "));
+            container->AddComponent(new EditorDynamicTextComponent(&x));
+            window_component_->AddComponent(container);
             
             //menu init
             std::vector<Menu> menus;

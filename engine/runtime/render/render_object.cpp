@@ -42,6 +42,12 @@ namespace kpengine
     void RenderObject::Render(std::shared_ptr<RenderShader> shader)
     {
     }
+    
+    glm::mat4 RenderObject::CalculateModelMatrix() const
+    {
+        return glm::mat4(1);
+    }
+
 
     RenderSingleObject::RenderSingleObject(std::vector<std::shared_ptr<RenderMesh>> meshes, const std::string vertex_shader_path, const std::string fragment_shader_path) : RenderObject(meshes, vertex_shader_path, fragment_shader_path)
     {
@@ -67,16 +73,21 @@ namespace kpengine
 
     void RenderSingleObject::Render(std::shared_ptr<RenderShader> shader)
     {
-        glm::mat4 transform = glm::mat4(1);
-        transform = glm::translate(transform, transformation_.location);
-        transform = glm::scale(transform, transformation_.scale);
 
-        shader->SetMat("model", glm::value_ptr(transform));
+        shader->SetMat("model", glm::value_ptr(CalculateModelMatrix()));
 
         for (std::shared_ptr<RenderMesh> &mesh : meshes_)
         {
             mesh->Draw(shader);
         }
+    }
+
+    glm::mat4 RenderSingleObject::CalculateModelMatrix() const
+    {
+        glm::mat4 transform = glm::mat4(1);
+        transform = glm::translate(transform, transformation_.location);
+        transform = glm::scale(transform, transformation_.scale);
+        return transform;
     }
 
     RenderMultipleObject::RenderMultipleObject(std::vector<std::shared_ptr<RenderMesh>> meshes, const std::string vertex_shader_path, const std::string fragment_shader_path) : RenderObject(meshes, vertex_shader_path, fragment_shader_path)

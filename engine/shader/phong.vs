@@ -20,7 +20,7 @@ void main()
 {
     gl_Position = projection* view*model* vec4(in_location, 1.f);
     frag_position = vec3(model * vec4(in_location, 1.f)); 
-    out_normal =  in_normal;
+    out_normal =   in_normal;
     out_texcoord = in_texcoord;
     frag_pos_light_space = light_space_matrix * vec4(frag_position, 1);
 }

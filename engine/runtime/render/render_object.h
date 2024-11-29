@@ -31,6 +31,7 @@ namespace kpengine
         virtual void Render(std::shared_ptr<RenderShader> shader);
         virtual void SetLocation(const glm::vec3 &location);
         virtual void SetScale(const glm::vec3 &scale);
+        virtual glm::mat4 CalculateModelMatrix() const;
         inline std::shared_ptr<RenderShader> GetShader() const { return shader_helper_; }
 
     protected:
@@ -47,6 +48,7 @@ namespace kpengine
         virtual void Initialize() override;
         virtual void Render(std::shared_ptr<RenderShader> shader) override;
         virtual void SetLocation(const glm::vec3 &location) override;
+        virtual glm::mat4 CalculateModelMatrix() const override;
         virtual void SetScale(const glm::vec3 &scale) override;
 
     protected:

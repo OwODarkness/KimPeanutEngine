@@ -5,6 +5,8 @@
 #include "editor/include/editor_ui.h"
 #include "editor/include/editor_global_context.h"
 #include "editor/include/editor_scene_manager.h"
+#include "editor/include/editor_log_manager.h"
+
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
 #include "runtime/core/system/render_system.h"
@@ -50,6 +52,7 @@ namespace kpengine
             {
                 editor_ui->BeginDraw();
                 global_editor_context.editor_scene_manager_->Tick();
+                global_editor_context.editor_log_manager->Tick();
                 {
                     editor_ui->Render();
                 }

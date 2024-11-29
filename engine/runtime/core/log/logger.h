@@ -11,6 +11,8 @@
 #include <cstdio>
 #include <magic_enum/magic_enum.hpp>
 
+#include "editor/include/editor_global_context.h"
+#include "editor/include/editor_log_manager.h"
 #define KP_LOG(LOG_NAME, LEVEL, MESSAGE, ...) \
     kpengine::program::Logger::GetLogger()->Log(LOG_NAME, LEVEL, MESSAGE, ##__VA_ARGS__)
 

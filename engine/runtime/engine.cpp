@@ -6,7 +6,7 @@
 #include <iostream>
 namespace kpengine{
     namespace runtime{
-        constexpr float fps_alpha = 1.f / 100.f;
+        constexpr float fps_alpha = 0.1f;
 
         void Engine::Initialize()
         {

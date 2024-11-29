@@ -26,8 +26,8 @@ namespace kpengine
             glBindTexture(GL_TEXTURE_2D, diffuse_textures_[i]->GetTexture());
 
         }
-
-        for (int i = 0; i < specular_textures_.size(); i++)
+        int specular_texture_num = specular_textures_.size();
+        for (int i = 0; i < specular_texture_num; i++)
         {
             glActiveTexture(GL_TEXTURE0 + diffuse_texture_num + i);
             texture_prefix = "material.specular_texture_";
@@ -38,17 +38,23 @@ namespace kpengine
         }
         if(emmision_texture)
         {
-            glActiveTexture(GL_TEXTURE0 + diffuse_texture_num + specular_textures_.size());
-            shader_helper->SetInt("material.emission_texture", diffuse_texture_num + specular_textures_.size());
+            glActiveTexture(GL_TEXTURE0 + diffuse_texture_num + specular_texture_num);
+            shader_helper->SetInt("material.emission_texture", diffuse_texture_num + specular_texture_num);
             glBindTexture(GL_TEXTURE_2D, emmision_texture->GetTexture());
-
+        }
+        if(normal_texture_ && normal_texture_enable_)
+        {
+            glActiveTexture(GL_TEXTURE0 + diffuse_texture_num + specular_texture_num + 1);
+            shader_helper->SetInt("material.normal_texture", diffuse_texture_num + specular_texture_num + 1);
+            glBindTexture(GL_TEXTURE_2D, normal_texture_->GetTexture());
+            shader_helper->SetBool("normal_texture_enabled", normal_texture_enable_);
         }
     }
 
     void RenderMaterialSkyBox::Render(RenderShader* shader_helper)
     {
-        // glActiveTexture(GL_TEXTURE0 );
+         glActiveTexture(GL_TEXTURE0 );
         // shader_helper->SetInt("skybox", 0);
-        // glBindTexture(GL_TEXTURE_CUBE_MAP, cube_map_texture_->GetTexture());
+         glBindTexture(GL_TEXTURE_CUBE_MAP, cube_map_texture_->GetTexture());
     }
 }

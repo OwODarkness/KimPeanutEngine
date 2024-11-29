@@ -16,7 +16,6 @@ namespace kpengine
     void RenderSystem::Initialize()
     {
         // TODO
-        // Initialize render_scene, render_camera
 
         render_camera_ = std::make_shared<RenderCamera>();
 
@@ -26,7 +25,7 @@ namespace kpengine
 
     void RenderSystem::Tick(float DeltaTime)
     {
-        render_scene_->Render();
+        render_scene_->Render(DeltaTime);
 
     }
 }

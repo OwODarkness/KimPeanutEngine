@@ -5,7 +5,6 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/gtc/type_ptr.hpp>
-#include <glm/gtc/matrix_transform.hpp>
 
 #include "runtime/render/frame_buffer.h"
 #include "runtime/render/render_object.h"
@@ -27,7 +26,6 @@ namespace kpengine
         scene_ = std::make_shared<FrameBuffer>(1280, 720);
         scene_->Initialize();
 
-       
         skybox = test::GetRenderObjectSkyBox();
         skybox->Initialize();
 
@@ -56,36 +54,31 @@ namespace kpengine
 
         glBindBufferRange(GL_UNIFORM_BUFFER, 0, ubo_matrices_, 0, 2 * sizeof(glm::mat4));
 
-        // directional_light_.color = glm::vec3(0.);
+        directional_light_.color = glm::vec3(0.);
         spot_light_.color = glm::vec3(0.f);
         spot_light_.cutoff = (float)std::cos(glm::radians(12.5));
         spot_light_.outer_cutoff = (float)std::cos(glm::radians(17.5));
 
-        point_light_.color = glm::vec3(0.f, 0.f, 0.f);
+        //point_light_.color = glm::vec3(0.f, 0.f, 0.f);
+        point_light_.position = glm::vec3(0.f, 2.f, 3.f);
 
         shadow_maker_ = std::make_shared<ShadowMaker>(1024, 1024);
         shadow_maker_->Initialize();
+        ambient_light_.ambient = glm::vec3(0.2f);
+        point_shadow_maker_ = std::make_shared<PointShadowMaker>(1024, 1024);
+        point_shadow_maker_->Initialize();
     }
 
-    void RenderScene::Render()
+    void RenderScene::Render(float deltatime)
     {
+        // angle += 10.f * deltatime;
+        // point_light_.position.x = std::cos(glm::radians(angle));
+        // point_light_.position.z = std::sin(glm::radians(angle));
+
         // render a depth map
-        glCullFace(GL_FRONT);
-        glViewport(0, 0, shadow_maker_->width_, shadow_maker_->height_);
-
-        glBindFramebuffer(GL_FRAMEBUFFER, shadow_maker_->GetShadowBuffer());
-        glClear(GL_DEPTH_BUFFER_BIT);
-
+        shadow_maker_->BindFrameBuffer();
         glm::vec3 light_pos = -directional_light_.direction * 2.f;
-
-        glm::mat4 light_projection, light_view;
-        glm::mat4 light_space_matrix;
-        float near_plane = 1.f, far_plane = 7.5f;
-
-        light_projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane, far_plane);
-        light_view = glm::lookAt(light_pos, glm::vec3(0.f), glm::vec3(0.f, 1.f, 0.f));
-        light_space_matrix = light_projection * light_view;
-
+        glm::mat4 light_space_matrix = shadow_maker_->CalculateShadowTransform(light_pos);
         std::shared_ptr<RenderShader> depth_shader = shadow_maker_->GetShader();
         depth_shader->UseProgram();
         depth_shader->SetMat("light_space_matrix", glm::value_ptr(light_space_matrix));
@@ -94,47 +87,62 @@ namespace kpengine
         {
             render_objects_[i]->Render(depth_shader);
         }
-        glCullFace(GL_BACK);
-        // render a normal scene
-        BeginDraw();
-        glBindBuffer(GL_UNIFORM_BUFFER, ubo_matrices_);
-        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(glm::mat4), glm::value_ptr(render_camera_->GetProjectionMatrix()));
-        glBufferSubData(GL_UNIFORM_BUFFER, sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(render_camera_->GetViewMatrix()));
-        glBindBuffer(GL_UNIFORM_BUFFER, 0);
+        shadow_maker_->UnBindFrameBuffer();
 
-        skybox->GetShader()->UseProgram();
-        skybox->Render(skybox->GetShader());
-
-        for (int i = 0; i < render_objects_.size(); i++)
+        //render a point depth map
+        point_shadow_maker_->BindFrameBuffer();
+        std::vector<glm::mat4> light_space_matrices = point_shadow_maker_->CalculateShadowTransform(point_light_.position);
+        std::shared_ptr<RenderShader> point_depth_shader = point_shadow_maker_->GetShader();
+        point_depth_shader->UseProgram();
+        for (int i = 0; i < light_space_matrices.size(); i++)
         {
-            std::shared_ptr<RenderShader> shader = render_objects_[i]->GetShader();
-            shader->UseProgram();
-            shader->SetVec3("ambient", glm::value_ptr(ambient_light_.ambient));
-
-            ConfigurePointLightInfo(shader);
-            ConfigureDirectionalLightInfo(shader);
-            ConfigureSpotLightInfo(shader);
-
-            shader->SetVec3("view_position", glm::value_ptr(render_camera_->GetPosition()));
-            shader->SetMat("light_space_matrix", glm::value_ptr(light_space_matrix));
-
-            glActiveTexture(GL_TEXTURE15);
-            shader->SetInt("shadow_map", 15);
-            glBindTexture(GL_TEXTURE_2D, shadow_maker_->GetShadowMap());
-
-            render_objects_[i]->Render(shader);
+            point_depth_shader->SetMat(("shadow_matrices[" + std::to_string(i) + ']').c_str(), glm::value_ptr(light_space_matrices[i]));
         }
+        point_depth_shader->SetVec3("light_position", glm::value_ptr(point_light_.position));
+        point_depth_shader->SetFloat("far_plane", 25.f);
+        for(int i = 0;i<render_objects_.size();i++)
+        {
+            point_depth_shader->SetMat("model", glm::value_ptr(render_objects_[i]->CalculateModelMatrix()));
+            render_objects_[i]->Render(point_depth_shader);
+        }
+        point_shadow_maker_->UnBindFrameBuffer();
 
-        EndDraw();
-    }
-
-    void RenderScene::BeginDraw()
-    {
+        // render a normal scene
         scene_->BindFrameBuffer();
-    }
+        {
+            glBindBuffer(GL_UNIFORM_BUFFER, ubo_matrices_);
+            glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(glm::mat4), glm::value_ptr(render_camera_->GetProjectionMatrix()));
+            glBufferSubData(GL_UNIFORM_BUFFER, sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(render_camera_->GetViewMatrix()));
+            glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-    void RenderScene::EndDraw()
-    {
+            skybox->GetShader()->UseProgram();
+            //skybox->Render(skybox->GetShader());
+
+            for (int i = 0; i < render_objects_.size(); i++)
+            {
+                std::shared_ptr<RenderShader> shader = render_objects_[i]->GetShader();
+                shader->UseProgram();
+                shader->SetVec3("ambient", glm::value_ptr(ambient_light_.ambient));
+
+                ConfigurePointLightInfo(shader);
+                ConfigureDirectionalLightInfo(shader);
+                ConfigureSpotLightInfo(shader);
+
+                shader->SetVec3("view_position", glm::value_ptr(render_camera_->GetPosition()));
+                shader->SetMat("light_space_matrix", glm::value_ptr(light_space_matrix));
+
+                glActiveTexture(GL_TEXTURE15);
+                shader->SetInt("shadow_map", 15);
+                glBindTexture(GL_TEXTURE_2D, shadow_maker_->GetShadowMap());
+
+                shader->SetFloat("far_plane", 25.f);
+                glActiveTexture(GL_TEXTURE14);
+                shader->SetInt("point_shadow_map", 14);
+                glBindTexture(GL_TEXTURE_CUBE_MAP, point_shadow_maker_->GetShadowMap());
+
+                render_objects_[i]->Render(shader);
+            }
+        }
         scene_->UnBindFrameBuffer();
     }
 

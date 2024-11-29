@@ -71,9 +71,15 @@ namespace kpengine
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             
             std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "floor.png");
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "brickwall.jpg");
             texture->Initialize();
+
+            std::shared_ptr<RenderTexture> normal_texture = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "brickwall_normal.jpg");
+            normal_texture->Initialize();
+
             material->diffuse_textures_.push_back(texture);
+            material->normal_texture_enable_ = true;
+            material->normal_texture_ = normal_texture;
             std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMeshStandard>(verticles, indices, material);
             
             meshes.push_back(mesh);

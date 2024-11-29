@@ -3,7 +3,7 @@
 #include "runtime/core/system/render_system.h"
 #include "editor/include/editor_scene_manager.h"
 #include "editor/include/editor_input_manager.h"
-
+#include "editor/include/editor_log_manager.h"
 namespace kpengine{
     namespace editor{
         EditorContext global_editor_context;
@@ -20,12 +20,16 @@ namespace kpengine{
 
             editor_input_manager_ = new EditorInputManager();
             editor_input_manager_->Initialize();
+
+            editor_log_manager = new EditorLogManager();
+            editor_log_manager->Initialize();
         }
 
         void EditorContext::Clear()
         {
             delete editor_scene_manager_;
             delete editor_input_manager_;
+            delete editor_log_manager;
         }
     }
 }

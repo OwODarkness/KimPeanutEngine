@@ -13,6 +13,7 @@ namespace runtime{
 namespace editor{
     class EditorSceneManager;
     class EditorInputManager;
+    class EditorLogManager;
 
     struct EditorContextInitInfo{
         WindowSystem* window_system;
@@ -32,6 +33,7 @@ namespace editor{
 
         EditorSceneManager* editor_scene_manager_;
         EditorInputManager* editor_input_manager_;
+        EditorLogManager* editor_log_manager;
     };
 
     extern EditorContext global_editor_context;

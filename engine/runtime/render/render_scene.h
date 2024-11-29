@@ -11,6 +11,7 @@ namespace kpengine{
     class RenderCamera;
     class RenderShader;
     class ShadowMaker;
+    class PointShadowMaker;
     class SkyBox;
 
     class RenderScene{
@@ -19,11 +20,9 @@ namespace kpengine{
 
         void Initialize(std::shared_ptr<RenderCamera> camera);
 
-        void BeginDraw();
 
-        void Render();
+        void Render(float delta_time);
 
-        void EndDraw();
     private:
         void ConfigurePointLightInfo(std::shared_ptr<RenderShader> shader);
         void ConfigureSpotLightInfo(std::shared_ptr<RenderShader> shader);
@@ -41,8 +40,11 @@ namespace kpengine{
         SpotLight spot_light_;
 
         std::shared_ptr<ShadowMaker> shadow_maker_;
+        std::shared_ptr<PointShadowMaker> point_shadow_maker_;
 
         std::shared_ptr<RenderObject> skybox;
+
+        float angle = 0.f;
 
     private:
         unsigned int ubo_matrices_;
