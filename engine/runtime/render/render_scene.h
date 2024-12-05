@@ -39,8 +39,8 @@ namespace kpengine{
         PointLight point_light_;
         SpotLight spot_light_;
 
-        std::shared_ptr<ShadowMaker> shadow_maker_;
-        std::shared_ptr<PointShadowMaker> point_shadow_maker_;
+        std::shared_ptr<ShadowMaker> directional_shadow_maker_;
+        std::shared_ptr<ShadowMaker> point_shadow_maker_;
 
         std::shared_ptr<RenderObject> skybox;
 

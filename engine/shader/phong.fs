@@ -11,6 +11,7 @@ struct Material{
 
     sampler2D normal_texture;
     float shininess;
+    vec3 diffuse_albedo;
 };
 
 struct PointLight{
@@ -55,7 +56,7 @@ in vec3 out_normal;
 in vec2 out_texcoord;
 in vec3 frag_position;
 in vec4 frag_pos_light_space;
-
+in mat3 out_TBN;
 out vec4 out_frag_color;
 
 uniform PointLight point_light;
@@ -149,16 +150,17 @@ vec3 CalculatePointRender(PointLight light)
     {
         normal = texture(material.normal_texture, out_texcoord).rgb;
         normal = normalize(normal * 2.f - 1.f);
+        normal = normalize(out_TBN * normal);
     }
     else
     {
         normal = normalize(out_normal);
     }
 
-    vec3 ambient_render = light.ambient * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
+    vec3 ambient_render = light.ambient * material.diffuse_albedo * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
 
     float diff = max(dot(normal, light_direction), 0);
-    vec3 diffuse_render = light.diffuse * diff  * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
+    vec3 diffuse_render = light.diffuse * material.diffuse_albedo * diff  * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
 
     vec3 view_direction = normalize(view_position - frag_position);
 
@@ -170,19 +172,29 @@ vec3 CalculatePointRender(PointLight light)
     float distance    = length(light.position - frag_position);
     float attenuation = 1.0 / (light.constant + light.linear * distance + 
                 light.quadratic * (distance * distance));
-    return attenuation * vec3( diffuse_render + specular_render);   
+    return attenuation * vec3(ambient_render+ diffuse_render + specular_render);   
 }
 
 vec3 CalculateDirectionalLightRender(DirectionalLight light)
 {
     vec3 light_direction = normalize(-light.direction);
     vec3 light_color = light.color;
-    vec3 normal = normal_texture_enabled ? texture(material.normal_texture, out_texcoord).rgb : normalize(out_normal);
+    vec3 normal = out_normal;
+    if(normal_texture_enabled)
+    {
+        normal = texture(material.normal_texture, out_texcoord).rgb;
+        normal = normalize(normal * 2.f - 1.f);
+        normal = normalize(out_TBN * normal);
+    }
+    else
+    {
+        normal = normalize(out_normal);
+    }
 
-    vec3 ambient_render = light.ambient * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color ;
+    vec3 ambient_render = light.ambient * material.diffuse_albedo * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color ;
 
     float diff = max(dot(normal, light_direction), 0);
-    vec3 diffuse_render = light.diffuse * diff * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
+    vec3 diffuse_render = light.diffuse * material.diffuse_albedo * diff * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
 
     vec3 view_direction = normalize(view_position - frag_position);
     vec3 halfway_direction = normalize(view_direction + light_direction);
@@ -202,10 +214,10 @@ vec3 CalculateSpotLightRender(SpotLight light)
     vec3 light_color = light.color;
     vec3 normal = normal_texture_enabled ? texture(material.normal_texture, out_texcoord).rgb : normalize(out_normal);
 
-    vec3 ambient_render = light.ambient * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color ;
+    vec3 ambient_render = light.ambient * material.diffuse_albedo * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color ;
 
     float diff = max(dot(normal, light_direction), 0);
-    vec3 diffuse_render = light.diffuse * diff * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
+    vec3 diffuse_render = light.diffuse * material.diffuse_albedo * diff * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
 
     vec3 view_direction = normalize(view_position - frag_position);
     vec3 halfway_direction = normalize(view_direction + light_direction);
@@ -231,8 +243,16 @@ void main()
     vec3 spot_light_res = CalculateSpotLightRender(spot_light);
     vec3 light_res =  point_light_res + directional_light_res + spot_light_res;
     vec3 ambient_res = ambient * vec3(texture(material.diffuse_texture_0, out_texcoord));
+    const float gamma = 2.2f;
     out_frag_color = vec4(light_res + ambient_res , 1 );
     
+    // if(normal_texture_enabled)
+    // {
+    //     vec3 normal = texture(material.normal_texture, out_texcoord).rgb;
+    //     normal = normalize(normal * 2.f - 1.f);
+    //     normal = normalize(out_TBN * normal);
+    //     out_frag_color = vec4(normal, 1.f);
+    // }
 
     // if(gl_FragCoord.x < 600)
     //     out_frag_color = vec4(ambient_res + diffuse_res + specular_res, 1 );

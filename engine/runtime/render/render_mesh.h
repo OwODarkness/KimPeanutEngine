@@ -13,6 +13,7 @@ struct Vertex{
     glm::vec3 location;
     glm::vec3 normal;
     glm::vec2 tex_coord;
+    glm::vec3 tangent;
 };
 
 class RenderMesh{

@@ -1,6 +1,9 @@
 #include "render_material.h"
 
 #include <glad/glad.h>
+#include <glm/gtc/type_ptr.hpp>
+
+
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_texture.h"
 
@@ -11,11 +14,11 @@ namespace kpengine
 
 
         shader_helper->SetFloat("material.shininess", shininess);
-
+        shader_helper->SetVec3("material.diffuse_albedo", glm::value_ptr(diffuse_albedo_));
         std::string texture_prefix = "";
         std::string texture_id = "";
 
-        int diffuse_texture_num = diffuse_textures_.size();
+        int diffuse_texture_num = (int)diffuse_textures_.size();
 
         for (int i = 0; i < diffuse_texture_num; i++)
         {
@@ -26,7 +29,7 @@ namespace kpengine
             glBindTexture(GL_TEXTURE_2D, diffuse_textures_[i]->GetTexture());
 
         }
-        int specular_texture_num = specular_textures_.size();
+        int specular_texture_num = (int)specular_textures_.size();
         for (int i = 0; i < specular_texture_num; i++)
         {
             glActiveTexture(GL_TEXTURE0 + diffuse_texture_num + i);

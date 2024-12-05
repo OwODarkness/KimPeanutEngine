@@ -8,11 +8,13 @@
 #include <chrono>
 #include <iomanip>
 #include <ctime>
+#include <vector>
 #include <cstdio>
 #include <magic_enum/magic_enum.hpp>
 
-#include "editor/include/editor_global_context.h"
-#include "editor/include/editor_log_manager.h"
+#include "runtime/runtime_global_context.h"
+#include "runtime/core/system/log_system.h"
+
 #define KP_LOG(LOG_NAME, LEVEL, MESSAGE, ...) \
     kpengine::program::Logger::GetLogger()->Log(LOG_NAME, LEVEL, MESSAGE, ##__VA_ARGS__)
 
@@ -53,13 +55,23 @@ namespace kpengine
                 errno_t err = localtime_s(&local_time, &time);
                 if (err == 0)
                 {
+                    int size = std::snprintf(nullptr, 0, msg.c_str(), std::forward<Args>(args)...) + 1;
+                    std::vector<char> buffer(size);
+                     std::snprintf(buffer.data(), buffer.size(), msg.c_str(), std::forward<Args>(args)...);
+                    std::string message =  std::string(buffer.data(), buffer.size() - 1);
 
-                    std::cout 
-                              << "[" << std::put_time(&local_time, "%Y-%m-%d %H:%M:%S") << "] "
-                              << log_name << ": "
-                              << "[" << magic_enum::enum_name(level) << "] ";
-                    std::printf(msg.c_str(), std::forward<Args>(args)...) ;
-                    std::cout << std::endl;
+                    std::stringstream ss ;
+                    ss<<std::put_time(&local_time, "%Y-%m-%d %H:%M:%S");
+                    std::string s = "[" + ss.str() + "] " + std::string(log_name) + ": " +
+                     "[" + std::string(magic_enum::enum_name(level)) +"] " + message;
+                    runtime::global_runtime_context.log_system_->AddLog(s);
+
+                    // std::cout 
+                    //           << "[" << std::put_time(&local_time, "%Y-%m-%d %H:%M:%S") << "] "
+                    //           << log_name << ": "
+                    //           << "[" << magic_enum::enum_name(level) << "] ";
+                    // std::printf(msg.c_str(), std::forward<Args>(args)...) ;
+                    // std::cout << std::endl;
                 }
             }
 

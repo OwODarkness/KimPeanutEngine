@@ -25,8 +25,7 @@ namespace kpengine{
         std::vector<std::shared_ptr<RenderTexture>>  specular_textures_;
         std::shared_ptr<RenderTexture> emmision_texture;
         std::shared_ptr<RenderTexture> normal_texture_;
-        float kd{0.5f};
-        float ks{1.f};
+        glm::vec3 diffuse_albedo_{1.f};
         float shininess = 70.f;
         bool normal_texture_enable_ = false;
     };

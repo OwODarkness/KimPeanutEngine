@@ -39,6 +39,10 @@ namespace kpengine
     {
     }
 
+    void RenderObject::SetRotation(const glm::vec3 &rotation)
+    {
+    }
+
     void RenderObject::Render(std::shared_ptr<RenderShader> shader)
     {
     }
@@ -71,6 +75,11 @@ namespace kpengine
         transformation_.scale = scale;
     }
 
+    void RenderSingleObject::SetRotation(const glm::vec3& rotation)
+    {
+        transformation_.rotation = rotation;
+    }
+
     void RenderSingleObject::Render(std::shared_ptr<RenderShader> shader)
     {
 
@@ -86,6 +95,9 @@ namespace kpengine
     {
         glm::mat4 transform = glm::mat4(1);
         transform = glm::translate(transform, transformation_.location);
+        transform = glm::rotate(transform, transformation_.rotation.x, glm::vec3(1.f, 0.f, 0.f));
+        transform = glm::rotate(transform, transformation_.rotation.y, glm::vec3(0.f, 0.f, 1.f));
+        transform = glm::rotate(transform, transformation_.rotation.z, glm::vec3(0.f, 1.f, 0.f));
         transform = glm::scale(transform, transformation_.scale);
         return transform;
     }

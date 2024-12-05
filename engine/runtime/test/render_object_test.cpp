@@ -56,16 +56,52 @@ namespace kpengine
         }
 
         std::shared_ptr<RenderObject> GetRenderObjectFloor()
-        {
-            std::vector<Vertex> verticles = {
-                {{10.0f, -0.5f,  10.0f}, {0.0f, 1.0f, 0.0f}, {10.0f,  0.0f}},
-                { {-10.0f, -0.5f,  10.0f},  {0.0f, 1.0f, 0.0f},   {0.0f,  0.0f}},
-                { {-10.0f, -0.5f, -10.0f},  {0.0f, 1.0f, 0.0f},   {0.0f, 10.0f}},
-                {{10.0f, -0.5f,  10.0f},  {0.0f, 1.0f, 0.0f},  {10.0f,  0.0f}},
-                {{-10.0f, -0.5f, -10.0f},  {0.0f, 1.0f, 0.0f},   {0.0f, 10.0f}},
-                {{10.0f, -0.5f, -10.0f},  {0.0f, 1.0f, 0.0f},  {10.0f, 10.0f}}
-            };
+        {   
+            glm::vec3 pos1{10.0f, -0.5f,  10.0f};
+            glm::vec3 pos2{-10.0f, -0.5f,  10.0f};
+            glm::vec3 pos3{-10.0f, -0.5f, -10.0f};
+            glm::vec3 pos4{10.0f, -0.5f,  -10.0f};
 
+            glm::vec3 normal{0.0f, 1.0f, 0.0f};
+
+            glm::vec2 uv1{10.f, 0.f};
+            glm::vec2 uv2{0.f, 0.f};
+            glm::vec2 uv3{0.f, 10.f};
+            glm::vec2 uv4{10.f, 10.f};
+
+
+            glm::vec3 edge1 = pos2 - pos1;
+            glm::vec3 edge2 = pos3 - pos1;
+            glm::vec2 delta_uv1 = uv2 - uv1;
+            glm::vec2 delta_uv2 = uv3 - uv1;
+
+            glm::vec3 tangent1, tangent2;
+
+            float f = 1.f / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+            tangent1.x = f * (delta_uv2.y * edge1.x - delta_uv1.y * edge2.x);
+            tangent1.y = f * (delta_uv2.y * edge1.y - delta_uv1.y * edge2.y);
+            tangent1.z = f * (delta_uv2.y * edge1.z - delta_uv1.y * edge2.z);
+
+            tangent1 = glm::normalize(tangent1);
+
+            edge1 = pos3 - pos1;
+            edge2 = pos4 - pos1;
+            delta_uv1 = uv3 - uv1;
+            delta_uv2 = uv4 - uv1;
+            f = 1.f / (delta_uv1.x * delta_uv2.y - delta_uv1.y * delta_uv2.x);
+            tangent2.x = f * (delta_uv2.y * edge1.x - delta_uv1.y * edge2.x);
+            tangent2.y = f * (delta_uv2.y * edge1.y - delta_uv1.y * edge2.y);
+            tangent2.z = f * (delta_uv2.y * edge1.z - delta_uv1.y * edge2.z);
+            tangent2 = glm::normalize(tangent2);
+
+            std::vector<Vertex> verticles = {
+                {pos1, normal, uv1, tangent1},
+                {pos2, normal, uv2, tangent1},
+                {pos3, normal, uv3, tangent1},
+                {pos1, normal, uv1, tangent2},
+                {pos3, normal, uv3, tangent2},
+                {pos4, normal, uv4, tangent2}
+            };
             std::vector<unsigned int> indices = {0, 1, 2, 3, 4, 5};
 
             std::vector<std::shared_ptr<RenderMesh>> meshes;

@@ -11,11 +11,38 @@ namespace kpengine
 
     ShadowMaker::ShadowMaker(int width, int height) : width_(width), height_(height)
     {
-        shader = std::make_shared<RenderShader>(GetShaderDirectory() + "shadow_mapping_depth.vs", GetShaderDirectory() + "shadow_mapping_depth.fs");
     }
 
     void ShadowMaker::Initialize()
     {
+        shader->Initialize();
+    }
+
+    void ShadowMaker::BindFrameBuffer()
+    {
+        glViewport(0, 0, width_, height_);
+        glBindFramebuffer(GL_FRAMEBUFFER, frame_buffer_);
+        glClear(GL_DEPTH_BUFFER_BIT);
+    }
+    void ShadowMaker::UnBindFrameBuffer()
+    {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+    }
+
+    DirectionalShadowMaker::DirectionalShadowMaker(int width, int height):
+    ShadowMaker(width, height)
+    {
+        std::string shader_directory = GetShaderDirectory();
+        shader = std::make_shared<RenderShader>(
+            shader_directory + "shadow_mapping_depth.vs", 
+            shader_directory + "shadow_mapping_depth.fs");
+
+    }
+
+    void DirectionalShadowMaker::Initialize()
+    {
+        ShadowMaker::Initialize();
+        
         glGenFramebuffers(1, &frame_buffer_);
         glGenTextures(1, &depth_texture_);
 
@@ -35,39 +62,41 @@ namespace kpengine
         glDrawBuffer(GL_NONE);
         glReadBuffer(GL_NONE);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
-        shader->Initialize();
     }
 
-    void ShadowMaker::BindFrameBuffer()
+    void DirectionalShadowMaker::BindFrameBuffer()
     {
         glCullFace(GL_FRONT);
-        glViewport(0, 0, width_, height_);
-        glBindFramebuffer(GL_FRAMEBUFFER, frame_buffer_);
-        glClear(GL_DEPTH_BUFFER_BIT);
-    }
-    void ShadowMaker::UnBindFrameBuffer()
-    {
-        glCullFace(GL_BACK);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        ShadowMaker::BindFrameBuffer();
     }
 
-    glm::mat4 ShadowMaker::CalculateShadowTransform(glm::vec3 light_position)
+    void DirectionalShadowMaker::UnBindFrameBuffer()
+    {
+        glCullFace(GL_BACK);
+        ShadowMaker::UnBindFrameBuffer();
+    }
+
+    void DirectionalShadowMaker::CalculateShadowTransform(glm::vec3 light_position, std::vector<glm::mat4>& out_shadow_transforms)
     {
         glm::mat4 light_projection, light_view;
         light_projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane_, far_plane_);
         light_view = glm::lookAt(light_position, glm::vec3(0.f), glm::vec3(0.f, 1.f, 0.f));
-
-        return light_projection * light_view;
+        out_shadow_transforms.push_back(light_projection * light_view);
     }
 
-    PointShadowMaker::PointShadowMaker(int width, int height) : width_(width), height_(height) {
-        shader = std::make_shared<RenderShader>(GetShaderDirectory() + "pointshadow_mapping_depth.vs", GetShaderDirectory() + "pointshadow_mapping_depth.fs", GetShaderDirectory() + "pointshadow_mapping_depth.gs");
-        
+    PointShadowMaker::PointShadowMaker(int width, int height) : ShadowMaker(width, height){
+        std::string shader_directory = GetShaderDirectory();
+        shader = std::make_shared<RenderShader>( 
+            shader_directory + "pointshadow_mapping_depth.vs", 
+            shader_directory + "pointshadow_mapping_depth.fs",
+            shader_directory + "pointshadow_mapping_depth.gs");
+        near_plane_ = 1.f;
+        far_plane_ = 25.f;
     }
 
     void PointShadowMaker::Initialize()
     {
+        ShadowMaker::Initialize();
         glGenFramebuffers(1, &frame_buffer_);
         glGenTextures(1, &depth_texture_);
 
@@ -89,36 +118,32 @@ namespace kpengine
         glReadBuffer(GL_NONE);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-        shader->Initialize();
     }
 
 
     void PointShadowMaker::BindFrameBuffer()
     {
-        glViewport(0, 0, width_, height_);
-        glBindFramebuffer(GL_FRAMEBUFFER, frame_buffer_);
-        glClear(GL_DEPTH_BUFFER_BIT);
+        ShadowMaker::BindFrameBuffer();
     }
 
     void PointShadowMaker::UnBindFrameBuffer()
     {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        ShadowMaker::UnBindFrameBuffer();
     }
 
-    std::vector<glm::mat4> PointShadowMaker::CalculateShadowTransform(const glm::vec3& light_position)
+
+
+    void  PointShadowMaker::CalculateShadowTransform(glm::vec3 light_position, std::vector<glm::mat4>& out_shadow_transforms)
     {
-        std::vector<glm::mat4> transforms;
-        transforms.reserve(6);
 
         float aspect = (float)(width_ / height_);
         glm::mat4 projection =  glm::perspective(glm::radians(90.f), aspect, near_plane_, far_plane_);
-        transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(1.f, 0.f, 0.f), glm::vec3(0.f, -1.f, 0.f)));
-        transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(-1.f, 0.f, 0.f), glm::vec3(0.f, -1.f, 0.f)));
-        transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, 1.f, 0.f), glm::vec3(0.f, 0.f, 1.f)));
-        transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, -1.f, 0.f), glm::vec3(0.f, 0.f, -1.f)));
-        transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, 0.f, 1.f), glm::vec3(0.f, -1.f, 0.f)));
-        transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, 0.f, -1.f), glm::vec3(0.f, -1.f, 0.f)));
+        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(1.f, 0.f, 0.f), glm::vec3(0.f, -1.f, 0.f)));
+        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(-1.f, 0.f, 0.f), glm::vec3(0.f, -1.f, 0.f)));
+        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, 1.f, 0.f), glm::vec3(0.f, 0.f, 1.f)));
+        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, -1.f, 0.f), glm::vec3(0.f, 0.f, -1.f)));
+        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, 0.f, 1.f), glm::vec3(0.f, -1.f, 0.f)));
+        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, 0.f, -1.f), glm::vec3(0.f, -1.f, 0.f)));
         
-        return transforms;
     }
 }

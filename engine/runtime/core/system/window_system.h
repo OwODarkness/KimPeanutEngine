@@ -17,8 +17,8 @@ namespace kpengine
         static WindowInitInfo GetDefaultWindowInfo()
         {
             WindowInitInfo window_info;
-            window_info.width = 1280;
-            window_info.height = 720;
+            window_info.width = 1920;
+            window_info.height = 1080;
             return window_info;
         }
 
