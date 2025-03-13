@@ -23,10 +23,13 @@ public:
     virtual void Draw(std::shared_ptr<RenderShader> shader_helper);
     virtual ~RenderMesh();
 
+    size_t GetVerticlesNumber() const{return verticles_.size();}
+    size_t GetTrianglesNumber() const{return indices_.size()/3;}
 protected:
     std::vector<Vertex> verticles_;
     std::shared_ptr<RenderMaterial> material_;
     std::shared_ptr<RenderShader> shader_helper_;
+    int triangle_number_;
 public:
     std::vector<unsigned int> indices_; 
     unsigned int vbo_;

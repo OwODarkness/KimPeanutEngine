@@ -10,9 +10,9 @@ namespace kpengine{
     namespace ui{
         class EditorSceneComponent : public EditorUIComponent{
         public:
-            EditorSceneComponent() = delete;
+            //EditorSceneComponent() = delete;
             EditorSceneComponent(FrameBuffer* scene);
-
+            virtual ~EditorSceneComponent();
             virtual void Render() override;
 
 

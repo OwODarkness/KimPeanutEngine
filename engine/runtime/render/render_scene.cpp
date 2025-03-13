@@ -37,6 +37,8 @@ namespace kpengine
         teapot->SetLocation(glm::vec3(1.f, -0.5f, 1.f));
         render_objects_.push_back(teapot);
 
+        //bunny->SetLocation(glm::vec3(0.f, -0.8f, 0.f));
+
         for (int i = 0; i < render_objects_.size(); i++)
         {
             render_objects_[i]->Initialize();
@@ -71,11 +73,11 @@ namespace kpengine
 
     void RenderScene::Render(float deltatime)
     {
-        angle += 5.f * deltatime;
-        point_light_.position.x = 4 * std::cos(glm::radians(angle));
-        point_light_.position.z = 4* std::sin(glm::radians(angle));
+        // angle += 5.f * deltatime;
+        // point_light_.position.x = 4 * std::cos(glm::radians(angle));
+        // point_light_.position.z = 4* std::sin(glm::radians(angle));
 
-        //render_objects_[1]->SetRotation({0.f,0.f, angle});
+        // render_objects_[1]->SetRotation({0.f,0.f, angle});
 
         // render a depth map
         directional_shadow_maker_->BindFrameBuffer();
@@ -121,8 +123,13 @@ namespace kpengine
             glBufferSubData(GL_UNIFORM_BUFFER, sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(render_camera_->GetViewMatrix()));
             glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-            skybox->GetShader()->UseProgram();
+            if(isskydraw)
+            {
+                            skybox->GetShader()->UseProgram();
             skybox->Render(skybox->GetShader());
+            }
+
+
 
             for (int i = 0; i < render_objects_.size(); i++)
             {

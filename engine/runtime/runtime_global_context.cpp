@@ -10,12 +10,12 @@ namespace kpengine
 
         void RuntimeContext::Initialize()
         {
-            log_system_ = std::make_shared<LogSystem>();
+            log_system_ = std::make_unique<LogSystem>();
 
-            window_system_ = std::make_shared<WindowSystem>();
+            window_system_ = std::make_unique<WindowSystem>();
             window_system_->Initialize(WindowInitInfo::GetDefaultWindowInfo());
 
-            render_system_ = std::make_shared<RenderSystem>();
+            render_system_ = std::make_unique<RenderSystem>();
             render_system_->Initialize();
 
 

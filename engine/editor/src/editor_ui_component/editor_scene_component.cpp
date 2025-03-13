@@ -33,7 +33,7 @@ namespace kpengine{
                 height_ = (int)ImGui::GetContentRegionAvail().y;
                 ImGui::BeginChild("render target");
                 ImGui::Image(
-                    (ImTextureID)scene_->GetTexture(),
+                    static_cast<ImTextureID>(scene_->GetTexture()),
                     ImGui::GetContentRegionAvail(),
                     ImVec2(0, 1),
                     ImVec2(1, 0)
@@ -51,6 +51,11 @@ namespace kpengine{
                 ImGui::EndChild();
             }
             ImGui::End();
+        }
+
+        EditorSceneComponent::~EditorSceneComponent()
+        {
+            
         }
     }
 }

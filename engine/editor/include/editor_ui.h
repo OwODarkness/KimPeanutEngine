@@ -1,7 +1,7 @@
 #ifndef KPENGINE_EDITOR_UI_H
 #define KPENGINE_EDITOR_UI_H
 
-
+#include <vector>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <imgui/imgui.h>
@@ -26,16 +26,14 @@ namespace ui{
         void Close();
         void BeginDraw();
         void EndDraw();
-        void MainMenuBarRender();
     private:
 
     private:
-        EditorUIComponent* main_menubar_;
-        EditorWindowComponent* window_component_;
+        std::vector<EditorUIComponent*> components_;
         int x = 0;
     };
     
 }
 }
 
-#endif
+#endif //KPENGINE_EDITOR_UI_H

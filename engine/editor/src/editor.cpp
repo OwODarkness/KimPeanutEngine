@@ -51,18 +51,18 @@ namespace kpengine
             assert(editor_ui);
             while (true)
             {
-                editor_ui->BeginDraw();
-                global_editor_context.editor_scene_manager_->Tick();
-                global_editor_context.editor_log_manager->Tick();
-                {
-                    editor_ui->Render();
-                }
-                editor_ui->EndDraw();
-
                 if(!engine_->Tick())
                 {
                     break;
                 }
+
+                editor_ui->BeginDraw();
+                global_editor_context.editor_scene_manager_->Tick();
+                global_editor_context.editor_log_manager_->Tick();
+                editor_ui->Render();
+                editor_ui->EndDraw();
+
+
             }
             
         }
@@ -70,6 +70,7 @@ namespace kpengine
         void Editor::Clear()
         {
             editor_ui->Close();
+
         }
 
     }

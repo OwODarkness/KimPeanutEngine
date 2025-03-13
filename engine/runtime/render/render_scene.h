@@ -48,6 +48,7 @@ namespace kpengine{
 
     private:
         unsigned int ubo_matrices_;
+        bool isskydraw = true;
     };
 }
 

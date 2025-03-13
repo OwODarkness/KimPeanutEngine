@@ -26,8 +26,10 @@ namespace kpengine
         EditorUI::~EditorUI()
         {
 
-           delete main_menubar_;
-           delete window_component_;
+           for(int i = 0;i<components_.size();i++)
+           {
+                delete components_[i];
+           }
         }
 
         void EditorUI::Initialize(GLFWwindow *window)
@@ -45,7 +47,7 @@ namespace kpengine
             //ImFont *font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\simhei.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesChineseFull());
             //IM_ASSERT(font != nullptr);
 
-            window_component_ = new EditorWindowComponent("window");
+            EditorWindowComponent* window_component_ = new EditorWindowComponent("window");
             window_component_->AddComponent(new EditorTextComponent("hello imgui"));
             window_component_->AddComponent(new EditorTooltipComponent("welcome"));
             EditorButtonComponent *button = new EditorButtonComponent("button");
@@ -58,15 +60,17 @@ namespace kpengine
             container->AddComponent(new EditorTextComponent("FPS: "));
             container->AddComponent(new EditorDynamicTextComponent(&x));
             window_component_->AddComponent(container);
-            
+             
+            components_.push_back(window_component_);
+
             //menu init
             std::vector<Menu> menus;
             menus.push_back({"File", {{"Open Project", "Ctrl+O"}, {"New Project", "Ctrl+N"}, {"Exit"}}});
             menus.push_back({"Edit", {{"Setting"}}});
             menus.push_back({"Window"});
             menus.push_back({"Tools"});
-            main_menubar_ = new EditorMenuBarComponent(menus);
-        
+            components_.push_back(new EditorMainMenuBarComponent(menus));
+
         }
 
         void EditorUI::Close()
@@ -83,7 +87,6 @@ namespace kpengine
             ImGui_ImplGlfw_NewFrame();
             ImGui::NewFrame();
 
-            MainMenuBarRender();
         }
 
         void EditorUI::EndDraw()
@@ -97,17 +100,14 @@ namespace kpengine
         {
             // Start the Dear ImGui frame
             x = editor::global_editor_context.runtime_engine_->GetFPS();
-            window_component_->Render();
+            for(int i = 0;i<components_.size();i++)
+            {
+                components_[i]->Render();
+            }
             return true;
         }
 
 
-        void EditorUI::MainMenuBarRender()
-        {
-            ImGui::BeginMainMenuBar();
-            main_menubar_->Render();
-            
-            ImGui::EndMainMenuBar();
-        }
+
     }
 }

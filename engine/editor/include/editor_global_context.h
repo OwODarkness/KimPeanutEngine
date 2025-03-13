@@ -1,7 +1,6 @@
 #ifndef KPENGINE_EDITOR_GLOBAL_CONTEXT_H
 #define KPENGINE_EDITOR_GLOBAL_CONTEXT_H
-
-
+#include<memory>
 namespace kpengine{
     class WindowSystem;
     class RenderSystem;
@@ -26,7 +25,6 @@ namespace editor{
     class EditorContext{
     public:
         void Initialize(const EditorContextInitInfo& init_info);
-
         void Clear();
 
         WindowSystem* window_system_{nullptr};
@@ -36,7 +34,7 @@ namespace editor{
 
         EditorSceneManager* editor_scene_manager_;
         EditorInputManager* editor_input_manager_;
-        EditorLogManager* editor_log_manager;
+        EditorLogManager* editor_log_manager_;
     };
 
     extern EditorContext global_editor_context;

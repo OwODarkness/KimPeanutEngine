@@ -20,9 +20,9 @@ namespace kpengine
 
             void Clear();
 
-            std::shared_ptr<WindowSystem> window_system_;
-            std::shared_ptr<RenderSystem> render_system_;
-            std::shared_ptr<LogSystem> log_system_;
+            std::unique_ptr<WindowSystem> window_system_;
+            std::unique_ptr<RenderSystem> render_system_;
+            std::unique_ptr<LogSystem> log_system_;
         };
 
         extern RuntimeContext global_runtime_context;

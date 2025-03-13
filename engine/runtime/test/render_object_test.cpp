@@ -123,6 +123,14 @@ namespace kpengine
             return std::make_shared<RenderSingleObject>(meshes, shader_dir + "phong.vs", shader_dir + "phong.fs");
         }
 
+        std::shared_ptr<RenderObject> GetRenderObjectSphere()
+        {
+                        std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "sphere.obj");
+            //render_object->SetScale({0.1f, 0.1f, 0.1f});
+
+            return render_object;
+        }
+
         std::shared_ptr<RenderObject> GetRenderObjectCube()
         {
             std::vector<Vertex> verticles = {

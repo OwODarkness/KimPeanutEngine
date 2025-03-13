@@ -7,10 +7,14 @@ namespace kpengine
 {
     namespace editor
     {
+        EditorSceneManager::EditorSceneManager():
+        scene_ui_(nullptr)
+        {
 
+        }
         void EditorSceneManager::Initialize()
         {
-            scene_ui_ = std::make_shared<ui::EditorSceneComponent>(global_editor_context.render_system_->GetRenderScene()->scene_.get());
+            scene_ui_ = std::make_unique<ui::EditorSceneComponent>(global_editor_context.render_system_->GetRenderScene()->scene_.get());
         }
 
         void EditorSceneManager::Tick()
@@ -38,5 +42,7 @@ namespace kpengine
         {
             return scene_ui_->is_scene_window_focus;
         }
+
+        EditorSceneManager::~EditorSceneManager() = default;
     }
 }

@@ -76,7 +76,7 @@ namespace kpengine
         void EditorInputManager::KeyCallback(int key, int code, int action, int mods)
         {
             // std::cout << "Test__key:" << key << " code:" << code << " action:" << action << " mods:" << mods << std::endl;
-            bool is_focus = global_editor_context.editor_scene_manager_->IsSCeneFocus();
+            bool is_focus =global_editor_context.editor_scene_manager_&& global_editor_context.editor_scene_manager_->IsSCeneFocus();
             if(!is_focus)
             {
                 return ;
@@ -145,7 +145,7 @@ namespace kpengine
 
         void EditorInputManager::CursorPosCallback(double xpos, double ypos)
         {
-            bool is_focus = global_editor_context.editor_scene_manager_->IsSCeneFocus();
+            bool is_focus = global_editor_context.editor_scene_manager_ && global_editor_context.editor_scene_manager_->IsSCeneFocus();
             if(!is_focus)
             {
                 is_first_cursor = true;

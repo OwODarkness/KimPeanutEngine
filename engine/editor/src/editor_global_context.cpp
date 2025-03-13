@@ -25,15 +25,18 @@ namespace kpengine{
             editor_input_manager_ = new EditorInputManager();
             editor_input_manager_->Initialize();
 
-            editor_log_manager = new EditorLogManager();
-            editor_log_manager->Initialize(log_system_);
+            editor_log_manager_ = new EditorLogManager();
+            editor_log_manager_->Initialize(log_system_);
         }
 
         void EditorContext::Clear()
         {
             delete editor_scene_manager_;
+            editor_scene_manager_ = nullptr;
             delete editor_input_manager_;
-            delete editor_log_manager;
+            delete editor_log_manager_;
         }
+
+
     }
 }

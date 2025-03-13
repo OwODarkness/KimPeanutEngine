@@ -19,6 +19,7 @@ namespace kpengine
         std::shared_ptr<RenderObject> GetRenderObjectVenusm();
         std::shared_ptr<RenderObject> GetRenderObjectPlanet();
         std::shared_ptr<RenderObject> GetRenderObjectRock();
+        std::shared_ptr<RenderObject> GetRenderObjectSphere();
     }
 }
 

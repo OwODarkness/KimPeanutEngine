@@ -9,16 +9,18 @@ namespace ui{
     class EditorSceneComponent;
 }
 namespace editor{
+
     class EditorSceneManager{
     public:
-        EditorSceneManager() = default;
+        EditorSceneManager();
+        ~EditorSceneManager();
         void Initialize();
         void Tick();
         void Close();
         bool IsCursorInScene(float cursor_x, float cursor_y);
         bool IsSCeneFocus() const;
     private:
-        std::shared_ptr<ui::EditorSceneComponent> scene_ui_;
+        std::unique_ptr<ui::EditorSceneComponent> scene_ui_;
     };
 }
 }

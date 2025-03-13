@@ -27,9 +27,13 @@ namespace kpengine
 
     void ModelLoader::ProcessNode(struct aiNode *node, const struct aiScene *scene)
     {
+        int face_count = 0;
+        int vertex_count = 0;
         for (unsigned int i = 0; i < node->mNumMeshes; i++)
         {
             aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
+            face_count += mesh->mNumFaces;
+            vertex_count += mesh->mNumVertices;
             meshes.push_back(GenerateMesh(mesh, scene));
         }
 

@@ -35,6 +35,13 @@ namespace kpengine{
         private:
             std::vector<Menu> menus_;
         };
+
+        class EditorMainMenuBarComponent: public EditorMenuBarComponent{
+        public:
+            EditorMainMenuBarComponent(const std::vector<Menu>& menus);
+            
+            void Render() override;
+        };
     }
 }
 

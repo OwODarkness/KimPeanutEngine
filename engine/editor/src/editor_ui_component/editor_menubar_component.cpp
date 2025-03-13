@@ -34,5 +34,18 @@ namespace kpengine{
                 }
             }
         }
+
+        EditorMainMenuBarComponent::EditorMainMenuBarComponent(const std::vector<Menu>& menus):
+        EditorMenuBarComponent(menus)
+        {
+
+        }
+
+        void EditorMainMenuBarComponent::Render()
+        {
+            ImGui::BeginMainMenuBar();
+            EditorMenuBarComponent::Render();
+            ImGui::EndMainMenuBar();
+        }
     }
 }
