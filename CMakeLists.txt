@@ -6,11 +6,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 include_directories(
     third_party
+    third_party/googletest/googletest/include
     )
 
 add_subdirectory(engine)
 add_subdirectory(third_party)
-
 
 add_executable(KimPeanutEngine 
     engine/editor/main.cpp
@@ -19,3 +19,8 @@ target_link_libraries(KimPeanutEngine
     EngineLib
     ThirdPartyLib
 )
+
+#TEST
+enable_testing()
+
+add_subdirectory(engine/test)

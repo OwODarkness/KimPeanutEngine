@@ -1,5 +1,20 @@
-// #ifndef KPENGINE_RUNTIME_MATH_H
-// #define KPENGINE_RUNTIME_MATH_H
+#ifndef KPENGINE_RUNTIME_MATH_H
+#define KPENGINE_RUNTIME_MATH_H
+
+#include <cmath>
+
+namespace kpengine{
+
+    template<typename T>
+    bool IsNearlyZero(T value, T tolerance = 1e-6)
+    {
+        return std::abs(value) < tolerance;
+    }
+
+    template bool IsNearlyZero<>(float, float);
+    template bool IsNearlyZero<>(double, double);
+
+}
 
 // #include <vector>
 // #include <Eigen/Core>
@@ -28,4 +43,4 @@
 //     }
 // }
 
-// #endif
+#endif

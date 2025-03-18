@@ -24,7 +24,7 @@ public:
     virtual ~RenderMesh();
 
     size_t GetVerticlesNumber() const{return verticles_.size();}
-    size_t GetTrianglesNumber() const{return indices_.size()/3;}
+    size_t GetTrianglesNumber() const{return indices_.size()/3;} 
 protected:
     std::vector<Vertex> verticles_;
     std::shared_ptr<RenderMaterial> material_;

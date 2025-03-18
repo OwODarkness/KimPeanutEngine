@@ -1,11 +1,10 @@
 #include <memory> 
+
 #include "editor/include/editor.h"
 #include "runtime/engine.h"
-// Main code
 
 int main(int argc, char** argv)
 {
-
     using Engine = kpengine::runtime::Engine;
     using Editor = kpengine::editor::Editor;
 

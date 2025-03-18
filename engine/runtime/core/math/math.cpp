@@ -1,7 +1,10 @@
-// #include "math.h"
+#include "math.h"
 
-// #include <cmath>
-// namespace kpengine
+#include <cmath>
+namespace kpengine
+{
+
+}
 // {
 //     namespace math
 //     {
