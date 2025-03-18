@@ -1,7 +1,7 @@
 #include "gtest/gtest.h"
 #include "runtime/core/math/math_header.h"
 
-TEST(VectorAddTest, AddTwoVectors)
+TEST(Vector3AddTest, AddTwoVectors)
 {
     kpengine::Vector3f v1{1.f, 2.f, 3.f};
 
@@ -22,7 +22,7 @@ TEST(VectorAddTest, AddTwoVectors)
     }
 }
 
-TEST(VectorAddTest, AddScalarToVector)
+TEST(Vector3AddTest, AddScalarToVector)
 {
     kpengine::Vector3f v1{1.f, 2.f, 3.f};
 

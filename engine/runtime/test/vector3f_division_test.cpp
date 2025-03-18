@@ -1,7 +1,7 @@
 #include "gtest/gtest.h"
 #include "runtime/core/math/math_header.h"
 
-TEST(VectorDivTest, DivideVectorByScalar)
+TEST(Vector3DivisionTest, DivideVectorByScalar)
 {
     kpengine::Vector3f v1{10.f, 20.f, 30.f};
 

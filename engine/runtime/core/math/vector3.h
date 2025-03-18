@@ -1,5 +1,5 @@
-#ifndef KPENGINE_RUNTIME_MATH_VECTOR_H
-#define KPENGINE_RUNTIME_MATH_VECTOR_H
+#ifndef KPENGINE_RUNTIME_MATH_VECTOR3_H
+#define KPENGINE_RUNTIME_MATH_VECTOR3_H
 
 #include <cstddef>
 #include <cassert>

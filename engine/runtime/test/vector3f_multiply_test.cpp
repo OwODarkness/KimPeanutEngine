@@ -4,7 +4,7 @@
 //Test multiply operation, dotproduct and cross product
 
 
-TEST(VectorMultiplyTest, MultipleTwoVectors)
+TEST(Vector3MultiplyTest, MultipleTwoVectors)
 {
     kpengine::Vector3f v1{1.f, 2.f, 3.f};
 
@@ -25,7 +25,7 @@ TEST(VectorMultiplyTest, MultipleTwoVectors)
     }
 }
 
-TEST(VectorMultipleTest, MultipleScalarToVector)
+TEST(Vector3MultipleTest, MultipleScalarToVector)
 {
     kpengine::Vector3f v{1.f, -2.f, 3.f};
 
@@ -58,7 +58,7 @@ TEST(VectorMultipleTest, MultipleScalarToVector)
     }
 }
 
-TEST(VectorMultipleTest, CrossProduct)
+TEST(Vector3MultipleTest, DotProduct)
 {
     // Case 1: Dot product of perpendicular vectors (should be 0)
     {
@@ -88,7 +88,7 @@ TEST(VectorMultipleTest, CrossProduct)
     }
 }
 
-TEST(VectorMultipleTest, DotProduct)
+TEST(Vector3MultipleTest, CrossProduct)
 {
     // Case 1: Cross product of perpendicular unit vectors
     {
