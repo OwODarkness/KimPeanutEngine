@@ -13,7 +13,7 @@ namespace kpengine {
         class Vector4 {
         public:
             Vector4() : x_{}, y_{}, z_{}, w_{} {}
-            Vector4(T value) : x_(value), y_(value), z_(value), w_(value) {}
+            explicit Vector4(T value) : x_(value), y_(value), z_(value), w_(value) {}
             Vector4(T x, T y, T z, T w) : x_(x), y_(y), z_(z), w_(w) {}
             Vector4(const Vector3<T>&v, T w):x_(v.x_), y_(v.y_), z_(v.z_), w_(w){} 
             explicit Vector4(const T arr[4]) : x_(arr[0]), y_(arr[1]), z_(arr[2]), w_(arr[3]) {}
@@ -40,9 +40,12 @@ namespace kpengine {
             Vector4 operator+(const Vector4& v) noexcept { return Vector4(x_ + v.x_, y_ + v.y_, z_ + v.z_, w_ + v.w_); }
             Vector4 operator-(const Vector4& v) noexcept { return Vector4(x_ - v.x_, y_ - v.y_, z_ - v.z_, w_ - v.w_); }
             Vector4 operator*(const Vector4& v) noexcept { return Vector4(x_ * v.x_, y_ * v.y_, z_ * v.z_, w_ * v.w_); }
+            
+            Vector4 operator+(T scalar) noexcept { return Vector4(x_ + scalar, y_ + scalar, z_ + scalar, w_ + scalar); }
+            Vector4 operator-(T scalar) noexcept { return Vector4(x_ - scalar, y_ - scalar, z_ - scalar, w_ - scalar); }
             Vector4 operator*(T scalar) noexcept { return Vector4(x_ * scalar, y_ * scalar, z_ * scalar, w_ * scalar); }
             Vector4 operator/(T scalar) {
-                assert(scalar != 0);
+                assert(scalar != T(0));
                 return Vector4(x_ / scalar, y_ / scalar, z_ / scalar, w_ / scalar);
             }
             Vector4 operator-() { return Vector4(-x_, -y_, -z_, -w_); }
@@ -56,6 +59,25 @@ namespace kpengine {
 
             T DotProduct(const Vector4& v);
             void Normalize();
+
+            template<typename U>
+            friend Vector4<U> operator+(U scalar, const Vector4<U>& v);
+
+            template<typename U, typename V>
+            friend Vector4<V> operator+(U scalar, const Vector4<V>& v);
+
+            template<typename U>
+            friend Vector4<U> operator-(U scalar, const Vector4<U>& v);
+
+            template<typename U, typename V>
+            friend Vector4<V> operator-(U scalar, const Vector4<V>& v);
+
+            template<typename U>
+            friend Vector4<U> operator*(U scalar, const Vector4<U>& v);
+
+            template<typename U, typename V>
+            friend Vector4<V> operator*(U scalar, const Vector4<V>& v);
+
 
         public:
             T x_, y_, z_, w_;
@@ -81,7 +103,7 @@ namespace kpengine {
 
         template<typename T>
         Vector4<T>& Vector4<T>::operator/=(const Vector4& v) {
-            assert(v.x_ != 0 && v.y_ != 0 && v.z_ != 0 && v.w_ != 0);
+            assert(v.x_ != T(0) && v.y_ != T(0) && v.z_ != T(0) && v.w_ != T(0));
             x_ /= v.x_; y_ /= v.y_; z_ /= v.z_; w_ /= v.w_;
             return *this;
         }
@@ -107,9 +129,64 @@ namespace kpengine {
         template<typename T>
         void Vector4<T>::Normalize() {
             double length = Length();
-            if (length == 0) return;
+            if (length == 0.) 
+            {
+                return;
+            }
             T coeff = static_cast<T>(1.0 / length);
             x_ *= coeff; y_ *= coeff; z_ *= coeff; w_ *= coeff;
+        }
+
+        template<typename T>
+        Vector4<T> operator+(T scalar, const Vector4<T>& v)
+        {
+            return Vector4<T>(v.x_ + scalar, v.y_ + scalar, v.z_ + scalar, v.w_ + scalar);
+        }
+
+        template<typename T, typename U>
+        Vector4<U> operator+(T scalar, const Vector4<U>& v)
+        {
+            U scalar_u = static_cast<U>(scalar);
+            return Vector4<U>(
+                scalar_u + v.x_, 
+                scalar_u + v.y_, 
+                scalar_u + v.z_,
+                scalar_u + v.w_);
+        }
+
+        template<typename T>
+        Vector4<T> operator-(T scalar, const Vector4<T>& v)
+        {
+            return Vector4<T>(scalar - v.x_, scalar - v.y_, scalar - v.z_, scalar - v.w_);
+        }
+
+        template<typename T, typename U>
+        Vector4<U> operator-(T scalar, const Vector4<U>& v)
+        {
+            U scalar_u = static_cast<U>(scalar);
+            return Vector4<U>(
+                scalar_u - v.x_, 
+                scalar_u - v.y_, 
+                scalar_u - v.z_,
+                scalar_u - v.w_);
+        }
+
+
+        template<typename T>
+        Vector4<T> operator*(T scalar, const Vector4<T>& v)
+        {
+            return Vector4<T>(v.x_ * scalar, v.y_ * scalar, v.z_ * scalar, v.w_ * scalar);
+        }
+
+        template<typename T, typename U>
+        Vector3<U> operator*(T scalar, const Vector4<U>& v)
+        {
+            U scalar_u = static_cast<U>(scalar);
+            return Vector4<U>(
+                scalar_u * v.x_, 
+                scalar_u * v.y_, 
+                scalar_u * v.z_,
+                scalar_u * v.w_);
         }
     }
 }

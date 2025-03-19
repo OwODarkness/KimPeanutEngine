@@ -12,11 +12,11 @@ namespace kpengine{
         class Vector3{
         public:
             Vector3():x_{}, y_{}, z_{}{}
-            Vector3(T value):x_(value), y_(value), z_(value){}
+            explicit Vector3(T value):x_(value), y_(value), z_(value){}
             Vector3(T x, T y, T z):x_(x), y_(y), z_(z){}
             explicit Vector3(const T arr[3]):x_(arr[0]), y_(arr[1]), z_(arr[2]){}
 
-            T operator[](size_t index) const
+            const T operator[](size_t index) const
             {
                 assert(index < 3);
                 return *(&this->x_ + index);
@@ -40,8 +40,11 @@ namespace kpengine{
             Vector3 operator+(const Vector3& v) noexcept{return Vector3(x_ + v.x_, y_ + v.y_, z_ + v.z_);}
             Vector3 operator-(const Vector3& v) noexcept{return Vector3(x_ - v.x_, y_ - v.y_, z_ - v.z_);}
             Vector3 operator*(const Vector3& v) noexcept{return Vector3(x_ * v.x_, y_ * v.y_, z_ * v.z_);}
+            Vector3 operator+(T scalar) noexcept{return Vector3(x_ + scalar, y_ + scalar, z_ + scalar);}
+            Vector3 operator-(T scalar) noexcept{return Vector3(x_ - scalar, y_ - scalar, z_ - scalar);}
             Vector3 operator*(T scalar) noexcept{return Vector3(x_ *scalar, y_ * scalar, z_ * scalar);}
             Vector3 operator/(T scalar){
+                assert(scalar != T(0));
                 return Vector3(x_ / scalar, y_ / scalar, z_ / scalar);
             }
             Vector3 operator-(){return Vector3(-x_, -y_, -z_);}
@@ -113,7 +116,7 @@ namespace kpengine{
         template<typename T>
         Vector3<T>& Vector3<T>::operator/=(T scalar)
         {
-            assert(!kpengine::IsNearlyZero(scalar));
+            assert(scalar != T(0));
             x_ /= scalar;
             y_ /= scalar;
             z_ /= scalar;
@@ -150,10 +153,7 @@ namespace kpengine{
         template<typename T>
         Vector3<T>& Vector3<T>::operator/=(const Vector3& v)
         {
-            assert(
-             !kpengine::IsNearlyZero(v.x_) &&
-             !kpengine::IsNearlyZero(v.y_)  &&
-             !kpengine::IsNearlyZero(v.z_) );
+            assert(v.x_ != T(0) && v.y_ != T(0) && v.z_ != T(0));
             x_ /= v.x_;
             y_ /= v.y_;
             z_ /= v.z_;
@@ -169,10 +169,11 @@ namespace kpengine{
         template<typename T, typename U>
         Vector3<U> operator+(T scalar, const Vector3<U>& v)
         {
+            U scalar_u = static_cast<U>(scalar);
             return Vector3<U>(
-                v.x_ + static_cast<U>(scalar), 
-                v.y_ + static_cast<U>(scalar), 
-                v.z_ + static_cast<U>(scalar));
+                scalar_u + v.x_, 
+                scalar_u + v.y_, 
+                scalar_u + v.z_);
         }
 
         template<typename T>
@@ -184,10 +185,11 @@ namespace kpengine{
         template<typename T, typename U>
         Vector3<U> operator-(T scalar, const Vector3<U>& v)
         {
+            U scalar_u = static_cast<U>(scalar);
             return Vector3<U>(
-                static_cast<U>(scalar) - v.x_, 
-                static_cast<U>(scalar) - v.y_, 
-                static_cast<U>(scalar) - v.z_);
+                scalar_u - v.x_, 
+                scalar_u - v.y_, 
+                scalar_u - v.z_);
         }
 
 
@@ -200,10 +202,11 @@ namespace kpengine{
         template<typename T, typename U>
         Vector3<U> operator*(T scalar, const Vector3<U>& v)
         {
+            U scalar_u = static_cast<U>(scalar);
             return Vector3<U>(
-                v.x_ * static_cast<U>(scalar), 
-                v.y_ * static_cast<U>(scalar), 
-                v.z_ * static_cast<U>(scalar));
+                scalar_u * v.x_, 
+                scalar_u * v.y_, 
+                scalar_u * v.z_);
         }
 
         template<typename T>
@@ -226,7 +229,7 @@ namespace kpengine{
         void Vector3<T>::Normalize()
         {
             double length = Length();
-            if(kpengine::IsNearlyZero(length))
+            if(length == 0.)
             {
                 return;
             }

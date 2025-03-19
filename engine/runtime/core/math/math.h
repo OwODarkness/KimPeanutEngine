@@ -4,18 +4,38 @@
 #include <cmath>
 
 namespace kpengine{
-
-    template<typename T>
-    bool IsNearlyZero(T value, T tolerance = 1e-6)
+namespace math{
+    inline bool IsNearlyZero(float value, float tolerance = 1e-6)
     {
-        return std::abs(value) < tolerance;
+        return std::fabs(value) < tolerance;
     }
 
-    template bool IsNearlyZero<>(float, float);
-    template bool IsNearlyZero<>(double, double);
+    inline bool IsNearlyZero(double value, double tolerance = 1e-6)
+    {
+        return std::fabs(value) < tolerance;
+    }
 
+    inline bool IsNearlyEqual(float a, float b, float tolerance = 1e-6)
+    {
+        return std::fabs(a - b) < tolerance;
+    }
+
+    inline bool IsNearlyEqual(double a, double b, double tolerance = 1e-6)
+    {
+        return std::fabs(a - b) < tolerance;
+    }
+
+    inline double Lerp(double a, double b, double alpha)
+    {
+        return (1.f - alpha) * a + alpha * b;
+    }
+
+    inline float Lerp(float a, float b, float alpha)
+    {
+        return (1.f - alpha) * a + alpha * b;
+    }
 }
-
+}
 // #include <vector>
 // #include <Eigen/Core>
 // namespace kpengine

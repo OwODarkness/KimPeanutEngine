@@ -11,7 +11,7 @@ namespace kpengine{
         class Vector2{
         public:
             Vector2(): x_{}, y_{} {}
-            Vector2(T value): x_(value), y_(value) {}
+            explicit Vector2(T value): x_(value), y_(value) {}
             Vector2(T x, T y): x_(x), y_(y) {}
             explicit Vector2(const T arr[2]): x_(arr[0]), y_(arr[1]) {}
 
@@ -39,7 +39,10 @@ namespace kpengine{
             Vector2 operator+(const Vector2& v) noexcept { return Vector2(x_ + v.x_, y_ + v.y_); }
             Vector2 operator-(const Vector2& v) noexcept { return Vector2(x_ - v.x_, y_ - v.y_); }
             Vector2 operator*(const Vector2& v) noexcept { return Vector2(x_ * v.x_, y_ * v.y_); }
+            Vector2 operator+(T scalar) noexcept { return Vector2(x_ + scalar, y_ + scalar); }
+            Vector2 operator-(T scalar) noexcept { return Vector2(x_ - scalar, y_ - scalar); }
             Vector2 operator*(T scalar) noexcept { return Vector2(x_ * scalar, y_ * scalar); }
+
             Vector2 operator/(T scalar) {
                 return Vector2(x_ / scalar, y_ / scalar);
             }
@@ -107,7 +110,7 @@ namespace kpengine{
         template<typename T>
         Vector2<T>& Vector2<T>::operator/=(T scalar)
         {
-            assert(!kpengine::IsNearlyZero(scalar));
+            assert(scalar != T(0));
             x_ /= scalar;
             y_ /= scalar;
             return *this;
@@ -140,7 +143,7 @@ namespace kpengine{
         template<typename T>
         Vector2<T>& Vector2<T>::operator/=(const Vector2& v)
         {
-            assert(!kpengine::IsNearlyZero(v.x_) && !kpengine::IsNearlyZero(v.y_));
+            assert(v.x_ != T(0) && v.y_ != T(0));
             x_ /= v.x_;
             y_ /= v.y_;
             return *this;
@@ -156,7 +159,7 @@ namespace kpengine{
         void Vector2<T>::Normalize()
         {
             double length = Length();
-            if (kpengine::IsNearlyZero(length))
+            if (length == 0.)
             {
                 return;
             }
