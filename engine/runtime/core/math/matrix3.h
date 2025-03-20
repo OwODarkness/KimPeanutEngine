@@ -132,6 +132,8 @@ namespace kpengine{
             return res;
         }
 
+
+
         Matrix3 operator-(const Matrix3& mat) const
         {
             Matrix3 res;
@@ -140,6 +142,19 @@ namespace kpengine{
                 for(size_t j = 0;j< 3;j++)
                 {
                     res[i][j] = data_[i][j] - mat[i][j];
+                }
+            }
+            return res;
+        }
+
+        Matrix3 operator-() const
+        {
+            Matrix3 res;
+            for(size_t i = 0; i< 3;i++)
+            {
+                for(size_t j = 0;j< 3;j++)
+                {
+                    res[i][j] = -1 * data_[i][j];
                 }
             }
             return res;
@@ -183,13 +198,15 @@ namespace kpengine{
         template<typename U, typename V>
         friend Matrix3<V> operator*(U scalar, const Matrix3<V>& mat);
 
-        static Matrix3 Identity();
-        static Matrix3 Zero();
+
         Matrix3 Transpose() const;
         T Determinant() const;
         Matrix3 Adjoint() const;
         Matrix3 Inverse() const;        
-    public:
+
+        static Matrix3 Identity();
+        static Matrix3 Zero();
+    private:
         std::array<std::array<T, 3>, 3> data_;
     };
 
@@ -282,18 +299,19 @@ namespace kpengine{
     template<typename T>
     Matrix3<T> Matrix3<T>::Adjoint() const
     {
-        Matrix3 res;
-        res[0][0] = data_[1][1] * data_[2][2] - data_[1][2] * data_[2][1];
-        res[0][1] = data_[1][2] * data_[2][0] - data_[1][0] * data_[2][2];
-        res[0][2] = data_[1][0] * data_[2][1] - data_[1][1] * data_[2][0];
-        res[1][0] = data_[0][2] * data_[2][1] - data_[0][1] * data_[2][2];
-        res[1][1] = data_[0][0] * data_[2][2] - data_[0][2] * data_[2][0];
-        res[1][2] = data_[0][1] * data_[2][0] - data_[0][0] * data_[2][1];
-        res[2][0] = data_[0][1] * data_[1][2] - data_[0][2] * data_[1][1];
-        res[2][1] = data_[0][2] * data_[1][0] - data_[0][0] * data_[1][2];
-        res[2][2] = data_[0][0] * data_[1][1] - data_[0][1] * data_[1][0];
-
-        return res;
+        return Matrix3({
+            data_[1][1] * data_[2][2] - data_[1][2] * data_[2][1],
+            data_[0][2] * data_[2][1] - data_[0][1] * data_[2][2],
+            data_[0][1] * data_[1][2] - data_[0][2] * data_[1][1],
+          
+            data_[1][2] * data_[2][0] - data_[1][0] * data_[2][2],
+            data_[0][0] * data_[2][2] - data_[0][2] * data_[2][0],
+            data_[0][2] * data_[1][0] - data_[0][0] * data_[1][2],
+    
+            data_[1][0] * data_[2][1] - data_[1][1] * data_[2][0],
+            data_[0][1] * data_[2][0] - data_[0][0] * data_[2][1],
+            data_[0][0] * data_[1][1] - data_[0][1] * data_[1][0]
+        });
     }
 
     template<typename T>
@@ -302,7 +320,7 @@ namespace kpengine{
         T det = Determinant();
         if (det == T(0))
         {
-            throw(std::runtime_error);
+            throw std::runtime_error("determinant is zero");
         }
         return Adjoint() / det;
     }

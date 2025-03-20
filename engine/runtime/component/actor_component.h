@@ -1,10 +1,10 @@
-#ifndef KPENGINE_RUNTIME_COMPONENT_H
-#define KPENIGNE_RUNTIME_COMPONENT_H
+#ifndef KPENGINE_RUNTIME_ACTORCOMPONENT_H
+#define KPENIGNE_RUNTIME_ACTORCOMPONENT_H
 
 #include "object/object.h"
 
 namespace kpengine{
-    class Component : public Object{
+    class ActorComponent : public Object{
     public:
         virtual void TickComponent(float delta_time) = 0;
     };

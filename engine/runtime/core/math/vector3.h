@@ -59,10 +59,12 @@ namespace kpengine{
             Vector3& operator*=(const Vector3& v);
             Vector3& operator/=(const Vector3& v);
 
-            T DotProduct(const Vector3& v);
-            Vector3 CrossProduct(const Vector3& v);
+            T DotProduct(const Vector3& v) const;
+            Vector3 CrossProduct(const Vector3& v) const;
+            Vector3 Reflect(const Vector3& normal) const;
+            Vector3 GetSafetyNormalize() const;
             void Normalize();
-            
+            void SafetyNormalize();
             template<typename U>
             friend Vector3<U> operator+(U scalar, const Vector3<U>& v);
 
@@ -210,19 +212,25 @@ namespace kpengine{
         }
 
         template<typename T>
-        T Vector3<T>::DotProduct(const Vector3& v)
+        T Vector3<T>::DotProduct(const Vector3& v) const
         {
             return x_ * v.x_ + y_ * v.y_ + z_ * v.z_;
         }
 
         template<typename T>
-        Vector3<T> Vector3<T>::CrossProduct(const Vector3& v)
+        Vector3<T> Vector3<T>::CrossProduct(const Vector3& v) const
         {
             return Vector3(
                 y_ * v.z_ - z_ * v.y_,
                 z_ * v.x_ - x_ * v.z_,
                 x_ * v.y_ - y_ * v.x_
             );
+        }
+
+        template<typename T>
+        Vector3<T> Vector3<T>::Reflect(const Vector3& Normal) const
+        {
+            return this - (2 * this->DotProduct(Normal) * Normal);
         }
 
         template<typename T>
@@ -233,12 +241,39 @@ namespace kpengine{
             {
                 return;
             }
-
-            T coff = static_cast<T>(1. / length);
+            T coff = T(1.0/length);
             x_ *= coff;
             y_ *= coff;
             z_ *= coff;
         }
+
+        template<typename T>
+        void Vector3<T>::SafetyNormalize()
+        {
+            double length = Length();
+            if(length == 0.)
+            {
+                length += 1e-4;
+                return;
+            }
+            T coff = T(1.0/length);
+            x_ *= coff;
+            y_ *= coff;
+            z_ *= coff;
+        }
+
+        template<typename T>
+        Vector3<T> Vector3<T>::GetSafetyNormalize() const
+        {
+            double length = Length();
+            if(length == 0.)
+            {
+                length += 1e-4;
+            }
+            T coff = T(1.0/length);
+            return Vector3f(coff * x_, coff * y_, coff * z_);
+        }
+        
 
     }
 }

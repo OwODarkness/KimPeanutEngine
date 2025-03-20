@@ -43,7 +43,7 @@ TEST(Matrix3SubTest, SubtractScalarFromMatrix)
         float scalar = 2.f;
         kpengine::Matrix3f expect{-1.f, 0.f, 1.f, 2.f, 3.f, 4.f, 5.f, 6.f, 7.f};
         EXPECT_EQ(mat - scalar, expect);
-        EXPECT_EQ(scalar - mat, -1.f * expect);
+        EXPECT_EQ(scalar - mat, -expect);
 
     }
     
@@ -52,7 +52,7 @@ TEST(Matrix3SubTest, SubtractScalarFromMatrix)
         float scalar = -1.f;
         kpengine::Matrix3f expect{2.f, 3.f, 4.f, 5.f, 6.f, 7.f, 8.f, 9.f, 10.f};
         EXPECT_EQ(mat - scalar, expect);
-        EXPECT_EQ(scalar - mat, -1.f * expect);
+        EXPECT_EQ(scalar - mat, -expect);
 
     }
     
@@ -61,7 +61,7 @@ TEST(Matrix3SubTest, SubtractScalarFromMatrix)
         float scalar = 0.f;
         kpengine::Matrix3f expect = mat;
         EXPECT_EQ(mat - scalar, expect);
-        EXPECT_EQ(scalar - mat, -1.f * expect);
+        EXPECT_EQ(scalar - mat, -expect);
 
     }
 }

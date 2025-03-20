@@ -54,7 +54,7 @@ add_executable(KPT_Vector4DivisionTest
     ${vector4_test_dir}/vector4f_division_test.cpp 
 )
 
-# Matrix Operation
+# Matrix3 Operation
 set(mat3_test_dir ${CMAKE_SOURCE_DIR}/engine/runtime/test/matrix3f_test)
 
 add_executable(KPT_Matrix3AddTest
@@ -66,9 +66,27 @@ add_executable(KPT_Matrix3MultiplyTest
 add_executable(KPT_Matrix3SubtractTest
     ${mat3_test_dir}/matrix3f_subtract_test.cpp
 )
+add_executable(KPT_Matrix3FunctionTest
+    ${mat3_test_dir}/matrix3f_function_test.cpp
+)
 
 set(gtestlib ${CMAKE_SOURCE_DIR}/third_party/googletest/lib/gtest.lib)
 set(gtestmainlib ${CMAKE_SOURCE_DIR}/third_party/googletest/lib/gtest_main.lib)
+
+# Matrix4 Operation
+set(mat4_test_dir ${CMAKE_SOURCE_DIR}/engine/runtime/test/matrix4f_test)
+
+add_executable(KPT_Matrix4AddTest
+    ${mat4_test_dir}/matrix4f_add_test.cpp
+)
+
+add_executable(KPT_Matrix4SubtractTest
+    ${mat4_test_dir}/matrix4f_subtract_test.cpp
+)
+
+add_executable(KPT_Matrix4MultiplyTest
+    ${mat4_test_dir}/matrix4f_multiply_test.cpp
+)
 
 foreach(test_target IN ITEMS 
     KPT_Vector2AddTest
@@ -89,6 +107,11 @@ foreach(test_target IN ITEMS
     KPT_Matrix3AddTest
     KPT_Matrix3MultiplyTest
     KPT_Matrix3SubtractTest
+    KPT_Matrix3FunctionTest
+
+    KPT_Matrix4AddTest
+    KPT_Matrix4SubtractTest
+    KPT_Matrix4MultiplyTest
     )
 
     target_link_libraries(${test_target}
@@ -121,3 +144,9 @@ add_test(NAME KPT_Vector4DivisionTest COMMAND KPT_Vector4DivisionTest)
 add_test(NAME KPT_Matrix3AddTest COMMAND KPT_Matrix3AddTest)
 add_test(NAME KPT_Matrix3MultiplyTest COMMAND KPT_Matrix3MultiplyTest)
 add_test(NAME KPT_Matrix3SubtractTest COMMAND KPT_Matrix3SubtractTest)
+add_test(NAME KPT_Matrix3FunctionTest COMMAND KPT_Matrix3FunctionTest)
+
+add_test(NAME KPT_Matrix4AddTest COMMAND KPT_Matrix4AddTest)
+add_test(NAME KPT_Matrix4SubtractTest COMMAND KPT_Matrix4SubtractTest)
+add_test(NAME KPT_Matrix4MultiplyTest COMMAND KPT_Matrix4MultiplyTest)
+

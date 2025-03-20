@@ -6,7 +6,7 @@
 #include "vector3.h"
 #include "vector4.h"
 #include "matrix3.h"
-
+#include "matrix4.h"
 namespace kpengine{
     using Vector2f = math::Vector2<float>;
     using Vector2d = math::Vector2<double>;
@@ -16,6 +16,8 @@ namespace kpengine{
     using Vector4d = math::Vector4<double>;
     using Matrix3f = math::Matrix3<float>;
     using Matrix3d = math::Matrix3<double>;
+    using Matrix4f = math::Matrix4<float>;
+    using Matrix4d = math::Matrix4<double>;
 }
 
 #endif
