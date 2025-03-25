@@ -43,7 +43,7 @@ namespace kpengine
 
         public:
             static Logger *GetLogger();
-
+            void ExtractTipColorFromLogLevel(float (&color)[4],  LogLevel level);
             template <typename... Args>
             void Log(std::string_view log_name, LogLevel level, const std::string &msg, Args &&...args)
             {
@@ -64,17 +64,14 @@ namespace kpengine
                     ss<<std::put_time(&local_time, "%Y-%m-%d %H:%M:%S");
                     std::string s = "[" + ss.str() + "] " + std::string(log_name) + ": " +
                      "[" + std::string(magic_enum::enum_name(level)) +"] " + message;
-                    runtime::global_runtime_context.log_system_->AddLog(s);
-
-                    // std::cout 
-                    //           << "[" << std::put_time(&local_time, "%Y-%m-%d %H:%M:%S") << "] "
-                    //           << log_name << ": "
-                    //           << "[" << magic_enum::enum_name(level) << "] ";
-                    // std::printf(msg.c_str(), std::forward<Args>(args)...) ;
-                    // std::cout << std::endl;
+                    float msg_color[4];
+                    ExtractTipColorFromLogLevel(msg_color, level);
+                    runtime::global_runtime_context.log_system_->AddLog(s, msg_color);
+#ifdef KPENGINE_DEBUG
+                    std::cout << s <<  std::endl;
+#endif
                 }
             }
-
         private:
             static Logger *log_single_instance_;
             static std::mutex log_mutex;

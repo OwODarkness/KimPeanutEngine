@@ -18,7 +18,7 @@ namespace kpengine{
 
             void AddComponent(EditorUIComponent* component);
 
-        private:    
+        protected:    
             std::string title_;
             std::vector<EditorUIComponent*> components_;
             bool is_open_ = true;

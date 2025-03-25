@@ -14,24 +14,24 @@ namespace kpengine
     glm::vec3 RenderCamera::up_{0.f, 1.f, 0.f};
     void RenderCamera::MoveForward(float delta)
     {
-        position_ += direction_ * delta * move_speed_;
+        position_ += direction_ * delta * move_speed_ * move_coff_;
         // std::cout << "(" << position_.x << " ," << position_.y << " ," << position_.z << ")" << std::endl;
     }
 
     void RenderCamera::MoveRight(float delta)
     {
-        position_ += GetCameraRight() * delta * move_speed_;
+        position_ += GetCameraRight() * delta * move_speed_ * move_coff_;
     }
 
     void RenderCamera::MoveUp(float delta)
     {
-        position_ += up_ * delta * move_speed_;
+        position_ += up_ * delta * move_speed_ * move_coff_;
     }
 
     void RenderCamera::Rotate(const glm::vec2 &delta)
     {
-        float delta_pitch = delta.x * rotate_speed_;
-        float delta_yaw = delta.y * rotate_speed_;
+        float delta_pitch = delta.x * rotate_speed_ * rotate_coff_;
+        float delta_yaw = delta.y * rotate_speed_ * rotate_coff_;
 
         yaw_ += delta_yaw;
         pitch_ = std::clamp(delta_pitch + pitch_, pitch_min_, pitch_max_);
@@ -59,11 +59,11 @@ namespace kpengine
             const int kwidth = runtime::global_runtime_context.window_system_->width_;
             const int kheight = runtime::global_runtime_context.window_system_->height_;
             aspect_ = (float)(kwidth / kheight);
-            return glm::perspective(glm::radians(fov_), aspect_, z_near, z_far);
+            return glm::perspective(glm::radians(fov_), aspect_, z_near_, z_far_);
         }
         else
         {
-            return glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, z_near, z_far);
+            return glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, z_near_, z_far_);
         }
     }
 }

@@ -10,9 +10,11 @@
 #include "editor/include/editor_ui_component/editor_button_component.h"
 #include "editor/include/editor_ui_component/editor_menubar_component.h"
 #include "editor/include/editor_ui_component/editor_window_component.h"
-#include "editor/include/editor_ui_component/eidtor_plot_component.h"
+#include "editor/include/editor_ui_component/editor_plot_component.h"
 #include "editor/include/editor_global_context.h"
 #include "editor/include/editor_ui_component/editor_container_component.h"
+#include "editor/include/editor_ui_component/editor_camera_component.h"
+#include "runtime/core/system/render_system.h"
 #include "runtime/engine.h"
 
 
@@ -71,6 +73,9 @@ namespace kpengine
             menus.push_back({"Tools"});
             components_.push_back(new EditorMainMenuBarComponent(menus));
 
+            //Camera
+            EditorWindowComponent* camera_ui = new EditorCameraControlComponent(kpengine::editor::global_editor_context.render_system_->GetRenderCamera());
+            components_.push_back(camera_ui);
         }
 
         void EditorUI::Close()

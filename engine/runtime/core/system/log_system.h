@@ -4,16 +4,25 @@
 #include <string>
 #include <vector>
 
+struct LogInfo {
+    LogInfo(const float in_color[4], const std::string& in_log_text) {
+        std::copy(in_color, in_color + 4, color);
+        log_text = in_log_text;
+    }
+    float color[4];
+    std::string log_text;
+};
 
+namespace kpengine {
 
-namespace kpengine{
-
-    class LogSystem{
+    class LogSystem {
     public:
-        void AddLog(std::string msg);
-        const std::vector<std::string>& GetLogs() const{return logs;}
+        void AddLog(const std::string& msg, const float msg_color[4]);
+        
+        inline const std::vector<LogInfo>& GetLogs() const { return logs_; }
+        
     private:
-        std::vector<std::string> logs;
+        std::vector<LogInfo> logs_;
     };
 }
 

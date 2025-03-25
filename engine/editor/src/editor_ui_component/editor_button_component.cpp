@@ -29,7 +29,7 @@ namespace kpengine
             ImGui::PopStyleColor(sizeof(ButtonStyle) / sizeof(ImVec4));
             if(ImGui::IsItemClicked())
             {
-                click_callback_();
+                on_click_notify_.ExecuteIfBound();
             }
         }
 

@@ -1,4 +1,4 @@
-#include "eidtor_plot_component.h"
+#include "editor_plot_component.h"
 
 namespace kpengine
 {

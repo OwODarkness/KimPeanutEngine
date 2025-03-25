@@ -12,8 +12,8 @@ namespace kpengine{
         RenderSystem() = default;
         void Initialize();
         void Tick(float DeltaTime);
-        std::shared_ptr<RenderScene> GetRenderScene() const{return render_scene_;}
-        std::shared_ptr<RenderCamera> GetRenderCamera() const{return render_camera_;}
+        RenderScene* GetRenderScene() {return render_scene_.get();}
+        RenderCamera* GetRenderCamera() {return render_camera_.get();}
     private:
         std::shared_ptr<RenderScene> render_scene_;
         std::shared_ptr<RenderCamera> render_camera_;

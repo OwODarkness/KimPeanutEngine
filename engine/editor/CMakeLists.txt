@@ -7,4 +7,6 @@ add_library(EditorLib STATIC ${EDITOR_SRC}  ${EDITOR_UICOMPONENT_SRC})
 
 target_include_directories(EditorLib PUBLIC
 "${CMAKE_CURRENT_SOURCE_DIR}/include"
-"${CMAKE_CURRENT_SOURCE_DIR}/include/editor_ui_component")
+"${CMAKE_CURRENT_SOURCE_DIR}/include/editor_ui_component"
+"${CMAKE_SOURCE_DIR}/engine/runtime"
+)

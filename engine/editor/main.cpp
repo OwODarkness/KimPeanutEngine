@@ -2,6 +2,10 @@
 #include "editor/include/editor.h"
 #include "runtime/engine.h"
 
+#include "runtime/core/system/delegate.h"
+#include <iostream>
+DECLARE_DELEGATE(FOnNotify)
+
 
 int main(int argc, char** argv)
 {
@@ -17,5 +21,5 @@ int main(int argc, char** argv)
     editor->Run();
     editor->Clear();
 
-    return 0;
+
 }
