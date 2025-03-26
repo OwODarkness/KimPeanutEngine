@@ -1,7 +1,7 @@
 #include "render_scene.h"
 
 #include <iostream>
-
+#include <cassert>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <glm/gtc/type_ptr.hpp>
@@ -23,6 +23,8 @@ namespace kpengine
 
     void RenderScene::Initialize(std::shared_ptr<RenderCamera> camera)
     {
+
+        assert(camera);
         scene_ = std::make_shared<FrameBuffer>(1280, 720);
         scene_->Initialize();
 
@@ -197,4 +199,5 @@ namespace kpengine
         shader->SetVec3("directional_light.diffuse", glm::value_ptr(directional_light_.diffuse));
         shader->SetVec3("directional_light.specular", glm::value_ptr(directional_light_.specular));
     }
+
 }

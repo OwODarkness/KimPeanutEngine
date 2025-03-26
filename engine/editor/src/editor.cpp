@@ -29,8 +29,8 @@ namespace kpengine
 
         void Editor::Initialize(kpengine::runtime::Engine* engine)
         {
+            assert(engine);
             engine_ = engine;
-
              editor::EditorContextInitInfo global_editor_context_init_info{
                 runtime::global_runtime_context.window_system_.get(),
                 runtime::global_runtime_context.render_system_.get(),
@@ -61,8 +61,6 @@ namespace kpengine
                 global_editor_context.editor_log_manager_->Tick();
                 editor_ui->Render();
                 editor_ui->EndDraw();
-
-
             }
             
         }

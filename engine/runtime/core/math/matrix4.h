@@ -8,6 +8,7 @@
 #include "runtime/core/math/math.h"
 #include "runtime/core/math/vector4.h"
 #include "runtime/core/math/matrix3.h"
+#include "runtime/core/math/rotator.h"
 namespace kpengine
 {
     namespace math
@@ -208,28 +209,14 @@ namespace kpengine
             Matrix4 Inverse() const;
             static Matrix4 Identity();
             static Matrix4 Zero();
+            static Matrix4 MakeRotationMatrix(const Rotator<T>& rotator);
 
         private:
             std::array<std::array<T, 4>, 4> data_;
         };
-        template<typename T>
-        Matrix4<T>  Matrix4<T>::Identity()
-        {
-            return Matrix4{
-                T(1), 0, 0, 0,
-                0, T(1), 0, 0,
-                0, 0, T(1), 0,
-                0, 0, 0, T(1)};
-        }
-        template<typename T>
-         Matrix4<T> Matrix4<T>::Zero()
-        {
-            return Matrix4{
-                0, 0, 0, 0,
-                0, 0, 0, 0,
-                0, 0, 0, 0,
-                0, 0, 0, 0};
-        }
+
+
+        
 
         template<typename T, typename U>
         Matrix4<U> operator+(T scalar, const Matrix4<U>& mat)
@@ -384,6 +371,41 @@ namespace kpengine
             }
             T coff = 1.f / det;
             return coff * Adjoint();
+        }
+
+
+        template<typename T>
+        Matrix4<T>  Matrix4<T>::Identity()
+        {
+            return Matrix4{
+                T(1), 0, 0, 0,
+                0, T(1), 0, 0,
+                0, 0, T(1), 0,
+                0, 0, 0, T(1)};
+        }
+        template<typename T>
+         Matrix4<T> Matrix4<T>::Zero()
+        {
+            return Matrix4{
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0,
+                0, 0, 0, 0};
+        }
+
+        template<typename T>
+        Matrix4<T> Matrix4<T>::MakeRotationMatrix(const Rotator<T>& rotator)
+        {
+            Matrix4 mat_roll = Matrix4::Identity();
+            T roll_radian = DegreeToRadian(rotator.roll_);
+            T cos_roll = std::cos(roll_radian);
+            T sin_roll = std::sin(roll_radian);
+            mat_roll[0][0] = cos_roll;
+            mat_roll[0][1] = sin_roll;
+            mat_roll[1][0] = -sin_roll;
+            mat_roll[1][1] = cos_roll;
+            //TODO pitch、yaw
+            return mat_roll;
         }
     }
 } // namespace kpengine::math

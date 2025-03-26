@@ -66,10 +66,11 @@ uniform vec3 ambient;
 uniform Material material;
 uniform vec3 view_position;
 
+//shadow map
 uniform sampler2D shadow_map;
 uniform samplerCube point_shadow_map;
-uniform float far_plane;
 
+uniform float far_plane;
 uniform bool normal_texture_enabled;
 
 float CalculateShadowValue(vec4 light_space)
@@ -82,7 +83,7 @@ float CalculateShadowValue(vec4 light_space)
     }
     float current_depth = proj_coords.z;
 
-        vec3 normal = out_normal;
+    vec3 normal = out_normal;
     if(normal_texture_enabled)
     {
         normal = texture(material.normal_texture, out_texcoord).rgb;

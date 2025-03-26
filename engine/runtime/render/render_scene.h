@@ -17,12 +17,8 @@ namespace kpengine{
     class RenderScene{
     public:
         RenderScene() = default;
-
         void Initialize(std::shared_ptr<RenderCamera> camera);
-
-
         void Render(float delta_time);
-
     private:
         void ConfigurePointLightInfo(std::shared_ptr<RenderShader> shader);
         void ConfigureSpotLightInfo(std::shared_ptr<RenderShader> shader);

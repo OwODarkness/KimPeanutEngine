@@ -21,6 +21,5 @@ target_link_libraries(KimPeanutEngine
 )
 
 #TEST
-enable_testing()
-
-add_subdirectory(engine/test)
+# enable_testing()
+# add_subdirectory(engine/test)

@@ -137,13 +137,13 @@ namespace kpengine
             // location
             GLsizei vec4Size = sizeof(glm::vec4);
             glEnableVertexAttribArray(3);
-            glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void *)0);
+            glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (const void*)0);
             glEnableVertexAttribArray(4);
-            glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void *)(vec4Size));
+            glVertexAttribPointer(4, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (const void*)(vec4Size));
             glEnableVertexAttribArray(5);
-            glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void *)(2 * vec4Size));
+            glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (const void*)(2 * vec4Size));
             glEnableVertexAttribArray(6);
-            glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (void *)(3 * vec4Size));
+            glVertexAttribPointer(6, 4, GL_FLOAT, GL_FALSE, 4 * vec4Size, (const void*)(3 * vec4Size));
 
             glVertexAttribDivisor(3, 1);
             glVertexAttribDivisor(4, 1);
@@ -160,7 +160,7 @@ namespace kpengine
         for (std::shared_ptr<RenderMesh> &mesh : meshes_)
         {
             glBindVertexArray(mesh->vao_);
-            glDrawElementsInstanced(GL_TRIANGLES, (GLsizei)mesh->indices_.size(), GL_UNSIGNED_INT, 0, transformations_.size());
+            glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(mesh->indices_.size()), GL_UNSIGNED_INT, 0, static_cast<GLsizei>(transformations_.size()));
             glBindVertexArray(0);
             // mesh->Draw();
         }

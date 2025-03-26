@@ -53,4 +53,4 @@ namespace kpengine{
     };
 }
 
-#endif
+#endif //KPENGINE_RUNTIME_SHADOW_MAKER_H
