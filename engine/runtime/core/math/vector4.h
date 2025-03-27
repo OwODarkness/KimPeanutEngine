@@ -32,7 +32,7 @@ namespace kpengine {
             const T* Data() const { return &x_; }
 
             inline double SquareLength() const { return x_ * x_ + y_ * y_ + z_ * z_ + w_ * w_; }
-            double Length() const { return std::sqrt(SquareLength()); }
+            double Norm() const { return std::sqrt(SquareLength()); }
 
             bool operator==(const Vector4& v) const { return x_ == v.x_ && y_ == v.y_ && z_ == v.z_ && w_ == v.w_; }
             bool operator!=(const Vector4& v) const { return !(*this == v); }
@@ -48,7 +48,7 @@ namespace kpengine {
                 assert(scalar != T(0));
                 return Vector4(x_ / scalar, y_ / scalar, z_ / scalar, w_ / scalar);
             }
-            Vector4 operator-() { return Vector4(-x_, -y_, -z_, -w_); }
+            Vector4 operator-() const { return Vector4(-x_, -y_, -z_, -w_); }
 
             Vector4& operator+=(const Vector4& v);
             Vector4& operator-=(const Vector4& v);
@@ -59,6 +59,8 @@ namespace kpengine {
 
             T DotProduct(const Vector4& v);
             void Normalize();
+
+            Vector3<T> MakeVector3() const;
 
             template<typename U>
             friend Vector4<U> operator+(U scalar, const Vector4<U>& v);
@@ -128,7 +130,7 @@ namespace kpengine {
 
         template<typename T>
         void Vector4<T>::Normalize() {
-            double length = Length();
+            double length = Norm();
             if (length == 0.) 
             {
                 return;
@@ -136,6 +138,13 @@ namespace kpengine {
             T coeff = static_cast<T>(1.0 / length);
             x_ *= coeff; y_ *= coeff; z_ *= coeff; w_ *= coeff;
         }
+
+        template<typename T>
+        Vector3<T>  Vector4<T>::MakeVector3() const
+        {
+            return Vector3<T>(x_, y_, z_);
+        }
+
 
         template<typename T>
         Vector4<T> operator+(T scalar, const Vector4<T>& v)

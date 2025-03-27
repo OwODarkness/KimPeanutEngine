@@ -1,16 +1,22 @@
 #ifndef KPENGINE_RUNTIME_MATH_TRANSFORM_H
 #define KPENGINE_RUNTIME_MATH_TRANSFORM_H
 
-#include "math_header.h"
+#include "runtime/core/math/vector3.h"
+#include "runtime/core/math/rotator.h"
 namespace kpengine{
     //TODO position scale rotation
-    
+namespace math{
+        
+    template<typename T>
     class Transform{
     public:
-        Vector3f position;
-        Rotatorf rotator;
-        Vector3f scale;
+        Transform() = default;
+        Transform(const Vector3<T>& position, const Rotator<T>& rotator, const Vector3<T>& scale):position_(position), rotator_(rotator), scale_(scale){}
+        Vector3<T> position_;
+        Rotator<T> rotator_;
+        Vector3<T> scale_;
     };
+}
 }
 
 #endif //KPENGINE_RUNTIME_MATH_TRANSFORM_H

@@ -9,6 +9,7 @@
 #include "runtime/core/math/vector4.h"
 #include "runtime/core/math/matrix3.h"
 #include "runtime/core/math/rotator.h"
+#include "runtime/core/math/transform.h"
 namespace kpengine
 {
     namespace math
@@ -210,7 +211,14 @@ namespace kpengine
             static Matrix4 Identity();
             static Matrix4 Zero();
             static Matrix4 MakeRotationMatrix(const Rotator<T>& rotator);
-
+            static Matrix4 MakeScaleMatrix(const Vector3<T>& scale);
+            static Matrix4 MakeTranslationMatrix(const Vector3<T>& translate);
+            static Matrix4 MakeTransformMatrix(const Transform<T>& transform);
+            static Matrix4 MakeCameraMatrix(const Vector3<T>& eye_pos, const Vector3<T>& gaze_dir, const Vector3<T>& up);
+            //Orthographic Projection
+            static Matrix4 MakeOrthProjMatrix(T left, T right, T bottom, T top, T near, T far);
+            //Perspective Projection
+            static Matrix4 MakePerProjMatrix(T fov, T aspect, T near, T far);
         private:
             std::array<std::array<T, 4>, 4> data_;
         };
@@ -392,20 +400,125 @@ namespace kpengine
                 0, 0, 0, 0,
                 0, 0, 0, 0};
         }
-
+        //TODO: Gimbal Lock
         template<typename T>
         Matrix4<T> Matrix4<T>::MakeRotationMatrix(const Rotator<T>& rotator)
         {
+            //roll
             Matrix4 mat_roll = Matrix4::Identity();
             T roll_radian = DegreeToRadian(rotator.roll_);
             T cos_roll = std::cos(roll_radian);
             T sin_roll = std::sin(roll_radian);
             mat_roll[0][0] = cos_roll;
-            mat_roll[0][1] = sin_roll;
-            mat_roll[1][0] = -sin_roll;
+            mat_roll[0][1] = -sin_roll;
+            mat_roll[1][0] = sin_roll;
             mat_roll[1][1] = cos_roll;
+            
             //TODO pitch、yaw
-            return mat_roll;
+            Matrix4 mat_pitch = Matrix4::Identity();
+            T pitch_radian = DegreeToRadian(rotator.pitch_);
+            T cos_pitch = std::cos(pitch_radian);
+            T sin_pitch = std::sin(pitch_radian);
+            mat_pitch[1][1] = cos_pitch;
+            mat_pitch[1][2] = -sin_pitch;
+            mat_pitch[2][1] = sin_pitch;
+            mat_pitch[2][2] = cos_pitch;
+
+            Matrix4 mat_yaw = Matrix4::Identity();
+            T yaw_radian = DegreeToRadian(rotator.yaw_);
+            T cos_yaw = std::cos(yaw_radian);
+            T sin_yaw = std::sin(yaw_radian);
+            mat_yaw[0][0] = cos_yaw;
+            mat_yaw[0][2] = sin_yaw;
+            mat_yaw[2][0] = -sin_yaw;
+            mat_yaw[2][2] = cos_yaw;
+            return mat_roll * mat_pitch * mat_yaw;
+        }
+
+        template<typename T>
+        Matrix4<T> Matrix4<T>::MakeScaleMatrix(const Vector3<T>& scale)
+        {
+            Matrix4 res = Matrix4::Identity();
+            res[0][0] = scale[0];
+            res[1][1] = scale[1];
+            res[2][2] = scale[2];
+            return res;
+        }
+
+        template<typename T>
+        Matrix4<T> Matrix4<T>::MakeTranslationMatrix(const Vector3<T>& translate)
+        {
+            Matrix4 res = Matrix4::Identity();
+            res[0][3] = translate[0];
+            res[1][3] = translate[1];
+            res[2][3] = translate[2];
+            return res;
+        }
+
+        template<typename T>
+        Matrix4<T> Matrix4<T>::MakeTransformMatrix(const Transform<T>& transfrom)
+        {
+            return 
+                MakeRotationMatrix(transfrom.rotator_) * 
+                MakeTranslationMatrix(transfrom.position_) * 
+                MakeScaleMatrix(transfrom.scale_);
+        }
+        template<typename T>
+        Matrix4<T> Matrix4<T>::MakeCameraMatrix(const Vector3<T>& eye_pos, const Vector3<T>& gaze_dir, const Vector3<T>& up)
+        {
+            Vector3<T> w = -(gaze_dir) / (T)gaze_dir.Norm();
+            Vector3<T> tmp = up.CrossProduct(w);
+            Vector3<T> u = tmp / (T)tmp.Norm();
+            Vector3<T> v = w.CrossProduct(u);
+
+            Matrix4 res = Matrix4::Identity();
+            res[0][0] = u[0];
+            res[0][1] = u[1];
+            res[0][2] = u[2];
+            res[0][3] = - u.DotProduct(eye_pos);
+
+            res[1][0] = v[0];
+            res[1][1] = v[1];
+            res[1][2] = v[2];
+            res[1][3] = - v.DotProduct(eye_pos);
+
+            res[2][0] = w[0];
+            res[2][1] = w[1];
+            res[2][2] = w[2];
+            res[2][3] = w.DotProduct(eye_pos);
+
+            return res;
+        }
+
+        template<typename T>
+        Matrix4<T> Matrix4<T>::MakeOrthProjMatrix(T left, T right, T bottom, T top, T near, T far)
+        {
+            Matrix4 res = Matrix4::Identity();
+            res[0][0] = T(2)/ ( right - left);
+            res[0][3] = (left+right)/(left-right);
+            res[1][1] = T(2)/ (top - bottom);
+            res[1][3] = (bottom+top)/(bottom-top);
+            res[2][2] = T(2)/ (near - far);
+            res[2][3] = (far + near)/(far - near);
+            return res;
+        }
+        template<typename T>
+        Matrix4<T> Matrix4<T>::MakePerProjMatrix(T fov, T aspect, T near, T far)
+        {
+            Matrix4 res = Matrix4::Zero();
+            T half_radian = T(kpengine::math::DegreeToRadian(0.5 * fov));
+            T top = std::tan(half_radian) * near;
+            T bottom = - top;
+            T right = aspect * top;
+            T left = - right;
+            res[0][0] = 2 * near / (right - left);
+            res[0][2] = (left + right) / (left - right);
+            res[1][1] = 2 * near / (top - bottom);
+            res[1][2] = (bottom + top) / (bottom - top);
+            res[2][2] = (far + near)/(near - far);
+            res[2][3] = 2 * far * near / (near - far);
+            res[3][2] = -1;
+            return res;
         }
     }
 } // namespace kpengine::math

@@ -8,6 +8,7 @@
 #include "matrix3.h"
 #include "matrix4.h"
 #include "rotator.h"
+#include "transform.h"
 
 namespace kpengine{
     using Vector2f = math::Vector2<float>;
@@ -22,6 +23,8 @@ namespace kpengine{
     using Matrix4d = math::Matrix4<double>;
     using Rotator3f = math::Rotator<float>;
     using Rotator3d = math::Rotator<double>;
+    using Transform3f = math::Transform<float>;
+    using Transform3d = math::Transform<double>;
 }
 
 #endif

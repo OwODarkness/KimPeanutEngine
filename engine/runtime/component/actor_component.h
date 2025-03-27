@@ -1,7 +1,8 @@
 #ifndef KPENGINE_RUNTIME_ACTOR_COMPONENT_H
 #define KPENIGNE_RUNTIME_ACTOR_COMPONENT_H
 
-#include "object/object.h"
+#include "runtime/object/object.h"
+
 
 namespace kpengine{
     class ActorComponent : public Object{

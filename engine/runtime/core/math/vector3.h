@@ -32,22 +32,22 @@ namespace kpengine{
             const T* Data() const{return &x_;}
 
             inline double SquareLength() const{return x_ * x_ + y_ * y_ + z_ * z_;}
-            double Length() const {return std::sqrt(SquareLength());}
+            double Norm() const {return std::sqrt(SquareLength());}
 
             bool operator==(const Vector3& v) const {return x_ == v.x_ && y_ == v.y_ && z_ == v.z_;}
             bool operator!=(const Vector3& v) const {return x_ != v.x_ || y_ != v.y_ || z_ != v.z_;}
             
-            Vector3 operator+(const Vector3& v) noexcept{return Vector3(x_ + v.x_, y_ + v.y_, z_ + v.z_);}
-            Vector3 operator-(const Vector3& v) noexcept{return Vector3(x_ - v.x_, y_ - v.y_, z_ - v.z_);}
-            Vector3 operator*(const Vector3& v) noexcept{return Vector3(x_ * v.x_, y_ * v.y_, z_ * v.z_);}
-            Vector3 operator+(T scalar) noexcept{return Vector3(x_ + scalar, y_ + scalar, z_ + scalar);}
-            Vector3 operator-(T scalar) noexcept{return Vector3(x_ - scalar, y_ - scalar, z_ - scalar);}
-            Vector3 operator*(T scalar) noexcept{return Vector3(x_ *scalar, y_ * scalar, z_ * scalar);}
-            Vector3 operator/(T scalar){
+            Vector3 operator+(const Vector3& v) const noexcept{return Vector3(x_ + v.x_, y_ + v.y_, z_ + v.z_);}
+            Vector3 operator-(const Vector3& v) const noexcept{return Vector3(x_ - v.x_, y_ - v.y_, z_ - v.z_);}
+            Vector3 operator*(const Vector3& v) const noexcept{return Vector3(x_ * v.x_, y_ * v.y_, z_ * v.z_);}
+            Vector3 operator+(T scalar) const noexcept{return Vector3(x_ + scalar, y_ + scalar, z_ + scalar);}
+            Vector3 operator-(T scalar) const noexcept{return Vector3(x_ - scalar, y_ - scalar, z_ - scalar);}
+            Vector3 operator*(T scalar) const noexcept{return Vector3(x_ *scalar, y_ * scalar, z_ * scalar);}
+            Vector3 operator/(T scalar) const{
                 assert(scalar != T(0));
                 return Vector3(x_ / scalar, y_ / scalar, z_ / scalar);
             }
-            Vector3 operator-(){return Vector3(-x_, -y_, -z_);}
+            Vector3 operator-() const{return Vector3(-x_, -y_, -z_);}
 
             Vector3& operator+=(T scalar);
             Vector3& operator-=(T scalar);
@@ -171,7 +171,7 @@ namespace kpengine{
         template<typename T, typename U>
         Vector3<U> operator+(T scalar, const Vector3<U>& v)
         {
-            U scalar_u = static_cast<U>(scalar);
+            U scalar_u = U(scalar);
             return Vector3<U>(
                 scalar_u + v.x_, 
                 scalar_u + v.y_, 
@@ -204,7 +204,7 @@ namespace kpengine{
         template<typename T, typename U>
         Vector3<U> operator*(T scalar, const Vector3<U>& v)
         {
-            U scalar_u = static_cast<U>(scalar);
+            U scalar_u = U(scalar);
             return Vector3<U>(
                 scalar_u * v.x_, 
                 scalar_u * v.y_, 
@@ -236,7 +236,7 @@ namespace kpengine{
         template<typename T>
         void Vector3<T>::Normalize()
         {
-            double length = Length();
+            double length = Norm();
             if(length == 0.)
             {
                 return;
@@ -250,7 +250,7 @@ namespace kpengine{
         template<typename T>
         void Vector3<T>::SafetyNormalize()
         {
-            double length = Length();
+            double length = Norm();
             if(length == 0.)
             {
                 length += 1e-4;
@@ -265,7 +265,7 @@ namespace kpengine{
         template<typename T>
         Vector3<T> Vector3<T>::GetSafetyNormalize() const
         {
-            double length = Length();
+            double length = Norm();
             if(length == 0.)
             {
                 length += 1e-4;

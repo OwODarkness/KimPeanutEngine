@@ -31,22 +31,22 @@ namespace kpengine{
             const T* Data() const { return &x_; }
 
             inline double SquareLength() const { return x_ * x_ + y_ * y_; }
-            double Length() const { return std::sqrt(SquareLength()); }
+            double Norm() const { return std::sqrt(SquareLength()); }
 
             bool operator==(const Vector2& v) const { return x_ == v.x_ && y_ == v.y_; }
             bool operator!=(const Vector2& v) const { return x_ != v.x_ || y_ != v.y_; }
             
-            Vector2 operator+(const Vector2& v) noexcept { return Vector2(x_ + v.x_, y_ + v.y_); }
-            Vector2 operator-(const Vector2& v) noexcept { return Vector2(x_ - v.x_, y_ - v.y_); }
-            Vector2 operator*(const Vector2& v) noexcept { return Vector2(x_ * v.x_, y_ * v.y_); }
-            Vector2 operator+(T scalar) noexcept { return Vector2(x_ + scalar, y_ + scalar); }
-            Vector2 operator-(T scalar) noexcept { return Vector2(x_ - scalar, y_ - scalar); }
-            Vector2 operator*(T scalar) noexcept { return Vector2(x_ * scalar, y_ * scalar); }
+            Vector2 operator+(const Vector2& v) const noexcept { return Vector2(x_ + v.x_, y_ + v.y_); }
+            Vector2 operator-(const Vector2& v) const noexcept { return Vector2(x_ - v.x_, y_ - v.y_); }
+            Vector2 operator*(const Vector2& v) const noexcept { return Vector2(x_ * v.x_, y_ * v.y_); }
+            Vector2 operator+(T scalar) const noexcept { return Vector2(x_ + scalar, y_ + scalar); }
+            Vector2 operator-(T scalar) const noexcept { return Vector2(x_ - scalar, y_ - scalar); }
+            Vector2 operator*(T scalar) const noexcept { return Vector2(x_ * scalar, y_ * scalar); }
 
             Vector2 operator/(T scalar) {
                 return Vector2(x_ / scalar, y_ / scalar);
             }
-            Vector2 operator-() { return Vector2(-x_, -y_); }
+            Vector2 operator-() const { return Vector2(-x_, -y_); }
 
             Vector2& operator+=(T scalar);
             Vector2& operator-=(T scalar);
@@ -158,7 +158,7 @@ namespace kpengine{
         template<typename T>
         void Vector2<T>::Normalize()
         {
-            double length = Length();
+            double length = Norm();
             if (length == 0.)
             {
                 return;

@@ -1,9 +1,12 @@
 #include "engine.h"
+#include <iostream>
+#include <thread>
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/log/logger.h"
-#include <iostream>
+
+
 namespace kpengine{
     namespace runtime{
         constexpr float fps_alpha = 0.1f;
@@ -11,6 +14,7 @@ namespace kpengine{
         void Engine::Initialize()
         {
             global_runtime_context.Initialize();
+            global_runtime_context.game_thread_id = std::this_thread::get_id();
             KP_LOG("EngineLog", LOG_LEVEL_DISPLAY, "Engine Initialize Successfully");
         }
 
