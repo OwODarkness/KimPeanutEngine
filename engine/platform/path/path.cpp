@@ -3,6 +3,11 @@
 namespace kpengine
 {
     const std::filesystem::path project_root = PROJECT_ROOT_DIR;
+    std::string GetAssetDirectory()
+    {
+        return (project_root / "engine/asset/").generic_string() ;
+    }
+    
     std::string GetTextureDirectory()
     {
         return (project_root / "engine/asset/texture/").generic_string();

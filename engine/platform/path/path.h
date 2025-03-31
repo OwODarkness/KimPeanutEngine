@@ -8,11 +8,14 @@
 
 namespace kpengine
 {
+    std::string GetAssetDirectory();
+
     std::string GetTextureDirectory();
 
     std::string GetModelDirectory();
 
     std::string GetShaderDirectory();
+
 }
 
 #endif

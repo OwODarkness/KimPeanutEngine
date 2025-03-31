@@ -13,6 +13,9 @@
 #include "runtime/render/render_camera.h"
 #include "runtime/render/shadow_maker.h"
 
+#include "runtime/render/model_loader.h"
+#include "runtime/render/render_mesh_resource.h"
+#include "platform/path/path.h"
 namespace kpengine
 {
 
@@ -38,6 +41,8 @@ namespace kpengine
         std::shared_ptr<RenderObject> teapot = test::GetRenderObjectTeapot();
         teapot->SetLocation(glm::vec3(1.f, -0.5f, 1.f));
         render_objects_.push_back(teapot);
+        std::shared_ptr<RenderObject> nanosuit = test::GetRenderObjectNanosuit();
+        render_objects_.push_back(nanosuit);
 
         //bunny->SetLocation(glm::vec3(0.f, -0.8f, 0.f));
 
@@ -71,6 +76,8 @@ namespace kpengine
         directional_shadow_maker_->Initialize();
         point_shadow_maker_ = std::make_shared<PointShadowMaker>();
         point_shadow_maker_->Initialize();
+
+  
     }
 
     void RenderScene::Render(float deltatime)

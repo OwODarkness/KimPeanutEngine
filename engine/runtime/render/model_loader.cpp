@@ -1,17 +1,22 @@
 #include "model_loader.h"
 
+#include <iostream>
+
 #include "runtime/render/render_mesh.h"
 #include "runtime/render/render_material.h"
 #include "runtime/render/render_texture.h"
 #include "runtime/core/log/logger.h"
 #include "platform/path/path.h"
 
+#include "runtime/render/render_mesh_resource.h"
+
 namespace kpengine
 {
-    std::vector<std::shared_ptr<RenderMesh>> ModelLoader::Load(const std::string &path)
+    std::vector<std::shared_ptr<RenderMesh>> ModelLoader::Load(const std::string &relative_model_path)
     {
         Assimp::Importer import;
-        const aiScene *scene = import.ReadFile(path, aiProcess_Triangulate | 
+        std::string absolute_model_path = GetAssetDirectory() + relative_model_path;
+        const aiScene *scene = import.ReadFile(absolute_model_path, aiProcess_Triangulate | 
                                              aiProcess_GenNormals |
                                              aiProcess_FlipUVs);
 
@@ -20,7 +25,7 @@ namespace kpengine
             KP_LOG("ModelLoadLog", LOG_LEVEL_ERROR, "%s failed to load model", import.GetErrorString());
             return {};
         }
-        directory = path.substr(0, path.find_last_of('/'));
+        directory = relative_model_path.substr(0, relative_model_path.find_last_of('/'));
         ProcessNode(scene->mRootNode, scene);
         return meshes;
     }
@@ -82,7 +87,7 @@ namespace kpengine
         else
         {
             
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "default.jpg");
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
         }
@@ -102,7 +107,7 @@ namespace kpengine
             bool is_texture_cached = false;
             for (const auto &item : textures_cached)
             {
-                if (item->image_path_ == file_path.C_Str())
+                if (item->image_id_ == file_path.C_Str())
                 {
                     textures.push_back(item);
                     is_texture_cached = true;
@@ -118,5 +123,111 @@ namespace kpengine
                 textures_cached.push_back(texture);
             }
         }
+    }
+
+    bool ModelLoader_V2::Load(const std::string& path, RenderMeshResource* mesh_resource){
+        Assimp::Importer import;
+        const aiScene *scene = import.ReadFile(path, aiProcess_Triangulate | 
+            aiProcess_GenNormals |
+            aiProcess_FlipUVs);
+
+        if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
+        {
+            KP_LOG("ModelLoadLog", LOG_LEVEL_ERROR, "%s failed to load model", import.GetErrorString());
+            return false;
+        }
+        KP_LOG("ModelLoadLog", LOG_LEVEL_DISPLAY, "start load mesh based model from %s", path.c_str());
+        unsigned int vertices_num = 0;
+        unsigned int indices_num = 0;
+        CountMeshData(scene->mRootNode, scene, vertices_num, indices_num);
+        ProcessNode(scene->mRootNode, scene, mesh_resource);
+        return true;
+    }
+
+    void ModelLoader_V2::ProcessNode(aiNode* node ,const aiScene* scene, RenderMeshResource* mesh_resource)
+    {
+        if(node == nullptr)
+        {
+            return ;
+        }
+        
+        for(unsigned int i = 0;i<node->mNumMeshes;i++)
+        {
+            aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+            ProcessMesh(mesh, scene, mesh_resource);
+        }
+
+        for (unsigned int i = 0; i < node->mNumChildren; i++)
+        {
+            ProcessNode(node->mChildren[i], scene, mesh_resource);
+        }
+    }
+
+    void ModelLoader_V2::CountMeshData(aiNode* node, const aiScene* scene, unsigned int& vertices_num, unsigned int& indices_num)
+    {
+        if(node == nullptr)
+        {
+            return ;
+        }
+        for(unsigned int i = 0;i<node->mNumMeshes;i++)
+        {
+            aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+            vertices_num += mesh->mNumVertices;
+            
+            for(unsigned int j = 0;j< mesh->mNumFaces;j++)
+            {
+                indices_num += mesh->mFaces[j].mNumIndices;
+            }
+        }
+
+        for(unsigned int i = 0;i<node->mNumChildren;i++)
+        {
+            CountMeshData(node->mChildren[i], scene, vertices_num, indices_num);
+        }
+    }
+
+    void ModelLoader_V2::ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderMeshResource* mesh_resource)
+    {
+
+        //TODO load texture and wrap to material
+        MeshSection mesh_section;
+        mesh_section.index_start = static_cast<unsigned int>(mesh_resource->index_buffer_.size());
+        
+
+        bool has_normal = mesh->HasNormals();
+        bool has_texcoord = mesh->HasTextureCoords(0);
+        //extract vertices
+        for(unsigned int i = 0;i<mesh->mNumVertices;i++)
+        {
+            MeshVertex vertex;
+            //position
+            vertex.position = {mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z};
+            //normal
+            if(has_normal)
+            {
+                vertex.normal = {mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z};
+            }
+            //texcoord
+            if(has_texcoord)
+            {
+                vertex.tex_coord = {mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y};
+            }
+
+            mesh_resource->vertex_buffer_.push_back(vertex);
+        }
+
+        unsigned int current_index_count = 0;
+        for(unsigned int i = 0;i<mesh->mNumFaces;i++)
+        {
+            for(unsigned int j = 0; j< mesh->mFaces[i].mNumIndices;j++)
+            {
+                unsigned int vertex_index = mesh->mFaces[i].mIndices[j];
+                mesh_resource->index_buffer_.push_back(vertex_index);
+                current_index_count++;   
+            }
+        }
+        mesh_section.index_count = current_index_count;
+        mesh_section.face_count = mesh->mNumFaces;
+        mesh_resource->mesh_sections_.push_back(mesh_section);
     }
 }

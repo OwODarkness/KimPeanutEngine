@@ -9,7 +9,11 @@ namespace kpengine
     class RenderTexture
     {
     public:
-        RenderTexture(const std::string &image_path);
+        /*  pass the relative path under engine/asset
+        /   for example, a texture resource's path is engine/asset/texture/bunny/bunny_normal.jpg
+        /   send texture/bunny/bunny_normal.jpg
+        */  
+        RenderTexture(const std::string &image_relative_path);
 
         virtual void Initialize() = 0;
 
@@ -19,9 +23,9 @@ namespace kpengine
         unsigned int texture_handle_;
 
     public:
-        std::string image_path_;
+        std::string image_id_;
     };
-
+    //texture2d
     class RenderTexture2D: public RenderTexture
     {
     public:
@@ -29,7 +33,7 @@ namespace kpengine
 
         virtual void Initialize() override;
     };
-
+    //cubemap type
     class RenderTextureCubeMap: public RenderTexture
     {
     public:

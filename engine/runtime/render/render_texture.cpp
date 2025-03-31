@@ -10,7 +10,8 @@
 
 namespace kpengine
 {
-    RenderTexture::RenderTexture(const std::string &image_path) : image_path_(image_path)
+    RenderTexture::RenderTexture(const std::string &image_relative_path):
+    image_id_(image_relative_path)
     {
     }
 
@@ -25,12 +26,20 @@ namespace kpengine
 
         int width = 0, height = 0, nr_channels = 0;
         stbi_set_flip_vertically_on_load(true);
-        unsigned char *image_data = stbi_load(image_path_.c_str(), &width, &height, &nr_channels, 0);
+
+        std::string absoulte_image_path = GetAssetDirectory() + image_id_;
+
+        unsigned char *image_data = stbi_load(absoulte_image_path.c_str(), &width, &height, &nr_channels, 0);
         if (!image_data)
         {
-            KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", image_path_.c_str());
-            image_path_ = GetTextureDirectory() + "default.jpg";
-            image_data = stbi_load(image_path_.c_str(), &width, &height, &nr_channels, 0);
+            KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", absoulte_image_path.c_str());
+            image_id_ =  "texture/default.jpg";
+            absoulte_image_path = GetAssetDirectory() + image_id_;
+            image_data = stbi_load(absoulte_image_path.c_str(), &width, &height, &nr_channels, 0);
+        }
+        else
+        {
+            KP_LOG("TextureLog", LOG_LEVEL_DISPLAY, "Load texture successfully from %s ", absoulte_image_path.c_str());
         }
 
         int color_format = 0;
@@ -75,7 +84,7 @@ namespace kpengine
         for(int i = 0;i<face_names_.size();i++)
         {
              
-            std::string item_path = image_path_ + '/' + face_names_[i];
+            std::string item_path = GetAssetDirectory() + image_id_ + '/' + face_names_[i];
             unsigned char *image_data = stbi_load(item_path.c_str(), &width, &height, &nr_channels, 0);
             if(image_data)
             {

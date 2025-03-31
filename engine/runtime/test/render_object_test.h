@@ -20,6 +20,7 @@ namespace kpengine
         std::shared_ptr<RenderObject> GetRenderObjectPlanet();
         std::shared_ptr<RenderObject> GetRenderObjectRock();
         std::shared_ptr<RenderObject> GetRenderObjectSphere();
+        std::shared_ptr<RenderObject> GetRenderObjectNanosuit();
     }
 }
 

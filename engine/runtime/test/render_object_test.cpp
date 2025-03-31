@@ -24,7 +24,7 @@ namespace kpengine
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             
             std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("default.jpg");
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
             std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMeshStandard>(verticles, indices, material);
@@ -44,7 +44,7 @@ namespace kpengine
             std::vector<unsigned int> indices = {0, 1, 2, 2, 3, 0};
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("default.jpg");
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
             std::shared_ptr<RenderMesh> mesh = std::make_shared<RenderMeshStandard>(verticles, indices, material);
@@ -107,10 +107,10 @@ namespace kpengine
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             
             std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "brickwall.jpg");
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>( "texture/brickwall.jpg");
             texture->Initialize();
 
-            std::shared_ptr<RenderTexture> normal_texture = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "brickwall_normal.jpg");
+            std::shared_ptr<RenderTexture> normal_texture = std::make_shared<RenderTexture2D>("texture/brickwall_normal.jpg");
             normal_texture->Initialize();
 
             material->diffuse_textures_.push_back(texture);
@@ -125,7 +125,7 @@ namespace kpengine
 
         std::shared_ptr<RenderObject> GetRenderObjectSphere()
         {
-                        std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "sphere.obj");
+                        std::shared_ptr<RenderObject> render_object = GetRenderObjectModel("model/sphere.obj");
             //render_object->SetScale({0.1f, 0.1f, 0.1f});
 
             return render_object;
@@ -192,11 +192,11 @@ namespace kpengine
             };
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "container.png");
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>( "texture/container.png");
             texture->Initialize();
-            std::shared_ptr<RenderTexture> texture_specular = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "container2_specular.png");
+            std::shared_ptr<RenderTexture> texture_specular = std::make_shared<RenderTexture2D>( "texture/container2_specular.png");
             texture_specular->Initialize();
-            std::shared_ptr<RenderTexture> texture_emmision = std::make_shared<RenderTexture2D>(GetTextureDirectory() + "matrix.jpg");
+            std::shared_ptr<RenderTexture> texture_emmision = std::make_shared<RenderTexture2D>( "texture/matrix.jpg");
             texture_emmision->Initialize();
             material->diffuse_textures_.push_back(texture);
             material->specular_textures_.push_back(texture_specular);
@@ -221,7 +221,7 @@ namespace kpengine
                 "front.jpg",
                 "back.jpg"
             };
-            std::shared_ptr<RenderTextureCubeMap> cube_map = std::make_shared<RenderTextureCubeMap>(GetTextureDirectory() + "skybox/lake", faces);
+            std::shared_ptr<RenderTextureCubeMap> cube_map = std::make_shared<RenderTextureCubeMap>( "texture/skybox/lake", faces);
             cube_map->Initialize();
             std::shared_ptr<RenderMaterialSkyBox> material = std::make_shared<RenderMaterialSkyBox>();
             material->cube_map_texture_ = cube_map;
@@ -243,7 +243,7 @@ namespace kpengine
 
         std::shared_ptr<RenderObject> GetRenderObjectBunny()
         {
-            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "bunny/stanford-bunny.obj");
+            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel( "model/bunny/stanford-bunny.obj");
             render_object->SetScale({10.f, 10.f, 10.f});
             return render_object;
         } 
@@ -251,7 +251,7 @@ namespace kpengine
 
         std::shared_ptr<RenderObject> GetRenderObjectTeapot()
         {
-            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "bunny/teapot.obj");
+            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel( "model/bunny/teapot.obj");
             render_object->SetScale({0.1f, 0.1f, 0.1f});
             //render_object->SetLocation({13.f, 13.f, 13.f});
 
@@ -261,17 +261,24 @@ namespace kpengine
 
         std::shared_ptr<RenderObject> GetRenderObjectVenusm()
         {
-            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "bunny/venusm.obj");
+            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel( "model/bunny/venusm.obj");
             render_object->SetScale({0.001f, 0.001f, 0.001f});
             return render_object;
         }
 
         std::shared_ptr<RenderObject> GetRenderObjectPlanet()
         {
-            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel(GetModelDirectory() + "planet/planet.obj");
+            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel( "model/planet/planet.obj");
             render_object->SetScale({0.5, 0.5, 0.5});
             return render_object;
         } 
+
+        std::shared_ptr<RenderObject> GetRenderObjectNanosuit()
+        {
+            std::shared_ptr<RenderObject> render_object = GetRenderObjectModel( "model/nanosuit/nanosuit.obj");
+            render_object->SetScale({0.1, 0.1, 0.1});
+            return render_object;
+        }
 
         std::shared_ptr<RenderObject> GetRenderObjectRock()
         {
@@ -308,7 +315,7 @@ namespace kpengine
             
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             ModelLoader* model_loader = new ModelLoader();
-            meshes = model_loader->Load(GetModelDirectory() + "rock/rock.obj");
+            meshes = model_loader->Load( "model/rock/rock.obj");
             delete model_loader;
             const std::string shader_dir = kpengine::GetShaderDirectory();
             std::shared_ptr<RenderMultipleObject> render_object = std::make_shared<RenderMultipleObject>(meshes, shader_dir + "cluster.vs", shader_dir + "phong.fs");
