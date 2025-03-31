@@ -6,13 +6,14 @@
 #include "runtime/render/render_light.h"
 
 namespace kpengine{
+
     class FrameBuffer;
     class RenderObject;
     class RenderCamera;
     class RenderShader;
     class ShadowMaker;
     class PointShadowMaker;
-    class SkyBox;
+    class Skybox;
 
     class RenderScene{
     public:
@@ -38,13 +39,12 @@ namespace kpengine{
         std::shared_ptr<ShadowMaker> directional_shadow_maker_;
         std::shared_ptr<ShadowMaker> point_shadow_maker_;
 
-        std::shared_ptr<RenderObject> skybox;
 
         float angle = 0.f;
-
+        std::shared_ptr<Skybox> skybox;
     private:
         unsigned int ubo_matrices_;
-        bool isskydraw = true;
+        bool isskydraw = false;
     };
 }
 

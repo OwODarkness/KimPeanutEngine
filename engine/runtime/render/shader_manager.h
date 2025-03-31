@@ -19,6 +19,7 @@ namespace kpengine{
         ShaderManager();
         void Initialize();
         ~ShaderManager();
+        std::shared_ptr<RenderShader> GetShader(const std::string& shader_type);
     private:
         std::unordered_map<std::string, std::shared_ptr<RenderShader>> shader_cache;
     };

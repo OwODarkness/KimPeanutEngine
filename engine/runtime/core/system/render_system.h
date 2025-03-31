@@ -16,6 +16,7 @@ namespace kpengine{
         void Tick(float DeltaTime);
         RenderScene* GetRenderScene() {return render_scene_.get();}
         RenderCamera* GetRenderCamera() {return render_camera_.get();}
+        ShaderManager* GetShaderManager() {return shader_manager_.get();}
         
     private:
         std::shared_ptr<RenderCamera> render_camera_;

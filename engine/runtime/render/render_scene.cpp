@@ -16,6 +16,8 @@
 #include "runtime/render/model_loader.h"
 #include "runtime/render/render_mesh_resource.h"
 #include "platform/path/path.h"
+
+#include "runtime/render/skybox.h"
 namespace kpengine
 {
 
@@ -31,7 +33,7 @@ namespace kpengine
         scene_ = std::make_shared<FrameBuffer>(1280, 720);
         scene_->Initialize();
 
-        skybox = test::GetRenderObjectSkyBox();
+        skybox = test::GetRenderObjectSkybox();
         skybox->Initialize();
 
         render_objects_.push_back(test::GetRenderObjectFloor());
@@ -132,13 +134,8 @@ namespace kpengine
             glBufferSubData(GL_UNIFORM_BUFFER, sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(render_camera_->GetViewMatrix()));
             glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-            if(isskydraw)
-            {
-                            skybox->GetShader()->UseProgram();
-            skybox->Render(skybox->GetShader());
-            }
-
-
+            //render skybox
+            skybox->Render();
 
             for (int i = 0; i < render_objects_.size(); i++)
             {

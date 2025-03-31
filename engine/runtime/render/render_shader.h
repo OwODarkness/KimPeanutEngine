@@ -13,7 +13,7 @@ namespace kpengine
        RenderShader() = delete;
         RenderShader(const RenderShader& ) = delete;
         explicit RenderShader(std::string vertex_shader_path, std::string fragment_shader_path, std::string geometry_shader_path = "");
-
+        
         void Initialize();
 
         bool ExtractShaderCodeFromFile(const std::string& file_path, std::string &out_code);

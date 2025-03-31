@@ -5,10 +5,14 @@
 #include <memory>
 
 #include <glm/glm.hpp>
+#include "runtime/render/render_mesh_resource.h"
 
 namespace kpengine{
 class RenderMaterial;
 class RenderShader;
+class RenderMeshResource;
+
+
 struct Vertex{
     glm::vec3 location;
     glm::vec3 normal;
@@ -47,12 +51,14 @@ protected:
 
 };
 
-class SkyBox : public RenderMesh{
-public:
-    SkyBox(std::shared_ptr<RenderMaterial> material);
-    virtual void Initialize() override;
-    virtual void Draw(std::shared_ptr<RenderShader> shader_helper) override;
 
+
+class RenderMesh_V2
+{
+public:
+    
+private:
+    std::vector<RenderMeshResource> lod_mesh_resources;
 };
 }
 

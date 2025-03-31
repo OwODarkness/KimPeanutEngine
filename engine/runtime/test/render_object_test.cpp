@@ -10,6 +10,11 @@
 #include "runtime/render/model_loader.h"
 #include "platform/path/path.h"
 
+#include "runtime/render/skybox.h"
+#include "runtime/render/render_shader.h"
+
+#include "runtime/runtime_header.h"
+#include "runtime/render/shader_manager.h"
 namespace kpengine
 {
     namespace test
@@ -210,9 +215,8 @@ namespace kpengine
         }
 
 
-        std::shared_ptr<RenderObject> GetRenderObjectSkyBox()
+        std::shared_ptr<Skybox> GetRenderObjectSkybox()
         {
-            std::vector<std::shared_ptr<RenderMesh>> meshes;
             std::vector<std::string> faces{
                 "right.jpg",
                 "left.jpg",
@@ -221,14 +225,12 @@ namespace kpengine
                 "front.jpg",
                 "back.jpg"
             };
+            std::shared_ptr<RenderShader> shader = runtime::global_runtime_context.render_system_->GetShaderManager()->GetShader(SHADER_CATEGORY_SKYBOX);
+            const std::string shader_dir = kpengine::GetShaderDirectory();
             std::shared_ptr<RenderTextureCubeMap> cube_map = std::make_shared<RenderTextureCubeMap>( "texture/skybox/lake", faces);
             cube_map->Initialize();
-            std::shared_ptr<RenderMaterialSkyBox> material = std::make_shared<RenderMaterialSkyBox>();
-            material->cube_map_texture_ = cube_map;
-            meshes.push_back(std::make_shared<SkyBox>(material));
-
-            const std::string shader_dir = kpengine::GetShaderDirectory();
-            return std::make_shared<RenderSingleObject>(meshes, shader_dir+"skybox.vs", shader_dir+"skybox.fs");
+            
+            return std::make_shared<Skybox>(shader, cube_map);
         }
 
         std::shared_ptr<RenderObject> GetRenderObjectModel(const std::string& model_dir)

@@ -35,5 +35,14 @@ namespace kpengine{
 
     }
 
+    std::shared_ptr<RenderShader> ShaderManager::GetShader(const std::string& shader_type)
+    {
+        if(!shader_cache.contains(shader_type))
+        {
+            return nullptr;
+        }
+        return shader_cache.at(shader_type);
+    }
+
     ShaderManager::~ShaderManager() = default;
 }
