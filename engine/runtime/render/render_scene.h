@@ -3,7 +3,9 @@
 
 #include <memory>
 #include <vector>
-#include "runtime/render/render_light.h"
+
+#include "render_light.h"
+#include "scene_proxy_handle.h"
 
 namespace kpengine{
 
@@ -14,13 +16,17 @@ namespace kpengine{
     class ShadowMaker;
     class PointShadowMaker;
     class Skybox;
+    class PrimitiveSceneProxy;
 
     class RenderScene{
     public:
         RenderScene() = default;
         void Initialize(std::shared_ptr<RenderCamera> camera);
         void Render(float delta_time);
+        SceneProxyHandle AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy);
+        void RemoveProxy(SceneProxyHandle handle);
     private:
+        void ConfigureUniformLight(std::shared_ptr<RenderShader> shader);
         void ConfigurePointLightInfo(std::shared_ptr<RenderShader> shader);
         void ConfigureSpotLightInfo(std::shared_ptr<RenderShader> shader);
         void ConfigureDirectionalLightInfo(std::shared_ptr<RenderShader> shader);
@@ -39,12 +45,12 @@ namespace kpengine{
         std::shared_ptr<ShadowMaker> directional_shadow_maker_;
         std::shared_ptr<ShadowMaker> point_shadow_maker_;
 
-
         float angle = 0.f;
         std::shared_ptr<Skybox> skybox;
     private:
         unsigned int ubo_matrices_;
         bool isskydraw = false;
+        bool is_light_dirty = true;
     };
 }
 

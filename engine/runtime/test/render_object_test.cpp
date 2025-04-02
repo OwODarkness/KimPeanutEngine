@@ -28,7 +28,7 @@ namespace kpengine
             std::vector<unsigned int> indices = {0, 1, 2};
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             
-            std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
+            std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
             std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
@@ -48,7 +48,7 @@ namespace kpengine
                 {{0.5, 0.5, 0}}};
             std::vector<unsigned int> indices = {0, 1, 2, 2, 3, 0};
             std::vector<std::shared_ptr<RenderMesh>> meshes;
-            std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
+            std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
             std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
@@ -111,7 +111,7 @@ namespace kpengine
 
             std::vector<std::shared_ptr<RenderMesh>> meshes;
             
-            std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
+            std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
             std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>( "texture/brickwall.jpg");
             texture->Initialize();
 
@@ -196,7 +196,7 @@ namespace kpengine
                 30, 31, 32, 33, 34, 35  // Top face
             };
             std::vector<std::shared_ptr<RenderMesh>> meshes;
-            std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
+            std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
             std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>( "texture/container.png");
             texture->Initialize();
             std::shared_ptr<RenderTexture> texture_specular = std::make_shared<RenderTexture2D>( "texture/container2_specular.png");

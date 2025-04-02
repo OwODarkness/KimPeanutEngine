@@ -8,6 +8,11 @@ namespace kpengine{
         
     }
     
+    void SceneComponent::Initialize()
+    {
+        
+    }
+
     Vector3f SceneComponent::GetWorldLocation() const
     {
         if(attach_parent_)

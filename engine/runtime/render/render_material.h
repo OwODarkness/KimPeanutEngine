@@ -11,16 +11,9 @@ namespace kpengine{
     class RenderShader;
 
     class RenderMaterial{
-
     public:
-        virtual void Render(RenderShader* shader_helper) = 0;
-    };
-
-    class RenderMaterialStanard : public RenderMaterial{
-        public:
-        virtual void Render(RenderShader* shader_helper) override;
-    
-        public:
+        void Render(RenderShader* shader_helper) ;
+    public:
         std::vector<std::shared_ptr<RenderTexture>> diffuse_textures_;
         std::vector<std::shared_ptr<RenderTexture>>  specular_textures_;
         std::shared_ptr<RenderTexture> emmision_texture;
@@ -30,13 +23,8 @@ namespace kpengine{
         bool normal_texture_enable_ = false;
     };
 
-    class RenderMaterialSkyBox: public RenderMaterial{
-    public:
-        std::shared_ptr<RenderTexture> cube_map_texture_;
-    
-        virtual void Render(RenderShader* shader_helper) override;
-    
-    };
+
+
 }
 
 #endif

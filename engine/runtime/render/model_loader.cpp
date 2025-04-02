@@ -53,7 +53,7 @@ namespace kpengine
 
         std::vector<Vertex> vertices;
         std::vector<unsigned int> indices;
-        std::shared_ptr<RenderMaterialStanard> material = std::make_shared<RenderMaterialStanard>();
+        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
 
         for (unsigned int i = 0; i < mesh->mNumVertices; i++)
         {
@@ -75,18 +75,15 @@ namespace kpengine
                 indices.push_back(mesh->mFaces[i].mIndices[j]);
             }
         }
-
+        
         if (mesh->mMaterialIndex > 0)
         {
-            
             aiMaterial *ai_material = scene->mMaterials[mesh->mMaterialIndex];
-
             ProcessTexture(ai_material, aiTextureType_DIFFUSE, material->diffuse_textures_);
             ProcessTexture(ai_material, aiTextureType_SPECULAR, material->specular_textures_);
         }
         else
         {
-            
             std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
             texture->Initialize();
             material->diffuse_textures_.push_back(texture);
@@ -125,7 +122,7 @@ namespace kpengine
         }
     }
 
-    bool ModelLoader_V2::Load(const std::string& path, RenderMeshResource* mesh_resource){
+    bool ModelLoader_V2::Load(const std::string& path, RenderMeshResource& mesh_resource){
         Assimp::Importer import;
         const aiScene *scene = import.ReadFile(path, aiProcess_Triangulate | 
             aiProcess_GenNormals |
@@ -137,14 +134,24 @@ namespace kpengine
             return false;
         }
         KP_LOG("ModelLoadLog", LOG_LEVEL_DISPLAY, "start load mesh based model from %s", path.c_str());
+        
+        
+        ModelLoader_V2 model_loader;
+        model_loader.directory = path.substr(0, path.find_last_of('/'));
+        //preallocate vertex_buffer and index_buffer
         unsigned int vertices_num = 0;
         unsigned int indices_num = 0;
-        CountMeshData(scene->mRootNode, scene, vertices_num, indices_num);
-        ProcessNode(scene->mRootNode, scene, mesh_resource);
+        
+        model_loader.CountMeshData(scene->mRootNode, scene, vertices_num, indices_num);
+        mesh_resource.vertex_buffer_.reserve(vertices_num);
+        mesh_resource.index_buffer_.reserve(indices_num);
+        model_loader.ProcessNode(scene->mRootNode, scene, mesh_resource);
         return true;
     }
 
-    void ModelLoader_V2::ProcessNode(aiNode* node ,const aiScene* scene, RenderMeshResource* mesh_resource)
+
+
+    void ModelLoader_V2::ProcessNode(aiNode* node ,const aiScene* scene, RenderMeshResource& mesh_resource)
     {
         if(node == nullptr)
         {
@@ -186,12 +193,12 @@ namespace kpengine
         }
     }
 
-    void ModelLoader_V2::ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderMeshResource* mesh_resource)
+    void ModelLoader_V2::ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderMeshResource& mesh_resource)
     {
 
         //TODO load texture and wrap to material
         MeshSection mesh_section;
-        mesh_section.index_start = static_cast<unsigned int>(mesh_resource->index_buffer_.size());
+        mesh_section.index_start = static_cast<unsigned int>(mesh_resource.index_buffer_.size());
         
 
         bool has_normal = mesh->HasNormals();
@@ -213,21 +220,68 @@ namespace kpengine
                 vertex.tex_coord = {mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y};
             }
 
-            mesh_resource->vertex_buffer_.push_back(vertex);
+            mesh_resource.vertex_buffer_.push_back(vertex);
         }
-
+        //generate index buffer
         unsigned int current_index_count = 0;
         for(unsigned int i = 0;i<mesh->mNumFaces;i++)
         {
             for(unsigned int j = 0; j< mesh->mFaces[i].mNumIndices;j++)
             {
                 unsigned int vertex_index = mesh->mFaces[i].mIndices[j];
-                mesh_resource->index_buffer_.push_back(vertex_index);
+                mesh_resource.index_buffer_.push_back(vertex_index);
                 current_index_count++;   
             }
         }
         mesh_section.index_count = current_index_count;
         mesh_section.face_count = mesh->mNumFaces;
-        mesh_resource->mesh_sections_.push_back(mesh_section);
+        //generate material
+        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
+        if (mesh->mMaterialIndex > 0)
+        {
+            aiMaterial *ai_material = scene->mMaterials[mesh->mMaterialIndex];
+            ProcessTexture(ai_material, aiTextureType_DIFFUSE, material->diffuse_textures_);
+            ProcessTexture(ai_material, aiTextureType_SPECULAR, material->specular_textures_);
+        }
+        else
+        {
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
+            texture->Initialize();
+            material->diffuse_textures_.push_back(texture);
+        }
+        
+        mesh_resource.mesh_sections_.push_back(mesh_section);
+
+
+    }
+
+    void ModelLoader_V2::ProcessTexture(aiMaterial *material, aiTextureType assimp_texture_type, std::vector<std::shared_ptr<RenderTexture>> &textures)
+    {
+        // for (unsigned int i = 0; i < material->GetTextureCount(assimp_texture_type); i++)
+        // {
+        //     aiString file_path;
+        //     material->GetTexture(assimp_texture_type, i, &file_path);
+
+        //     file_path = directory + '/' + file_path.C_Str();
+
+        //     bool is_texture_cached = false;
+        //     for (const auto &item : textures_cached)
+        //     {
+        //         if (item->image_id_ == file_path.C_Str())
+        //         {
+        //             textures.push_back(item);
+        //             is_texture_cached = true;
+        //             break;
+        //         }
+        //     }
+
+        //     if (false == is_texture_cached)
+        //     {
+        //         std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(file_path.C_Str());
+        //         texture->Initialize();
+        //         textures.push_back(texture);
+        //         textures_cached.push_back(texture);
+        //     }
+        // }
     }
 }

@@ -12,4 +12,9 @@ namespace kpengine{
             std::cout << "range: " << mesh_sections_[i].index_start << " -- " << mesh_sections_[i].index_start + mesh_sections_[i].index_count - 1 << "\n"; 
         }
     }
+
+    void RenderMeshResource::Initialize()
+    {
+        
+    }
 }

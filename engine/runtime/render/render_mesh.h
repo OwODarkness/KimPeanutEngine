@@ -2,11 +2,11 @@
 #define KPENGINE_RUNTIME_RENDER_MESH_H
 
 #include <vector>
+#include <string>
 #include <memory>
-
 #include <glm/glm.hpp>
-#include "runtime/render/render_mesh_resource.h"
 
+#include "runtime/render/render_mesh_resource.h"
 namespace kpengine{
 class RenderMaterial;
 class RenderShader;
@@ -56,9 +56,12 @@ protected:
 class RenderMesh_V2
 {
 public:
-    
+    RenderMesh_V2(const std::string& mesh_relative_path);
+    void Initialize();
 private:
     std::vector<RenderMeshResource> lod_mesh_resources;
+    std::string name_;
+
 };
 }
 

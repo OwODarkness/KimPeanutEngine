@@ -16,7 +16,7 @@
 #include "runtime/render/model_loader.h"
 #include "runtime/render/render_mesh_resource.h"
 #include "platform/path/path.h"
-
+#include "runtime/render/primitive_scene_proxy.h"
 #include "runtime/render/skybox.h"
 namespace kpengine
 {
@@ -32,7 +32,7 @@ namespace kpengine
         assert(camera);
         scene_ = std::make_shared<FrameBuffer>(1280, 720);
         scene_->Initialize();
-
+        //skybox
         skybox = test::GetRenderObjectSkybox();
         skybox->Initialize();
 
@@ -137,32 +137,47 @@ namespace kpengine
             //render skybox
             skybox->Render();
 
+            glActiveTexture(GL_TEXTURE15);
+            glBindTexture(GL_TEXTURE_2D, directional_shadow_maker_->GetShadowMap());
+            glActiveTexture(GL_TEXTURE14);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, point_shadow_maker_->GetShadowMap());
+
+            if(is_light_dirty)
+            {   
+                for (int i = 0; i < render_objects_.size(); i++)
+                {
+                    std::shared_ptr<RenderShader> shader = render_objects_[i]->GetShader();
+                    shader->UseProgram();
+                    ConfigureUniformLight(shader);
+                }
+                is_light_dirty = false;
+            }
+
             for (int i = 0; i < render_objects_.size(); i++)
             {
                 std::shared_ptr<RenderShader> shader = render_objects_[i]->GetShader();
                 shader->UseProgram();
                 shader->SetVec3("ambient", glm::value_ptr(ambient_light_.ambient));
-
-                ConfigurePointLightInfo(shader);
-                ConfigureDirectionalLightInfo(shader);
-                ConfigureSpotLightInfo(shader);
-
                 shader->SetVec3("view_position", glm::value_ptr(render_camera_->GetPosition()));
                 shader->SetMat("light_space_matrix", glm::value_ptr(light_space_matrix));
 
-                glActiveTexture(GL_TEXTURE15);
                 shader->SetInt("shadow_map", 15);
-                glBindTexture(GL_TEXTURE_2D, directional_shadow_maker_->GetShadowMap());
 
                 shader->SetFloat("far_plane", 25.f);
-                glActiveTexture(GL_TEXTURE14);
                 shader->SetInt("point_shadow_map", 14);
-                glBindTexture(GL_TEXTURE_CUBE_MAP, point_shadow_maker_->GetShadowMap());
 
                 render_objects_[i]->Render(shader);
             }
         }
         scene_->UnBindFrameBuffer();
+    }
+
+    void RenderScene::ConfigureUniformLight(std::shared_ptr<RenderShader> shader)
+    {
+        shader->SetVec3("ambient", glm::value_ptr(ambient_light_.ambient));
+        ConfigurePointLightInfo(shader);
+        ConfigureDirectionalLightInfo(shader);
+        ConfigureSpotLightInfo(shader);
     }
 
     void RenderScene::ConfigurePointLightInfo(std::shared_ptr<RenderShader> shader)
@@ -196,7 +211,6 @@ namespace kpengine
 
     void RenderScene::ConfigureDirectionalLightInfo(std::shared_ptr<RenderShader> shader)
     {
-
         shader->SetVec3("directional_light.direction", glm::value_ptr(directional_light_.direction));
         shader->SetVec3("directional_light.color", glm::value_ptr(directional_light_.color));
         shader->SetVec3("directional_light.ambient", glm::value_ptr(directional_light_.ambient));
@@ -204,4 +218,14 @@ namespace kpengine
         shader->SetVec3("directional_light.specular", glm::value_ptr(directional_light_.specular));
     }
 
+    SceneProxyHandle RenderScene::AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy)
+    {
+        //TODO add_proxy
+        return {0, 0};
+    }
+
+    void RenderScene::RemoveProxy(SceneProxyHandle handle)
+    {
+        
+    }
 }

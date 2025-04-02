@@ -7,6 +7,8 @@
 #include "runtime/render/render_material.h"
 #include "runtime/render/render_texture.h"
 
+#include "runtime/render/model_loader.h"
+
 namespace kpengine
 {
     RenderMesh::RenderMesh(std::vector<Vertex> verticles, std::vector<unsigned> indices, std::shared_ptr<RenderMaterial> material) : verticles_(verticles), indices_(indices), material_(material)
@@ -82,4 +84,15 @@ namespace kpengine
     }
 
 
+    RenderMesh_V2::RenderMesh_V2(const std::string& mesh_relative_path):
+    name_(mesh_relative_path){}
+
+    void RenderMesh_V2::Initialize()
+    {
+        RenderMeshResource mesh_resource;
+        ModelLoader_V2::Load(name_, mesh_resource);
+        lod_mesh_resources.push_back(mesh_resource);
+    }
+
+    
 }

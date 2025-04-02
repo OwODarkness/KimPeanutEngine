@@ -12,6 +12,7 @@ namespace kpengine{
     public:
         SceneComponent() = default;
         virtual void TickComponent(float delta_time) override;
+        virtual void Initialize() override;
         void AttachToComponent(SceneComponent* target_comp);
 
         inline Vector3f GetRelativeLocation() const{return transform_.position_;}
@@ -27,8 +28,6 @@ namespace kpengine{
         void SetRelativeLocation(const Vector3f& new_location);
         void SetRelativeRotation(const Rotator3f& new_rotation);
         void SetRelativeScale(const Vector3f& new_scale);
-
-
         ~SceneComponent();
     protected:
         void AddChild(SceneComponent* child);

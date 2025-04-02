@@ -9,7 +9,7 @@
 
 namespace kpengine
 {
-    void RenderMaterialStanard::Render(RenderShader *shader_helper)
+    void RenderMaterial::Render(RenderShader *shader_helper)
     {
 
 
@@ -54,10 +54,5 @@ namespace kpengine
         }
     }
 
-    void RenderMaterialSkyBox::Render(RenderShader* shader_helper)
-    {
-         glActiveTexture(GL_TEXTURE0 );
-        // shader_helper->SetInt("skybox", 0);
-         glBindTexture(GL_TEXTURE_CUBE_MAP, cube_map_texture_->GetTexture());
-    }
+
 }
