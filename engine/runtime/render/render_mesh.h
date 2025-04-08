@@ -6,7 +6,6 @@
 #include <memory>
 #include <glm/glm.hpp>
 
-#include "runtime/render/render_mesh_resource.h"
 namespace kpengine{
 class RenderMaterial;
 class RenderShader;
@@ -56,12 +55,20 @@ protected:
 class RenderMesh_V2
 {
 public:
+    RenderMesh_V2();
     RenderMesh_V2(const std::string& mesh_relative_path);
     void Initialize();
+    const RenderMeshResource* GetMeshResource() const;
+    ~RenderMesh_V2();
 private:
-    std::vector<RenderMeshResource> lod_mesh_resources;
+    //std::vector<std::unique_ptr<RenderMeshResource>> lod_mesh_resources;
+    std::unique_ptr<RenderMeshResource> mesh_resource;
     std::string name_;
-
+    unsigned int lod_level;
+public:
+    unsigned int vao_;
+    unsigned int vbo_;
+    unsigned int ebo_;
 };
 }
 

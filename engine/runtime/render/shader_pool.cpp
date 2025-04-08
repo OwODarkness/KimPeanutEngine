@@ -1,4 +1,4 @@
-#include "shader_manager.h"
+#include "shader_pool.h"
 
 #include "runtime/render/render_shader.h"
 #include "platform/path/path.h"
@@ -6,7 +6,7 @@
 
 
 namespace kpengine{
-    ShaderManager::ShaderManager()
+    ShaderPool::ShaderPool()
     {
         std::string shader_dir = GetShaderDirectory();
         shader_cache.insert(
@@ -20,7 +20,7 @@ namespace kpengine{
         });
     }
 
-    void ShaderManager::Initialize()
+    void ShaderPool::Initialize()
     {
         KP_LOG("ShaderManagerLog", LOG_LEVEL_DISPLAY, "shader compiling...");
         std::unordered_map<std::string, std::shared_ptr<RenderShader>>::iterator iter;
@@ -35,7 +35,7 @@ namespace kpengine{
 
     }
 
-    std::shared_ptr<RenderShader> ShaderManager::GetShader(const std::string& shader_type)
+    std::shared_ptr<RenderShader> ShaderPool::GetShader(const std::string& shader_type)
     {
         if(!shader_cache.contains(shader_type))
         {
@@ -44,5 +44,5 @@ namespace kpengine{
         return shader_cache.at(shader_type);
     }
 
-    ShaderManager::~ShaderManager() = default;
+    ShaderPool::~ShaderPool() = default;
 }

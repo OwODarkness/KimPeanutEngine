@@ -14,7 +14,7 @@
 #include "runtime/render/render_shader.h"
 
 #include "runtime/runtime_header.h"
-#include "runtime/render/shader_manager.h"
+#include "runtime/render/shader_pool.h"
 namespace kpengine
 {
     namespace test
@@ -225,7 +225,7 @@ namespace kpengine
                 "front.jpg",
                 "back.jpg"
             };
-            std::shared_ptr<RenderShader> shader = runtime::global_runtime_context.render_system_->GetShaderManager()->GetShader(SHADER_CATEGORY_SKYBOX);
+            std::shared_ptr<RenderShader> shader = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_SKYBOX);
             const std::string shader_dir = kpengine::GetShaderDirectory();
             std::shared_ptr<RenderTextureCubeMap> cube_map = std::make_shared<RenderTextureCubeMap>( "texture/skybox/lake", faces);
             cube_map->Initialize();

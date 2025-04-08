@@ -14,11 +14,11 @@
 namespace kpengine{
     class RenderShader;
     
-    class ShaderManager{
+    class ShaderPool{
     public:
-        ShaderManager();
+        ShaderPool();
         void Initialize();
-        ~ShaderManager();
+        ~ShaderPool();
         std::shared_ptr<RenderShader> GetShader(const std::string& shader_type);
     private:
         std::unordered_map<std::string, std::shared_ptr<RenderShader>> shader_cache;

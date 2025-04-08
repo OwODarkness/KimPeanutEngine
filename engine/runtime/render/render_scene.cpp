@@ -46,6 +46,8 @@ namespace kpengine
         std::shared_ptr<RenderObject> nanosuit = test::GetRenderObjectNanosuit();
         render_objects_.push_back(nanosuit);
 
+
+        
         //bunny->SetLocation(glm::vec3(0.f, -0.8f, 0.f));
 
         for (int i = 0; i < render_objects_.size(); i++)
@@ -220,12 +222,42 @@ namespace kpengine
 
     SceneProxyHandle RenderScene::AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy)
     {
-        //TODO add_proxy
-        return {0, 0};
+        //if free_slot exist, consume it
+        if(free_slots.size())
+        {
+            unsigned int id = *(free_slots.end() - 1);
+            free_slots.erase(free_slots.end() - 1);
+            scene_proxies[id] = scene_proxy;
+            return SceneProxyHandle(id, current_generation);
+        }
+        else
+        {
+            unsigned int id = current_generation;
+            SceneProxyHandle handle(id, id);
+            if(handle.IsValid())
+            {
+                ++current_generation;
+                scene_proxies.push_back(scene_proxy);
+                return handle;
+            }
+            else
+            {
+                return SceneProxyHandle::InValid();
+            }
+        }
     }
 
     void RenderScene::RemoveProxy(SceneProxyHandle handle)
     {
-        
+        unsigned int handle_index = handle.id;
+        if(current_generation < handle_index)
+        {
+            return ;
+        }
+        else
+        {
+            scene_proxies[handle_index] = nullptr;
+            free_slots.push_back(handle_index);
+        }
     }
 }

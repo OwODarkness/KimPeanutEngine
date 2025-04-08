@@ -30,7 +30,7 @@ namespace kpengine{
     private:
         std::string directory;
         std::vector<std::shared_ptr<RenderMesh>> meshes;
-        std::vector<std::shared_ptr<RenderTexture>> textures_cached;
+       // std::vector<std::shared_ptr<RenderTexture>> textures_cached;
     };
 
     class ModelLoader_V2{

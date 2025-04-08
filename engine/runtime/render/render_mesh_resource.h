@@ -6,19 +6,15 @@
 #include "mesh_vertex.h"
 #include "mesh_section.h"
 
+//renderable
 namespace kpengine{
     class RenderMeshResource{
     public:
-        friend class ModelLoader_V2;
-        void Debug();
-        void Initialize();
-    private:
+        unsigned int GetFaceNum() const;
+    public:
         std::vector<MeshVertex> vertex_buffer_;
         std::vector<unsigned int> index_buffer_;
         std::vector<MeshSection> mesh_sections_;
-    private:
-        unsigned int vao_;
-        unsigned int vbo_;
     };
 }
 #endif

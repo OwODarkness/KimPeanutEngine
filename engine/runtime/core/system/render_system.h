@@ -6,7 +6,7 @@
 namespace kpengine{
     class RenderScene;
     class RenderCamera;
-   class ShaderManager;
+   class ShaderPool;
 
     class RenderSystem{
     public:
@@ -16,12 +16,12 @@ namespace kpengine{
         void Tick(float DeltaTime);
         RenderScene* GetRenderScene() {return render_scene_.get();}
         RenderCamera* GetRenderCamera() {return render_camera_.get();}
-        ShaderManager* GetShaderManager() {return shader_manager_.get();}
+        ShaderPool* GetShaderPool() {return shader_pool_.get();}
         
     private:
         std::shared_ptr<RenderCamera> render_camera_;
         std::unique_ptr<RenderScene> render_scene_;
-        std::unique_ptr<ShaderManager> shader_manager_;
+        std::unique_ptr<ShaderPool> shader_pool_;
     };
 }
 

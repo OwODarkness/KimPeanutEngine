@@ -1,12 +1,12 @@
-#include "texture_cache.h"
+#include "texture_pool.h"
 #include "render_texture.h"
 namespace kpengine{
-    bool TextureCache::IsTextureCached(const std::string& key) const
+    bool TexturePool::IsTextureCached(const std::string& key) const
     {
         return texture_map.contains(key);
     }
 
-    void TextureCache::AddTexture(std::shared_ptr<RenderTexture> texture)
+    void TexturePool::AddTexture(std::shared_ptr<RenderTexture> texture)
     {
         if(!texture)
         {
@@ -16,7 +16,7 @@ namespace kpengine{
     }
 
 
-    std::shared_ptr<RenderTexture> TextureCache::FindTextureByKey(const std::string& key) const
+    std::shared_ptr<RenderTexture> TexturePool::FindTextureByKey(const std::string& key) const
     {
         if(!texture_map.contains(key))
         {
@@ -24,7 +24,7 @@ namespace kpengine{
         }
         return texture_map.at(key);    
     }
-    unsigned int TextureCache::FindHandleByTexture(const std::shared_ptr<RenderTexture>& texture) const
+    unsigned int TexturePool::FindHandleByTexture(const std::shared_ptr<RenderTexture>& texture) const
     {
         for(const auto& pair : texture_map)
         {
@@ -35,7 +35,7 @@ namespace kpengine{
         }
         return 0;
     }
-    unsigned int TextureCache::FindHandleByKey(const std::string& key) const
+    unsigned int TexturePool::FindHandleByKey(const std::string& key) const
     {
         if(!texture_map.contains(key))
         {
@@ -44,5 +44,5 @@ namespace kpengine{
         return texture_map.at(key)->GetTexture();
     }
 
-    TextureCache::~TextureCache() = default;
+    TexturePool::~TexturePool() = default;
 }

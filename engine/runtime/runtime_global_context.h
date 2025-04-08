@@ -7,6 +7,7 @@ namespace kpengine
 {
     class WindowSystem;
     class RenderSystem;
+    class AssetSystem;
     class LogSystem;
 
     namespace runtime
@@ -15,7 +16,7 @@ namespace kpengine
         {
             public:
             RuntimeContext() = default;
-
+            ~RuntimeContext();
             void Initialize();
 
             void Clear();
@@ -23,6 +24,7 @@ namespace kpengine
             std::unique_ptr<WindowSystem> window_system_;
             std::unique_ptr<RenderSystem> render_system_;
             std::unique_ptr<LogSystem> log_system_;
+            std::unique_ptr<AssetSystem> asset_system_;
 
             std::thread::id game_thread_id;
         };

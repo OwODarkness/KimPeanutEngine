@@ -19,7 +19,7 @@ namespace kpengine
     {
     }
 
-    void RenderTexture2D::Initialize()
+    bool RenderTexture2D::Initialize()
     {
         glGenTextures(1, &texture_handle_);
         glBindTexture(GL_TEXTURE_2D, texture_handle_);
@@ -36,6 +36,7 @@ namespace kpengine
             image_id_ =  "texture/default.jpg";
             absoulte_image_path = GetAssetDirectory() + image_id_;
             image_data = stbi_load(absoulte_image_path.c_str(), &width, &height, &nr_channels, 0);
+            return false;
         }
         else
         {
@@ -65,6 +66,8 @@ namespace kpengine
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        return true;
     }
 
     RenderTextureCubeMap::RenderTextureCubeMap(const std::string &image_directory, const std::vector<std::string>& face_names)
@@ -73,7 +76,7 @@ namespace kpengine
     {
     }
 
-    void RenderTextureCubeMap::Initialize()
+    bool RenderTextureCubeMap::Initialize()
     {
 
         glGenTextures(1, &texture_handle_);
@@ -95,6 +98,7 @@ namespace kpengine
             {
                 KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", item_path.c_str());
                 stbi_image_free(image_data);
+                return false;
             }
         }
 
@@ -103,6 +107,7 @@ namespace kpengine
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        return true;
     }
 
 

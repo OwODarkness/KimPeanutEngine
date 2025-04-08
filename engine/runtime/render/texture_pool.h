@@ -1,5 +1,5 @@
-#ifndef KPENGINE_RUNTIME_TEXTURE_CACHE_H
-#define KPENGINE_RUNTIME_TEXTURE_CACHE_H
+#ifndef KPENGINE_RUNTIME_TEXTURE_POOL_H
+#define KPENGINE_RUNTIME_TEXTURE_POOL_H
 
 #include <memory>
 #include <unordered_map>
@@ -8,10 +8,10 @@
 namespace kpengine{
     class RenderTexture;
 
-    class TextureCache{
+    class TexturePool{
     public:
-        TextureCache() = default;
-        ~TextureCache();
+        TexturePool() = default;
+        ~TexturePool();
         bool IsTextureCached(const std::string& key) const;
         void AddTexture(std::shared_ptr<RenderTexture> texture);
         std::shared_ptr<RenderTexture> FindTextureByKey(const std::string& key) const;

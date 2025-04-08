@@ -2,11 +2,14 @@
 #include "runtime/core/system/window_system.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/system/log_system.h"
+#include "runtime/core/system/asset_system.h"
+
 namespace kpengine
 {
     namespace runtime{
 
        RuntimeContext global_runtime_context;
+
 
         void RuntimeContext::Initialize()
         {
@@ -15,9 +18,11 @@ namespace kpengine
             window_system_ = std::make_unique<WindowSystem>();
             window_system_->Initialize(WindowInitInfo::GetDefaultWindowInfo());
 
+            asset_system_ = std::make_unique<AssetSystem>();
+            asset_system_->Initialize();
+
             render_system_ = std::make_unique<RenderSystem>();
             render_system_->Initialize();
-
 
         }
 
@@ -25,7 +30,11 @@ namespace kpengine
         {
             window_system_.reset();
             render_system_.reset();
+            asset_system_.reset();
             log_system_.reset();
         }
+
+        RuntimeContext::~RuntimeContext() = default;
+
     }
 }

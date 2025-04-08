@@ -9,6 +9,7 @@
 #include "platform/path/path.h"
 
 #include "runtime/render/render_mesh_resource.h"
+#include "runtime/runtime_header.h"
 
 namespace kpengine
 {
@@ -84,9 +85,23 @@ namespace kpengine
         }
         else
         {
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
-            texture->Initialize();
-            material->diffuse_textures_.push_back(texture);
+            TexturePool* texture_pool = runtime::global_runtime_context.asset_system_->GetTexturePool();
+            if(texture_pool->IsTextureCached("texture/default.jpg"))
+            {
+                material->diffuse_textures_.push_back(texture_pool->FindTextureByKey("texture/default.jpg"));
+            }
+            else
+            {
+                std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
+                bool is_succeed = texture->Initialize();
+                if(is_succeed)
+                {
+                    texture_pool->AddTexture(texture);
+                    material->diffuse_textures_.push_back(texture);
+                }
+                
+            }
+
         }
 
         return std::make_shared<RenderMeshStandard>(vertices, indices, material);
@@ -101,23 +116,25 @@ namespace kpengine
 
             file_path = directory + '/' + file_path.C_Str();
 
+            std::string texture_key = file_path.C_Str();
             bool is_texture_cached = false;
-            for (const auto &item : textures_cached)
-            {
-                if (item->image_id_ == file_path.C_Str())
-                {
-                    textures.push_back(item);
-                    is_texture_cached = true;
-                    break;
-                }
-            }
 
-            if (false == is_texture_cached)
+            TexturePool* texture_pool = runtime::global_runtime_context.asset_system_->GetTexturePool();
+            is_texture_cached = texture_pool->IsTextureCached(texture_key);
+
+            if(is_texture_cached == true)
             {
-                std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(file_path.C_Str());
-                texture->Initialize();
-                textures.push_back(texture);
-                textures_cached.push_back(texture);
+                textures.push_back(texture_pool->FindTextureByKey(texture_key));
+            }
+            else
+            {
+                std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(texture_key);
+                bool is_succeed = texture->Initialize();
+                if(is_succeed)
+                {
+                    texture_pool->AddTexture(texture);
+                    textures.push_back(texture);
+                }
             }
         }
     }
@@ -245,11 +262,23 @@ namespace kpengine
         }
         else
         {
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
-            texture->Initialize();
-            material->diffuse_textures_.push_back(texture);
+            TexturePool* texture_pool = runtime::global_runtime_context.asset_system_->GetTexturePool();
+            if(texture_pool->IsTextureCached("texture/default.jpg"))
+            {
+                material->diffuse_textures_.push_back(texture_pool->FindTextureByKey("texture/default.jpg"));
+            }
+            else
+            {
+                std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
+                bool is_succeed = texture->Initialize();
+                if(is_succeed)
+                {
+                    texture_pool->AddTexture(texture);
+                    material->diffuse_textures_.push_back(texture);
+                }
+            }
         }
-        
+        mesh_section.material = material;
         mesh_resource.mesh_sections_.push_back(mesh_section);
 
 
@@ -257,31 +286,34 @@ namespace kpengine
 
     void ModelLoader_V2::ProcessTexture(aiMaterial *material, aiTextureType assimp_texture_type, std::vector<std::shared_ptr<RenderTexture>> &textures)
     {
-        // for (unsigned int i = 0; i < material->GetTextureCount(assimp_texture_type); i++)
-        // {
-        //     aiString file_path;
-        //     material->GetTexture(assimp_texture_type, i, &file_path);
+        for (unsigned int i = 0; i < material->GetTextureCount(assimp_texture_type); i++)
+        {
+            aiString file_path;
+            material->GetTexture(assimp_texture_type, i, &file_path);
 
-        //     file_path = directory + '/' + file_path.C_Str();
+            file_path = directory + '/' + file_path.C_Str();
+            std::string texture_key = file_path.C_Str();
+            bool is_texture_cached = false;
 
-        //     bool is_texture_cached = false;
-        //     for (const auto &item : textures_cached)
-        //     {
-        //         if (item->image_id_ == file_path.C_Str())
-        //         {
-        //             textures.push_back(item);
-        //             is_texture_cached = true;
-        //             break;
-        //         }
-        //     }
+            TexturePool* texture_pool = runtime::global_runtime_context.asset_system_->GetTexturePool();
+            is_texture_cached = texture_pool->IsTextureCached(texture_key);
 
-        //     if (false == is_texture_cached)
-        //     {
-        //         std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(file_path.C_Str());
-        //         texture->Initialize();
-        //         textures.push_back(texture);
-        //         textures_cached.push_back(texture);
-        //     }
-        // }
+            if(is_texture_cached == true)
+            {
+                textures.push_back(texture_pool->FindTextureByKey(texture_key));
+            }
+            else
+            {
+                std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(texture_key);
+                bool is_succeed = texture->Initialize();
+                if(is_succeed)
+                {
+                    texture_pool->AddTexture(texture);
+                    textures.push_back(texture);
+                }
+            }
+
+
+        }
     }
 }

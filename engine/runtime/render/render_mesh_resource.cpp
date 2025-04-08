@@ -1,20 +1,18 @@
 #include "render_mesh_resource.h"
+#include <glad/glad.h>
 
-#include <iostream>
 
 namespace kpengine{
-    void RenderMeshResource::Debug()
+
+    unsigned int RenderMeshResource::GetFaceNum() const
     {
-        for(unsigned int i = 0;i<mesh_sections_.size();i++)
+        std::vector<MeshSection>::const_iterator iter;
+        unsigned int count = 0;
+        for(iter = mesh_sections_.cbegin() ; iter != mesh_sections_.cend();iter++)
         {
-            std::cout << "[section " << i << "]:\n";
-            std::cout << "face: " << mesh_sections_[i].face_count << "\n";
-            std::cout << "range: " << mesh_sections_[i].index_start << " -- " << mesh_sections_[i].index_start + mesh_sections_[i].index_count - 1 << "\n"; 
+            count += iter->face_count;
         }
+        return count;
     }
 
-    void RenderMeshResource::Initialize()
-    {
-        
-    }
 }

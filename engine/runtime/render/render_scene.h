@@ -48,6 +48,10 @@ namespace kpengine{
         float angle = 0.f;
         std::shared_ptr<Skybox> skybox;
     private:
+        std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies;//renderable
+        std::vector<unsigned int> free_slots;
+        unsigned int current_generation = 0;
+
         unsigned int ubo_matrices_;
         bool isskydraw = false;
         bool is_light_dirty = true;

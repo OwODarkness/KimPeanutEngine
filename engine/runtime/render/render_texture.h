@@ -15,7 +15,7 @@ namespace kpengine
         */  
         RenderTexture(const std::string &image_relative_path);
 
-        virtual void Initialize() = 0;
+        virtual bool Initialize() = 0;
 
         inline unsigned int GetTexture() const { return texture_handle_; }
 
@@ -31,7 +31,7 @@ namespace kpengine
     public:
         RenderTexture2D(const std::string &image_path);
 
-        virtual void Initialize() override;
+        virtual bool Initialize() override;
     };
     //cubemap type
     class RenderTextureCubeMap: public RenderTexture
@@ -39,7 +39,7 @@ namespace kpengine
     public:
         RenderTextureCubeMap(const std::string &image_directory, const std::vector<std::string>& face_names);
 
-        virtual void Initialize() override;
+        virtual bool Initialize() override;
     private:
         std::vector<std::string> face_names_;
     };
