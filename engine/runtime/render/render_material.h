@@ -21,6 +21,8 @@ namespace kpengine{
         glm::vec3 diffuse_albedo_{1.f};
         float shininess = 70.f;
         bool normal_texture_enable_ = false;
+
+        std::shared_ptr<RenderShader> shader_;
     };
 
 

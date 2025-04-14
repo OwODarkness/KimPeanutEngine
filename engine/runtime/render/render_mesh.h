@@ -60,15 +60,16 @@ public:
     void Initialize();
     const RenderMeshResource* GetMeshResource() const;
     ~RenderMesh_V2();
+public:
+    unsigned int vao_;
 private:
+    unsigned int vbo_;
+    unsigned int ebo_;
     //std::vector<std::unique_ptr<RenderMeshResource>> lod_mesh_resources;
     std::unique_ptr<RenderMeshResource> mesh_resource;
     std::string name_;
     unsigned int lod_level;
-public:
-    unsigned int vao_;
-    unsigned int vbo_;
-    unsigned int ebo_;
+
 };
 }
 

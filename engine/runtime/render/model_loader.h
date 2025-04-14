@@ -18,6 +18,7 @@ namespace kpengine{
     class RenderTexture;
     class RenderMeshResource;
 
+    //this class will be replaced by ModelLoader_V2 to support new mesh system
     class ModelLoader{
     public:
         ModelLoader() = default;
@@ -33,6 +34,7 @@ namespace kpengine{
        // std::vector<std::shared_ptr<RenderTexture>> textures_cached;
     };
 
+    //this no state class to used to load model to get mesh data 
     class ModelLoader_V2{
     public:
         //output: mesh_resource

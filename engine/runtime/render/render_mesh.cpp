@@ -1,7 +1,6 @@
 #include "render_mesh.h"
 
 #include <glad/glad.h>
-#include <iostream>
 
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_material.h"

@@ -12,6 +12,7 @@ enum class CameraType: unsigned int{
     CAMERA_ORTHOGONAL
 };
 
+//TODO replaced original third-party lib glm data type by custom matrix which could be found in runtime/core/math
 class RenderCamera{
 
 public:

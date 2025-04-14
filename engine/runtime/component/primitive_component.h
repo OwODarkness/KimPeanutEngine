@@ -11,6 +11,7 @@ namespace kpengine{
     class PrimitiveComponent: public SceneComponent{
     public:
         virtual void Initialize() override;
+        virtual void TickComponent(float delta_time);
     protected:
         virtual void RegisterSceneProxy() = 0 ;
         virtual void UnRegisterSceneProxy() = 0;

@@ -139,6 +139,8 @@ namespace kpengine
         }
     }
 
+
+    //ModelLoader_V2
     bool ModelLoader_V2::Load(const std::string& path, RenderMeshResource& mesh_resource){
         Assimp::Importer import;
         const aiScene *scene = import.ReadFile(path, aiProcess_Triangulate | 
@@ -262,6 +264,7 @@ namespace kpengine
         }
         else
         {
+            //without texture attach, send a default texture
             TexturePool* texture_pool = runtime::global_runtime_context.asset_system_->GetTexturePool();
             if(texture_pool->IsTextureCached("texture/default.jpg"))
             {
