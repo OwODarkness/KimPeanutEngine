@@ -14,7 +14,7 @@ namespace kpengine{
         MeshComponent(const std::string& mesh_realtive_path);
         void SetMesh(std::shared_ptr<RenderMesh_V2> mesh);
         virtual void Initialize() override;
-        virtual ~MeshComponent();
+        ~MeshComponent() override;
     protected:
         virtual void RegisterSceneProxy() override;
         virtual void UnRegisterSceneProxy() override;

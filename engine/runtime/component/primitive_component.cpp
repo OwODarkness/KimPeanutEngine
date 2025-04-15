@@ -13,4 +13,9 @@ namespace kpengine{
         scene_proxy_->UpdateTransform(GetWorldTransform());
     }
 
+    PrimitiveComponent::~PrimitiveComponent()
+    {
+        UnRegisterSceneProxy();
+        scene_proxy_.reset();
+    }
 }

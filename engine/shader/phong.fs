@@ -1,4 +1,4 @@
-#version 330 core
+#version 460 core
 
 struct Material{
     sampler2D diffuse_texture_0;
@@ -39,8 +39,7 @@ struct DirectionalLight{
 struct SpotLight{
     vec3 position;
     vec3 direction;
-    float cutoff;
-    float outer_cutoff;
+
     vec3 color;
 
     vec3 ambient;
@@ -50,6 +49,15 @@ struct SpotLight{
     float constant;
     float linear;
     float quadratic;
+
+    float cutoff;
+    float outer_cutoff;
+};
+
+layout(std140, binding=1) uniform Light{
+    PointLight point_light;
+    DirectionalLight directional_light;
+    SpotLight spot_light;
 };
 
 in vec3 out_normal;
@@ -59,10 +67,10 @@ in vec4 frag_pos_light_space;
 in mat3 out_TBN;
 out vec4 out_frag_color;
 
-uniform PointLight point_light;
-uniform DirectionalLight directional_light;
-uniform SpotLight spot_light;
-uniform vec3 ambient;
+// uniform PointLight point_light;
+// uniform DirectionalLight directional_light;
+// uniform SpotLight spot_light;
+vec3 ambient = vec3(0.1);
 uniform Material material;
 uniform vec3 view_position;
 

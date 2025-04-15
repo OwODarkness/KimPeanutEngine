@@ -25,6 +25,7 @@ namespace kpengine{
         MeshSceneProxy* mesh_proxy = dynamic_cast<MeshSceneProxy*>(scene_proxy_.get());
         if(mesh_proxy)
         {
+            mesh_proxy->Initialize();
             mesh_proxy->vao_ = mesh_->vao_;
         }
         RegisterSceneProxy();
@@ -44,6 +45,6 @@ namespace kpengine{
 
     MeshComponent::~MeshComponent()
     {
-        UnRegisterSceneProxy();
+        mesh_.reset();        
     }
 }

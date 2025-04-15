@@ -7,6 +7,7 @@
 namespace kpengine{
     class ActorComponent : public Object{
     public:
+        virtual ~ActorComponent() = default;
         virtual void Initialize() = 0;
         virtual void TickComponent(float delta_time) = 0;
     };

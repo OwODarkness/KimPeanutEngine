@@ -11,7 +11,9 @@
 namespace kpengine{
     class MeshSceneProxy: public PrimitiveSceneProxy{
     public:
-        virtual void Draw(std::shared_ptr<RenderShader> shader) override;
+        MeshSceneProxy();
+        void Draw(std::shared_ptr<RenderShader> shader) override;
+        void Initialize() override;
     public:
         unsigned int vao_;
         std::vector<MeshSection> mesh_sections;

@@ -25,11 +25,6 @@ namespace kpengine{
         void Render(float delta_time);
         SceneProxyHandle AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy);
         void RemoveProxy(SceneProxyHandle handle);
-    private:
-        void ConfigureUniformLight(std::shared_ptr<RenderShader> shader);
-        void ConfigurePointLightInfo(std::shared_ptr<RenderShader> shader);
-        void ConfigureSpotLightInfo(std::shared_ptr<RenderShader> shader);
-        void ConfigureDirectionalLightInfo(std::shared_ptr<RenderShader> shader);
     public:
         std::shared_ptr<FrameBuffer> scene_;//frame buffer
 
@@ -37,10 +32,7 @@ namespace kpengine{
 
         std::shared_ptr<RenderCamera> render_camera_;
 
-        AmbientLight ambient_light_;
-        DirectionalLight directional_light_;
-        PointLight point_light_;
-        SpotLight spot_light_;
+        Light light_;
 
         std::shared_ptr<ShadowMaker> directional_shadow_maker_;
         std::shared_ptr<ShadowMaker> point_shadow_maker_;
@@ -48,11 +40,14 @@ namespace kpengine{
         float angle = 0.f;
         std::shared_ptr<Skybox> skybox;
     private:
+        //scene proxy 
         std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies;//renderable
         std::vector<unsigned int> free_slots;
         unsigned int current_generation = 0;
 
-        unsigned int ubo_matrices_;
+        unsigned int ubo_camera_matrices_;//unifrom buffer object
+        unsigned int ubo_light_;//unifrom buffer object
+
         bool isskydraw = false;
         bool is_light_dirty = true;
     };
