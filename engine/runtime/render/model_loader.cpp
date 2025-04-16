@@ -10,7 +10,7 @@
 
 #include "runtime/render/render_mesh_resource.h"
 #include "runtime/runtime_header.h"
-
+#include "runtime/render/shader_pool.h"
 namespace kpengine
 {
     std::vector<std::shared_ptr<RenderMesh>> ModelLoader::Load(const std::string &relative_model_path)
@@ -141,9 +141,11 @@ namespace kpengine
 
 
     //ModelLoader_V2
-    bool ModelLoader_V2::Load(const std::string& path, RenderMeshResource& mesh_resource){
+    bool ModelLoader_V2::Load(const std::string& relative_model_path, RenderMeshResource& mesh_resource){
         Assimp::Importer import;
-        const aiScene *scene = import.ReadFile(path, aiProcess_Triangulate | 
+        std::string absolute_model_path = GetAssetDirectory() + relative_model_path;
+
+        const aiScene *scene = import.ReadFile(absolute_model_path, aiProcess_Triangulate | 
             aiProcess_GenNormals |
             aiProcess_FlipUVs);
 
@@ -152,11 +154,11 @@ namespace kpengine
             KP_LOG("ModelLoadLog", LOG_LEVEL_ERROR, "%s failed to load model", import.GetErrorString());
             return false;
         }
-        KP_LOG("ModelLoadLog", LOG_LEVEL_DISPLAY, "start load mesh based model from %s", path.c_str());
+        KP_LOG("ModelLoadLog", LOG_LEVEL_DISPLAY, "start load mesh based model from %s", absolute_model_path.c_str());
         
         
         ModelLoader_V2 model_loader;
-        model_loader.directory = path.substr(0, path.find_last_of('/'));
+        model_loader.directory = relative_model_path.substr(0, relative_model_path.find_last_of('/'));
         //preallocate vertex_buffer and index_buffer
         unsigned int vertices_num = 0;
         unsigned int indices_num = 0;
@@ -256,6 +258,8 @@ namespace kpengine
         mesh_section.face_count = mesh->mNumFaces;
         //generate material
         std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
+        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_PHONG);
+
         if (mesh->mMaterialIndex > 0)
         {
             aiMaterial *ai_material = scene->mMaterials[mesh->mMaterialIndex];
@@ -281,6 +285,7 @@ namespace kpengine
                 }
             }
         }
+        
         mesh_section.material = material;
         mesh_resource.mesh_sections_.push_back(mesh_section);
 

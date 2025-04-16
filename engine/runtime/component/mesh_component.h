@@ -18,7 +18,7 @@ namespace kpengine{
     protected:
         virtual void RegisterSceneProxy() override;
         virtual void UnRegisterSceneProxy() override;
-    private:
+    protected:
         std::shared_ptr<RenderMesh_V2> mesh_;
     };
 }

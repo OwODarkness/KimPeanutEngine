@@ -59,6 +59,7 @@ public:
     RenderMesh_V2(const std::string& mesh_relative_path);
     void Initialize();
     const RenderMeshResource* GetMeshResource() const;
+    std::string GetName() const{return name_;}
     ~RenderMesh_V2();
 public:
     unsigned int vao_;

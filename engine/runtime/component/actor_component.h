@@ -1,11 +1,12 @@
 #ifndef KPENGINE_RUNTIME_ACTOR_COMPONENT_H
-#define KPENIGNE_RUNTIME_ACTOR_COMPONENT_H
+#define KPENGINE_RUNTIME_ACTOR_COMPONENT_H
 
 #include "runtime/object/object.h"
 
 
 namespace kpengine{
-    class ActorComponent : public Object{
+
+    class ActorComponent: public Object{
     public:
         virtual ~ActorComponent() = default;
         virtual void Initialize() = 0;

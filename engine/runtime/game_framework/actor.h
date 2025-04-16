@@ -4,7 +4,7 @@
 #include <vector>
 #include <memory>
 
-#include "object.h"
+#include "runtime/object/object.h"
 #include "runtime/core/math/math_header.h"
 
 class ActorComponent;
@@ -17,11 +17,17 @@ namespace kpengine{
     public:
         Actor();
         ~Actor();
+        virtual void Initialize();
         virtual void Tick(float delta_time);
         Vector3f GetActorLocation() const;
         Vector3f GetActorScale() const;
         Rotator3f GetActorRotation() const;
         Transform3f GetActorTransform() const;
+
+        void SetActorLocation(const Vector3f& new_location);
+        void SetActorRotation(const Rotator3f& new_rotation);
+        void SetActorScale(const Vector3f& new_scale);
+        void SetTransform(const Transform3f& new_transform);
     protected:
         std::vector<std::shared_ptr<Actor>> children_;
         std::weak_ptr<Actor> owner_;

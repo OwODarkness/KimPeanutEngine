@@ -9,9 +9,10 @@ namespace kpengine{
 
     class Level{
     public:
+        Level();
         void Initialize();
         void Tick(float delta_time);
-        bool AddActor(std::shared_ptr<Actor> actor);
+        bool AddActor(const std::shared_ptr<Actor>& actor);
 
     private:
         std::vector<std::shared_ptr<Actor>> actors_;

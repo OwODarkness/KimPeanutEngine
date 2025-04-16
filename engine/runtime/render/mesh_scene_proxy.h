@@ -18,7 +18,7 @@ namespace kpengine{
         unsigned int vao_;
         std::vector<MeshSection> mesh_sections_;
     private:
-        std::shared_ptr<RenderShader> current_shader_;
+        unsigned int current_shader_id_;
     };
 }
 

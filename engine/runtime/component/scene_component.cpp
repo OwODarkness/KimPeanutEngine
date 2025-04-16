@@ -82,6 +82,12 @@ namespace kpengine{
         transform_.scale_ = new_scale;
     }
 
+
+    void SceneComponent::SetRelativeTransform(const Transform3f& new_transform)
+    {
+        transform_ = new_transform;
+    }
+
     void SceneComponent::AddChild(const std::shared_ptr<SceneComponent>& child)
     {
         //TODO Invoke some correspond 

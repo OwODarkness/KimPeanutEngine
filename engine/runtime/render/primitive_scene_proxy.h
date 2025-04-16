@@ -12,11 +12,16 @@ namespace kpengine{
     public:
         virtual void Draw(std::shared_ptr<RenderShader> shader) = 0;
         void UpdateTransform(const Transform3f& new_transform);
+        void UpdateViewPosition(float* view_pos);
+        void UpdateLightSpace(float* light_space);
         virtual void Initialize();
+        Transform3f GetTransform() const{return transfrom_;}
     protected:
         PrimitiveSceneProxy(Transform3f transform = Transform3f());
     protected:
         Transform3f transfrom_;
+        float* view_pos_;
+        float* light_space_;
     };
 }
 

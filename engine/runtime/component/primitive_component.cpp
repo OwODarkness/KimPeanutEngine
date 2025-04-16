@@ -18,4 +18,9 @@ namespace kpengine{
         UnRegisterSceneProxy();
         scene_proxy_.reset();
     }
+
+    void PrimitiveComponent::UnRegisterSceneProxy()
+    {
+
+    }
 }

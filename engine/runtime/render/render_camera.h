@@ -27,7 +27,7 @@ public:
     //(theta, fhi)
     void Rotate(const glm::vec2& delta);
 
-    inline glm::vec3 GetPosition() const{return position_;}
+    inline glm::vec3 GetPosition()const {return position_;}
 
     inline glm::vec3 GetDirection() const{return direction_;}
 

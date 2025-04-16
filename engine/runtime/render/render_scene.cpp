@@ -36,16 +36,15 @@ namespace kpengine
         skybox = test::GetRenderObjectSkybox();
         skybox->Initialize();
 
-        render_objects_.push_back(test::GetRenderObjectFloor());
-        std::shared_ptr<RenderObject> bunny = test::GetRenderObjectBunny();
-        bunny->SetLocation(glm::vec3(0.f, -0.8f, 0.f));
-        render_objects_.push_back(bunny);
-        std::shared_ptr<RenderObject> teapot = test::GetRenderObjectTeapot();
-        teapot->SetLocation(glm::vec3(1.f, -0.5f, 1.f));
-        render_objects_.push_back(teapot);
-        std::shared_ptr<RenderObject> nanosuit = test::GetRenderObjectNanosuit();
-        render_objects_.push_back(nanosuit);
-
+        // render_objects_.push_back(test::GetRenderObjectFloor());
+        // std::shared_ptr<RenderObject> bunny = test::GetRenderObjectBunny();
+        // bunny->SetLocation(glm::vec3(0.f, -0.8f, 0.f));
+        // render_objects_.push_back(bunny);
+        // std::shared_ptr<RenderObject> teapot = test::GetRenderObjectTeapot();
+        // teapot->SetLocation(glm::vec3(1.f, -0.5f, 1.f));
+        // render_objects_.push_back(teapot);
+        // std::shared_ptr<RenderObject> nanosuit = test::GetRenderObjectNanosuit();
+        // render_objects_.push_back(nanosuit);
 
         
         //bunny->SetLocation(glm::vec3(0.f, -0.8f, 0.f));
@@ -58,7 +57,6 @@ namespace kpengine
             glUniformBlockBinding(shader_id, ub_camera_index, 0);
             unsigned int ub_light_index = glGetUniformBlockIndex(shader_id, "Light");
             glUniformBlockBinding(shader_id, ub_light_index, 1);
-
         }
 
         render_camera_ = camera;
@@ -130,6 +128,14 @@ namespace kpengine
             point_depth_shader->SetMat("model", glm::value_ptr(render_objects_[i]->CalculateModelMatrix()));
             render_objects_[i]->Render(point_depth_shader);
         }
+
+        for(auto& proxy: scene_proxies)
+        {
+            Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(proxy->GetTransform());
+            point_depth_shader->SetMat("model", transform_mat[0]);
+            proxy->Draw(point_depth_shader);
+        }
+
         point_shadow_maker_->UnBindFrameBuffer();
 
         // render a normal scene
@@ -169,15 +175,25 @@ namespace kpengine
                 std::shared_ptr<RenderShader> shader = render_objects_[i]->GetShader();
                 shader->UseProgram();
                 //shader->SetVec3("ambient", glm::value_ptr(ambient_light.ambient));
-                shader->SetVec3("view_position", glm::value_ptr(render_camera_->GetPosition()));
+                glm::vec3 cam_pos = render_camera_->GetPosition();
+                shader->SetVec3("view_position", glm::value_ptr(cam_pos));
                 shader->SetMat("light_space_matrix", glm::value_ptr(light_space_matrix));
 
                 shader->SetInt("shadow_map", 15);
-
+                
                 shader->SetFloat("far_plane", 25.f);
                 shader->SetInt("point_shadow_map", 14);
 
                 render_objects_[i]->Render(shader);
+            }
+
+            for(auto& proxy: scene_proxies)
+            {
+                glm::vec3 cam_pos = render_camera_->GetPosition();
+
+                proxy->UpdateViewPosition(glm::value_ptr(cam_pos));
+                proxy->UpdateLightSpace(glm::value_ptr(light_space_matrix));
+                proxy->Draw(nullptr);
             }
         }
         scene_->UnBindFrameBuffer();
@@ -186,6 +202,10 @@ namespace kpengine
 
     SceneProxyHandle RenderScene::AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy)
     {
+        if(scene_proxy == nullptr)
+        {
+            return SceneProxyHandle::InValid();
+        }
         //if free_slot exist, consume it
         if(free_slots.size())
         {

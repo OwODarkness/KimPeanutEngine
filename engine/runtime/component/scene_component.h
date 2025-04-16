@@ -10,7 +10,6 @@
 namespace kpengine{
     class SceneComponent: public ActorComponent, public std::enable_shared_from_this<SceneComponent>{
     public:
-        SceneComponent() = default;
         virtual void TickComponent(float delta_time) override;
         virtual void Initialize() override;
         void AttachToComponent(const std::shared_ptr<SceneComponent>& child);
@@ -28,6 +27,8 @@ namespace kpengine{
         void SetRelativeLocation(const Vector3f& new_location);
         void SetRelativeRotation(const Rotator3f& new_rotation);
         void SetRelativeScale(const Vector3f& new_scale);
+        void SetRelativeTransform(const Transform3f& new_transform);
+
         ~SceneComponent() override;
     protected:
         void AddChild(const std::shared_ptr<SceneComponent>& child);

@@ -10,7 +10,7 @@ namespace math{
     template<typename T>
     class Transform{
     public:
-        Transform():position_(Vector3<T>()), rotator_(Rotator3<T>()), scale_(Vector3<T>()){}
+        Transform():position_(Vector3<T>()), rotator_(Rotator<T>()), scale_(Vector3<T>(1.f)){}
         Transform(const Vector3<T>& position, const Rotator<T>& rotator, const Vector3<T>& scale):position_(position), rotator_(rotator), scale_(scale){}
         Vector3<T> position_;
         Rotator<T> rotator_;
