@@ -21,9 +21,9 @@ namespace kpengine
         render_scene_->Initialize(render_camera_);
     }
 
-    void RenderSystem::Tick(float DeltaTime)
+    void RenderSystem::Tick(float delta_time)
     {
-        render_scene_->Render(DeltaTime);
+        render_scene_->Render(delta_time);
     }
 
     RenderSystem::~RenderSystem()

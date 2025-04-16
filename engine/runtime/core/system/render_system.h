@@ -13,7 +13,7 @@ namespace kpengine{
         RenderSystem();
         ~RenderSystem();
         void Initialize();
-        void Tick(float DeltaTime);
+        void Tick(float delta_time);
         RenderScene* GetRenderScene() {return render_scene_.get();}
         RenderCamera* GetRenderCamera() {return render_camera_.get();}
         ShaderPool* GetShaderPool() {return shader_pool_.get();}

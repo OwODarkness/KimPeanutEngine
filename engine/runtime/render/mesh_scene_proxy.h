@@ -6,7 +6,7 @@
 #include "primitive_scene_proxy.h"
 #include "mesh_section.h"
 
-
+#define SHADER_PARAM_MODEL_TRANSFORM "model"
 
 namespace kpengine{
     class MeshSceneProxy: public PrimitiveSceneProxy{
@@ -16,7 +16,9 @@ namespace kpengine{
         void Initialize() override;
     public:
         unsigned int vao_;
-        std::vector<MeshSection> mesh_sections;
+        std::vector<MeshSection> mesh_sections_;
+    private:
+        std::shared_ptr<RenderShader> current_shader_;
     };
 }
 

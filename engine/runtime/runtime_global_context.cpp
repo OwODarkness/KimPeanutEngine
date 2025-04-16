@@ -3,6 +3,7 @@
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/system/log_system.h"
 #include "runtime/core/system/asset_system.h"
+#include "runtime/core/system/level_system.h"
 
 namespace kpengine
 {
@@ -23,6 +24,9 @@ namespace kpengine
 
             render_system_ = std::make_unique<RenderSystem>();
             render_system_->Initialize();
+            
+            level_system_ = std::make_unique<LevelSystem>();
+            level_system_->Initialize();
 
         }
 

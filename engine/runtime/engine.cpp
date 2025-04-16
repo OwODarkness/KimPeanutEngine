@@ -5,7 +5,7 @@
 #include "runtime/core/system/window_system.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/log/logger.h"
-
+#include "runtime/core/system/level_system.h"
 
 namespace kpengine{
     namespace runtime{
@@ -25,6 +25,7 @@ namespace kpengine{
                 return false;
             }
             float delta_time = CalculateDeltaTime();
+            global_runtime_context.level_system_->Tick(delta_time);
             global_runtime_context.window_system_->Tick(delta_time);
             global_runtime_context.render_system_->Tick(delta_time);
             return true;
