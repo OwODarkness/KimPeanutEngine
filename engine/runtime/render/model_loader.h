@@ -18,24 +18,8 @@ namespace kpengine{
     class RenderTexture;
     class RenderMeshResource;
 
-    //this class will be replaced by ModelLoader_V2 to support new mesh system
-    class ModelLoader{
-    public:
-        ModelLoader() = default;
-
-        std::vector<std::shared_ptr<RenderMesh>> Load(const std::string& relative_model_path);
-    private:
-        void ProcessNode(aiNode* node ,const aiScene* scene);
-        std::shared_ptr<RenderMesh> GenerateMesh(aiMesh* mesh, const aiScene* scene);
-        void ProcessTexture(aiMaterial* material, aiTextureType assimp_texture_type, std::vector<std::shared_ptr<RenderTexture>>& textures);
-    private:
-        std::string directory;
-        std::vector<std::shared_ptr<RenderMesh>> meshes;
-       // std::vector<std::shared_ptr<RenderTexture>> textures_cached;
-    };
-
     //this no state class to used to load model to get mesh data 
-    class ModelLoader_V2{
+    class ModelLoader{
     public:
         //output: mesh_resource
         //path is relative directory

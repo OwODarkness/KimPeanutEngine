@@ -459,9 +459,10 @@ namespace kpengine
         Matrix4<T> Matrix4<T>::MakeTransformMatrix(const Transform<T>& transfrom)
         {
             return 
-                MakeRotationMatrix(transfrom.rotator_) * 
-                MakeTranslationMatrix(transfrom.position_) * 
-                MakeScaleMatrix(transfrom.scale_);
+            MakeTranslationMatrix(transfrom.position_)*
+            MakeRotationMatrix(transfrom.rotator_)*
+                MakeScaleMatrix(transfrom.scale_)
+                ;
         }
         template<typename T>
         Matrix4<T> Matrix4<T>::MakeCameraMatrix(const Vector3<T>& eye_pos, const Vector3<T>& gaze_dir, const Vector3<T>& up)

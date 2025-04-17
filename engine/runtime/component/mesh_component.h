@@ -6,20 +6,20 @@
 #include "primitive_component.h"
 
 namespace kpengine{
-    class RenderMesh_V2;    
+    class RenderMesh;    
 
     class MeshComponent: public PrimitiveComponent{
     public:
         MeshComponent();
         MeshComponent(const std::string& mesh_realtive_path);
-        void SetMesh(std::shared_ptr<RenderMesh_V2> mesh);
+        void SetMesh(std::shared_ptr<RenderMesh> mesh);
         virtual void Initialize() override;
         ~MeshComponent() override;
     protected:
         virtual void RegisterSceneProxy() override;
         virtual void UnRegisterSceneProxy() override;
     protected:
-        std::shared_ptr<RenderMesh_V2> mesh_;
+        std::shared_ptr<RenderMesh> mesh_;
     };
 }
 

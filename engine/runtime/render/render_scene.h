@@ -10,7 +10,6 @@
 namespace kpengine{
 
     class FrameBuffer;
-    class RenderObject;
     class RenderCamera;
     class RenderShader;
     class ShadowMaker;
@@ -27,8 +26,6 @@ namespace kpengine{
         void RemoveProxy(SceneProxyHandle handle);
     public:
         std::shared_ptr<FrameBuffer> scene_;//frame buffer
-
-        std::vector<std::shared_ptr<RenderObject>> render_objects_;
 
         std::shared_ptr<RenderCamera> render_camera_;
 

@@ -9,9 +9,8 @@ struct MeshVertex
 {
     Vector3f position;
     Vector3f normal;
-    Vector3f tangent;
     Vector2f tex_coord;
-    Vector4f color;
+    Vector3f tangent;
 };
 }
 #endif

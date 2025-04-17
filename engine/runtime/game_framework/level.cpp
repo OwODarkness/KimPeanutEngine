@@ -18,9 +18,25 @@ namespace kpengine{
     {
         KP_LOG("LevelLog", LOG_LEVEL_DISPLAY, "Level Init...");
         
-        std::shared_ptr<MeshActor> actor = std::make_shared<MeshActor>("model/bunny/stanford-bunny.obj");
-        actor->SetActorScale({10.f, 10.f, 10.f});
-        AddActor(actor);
+        std::shared_ptr<MeshActor> bunny = std::make_shared<MeshActor>("model/bunny/stanford-bunny.obj");
+        bunny->SetActorScale({5.f, 5.f, 5.f});
+        bunny->SetActorLocation({0.f, -0.1f, 0.f});
+        AddActor(bunny);
+
+        std::shared_ptr<MeshActor> teapot = std::make_shared<MeshActor>("model/bunny/teapot.obj");
+        teapot->SetActorScale({0.1f, 0.1f, 0.1f});
+        teapot->SetActorLocation({0.5f, 0.f, 0.5f});
+        AddActor(teapot);
+
+        std::shared_ptr<MeshActor> actor2 = std::make_shared<MeshActor>("model/bunny/floor.obj");
+        AddActor(actor2);
+
+        std::shared_ptr<MeshActor> nanosuit = std::make_shared<MeshActor>("model/nanosuit/nanosuit.obj");
+        nanosuit->SetActorScale({0.1f, 0.1f, 0.1f});
+        nanosuit->SetActorLocation({-0.6f, 0.0f, -0.6f});
+        AddActor(nanosuit);
+
+
 
         // std::unique_ptr<RenderMeshResource> resource = std::make_unique<RenderMeshResource>();
         // std::vector<MeshVertex> vertex_buffer;

@@ -2,16 +2,17 @@
 
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
-
+#include <iostream>
 
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_texture.h"
 
 namespace kpengine
 {
+
+
     void RenderMaterial::Render(RenderShader *shader_helper)
     {
-
 
         shader_helper->SetFloat("material.shininess", shininess);
         shader_helper->SetVec3("material.diffuse_albedo", glm::value_ptr(diffuse_albedo_));
@@ -19,7 +20,6 @@ namespace kpengine
         std::string texture_id = "";
 
         int diffuse_texture_num = (int)diffuse_textures_.size();
-
         for (int i = 0; i < diffuse_texture_num; i++)
         {
             glActiveTexture(GL_TEXTURE0 + i);
@@ -39,11 +39,11 @@ namespace kpengine
             glBindTexture(GL_TEXTURE_2D, specular_textures_[i]->GetTexture());
 
         }
-        if(emmision_texture)
+        if(emission_texture)
         {
             glActiveTexture(GL_TEXTURE0 + diffuse_texture_num + specular_texture_num);
             shader_helper->SetInt("material.emission_texture", diffuse_texture_num + specular_texture_num);
-            glBindTexture(GL_TEXTURE_2D, emmision_texture->GetTexture());
+            glBindTexture(GL_TEXTURE_2D, emission_texture->GetTexture());
         }
         if(normal_texture_ && normal_texture_enable_)
         {
@@ -52,6 +52,7 @@ namespace kpengine
             glBindTexture(GL_TEXTURE_2D, normal_texture_->GetTexture());
             shader_helper->SetBool("normal_texture_enabled", normal_texture_enable_);
         }
+
     }
 
 

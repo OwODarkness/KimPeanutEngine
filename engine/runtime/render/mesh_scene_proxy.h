@@ -16,9 +16,11 @@ namespace kpengine{
         void Initialize() override;
     public:
         unsigned int vao_;
+        unsigned int ebo_;
         std::vector<MeshSection> mesh_sections_;
     private:
         unsigned int current_shader_id_;
+        bool do_once = true;
     };
 }
 

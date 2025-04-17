@@ -1,23 +1,21 @@
 #include "mesh_component.h"
 
-#include <iostream>
-
-
 #include "runtime/runtime_header.h"
 #include "runtime/render/render_scene.h"
 #include "runtime/render/render_mesh.h"
 #include "runtime/render/mesh_scene_proxy.h"
 #include "runtime/render/render_mesh_resource.h"
 #include "runtime/core/log/logger.h"
+
 namespace kpengine{
     MeshComponent::MeshComponent():mesh_(nullptr){}
     MeshComponent::MeshComponent(const std::string& mesh_realtive_path):
-    mesh_(std::make_shared<RenderMesh_V2>(mesh_realtive_path))
+    mesh_(std::make_shared<RenderMesh>(mesh_realtive_path))
     {
 
     }
 
-    void MeshComponent::SetMesh(std::shared_ptr<RenderMesh_V2> mesh)
+    void MeshComponent::SetMesh(std::shared_ptr<RenderMesh> mesh)
     {
         mesh_ = mesh;
     }
@@ -32,6 +30,7 @@ namespace kpengine{
         if(mesh_proxy)
         {
             mesh_proxy->vao_ = mesh_->vao_;
+            mesh_proxy->ebo_ = mesh_->ebo_;
             mesh_proxy->mesh_sections_ = mesh_->GetMeshResource()->mesh_sections_;
             mesh_proxy->Initialize();
         }

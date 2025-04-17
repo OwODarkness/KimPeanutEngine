@@ -2,7 +2,6 @@
 
 #include "runtime/render/shader_pool.h"
 #include "runtime/render/render_scene.h"
-#include "runtime/render/render_object.h"
 #include "runtime/render/render_camera.h"
 
 

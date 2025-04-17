@@ -7,13 +7,11 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include "runtime/render/frame_buffer.h"
-#include "runtime/render/render_object.h"
 #include "runtime/test/render_object_test.h"
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_camera.h"
 #include "runtime/render/shadow_maker.h"
 
-#include "runtime/render/model_loader.h"
 #include "runtime/render/render_mesh_resource.h"
 #include "platform/path/path.h"
 #include "runtime/render/primitive_scene_proxy.h"
@@ -30,36 +28,14 @@ namespace kpengine
     {
 
         assert(camera);
+        render_camera_ = camera;
+
         scene_ = std::make_shared<FrameBuffer>(1280, 720);
         scene_->Initialize();
         //skybox
         skybox = test::GetRenderObjectSkybox();
         skybox->Initialize();
 
-        // render_objects_.push_back(test::GetRenderObjectFloor());
-        // std::shared_ptr<RenderObject> bunny = test::GetRenderObjectBunny();
-        // bunny->SetLocation(glm::vec3(0.f, -0.8f, 0.f));
-        // render_objects_.push_back(bunny);
-        // std::shared_ptr<RenderObject> teapot = test::GetRenderObjectTeapot();
-        // teapot->SetLocation(glm::vec3(1.f, -0.5f, 1.f));
-        // render_objects_.push_back(teapot);
-        // std::shared_ptr<RenderObject> nanosuit = test::GetRenderObjectNanosuit();
-        // render_objects_.push_back(nanosuit);
-
-        
-        //bunny->SetLocation(glm::vec3(0.f, -0.8f, 0.f));
-
-        for (int i = 0; i < render_objects_.size(); i++)
-        {
-            render_objects_[i]->Initialize();
-            unsigned int shader_id = render_objects_[i]->GetShader()->GetShaderProgram();
-            unsigned int ub_camera_index = glGetUniformBlockIndex(shader_id, "CameraMatrices");
-            glUniformBlockBinding(shader_id, ub_camera_index, 0);
-            unsigned int ub_light_index = glGetUniformBlockIndex(shader_id, "Light");
-            glUniformBlockBinding(shader_id, ub_light_index, 1);
-        }
-
-        render_camera_ = camera;
 
         glGenBuffers(1, &ubo_camera_matrices_);
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
@@ -81,18 +57,14 @@ namespace kpengine
         light_.point_light.ambient = glm::vec3(1.f, 1.f, 1.f);
         light_.point_light.position = glm::vec3(4.f, 2.f, 0.f);
         light_.directional_light.color = glm::vec3(0.);
-        light_.spot_light.color = glm::vec3(0.f);
+        //light_.spot_light.color = glm::vec3(0.f);
         light_.spot_light.cutoff = (float)std::cos(glm::radians(12.5));
         light_.spot_light.outer_cutoff = (float)std::cos(glm::radians(17.5));
     }
 
     void RenderScene::Render(float deltatime)
     {
-        // angle += 5.f * deltatime;
-        // point_light_.position.x = 4 * std::cos(glm::radians(angle));
-        // point_light_.position.z = 4* std::sin(glm::radians(angle));
 
-        // render_objects_[1]->SetRotation({0.f,0.f, angle});
 
         // render a depth map
         directional_shadow_maker_->BindFrameBuffer();
@@ -104,10 +76,11 @@ namespace kpengine
         depth_shader->UseProgram();
         depth_shader->SetMat("light_space_matrix", glm::value_ptr(light_space_matrix));
 
-        for (int i = 0; i < render_objects_.size(); i++)
+        for(auto& proxy: scene_proxies)
         {
-            render_objects_[i]->Render(depth_shader);
+            proxy->Draw(depth_shader);
         }
+
         directional_shadow_maker_->UnBindFrameBuffer();
 
         shadow_transforms.clear();
@@ -123,11 +96,6 @@ namespace kpengine
         }
         point_depth_shader->SetVec3("light_position", glm::value_ptr(light_.point_light.position));
         point_depth_shader->SetFloat("far_plane", 25.f);
-        for(int i = 0;i<render_objects_.size();i++)
-        {
-            point_depth_shader->SetMat("model", glm::value_ptr(render_objects_[i]->CalculateModelMatrix()));
-            render_objects_[i]->Render(point_depth_shader);
-        }
 
         for(auto& proxy: scene_proxies)
         {
@@ -151,12 +119,6 @@ namespace kpengine
                 glBindBuffer(GL_UNIFORM_BUFFER, ubo_light_);
                 glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Light), &light_);
                 glBindBuffer(GL_UNIFORM_BUFFER, 0);
-                // for (int i = 0; i < render_objects_.size(); i++)
-                // {
-                //     std::shared_ptr<RenderShader> shader = render_objects_[i]->GetShader();
-                //     shader->UseProgram();
-                //     ConfigureUniformLight(shader);
-                // }
                 is_light_dirty = false;
             }
 
@@ -167,25 +129,6 @@ namespace kpengine
             glBindTexture(GL_TEXTURE_2D, directional_shadow_maker_->GetShadowMap());
             glActiveTexture(GL_TEXTURE14);
             glBindTexture(GL_TEXTURE_CUBE_MAP, point_shadow_maker_->GetShadowMap());
-
-
-
-            for (int i = 0; i < render_objects_.size(); i++)
-            {
-                std::shared_ptr<RenderShader> shader = render_objects_[i]->GetShader();
-                shader->UseProgram();
-                //shader->SetVec3("ambient", glm::value_ptr(ambient_light.ambient));
-                glm::vec3 cam_pos = render_camera_->GetPosition();
-                shader->SetVec3("view_position", glm::value_ptr(cam_pos));
-                shader->SetMat("light_space_matrix", glm::value_ptr(light_space_matrix));
-
-                shader->SetInt("shadow_map", 15);
-                
-                shader->SetFloat("far_plane", 25.f);
-                shader->SetInt("point_shadow_map", 14);
-
-                render_objects_[i]->Render(shader);
-            }
 
             for(auto& proxy: scene_proxies)
             {
