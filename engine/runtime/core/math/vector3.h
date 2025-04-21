@@ -271,7 +271,7 @@ namespace kpengine{
                 length += 1e-4;
             }
             T coff = T(1.0/length);
-            return Vector3f(coff * x_, coff * y_, coff * z_);
+            return Vector3(coff * x_, coff * y_, coff * z_);
         }
         
 

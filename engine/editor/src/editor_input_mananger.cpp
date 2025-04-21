@@ -8,7 +8,7 @@
 #include "runtime/core/system/window_system.h"
 #include "runtime/render/render_camera.h"
 #include "editor/include/editor_ui_component/editor_scene_component.h"
-
+#include "runtime/core/math/math_header.h"
 namespace kpengine
 {
     namespace editor
@@ -153,9 +153,10 @@ namespace kpengine
             }
             if(!is_first_cursor)
             {
-            double delta_x = xpos - last_cursor_xpos_;
-            double delta_y = ypos - last_cursor_ypos_;
-            camera_->Rotate(glm::vec2(-delta_y , delta_x));
+            float delta_x = (float)(xpos - last_cursor_xpos_);
+            float delta_y = (float)(ypos - last_cursor_ypos_);
+
+            camera_->Rotate(Vector2f(-delta_y , delta_x));
 
             }
             is_first_cursor = false;

@@ -3,8 +3,7 @@
 
 #include <memory>
 #include <vector>
-#include <glm/glm.hpp>
-
+#include "runtime/core/math/math_header.h"
 namespace kpengine{
 
     class RenderTexture; 
@@ -18,7 +17,7 @@ namespace kpengine{
         std::vector<std::shared_ptr<RenderTexture>>  specular_textures_;
         std::shared_ptr<RenderTexture> emission_texture;
         std::shared_ptr<RenderTexture> normal_texture_;
-        glm::vec3 diffuse_albedo_{1.f};
+        Vector3f diffuse_albedo_{1.f};
         float shininess = 70.f;
         bool normal_texture_enable_ = false;
 

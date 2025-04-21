@@ -3,8 +3,6 @@
 #include <iostream>
 #include <cassert>
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include <glm/gtc/type_ptr.hpp>
 
 #include "runtime/render/frame_buffer.h"
 #include "runtime/test/render_object_test.h"
@@ -54,12 +52,11 @@ namespace kpengine
         directional_shadow_maker_->Initialize();
         point_shadow_maker_ = std::make_shared<PointShadowMaker>();
         point_shadow_maker_->Initialize();
-        light_.point_light.ambient = glm::vec3(1.f, 1.f, 1.f);
-        light_.point_light.position = glm::vec3(4.f, 2.f, 0.f);
-        light_.directional_light.color = glm::vec3(0.);
-        //light_.spot_light.color = glm::vec3(0.f);
-        light_.spot_light.cutoff = (float)std::cos(glm::radians(12.5));
-        light_.spot_light.outer_cutoff = (float)std::cos(glm::radians(17.5));
+        light_.point_light.ambient = {1.f, 1.f, 1.f};
+        light_.point_light.position = {4.f, 2.f, 0.f};
+        light_.directional_light.color = {0.f, 0.f, 0.f};
+        light_.spot_light.cutoff = std::cos(math::DegreeToRadian(12.5f));
+        light_.spot_light.outer_cutoff = std::cos(math::DegreeToRadian(17.5f));
     }
 
     void RenderScene::Render(float deltatime)
@@ -68,13 +65,13 @@ namespace kpengine
 
         // render a depth map
         directional_shadow_maker_->BindFrameBuffer();
-        glm::vec3 light_pos = -light_.directional_light.direction * 2.f;
-        std::vector<glm::mat4> shadow_transforms; 
+        Vector3f light_pos = -light_.directional_light.direction * 2.f;
+        std::vector<Matrix4f> shadow_transforms; 
         directional_shadow_maker_->CalculateShadowTransform(light_pos, shadow_transforms);
-        glm::mat4 light_space_matrix = shadow_transforms[0];
+        Matrix4f light_space_matrix = shadow_transforms[0].Transpose();
         std::shared_ptr<RenderShader> depth_shader = directional_shadow_maker_->GetShader();
         depth_shader->UseProgram();
-        depth_shader->SetMat("light_space_matrix", glm::value_ptr(light_space_matrix));
+        depth_shader->SetMat("light_space_matrix", light_space_matrix[0]);
 
         for(auto& proxy: scene_proxies)
         {
@@ -92,14 +89,14 @@ namespace kpengine
         point_depth_shader->UseProgram();
         for (int i = 0; i < shadow_transforms.size(); i++)
         {
-            point_depth_shader->SetMat(("shadow_matrices[" + std::to_string(i) + ']').c_str(), glm::value_ptr(shadow_transforms[i]));
+            point_depth_shader->SetMat(("shadow_matrices[" + std::to_string(i) + ']').c_str(), shadow_transforms[i].Transpose()[0]);
         }
-        point_depth_shader->SetVec3("light_position", glm::value_ptr(light_.point_light.position));
+        point_depth_shader->SetVec3("light_position", light_.point_light.position.Data());
         point_depth_shader->SetFloat("far_plane", 25.f);
 
         for(auto& proxy: scene_proxies)
         {
-            Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(proxy->GetTransform());
+            Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(proxy->GetTransform()).Transpose();
             point_depth_shader->SetMat("model", transform_mat[0]);
             proxy->Draw(point_depth_shader);
         }
@@ -110,8 +107,10 @@ namespace kpengine
         scene_->BindFrameBuffer();
         {
             glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
-            glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(glm::mat4), glm::value_ptr(render_camera_->GetProjectionMatrix()));
-            glBufferSubData(GL_UNIFORM_BUFFER, sizeof(glm::mat4), sizeof(glm::mat4), glm::value_ptr(render_camera_->GetViewMatrix()));
+            Matrix4f proj_mat = render_camera_->GetProjectionMatrix().Transpose();
+            Matrix4f view_mat = render_camera_->GetViewMatrix().Transpose();
+            glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4f), proj_mat[0]);
+            glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4f), sizeof(Matrix4f), view_mat[0]);
             glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
             if(is_light_dirty)
@@ -132,10 +131,9 @@ namespace kpengine
 
             for(auto& proxy: scene_proxies)
             {
-                glm::vec3 cam_pos = render_camera_->GetPosition();
-
-                proxy->UpdateViewPosition(glm::value_ptr(cam_pos));
-                proxy->UpdateLightSpace(glm::value_ptr(light_space_matrix));
+                Vector3f cam_pos = render_camera_->GetPosition();
+                proxy->UpdateViewPosition(cam_pos.Data());
+                proxy->UpdateLightSpace(light_space_matrix[0]);
                 proxy->Draw(nullptr);
             }
         }

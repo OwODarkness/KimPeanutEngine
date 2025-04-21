@@ -15,7 +15,7 @@ namespace kpengine
     {
 
         shader_helper->SetFloat("material.shininess", shininess);
-        shader_helper->SetVec3("material.diffuse_albedo", glm::value_ptr(diffuse_albedo_));
+        shader_helper->SetVec3("material.diffuse_albedo", diffuse_albedo_.Data());
         std::string texture_prefix = "";
         std::string texture_id = "";
 

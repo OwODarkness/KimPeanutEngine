@@ -47,12 +47,11 @@ namespace kpengine{
                     current_shader->SetInt("shadow_map", 15);
                     current_shader->SetFloat("far_plane", 25.f);
                     current_shader->SetInt("point_shadow_map", 14);
+                    current_shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
                 }
-                current_shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
-                
                 iter->material->Render(current_shader.get());
                 glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void*)(iter->index_start * sizeof(unsigned int)));
-
+                //glBindTexture(GL_TEXTURE_2D, 0);
             }
         }
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);

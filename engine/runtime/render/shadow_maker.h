@@ -3,7 +3,8 @@
 
 #include <memory>
 #include <vector>
-#include <glm/gtc/type_ptr.hpp>
+
+#include "runtime/core/math/math_header.h"
 
 namespace kpengine{
 
@@ -16,7 +17,7 @@ namespace kpengine{
         virtual void Initialize();
         virtual void BindFrameBuffer();
         virtual void UnBindFrameBuffer();
-        virtual void CalculateShadowTransform(glm::vec3 light_position, std::vector<glm::mat4>& out_shadow_transforms) = 0;
+        virtual void CalculateShadowTransform(const Vector3f& light_position, std::vector<Matrix4f>& out_shadow_transforms) = 0;
    
         std::shared_ptr<RenderShader> GetShader() const {return shader;}
         inline unsigned int GetShadowMap() const {return depth_texture_;}
@@ -39,7 +40,7 @@ namespace kpengine{
         void Initialize() override;
         void BindFrameBuffer() override;
         void UnBindFrameBuffer() override;
-        void CalculateShadowTransform(glm::vec3 light_position, std::vector<glm::mat4>& out_shadow_transform) override;
+        void CalculateShadowTransform(const Vector3f& light_position, std::vector<Matrix4f>& out_shadow_transforms) override;
     };
 
     class PointShadowMaker : public ShadowMaker{
@@ -48,8 +49,7 @@ namespace kpengine{
         void Initialize() override;
         void BindFrameBuffer()override;
         void UnBindFrameBuffer()override;
-        void CalculateShadowTransform(glm::vec3 light_position, std::vector<glm::mat4>& out_shadow_transform) override;
-
+        void CalculateShadowTransform(const Vector3f& light_position, std::vector<Matrix4f>& out_shadow_transforms) override;
     };
 }
 

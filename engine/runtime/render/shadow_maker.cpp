@@ -1,8 +1,6 @@
 #include "shadow_maker.h"
 
 #include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include <glm/gtc/matrix_transform.hpp>
 
 #include "platform/path/path.h"
 #include "runtime/render/render_shader.h"
@@ -76,11 +74,11 @@ namespace kpengine
         ShadowMaker::UnBindFrameBuffer();
     }
 
-    void DirectionalShadowMaker::CalculateShadowTransform(glm::vec3 light_position, std::vector<glm::mat4>& out_shadow_transforms)
+    void DirectionalShadowMaker::CalculateShadowTransform(const Vector3f& light_position, std::vector<Matrix4f>& out_shadow_transforms)
     {
-        glm::mat4 light_projection, light_view;
-        light_projection = glm::ortho(-10.0f, 10.0f, -10.0f, 10.0f, near_plane_, far_plane_);
-        light_view = glm::lookAt(light_position, glm::vec3(0.f), glm::vec3(0.f, 1.f, 0.f));
+        Matrix4f light_projection, light_view;
+        light_projection = Matrix4f::MakeOrthProjMatrix(-10.0f, 10.0f, -10.0f, 10.0f, near_plane_, far_plane_);
+        light_view = Matrix4f::MakeCameraMatrix(light_position, Vector3f(0.f, -1.f, 0.f), Vector3f(0.f, 1.f, 0.f));
         out_shadow_transforms.push_back(light_projection * light_view);
     }
 
@@ -133,17 +131,17 @@ namespace kpengine
 
 
 
-    void  PointShadowMaker::CalculateShadowTransform(glm::vec3 light_position, std::vector<glm::mat4>& out_shadow_transforms)
+    void  PointShadowMaker::CalculateShadowTransform(const Vector3f& light_position, std::vector<Matrix4f>& out_shadow_transforms)
     {
 
         float aspect = (float)(width_ / height_);
-        glm::mat4 projection =  glm::perspective(glm::radians(90.f), aspect, near_plane_, far_plane_);
-        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(1.f, 0.f, 0.f), glm::vec3(0.f, -1.f, 0.f)));
-        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(-1.f, 0.f, 0.f), glm::vec3(0.f, -1.f, 0.f)));
-        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, 1.f, 0.f), glm::vec3(0.f, 0.f, 1.f)));
-        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, -1.f, 0.f), glm::vec3(0.f, 0.f, -1.f)));
-        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, 0.f, 1.f), glm::vec3(0.f, -1.f, 0.f)));
-        out_shadow_transforms.push_back(projection * glm::lookAt(light_position, light_position + glm::vec3(0.f, 0.f, -1.f), glm::vec3(0.f, -1.f, 0.f)));
+        Matrix4f projection = Matrix4f::MakePerProjMatrix(90.f, aspect, near_plane_, far_plane_);
+        out_shadow_transforms.push_back(projection * Matrix4f::MakeCameraMatrix(light_position, {1.f, 0.f, 0.f}, {0.f, -1.f, 0.f}));
+        out_shadow_transforms.push_back(projection * Matrix4f::MakeCameraMatrix(light_position, {-1.f, 0.f, 0.f}, {0.f, -1.f, 0.f}));
+        out_shadow_transforms.push_back(projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, 1.f, 0.f}, {0.f, 0.f, 1.f}));
+        out_shadow_transforms.push_back(projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, -1.f, 0.f}, {0.f, 0.f, -1.f}));
+        out_shadow_transforms.push_back(projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, 0.f, 1.f}, {0.f, -1.f, 0.f}));
+        out_shadow_transforms.push_back(projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, 0.f, -1.f}, {0.f, -1.f, 0.f}));
         
     }
 }
