@@ -1,21 +1,52 @@
 #include "engine.h"
 #include <iostream>
-#include <thread>
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/log/logger.h"
 #include "runtime/core/system/level_system.h"
+#include "editor/include/editor_global_context.h"
+#include "editor/include/editor.h"
 
 namespace kpengine{
     namespace runtime{
+        
         constexpr float fps_alpha = 0.1f;
 
         void Engine::Initialize()
         {
             global_runtime_context.Initialize();
-            global_runtime_context.game_thread_id = std::this_thread::get_id();
+            
+            global_runtime_context.game_thread_id_ = std::this_thread::get_id();
+            render_thread_ = std::thread(&Engine::RenderThreadFunc, this);
             KP_LOG("EngineLog", LOG_LEVEL_DISPLAY, "Engine Initialize Successfully");
+        }
+
+        void Engine::OnRenderThreadBegin()
+        {
+            
+            render_thread_.join();
+            global_runtime_context.render_thread_id_ = render_thread_.get_id();
+        }
+
+        void Engine::RenderThreadFunc()
+        {
+            std::cout << "render thread running\n";
+
+            while(!global_runtime_context.window_system_->ShouldClose())
+            {
+                
+                while(is_game_thread_loaded_ == true)
+                {
+                    std::this_thread::sleep_for(std::chrono::microseconds(1));
+                }
+                
+
+                //TODO this would filed because window thread is not in this thread
+                
+                is_game_thread_loaded_ = true;
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            }
         }
 
         bool Engine::Tick()
@@ -24,10 +55,14 @@ namespace kpengine{
             {
                 return false;
             }
+            
+            is_game_thread_loaded_ = true;
             float delta_time = CalculateDeltaTime();
-            global_runtime_context.level_system_->Tick(delta_time);
-            global_runtime_context.window_system_->Tick(delta_time);
-            global_runtime_context.render_system_->Tick(delta_time);
+            global_runtime_context.window_system_->Tick(1.f/fps);
+            global_runtime_context.render_system_->Tick(1.f/fps);
+            global_runtime_context.level_system_->Tick(1.f/fps);
+            is_game_thread_loaded_ = false;
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
             return true;
         }
 
@@ -40,6 +75,7 @@ namespace kpengine{
             last_time = current_time;
             float delta_time = duration.count();
             CalculateFPS(delta_time);
+            
             return delta_time;
         }
 

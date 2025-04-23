@@ -19,7 +19,7 @@ namespace kpengine{
 
     class RenderScene{
     public:
-        RenderScene() = default;
+        RenderScene();
         void Initialize(std::shared_ptr<RenderCamera> camera);
         void Render(float delta_time);
         SceneProxyHandle AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy);

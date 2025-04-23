@@ -22,17 +22,28 @@ namespace kpengine
         SceneMode_Editor
     };
 
+    RenderScene::RenderScene():
+    scene_(std::make_shared<FrameBuffer>(1280, 720)),
+    render_camera_(nullptr),
+    directional_shadow_maker_(std::make_shared<DirectionalShadowMaker>()),
+    point_shadow_maker_(std::make_shared<PointShadowMaker>()),
+    light_(Light())
+    {
+
+    }
+
     void RenderScene::Initialize(std::shared_ptr<RenderCamera> camera)
     {
 
         assert(camera);
         render_camera_ = camera;
 
-        scene_ = std::make_shared<FrameBuffer>(1280, 720);
         scene_->Initialize();
+        
         //skybox
-        skybox = test::GetRenderObjectSkybox();
-        skybox->Initialize();
+       skybox = test::GetRenderObjectSkybox();
+        
+       skybox->Initialize();
 
 
         glGenBuffers(1, &ubo_camera_matrices_);
@@ -48,9 +59,8 @@ namespace kpengine
         glBindBufferBase(GL_UNIFORM_BUFFER, 1, ubo_light_); // Bind to binding point 1
 
 
-        directional_shadow_maker_ = std::make_shared<DirectionalShadowMaker>();
         directional_shadow_maker_->Initialize();
-        point_shadow_maker_ = std::make_shared<PointShadowMaker>();
+
         point_shadow_maker_->Initialize();
         light_.point_light.ambient = {1.f, 1.f, 1.f};
         light_.point_light.position = {4.f, 2.f, 0.f};
@@ -61,8 +71,6 @@ namespace kpengine
 
     void RenderScene::Render(float deltatime)
     {
-
-
         // render a depth map
         directional_shadow_maker_->BindFrameBuffer();
         Vector3f light_pos = -light_.directional_light.direction * 2.f;

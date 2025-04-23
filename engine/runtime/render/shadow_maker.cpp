@@ -32,8 +32,8 @@ namespace kpengine
     {
         std::string shader_directory = GetShaderDirectory();
         shader = std::make_shared<RenderShader>(
-            shader_directory + "shadow_mapping_depth.vs", 
-            shader_directory + "shadow_mapping_depth.fs");
+            "shadow_mapping_depth.vs", 
+            "shadow_mapping_depth.fs");
 
     }
 
@@ -83,11 +83,10 @@ namespace kpengine
     }
 
     PointShadowMaker::PointShadowMaker(int width, int height) : ShadowMaker(width, height){
-        std::string shader_directory = GetShaderDirectory();
         shader = std::make_shared<RenderShader>( 
-            shader_directory + "pointshadow_mapping_depth.vs", 
-            shader_directory + "pointshadow_mapping_depth.fs",
-            shader_directory + "pointshadow_mapping_depth.gs");
+            "pointshadow_mapping_depth.vs", 
+            "pointshadow_mapping_depth.fs",
+            "pointshadow_mapping_depth.gs");
         near_plane_ = 1.f;
         far_plane_ = 25.f;
     }

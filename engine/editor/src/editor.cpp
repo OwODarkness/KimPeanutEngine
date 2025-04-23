@@ -1,5 +1,5 @@
 #include "editor.h"
-
+#include <iostream>
 #include <cassert>
 
 #include "editor/include/editor_ui.h"
@@ -19,7 +19,8 @@ namespace kpengine
     namespace editor
     {
 
-        Editor::Editor()
+        Editor::Editor():
+        editor_ui(std::make_shared<kpengine::ui::EditorUI>())
         {
         }
 
@@ -36,33 +37,45 @@ namespace kpengine
                 runtime::global_runtime_context.render_system_.get(),
                 runtime::global_runtime_context.log_system_.get(),
                 engine};
-
+            editor::global_editor_context.editor = this;
             editor::global_editor_context.Initialize(global_editor_context_init_info);
-
-            editor_ui = std::make_shared<kpengine::ui::EditorUI>();
-            editor_ui->Initialize(global_editor_context.window_system_->GetOpenGLWndow());
+            
+            InitEditorUI();
 
             KP_LOG("EditorLog", LOG_LEVEL_DISPLAY, "Editor Initialize Successfully");
+            std::cout << "Editor Initialize Successfully\n";
+        }
+
+        void Editor::InitEditorUI()
+        {
+            editor_ui->Initialize(global_editor_context.window_system_->GetOpenGLWndow());
+        
         }
 
         void Editor::Run()
         {
             assert(engine_);
             assert(editor_ui);
+           
             while (true)
             {
                 if(!engine_->Tick())
                 {
                     break;
                 }
-
-                editor_ui->BeginDraw();
-                global_editor_context.editor_scene_manager_->Tick();
-                global_editor_context.editor_log_manager_->Tick();
-                editor_ui->Render();
-                editor_ui->EndDraw();
+                Tick();
             }
+            engine_->OnRenderThreadBegin();
             
+        }
+
+        void Editor::Tick()
+        {
+            editor_ui->BeginDraw();
+            global_editor_context.editor_scene_manager_->Tick();
+            global_editor_context.editor_log_manager_->Tick();
+            editor_ui->Render();
+            editor_ui->EndDraw();
         }
 
         void Editor::Clear()

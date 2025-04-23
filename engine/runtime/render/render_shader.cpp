@@ -6,7 +6,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "runtime/core/log/logger.h"
-
+#include "platform/path/path.h"
 namespace kpengine
 {
 
@@ -106,11 +106,12 @@ namespace kpengine
     bool RenderShader::ExtractShaderCodeFromFile(const std::string& file_path, std::string &out_code)
     {
         std::ifstream ifs;
-        ifs.open(file_path, std::ios_base::in);
+        std::string abs_path = GetShaderDirectory() + file_path;
+        ifs.open(abs_path, std::ios_base::in);
         if (!ifs.is_open())
         {
 
-            KP_LOG("ShaderLog", LOG_LEVEL_ERROR, "Failed to open shader file %s", file_path.c_str());
+            KP_LOG("ShaderLog", LOG_LEVEL_ERROR, "Failed to open shader file %s", abs_path.c_str());
             return false;
         }
         else

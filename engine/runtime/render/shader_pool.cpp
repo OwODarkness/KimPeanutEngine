@@ -8,20 +8,20 @@
 namespace kpengine{
     ShaderPool::ShaderPool()
     {
-        std::string shader_dir = GetShaderDirectory();
         shader_cache.insert(
         {
             SHADER_CATEGORY_PHONG, 
-            std::make_shared<RenderShader>(shader_dir + "phong.vs", shader_dir + "phong.fs")
+            std::make_shared<RenderShader>("phong.vs", "phong.fs")
         });
         shader_cache.insert({
             SHADER_CATEGORY_SKYBOX,
-            std::make_shared<RenderShader>(shader_dir + "skybox.vs", shader_dir + "skybox.fs")
+            std::make_shared<RenderShader>("skybox.vs", "skybox.fs")
         });
     }
 
     void ShaderPool::Initialize()
     {
+        
         KP_LOG("ShaderManagerLog", LOG_LEVEL_DISPLAY, "shader compiling...");
         std::unordered_map<std::string, std::shared_ptr<RenderShader>>::iterator iter;
         for(iter = shader_cache.begin();iter !=shader_cache.end();++iter)

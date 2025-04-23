@@ -2,6 +2,8 @@
 #define KPENGINE_RUNTIME_ENGINE_H
 
 #include <chrono>
+#include <thread>
+
 
 namespace kpengine{
 namespace runtime{
@@ -12,6 +14,10 @@ namespace runtime{
         void Initialize();
 
         bool Tick();
+
+        void RenderThreadFunc();
+
+        void OnRenderThreadBegin();
 
         float CalculateDeltaTime();
 
@@ -24,6 +30,10 @@ namespace runtime{
         int frame_count = 0;
         float avg_time_cost = 0.f;
         int fps = 0;
+
+        bool is_game_thread_loaded_ = true;
+
+        std::thread render_thread_;
     };
 }
 }

@@ -21,7 +21,9 @@ namespace editor{
         virtual ~Editor();
     
         void Initialize(kpengine::runtime::Engine* engine);
+        void InitEditorUI();
         void Run();
+        void Tick();
         void Clear();
 
         

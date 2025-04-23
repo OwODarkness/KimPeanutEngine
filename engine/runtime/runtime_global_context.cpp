@@ -1,4 +1,7 @@
 #include "runtime_global_context.h"
+
+#include <iostream>
+
 #include "runtime/core/system/window_system.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/system/log_system.h"
@@ -11,21 +14,23 @@ namespace kpengine
 
        RuntimeContext global_runtime_context;
 
-
+        RuntimeContext::RuntimeContext():
+        window_system_(std::make_unique<WindowSystem>()),        
+        render_system_(std::make_unique<RenderSystem>()),
+        log_system_(std::make_unique<LogSystem>()),
+        asset_system_(std::make_unique<AssetSystem>()),
+        level_system_(std::make_unique<LevelSystem>())
+        {
+            
+        }
         void RuntimeContext::Initialize()
         {
-            log_system_ = std::make_unique<LogSystem>();
-
-            window_system_ = std::make_unique<WindowSystem>();
             window_system_->Initialize(WindowInitInfo::GetDefaultWindowInfo());
 
-            asset_system_ = std::make_unique<AssetSystem>();
             asset_system_->Initialize();
 
-            render_system_ = std::make_unique<RenderSystem>();
             render_system_->Initialize();
             
-            level_system_ = std::make_unique<LevelSystem>();
             level_system_->Initialize();
 
         }

@@ -36,13 +36,18 @@ namespace kpengine
 
         void EditorUI::Initialize(GLFWwindow *window)
         {
+
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
             ImGui::StyleColorsDark();
             // Setup Dear ImGui style
             ImGui_ImplGlfw_InitForOpenGL(window, true);
-            const char *glsl_version = "#version 330";
+
+            const char *glsl_version = "#version 460";
             ImGui_ImplOpenGL3_Init(glsl_version);
+
+
+            
             ImGuiIO &io = ImGui::GetIO();
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
@@ -76,6 +81,8 @@ namespace kpengine
             //Camera
             EditorWindowComponent* camera_ui = new EditorCameraControlComponent(kpengine::editor::global_editor_context.render_system_->GetRenderCamera());
             components_.push_back(camera_ui);
+
+            
         }
 
         void EditorUI::Close()

@@ -16,7 +16,7 @@ namespace kpengine
         class RuntimeContext
         {
             public:
-            RuntimeContext() = default;
+            RuntimeContext();
             ~RuntimeContext();
             void Initialize();
 
@@ -28,7 +28,8 @@ namespace kpengine
             std::unique_ptr<AssetSystem> asset_system_;
             std::unique_ptr<LevelSystem> level_system_;
 
-            std::thread::id game_thread_id;
+            std::thread::id game_thread_id_;
+            std::thread::id render_thread_id_;
         };
 
         extern RuntimeContext global_runtime_context;
