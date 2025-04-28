@@ -10,7 +10,10 @@ namespace kpengine{
     void PrimitiveComponent::TickComponent(float delta_time)
     {
         SceneComponent::TickComponent(delta_time);
-        scene_proxy_->UpdateTransform(GetWorldTransform());
+        if(scene_proxy_)
+        {
+            scene_proxy_->UpdateTransform(GetWorldTransform());
+        }
     }
 
     PrimitiveComponent::~PrimitiveComponent()

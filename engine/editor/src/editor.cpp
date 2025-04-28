@@ -30,8 +30,11 @@ namespace kpengine
 
         void Editor::Initialize(kpengine::runtime::Engine* engine)
         {
-            assert(engine);
             engine_ = engine;
+
+            assert(engine_);
+            assert(editor_ui);
+
              editor::EditorContextInitInfo global_editor_context_init_info{
                 runtime::global_runtime_context.window_system_.get(),
                 runtime::global_runtime_context.render_system_.get(),
@@ -44,6 +47,8 @@ namespace kpengine
 
             KP_LOG("EditorLog", LOG_LEVEL_DISPLAY, "Editor Initialize Successfully");
             std::cout << "Editor Initialize Successfully\n";
+        
+        
         }
 
         void Editor::InitEditorUI()
@@ -52,22 +57,6 @@ namespace kpengine
         
         }
 
-        void Editor::Run()
-        {
-            assert(engine_);
-            assert(editor_ui);
-           
-            while (true)
-            {
-                if(!engine_->Tick())
-                {
-                    break;
-                }
-                Tick();
-            }
-            engine_->OnRenderThreadBegin();
-            
-        }
 
         void Editor::Tick()
         {
@@ -81,7 +70,6 @@ namespace kpengine
         void Editor::Clear()
         {
             editor_ui->Close();
-
         }
 
     }

@@ -35,15 +35,10 @@ namespace kpengine
 
         void Initialize(WindowInitInfo window_info);
 
-        static void OnErrorCallback(int error_code, const char* msg);
+        //makecontext should bind into specify thread
+        void MakeContext();
 
-        static void OnMouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
-
-        static void OnFrameBufferSizeCallback(GLFWwindow*window, int width, int height);
-
-        static void OnKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
-
-        static void OnCursorPosCallback(GLFWwindow* window, double xpos, double ypos);
+        void ClearContext();
 
         bool ShouldClose() const;
 
@@ -64,6 +59,18 @@ namespace kpengine
         void MouseButtonExec(int code, int action, int mods);
         void KeyExec(int key, int code, int action, int mods);
         void CursorPosExec(double xpos, double ypos);
+
+    private:
+    static void OnErrorCallback(int error_code, const char* msg);
+
+    static void OnMouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
+
+    static void OnFrameBufferSizeCallback(GLFWwindow*window, int width, int height);
+
+    static void OnKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
+
+    static void OnCursorPosCallback(GLFWwindow* window, double xpos, double ypos);
+
 
     public:
         int width_;

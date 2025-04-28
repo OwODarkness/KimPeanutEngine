@@ -38,6 +38,18 @@ namespace kpengine
             return;
         }
 
+        glfwSetWindowUserPointer(window_, this);
+        glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
+        glfwSetMouseButtonCallback(window_, &WindowSystem::OnMouseButtonCallback);
+        glfwSetKeyCallback(window_, &WindowSystem::OnKeyCallback);
+        glfwSetCursorPosCallback(window_, &WindowSystem::OnCursorPosCallback);
+
+        MakeContext();
+    }
+
+    void WindowSystem::MakeContext()
+    {
+        
         glfwMakeContextCurrent(window_);
         // glfwSwapInterval(1);
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -46,11 +58,11 @@ namespace kpengine
             return;
         }
 
-        glfwSetWindowUserPointer(window_, this);
-        glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
-        glfwSetMouseButtonCallback(window_, &WindowSystem::OnMouseButtonCallback);
-        glfwSetKeyCallback(window_, &WindowSystem::OnKeyCallback);
-        glfwSetCursorPosCallback(window_, &WindowSystem::OnCursorPosCallback);
+    }
+
+    void WindowSystem::ClearContext()
+    {
+        glfwMakeContextCurrent(nullptr);
     }
 
     void WindowSystem::PollEvents() const
