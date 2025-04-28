@@ -1,5 +1,7 @@
 #include "engine.h"
-#include <iostream>
+
+#include<iostream>
+
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
 #include "runtime/core/system/asset_system.h"
@@ -27,15 +29,10 @@ namespace kpengine{
         void Engine::Initialize()
         {
             global_runtime_context.Initialize();
-
-
-        
-            global_runtime_context.game_thread_id_ = std::this_thread::get_id();
-            render_thread_ = std::thread(&Engine::RenderThreadFunc, this);
-
             assert(editor_);
             editor_->Initialize(this);
-
+            global_runtime_context.render_thread_id_ = std::this_thread::get_id();
+            render_thread_ = std::thread(&Engine::GameThreadFunc, this);
             KP_LOG("EngineLog", LOG_LEVEL_DISPLAY, "Engine Initialize Successfully");
         }
 
@@ -52,33 +49,26 @@ namespace kpengine{
                 {
                     break;
                 }
-                editor_->Tick();
+                
             }
-            OnRenderThreadBegin();
+            OnGameThreadBegin();
         }
 
-        void Engine::OnRenderThreadBegin()
+        void Engine::OnGameThreadBegin()
         {
             
             render_thread_.join();
-            global_runtime_context.render_thread_id_ = render_thread_.get_id();
+            global_runtime_context.game_thread_id_ = render_thread_.get_id();
         }
 
-        void Engine::RenderThreadFunc()
+        void Engine::GameThreadFunc()
         {
-            std::cout << "render thread running\n";
-            //should make gl context here, then init imgui
             while(!global_runtime_context.window_system_->ShouldClose())
             {
-                    while(is_game_thread_loaded_ == true)
-                    {
-                        std::this_thread::sleep_for(std::chrono::milliseconds(1));
-                    }
-
-                //TODO this would filed because window thread is not in this thread
-
-
-                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+                is_game_thread_loaded_ = false;
+                global_runtime_context.level_system_->Tick(1.f/fps);
+                is_game_thread_loaded_ = true;
+                std::this_thread::sleep_for(std::chrono::milliseconds(2));
             }
         }
 
@@ -90,11 +80,15 @@ namespace kpengine{
             }
             float delta_time = CalculateDeltaTime();
             
-            is_game_thread_loaded_ = true;
+            if(is_game_thread_loaded_ == false)
+            {
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            global_runtime_context.render_system_->Tick(1.f/fps);
             global_runtime_context.window_system_->Tick(1.f/fps);
-            global_runtime_context.level_system_->Tick(1.f/fps);
-           global_runtime_context.render_system_->Tick(1.f/fps);
-            is_game_thread_loaded_ = false;
+            editor_->Tick();
+
+
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             return true;
         }

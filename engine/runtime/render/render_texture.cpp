@@ -38,10 +38,10 @@ namespace kpengine
             image_data = stbi_load(absoulte_image_path.c_str(), &width, &height, &nr_channels, 0);
             return false;
         }
-        else
-        {
-            KP_LOG("TextureLog", LOG_LEVEL_DISPLAY, "Load texture successfully from %s ", absoulte_image_path.c_str());
-        }
+        // else
+        // {
+        //     KP_LOG("TextureLog", LOG_LEVEL_DISPLAY, "Load texture successfully from %s ", absoulte_image_path.c_str());
+        // }
 
         int color_format = 0;
         if (nr_channels == 1)

@@ -28,7 +28,7 @@ namespace kpengine
             KP_LOG("ModelLoadLog", LOG_LEVEL_ERROR, "%s failed to load model", import.GetErrorString());
             return false;
         }
-        KP_LOG("ModelLoadLog", LOG_LEVEL_DISPLAY, "start load mesh based model from %s", absolute_model_path.c_str());
+        //KP_LOG("ModelLoadLog", LOG_LEVEL_DISPLAY, "start load mesh based model from %s", absolute_model_path.c_str());
         
         
         ModelLoader model_loader;

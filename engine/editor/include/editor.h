@@ -21,7 +21,6 @@ namespace editor{
         virtual ~Editor();
     
         void Initialize(kpengine::runtime::Engine* engine);
-        void InitEditorUI();
         void Tick();
         void Clear();
 
@@ -29,7 +28,7 @@ namespace editor{
     private:
         kpengine::runtime::Engine* engine_ = nullptr;
         std::shared_ptr<kpengine::ui::EditorUI> editor_ui;
-
+        bool is_initialized_;
     };
 }
 }

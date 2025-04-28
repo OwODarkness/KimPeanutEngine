@@ -1,5 +1,4 @@
 #include "editor.h"
-#include <iostream>
 #include <cassert>
 
 #include "editor/include/editor_ui.h"
@@ -20,7 +19,8 @@ namespace kpengine
     {
 
         Editor::Editor():
-        editor_ui(std::make_shared<kpengine::ui::EditorUI>())
+        editor_ui(std::make_shared<kpengine::ui::EditorUI>()),
+        is_initialized_(false)
         {
         }
 
@@ -43,23 +43,20 @@ namespace kpengine
             editor::global_editor_context.editor = this;
             editor::global_editor_context.Initialize(global_editor_context_init_info);
             
-            InitEditorUI();
+            editor_ui->Initialize(global_editor_context.window_system_->GetOpenGLWndow());
 
             KP_LOG("EditorLog", LOG_LEVEL_DISPLAY, "Editor Initialize Successfully");
-            std::cout << "Editor Initialize Successfully\n";
-        
-        
+            is_initialized_ = true;
         }
 
-        void Editor::InitEditorUI()
-        {
-            editor_ui->Initialize(global_editor_context.window_system_->GetOpenGLWndow());
-        
-        }
 
 
         void Editor::Tick()
         {
+            if(is_initialized_ == false)
+            {
+                return ;
+            }
             editor_ui->BeginDraw();
             global_editor_context.editor_scene_manager_->Tick();
             global_editor_context.editor_log_manager_->Tick();

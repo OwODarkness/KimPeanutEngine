@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+
 struct LogInfo {
     LogInfo(const float in_color[4], const std::string& in_log_text) {
         std::copy(in_color, in_color + 4, color);

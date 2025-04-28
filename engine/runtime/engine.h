@@ -4,6 +4,7 @@
 #include <chrono>
 #include <thread>
 #include <memory>
+#include <atomic>
 
 namespace kpengine{
 
@@ -25,9 +26,9 @@ namespace runtime{
 
         bool Tick();
 
-        void RenderThreadFunc();
+        void GameThreadFunc();
 
-        void OnRenderThreadBegin();
+        void OnGameThreadBegin();
 
         float CalculateDeltaTime();
 
@@ -41,7 +42,7 @@ namespace runtime{
         float avg_time_cost = 0.f;
         int fps = 0;
 
-        bool is_game_thread_loaded_ = true;
+        std::atomic<bool> is_game_thread_loaded_ = false;
         std::thread render_thread_;
 
         std::unique_ptr<editor::Editor> editor_;

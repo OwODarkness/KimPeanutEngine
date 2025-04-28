@@ -26,7 +26,7 @@ namespace kpengine
         void RuntimeContext::Initialize()
         {
             window_system_->Initialize(WindowInitInfo::GetDefaultWindowInfo());
-
+            window_system_->MakeContext();
             asset_system_->Initialize();
 
             render_system_->Initialize();

@@ -15,6 +15,7 @@
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/log_system.h"
 
+
 #define KP_LOG(LOG_NAME, LEVEL, MESSAGE, ...) \
     kpengine::program::Logger::GetLogger()->Log(LOG_NAME, LEVEL, MESSAGE, ##__VA_ARGS__)
 
@@ -22,6 +23,10 @@
 #define LOG_LEVEL_WARNNING kpengine::program::LogLevel::WARNNING
 #define LOG_LEVEL_ERROR kpengine::program::LogLevel::ERROR
 #define LOG_LEVEL_FATAL kpengine::program::LogLevel::FATAL
+
+//debug flag
+#define KPENGINE_DEBUG
+
 
 namespace kpengine
 {

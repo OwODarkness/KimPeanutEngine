@@ -38,25 +38,25 @@ namespace kpengine
             return;
         }
 
-        glfwSetWindowUserPointer(window_, this);
-        glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
-        glfwSetMouseButtonCallback(window_, &WindowSystem::OnMouseButtonCallback);
-        glfwSetKeyCallback(window_, &WindowSystem::OnKeyCallback);
-        glfwSetCursorPosCallback(window_, &WindowSystem::OnCursorPosCallback);
 
-        MakeContext();
+        //MakeContext();
     }
 
     void WindowSystem::MakeContext()
     {
         
         glfwMakeContextCurrent(window_);
-        // glfwSwapInterval(1);
+        glfwSwapInterval(1);
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         {
             std::cout << "Failed to initialize GLAD" << std::endl;
             return;
         }
+        glfwSetWindowUserPointer(window_, this);
+        glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
+        glfwSetMouseButtonCallback(window_, &WindowSystem::OnMouseButtonCallback);
+        glfwSetKeyCallback(window_, &WindowSystem::OnKeyCallback);
+        glfwSetCursorPosCallback(window_, &WindowSystem::OnCursorPosCallback);
 
     }
 
@@ -72,8 +72,8 @@ namespace kpengine
 
     void WindowSystem::Tick(float DeltaTime)
     {
-        PollEvents();
         glfwSwapBuffers(window_);
+        PollEvents();
 
         glClearColor(0.1f, 0.1f, 0.1f, 1.f);
         glClear(GL_COLOR_BUFFER_BIT);
