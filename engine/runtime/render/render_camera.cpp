@@ -4,6 +4,7 @@
 #include <cmath>
 #include <algorithm>
 
+
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
 
@@ -11,10 +12,16 @@
 namespace kpengine
 {
 
+    Vector3f RenderCamera::world_up{0.f, 1.f, 0.f};
     
-    
+    RenderCamera::RenderCamera():
+    position_({0.f, 0.8f, 2.f}),
+    direction_({0.f, 0.f, -1.f}),
+    up_({0.f, 1.f, 0.f})
+    {
+        right_ = direction_.CrossProduct(up_);
+    }
 
-    Vector3f RenderCamera::up_{0.f, 1.f, 0.f};
     void RenderCamera::MoveForward(float delta)
     {
         position_ += direction_ * delta * move_speed_ * move_coff_;
@@ -22,12 +29,12 @@ namespace kpengine
 
     void RenderCamera::MoveRight(float delta)
     {
-        position_ += GetCameraRight() * delta * move_speed_ * move_coff_;
+        position_ += right_ * delta * move_speed_ * move_coff_;
     }
 
     void RenderCamera::MoveUp(float delta)
     {
-        position_ += up_ * delta * move_speed_ * move_coff_;
+        position_ += world_up * delta * move_speed_ * move_coff_;
     }
 
     void RenderCamera::Rotate(const Vector2f &delta)
@@ -35,7 +42,7 @@ namespace kpengine
         float delta_pitch = delta.x_ * rotate_speed_ * rotate_coff_;
         float delta_yaw = delta.y_ * rotate_speed_ * rotate_coff_;
     
-        yaw_ += delta_yaw;
+        yaw_ = (float)((int)(yaw_ +  delta_yaw) % 360);
         pitch_ = std::clamp(delta_pitch + pitch_, pitch_min_, pitch_max_);
     
         float radians_pitch = math::DegreeToRadian(pitch_);
@@ -48,19 +55,15 @@ namespace kpengine
     
         direction_ = dir.GetSafetyNormalize();
 
+        right_ = direction_.CrossProduct(world_up).GetSafetyNormalize();
+        up_ = right_.CrossProduct(direction_).GetSafetyNormalize();
+
     }
     
 
-    Vector3f RenderCamera::GetCameraRight() const
-    {
-        return direction_.CrossProduct(up_);
-    }
-
    Matrix4f RenderCamera::GetViewMatrix() const
     {
-        Matrix4f mat1 = Matrix4f::MakeCameraMatrix(position_, direction_, up_);
-
-        return mat1;
+        return  Matrix4f::MakeCameraMatrix(position_, direction_, up_);
     }
 
     Matrix4f RenderCamera::GetProjectionMatrix() const

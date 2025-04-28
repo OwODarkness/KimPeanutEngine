@@ -11,6 +11,7 @@
 #include "editor/include/editor_ui_component/editor_menubar_component.h"
 #include "editor/include/editor_ui_component/editor_window_component.h"
 #include "editor/include/editor_ui_component/editor_plot_component.h"
+#include "editor/include/editor_ui_component/editor_listbox_component.h"
 #include "editor/include/editor_global_context.h"
 #include "editor/include/editor_ui_component/editor_container_component.h"
 #include "editor/include/editor_ui_component/editor_camera_component.h"
@@ -67,8 +68,14 @@ namespace kpengine
             container->AddComponent(new EditorTextComponent("FPS: "));
             container->AddComponent(new EditorDynamicTextComponent(&x));
             window_component_->AddComponent(container);
-             
+
+            std::vector<const char*> items = {"custom", SHADER_CATEOGRY_NORMAL};
+            EditorListboxComponent* listbox = new EditorListboxComponent(items);
+            window_component_->AddComponent(listbox);
+
             components_.push_back(window_component_);
+
+
 
             //menu init
             std::vector<Menu> menus;

@@ -24,6 +24,7 @@ namespace kpengine{
         void Render(float delta_time);
         SceneProxyHandle AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy);
         void RemoveProxy(SceneProxyHandle handle);
+        void SetCurrentShader(const std::shared_ptr<RenderShader>& shader);
     public:
         std::shared_ptr<FrameBuffer> scene_;//frame buffer
 
@@ -47,6 +48,8 @@ namespace kpengine{
 
         bool isskydraw = false;
         bool is_light_dirty = true;
+
+        std::shared_ptr<RenderShader> current_shader;
     };
 }
 

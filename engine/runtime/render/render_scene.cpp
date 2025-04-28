@@ -4,6 +4,10 @@
 #include <cassert>
 #include <glad/glad.h>
 
+#include "runtime/runtime_global_context.h"
+#include "runtime/core/system/render_system.h"
+#include "runtime/render/shader_pool.h"
+
 #include "runtime/render/frame_buffer.h"
 #include "runtime/test/render_object_test.h"
 #include "runtime/render/render_shader.h"
@@ -27,7 +31,8 @@ namespace kpengine
     render_camera_(nullptr),
     directional_shadow_maker_(std::make_shared<DirectionalShadowMaker>()),
     point_shadow_maker_(std::make_shared<PointShadowMaker>()),
-    light_(Light())
+    light_(Light()),
+    current_shader(nullptr)
     {
 
     }
@@ -142,10 +147,15 @@ namespace kpengine
                 Vector3f cam_pos = render_camera_->GetPosition();
                 proxy->UpdateViewPosition(cam_pos.Data());
                 proxy->UpdateLightSpace(light_space_matrix[0]);
-                proxy->Draw(nullptr);
+                proxy->Draw(current_shader);
             }
         }
         scene_->UnBindFrameBuffer();
+    }
+
+    void RenderScene::SetCurrentShader(const std::shared_ptr<RenderShader>& shader)
+    {
+        current_shader = shader;
     }
 
 
@@ -179,6 +189,7 @@ namespace kpengine
             }
         }
     }
+
 
     void RenderScene::RemoveProxy(SceneProxyHandle handle)
     {

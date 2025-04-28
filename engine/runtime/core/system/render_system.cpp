@@ -1,4 +1,7 @@
 #include "render_system.h"
+
+#include <iostream>
+
 #include "runtime/render/shader_pool.h"
 #include "runtime/render/render_scene.h"
 #include "runtime/render/render_camera.h"
@@ -23,6 +26,12 @@ namespace kpengine
     void RenderSystem::Tick(float delta_time)
     {
         render_scene_->Render(delta_time);
+    }
+
+    void RenderSystem::SetCurrentShaderMode(const std::string& target)
+    {
+        current_shader_mode_ = target;
+        render_scene_->SetCurrentShader(shader_pool_->GetShader(current_shader_mode_));
     }
 
     RenderSystem::~RenderSystem()

@@ -28,7 +28,8 @@ namespace kpengine
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
-
+        glfwWindowHint(GLFW_SAMPLES, 4);
+        
         width_ = window_info.width;
         height_ = window_info.height;
         window_ = glfwCreateWindow(window_info.width, window_info.height, "KimPeanut Engine", nullptr, nullptr);

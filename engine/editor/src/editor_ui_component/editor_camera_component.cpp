@@ -3,6 +3,8 @@
 #include "editor_text_component.h"
 #include "editor_slider_component.h"
 #include "editor_button_component.h"
+#include "editor_text_component.h"
+
 #include "runtime/core/system/delegate.h"
 namespace kpengine{
     namespace ui{
@@ -27,6 +29,12 @@ namespace kpengine{
 
             EditorSliderComponent<float>* rotate_slider = new EditorSliderComponent<float>("rotate_slider", &camera->rotate_speed_, rotate_speed_default_, 5 * rotate_speed_default_);
             AddComponent(rotate_slider);
+            EditorDynamicTextComponent<float>* yaw_text_comp = new EditorDynamicTextComponent<float>(&camera->yaw_);
+            AddComponent(yaw_text_comp);
+            EditorDynamicTextComponent<float>* pitch_text_comp = new EditorDynamicTextComponent<float>(&camera->pitch_);
+            AddComponent(pitch_text_comp);
+
+
         }
 
         void EditorCameraControlComponent::ResetCameraConfig()

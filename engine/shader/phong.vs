@@ -19,7 +19,7 @@ uniform mat4 light_space_matrix;
 
 void main()
 {
-    gl_Position = projection* view*model* vec4(in_location, 1.f);
+    gl_Position = projection* view * model* vec4(in_location, 1.f);
     frag_position = vec3(model * vec4(in_location, 1.f)); 
     out_normal =   mat3(transpose(inverse(model))) * in_normal;
     out_texcoord = in_texcoord;

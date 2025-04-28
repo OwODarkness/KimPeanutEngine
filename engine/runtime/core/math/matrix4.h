@@ -467,9 +467,8 @@ namespace kpengine
         template<typename T>
         Matrix4<T> Matrix4<T>::MakeCameraMatrix(const Vector3<T>& eye_pos, const Vector3<T>& gaze_dir, const Vector3<T>& up)
         {
-            Vector3<T> w =   (1.f/(T)gaze_dir.Norm()) * -(gaze_dir);
-            Vector3<T> tmp = up.CrossProduct(w);
-            Vector3<T> u = (1.f/(T)gaze_dir.Norm())  *  tmp ;
+            Vector3<T> w =  -(gaze_dir);
+            Vector3<T> u =  up.CrossProduct(w);
             Vector3<T> v = w.CrossProduct(u);
 
             Matrix4 res = Matrix4::Identity();
@@ -512,7 +511,7 @@ namespace kpengine
             T bottom = - top;
             T right = aspect * top;
             T left = - right;
-            res[0][0] = 2 * near / (right - left);
+            res[0][0] = 2 *  near / (right - left);
             res[0][2] = (left + right) / (left - right);
             res[1][1] = 2 * near / (top - bottom);
             res[1][2] = (bottom + top) / (bottom - top);

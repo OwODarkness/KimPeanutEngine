@@ -17,6 +17,11 @@ namespace kpengine{
             SHADER_CATEGORY_SKYBOX,
             std::make_shared<RenderShader>("skybox.vs", "skybox.fs")
         });
+
+        shader_cache.insert({
+            SHADER_CATEOGRY_NORMAL,
+            std::make_shared<RenderShader>("normal.vs", "normal.fs")
+        });
     }
 
     void ShaderPool::Initialize()
