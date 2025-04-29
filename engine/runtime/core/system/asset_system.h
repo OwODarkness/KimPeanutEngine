@@ -4,16 +4,13 @@
 #include <memory>
 
 namespace kpengine{
-    class TexturePool;
 
     class AssetSystem{
     public:
         AssetSystem();
         void Initialize();
-        TexturePool* GetTexturePool(){return texture_pool_.get();}
         ~AssetSystem();
     public:
-        std::unique_ptr<TexturePool> texture_pool_;
     };
 }
 

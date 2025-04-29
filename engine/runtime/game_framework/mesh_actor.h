@@ -6,7 +6,6 @@
 #include "actor.h"
 
 namespace kpengine{
-    class RenderMesh_V2;
 
     class MeshActor: public Actor{
     public:

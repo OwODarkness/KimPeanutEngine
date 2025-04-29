@@ -23,6 +23,7 @@ namespace kpengine{
         Vector3f GetActorScale() const;
         Rotator3f GetActorRotation() const;
         Transform3f GetActorTransform() const;
+        SceneComponent* GetRootComponent(){return root_component_.get();}
 
         void SetActorLocation(const Vector3f& new_location);
         void SetActorRotation(const Rotator3f& new_rotation);

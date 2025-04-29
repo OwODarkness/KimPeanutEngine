@@ -13,6 +13,7 @@ namespace kpengine{
         MeshComponent();
         MeshComponent(const std::string& mesh_realtive_path);
         void SetMesh(std::shared_ptr<RenderMesh> mesh);
+        std::shared_ptr<RenderMesh> GetMesh(){return mesh_;}
         virtual void Initialize() override;
         ~MeshComponent() override;
     protected:

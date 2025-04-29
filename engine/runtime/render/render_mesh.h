@@ -16,7 +16,8 @@ public:
     RenderMesh();
     RenderMesh(const std::string& mesh_relative_path);
     void Initialize();
-    const RenderMeshResource* GetMeshResource() const;
+    RenderMeshResource* GetMeshResource(){return mesh_resource.get();}
+    void SetMaterial(const std::shared_ptr<RenderMaterial>& material, unsigned int section_index);
     std::string GetName() const{return name_;}
     ~RenderMesh();
 public:

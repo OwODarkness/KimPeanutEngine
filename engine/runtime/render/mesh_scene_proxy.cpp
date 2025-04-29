@@ -2,7 +2,7 @@
 
 #include <glad/glad.h>
 #include <iostream>
-
+#include "runtime/render/render_mesh_resource.h"
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_material.h"
 #include "runtime/core/utility/gl_vertex_array_guard.h"
@@ -10,7 +10,7 @@
 namespace kpengine{
     MeshSceneProxy::MeshSceneProxy():
     vao_(0),
-    mesh_sections_({}),
+    mesh_resourece_ref_(nullptr),
     current_shader_id_(0)
     {}
     void MeshSceneProxy::Draw(std::shared_ptr<RenderShader> shader)
@@ -22,7 +22,7 @@ namespace kpengine{
         {
 
             shader->UseProgram();
-            for(std::vector<MeshSection>::iterator iter = mesh_sections_.begin(); iter != mesh_sections_.end(); iter++)
+            for(std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
             {
                 shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
                 
@@ -32,11 +32,12 @@ namespace kpengine{
         else
         {
 
-            for(std::vector<MeshSection>::iterator iter = mesh_sections_.begin(); iter != mesh_sections_.end(); iter++)
+            for(std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
             {
-
                 unsigned int new_shader_id = iter->material->shader_->GetShaderProgram();
                 std::shared_ptr<RenderShader> current_shader = iter->material->shader_;
+                
+
                 current_shader->UseProgram();
                 if(new_shader_id != current_shader_id_)
                 {
@@ -49,9 +50,9 @@ namespace kpengine{
                     current_shader->SetInt("point_shadow_map", 14);
                     current_shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
                 }
-                iter->material->Render(current_shader.get());
+                iter->material->Render();
+
                 glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void*)(iter->index_start * sizeof(unsigned int)));
-                //glBindTexture(GL_TEXTURE_2D, 0);
             }
         }
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
@@ -62,7 +63,7 @@ namespace kpengine{
     {
         PrimitiveSceneProxy::Initialize();
         int count = 0;
-        for(std::vector<MeshSection>::iterator iter = mesh_sections_.begin(); iter != mesh_sections_.end(); iter++)
+        for(std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
         {
             //Debug
 
@@ -75,13 +76,7 @@ namespace kpengine{
             glUniformBlockBinding(shader_id, light_block_index, 1);
 
             unsigned int new_shader_id = iter->material->shader_->GetShaderProgram();
-            // if(new_shader_id != current_shader_id_)
-            // {
-            //     current_shader_id_ = new_shader_id;
-            //     std::shared_ptr<RenderShader> current_shader = iter->material->shader_;
-            //     current_shader->UseProgram();
-            //     iter->material->Render(current_shader.get());
-            // }
+            iter->material->Initialize();
         }
         current_shader_id_ = 0;
     }

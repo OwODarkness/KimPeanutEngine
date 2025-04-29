@@ -1,7 +1,7 @@
 #include "render_mesh.h"
 
 #include <glad/glad.h>
-#include <iostream>
+#include "runtime/core/log/logger.h"
 
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_material.h"
@@ -17,16 +17,13 @@ namespace kpengine
     RenderMesh::RenderMesh(){}
 
     RenderMesh::RenderMesh(const std::string& mesh_relative_path):
-    name_(mesh_relative_path), lod_level(0){}
+    name_(mesh_relative_path), lod_level(0), mesh_resource(std::make_unique<RenderMeshResource>())
+    {}
 
-    const RenderMeshResource* RenderMesh::GetMeshResource() const
-    {
-        //return lod_mesh_resources.at(lod_level).get();
-        return mesh_resource.get();
-    }
+
+
     void RenderMesh::Initialize()
     {
-        mesh_resource = std::make_unique<RenderMeshResource>();
         ModelLoader::Load(name_, *mesh_resource);
 
         //lod_mesh_resources.push_back(mesh_resource);
@@ -56,6 +53,19 @@ namespace kpengine
         glEnableVertexAttribArray(3);
         glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex), (void*)(offsetof(MeshVertex, tangent)));
     
+    }
+
+    void  RenderMesh::SetMaterial(const std::shared_ptr<RenderMaterial>& material, unsigned int section_index)
+    {
+
+        bool is_index_valid = section_index >=0 && section_index < mesh_resource->mesh_sections_.size();
+        if(!is_index_valid)
+        {
+            KP_LOG("MeshLog", LOG_LEVEL_ERROR, "try to access invalid mesh section with index: %d", section_index);
+            return;
+        }
+        mesh_resource->mesh_sections_.at(section_index).material = material;
+        mesh_resource->mesh_sections_.at(section_index).material->Initialize();
     }
 
     RenderMesh::~RenderMesh()

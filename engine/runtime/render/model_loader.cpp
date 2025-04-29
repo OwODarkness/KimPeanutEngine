@@ -90,7 +90,7 @@ namespace kpengine
 
     void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderMeshResource& mesh_resource)
     {
-        unsigned int mesh_count =  mesh_resource.vertex_buffer_.size();
+        unsigned int mesh_count =  (unsigned int)mesh_resource.vertex_buffer_.size();
         //TODO load texture and wrap to material
         MeshSection mesh_section;
         mesh_section.index_start = static_cast<unsigned int>(mesh_resource.index_buffer_.size());
@@ -142,8 +142,9 @@ namespace kpengine
         }
         else
         {
+
             //without texture attach, send a default texture
-            TexturePool* texture_pool = runtime::global_runtime_context.asset_system_->GetTexturePool();
+            TexturePool* texture_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
             if(texture_pool->IsTextureCached("texture/default.jpg"))
             {
                 material->diffuse_textures_.push_back(texture_pool->FindTextureByKey("texture/default.jpg"));
@@ -177,7 +178,7 @@ namespace kpengine
             std::string texture_key = file_path.C_Str();
             bool is_texture_cached = false;
 
-            TexturePool* texture_pool = runtime::global_runtime_context.asset_system_->GetTexturePool();
+            TexturePool* texture_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
             is_texture_cached = texture_pool->IsTextureCached(texture_key);
 
             if(is_texture_cached == true)

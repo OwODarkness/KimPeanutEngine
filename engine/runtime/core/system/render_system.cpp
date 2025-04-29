@@ -2,17 +2,17 @@
 
 #include <iostream>
 
-#include "runtime/render/shader_pool.h"
 #include "runtime/render/render_scene.h"
 #include "runtime/render/render_camera.h"
-
+#include "runtime/render/texture_pool.h"
 
 namespace kpengine
 {
     RenderSystem::RenderSystem():
     render_camera_(std::make_shared<RenderCamera>()),
     render_scene_(std::make_unique<RenderScene>()),
-    shader_pool_(std::make_unique<ShaderPool>())
+    shader_pool_(std::make_unique<ShaderPool>()),
+    texture_pool_(std::make_unique<TexturePool>())
     {
 
     }

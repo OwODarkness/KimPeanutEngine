@@ -9,6 +9,8 @@
 #define SHADER_PARAM_MODEL_TRANSFORM "model"
 
 namespace kpengine{
+    class RenderMeshResource;
+
     class MeshSceneProxy: public PrimitiveSceneProxy{
     public:
         MeshSceneProxy();
@@ -17,7 +19,7 @@ namespace kpengine{
     public:
         unsigned int vao_;
         unsigned int ebo_;
-        std::vector<MeshSection> mesh_sections_;
+        RenderMeshResource* mesh_resourece_ref_;
     private:
         unsigned int current_shader_id_;
         bool do_once = true;

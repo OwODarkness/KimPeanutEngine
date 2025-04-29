@@ -31,7 +31,7 @@ namespace kpengine{
         {
             mesh_proxy->vao_ = mesh_->vao_;
             mesh_proxy->ebo_ = mesh_->ebo_;
-            mesh_proxy->mesh_sections_ = mesh_->GetMeshResource()->mesh_sections_;
+            mesh_proxy->mesh_resourece_ref_ = mesh_->GetMeshResource();
             mesh_proxy->Initialize();
         }
         RegisterSceneProxy();

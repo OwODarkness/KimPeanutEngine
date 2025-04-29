@@ -1,17 +1,26 @@
+//Blinn-Phong fragment shader
+
 #version 460 core
 
 struct Material{
     sampler2D diffuse_texture_0;
     sampler2D diffuse_texture_1;
+    sampler2D diffuse_texture_2;
 
     sampler2D specular_texture_0;
     sampler2D specular_texture_1;
+    sampler2D specular_texture_2;
+
+    sampler2D normal_texture;
 
     sampler2D emission_texture;
 
-    sampler2D normal_texture;
     float shininess;
     vec3 diffuse_albedo;
+
+    
+    int diffuse_count;
+    int specular_count;
 };
 
 struct PointLight{
@@ -65,6 +74,7 @@ in vec2 out_texcoord;
 in vec3 frag_position;
 in vec4 frag_pos_light_space;
 in mat3 out_TBN;
+
 out vec4 out_frag_color;
 
 // uniform PointLight point_light;
@@ -166,17 +176,23 @@ vec3 CalculatePointRender(PointLight light)
         normal = normalize(out_normal);
     }
 
-    vec3 ambient_render = light.ambient * material.diffuse_albedo * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
+    vec3 ambient_render = material.diffuse_count > 0 ? 
+    light.ambient * material.diffuse_albedo * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color:
+    vec3(0., 0., 0.);
 
     float diff = max(dot(normal, light_direction), 0);
-    vec3 diffuse_render = light.diffuse * material.diffuse_albedo * diff  * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color;
+    vec3 diffuse_render = material.diffuse_count > 0 ?
+     light.diffuse * material.diffuse_albedo * diff  * vec3(texture(material.diffuse_texture_0, out_texcoord)) * light_color
+     :vec3(0., 0., 0.);
 
     vec3 view_direction = normalize(view_position - frag_position);
 
     vec3 halfway_direction = normalize(view_direction + light_direction);
 
     float spec = pow(max(dot(normal, halfway_direction), 0.f), material.shininess);
-    vec3 specular_render = light.specular * spec  * vec3(texture(material.specular_texture_0, out_texcoord)) * light_color ;
+    vec3 specular_render = material.specular_count >0 ? 
+    light.specular * spec  * vec3(texture(material.specular_texture_0, out_texcoord)) * light_color
+    :vec3(0.f,0.f, 0.f) ;
 
     float distance    = length(light.position - frag_position);
     float attenuation = 1.0 / (light.constant + light.linear * distance + 
