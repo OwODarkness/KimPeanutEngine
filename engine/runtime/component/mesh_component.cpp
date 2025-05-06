@@ -59,6 +59,7 @@ namespace kpengine{
 
     MeshComponent::~MeshComponent()
     {
+        UnRegisterSceneProxy();
         mesh_.reset();        
     }
 }

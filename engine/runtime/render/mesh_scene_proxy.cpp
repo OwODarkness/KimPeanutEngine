@@ -1,7 +1,7 @@
 #include "mesh_scene_proxy.h"
 
 #include <glad/glad.h>
-#include <iostream>
+
 #include "runtime/render/render_mesh_resource.h"
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_material.h"
@@ -27,6 +27,7 @@ namespace kpengine{
                 shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
                 
                 glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void*)(iter->index_start* sizeof(unsigned int)));
+                
             }
         }
         else
@@ -41,7 +42,6 @@ namespace kpengine{
                 current_shader->UseProgram();
                 if(new_shader_id != current_shader_id_)
                 {
-
                     current_shader_id_ = new_shader_id;
                     current_shader->SetVec3("view_position", view_pos_);
                     current_shader->SetMat("light_space_matrix", light_space_);

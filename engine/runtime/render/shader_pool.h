@@ -5,6 +5,7 @@
 #define SHADER_CATEGORY_PHONG "phong_shader"
 #define SHADER_CATEGORY_SKYBOX "skybox_shader"
 #define SHADER_CATEOGRY_NORMAL "normal_shader"
+#define SHADER_CATEGORY_POINTCLOUD "pointcloud_shader"
 
 #include <memory>
 #include <string>

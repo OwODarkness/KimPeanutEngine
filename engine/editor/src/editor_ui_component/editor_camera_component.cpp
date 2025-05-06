@@ -29,9 +29,9 @@ namespace kpengine{
 
             EditorSliderComponent<float>* rotate_slider = new EditorSliderComponent<float>("rotate_slider", &camera->rotate_speed_, rotate_speed_default_, 5 * rotate_speed_default_);
             AddComponent(rotate_slider);
-            EditorDynamicTextComponent<float>* yaw_text_comp = new EditorDynamicTextComponent<float>(&camera->yaw_);
+            EditorDynamicTextComponent<float>* yaw_text_comp = new EditorDynamicTextComponent<float>(&camera->yaw_, "yaw degree: ");
             AddComponent(yaw_text_comp);
-            EditorDynamicTextComponent<float>* pitch_text_comp = new EditorDynamicTextComponent<float>(&camera->pitch_);
+            EditorDynamicTextComponent<float>* pitch_text_comp = new EditorDynamicTextComponent<float>(&camera->pitch_, "pitch degree: ");
             AddComponent(pitch_text_comp);
 
 

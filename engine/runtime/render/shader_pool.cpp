@@ -22,6 +22,11 @@ namespace kpengine{
             SHADER_CATEOGRY_NORMAL,
             std::make_shared<RenderShader>("normal.vs", "normal.fs")
         });
+
+        shader_cache.insert({
+            SHADER_CATEGORY_POINTCLOUD,
+            std::make_shared<RenderShader>("pointcloud.vs", "pointcloud.fs")
+        });
     }
 
     void ShaderPool::Initialize()

@@ -65,8 +65,7 @@ namespace kpengine
             window_component_->AddComponent(new EditorPlotComponent([](float x){return std::sin(x);}, 0, 10));
            
             EditorContainerComponent* container = new EditorContainerComponent();
-            container->AddComponent(new EditorTextComponent("FPS: "));
-            container->AddComponent(new EditorDynamicTextComponent(&x));
+            container->AddComponent(new EditorDynamicTextComponent(&x, "fps: "));
             window_component_->AddComponent(container);
 
             std::vector<const char*> items = {"custom", SHADER_CATEOGRY_NORMAL};

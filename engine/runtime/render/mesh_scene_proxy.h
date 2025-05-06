@@ -1,7 +1,6 @@
 #ifndef KPENGINE_RUNTIME_MESH_SCENE_PROXY_H
 #define KPENGINE_RUNTIME_MESH_SCENE_PROXY_H
 
-#include <vector>
 
 #include "primitive_scene_proxy.h"
 #include "mesh_section.h"

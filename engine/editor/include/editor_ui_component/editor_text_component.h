@@ -19,17 +19,19 @@ namespace kpengine{
         template<typename T>
         class EditorDynamicTextComponent : public EditorTextComponent { 
         public:
-            EditorDynamicTextComponent(T* text_ref, ImVec4 color = ImVec4(1.f, 1.f, 1.f, 1.f));
+            EditorDynamicTextComponent(T* text_ref,  const std::string& label = "", ImVec4 color = ImVec4(1.f, 1.f, 1.f, 1.f));
             virtual void Render() override;
         public:
             T* text_ref_;
+            std::string label_;
         };
         
         // Implementation must include template parameter
         template<typename T>
-        EditorDynamicTextComponent<T>::EditorDynamicTextComponent(T* text_ref, ImVec4 color)
+        EditorDynamicTextComponent<T>::EditorDynamicTextComponent(T* text_ref, const std::string& label, ImVec4 color)
             : EditorTextComponent("", color),  // Base class first in initialization list
-              text_ref_(text_ref)
+              text_ref_(text_ref),
+              label_(label)
         {
         }
         
@@ -38,7 +40,7 @@ namespace kpengine{
         {
             if (text_ref_) {  // Check for null pointer
                 // For more generic solution, consider using string streams or specialization
-                content_ = std::to_string(*text_ref_);
+                content_ = label_ + std::to_string(*text_ref_);
             }
             EditorTextComponent::Render();
         }

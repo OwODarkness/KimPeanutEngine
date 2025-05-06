@@ -7,14 +7,12 @@
 #include "runtime/render/render_texture.h"
 #include "runtime/core/log/logger.h"
 #include "platform/path/path.h"
-
+#include "runtime/render/render_pointcloud_resource.h"
 #include "runtime/render/render_mesh_resource.h"
 #include "runtime/runtime_header.h"
 #include "runtime/render/shader_pool.h"
 namespace kpengine
 {
-
-    //ModelLoader_V2
     bool ModelLoader::Load(const std::string& relative_model_path, RenderMeshResource& mesh_resource){
         Assimp::Importer import;
         std::string absolute_model_path = GetAssetDirectory() + relative_model_path;
@@ -44,7 +42,30 @@ namespace kpengine
         return true;
     }
 
+    bool ModelLoader::Load(const std::string& relative_model_path, RenderPointCloudResource& pointcloud_resource){
+        Assimp::Importer import;
+        std::string absolute_model_path = GetAssetDirectory() + relative_model_path;
 
+        const aiScene *scene = import.ReadFile(absolute_model_path, aiProcess_Triangulate | 
+            aiProcess_GenNormals |
+            aiProcess_FlipUVs);
+
+        if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
+        {
+            KP_LOG("ModelLoadLog", LOG_LEVEL_ERROR, "%s failed to load model", import.GetErrorString());
+            return false;
+        }
+
+        ModelLoader model_loader;
+        model_loader.directory = relative_model_path.substr(0, relative_model_path.find_last_of('/'));
+        model_loader.ProcessNode(scene->mRootNode, scene, pointcloud_resource);
+        //TODO provide a material to point cloud resource
+        
+        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
+        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_POINTCLOUD);
+        pointcloud_resource.material_ = material;
+        return true;
+    }
 
     void ModelLoader::ProcessNode(aiNode* node ,const aiScene* scene, RenderMeshResource& mesh_resource)
     {
@@ -91,7 +112,6 @@ namespace kpengine
     void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderMeshResource& mesh_resource)
     {
         unsigned int mesh_count =  (unsigned int)mesh_resource.vertex_buffer_.size();
-        //TODO load texture and wrap to material
         MeshSection mesh_section;
         mesh_section.index_start = static_cast<unsigned int>(mesh_resource.index_buffer_.size());
         
@@ -195,8 +215,36 @@ namespace kpengine
                     textures.push_back(texture);
                 }
             }
+        }        
+    }
+
+    
+    void ModelLoader::ProcessNode(aiNode* node ,const aiScene* scene, RenderPointCloudResource& pointcloud_resource)
+    {
+        if(node == nullptr)
+        {
+            return ;
+        }
+
+        for(unsigned int i = 0;i<node->mNumMeshes;i++)
+        {
+            aiMesh* mesh = scene->mMeshes[node->mMeshes[i]];
+            ProcessMesh(mesh, scene, pointcloud_resource);
+        }
+
+        for (unsigned int i = 0; i < node->mNumChildren; i++)
+        {
+            ProcessNode(node->mChildren[i], scene, pointcloud_resource);
+        }
+    }
 
 
+    void ModelLoader::ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderPointCloudResource& pointcloud_resource)
+    {
+        for(unsigned int i = 0;i< mesh->mNumVertices;i++)
+        {   
+            Vector3f pos= {mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z};
+            pointcloud_resource.vertex_buffer_.push_back(pos);
         }
     }
 }
