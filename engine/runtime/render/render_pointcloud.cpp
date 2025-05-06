@@ -1,6 +1,7 @@
 #include "render_pointcloud.h"
 
 #include <glad/glad.h>
+#include "runtime/render/model_loader.h"
 #include "runtime/render/render_pointcloud_resource.h"
 #include "runtime/core/utility/utility.h"
 
@@ -20,6 +21,8 @@ namespace kpengine{
     void RenderPointCloud::Initialize()
     {
         //TODO: load pointcloud
+        ModelLoader::Load(name_, *pointcloud_resource_);
+        
         glGenVertexArrays(1, &vao_);
         glGenBuffers(1, &vbo_);
         

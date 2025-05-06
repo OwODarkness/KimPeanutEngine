@@ -27,7 +27,7 @@ namespace kpengine{
         bunny->SetActorLocation({0.f, -0.1f, 0.f});
         AddActor(bunny);
 
-        std::shared_ptr<MeshActor> teapot = std::make_shared<MeshActor>("model/bunny/teapot.obj");
+        std::shared_ptr<MeshActor> teapot = std::make_shared<MeshActor>("model/teapot/teapot.obj");
         teapot->SetActorScale({0.1f, 0.1f, 0.1f});
         teapot->SetActorLocation({0.5f, 0.f, 0.5f});
         AddActor(teapot);
@@ -36,6 +36,11 @@ namespace kpengine{
         nanosuit->SetActorScale({0.1f, 0.1f, 0.1f});
         nanosuit->SetActorLocation({-0.6f, 0.0f, -0.6f});
         AddActor(nanosuit);
+
+        std::shared_ptr<PointCloudActor> dragon = std::make_shared<PointCloudActor>("model/dragon/dragon.obj");
+        dragon->SetActorScale({0.1f, 0.1f, 0.1f});
+        dragon->SetActorLocation({1.6f, 0.0f, -2.6f});
+        AddActor(dragon);
 
 
         //floor

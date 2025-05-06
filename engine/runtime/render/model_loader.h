@@ -32,8 +32,8 @@ namespace kpengine{
         void ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderMeshResource& mesh_resource);  
         void ProcessTexture(aiMaterial* material, aiTextureType assip_texture_type,  std::vector<std::shared_ptr<RenderTexture>>& textures);
         
-        void ProcessNode(aiNode* node ,const aiScene* scene, RenderPointCloudResource& mesh_resource);
-        void ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderPointCloudResource& mesh_resource);  
+        void ProcessNode(aiNode* node ,const aiScene* scene, RenderPointCloudResource& pointcloud_resource);
+        void ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderPointCloudResource& pointcloud_resource);  
         
     private:
         std::string directory;

@@ -12,6 +12,11 @@ namespace kpengine{
         MeshActor(const std::string& relative_path);
     
     };
+
+    class PointCloudActor: public Actor{
+    public:
+        PointCloudActor(const std::string& relative_path);
+    };
 }
 
 #endif
