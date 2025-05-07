@@ -68,8 +68,9 @@ namespace kpengine
 
         point_shadow_maker_->Initialize();
         light_.point_light.ambient = {1.f, 1.f, 1.f};
-        light_.point_light.position = {4.f, 2.f, 0.f};
+        light_.point_light.position = {4.f, 5.f, 0.f};
         light_.directional_light.color = {0.f, 0.f, 0.f};
+        light_.spot_light.color = {0.f, 0.f, 0.f};
         light_.spot_light.cutoff = std::cos(math::DegreeToRadian(12.5f));
         light_.spot_light.outer_cutoff = std::cos(math::DegreeToRadian(17.5f));
     }

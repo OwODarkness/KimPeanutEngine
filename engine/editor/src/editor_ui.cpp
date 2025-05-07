@@ -68,7 +68,7 @@ namespace kpengine
             container->AddComponent(new EditorDynamicTextComponent(&x, "fps: "));
             window_component_->AddComponent(container);
 
-            std::vector<const char*> items = {"custom", SHADER_CATEOGRY_NORMAL};
+            std::vector<const char*> items = {"custom", SHADER_CATEGORY_NORMAL};
             EditorListboxComponent* listbox = new EditorListboxComponent(items);
             window_component_->AddComponent(listbox);
 

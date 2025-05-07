@@ -34,7 +34,7 @@ namespace kpengine{
 
         std::shared_ptr<MeshActor> nanosuit = std::make_shared<MeshActor>("model/nanosuit/nanosuit.obj");
         nanosuit->SetActorScale({0.1f, 0.1f, 0.1f});
-        nanosuit->SetActorLocation({-0.6f, 0.0f, -0.6f});
+        nanosuit->SetActorLocation({4.6f, 0.0f, -0.6f});
         AddActor(nanosuit);
 
         std::shared_ptr<PointCloudActor> dragon = std::make_shared<PointCloudActor>("model/dragon/dragon.obj");
@@ -42,9 +42,13 @@ namespace kpengine{
         dragon->SetActorLocation({1.6f, 0.0f, -2.6f});
         AddActor(dragon);
 
+        std::shared_ptr<MeshActor> sphere = std::make_shared<MeshActor>("model/bunny/sphere.obj");
+        AddActor(sphere);
+        sphere->SetActorLocation({0.f, 3.f, 0.f});
 
         //floor
         std::shared_ptr<MeshActor> floor = std::make_shared<MeshActor>("model/brickwall/floor.obj");
+        floor->SetActorScale({2.f, 1.f, 2.f});
         AddActor(floor);
 
         for(std::shared_ptr<Actor>& actor: actors_)
@@ -54,31 +58,10 @@ namespace kpengine{
 
         MeshComponent* floor_mesh_comp = dynamic_cast<MeshComponent*>(floor->GetRootComponent());
         std::shared_ptr<RenderMesh> floor_mesh = floor_mesh_comp->GetMesh();
-        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
-        std::vector<std::shared_ptr<RenderTexture>> diffs;
-        std::string diff_key = "model/brickwall/brickwall_dif.jpg";
-        TexturePool* tex_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
-        bool is_diff_cached = tex_pool->IsTextureCached(diff_key);
-        if(is_diff_cached)
-        {
-            diffs.push_back(tex_pool->FindTextureByKey(diff_key));
-        }
-        else
-        {
-            std::shared_ptr<RenderTexture2D> tex_diff = std::make_shared<RenderTexture2D>(diff_key);
-            tex_diff->Initialize();
-            tex_pool->AddTexture(tex_diff);
-            diffs.push_back(tex_diff);
-        }
-        std::string normal_key = "model/brickwall/brickwall_normal.jpg";
-        std::shared_ptr<RenderTexture2D> tex_normal = std::make_shared<RenderTexture2D>(normal_key);
-        tex_normal->Initialize();
-        material->diffuse_textures_ = diffs;
-        material->normal_texture_ = tex_normal;
+        std::shared_ptr<RenderMaterial> material = RenderMaterial::CreateMaterial({"model/brickwall/brickwall_dif.jpg"}, {}, "", "model/brickwall/brickwall_normal.jpg", SHADER_CATEGORY_PHONG);
         material->normal_texture_enable_ = false;
-        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_PHONG);
-        
         floor_mesh->SetMaterial(material, 0);
+
     }
 
     void Level::Tick(float delta_time)

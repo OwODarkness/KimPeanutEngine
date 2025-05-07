@@ -12,6 +12,7 @@ namespace kpengine{
     public:
         TexturePool() = default;
         ~TexturePool();
+        std::shared_ptr<RenderTexture> FetchTexture2D(const std::string& path);
         bool IsTextureCached(const std::string& key) const;
         void AddTexture(std::shared_ptr<RenderTexture> texture);
         std::shared_ptr<RenderTexture> FindTextureByKey(const std::string& key) const;

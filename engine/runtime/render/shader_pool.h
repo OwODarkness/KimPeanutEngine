@@ -1,16 +1,16 @@
 #ifndef KPENGINE_RUNTIME_SHADER_MANAGER_H
 #define KPENGINE_RUNTIME_SHADER_MANAGER_H
 
-
-#define SHADER_CATEGORY_PHONG "phong_shader"
-#define SHADER_CATEGORY_SKYBOX "skybox_shader"
-#define SHADER_CATEOGRY_NORMAL "normal_shader"
-#define SHADER_CATEGORY_POINTCLOUD "pointcloud_shader"
-
 #include <memory>
 #include <string>
 #include <unordered_map>
 
+
+#define SHADER_CATEGORY_PHONG "phong_shader"
+#define SHADER_CATEGORY_SKYBOX "skybox_shader"
+#define SHADER_CATEGORY_NORMAL "normal_shader"
+#define SHADER_CATEGORY_POINTCLOUD "pointcloud_shader"
+#define SHADER_CATEGORY_PBR "pbr_shader"
 
 namespace kpengine{
     class RenderShader;

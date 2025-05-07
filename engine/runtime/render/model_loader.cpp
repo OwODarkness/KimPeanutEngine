@@ -1,6 +1,5 @@
 #include "model_loader.h"
 
-#include <iostream>
 
 #include "runtime/render/render_mesh.h"
 #include "runtime/render/render_material.h"
@@ -61,8 +60,7 @@ namespace kpengine
         model_loader.ProcessNode(scene->mRootNode, scene, pointcloud_resource);
         //TODO provide a material to point cloud resource
         
-        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
-        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_POINTCLOUD);
+        std::shared_ptr<RenderMaterial> material = RenderMaterial::CreateMaterial({}, {}, "", "", SHADER_CATEGORY_POINTCLOUD);
         pointcloud_resource.material_ = material;
         return true;
     }
@@ -114,10 +112,10 @@ namespace kpengine
         unsigned int mesh_count =  (unsigned int)mesh_resource.vertex_buffer_.size();
         MeshSection mesh_section;
         mesh_section.index_start = static_cast<unsigned int>(mesh_resource.index_buffer_.size());
-        
 
         bool has_normal = mesh->HasNormals();
         bool has_texcoord = mesh->mTextureCoords[0];
+
         //extract vertices
         for(unsigned int i = 0;i<mesh->mNumVertices;i++)
         {
@@ -137,6 +135,7 @@ namespace kpengine
 
             mesh_resource.vertex_buffer_.push_back(vertex);
         }
+
         //generate index buffer
         unsigned int current_index_count = 0;
         for(unsigned int i = 0;i<mesh->mNumFaces;i++)
@@ -150,44 +149,28 @@ namespace kpengine
         }
         mesh_section.index_count = current_index_count;
         mesh_section.face_count = mesh->mNumFaces;
+
         //generate material
-        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
-        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_PHONG);
-            
         if (mesh->mMaterialIndex > 0)
         {
+            std::vector<std::string> diffuse_texture_path_container;
+            std::vector<std::string> specular_texture_path_container;
+
             aiMaterial *ai_material = scene->mMaterials[mesh->mMaterialIndex];
-            ProcessTexture(ai_material, aiTextureType_DIFFUSE, material->diffuse_textures_);
-            ProcessTexture(ai_material, aiTextureType_SPECULAR, material->specular_textures_);
+            ProcessTexture(ai_material, aiTextureType_DIFFUSE, diffuse_texture_path_container);
+            ProcessTexture(ai_material, aiTextureType_SPECULAR, specular_texture_path_container);
+            mesh_section.material = RenderMaterial::CreateMaterial(diffuse_texture_path_container, specular_texture_path_container, "", "", SHADER_CATEGORY_PHONG);
         }
         else
         {
-
             //without texture attach, send a default texture
-            TexturePool* texture_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
-            if(texture_pool->IsTextureCached("texture/default.jpg"))
-            {
-                material->diffuse_textures_.push_back(texture_pool->FindTextureByKey("texture/default.jpg"));
-            }
-            else
-            {
-                std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>("texture/default.jpg");
-                bool is_succeed = texture->Initialize();
-                if(is_succeed)
-                {
-                    texture_pool->AddTexture(texture);
-                    material->diffuse_textures_.push_back(texture);
-                }
-            }
+            mesh_section.material = RenderMaterial::CreateMaterial({"texture/default.png"}, {}, "", "", SHADER_CATEGORY_PHONG);
         }
         
-        mesh_section.material = material;
         mesh_resource.mesh_sections_.push_back(mesh_section);
-
-
     }
 
-    void ModelLoader::ProcessTexture(aiMaterial *material, aiTextureType assimp_texture_type, std::vector<std::shared_ptr<RenderTexture>> &textures)
+    void ModelLoader::ProcessTexture(aiMaterial *material, aiTextureType assimp_texture_type, std::vector<std::string>& textures)
     {
         for (unsigned int i = 0; i < material->GetTextureCount(assimp_texture_type); i++)
         {
@@ -196,25 +179,7 @@ namespace kpengine
 
             file_path = directory + '/' + file_path.C_Str();
             std::string texture_key = file_path.C_Str();
-            bool is_texture_cached = false;
-
-            TexturePool* texture_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
-            is_texture_cached = texture_pool->IsTextureCached(texture_key);
-
-            if(is_texture_cached == true)
-            {
-                textures.push_back(texture_pool->FindTextureByKey(texture_key));
-            }
-            else
-            {
-                std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(texture_key);
-                bool is_succeed = texture->Initialize();
-                if(is_succeed)
-                {
-                    texture_pool->AddTexture(texture);
-                    textures.push_back(texture);
-                }
-            }
+            textures.push_back(texture_key);
         }        
     }
 

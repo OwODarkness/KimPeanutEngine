@@ -5,9 +5,62 @@
 
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_texture.h"
-
+#include "runtime/runtime_header.h"
+#include "runtime/render/texture_pool.h"
 namespace kpengine
 {
+
+    std::shared_ptr<RenderMaterial> RenderMaterial::CreateMaterial(
+        const std::vector<std::string>& diffuse_textures_path_container, 
+        const std::vector<std::string>& specular_textures_path_container, 
+        const std::string& emission_texture_path, 
+        const std::string normal_texture_path, 
+        const std::string shader_name)
+    {
+        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
+        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(shader_name);
+        TexturePool* texture_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
+        
+        //diffuse texture load
+        for(const std::string &diffuse_path : diffuse_textures_path_container)
+        {
+            if(diffuse_path == "")
+            {
+                continue;
+            }
+            std::shared_ptr<RenderTexture> diffuse_texture = texture_pool->FetchTexture2D(diffuse_path);
+            if(diffuse_texture)
+            {
+                material->diffuse_textures_.push_back(diffuse_texture);
+            }
+        }
+
+        //specular texture load
+        for(const std::string &specular_path : specular_textures_path_container)
+        {
+            if(specular_path == "")
+            {
+                continue;
+            }
+            std::shared_ptr<RenderTexture> specular_texture = texture_pool->FetchTexture2D(specular_path);
+            if(specular_texture)
+            {
+                material->specular_textures_.push_back(specular_texture);
+            }
+        }
+
+        if(emission_texture_path != "")
+        {
+            material->emission_texture_ = texture_pool->FetchTexture2D(emission_texture_path);
+        }
+
+        if(normal_texture_path != "")
+        {
+            material->normal_texture_ = texture_pool->FetchTexture2D(normal_texture_path);
+        }
+
+        return material;
+    }
 
     void RenderMaterial::Initialize()
     {

@@ -6,6 +6,28 @@ namespace kpengine{
         return texture_map.contains(key);
     }
 
+    std::shared_ptr<RenderTexture> TexturePool::FetchTexture2D(const std::string& path)
+    {
+        if(IsTextureCached(path))
+        {
+            return FindTextureByKey(path);
+        }
+        else
+        {
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(path);
+            bool is_succeed = texture->Initialize();
+            if(is_succeed)
+            {
+                AddTexture(texture);
+                return texture;
+            }
+            else
+            {
+                return nullptr;
+            }
+        }
+    }
+
     void TexturePool::AddTexture(std::shared_ptr<RenderTexture> texture)
     {
         if(!texture)

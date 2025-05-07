@@ -68,7 +68,7 @@ namespace kpengine{
                 is_game_thread_loaded_ = false;
                 global_runtime_context.level_system_->Tick(1.f/fps);
                 is_game_thread_loaded_ = true;
-                std::this_thread::sleep_for(std::chrono::milliseconds(2));
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
         }
 
@@ -87,8 +87,6 @@ namespace kpengine{
             global_runtime_context.render_system_->Tick(1.f/fps);
             global_runtime_context.window_system_->Tick(1.f/fps);
             editor_->Tick();
-
-
             std::this_thread::sleep_for(std::chrono::milliseconds(1));
             return true;
         }

@@ -19,10 +19,7 @@ namespace kpengine
         float pad4;
         Vector3f specular{1.f, 1.f, 1.f}; // offset: 64
         float pad5;
-        float constant{1.f};     // offset: 80
-        float linear{0.09f};     // offset: 84
-        float quadratic{0.032f}; // offset: 88
-        float pad6;              // padding to align structure size to multiple of 16
+
     };
 
     struct alignas(16) DirectionalLight
@@ -53,9 +50,7 @@ namespace kpengine
         float pad5;
         Vector3f specular{1.f, 1.f, 1.f}; // offset: 80
         float pad6;
-        float constant{1.f};     // offset: 96
-        float linear{0.09f};       // offset: 100
-        float quadratic{0.032f};    // offset: 104
+
         float cutoff;       // offset: 108
         float outer_cutoff; // offset: 112
         float pad7;         // padding to align structure size to multiple of 16

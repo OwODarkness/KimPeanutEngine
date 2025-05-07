@@ -19,13 +19,18 @@ namespace kpengine{
         });
 
         shader_cache.insert({
-            SHADER_CATEOGRY_NORMAL,
+            SHADER_CATEGORY_NORMAL,
             std::make_shared<RenderShader>("normal.vs", "normal.fs")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_POINTCLOUD,
             std::make_shared<RenderShader>("pointcloud.vs", "pointcloud.fs")
+        });
+
+        shader_cache.insert({
+            SHADER_CATEGORY_PBR,
+            std::make_shared<RenderShader>("pbr.vs", "pbr.fs")
         });
     }
 

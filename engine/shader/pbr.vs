@@ -11,7 +11,13 @@ layout(std140, binding = 0) uniform CameraMatrices{
 
 uniform mat4 model;
 
+out vec2 texcoord;
+out vec3 frag_position;
+out vec3 normal;
+
 void main()
 {
     gl_Position = projection * view *  model * vec4(in_location, 1.0);
+    frag_position = vec3(model * vec4(in_location, 1.f)); 
+    normal =   mat3(transpose(inverse(model))) * in_normal;
 }

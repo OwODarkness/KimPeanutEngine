@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <vector>
+#include <string>
 #include "runtime/core/math/math_header.h"
 namespace kpengine{
 
@@ -23,6 +24,9 @@ namespace kpengine{
     class RenderMaterial{
     
     public:
+        static std::shared_ptr<RenderMaterial> CreateMaterial(const std::vector<std::string>& diffuse_textures_path_container, 
+            const std::vector<std::string>& specular_textures_path_container, const std::string& emission_texture_path, const std::string normal_texture_path, const std::string shader_name);
+            
         void Initialize();
         void Render() ;
     public:
