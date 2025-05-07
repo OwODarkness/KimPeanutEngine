@@ -15,7 +15,9 @@
 #include "editor/include/editor_global_context.h"
 #include "editor/include/editor_ui_component/editor_container_component.h"
 #include "editor/include/editor_ui_component/editor_camera_component.h"
+#include "editor/include/editor_actor_control_panel.h"
 #include "runtime/core/system/render_system.h"
+#include "runtime/core/system/level_system.h"
 #include "runtime/engine.h"
 
 
@@ -88,7 +90,8 @@ namespace kpengine
             EditorWindowComponent* camera_ui = new EditorCameraControlComponent(kpengine::editor::global_editor_context.render_system_->GetRenderCamera());
             components_.push_back(camera_ui);
 
-            
+            EditorActorControlPanel* actor_control_panel = new EditorActorControlPanel(kpengine::editor::global_editor_context.level_system_->GetActor(0).get());
+            components_.push_back(actor_control_panel);
         }
 
         void EditorUI::Close()

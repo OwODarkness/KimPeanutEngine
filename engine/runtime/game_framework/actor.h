@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_GAME_FRAMEWORK_ACTOR_H
 
 #include <vector>
+#include <string>
 #include <memory>
 
 #include "runtime/object/object.h"
@@ -29,11 +30,15 @@ namespace kpengine{
         void SetActorRotation(const Rotator3f& new_rotation);
         void SetActorScale(const Vector3f& new_scale);
         void SetTransform(const Transform3f& new_transform);
+
+        std::string GetName() const{return name_;}
     protected:
         std::vector<std::shared_ptr<Actor>> children_;
         std::weak_ptr<Actor> owner_;
         std::vector<std::shared_ptr<ActorComponent>> actor_components_;
         std::shared_ptr<SceneComponent> root_component_;
+
+        std::string name_;
     };
 
 }

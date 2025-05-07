@@ -13,6 +13,7 @@ namespace kpengine{
         void Initialize();
         void Tick(float delta_time);
         bool AddActor(const std::shared_ptr<Actor>& actor);
+        std::shared_ptr<Actor> GetActor(unsigned int index){return actors_.at(index);}
 
     private:
         std::vector<std::shared_ptr<Actor>> actors_;

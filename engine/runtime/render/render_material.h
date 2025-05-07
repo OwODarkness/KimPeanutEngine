@@ -21,6 +21,9 @@ namespace kpengine{
         EMISSION = 8
     };
 
+    constexpr unsigned int MAX_DIFFUSE_NUM = 3;
+    constexpr unsigned int MAX_SPECULAR_NUM = 3;
+
     class RenderMaterial{
     
     public:
@@ -30,16 +33,21 @@ namespace kpengine{
         void Initialize();
         void Render() ;
     public:
+        std::shared_ptr<RenderShader> shader_;
+        
         std::vector<std::shared_ptr<RenderTexture>> diffuse_textures_;
         std::vector<std::shared_ptr<RenderTexture>>  specular_textures_;
         std::shared_ptr<RenderTexture> emission_texture_;
         std::shared_ptr<RenderTexture> normal_texture_;
-        Vector3f diffuse_albedo_{1.f};
-        float shininess = 70.f;
+
         bool normal_texture_enable_ = false;
-        const unsigned int MAX_DIFFUSE_NUM = 3;
-        const unsigned int MAX_SPECULAR_NUM = 3;
-        std::shared_ptr<RenderShader> shader_;
+
+        float metallic = 0.5f;
+        float roughness = 0.5f;
+        float shininess = 70.f;
+        float ao = 1.f;
+        Vector3f albedo{0.5f, 0.f, 0.f};
+        Vector3f diffuse_albedo_{1.f};
     };
 
 

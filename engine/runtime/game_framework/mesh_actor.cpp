@@ -6,6 +6,8 @@ namespace kpengine{
     Actor()
     {
         root_component_ = std::make_shared<MeshComponent>(relative_path);
+        std::size_t index=  relative_path.find_last_of('.');
+        name_ = relative_path.substr(0, index);
     }
 
 

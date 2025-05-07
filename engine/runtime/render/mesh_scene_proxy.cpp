@@ -38,7 +38,6 @@ namespace kpengine{
                 unsigned int new_shader_id = iter->material->shader_->GetShaderProgram();
                 std::shared_ptr<RenderShader> current_shader = iter->material->shader_;
                 
-
                 current_shader->UseProgram();
                 if(new_shader_id != current_shader_id_)
                 {
@@ -49,6 +48,16 @@ namespace kpengine{
                     current_shader->SetFloat("far_plane", 25.f);
                     current_shader->SetInt("point_shadow_map", 14);
                     current_shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
+                    
+                    for(int i = 0;i<4;i++)
+                    {
+                        std::string light_pos = "light_positions[" + std::to_string(i) + "]";
+                        std::string light_color = "light_colors[" + std::to_string(i) + "]";
+                        const float pos_ptr[3] = {-1.f + i * 1.f,  2.f, 0.f};
+                        current_shader->SetVec3(light_pos, pos_ptr);
+                        const float color_ptr[3] = {0.5f, 0.f, 0.f};
+                        current_shader->SetVec3(light_color, color_ptr);
+                    }
                 }
                 iter->material->Render();
 

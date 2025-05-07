@@ -18,6 +18,7 @@ public:
     void Initialize();
     RenderMeshResource* GetMeshResource(){return mesh_resource.get();}
     void SetMaterial(const std::shared_ptr<RenderMaterial>& material, unsigned int section_index);
+    std::shared_ptr<RenderMaterial> GetMaterial(unsigned int index);
     std::string GetName() const{return name_;}
     ~RenderMesh();
 public:
@@ -29,6 +30,8 @@ private:
     std::unique_ptr<RenderMeshResource> mesh_resource;
     std::string name_;
     unsigned int lod_level;
+
+    bool is_initialized_ = false;
 
 };
 }

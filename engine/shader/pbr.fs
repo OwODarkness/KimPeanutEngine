@@ -2,6 +2,14 @@
 
 
 struct Material{
+    int diffuse_count;
+    int specular_count;
+    float metallic;
+    float roughness;
+    float shininess;
+    float ao;
+    vec3 albedo;
+
     sampler2D diffuse_texture_0;
     sampler2D diffuse_texture_1;
     sampler2D diffuse_texture_2;
@@ -13,23 +21,12 @@ struct Material{
     sampler2D normal_texture;
 
     sampler2D emission_texture;
-
-    float shininess;
-    vec3 diffuse_albedo;
-
-    
-    int diffuse_count;
-    int specular_count;
 };
 
 uniform Material material;
 uniform vec3 view_position;
 uniform vec3 light_positions[4];
 uniform vec3 light_colors[4];
-uniform vec3 albedo;
-uniform float metallic;
-uniform float roughtness;
-uniform float ao;
 
 in vec2 texcoord;
 in vec3 frag_position;
@@ -38,31 +35,39 @@ in vec3 normal;
 out vec4 out_frag_color;
 
 float PI = 3.14159265;
+float constant = 1.0;    
+float linear = 0.09;     
+float quadratic = 0.032;
 
 vec3 CalculateHalfVector(vec3 a, vec3 b)
 {
     vec3 tmp = a + b;
     return tmp / length(tmp);
 }
-
+float CalculateAttenuation(vec3 light_pos, vec3 frag_pos)
+{
+    float dist = length(light_pos - frag_pos);
+    return  1.0 / (constant + linear * dist + 
+                quadratic * (dist * dist));
+}
 vec3 Lambert()
 {
     vec3 res_color = texture(material.diffuse_texture_0, texcoord).rgb;
     return res_color / PI;
 }
 
-float DistributionGGX(vec3 normal_vec, vec3 half_vec, float roughtness)
+float DistributionGGX(vec3 normal_vec, vec3 half_vec, float roughness)
 {
-    float alpha = roughtness * roughtness;
+    float alpha = roughness * roughness;
     float alpha_square = alpha * alpha;
     float dot_nh =  max(dot(normal_vec, half_vec), 0.) ;
     float denom = (dot_nh * dot_nh) * (alpha_square - 1.) + 1.;
     return alpha_square / (PI  * denom * denom);
 }
 
-float GeometrySchlickGGX(vec3 normal_vec, vec3 vec, float roughtness)
+float GeometrySchlickGGX(vec3 normal_vec, vec3 vec, float roughness)
 {
-    float r = roughtness + 1.0;
+    float r = roughness + 1.0;
     float k = r * r / 8.0;
     float dot_nv = max(dot(normal_vec, vec), 0);
     float nom   = dot_nv;
@@ -70,11 +75,11 @@ float GeometrySchlickGGX(vec3 normal_vec, vec3 vec, float roughtness)
     return nom / denom;
 }
   
-float GeometrySmith(vec3 normal_vec, vec3 view_vec, vec3 light_vec, float roughtness)
+float GeometrySmith(vec3 normal_vec, vec3 view_vec, vec3 light_vec, float roughness)
 {
 
-    float ggx1 = GeometrySchlickGGX(normal_vec, view_vec, roughtness);
-    float ggx2 = GeometrySchlickGGX(normal_vec, light_vec, roughtness);
+    float ggx1 = GeometrySchlickGGX(normal_vec, view_vec, roughness);
+    float ggx2 = GeometrySchlickGGX(normal_vec, light_vec, roughness);
     return ggx1 * ggx2;
 }
 
@@ -99,15 +104,14 @@ void main()
         vec3 light_vec = normalize(light_positions[i] - frag_position);
         vec3 half_vec = CalculateHalfVector(light_vec, view_vec);
 
-        float dist = length(light_positions[i] - frag_position);
-        float attenuation = 1.0 / (dist * dist);
+        float attenuation = CalculateAttenuation(light_positions[i], frag_position);
         vec3 radiance = attenuation * light_colors[i];
 
         vec3 F0 = vec3(0.04);
-        F0 = mix(F0, albedo, metallic);
+        F0 = mix(F0, material.albedo, material.metallic);
         vec3 F = FresnelSchlick(F0, half_vec, view_vec);
-        float NDF = DistributionGGX(normal_vec, half_vec, roughtness);
-        float G = GeometrySmith(normal_vec, view_vec, light_vec, roughtness);
+        float NDF = DistributionGGX(normal_vec, half_vec, material.roughness);
+        float G = GeometrySmith(normal_vec, view_vec, light_vec, material.roughness);
 
         vec3 numerator = NDF * G * F;
         float denom = 4.0 * max(dot(normal_vec, view_vec), 0.) * max(dot(normal_vec, light_vec), 0.) + 0.0001;
@@ -115,13 +119,13 @@ void main()
 
         vec3 ks = F;
         vec3 kd = vec3(1.0) - ks;
-        kd *= (1.0 - metallic);
+        kd *= (1.0 - material.metallic);
 
-        L0 += (kd * albedo / PI + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
+        L0 += (kd * material.albedo / PI + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
 
     }
 
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    vec3 ambient = vec3(0.03) * material.albedo * material.ao;
     vec3 color = ambient + L0;
 
     color = color / (color + vec3(1.0));

@@ -18,6 +18,11 @@ namespace kpengine{
         level_->Tick(delta_time);
     }
 
+    std::shared_ptr<Actor> LevelSystem::GetActor(unsigned int index)
+    {
+        return level_->GetActor(index);
+    }
+
     LevelSystem::~LevelSystem()
     {
         level_.reset();

@@ -5,6 +5,7 @@
 
 namespace kpengine{
     class Level;
+    class Actor;
 
     class LevelSystem{
     public:
@@ -12,6 +13,7 @@ namespace kpengine{
         ~LevelSystem();
         void Tick(float delta_time);
         void Initialize();
+        std::shared_ptr<Actor> GetActor(unsigned int index);    
     private:
         std::unique_ptr<Level> level_;
     };

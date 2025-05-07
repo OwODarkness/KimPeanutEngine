@@ -16,6 +16,7 @@ namespace kpengine{
             window_system_ = init_info.window_system;
             render_system_ = init_info.render_system;
             log_system_ = init_info.log_system;
+            level_system_ = init_info.level_system;
             runtime_engine_ = init_info.runtime_engine;
 
 

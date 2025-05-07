@@ -53,6 +53,7 @@ namespace kpengine
         glEnableVertexAttribArray(3);
         glVertexAttribPointer(3, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex), (void*)(offsetof(MeshVertex, tangent)));
     
+        is_initialized_ = true;
     }
 
     void  RenderMesh::SetMaterial(const std::shared_ptr<RenderMaterial>& material, unsigned int section_index)
@@ -61,11 +62,27 @@ namespace kpengine
         bool is_index_valid = section_index >=0 && section_index < mesh_resource->mesh_sections_.size();
         if(!is_index_valid)
         {
-            KP_LOG("MeshLog", LOG_LEVEL_ERROR, "try to access invalid mesh section with index: %d", section_index);
+            KP_LOG("MeshLog", LOG_LEVEL_ERROR, "try to access(set material) invalid mesh section with index: %d", section_index);
             return;
         }
         mesh_resource->mesh_sections_.at(section_index).material = material;
-        mesh_resource->mesh_sections_.at(section_index).material->Initialize();
+        if(is_initialized_)
+        {
+            mesh_resource->mesh_sections_.at(section_index).material->Initialize();
+        }
+    }
+
+    std::shared_ptr<RenderMaterial> RenderMesh::GetMaterial(unsigned int section_index)
+    {
+        bool is_index_valid = section_index >=0 && section_index < mesh_resource->mesh_sections_.size();
+        if(!is_index_valid)
+        {
+            KP_LOG("MeshLog", LOG_LEVEL_ERROR, "try to access(get material) invalid mesh section with index: %d", section_index);
+            return nullptr;
+        }
+
+        return mesh_resource->mesh_sections_.at(section_index).material;
+
     }
 
     RenderMesh::~RenderMesh()

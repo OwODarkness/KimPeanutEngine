@@ -78,7 +78,16 @@ namespace kpengine
 
         shader_->SetInt("material.normal_texture", TextureSlots::NORMAL);
         shader_->SetInt("material.emission_texture", TextureSlots::EMISSION);
+       
+        unsigned int diffuse_texture_num =  std::min((unsigned int)diffuse_textures_.size(), MAX_DIFFUSE_NUM);
+        unsigned int specular_texture_num = std::min((unsigned int)specular_textures_.size(), MAX_SPECULAR_NUM);
         
+        shader_->SetInt("material.diffuse_count", diffuse_texture_num);
+        shader_->SetInt("material.specular_count", specular_texture_num);
+        shader_->SetBool("normal_texture_enabled", normal_texture_enable_);
+        shader_->SetFloat("material.ao", ao);
+
+        shader_->SetVec3("material.albedo", albedo.Data());
     }
 
     void RenderMaterial::Render()
@@ -89,7 +98,11 @@ namespace kpengine
         shader_->SetInt("material.diffuse_count", diffuse_texture_num);
         shader_->SetInt("material.specular_count", specular_texture_num);
         shader_->SetBool("normal_texture_enabled", normal_texture_enable_);
+        
+        shader_->SetFloat("material.metallic", metallic);
+        shader_->SetFloat("material.roughness", roughness);
 
+        
         for (unsigned int i = 0; i < diffuse_texture_num; i++)
         {
             glActiveTexture(GL_TEXTURE0 + i + TextureSlots::DIFFUSE_0);
