@@ -23,10 +23,46 @@ struct Material{
     sampler2D emission_texture;
 };
 
+struct PointLight{
+    vec3 position;
+    vec3 color;
+
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+
+};
+
+struct DirectionalLight{
+    vec3 direction;
+    vec3 color;
+
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+};
+
+struct SpotLight{
+    vec3 position;
+    vec3 direction;
+
+    vec3 color;
+
+    vec3 ambient;
+    vec3 diffuse;
+    vec3 specular;
+    float cutoff;
+    float outer_cutoff;
+};
+
+layout(std140, binding=1) uniform Light{
+    PointLight point_light;
+    DirectionalLight directional_light;
+    SpotLight spot_light;
+};
+
 uniform Material material;
 uniform vec3 view_position;
-uniform vec3 light_positions[4];
-uniform vec3 light_colors[4];
 
 in vec2 texcoord;
 in vec3 frag_position;
@@ -99,13 +135,11 @@ void main()
     vec3 normal_vec = normalize(normal);
     vec3 view_vec = normalize(view_position - frag_position);
     vec3 L0 = vec3(0.);
-    for(int i = 0;i<4;i++)
-    {
-        vec3 light_vec = normalize(light_positions[i] - frag_position);
+        vec3 light_vec = normalize(point_light.position - frag_position);
         vec3 half_vec = CalculateHalfVector(light_vec, view_vec);
 
-        float attenuation = CalculateAttenuation(light_positions[i], frag_position);
-        vec3 radiance = attenuation * light_colors[i];
+        float attenuation = CalculateAttenuation(point_light.position, frag_position);
+        vec3 radiance = attenuation * point_light.color;
 
         vec3 F0 = vec3(0.04);
         F0 = mix(F0, material.albedo, material.metallic);
@@ -121,9 +155,7 @@ void main()
         vec3 kd = vec3(1.0) - ks;
         kd *= (1.0 - material.metallic);
 
-        L0 += (kd * material.albedo / PI + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
-
-    }
+        L0 = (kd * material.albedo / PI + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
 
     vec3 ambient = vec3(0.03) * material.albedo * material.ao;
     vec3 color = ambient + L0;

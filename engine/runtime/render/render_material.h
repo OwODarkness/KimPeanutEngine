@@ -42,8 +42,8 @@ namespace kpengine{
 
         bool normal_texture_enable_ = false;
 
-        float metallic = 0.5f;
-        float roughness = 0.5f;
+        float metallic = 0.05f;
+        float roughness = 0.05f;
         float shininess = 70.f;
         float ao = 1.f;
         Vector3f albedo{0.5f, 0.f, 0.f};
