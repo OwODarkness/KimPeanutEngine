@@ -60,7 +60,7 @@ namespace kpengine
         model_loader.ProcessNode(scene->mRootNode, scene, pointcloud_resource);
         //TODO provide a material to point cloud resource
         
-        std::shared_ptr<RenderMaterial> material = RenderMaterial::CreateMaterial({}, {}, "", "", SHADER_CATEGORY_POINTCLOUD);
+        std::shared_ptr<RenderMaterial> material = RenderMaterial::CreateMaterial(SHADER_CATEGORY_POINTCLOUD);
         pointcloud_resource.material_ = material;
         return true;
     }
@@ -153,34 +153,50 @@ namespace kpengine
         //generate material
         if (mesh->mMaterialIndex > 0)
         {
-            std::vector<std::string> diffuse_texture_path_container;
-            std::vector<std::string> specular_texture_path_container;
+            std::vector<MaterialMapInfo> map_info_container;
 
             aiMaterial *ai_material = scene->mMaterials[mesh->mMaterialIndex];
-            ProcessTexture(ai_material, aiTextureType_DIFFUSE, diffuse_texture_path_container);
-            ProcessTexture(ai_material, aiTextureType_SPECULAR, specular_texture_path_container);
-            mesh_section.material = RenderMaterial::CreateMaterial(diffuse_texture_path_container, specular_texture_path_container, "", "", SHADER_CATEGORY_PHONG);
+            std::string diffuse_name = ProcessTexture(ai_material, aiTextureType_DIFFUSE);
+            if(!diffuse_name.empty())
+            {
+                map_info_container.push_back({material_map_type::DIFFUSE_MAP, diffuse_name});
+            }
+            std::string specular_name = ProcessTexture(ai_material, aiTextureType_SPECULAR);
+            if(!specular_name.empty())
+            {
+                map_info_container.push_back({material_map_type::SPECULAR_MAP, specular_name});
+            }
+
+
+            mesh_section.material = RenderMaterial::CreatePhongMaterial(map_info_container, {}, {});
         }
         else
         {
             //without texture attach, send a default texture
-            mesh_section.material = RenderMaterial::CreateMaterial({"texture/default.png"}, {}, "", "", SHADER_CATEGORY_PHONG);
+            std::vector<MaterialMapInfo> map_info_container;
+            map_info_container.push_back({material_map_type::DIFFUSE_MAP, "texture/default.png"});
+            std::vector<MaterialFloatParamInfo> float_param_container;
+
+
+            mesh_section.material = RenderMaterial::CreatePhongMaterial(map_info_container, {}, {});
         }
         
         mesh_resource.mesh_sections_.push_back(mesh_section);
     }
 
-    void ModelLoader::ProcessTexture(aiMaterial *material, aiTextureType assimp_texture_type, std::vector<std::string>& textures)
+    std::string ModelLoader::ProcessTexture(aiMaterial *material, aiTextureType assimp_texture_type)
     {
-        for (unsigned int i = 0; i < material->GetTextureCount(assimp_texture_type); i++)
+        if(material->GetTextureCount(assimp_texture_type) > 0)
         {
             aiString file_path;
-            material->GetTexture(assimp_texture_type, i, &file_path);
-
+            material->GetTexture(assimp_texture_type, 0, &file_path);
             file_path = directory + '/' + file_path.C_Str();
-            std::string texture_key = file_path.C_Str();
-            textures.push_back(texture_key);
-        }        
+            return  file_path.C_Str();
+        }
+        else
+        {
+            return "";
+        }
     }
 
     

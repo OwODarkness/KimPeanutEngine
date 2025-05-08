@@ -22,13 +22,10 @@ namespace kpengine{
     {
         KP_LOG("LevelLog", LOG_LEVEL_DISPLAY, "Level Init...");
 
-  
-
-
-        std::shared_ptr<MeshActor> sphere = std::make_shared<MeshActor>("model/sphere/sphere.obj");
-        AddActor(sphere);
-        sphere->SetActorScale({0.6f, 0.6f, 0.6f});
-        sphere->SetActorLocation({1.f, 1.f, 1.f});
+        // std::shared_ptr<MeshActor> sphere = std::make_shared<MeshActor>("model/sphere/sphere.obj");
+        // AddActor(sphere);
+        // sphere->SetActorScale({0.6f, 0.6f, 0.6f});
+        // sphere->SetActorLocation({1.f, 1.f, 1.f});
 
         std::shared_ptr<MeshActor> bunny = std::make_shared<MeshActor>("model/bunny/stanford-bunny.obj");
         bunny->SetActorScale({5.f, 5.f, 5.f});
@@ -62,14 +59,13 @@ namespace kpengine{
 
         MeshComponent* floor_mesh_comp = dynamic_cast<MeshComponent*>(floor->GetRootComponent());
         std::shared_ptr<RenderMesh> floor_mesh = floor_mesh_comp->GetMesh();
-        std::shared_ptr<RenderMaterial> material = RenderMaterial::CreateMaterial({"model/brickwall/brickwall_dif.jpg"}, {}, "", "model/brickwall/brickwall_normal.jpg", SHADER_CATEGORY_PHONG);
-        material->normal_texture_enable_ = false;
+        std::shared_ptr<RenderMaterial> material = RenderMaterial::CreatePhongMaterial({{material_map_type::DIFFUSE_MAP, "model/brickwall/brickwall_dif.jpg"}}, {},{});
         floor_mesh->SetMaterial(material, 0);
 
-        MeshComponent* sphere_mesh_comp = dynamic_cast<MeshComponent*>(sphere->GetRootComponent());
-        std::shared_ptr<RenderMesh> sphere_mesh = sphere_mesh_comp->GetMesh();
-        std::shared_ptr<RenderMaterial> pbr_material = RenderMaterial::CreateMaterial({}, {}, "", "", SHADER_CATEGORY_PBR);
-        sphere_mesh->SetMaterial(pbr_material, 0); 
+        // MeshComponent* sphere_mesh_comp = dynamic_cast<MeshComponent*>(sphere->GetRootComponent());
+        // std::shared_ptr<RenderMesh> sphere_mesh = sphere_mesh_comp->GetMesh();
+        // std::shared_ptr<RenderMaterial> pbr_material = RenderMaterial::CreateMaterial({"texture/pbr/speckled-rust-bl/speckled-rust_albedo.png"}, {}, "", "", SHADER_CATEGORY_PBR);
+        // sphere_mesh->SetMaterial(pbr_material, 0); 
 
     }
 

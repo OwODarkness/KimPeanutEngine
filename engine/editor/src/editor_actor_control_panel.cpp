@@ -16,15 +16,15 @@ namespace kpengine{
             MeshComponent* meshcomp =  dynamic_cast<MeshComponent*>(actor_->GetRootComponent());
             std::shared_ptr<RenderMesh> mesh = meshcomp->GetMesh();
             std::shared_ptr<RenderMaterial> material = mesh->GetMaterial(0);
-            if(material)
-            {
-                AddComponent(new EditorTextComponent(actor_->GetName()));
-                EditorSliderComponent<float>* roughness_slide = new EditorSliderComponent<float>("roughness", &material->roughness, 0.05f, 1.f);
-                AddComponent(roughness_slide);
+            // if(material)
+            // {
+            //     AddComponent(new EditorTextComponent(actor_->GetName()));
+            //     EditorSliderComponent<float>* roughness_slide = new EditorSliderComponent<float>("roughness", &material->roughness, 0.05f, 1.f);
+            //     AddComponent(roughness_slide);
 
-                EditorSliderComponent<float>* metallic_slide = new EditorSliderComponent<float>("metallic", &material->metallic, 0.f, 1.f);
-                AddComponent(metallic_slide);
-            }
+            //     EditorSliderComponent<float>* metallic_slide = new EditorSliderComponent<float>("metallic", &material->metallic, 0.f, 1.f);
+            //     AddComponent(metallic_slide);
+            // }
         }
 
 

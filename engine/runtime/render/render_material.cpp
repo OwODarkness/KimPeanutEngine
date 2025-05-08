@@ -9,122 +9,188 @@
 #include "runtime/render/texture_pool.h"
 namespace kpengine
 {
-
-    std::shared_ptr<RenderMaterial> RenderMaterial::CreateMaterial(
-        const std::vector<std::string>& diffuse_textures_path_container, 
-        const std::vector<std::string>& specular_textures_path_container, 
-        const std::string& emission_texture_path, 
-        const std::string normal_texture_path, 
-        const std::string shader_name)
+    std::shared_ptr<RenderMaterial> RenderMaterial::CreatePBRMaterial(const std::vector<MaterialMapInfo>& map_info_container, const std::vector<MaterialFloatParamInfo>& float_param_info_container, const std::vector<MaterialVec3ParamInfo>& vec3_param_info_container)
     {
         std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
-        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(shader_name);
+        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_PBR);
         TexturePool* texture_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
-        
-        //diffuse texture load
-        for(const std::string &diffuse_path : diffuse_textures_path_container)
+
+        material->textures.insert({
+            material_map_type::ALBEDO_MAP,
+            nullptr
+        });
+        material->textures.insert({
+            material_map_type::ROUGHNESS_MAP,
+            nullptr
+        });
+        material->textures.insert({
+            material_map_type::METALLIC_MAP,
+            nullptr
+        });
+        material->textures.insert({
+            material_map_type::NORMAL_MAP,
+            nullptr
+        });
+        material->textures.insert({
+            material_map_type::AO_MAP,
+            nullptr
+        });
+
+        for(const MaterialMapInfo& map_info: map_info_container)
         {
-            if(diffuse_path == "")
+            if(!map_info.map_path.empty() && material->textures.contains(map_info.map_type))
             {
-                continue;
-            }
-            std::shared_ptr<RenderTexture> diffuse_texture = texture_pool->FetchTexture2D(diffuse_path);
-            if(diffuse_texture)
-            {
-                material->diffuse_textures_.push_back(diffuse_texture);
+                std::shared_ptr<RenderTexture> texture = texture_pool->FetchTexture2D(map_info.map_path);
+                if(texture)
+                {
+                    material->textures[map_info.map_type] = texture;
+                }
             }
         }
 
-        //specular texture load
-        for(const std::string &specular_path : specular_textures_path_container)
+        for(const MaterialFloatParamInfo& float_param_info : float_param_info_container)
         {
-            if(specular_path == "")
+            if(float_param_info.param_type != "")
             {
-                continue;
-            }
-            std::shared_ptr<RenderTexture> specular_texture = texture_pool->FetchTexture2D(specular_path);
-            if(specular_texture)
-            {
-                material->specular_textures_.push_back(specular_texture);
+                material->float_params.insert({float_param_info.param_type, float_param_info.value});
             }
         }
 
-        if(emission_texture_path != "")
+        for(const MaterialVec3ParamInfo& vec3_param_info : vec3_param_info_container)
         {
-            material->emission_texture_ = texture_pool->FetchTexture2D(emission_texture_path);
-        }
-
-        if(normal_texture_path != "")
-        {
-            material->normal_texture_ = texture_pool->FetchTexture2D(normal_texture_path);
+            if(vec3_param_info.param_type != "")
+            {
+                material->float_params.insert({vec3_param_info.param_type, vec3_param_info.value});
+            }
         }
 
         return material;
+
+    }
+    std::shared_ptr<RenderMaterial> RenderMaterial::CreatePhongMaterial(const std::vector<MaterialMapInfo>& map_info_container, const std::vector<MaterialFloatParamInfo>& float_param_info_container, const std::vector<MaterialVec3ParamInfo>& vec3_param_info_container)
+    {
+        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
+        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_PHONG);
+        TexturePool* texture_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
+
+        material->textures.insert({
+            material_map_type::DIFFUSE_MAP,
+            nullptr
+        });
+        material->textures.insert({
+            material_map_type::SPECULAR_MAP,
+            nullptr
+        });
+        material->textures.insert({
+            material_map_type::NORMAL_MAP,
+            nullptr
+        });
+
+        
+        for(const MaterialMapInfo& map_info: map_info_container)
+        {
+            if(!map_info.map_path.empty() && material->textures.contains(map_info.map_type))
+            {
+                std::shared_ptr<RenderTexture> texture = texture_pool->FetchTexture2D(map_info.map_path);
+                if(texture)
+                {
+                    material->textures[map_info.map_type] = texture;
+                }
+            }
+        }
+
+        material->float_params.insert({material_param_type::SHINESS_PARAM, 70.f});
+        material->vec3_params.insert({material_param_type::ALBEDO_PARAM, Vector3f(1.f)});
+
+        for(const MaterialFloatParamInfo& float_param_info : float_param_info_container)
+        {
+            if(float_param_info.param_type != "")
+            {
+                material->float_params.insert({float_param_info.param_type, float_param_info.value});
+            }
+        }
+
+        for(const MaterialVec3ParamInfo& vec3_param_info : vec3_param_info_container)
+        {
+            if(vec3_param_info.param_type != "")
+            {
+                material->float_params.insert({vec3_param_info.param_type, vec3_param_info.value});
+            }
+        }
+        return material;
+    }
+    
+
+    std::shared_ptr<RenderMaterial> RenderMaterial::CreateMaterial(const std::string& shader_name)
+    {
+        std::shared_ptr<RenderMaterial> material = std::make_shared<RenderMaterial>();
+        material->shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(shader_name);
+        return material;
+    }
+
+    void RenderMaterial::AddTexture(const MaterialMapInfo& map_info)
+    {
+
+        if(map_info.map_path != "" && textures.contains(map_info.map_type))
+        {
+            TexturePool* texture_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
+            textures[map_info.map_type] = texture_pool->FetchTexture2D(map_info.map_path);
+        }
     }
 
     void RenderMaterial::Initialize()
     {
+
         shader_->UseProgram();
-        shader_->SetFloat("material.shininess", shininess);
-        shader_->SetVec3("material.diffuse_albedo", diffuse_albedo_.Data());
+                
 
-        shader_->SetInt("material.diffuse_texture_0", TextureSlots::DIFFUSE_0);
-        shader_->SetInt("material.diffuse_texture_1", TextureSlots::DIFFUSE_1);
-        shader_->SetInt("material.diffuse_texture_2", TextureSlots::DIFFUSE_2);
+        int map_count = 0;
+        for(const auto& pair: textures)
+        {
+            std::string texture_name = "material." + pair.first;
+            shader_->SetInt(texture_name, map_count);
+            map_count++;
+        }
 
-        shader_->SetInt("material.specular_texture_0", TextureSlots::SPECULAR_0);
-        shader_->SetInt("material.specular_texture_1", TextureSlots::SPECULAR_1);
-        shader_->SetInt("material.specular_texture_2", TextureSlots::SPECULAR_2);
-
-        shader_->SetInt("material.normal_texture", TextureSlots::NORMAL);
-        shader_->SetInt("material.emission_texture", TextureSlots::EMISSION);
-       
-        unsigned int diffuse_texture_num =  std::min((unsigned int)diffuse_textures_.size(), MAX_DIFFUSE_NUM);
-        unsigned int specular_texture_num = std::min((unsigned int)specular_textures_.size(), MAX_SPECULAR_NUM);
-        
-        shader_->SetInt("material.diffuse_count", diffuse_texture_num);
-        shader_->SetInt("material.specular_count", specular_texture_num);
-        shader_->SetBool("normal_texture_enabled", normal_texture_enable_);
-        shader_->SetFloat("material.ao", ao);
-
-        shader_->SetVec3("material.albedo", albedo.Data());
     }
 
     void RenderMaterial::Render()
     {
-        unsigned int diffuse_texture_num =  std::min((unsigned int)diffuse_textures_.size(), MAX_DIFFUSE_NUM);
-        unsigned int specular_texture_num = std::min((unsigned int)specular_textures_.size(), MAX_SPECULAR_NUM);
-        
-        shader_->SetInt("material.diffuse_count", diffuse_texture_num);
-        shader_->SetInt("material.specular_count", specular_texture_num);
-        shader_->SetBool("normal_texture_enabled", normal_texture_enable_);
-        
-        shader_->SetFloat("material.metallic", metallic);
-        shader_->SetFloat("material.roughness", roughness);
-
-        
-        for (unsigned int i = 0; i < diffuse_texture_num; i++)
+        for(const auto& pair : float_params)
         {
-            glActiveTexture(GL_TEXTURE0 + i + TextureSlots::DIFFUSE_0);
-            glBindTexture(GL_TEXTURE_2D, diffuse_textures_[i]->GetTexture());
-        }
-        for (unsigned int i = 0; i < specular_texture_num; i++)
-        {
-            glActiveTexture(GL_TEXTURE0 + i + TextureSlots::SPECULAR_0);
-            glBindTexture(GL_TEXTURE_2D, specular_textures_[i]->GetTexture());
-
-        }
-        if(emission_texture_)
-        {
-            glActiveTexture(GL_TEXTURE0 + TextureSlots::EMISSION);
-            glBindTexture(GL_TEXTURE_2D, emission_texture_->GetTexture());
-        }
-        if(normal_texture_ )
-        {
-            glActiveTexture(GL_TEXTURE0 + TextureSlots::NORMAL);
-            glBindTexture(GL_TEXTURE_2D, normal_texture_->GetTexture());
+            std::string param_name = "material." + pair.first;
+            shader_->SetFloat(param_name, pair.second);
         }
 
+        for(const auto& pair : vec3_params)
+        {
+            std::string param_name = "material." + pair.first;
+            shader_->SetVec3(param_name, pair.second.Data());
+        }  
+
+        int map_count = 0;
+        for(const auto& pair : textures)
+        {
+            if(pair.second)
+            {
+                std::string bool_name = "material.has_" + pair.first;
+                shader_->SetBool(bool_name, true);
+                std::string texture_name = "material." + pair.first;
+                glActiveTexture(GL_TEXTURE0 + map_count);
+                glBindTexture(GL_TEXTURE_2D, pair.second->GetTexture());
+
+            }
+            else
+            {
+                std::string bool_name = "material.has_" + pair.first;
+                shader_->SetBool(bool_name, false);
+
+            }
+            
+            map_count++;
+        }
+
+     
     }
 
 

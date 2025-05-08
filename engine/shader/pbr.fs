@@ -2,25 +2,20 @@
 
 
 struct Material{
-    int diffuse_count;
-    int specular_count;
+
+    bool has_albedo_map;
+    bool has_roughness_map;
+    bool has_metallic_map;
+    bool has_normal_map;
     float metallic;
     float roughness;
-    float shininess;
     float ao;
     vec3 albedo;
 
-    sampler2D diffuse_texture_0;
-    sampler2D diffuse_texture_1;
-    sampler2D diffuse_texture_2;
-
-    sampler2D specular_texture_0;
-    sampler2D specular_texture_1;
-    sampler2D specular_texture_2;
-
-    sampler2D normal_texture;
-
-    sampler2D emission_texture;
+    sampler2D albedo_map;
+    sampler2D roughness_map;
+    sampler2D metallic_map;
+    sampler2D normal_map;
 };
 
 struct PointLight{
@@ -86,10 +81,9 @@ float CalculateAttenuation(vec3 light_pos, vec3 frag_pos)
     return  1.0 / (constant + linear * dist + 
                 quadratic * (dist * dist));
 }
-vec3 Lambert()
+vec3 Lambert(vec3 albedo)
 {
-    vec3 res_color = texture(material.diffuse_texture_0, texcoord).rgb;
-    return res_color / PI;
+    return albedo / PI;
 }
 
 float DistributionGGX(vec3 normal_vec, vec3 half_vec, float roughness)
@@ -119,9 +113,9 @@ float GeometrySmith(vec3 normal_vec, vec3 view_vec, vec3 light_vec, float roughn
     return ggx1 * ggx2;
 }
 
-vec3 FresnelSchlick(vec3 F0, vec3 half_vec, vec3 view_vec)
+vec3 FresnelSchlick(vec3 f0, vec3 half_vec, vec3 view_vec)
 {
-    return F0 + (vec3(1.0) - F0) * (1.0 - pow(max(dot(half_vec, view_vec), 0), 5));
+    return f0 + (vec3(1.0) - f0) * pow(1.0 - max(dot(half_vec, view_vec), 0), 5);
 }
 
 vec3 BRDF(vec3 pos, vec2 dir_i, vec2 dir_o)
@@ -132,32 +126,38 @@ vec3 BRDF(vec3 pos, vec2 dir_i, vec2 dir_o)
 
 void main()
 {
-    vec3 normal_vec = normalize(normal);
+    vec3 normal_vec = material.has_normal_map ? texture(material.normal_map, texcoord).rgb : normalize(normal);
     vec3 view_vec = normalize(view_position - frag_position);
     vec3 L0 = vec3(0.);
-        vec3 light_vec = normalize(point_light.position - frag_position);
-        vec3 half_vec = CalculateHalfVector(light_vec, view_vec);
+    vec3 light_vec = normalize(point_light.position - frag_position);
+    vec3 half_vec = CalculateHalfVector(light_vec, view_vec);
 
-        float attenuation = CalculateAttenuation(point_light.position, frag_position);
-        vec3 radiance = attenuation * point_light.color;
 
-        vec3 F0 = vec3(0.04);
-        F0 = mix(F0, material.albedo, material.metallic);
-        vec3 F = FresnelSchlick(F0, half_vec, view_vec);
-        float NDF = DistributionGGX(normal_vec, half_vec, material.roughness);
-        float G = GeometrySmith(normal_vec, view_vec, light_vec, material.roughness);
+    float attenuation = CalculateAttenuation(point_light.position, frag_position);
+    vec3 radiance = attenuation * point_light.color;
 
-        vec3 numerator = NDF * G * F;
-        float denom = 4.0 * max(dot(normal_vec, view_vec), 0.) * max(dot(normal_vec, light_vec), 0.) + 0.0001;
-        vec3 specular = numerator / denom;
+    vec3 albedo = material.has_albedo_map ? pow(texture(material.albedo_map, texcoord).rgb, vec3(2.2)) : material.albedo;
+    
+    float roughness = material.has_roughness_map ? texture(material.roughness_map, texcoord).r : material.roughness;
+    float metallic = material.has_metallic_map ? texture(material.metallic_map, texcoord).r : material.metallic;
 
-        vec3 ks = F;
-        vec3 kd = vec3(1.0) - ks;
-        kd *= (1.0 - material.metallic);
+    vec3 f0 = vec3(0.04);
+    f0 = mix(f0, albedo, metallic);
+    vec3 F = FresnelSchlick(f0, half_vec, view_vec);
+    float NDF = DistributionGGX(normal_vec, half_vec, roughness);
+    float G = GeometrySmith(normal_vec, view_vec, light_vec, roughness);
 
-        L0 = (kd * material.albedo / PI + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
+    vec3 numerator = NDF * G * F;//DFG
+    float denom = 4.0 * max(dot(normal_vec, view_vec), 0.) * max(dot(normal_vec, light_vec), 0.) + 0.0001;
+    vec3 specular = numerator / denom;
 
-    vec3 ambient = vec3(0.03) * material.albedo * material.ao;
+    vec3 ks = F;
+    vec3 kd = vec3(1.0) - ks;
+    kd *= (1.0 - metallic);
+
+    L0 = (kd * Lambert(albedo) + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
+
+    vec3 ambient = vec3(0.03) * albedo * material.ao;
     vec3 color = ambient + L0;
 
     color = color / (color + vec3(1.0));
