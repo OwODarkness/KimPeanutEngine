@@ -48,6 +48,13 @@ namespace kpengine
             }
         }
 
+        material->float_params.insert({material_param_type::METALLIC_PARAM, 0.15f});
+        material->float_params.insert({material_param_type::ROUGHNESS_PARAM, 0.15f});
+        material->float_params.insert({material_param_type::AO_PARAM, 1.f});
+        
+        material->vec3_params.insert({material_param_type::ALBEDO_PARAM, Vector3f(0.5f, 0.f, 0.f)});
+
+
         for(const MaterialFloatParamInfo& float_param_info : float_param_info_container)
         {
             if(float_param_info.param_type != "")
@@ -152,6 +159,19 @@ namespace kpengine
             map_count++;
         }
 
+    }
+
+
+    float* RenderMaterial::GetFloatParamRef(const std::string& key)
+    {
+        if(float_params.contains(key))
+        {
+            return &float_params[key];
+        }
+        else
+        {
+            return nullptr;
+        }
     }
 
     void RenderMaterial::Render()

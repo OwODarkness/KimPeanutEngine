@@ -31,7 +31,8 @@ namespace kpengine{
         void CountMeshData(aiNode* node, const aiScene* scene, unsigned int& vertices_num, unsigned int& indices_num);
         void ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderMeshResource& mesh_resource);  
         std::string ProcessTexture(aiMaterial* material, aiTextureType assip_texture_type);
-        
+        void ComputeTangent(aiMesh* mesh, const aiScene* scene, RenderMeshResource& mesh_resource);
+
         void ProcessNode(aiNode* node ,const aiScene* scene, RenderPointCloudResource& pointcloud_resource);
         void ProcessMesh(aiMesh* mesh, const aiScene* scene, RenderPointCloudResource& pointcloud_resource);  
         

@@ -4,15 +4,17 @@ layout(location = 0) in vec3 in_location;
 layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec2 in_texcoord;
 layout(location = 3) in vec3 in_tangent;
+
+layout (std140, binding=0) uniform CameraMatrices{
+    mat4 projection;
+    mat4 view;
+};
+
 out vec3 normal;
 out vec2 texcoord;
 out vec3 frag_position;
 out vec4 frag_pos_light_space;
 out mat3 TBN;
-layout (std140, binding=0) uniform CameraMatrices{
-    mat4 projection;
-    mat4 view;
-};
 
 uniform mat4 model;
 uniform mat4 light_space_matrix;

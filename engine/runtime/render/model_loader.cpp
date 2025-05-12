@@ -1,6 +1,6 @@
 #include "model_loader.h"
 
-
+#include <iostream>
 #include "runtime/render/render_mesh.h"
 #include "runtime/render/render_material.h"
 #include "runtime/render/render_texture.h"
@@ -18,7 +18,8 @@ namespace kpengine
 
         const aiScene *scene = import.ReadFile(absolute_model_path, aiProcess_Triangulate | 
             aiProcess_GenNormals |
-            aiProcess_FlipUVs);
+            aiProcess_FlipUVs |
+            aiProcess_CalcTangentSpace);
 
         if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
         {
@@ -115,7 +116,7 @@ namespace kpengine
 
         bool has_normal = mesh->HasNormals();
         bool has_texcoord = mesh->mTextureCoords[0];
-
+        bool has_tangent = mesh->HasTangentsAndBitangents();
         //extract vertices
         for(unsigned int i = 0;i<mesh->mNumVertices;i++)
         {
@@ -131,6 +132,11 @@ namespace kpengine
             if(has_texcoord)
             {
                 vertex.tex_coord = {mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y};
+            }
+            
+            if(has_tangent)
+            {
+                vertex.tangent = {mesh->mTangents[i].x, mesh->mTangents[i].y, mesh->mTangents[i].z};
             }
 
             mesh_resource.vertex_buffer_.push_back(vertex);
@@ -149,7 +155,7 @@ namespace kpengine
         }
         mesh_section.index_count = current_index_count;
         mesh_section.face_count = mesh->mNumFaces;
-
+        
         //generate material
         if (mesh->mMaterialIndex > 0)
         {
@@ -167,6 +173,11 @@ namespace kpengine
                 map_info_container.push_back({material_map_type::SPECULAR_MAP, specular_name});
             }
 
+            std::string normal_name = ProcessTexture(ai_material, aiTextureType_NORMALS);
+            if(!normal_name.empty())
+            {
+                map_info_container.push_back({material_map_type::NORMAL_MAP, normal_name});
+            }
 
             mesh_section.material = RenderMaterial::CreatePhongMaterial(map_info_container, {}, {});
         }
@@ -227,5 +238,10 @@ namespace kpengine
             Vector3f pos= {mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z};
             pointcloud_resource.vertex_buffer_.push_back(pos);
         }
+    }
+
+    void ModelLoader::ComputeTangent(aiMesh* mesh, const aiScene* scene, RenderMeshResource& mesh_resource)
+    {
+        //for(unsigned int i = 0;i<mesh-)
     }
 }

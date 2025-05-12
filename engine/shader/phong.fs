@@ -211,7 +211,7 @@ vec3 CalculateSpotLightRender(SpotLight light, vec3 normal_vec, vec3 diffuse, ve
 void main()
 {
     vec3 normal_vec = material.has_normal_map == true ? 
-    normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0): normalize(normal);
+    normalize(TBN * (texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal);
 
     float shadow = CalculateShadowValue(frag_pos_light_space, normal_vec);
     float point_shadow = CalculatePointShadowValue(frag_position);
@@ -225,13 +225,7 @@ void main()
     vec3 ambient_res = ambient * diffuse;
     const float gamma = 2.2f;
     out_frag_color = vec4(light_res + ambient_res , 1 );
-    // if(normal_texture_enabled)
-    // {
-    //     vec3 normal = texture(material.normal_texture, out_texcoord).rgb;
-    //     normal = normalize(normal * 2.f - 1.f);
-    //     normal = normalize(out_TBN * normal);
-    //     out_frag_color = vec4(normal, 1.f);
-    // }
+
 
     
 }

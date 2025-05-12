@@ -51,9 +51,14 @@ namespace kpengine{
         static std::shared_ptr<RenderMaterial> CreatePBRMaterial(const std::vector<MaterialMapInfo>& map_info_container, const std::vector<MaterialFloatParamInfo>& float_param_info_container, const std::vector<MaterialVec3ParamInfo>& vec3_param_info_container);
         static std::shared_ptr<RenderMaterial> CreatePhongMaterial(const std::vector<MaterialMapInfo>& map_info_container, const std::vector<MaterialFloatParamInfo>& float_param_info_container, const std::vector<MaterialVec3ParamInfo>& vec3_param_info_container);
         static std::shared_ptr<RenderMaterial> CreateMaterial(const std::string& shader_name);
+        
         void Initialize();
         void Render() ;
         void AddTexture(const MaterialMapInfo& map_info);
+
+        
+        float* GetFloatParamRef(const std::string& key);
+
     public:
         std::shared_ptr<RenderShader> shader_;
         std::unordered_map<std::string, std::shared_ptr<RenderTexture>> textures;
