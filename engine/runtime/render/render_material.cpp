@@ -48,11 +48,10 @@ namespace kpengine
             }
         }
 
-        material->float_params.insert({material_param_type::METALLIC_PARAM, 0.15f});
-        material->float_params.insert({material_param_type::ROUGHNESS_PARAM, 0.15f});
-        material->float_params.insert({material_param_type::AO_PARAM, 1.f});
-        
-        material->vec3_params.insert({material_param_type::ALBEDO_PARAM, Vector3f(0.5f, 0.f, 0.f)});
+        // material->float_params.insert({material_param_type::METALLIC_PARAM, 0.15f});
+        // material->float_params.insert({material_param_type::ROUGHNESS_PARAM, 0.15f});
+        // material->float_params.insert({material_param_type::AO_PARAM, 1.f});
+        // material->vec3_params.insert({material_param_type::ALBEDO_PARAM, Vector3f(0.5f, 0.f, 0.f)});
 
 
         for(const MaterialFloatParamInfo& float_param_info : float_param_info_container)
@@ -174,18 +173,18 @@ namespace kpengine
         }
     }
 
-    void RenderMaterial::Render()
+    void RenderMaterial::Render(const std::shared_ptr<RenderShader>& shader)
     {
         for(const auto& pair : float_params)
         {
             std::string param_name = "material." + pair.first;
-            shader_->SetFloat(param_name, pair.second);
+            shader->SetFloat(param_name, pair.second);
         }
 
         for(const auto& pair : vec3_params)
         {
             std::string param_name = "material." + pair.first;
-            shader_->SetVec3(param_name, pair.second.Data());
+            shader->SetVec3(param_name, pair.second.Data());
         }  
 
         int map_count = 0;
@@ -194,7 +193,7 @@ namespace kpengine
             if(pair.second)
             {
                 std::string bool_name = "material.has_" + pair.first;
-                shader_->SetBool(bool_name, true);
+                shader->SetBool(bool_name, true);
                 std::string texture_name = "material." + pair.first;
                 glActiveTexture(GL_TEXTURE0 + map_count);
                 glBindTexture(GL_TEXTURE_2D, pair.second->GetTexture());
@@ -203,7 +202,7 @@ namespace kpengine
             else
             {
                 std::string bool_name = "material.has_" + pair.first;
-                shader_->SetBool(bool_name, false);
+                shader->SetBool(bool_name, false);
 
             }
             

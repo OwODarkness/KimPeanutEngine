@@ -53,7 +53,7 @@ namespace kpengine{
         static std::shared_ptr<RenderMaterial> CreateMaterial(const std::string& shader_name);
         
         void Initialize();
-        void Render() ;
+        void Render(const std::shared_ptr<RenderShader>& shader) ;
         void AddTexture(const MaterialMapInfo& map_info);
 
         

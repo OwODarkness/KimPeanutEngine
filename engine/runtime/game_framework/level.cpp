@@ -73,6 +73,7 @@ namespace kpengine{
                 {material_map_type::ROUGHNESS_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_roughness.png"},
                 {material_map_type::METALLIC_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_metallic.png"},
                 {material_map_type::NORMAL_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_normal-ogl.png"},
+                {material_map_type::AO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_ao.png"}
 
             }, {}, {});
         sphere_mesh->SetMaterial(pbr_material, 0); 

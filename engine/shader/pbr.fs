@@ -7,15 +7,17 @@ struct Material{
     bool has_roughness_map;
     bool has_metallic_map;
     bool has_normal_map;
+    bool has_ao_map;
     float metallic;
     float roughness;
-    float ao;
+    vec3 ao;
     vec3 albedo;
 
     sampler2D albedo_map;
     sampler2D roughness_map;
     sampler2D metallic_map;
     sampler2D normal_map;
+    sampler2D ao_map;
 };
 
 struct PointLight{
@@ -131,7 +133,7 @@ void main()
     vec3 L0 = vec3(0.);
     vec3 light_vec = normalize(point_light.position - frag_position);
     vec3 half_vec = CalculateHalfVector(light_vec, view_vec);
-
+    vec3 ao = material.has_ao_map ? texture(material.ao_map, texcoord).rgb : material.ao;
 
     float attenuation = CalculateAttenuation(point_light.position, frag_position);
     vec3 radiance = attenuation * point_light.color;
@@ -157,7 +159,7 @@ void main()
 
     L0 = (kd * Lambert(albedo) + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
 
-    vec3 ambient = vec3(0.03) * albedo * material.ao;
+    vec3 ambient = vec3(0.03) * albedo * ao;
     vec3 color = ambient + L0;
 
     color = color / (color + vec3(1.0));

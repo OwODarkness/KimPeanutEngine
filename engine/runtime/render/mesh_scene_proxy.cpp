@@ -25,7 +25,7 @@ namespace kpengine{
             for(std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
             {
                 shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
-                
+                iter->material->Render(shader);
                 glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void*)(iter->index_start* sizeof(unsigned int)));
                 
             }
@@ -51,7 +51,7 @@ namespace kpengine{
                     
 
                 }
-                iter->material->Render();
+                iter->material->Render(current_shader);
 
                 glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void*)(iter->index_start * sizeof(unsigned int)));
             }
