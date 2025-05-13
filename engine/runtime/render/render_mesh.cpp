@@ -66,10 +66,7 @@ namespace kpengine
             return;
         }
         mesh_resource->mesh_sections_.at(section_index).material = material;
-        if(is_initialized_)
-        {
-            mesh_resource->mesh_sections_.at(section_index).material->Initialize();
-        }
+
     }
 
     std::shared_ptr<RenderMaterial> RenderMesh::GetMaterial(unsigned int section_index)

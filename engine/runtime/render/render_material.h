@@ -52,12 +52,13 @@ namespace kpengine{
         static std::shared_ptr<RenderMaterial> CreatePhongMaterial(const std::vector<MaterialMapInfo>& map_info_container, const std::vector<MaterialFloatParamInfo>& float_param_info_container, const std::vector<MaterialVec3ParamInfo>& vec3_param_info_container);
         static std::shared_ptr<RenderMaterial> CreateMaterial(const std::string& shader_name);
         
-        void Initialize();
+        void Initialize(const std::shared_ptr<RenderShader>& shader);
         void Render(const std::shared_ptr<RenderShader>& shader) ;
         void AddTexture(const MaterialMapInfo& map_info);
 
-        
+        std::shared_ptr<RenderTexture> GetTexture(const std::string key);
         float* GetFloatParamRef(const std::string& key);
+        Vector3f* GetVectorParamRef(const std::string& key);
 
     public:
         std::shared_ptr<RenderShader> shader_;
@@ -65,6 +66,8 @@ namespace kpengine{
         std::unordered_map<std::string, float> float_params;
         std::unordered_map<std::string, Vector3f> vec3_params;
         Vector3f diffuse_albedo_{1.f};
+
+        unsigned int last_use_shader_id_ = 0;
     };
 
 

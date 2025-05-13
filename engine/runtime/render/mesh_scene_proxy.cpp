@@ -20,7 +20,6 @@ namespace kpengine{
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_).Transpose();
         if(shader)
         {
-
             shader->UseProgram();
             for(std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
             {
@@ -76,8 +75,6 @@ namespace kpengine{
             unsigned int light_block_index = glGetUniformBlockIndex(shader_id, "Light");
             glUniformBlockBinding(shader_id, light_block_index, 1);
 
-            unsigned int new_shader_id = iter->material->shader_->GetShaderProgram();
-            iter->material->Initialize();
         }
         current_shader_id_ = 0;
     }

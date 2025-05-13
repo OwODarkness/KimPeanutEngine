@@ -25,7 +25,7 @@ namespace kpengine{
         std::shared_ptr<MeshActor> sphere = std::make_shared<MeshActor>("model/sphere/sphere.obj");
         AddActor(sphere);
         sphere->SetActorScale({0.6f, 0.6f, 0.6f});
-        sphere->SetActorLocation({1.f, 1.f, 1.f});
+        sphere->SetActorLocation({5.f, 1.f, 3.f});
 
         std::shared_ptr<MeshActor> bunny = std::make_shared<MeshActor>("model/bunny/stanford-bunny.obj");
         bunny->SetActorScale({5.f, 5.f, 5.f});
@@ -47,7 +47,9 @@ namespace kpengine{
         dragon->SetActorLocation({1.6f, 0.0f, -2.6f});
         AddActor(dragon);
 
-        //floor
+        // std::shared_ptr<PointCloudActor> stump = std::make_shared<PointCloudActor>("model/stump/input.ply");
+        // AddActor(stump);
+        
         std::shared_ptr<MeshActor> floor = std::make_shared<MeshActor>("model/brickwall/floor.obj");
         floor->SetActorScale({2.f, 1.f, 2.f});
         AddActor(floor);
@@ -69,12 +71,15 @@ namespace kpengine{
         std::shared_ptr<RenderMesh> sphere_mesh = sphere_mesh_comp->GetMesh();
         std::shared_ptr<RenderMaterial> pbr_material = RenderMaterial::CreatePBRMaterial(
             {
-                {material_map_type::ALBEDO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_albedo.png"},
-                {material_map_type::ROUGHNESS_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_roughness.png"},
-                {material_map_type::METALLIC_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_metallic.png"},
-                {material_map_type::NORMAL_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_normal-ogl.png"},
+                // {material_map_type::ALBEDO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_albedo.png"},
+                // {material_map_type::ROUGHNESS_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_roughness.png"},
+                // {material_map_type::METALLIC_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_metallic.png"},
+                // {material_map_type::NORMAL_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_normal-ogl.png"},
+                {material_map_type::ALBEDO_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_basecolor.png"},
+                {material_map_type::METALLIC_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_metallic.png"},
+                {material_map_type::ROUGHNESS_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_roughness.png"},
+                {material_map_type::NORMAL_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_normal.png"},
                 {material_map_type::AO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_ao.png"}
-
             }, {}, {});
         sphere_mesh->SetMaterial(pbr_material, 0); 
 

@@ -10,7 +10,7 @@ struct Material{
     bool has_ao_map;
     float metallic;
     float roughness;
-    vec3 ao;
+    float ao;
     vec3 albedo;
 
     sampler2D albedo_map;
@@ -60,10 +60,18 @@ layout(std140, binding=1) uniform Light{
 
 uniform Material material;
 uniform vec3 view_position;
+//shadow map
+uniform sampler2D shadow_map;
+uniform samplerCube point_shadow_map;
+
+uniform float far_plane;
 
 in vec2 texcoord;
 in vec3 frag_position;
 in vec3 normal;
+in mat3 TBN;
+in vec4 frag_pos_light_space;
+
 
 out vec4 out_frag_color;
 
@@ -72,11 +80,71 @@ float constant = 1.0;
 float linear = 0.09;     
 float quadratic = 0.032;
 
+
+float CalculateShadowValue(vec4 light_space, vec3 normal_vec)
+{
+    vec3 proj_coords = light_space.xyz / light_space.w;
+    proj_coords = proj_coords * 0.5 + 0.5;
+    if(proj_coords.z > 1.f)
+    {
+        return 0.f;
+    }
+    float current_depth = proj_coords.z;
+
+
+    vec3 lightdir = normalize(directional_light.direction);
+
+    float bias = max(0.5 * dot(normal_vec, lightdir),  0.005f);
+    float shadow = 0.f;
+
+    vec2 texture_size = 1.f / textureSize(shadow_map, 0);
+    for(int x = -1;x<=1;x++)
+    {
+        for(int y = -1;y<=1;y++)
+        {
+            float pcf = texture(shadow_map, proj_coords.xy + vec2(x, y) * texture_size).r;
+            shadow += current_depth - bias > pcf ? 1: 0;
+        }
+    }
+    shadow/= 9.f;
+
+    return shadow;
+}
+
+float CalculatePointShadowValue(vec3 frag_position)
+{
+    vec3 frag_to_light = frag_position - point_light.position;
+    float current_depth = length(frag_to_light);
+    float shadow = 0.f;
+    float bias = 0.05; 
+    float samples = 4.0f;
+    float offset = 0.1f;
+
+    for(float x = -offset ; x< offset ;x += offset / (samples * 0.5))
+    {
+        for(float y = -offset ; y<offset;y+=offset/(samples * 0.5))
+        {
+            for(float z = -offset;z<offset;z+= offset/(samples * 0.5))
+            {
+                float close_depth = texture(point_shadow_map, frag_to_light + vec3(x, y, z)).r;
+                close_depth *= far_plane;
+                if(current_depth - bias > close_depth)
+                {
+                    shadow += 1.f;
+                }
+            }
+        }
+    }
+    shadow /= (samples * samples * samples);
+    return shadow;
+}
+
 vec3 CalculateHalfVector(vec3 a, vec3 b)
 {
     vec3 tmp = a + b;
     return tmp / length(tmp);
 }
+
 float CalculateAttenuation(vec3 light_pos, vec3 frag_pos)
 {
     float dist = length(light_pos - frag_pos);
@@ -128,12 +196,17 @@ vec3 BRDF(vec3 pos, vec2 dir_i, vec2 dir_o)
 
 void main()
 {
-    vec3 normal_vec = material.has_normal_map ? texture(material.normal_map, texcoord).rgb : normalize(normal);
+
+    float point_shadow = CalculatePointShadowValue(frag_position);
+
+    vec3 normal_vec = material.has_normal_map == true ? 
+    normalize(TBN * normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal);
+
     vec3 view_vec = normalize(view_position - frag_position);
     vec3 L0 = vec3(0.);
     vec3 light_vec = normalize(point_light.position - frag_position);
     vec3 half_vec = CalculateHalfVector(light_vec, view_vec);
-    vec3 ao = material.has_ao_map ? texture(material.ao_map, texcoord).rgb : material.ao;
+    float ao = material.has_ao_map ? texture(material.ao_map, texcoord).r : material.ao;
 
     float attenuation = CalculateAttenuation(point_light.position, frag_position);
     vec3 radiance = attenuation * point_light.color;
@@ -165,5 +238,6 @@ void main()
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0/2.2));
 
-    out_frag_color = vec4(color, 1.0);
+    out_frag_color = vec4( (1.0 - point_shadow) * color, 1.0);
+
 }

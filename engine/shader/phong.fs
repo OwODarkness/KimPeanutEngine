@@ -75,7 +75,7 @@ uniform sampler2D shadow_map;
 uniform samplerCube point_shadow_map;
 
 uniform float far_plane;
-uniform bool normal_texture_enabled;
+
 
 float CalculateAttenuation(vec3 light_pos, vec3 frag_pos)
 {
@@ -223,7 +223,7 @@ void main()
     vec3 spot_light_res = CalculateSpotLightRender(spot_light, normal_vec, diffuse, specular);
     vec3 light_res =  point_light_res + directional_light_res + spot_light_res;
     vec3 ambient_res = ambient * diffuse;
-    const float gamma = 2.2f;
+    const float gamma = 2.2;
     out_frag_color = vec4(light_res + ambient_res , 1 );
 
 

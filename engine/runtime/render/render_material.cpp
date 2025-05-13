@@ -144,22 +144,30 @@ namespace kpengine
         }
     }
 
-    void RenderMaterial::Initialize()
+    void RenderMaterial::Initialize(const std::shared_ptr<RenderShader>& shader)
     {
-
-        shader_->UseProgram();
-                
-
+        shader->UseProgram();
         int map_count = 0;
         for(const auto& pair: textures)
         {
             std::string texture_name = "material." + pair.first;
-            shader_->SetInt(texture_name, map_count);
+            
+            shader->SetInt(texture_name, map_count);
             map_count++;
         }
-
     }
 
+    std::shared_ptr<RenderTexture> RenderMaterial::GetTexture(const std::string key)
+    {
+        if(textures.contains(key))
+        {
+            return textures[key];
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
 
     float* RenderMaterial::GetFloatParamRef(const std::string& key)
     {
@@ -173,8 +181,27 @@ namespace kpengine
         }
     }
 
+    Vector3f* RenderMaterial::GetVectorParamRef(const std::string& key)
+    {
+        if(vec3_params.contains(key))
+        {
+            return &vec3_params[key];
+        }
+        else
+        {
+            return nullptr;
+        }
+    }
+
     void RenderMaterial::Render(const std::shared_ptr<RenderShader>& shader)
     {
+        unsigned int current_shader_id = shader->GetShaderProgram();
+        if(current_shader_id != last_use_shader_id_)
+        {
+            last_use_shader_id_ = current_shader_id;
+            Initialize(shader);
+        }
+
         for(const auto& pair : float_params)
         {
             std::string param_name = "material." + pair.first;
@@ -203,7 +230,6 @@ namespace kpengine
             {
                 std::string bool_name = "material.has_" + pair.first;
                 shader->SetBool(bool_name, false);
-
             }
             
             map_count++;
