@@ -65,6 +65,8 @@ uniform sampler2D shadow_map;
 uniform samplerCube point_shadow_map;
 
 uniform float far_plane;
+uniform samplerCube environment_map;
+
 
 in vec2 texcoord;
 in vec3 frag_position;
@@ -230,7 +232,7 @@ void main()
     vec3 kd = vec3(1.0) - ks;
     kd *= (1.0 - metallic);
 
-    L0 = (kd * Lambert(albedo) + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
+    L0 = (kd * Lambert(albedo) + ks * specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
 
     vec3 ambient = vec3(0.03) * albedo * ao;
     vec3 color = ambient + L0;

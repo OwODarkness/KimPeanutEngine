@@ -21,8 +21,6 @@ namespace kpengine
 
     bool RenderTexture2D::Initialize()
     {
-        glGenTextures(1, &texture_handle_);
-        glBindTexture(GL_TEXTURE_2D, texture_handle_);
 
         int width = 0, height = 0, nr_channels = 0;
         stbi_set_flip_vertically_on_load(true);
@@ -33,15 +31,14 @@ namespace kpengine
         if (!image_data)
         {
             KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", absoulte_image_path.c_str());
-            image_id_ =  "texture/default.jpg";
-            absoulte_image_path = GetAssetDirectory() + image_id_;
-            image_data = stbi_load(absoulte_image_path.c_str(), &width, &height, &nr_channels, 0);
             return false;
         }
         // else
         // {
         //     KP_LOG("TextureLog", LOG_LEVEL_DISPLAY, "Load texture successfully from %s ", absoulte_image_path.c_str());
         // }
+        glGenTextures(1, &texture_handle_);
+        glBindTexture(GL_TEXTURE_2D, texture_handle_);
 
         int color_format = 0;
         if (nr_channels == 1)
@@ -72,9 +69,8 @@ namespace kpengine
         return true;
     }
 
-    RenderTextureCubeMap::RenderTextureCubeMap(const std::string &image_directory, const std::vector<std::string>& face_names)
-     : RenderTexture(image_directory),
-     face_names_(face_names)
+    RenderTextureCubeMap::RenderTextureCubeMap(const std::string &image_directory, const std::unordered_map<CubemapSlotName, std::string>& slots)
+     : RenderTexture(image_directory),cubemap_slots_(slots)
     {
     }
 
@@ -86,11 +82,16 @@ namespace kpengine
 
         int width = 0, height = 0, nr_channels = 0;
 
-        for(int i = 0;i<face_names_.size();i++)
+        for(int i = 0;i<6;i++)
         {
-             
-            std::string item_path = GetAssetDirectory() + image_id_ + '/' + face_names_[i];
-            unsigned char *image_data = stbi_load(item_path.c_str(), &width, &height, &nr_channels, 0);
+            CubemapSlotName slot_name = static_cast<CubemapSlotName>(i);
+            if(!cubemap_slots_.contains(slot_name))
+            {
+                KP_LOG("CubeMapTextureLog", LOG_LEVEL_ERROR, "Couldn't find desired slot");
+                return false;
+            }
+            std::string face_path = GetAssetDirectory() + image_id_  + cubemap_slots_[slot_name];
+            unsigned char *image_data = stbi_load(face_path.c_str(), &width, &height, &nr_channels, 0);
             if(image_data)
             {
                 glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB, width, height, 0, GL_RGB, GL_UNSIGNED_BYTE, image_data);
@@ -98,7 +99,7 @@ namespace kpengine
             }
             else
             {
-                KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", item_path.c_str());
+                KP_LOG("CubeMapTextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", face_path.c_str());
                 stbi_image_free(image_data);
                 return false;
             }
@@ -112,5 +113,41 @@ namespace kpengine
         return true;
     }
 
+
+    RenderTextureHDR::RenderTextureHDR(const std::string& image_directory):
+    RenderTexture(image_directory)
+    {
+
+    }
+
+    bool RenderTextureHDR::Initialize()
+    {
+
+
+        int width = 0, height = 0, nr_channels = 0;
+        stbi_set_flip_vertically_on_load(true);
+
+        std::string absoulte_image_path = GetAssetDirectory() + image_id_;
+        float *data = stbi_loadf(absoulte_image_path.c_str(), &width, &height, &nr_channels, 0);
+
+        if(!data)
+        {
+            KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load hdr_texture from %s", absoulte_image_path.c_str());
+            return false;
+        }
+
+        glGenTextures(1, &texture_handle_);
+        glBindTexture(GL_TEXTURE_2D, texture_handle_);
+
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB16F, width, height, 0, GL_RGB, GL_FLOAT, data);
+
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        stbi_image_free(data);
+        return true;
+    }
 
 }

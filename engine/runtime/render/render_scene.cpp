@@ -13,7 +13,7 @@
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_camera.h"
 #include "runtime/render/shadow_maker.h"
-
+#include "runtime/render/environment_map.h"
 #include "runtime/render/render_mesh_resource.h"
 #include "platform/path/path.h"
 #include "runtime/render/primitive_scene_proxy.h"
@@ -47,8 +47,11 @@ namespace kpengine
         
         //skybox
        skybox = test::GetRenderObjectSkybox();
-        
        skybox->Initialize();
+
+        //environment map
+        environment_map = std::make_shared<EnvironmentMap>("texture/hdr/venice_sunset_1k.hdr");
+        environment_map->Initialize();
 
 
         glGenBuffers(1, &ubo_camera_matrices_);
@@ -137,6 +140,7 @@ namespace kpengine
 
             //render skybox
             skybox->Render();
+
 
             glActiveTexture(GL_TEXTURE15);
             glBindTexture(GL_TEXTURE_2D, directional_shadow_maker_->GetShadowMap());

@@ -32,6 +32,11 @@ namespace kpengine{
             SHADER_CATEGORY_PBR,
             std::make_shared<RenderShader>("pbr.vs", "pbr.fs")
         });
+
+        shader_cache.insert({
+            SHADER_CATEGORY_EQUIRECTANGULAR,
+            std::make_shared<RenderShader>("equiretangular_to_cubemap.vs", "equiretangular_to_cubemap.fs")
+        });
     }
 
     void ShaderPool::Initialize()

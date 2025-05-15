@@ -16,6 +16,7 @@ namespace kpengine{
     class PointShadowMaker;
     class Skybox;
     class PrimitiveSceneProxy;
+    class EnvironmentMap;
 
     class RenderScene{
     public:
@@ -37,6 +38,7 @@ namespace kpengine{
 
         float angle = 0.f;
         std::shared_ptr<Skybox> skybox;
+        std::shared_ptr<EnvironmentMap> environment_map;
     private:
         //scene proxy 
         std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies;//renderable

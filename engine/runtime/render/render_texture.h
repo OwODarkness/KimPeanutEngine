@@ -2,7 +2,10 @@
 #define KPENGINE_RUNTIME_RENDER_TEXTURE_H
 
 #include <string>
+#include <unordered_map>
 #include <filesystem>
+#include <array>
+
 namespace kpengine
 {
 
@@ -33,17 +36,39 @@ namespace kpengine
 
         virtual bool Initialize() override;
     };
+
+    
     //cubemap type
+        enum class CubemapSlotName{
+        Right,
+        Left,
+        Top,
+        Bottom,
+        Front,
+        Back
+    };
+
+    
     class RenderTextureCubeMap: public RenderTexture
     {
     public:
-        RenderTextureCubeMap(const std::string &image_directory, const std::vector<std::string>& face_names);
+        RenderTextureCubeMap(const std::string &image_directory,const std::unordered_map<CubemapSlotName, std::string>& slots);
 
         virtual bool Initialize() override;
     private:
-        std::vector<std::string> face_names_;
+        std::unordered_map<CubemapSlotName, std::string> cubemap_slots_;
+
     };
 
+
+    class RenderTextureHDR: public RenderTexture
+    {
+    public:
+        RenderTextureHDR(const std::string& image_directory);
+
+        virtual bool Initialize() override;
+        
+    };
 }
 
 #endif
