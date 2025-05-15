@@ -41,7 +41,7 @@ namespace kpengine{
 
     struct MaterialVec3ParamInfo{
         std::string param_type;
-        float value;
+        Vector3f value;
     };
 
 

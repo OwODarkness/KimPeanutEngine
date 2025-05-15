@@ -27,7 +27,6 @@ namespace kpengine
 
     bool RenderTexture2D::Initialize()
     {
-
         int width = 0, height = 0, nr_channels = 0;
         stbi_set_flip_vertically_on_load(true);
 

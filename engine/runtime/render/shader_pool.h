@@ -12,6 +12,7 @@
 #define SHADER_CATEGORY_POINTCLOUD "pointcloud_shader"
 #define SHADER_CATEGORY_PBR "pbr_shader"
 #define SHADER_CATEGORY_EQUIRECTANGULAR "equirectangular_to_cubemap_shader"
+#define SHADER_CATEGORY_IRRADIANCE "irradiance_shader"
 
 namespace kpengine{
     class RenderShader;

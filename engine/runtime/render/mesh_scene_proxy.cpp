@@ -47,11 +47,13 @@ namespace kpengine{
                     current_shader->SetFloat("far_plane", 25.f);
                     current_shader->SetInt("point_shadow_map", 14);
                     current_shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
-                    
+
 
                 }
                 iter->material->Render(current_shader);
-
+                current_shader->SetInt("irradiance_map", 10);
+                glActiveTexture(GL_TEXTURE10);
+                glBindTexture(GL_TEXTURE_CUBE_MAP, irradiance_map_handle_);
                 glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void*)(iter->index_start * sizeof(unsigned int)));
             }
         }
@@ -66,14 +68,15 @@ namespace kpengine{
         for(std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
         {
             //Debug
-
-            unsigned int shader_id = iter->material->shader_->GetShaderProgram();
+            std::shared_ptr<RenderShader> shader = iter->material->shader_;
+            unsigned int shader_id = shader->GetShaderProgram();
 
             unsigned int uniform_block_index = glGetUniformBlockIndex(shader_id, "CameraMatrices");
             glUniformBlockBinding(shader_id, uniform_block_index, 0);
 
             unsigned int light_block_index = glGetUniformBlockIndex(shader_id, "Light");
             glUniformBlockBinding(shader_id, light_block_index, 1);
+
 
         }
         current_shader_id_ = 0;

@@ -22,6 +22,8 @@ namespace kpengine{
         Transform3f transfrom_;
         float* view_pos_;
         float* light_space_;
+    public:
+        unsigned int irradiance_map_handle_ = 0;
     };
 }
 

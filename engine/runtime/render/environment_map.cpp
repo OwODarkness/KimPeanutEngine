@@ -20,22 +20,19 @@ namespace kpengine{
     bool EnvironmentMapWrapper::Initialize()
     {
         hdr_texture_->Initialize();
-        equirect_to_cubemap_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_EQUIRECTANGULAR);
-        
+        ShaderPool* shader_pool = runtime::global_runtime_context.render_system_->GetShaderPool();
+        equirect_to_cubemap_shader_ = shader_pool->GetShader(SHADER_CATEGORY_EQUIRECTANGULAR);
+        irradiance_shader_ = shader_pool->GetShader(SHADER_CATEGORY_IRRADIANCE);
+
         glGenFramebuffers(1, &capture_fbo_);
         glGenRenderbuffers(1, &capture_rbo_);
 
-        glBindFramebuffer(GL_FRAMEBUFFER, capture_fbo_);
-        glBindRenderbuffer(GL_RENDERBUFFER, capture_rbo_);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, 512, 512);
-        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, capture_rbo_);
-
         GenerateEnvironmentMap();
-
+        GenerateIrradianceMap();
         return true;
     }
 
-    std::shared_ptr<RenderTexture> EnvironmentMapWrapper::GenerateEnvironmentMap()
+    void EnvironmentMapWrapper::GenerateEnvironmentMap()
     {
         glGenTextures(1, &environment_map_handle_);
         glBindTexture(GL_TEXTURE_CUBE_MAP, environment_map_handle_);
@@ -49,6 +46,12 @@ namespace kpengine{
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
         glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+
+
+        glBindFramebuffer(GL_FRAMEBUFFER, capture_fbo_);
+        glBindRenderbuffer(GL_RENDERBUFFER, capture_rbo_);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, 512, 512);
+        glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_RENDERBUFFER, capture_rbo_);
 
         Matrix4f projection = Matrix4f::MakePerProjMatrix(90.f, 1.f, 0.1f, 10.f);
         std::vector<Matrix4f> views = {
@@ -78,6 +81,55 @@ namespace kpengine{
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
         environment_map_ = std::make_shared<RenderTextureCubeMap>(hdr_path_, environment_map_handle_);
+    }
+
+    void EnvironmentMapWrapper::GenerateIrradianceMap()
+    {
+        glGenTextures(1, &irradiance_map_handle_);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, irradiance_map_handle_);
+        for(unsigned int i = 0;i < 6 ;i++)
+        {
+            glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_RGB16F, 32, 32, 0, GL_RGB, GL_FLOAT, nullptr);
+        }
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+
+        glBindFramebuffer(GL_FRAMEBUFFER, capture_fbo_);
+        glBindRenderbuffer(GL_RENDERBUFFER, capture_rbo_);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, 32, 32);
+
+        Matrix4f projection = Matrix4f::MakePerProjMatrix(90.f, 1.f, 0.1f, 10.f);
+        std::vector<Matrix4f> views = {
+            Matrix4f::MakeCameraMatrix({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, {0.f, -1.f, 0.f}),
+            Matrix4f::MakeCameraMatrix({0.f, 0.f, 0.f}, {-1.f, 0.f, 0.f}, {0.f, -1.f, 0.f}),
+            Matrix4f::MakeCameraMatrix({0.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, 1.f}),
+            Matrix4f::MakeCameraMatrix({0.f, 0.f, 0.f}, {0.f, -1.f, 0.f}, {0.f, 0.f, -1.f}),
+            Matrix4f::MakeCameraMatrix({0.f, 0.f, 0.f}, {0.f, 0.f, 1.f}, {0.f, -1.f, 0.f}),
+            Matrix4f::MakeCameraMatrix({0.f, 0.f, 0.f}, {0.f, 0.f, -1.f}, {0.f, -1.f, 0.f}),
+        };
+        
+
+        irradiance_shader_->UseProgram();
+        irradiance_shader_->SetMat("projection", projection.Transpose()[0]);
+        irradiance_shader_->SetInt("environment_map", 0);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, environment_map_handle_);
+        
+        glViewport(0, 0, 32, 32);
+        glBindFramebuffer(GL_FRAMEBUFFER, capture_fbo_);
+        for(unsigned int  i = 0;i<6;i++)
+        {
+            irradiance_shader_->SetMat("view", views[i].Transpose()[0]);
+            glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, irradiance_map_handle_, 0);
+            glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+            RenderCube();
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+
+        irradiance_map_ = std::make_shared<RenderTextureCubeMap>(hdr_path_, irradiance_map_handle_);
     }
 
     void EnvironmentMapWrapper::RenderCube()

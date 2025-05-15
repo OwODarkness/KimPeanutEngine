@@ -37,6 +37,11 @@ namespace kpengine{
             SHADER_CATEGORY_EQUIRECTANGULAR,
             std::make_shared<RenderShader>("equiretangular_to_cubemap.vs", "equiretangular_to_cubemap.fs")
         });
+
+        shader_cache.insert({
+            SHADER_CATEGORY_IRRADIANCE,
+            std::make_shared<RenderShader>("irradiance.vs", "irradiance.fs")
+        });
     }
 
     void ShaderPool::Initialize()

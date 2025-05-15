@@ -65,7 +65,7 @@ uniform sampler2D shadow_map;
 uniform samplerCube point_shadow_map;
 
 uniform float far_plane;
-uniform samplerCube environment_map;
+uniform samplerCube irradiance_map;
 
 
 in vec2 texcoord;
@@ -132,7 +132,7 @@ float CalculatePointShadowValue(vec3 frag_position)
                 close_depth *= far_plane;
                 if(current_depth - bias > close_depth)
                 {
-                    shadow += 1.f;
+                    shadow += 1.0;
                 }
             }
         }
@@ -187,7 +187,8 @@ float GeometrySmith(vec3 normal_vec, vec3 view_vec, vec3 light_vec, float roughn
 
 vec3 FresnelSchlick(vec3 f0, vec3 half_vec, vec3 view_vec)
 {
-    return f0 + (vec3(1.0) - f0) * pow(1.0 - max(dot(half_vec, view_vec), 0), 5);
+    float cos_theta = max(dot(half_vec, view_vec), 0);
+    return f0 + (1.0 - f0) * pow(clamp(1 - cos_theta, 0.0, 1.0), 5.0);
 }
 
 vec3 BRDF(vec3 pos, vec2 dir_i, vec2 dir_o)
@@ -229,17 +230,22 @@ void main()
     vec3 specular = numerator / denom;
 
     vec3 ks = F;
-    vec3 kd = vec3(1.0) - ks;
+    vec3 kd = 1.0 - ks;
     kd *= (1.0 - metallic);
 
-    L0 = (kd * Lambert(albedo) + ks * specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
+    L0 = (kd * Lambert(albedo) + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
 
-    vec3 ambient = vec3(0.03) * albedo * ao;
+    ks = FresnelSchlick(f0, normal_vec, view_vec);
+    kd = vec3(1.0) - ks;
+    kd *= (1.0 - metallic); 
+    vec3 irradiance = texture(irradiance_map, normal_vec).rgb;
+    vec3 diffuse = irradiance * albedo;
+    vec3 ambient = kd * diffuse * ao;
     vec3 color = ambient + L0;
 
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0/2.2));
 
-    out_frag_color = vec4( (1.0 - point_shadow) * color, 1.0);
+    out_frag_color = vec4((1 - point_shadow) * color, 1.0);
 
 }

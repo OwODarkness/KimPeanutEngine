@@ -7,7 +7,7 @@
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/render/shader_pool.h"
-
+#include "runtime/render/render_texture.h"
 #include "runtime/render/frame_buffer.h"
 #include "runtime/test/render_object_test.h"
 #include "runtime/render/render_shader.h"
@@ -156,6 +156,7 @@ namespace kpengine
                 Vector3f cam_pos = render_camera_->GetPosition();
                 proxy->UpdateViewPosition(cam_pos.Data());
                 proxy->UpdateLightSpace(light_space_matrix[0]);
+                proxy->irradiance_map_handle_ = environment_map_wrapper->GetIrradianceMap()->GetTexture();
                 proxy->Draw(current_shader);
             }
         }

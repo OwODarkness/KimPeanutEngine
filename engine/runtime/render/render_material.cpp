@@ -66,7 +66,7 @@ namespace kpengine
         {
             if(vec3_param_info.param_type != "")
             {
-                material->float_params.insert({vec3_param_info.param_type, vec3_param_info.value});
+                material->vec3_params.insert({vec3_param_info.param_type, vec3_param_info.value});
             }
         }
 
@@ -120,7 +120,7 @@ namespace kpengine
         {
             if(vec3_param_info.param_type != "")
             {
-                material->float_params.insert({vec3_param_info.param_type, vec3_param_info.value});
+                material->vec3_params.insert({vec3_param_info.param_type, vec3_param_info.value});
             }
         }
         return material;
