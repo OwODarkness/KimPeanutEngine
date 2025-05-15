@@ -21,7 +21,7 @@ namespace kpengine
         virtual bool Initialize() = 0;
 
         inline unsigned int GetTexture() const { return texture_handle_; }
-
+        ~RenderTexture();
     protected:
         unsigned int texture_handle_;
 
@@ -35,6 +35,8 @@ namespace kpengine
         RenderTexture2D(const std::string &image_path);
 
         virtual bool Initialize() override;
+
+        virtual ~RenderTexture2D();
     };
 
     
@@ -53,10 +55,13 @@ namespace kpengine
     {
     public:
         RenderTextureCubeMap(const std::string &image_directory,const std::unordered_map<CubemapSlotName, std::string>& slots);
-
+        RenderTextureCubeMap(const std::string &image_directory,unsigned int handle);
         virtual bool Initialize() override;
+        virtual ~RenderTextureCubeMap();
+
     private:
         std::unordered_map<CubemapSlotName, std::string> cubemap_slots_;
+
 
     };
 
@@ -67,6 +72,9 @@ namespace kpengine
         RenderTextureHDR(const std::string& image_directory);
 
         virtual bool Initialize() override;
+
+        virtual ~RenderTextureHDR();
+
         
     };
 }

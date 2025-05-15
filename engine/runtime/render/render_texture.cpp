@@ -15,6 +15,12 @@ namespace kpengine
     {
     }
 
+
+    RenderTexture::~RenderTexture()
+    {
+        glDeleteTextures(1, &texture_handle_);
+    }
+
     RenderTexture2D::RenderTexture2D(const std::string &image_path) : RenderTexture(image_path)
     {
     }
@@ -69,9 +75,17 @@ namespace kpengine
         return true;
     }
 
+    RenderTexture2D::~RenderTexture2D() = default;
+
     RenderTextureCubeMap::RenderTextureCubeMap(const std::string &image_directory, const std::unordered_map<CubemapSlotName, std::string>& slots)
      : RenderTexture(image_directory),cubemap_slots_(slots)
     {
+    }
+
+    RenderTextureCubeMap::RenderTextureCubeMap(const std::string &image_directory, unsigned int handle)
+    :RenderTexture(image_directory)
+    {
+        texture_handle_ = handle;
     }
 
     bool RenderTextureCubeMap::Initialize()
@@ -114,6 +128,10 @@ namespace kpengine
     }
 
 
+
+
+    RenderTextureCubeMap::~RenderTextureCubeMap() = default;
+
     RenderTextureHDR::RenderTextureHDR(const std::string& image_directory):
     RenderTexture(image_directory)
     {
@@ -149,5 +167,7 @@ namespace kpengine
         stbi_image_free(data);
         return true;
     }
+
+    RenderTextureHDR::~RenderTextureHDR() = default;
 
 }

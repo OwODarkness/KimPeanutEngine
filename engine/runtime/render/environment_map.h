@@ -9,14 +9,33 @@ namespace kpengine{
     class RenderShader;
     class RenderTexture;
 
-class EnvironmentMap{
+class EnvironmentMapWrapper{
 public:
-    EnvironmentMap(const std::string& hdr_path);
+    EnvironmentMapWrapper(const std::string& hdr_path);
     bool Initialize();
-    void RenderCube();
+    std::shared_ptr<RenderTexture> GetEnvironmentMap() const{return environment_map_;}
+
 private:
-    std::shared_ptr<RenderShader> shader_;
+
+    void RenderCube();
+
+    std::shared_ptr<RenderTexture> GenerateEnvironmentMap();
+
+
+
+private:
+
+
+    std::shared_ptr<RenderShader> equirect_to_cubemap_shader_;
     std::shared_ptr<RenderTexture> hdr_texture_;
+    std::shared_ptr<RenderTexture> environment_map_;
+
+    std::string hdr_path_;
+    unsigned int capture_fbo_;
+    unsigned int capture_rbo_; 
+
+    unsigned int environment_map_handle_;
+
     static unsigned int vao;
     static unsigned int vbo;
     static const float vertices[108];

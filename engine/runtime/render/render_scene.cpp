@@ -45,13 +45,17 @@ namespace kpengine
 
         scene_->Initialize();
         
+        //environment map
+        environment_map_wrapper = std::make_shared<EnvironmentMapWrapper>("texture/hdr/venice_sunset_1k.hdr");
+        environment_map_wrapper->Initialize();
+
+        
         //skybox
-       skybox = test::GetRenderObjectSkybox();
+       //skybox = test::GetRenderObjectSkybox();
+       skybox = std::make_shared<Skybox>( runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_SKYBOX), environment_map_wrapper->GetEnvironmentMap());
        skybox->Initialize();
 
-        //environment map
-        environment_map = std::make_shared<EnvironmentMap>("texture/hdr/venice_sunset_1k.hdr");
-        environment_map->Initialize();
+
 
 
         glGenBuffers(1, &ubo_camera_matrices_);
