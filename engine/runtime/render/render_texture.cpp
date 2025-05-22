@@ -25,6 +25,12 @@ namespace kpengine
     {
     }
 
+    RenderTexture2D::RenderTexture2D(const std::string& image_path, unsigned int handle):
+    RenderTexture(image_path)
+    {
+        texture_handle_ = handle;
+    }
+
     bool RenderTexture2D::Initialize()
     {
         int width = 0, height = 0, nr_channels = 0;
@@ -32,6 +38,7 @@ namespace kpengine
 
         std::string absoulte_image_path = GetAssetDirectory() + image_id_;
 
+    
         unsigned char *image_data = stbi_load(absoulte_image_path.c_str(), &width, &height, &nr_channels, 0);
         if (!image_data)
         {

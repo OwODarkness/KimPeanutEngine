@@ -11,6 +11,7 @@ struct MeshVertex
     Vector3f normal;
     Vector2f tex_coord;
     Vector3f tangent;
+    Vector3f bitangent;
 };
 }
 #endif

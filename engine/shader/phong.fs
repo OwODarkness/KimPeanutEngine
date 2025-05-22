@@ -8,13 +8,14 @@ struct Material{
     sampler2D diffuse_map;
     sampler2D specular_map;
     sampler2D normal_map;
-
+    sampler2D bump_map;
     vec3 albedo;
 
     float shininess;
     bool has_diffuse_map;
     bool has_specular_map;
     bool has_normal_map;
+    bool has_bump_map;
 };
 
 struct PointLight{
@@ -211,7 +212,8 @@ vec3 CalculateSpotLightRender(SpotLight light, vec3 normal_vec, vec3 diffuse, ve
 void main()
 {
     vec3 normal_vec = material.has_normal_map == true ? 
-    normalize(TBN * (texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal);
+    normalize(TBN * normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal);
+
 
     float shadow = CalculateShadowValue(frag_pos_light_space, normal_vec);
     float point_shadow = CalculatePointShadowValue(frag_position);

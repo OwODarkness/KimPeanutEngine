@@ -1,5 +1,4 @@
 #include "model_loader.h"
-
 #include <iostream>
 #include "runtime/render/render_mesh.h"
 #include "runtime/render/render_material.h"
@@ -10,6 +9,7 @@
 #include "runtime/render/render_mesh_resource.h"
 #include "runtime/runtime_header.h"
 #include "runtime/render/shader_pool.h"
+
 namespace kpengine
 {
     bool ModelLoader::Load(const std::string& relative_model_path, RenderMeshResource& mesh_resource){
@@ -116,7 +116,8 @@ namespace kpengine
 
         bool has_normal = mesh->HasNormals();
         bool has_texcoord = mesh->mTextureCoords[0];
-        bool has_tangent = mesh->HasTangentsAndBitangents();
+        bool has_tangent_and_bitangent = mesh->HasTangentsAndBitangents();
+
         //extract vertices
         for(unsigned int i = 0;i<mesh->mNumVertices;i++)
         {
@@ -134,9 +135,10 @@ namespace kpengine
                 vertex.tex_coord = {mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y};
             }
             
-            if(has_tangent)
+            if(has_tangent_and_bitangent)
             {
                 vertex.tangent = {mesh->mTangents[i].x, mesh->mTangents[i].y, mesh->mTangents[i].z};
+                vertex.bitangent = {mesh->mBitangents[i].x, mesh->mBitangents[i].y, mesh->mBitangents[i].z};
             }
 
             mesh_resource.vertex_buffer_.push_back(vertex);
@@ -163,23 +165,44 @@ namespace kpengine
 
             aiMaterial *ai_material = scene->mMaterials[mesh->mMaterialIndex];
             std::string diffuse_name = ProcessTexture(ai_material, aiTextureType_DIFFUSE);
-            if(!diffuse_name.empty())
+
+            bool is_phong_model = !diffuse_name.empty() ? true : false;
+            
+            if(is_phong_model)
             {
-                map_info_container.push_back({material_map_type::DIFFUSE_MAP, diffuse_name});
+                if(!diffuse_name.empty())
+                {
+                    map_info_container.push_back({material_map_type::DIFFUSE_MAP, diffuse_name});
+                }
+
+                std::string specular_name = ProcessTexture(ai_material, aiTextureType_SPECULAR);
+                if(!specular_name.empty())
+                {
+                    map_info_container.push_back({material_map_type::SPECULAR_MAP, specular_name});
+                }
+
+                std::string normal_name = ProcessTexture(ai_material, aiTextureType_NORMALS);
+                if(!normal_name.empty())
+                {
+                    map_info_container.push_back({material_map_type::NORMAL_MAP, normal_name});
+                }
+
+                std::string bump_name = ProcessTexture(ai_material, aiTextureType_HEIGHT);
+                if(!bump_name.empty())
+                {
+                    map_info_container.push_back({material_map_type::NORMAL_MAP, bump_name});
+                }
+                mesh_section.material = RenderMaterial::CreatePhongMaterial(map_info_container, {}, {});
             }
-            std::string specular_name = ProcessTexture(ai_material, aiTextureType_SPECULAR);
-            if(!specular_name.empty())
+            else
             {
-                map_info_container.push_back({material_map_type::SPECULAR_MAP, specular_name});
+                std::string albedo = ProcessTexture(ai_material, aiTextureType_BASE_COLOR);
+                if(!albedo.empty())
+                {
+                    std::cout << albedo << "\n";
+                }
             }
 
-            std::string normal_name = ProcessTexture(ai_material, aiTextureType_NORMALS);
-            if(!normal_name.empty())
-            {
-                map_info_container.push_back({material_map_type::NORMAL_MAP, normal_name});
-            }
-
-            mesh_section.material = RenderMaterial::CreatePhongMaterial(map_info_container, {}, {});
         }
         else
         {

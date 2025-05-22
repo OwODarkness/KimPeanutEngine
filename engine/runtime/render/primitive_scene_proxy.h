@@ -24,6 +24,8 @@ namespace kpengine{
         float* light_space_;
     public:
         unsigned int irradiance_map_handle_ = 0;
+        unsigned int prefilter_map_handle_ = 0;
+        unsigned int brdf_map_handle_ = 0;
     };
 }
 

@@ -66,7 +66,8 @@ uniform samplerCube point_shadow_map;
 
 uniform float far_plane;
 uniform samplerCube irradiance_map;
-
+uniform samplerCube prefilter_map;
+uniform sampler2D brdf_map;
 
 in vec2 texcoord;
 in vec3 frag_position;
@@ -77,11 +78,11 @@ in vec4 frag_pos_light_space;
 
 out vec4 out_frag_color;
 
-float PI = 3.14159265;
-float constant = 1.0;    
-float linear = 0.09;     
-float quadratic = 0.032;
-
+const float PI = 3.14159265;
+const float constant = 1.0;    
+const float linear = 0.09;     
+const float quadratic = 0.032;
+const float MAX_REFLECTION_LOD = 4.0;
 
 float CalculateShadowValue(vec4 light_space, vec3 normal_vec)
 {
@@ -113,14 +114,14 @@ float CalculateShadowValue(vec4 light_space, vec3 normal_vec)
     return shadow;
 }
 
-float CalculatePointShadowValue(vec3 frag_position)
+float CalculatePointShadowValue(vec3 frag_position, PointLight light)
 {
-    vec3 frag_to_light = frag_position - point_light.position;
+    vec3 frag_to_light = frag_position - light.position;
     float current_depth = length(frag_to_light);
-    float shadow = 0.f;
+    float shadow = 0.0;
     float bias = 0.05; 
-    float samples = 4.0f;
-    float offset = 0.1f;
+    float samples = 4.0;
+    float offset = 0.1;
 
     for(float x = -offset ; x< offset ;x += offset / (samples * 0.5))
     {
@@ -191,6 +192,12 @@ vec3 FresnelSchlick(vec3 f0, vec3 half_vec, vec3 view_vec)
     return f0 + (1.0 - f0) * pow(clamp(1 - cos_theta, 0.0, 1.0), 5.0);
 }
 
+vec3 fresnelSchlickRoughness(vec3 f0, vec3 half_vec, vec3 view_vec, float roughness)
+{
+    float cos_theta = max(dot(half_vec, view_vec), 0);
+    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+}  
+
 vec3 BRDF(vec3 pos, vec2 dir_i, vec2 dir_o)
 {
     //fr = k_d * f_lambert + ks * specular
@@ -200,7 +207,7 @@ vec3 BRDF(vec3 pos, vec2 dir_i, vec2 dir_o)
 void main()
 {
 
-    float point_shadow = CalculatePointShadowValue(frag_position);
+    float point_shadow = CalculatePointShadowValue(frag_position, point_light);
 
     vec3 normal_vec = material.has_normal_map == true ? 
     normalize(TBN * normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal);
@@ -209,6 +216,8 @@ void main()
     vec3 L0 = vec3(0.);
     vec3 light_vec = normalize(point_light.position - frag_position);
     vec3 half_vec = CalculateHalfVector(light_vec, view_vec);
+    vec3 reflect_vec = reflect(-view_vec, normal_vec);
+
     float ao = material.has_ao_map ? texture(material.ao_map, texcoord).r : material.ao;
 
     float attenuation = CalculateAttenuation(point_light.position, frag_position);
@@ -235,12 +244,19 @@ void main()
 
     L0 = (kd * Lambert(albedo) + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
 
-    ks = FresnelSchlick(f0, normal_vec, view_vec);
+    ks = fresnelSchlickRoughness(f0, normal_vec, view_vec, roughness);
     kd = vec3(1.0) - ks;
     kd *= (1.0 - metallic); 
     vec3 irradiance = texture(irradiance_map, normal_vec).rgb;
     vec3 diffuse = irradiance * albedo;
-    vec3 ambient = kd * diffuse * ao;
+
+
+    vec3 prefilter_color = textureLod(prefilter_map, reflect_vec, roughness * MAX_REFLECTION_LOD).rgb;
+    vec2 env_brdf = texture(brdf_map, vec2(max(dot(normal_vec, view_vec), 0.0), roughness)).rg;
+    vec3 specular_brdf = prefilter_color * (F * env_brdf.x + env_brdf.y);
+
+    vec3 ambient = (kd * diffuse + specular_brdf) * ao;
+
     vec3 color = ambient + L0;
 
     color = color / (color + vec3(1.0));

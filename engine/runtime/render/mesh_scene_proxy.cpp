@@ -51,9 +51,19 @@ namespace kpengine{
 
                 }
                 iter->material->Render(current_shader);
+
                 current_shader->SetInt("irradiance_map", 10);
                 glActiveTexture(GL_TEXTURE10);
                 glBindTexture(GL_TEXTURE_CUBE_MAP, irradiance_map_handle_);
+
+                current_shader->SetInt("prefilter_map", 11);
+                glActiveTexture(GL_TEXTURE11);
+                glBindTexture(GL_TEXTURE_CUBE_MAP, prefilter_map_handle_);
+
+                current_shader->SetInt("brdf_map", 12);
+                glActiveTexture(GL_TEXTURE12);
+                glBindTexture(GL_TEXTURE_2D, brdf_map_handle_);
+
                 glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void*)(iter->index_start * sizeof(unsigned int)));
             }
         }

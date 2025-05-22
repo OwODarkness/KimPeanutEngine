@@ -33,6 +33,7 @@ namespace kpengine
     {
     public:
         RenderTexture2D(const std::string &image_path);
+        RenderTexture2D(const std::string &image_path, unsigned int handle);
 
         virtual bool Initialize() override;
 

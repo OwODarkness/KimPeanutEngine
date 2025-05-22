@@ -156,9 +156,14 @@ namespace kpengine
                 Vector3f cam_pos = render_camera_->GetPosition();
                 proxy->UpdateViewPosition(cam_pos.Data());
                 proxy->UpdateLightSpace(light_space_matrix[0]);
+
                 proxy->irradiance_map_handle_ = environment_map_wrapper->GetIrradianceMap()->GetTexture();
+                proxy->prefilter_map_handle_ = environment_map_wrapper->GetPrefilterMap()->GetTexture();
+                proxy->brdf_map_handle_ = environment_map_wrapper->GetBRDFMap()->GetTexture();
+                
                 proxy->Draw(current_shader);
             }
+
         }
         scene_->UnBindFrameBuffer();
     }

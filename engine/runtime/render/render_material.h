@@ -19,6 +19,8 @@ namespace kpengine{
         constexpr const char* ROUGHNESS_MAP = "roughness_map";
         constexpr const char* METALLIC_MAP = "metallic_map";
         constexpr const char* AO_MAP = "ao_map";
+        constexpr const char* BUMP_MAP = "bump_map";
+        constexpr const char* DISPLACEMENT_MAP = "displacement_map";
     };
 
     namespace material_param_type{

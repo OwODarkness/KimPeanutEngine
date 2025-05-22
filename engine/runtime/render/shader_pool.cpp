@@ -42,6 +42,16 @@ namespace kpengine{
             SHADER_CATEGORY_IRRADIANCE,
             std::make_shared<RenderShader>("irradiance.vs", "irradiance.fs")
         });
+
+        shader_cache.insert({
+            SHADER_CATEGORY_PREFILTER,
+            std::make_shared<RenderShader>("prefilter_map.vs", "prefilter_map.fs")
+        });
+
+        shader_cache.insert({
+            SHADER_CATEGORY_BRDF,
+            std::make_shared<RenderShader>("brdf.vs", "brdf.fs")
+        });
     }
 
     void ShaderPool::Initialize()

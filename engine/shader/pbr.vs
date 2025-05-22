@@ -3,7 +3,7 @@ layout(location = 0) in vec3 in_location;
 layout(location = 1) in vec3 in_normal;
 layout(location = 2) in vec2 in_texcoord;
 layout(location = 3) in vec3 in_tangent;
-
+layout(location = 4) in vec3 in_bitangent;
 
 layout(std140, binding = 0) uniform CameraMatrices{
     mat4 projection;
@@ -27,7 +27,6 @@ void main()
 
     vec3 N = normalize(vec3(model * vec4(in_normal, 0.f)));    // Normal vector
     vec3 T = normalize(vec3(model * vec4(in_tangent, 0.f)));  // Tangent vector
-    T = normalize(T - dot(T, N) * N);  // Orthogonalize T with respect to N
-    vec3 B = cross(N, T);              // Bitangent vector
+    vec3 B = normalize(vec3(model * vec4(in_bitangent, 0.f)));              // Bitangent vector
     TBN = mat3(T, B, N);               // TBN matrix
 }

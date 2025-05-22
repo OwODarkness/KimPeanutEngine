@@ -91,6 +91,10 @@ namespace kpengine
             material_map_type::NORMAL_MAP,
             nullptr
         });
+        material->textures.insert({
+            material_map_type::BUMP_MAP,
+            nullptr
+        });
 
         
         for(const MaterialMapInfo& map_info: map_info_container)

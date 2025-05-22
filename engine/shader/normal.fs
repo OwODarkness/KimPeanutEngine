@@ -24,7 +24,8 @@ out vec4 out_frag_color;
 
 void main()
 {
-    vec3 normal_vec = material.has_normal_map == true ? normalize(TBN * normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal);
+    vec3 normal_vec = material.has_normal_map == true ? 
+    normalize(TBN * normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal);
 
     out_frag_color = vec4(normal_vec, 1.0);
 
