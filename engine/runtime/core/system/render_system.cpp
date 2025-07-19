@@ -1,7 +1,6 @@
 #include "render_system.h"
-
 #include <iostream>
-
+#include <glad/glad.h>
 #include "runtime/render/render_scene.h"
 #include "runtime/render/render_camera.h"
 #include "runtime/render/texture_pool.h"
@@ -25,7 +24,16 @@ namespace kpengine
 
     void RenderSystem::Tick(float delta_time)
     {
+        GLuint query;
+        glGenQueries(1, &query);
+
+        glBeginQuery(GL_PRIMITIVES_GENERATED, query);
         render_scene_->Render(delta_time);
+        glEndQuery(GL_PRIMITIVES_GENERATED);
+        GLuint primitives_generated = 0;
+        glGetQueryObjectuiv(query, GL_QUERY_RESULT, &primitives_generated);
+        glDeleteQueries(1, &query);
+        triangle_count_this_frame_ = primitives_generated;
     }
 
     void RenderSystem::SetCurrentShaderMode(const std::string& target)

@@ -8,8 +8,7 @@ namespace kpengine{
     class RenderMaterial;
 
     struct MeshSection{
-        explicit MeshSection():
-        index_start(0), index_count(0), face_count(0), material(nullptr){}
+        explicit MeshSection():index_start(0), index_count(0), face_count(0), material(nullptr){}
         explicit MeshSection(const MeshSection& mesh_section):
         index_start(mesh_section.index_start),
         index_count(mesh_section.index_count),

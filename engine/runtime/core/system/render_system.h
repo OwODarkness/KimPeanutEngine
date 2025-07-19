@@ -22,6 +22,8 @@ namespace kpengine{
 
         void SetCurrentShaderMode(const std::string& target);
         std::string GetCurrentShaderMode() const{return current_shader_mode_;}
+
+        const int* GetTriangleCountRef() const{return &triangle_count_this_frame_;}
         
     private:
         std::shared_ptr<RenderCamera> render_camera_;
@@ -31,6 +33,7 @@ namespace kpengine{
 
     private:
         std::string current_shader_mode_;
+        int triangle_count_this_frame_;
     };
 }
 

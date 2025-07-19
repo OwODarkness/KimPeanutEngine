@@ -25,6 +25,8 @@ namespace kpengine{
     using Rotator3d = math::Rotator<double>;
     using Transform3f = math::Transform<float>;
     using Transform3d = math::Transform<double>;
+
+
 }
 
 #endif

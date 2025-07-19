@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "runtime/core/math/math_header.h"
+#include "aabb.h"
 
 namespace kpengine{
     class RenderShader;
@@ -16,6 +17,7 @@ namespace kpengine{
         void UpdateLightSpace(float* light_space);
         virtual void Initialize();
         Transform3f GetTransform() const{return transfrom_;}
+        virtual AABB GetAABB();
     protected:
         PrimitiveSceneProxy(Transform3f transform = Transform3f());
     protected:
@@ -26,6 +28,7 @@ namespace kpengine{
         unsigned int irradiance_map_handle_ = 0;
         unsigned int prefilter_map_handle_ = 0;
         unsigned int brdf_map_handle_ = 0;
+        bool visible_this_frame = false;
     };
 }
 

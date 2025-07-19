@@ -12,6 +12,8 @@
 #include "runtime/core/system/render_system.h"
 #include "runtime/render/texture_pool.h"
 #include "runtime/render/render_texture.h"
+
+
 namespace kpengine{
 
     Level::Level()
@@ -37,15 +39,15 @@ namespace kpengine{
         teapot->SetActorLocation({0.5f, 0.f, 0.5f});
         AddActor(teapot);
 
-        std::shared_ptr<MeshActor> nanosuit = std::make_shared<MeshActor>("model/nanosuit/nanosuit.obj");
-        nanosuit->SetActorScale({0.1f, 0.1f, 0.1f});
-        nanosuit->SetActorLocation({4.6f, 0.0f, -0.6f});
-        AddActor(nanosuit);
+        // std::shared_ptr<MeshActor> nanosuit = std::make_shared<MeshActor>("model/nanosuit/nanosuit.obj");
+        // nanosuit->SetActorScale({0.1f, 0.1f, 0.1f});
+        // nanosuit->SetActorLocation({4.6f, 0.0f, -0.6f});
+        // AddActor(nanosuit);
 
-        std::shared_ptr<PointCloudActor> dragon = std::make_shared<PointCloudActor>("model/dragon/dragon.obj");
-        dragon->SetActorScale({0.1f, 0.1f, 0.1f});
-        dragon->SetActorLocation({1.6f, 0.0f, -2.6f});
-        AddActor(dragon);
+        // std::shared_ptr<PointCloudActor> dragon = std::make_shared<PointCloudActor>("model/dragon/dragon.obj");
+        // dragon->SetActorScale({0.1f, 0.1f, 0.1f});
+        // dragon->SetActorLocation({1.6f, 0.0f, -2.6f});
+        // AddActor(dragon);
 
         std::shared_ptr<MeshActor> gun = std::make_shared<MeshActor>("model/cerberus/Cerberus_LP.FBX");
         gun->SetActorScale({0.01f, 0.01f, 0.01f});

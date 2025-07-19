@@ -18,6 +18,11 @@ namespace kpengine {
             Vector4(const Vector3<T>&v, T w):x_(v.x_), y_(v.y_), z_(v.z_), w_(w){} 
             explicit Vector4(const T arr[4]) : x_(arr[0]), y_(arr[1]), z_(arr[2]), w_(arr[3]) {}
 
+            operator Vector3<T>() const 
+            {
+                return Vector3<T>(x_, y_, z_);
+            }
+
             T operator[](size_t index) const {
                 assert(index < 4);
                 return *(&x_ + index);
@@ -84,6 +89,10 @@ namespace kpengine {
         public:
             T x_, y_, z_, w_;
         };
+
+
+
+
 
         template<typename T>
         Vector4<T>& Vector4<T>::operator+=(const Vector4& v) {

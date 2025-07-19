@@ -16,6 +16,8 @@
 #define SHADER_CATEGORY_PREFILTER "prefilter_map"
 #define SHADER_CATEGORY_BRDF "brdf"
 
+#define SHADER_CATEGORY_DEBUGCUBIC "debug_cubic"
+
 namespace kpengine{
     class RenderShader;
     

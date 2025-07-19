@@ -23,4 +23,9 @@ namespace kpengine{
     {
         transfrom_ = new_transfrom;
     }
+
+    AABB PrimitiveSceneProxy::GetAABB()
+    {
+        return AABB();
+    }
 }

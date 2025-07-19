@@ -49,8 +49,6 @@ namespace kpengine
             const char *glsl_version = "#version 460";
             ImGui_ImplOpenGL3_Init(glsl_version);
 
-
-            
             ImGuiIO &io = ImGui::GetIO();
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
@@ -65,9 +63,14 @@ namespace kpengine
                                    { std::cout << "click" << std::endl; });
             window_component_->AddComponent(button);
             window_component_->AddComponent(new EditorPlotComponent([](float x){return std::sin(x);}, 0, 10));
-           
+
             EditorContainerComponent* container = new EditorContainerComponent();
-            container->AddComponent(new EditorDynamicTextComponent(&x, "fps: "));
+           
+            const int* fps = editor::global_editor_context.runtime_engine_->GetFPSRef();
+            container->AddComponent(new EditorDynamicTextComponent(fps, "fps: "));
+
+            const int* triangle_count = editor::global_editor_context.render_system_->GetTriangleCountRef();
+            container->AddComponent(new EditorDynamicTextComponent(triangle_count, "trangle count this frame: "));
             window_component_->AddComponent(container);
 
             std::vector<const char*> items = {"custom", SHADER_CATEGORY_NORMAL};
@@ -120,7 +123,6 @@ namespace kpengine
         bool EditorUI::Render()
         {
             // Start the Dear ImGui frame
-            x = editor::global_editor_context.runtime_engine_->GetFPS();
             for(int i = 0;i<components_.size();i++)
             {
                 components_[i]->Render();

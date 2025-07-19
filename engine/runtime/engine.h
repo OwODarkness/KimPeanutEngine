@@ -36,6 +36,8 @@ namespace runtime{
 
         inline int GetFPS() const {return fps;} 
 
+        const int* GetFPSRef() const {return &fps;}
+
     private:
         std::chrono::steady_clock::time_point last_time{std::chrono::steady_clock::now()};
         int frame_count = 0;

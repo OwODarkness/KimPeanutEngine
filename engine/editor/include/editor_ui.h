@@ -28,7 +28,6 @@ namespace ui{
         void EndDraw();
     private:
         std::vector<EditorUIComponent*> components_;
-        int x = 0;
     };
     
 }

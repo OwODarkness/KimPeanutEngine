@@ -18,6 +18,9 @@
 #include "platform/path/path.h"
 #include "runtime/render/primitive_scene_proxy.h"
 #include "runtime/render/skybox.h"
+#include "runtime/render/aabb.h"
+#include "runtime/render/frustum.h"
+
 namespace kpengine
 {
 
@@ -49,14 +52,10 @@ namespace kpengine
         environment_map_wrapper = std::make_shared<EnvironmentMapWrapper>("texture/hdr/venice_sunset_1k.hdr");
         environment_map_wrapper->Initialize();
 
-        
         //skybox
        //skybox = test::GetRenderObjectSkybox();
        skybox = std::make_shared<Skybox>( runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_SKYBOX), environment_map_wrapper->GetEnvironmentMap());
        skybox->Initialize();
-
-
-
 
         glGenBuffers(1, &ubo_camera_matrices_);
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
@@ -84,6 +83,18 @@ namespace kpengine
 
     void RenderScene::Render(float deltatime)
     {
+        Matrix4f proj_mat = render_camera_->GetProjectionMatrix();
+        Matrix4f view_mat = render_camera_->GetViewMatrix();
+        Frustum frustum = ExtractFrustumFromVPMat(proj_mat * view_mat);
+
+        //mark visiable
+        for(auto& proxy: scene_proxies)
+        {
+            Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(proxy->GetTransform());
+            AABB world_AABB = GetWorldAABB(proxy->GetAABB(), transform_mat);
+            proxy->visible_this_frame = frustum.Contains(world_AABB);
+        }
+
         // render a depth map
         directional_shadow_maker_->BindFrameBuffer();
         Vector3f light_pos = -light_.directional_light.direction * 2.f;
@@ -96,6 +107,10 @@ namespace kpengine
 
         for(auto& proxy: scene_proxies)
         {
+            if(!proxy->visible_this_frame)
+            {
+                continue;
+            }
             proxy->Draw(depth_shader);
         }
 
@@ -117,21 +132,22 @@ namespace kpengine
 
         for(auto& proxy: scene_proxies)
         {
-            Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(proxy->GetTransform()).Transpose();
-            point_depth_shader->SetMat("model", transform_mat[0]);
+            if(!proxy->visible_this_frame)
+            {
+                continue;
+            }
+            Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(proxy->GetTransform());
+            point_depth_shader->SetMat("model", transform_mat.Transpose()[0]);
             proxy->Draw(point_depth_shader);
         }
-
         point_shadow_maker_->UnBindFrameBuffer();
-
         // render a normal scene
         scene_->BindFrameBuffer();
         {
             glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
-            Matrix4f proj_mat = render_camera_->GetProjectionMatrix().Transpose();
-            Matrix4f view_mat = render_camera_->GetViewMatrix().Transpose();
-            glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4f), proj_mat[0]);
-            glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4f), sizeof(Matrix4f), view_mat[0]);
+
+            glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4f), proj_mat.Transpose()[0]);
+            glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4f), sizeof(Matrix4f), view_mat.Transpose()[0]);
             glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
             if(is_light_dirty)
@@ -141,10 +157,8 @@ namespace kpengine
                 glBindBuffer(GL_UNIFORM_BUFFER, 0);
                 is_light_dirty = false;
             }
-
             //render skybox
             skybox->Render();
-
 
             glActiveTexture(GL_TEXTURE15);
             glBindTexture(GL_TEXTURE_2D, directional_shadow_maker_->GetShadowMap());
@@ -153,14 +167,16 @@ namespace kpengine
 
             for(auto& proxy: scene_proxies)
             {
+                if(!proxy->visible_this_frame)
+                {
+                    continue;
+                }
                 Vector3f cam_pos = render_camera_->GetPosition();
                 proxy->UpdateViewPosition(cam_pos.Data());
                 proxy->UpdateLightSpace(light_space_matrix[0]);
-
                 proxy->irradiance_map_handle_ = environment_map_wrapper->GetIrradianceMap()->GetTexture();
                 proxy->prefilter_map_handle_ = environment_map_wrapper->GetPrefilterMap()->GetTexture();
                 proxy->brdf_map_handle_ = environment_map_wrapper->GetBRDFMap()->GetTexture();
-                
                 proxy->Draw(current_shader);
             }
 

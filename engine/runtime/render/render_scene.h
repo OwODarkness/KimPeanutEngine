@@ -6,7 +6,6 @@
 
 #include "render_light.h"
 #include "scene_proxy_handle.h"
-
 namespace kpengine{
 
     class FrameBuffer;
@@ -50,8 +49,8 @@ namespace kpengine{
 
         bool isskydraw = false;
         bool is_light_dirty = true;
-
         std::shared_ptr<RenderShader> current_shader;
+    
     };
 }
 

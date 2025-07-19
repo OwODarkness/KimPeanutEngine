@@ -52,11 +52,15 @@ namespace kpengine{
             SHADER_CATEGORY_BRDF,
             std::make_shared<RenderShader>("brdf.vs", "brdf.fs")
         });
+
+        shader_cache.insert({
+            SHADER_CATEGORY_DEBUGCUBIC,
+            std::make_shared<RenderShader>("debug_cubic.vs", "debug_cubic.fs")
+        });
     }
 
     void ShaderPool::Initialize()
     {
-        
         KP_LOG("ShaderManagerLog", LOG_LEVEL_DISPLAY, "shader compiling...");
         std::unordered_map<std::string, std::shared_ptr<RenderShader>>::iterator iter;
         for(iter = shader_cache.begin();iter !=shader_cache.end();++iter)

@@ -17,16 +17,17 @@ namespace kpengine
     RenderMesh::RenderMesh(){}
 
     RenderMesh::RenderMesh(const std::string& mesh_relative_path):
-    name_(mesh_relative_path), lod_level(0), mesh_resource(std::make_unique<RenderMeshResource>())
+    name_(mesh_relative_path), lod_level(0)
     {}
 
 
 
     void RenderMesh::Initialize()
     {
+        lod_mesh_resources.push_back(std::make_unique<RenderMeshResource>());
+        mesh_resource = GetMeshResource(0);
         ModelLoader::Load(name_, *mesh_resource);
-
-        //lod_mesh_resources.push_back(mesh_resource);
+        //
         glGenVertexArrays(1, &vao_);
         glGenBuffers(1, &vbo_);
         glGenBuffers(1, &ebo_);
@@ -83,6 +84,11 @@ namespace kpengine
 
         return mesh_resource->mesh_sections_.at(section_index).material;
 
+    }
+
+    void RenderMesh::UpdateLOD(float distance)
+    {
+        //match LOD
     }
 
     RenderMesh::~RenderMesh()

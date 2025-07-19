@@ -88,6 +88,8 @@ namespace kpengine{
         };
 
 
+
+
         template<typename T>
         Vector3<T>& Vector3<T>::operator+=(T scalar)
         {
