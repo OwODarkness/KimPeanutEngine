@@ -3,6 +3,7 @@
 
 #include "runtime/core/math/math_header.h"
 
+
 namespace kpengine{
     constexpr float pitch_min_ = -89.f;
     constexpr float pitch_max_ = 89.f;
@@ -18,6 +19,8 @@ class RenderCamera{
 public:
     RenderCamera();
 
+    void Initialize();
+
     void MoveForward(float delta);
 
     void MoveRight(float delta);
@@ -25,7 +28,7 @@ public:
     void MoveUp(float delta);
 
     //(theta, fhi)
-    void Rotate(const Vector2f& delta);
+    void Rotate(float delta_x, float delta_y);
 
     inline const Vector3f GetPosition()const {return position_;}
 

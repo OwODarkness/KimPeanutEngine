@@ -18,8 +18,8 @@ namespace kpengine
     void RenderSystem::Initialize()
     {
         shader_pool_->Initialize();
+        render_camera_->Initialize();
         render_scene_->Initialize(render_camera_);
-        
     }
 
     void RenderSystem::Tick(float delta_time)

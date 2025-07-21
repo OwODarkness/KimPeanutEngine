@@ -15,13 +15,18 @@ namespace kpengine{
             EditorWindowComponent(const std::string& title);
             virtual ~EditorWindowComponent();
             virtual void Render() override;
-
+            virtual void RenderContent();
             void AddComponent(EditorUIComponent* component);
 
         protected:    
             std::string title_;
             std::vector<EditorUIComponent*> components_;
             bool is_open_ = true;
+        public:
+            int width_;
+            int height_;
+            float pos_x;
+            float pos_y;
         };
     }
 }

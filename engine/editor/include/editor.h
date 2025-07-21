@@ -12,9 +12,8 @@ namespace runtime{
 }
 }
 
-namespace kpengine{
+namespace kpengine::editor{
 
-namespace editor{
     class Editor{
     public:
         Editor();
@@ -23,14 +22,12 @@ namespace editor{
         void Initialize(kpengine::runtime::Engine* engine);
         void Tick();
         void Clear();
-
         
     private:
         kpengine::runtime::Engine* engine_ = nullptr;
         std::shared_ptr<kpengine::ui::EditorUI> editor_ui;
         bool is_initialized_;
     };
-}
 }
 
 

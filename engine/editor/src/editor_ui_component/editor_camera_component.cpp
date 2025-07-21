@@ -1,7 +1,7 @@
 #include "editor_camera_component.h"
 #include "runtime/render/render_camera.h"
 #include "editor_text_component.h"
-#include "editor_slider_component.h"
+#include "editor_drag_component.h"
 #include "editor_button_component.h"
 #include "editor_text_component.h"
 
@@ -9,7 +9,7 @@
 namespace kpengine{
     namespace ui{
         EditorCameraControlComponent::EditorCameraControlComponent(kpengine::RenderCamera* camera)
-        :EditorWindowComponent("Camera control"), camera_(camera)
+        :EditorWindowComponent("Camera Settings"), camera_(camera)
         {
             fov_default_ = camera->fov_;
             move_speed_default_ = camera->move_speed_;
@@ -21,14 +21,14 @@ namespace kpengine{
             EditorButtonComponent* btn = new EditorButtonComponent("default");
             btn->on_click_notify_.Bind<EditorCameraControlComponent, &EditorCameraControlComponent::ResetCameraConfig>(this);
             AddComponent(btn);
-            EditorSliderComponent<float>* fov_slider = new EditorSliderComponent<float>("fov_slider", &camera->fov_, 10.f, 160.f);
-            AddComponent(fov_slider);
+            EditorDragComponent<float>* fov_drag = new EditorDragComponent<float>("fov_setting", &camera->fov_, 1.f, 10.f, 160.f);
+            AddComponent(fov_drag);
 
-            EditorSliderComponent<float>* move_slider = new EditorSliderComponent<float>("move_slider", &camera->move_speed_, move_speed_default_, 5 * move_speed_default_);
-            AddComponent(move_slider);
+            EditorDragComponent<float>* move_drag = new EditorDragComponent<float>("move_setting", &camera->move_speed_, 0.1f, move_speed_default_, 5 * move_speed_default_);
+            AddComponent(move_drag);
 
-            EditorSliderComponent<float>* rotate_slider = new EditorSliderComponent<float>("rotate_slider", &camera->rotate_speed_, rotate_speed_default_, 5 * rotate_speed_default_);
-            AddComponent(rotate_slider);
+            EditorDragComponent<float>* rotate_drag = new EditorDragComponent<float>("rotate_setting", &camera->rotate_speed_, 0.1f,  rotate_speed_default_, 5 * rotate_speed_default_);
+            AddComponent(rotate_drag);
             EditorDynamicTextComponent<float>* yaw_text_comp = new EditorDynamicTextComponent<float>(&camera->yaw_, "yaw degree: ");
             AddComponent(yaw_text_comp);
             EditorDynamicTextComponent<float>* pitch_text_comp = new EditorDynamicTextComponent<float>(&camera->pitch_, "pitch degree: ");

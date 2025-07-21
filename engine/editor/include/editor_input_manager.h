@@ -2,6 +2,9 @@
 #define KPENGINE_EDITOR_INPUT_MANAGER_H
 
 #include <memory>
+#include "runtime/core/system/delegate.h"
+
+DECLARE_DELEGATE_TwoParams(FOnMouseMoveNotify, float, float)
 
 namespace kpengine
 {
@@ -16,7 +19,6 @@ namespace kpengine
             CAMERA_BACKWARD = 1 << 3,
             CAMERA_UP = 1 << 4,
             CAMERA_DOWN = 1 << 5
-
         };
         class EditorInputManager
         {
@@ -33,7 +35,8 @@ namespace kpengine
             void CursorPosCallback(double xpos, double ypos);
 
             void HandleInput();
-
+        public:
+            FOnMouseMoveNotify on_mouse_move_notify;
         private:
             double last_cursor_xpos_;
             double last_cursor_ypos_;

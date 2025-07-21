@@ -2,12 +2,12 @@
 
 #include <iostream>
 
-#include "editor/include/editor_global_context.h"
-#include "editor/include/editor_scene_manager.h"
+#include "editor_global_context.h"
+#include "editor_scene_manager.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/system/window_system.h"
 #include "runtime/render/render_camera.h"
-#include "editor/include/editor_ui_component/editor_scene_component.h"
+#include "editor_ui_component/editor_scene_component.h"
 #include "runtime/core/math/math_header.h"
 namespace kpengine
 {
@@ -35,13 +35,12 @@ namespace kpengine
                 std::placeholders::_1,
                 std::placeholders::_2));
 
-             camera_ = global_editor_context.render_system_->GetRenderCamera();
-
+            camera_ = global_editor_context.render_system_->GetRenderCamera();
         }
 
         void EditorInputManager::Tick(float DeltaTime)
         {
-            //HandleInput();
+            // HandleInput();
         }
 
         void EditorInputManager::HandleInput()
@@ -53,7 +52,7 @@ namespace kpengine
             if (static_cast<unsigned int>(EditorCommand::CAMERA_BACKWARD) & editor_command_)
             {
                 camera_->MoveForward(-1.f);
-            } 
+            }
             if (static_cast<unsigned int>(EditorCommand::CAMERA_RIGHT) & editor_command_)
             {
                 camera_->MoveRight(1.f);
@@ -70,16 +69,14 @@ namespace kpengine
             {
                 camera_->MoveUp(-1.f);
             }
-            
         }
 
         void EditorInputManager::KeyCallback(int key, int code, int action, int mods)
         {
-            // std::cout << "Test__key:" << key << " code:" << code << " action:" << action << " mods:" << mods << std::endl;
-            bool is_focus =global_editor_context.editor_scene_manager_&& global_editor_context.editor_scene_manager_->IsSCeneFocus();
-            if(!is_focus)
+            bool is_focus = global_editor_context.editor_scene_manager_ && global_editor_context.editor_scene_manager_->IsSCeneFocus();
+            if (!is_focus)
             {
-                return ;
+                return;
             }
             if (GLFW_PRESS == action)
             {
@@ -139,32 +136,28 @@ namespace kpengine
 
         void EditorInputManager::MouseButtonCallback(int code, int action, int mods)
         {
-            // std::cout << "Test__mouse:"  << " code:" << code << " action:" << action << " mods:" << mods << std::endl;
-
         }
 
         void EditorInputManager::CursorPosCallback(double xpos, double ypos)
         {
             bool is_focus = global_editor_context.editor_scene_manager_ && global_editor_context.editor_scene_manager_->IsSCeneFocus();
-            if(!is_focus)
+            if (!is_focus)
             {
                 is_first_cursor = true;
-                return ;
+                return;
             }
-            if(!is_first_cursor)
+            if (!is_first_cursor)
             {
-            float delta_x = (float)(xpos - last_cursor_xpos_);
-            float delta_y = (float)(ypos - last_cursor_ypos_);
-
-            camera_->Rotate(Vector2f(-delta_y , delta_x));
-
+                float delta_x = (float)(xpos - last_cursor_xpos_);
+                float delta_y = (float)(ypos - last_cursor_ypos_);
+                if (ImGui::IsMouseDown(ImGuiMouseButton_Right))
+                {
+                    on_mouse_move_notify.ExecuteIfBound(-delta_y, delta_x);
+                }
             }
             is_first_cursor = false;
-            //std::cout << "delta_x:" << delta_x << " delta_y:" << delta_y << std::endl;
             last_cursor_xpos_ = xpos;
             last_cursor_ypos_ = ypos;
-
-            
         }
     }
 }

@@ -3,29 +3,22 @@
 
 #include <string>
 #include <memory>
-#include "editor/include/editor_ui_component.h"
-
+#include "editor/include/editor_ui_component/editor_window_component.h"
 namespace kpengine{
     class FrameBuffer;
     namespace ui{
-        class EditorSceneComponent : public EditorUIComponent{
+        class EditorSceneComponent : public EditorWindowComponent{
         public:
             //EditorSceneComponent() = delete;
             EditorSceneComponent(FrameBuffer* scene);
             virtual ~EditorSceneComponent();
-            virtual void Render() override;
-
+            virtual void RenderContent() override;
 
             void SetTitle(const std::string & title);
         private:
             std::shared_ptr<FrameBuffer> scene_;
-
-            std::string title_{"scene"};
         public:
-            int width_;
-            int height_;
-            float pos_x;
-            float pos_y;
+
 
             bool is_scene_window_focus;
         };

@@ -13,10 +13,8 @@
 #include "runtime/core/log/logger.h"
 
 
-namespace kpengine
+namespace kpengine::editor
 {
-    namespace editor
-    {
 
         Editor::Editor():
         editor_ui(std::make_shared<kpengine::ui::EditorUI>()),
@@ -50,8 +48,6 @@ namespace kpengine
             is_initialized_ = true;
         }
 
-
-
         void Editor::Tick()
         {
             if(is_initialized_ == false)
@@ -70,5 +66,4 @@ namespace kpengine
             editor_ui->Close();
         }
 
-    }
 }

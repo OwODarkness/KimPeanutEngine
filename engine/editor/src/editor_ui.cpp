@@ -50,6 +50,7 @@ namespace kpengine
             ImGui_ImplOpenGL3_Init(glsl_version);
 
             ImGuiIO &io = ImGui::GetIO();
+            io.ConfigWindowsMoveFromTitleBarOnly = true;
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard; // Enable Keyboard Controls
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableGamepad;  // Enable Gamepad Controls
             //ImFont *font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\simhei.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesChineseFull());
@@ -58,10 +59,6 @@ namespace kpengine
             EditorWindowComponent* window_component_ = new EditorWindowComponent("window");
             window_component_->AddComponent(new EditorTextComponent("hello imgui"));
             window_component_->AddComponent(new EditorTooltipComponent("welcome"));
-            EditorButtonComponent *button = new EditorButtonComponent("button");
-            button->BindClickEvent([]()
-                                   { std::cout << "click" << std::endl; });
-            window_component_->AddComponent(button);
             window_component_->AddComponent(new EditorPlotComponent([](float x){return std::sin(x);}, 0, 10));
 
             EditorContainerComponent* container = new EditorContainerComponent();

@@ -19,9 +19,9 @@ namespace kpengine
         render_system_(std::make_unique<RenderSystem>()),
         log_system_(std::make_unique<LogSystem>()),
         asset_system_(std::make_unique<AssetSystem>()),
-        level_system_(std::make_unique<LevelSystem>())
+        level_system_(std::make_unique<LevelSystem>()),
+        runtime_mode_(RuntimeMode::Editor)
         {
-            
         }
         void RuntimeContext::Initialize()
         {
@@ -32,7 +32,6 @@ namespace kpengine
             render_system_->Initialize();
             
             level_system_->Initialize();
-
         }
 
         void RuntimeContext::Clear()

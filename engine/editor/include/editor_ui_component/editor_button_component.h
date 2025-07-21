@@ -19,19 +19,15 @@ namespace kpengine{
             ImVec4 background_active_color;
         };
 
-
         class EditorButtonComponent: public EditorUIComponent{
         public:
             EditorButtonComponent(const std::string& label);
             virtual void Render() override;
-            void BindClickEvent(std::function<void()> callback);
         public:
             std::string label_;
             ButtonStyle button_style;
 
             FOnButtonClickNotify on_click_notify_;
-        private:
-            std::function<void()> click_callback_;
         };
     }
 }

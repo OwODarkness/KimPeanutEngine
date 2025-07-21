@@ -15,6 +15,7 @@ namespace kpengine
         void EditorSceneManager::Initialize()
         {
             scene_ui_ = std::make_unique<ui::EditorSceneComponent>(global_editor_context.render_system_->GetRenderScene()->scene_.get());
+            
         }
 
         void EditorSceneManager::Tick()

@@ -14,11 +14,6 @@ namespace kpengine
             button_style.background_active_color = ImVec4(0.1f, 0.2f, 0.3f, 1.0f);
         }
 
-        void EditorButtonComponent::BindClickEvent(std::function<void()> callback)
-        {
-            click_callback_ = callback;
-        }
-
         void EditorButtonComponent::Render()
         {
             ImGui::PushStyleColor(ImGuiCol_Text, button_style.text_color);            

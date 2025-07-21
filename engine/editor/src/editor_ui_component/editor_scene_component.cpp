@@ -9,6 +9,7 @@
 namespace kpengine{
     namespace ui{
         EditorSceneComponent::EditorSceneComponent(FrameBuffer* scene):
+        EditorWindowComponent("scene"),
         scene_(scene)
         {
             width_ = scene->width_;
@@ -19,18 +20,13 @@ namespace kpengine{
         {
             title_ = title;
         }
-        void EditorSceneComponent::Render()
+        void EditorSceneComponent::RenderContent()
         {
-            ImGui::Begin(title_.c_str());
-            {
+            EditorWindowComponent::RenderContent();
+            GLFWwindow* window = editor::global_editor_context.window_system_->GetOpenGLWndow();
                 //ImGui::SetMouseCursor(ImGuiMouseCursor_None);
                 //ImGui::SetNextFrameWantCaptureMouse(true);
-                //
 
-                pos_x = ImGui::GetWindowPos().x;
-                pos_y = ImGui::GetWindowPos().y;
-                width_ = (int)ImGui::GetContentRegionAvail().x;
-                height_ = (int)ImGui::GetContentRegionAvail().y;
                 ImGui::BeginChild("render target");
                 ImGui::Image(
                     static_cast<ImTextureID>(scene_->GetTexture()),
@@ -38,19 +34,14 @@ namespace kpengine{
                     ImVec2(0, 1),
                     ImVec2(1, 0)
                 );
-                is_scene_window_focus = ImGui::IsWindowFocused();
-                if(is_scene_window_focus)
-                {
-                    glfwSetInputMode(editor::global_editor_context.window_system_->GetOpenGLWndow(), GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-                    
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                 }
-                else
-                {
-                    glfwSetInputMode(editor::global_editor_context.window_system_->GetOpenGLWndow(), GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
+                    glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
                 }
                 ImGui::EndChild();
-            }
-            ImGui::End();
+            
         }
 
         EditorSceneComponent::~EditorSceneComponent()

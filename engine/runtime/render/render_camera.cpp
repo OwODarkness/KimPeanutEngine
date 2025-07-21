@@ -7,7 +7,8 @@
 
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
-
+#include "editor/include/editor_global_context.h"
+#include "editor/include/editor_input_manager.h"
 
 namespace kpengine
 {
@@ -20,6 +21,11 @@ namespace kpengine
     up_({0.f, 1.f, 0.f})
     {
         right_ = direction_.CrossProduct(up_);
+    }
+
+    void RenderCamera::Initialize()
+    {
+        editor::global_editor_context.editor_input_manager_->on_mouse_move_notify.Bind<RenderCamera, &RenderCamera::Rotate>(this);
     }
 
     void RenderCamera::MoveForward(float delta)
@@ -37,10 +43,10 @@ namespace kpengine
         position_ += world_up * delta * move_speed_ * move_coff_;
     }
 
-    void RenderCamera::Rotate(const Vector2f &delta)
+    void RenderCamera::Rotate(float delta_x, float delta_y)
     {
-        float delta_pitch = delta.x_ * rotate_speed_ * rotate_coff_;
-        float delta_yaw = delta.y_ * rotate_speed_ * rotate_coff_;
+        float delta_pitch = delta_x * rotate_speed_ * rotate_coff_;
+        float delta_yaw = delta_y * rotate_speed_ * rotate_coff_;
     
         yaw_ = (float)((int)(yaw_ +  delta_yaw) % 360);
         pitch_ = std::clamp(delta_pitch + pitch_, pitch_min_, pitch_max_);

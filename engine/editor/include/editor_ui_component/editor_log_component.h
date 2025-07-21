@@ -3,18 +3,16 @@
 
 #include <memory>
 
-#include "editor/include/editor_ui_component.h"
+#include "editor/include/editor_ui_component/editor_window_component.h"
 
 namespace kpengine{
     class LogSystem;
     namespace ui{
-        class EditorLogComponent: public EditorUIComponent{
+        class EditorLogComponent: public EditorWindowComponent{
         public:
             //void Initialize(std::shared_ptr<LogSystem> log_system); 
             EditorLogComponent(LogSystem* log_system);
-            void Render() override;
-
-
+            void RenderContent() override;
         private:
             LogSystem* log_system_;
         };

@@ -5,9 +5,7 @@ namespace kpengine
 Frustum ExtractFrustumFromVPMat(const Matrix4f& m)
 {
     Frustum frustum;
-
-    // Row-major: extract planes using row operations
-    // Left: row4 + row1
+    // Left
     frustum.planes[0] = { 
         m[3][0] + m[0][0], 
         m[3][1] + m[0][1], 
@@ -15,7 +13,7 @@ Frustum ExtractFrustumFromVPMat(const Matrix4f& m)
         m[3][3] + m[0][3] 
     };
 
-    // Right: row4 - row1
+    // Right
     frustum.planes[1] = { 
         m[3][0] - m[0][0], 
         m[3][1] - m[0][1], 
@@ -23,7 +21,7 @@ Frustum ExtractFrustumFromVPMat(const Matrix4f& m)
         m[3][3] - m[0][3] 
     };
 
-    // Bottom: row4 + row2
+    // Bottom
     frustum.planes[2] = { 
         m[3][0] + m[1][0], 
         m[3][1] + m[1][1], 
@@ -31,7 +29,7 @@ Frustum ExtractFrustumFromVPMat(const Matrix4f& m)
         m[3][3] + m[1][3] 
     };
 
-    // Top: row4 - row2
+    // Top
     frustum.planes[3] = { 
         m[3][0] - m[1][0], 
         m[3][1] - m[1][1], 
@@ -39,7 +37,7 @@ Frustum ExtractFrustumFromVPMat(const Matrix4f& m)
         m[3][3] - m[1][3] 
     };
 
-    // Near: row4 + row3
+    // Near
     frustum.planes[4] = { 
         m[3][0] + m[2][0], 
         m[3][1] + m[2][1], 
@@ -47,7 +45,7 @@ Frustum ExtractFrustumFromVPMat(const Matrix4f& m)
         m[3][3] + m[2][3] 
     };
 
-    // Far: row4 - row3
+    // Far
     frustum.planes[5] = { 
         m[3][0] - m[2][0], 
         m[3][1] - m[2][1], 

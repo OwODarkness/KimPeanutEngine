@@ -29,6 +29,7 @@ namespace editor{
 
     class EditorContext{
     public:
+        EditorContext();
         void Initialize(const EditorContextInitInfo& init_info);
         void Clear();
 

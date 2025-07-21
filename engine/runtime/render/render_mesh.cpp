@@ -128,7 +128,7 @@ namespace kpengine
     void RenderMesh::UpdateLOD(const Vector3f &camera_pos, const Matrix4f &transform)
     {
         Vector3f world_aabb_center = GetWorldAABB(mesh_resource_->aabb_, transform).Center();
-        float distance = (camera_pos - world_aabb_center).Norm();
+        float distance = (float)(camera_pos - world_aabb_center).Norm();
         // match LOD
         unsigned int new_lod = std::min(GetLODLevelFromDistance(distance), lod_max_level);
         if (new_lod == lod_level)
@@ -142,15 +142,15 @@ namespace kpengine
 
     unsigned int RenderMesh::GetLODLevelFromDistance(float distance)
     {
-        if (distance <= 20)
+        if (distance < 20)
         {
             return 0;
         }
-        else if (distance <= 50)
+        else if (distance < 50)
         {
             return 1;
         }
-        else if (distance <= 100)
+        else if (distance < 100)
         {
             return 2;
         }

@@ -11,6 +11,14 @@ namespace kpengine{
         EditorContext global_editor_context;
 
 
+        EditorContext::EditorContext():
+        editor_scene_manager_(new EditorSceneManager()),
+        editor_input_manager_(new EditorInputManager()),
+        editor_log_manager_(new EditorLogManager())
+        {
+
+        }
+
         void EditorContext::Initialize(const EditorContextInitInfo& init_info)
         {
             window_system_ = init_info.window_system;
@@ -20,13 +28,10 @@ namespace kpengine{
             runtime_engine_ = init_info.runtime_engine;
 
 
-            editor_scene_manager_ = new EditorSceneManager();
             editor_scene_manager_->Initialize();
 
-            editor_input_manager_ = new EditorInputManager();
             editor_input_manager_->Initialize();
 
-            editor_log_manager_ = new EditorLogManager();
             editor_log_manager_->Initialize(log_system_);
         }
 
