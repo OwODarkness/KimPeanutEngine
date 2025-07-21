@@ -62,9 +62,6 @@ namespace math{
     }
 
 
-    // template<typename T>
-
-
 
 }
 }

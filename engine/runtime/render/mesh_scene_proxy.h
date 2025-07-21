@@ -18,8 +18,7 @@ namespace kpengine{
         void Initialize() override;
         AABB GetAABB() override;
     public:
-        unsigned int vao_;
-        unsigned int ebo_;
+        struct GeometryBuffer* geometry_buffer_;
         RenderMeshResource* mesh_resourece_ref_;
     private:
         unsigned int current_shader_id_;

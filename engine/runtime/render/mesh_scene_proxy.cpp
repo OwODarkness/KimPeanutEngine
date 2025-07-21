@@ -8,12 +8,13 @@
 #include "runtime/render/render_material.h"
 #include "runtime/core/utility/utility.h"
 #include "runtime/core/log/logger.h"
+#include "geometry_buffer.h"
 #include "runtime/core/utility/aabb_debugger.h"
 
 
 namespace kpengine
 {
-    MeshSceneProxy::MeshSceneProxy() : vao_(0),
+    MeshSceneProxy::MeshSceneProxy() : geometry_buffer_(nullptr),
                                        mesh_resourece_ref_(nullptr),
                                        current_shader_id_(0)
     {
@@ -23,8 +24,8 @@ namespace kpengine
 
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_).Transpose();
         {
-            GlVertexArrayGuard vao_guard(vao_);
-            GlElementBufferGuard ebo_guard(ebo_);
+            GlVertexArrayGuard vao_guard(geometry_buffer_->vao);
+            GlElementBufferGuard ebo_guard(geometry_buffer_->ebo);
             if (shader)
             {
                 shader->UseProgram();

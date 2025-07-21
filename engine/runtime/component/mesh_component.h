@@ -12,6 +12,7 @@ namespace kpengine{
     public:
         MeshComponent();
         MeshComponent(const std::string& mesh_realtive_path);
+        virtual void TickComponent(float delta_time) override;
         void SetMesh(std::shared_ptr<RenderMesh> mesh);
         std::shared_ptr<RenderMesh> GetMesh(){return mesh_;}
         virtual void Initialize() override;

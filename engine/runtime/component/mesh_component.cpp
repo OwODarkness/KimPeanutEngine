@@ -5,6 +5,7 @@
 #include "runtime/render/render_mesh.h"
 #include "runtime/render/mesh_scene_proxy.h"
 #include "runtime/render/render_mesh_resource.h"
+#include "runtime/render/render_camera.h"
 #include "runtime/core/log/logger.h"
 
 namespace kpengine{
@@ -15,6 +16,14 @@ namespace kpengine{
 
     }
 
+    void MeshComponent::TickComponent(float delta_time)
+    {
+        PrimitiveComponent::TickComponent(delta_time);
+
+        const Vector3f& camera_pos = runtime::global_runtime_context.render_system_->GetRenderCamera()->GetPosition();
+        mesh_->UpdateLOD(camera_pos, Matrix4f::MakeTransformMatrix(GetWorldTransform()));
+    }
+    
     void MeshComponent::SetMesh(std::shared_ptr<RenderMesh> mesh)
     {
         mesh_ = mesh;
@@ -29,8 +38,7 @@ namespace kpengine{
         MeshSceneProxy* mesh_proxy = dynamic_cast<MeshSceneProxy*>(scene_proxy_.get());
         if(mesh_proxy)
         {
-            mesh_proxy->vao_ = mesh_->vao_;
-            mesh_proxy->ebo_ = mesh_->ebo_;
+            mesh_proxy->geometry_buffer_ = &mesh_->geometry_buf_;
             mesh_proxy->mesh_resourece_ref_ = mesh_->GetMeshResource();
             mesh_proxy->Initialize();
         }
