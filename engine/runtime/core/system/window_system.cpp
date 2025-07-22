@@ -40,7 +40,7 @@ namespace kpengine
         }
 
 
-        //MakeContext();
+        MakeContext();
     }
 
     void WindowSystem::MakeContext()
@@ -55,10 +55,6 @@ namespace kpengine
         }
         glfwSetWindowUserPointer(window_, this);
         glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
-        glfwSetMouseButtonCallback(window_, &WindowSystem::OnMouseButtonCallback);
-        glfwSetKeyCallback(window_, &WindowSystem::OnKeyCallback);
-        glfwSetCursorPosCallback(window_, &WindowSystem::OnCursorPosCallback);
-
     }
 
     void WindowSystem::ClearContext()
@@ -99,61 +95,4 @@ namespace kpengine
         widnow_system->height_ = height;
     }
 
-    void WindowSystem::OnMouseButtonCallback(GLFWwindow* window, int button, int action, int mods)
-    {
-        WindowSystem* window_system = static_cast<WindowSystem*>(glfwGetWindowUserPointer(window));
-        window_system->MouseButtonExec(button, action, mods);
-
-    }
-
-    void WindowSystem::OnKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods)
-    {
-        WindowSystem* window_system = static_cast<WindowSystem*>(glfwGetWindowUserPointer(window));
-        window_system->KeyExec(key, scancode, action, mods);
-    }
-
-    void WindowSystem::OnCursorPosCallback(GLFWwindow* window, double xpos, double ypos)
-    {
-        WindowSystem* window_system = static_cast<WindowSystem*>(glfwGetWindowUserPointer(window));
-        window_system->CursorPosExec(xpos, ypos);
-    }
-
-    void WindowSystem::RegisterOnMouseButtionFunc(MouseButtonFuncType func)
-    {
-        button_func_group_.push_back(func);
-    }
-
-    void WindowSystem::RegisterOnKeyFunc(KeyFuncType func)
-    {
-        key_func_group_.push_back(func);
-    }
-
-    void WindowSystem::RegisterOnCursorPosFunc(CursorPosFuncType func)
-    {
-        cursor_pos_func_group_.push_back(func);
-    }
-
-    void WindowSystem::MouseButtonExec(int code, int action, int mods)
-    {
-        for(auto& func: button_func_group_)
-        {
-            func(code, action, mods);
-        }
-    }
-
-    void WindowSystem::KeyExec(int key, int code, int action,int mods)
-    {
-        for(auto& func : key_func_group_)
-        {
-            func(key, code, action, mods);
-        }
-    }
-
-    void WindowSystem::CursorPosExec(double xpos, double ypos)
-    {
-        for(auto& func : cursor_pos_func_group_)
-        {
-            func(xpos, ypos);
-        }
-    }
 }

@@ -22,6 +22,11 @@ namespace kpengine
         render_scene_->Initialize(render_camera_);
     }
 
+    void RenderSystem::PostInitialize()
+    {
+        render_camera_->PostInitialize();
+    }
+
     void RenderSystem::Tick(float delta_time)
     {
         GLuint query;

@@ -3,6 +3,11 @@
 
 #include <memory>
 #include <thread>
+
+namespace kpengine::input{
+    class InputSystem;
+}
+
 namespace kpengine
 {
     class WindowSystem;
@@ -10,6 +15,7 @@ namespace kpengine
     class AssetSystem;
     class LevelSystem;
     class LogSystem;
+    
 
     namespace runtime
     {
@@ -27,6 +33,7 @@ namespace kpengine
             RuntimeContext();
             ~RuntimeContext();
             void Initialize();
+            void PostInitialize();
             void Clear();
             
             RuntimeMode GetRuntimeMode() const{return runtime_mode_;}
@@ -40,6 +47,7 @@ namespace kpengine
             std::unique_ptr<LogSystem> log_system_;
             std::unique_ptr<AssetSystem> asset_system_;
             std::unique_ptr<LevelSystem> level_system_;
+            std::unique_ptr<input::InputSystem> input_system_;
 
             std::thread::id game_thread_id_;
             std::thread::id render_thread_id_;

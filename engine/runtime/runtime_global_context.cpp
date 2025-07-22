@@ -7,7 +7,7 @@
 #include "runtime/core/system/log_system.h"
 #include "runtime/core/system/asset_system.h"
 #include "runtime/core/system/level_system.h"
-
+#include "runtime/core/system/input_system.h"
 namespace kpengine
 {
     namespace runtime{
@@ -20,18 +20,24 @@ namespace kpengine
         log_system_(std::make_unique<LogSystem>()),
         asset_system_(std::make_unique<AssetSystem>()),
         level_system_(std::make_unique<LevelSystem>()),
+        input_system_(std::make_unique<input::InputSystem>()),
         runtime_mode_(RuntimeMode::Editor)
         {
         }
         void RuntimeContext::Initialize()
         {
             window_system_->Initialize(WindowInitInfo::GetDefaultWindowInfo());
-            window_system_->MakeContext();
+            input_system_->Initialize(window_system_->GetOpenGLWndow());
             asset_system_->Initialize();
 
             render_system_->Initialize();
             
             level_system_->Initialize();
+        }
+
+        void RuntimeContext::PostInitialize()
+        {
+            render_system_->PostInitialize();   
         }
 
         void RuntimeContext::Clear()

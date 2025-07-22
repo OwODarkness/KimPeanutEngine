@@ -26,7 +26,6 @@ namespace kpengine{
             GLFWwindow* window = editor::global_editor_context.window_system_->GetOpenGLWndow();
                 //ImGui::SetMouseCursor(ImGuiMouseCursor_None);
                 //ImGui::SetNextFrameWantCaptureMouse(true);
-
                 ImGui::BeginChild("render target");
                 ImGui::Image(
                     static_cast<ImTextureID>(scene_->GetTexture()),
@@ -36,9 +35,12 @@ namespace kpengine{
                 );
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) {
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+                    is_scene_window_focus = true;
+
                 }
                 if (ImGui::IsMouseReleased(ImGuiMouseButton_Right)) {
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+                    is_scene_window_focus = false;
                 }
                 ImGui::EndChild();
             

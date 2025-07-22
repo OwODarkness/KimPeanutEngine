@@ -38,6 +38,7 @@ namespace kpengine::editor
                 runtime::global_runtime_context.render_system_.get(),
                 runtime::global_runtime_context.log_system_.get(),
                 runtime::global_runtime_context.level_system_.get(),
+                runtime::global_runtime_context.input_system_.get(),
                 engine};
             editor::global_editor_context.editor = this;
             editor::global_editor_context.Initialize(global_editor_context_init_info);

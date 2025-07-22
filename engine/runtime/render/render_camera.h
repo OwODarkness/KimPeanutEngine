@@ -2,7 +2,12 @@
 #define KPENGINE_RUNTIME_RENDER_CAMERA_H
 
 #include "runtime/core/math/math_header.h"
+#include "runtime/input/input_action.h"
+#include <memory>
 
+namespace kpengine::input{
+    class InputAction;
+}
 
 namespace kpengine{
     constexpr float pitch_min_ = -89.f;
@@ -20,6 +25,8 @@ public:
     RenderCamera();
 
     void Initialize();
+
+    void PostInitialize();
 
     void MoveForward(float delta);
 
@@ -41,6 +48,9 @@ public:
 
     Matrix4f GetProjectionMatrix() const;
 
+    void OnCameraRotateCallback(const input::InputState& state);
+    void OnCameraMoveCallback(const input::InputState& state);
+
 private:
     Vector3f position_;
     Vector3f direction_;
@@ -51,9 +61,16 @@ private:
     float rotate_coff_ = 0.05f;
     float aspect_ {4.f/3.f};
 
-
     CameraType camera_type_ = CameraType::CAMREA_PERSPECTIVE;
+    bool is_lock_ = false;
 
+    std::shared_ptr<input::InputAction> rotate_action;
+    std::shared_ptr<input::InputAction> forward_action;
+    std::shared_ptr<input::InputAction> backward_action;
+    std::shared_ptr<input::InputAction> right_action;
+    std::shared_ptr<input::InputAction> left_action;
+    std::shared_ptr<input::InputAction> up_action;
+    std::shared_ptr<input::InputAction> down_action;
 public:
     float fov_{45.f};
     float move_speed_ = 1.f;

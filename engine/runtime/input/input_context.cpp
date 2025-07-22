@@ -1,35 +1,46 @@
 #include "input_context.h"
+#include <iostream>
+
 #include "runtime/core/log/logger.h"
 
-namespace kpengine::input{
-
-    InputHandle InputContext::CreatAction(const std::string& name, InputValueType value_type)
+namespace kpengine::input
+{
+    InputHandle InputContext::Bind(std::shared_ptr<InputAction> action, const InputKey &key)
     {
-        if(name == "")
+        if (action == nullptr)
         {
-            return InputHandle();
+            return InputHandle{0};
         }
-        std::shared_ptr<InputAction> input_action = std::make_shared<InputAction>();
-        input_action->name_ = name;
-        input_action->value_type_ = value_type;
-        InputHandle handle{next_handle_id_};
 
-        input_actions[handle] = input_action;
-        name_to_handle_[input_action->name_] = handle;
-        return handle;
+        InputHandle input_handle{next_handle_id_++};
+        input_actions[input_handle] = action;
+        name_to_handle_[action->name_] = input_handle;
+        input_bindings_[key] = input_handle;
+        handle_to_key[input_handle] = key;
+
+        return input_handle;
     }
-    
 
-    std::string InputContext::GetNameFromHandle(InputHandle handle) const
+    void InputContext::UnBind(InputHandle input_handle)
     {
-        auto it = input_actions.find(handle);
-        if(it == input_actions.end())
+        auto it = handle_to_key.find(input_handle);
+        if (it == handle_to_key.end())
+        {
+            return;
+        }
+        input_bindings_.erase(it->second);
+    }
+
+    std::string InputContext::GetNameByHandle(InputHandle input_handle) const
+    {
+        auto it = input_actions.find(input_handle);
+        if (it == input_actions.end())
         {
             return "";
         }
         else
         {
-            if(it->second == nullptr)
+            if (it->second == nullptr)
             {
                 KP_LOG("InputLog", LOG_LEVEL_ERROR, "met nullptr InputAction Object when calling GetNameFromHandle");
                 return "";
@@ -38,24 +49,66 @@ namespace kpengine::input{
         }
     }
 
-    InputHandle InputContext::GetHandleFromName(const std::string & name) const
+    InputHandle InputContext::GetHandleByName(const std::string &name) const
     {
         auto it = name_to_handle_.find(name);
-        if(it == name_to_handle_.end())
+        if (it == name_to_handle_.end())
         {
             return InputHandle();
         }
         return it->second;
     }
 
-    std::shared_ptr<InputAction> InputContext::GetInputActionFromHandle(InputHandle handle) const
+    InputHandle InputContext::GetHandleByInputKey(InputKey key) const
     {
-        auto it = input_actions.find(handle);
-        if(it == input_actions.end())
+        auto it = input_bindings_.find(key);
+        if (it == input_bindings_.end())
+        {
+            return InputHandle();
+        }
+        return it->second;
+    }
+
+    std::shared_ptr<InputAction> InputContext::GetInputActionByHandle(InputHandle input_handle) const
+    {
+        auto it = input_actions.find(input_handle);
+        if (it == input_actions.end())
         {
             return nullptr;
         }
         return it->second;
     }
-    
+
+    std::shared_ptr<InputAction> InputContext::GetInputActionByInputKey(InputKey key) const
+    {
+        InputHandle input_handle = GetHandleByInputKey(key);
+        if (!input_handle.IsValid())
+        {
+            return nullptr;
+        }
+        return GetInputActionByHandle(input_handle);
+    }
+
+    void InputContext::ProcessKeyInput(InputKey key, InputTriggleType triggle_type, int mods)
+    {
+        std::shared_ptr<InputAction> input_action = GetInputActionByInputKey(key);
+        if (input_action == nullptr)
+        {
+            return;
+        }
+        // TODO: Modifier?
+        InputState state{.triggle_type = triggle_type, .value = input_action->default_value};
+        input_action->callback_(state);
+    }
+
+    void InputContext::ProcessAxis2DInput(InputKey key, float deltax, float deltay)
+    {
+        std::shared_ptr<InputAction> input_action = GetInputActionByInputKey(key);
+        if (input_action == nullptr)
+        {
+            return;
+        }
+        InputState state{.value = Vector2f(deltax, deltay)};
+        input_action->callback_(state);
+    }
 }

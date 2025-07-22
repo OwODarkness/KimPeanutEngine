@@ -31,6 +31,7 @@ namespace kpengine{
             global_runtime_context.Initialize();
             assert(editor_);
             editor_->Initialize(this);
+            global_runtime_context.PostInitialize();
             global_runtime_context.render_thread_id_ = std::this_thread::get_id();
             render_thread_ = std::thread(&Engine::GameThreadFunc, this);
             KP_LOG("EngineLog", LOG_LEVEL_DISPLAY, "Engine Initialize Successfully");

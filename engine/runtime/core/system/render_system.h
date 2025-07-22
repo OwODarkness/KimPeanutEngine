@@ -14,6 +14,7 @@ namespace kpengine{
         RenderSystem();
         ~RenderSystem();
         void Initialize();
+        void PostInitialize();
         void Tick(float delta_time);
         RenderScene* GetRenderScene() {return render_scene_.get();}
         RenderCamera* GetRenderCamera() {return render_camera_.get();}

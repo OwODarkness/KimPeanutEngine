@@ -8,7 +8,8 @@
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
 #include "editor/include/editor_global_context.h"
-#include "editor/include/editor_input_manager.h"
+#include "runtime/input/input_context.h"
+#include "runtime/core/system/input_system.h"
 
 namespace kpengine
 {
@@ -25,8 +26,65 @@ namespace kpengine
 
     void RenderCamera::Initialize()
     {
-        editor::global_editor_context.editor_input_manager_->on_mouse_move_notify.Bind<RenderCamera, &RenderCamera::Rotate>(this);
+
     }
+
+        void RenderCamera::PostInitialize()
+    {
+        std::shared_ptr<input::InputContext> input_context = runtime::global_runtime_context.input_system_->GetInputContext("SceneInputContext");
+        if(input_context)
+        {
+            //rotate
+            rotate_action = std::make_shared<input::InputAction>();
+            rotate_action->callback_ = std::bind(&RenderCamera::OnCameraRotateCallback, this, std::placeholders::_1);
+            rotate_action->name_ = "CameraRotate";
+            rotate_action->value_type_ = input::InputValueType::Axis2D;
+            input_context->Bind(rotate_action, {input::InputDevice::Mouse, KPENGINE_MOUSE_CURSOR});
+
+            forward_action = std::make_shared<input::InputAction>();
+            forward_action->callback_ = std::bind(&RenderCamera::OnCameraMoveCallback, this, std::placeholders::_1);
+            forward_action->name_ = "CameraForward";
+            forward_action->value_type_ = input::InputValueType::Axis2D;
+            forward_action->default_value = Vector3f{1.f, 0.f, 0.f};
+            input_context->Bind(forward_action, {input::InputDevice::Keyboard, GLFW_KEY_W});
+
+            backward_action = std::make_shared<input::InputAction>();
+            backward_action->callback_ = std::bind(&RenderCamera::OnCameraMoveCallback, this, std::placeholders::_1);
+            backward_action->name_ = "CameraBackward";
+            backward_action->value_type_ = input::InputValueType::Axis2D;
+            backward_action->default_value = Vector3f{-1.f, 0.f, 0.f};
+            input_context->Bind(backward_action, {input::InputDevice::Keyboard, GLFW_KEY_S});
+
+            right_action = std::make_shared<input::InputAction>();
+            right_action->callback_ = std::bind(&RenderCamera::OnCameraMoveCallback, this, std::placeholders::_1);
+            right_action->name_ = "CameraRight";
+            right_action->value_type_ = input::InputValueType::Axis2D;
+            right_action->default_value = Vector3f{0.f, 1.f, 0.f};
+            input_context->Bind(right_action, {input::InputDevice::Keyboard, GLFW_KEY_D});
+
+            left_action = std::make_shared<input::InputAction>();
+            left_action->callback_ = std::bind(&RenderCamera::OnCameraMoveCallback, this, std::placeholders::_1);
+            left_action->name_ = "CameraLeft";
+            left_action->value_type_ = input::InputValueType::Axis2D;
+            left_action->default_value = Vector3f{0.f, -1.f, 0.f};
+            input_context->Bind(left_action, {input::InputDevice::Keyboard, GLFW_KEY_A});
+
+            up_action = std::make_shared<input::InputAction>();
+            up_action->callback_ = std::bind(&RenderCamera::OnCameraMoveCallback, this, std::placeholders::_1);
+            up_action->name_ = "CameraUp";
+            up_action->value_type_ = input::InputValueType::Axis2D;
+            up_action->default_value = Vector3f{0.f, 0.f, 1.f};
+            input_context->Bind(up_action, {input::InputDevice::Keyboard, GLFW_KEY_E});
+
+            down_action = std::make_shared<input::InputAction>();
+            down_action->callback_ = std::bind(&RenderCamera::OnCameraMoveCallback, this, std::placeholders::_1);
+            down_action->name_ = "CameraDown";
+            down_action->value_type_ = input::InputValueType::Axis2D;
+            down_action->default_value = Vector3f{0.f, 0.f, -1.f};
+            input_context->Bind(down_action, {input::InputDevice::Keyboard, GLFW_KEY_Q});
+        }
+    }
+
 
     void RenderCamera::MoveForward(float delta)
     {
@@ -85,5 +143,28 @@ namespace kpengine
         {
             return Matrix4f::MakeOrthProjMatrix(-10.0f, 10.0f, -10.0f, 10.0f, z_near_, z_far_);
         }
+    }
+
+    void RenderCamera::OnCameraRotateCallback(const input::InputState& state)
+    {
+        if(is_lock_)
+        {
+            return ;
+        }
+        Vector2f res = std::get<Vector2f>(state.value);
+        Rotate(-res.y_, res.x_);
+    }
+
+    void RenderCamera::OnCameraMoveCallback(const input::InputState& state)
+    {
+        if(is_lock_)
+        {
+            return ;
+        }
+        Vector3f res = std::get<Vector3f>(state.value);
+        MoveForward(res.x_);
+        MoveRight(res.y_);
+        MoveUp(res.z_);
+
     }
 }

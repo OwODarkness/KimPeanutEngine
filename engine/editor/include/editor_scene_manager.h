@@ -3,10 +3,14 @@
 
 #include <memory>
 
+
 namespace kpengine{
     class RenderSystem;
 namespace ui{
     class EditorSceneComponent;
+    }
+namespace input{
+    class InputContext;
 }
 namespace editor{
 
@@ -19,8 +23,10 @@ namespace editor{
         void Close();
         bool IsCursorInScene(float cursor_x, float cursor_y);
         bool IsSCeneFocus() const;
+        std::shared_ptr<input::InputContext> GetInputContext() const{return input_context_;}
     private:
         std::unique_ptr<ui::EditorSceneComponent> scene_ui_;
+        std::shared_ptr<input::InputContext> input_context_;
     };
 }
 }

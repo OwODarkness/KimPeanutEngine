@@ -18,9 +18,7 @@ namespace kpengine{
         private:
             std::shared_ptr<FrameBuffer> scene_;
         public:
-
-
-            bool is_scene_window_focus;
+            bool is_scene_window_focus = false;
         };
     }
 }

@@ -11,10 +11,12 @@ namespace kpengine{
 namespace runtime{
     class Engine;
 }
+namespace input{
+    class InputSystem;
+}
 
 namespace editor{
     class EditorSceneManager;
-    class EditorInputManager;
     class EditorLogManager;
     class Editor;
 
@@ -24,6 +26,7 @@ namespace editor{
         RenderSystem* render_system;
         LogSystem* log_system;
         LevelSystem* level_system;
+        input::InputSystem* input_system;
         runtime::Engine* runtime_engine;
     };
 
@@ -37,11 +40,10 @@ namespace editor{
         RenderSystem* render_system_{nullptr};
         LogSystem* log_system_{nullptr};
         LevelSystem* level_system_{nullptr};
-
+        input::InputSystem* input_system_{nullptr};
         runtime::Engine* runtime_engine_{nullptr}; 
 
         EditorSceneManager* editor_scene_manager_;
-        EditorInputManager* editor_input_manager_;
         EditorLogManager* editor_log_manager_;
         Editor* editor;
     };
