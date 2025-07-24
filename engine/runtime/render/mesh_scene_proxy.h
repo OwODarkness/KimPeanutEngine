@@ -17,6 +17,7 @@ namespace kpengine{
         void Draw(std::shared_ptr<RenderShader> shader) override;
         void Initialize() override;
         AABB GetAABB() override;
+        ~MeshSceneProxy();
     public:
         struct GeometryBuffer* geometry_buffer_;
         RenderMeshResource* mesh_resourece_ref_;
@@ -24,7 +25,7 @@ namespace kpengine{
         unsigned int current_shader_id_;
         bool do_once = true;
         //aabb debug usage
-        std::shared_ptr<AABBDebugger> aabb_debugger_;
+        std::unique_ptr<AABBDebugger> aabb_debugger_;
     };
 }
 

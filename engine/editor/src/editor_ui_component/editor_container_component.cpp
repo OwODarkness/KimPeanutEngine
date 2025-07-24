@@ -3,15 +3,9 @@
 namespace kpengine{
     namespace ui{
 
-        EditorContainerComponent::~EditorContainerComponent()
-        {
-            for(int i = 0;i< items.size();i++)
-            {
-                delete items[i];
-            }
-        }
+        EditorContainerComponent::~EditorContainerComponent() = default;
         
-        void EditorContainerComponent::AddComponent(EditorUIComponent* component)
+        void EditorContainerComponent::AddComponent(std::shared_ptr<EditorUIComponent> component)
         {
             if(component == nullptr)
             {

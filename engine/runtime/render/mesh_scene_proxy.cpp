@@ -82,7 +82,7 @@ namespace kpengine
         PrimitiveSceneProxy::Initialize();
         assert(mesh_resourece_ref_ != nullptr);
         mesh_resourece_ref_->Initialize();
-        aabb_debugger_ = std::make_shared<AABBDebugger>();
+        aabb_debugger_ = std::make_unique<AABBDebugger>();
         aabb_debugger_->Initialize(mesh_resourece_ref_->aabb_);
         aabb_debugger_->is_visiable_ = false;
     }
@@ -91,4 +91,6 @@ namespace kpengine
     {
         return mesh_resourece_ref_->aabb_;
     }
+
+    MeshSceneProxy::~MeshSceneProxy() = default;
 }

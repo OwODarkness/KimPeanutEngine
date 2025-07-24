@@ -4,6 +4,12 @@
 #include <iostream>
 #include <cstdio>
 #include <cmath>
+#include <glad/glad.h>
+#include <GLFW/glfw3.h>
+#include <imgui/imgui.h>
+#include <imgui/imgui_impl_glfw.h>
+#include <imgui/imgui_impl_opengl3.h>
+
 
 #include "editor/include/editor_ui_component/editor_text_component.h"
 #include "editor/include/editor_ui_component/editor_tooltip_component.h"
@@ -28,14 +34,6 @@ namespace kpengine
         EditorUI::EditorUI()
         {
         }
-        EditorUI::~EditorUI()
-        {
-
-           for(int i = 0;i<components_.size();i++)
-           {
-                delete components_[i];
-           }
-        }
 
         void EditorUI::Initialize(GLFWwindow *window)
         {
@@ -56,27 +54,25 @@ namespace kpengine
             //ImFont *font = io.Fonts->AddFontFromFileTTF("c:\\Windows\\Fonts\\simhei.ttf", 18.0f, NULL, io.Fonts->GetGlyphRangesChineseFull());
             //IM_ASSERT(font != nullptr);
 
-            EditorWindowComponent* window_component_ = new EditorWindowComponent("window");
-            window_component_->AddComponent(new EditorTextComponent("hello imgui"));
-            window_component_->AddComponent(new EditorTooltipComponent("welcome"));
-            window_component_->AddComponent(new EditorPlotComponent([](float x){return std::sin(x);}, 0, 10));
+            std::unique_ptr<EditorWindowComponent> window_component_ = std::make_unique<EditorWindowComponent>("window");
+            window_component_->AddComponent(std::make_shared<EditorTextComponent>("hello imgui"));
+            window_component_->AddComponent(std::make_shared<EditorTooltipComponent>("welcome"));
 
-            EditorContainerComponent* container = new EditorContainerComponent();
+            std::shared_ptr<EditorContainerComponent> container = std::make_shared<EditorContainerComponent>();
            
             const int* fps = editor::global_editor_context.runtime_engine_->GetFPSRef();
-            container->AddComponent(new EditorDynamicTextComponent(fps, "fps: "));
+            container->AddComponent(std::make_shared<EditorDynamicTextComponent<int>>(fps, "fps: "));
 
             const int* triangle_count = editor::global_editor_context.render_system_->GetTriangleCountRef();
-            container->AddComponent(new EditorDynamicTextComponent(triangle_count, "trangle count this frame: "));
+            container->AddComponent(std::make_shared<EditorDynamicTextComponent<int>>(triangle_count, "trangle count this frame: "));
             window_component_->AddComponent(container);
 
             std::vector<const char*> items = {"custom", SHADER_CATEGORY_NORMAL};
-            EditorListboxComponent* listbox = new EditorListboxComponent(items);
+
+            std::shared_ptr<EditorUIComponent> listbox = std::make_shared<EditorListboxComponent>(items);
             window_component_->AddComponent(listbox);
 
-            components_.push_back(window_component_);
-
-
+            components_.push_back(std::move(window_component_));
 
             //menu init
             std::vector<Menu> menus;
@@ -84,14 +80,14 @@ namespace kpengine
             menus.push_back({"Edit", {{"Setting"}}});
             menus.push_back({"Window"});
             menus.push_back({"Tools"});
-            components_.push_back(new EditorMainMenuBarComponent(menus));
+            components_.push_back(std::make_unique<EditorMainMenuBarComponent>(menus));
 
             //Camera
-            EditorWindowComponent* camera_ui = new EditorCameraControlComponent(kpengine::editor::global_editor_context.render_system_->GetRenderCamera());
-            components_.push_back(camera_ui);
+            std::unique_ptr<EditorUIComponent> camera_ui = std::make_unique<EditorCameraControlComponent>(kpengine::editor::global_editor_context.render_system_->GetRenderCamera());
+            components_.push_back(std::move(camera_ui));
 
-            EditorActorControlPanel* actor_control_panel = new EditorActorControlPanel(kpengine::editor::global_editor_context.level_system_->GetActor(0).get());
-            components_.push_back(actor_control_panel);
+            std::unique_ptr<EditorUIComponent> actor_control_panel =std::make_unique<EditorActorControlPanel>(kpengine::editor::global_editor_context.level_system_->GetActor(0).get());
+            components_.push_back(std::move(actor_control_panel));
         }
 
         void EditorUI::Close()
@@ -127,7 +123,7 @@ namespace kpengine
             return true;
         }
 
-
+        EditorUI::~EditorUI() = default;
 
     }
 }

@@ -29,7 +29,7 @@ namespace kpengine
 
     }
 
-        void RenderCamera::PostInitialize()
+    void RenderCamera::PostInitialize()
     {
         std::shared_ptr<input::InputContext> input_context = runtime::global_runtime_context.input_system_->GetInputContext("SceneInputContext");
         if(input_context)

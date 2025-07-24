@@ -2,12 +2,8 @@
 #define KPENGINE_EDITOR_UI_H
 
 #include <vector>
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include <imgui/imgui.h>
-#include <imgui/imgui_impl_glfw.h>
-#include <imgui/imgui_impl_opengl3.h>
-
+#include <memory>
+struct GLFWwindow;
 
 namespace kpengine{
 
@@ -19,7 +15,7 @@ namespace ui{
     class EditorUI{
     public:
         EditorUI();
-        virtual ~EditorUI();
+        ~EditorUI();
 
         void Initialize(GLFWwindow* window);
         bool Render();
@@ -27,7 +23,7 @@ namespace ui{
         void BeginDraw();
         void EndDraw();
     private:
-        std::vector<EditorUIComponent*> components_;
+        std::vector<std::unique_ptr<EditorUIComponent>> components_;
     };
     
 }

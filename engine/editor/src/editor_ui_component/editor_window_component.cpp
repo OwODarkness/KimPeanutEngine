@@ -7,15 +7,6 @@ namespace kpengine
 
         EditorWindowComponent::EditorWindowComponent(const std::string &title) : title_(title) {}
 
-        EditorWindowComponent::~EditorWindowComponent()
-        {
-            for (int i = 0; i < components_.size(); i++)
-            {
-                delete components_[i];
-            }
-            components_.clear();
-        }
-
         void EditorWindowComponent::Render()
         {
             if (is_open_)
@@ -39,9 +30,12 @@ namespace kpengine
             }
         }
 
-        void EditorWindowComponent::AddComponent(EditorUIComponent *component)
+        void EditorWindowComponent::AddComponent(std::shared_ptr<EditorUIComponent> component)
         {
             components_.push_back(component);
         }
+
+        EditorWindowComponent::~EditorWindowComponent() = default;
+
     }
 }

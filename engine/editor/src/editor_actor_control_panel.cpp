@@ -18,18 +18,16 @@ namespace kpengine{
             std::shared_ptr<RenderMaterial> material = mesh->GetMaterial(0);
             if(material)
             {
-                AddComponent(new EditorTextComponent(actor_->GetName()));
+                AddComponent(std::make_shared<EditorTextComponent>(actor_->GetName()));
                 float* roughness_ref = material->GetFloatParamRef(material_param_type::ROUGHNESS_PARAM);
                 float* metallic_ref = material->GetFloatParamRef(material_param_type::METALLIC_PARAM);
                 if(roughness_ref)
                 {
-                    EditorSliderComponent<float>* roughness_slide = new EditorSliderComponent<float>("roughness", roughness_ref, 0.05f, 1.f);
-                    AddComponent(roughness_slide);
+                    AddComponent(std::make_shared<EditorSliderComponent<float>>("roughness", roughness_ref, 0.05f, 1.f));
                 }
                 if(metallic_ref)
                 {
-                    EditorSliderComponent<float>* metallic_slide = new EditorSliderComponent<float>("metallic", metallic_ref, 0.f, 1.f);
-                    AddComponent(metallic_slide);
+                    AddComponent(std::make_shared<EditorSliderComponent<float>>("metallic", metallic_ref, 0.f, 1.f));
                 }
 
             }
