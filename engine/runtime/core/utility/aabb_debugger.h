@@ -10,7 +10,6 @@ namespace kpengine{
 class AABBDebugger{
 public:
     AABBDebugger() = default;
-    ~AABBDebugger();
     void Initialize(const AABB& aabb);
     void Debug(const Matrix4f& mat);
 public:

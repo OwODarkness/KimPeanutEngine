@@ -72,6 +72,4 @@ void AABBDebugger::Debug(const Matrix4f& mat)
     glDrawElements(GL_LINES, 24, GL_UNSIGNED_INT, 0);
 }
 
-
-AABBDebugger::~AABBDebugger() = default;
 }
