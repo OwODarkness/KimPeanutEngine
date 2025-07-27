@@ -31,7 +31,6 @@ namespace kpengine{
 
     void MeshComponent::Initialize()
     {
-        PrimitiveComponent::Initialize();
         assert(mesh_);
         mesh_->Initialize();
         scene_proxy_ = std::make_shared<MeshSceneProxy>();
@@ -43,6 +42,7 @@ namespace kpengine{
             mesh_proxy->Initialize();
         }
         RegisterSceneProxy();
+        PrimitiveComponent::Initialize();
     }
 
     void MeshComponent::RegisterSceneProxy()

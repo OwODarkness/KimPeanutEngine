@@ -23,10 +23,15 @@ namespace editor{
         void Close();
         bool IsCursorInScene(float cursor_x, float cursor_y);
         bool IsSCeneFocus() const;
+
         std::shared_ptr<input::InputContext> GetInputContext() const{return input_context_;}
+    private:
+        void OnClickMouseCallback(float mouse_pos_x, float mouse_pos_y);
+
     private:
         std::unique_ptr<ui::EditorSceneComponent> scene_ui_;
         std::shared_ptr<input::InputContext> input_context_;
+        int object_selected_index;
     };
 }
 }

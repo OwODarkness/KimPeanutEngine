@@ -5,6 +5,10 @@ namespace kpengine{
     void PrimitiveComponent::Initialize()
     {
         SceneComponent::Initialize();
+        if(scene_proxy_)
+        {
+            
+        }
     }
 
     void PrimitiveComponent::TickComponent(float delta_time)

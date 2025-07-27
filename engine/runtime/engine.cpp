@@ -6,8 +6,8 @@
 #include "runtime/core/system/window_system.h"
 #include "runtime/core/system/asset_system.h"
 #include "runtime/core/system/render_system.h"
+#include "runtime/core/system/world_system.h"
 #include "runtime/core/log/logger.h"
-#include "runtime/core/system/level_system.h"
 #include "editor/include/editor_global_context.h"
 #include "editor/include/editor.h"
 
@@ -67,7 +67,7 @@ namespace kpengine{
             while(!global_runtime_context.window_system_->ShouldClose())
             {
                 is_game_thread_loaded_ = false;
-                global_runtime_context.level_system_->Tick(1.f/fps);
+                global_runtime_context.world_system_->Tick(1.f/fps);
                 is_game_thread_loaded_ = true;
                 std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }

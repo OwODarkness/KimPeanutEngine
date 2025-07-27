@@ -6,7 +6,7 @@
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/system/log_system.h"
 #include "runtime/core/system/asset_system.h"
-#include "runtime/core/system/level_system.h"
+#include "runtime/core/system/world_system.h"
 #include "runtime/core/system/input_system.h"
 namespace kpengine
 {
@@ -19,9 +19,8 @@ namespace kpengine
         render_system_(std::make_unique<RenderSystem>()),
         log_system_(std::make_unique<LogSystem>()),
         asset_system_(std::make_unique<AssetSystem>()),
-        level_system_(std::make_unique<LevelSystem>()),
-        input_system_(std::make_unique<input::InputSystem>()),
-        runtime_mode_(RuntimeMode::Editor)
+        world_system_(std::make_unique<WorldSystem>()),
+        input_system_(std::make_unique<input::InputSystem>())
         {
         }
         void RuntimeContext::Initialize()
@@ -32,7 +31,7 @@ namespace kpengine
 
             render_system_->Initialize();
             
-            level_system_->Initialize();
+            world_system_->Initialize();
         }
 
         void RuntimeContext::PostInitialize()

@@ -23,7 +23,7 @@
 #include "editor/include/editor_ui_component/editor_camera_component.h"
 #include "editor/include/editor_actor_control_panel.h"
 #include "runtime/core/system/render_system.h"
-#include "runtime/core/system/level_system.h"
+#include "runtime/core/system/world_system.h"
 #include "runtime/engine.h"
 
 
@@ -86,8 +86,7 @@ namespace kpengine
             std::unique_ptr<EditorUIComponent> camera_ui = std::make_unique<EditorCameraControlComponent>(kpengine::editor::global_editor_context.render_system_->GetRenderCamera());
             components_.push_back(std::move(camera_ui));
 
-            std::unique_ptr<EditorUIComponent> actor_control_panel =std::make_unique<EditorActorControlPanel>(kpengine::editor::global_editor_context.level_system_->GetActor(0).get());
-            components_.push_back(std::move(actor_control_panel));
+
         }
 
         void EditorUI::Close()

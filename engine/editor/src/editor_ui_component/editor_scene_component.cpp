@@ -2,7 +2,6 @@
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-
 #include "runtime/render/frame_buffer.h"
 #include "editor/include/editor_global_context.h"
 #include "runtime/core/system/window_system.h"
@@ -35,6 +34,12 @@ namespace kpengine
                 ImGui::GetContentRegionAvail(),
                 ImVec2(0, 1),
                 ImVec2(1, 0));
+            
+            ImVec2 screen_size =   ImGui::GetCursorScreenPos();
+            ImVec2 mouse_abs_pos = ImGui::GetMousePos();
+            
+            mouse_pos_x_ = mouse_abs_pos.x - screen_size.x;
+            mouse_pos_y_ = screen_size.y - mouse_abs_pos.y;
 
             // Only act on mouse click if the region is hovered
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
@@ -43,6 +48,10 @@ namespace kpengine
                 {
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
                     is_scene_window_focus = true;
+                }
+                if(ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                {
+                    on_mouse_click_callback_.ExecuteIfBound(mouse_pos_x_, mouse_pos_y_);
                 }
             }
             if (ImGui::IsMouseReleased(ImGuiMouseButton_Right))

@@ -1,4 +1,6 @@
 #include "editor_scene_manager.h"
+
+
 #include "editor/include/editor_ui_component/editor_scene_component.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/render/render_scene.h"
@@ -10,12 +12,17 @@ namespace kpengine
 {
     namespace editor
     {
-        EditorSceneManager::EditorSceneManager() : scene_ui_(nullptr)
+        EditorSceneManager::EditorSceneManager() : 
+        scene_ui_(nullptr),
+        input_context_(nullptr),
+        object_selected_index(-1)
         {
         }
         void EditorSceneManager::Initialize()
         {
             scene_ui_ = std::make_unique<ui::EditorSceneComponent>(global_editor_context.render_system_->GetRenderScene()->scene_.get());
+            scene_ui_->on_mouse_click_callback_.Bind<EditorSceneManager, &EditorSceneManager::OnClickMouseCallback>(this);
+            
             input_context_ = std::make_shared<input::InputContext>();
             editor::global_editor_context.input_system_->AddContext("SceneInputContext", input_context_);
         }
@@ -54,6 +61,15 @@ namespace kpengine
             return scene_ui_->is_scene_window_focus;
         }
 
-        EditorSceneManager::~EditorSceneManager() = default;
+        void EditorSceneManager::OnClickMouseCallback(float mouse_pos_x, float mouse_pos_y)
+        {
+        }
+
+        EditorSceneManager::~EditorSceneManager()
+        {
+            scene_ui_->on_mouse_click_callback_.UnBind();
+        }
     }
+
+
 }
