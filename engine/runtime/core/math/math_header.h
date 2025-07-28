@@ -9,6 +9,7 @@
 #include "matrix4.h"
 #include "rotator.h"
 #include "transform.h"
+#include "quaternion.h"
 
 namespace kpengine{
     using Vector2f = math::Vector2<float>;
@@ -25,8 +26,8 @@ namespace kpengine{
     using Rotator3d = math::Rotator<double>;
     using Transform3f = math::Transform<float>;
     using Transform3d = math::Transform<double>;
-
-
+    using Quanternion3f = math::Quaternion<float>;
+    using Quanternion3d = math::Quaternion<double>;
 }
 
 #endif

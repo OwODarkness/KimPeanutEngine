@@ -10,7 +10,33 @@ namespace kpengine{
     
     void SceneComponent::Initialize()
     {
-        
+        MarkTransformDirty();
+    }
+
+    void SceneComponent::MarkTransformDirty()
+    {
+        is_transform_dirty = true;
+        for(auto& child: attach_children_)
+        {
+            child->MarkTransformDirty();
+        }
+    }
+
+
+    Transform3f SceneComponent::GetWorldTransform() const
+    {
+        if(!attach_parent_.expired())
+        {
+            return Transform3f(
+                GetWorldLocation(),
+                GetWorldRotation(),
+                GetWorldScale()
+            );
+        }
+        else
+        {
+            return transform_;
+        }
     }
 
     Vector3f SceneComponent::GetWorldLocation() const
@@ -51,21 +77,6 @@ namespace kpengine{
         }
     }
 
-    Transform3f SceneComponent::GetWorldTransform() const
-    {
-        if(!attach_parent_.expired())
-        {
-            return Transform3f(
-                GetWorldLocation(),
-                GetWorldRotation(),
-                GetWorldScale()
-            );
-        }
-        else
-        {
-            return transform_;
-        }
-    }
 
     void SceneComponent::SetRelativeLocation(const Vector3f& new_location)
     {

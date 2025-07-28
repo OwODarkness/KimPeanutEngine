@@ -8,10 +8,11 @@
 
 #include "runtime/core/math/math.h"
 #include "runtime/core/math/vector3.h"
-namespace kpengine{
-    namespace math{
+namespace kpengine::math{
     template<typename T>
     class Matrix3{
+        static_assert(std::is_floating_point_v<T>, "T must be floating point");
+
     public:
         Matrix3(){
             const T k_zero = T(0);
@@ -39,11 +40,11 @@ namespace kpengine{
         }
 
         T* operator[](size_t row_index) {
-            assert(row_index >=0 && row_index <=2 );
+            assert(row_index >=0 && row_index < 3 );
             return data_[row_index].data();
         }
         const T* operator[](size_t row_index) const {
-            assert(row_index >=0 && row_index <=2 );
+            assert(row_index >=0 && row_index < 3 );
             return data_[row_index].data();
         }
 
@@ -326,6 +327,6 @@ namespace kpengine{
         return Adjoint() / det;
     }
 
-}}
+}
 
 #endif
