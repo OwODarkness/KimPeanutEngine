@@ -22,12 +22,12 @@ namespace kpengine{
         virtual void Tick(float delta_time);
         Vector3f GetActorLocation() const;
         Vector3f GetActorScale() const;
-        Rotator3f GetActorRotation() const;
+        Rotatorf GetActorRotation() const;
         Transform3f GetActorTransform() const;
         SceneComponent* GetRootComponent(){return root_component_.get();}
 
         void SetActorLocation(const Vector3f& new_location);
-        void SetActorRotation(const Rotator3f& new_rotation);
+        void SetActorRotation(const Rotatorf& new_rotation);
         void SetActorScale(const Vector3f& new_scale);
         void SetTransform(const Transform3f& new_transform);
 

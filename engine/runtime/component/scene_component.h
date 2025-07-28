@@ -21,15 +21,15 @@ namespace kpengine{
         inline Transform3f GetRelativeTransform() const{return transform_;}
         inline Vector3f GetRelativeLocation() const{return transform_.position_;}
         inline Vector3f GetRelativeScale() const{return transform_.scale_;}
-        inline Rotator3f GetRelativeRotation() const{return transform_.rotator_;}
+        inline Rotatorf GetRelativeRotation() const{return transform_.rotator_;}
         
         Transform3f GetWorldTransform() const;
         Vector3f GetWorldLocation() const;
         Vector3f GetWorldScale() const;
-        Rotator3f GetWorldRotation() const;
+        Rotatorf GetWorldRotation() const;
 
         void SetRelativeLocation(const Vector3f& new_location);
-        void SetRelativeRotation(const Rotator3f& new_rotation);
+        void SetRelativeRotation(const Rotatorf& new_rotator);
         void SetRelativeScale(const Vector3f& new_scale);
         void SetRelativeTransform(const Transform3f& new_transform);
 

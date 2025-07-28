@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 #include "primitive_component.h"
-
+#include "runtime/render/aabb.h"
 namespace kpengine{
     class RenderMesh;    
 
@@ -15,6 +15,7 @@ namespace kpengine{
         virtual void TickComponent(float delta_time) override;
         void SetMesh(std::shared_ptr<RenderMesh> mesh);
         std::shared_ptr<RenderMesh> GetMesh(){return mesh_;}
+        AABB GetWorldAABB()const ;
         virtual void Initialize() override;
         ~MeshComponent() override;
     protected:

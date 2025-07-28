@@ -160,6 +160,11 @@ namespace kpengine
         }
     }
 
+    AABB RenderMesh::GetAABB() const
+    {
+        return mesh_resource_ ? mesh_resource_->aabb_ : AABB();
+    }
+
     void RenderMesh::BuildLODMeshResource(unsigned int level)
     {
         std::unique_ptr<RenderMeshResource> lod_resource = std::make_unique<RenderMeshResource>();

@@ -22,12 +22,12 @@ namespace kpengine{
     using Matrix3d = math::Matrix3<double>;
     using Matrix4f = math::Matrix4<float>;
     using Matrix4d = math::Matrix4<double>;
-    using Rotator3f = math::Rotator<float>;
-    using Rotator3d = math::Rotator<double>;
+    using Rotatorf = math::Rotator<float>;
+    using Rotatord = math::Rotator<double>;
     using Transform3f = math::Transform<float>;
     using Transform3d = math::Transform<double>;
-    using Quanternion3f = math::Quaternion<float>;
-    using Quanternion3d = math::Quaternion<double>;
+    using Quanternionf = math::Quaternion<float>;
+    using Quanterniond = math::Quaternion<double>;
 }
 
 #endif

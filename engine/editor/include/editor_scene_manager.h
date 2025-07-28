@@ -2,7 +2,8 @@
 #define KPENGINE_EDITOR_SCENE_MANAGER_H
 
 #include <memory>
-
+#include "runtime/core/math/math_header.h"
+#include "runtime/render/aabb.h"
 
 namespace kpengine{
     class RenderSystem;
@@ -23,7 +24,8 @@ namespace editor{
         void Close();
         bool IsCursorInScene(float cursor_x, float cursor_y);
         bool IsSCeneFocus() const;
-
+        bool IntersectRayAABB(const Vector3f& origin, const Vector3f& ray_dir, const AABB& aabb, float& out_dist);
+        
         std::shared_ptr<input::InputContext> GetInputContext() const{return input_context_;}
     private:
         void OnClickMouseCallback(float mouse_pos_x, float mouse_pos_y);

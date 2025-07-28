@@ -22,6 +22,11 @@ namespace kpengine::math
             return Rotator(pitch_ + rhs.pitch_, yaw_ + rhs.yaw_, roll_ + rhs.roll_);
         }
 
+        bool operator==(const Rotator& rhs) const
+        {
+            return pitch_ == rhs.pitch_ && yaw_ == rhs.yaw_ && roll_ == rhs.roll_;
+        }
+
         Rotator &operator=(const Rotator &rhs)
         {
             pitch_ = rhs.pitch_;

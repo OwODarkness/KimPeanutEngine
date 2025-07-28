@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include "runtime/core/math/math_header.h"
+#include "runtime/render/aabb.h"
 #include "geometry_buffer.h"
 
 namespace kpengine{
@@ -26,7 +27,7 @@ public:
     void UpdateLOD(const Vector3f& camera_pos, const Matrix4f& transform);
     unsigned int CalculateLODCount(unsigned int triangle_count);
     void BuildLODMeshResource(unsigned int level);
-
+    AABB GetAABB() const;
     std::string GetName() const{return name_;}
     ~RenderMesh();
 protected:

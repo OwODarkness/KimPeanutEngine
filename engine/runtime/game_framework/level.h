@@ -14,7 +14,7 @@ namespace kpengine{
         void Tick(float delta_time);
         bool AddActor(const std::shared_ptr<Actor>& actor);
         std::shared_ptr<Actor> GetActor(unsigned int index){return actors_.at(index);}
-
+        std::vector<std::shared_ptr<Actor>> GetLevelActors() const{return actors_;}
     private:
         std::vector<std::shared_ptr<Actor>> actors_;
     };

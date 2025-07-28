@@ -49,7 +49,7 @@ namespace kpengine::math
         }
 
         void Normalize();
-
+        Quaternion GetNormailizedQuat() const;
         Rotator<T> ToRotator() const;
         Quaternion Conjugate() const;
         Vector3<T> RotateVector(const Vector3<T> &v) const;
@@ -72,6 +72,14 @@ namespace kpengine::math
         x_ *= coff;
         y_ *= coff;
         z_ *= coff;
+    }
+
+    template<typename T>
+    Quaternion<T> Quaternion<T>::GetNormailizedQuat() const
+    {
+        T len = std::sqrt(w_ * w_ + x_ * x_ + y_ * y_ + z_ * z_);
+        T coff = 1.0 / len;
+        return Quaternion(w_ * coff, x_ * coff, y_ * coff, z_ * coff);
     }
 
     template <typename T>
@@ -102,7 +110,7 @@ namespace kpengine::math
     Vector3<T> Quaternion<T>::RotateVector(const Vector3<T> &v) const
     {
         Quaternion<T> v_quat{0, v.x_, v.y_, v.z_};
-        Quaternion<T> res_quat = (*this).Normalize() * v_quat * this->Conjugate().Normalize();
+        Quaternion<T> res_quat = this->GetNormailizedQuat() * v_quat * this->Conjugate().GetNormailizedQuat();
         return Vector3<T>(res_quat.x_, res_quat.y_, res_quat.z_);
     }
 

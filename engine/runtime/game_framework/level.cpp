@@ -51,8 +51,8 @@ namespace kpengine{
 
         std::shared_ptr<MeshActor> gun = std::make_shared<MeshActor>("model/cerberus/Cerberus_LP.FBX");
         gun->SetActorScale({0.01f, 0.01f, 0.01f});
-        gun->SetActorLocation({2.f, 2.f, -4.f});
-        gun->SetActorRotation({90.f ,0.f, 90.f});
+        gun->SetActorLocation({2.f, 1.f, 0.f});
+        gun->SetActorRotation({-90.f ,180.f, 0.f});
         AddActor(gun);
 
         std::shared_ptr<MeshActor> floor = std::make_shared<MeshActor>("model/brickwall/floor.obj");

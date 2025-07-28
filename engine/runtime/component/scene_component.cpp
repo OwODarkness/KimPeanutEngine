@@ -1,13 +1,12 @@
 #include "scene_component.h"
 
-namespace kpengine{
+namespace kpengine
+{
 
-    
     void SceneComponent::TickComponent(float delta_time)
     {
-        
     }
-    
+
     void SceneComponent::Initialize()
     {
         MarkTransformDirty();
@@ -16,109 +15,103 @@ namespace kpengine{
     void SceneComponent::MarkTransformDirty()
     {
         is_transform_dirty = true;
-        for(auto& child: attach_children_)
+         if (!attach_parent_.expired())
+            {
+                world_transform_ = transform_ * attach_parent_.lock()->GetWorldTransform();
+            }
+            else
+            {
+                world_transform_ = transform_;
+            }
+
+        for (auto &child : attach_children_)
         {
             child->MarkTransformDirty();
         }
     }
 
-
     Transform3f SceneComponent::GetWorldTransform() const
     {
-        if(!attach_parent_.expired())
-        {
-            return Transform3f(
-                GetWorldLocation(),
-                GetWorldRotation(),
-                GetWorldScale()
-            );
-        }
-        else
-        {
-            return transform_;
-        }
+        return world_transform_;
     }
 
     Vector3f SceneComponent::GetWorldLocation() const
     {
-        if(!attach_parent_.expired())
-        {
-            return transform_.position_ + attach_parent_.lock()->GetWorldLocation();
-
-        }
-        else
-        {
-            return transform_.position_;
-        }
+        return GetWorldTransform().position_;
     }
 
     Vector3f SceneComponent::GetWorldScale() const
     {
-        if(!attach_parent_.expired())
-        {
-            return transform_.scale_ * attach_parent_.lock()->GetWorldScale();
-
-        }
-        else
-        {
-            return transform_.scale_;
-        }
+        return GetWorldTransform().scale_;
     }
 
-    Rotator3f SceneComponent::GetWorldRotation() const
+    Rotatorf SceneComponent::GetWorldRotation() const
     {
-        if(!attach_parent_.expired())
+        return GetWorldTransform().rotator_;
+    }
+
+    void SceneComponent::SetRelativeLocation(const Vector3f &new_location)
+    {
+        if (transform_.position_ != new_location)
         {
-            return transform_.rotator_ + attach_parent_.lock()->GetWorldRotation();
-        }
-        else
-        {
-            return transform_.rotator_;
+            transform_.position_ = new_location;
+            MarkTransformDirty();
         }
     }
 
-
-    void SceneComponent::SetRelativeLocation(const Vector3f& new_location)
+    void SceneComponent::SetRelativeRotation(const Rotatorf &new_rotator)
     {
-        transform_.position_ = new_location;
-    }
-
-    void SceneComponent::SetRelativeRotation(const Rotator3f& new_rotation)
-    {
-        transform_.rotator_ = new_rotation;
-    }
-
-    void SceneComponent::SetRelativeScale(const Vector3f& new_scale)
-    {
-        transform_.scale_ = new_scale;
-    }
-
-
-    void SceneComponent::SetRelativeTransform(const Transform3f& new_transform)
-    {
-        transform_ = new_transform;
-    }
-
-    void SceneComponent::AddChild(const std::shared_ptr<SceneComponent>& child)
-    {
-        //TODO Invoke some correspond 
-        attach_children_.push_back(child);
-    }
-
-    void SceneComponent::AttachToComponent(const std::shared_ptr<SceneComponent>& target_comp)
-    {
-        if(target_comp == nullptr)
+        if (transform_.rotator_ != new_rotator)
         {
-            return ;
+            transform_.rotator_ = new_rotator;
+            MarkTransformDirty();
+        }
+    }
+
+    void SceneComponent::SetRelativeScale(const Vector3f &new_scale)
+    {
+        if (transform_.scale_ != new_scale)
+        {
+            transform_.scale_ = new_scale;
+            MarkTransformDirty();
+        }
+    }
+
+    void SceneComponent::SetRelativeTransform(const Transform3f &new_transform)
+    {
+        if(transform_ != new_transform)
+        {
+            transform_ = new_transform;
+            MarkTransformDirty();
+        }
+    }
+
+    void SceneComponent::AddChild(const std::shared_ptr<SceneComponent> &child)
+    {
+        // TODO Invoke some correspond
+        if(child)
+        {
+            attach_children_.push_back(child);
+            child->AttachToComponent(shared_from_this());
+        }
+    }
+
+    void SceneComponent::AttachToComponent(const std::shared_ptr<SceneComponent> &target_comp)
+    {
+        if (target_comp == nullptr)
+        {
+            return;
         }
         attach_parent_ = target_comp;
         target_comp->AddChild(shared_from_this());
+        MarkTransformDirty();
     }
 
-    bool SceneComponent::RemoveChild(const std::shared_ptr<SceneComponent>& child)
+    bool SceneComponent::RemoveChild(const std::shared_ptr<SceneComponent> &child)
     {
         auto it = std::find(attach_children_.begin(), attach_children_.end(), child);
-        if (it != attach_children_.end()) {
+        if (it != attach_children_.end())
+        {
             attach_children_.erase(it);
             return true;
         }
@@ -127,15 +120,16 @@ namespace kpengine{
 
     void SceneComponent::Detach()
     {
-        if(!attach_parent_.expired())
+        if (!attach_parent_.expired())
         {
             attach_parent_.lock()->RemoveChild(shared_from_this());
         }
         attach_parent_.reset();
+        MarkTransformDirty();
     }
 
     SceneComponent::~SceneComponent()
     {
-        //TODO resource
+        // TODO resource
     }
 }

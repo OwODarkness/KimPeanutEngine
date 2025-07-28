@@ -42,11 +42,12 @@ public:
     Vector3f& GetPosition() {return position_;}
 
     inline const Vector3f GetDirection() const{return direction_;}
-
+    Vector3f GetCameraUp() const{return up_;}
     Vector3f GetCameraRight() const{return right_;};
+    Vector3f GetCameraForward() const{return direction_;}
     Matrix4f GetViewMatrix() const;
-
     Matrix4f GetProjectionMatrix() const;
+    float GetCameraFOV() const{return fov_;}
 
     void OnCameraRotateCallback(const input::InputState& state);
     void OnCameraMoveCallback(const input::InputState& state);

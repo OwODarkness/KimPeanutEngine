@@ -26,7 +26,7 @@ namespace kpengine
 
     void RenderCamera::Initialize()
     {
-
+        
     }
 
     void RenderCamera::PostInitialize()

@@ -47,9 +47,9 @@ namespace kpengine{
         return root_component_ ? root_component_->GetWorldScale() : Vector3f();
     }
 
-    Rotator3f Actor::GetActorRotation() const
+    Rotatorf Actor::GetActorRotation() const
     {
-        return root_component_ ? root_component_->GetWorldRotation() : Rotator3f();
+        return root_component_ ? root_component_->GetWorldRotation() : Rotatorf();
     }
 
     Transform3f Actor::GetActorTransform() const
@@ -64,7 +64,7 @@ namespace kpengine{
             root_component_->SetRelativeLocation(new_location);
         }
     }
-    void Actor::SetActorRotation(const Rotator3f& new_rotation)
+    void Actor::SetActorRotation(const Rotatorf& new_rotation)
     {
         if(root_component_)
         {
