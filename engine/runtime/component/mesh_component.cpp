@@ -34,6 +34,12 @@ namespace kpengine{
             return kpengine::GetWorldAABB(mesh_->GetAABB(), Matrix4f::MakeTransformMatrix(GetWorldTransform()));
         }
 
+        
+        AABB MeshComponent::GetAABB()const 
+        {
+            return mesh_->GetAABB();
+        }
+
     void MeshComponent::Initialize()
     {
         assert(mesh_);

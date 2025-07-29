@@ -16,6 +16,7 @@ namespace kpengine{
     class Skybox;
     class PrimitiveSceneProxy;
     class EnvironmentMapWrapper;
+    class RenderAxis;
 
     class RenderScene{
     public:
@@ -25,6 +26,7 @@ namespace kpengine{
         SceneProxyHandle AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy);
         void RemoveProxy(SceneProxyHandle handle);
         void SetCurrentShader(const std::shared_ptr<RenderShader>& shader);
+        void SetRenderAxis(std::shared_ptr<RenderAxis> axis);
     public:
         std::shared_ptr<FrameBuffer> scene_;//frame buffer
 
@@ -41,6 +43,7 @@ namespace kpengine{
     private:
         //scene proxy 
         std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies;//renderable
+        std::shared_ptr<RenderAxis> axis_;
         std::vector<unsigned int> free_slots;
         unsigned int current_generation = 0;
 

@@ -8,6 +8,7 @@ namespace kpengine{
     class RenderScene;
     class RenderCamera;
     class TexturePool;
+    class RenderAxis;
 
     class RenderSystem{
     public:
@@ -16,15 +17,16 @@ namespace kpengine{
         void Initialize();
         void PostInitialize();
         void Tick(float delta_time);
+        
         RenderScene* GetRenderScene() {return render_scene_.get();}
         RenderCamera* GetRenderCamera() {return render_camera_.get();}
         ShaderPool* GetShaderPool() {return shader_pool_.get();}
         TexturePool* GetTexturePool(){return texture_pool_.get();}
+        std::string GetCurrentShaderMode() const{return current_shader_mode_;}
+        const int* GetTriangleCountRef() const{return &triangle_count_this_frame_;}
 
         void SetCurrentShaderMode(const std::string& target);
-        std::string GetCurrentShaderMode() const{return current_shader_mode_;}
-
-        const int* GetTriangleCountRef() const{return &triangle_count_this_frame_;}
+        void SetVisibleAxis(std::shared_ptr<RenderAxis> axis);
         
     private:
         std::shared_ptr<RenderCamera> render_camera_;

@@ -20,7 +20,7 @@
 #include "runtime/render/skybox.h"
 #include "runtime/render/aabb.h"
 #include "runtime/render/frustum.h"
-
+#include "runtime/render/render_axis.h"
 namespace kpengine
 {
 
@@ -180,6 +180,11 @@ namespace kpengine
                 proxy->Draw(current_shader);
             }
 
+            if(axis_)
+            {
+            axis_->Draw();
+            }
+
         }
         scene_->UnBindFrameBuffer();
     }
@@ -189,6 +194,10 @@ namespace kpengine
         current_shader = shader;
     }
 
+    void RenderScene::SetRenderAxis(std::shared_ptr<RenderAxis> axis)
+    {
+        axis_ = axis;
+    }
 
     SceneProxyHandle RenderScene::AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy)
     {

@@ -13,6 +13,9 @@
 #include "runtime/game_framework/world.h"
 #include "runtime/game_framework/level.h"
 #include "runtime/game_framework/actor.h"
+#include "runtime/component/mesh_component.h"
+#include "runtime/render/render_axis.h"
+#include <limits>
 
 namespace kpengine
 {
@@ -116,6 +119,10 @@ namespace kpengine
         void EditorSceneManager::OnClickMouseCallback(float mouse_pos_x, float mouse_pos_y)
         {
             RenderCamera *camera = editor::global_editor_context.render_system_->GetRenderCamera();
+
+            if (!camera)
+                return;
+
             float camera_fov = camera->GetCameraFOV();
             Vector3f camera_forward = camera->GetCameraForward();
             Vector3f camera_up = camera->GetCameraUp();
@@ -129,17 +136,48 @@ namespace kpengine
             Vector3f world_ray_dir = camera_right * window_right + camera_up * window_up + camera_forward * window_forward;
 
             std::weak_ptr<World> world = editor::global_editor_context.world_system_->GetCurrentWorld();
-            if (!world.expired())
+            if (world.expired())
+                return;
+            std::weak_ptr<Level> level = world.lock()->GetCurrentLevel();
+            if (level.expired())
+                return;
+
+            std::vector<std::shared_ptr<Actor>> actors = level.lock()->GetLevelActors();
+            std::shared_ptr<Actor> selected = nullptr;
+            float closest_dist = std::numeric_limits<float>::max();
+
+            for (const auto &item : actors)
             {
-                std::weak_ptr<Level> level = world.lock()->GetCurrentLevel();
-                if (!level.expired())
+                MeshComponent *mesh = dynamic_cast<MeshComponent *>(item->GetRootComponent());
+                if (!mesh)
+                    continue;
+                float hit_dist;
+                if (IntersectRayAABB(origin_pos, world_ray_dir, mesh->GetWorldAABB(), hit_dist))
                 {
-                    std::vector<std::shared_ptr<Actor>> actors = level.lock()->GetLevelActors();
-                    for (const auto &item : actors)
+                    if (closest_dist > hit_dist)
                     {
-                        
+                        closest_dist = hit_dist;
+                        selected = item;
                     }
                 }
+            }
+
+            if(selected)
+            {
+                MeshComponent *mesh = dynamic_cast<MeshComponent *>(selected->GetRootComponent());
+                std::shared_ptr<RenderAxis> axis = std::make_shared<RenderAxis>();
+                axis->Initialize();
+                Transform3f transform;
+                transform.position_ = mesh->GetWorldAABB().Center();
+                transform.rotator_ = selected->GetActorRotation();
+                transform.scale_ = Vector3f(1.f, 1.f, 1.f);
+                //std::cout << transform.position_.x_ << " " << transform.position_.y_ << " " << transform.position_.z_ << std::endl;
+                axis->SetModelTransform(Matrix4f::MakeTransformMatrix(transform).Transpose());
+                editor::global_editor_context.render_system_->SetVisibleAxis(axis);
+            }
+            else
+            {
+                editor::global_editor_context.render_system_->SetVisibleAxis(nullptr);
             }
         }
 

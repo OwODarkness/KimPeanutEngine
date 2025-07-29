@@ -57,6 +57,11 @@ namespace kpengine{
             SHADER_CATEGORY_DEBUGCUBIC,
             std::make_shared<RenderShader>("debug_cubic.vs", "debug_cubic.fs")
         });
+
+        shader_cache.insert({
+            SHADER_CATEGORY_AXIS,
+            std::make_shared<RenderShader>("axis.vs", "axis.fs")
+        });
     }
 
     void ShaderPool::Initialize()

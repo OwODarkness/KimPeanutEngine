@@ -84,7 +84,7 @@ namespace kpengine
         mesh_resourece_ref_->Initialize();
         aabb_debugger_ = std::make_unique<AABBDebugger>();
         aabb_debugger_->Initialize(mesh_resourece_ref_->aabb_);
-        aabb_debugger_->is_visiable_ = false;
+        //aabb_debugger_->is_visiable_ = false;
     }
 
     AABB MeshSceneProxy::GetAABB()
