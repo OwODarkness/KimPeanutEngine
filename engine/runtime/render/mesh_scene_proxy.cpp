@@ -11,7 +11,6 @@
 #include "geometry_buffer.h"
 #include "runtime/core/utility/aabb_debugger.h"
 
-
 namespace kpengine
 {
     MeshSceneProxy::MeshSceneProxy() : geometry_buffer_(nullptr),
@@ -19,10 +18,57 @@ namespace kpengine
                                        current_shader_id_(0)
     {
     }
+
+    void MeshSceneProxy::Initialize()
+    {
+        PrimitiveSceneProxy::Initialize();
+        assert(mesh_resourece_ref_ != nullptr);
+        mesh_resourece_ref_->Initialize();
+        aabb_debugger_ = std::make_unique<AABBDebugger>();
+        aabb_debugger_->Initialize(mesh_resourece_ref_->aabb_);
+        aabb_debugger_->is_visiable_ = false;
+
+        outlining_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_OUTLINING);
+    }
+
     void MeshSceneProxy::Draw(std::shared_ptr<RenderShader> shader)
     {
+        Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_);
+        glStencilMask(0x00);
+        aabb_debugger_->Debug(transform_mat.Transpose());
 
-        Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_).Transpose();
+        if (is_outline_visible)
+        {
+            glStencilMask(0xFF);
+            glStencilFunc(GL_ALWAYS, 1, 0xFF);
+            DrawRenderable(shader, transform_mat.Transpose());
+
+            glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
+            glStencilMask(0x00);
+            glDisable(GL_DEPTH_TEST);
+            Transform3f scaled_transform = transfrom_;
+            scaled_transform.scale_ *= 1.05f;
+            Matrix4f transform_scaled_mat = Matrix4f::MakeTransformMatrix(scaled_transform);
+
+            DrawRenderable(outlining_shader_, transform_scaled_mat.Transpose());
+            glStencilMask(0xFF);
+            glStencilFunc(GL_ALWAYS, 0, 0xFF);
+            glEnable(GL_DEPTH_TEST);
+        }
+        else
+        {
+            glStencilMask(0x00);
+            DrawRenderable(shader, transform_mat.Transpose());
+        }
+    }
+
+    void MeshSceneProxy::DrawOutline(const Matrix4f &transform_mat)
+    {
+        DrawRenderable(outlining_shader_, transform_mat);
+    }
+
+    void MeshSceneProxy::DrawRenderable(std::shared_ptr<RenderShader> shader, const Matrix4f &transform_mat)
+    {
         {
             GlVertexArrayGuard vao_guard(geometry_buffer_->vao);
             GlElementBufferGuard ebo_guard(geometry_buffer_->ebo);
@@ -74,17 +120,11 @@ namespace kpengine
             }
         }
         current_shader_id_ = 0;
-        aabb_debugger_->Debug(transform_mat);
     }
 
-    void MeshSceneProxy::Initialize()
+    void MeshSceneProxy::SetOutlineVisibility(bool visible)
     {
-        PrimitiveSceneProxy::Initialize();
-        assert(mesh_resourece_ref_ != nullptr);
-        mesh_resourece_ref_->Initialize();
-        aabb_debugger_ = std::make_unique<AABBDebugger>();
-        aabb_debugger_->Initialize(mesh_resourece_ref_->aabb_);
-        //aabb_debugger_->is_visiable_ = false;
+        is_outline_visible = visible;
     }
 
     AABB MeshSceneProxy::GetAABB()

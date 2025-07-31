@@ -26,6 +26,8 @@
 #include "runtime/core/system/world_system.h"
 #include "runtime/engine.h"
 
+#include "runtime/render/render_scene.h"
+#include "runtime/render/frame_buffer.h"
 
 namespace kpengine
 {
@@ -119,6 +121,16 @@ namespace kpengine
             {
                 components_[i]->Render();
             }
+        ImGui::BeginChild("G-Buffer Viewer");
+
+        GLuint texID = editor::global_editor_context.render_system_->GetRenderScene()->g_buffer_->GetTexture(0);
+        ImVec2 size = ImVec2(360, 256); // size of the preview
+
+        ImGui::Text("Normal Buffer");
+        ImGui::Image((ImTextureID)(uintptr_t)texID, size, ImVec2(0, 1), ImVec2(1, 0));
+
+        ImGui::EndChild();
+
             return true;
         }
 

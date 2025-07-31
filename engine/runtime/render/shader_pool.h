@@ -17,6 +17,7 @@
 #define SHADER_CATEGORY_BRDF "brdf"
 #define SHADER_CATEGORY_AXIS "axis"
 #define SHADER_CATEGORY_DEBUGCUBIC "debug_cubic"
+#define SHADER_CATEGORY_OUTLINING "outlining"
 
 namespace kpengine{
     class RenderShader;

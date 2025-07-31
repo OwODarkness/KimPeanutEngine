@@ -24,7 +24,7 @@ namespace kpengine::math
 
         static Quaternion FromAxisAngle(const Vector3<T> &axis, T angle)
         {
-            T half_angle = angle * static_cast<T>(0.5);
+            T half_angle = angle * T(0.5);
             T s = std::sin(half_angle);
 
             return Quaternion(std::cos(half_angle), axis.x_ * s, axis.y_ * s, axis.z_ * s);
@@ -65,9 +65,9 @@ namespace kpengine::math
     void Quaternion<T>::Normalize()
     {
         T len = std::sqrt(w_ * w_ + x_ * x_ + y_ * y_ + z_ * z_);
-        if (len == static_cast<T>(0))
+        if (len == T(0))
             return;
-        T coff = 1.0 / len;
+        T coff = T(1) / len;
         w_ *= coff;
         x_ *= coff;
         y_ *= coff;
@@ -78,23 +78,23 @@ namespace kpengine::math
     Quaternion<T> Quaternion<T>::GetNormailizedQuat() const
     {
         T len = std::sqrt(w_ * w_ + x_ * x_ + y_ * y_ + z_ * z_);
-        T coff = 1.0 / len;
+        T coff = T(1) / len;
         return Quaternion(w_ * coff, x_ * coff, y_ * coff, z_ * coff);
     }
 
     template <typename T>
     Rotator<T> Quaternion<T>::ToRotator() const
     {
-        T sin_roll = 2.f * (w_ * z_ + x_ * y_);
-        T cos_roll = 1.f - 2.f * (y_ * y_ + z_ * z_);
+        T sin_roll = T(2) * (w_ * z_ + x_ * y_);
+        T cos_roll = T(1) - T(2) * (y_ * y_ + z_ * z_);
         T roll = RadianToDegree(std::atan2(sin_roll, cos_roll));
 
-        T sin_pitch = 2.f * (w_ * x_ + y_ * z_);
-        T cos_pitch = 1.f - 2.f * (x_ * x_ + y_ * y_);
+        T sin_pitch = T(2) * (w_ * x_ + y_ * z_);
+        T cos_pitch = T(1) - T(2) * (x_ * x_ + y_ * y_);
         T pitch = RadianToDegree(std::atan2(sin_pitch, cos_pitch));
 
-        T sin_yaw = 2.f * (w_ * y_ - z_ * x_);
-        sin_yaw = std::clamp(sin_yaw, -1.f, 1.f); 
+        T sin_yaw = T(2) * (w_ * y_ - z_ * x_);
+        sin_yaw = std::clamp(sin_yaw, T(-1), T(1)); 
         T yaw = RadianToDegree(std::asin(sin_yaw));
 
         return Rotator<T>(pitch, yaw, roll);
@@ -109,7 +109,7 @@ namespace kpengine::math
     template <typename T>
     Vector3<T> Quaternion<T>::RotateVector(const Vector3<T> &v) const
     {
-        Quaternion<T> v_quat{0, v.x_, v.y_, v.z_};
+        Quaternion<T> v_quat{T(0), v.x_, v.y_, v.z_};
         Quaternion<T> res_quat = this->GetNormailizedQuat() * v_quat * this->Conjugate().GetNormailizedQuat();
         return Vector3<T>(res_quat.x_, res_quat.y_, res_quat.z_);
     }

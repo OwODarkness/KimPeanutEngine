@@ -62,6 +62,11 @@ namespace kpengine{
             SHADER_CATEGORY_AXIS,
             std::make_shared<RenderShader>("axis.vs", "axis.fs")
         });
+
+        shader_cache.insert({
+            SHADER_CATEGORY_OUTLINING,
+            std::make_shared<RenderShader>("single_color.vs", "single_color.fs")
+        });
     }
 
     void ShaderPool::Initialize()

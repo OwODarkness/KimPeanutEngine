@@ -29,6 +29,7 @@ namespace kpengine{
         void SetRenderAxis(std::shared_ptr<RenderAxis> axis);
     public:
         std::shared_ptr<FrameBuffer> scene_;//frame buffer
+        std::shared_ptr<FrameBuffer> g_buffer_;
 
         std::shared_ptr<RenderCamera> render_camera_;
 
@@ -53,7 +54,8 @@ namespace kpengine{
         bool isskydraw = false;
         bool is_light_dirty = true;
         std::shared_ptr<RenderShader> current_shader;
-    
+
+        std::shared_ptr<RenderShader> geometry_shader_;
     };
 }
 

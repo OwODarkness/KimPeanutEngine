@@ -76,12 +76,12 @@ namespace kpengine
 
         return GeometryBuffer(vao, vbo, ebo);
     }
-    RenderMeshResource *RenderMesh::GetMeshResource(unsigned int index)
+    RenderMeshResource *RenderMesh::GetMeshResource(size_t  index)
     {
         return lod_mesh_resources_.at(index) ? lod_mesh_resources_[index].get() : nullptr;
     }
 
-    void RenderMesh::SetMaterial(const std::shared_ptr<RenderMaterial> &material, unsigned int section_index)
+    void RenderMesh::SetMaterial(const std::shared_ptr<RenderMaterial> &material, size_t  section_index)
     {
 
         bool is_index_valid = section_index >= 0 && section_index < mesh_resource_->mesh_sections_.size();
@@ -93,7 +93,7 @@ namespace kpengine
         mesh_resource_->mesh_sections_.at(section_index).material = material;
     }
 
-    std::shared_ptr<RenderMaterial> RenderMesh::GetMaterial(unsigned int section_index)
+    std::shared_ptr<RenderMaterial> RenderMesh::GetMaterial(size_t  section_index)
     {
         bool is_index_valid = section_index >= 0 && section_index < mesh_resource_->mesh_sections_.size();
         if (!is_index_valid)
@@ -105,7 +105,7 @@ namespace kpengine
         return mesh_resource_->mesh_sections_.at(section_index).material;
     }
 
-    unsigned int RenderMesh::CalculateLODCount(unsigned int triangle_count)
+    size_t  RenderMesh::CalculateLODCount(size_t triangle_count)
     {
         if (triangle_count < 500)
         {
@@ -130,7 +130,7 @@ namespace kpengine
         Vector3f world_aabb_center = GetWorldAABB(mesh_resource_->aabb_, transform).Center();
         float distance = (float)(camera_pos - world_aabb_center).Norm();
         // match LOD
-        unsigned int new_lod = std::min(GetLODLevelFromDistance(distance), lod_max_level);
+        size_t  new_lod = std::min(GetLODLevelFromDistance(distance), lod_max_level);
         if (new_lod == lod_level)
         {
             return;
@@ -140,7 +140,7 @@ namespace kpengine
         geometry_buf_ = geometry_buffers_[lod_level];
     }
 
-    unsigned int RenderMesh::GetLODLevelFromDistance(float distance)
+    size_t  RenderMesh::GetLODLevelFromDistance(float distance)
     {
         if (distance < 20)
         {
@@ -165,14 +165,14 @@ namespace kpengine
         return mesh_resource_ ? mesh_resource_->aabb_ : AABB();
     }
 
-    void RenderMesh::BuildLODMeshResource(unsigned int level)
+    void RenderMesh::BuildLODMeshResource(size_t  level)
     {
         std::unique_ptr<RenderMeshResource> lod_resource = std::make_unique<RenderMeshResource>();
 
         for (const MeshSection &section : mesh_resource_->mesh_sections_)
         {
-            unsigned int start = section.index_start;
-            unsigned int count = section.index_count;
+            size_t  start = section.index_start;
+            size_t  count = section.index_count;
 
             std::vector<unsigned int> input_indices(
                 mesh_resource_->index_buffer_.begin() + start,

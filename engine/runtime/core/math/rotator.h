@@ -47,9 +47,9 @@ namespace kpengine::math
     template <typename T>
     Quaternion<T> Rotator<T>::ToQuat() const
     {
-        T half_pitch = DegreeToRadian(pitch_) * 0.5;
-        T half_yaw = DegreeToRadian(yaw_) * 0.5;
-        T half_roll = DegreeToRadian(roll_) * 0.5;
+        T half_pitch = DegreeToRadian(pitch_) * T(0.5);
+        T half_yaw = DegreeToRadian(yaw_) * T(0.5);
+        T half_roll = DegreeToRadian(roll_) * T(0.5);
 
         T cp = std::cos(half_pitch), sp = std::sin(half_pitch); 
         T cy = std::cos(half_yaw), sy = std::sin(half_yaw);     

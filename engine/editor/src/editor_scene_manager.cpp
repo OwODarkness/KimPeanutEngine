@@ -64,7 +64,7 @@ namespace kpengine
             return false;
         }
 
-        bool EditorSceneManager::IsSCeneFocus() const
+        bool EditorSceneManager::IsSceneFocus() const
         {
             return scene_ui_->is_scene_window_focus;
         }
@@ -128,8 +128,8 @@ namespace kpengine
             Vector3f camera_up = camera->GetCameraUp();
             Vector3f camera_right = camera->GetCameraRight();
             Vector3f origin_pos = camera->GetPosition();
-            float window_size_x = scene_ui_->width_;
-            float window_size_y = scene_ui_->height_;
+            float window_size_x = static_cast<float>(scene_ui_->width_);
+            float window_size_y = static_cast<float>(scene_ui_->height_);
             float window_forward = 0.5f * window_size_y / std::tan(math::DegreeToRadian(camera_fov) * 0.5f);
             float window_right = mouse_pos_x - 0.5f * window_size_x;
             float window_up = mouse_pos_y - 0.5f * window_size_y;
@@ -162,22 +162,44 @@ namespace kpengine
                 }
             }
 
-            if(selected)
+            if (selected)
             {
+                if (last_select_actor_ == selected)
+                {
+                    return;
+                }
+                if (last_select_actor_)
+                {
+                    MeshComponent *last_mesh = dynamic_cast<MeshComponent *>(last_select_actor_->GetRootComponent());
+                    if (!last_mesh)
+                        return;
+                    last_mesh->SetOutlineVisibility(false);
+                }
+                last_select_actor_ = selected;
                 MeshComponent *mesh = dynamic_cast<MeshComponent *>(selected->GetRootComponent());
+                if (!mesh)
+                    return;
                 std::shared_ptr<RenderAxis> axis = std::make_shared<RenderAxis>();
                 axis->Initialize();
                 Transform3f transform;
                 transform.position_ = mesh->GetWorldAABB().Center();
                 transform.rotator_ = selected->GetActorRotation();
-                transform.scale_ = Vector3f(1.f, 1.f, 1.f);
-                //std::cout << transform.position_.x_ << " " << transform.position_.y_ << " " << transform.position_.z_ << std::endl;
+                transform.scale_ = Vector3f(1.f);
                 axis->SetModelTransform(Matrix4f::MakeTransformMatrix(transform).Transpose());
                 editor::global_editor_context.render_system_->SetVisibleAxis(axis);
+                mesh->SetOutlineVisibility(true);
             }
             else
             {
                 editor::global_editor_context.render_system_->SetVisibleAxis(nullptr);
+                if (last_select_actor_)
+                {
+                    MeshComponent *last_mesh = dynamic_cast<MeshComponent *>(last_select_actor_->GetRootComponent());
+                    if (!last_mesh)
+                        return;
+                    last_mesh->SetOutlineVisibility(false);
+                    last_select_actor_ = nullptr;
+                }
             }
         }
 

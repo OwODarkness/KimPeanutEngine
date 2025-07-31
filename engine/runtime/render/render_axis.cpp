@@ -50,9 +50,11 @@ namespace kpengine
 
     void RenderAxis::Draw()
     {
+        glDisable(GL_DEPTH_TEST);
         GlVertexArrayGuard vao_guard(vao_);
         shader_->UseProgram();
         shader_->SetMat("model", model_mat_[0]);
         glDrawArrays(GL_LINES, 0, 6);
+        glEnable(GL_DEPTH_TEST);
     }
 }

@@ -21,17 +21,17 @@ public:
     
     void Initialize();
     GeometryBuffer CreateGeometryBuffer(RenderMeshResource* mesh_resource);
-    RenderMeshResource* GetMeshResource(unsigned int index = 0);
-    void SetMaterial(const std::shared_ptr<RenderMaterial>& material, unsigned int section_index);
-    std::shared_ptr<RenderMaterial> GetMaterial(unsigned int index);
+    RenderMeshResource* GetMeshResource(size_t  index = 0);
+    void SetMaterial(const std::shared_ptr<RenderMaterial>& material, size_t  section_index);
+    std::shared_ptr<RenderMaterial> GetMaterial(size_t  index);
     void UpdateLOD(const Vector3f& camera_pos, const Matrix4f& transform);
-    unsigned int CalculateLODCount(unsigned int triangle_count);
-    void BuildLODMeshResource(unsigned int level);
+    size_t CalculateLODCount(size_t triangle_count);
+    void BuildLODMeshResource(size_t level);
     AABB GetAABB() const;
     std::string GetName() const{return name_;}
     ~RenderMesh();
 protected:
-    unsigned int GetLODLevelFromDistance(float distance);
+    size_t  GetLODLevelFromDistance(float distance);
 public:
     //geometry_buffer and mesh_resource in runtime
     GeometryBuffer geometry_buf_;
@@ -41,8 +41,8 @@ private:
     std::vector<std::unique_ptr<RenderMeshResource>> lod_mesh_resources_;
     std::vector<GeometryBuffer> geometry_buffers_;
     std::string name_;
-    unsigned int lod_level;
-    unsigned int lod_max_level;
+    size_t  lod_level;
+    size_t  lod_max_level;
     bool is_initialized_ = false;
 };
 }

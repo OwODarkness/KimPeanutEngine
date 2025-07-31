@@ -16,7 +16,7 @@ namespace kpengine{
         void SetMesh(std::shared_ptr<RenderMesh> mesh);
         std::shared_ptr<RenderMesh> GetMesh(){return mesh_;}
         AABB GetWorldAABB()const ;
-        AABB GetAABB() const;
+        void SetOutlineVisibility(bool visible);        
         virtual void Initialize() override;
         ~MeshComponent() override;
     protected:

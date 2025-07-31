@@ -4,6 +4,7 @@
 
 #include "primitive_scene_proxy.h"
 #include "mesh_section.h"
+#include "runtime/core/math/math_header.h"
 #include <memory>
 
 #define SHADER_PARAM_MODEL_TRANSFORM "model"
@@ -11,11 +12,16 @@
 namespace kpengine{
     class RenderMeshResource;
     class AABBDebugger;
+    class RenderShader;
+
     class MeshSceneProxy: public PrimitiveSceneProxy{
     public:
         MeshSceneProxy();
-        void Draw(std::shared_ptr<RenderShader> shader) override;
         void Initialize() override;
+        void Draw(std::shared_ptr<RenderShader> shader) override;
+        void DrawOutline(const Matrix4f& transform_mat);
+        void DrawRenderable(std::shared_ptr<RenderShader> shader, const Matrix4f& transform_mat);
+        void SetOutlineVisibility(bool visible);
         AABB GetAABB() override;
         ~MeshSceneProxy();
     public:
@@ -26,6 +32,9 @@ namespace kpengine{
         bool do_once = true;
         //aabb debug usage
         std::unique_ptr<AABBDebugger> aabb_debugger_;
+        std::shared_ptr<RenderShader> outlining_shader_;
+
+        bool is_outline_visible = false;
     };
 }
 

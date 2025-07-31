@@ -11,7 +11,7 @@
 namespace kpengine{
     class RenderMeshResource{
     public:
-        unsigned int GetFaceNum() const;
+        size_t  GetFaceNum() const;
         void Initialize();
     public:
         AABB aabb_;

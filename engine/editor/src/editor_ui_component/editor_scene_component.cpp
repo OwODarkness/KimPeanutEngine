@@ -30,7 +30,7 @@ namespace kpengine
 
             // Render the scene texture
             ImGui::Image(
-                static_cast<ImTextureID>(scene_->GetTexture()),
+                static_cast<ImTextureID>(scene_->GetTexture(0)),
                 ImGui::GetContentRegionAvail(),
                 ImVec2(0, 1),
                 ImVec2(1, 0));

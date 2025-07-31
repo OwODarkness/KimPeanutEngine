@@ -42,11 +42,11 @@ namespace kpengine
 
     void RenderScene::Initialize(std::shared_ptr<RenderCamera> camera)
     {
-
         assert(camera);
         render_camera_ = camera;
 
         scene_->Initialize();
+        scene_->AddColorAttachment("default", GL_RGB, GL_RGB, GL_UNSIGNED_INT);
         
         //environment map
         environment_map_wrapper = std::make_shared<EnvironmentMapWrapper>("texture/hdr/venice_sunset_1k.hdr");
@@ -56,6 +56,15 @@ namespace kpengine
        //skybox = test::GetRenderObjectSkybox();
        skybox = std::make_shared<Skybox>( runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_SKYBOX), environment_map_wrapper->GetEnvironmentMap());
        skybox->Initialize();
+
+        g_buffer_ = std::make_shared<FrameBuffer>(1280, 720);
+        g_buffer_->Initialize();
+        g_buffer_->AddColorAttachment("normal", GL_RGB16F, GL_RGB, GL_FLOAT);
+        g_buffer_->AddColorAttachment("object_id", GL_R32I, GL_RED_INTEGER, GL_INT);
+        g_buffer_->Finalize();
+        
+        geometry_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_NORMAL);
+
 
         glGenBuffers(1, &ubo_camera_matrices_);
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
@@ -138,9 +147,26 @@ namespace kpengine
             }
             Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(proxy->GetTransform());
             point_depth_shader->SetMat("model", transform_mat.Transpose()[0]);
+
             proxy->Draw(point_depth_shader);
         }
         point_shadow_maker_->UnBindFrameBuffer();
+
+        g_buffer_->BindFrameBuffer();
+        for(size_t i = 0;i<scene_proxies.size();i++)
+        {
+            if(!scene_proxies[i]->visible_this_frame)
+            {
+                continue;
+            }
+            geometry_shader_->UseProgram();
+            Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(scene_proxies[i]->GetTransform());
+            geometry_shader_->SetMat("model", transform_mat.Transpose()[0]);
+            geometry_shader_->SetInt("object_id", i);
+            scene_proxies[i]->Draw(geometry_shader_);
+        }
+        g_buffer_->UnBindFrameBuffer();
+
         // render a normal scene
         scene_->BindFrameBuffer();
         {

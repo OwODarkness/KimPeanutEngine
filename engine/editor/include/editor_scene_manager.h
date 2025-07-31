@@ -7,6 +7,7 @@
 
 namespace kpengine{
     class RenderSystem;
+    class Actor;
 namespace ui{
     class EditorSceneComponent;
     }
@@ -23,7 +24,7 @@ namespace editor{
         void Tick();
         void Close();
         bool IsCursorInScene(float cursor_x, float cursor_y);
-        bool IsSCeneFocus() const;
+        bool IsSceneFocus() const;
         bool IntersectRayAABB(const Vector3f& origin, const Vector3f& ray_dir, const AABB& aabb, float& out_dist);
         
         std::shared_ptr<input::InputContext> GetInputContext() const{return input_context_;}
@@ -34,6 +35,7 @@ namespace editor{
         std::unique_ptr<ui::EditorSceneComponent> scene_ui_;
         std::shared_ptr<input::InputContext> input_context_;
         int object_selected_index;
+        std::shared_ptr<Actor> last_select_actor_{};
     };
 }
 }
