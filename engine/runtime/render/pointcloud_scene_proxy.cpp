@@ -18,7 +18,12 @@ namespace kpengine{
         glUniformBlockBinding(shader_id, uniform_block_index, 0);
     }
     
-    void PointCloudSceneProxy::Draw(std::shared_ptr<RenderShader> shader)
+         void PointCloudSceneProxy::DrawGeometryPass(const RenderContext& context)
+        {
+
+        }
+
+    void PointCloudSceneProxy::Draw(const RenderContext& context)
     {
         GlVertexArrayGuard vao_guard(vao_);
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_).Transpose();

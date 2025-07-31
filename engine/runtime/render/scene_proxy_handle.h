@@ -4,12 +4,13 @@
 #include <climits>
 
 struct SceneProxyHandle{
-    unsigned int id;
-    unsigned int generation;
+    int id;
+    int generation;
+
     SceneProxyHandle():id(0), generation(0){}
-    SceneProxyHandle(unsigned int _id, unsigned int _generation):id(_id), generation(_generation){}
-    inline bool IsValid() const {return id != UINT32_MAX;}
-    static SceneProxyHandle InValid(){return {UINT32_MAX, 0};}
+    SceneProxyHandle(int _id, int _generation):id(_id), generation(_generation){}
+    inline bool IsValid() const {return id != -1;}
+    static SceneProxyHandle InValid(){return {-1, 0};}
 };
 
 #endif

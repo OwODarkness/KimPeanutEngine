@@ -16,14 +16,17 @@ struct Material{
 
 uniform Material material;
 uniform int object_id;
+
+in vec3 frag_pos;
 in vec3 normal;
 in vec2 texcoord;
 in mat3 TBN;
 
 out vec4 out_frag_color;
 
-layout (location = 0) out vec3 out_normal;
-layout (location = 1) out int out_object_id;
+layout (location = 0) out vec3 gPosition;
+layout (location = 1) out vec3 gNormal;
+layout (location = 2) out int gObjectID;
 
 void main()
 {
@@ -31,7 +34,9 @@ void main()
     normalize(TBN * normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal);
 
     out_frag_color = vec4(normal_vec, 1.0);
-    out_normal = normal_vec;
-    out_object_id = object_id;
+    
+    gPosition = frag_pos;
+    gNormal = normal_vec;
+    gObjectID = object_id;
 
 }

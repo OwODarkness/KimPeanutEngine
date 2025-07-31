@@ -18,12 +18,14 @@ namespace kpengine{
     public:
         MeshSceneProxy();
         void Initialize() override;
-        void Draw(std::shared_ptr<RenderShader> shader) override;
-        void DrawOutline(const Matrix4f& transform_mat);
-        void DrawRenderable(std::shared_ptr<RenderShader> shader, const Matrix4f& transform_mat);
+        void Draw(const RenderContext& context) override;
+        void DrawGeometryPass(const RenderContext& context) override;
         void SetOutlineVisibility(bool visible);
         AABB GetAABB() override;
         ~MeshSceneProxy();
+    private:
+        void DrawOutline(const Matrix4f& transform_mat);
+        void DrawRenderable(const RenderContext& context, const Matrix4f& transform_mat);
     public:
         struct GeometryBuffer* geometry_buffer_;
         RenderMeshResource* mesh_resourece_ref_;

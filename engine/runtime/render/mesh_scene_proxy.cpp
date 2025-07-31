@@ -31,7 +31,7 @@ namespace kpengine
         outlining_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_OUTLINING);
     }
 
-    void MeshSceneProxy::Draw(std::shared_ptr<RenderShader> shader)
+    void MeshSceneProxy::Draw(const RenderContext& context)
     {
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_);
         glStencilMask(0x00);
@@ -41,7 +41,7 @@ namespace kpengine
         {
             glStencilMask(0xFF);
             glStencilFunc(GL_ALWAYS, 1, 0xFF);
-            DrawRenderable(shader, transform_mat.Transpose());
+            DrawRenderable(context, transform_mat.Transpose());
 
             glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
             glStencilMask(0x00);
@@ -50,7 +50,7 @@ namespace kpengine
             scaled_transform.scale_ *= 1.05f;
             Matrix4f transform_scaled_mat = Matrix4f::MakeTransformMatrix(scaled_transform);
 
-            DrawRenderable(outlining_shader_, transform_scaled_mat.Transpose());
+            DrawRenderable({.shader = outlining_shader_}, transform_scaled_mat.Transpose());
             glStencilMask(0xFF);
             glStencilFunc(GL_ALWAYS, 0, 0xFF);
             glEnable(GL_DEPTH_TEST);
@@ -58,27 +58,46 @@ namespace kpengine
         else
         {
             glStencilMask(0x00);
-            DrawRenderable(shader, transform_mat.Transpose());
+            DrawRenderable(context, transform_mat.Transpose());
+        }
+    }
+
+    void MeshSceneProxy::DrawGeometryPass(const RenderContext& context)
+    {
+        if (!context.shader)
+        {
+            return;
+        }
+        GlVertexArrayGuard vao_guard(geometry_buffer_->vao);
+        GlElementBufferGuard ebo_guard(geometry_buffer_->ebo);
+        context.shader->UseProgram();
+        Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_);
+        for (std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
+        {
+            context.shader->SetMat("model", transform_mat.Transpose()[0]);
+            context.shader->SetInt("object_id", id_);
+            iter->material->Render(context.shader, 0);
+            glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));
         }
     }
 
     void MeshSceneProxy::DrawOutline(const Matrix4f &transform_mat)
     {
-        DrawRenderable(outlining_shader_, transform_mat);
+        DrawRenderable({.shader = outlining_shader_}, transform_mat);
     }
 
-    void MeshSceneProxy::DrawRenderable(std::shared_ptr<RenderShader> shader, const Matrix4f &transform_mat)
+    void MeshSceneProxy::DrawRenderable(const RenderContext& context, const Matrix4f &transform_mat)
     {
         {
             GlVertexArrayGuard vao_guard(geometry_buffer_->vao);
             GlElementBufferGuard ebo_guard(geometry_buffer_->ebo);
-            if (shader)
+            if (context.shader)
             {
-                shader->UseProgram();
+                context.shader->UseProgram();
                 for (std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
                 {
-                    shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
-                    iter->material->Render(shader);
+                    context.shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
+                    iter->material->Render(context.shader, 0);
                     glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));
                 }
             }
@@ -96,24 +115,33 @@ namespace kpengine
                         current_shader_id_ = new_shader_id;
                         current_shader->SetVec3("view_position", view_pos_);
                         current_shader->SetMat("light_space_matrix", light_space_);
-                        current_shader->SetInt("shadow_map", 15);
                         current_shader->SetFloat("far_plane", 25.f);
-                        current_shader->SetInt("point_shadow_map", 14);
                         current_shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
+
+                        int used_count = iter->material->Render(current_shader, 0);
+
+                        current_shader->SetInt("shadow_map", 10);
+                        glActiveTexture(GL_TEXTURE10);
+                        glBindTexture(GL_TEXTURE_2D, context.directional_shadow_map);
+
+                        current_shader->SetInt("point_shadow_map", 11);
+                        glActiveTexture(GL_TEXTURE11);
+                        glBindTexture(GL_TEXTURE_CUBE_MAP, context.point_shadow_map);
+
+                        current_shader->SetInt("irradiance_map", 12);
+                        glActiveTexture(GL_TEXTURE12);
+                        glBindTexture(GL_TEXTURE_CUBE_MAP, context.irradiance_map);
+
+                        current_shader->SetInt("prefilter_map", 13);
+                        glActiveTexture(GL_TEXTURE13);
+                        glBindTexture(GL_TEXTURE_CUBE_MAP, context.prefilter_map);
+
+                        current_shader->SetInt("brdf_map", 14);
+                        glActiveTexture(GL_TEXTURE14);
+                        glBindTexture(GL_TEXTURE_2D, context.brdf_map);
+
+
                     }
-                    iter->material->Render(current_shader);
-
-                    current_shader->SetInt("irradiance_map", 10);
-                    glActiveTexture(GL_TEXTURE10);
-                    glBindTexture(GL_TEXTURE_CUBE_MAP, irradiance_map_handle_);
-
-                    current_shader->SetInt("prefilter_map", 11);
-                    glActiveTexture(GL_TEXTURE11);
-                    glBindTexture(GL_TEXTURE_CUBE_MAP, prefilter_map_handle_);
-
-                    current_shader->SetInt("brdf_map", 12);
-                    glActiveTexture(GL_TEXTURE12);
-                    glBindTexture(GL_TEXTURE_2D, brdf_map_handle_);
 
                     glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));
                 }

@@ -4,6 +4,7 @@
 #include <memory>
 
 #include "runtime/core/math/math_header.h"
+#include "render_context.h"
 #include "aabb.h"
 
 namespace kpengine{
@@ -11,7 +12,8 @@ namespace kpengine{
     //render entity
     class PrimitiveSceneProxy{
     public:
-        virtual void Draw(std::shared_ptr<RenderShader> shader) = 0;
+        virtual void Draw(const RenderContext& context) = 0;
+        virtual void DrawGeometryPass(const RenderContext& context) = 0;
         void UpdateTransform(const Transform3f& new_transform);
         void UpdateViewPosition(float* view_pos);
         void UpdateLightSpace(float* light_space);
@@ -25,9 +27,7 @@ namespace kpengine{
         float* view_pos_;
         float* light_space_;
     public:
-        unsigned int irradiance_map_handle_ = 0;
-        unsigned int prefilter_map_handle_ = 0;
-        unsigned int brdf_map_handle_ = 0;
+        int id_ = -1;
         bool visible_this_frame = false;
     };
 }

@@ -47,6 +47,7 @@ namespace kpengine
 
         scene_->Initialize();
         scene_->AddColorAttachment("default", GL_RGB, GL_RGB, GL_UNSIGNED_INT);
+        scene_->Finalize();
         
         //environment map
         environment_map_wrapper = std::make_shared<EnvironmentMapWrapper>("texture/hdr/venice_sunset_1k.hdr");
@@ -59,6 +60,7 @@ namespace kpengine
 
         g_buffer_ = std::make_shared<FrameBuffer>(1280, 720);
         g_buffer_->Initialize();
+        g_buffer_->AddColorAttachment("position", GL_RGB16F, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("normal", GL_RGB16F, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("object_id", GL_R32I, GL_RED_INTEGER, GL_INT);
         g_buffer_->Finalize();
@@ -113,14 +115,14 @@ namespace kpengine
         std::shared_ptr<RenderShader> depth_shader = directional_shadow_maker_->GetShader();
         depth_shader->UseProgram();
         depth_shader->SetMat("light_space_matrix", light_space_matrix[0]);
-
+        RenderContext depth_shader_context = {.shader = depth_shader};
         for(auto& proxy: scene_proxies)
         {
             if(!proxy->visible_this_frame)
             {
                 continue;
             }
-            proxy->Draw(depth_shader);
+            proxy->Draw(depth_shader_context);
         }
 
         directional_shadow_maker_->UnBindFrameBuffer();
@@ -138,33 +140,28 @@ namespace kpengine
         }
         point_depth_shader->SetVec3("light_position", light_.point_light.position.Data());
         point_depth_shader->SetFloat("far_plane", 25.f);
-
+        RenderContext point_shader_context{.shader = point_depth_shader};
         for(auto& proxy: scene_proxies)
         {
             if(!proxy->visible_this_frame)
             {
                 continue;
             }
-            Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(proxy->GetTransform());
-            point_depth_shader->SetMat("model", transform_mat.Transpose()[0]);
-
-            proxy->Draw(point_depth_shader);
+            proxy->Draw(point_shader_context);
         }
         point_shadow_maker_->UnBindFrameBuffer();
-
+        //GBuffer update
+        RenderContext geo_pass_context{.shader = geometry_shader_};
         g_buffer_->BindFrameBuffer();
-        for(size_t i = 0;i<scene_proxies.size();i++)
+        for(auto& proxy: scene_proxies)
         {
-            if(!scene_proxies[i]->visible_this_frame)
+            if(!proxy->visible_this_frame)
             {
                 continue;
             }
-            geometry_shader_->UseProgram();
-            Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(scene_proxies[i]->GetTransform());
-            geometry_shader_->SetMat("model", transform_mat.Transpose()[0]);
-            geometry_shader_->SetInt("object_id", i);
-            scene_proxies[i]->Draw(geometry_shader_);
+            proxy->DrawGeometryPass(geo_pass_context);
         }
+
         g_buffer_->UnBindFrameBuffer();
 
         // render a normal scene
@@ -186,11 +183,14 @@ namespace kpengine
             //render skybox
             skybox->Render();
 
-            glActiveTexture(GL_TEXTURE15);
-            glBindTexture(GL_TEXTURE_2D, directional_shadow_maker_->GetShadowMap());
-            glActiveTexture(GL_TEXTURE14);
-            glBindTexture(GL_TEXTURE_CUBE_MAP, point_shadow_maker_->GetShadowMap());
-
+            RenderContext lighting_pass_context = {
+                .shader = current_shader,
+                .directional_shadow_map = directional_shadow_maker_->GetShadowMap(),
+                .point_shadow_map = point_shadow_maker_->GetShadowMap(),
+                .irradiance_map = environment_map_wrapper->GetIrradianceMap()->GetTexture(),
+                .prefilter_map = environment_map_wrapper->GetPrefilterMap()->GetTexture(),
+                .brdf_map = environment_map_wrapper->GetBRDFMap()->GetTexture()
+            };
             for(auto& proxy: scene_proxies)
             {
                 if(!proxy->visible_this_frame)
@@ -200,10 +200,7 @@ namespace kpengine
                 Vector3f cam_pos = render_camera_->GetPosition();
                 proxy->UpdateViewPosition(cam_pos.Data());
                 proxy->UpdateLightSpace(light_space_matrix[0]);
-                proxy->irradiance_map_handle_ = environment_map_wrapper->GetIrradianceMap()->GetTexture();
-                proxy->prefilter_map_handle_ = environment_map_wrapper->GetPrefilterMap()->GetTexture();
-                proxy->brdf_map_handle_ = environment_map_wrapper->GetBRDFMap()->GetTexture();
-                proxy->Draw(current_shader);
+                proxy->Draw(lighting_pass_context);
             }
 
             if(axis_)
@@ -247,6 +244,7 @@ namespace kpengine
             {
                 ++current_generation;
                 scene_proxies.push_back(scene_proxy);
+                scene_proxy->id_;
                 return handle;
             }
             else

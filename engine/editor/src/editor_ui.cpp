@@ -123,7 +123,7 @@ namespace kpengine
             }
         ImGui::BeginChild("G-Buffer Viewer");
 
-        GLuint texID = editor::global_editor_context.render_system_->GetRenderScene()->g_buffer_->GetTexture(0);
+        GLuint texID = editor::global_editor_context.render_system_->GetRenderScene()->g_buffer_->GetTexture("position");
         ImVec2 size = ImVec2(360, 256); // size of the preview
 
         ImGui::Text("Normal Buffer");

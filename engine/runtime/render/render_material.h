@@ -55,7 +55,11 @@ namespace kpengine{
         static std::shared_ptr<RenderMaterial> CreateMaterial(const std::string& shader_name);
         
         void Initialize(const std::shared_ptr<RenderShader>& shader);
-        void Render(const std::shared_ptr<RenderShader>& shader) ;
+        /*
+        *  texture_start_index: GL_TEXTURE index start
+        *  return: the number of texture slots that has been used
+        */
+        int Render(const std::shared_ptr<RenderShader>& shader, size_t texture_start_index) ;
         void AddTexture(const MaterialMapInfo& map_info);
 
         std::shared_ptr<RenderTexture> GetTexture(const std::string key);
