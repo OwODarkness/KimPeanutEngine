@@ -9,11 +9,18 @@ namespace kpengine
     struct RenderContext
     {
         std::shared_ptr<RenderShader> shader;
+        float far_plane;
+        float* view_position;
         unsigned int directional_shadow_map;
         unsigned int point_shadow_map;
         unsigned int irradiance_map;
         unsigned int prefilter_map;
         unsigned int brdf_map;
+        unsigned int g_position;
+        unsigned int g_normal;
+        unsigned int g_albedo;
+        unsigned int g_material;
+        unsigned int g_object_id;
     };
 }
 

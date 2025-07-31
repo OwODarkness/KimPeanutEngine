@@ -31,7 +31,7 @@ namespace kpengine
         outlining_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_OUTLINING);
     }
 
-    void MeshSceneProxy::Draw(const RenderContext& context)
+    void MeshSceneProxy::Draw(const RenderContext &context)
     {
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_);
         glStencilMask(0x00);
@@ -62,7 +62,7 @@ namespace kpengine
         }
     }
 
-    void MeshSceneProxy::DrawGeometryPass(const RenderContext& context)
+    void MeshSceneProxy::DrawGeometryPass(const RenderContext &context)
     {
         if (!context.shader)
         {
@@ -86,7 +86,7 @@ namespace kpengine
         DrawRenderable({.shader = outlining_shader_}, transform_mat);
     }
 
-    void MeshSceneProxy::DrawRenderable(const RenderContext& context, const Matrix4f &transform_mat)
+    void MeshSceneProxy::DrawRenderable(const RenderContext &context, const Matrix4f &transform_mat)
     {
         {
             GlVertexArrayGuard vao_guard(geometry_buffer_->vao);
@@ -113,9 +113,9 @@ namespace kpengine
                     if (new_shader_id != current_shader_id_)
                     {
                         current_shader_id_ = new_shader_id;
-                        current_shader->SetVec3("view_position", view_pos_);
+                        current_shader->SetVec3("view_position", context.view_position);
                         current_shader->SetMat("light_space_matrix", light_space_);
-                        current_shader->SetFloat("far_plane", 25.f);
+                        current_shader->SetFloat("far_plane", context.far_plane);
                         current_shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
 
                         int used_count = iter->material->Render(current_shader, 0);
@@ -140,7 +140,21 @@ namespace kpengine
                         glActiveTexture(GL_TEXTURE14);
                         glBindTexture(GL_TEXTURE_2D, context.brdf_map);
 
+                        current_shader->SetInt("g_position", 15);
+                        glActiveTexture(GL_TEXTURE15);
+                        glBindTexture(GL_TEXTURE_2D, context.g_position);
 
+                        current_shader->SetInt("g_normal", 16);
+                        glActiveTexture(GL_TEXTURE16);
+                        glBindTexture(GL_TEXTURE_2D, context.g_normal);
+
+                        current_shader->SetInt("g_albedo", 17);
+                        glActiveTexture(GL_TEXTURE17);
+                        glBindTexture(GL_TEXTURE_2D, context.g_albedo);
+
+                        current_shader->SetInt("g_material", 18);
+                        glActiveTexture(GL_TEXTURE18);
+                        glBindTexture(GL_TEXTURE_2D, context.g_material);
                     }
 
                     glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));

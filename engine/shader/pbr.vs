@@ -11,7 +11,7 @@ layout(std140, binding = 0) uniform CameraMatrices{
 };
 
 uniform mat4 model;
-uniform mat4 light_space_matrix;
+//uniform mat4 light_space_matrix;
 
 out vec2 texcoord;
 out vec3 frag_position;

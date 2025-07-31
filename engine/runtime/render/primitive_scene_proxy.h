@@ -15,7 +15,6 @@ namespace kpengine{
         virtual void Draw(const RenderContext& context) = 0;
         virtual void DrawGeometryPass(const RenderContext& context) = 0;
         void UpdateTransform(const Transform3f& new_transform);
-        void UpdateViewPosition(float* view_pos);
         void UpdateLightSpace(float* light_space);
         virtual void Initialize();
         Transform3f GetTransform() const{return transfrom_;}
@@ -24,7 +23,6 @@ namespace kpengine{
         PrimitiveSceneProxy(Transform3f transform = Transform3f());
     protected:
         Transform3f transfrom_;
-        float* view_pos_;
         float* light_space_;
     public:
         int id_ = -1;

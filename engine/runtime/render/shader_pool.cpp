@@ -67,6 +67,11 @@ namespace kpengine{
             SHADER_CATEGORY_OUTLINING,
             std::make_shared<RenderShader>("single_color.vs", "single_color.fs")
         });
+        
+        shader_cache.insert({
+            SHADER_CATEGORY_DEFER_PBR,
+            std::make_shared<RenderShader>("defer_pbr.vs", "defer_pbr.fs")
+        });
     }
 
     void ShaderPool::Initialize()

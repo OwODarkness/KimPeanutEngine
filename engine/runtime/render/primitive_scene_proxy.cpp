@@ -10,10 +10,7 @@ namespace kpengine
     {
     }
 
-    void PrimitiveSceneProxy::UpdateViewPosition(float *view_pos)
-    {
-        view_pos_ = view_pos;
-    }
+ 
     void PrimitiveSceneProxy::UpdateLightSpace(float *light_space)
     {
         light_space_ = light_space;

@@ -95,7 +95,7 @@ namespace kpengine
 
     void WindowSystem::OnFrameBufferSizeCallback(GLFWwindow*window, int width, int height)
     {
-        runtime::global_runtime_context.render_system_->GetRenderScene()->scene_->ReSizeFrameBuffer(width, height);
+        //runtime::global_runtime_context.render_system_->GetRenderScene()->scene_fb_->ReSizeFrameBuffer(width, height);
         glViewport(0, 0, width, height);
         WindowSystem* widnow_system = static_cast<WindowSystem*>(glfwGetWindowUserPointer(window));
         widnow_system->width_ = width;

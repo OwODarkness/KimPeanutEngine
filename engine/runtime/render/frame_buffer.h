@@ -23,6 +23,7 @@ namespace kpengine
                                 unsigned int type);
         unsigned int GetTexture(size_t index) const;
         unsigned int GetTexture(const std::string& name) const;
+        unsigned int GetFBO() const{return fbo_;}
     private:
         unsigned int fbo_; // frame buffer object
         unsigned int rbo_;

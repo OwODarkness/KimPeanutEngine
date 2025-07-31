@@ -25,16 +25,21 @@ namespace kpengine{
 
     void Skybox::Render()
     {
-        glDepthFunc(GL_LEQUAL);
-        glBindVertexArray(vao_);
-        shader_->UseProgram();
-        glActiveTexture(GL_TEXTURE0 );
-         glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap_->GetTexture());
+glDepthFunc(GL_LEQUAL);   // Let it pass where depth == 1.0
+    glDepthMask(GL_FALSE);    // Don’t write to depth
 
-        glDrawArrays(GL_TRIANGLES, 0, 36);
-        glBindVertexArray(0);
-        glDepthFunc(GL_LESS);
-        glActiveTexture(GL_TEXTURE0);
+    shader_->UseProgram();
+
+    glBindVertexArray(vao_);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap_->GetTexture());
+
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+
+    glBindVertexArray(0);
+
+    glDepthFunc(GL_LESS);     // Reset
+    glDepthMask(GL_TRUE);
     }
 
     const float Skybox::skybox_vertices[108] = {

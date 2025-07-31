@@ -5,8 +5,10 @@
 #include <vector>
 
 #include "render_light.h"
+#include "render_context.h"
 #include "scene_proxy_handle.h"
-namespace kpengine{
+namespace kpengine
+{
 
     class FrameBuffer;
     class RenderCamera;
@@ -18,17 +20,23 @@ namespace kpengine{
     class EnvironmentMapWrapper;
     class RenderAxis;
 
-    class RenderScene{
+    class RenderScene
+    {
     public:
         RenderScene();
         void Initialize(std::shared_ptr<RenderCamera> camera);
         void Render(float delta_time);
         SceneProxyHandle AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy);
         void RemoveProxy(SceneProxyHandle handle);
-        void SetCurrentShader(const std::shared_ptr<RenderShader>& shader);
+        void SetCurrentShader(const std::shared_ptr<RenderShader> &shader);
         void SetRenderAxis(std::shared_ptr<RenderAxis> axis);
+
+    private:
+        void InitFullScreenTriangle();
+        void ExecLightingRenderPass(const RenderContext &context);
+
     public:
-        std::shared_ptr<FrameBuffer> scene_;//frame buffer
+        std::shared_ptr<FrameBuffer> scene_fb_; // frame buffer
         std::shared_ptr<FrameBuffer> g_buffer_;
 
         std::shared_ptr<RenderCamera> render_camera_;
@@ -38,24 +46,28 @@ namespace kpengine{
         std::shared_ptr<ShadowMaker> directional_shadow_maker_;
         std::shared_ptr<ShadowMaker> point_shadow_maker_;
 
-        float angle = 0.f;
         std::shared_ptr<Skybox> skybox;
         std::shared_ptr<EnvironmentMapWrapper> environment_map_wrapper;
+
     private:
-        //scene proxy 
-        std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies;//renderable
+        // scene proxy
+        std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies; // renderable
         std::shared_ptr<RenderAxis> axis_;
         std::vector<unsigned int> free_slots;
         unsigned int current_generation = 0;
 
-        unsigned int ubo_camera_matrices_;//unifrom buffer object
-        unsigned int ubo_light_;//unifrom buffer object
+        unsigned int ubo_camera_matrices_; // unifrom buffer object
+        unsigned int ubo_light_;           // unifrom buffer object
 
         bool isskydraw = false;
         bool is_light_dirty = true;
         std::shared_ptr<RenderShader> current_shader;
 
         std::shared_ptr<RenderShader> geometry_shader_;
+
+        unsigned int fullscreen_vao{};
+        unsigned int fullscreen_vbo{};
+        std::shared_ptr<RenderShader> light_pass_shader_{};
     };
 }
 
