@@ -1,8 +1,9 @@
 #ifndef KPENGINE_EDITOR_DRAG_COMPONENT_H
 #define KPENGINE_EDITOR_DRAG_COMPONENT_H
 
-#include "editor/include/editor_ui_component.h"
 #include <string>
+#include "editor/include/editor_ui_component.h"
+#include "runtime/core/math/math_header.h"
 
 namespace kpengine {
 namespace ui {
@@ -16,7 +17,11 @@ namespace ui {
         {}
 
         void Render() override {
-            // No-op: only specializations are used
+        }
+
+        void BindData(T* data)
+        {
+            data_ = data;
         }
 
     protected:
@@ -70,6 +75,9 @@ namespace ui {
         int min_value_;
         int max_value_;
     };
+
+
+
 
 } // namespace ui
 } // namespace kpengine

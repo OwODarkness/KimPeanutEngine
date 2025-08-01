@@ -1,7 +1,7 @@
 #include "render_shader.h"
 
 #include <fstream>
-#include<iostream>
+#include <iostream>
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -10,10 +10,9 @@
 namespace kpengine
 {
 
-    RenderShader::RenderShader(std::string vertex_shader_path,std::string fragment_shader_path, std::string geometry_shader_path) : 
-    vertex_shader_path_(std::move(vertex_shader_path)),
-    fragment_shader_path_(std::move(fragment_shader_path)),
-    geometry_shader_path_(std::move(geometry_shader_path))
+    RenderShader::RenderShader(std::string vertex_shader_path, std::string fragment_shader_path, std::string geometry_shader_path) : vertex_shader_path_(std::move(vertex_shader_path)),
+                                                                                                                                     fragment_shader_path_(std::move(fragment_shader_path)),
+                                                                                                                                     geometry_shader_path_(std::move(geometry_shader_path))
     {
     }
 
@@ -56,20 +55,20 @@ namespace kpengine
             KP_LOG("FragmentShaderLog", LOG_LEVEL_ERROR, info_log);
         }
 
-        //compile geometry shader code
+        // compile geometry shader code
         unsigned int geomery_shader;
-        if(geometry_shader_path_.size() != 0)
+        if (geometry_shader_path_.size() != 0)
         {
             std::string geometry_shader_code = "";
-            if(!ExtractShaderCodeFromFile(geometry_shader_path_, geometry_shader_code))
+            if (!ExtractShaderCodeFromFile(geometry_shader_path_, geometry_shader_code))
             {
-                return ;
+                return;
             }
-            const char* geometry_shader_code_c = geometry_shader_code.c_str();
+            const char *geometry_shader_code_c = geometry_shader_code.c_str();
             geomery_shader = glCreateShader(GL_GEOMETRY_SHADER);
             glShaderSource(geomery_shader, 1, &geometry_shader_code_c, nullptr);
             glCompileShader(geomery_shader);
-            if(!bsucceed)
+            if (!bsucceed)
             {
                 glGetShaderInfoLog(geomery_shader, 512, nullptr, info_log);
                 KP_LOG("GeometryShaderLog", LOG_LEVEL_ERROR, info_log);
@@ -80,7 +79,7 @@ namespace kpengine
         glAttachShader(shader_program_handle_, vertex_shader);
         glAttachShader(shader_program_handle_, fragment_shader);
 
-        if(geometry_shader_path_.size()!= 0)
+        if (geometry_shader_path_.size() != 0)
         {
             glAttachShader(shader_program_handle_, geomery_shader);
         }
@@ -96,14 +95,14 @@ namespace kpengine
         {
             std::string shader_name = vertex_shader_path_;
             int index = shader_name.find_last_of('/');
-            KP_LOG("ShaderLinkLog", LOG_LEVEL_DISPLAY, shader_name.substr(index+1, shader_name.size() - index - 4)+ " shader link successfully");
+            KP_LOG("ShaderLinkLog", LOG_LEVEL_DISPLAY, shader_name.substr(index + 1, shader_name.size() - index - 4) + " shader link successfully");
         }
 
         glDeleteShader(vertex_shader);
         glDeleteShader(fragment_shader);
     }
 
-    bool RenderShader::ExtractShaderCodeFromFile(const std::string& file_path, std::string &out_code)
+    bool RenderShader::ExtractShaderCodeFromFile(const std::string &file_path, std::string &out_code)
     {
         std::ifstream ifs;
         std::string abs_path = GetShaderDirectory() + file_path;
@@ -157,6 +156,15 @@ namespace kpengine
     void RenderShader::SetVec3(const std::string &name, float r, float g, float b) const
     {
         glUniform3f(glGetUniformLocation(shader_program_handle_, name.c_str()), r, g, b);
+    }
+
+    void RenderShader::SetVec2(const std::string &name, float a, float b) const
+    {
+        glUniform2f(glGetUniformLocation(shader_program_handle_, name.c_str()), a, b);
+    }
+    void RenderShader::SetVec2(const std::string &name, const float *value) const
+    {
+        glUniform2f(glGetUniformLocation(shader_program_handle_, name.c_str()), value[0], value[1]);
     }
 
 }

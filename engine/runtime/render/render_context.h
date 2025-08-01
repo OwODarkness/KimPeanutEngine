@@ -20,7 +20,6 @@ namespace kpengine
         unsigned int g_normal;
         unsigned int g_albedo;
         unsigned int g_material;
-        unsigned int g_object_id;
     };
 }
 

@@ -19,6 +19,7 @@
 #define SHADER_CATEGORY_DEBUGCUBIC "debug_cubic"
 #define SHADER_CATEGORY_OUTLINING "outlining"
 #define SHADER_CATEGORY_DEFER_PBR "defer_pbr_shader"
+#define SHADER_CATEGORY_
 
 namespace kpengine{
     class RenderShader;

@@ -24,7 +24,6 @@ namespace kpengine{
         AABB GetAABB() override;
         ~MeshSceneProxy();
     private:
-        void DrawOutline(const Matrix4f& transform_mat);
         void DrawRenderable(const RenderContext& context, const Matrix4f& transform_mat);
     public:
         struct GeometryBuffer* geometry_buffer_;
@@ -34,7 +33,6 @@ namespace kpengine{
         bool do_once = true;
         //aabb debug usage
         std::unique_ptr<AABBDebugger> aabb_debugger_;
-        std::shared_ptr<RenderShader> outlining_shader_;
 
         bool is_outline_visible = false;
     };

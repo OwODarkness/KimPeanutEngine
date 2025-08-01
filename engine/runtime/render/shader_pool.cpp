@@ -65,7 +65,7 @@ namespace kpengine{
 
         shader_cache.insert({
             SHADER_CATEGORY_OUTLINING,
-            std::make_shared<RenderShader>("single_color.vs", "single_color.fs")
+            std::make_shared<RenderShader>("screen_quad.vs", "outline.fs")
         });
         
         shader_cache.insert({

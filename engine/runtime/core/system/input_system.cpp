@@ -1,8 +1,9 @@
 #include "input_system.h"
 
-#include "runtime/input/input_context.h"
+#include <iostream>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+#include "runtime/input/input_context.h"
 
 namespace kpengine::input
 {
@@ -13,6 +14,7 @@ namespace kpengine::input
         glfwSetMouseButtonCallback(window, InputSystem::OnMouseButtonCallback);
         glfwSetKeyCallback(window, InputSystem::OnKeyCallback);
         glfwSetCursorPosCallback(window, InputSystem::OnCursorPosCallback);
+        glfwSetScrollCallback(window, InputSystem::OnScrollCallback);
     }
 
     void InputSystem::AddContext(const std::string &name, std::shared_ptr<InputContext> context)
@@ -107,6 +109,16 @@ namespace kpengine::input
         it->second->ProcessAxis2DInput({InputDevice::Mouse, KPENGINE_MOUSE_CURSOR}, delta_x, delta_y);
     }
 
+    void InputSystem::ScrollExec(double xoffset, double yoffset)
+    {
+                auto it = contexts_.find(active_context_);
+        if (it == contexts_.end())
+        {
+            return;
+        }
+        it->second->ProcessAxis1DInput({InputDevice::Mouse, KPENGINE_MOUSE_SCROLL}, yoffset);
+    }
+
     void InputSystem::OnMouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
     {
         InputSystem *input_system = static_cast<InputSystem *>(glfwGetWindowUserPointer(window));
@@ -123,6 +135,12 @@ namespace kpengine::input
     {
         InputSystem *input_system = static_cast<InputSystem *>(glfwGetWindowUserPointer(window));
         input_system->CursorPosExec(xpos, ypos);
+    }
+
+    void InputSystem::OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+    {
+        InputSystem *input_system = static_cast<InputSystem *>(glfwGetWindowUserPointer(window));
+        input_system->ScrollExec(xoffset, yoffset);
     }
 
 }

@@ -28,6 +28,8 @@ namespace kpengine
         void SetMat(const std::string &name, const float *value) const;
         void SetVec3(const std::string &name, const float *value) const;
         void SetVec3(const std::string &name, float r, float g, float b) const;
+        void SetVec2(const std::string &name, float a, float b) const;
+        void SetVec2(const std::string &name, const float* value) const;
 
     private:
         std::string vertex_shader_path_;

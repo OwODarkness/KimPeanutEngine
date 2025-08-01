@@ -20,6 +20,7 @@ struct Material{
 };
 
 uniform Material material;
+uniform bool is_outline_visible;
 uniform int object_id;
 
 in vec3 frag_pos;
@@ -33,6 +34,23 @@ layout (location = 1) out vec3 gNormal;
 layout (location = 2) out vec3 gAlbedo;
 layout (location = 3) out vec3 gMaterial; 
 layout (location = 4) out int gObjectID;
+layout (location = 5) out vec3 gObjectVisual;
+
+vec3 IDToColor(int id) {
+    // Use a pseudo-random hash based on the ID
+    uint uid = uint(id);
+    uid = (uid ^ 61u) ^ (uid >> 16);
+    uid *= 9u;
+    uid = uid ^ (uid >> 4);
+    uid *= 0x27d4eb2du;
+    uid = uid ^ (uid >> 15);
+
+    float r = float((uid & 0xFFu)) / 255.0;
+    float g = float((uid >> 8) & 0xFFu) / 255.0;
+    float b = float((uid >> 16) & 0xFFu) / 255.0;
+
+    return vec3(r, g, b);
+}
 
 void main()
 {
@@ -52,7 +70,11 @@ void main()
     gNormal = normal_vec;
     gAlbedo = albedo_vec;
     gMaterial = vec3(roughness, metallic, ao);
+    if(is_outline_visible)
+    {
     gObjectID = object_id;
 
+    gObjectVisual = IDToColor(object_id);
+    }
 
 }

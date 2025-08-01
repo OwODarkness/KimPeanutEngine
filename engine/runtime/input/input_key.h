@@ -4,7 +4,7 @@
 #include <string>
 
 #define KPENGINE_MOUSE_CURSOR 100
-
+#define KPENGINE_MOUSE_SCROLL 101
 namespace kpengine::input
 {
     enum class InputDevice{

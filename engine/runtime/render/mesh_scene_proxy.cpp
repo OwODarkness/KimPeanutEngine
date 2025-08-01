@@ -27,8 +27,6 @@ namespace kpengine
         aabb_debugger_ = std::make_unique<AABBDebugger>();
         aabb_debugger_->Initialize(mesh_resourece_ref_->aabb_);
         aabb_debugger_->is_visiable_ = false;
-
-        outlining_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_OUTLINING);
     }
 
     void MeshSceneProxy::Draw(const RenderContext &context)
@@ -36,30 +34,7 @@ namespace kpengine
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_);
         glStencilMask(0x00);
         aabb_debugger_->Debug(transform_mat.Transpose());
-
-        if (is_outline_visible)
-        {
-            glStencilMask(0xFF);
-            glStencilFunc(GL_ALWAYS, 1, 0xFF);
-            DrawRenderable(context, transform_mat.Transpose());
-
-            glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
-            glStencilMask(0x00);
-            glDisable(GL_DEPTH_TEST);
-            Transform3f scaled_transform = transfrom_;
-            scaled_transform.scale_ *= 1.05f;
-            Matrix4f transform_scaled_mat = Matrix4f::MakeTransformMatrix(scaled_transform);
-
-            DrawRenderable({.shader = outlining_shader_}, transform_scaled_mat.Transpose());
-            glStencilMask(0xFF);
-            glStencilFunc(GL_ALWAYS, 0, 0xFF);
-            glEnable(GL_DEPTH_TEST);
-        }
-        else
-        {
-            glStencilMask(0x00);
-            DrawRenderable(context, transform_mat.Transpose());
-        }
+        DrawRenderable(context, transform_mat.Transpose());
     }
 
     void MeshSceneProxy::DrawGeometryPass(const RenderContext &context)
@@ -75,15 +50,11 @@ namespace kpengine
         for (std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
         {
             context.shader->SetMat("model", transform_mat.Transpose()[0]);
+            context.shader->SetBool("is_outline_visible", is_outline_visible);
             context.shader->SetInt("object_id", id_);
             iter->material->Render(context.shader, 0);
             glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));
         }
-    }
-
-    void MeshSceneProxy::DrawOutline(const Matrix4f &transform_mat)
-    {
-        DrawRenderable({.shader = outlining_shader_}, transform_mat);
     }
 
     void MeshSceneProxy::DrawRenderable(const RenderContext &context, const Matrix4f &transform_mat)

@@ -51,6 +51,8 @@ public:
 
     void OnCameraRotateCallback(const input::InputState& state);
     void OnCameraMoveCallback(const input::InputState& state);
+    void OnCameraScrollCallback(const input::InputState& state);
+
 
 private:
     Vector3f position_;
@@ -72,6 +74,7 @@ private:
     std::shared_ptr<input::InputAction> left_action;
     std::shared_ptr<input::InputAction> up_action;
     std::shared_ptr<input::InputAction> down_action;
+    std::shared_ptr<input::InputAction> scroll_action;
 public:
     float fov_{45.f};
     float move_speed_ = 1.f;

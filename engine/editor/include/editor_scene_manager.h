@@ -7,9 +7,11 @@
 
 namespace kpengine{
     class RenderSystem;
+    class RenderCamera;
     class Actor;
 namespace ui{
     class EditorSceneComponent;
+    class EditorActorControlPanel;
     }
 namespace input{
     class InputContext;
@@ -17,6 +19,7 @@ namespace input{
 namespace editor{
 
     class EditorSceneManager{
+    private:
     public:
         EditorSceneManager();
         ~EditorSceneManager();
@@ -25,14 +28,17 @@ namespace editor{
         void Close();
         bool IsCursorInScene(float cursor_x, float cursor_y);
         bool IsSceneFocus() const;
-        bool IntersectRayAABB(const Vector3f& origin, const Vector3f& ray_dir, const AABB& aabb, float& out_dist);
         
         std::shared_ptr<input::InputContext> GetInputContext() const{return input_context_;}
     private:
         void OnClickMouseCallback(float mouse_pos_x, float mouse_pos_y);
-
+        Vector3f ComputeWorldRayFromScreen(RenderCamera* camera, float mouse_pos_x, float mouse_pos_y) const;
+        bool IntersectRayAABB(const Vector3f& origin, const Vector3f& ray_dir, const AABB& aabb, float& out_dist);
+        void ClearLastSelection();
     private:
         std::unique_ptr<ui::EditorSceneComponent> scene_ui_;
+        std::unique_ptr<ui::EditorActorControlPanel> actor_panel_;
+
         std::shared_ptr<input::InputContext> input_context_;
         int object_selected_index;
         std::shared_ptr<Actor> last_select_actor_{};

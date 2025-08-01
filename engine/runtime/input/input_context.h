@@ -42,6 +42,7 @@ public:
     std::shared_ptr<InputAction> GetInputActionByInputKey(InputKey key) const;
 public:
     void ProcessKeyInput(InputKey key, InputTriggleType triggle_type, int mods);
+    void ProcessAxis1DInput(InputKey key, float delta);
     void ProcessAxis2DInput(InputKey key, float deltax, float deltay);
 private:
     std::unordered_map<InputHandle, std::shared_ptr<InputAction>, InputHandleHash> input_actions;

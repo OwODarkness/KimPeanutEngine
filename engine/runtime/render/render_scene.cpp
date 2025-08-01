@@ -21,6 +21,9 @@
 #include "runtime/render/aabb.h"
 #include "runtime/render/frustum.h"
 #include "runtime/render/render_axis.h"
+#include "runtime/render/postprocess_pipeline.h"
+#include "runtime/render/outline_effect.h"
+
 namespace kpengine
 {
 
@@ -63,12 +66,17 @@ namespace kpengine
         g_buffer_->AddColorAttachment("g_albedo", GL_RGB8, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_material", GL_RGB8, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_object_id", GL_R32I, GL_RED_INTEGER, GL_INT);
+        g_buffer_->AddColorAttachment("g_object_visual", GL_RGB16F, GL_RGB, GL_FLOAT);
         g_buffer_->Finalize();
 
         geometry_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_NORMAL);
 
         InitFullScreenTriangle();
         light_pass_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_DEFER_PBR);
+
+        postprocess_pipeline_ = std::make_shared<PostProcessPipeline>();
+        postprocess_pipeline_->AddEffect(std::make_shared<OutlineEffect>());
+        postprocess_pipeline_->Initialize();
 
         glGenBuffers(1, &ubo_camera_matrices_);
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
@@ -196,8 +204,7 @@ namespace kpengine
             .g_position = g_buffer_->GetTexture("g_position"),
             .g_normal = g_buffer_->GetTexture("g_normal"),
             .g_albedo = g_buffer_->GetTexture("g_albedo"),
-            .g_material = g_buffer_->GetTexture("g_material"),
-            .g_object_id = g_buffer_->GetTexture("g_object_id")};
+            .g_material = g_buffer_->GetTexture("g_material")};
 
         ExecLightingRenderPass(lighting_pass_context);
 
@@ -211,6 +218,12 @@ namespace kpengine
             GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, scene_fb_->GetFBO());
         skybox->Render();
+
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        postprocess_pipeline_->Execute({.g_object_id = g_buffer_->GetTexture("g_object_visual"),
+                                        .texel_size = {1.f / 1280.f, 1.f / 720.f}});
+        glDisable(GL_BLEND);
 
         // forward render
         //  for (auto &proxy : scene_proxies)
@@ -258,12 +271,12 @@ namespace kpengine
         else
         {
             unsigned int id = current_generation;
-            SceneProxyHandle handle(id, id);
+            SceneProxyHandle handle(id, current_generation);
             if (handle.IsValid())
             {
                 ++current_generation;
                 scene_proxies.push_back(scene_proxy);
-                scene_proxy->id_;
+                scene_proxy->id_ = handle.id;
                 return handle;
             }
             else

@@ -71,8 +71,7 @@ namespace kpengine
 
             std::vector<const char*> items = {"custom", SHADER_CATEGORY_NORMAL};
 
-            std::shared_ptr<EditorUIComponent> listbox = std::make_shared<EditorListboxComponent>(items);
-            window_component_->AddComponent(listbox);
+
 
             components_.push_back(std::move(window_component_));
 
@@ -123,7 +122,7 @@ namespace kpengine
             }
         ImGui::BeginChild("G-Buffer Viewer");
 
-        GLuint texID = editor::global_editor_context.render_system_->GetRenderScene()->g_buffer_->GetTexture("g_material");
+        GLuint texID = editor::global_editor_context.render_system_->GetRenderScene()->g_buffer_->GetTexture("g_object_visual");
         ImVec2 size = ImVec2(360, 256); // size of the preview
 
         ImGui::Text("Normal Buffer");

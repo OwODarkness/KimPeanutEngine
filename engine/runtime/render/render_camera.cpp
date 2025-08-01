@@ -4,7 +4,6 @@
 #include <cmath>
 #include <algorithm>
 
-
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
 #include "editor/include/editor_global_context.h"
@@ -15,26 +14,24 @@ namespace kpengine
 {
 
     Vector3f RenderCamera::world_up{0.f, 1.f, 0.f};
-    
-    RenderCamera::RenderCamera():
-    position_({0.f, 0.8f, 2.f}),
-    direction_({0.f, 0.f, -1.f}),
-    up_({0.f, 1.f, 0.f})
+
+    RenderCamera::RenderCamera() : position_({0.f, 0.8f, 2.f}),
+                                   direction_({0.f, 0.f, -1.f}),
+                                   up_({0.f, 1.f, 0.f})
     {
         right_ = direction_.CrossProduct(up_);
     }
 
     void RenderCamera::Initialize()
     {
-        
     }
 
     void RenderCamera::PostInitialize()
     {
         std::shared_ptr<input::InputContext> input_context = runtime::global_runtime_context.input_system_->GetInputContext("SceneInputContext");
-        if(input_context)
+        if (input_context)
         {
-            //rotate
+            // rotate
             rotate_action = std::make_shared<input::InputAction>();
             rotate_action->callback_ = std::bind(&RenderCamera::OnCameraRotateCallback, this, std::placeholders::_1);
             rotate_action->name_ = "CameraRotate";
@@ -82,9 +79,14 @@ namespace kpengine
             down_action->value_type_ = input::InputValueType::Axis2D;
             down_action->default_value = Vector3f{0.f, 0.f, -1.f};
             input_context->Bind(down_action, {input::InputDevice::Keyboard, GLFW_KEY_Q});
+
+            scroll_action = std::make_shared<input::InputAction>();
+            scroll_action->callback_ = std::bind(&RenderCamera::OnCameraScrollCallback, this, std::placeholders::_1);
+            scroll_action->name_ = "CameraScroll";
+            scroll_action->value_type_ = input::InputValueType::Axis1D;
+            input_context->Bind(scroll_action, {input::InputDevice::Mouse, KPENGINE_MOUSE_SCROLL});
         }
     }
-
 
     void RenderCamera::MoveForward(float delta)
     {
@@ -105,29 +107,27 @@ namespace kpengine
     {
         float delta_pitch = delta_x * rotate_speed_ * rotate_coff_;
         float delta_yaw = delta_y * rotate_speed_ * rotate_coff_;
-    
-        yaw_ = (float)((int)(yaw_ +  delta_yaw) % 360);
+
+        yaw_ = (float)((int)(yaw_ + delta_yaw) % 360);
         pitch_ = std::clamp(delta_pitch + pitch_, pitch_min_, pitch_max_);
-    
+
         float radians_pitch = math::DegreeToRadian(pitch_);
         float radians_yaw = math::DegreeToRadian(yaw_);
-    
+
         Vector3f dir;
         dir.x_ = std::cos(radians_pitch) * std::cos(radians_yaw);
         dir.y_ = std::sin(radians_pitch);
         dir.z_ = std::cos(radians_pitch) * std::sin(radians_yaw);
-    
+
         direction_ = dir.GetSafetyNormalize();
 
         right_ = direction_.CrossProduct(world_up).GetSafetyNormalize();
         up_ = right_.CrossProduct(direction_).GetSafetyNormalize();
-
     }
-    
 
-   Matrix4f RenderCamera::GetViewMatrix() const
+    Matrix4f RenderCamera::GetViewMatrix() const
     {
-        return  Matrix4f::MakeCameraMatrix(position_, direction_, up_);
+        return Matrix4f::MakeCameraMatrix(position_, direction_, up_);
     }
 
     Matrix4f RenderCamera::GetProjectionMatrix() const
@@ -145,26 +145,36 @@ namespace kpengine
         }
     }
 
-    void RenderCamera::OnCameraRotateCallback(const input::InputState& state)
+    void RenderCamera::OnCameraRotateCallback(const input::InputState &state)
     {
-        if(is_lock_)
+        if (is_lock_)
         {
-            return ;
+            return;
         }
         Vector2f res = std::get<Vector2f>(state.value);
         Rotate(-res.y_, res.x_);
     }
 
-    void RenderCamera::OnCameraMoveCallback(const input::InputState& state)
+    void RenderCamera::OnCameraMoveCallback(const input::InputState &state)
     {
-        if(is_lock_)
+        if (is_lock_)
         {
-            return ;
+            return;
         }
         Vector3f res = std::get<Vector3f>(state.value);
         MoveForward(res.x_);
         MoveRight(res.y_);
         MoveUp(res.z_);
-
     }
+
+    void RenderCamera::OnCameraScrollCallback(const input::InputState &state)
+    {
+        if (is_lock_)
+        {
+            return;
+        }
+        float res = std::get<float>(state.value);
+        MoveForward(res);
+    }
+
 }

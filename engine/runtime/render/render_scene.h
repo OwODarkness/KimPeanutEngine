@@ -19,6 +19,7 @@ namespace kpengine
     class PrimitiveSceneProxy;
     class EnvironmentMapWrapper;
     class RenderAxis;
+    class PostProcessPipeline;
 
     class RenderScene
     {
@@ -68,6 +69,8 @@ namespace kpengine
         unsigned int fullscreen_vao{};
         unsigned int fullscreen_vbo{};
         std::shared_ptr<RenderShader> light_pass_shader_{};
+
+        std::shared_ptr<PostProcessPipeline> postprocess_pipeline_;
     };
 }
 
