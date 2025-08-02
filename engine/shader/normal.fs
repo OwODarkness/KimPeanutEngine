@@ -33,8 +33,7 @@ layout (location = 0) out vec3 gPosition;
 layout (location = 1) out vec3 gNormal;
 layout (location = 2) out vec3 gAlbedo;
 layout (location = 3) out vec3 gMaterial; 
-layout (location = 4) out int gObjectID;
-layout (location = 5) out vec3 gObjectVisual;
+layout (location = 4) out vec3 gObjectID;
 
 vec3 IDToColor(int id) {
     // Use a pseudo-random hash based on the ID
@@ -72,9 +71,7 @@ void main()
     gMaterial = vec3(roughness, metallic, ao);
     if(is_outline_visible)
     {
-    gObjectID = object_id;
-
-    gObjectVisual = IDToColor(object_id);
+        gObjectID = IDToColor(object_id);
     }
 
 }

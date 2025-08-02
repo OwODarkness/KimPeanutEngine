@@ -18,7 +18,7 @@ namespace kpengine
     class Skybox;
     class PrimitiveSceneProxy;
     class EnvironmentMapWrapper;
-    class RenderAxis;
+    class Gizmos;
     class PostProcessPipeline;
 
     class RenderScene
@@ -30,7 +30,7 @@ namespace kpengine
         SceneProxyHandle AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy);
         void RemoveProxy(SceneProxyHandle handle);
         void SetCurrentShader(const std::shared_ptr<RenderShader> &shader);
-        void SetRenderAxis(std::shared_ptr<RenderAxis> axis);
+        void SetRenderAxis(std::shared_ptr<Gizmos> gizmos);
 
     private:
         void InitFullScreenTriangle();
@@ -53,7 +53,7 @@ namespace kpengine
     private:
         // scene proxy
         std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies; // renderable
-        std::shared_ptr<RenderAxis> axis_;
+        std::shared_ptr<Gizmos> gizmos_;
         std::vector<unsigned int> free_slots;
         unsigned int current_generation = 0;
 

@@ -17,24 +17,7 @@ namespace kpengine
         EditorActorControlPanel::EditorActorControlPanel() : EditorWindowComponent("Actor Control Panel"),
                                                              actor_(nullptr), last_actor_(nullptr)
         {
-            // MeshComponent* meshcomp =  dynamic_cast<MeshComponent*>(actor_->GetRootComponent());
-            // std::shared_ptr<RenderMesh> mesh = meshcomp->GetMesh();
-            // std::shared_ptr<RenderMaterial> material = mesh->GetMaterial(0);
-            // if(material)
-            // {
-            //     AddComponent(std::make_shared<EditorTextComponent>(actor_->GetName()));
-            //     float* roughness_ref = material->GetFloatParamRef(material_param_type::ROUGHNESS_PARAM);
-            //     float* metallic_ref = material->GetFloatParamRef(material_param_type::METALLIC_PARAM);
-            //     if(roughness_ref)
-            //     {
-            //         AddComponent(std::make_shared<EditorSliderComponent<float>>("roughness", roughness_ref, 0.05f, 1.f));
-            //     }
-            //     if(metallic_ref)
-            //     {
-            //         AddComponent(std::make_shared<EditorSliderComponent<float>>("metallic", metallic_ref, 0.f, 1.f));
-            //     }
 
-            // }
         }
 
         void EditorActorControlPanel::RenderContent()
@@ -43,25 +26,21 @@ namespace kpengine
             {
                 GLFWwindow *window = editor::global_editor_context.window_system_->GetOpenGLWndow();
 
-                if (actor_ != last_actor_)
-                {
-                    Vector3f new_location = actor_->GetActorLocation();
+                    const Vector3f& new_location = actor_->GetActorLocation();
                     location[0] = new_location[0];
                     location[1] = new_location[1];
                     location[2] = new_location[2];
 
-                    Rotatorf new_rotation = actor_->GetActorRotation();
+                    const Rotatorf& new_rotation = actor_->GetActorRotation();
                     rotation[0] = new_rotation.pitch_;
                     rotation[1] = new_rotation.yaw_;
                     rotation[2] = new_rotation.roll_;
 
-                    Vector3f new_scale = actor_->GetActorScale();
+                    const Vector3f& new_scale = actor_->GetActorScale();
                     scale[0] = new_scale[0];
                     scale[1] = new_scale[1];
                     scale[2] = new_scale[2];
 
-                    last_actor_ = actor_;
-                }
 
                 ImGui::Text("object name: ");
                 ImGui::SameLine();
@@ -95,20 +74,6 @@ namespace kpengine
         {
             bool changed = ImGui::DragFloat3(label, v, speed, min, max);
 
-            if(ImGui::IsItemHovered())
-            {
-                ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeAll);
-            }
-
-            if (ImGui::IsItemActive())
-            {
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
-            }
-            else if (!ImGui::IsAnyItemActive())
-            {
-                // Only unlock when no item is active at all
-                glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
-            }
             return changed;
         }
 

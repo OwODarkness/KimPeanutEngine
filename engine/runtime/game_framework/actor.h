@@ -31,6 +31,8 @@ namespace kpengine{
         void SetActorScale(const Vector3f& new_scale);
         void SetTransform(const Transform3f& new_transform);
 
+        void AddRelativeOffset(const Vector3f& delta);
+
         std::string GetName() const{return name_;}
     protected:
         std::vector<std::shared_ptr<Actor>> children_;

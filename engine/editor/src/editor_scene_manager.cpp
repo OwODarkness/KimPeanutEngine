@@ -15,7 +15,7 @@
 #include "runtime/game_framework/level.h"
 #include "runtime/game_framework/actor.h"
 #include "runtime/component/mesh_component.h"
-#include "runtime/render/render_axis.h"
+#include "runtime/render/gizmos.h"
 #include <limits>
 
 namespace kpengine
@@ -50,6 +50,37 @@ namespace kpengine
             {
                 editor::global_editor_context.input_system_->SetActiveContext("");
             }
+
+            if(is_first_frame_)
+            {
+                is_first_frame_ = false;
+            }
+
+            float mouse_pos_x = scene_ui_->GetMousePosX();
+            float mouse_pos_y = scene_ui_->GetMousePosY();
+            RenderCamera *camera = editor::global_editor_context.render_system_->GetRenderCamera();
+
+            if (!camera)
+                return;
+            if (gizmos_)
+            {
+                const Vector3f &origin_pos = camera->GetPosition();
+                Vector3f world_ray = ComputeWorldRayFromScreen(camera, mouse_pos_x, mouse_pos_y);
+                bool hit = gizmos_->HitAxis(origin_pos, world_ray);
+                if (hit )
+                {
+                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+
+                    if(scene_ui_->IsLeftMouseDrag() && !is_first_frame_)
+                    {
+                        float delta_x = mouse_pos_x - last_mouse_x_;
+                        float delta_y = mouse_pos_y - last_mouse_y_;
+                        gizmos_->Drag(delta_x, delta_y);
+                    }
+                }
+            }
+            last_mouse_x_ = mouse_pos_x;
+            last_mouse_y_ = mouse_pos_y;
         }
 
         void EditorSceneManager::Close()
@@ -145,6 +176,7 @@ namespace kpengine
                 last_mesh->SetOutlineVisibility(false);
             }
             last_select_actor_ = nullptr;
+            gizmos_ = nullptr;
         }
 
         void EditorSceneManager::OnClickMouseCallback(float mouse_pos_x, float mouse_pos_y)
@@ -183,9 +215,7 @@ namespace kpengine
             }
 
             if (last_select_actor_ == selected)
-            {
                 return;
-            }
 
             ClearLastSelection();
 
@@ -198,16 +228,12 @@ namespace kpengine
                     return;
                 mesh->SetOutlineVisibility(true);
 
-                std::shared_ptr<RenderAxis> axis = std::make_shared<RenderAxis>();
-                axis->Initialize();
+                gizmos_ = std::make_shared<Gizmos>();
+                gizmos_->Initialize();
 
-                Transform3f transform;
-                transform.position_ = mesh->GetWorldAABB().Center();
-                transform.rotator_ = selected->GetActorRotation();
-                transform.scale_ = Vector3f(1.f);
-                axis->SetModelTransform(Matrix4f::MakeTransformMatrix(transform).Transpose());
+                gizmos_->SetActor(selected);
 
-                editor::global_editor_context.render_system_->SetVisibleAxis(axis);
+                editor::global_editor_context.render_system_->SetVisibleAxis(gizmos_);
             }
             else
             {

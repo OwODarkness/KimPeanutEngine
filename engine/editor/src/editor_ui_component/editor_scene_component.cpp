@@ -41,9 +41,14 @@ namespace kpengine
             mouse_pos_x_ = mouse_abs_pos.x - screen_size.x;
             mouse_pos_y_ = screen_size.y - mouse_abs_pos.y;
 
+
             // Only act on mouse click if the region is hovered
             if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup | ImGuiHoveredFlags_AllowWhenBlockedByActiveItem))
             {
+                is_left_mouse_drag_ =  ImGui::IsMouseDragging(ImGuiMouseButton_Left);
+                is_left_mouse_down_ =  ImGui::IsMouseDown(ImGuiMouseButton_Left);
+
+
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
                 {
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);

@@ -47,9 +47,9 @@ namespace kpengine
         render_scene_->SetCurrentShader(shader_pool_->GetShader(current_shader_mode_));
     }
 
-    void RenderSystem::SetVisibleAxis(std::shared_ptr<RenderAxis> axis)
+    void RenderSystem::SetVisibleAxis(std::shared_ptr<Gizmos> gizmos)
     {
-        render_scene_->SetRenderAxis(axis);
+        render_scene_->SetRenderAxis(gizmos);
     }
 
     RenderSystem::~RenderSystem()

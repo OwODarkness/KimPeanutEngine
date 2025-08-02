@@ -20,10 +20,17 @@ namespace kpengine{
             virtual void RenderContent() override;
 
             void SetTitle(const std::string & title);
+            float GetMousePosX() const{return mouse_pos_x_;}
+            float GetMousePosY() const{return mouse_pos_y_;}
+            bool IsLeftMouseDrag() const{return is_left_mouse_drag_;}
+            bool IsLeftMouseDown() const{return is_left_mouse_down_;}
         private:
             std::shared_ptr<FrameBuffer> scene_;
             float mouse_pos_x_;
             float mouse_pos_y_;
+            bool is_left_mouse_drag_;
+            bool is_left_mouse_down_;
+
         public:
             bool is_scene_window_focus = false;
             FOnMouseClickCallback on_mouse_click_callback_;

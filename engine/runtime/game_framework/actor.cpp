@@ -86,6 +86,14 @@ namespace kpengine{
         }
     }
 
+    void Actor::AddRelativeOffset(const Vector3f& delta)
+    {
+        if(root_component_)
+        {
+            root_component_->SetRelativeLocation(GetActorLocation() + delta);
+        }
+    }
+
     Actor::~Actor()
     {
         

@@ -20,7 +20,7 @@
 #include "runtime/render/skybox.h"
 #include "runtime/render/aabb.h"
 #include "runtime/render/frustum.h"
-#include "runtime/render/render_axis.h"
+#include "runtime/render/gizmos.h"
 #include "runtime/render/postprocess_pipeline.h"
 #include "runtime/render/outline_effect.h"
 
@@ -65,8 +65,7 @@ namespace kpengine
         g_buffer_->AddColorAttachment("g_normal", GL_RGB16F, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_albedo", GL_RGB8, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_material", GL_RGB8, GL_RGB, GL_FLOAT);
-        g_buffer_->AddColorAttachment("g_object_id", GL_R32I, GL_RED_INTEGER, GL_INT);
-        g_buffer_->AddColorAttachment("g_object_visual", GL_RGB16F, GL_RGB, GL_FLOAT);
+        g_buffer_->AddColorAttachment("g_object_id", GL_RGB16F, GL_RGB, GL_FLOAT);
         g_buffer_->Finalize();
 
         geometry_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_NORMAL);
@@ -221,7 +220,7 @@ namespace kpengine
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        postprocess_pipeline_->Execute({.g_object_id = g_buffer_->GetTexture("g_object_visual"),
+        postprocess_pipeline_->Execute({.g_object_id = g_buffer_->GetTexture("g_object_id"),
                                         .texel_size = {1.f / 1280.f, 1.f / 720.f}});
         glDisable(GL_BLEND);
 
@@ -236,9 +235,9 @@ namespace kpengine
         //      proxy->Draw(lighting_pass_context);
         //  }
 
-        if (axis_)
+        if (gizmos_)
         {
-            axis_->Draw();
+            gizmos_->Draw();
         }
 
         scene_fb_->UnBindFrameBuffer();
@@ -249,9 +248,9 @@ namespace kpengine
         current_shader = shader;
     }
 
-    void RenderScene::SetRenderAxis(std::shared_ptr<RenderAxis> axis)
+    void RenderScene::SetRenderAxis(std::shared_ptr<Gizmos> gizmos)
     {
-        axis_ = axis;
+        gizmos_ = gizmos;
     }
 
     SceneProxyHandle RenderScene::AddProxy(std::shared_ptr<PrimitiveSceneProxy> scene_proxy)

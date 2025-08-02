@@ -9,6 +9,7 @@ namespace kpengine{
     class RenderSystem;
     class RenderCamera;
     class Actor;
+    class Gizmos;
 namespace ui{
     class EditorSceneComponent;
     class EditorActorControlPanel;
@@ -40,8 +41,13 @@ namespace editor{
         std::unique_ptr<ui::EditorActorControlPanel> actor_panel_;
 
         std::shared_ptr<input::InputContext> input_context_;
+        std::shared_ptr<Gizmos> gizmos_;
         int object_selected_index;
         std::shared_ptr<Actor> last_select_actor_{};
+
+        bool is_first_frame_{true};
+        float last_mouse_x_;
+        float last_mouse_y_;
     };
 }
 }

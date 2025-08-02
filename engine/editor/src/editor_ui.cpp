@@ -71,8 +71,6 @@ namespace kpengine
 
             std::vector<const char*> items = {"custom", SHADER_CATEGORY_NORMAL};
 
-
-
             components_.push_back(std::move(window_component_));
 
             //menu init
@@ -122,12 +120,11 @@ namespace kpengine
             }
         ImGui::BeginChild("G-Buffer Viewer");
 
-        GLuint texID = editor::global_editor_context.render_system_->GetRenderScene()->g_buffer_->GetTexture("g_object_visual");
+        GLuint texID = editor::global_editor_context.render_system_->GetRenderScene()->g_buffer_->GetTexture("g_normal");
         ImVec2 size = ImVec2(360, 256); // size of the preview
 
         ImGui::Text("Normal Buffer");
         ImGui::Image((ImTextureID)(uintptr_t)texID, size, ImVec2(0, 1), ImVec2(1, 0));
-
         ImGui::EndChild();
 
             return true;

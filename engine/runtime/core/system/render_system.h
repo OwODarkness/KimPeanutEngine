@@ -8,7 +8,7 @@ namespace kpengine{
     class RenderScene;
     class RenderCamera;
     class TexturePool;
-    class RenderAxis;
+    class Gizmos;
 
     class RenderSystem{
     public:
@@ -26,7 +26,7 @@ namespace kpengine{
         const int* GetTriangleCountRef() const{return &triangle_count_this_frame_;}
 
         void SetCurrentShaderMode(const std::string& target);
-        void SetVisibleAxis(std::shared_ptr<RenderAxis> axis);
+        void SetVisibleAxis(std::shared_ptr<Gizmos> axis);
         
     private:
         std::shared_ptr<RenderCamera> render_camera_;
