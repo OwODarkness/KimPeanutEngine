@@ -48,7 +48,8 @@ public:
     Matrix4f GetViewMatrix() const;
     Matrix4f GetProjectionMatrix() const;
     float GetCameraFOV() const{return fov_;}
-
+    Vector3f ComputeWorldRayFromScreen(const Vector2f& mouse_pos, const Vector2f& window_size) const;
+private:
     void OnCameraRotateCallback(const input::InputState& state);
     void OnCameraMoveCallback(const input::InputState& state);
     void OnCameraScrollCallback(const input::InputState& state);

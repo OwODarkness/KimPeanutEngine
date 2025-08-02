@@ -47,8 +47,8 @@ namespace kpengine
             {
                 is_left_mouse_drag_ =  ImGui::IsMouseDragging(ImGuiMouseButton_Left);
                 is_left_mouse_down_ =  ImGui::IsMouseDown(ImGuiMouseButton_Left);
-
-
+                is_left_mouse_released_ = ImGui::IsMouseReleased(ImGuiMouseButton_Left);
+                is_left_mouse_clicked_ =  ImGui::IsMouseClicked(ImGuiMouseButton_Left);
                 if (ImGui::IsMouseClicked(ImGuiMouseButton_Right))
                 {
                     glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);

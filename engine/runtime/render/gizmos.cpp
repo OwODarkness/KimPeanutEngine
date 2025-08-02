@@ -51,43 +51,73 @@ namespace kpengine
         actor_ = actor;
     }
 
-    void Gizmos::Drag(float x, float y)
+    void Gizmos::Drag(const Vector3f &origin, const Vector3f &dir)
     {
-        float delta_x{};
-        float delta_y{};
+        Vector3f current_hit_point = IntersectRayPlane(origin, dir, start_plane_origin, start_plane_normal);
+        Vector3f raw_delta = current_hit_point - start_hit_point;
 
-        if(x > 0)
-            delta_x = 1.f;
-        else if(x < 0)
-            delta_x = -1.f;
-        else
-            delta_x = 0.f;
+        Vector3f rotated_axis = GetRotateAxis();
+        Vector3f projected = rotated_axis * raw_delta.DotProduct(rotated_axis);
 
-        if(y > 0)
-            delta_y = 1.f;
-        else if(y < 0)
-            delta_y = -1.f;
-        else
-            delta_y = 0.f;
-        
-        Vector3f delta_v{};
-        float ratio = 0.1f;
-        if(selected_axis == 0)
+        actor_->AddRelativeOffset(projected);
+        start_hit_point = IntersectRayPlane(origin, dir, start_plane_origin, start_plane_normal);
+    }
+
+    void Gizmos::DragStart(const Vector3f &origin, const Vector3f &world_ray)
+    {
+        if (!actor_)
+            return;
+        MeshComponent *mesh = dynamic_cast<MeshComponent *>(actor_->GetRootComponent());
+        if (!mesh)
+            return;
+
+        start_plane_origin = mesh->GetWorldAABB().Center();
+        const Vector3f rotate_axis = start_plane_origin + scale * GetRotateAxis();
+        const Vector3f view_dir = origin - mesh->GetWorldAABB().Center();
+        start_plane_normal = ((rotate_axis.CrossProduct(view_dir)).CrossProduct(rotate_axis)).GetSafetyNormalize();
+        start_hit_point = IntersectRayPlane(origin, world_ray, start_plane_origin, start_plane_normal);
+    }
+
+    Vector3f Gizmos::IntersectRayPlane(const Vector3f &ray_origin, const Vector3f &ray_dir, const Vector3f &plane_origin, const Vector3f &plane_normal)
+    {
+        float denom = ray_dir.DotProduct(plane_normal);
+        if (std::fabs(denom) < 1e-6)
         {
-            delta_v = ratio * delta_x * Vector3f(1.f, 0.f, 0.f);
-        }        
-        else if(selected_axis == 1)
-        {
-            delta_v = ratio * delta_y * Vector3f(0.f, 1.f, 0.f);
+            return {};
         }
-        else if(selected_axis == 2)
+        float t = (plane_origin - ray_origin).DotProduct(plane_normal) / denom;
+        return ray_origin + t * ray_dir;
+    }
+
+    Vector3f Gizmos::GetRotateAxis() const
+    {
+        if (selected_axis == -1)
+            return {};
+        Vector3f axis{};
+        if (selected_axis == 0)
         {
-            delta_v = ratio * 0.5f * (delta_y + delta_y) * Vector3f(0.f, 1.f, 1.f);
+            axis = Vector3f(1.f, 0.f, 0.f);
         }
-        if(actor_)
+        else if (selected_axis == 1)
         {
-            actor_->AddRelativeOffset(delta_v);
+            axis = Vector3f(0.f, 1.f, 0.f);
         }
+        else if (selected_axis == 2)
+        {
+            axis = Vector3f(0.f, 0.f, -1.f);
+        }
+        const Rotatorf &rot = actor_->GetActorRotation();
+        return rot.RotateVector(axis);
+    }
+
+    void Gizmos::Lock()
+    {
+        is_lock_ = true;
+    }
+
+    void Gizmos::UnLock()
+    {
+        is_lock_ = false;
     }
 
     bool Gizmos::HitAxis(const Vector3f &origin, const Vector3f &dir)
@@ -135,7 +165,10 @@ namespace kpengine
         {
             return false;
         }
-        selected_axis = pre_selected_axis;
+        if (!is_lock_)
+        {
+            selected_axis = pre_selected_axis;
+        }
         return true;
     }
 
@@ -188,7 +221,7 @@ namespace kpengine
         Transform3f transform;
         transform.position_ = mesh->GetWorldAABB().Center();
         transform.rotator_ = actor_->GetActorRotation();
-        transform.scale_ = Vector3f(0.5);
+        transform.scale_ = Vector3f(scale);
         shader_->SetInt("selected_axis", selected_axis);
         shader_->SetMat("model", Matrix4f::MakeTransformMatrix(transform).Transpose()[0]);
         glDrawArrays(GL_LINES, 0, 6);

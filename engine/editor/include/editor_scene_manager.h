@@ -33,7 +33,6 @@ namespace editor{
         std::shared_ptr<input::InputContext> GetInputContext() const{return input_context_;}
     private:
         void OnClickMouseCallback(float mouse_pos_x, float mouse_pos_y);
-        Vector3f ComputeWorldRayFromScreen(RenderCamera* camera, float mouse_pos_x, float mouse_pos_y) const;
         bool IntersectRayAABB(const Vector3f& origin, const Vector3f& ray_dir, const AABB& aabb, float& out_dist);
         void ClearLastSelection();
     private:
@@ -45,9 +44,6 @@ namespace editor{
         int object_selected_index;
         std::shared_ptr<Actor> last_select_actor_{};
 
-        bool is_first_frame_{true};
-        float last_mouse_x_;
-        float last_mouse_y_;
     };
 }
 }

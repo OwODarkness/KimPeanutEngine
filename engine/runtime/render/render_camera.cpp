@@ -145,6 +145,15 @@ namespace kpengine
         }
     }
 
+    Vector3f RenderCamera::ComputeWorldRayFromScreen(const Vector2f &mouse_pos, const Vector2f &window_size) const
+    {
+        float window_forward = 0.5f * window_size.y_ / std::tan(math::DegreeToRadian(fov_) * 0.5f);
+        float window_right = mouse_pos.x_ - 0.5f * window_size.x_;
+        float window_up = mouse_pos.y_ - 0.5f * window_size.y_;
+        Vector3f world_ray = right_ * window_right + up_ * window_up + direction_ * window_forward;
+        return world_ray;
+    }
+
     void RenderCamera::OnCameraRotateCallback(const input::InputState &state)
     {
         if (is_lock_)

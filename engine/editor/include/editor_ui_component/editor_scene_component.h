@@ -24,12 +24,16 @@ namespace kpengine{
             float GetMousePosY() const{return mouse_pos_y_;}
             bool IsLeftMouseDrag() const{return is_left_mouse_drag_;}
             bool IsLeftMouseDown() const{return is_left_mouse_down_;}
+            bool IsLeftMouseRelease() const{return is_left_mouse_released_;}
+            bool IsLeftMouseClick() const{return is_left_mouse_clicked_;}
         private:
             std::shared_ptr<FrameBuffer> scene_;
             float mouse_pos_x_;
             float mouse_pos_y_;
-            bool is_left_mouse_drag_;
-            bool is_left_mouse_down_;
+            bool is_left_mouse_drag_{};
+            bool is_left_mouse_down_{};
+            bool is_left_mouse_released_{};
+            bool is_left_mouse_clicked_{};
 
         public:
             bool is_scene_window_focus = false;

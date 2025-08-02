@@ -51,11 +51,6 @@ namespace kpengine
                 editor::global_editor_context.input_system_->SetActiveContext("");
             }
 
-            if(is_first_frame_)
-            {
-                is_first_frame_ = false;
-            }
-
             float mouse_pos_x = scene_ui_->GetMousePosX();
             float mouse_pos_y = scene_ui_->GetMousePosY();
             RenderCamera *camera = editor::global_editor_context.render_system_->GetRenderCamera();
@@ -65,22 +60,27 @@ namespace kpengine
             if (gizmos_)
             {
                 const Vector3f &origin_pos = camera->GetPosition();
-                Vector3f world_ray = ComputeWorldRayFromScreen(camera, mouse_pos_x, mouse_pos_y);
+                Vector3f world_ray = camera->ComputeWorldRayFromScreen({mouse_pos_x, mouse_pos_y}, {(float)scene_ui_->width_, (float)scene_ui_->height_});
                 bool hit = gizmos_->HitAxis(origin_pos, world_ray);
-                if (hit )
+                if (hit)
                 {
                     ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
-
-                    if(scene_ui_->IsLeftMouseDrag() && !is_first_frame_)
+                    if(scene_ui_->IsLeftMouseClick())
                     {
-                        float delta_x = mouse_pos_x - last_mouse_x_;
-                        float delta_y = mouse_pos_y - last_mouse_y_;
-                        gizmos_->Drag(delta_x, delta_y);
+                        gizmos_->DragStart(origin_pos, world_ray);
+                    }
+                    if (scene_ui_->IsLeftMouseDrag())
+                    {
+                        gizmos_->Lock();
+                        gizmos_->Drag(origin_pos, world_ray);
                     }
                 }
+                if (scene_ui_->IsLeftMouseRelease())
+                {
+                    gizmos_->UnLock();
+                }
             }
-            last_mouse_x_ = mouse_pos_x;
-            last_mouse_y_ = mouse_pos_y;
+
         }
 
         void EditorSceneManager::Close()
@@ -104,20 +104,6 @@ namespace kpengine
             return scene_ui_->is_scene_window_focus;
         }
 
-        Vector3f EditorSceneManager::ComputeWorldRayFromScreen(RenderCamera *camera, float mouse_pos_x, float mouse_pos_y) const
-        {
-            float camera_fov = camera->GetCameraFOV();
-            Vector3f camera_forward = camera->GetCameraForward();
-            Vector3f camera_up = camera->GetCameraUp();
-            Vector3f camera_right = camera->GetCameraRight();
-            float window_size_x = static_cast<float>(scene_ui_->width_);
-            float window_size_y = static_cast<float>(scene_ui_->height_);
-            float window_forward = 0.5f * window_size_y / std::tan(math::DegreeToRadian(camera_fov) * 0.5f);
-            float window_right = mouse_pos_x - 0.5f * window_size_x;
-            float window_up = mouse_pos_y - 0.5f * window_size_y;
-            Vector3f world_ray = camera_right * window_right + camera_up * window_up + camera_forward * window_forward;
-            return world_ray;
-        }
 
         bool EditorSceneManager::IntersectRayAABB(const Vector3f &origin, const Vector3f &ray_dir, const AABB &aabb, float &out_dist)
         {
@@ -187,7 +173,7 @@ namespace kpengine
                 return;
             // transform the click position and camera direction to world direction
             Vector3f origin_pos = camera->GetPosition();
-            Vector3f world_ray = ComputeWorldRayFromScreen(camera, mouse_pos_x, mouse_pos_y);
+            Vector3f world_ray = camera->ComputeWorldRayFromScreen({mouse_pos_x, mouse_pos_y}, {(float)scene_ui_->width_, (float)scene_ui_->height_});
 
             auto world = editor::global_editor_context.world_system_->GetCurrentWorld().lock();
             if (!world)
