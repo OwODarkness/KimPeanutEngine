@@ -66,6 +66,7 @@ namespace kpengine
         g_buffer_->AddColorAttachment("g_albedo", GL_RGB8, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_material", GL_RGB8, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_object_id", GL_RGB16F, GL_RGB, GL_FLOAT);
+        g_buffer_->AddColorAttachment("g_depth", GL_RGB16F, GL_RGB, GL_FLOAT);
         g_buffer_->Finalize();
 
         geometry_shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_NORMAL);
@@ -159,7 +160,11 @@ namespace kpengine
         }
         point_shadow_maker_->UnBindFrameBuffer();
         // GBuffer update
-        RenderContext geo_pass_context{.shader = geometry_shader_};
+        RenderContext geo_pass_context{
+            .shader = geometry_shader_,
+            .near_plane = render_camera_->z_near_,
+            .far_plane = render_camera_->z_far_
+        };
         g_buffer_->BindFrameBuffer();
 
         for (auto &proxy : scene_proxies)
@@ -193,7 +198,8 @@ namespace kpengine
 
         RenderContext lighting_pass_context = {
             .shader = light_pass_shader_,
-            .far_plane = 25.f,
+            .near_plane = render_camera_->z_near_,
+            .far_plane = render_camera_->z_far_,
             .view_position = cam_pos.Data(),
             .directional_shadow_map = directional_shadow_maker_->GetShadowMap(),
             .point_shadow_map = point_shadow_maker_->GetShadowMap(),
@@ -329,6 +335,7 @@ namespace kpengine
         context.shader->UseProgram();
 
         context.shader->SetVec3("view_position", context.view_position);
+        context.shader->SetFloat("near_plane", context.near_plane);
         context.shader->SetFloat("far_plane", context.far_plane);
 
         context.shader->SetInt("shadow_map", 0);

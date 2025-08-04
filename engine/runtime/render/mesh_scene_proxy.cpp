@@ -51,6 +51,8 @@ namespace kpengine
         {
             context.shader->SetMat("model", transform_mat.Transpose()[0]);
             context.shader->SetBool("is_outline_visible", is_outline_visible);
+            context.shader->SetFloat("near_plane", context.near_plane);
+            context.shader->SetFloat("far_plane", context.far_plane);
             context.shader->SetInt("object_id", id_);
             iter->material->Render(context.shader, 0);
             glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));

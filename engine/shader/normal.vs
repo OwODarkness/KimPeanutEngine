@@ -17,7 +17,7 @@ out vec3 frag_pos;
 out vec3 normal;
 out vec2 texcoord;
 out mat3 TBN;
-
+out vec3 ndc_coord;
 void main()
 {
     vec4 world_pos = model* vec4(in_location, 1.0);
@@ -26,9 +26,12 @@ void main()
     normal =   mat3(transpose(inverse(model))) * in_normal;
     texcoord = in_texcoord;
     
+
     vec3 N = normalize(vec3(model * vec4(in_normal, 0.)));    // Normal vector
     vec3 T = normalize(vec3(model * vec4(in_tangent, 0.)));  // Tangent vector
     vec3 B = normalize(vec3(model * vec4(in_bitangent, 0.)));              // Bitangent vector
     TBN = mat3(T, B, N);               // TBN matrix
     gl_Position = projection * view * world_pos;
+    vec4 clip_coord = gl_Position;
+    vec3 ndc_coord = clip_coord.xyz / clip_coord.w;
 }

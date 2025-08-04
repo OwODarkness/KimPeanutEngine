@@ -10,6 +10,7 @@ namespace kpengine::input{
 
 namespace kpengine
 {
+
     class WindowSystem;
     class RenderSystem;
     class AssetSystem;
@@ -17,6 +18,10 @@ namespace kpengine
     class LogSystem;
     class WorldSystem;
     
+    struct GLFWAppContext{
+        WindowSystem* window_sys;
+        input::InputSystem* input_sys;
+    };
 
     namespace runtime
     {
@@ -41,6 +46,7 @@ namespace kpengine
             std::thread::id game_thread_id_;
             std::thread::id render_thread_id_;
         private:
+            std::shared_ptr<GLFWAppContext> glfw_context_;
         };
 
         extern RuntimeContext global_runtime_context;

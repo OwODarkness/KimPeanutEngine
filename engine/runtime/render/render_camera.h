@@ -81,7 +81,7 @@ public:
     float move_speed_ = 1.f;
     float rotate_speed_ = 1.f;
     float z_near_ = 0.1f;
-    float z_far_ = 100.f;
+    float z_far_ = 25.f;
     float pitch_ = 0.f;
     float yaw_ = -90.f;
 };

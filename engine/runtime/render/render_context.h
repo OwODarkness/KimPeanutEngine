@@ -9,6 +9,7 @@ namespace kpengine
     struct RenderContext
     {
         std::shared_ptr<RenderShader> shader;
+        float near_plane;
         float far_plane;
         float* view_position;
         unsigned int directional_shadow_map;

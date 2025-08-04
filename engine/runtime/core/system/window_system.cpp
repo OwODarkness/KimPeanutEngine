@@ -19,7 +19,7 @@ namespace kpengine
     void WindowSystem::Initialize(WindowInitInfo window_info)
     {
         glfwSetErrorCallback(&WindowSystem::OnErrorCallback);
-        
+
         if (GLFW_FALSE == glfwInit())
         {
             KP_LOG("GLFW Init", LOG_LEVEL_ERROR, "Failed to initialize glfw");
@@ -29,7 +29,7 @@ namespace kpengine
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
         glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
         glfwWindowHint(GLFW_SAMPLES, 4);
-        
+
         width_ = window_info.width;
         height_ = window_info.height;
         window_ = glfwCreateWindow(window_info.width, window_info.height, "KimPeanut Engine", nullptr, nullptr);
@@ -38,14 +38,11 @@ namespace kpengine
             KP_LOG("GLFW Window Create", LOG_LEVEL_ERROR, "Failed to create winodw");
             return;
         }
-
-
-        MakeContext();
     }
 
     void WindowSystem::MakeContext()
     {
-        
+
         glfwMakeContextCurrent(window_);
         glfwSwapInterval(1);
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
@@ -53,7 +50,6 @@ namespace kpengine
             std::cout << "Failed to initialize GLAD" << std::endl;
             return;
         }
-        glfwSetWindowUserPointer(window_, this);
         glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
 
         glEnable(GL_DEPTH_TEST);
@@ -61,7 +57,6 @@ namespace kpengine
         glEnable(GL_STENCIL_TEST);
         glStencilFunc(GL_NOTEQUAL, 1, 0xFF);
         glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
-
     }
 
     void WindowSystem::ClearContext()
@@ -93,13 +88,17 @@ namespace kpengine
         fprintf(stderr, "GLFW Error %d: %s\n", error_code, msg);
     }
 
-    void WindowSystem::OnFrameBufferSizeCallback(GLFWwindow*window, int width, int height)
+    void WindowSystem::OnFrameBufferSizeCallback(GLFWwindow *window, int width, int height)
     {
-        //runtime::global_runtime_context.render_system_->GetRenderScene()->scene_fb_->ReSizeFrameBuffer(width, height);
         glViewport(0, 0, width, height);
-        WindowSystem* widnow_system = static_cast<WindowSystem*>(glfwGetWindowUserPointer(window));
-        widnow_system->width_ = width;
-        widnow_system->height_ = height;
+        GLFWAppContext *glfw_context = static_cast<GLFWAppContext *>(glfwGetWindowUserPointer(window));
+        if (!glfw_context || !glfw_context->window_sys)
+            return;
+
+        WindowSystem *window_system = glfw_context->window_sys;
+        window_system->width_ = width;
+        window_system->height_ = height;
+        std::cout << width << " " << height << "\n";
     }
 
 }

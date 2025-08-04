@@ -20,13 +20,20 @@ namespace kpengine
         log_system_(std::make_unique<LogSystem>()),
         asset_system_(std::make_unique<AssetSystem>()),
         world_system_(std::make_unique<WorldSystem>()),
-        input_system_(std::make_unique<input::InputSystem>())
+        input_system_(std::make_unique<input::InputSystem>()),
+        glfw_context_(std::make_shared<GLFWAppContext>())
         {
         }
         void RuntimeContext::Initialize()
         {
+            glfw_context_->window_sys = window_system_.get();
+            glfw_context_->input_sys = input_system_.get();
+            
             window_system_->Initialize(WindowInitInfo::GetDefaultWindowInfo());
-            input_system_->Initialize(window_system_->GetOpenGLWndow());
+            GLFWwindow* window = window_system_->GetOpenGLWndow();
+            glfwSetWindowUserPointer(window, glfw_context_.get());
+            window_system_->MakeContext();
+            input_system_->Initialize(window);
             asset_system_->Initialize();
 
             render_system_->Initialize();

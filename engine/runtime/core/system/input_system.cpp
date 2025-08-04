@@ -4,13 +4,13 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "runtime/input/input_context.h"
+#include "runtime/runtime_global_context.h"
 
 namespace kpengine::input
 {
 
     void InputSystem::Initialize(GLFWwindow *window)
     {
-        glfwSetWindowUserPointer(window, this);
         glfwSetMouseButtonCallback(window, InputSystem::OnMouseButtonCallback);
         glfwSetKeyCallback(window, InputSystem::OnKeyCallback);
         glfwSetCursorPosCallback(window, InputSystem::OnCursorPosCallback);
@@ -30,10 +30,10 @@ namespace kpengine::input
         active_context_ = name;
     }
 
-    std::shared_ptr<InputContext> InputSystem::GetInputContext(const std::string& name)
+    std::shared_ptr<InputContext> InputSystem::GetInputContext(const std::string &name)
     {
         auto it = contexts_.find(name);
-        if(it == contexts_.end())
+        if (it == contexts_.end())
         {
             return nullptr;
         }
@@ -68,7 +68,7 @@ namespace kpengine::input
         {
             return;
         }
-        //KEY
+        // KEY
         InputTriggleType triggle_type;
         switch (action)
         {
@@ -84,16 +84,15 @@ namespace kpengine::input
             triggle_type = InputTriggleType::Pressed;
         }
         it->second->ProcessKeyInput({InputDevice::Keyboard, key}, triggle_type, mods);
-
     }
     void InputSystem::CursorPosExec(double xpos, double ypos)
     {
-        if(is_first_cursor_ == true)
+        if (is_first_cursor_ == true)
         {
             is_first_cursor_ = false;
             last_cursor_xpos_ = xpos;
             last_cursor_ypos_ = ypos;
-            return ;
+            return;
         }
 
         float delta_x = (float)(xpos - last_cursor_xpos_);
@@ -111,7 +110,7 @@ namespace kpengine::input
 
     void InputSystem::ScrollExec(double xoffset, double yoffset)
     {
-                auto it = contexts_.find(active_context_);
+        auto it = contexts_.find(active_context_);
         if (it == contexts_.end())
         {
             return;
@@ -121,25 +120,37 @@ namespace kpengine::input
 
     void InputSystem::OnMouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
     {
-        InputSystem *input_system = static_cast<InputSystem *>(glfwGetWindowUserPointer(window));
+        GLFWAppContext *glfw_context = static_cast<GLFWAppContext *>(glfwGetWindowUserPointer(window));
+        if (!glfw_context || !glfw_context->input_sys)
+            return;
+        InputSystem *input_system = glfw_context->input_sys;
         input_system->MouseButtonExec(button, action, mods);
     }
 
     void InputSystem::OnKeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
     {
-        InputSystem *input_system = static_cast<InputSystem *>(glfwGetWindowUserPointer(window));
+        GLFWAppContext *glfw_context = static_cast<GLFWAppContext *>(glfwGetWindowUserPointer(window));
+        if (!glfw_context || !glfw_context->input_sys)
+            return;
+        InputSystem *input_system = glfw_context->input_sys;
         input_system->KeyExec(key, scancode, action, mods);
     }
 
     void InputSystem::OnCursorPosCallback(GLFWwindow *window, double xpos, double ypos)
     {
-        InputSystem *input_system = static_cast<InputSystem *>(glfwGetWindowUserPointer(window));
+        GLFWAppContext *glfw_context = static_cast<GLFWAppContext *>(glfwGetWindowUserPointer(window));
+        if (!glfw_context || !glfw_context->input_sys)
+            return;
+        InputSystem *input_system = glfw_context->input_sys;
         input_system->CursorPosExec(xpos, ypos);
     }
 
-    void InputSystem::OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset)
+    void InputSystem::OnScrollCallback(GLFWwindow *window, double xoffset, double yoffset)
     {
-        InputSystem *input_system = static_cast<InputSystem *>(glfwGetWindowUserPointer(window));
+        GLFWAppContext *glfw_context = static_cast<GLFWAppContext *>(glfwGetWindowUserPointer(window));
+        if (!glfw_context || !glfw_context->input_sys)
+            return;
+        InputSystem *input_system = glfw_context->input_sys;
         input_system->ScrollExec(xoffset, yoffset);
     }
 

@@ -22,18 +22,21 @@ struct Material{
 uniform Material material;
 uniform bool is_outline_visible;
 uniform int object_id;
+uniform float far_plane;
+uniform float near_plane;
 
 in vec3 frag_pos;
 in vec3 normal;
 in vec2 texcoord;
 in mat3 TBN;
-
+in vec3 ndc_coord;
 
 layout (location = 0) out vec3 gPosition;
 layout (location = 1) out vec3 gNormal;
 layout (location = 2) out vec3 gAlbedo;
 layout (location = 3) out vec3 gMaterial; 
 layout (location = 4) out vec3 gObjectID;
+layout (location = 5) out vec3 gDepth;
 
 vec3 IDToColor(int id) {
     // Use a pseudo-random hash based on the ID
@@ -50,6 +53,10 @@ vec3 IDToColor(int id) {
 
     return vec3(r, g, b);
 }
+float linearize_depth(float z_ndc, float near, float far)
+{
+    return (near * far) / (far - z_ndc * (far - near));;
+}
 
 void main()
 {
@@ -64,11 +71,30 @@ void main()
     float roughness = material.has_roughness_map ? texture(material.roughness_map, texcoord).r : material.roughness;
     float metallic = material.has_metallic_map ? texture(material.metallic_map, texcoord).r : material.metallic;
     float ao = material.has_ao_map ? texture(material.ao_map, texcoord).r : material.ao;
+    float z_buffer = ndc_coord.z * 0.5 + 0.5;
+
+    float linear_depth = (2.0 * near_plane * far_plane) / 
+                        (far_plane + near_plane - z_buffer * (far_plane - near_plane));
+
+    // Visualization range
+    float vis_near = 0.1;
+    float vis_far  = 25.0;
+
+    // Avoid log(0) by clamping
+    float d = clamp(linear_depth, vis_near, vis_far);
+
+    // Log-based normalization
+    float depth_vis = log(d + 1.0);  // +1 to avoid log(0)
+    float log_near = log(vis_near + 1.0);
+    float log_far = log(vis_far + 1.0);
+    depth_vis = (depth_vis - log_near) / (log_far - log_near);
+    depth_vis = clamp(depth_vis, 0.0, 1.0);
 
     gPosition = frag_pos;
     gNormal = normal_vec;
     gAlbedo = albedo_vec;
     gMaterial = vec3(roughness, metallic, ao);
+    gDepth = vec3(depth_vis);
     if(is_outline_visible)
     {
         gObjectID = IDToColor(object_id);

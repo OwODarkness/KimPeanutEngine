@@ -189,7 +189,6 @@ namespace kpengine
 
         if (denom < 1e-5f)
         {
-            // Ray and segment are almost parallel
             s = 0.0f;
         }
         else
@@ -197,10 +196,10 @@ namespace kpengine
             s = (b * e - c * d) / denom;
         }
 
-        s = std::max(s, 0.0f); // clamp ray parameter to >= 0
+        s = std::max(s, 0.0f); 
 
-        t = (b * s + e) / c;
-        t = std::clamp(t, 0.0f, 1.0f); // clamp segment param to [0,1]
+        t = (b * s + e) / c;            
+        t = std::clamp(t, 0.0f, 1.0f); 
 
         Vector3f closest_ray = ray_origin + s * u;
         Vector3f closest_seg = seg_start + t * v;
