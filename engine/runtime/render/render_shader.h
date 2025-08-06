@@ -12,7 +12,9 @@ namespace kpengine
         
        RenderShader() = delete;
         RenderShader(const RenderShader& ) = delete;
-        explicit RenderShader(std::string vertex_shader_path, std::string fragment_shader_path, std::string geometry_shader_path = "");
+        explicit RenderShader(const std::string& vertex_shader_path,const std::string& fragment_shader_path);
+
+        explicit RenderShader(const std::string& vertex_shader_path,const std::string& fragment_shader_path, const std::string& geometry_shader_path);
         
         void Initialize();
 
@@ -20,7 +22,7 @@ namespace kpengine
 
         inline unsigned int GetShaderProgram() const { return shader_program_handle_; }
 
-        void UseProgram();
+        void UseProgram() const;
 
         void SetBool(const std::string &name, bool value) const;
         void SetInt(const std::string &name, int value) const;
@@ -35,7 +37,7 @@ namespace kpengine
         std::string vertex_shader_path_;
         std::string fragment_shader_path_;
         std::string geometry_shader_path_;
-
+        std::string name_;
         unsigned int shader_program_handle_;
     };
 }

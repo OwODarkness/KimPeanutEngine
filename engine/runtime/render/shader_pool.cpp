@@ -72,6 +72,16 @@ namespace kpengine{
             SHADER_CATEGORY_DEFER_PBR,
             std::make_shared<RenderShader>("defer_pbr.vs", "defer_pbr.fs")
         });
+
+                shader_cache.insert({
+            SHADER_CATEGORY_DIRECTIONALSHADOW,
+            std::make_shared<RenderShader>("directionalshadow_mapping_depth.vs", "directionalshadow_mapping_depth.fs")
+        });
+
+                shader_cache.insert({
+            SHADER_CATEGORY_POINTSHADOW,
+            std::make_shared<RenderShader>("pointshadow_mapping_depth.vs", "pointshadow_mapping_depth.fs", "pointshadow_mapping_depth.gs")
+        });
     }
 
     void ShaderPool::Initialize()

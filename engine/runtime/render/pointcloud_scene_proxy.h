@@ -10,8 +10,8 @@ namespace kpengine{
 
     class PointCloudSceneProxy: public PrimitiveSceneProxy{
     public:
-        void Draw(const RenderContext& context) override;
-        virtual void DrawGeometryPass(const RenderContext& context) override;
+        void Draw(const RenderContext& context) const override;
+        virtual void DrawGeometryPass(const RenderContext& context) const override;
         void Initialize() override;
 
     public:

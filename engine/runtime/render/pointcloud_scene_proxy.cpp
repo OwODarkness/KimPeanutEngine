@@ -7,7 +7,8 @@
 #include "runtime/core/utility/gl_vertex_array_guard.h"
 #include "runtime/render/render_material.h"
 
-namespace kpengine{
+namespace kpengine
+{
     void PointCloudSceneProxy::Initialize()
     {
         PrimitiveSceneProxy::Initialize();
@@ -17,17 +18,17 @@ namespace kpengine{
         unsigned int uniform_block_index = glGetUniformBlockIndex(shader_id, "CameraMatrices");
         glUniformBlockBinding(shader_id, uniform_block_index, 0);
     }
-    
-         void PointCloudSceneProxy::DrawGeometryPass(const RenderContext& context)
-        {
 
-        }
+    void PointCloudSceneProxy::DrawGeometryPass(const RenderContext &context) const
+    {
+        //TODO
+    }
 
-    void PointCloudSceneProxy::Draw(const RenderContext& context)
+    void PointCloudSceneProxy::Draw(const RenderContext &context) const
     {
         GlVertexArrayGuard vao_guard(vao_);
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_).Transpose();
-    
+
         std::shared_ptr<RenderShader> cur_shader = pointcloud_resource_ref_->material_->shader_;
 
         cur_shader->UseProgram();

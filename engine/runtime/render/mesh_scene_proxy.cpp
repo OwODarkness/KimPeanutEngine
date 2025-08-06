@@ -14,8 +14,7 @@
 namespace kpengine
 {
     MeshSceneProxy::MeshSceneProxy() : geometry_buffer_(nullptr),
-                                       mesh_resourece_ref_(nullptr),
-                                       current_shader_id_(0)
+                                       mesh_resourece_ref_(nullptr)
     {
     }
 
@@ -29,15 +28,14 @@ namespace kpengine
         aabb_debugger_->is_visiable_ = false;
     }
 
-    void MeshSceneProxy::Draw(const RenderContext &context)
+    void MeshSceneProxy::Draw(const RenderContext &context) const
     {
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_);
-        glStencilMask(0x00);
         aabb_debugger_->Debug(transform_mat.Transpose());
         DrawRenderable(context, transform_mat.Transpose());
     }
 
-    void MeshSceneProxy::DrawGeometryPass(const RenderContext &context)
+    void MeshSceneProxy::DrawGeometryPass(const RenderContext &context) const
     {
         if (!context.shader)
         {
@@ -59,9 +57,10 @@ namespace kpengine
         }
     }
 
-    void MeshSceneProxy::DrawRenderable(const RenderContext &context, const Matrix4f &transform_mat)
+    void MeshSceneProxy::DrawRenderable(const RenderContext &context, const Matrix4f &transform_mat) const
     {
-        {
+        unsigned int current_shader_id = 0;
+
             GlVertexArrayGuard vao_guard(geometry_buffer_->vao);
             GlElementBufferGuard ebo_guard(geometry_buffer_->ebo);
             if (context.shader)
@@ -83,9 +82,9 @@ namespace kpengine
                     std::shared_ptr<RenderShader> current_shader = iter->material->shader_;
 
                     current_shader->UseProgram();
-                    if (new_shader_id != current_shader_id_)
+                    if (new_shader_id != current_shader_id)
                     {
-                        current_shader_id_ = new_shader_id;
+                        current_shader_id = new_shader_id;
                         current_shader->SetVec3("view_position", context.view_position);
                         current_shader->SetMat("light_space_matrix", light_space_);
                         current_shader->SetFloat("far_plane", context.far_plane);
@@ -133,8 +132,7 @@ namespace kpengine
                     glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));
                 }
             }
-        }
-        current_shader_id_ = 0;
+
     }
 
     void MeshSceneProxy::SetOutlineVisibility(bool visible)

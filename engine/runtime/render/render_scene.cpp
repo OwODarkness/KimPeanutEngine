@@ -23,6 +23,8 @@
 #include "runtime/render/gizmos.h"
 #include "runtime/render/postprocess_pipeline.h"
 #include "runtime/render/outline_effect.h"
+#include "runtime/render/shadow_manager.h"
+
 
 namespace kpengine
 {
@@ -34,8 +36,6 @@ namespace kpengine
 
     RenderScene::RenderScene() : scene_fb_(std::make_shared<FrameBuffer>(1280, 720)),
                                  render_camera_(nullptr),
-                                 directional_shadow_maker_(std::make_shared<DirectionalShadowMaker>()),
-                                 point_shadow_maker_(std::make_shared<PointShadowMaker>()),
                                  light_(Light()),
                                  current_shader(nullptr)
     {
@@ -80,7 +80,7 @@ namespace kpengine
 
         glGenBuffers(1, &ubo_camera_matrices_);
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
-        glBufferData(GL_UNIFORM_BUFFER, 2 * sizeof(glm::mat4), nullptr, GL_DYNAMIC_DRAW);
+        glBufferData(GL_UNIFORM_BUFFER, 2 * sizeof(Matrix4f), nullptr, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_UNIFORM_BUFFER, 0);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, ubo_camera_matrices_); // Bind to binding point 0
 
@@ -90,15 +90,24 @@ namespace kpengine
         glBindBuffer(GL_UNIFORM_BUFFER, 0);
         glBindBufferBase(GL_UNIFORM_BUFFER, 1, ubo_light_); // Bind to binding point 1
 
-        directional_shadow_maker_->Initialize();
-
-        point_shadow_maker_->Initialize();
         light_.point_light.ambient = {1.f, 1.f, 1.f};
-        light_.point_light.position = {4.f, 5.f, 0.f};
+        light_.point_light.position = {0.f, 2.f, 0.f};
         light_.directional_light.color = {0.f, 0.f, 0.f};
         light_.spot_light.color = {0.f, 0.f, 0.f};
         light_.spot_light.cutoff = std::cos(math::DegreeToRadian(12.5f));
         light_.spot_light.outer_cutoff = std::cos(math::DegreeToRadian(17.5f));
+
+        shadow_manager_ = std::make_unique<ShadowManager>();
+
+        std::shared_ptr<DirectionalLightData> light0 = std::make_shared<DirectionalLightData>();
+        shadow_manager_->AddLight(light0);
+
+         std::shared_ptr<PointLightData> light1 = std::make_shared<PointLightData>();
+         light1->position = {0.f, 2.f, 0.f};
+         shadow_manager_->AddLight(light1);
+         shadow_manager_->Initialize();
+         Vector3f light_pos = light1->position;
+        
     }
 
     void RenderScene::Render(float deltatime)
@@ -112,53 +121,11 @@ namespace kpengine
         {
             Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(proxy->GetTransform());
             AABB world_AABB = GetWorldAABB(proxy->GetAABB(), transform_mat);
-            proxy->visible_this_frame = frustum.Contains(world_AABB);
+            proxy->SetVisibility(frustum.Contains(world_AABB));
         }
 
-        // render a depth map
-        directional_shadow_maker_->BindFrameBuffer();
-        Vector3f light_pos = -light_.directional_light.direction * 2.f;
-        std::vector<Matrix4f> shadow_transforms;
-        directional_shadow_maker_->CalculateShadowTransform(light_pos, shadow_transforms);
-        Matrix4f light_space_matrix = shadow_transforms[0].Transpose();
-        std::shared_ptr<RenderShader> depth_shader = directional_shadow_maker_->GetShader();
-        depth_shader->UseProgram();
-        depth_shader->SetMat("light_space_matrix", light_space_matrix[0]);
-        RenderContext depth_shader_context = {.shader = depth_shader};
-        for (auto &proxy : scene_proxies)
-        {
-            if (!proxy->visible_this_frame)
-            {
-                continue;
-            }
-            proxy->Draw(depth_shader_context);
-        }
-
-        directional_shadow_maker_->UnBindFrameBuffer();
-
-        shadow_transforms.clear();
-
-        // render a point depth map
-        point_shadow_maker_->BindFrameBuffer();
-        point_shadow_maker_->CalculateShadowTransform(light_.point_light.position, shadow_transforms);
-        std::shared_ptr<RenderShader> point_depth_shader = point_shadow_maker_->GetShader();
-        point_depth_shader->UseProgram();
-        for (int i = 0; i < shadow_transforms.size(); i++)
-        {
-            point_depth_shader->SetMat(("shadow_matrices[" + std::to_string(i) + ']').c_str(), shadow_transforms[i].Transpose()[0]);
-        }
-        point_depth_shader->SetVec3("light_position", light_.point_light.position.Data());
-        point_depth_shader->SetFloat("far_plane", 25.f);
-        RenderContext point_shader_context{.shader = point_depth_shader};
-        for (auto &proxy : scene_proxies)
-        {
-            if (!proxy->visible_this_frame)
-            {
-                continue;
-            }
-            proxy->Draw(point_shader_context);
-        }
-        point_shadow_maker_->UnBindFrameBuffer();
+        shadow_manager_->Render(scene_proxies);
+        
         // GBuffer update
         RenderContext geo_pass_context{
             .shader = geometry_shader_,
@@ -169,7 +136,7 @@ namespace kpengine
 
         for (auto &proxy : scene_proxies)
         {
-            if (!proxy->visible_this_frame)
+            if (!proxy->IsVisible())
             {
                 continue;
             }
@@ -177,6 +144,10 @@ namespace kpengine
         }
 
         g_buffer_->UnBindFrameBuffer();
+
+  
+
+     debug_id = g_buffer_->GetTexture("g_normal");
 
         scene_fb_->BindFrameBuffer();
 
@@ -201,8 +172,8 @@ namespace kpengine
             .near_plane = render_camera_->z_near_,
             .far_plane = render_camera_->z_far_,
             .view_position = cam_pos.Data(),
-            .directional_shadow_map = directional_shadow_maker_->GetShadowMap(),
-            .point_shadow_map = point_shadow_maker_->GetShadowMap(),
+            .directional_shadow_map = shadow_manager_->GetDirectionalShadowMap(),
+            .point_shadow_map = shadow_manager_->GetPointShadowMap(),
             .irradiance_map = environment_map_wrapper->GetIrradianceMap()->GetTexture(),
             .prefilter_map = environment_map_wrapper->GetPrefilterMap()->GetTexture(),
             .brdf_map = environment_map_wrapper->GetBRDFMap()->GetTexture(),
@@ -229,17 +200,6 @@ namespace kpengine
         postprocess_pipeline_->Execute({.g_object_id = g_buffer_->GetTexture("g_object_id"),
                                         .texel_size = {1.f / 1280.f, 1.f / 720.f}});
         glDisable(GL_BLEND);
-
-        // forward render
-        //  for (auto &proxy : scene_proxies)
-        //  {
-        //      if (!proxy->visible_this_frame)
-        //      {
-        //          continue;
-        //      }
-        //      proxy->UpdateLightSpace(light_space_matrix[0]);
-        //      proxy->Draw(lighting_pass_context);
-        //  }
 
         if (gizmos_)
         {
@@ -380,4 +340,7 @@ namespace kpengine
 
         glActiveTexture(GL_TEXTURE0);
     }
+
+        RenderScene::~RenderScene() = default;
+
 }

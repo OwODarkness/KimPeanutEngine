@@ -15,6 +15,7 @@ namespace kpengine
     class RenderShader;
     class ShadowMaker;
     class PointShadowMaker;
+    class ShadowManager;
     class Skybox;
     class PrimitiveSceneProxy;
     class EnvironmentMapWrapper;
@@ -31,7 +32,7 @@ namespace kpengine
         void RemoveProxy(SceneProxyHandle handle);
         void SetCurrentShader(const std::shared_ptr<RenderShader> &shader);
         void SetRenderAxis(std::shared_ptr<Gizmos> gizmos);
-
+        ~RenderScene();
     private:
         void InitFullScreenTriangle();
         void ExecLightingRenderPass(const RenderContext &context);
@@ -44,12 +45,10 @@ namespace kpengine
 
         Light light_;
 
-        std::shared_ptr<ShadowMaker> directional_shadow_maker_;
-        std::shared_ptr<ShadowMaker> point_shadow_maker_;
-
         std::shared_ptr<Skybox> skybox;
         std::shared_ptr<EnvironmentMapWrapper> environment_map_wrapper;
 
+        unsigned int debug_id;
     private:
         // scene proxy
         std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies; // renderable
@@ -71,7 +70,9 @@ namespace kpengine
         std::shared_ptr<RenderShader> light_pass_shader_{};
 
         std::shared_ptr<PostProcessPipeline> postprocess_pipeline_;
-    };
+        std::unique_ptr<ShadowManager> shadow_manager_;
+        std::shared_ptr<struct LightData> lights_;
+     };
 }
 
 #endif

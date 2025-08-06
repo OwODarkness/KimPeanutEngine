@@ -33,5 +33,5 @@ void main()
     TBN = mat3(T, B, N);               // TBN matrix
     gl_Position = projection * view * world_pos;
     vec4 clip_coord = gl_Position;
-    vec3 ndc_coord = clip_coord.xyz / clip_coord.w;
+    ndc_coord = clip_coord.xyz / clip_coord.w;
 }

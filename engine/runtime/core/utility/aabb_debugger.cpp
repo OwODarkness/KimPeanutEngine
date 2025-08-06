@@ -59,7 +59,7 @@ void AABBDebugger::Initialize(const AABB& aabb)
 
 }
 
-void AABBDebugger::Debug(const Matrix4f& mat)
+void AABBDebugger::Debug(const Matrix4f& mat) const
 {
     if(!is_visiable_)
     {

@@ -18,19 +18,17 @@ namespace kpengine{
     public:
         MeshSceneProxy();
         void Initialize() override;
-        void Draw(const RenderContext& context) override;
-        void DrawGeometryPass(const RenderContext& context) override;
+        void Draw(const RenderContext& context) const override;
+        void DrawGeometryPass(const RenderContext& context) const override;
         void SetOutlineVisibility(bool visible);
         AABB GetAABB() override;
         ~MeshSceneProxy();
     private:
-        void DrawRenderable(const RenderContext& context, const Matrix4f& transform_mat);
+        void DrawRenderable(const RenderContext& context, const Matrix4f& transform_mat) const;
     public:
         struct GeometryBuffer* geometry_buffer_;
         RenderMeshResource* mesh_resourece_ref_;
     private:
-        unsigned int current_shader_id_;
-        bool do_once = true;
         //aabb debug usage
         std::unique_ptr<AABBDebugger> aabb_debugger_;
 

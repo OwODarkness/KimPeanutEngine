@@ -11,7 +11,7 @@ class AABBDebugger{
 public:
     AABBDebugger() = default;
     void Initialize(const AABB& aabb);
-    void Debug(const Matrix4f& mat);
+    void Debug(const Matrix4f& mat) const;
 public:
     bool is_visiable_ = true;
 private:

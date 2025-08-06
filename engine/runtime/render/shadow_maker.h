@@ -7,8 +7,10 @@
 #include "runtime/core/math/math_header.h"
 
 namespace kpengine{
-
+    struct LightData;
+    struct PointLightData;
     class RenderShader;
+    class PrimitiveSceneProxy;
     
     class ShadowMaker{
 
@@ -30,7 +32,7 @@ namespace kpengine{
         int width_{1024};
         int height_{1024};
         float near_plane_{1.f};
-        float far_plane_{7.5f};
+        float far_plane_{50.f};
         std::shared_ptr<RenderShader> shader;
     };
 
@@ -47,9 +49,12 @@ namespace kpengine{
     public:
         PointShadowMaker(int width = 1024, int height = 1024);
         void Initialize() override;
-        void BindFrameBuffer()override;
-        void UnBindFrameBuffer()override;
+        void Render(const std::vector<std::shared_ptr<PrimitiveSceneProxy>> &proxies);
         void CalculateShadowTransform(const Vector3f& light_position, std::vector<Matrix4f>& out_shadow_transforms) override;
+        std::array<Matrix4f, 6> CalculateLighSpaceMatrices(const Vector3f& light_position);
+        void AddLight(LightData* light);
+    private:
+        PointLightData* light_;
     };
 }
 

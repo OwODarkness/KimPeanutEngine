@@ -71,24 +71,9 @@ void main()
     float roughness = material.has_roughness_map ? texture(material.roughness_map, texcoord).r : material.roughness;
     float metallic = material.has_metallic_map ? texture(material.metallic_map, texcoord).r : material.metallic;
     float ao = material.has_ao_map ? texture(material.ao_map, texcoord).r : material.ao;
-    float z_buffer = ndc_coord.z * 0.5 + 0.5;
+    float linear_depth = linearize_depth(0.5 * ndc_coord.z + 0.5, near_plane, far_plane);
 
-    float linear_depth = (2.0 * near_plane * far_plane) / 
-                        (far_plane + near_plane - z_buffer * (far_plane - near_plane));
-
-    // Visualization range
-    float vis_near = 0.1;
-    float vis_far  = 25.0;
-
-    // Avoid log(0) by clamping
-    float d = clamp(linear_depth, vis_near, vis_far);
-
-    // Log-based normalization
-    float depth_vis = log(d + 1.0);  // +1 to avoid log(0)
-    float log_near = log(vis_near + 1.0);
-    float log_far = log(vis_far + 1.0);
-    depth_vis = (depth_vis - log_near) / (log_far - log_near);
-    depth_vis = clamp(depth_vis, 0.0, 1.0);
+    float depth_vis = (linear_depth - near_plane ) / (far_plane - near_plane);
 
     gPosition = frag_pos;
     gNormal = normal_vec;

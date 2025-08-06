@@ -25,4 +25,9 @@ namespace kpengine
     {
         return AABB();
     }
+
+    void PrimitiveSceneProxy::SetVisibility(bool visible)
+    {
+        visible_this_frame_ = visible;
+    }
 }

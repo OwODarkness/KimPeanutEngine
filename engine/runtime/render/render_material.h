@@ -59,10 +59,10 @@ namespace kpengine{
         *  texture_start_index: GL_TEXTURE index start
         *  return: the number of texture slots that has been used
         */
-        int Render(const std::shared_ptr<RenderShader>& shader, size_t texture_start_index) ;
+        int Render(const std::shared_ptr<RenderShader>& shader, size_t texture_start_index) const;
         void AddTexture(const MaterialMapInfo& map_info);
 
-        std::shared_ptr<RenderTexture> GetTexture(const std::string key);
+        std::shared_ptr<RenderTexture> GetTexture(const std::string key) const;
         float* GetFloatParamRef(const std::string& key);
         Vector3f* GetVectorParamRef(const std::string& key);
 

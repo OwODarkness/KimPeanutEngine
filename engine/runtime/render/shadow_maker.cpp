@@ -1,9 +1,16 @@
 #include "shadow_maker.h"
 
 #include <glad/glad.h>
-
+#include <iostream>
 #include "platform/path/path.h"
 #include "runtime/render/render_shader.h"
+#include "runtime/runtime_global_context.h"
+#include "runtime/core/system/render_system.h"
+#include "runtime/render/shader_pool.h"
+#include "runtime/render/render_shader.h"
+#include "runtime/render/primitive_scene_proxy.h"
+#include "runtime/render/render_context.h"
+#include "runtime/render/render_light.h"
 namespace kpengine
 {
 
@@ -13,7 +20,6 @@ namespace kpengine
 
     void ShadowMaker::Initialize()
     {
-        shader->Initialize();
     }
 
     void ShadowMaker::BindFrameBuffer()
@@ -27,20 +33,14 @@ namespace kpengine
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    DirectionalShadowMaker::DirectionalShadowMaker(int width, int height):
-    ShadowMaker(width, height)
+    DirectionalShadowMaker::DirectionalShadowMaker(int width, int height) : ShadowMaker(width, height)
     {
-        std::string shader_directory = GetShaderDirectory();
-        shader = std::make_shared<RenderShader>(
-            "shadow_mapping_depth.vs", 
-            "shadow_mapping_depth.fs");
-
     }
 
     void DirectionalShadowMaker::Initialize()
     {
-        ShadowMaker::Initialize();
-        
+        shader = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_DIRECTIONALSHADOW);
+
         glGenFramebuffers(1, &frame_buffer_);
         glGenTextures(1, &depth_texture_);
 
@@ -74,7 +74,7 @@ namespace kpengine
         ShadowMaker::UnBindFrameBuffer();
     }
 
-    void DirectionalShadowMaker::CalculateShadowTransform(const Vector3f& light_position, std::vector<Matrix4f>& out_shadow_transforms)
+    void DirectionalShadowMaker::CalculateShadowTransform(const Vector3f &light_position, std::vector<Matrix4f> &out_shadow_transforms)
     {
         Matrix4f light_projection, light_view;
         light_projection = Matrix4f::MakeOrthProjMatrix(-10.0f, 10.0f, -10.0f, 10.0f, near_plane_, far_plane_);
@@ -82,18 +82,16 @@ namespace kpengine
         out_shadow_transforms.push_back(light_projection * light_view);
     }
 
-    PointShadowMaker::PointShadowMaker(int width, int height) : ShadowMaker(width, height){
-        shader = std::make_shared<RenderShader>( 
-            "pointshadow_mapping_depth.vs", 
-            "pointshadow_mapping_depth.fs",
-            "pointshadow_mapping_depth.gs");
-        near_plane_ = 1.f;
-        far_plane_ = 25.f;
+    PointShadowMaker::PointShadowMaker(int width, int height) : ShadowMaker(width, height)
+    {
     }
 
     void PointShadowMaker::Initialize()
     {
-        ShadowMaker::Initialize();
+        shader = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_POINTSHADOW);
+        near_plane_ = 1.f;
+        far_plane_ = 25.f;
+
         glGenFramebuffers(1, &frame_buffer_);
         glGenTextures(1, &depth_texture_);
 
@@ -114,23 +112,37 @@ namespace kpengine
         glDrawBuffer(GL_NONE);
         glReadBuffer(GL_NONE);
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
     }
 
-
-    void PointShadowMaker::BindFrameBuffer()
+    void PointShadowMaker::Render(const std::vector<std::shared_ptr<PrimitiveSceneProxy>> &proxies)
     {
-        ShadowMaker::BindFrameBuffer();
+        glViewport(0, 0, width_, height_);
+        glBindFramebuffer(GL_FRAMEBUFFER, frame_buffer_);
+        glClear(GL_DEPTH_BUFFER_BIT);
+        Vector3f light_pos = light_->position;
+        // std::cout << light_pos.x_ << " " << light_pos.y_ << " " << light_pos.z_ << std::endl;
+        // CalculateShadowTransform(light_pos, shadow_transforms);
+        std::array<Matrix4f, 6> shadow_transforms = CalculateLighSpaceMatrices(light_pos);
+
+        shader->UseProgram();
+        for (int i = 0; i < shadow_transforms.size(); i++)
+        {
+            shader->SetMat(("shadow_matrices[" + std::to_string(i) + ']').c_str(), shadow_transforms[i].Transpose()[0]);
+        }
+        shader->SetVec3("light_position", light_pos.Data());
+        shader->SetFloat("far_plane", far_plane_);
+        for (auto &proxy : proxies)
+        {
+            if (!proxy->IsVisible())
+            {
+                continue;
+            }
+            proxy->Draw({.shader = shader});
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    void PointShadowMaker::UnBindFrameBuffer()
-    {
-        ShadowMaker::UnBindFrameBuffer();
-    }
-
-
-
-    void  PointShadowMaker::CalculateShadowTransform(const Vector3f& light_position, std::vector<Matrix4f>& out_shadow_transforms)
+    void PointShadowMaker::CalculateShadowTransform(const Vector3f &light_position, std::vector<Matrix4f> &out_shadow_transforms)
     {
 
         float aspect = (float)(width_ / height_);
@@ -141,6 +153,30 @@ namespace kpengine
         out_shadow_transforms.push_back(projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, -1.f, 0.f}, {0.f, 0.f, -1.f}));
         out_shadow_transforms.push_back(projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, 0.f, 1.f}, {0.f, -1.f, 0.f}));
         out_shadow_transforms.push_back(projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, 0.f, -1.f}, {0.f, -1.f, 0.f}));
-        
+    }
+
+    void PointShadowMaker::AddLight(LightData *light)
+    {
+        PointLightData *point_light = static_cast<PointLightData *>(light);
+        if (point_light)
+        {
+            light_ = point_light;
+        }
+        Vector3f light_pos = light_->position;
+        std::cout << light_pos.x_ << " " << light_pos.y_ << " " << light_pos.z_ << std::endl;
+    }
+
+    std::array<Matrix4f, 6> PointShadowMaker::CalculateLighSpaceMatrices(const Vector3f &light_position)
+    {
+        std::array<Matrix4f, 6> light_space_matrices;
+        float aspect = static_cast<float>(width_) / static_cast<float>(height_);
+        Matrix4f projection = Matrix4f::MakePerProjMatrix(90.f, aspect, near_plane_, far_plane_);
+        light_space_matrices[0] = projection * Matrix4f::MakeCameraMatrix(light_position, {1.f, 0.f, 0.f}, {0.f, -1.f, 0.f});
+        light_space_matrices[1] = projection * Matrix4f::MakeCameraMatrix(light_position, {-1.f, 0.f, 0.f}, {0.f, -1.f, 0.f});
+        light_space_matrices[2] = projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, 1.f, 0.f}, {0.f, 0.f, 1.f});
+        light_space_matrices[3] = projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, -1.f, 0.f}, {0.f, 0.f, -1.f});
+        light_space_matrices[4] = projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, 0.f, 1.f}, {0.f, -1.f, 0.f});
+        light_space_matrices[5] = projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, 0.f, -1.f}, {0.f, -1.f, 0.f});
+        return light_space_matrices;
     }
 }

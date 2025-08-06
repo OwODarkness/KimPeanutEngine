@@ -161,11 +161,11 @@ namespace kpengine
         }
     }
 
-    std::shared_ptr<RenderTexture> RenderMaterial::GetTexture(const std::string key)
+    std::shared_ptr<RenderTexture> RenderMaterial::GetTexture(const std::string key) const
     {
         if(textures.contains(key))
         {
-            return textures[key];
+            return textures.at(key);
         }
         else
         {
@@ -197,14 +197,9 @@ namespace kpengine
         }
     }
 
-    int RenderMaterial::Render(const std::shared_ptr<RenderShader>& shader, size_t texture_start_index)
+    int RenderMaterial::Render(const std::shared_ptr<RenderShader>& shader, size_t texture_start_index) const
     {
-        unsigned int current_shader_id = shader->GetShaderProgram();
-        if(current_shader_id != last_use_shader_id_)
-        {
-            last_use_shader_id_ = current_shader_id;
-            Initialize(shader);
-        }
+            //Initialize(shader);
 
         for(const auto& pair : float_params)
         {
@@ -226,6 +221,7 @@ namespace kpengine
                 std::string bool_name = "material.has_" + pair.first;
                 shader->SetBool(bool_name, true);
                 std::string texture_name = "material." + pair.first;
+                shader->SetInt(texture_name, texture_start_index + map_count);
                 glActiveTexture(GL_TEXTURE0 + texture_start_index + map_count);
                 glBindTexture(GL_TEXTURE_2D, pair.second->GetTexture());
 
