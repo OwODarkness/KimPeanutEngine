@@ -425,70 +425,73 @@ namespace kpengine::math
         mat_yaw[0][2] = sin_yaw;
         mat_yaw[2][0] = -sin_yaw;
         mat_yaw[2][2] = cos_yaw;
-        return mat_roll * mat_yaw* mat_pitch ;
+        return mat_roll * mat_yaw * mat_pitch;
     }
 
     // TODO: Gimbal Lock
-template <typename T>
-Matrix4<T> Matrix4<T>::MakeRotationMatrix(const Rotator<T>& rotator)
-{
-    Quaternion<T> quat = rotator.ToQuat();
-    quat.Normalize();
+    template <typename T>
+    Matrix4<T> Matrix4<T>::MakeRotationMatrix(const Rotator<T> &rotator)
+    {
+        Quaternion<T> quat = rotator.ToQuat();
+        quat.Normalize();
 
-    const T x = quat.x_;
-    const T y = quat.y_;
-    const T z = quat.z_;
-    const T w = quat.w_;
+        const T x = quat.x_;
+        const T y = quat.y_;
+        const T z = quat.z_;
+        const T w = quat.w_;
 
-    // Compute squared components more precisely
-    const T xx = x * x;
-    const T yy = y * y;
-    const T zz = z * z;
-    const T xy = x * y;
-    const T xz = x * z;
-    const T yz = y * z;
-    const T wx = w * x;
-    const T wy = w * y;
-    const T wz = w * z;
+        // Compute squared components more precisely
+        const T xx = x * x;
+        const T yy = y * y;
+        const T zz = z * z;
+        const T xy = x * y;
+        const T xz = x * z;
+        const T yz = y * z;
+        const T wx = w * x;
+        const T wy = w * y;
+        const T wz = w * z;
 
-    Matrix4<T> mat = Matrix4::Identity();
+        Matrix4<T> mat = Matrix4::Identity();
 
-    // First row (X basis vector)
-    mat[0][0] = T(1) - T(2) * (yy + zz);
-    mat[0][1] = T(2) * (xy - wz);
-    mat[0][2] = T(2) * (xz + wy);
-    mat[0][3] = T(0);
+        // First row (X basis vector)
+        mat[0][0] = T(1) - T(2) * (yy + zz);
+        mat[0][1] = T(2) * (xy - wz);
+        mat[0][2] = T(2) * (xz + wy);
+        mat[0][3] = T(0);
 
-    // Second row (Y basis vector)
-    mat[1][0] = T(2) * (xy + wz);
-    mat[1][1] = T(1) - T(2) * (xx + zz);
-    mat[1][2] = T(2) * (yz - wx);
-    mat[1][3] = T(0);
+        // Second row (Y basis vector)
+        mat[1][0] = T(2) * (xy + wz);
+        mat[1][1] = T(1) - T(2) * (xx + zz);
+        mat[1][2] = T(2) * (yz - wx);
+        mat[1][3] = T(0);
 
-    // Third row (Z basis vector)
-    mat[2][0] = T(2) * (xz - wy);
-    mat[2][1] = T(2) * (yz + wx);
-    mat[2][2] = T(1) - T(2) * (xx + yy);
-    mat[2][3] = T(0);
+        // Third row (Z basis vector)
+        mat[2][0] = T(2) * (xz - wy);
+        mat[2][1] = T(2) * (yz + wx);
+        mat[2][2] = T(1) - T(2) * (xx + yy);
+        mat[2][3] = T(0);
 
-    // Fourth row (translation)
-    mat[3][0] = T(0);
-    mat[3][1] = T(0);
-    mat[3][2] = T(0);
-    mat[3][3] = T(1);
+        // Fourth row (translation)
+        mat[3][0] = T(0);
+        mat[3][1] = T(0);
+        mat[3][2] = T(0);
+        mat[3][3] = T(1);
 
-    // Clean up near-zero values
-    const T threshold = static_cast<T>(1e-6);
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 4; ++j) {
-            if (std::abs(mat[i][j]) < threshold) {
-                mat[i][j] = T(0);
+        // Clean up near-zero values
+        const T threshold = static_cast<T>(1e-6);
+        for (int i = 0; i < 4; ++i)
+        {
+            for (int j = 0; j < 4; ++j)
+            {
+                if (std::abs(mat[i][j]) < threshold)
+                {
+                    mat[i][j] = T(0);
+                }
             }
         }
-    }
 
-    return mat;
-}
+        return mat;
+    }
     template <typename T>
     Matrix4<T> Matrix4<T>::MakeScaleMatrix(const Vector3<T> &scale)
     {
@@ -519,24 +522,23 @@ Matrix4<T> Matrix4<T>::MakeRotationMatrix(const Rotator<T>& rotator)
     template <typename T>
     Matrix4<T> Matrix4<T>::MakeCameraMatrix(const Vector3<T> &eye_pos, const Vector3<T> &gaze_dir, const Vector3<T> &up)
     {
-        Vector3<T> w = -(gaze_dir);
-        Vector3<T> u = up.CrossProduct(w);
-        Vector3<T> v = w.CrossProduct(u);
+        Vector3<T> w = -(gaze_dir).GetSafetyNormalize();
+        Vector3<T> u = (up.CrossProduct(w)).GetSafetyNormalize();
+        Vector3<T> v = w.CrossProduct(u); // already orthogonal if u,w are normalized
 
-        Matrix4 res = Matrix4::Identity();
-        res[0][0] = u[0];
-        res[0][1] = u[1];
-        res[0][2] = u[2];
+        Matrix4<T> res = Matrix4<T>::Identity();
+
+        res[0][0] = u.x_;
+        res[0][1] = u.y_;
+        res[0][2] = u.z_;
         res[0][3] = -u.DotProduct(eye_pos);
-
-        res[1][0] = v[0];
-        res[1][1] = v[1];
-        res[1][2] = v[2];
+        res[1][0] = v.x_;
+        res[1][1] = v.y_;
+        res[1][2] = v.z_;
         res[1][3] = -v.DotProduct(eye_pos);
-
-        res[2][0] = w[0];
-        res[2][1] = w[1];
-        res[2][2] = w[2];
+        res[2][0] = w.x_;
+        res[2][1] = w.y_;
+        res[2][2] = w.z_;
         res[2][3] = -w.DotProduct(eye_pos);
 
         return res;
@@ -551,7 +553,7 @@ Matrix4<T> Matrix4<T>::MakeRotationMatrix(const Rotator<T>& rotator)
         res[1][1] = T(2) / (top - bottom);
         res[1][3] = (bottom + top) / (bottom - top);
         res[2][2] = T(2) / (near - far);
-        res[2][3] = (far + near) / (far - near);
+        res[2][3] = -(far + near) / (far - near);
         return res;
     }
     template <typename T>

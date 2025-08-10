@@ -3,6 +3,7 @@
 #include <iostream>
 #include <cassert>
 #include <glad/glad.h>
+#include <glm/glm.hpp>
 
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/render_system.h"
@@ -12,7 +13,6 @@
 #include "runtime/test/render_object_test.h"
 #include "runtime/render/render_shader.h"
 #include "runtime/render/render_camera.h"
-#include "runtime/render/shadow_maker.h"
 #include "runtime/render/environment_map.h"
 #include "runtime/render/render_mesh_resource.h"
 #include "platform/path/path.h"
@@ -24,7 +24,7 @@
 #include "runtime/render/postprocess_pipeline.h"
 #include "runtime/render/outline_effect.h"
 #include "runtime/render/shadow_manager.h"
-
+#include "runtime/render/render_light.h"
 
 namespace kpengine
 {
@@ -36,7 +36,6 @@ namespace kpengine
 
     RenderScene::RenderScene() : scene_fb_(std::make_shared<FrameBuffer>(1280, 720)),
                                  render_camera_(nullptr),
-                                 light_(Light()),
                                  current_shader(nullptr)
     {
     }
@@ -81,33 +80,27 @@ namespace kpengine
         glGenBuffers(1, &ubo_camera_matrices_);
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
         glBufferData(GL_UNIFORM_BUFFER, 2 * sizeof(Matrix4f), nullptr, GL_DYNAMIC_DRAW);
-        glBindBuffer(GL_UNIFORM_BUFFER, 0);
         glBindBufferBase(GL_UNIFORM_BUFFER, 0, ubo_camera_matrices_); // Bind to binding point 0
-
-        glGenBuffers(1, &ubo_light_);
-        glBindBuffer(GL_UNIFORM_BUFFER, ubo_light_);
-        glBufferData(GL_UNIFORM_BUFFER, sizeof(Light), nullptr, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_UNIFORM_BUFFER, 0);
-        glBindBufferBase(GL_UNIFORM_BUFFER, 1, ubo_light_); // Bind to binding point 1
 
-        light_.point_light.ambient = {1.f, 1.f, 1.f};
-        light_.point_light.position = {0.f, 2.f, 0.f};
-        light_.directional_light.color = {0.f, 0.f, 0.f};
-        light_.spot_light.color = {0.f, 0.f, 0.f};
-        light_.spot_light.cutoff = std::cos(math::DegreeToRadian(12.5f));
-        light_.spot_light.outer_cutoff = std::cos(math::DegreeToRadian(17.5f));
+        glGenBuffers(1, &light_ssbo_);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, light_ssbo_);
+        glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(GPULightData) * KPENGINE_MAX_LIGHTS, nullptr, GL_DYNAMIC_DRAW);
+        glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, light_ssbo_);
+        glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
 
         shadow_manager_ = std::make_unique<ShadowManager>();
 
         std::shared_ptr<DirectionalLightData> light0 = std::make_shared<DirectionalLightData>();
+        lights_.push_back(light0);
         shadow_manager_->AddLight(light0);
 
-         std::shared_ptr<PointLightData> light1 = std::make_shared<PointLightData>();
-         light1->position = {0.f, 2.f, 0.f};
-         shadow_manager_->AddLight(light1);
-         shadow_manager_->Initialize();
-         Vector3f light_pos = light1->position;
-        
+        // std::shared_ptr<PointLightData> light1 = std::make_shared<PointLightData>();
+        // lights_.push_back(light1);
+        // light1->position = {0.f, 2.f, 0.f};
+        // shadow_manager_->AddLight(light1);
+
+        shadow_manager_->Initialize();
     }
 
     void RenderScene::Render(float deltatime)
@@ -125,13 +118,12 @@ namespace kpengine
         }
 
         shadow_manager_->Render(scene_proxies);
-        
+
         // GBuffer update
         RenderContext geo_pass_context{
             .shader = geometry_shader_,
             .near_plane = render_camera_->z_near_,
-            .far_plane = render_camera_->z_far_
-        };
+            .far_plane = render_camera_->z_far_};
         g_buffer_->BindFrameBuffer();
 
         for (auto &proxy : scene_proxies)
@@ -145,10 +137,7 @@ namespace kpengine
 
         g_buffer_->UnBindFrameBuffer();
 
-  
-
-     debug_id = g_buffer_->GetTexture("g_normal");
-
+        debug_id = shadow_manager_->GetDirectionalShadowMap();
         scene_fb_->BindFrameBuffer();
 
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
@@ -157,21 +146,34 @@ namespace kpengine
         glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4f), sizeof(Matrix4f), view_mat.Transpose()[0]);
         glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-        if (is_light_dirty)
+        // ssbo
+        int current_light_count = lights_.size();
+
+        if (current_light_count < KPENGINE_MAX_LIGHTS)
         {
-            glBindBuffer(GL_UNIFORM_BUFFER, ubo_light_);
-            glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Light), &light_);
-            glBindBuffer(GL_UNIFORM_BUFFER, 0);
-            is_light_dirty = false;
+            std::vector<GPULightData> light_data;
+
+            for (int i = 0; i < current_light_count; i++)
+            {
+                light_data.push_back(lights_[i]->ToGPULightData());
+            }
+
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, light_ssbo_);
+            glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, sizeof(GPULightData) * current_light_count, light_data.data());
+            glBindBuffer(GL_SHADER_STORAGE_BUFFER, 0);
         }
+
         // render skybox
         Vector3f cam_pos = render_camera_->GetPosition();
 
+
         RenderContext lighting_pass_context = {
             .shader = light_pass_shader_,
+            .light_num = current_light_count,
             .near_plane = render_camera_->z_near_,
             .far_plane = render_camera_->z_far_,
             .view_position = cam_pos.Data(),
+            .light_space_matrix = shadow_manager_->GetLightSpaceMatrix().Transpose()[0],
             .directional_shadow_map = shadow_manager_->GetDirectionalShadowMap(),
             .point_shadow_map = shadow_manager_->GetPointShadowMap(),
             .irradiance_map = environment_map_wrapper->GetIrradianceMap()->GetTexture(),
@@ -193,7 +195,10 @@ namespace kpengine
             GL_DEPTH_BUFFER_BIT,
             GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, scene_fb_->GetFBO());
-        skybox->Render();
+        if (is_skybox_visible)
+        {
+            skybox->Render();
+        }
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -293,12 +298,14 @@ namespace kpengine
             return;
 
         context.shader->UseProgram();
-
+        context.shader->SetInt("light_num", context.light_num);
         context.shader->SetVec3("view_position", context.view_position);
+        context.shader->SetMat("light_space_matrix", context.light_space_matrix);
+
         context.shader->SetFloat("near_plane", context.near_plane);
         context.shader->SetFloat("far_plane", context.far_plane);
 
-        context.shader->SetInt("shadow_map", 0);
+        context.shader->SetInt("directional_shadow_map", 0);
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, context.directional_shadow_map);
 
@@ -341,6 +348,6 @@ namespace kpengine
         glActiveTexture(GL_TEXTURE0);
     }
 
-        RenderScene::~RenderScene() = default;
+    RenderScene::~RenderScene() = default;
 
 }

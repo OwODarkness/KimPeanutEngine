@@ -11,8 +11,8 @@ namespace kpengine{
         void Initialize() override;
         void AddLight(std::shared_ptr<LightData> light) override;
         void Render(const std::vector<std::shared_ptr<PrimitiveSceneProxy>> &proxies) override;
-    private:
-        Matrix4f CalculateLighSpaceMatrix(const Vector3f& light_position);
+    public:
+         Matrix4f CalculateLighSpaceMatrix() const;
     private:
         std::shared_ptr<DirectionalLightData> light_;
     };

@@ -5,27 +5,26 @@
 #include "runtime/render/spot_shadow_caster.h"
 #include "runtime/render/render_light.h"
 
-namespace kpengine{
-    ShadowManager::ShadowManager():
-    directional_caster_(std::make_unique<DirectionalShadowCaster>()),
-    point_caster_(std::make_unique<PointShadowCaster>()),
-    spot_caster_(std::make_unique<SpotShadowCaster>())
+namespace kpengine
+{
+    ShadowManager::ShadowManager() : directional_caster_(std::make_unique<DirectionalShadowCaster>()),
+                                     point_caster_(std::make_unique<PointShadowCaster>()),
+                                     spot_caster_(std::make_unique<SpotShadowCaster>())
     {
-
     }
 
     void ShadowManager::Initialize()
     {
-       directional_caster_->Initialize();
+        directional_caster_->Initialize();
         point_caster_->Initialize();
-       spot_caster_->Initialize();
+        spot_caster_->Initialize();
     }
 
-    void ShadowManager::AddLight(std::shared_ptr<LightData>light)
+    void ShadowManager::AddLight(std::shared_ptr<LightData> light)
     {
-        if(!light)
+        if (!light)
         {
-            return ;
+            return;
         }
         switch (light->light_type)
         {
@@ -45,23 +44,28 @@ namespace kpengine{
 
     void ShadowManager::Render(const std::vector<std::shared_ptr<PrimitiveSceneProxy>> &proxies)
     {
-       directional_caster_->Render(proxies);
+        directional_caster_->Render(proxies);
         point_caster_->Render(proxies);
-       spot_caster_->Render(proxies);
+        spot_caster_->Render(proxies);
     }
 
-       unsigned int ShadowManager::GetDirectionalShadowMap() const
-       {
-            return directional_caster_->GetShadowMap();
-       }
-        unsigned int ShadowManager::GetPointShadowMap() const
-        {
-            return point_caster_->GetShadowMap();
-        }
-        unsigned int ShadowManager::GetSpotShadowMap() const
-        {
-            return spot_caster_->GetShadowMap();
-        }
+    unsigned int ShadowManager::GetDirectionalShadowMap() const
+    {
+        return directional_caster_->GetShadowMap();
+    }
+    unsigned int ShadowManager::GetPointShadowMap() const
+    {
+        return point_caster_->GetShadowMap();
+    }
+    unsigned int ShadowManager::GetSpotShadowMap() const
+    {
+        return spot_caster_->GetShadowMap();
+    }
+
+    Matrix4f ShadowManager::GetLightSpaceMatrix() const
+    {
+        return directional_caster_->CalculateLighSpaceMatrix();
+    }
 
     ShadowManager::~ShadowManager() = default;
 

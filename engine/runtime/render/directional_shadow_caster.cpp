@@ -1,5 +1,6 @@
 #include "directional_shadow_caster.h"
 #include <glad/glad.h>
+#include <iostream>
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/render/shader_pool.h"
@@ -13,19 +14,19 @@ namespace kpengine
     void DirectionalShadowCaster::Initialize()
     {
         shader_ = runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_DIRECTIONALSHADOW);
+        near_plane_ = 0.1f;
+        far_plane_ = 5.f;
 
         glGenFramebuffers(1, &fbo_);
         glGenTextures(1, &shadow_map_);
 
         glBindTexture(GL_TEXTURE_2D, shadow_map_);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH_COMPONENT, width_, height_, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
-
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-        GLfloat borderColor[] = {1.0, 1.0, 1.0, 1.0};
+        float borderColor[] = {1.0, 1.0, 1.0, 1.0};
         glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
 
         glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
@@ -36,7 +37,7 @@ namespace kpengine
     }
     void DirectionalShadowCaster::AddLight(std::shared_ptr<LightData> light)
     {
-        std::shared_ptr<DirectionalLightData> directional =  std::dynamic_pointer_cast<DirectionalLightData>(light);
+        std::shared_ptr<DirectionalLightData> directional = std::dynamic_pointer_cast<DirectionalLightData>(light);
         if (directional)
         {
             light_ = directional;
@@ -49,30 +50,38 @@ namespace kpengine
         {
             return;
         }
+        Matrix4f light_space_matrix = CalculateLighSpaceMatrix();
+        shader_->UseProgram();
+
+        shader_->SetMat("light_space_matrix", light_space_matrix.Transpose()[0]);
+
         glViewport(0, 0, width_, height_);
         glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-        glCullFace(GL_FRONT);
         glClear(GL_DEPTH_BUFFER_BIT);
-
-        Matrix4f light_space_matrix = CalculateLighSpaceMatrix(-200.f * light_->direction);
-        shader_->UseProgram();
-        shader_->SetMat("light_space_matrix", light_space_matrix.Transpose()[0]);
+        glCullFace(GL_FRONT);
+        RenderContext shader_context{.shader = shader_};
         for (const auto &proxy : proxies)
         {
-            if (proxy->IsVisible())
+            if (!proxy->IsVisible())
             {
-                proxy->Draw({.shader = shader_});
+                continue;
             }
+            proxy->Draw(shader_context);
+            
         }
-
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
         glCullFace(GL_BACK);
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 
-    Matrix4f DirectionalShadowCaster::CalculateLighSpaceMatrix(const Vector3f &light_position)
+    Matrix4f DirectionalShadowCaster::CalculateLighSpaceMatrix() const
     {
+
+        if (!light_)
+            return {};
+        Vector3f eye_pos =  -2.f * light_->direction;
+        Vector3f gaze_dir = (Vector3f(0.f) - eye_pos).GetSafetyNormalize();
         Matrix4f proj = Matrix4f::MakeOrthProjMatrix(-10.0f, 10.0f, -10.0f, 10.0f, near_plane_, far_plane_);
-        Matrix4f view = Matrix4f::MakeCameraMatrix(light_position, Vector3f(0.f, -1.f, 0.f), Vector3f(0.f, 1.f, 0.f));
+        Matrix4f view = Matrix4f::MakeCameraMatrix(eye_pos, gaze_dir, Vector3f(0.f, 1.f, 0.f));
         return proj * view;
     }
 }

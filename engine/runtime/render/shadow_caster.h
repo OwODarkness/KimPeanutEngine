@@ -30,7 +30,7 @@ namespace kpengine
         unsigned int shadow_map_;
         int width_ = 1024;
         int height_ = 1024;
-        float near_plane_;
+        float near_plane_ = 1.f;
         float far_plane_ = 25.f;
         std::shared_ptr<RenderShader> shader_;
     };

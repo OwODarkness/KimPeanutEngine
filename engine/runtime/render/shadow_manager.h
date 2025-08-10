@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <vector>
-
+#include "runtime/core/math/math_header.h"
 namespace kpengine
 {
     struct LightData;
@@ -20,6 +20,7 @@ namespace kpengine
         void AddLight(std::shared_ptr<LightData>light);
         void Render(const std::vector<std::shared_ptr<PrimitiveSceneProxy>> &proxies);
         ~ShadowManager();
+        Matrix4f GetLightSpaceMatrix() const;
 
         unsigned int GetDirectionalShadowMap() const;
         unsigned int GetPointShadowMap() const;
@@ -29,6 +30,7 @@ namespace kpengine
         std::unique_ptr<DirectionalShadowCaster> directional_caster_;
         std::unique_ptr<PointShadowCaster> point_caster_;
         std::unique_ptr<SpotShadowCaster> spot_caster_;
+
     };
 
 }

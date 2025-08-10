@@ -2,16 +2,17 @@
 #define KPENGINE_RUNTIME_RENDER_CONTEXT_H
 
 #include <memory>
-
 namespace kpengine
 {
     class RenderShader;
     struct RenderContext
     {
         std::shared_ptr<RenderShader> shader;
+        int light_num;
         float near_plane;
         float far_plane;
         float* view_position;
+        float* light_space_matrix;
         unsigned int directional_shadow_map;
         unsigned int point_shadow_map;
         unsigned int irradiance_map;

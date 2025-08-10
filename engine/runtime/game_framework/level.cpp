@@ -25,7 +25,7 @@ namespace kpengine
         std::shared_ptr<MeshActor> sphere = std::make_shared<MeshActor>("model/sphere/sphere.obj");
         AddActor(sphere);
         sphere->SetActorScale({0.6f, 0.6f, 0.6f});
-        sphere->SetActorLocation({5.f, 1.f, 3.f});
+        sphere->SetActorLocation({2.f, 1.f, 2.f});
 
         std::shared_ptr<MeshActor> bunny = std::make_shared<MeshActor>("model/bunny/stanford-bunny.obj");
         bunny->SetActorScale({5.f, 5.f, 5.f});
