@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <vector>
+#include <array>
 #include "runtime/core/math/math_header.h"
 namespace kpengine
 {
@@ -23,7 +24,7 @@ namespace kpengine
         Matrix4f GetLightSpaceMatrix() const;
 
         unsigned int GetDirectionalShadowMap() const;
-        unsigned int GetPointShadowMap() const;
+        std::array<unsigned int, 4> GetPointShadowMap() const;
         unsigned int GetSpotShadowMap() const;
 
     private:

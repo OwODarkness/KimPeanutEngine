@@ -1,6 +1,7 @@
 #version 460 core
 struct LightData{
     int type;
+    int shadow_map_index;
     vec3 color;
     float intensity;
     vec3 position;
@@ -36,7 +37,7 @@ uniform float near_plane;
 uniform float far_plane;
 
 uniform sampler2D directional_shadow_map;
-uniform samplerCube point_shadow_map;
+uniform samplerCube point_shadow_map[4];
 
 uniform samplerCube irradiance_map;
 uniform samplerCube prefilter_map;
@@ -64,7 +65,7 @@ float CalculateDirectionalShadowValue(vec4 light_space_pos, vec3 normal_vec, vec
 
     float current_depth = proj_coords.z;
     float bias = max(0.5 * (1.0 - dot(normal_vec, light_vec)),  0.005);
-    float shadow = 0.f;
+    float shadow = 0.0;
 
     vec2 texture_size = 1.0 / textureSize(directional_shadow_map, 0);
     for(int x = -1;x<=1;x++)
@@ -79,7 +80,7 @@ float CalculateDirectionalShadowValue(vec4 light_space_pos, vec3 normal_vec, vec
    return shadow;
 }
 
-float CalculatePointShadowValue(vec3 frag_position, vec3 light_pos)
+float CalculatePointShadowValue(vec3 frag_position, vec3 light_pos, int index)
 {
     vec3 frag_to_light = frag_position - light_pos;
     float current_depth = length(frag_to_light);
@@ -94,7 +95,7 @@ float CalculatePointShadowValue(vec3 frag_position, vec3 light_pos)
         {
             for(float z = -offset; z < offset; z += offset / (samples * 0.5))
             {
-                float close_depth = texture(point_shadow_map, frag_to_light + vec3(x, y, z)).r;
+                float close_depth = texture(point_shadow_map[index], frag_to_light + vec3(x, y, z)).r;
                 close_depth *= far_plane;
                 if(current_depth - bias > close_depth)
                 {
@@ -228,7 +229,7 @@ vec3 CalculateDirectionalLight(LightData light, vec3 frag_position, vec3 normal_
     vec3 light_vec = normalize(-light.direction);
     vec4 light_space_pos = light_space_matrix * vec4(frag_position, 1.0);
     float shadow = CalculateDirectionalShadowValue(light_space_pos, normal_vec, light_vec);
-    vec3 radiance = light.color;
+    vec3 radiance = light.intensity * light.color;
     vec3 color = PBRLighting( normal_vec, view_vec, light_vec, radiance, material, shadow);
     return color;
 }
@@ -236,9 +237,10 @@ vec3 CalculatePointLight(LightData light, vec3 frag_position, vec3 normal_vec, M
 {
     vec3 view_vec = normalize(view_position - frag_position);
     vec3 light_vec = normalize(light.position - frag_position);
-    float shadow = CalculatePointShadowValue(frag_position, light.position);
+
+    float shadow = light.shadow_map_index >0 ? CalculatePointShadowValue(frag_position, light.position, light.shadow_map_index-1) : 0.0;
     float attenuation = CalculateAttenuation(light.position, frag_position);
-    vec3 radiance = attenuation * light.color;
+    vec3 radiance = light.intensity * attenuation * light.color;
     vec3 color = PBRLighting(normal_vec, view_vec, light_vec, radiance, material, shadow);
     return color;
 }

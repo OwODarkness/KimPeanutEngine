@@ -53,13 +53,15 @@ namespace kpengine
     {
         return directional_caster_->GetShadowMap();
     }
-    unsigned int ShadowManager::GetPointShadowMap() const
+    std::array<unsigned int, 4> ShadowManager::GetPointShadowMap() const
     {
-        return point_caster_->GetShadowMap();
+        //TODO
+        return point_caster_->GetShadowMaps();
     }
     unsigned int ShadowManager::GetSpotShadowMap() const
     {
-        return spot_caster_->GetShadowMap();
+        //TODO
+        return {};
     }
 
     Matrix4f ShadowManager::GetLightSpaceMatrix() const

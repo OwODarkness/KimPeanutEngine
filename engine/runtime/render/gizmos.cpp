@@ -135,6 +135,7 @@ namespace kpengine
         Vector3f p1{}, p2{};
         float dist{};
         int pre_selected_axis = selected_axis;
+        bool is_hit = false;
         // test (1, 0, 0) axis
         p1 = gizmos_loc;
         p2 = gizmos_loc + Vector3f(1.f, 0.f, 0.f) * length_;
@@ -143,6 +144,7 @@ namespace kpengine
         {
             min_dist = dist;
             pre_selected_axis = 0;
+            is_hit = true;
         }
 
         p2 = gizmos_loc + Vector3f(0.f, 1.f, 0.f) * length_;
@@ -151,6 +153,8 @@ namespace kpengine
         {
             min_dist = dist;
             pre_selected_axis = 1;
+            is_hit = true;
+
         }
 
         p2 = gizmos_loc + Vector3f(0.f, 0.f, 1.f) * length_;
@@ -159,17 +163,20 @@ namespace kpengine
         {
             min_dist = dist;
             pre_selected_axis = 2;
+            is_hit = true;
+
         }
 
-        if (pre_selected_axis == -1)
+        if(!is_hit)
         {
-            return false;
+            pre_selected_axis = -1;
         }
+
         if (!is_lock_)
         {
             selected_axis = pre_selected_axis;
         }
-        return true;
+        return is_hit;
     }
 
     float Gizmos::DistanceRayToSegment(const Vector3f &ray_origin, const Vector3f &ray_dir, const Vector3f &seg_start, const Vector3f &seg_end)

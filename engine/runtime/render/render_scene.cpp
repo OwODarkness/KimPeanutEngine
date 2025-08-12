@@ -93,12 +93,14 @@ namespace kpengine
 
         std::shared_ptr<DirectionalLightData> light0 = std::make_shared<DirectionalLightData>();
         lights_.push_back(light0);
+        light0->intensity = 0.2f;
         shadow_manager_->AddLight(light0);
 
-        // std::shared_ptr<PointLightData> light1 = std::make_shared<PointLightData>();
-        // lights_.push_back(light1);
-        // light1->position = {0.f, 2.f, 0.f};
-        // shadow_manager_->AddLight(light1);
+        std::shared_ptr<PointLightData> light1 = std::make_shared<PointLightData>();
+        lights_.push_back(light1);
+        light1->position = {0.f, 2.f, 0.f};
+        shadow_manager_->AddLight(light1);
+
 
         shadow_manager_->Initialize();
     }
@@ -165,7 +167,6 @@ namespace kpengine
 
         // render skybox
         Vector3f cam_pos = render_camera_->GetPosition();
-
 
         RenderContext lighting_pass_context = {
             .shader = light_pass_shader_,
@@ -309,10 +310,6 @@ namespace kpengine
         glActiveTexture(GL_TEXTURE0);
         glBindTexture(GL_TEXTURE_2D, context.directional_shadow_map);
 
-        context.shader->SetInt("point_shadow_map", 1);
-        glActiveTexture(GL_TEXTURE1);
-        glBindTexture(GL_TEXTURE_CUBE_MAP, context.point_shadow_map);
-
         context.shader->SetInt("irradiance_map", 2);
         glActiveTexture(GL_TEXTURE2);
         glBindTexture(GL_TEXTURE_CUBE_MAP, context.irradiance_map);
@@ -340,6 +337,13 @@ namespace kpengine
         context.shader->SetInt("g_material", 8);
         glActiveTexture(GL_TEXTURE8);
         glBindTexture(GL_TEXTURE_2D, context.g_material);
+
+        for (int i = 0; i < 4; i++)
+        {
+            context.shader->SetInt("point_shadow_map[" + std::to_string(i) + "]", 9 + i);
+            glActiveTexture(GL_TEXTURE9 + i);
+            glBindTexture(GL_TEXTURE_CUBE_MAP, context.point_shadow_map[i]);
+        }
 
         glBindVertexArray(fullscreen_vao);
         glDrawArrays(GL_TRIANGLES, 0, 3);

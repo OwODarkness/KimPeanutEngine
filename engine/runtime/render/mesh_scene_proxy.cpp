@@ -96,9 +96,9 @@ namespace kpengine
                         glActiveTexture(GL_TEXTURE10);
                         glBindTexture(GL_TEXTURE_2D, context.directional_shadow_map);
 
-                        current_shader->SetInt("point_shadow_map", 11);
-                        glActiveTexture(GL_TEXTURE11);
-                        glBindTexture(GL_TEXTURE_CUBE_MAP, context.point_shadow_map);
+                        // current_shader->SetInt("point_shadow_map", 11);
+                        // glActiveTexture(GL_TEXTURE11);
+                        // glBindTexture(GL_TEXTURE_CUBE_MAP, context.point_shadow_map);
 
                         current_shader->SetInt("irradiance_map", 12);
                         glActiveTexture(GL_TEXTURE12);

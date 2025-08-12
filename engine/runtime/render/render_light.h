@@ -15,7 +15,8 @@ namespace kpengine
     struct alignas(16) GPULightData
     {
         int type;
-        float padding0[3];
+        int shadow_map_index;
+        float padding0[2];
 
         Vector3f color;
         float intensity;
@@ -29,7 +30,8 @@ namespace kpengine
         alignas(4) float radius;
         alignas(4) float inner_cutoff;
         alignas(4) float outer_cutoff;
-        float padding3;
+        float padding ;
+
     };
 
     struct LightData
@@ -66,15 +68,17 @@ namespace kpengine
     {
         Vector3f position;
         float radius;
-
+        int shadow_map_index;
         PointLightData() : LightData(LightType::Point, {1.f, 1.f, 1.f}, 1.f),
                            position({3.f, 3.f, 3.f}),
                            radius(10.f) {}
-        PointLightData(const Vector3f &in_position, const Vector3f &in_color, float in_intensity, float in_radius) :
-         LightData(LightType::Directional, in_color, in_intensity),
-                                                                                                                     
-         position(in_position),
-                                                                                                                     radius(in_radius) {}
+        PointLightData(const Vector3f &in_position, const Vector3f &in_color, float in_intensity, float in_radius) : 
+        LightData(LightType::Directional, in_color, in_intensity),
+        position(in_position),
+        radius(in_radius),
+        shadow_map_index(0)
+        {
+        }
 
         GPULightData ToGPULightData() const override
         {
@@ -86,6 +90,7 @@ namespace kpengine
 
             data.position = position;
             data.radius = radius;
+            data.shadow_map_index = shadow_map_index;
             return data;
         }
     };
@@ -126,7 +131,6 @@ namespace kpengine
         }
     };
 
-  
 }
 
 #endif

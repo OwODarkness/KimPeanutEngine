@@ -64,7 +64,7 @@ namespace kpengine
                 bool hit = gizmos_->HitAxis(origin_pos, world_ray);
                 if (hit)
                 {
-                    ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
+                    //ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
                     if(scene_ui_->IsLeftMouseClick())
                     {
                         gizmos_->DragStart(origin_pos, world_ray);

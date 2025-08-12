@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_CONTEXT_H
 
 #include <memory>
+#include <array>
 namespace kpengine
 {
     class RenderShader;
@@ -14,7 +15,7 @@ namespace kpengine
         float* view_position;
         float* light_space_matrix;
         unsigned int directional_shadow_map;
-        unsigned int point_shadow_map;
+        std::array<unsigned int, 4> point_shadow_map;
         unsigned int irradiance_map;
         unsigned int prefilter_map;
         unsigned int brdf_map;
