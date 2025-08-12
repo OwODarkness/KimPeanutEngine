@@ -55,19 +55,23 @@ namespace kpengine
     }
     std::array<unsigned int, 4> ShadowManager::GetPointShadowMap() const
     {
-        //TODO
         return point_caster_->GetShadowMaps();
     }
-    unsigned int ShadowManager::GetSpotShadowMap() const
+    std::array<unsigned int, 4> ShadowManager::GetSpotShadowMap() const
     {
-        //TODO
-        return {};
+        return spot_caster_->GetShadowMaps();
     }
 
-    Matrix4f ShadowManager::GetLightSpaceMatrix() const
+    Matrix4f ShadowManager::GetDirectionalLightSpaceMatrix() const
     {
         return directional_caster_->CalculateLighSpaceMatrix();
     }
+
+    std::array<Matrix4f, 4> ShadowManager::GetSpotLightSpaceMatrix() const
+    {
+        return spot_caster_->GetLightSpaceMatrices();
+    }
+
 
     ShadowManager::~ShadowManager() = default;
 

@@ -2,6 +2,7 @@
 
 #include <iostream>
 #include <cassert>
+#include <array>
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
@@ -91,16 +92,22 @@ namespace kpengine
 
         shadow_manager_ = std::make_unique<ShadowManager>();
 
-        std::shared_ptr<DirectionalLightData> light0 = std::make_shared<DirectionalLightData>();
-        lights_.push_back(light0);
-        light0->intensity = 0.2f;
-        shadow_manager_->AddLight(light0);
+        // std::shared_ptr<DirectionalLightData> light0 = std::make_shared<DirectionalLightData>();
+        // lights_.push_back(light0);
+        // light0->intensity = 0.2f;
+        // shadow_manager_->AddLight(light0);
 
         std::shared_ptr<PointLightData> light1 = std::make_shared<PointLightData>();
         lights_.push_back(light1);
         light1->position = {0.f, 2.f, 0.f};
+        light1->intensity = 1.f;
         shadow_manager_->AddLight(light1);
 
+        // std::shared_ptr<SpotLightData> light2 = std::make_shared<SpotLightData>();
+        // light2->position = {0.f, 8.f, 0.f};
+        // light2->direction = {0.2f, -1.f, -0.10f};
+        // lights_.push_back(light2);
+        // shadow_manager_->AddLight(light2);
 
         shadow_manager_->Initialize();
     }
@@ -110,6 +117,8 @@ namespace kpengine
         Matrix4f proj_mat = render_camera_->GetProjectionMatrix();
         Matrix4f view_mat = render_camera_->GetViewMatrix();
         Frustum frustum = ExtractFrustumFromVPMat(proj_mat * view_mat);
+
+
 
         // mark visiable
         for (auto &proxy : scene_proxies)
@@ -139,11 +148,10 @@ namespace kpengine
 
         g_buffer_->UnBindFrameBuffer();
 
-        debug_id = shadow_manager_->GetDirectionalShadowMap();
+        debug_id = shadow_manager_->GetSpotShadowMap()[0];
         scene_fb_->BindFrameBuffer();
 
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
-
         glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(Matrix4f), proj_mat.Transpose()[0]);
         glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4f), sizeof(Matrix4f), view_mat.Transpose()[0]);
         glBindBuffer(GL_UNIFORM_BUFFER, 0);
@@ -174,9 +182,11 @@ namespace kpengine
             .near_plane = render_camera_->z_near_,
             .far_plane = render_camera_->z_far_,
             .view_position = cam_pos.Data(),
-            .light_space_matrix = shadow_manager_->GetLightSpaceMatrix().Transpose()[0],
+            .directional_light_space_matrix = shadow_manager_->GetDirectionalLightSpaceMatrix().Transpose()[0],
+            .spot_light_space_matrix = shadow_manager_->GetSpotLightSpaceMatrix(),
             .directional_shadow_map = shadow_manager_->GetDirectionalShadowMap(),
             .point_shadow_map = shadow_manager_->GetPointShadowMap(),
+            .spot_shadow_map = shadow_manager_->GetSpotShadowMap(),
             .irradiance_map = environment_map_wrapper->GetIrradianceMap()->GetTexture(),
             .prefilter_map = environment_map_wrapper->GetPrefilterMap()->GetTexture(),
             .brdf_map = environment_map_wrapper->GetBRDFMap()->GetTexture(),
@@ -301,7 +311,13 @@ namespace kpengine
         context.shader->UseProgram();
         context.shader->SetInt("light_num", context.light_num);
         context.shader->SetVec3("view_position", context.view_position);
-        context.shader->SetMat("light_space_matrix", context.light_space_matrix);
+        context.shader->SetMat("directional_light_space_matrix", context.directional_light_space_matrix);
+
+        for (int i = 0; i < 4; i++)
+        {
+            context.shader->SetMat("spot_light_space_matrix[" + std::to_string(i) + "]", context.spot_light_space_matrix[i].Transpose()[0]);
+
+        }
 
         context.shader->SetFloat("near_plane", context.near_plane);
         context.shader->SetFloat("far_plane", context.far_plane);
@@ -343,6 +359,13 @@ namespace kpengine
             context.shader->SetInt("point_shadow_map[" + std::to_string(i) + "]", 9 + i);
             glActiveTexture(GL_TEXTURE9 + i);
             glBindTexture(GL_TEXTURE_CUBE_MAP, context.point_shadow_map[i]);
+        }
+
+        for (int i = 0; i < 4; i++)
+        {
+            context.shader->SetInt("spot_shadow_map[" + std::to_string(i) + "]", 13 + i);
+            glActiveTexture(GL_TEXTURE13 + i);
+            glBindTexture(GL_TEXTURE_2D, context.spot_shadow_map[i]);
         }
 
         glBindVertexArray(fullscreen_vao);

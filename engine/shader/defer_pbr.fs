@@ -6,6 +6,7 @@ struct LightData{
     float intensity;
     vec3 position;
     vec3 direction;
+    float padding;
     float radius;
     float inner_cutoff;
     float outer_cutoff;
@@ -32,12 +33,15 @@ const float MAX_REFLECTION_LOD = 4.0;
 uniform int light_num;
 
 uniform vec3 view_position;
-uniform mat4 light_space_matrix;
+uniform mat4 directional_light_space_matrix;
+uniform mat4 spot_light_space_matrix[4];
+
 uniform float near_plane;
 uniform float far_plane;
 
 uniform sampler2D directional_shadow_map;
 uniform samplerCube point_shadow_map[4];
+uniform sampler2D spot_shadow_map[4];
 
 uniform samplerCube irradiance_map;
 uniform samplerCube prefilter_map;
@@ -80,6 +84,8 @@ float CalculateDirectionalShadowValue(vec4 light_space_pos, vec3 normal_vec, vec
    return shadow;
 }
 
+
+
 float CalculatePointShadowValue(vec3 frag_position, vec3 light_pos, int index)
 {
     vec3 frag_to_light = frag_position - light_pos;
@@ -108,6 +114,39 @@ float CalculatePointShadowValue(vec3 frag_position, vec3 light_pos, int index)
     return shadow;
 }
 
+float CalculateSpotShadowValue(vec4 light_space_pos, vec3 normal_vec, vec3 light_vec, int index)
+{
+    vec3 proj_coords = light_space_pos.xyz / light_space_pos.w;
+    proj_coords = proj_coords * 0.5 + 0.5;
+
+    if(proj_coords.x < 0.0 || proj_coords.x > 1.0 || 
+    proj_coords.y < 0.0 || proj_coords.y > 1.0 ||
+    proj_coords.z > 1.0)
+    {
+        return 0.0; 
+    }
+
+    float current_depth = proj_coords.z;
+    float max_depth = texture(spot_shadow_map[index], proj_coords.xy).r;
+    float ndotl = max(dot(normal_vec, light_vec), 0.0);
+
+// Blend constant and slope bias
+    float bias = max(0.0005, 0.005 * (1.0 - ndotl));
+    bias = min(bias, 0.01);
+    float shadow = 0.0;
+
+    vec2 texture_size = 1.0 / textureSize(spot_shadow_map[index], 0);
+    for(int x = -1;x<=1;x++)
+    {
+        for(int y = -1;y<=1;y++)
+        {
+            float pcf = texture(spot_shadow_map[index], proj_coords.xy + vec2(x, y) * texture_size).r;
+            shadow += current_depth - bias > pcf ? 1.0: 0.0;
+        }
+    }
+    shadow /= 9.0;
+   return shadow;
+}
 
 vec3 CalculateHalfVector(vec3 a, vec3 b)
 {
@@ -227,7 +266,7 @@ vec3 CalculateDirectionalLight(LightData light, vec3 frag_position, vec3 normal_
 {
     vec3 view_vec = normalize(view_position - frag_position);
     vec3 light_vec = normalize(-light.direction);
-    vec4 light_space_pos = light_space_matrix * vec4(frag_position, 1.0);
+    vec4 light_space_pos = directional_light_space_matrix * vec4(frag_position, 1.0);
     float shadow = CalculateDirectionalShadowValue(light_space_pos, normal_vec, light_vec);
     vec3 radiance = light.intensity * light.color;
     vec3 color = PBRLighting( normal_vec, view_vec, light_vec, radiance, material, shadow);
@@ -238,7 +277,12 @@ vec3 CalculatePointLight(LightData light, vec3 frag_position, vec3 normal_vec, M
     vec3 view_vec = normalize(view_position - frag_position);
     vec3 light_vec = normalize(light.position - frag_position);
 
-    float shadow = light.shadow_map_index >0 ? CalculatePointShadowValue(frag_position, light.position, light.shadow_map_index-1) : 0.0;
+    float shadow = 0.0;
+    if(light.shadow_map_index > 0)
+    {
+        int index = light.shadow_map_index - 1;
+        shadow = CalculatePointShadowValue(frag_position, light.position, index);
+    }
     float attenuation = CalculateAttenuation(light.position, frag_position);
     vec3 radiance = light.intensity * attenuation * light.color;
     vec3 color = PBRLighting(normal_vec, view_vec, light_vec, radiance, material, shadow);
@@ -246,8 +290,22 @@ vec3 CalculatePointLight(LightData light, vec3 frag_position, vec3 normal_vec, M
 }
 vec3 CalculateSpotLight(LightData light, vec3 frag_position, vec3 normal_vec, Material material)
 {
-    vec3 color;
     vec3 view_vec = normalize(view_position - frag_position);
+    vec3 light_vec = normalize(light.position - frag_position);
+    float shadow = 0.0;
+    if(light.shadow_map_index >0 )
+    {
+        int index = light.shadow_map_index  - 1;
+        vec4 light_space_pos = spot_light_space_matrix[index] * vec4(frag_position, 1.0);
+        shadow = CalculateSpotShadowValue(light_space_pos, normal_vec, light_vec, index);
+    }
+    
+    float theta = dot(-light_vec, normalize(light.direction));
+    float epsilon   = cos(light.inner_cutoff) - cos(light.outer_cutoff);
+    float intensity = clamp((theta - cos(light.outer_cutoff)) / epsilon, 0.0, 1.0);  
+    float attenuation = CalculateAttenuation(light.position, frag_position);
+    vec3 radiance = light.intensity * intensity * light.color * attenuation;
+    vec3 color = PBRLighting(normal_vec, view_vec, light_vec, radiance, material, shadow);
     return color;
 }
 
@@ -269,10 +327,9 @@ vec3 CalculateLight(LightData light, vec3 frag_position, vec3 normal_vec, Materi
     return color;
 }
 
-float LinearizeDepth(float depth)
+float linearize_depth(float z_ndc, float near, float far)
 {
-    float z = depth * 2.0 - 1.0;
-    return (2.0 * near_plane * far_plane ) / (far_plane + near_plane - z *(far_plane - near_plane));
+    return (near * far) / (far - z_ndc * (far - near));
 }
 
 void main()
@@ -293,7 +350,7 @@ void main()
         color += CalculateLight(lights[i], frag_position, normal_vec, material);
     }
 
-
     out_frag_color = vec4(color, 1.0);
+
 
 }

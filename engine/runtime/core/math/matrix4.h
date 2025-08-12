@@ -560,7 +560,7 @@ namespace kpengine::math
     Matrix4<T> Matrix4<T>::MakePerProjMatrix(T fov, T aspect, T near, T far)
     {
         Matrix4 res = Matrix4::Zero();
-        T half_radian = T(kpengine::math::DegreeToRadian(0.5 * fov));
+        T half_radian = T(0.5 * fov);
         T top = std::tan(half_radian) * near;
         T bottom = -top;
         T right = aspect * top;

@@ -102,17 +102,19 @@ namespace kpengine
         float radius;
         float inner_cutoff;
         float outer_cutoff;
+        int shadow_map_index;
 
         SpotLightData() : LightData(LightType::Spot, {1.f, 1.f, 1.f}, 1.f),
                           position({3.f, 3.f, 3.f}),
                           direction({-0.2f, -1.0f, -0.3f}),
                           radius(10.f),
-                          inner_cutoff(math::DegreeToRadian(12.5f)), outer_cutoff(math::DegreeToRadian(17.5f)) {}
+                          inner_cutoff(12.5f), outer_cutoff(17.5f) {}
         SpotLightData(const Vector3f &in_position, const Vector3f &in_direction, const Vector3f &in_color, float in_intensity, float in_radius, float in_inner_cutoff, float in_outer_cutoff) : LightData(LightType::Spot, in_color, in_intensity),
                                                                                                                                                                                                 position(in_position),
                                                                                                                                                                                                 direction(in_direction),
                                                                                                                                                                                                 radius(in_radius),
-                                                                                                                                                                                                inner_cutoff(in_inner_cutoff), outer_cutoff(in_outer_cutoff) {}
+                                                                                                                                                                                                inner_cutoff(in_inner_cutoff), outer_cutoff(in_outer_cutoff),
+                                                                                                                                                                                                shadow_map_index(0) {}
 
         GPULightData ToGPULightData() const override
         {
@@ -125,8 +127,9 @@ namespace kpengine
             data.position = position;
             data.direction = direction;
             data.radius = radius;
-            data.inner_cutoff = inner_cutoff;
-            data.outer_cutoff = outer_cutoff;
+            data.inner_cutoff = math::DegreeToRadian(inner_cutoff) ;
+            data.outer_cutoff = math::DegreeToRadian(outer_cutoff) ;
+            data.shadow_map_index = shadow_map_index;
             return data;
         }
     };

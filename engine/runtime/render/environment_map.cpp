@@ -29,7 +29,7 @@ namespace kpengine{
         glGenFramebuffers(1, &capture_fbo_);
         glGenRenderbuffers(1, &capture_rbo_);
 
-        Matrix4f projection = Matrix4f::MakePerProjMatrix(90.f, 1.f, 0.1f, 10.f);
+        Matrix4f projection = Matrix4f::MakePerProjMatrix(math::DegreeToRadian(90.f), 1.f, 0.1f, 10.f);
         std::vector<Matrix4f> views = {
             Matrix4f::MakeCameraMatrix({0.f, 0.f, 0.f}, {1.f, 0.f, 0.f}, {0.f, -1.f, 0.f}),
             Matrix4f::MakeCameraMatrix({0.f, 0.f, 0.f}, {-1.f, 0.f, 0.f}, {0.f, -1.f, 0.f}),

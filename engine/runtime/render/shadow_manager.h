@@ -21,11 +21,12 @@ namespace kpengine
         void AddLight(std::shared_ptr<LightData>light);
         void Render(const std::vector<std::shared_ptr<PrimitiveSceneProxy>> &proxies);
         ~ShadowManager();
-        Matrix4f GetLightSpaceMatrix() const;
+        Matrix4f GetDirectionalLightSpaceMatrix() const;
+        std::array<Matrix4f, 4> GetSpotLightSpaceMatrix() const;
 
         unsigned int GetDirectionalShadowMap() const;
         std::array<unsigned int, 4> GetPointShadowMap() const;
-        unsigned int GetSpotShadowMap() const;
+        std::array<unsigned int, 4> GetSpotShadowMap() const;
 
     private:
         std::unique_ptr<DirectionalShadowCaster> directional_caster_;

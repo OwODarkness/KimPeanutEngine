@@ -22,9 +22,9 @@ namespace kpengine
             glGenTextures(1, &shadow_maps_[i]);
 
             glBindTexture(GL_TEXTURE_CUBE_MAP, shadow_maps_[i]);
-            for (int i = 0; i < 6; i++)
+            for (int j = 0; j < 6; j++)
             {
-                glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + i, 0, GL_DEPTH_COMPONENT, width_, height_, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
+                glTexImage2D(GL_TEXTURE_CUBE_MAP_POSITIVE_X + j, 0, GL_DEPTH_COMPONENT, width_, height_, 0, GL_DEPTH_COMPONENT, GL_FLOAT, nullptr);
             }
 
             glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
@@ -92,7 +92,7 @@ namespace kpengine
     {
         std::array<Matrix4f, 6> light_space_matrices;
         float aspect = static_cast<float>(width_) / static_cast<float>(height_);
-        Matrix4f projection = Matrix4f::MakePerProjMatrix(90.f, aspect, near_plane_, far_plane_);
+        Matrix4f projection = Matrix4f::MakePerProjMatrix(math::DegreeToRadian(90.f), aspect, near_plane_, far_plane_);
         light_space_matrices[0] = projection * Matrix4f::MakeCameraMatrix(light_position, {1.f, 0.f, 0.f}, {0.f, -1.f, 0.f});
         light_space_matrices[1] = projection * Matrix4f::MakeCameraMatrix(light_position, {-1.f, 0.f, 0.f}, {0.f, -1.f, 0.f});
         light_space_matrices[2] = projection * Matrix4f::MakeCameraMatrix(light_position, {0.f, 1.f, 0.f}, {0.f, 0.f, 1.f});
@@ -102,9 +102,5 @@ namespace kpengine
         return light_space_matrices;
     }
 
-    unsigned int PointShadowCaster::GetShadowMap(unsigned int index) const
-    {
-        return shadow_maps_[index];
-    }
 
 }

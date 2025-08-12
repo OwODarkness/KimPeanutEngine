@@ -137,7 +137,7 @@ namespace kpengine
             // const int kwidth = runtime::global_runtime_context.window_system_->width_;
             // const int kheight = runtime::global_runtime_context.window_system_->height_;
             // aspect_ = (float)(kwidth / kheight);
-            return Matrix4f::MakePerProjMatrix(fov_, aspect_, z_near_, z_far_);
+            return Matrix4f::MakePerProjMatrix(math::DegreeToRadian(fov_), aspect_, z_near_, z_far_);
         }
         else
         {
