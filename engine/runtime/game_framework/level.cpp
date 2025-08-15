@@ -34,7 +34,7 @@ namespace kpengine
 
         std::shared_ptr<MeshActor> teapot = std::make_shared<MeshActor>("model/teapot/teapot.obj");
         teapot->SetActorScale({0.1f, 0.1f, 0.1f});
-        teapot->SetActorLocation({0.5f, 0.f, 0.5f});
+        teapot->SetActorLocation({0.5f, 0.2f, 0.5f});
         AddActor(teapot);
 
         // std::shared_ptr<MeshActor> nanosuit = std::make_shared<MeshActor>("model/nanosuit/nanosuit.obj");

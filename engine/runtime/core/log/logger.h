@@ -4,83 +4,71 @@
 #include <string>
 #include <mutex>
 #include <format>
-#include <iostream>
 #include <chrono>
-#include <iomanip>
-#include <ctime>
 #include <vector>
 #include <cstdio>
-#include <magic_enum/magic_enum.hpp>
-
+#include <fstream>
 #include "runtime/runtime_global_context.h"
-#include "runtime/core/system/log_system.h"
-
+#include "log_entry.h"
 
 #define KP_LOG(LOG_NAME, LEVEL, MESSAGE, ...) \
-    kpengine::program::Logger::GetLogger()->Log(LOG_NAME, LEVEL, MESSAGE, ##__VA_ARGS__)
+    kpengine::program::Logger::GetLogger()->Log(LOG_NAME, LEVEL, __LINE__, __FILE__, MESSAGE, ##__VA_ARGS__)
 
-#define LOG_LEVEL_DISPLAY kpengine::program::LogLevel::DISPLAY
-#define LOG_LEVEL_WARNNING kpengine::program::LogLevel::WARNNING
-#define LOG_LEVEL_ERROR kpengine::program::LogLevel::ERROR
-#define LOG_LEVEL_FATAL kpengine::program::LogLevel::FATAL
+#define LOG_LEVEL_DISPLAY kpengine::program::LogLevel::Info
+#define LOG_LEVEL_WARNNING kpengine::program::LogLevel::Warning
+#define LOG_LEVEL_ERROR kpengine::program::LogLevel::Error
+#define LOG_LEVEL_FATAL kpengine::program::LogLevel::Fatal
 
-//debug flag
+// debug flag
 #define KPENGINE_DEBUG
 
-
-namespace kpengine
+namespace kpengine::program
 {
-    namespace program
+
+    class Logger
     {
+    private:
+        Logger();
 
-        enum class LogLevel : uint8_t
-        {
-            DISPLAY = 0,
-            WARNNING,
-            ERROR,
-            FATAL
-        };
+    public:
+        ~Logger();
+        static Logger *GetLogger();
+        void ExtractTipColorFromLogLevel(float (&color)[4], LogLevel level);
+        void Tick();
+        template <typename... Args>
+        void Log(const std::string &log_name, LogLevel level, int line, const std::string &file, const std::string &msg, Args &&...args);
+        static std::string FetchStringFromLog(const LogEntry& log);
+    private:
+        void WriteLog(const std::string &name, LogLevel level, const std::string msg, int line, const std::string &file, std::chrono::system_clock::time_point timestamp);
+        void FlushToFile();
+        bool CreateLogFile();
+        void Reset();
+    private:
+        static Logger *log_single_instance_;
+        static std::mutex log_mutex;
 
-        class Logger
-        {
-        private:
-            Logger();
+        std::vector<LogEntry> logs_;
+        size_t last_flushed_index_{};
+        std::ofstream file_;
+        std::chrono::steady_clock::time_point last_flush_time_;
+        const float flush_interval;
+        const size_t flush_size_threshold;
+        const size_t max_buf_size ;
+        const size_t max_log_file_size;
+        
+        bool request_immediate_flush;
+    };
 
-        public:
-            static Logger *GetLogger();
-            void ExtractTipColorFromLogLevel(float (&color)[4],  LogLevel level);
-            template <typename... Args>
-            void Log(std::string_view log_name, LogLevel level, const std::string &msg, Args &&...args)
-            {
-                std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
-                std::time_t time = std::chrono::system_clock::to_time_t(now);
+    template <typename... Args>
+    void Logger::Log(const std::string &log_name, LogLevel level, int line, const std::string &file, const std::string &msg, Args &&...args)
+    {
+        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
+        int size = std::snprintf(nullptr, 0, msg.c_str(), std::forward<Args>(args)...) + 1;
+        std::vector<char> buffer(size);
+        std::snprintf(buffer.data(), buffer.size(), msg.c_str(), std::forward<Args>(args)...);
+        std::string message = std::string(buffer.data(), buffer.size() - 1);
 
-                std::tm local_time;
-
-                errno_t err = localtime_s(&local_time, &time);
-                if (err == 0)
-                {
-                    int size = std::snprintf(nullptr, 0, msg.c_str(), std::forward<Args>(args)...) + 1;
-                    std::vector<char> buffer(size);
-                     std::snprintf(buffer.data(), buffer.size(), msg.c_str(), std::forward<Args>(args)...);
-                    std::string message =  std::string(buffer.data(), buffer.size() - 1);
-
-                    std::stringstream ss ;
-                    ss<<std::put_time(&local_time, "%Y-%m-%d %H:%M:%S");
-                    std::string s = "[" + ss.str() + "] " + std::string(log_name) + ": " +
-                     "[" + std::string(magic_enum::enum_name(level)) +"] " + message;
-                    float msg_color[4];
-                    ExtractTipColorFromLogLevel(msg_color, level);
-                    runtime::global_runtime_context.log_system_->AddLog(s, msg_color);
-#ifdef KPENGINE_DEBUG
-                    std::cout << s <<  std::endl;
-#endif
-                }
-            }
-        private:
-            static Logger *log_single_instance_;
-            static std::mutex log_mutex;
-        };
+        WriteLog(log_name, level, message, line, file, now);
     }
 }
 

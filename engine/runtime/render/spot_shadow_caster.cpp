@@ -89,12 +89,10 @@ namespace kpengine
     {
         if (!light)
             return {};
-        Vector3f dir = light->direction.GetSafetyNormalize();
-        Matrix4f view = Matrix4f::MakeCameraMatrix(light->position, dir, Vector3f(0.f, 1.f, 0.f));
-
-        float fov = math::DegreeToRadian(light->outer_cutoff * 2) ;
-        float aspect = 1.f;
-        Matrix4f proj = Matrix4f::MakePerProjMatrix(fov, aspect, 0.1f, 10.f);
+        Matrix4f view = Matrix4f::MakeCameraMatrix(light->position, light->direction, Vector3f(0.f, 1.f, 0.f));
+        float fov = math::DegreeToRadian(light->outer_cutoff * 2.f) ;
+        float aspect = static_cast<float>(width_) / static_cast<float>(height_);
+        Matrix4f proj = Matrix4f::MakePerProjMatrix(fov, aspect, near_plane_, light->radius);
         return proj * view;
     }
 }

@@ -47,7 +47,7 @@ namespace kpengine
         glfwSwapInterval(1);
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         {
-            std::cout << "Failed to initialize GLAD" << std::endl;
+            KP_LOG("GLFW Window Create", LOG_LEVEL_ERROR, "Failed to initialize GLAD");
             return;
         }
         glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
@@ -95,7 +95,6 @@ namespace kpengine
         WindowSystem *window_system = glfw_context->window_sys;
         window_system->width_ = width;
         window_system->height_ = height;
-        std::cout << width << " " << height << "\n";
     }
 
 }

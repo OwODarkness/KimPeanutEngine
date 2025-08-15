@@ -1,6 +1,5 @@
 #include "editor_scene_manager.h"
 
-#include <iostream>
 #include "editor/include/editor_ui_component/editor_scene_component.h"
 #include "editor/include/editor_actor_control_panel.h"
 #include "runtime/core/system/render_system.h"
@@ -57,6 +56,7 @@ namespace kpengine
 
             if (!camera)
                 return;
+            //If gizmos axis existed, check hit axis and control drag behavior
             if (gizmos_)
             {
                 const Vector3f &origin_pos = camera->GetPosition();
@@ -64,7 +64,6 @@ namespace kpengine
                 bool hit = gizmos_->HitAxis(origin_pos, world_ray);
                 if (hit)
                 {
-                    //ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
                     if(scene_ui_->IsLeftMouseClick())
                     {
                         gizmos_->DragStart(origin_pos, world_ray);
@@ -144,7 +143,6 @@ namespace kpengine
             if (tzmax < tmax)
                 tmax = tzmax;
 
-            // Optional: discard negative intersections (behind camera)
             if (tmin < 0.0f && tmax < 0.0f)
                 return false;
 

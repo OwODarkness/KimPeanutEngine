@@ -52,27 +52,26 @@ namespace kpengine
 
     private:
         // scene proxy
-        std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies; // renderable
-        std::shared_ptr<Gizmos> gizmos_;
-        std::vector<unsigned int> free_slots;
-        unsigned int current_generation = 0;
-
-        unsigned int ubo_camera_matrices_; // unifrom buffer object
-        unsigned int light_ssbo_;
-
         bool is_skybox_visible = true;
         bool is_light_dirty = true;
-        std::shared_ptr<RenderShader> current_shader;
 
-        std::shared_ptr<RenderShader> geometry_shader_;
-
+        int width_;
+        int height_;
+        unsigned int current_generation{};
+        unsigned int ubo_camera_matrices_{}; // unifrom buffer object
+        unsigned int light_ssbo_{};
         unsigned int fullscreen_vao{};
         unsigned int fullscreen_vbo{};
-        std::shared_ptr<RenderShader> light_pass_shader_{};
 
+        std::shared_ptr<RenderShader> current_shader;
+        std::shared_ptr<RenderShader> geometry_shader_;
+        std::shared_ptr<RenderShader> light_pass_shader_{};
         std::shared_ptr<PostProcessPipeline> postprocess_pipeline_;
         std::unique_ptr<ShadowManager> shadow_manager_;
         std::vector<std::shared_ptr<struct LightData>> lights_;
+        std::vector<std::shared_ptr<PrimitiveSceneProxy>> scene_proxies;
+        std::shared_ptr<Gizmos> gizmos_;
+        std::vector<unsigned int> free_slots;
     };
 }
 

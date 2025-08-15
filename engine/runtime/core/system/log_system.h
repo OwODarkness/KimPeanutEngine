@@ -19,7 +19,7 @@ namespace kpengine {
     class LogSystem {
     public:
         void AddLog(const std::string& msg, const float msg_color[4]);
-        
+        void Tick(float delta_time);
         inline const std::vector<LogInfo>& GetLogs() const { return logs_; }
         
     private:

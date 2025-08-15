@@ -35,9 +35,7 @@ namespace kpengine
         SceneMode_Editor
     };
 
-    RenderScene::RenderScene() : scene_fb_(std::make_shared<FrameBuffer>(1280, 720)),
-                                 render_camera_(nullptr),
-                                 current_shader(nullptr)
+    RenderScene::RenderScene() : width_(1280), height_(720)
     {
     }
 
@@ -46,6 +44,7 @@ namespace kpengine
         assert(camera);
         render_camera_ = camera;
 
+        scene_fb_ = std::make_shared<FrameBuffer>(width_, height_);
         scene_fb_->Initialize();
         scene_fb_->AddColorAttachment("default", GL_RGB, GL_RGB, GL_UNSIGNED_INT);
         scene_fb_->Finalize();
@@ -55,11 +54,10 @@ namespace kpengine
         environment_map_wrapper->Initialize();
 
         // skybox
-        // skybox = test::GetRenderObjectSkybox();
         skybox = std::make_shared<Skybox>(runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_SKYBOX), environment_map_wrapper->GetEnvironmentMap());
         skybox->Initialize();
 
-        g_buffer_ = std::make_shared<FrameBuffer>(1280, 720);
+        g_buffer_ = std::make_shared<FrameBuffer>(width_, height_);
         g_buffer_->Initialize();
         g_buffer_->AddColorAttachment("g_position", GL_RGB16F, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_normal", GL_RGB16F, GL_RGB, GL_FLOAT);
@@ -103,11 +101,11 @@ namespace kpengine
         light1->intensity = 1.f;
         shadow_manager_->AddLight(light1);
 
-        // std::shared_ptr<SpotLightData> light2 = std::make_shared<SpotLightData>();
-        // light2->position = {0.f, 8.f, 0.f};
-        // light2->direction = {0.2f, -1.f, -0.10f};
-        // lights_.push_back(light2);
-        // shadow_manager_->AddLight(light2);
+        std::shared_ptr<SpotLightData> light2 = std::make_shared<SpotLightData>();
+        light2->position = {0.f, 8.f, 0.f};
+        light2->direction = {0.2f, -1.f, -0.10f};
+        lights_.push_back(light2);
+        shadow_manager_->AddLight(light2);
 
         shadow_manager_->Initialize();
     }
@@ -117,8 +115,6 @@ namespace kpengine
         Matrix4f proj_mat = render_camera_->GetProjectionMatrix();
         Matrix4f view_mat = render_camera_->GetViewMatrix();
         Frustum frustum = ExtractFrustumFromVPMat(proj_mat * view_mat);
-
-
 
         // mark visiable
         for (auto &proxy : scene_proxies)
@@ -148,7 +144,7 @@ namespace kpengine
 
         g_buffer_->UnBindFrameBuffer();
 
-        debug_id = shadow_manager_->GetSpotShadowMap()[0];
+        debug_id = g_buffer_->GetTexture("g_normal");
         scene_fb_->BindFrameBuffer();
 
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);
@@ -156,7 +152,6 @@ namespace kpengine
         glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4f), sizeof(Matrix4f), view_mat.Transpose()[0]);
         glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-        // ssbo
         int current_light_count = lights_.size();
 
         if (current_light_count < KPENGINE_MAX_LIGHTS)
@@ -201,8 +196,8 @@ namespace kpengine
         glBindFramebuffer(GL_READ_FRAMEBUFFER, g_buffer_->GetFBO());
         glBindFramebuffer(GL_DRAW_FRAMEBUFFER, scene_fb_->GetFBO());
         glBlitFramebuffer(
-            0, 0, 1280, 720, // src rect
-            0, 0, 1280, 720, // dst rect
+            0, 0, width_, height_, // src rect
+            0, 0, width_, height_, // dst rect
             GL_DEPTH_BUFFER_BIT,
             GL_NEAREST);
         glBindFramebuffer(GL_FRAMEBUFFER, scene_fb_->GetFBO());
@@ -214,7 +209,7 @@ namespace kpengine
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         postprocess_pipeline_->Execute({.g_object_id = g_buffer_->GetTexture("g_object_id"),
-                                        .texel_size = {1.f / 1280.f, 1.f / 720.f}});
+                                        .texel_size = {1.f / static_cast<float>(width_), 1.f / static_cast<float>(height_)}});
         glDisable(GL_BLEND);
 
         if (gizmos_)
@@ -316,7 +311,6 @@ namespace kpengine
         for (int i = 0; i < 4; i++)
         {
             context.shader->SetMat("spot_light_space_matrix[" + std::to_string(i) + "]", context.spot_light_space_matrix[i].Transpose()[0]);
-
         }
 
         context.shader->SetFloat("near_plane", context.near_plane);

@@ -15,7 +15,7 @@ namespace kpengine
         float far_plane;
         float* view_position;
         float* directional_light_space_matrix;
-        std::array<Matrix4f, 4> spot_light_space_matrix;
+         std::array<Matrix4f, 4> spot_light_space_matrix;
         unsigned int directional_shadow_map;
         std::array<unsigned int, 4> point_shadow_map;
         std::array<unsigned int, 4> spot_shadow_map;

@@ -9,16 +9,14 @@ namespace kpengine
     class RenderShader
     {
     public:
-        
-       RenderShader() = delete;
-        RenderShader(const RenderShader& ) = delete;
-        explicit RenderShader(const std::string& vertex_shader_path,const std::string& fragment_shader_path);
+        RenderShader() = delete;
+        RenderShader(const RenderShader &) = delete;
+        explicit RenderShader(const std::string &vertex_shader_path, const std::string &fragment_shader_path);
 
-        explicit RenderShader(const std::string& vertex_shader_path,const std::string& fragment_shader_path, const std::string& geometry_shader_path);
-        
+        explicit RenderShader(const std::string &vertex_shader_path, const std::string &fragment_shader_path, const std::string &geometry_shader_path);
+
         void Initialize();
 
-        bool ExtractShaderCodeFromFile(const std::string& file_path, std::string &out_code);
 
         inline unsigned int GetShaderProgram() const { return shader_program_handle_; }
 
@@ -31,7 +29,9 @@ namespace kpengine
         void SetVec3(const std::string &name, const float *value) const;
         void SetVec3(const std::string &name, float r, float g, float b) const;
         void SetVec2(const std::string &name, float a, float b) const;
-        void SetVec2(const std::string &name, const float* value) const;
+        void SetVec2(const std::string &name, const float *value) const;
+    private:
+        bool ExtractShaderCodeFromFile(const std::string &file_path, std::string &out_code);
 
     private:
         std::string vertex_shader_path_;

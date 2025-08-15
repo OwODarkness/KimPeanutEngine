@@ -16,6 +16,7 @@ namespace kpengine
 
     std::string GetShaderDirectory();
 
+    std::string GetLogDirectory();
 }
 
 #endif

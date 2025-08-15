@@ -20,4 +20,8 @@ namespace kpengine
     {
         return (project_root / "engine/shader/").generic_string();
     }
+    std::string GetLogDirectory()
+    {
+        return (project_root / "logs/").generic_string();
+    }
 }

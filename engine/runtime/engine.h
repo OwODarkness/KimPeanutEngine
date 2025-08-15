@@ -3,53 +3,55 @@
 
 #include <chrono>
 #include <thread>
+#include <condition_variable>
+#include <mutex>
 #include <memory>
 #include <atomic>
 
-namespace kpengine{
+namespace kpengine
+{
 
-namespace editor{
-    class Editor;
-}
+    namespace editor
+    {
+        class Editor;
+    }
 
-namespace runtime{
-    class Engine{
-    public:
-        Engine();
-        ~Engine();
+    namespace runtime
+    {
+        class Engine
+        {
+        public:
+            Engine();
+            ~Engine();
 
-        void Initialize();
+            void Initialize();
+            void Clear();
+            void Run();
 
-        void Clear();
+            inline int GetFPS() const { return measured_fps; }
+            const int *GetFPSRef() const { return &measured_fps; }
 
-        void Run();
+        private:
+            bool Tick();
+            void GameThreadFunc();
+            float CalculateDeltaTime();
+            void CalculateFPS(float delta_time);
 
-        bool Tick();
+        private:
+            std::chrono::steady_clock::time_point last_time{std::chrono::steady_clock::now()};
+            int frame_count = 0;
+            float avg_time_cost = 0.f;
+            int target_fps = 120; // fixed update rate
+            int measured_fps = 0; // for display
 
-        void GameThreadFunc();
+            std::condition_variable game_ready_cv_;
+            std::mutex game_ready_mutex_;
+            bool is_game_thread_loaded_ = false;
+            std::thread game_thread_;
 
-        void OnGameThreadBegin();
-
-        float CalculateDeltaTime();
-
-        void CalculateFPS(float delta_time);
-
-        inline int GetFPS() const {return fps;} 
-
-        const int* GetFPSRef() const {return &fps;}
-
-    private:
-        std::chrono::steady_clock::time_point last_time{std::chrono::steady_clock::now()};
-        int frame_count = 0;
-        float avg_time_cost = 0.f;
-        int fps = 0;
-
-        std::atomic<bool> is_game_thread_loaded_ = false;
-        std::thread render_thread_;
-
-        std::unique_ptr<editor::Editor> editor_;
-    };
-}
+            std::unique_ptr<editor::Editor> editor_;
+        };
+    }
 }
 
 #endif
