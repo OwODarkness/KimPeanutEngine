@@ -34,3 +34,6 @@
 *.app
 
 build/*
+
+.VSCodeCounter/
+logs/*
