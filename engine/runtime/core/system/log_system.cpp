@@ -3,14 +3,15 @@
 #include "runtime/core/log/logger.h"
 namespace kpengine
 {
-    void LogSystem::AddLog(const std::string &msg, const float msg_color[4])
+    const std::vector<program::LogEntry>& LogSystem::GetLogs() const
     {
-        logs_.emplace_back(msg_color, msg);
+        return program::Logger::GetLogger().Get();
     }
 
     void LogSystem::Tick(float delta_time)
     {
-        program::Logger::GetLogger()->Tick();
+        program::Logger::GetLogger().Tick();
     }
+
 
 }

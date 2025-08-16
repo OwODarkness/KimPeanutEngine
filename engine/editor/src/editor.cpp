@@ -28,8 +28,8 @@ namespace kpengine::editor
 
         void Editor::Initialize(kpengine::runtime::Engine* engine)
         {
+            KP_LOG("EditorLog", LOG_LEVEL_DISPLAY, "Editor initializing...");
             engine_ = engine;
-
             assert(engine_);
             assert(editor_ui);
 
@@ -44,9 +44,8 @@ namespace kpengine::editor
             editor::global_editor_context.Initialize(global_editor_context_init_info);
             
             editor_ui->Initialize(global_editor_context.window_system_->GetOpenGLWndow());
-
-            KP_LOG("EditorLog", LOG_LEVEL_DISPLAY, "Editor Initialize Successfully");
             is_initialized_ = true;
+            KP_LOG("EditorLog", LOG_LEVEL_DISPLAY, "Editor initialize successfully");
         }
 
         void Editor::Tick()

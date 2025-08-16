@@ -3,14 +3,10 @@
 #include <ctime>
 #include <filesystem>
 #include <magic_enum/magic_enum.hpp>
-#include "runtime/core/system/log_system.h"
 #include "platform/path/path.h"
 
 namespace kpengine::program
 {
-    // static member variables initialize
-    Logger *Logger::log_single_instance_ = nullptr;
-    std::mutex Logger::log_mutex;
 
     Logger::Logger() : last_flushed_index_(0), flush_interval(2.f), flush_size_threshold(200),
                        max_buf_size(1000),
@@ -18,48 +14,10 @@ namespace kpengine::program
     {
     }
 
-    Logger *Logger::GetLogger()
+    Logger& Logger::GetLogger()
     {
-
-        if (log_single_instance_ == nullptr)
-        {
-            log_mutex.lock();
-            log_single_instance_ = new Logger();
-            log_mutex.unlock();
-        }
-        return log_single_instance_;
-    }
-
-    void Logger::ExtractTipColorFromLogLevel(float (&color)[4], LogLevel level)
-    {
-        switch (level)
-        {
-        case LOG_LEVEL_DISPLAY:
-            color[0] = 1.f;
-            color[1] = 1.f;
-            color[2] = 1.f;
-            color[3] = 1.f;
-            break;
-        case LOG_LEVEL_WARNNING:
-            color[0] = 1.f;
-            color[1] = 1.f;
-            color[2] = 0.f;
-            color[3] = 1.f;
-            break;
-        case LOG_LEVEL_ERROR:
-            color[0] = 0.5f;
-            color[1] = 0.2f;
-            color[2] = 0.f;
-            color[3] = 1.f;
-        case LOG_LEVEL_FATAL:
-            color[0] = 1.f;
-            color[1] = 0.f;
-            color[2] = 0.f;
-            color[3] = 1.f;
-            break;
-        default:
-            break;
-        }
+        static Logger instance; 
+        return instance;
     }
 
     void Logger::Tick()
@@ -147,30 +105,36 @@ namespace kpengine::program
 
     void Logger::FlushToFile()
     {
-        if (!file_ && !CreateLogFile())
+        if (!file_.is_open() && !CreateLogFile())
             return;
+
+        if (file_.tellp() >= static_cast<std::streampos>(max_log_file_size))
+        {
+            std::cout << file_.tellp() << std::endl;
+            file_.close();
+            if (!CreateLogFile() )
+            {
+                return;
+            }
+        }
 
         size_t count = 0;
         for (size_t i = last_flushed_index_; i < logs_.size(); ++i)
         {
-            std::string s = FetchStringFromLog(logs_[i]);
-
-            file_ << s << std::endl;
-
-            // Debug: current put pointer in the stream
-            if(file_.tellp() != -1)
-            {
-                count++;
-            }
-
+                std::string s = FetchStringFromLog(logs_[i]);
+                file_ << s << std::endl;
+                    count++;
         }
-        last_flushed_index_ += count; // update AFTER writing
+        last_flushed_index_ += count; 
+        file_.flush();
     }
 
     void Logger::WriteLog(const std::string &name, LogLevel level, const std::string msg, int line, const std::string &file, std::chrono::system_clock::time_point timestamp)
     {
         std::time_t time = std::chrono::system_clock::to_time_t(timestamp);
         LogEntry log{.name = name, .level = level, .message = msg, .line = line, .file = file, .timestamp = timestamp};
+
+        std::lock_guard<std::mutex> lock(log_mutex);
         if (logs_.size() > max_buf_size)
         {
             FlushToFile();
@@ -178,9 +142,6 @@ namespace kpengine::program
         }
 
         std::string log_string = FetchStringFromLog(log);
-        float msg_color[4];
-        ExtractTipColorFromLogLevel(msg_color, level);
-        runtime::global_runtime_context.log_system_->AddLog(log_string, msg_color);
 
 #ifdef KPENGINE_DEBUG
         std::cout << log_string << std::endl;
@@ -210,9 +171,7 @@ namespace kpengine::program
 
     Logger::~Logger()
     {
-        if (file_ && file_.is_open())
-        {
-            file_.close();
-        }
+        FlushToFile();
+        file_.close();
     }
 }

@@ -12,7 +12,7 @@
 #include "log_entry.h"
 
 #define KP_LOG(LOG_NAME, LEVEL, MESSAGE, ...) \
-    kpengine::program::Logger::GetLogger()->Log(LOG_NAME, LEVEL, __LINE__, __FILE__, MESSAGE, ##__VA_ARGS__)
+    kpengine::program::Logger::GetLogger().Log(LOG_NAME, LEVEL, __LINE__, __FILE__, MESSAGE, ##__VA_ARGS__)
 
 #define LOG_LEVEL_DISPLAY kpengine::program::LogLevel::Info
 #define LOG_LEVEL_WARNNING kpengine::program::LogLevel::Warning
@@ -29,33 +29,36 @@ namespace kpengine::program
     {
     private:
         Logger();
+        ~Logger();
 
     public:
-        ~Logger();
-        static Logger *GetLogger();
-        void ExtractTipColorFromLogLevel(float (&color)[4], LogLevel level);
+        Logger(const Logger &) = delete;
+        Logger &operator=(const Logger &) = delete;
+        static Logger &GetLogger();
         void Tick();
         template <typename... Args>
         void Log(const std::string &log_name, LogLevel level, int line, const std::string &file, const std::string &msg, Args &&...args);
-        static std::string FetchStringFromLog(const LogEntry& log);
+        static std::string FetchStringFromLog(const LogEntry &log);
+        const std::vector<LogEntry> &Get() const { return logs_; }
+
     private:
         void WriteLog(const std::string &name, LogLevel level, const std::string msg, int line, const std::string &file, std::chrono::system_clock::time_point timestamp);
         void FlushToFile();
         bool CreateLogFile();
         void Reset();
+
     private:
-        static Logger *log_single_instance_;
-        static std::mutex log_mutex;
+        std::mutex log_mutex;
 
         std::vector<LogEntry> logs_;
         size_t last_flushed_index_{};
-        std::ofstream file_;
+        std::ofstream file_{};
         std::chrono::steady_clock::time_point last_flush_time_;
         const float flush_interval;
         const size_t flush_size_threshold;
-        const size_t max_buf_size ;
+        const size_t max_buf_size;
         const size_t max_log_file_size;
-        
+
         bool request_immediate_flush;
     };
 

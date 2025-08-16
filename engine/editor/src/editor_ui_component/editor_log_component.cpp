@@ -3,15 +3,45 @@
 #include <string>
 #include <vector>
 #include "runtime/core/system/log_system.h"
-
+#include "runtime/core/log/logger.h"
 namespace kpengine
 {
     namespace ui
     {
-        // void EditorLogComponent::Initialize(std::shared_ptr<LogSystem> log_system)
-        // {
-        //     log_system_ = log_system;
-        // }
+
+    void ExtractTipColorFromLogLevel(float (&color)[4], program::LogLevel level)
+    {
+        switch (level)
+        {
+        case program::LogLevel::Debug:
+        case program::LogLevel::Info:
+            color[0] = 1.f;
+            color[1] = 1.f;
+            color[2] = 1.f;
+            color[3] = 1.f;
+            break;
+        case program::LogLevel::Warning:
+            color[0] = 1.f;
+            color[1] = 1.f;
+            color[2] = 0.f;
+            color[3] = 1.f;
+            break;
+        case program::LogLevel::Error:
+            color[0] = 0.5f;
+            color[1] = 0.2f;
+            color[2] = 0.f;
+            color[3] = 1.f;
+        case program::LogLevel::Fatal:
+            color[0] = 1.f;
+            color[1] = 0.f;
+            color[2] = 0.f;
+            color[3] = 1.f;
+            break;
+        default:
+            break;
+        }
+    }
+
 
         EditorLogComponent::EditorLogComponent(LogSystem *log_system) : EditorWindowComponent("OutputLog"),
                                                                         log_system_(log_system) {}
@@ -20,11 +50,13 @@ namespace kpengine
         {
             EditorWindowComponent::RenderContent();
             assert(log_system_ != nullptr);
-            const std::vector<LogInfo> &ref = log_system_->GetLogs();
-            for (const LogInfo &info : ref)
+            const std::vector<program::LogEntry> &logs = log_system_->GetLogs();
+            for (const auto& log : logs)
             {
-                ImVec4 color(info.color[0], info.color[1], info.color[2], info.color[3]);
-                ImGui::TextColored(color, info.log_text.c_str());
+                float color[4];
+                ExtractTipColorFromLogLevel(color, log.level);
+                ImVec4 imgui_color(color[0], color[1], color[2], color[3]);
+                ImGui::TextColored(imgui_color, program::Logger::FetchStringFromLog(log).c_str());
             }
         }
 
