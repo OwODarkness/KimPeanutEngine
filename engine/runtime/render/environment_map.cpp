@@ -100,17 +100,20 @@ namespace kpengine{
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
         glTexParameteri(GL_TEXTURE_CUBE_MAP, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+
 
         glBindFramebuffer(GL_FRAMEBUFFER, capture_fbo_);
         glBindRenderbuffer(GL_RENDERBUFFER, capture_rbo_);
         glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, 32, 32);
 
+        
         irradiance_shader_->UseProgram();
         irradiance_shader_->SetMat("projection", proj.Transpose()[0]);
-        irradiance_shader_->SetInt("environment_map", 0);
-        glActiveTexture(GL_TEXTURE0);
+        irradiance_shader_->SetInt("equiretangular_map", 0);
+        glActiveTexture(GL_TEXTURE0 );
         glBindTexture(GL_TEXTURE_CUBE_MAP, environment_map_handle_);
         
         glViewport(0, 0, 32, 32);
@@ -123,7 +126,6 @@ namespace kpengine{
             RenderCube();
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
-
         irradiance_map_ = std::make_shared<RenderTextureCubeMap>(hdr_path_, irradiance_map_handle_);
     }
 

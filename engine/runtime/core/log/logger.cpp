@@ -14,9 +14,9 @@ namespace kpengine::program
     {
     }
 
-    Logger& Logger::GetLogger()
+    Logger &Logger::GetLogger()
     {
-        static Logger instance; 
+        static Logger instance;
         return instance;
     }
 
@@ -112,20 +112,18 @@ namespace kpengine::program
         {
             std::cout << file_.tellp() << std::endl;
             file_.close();
-            if (!CreateLogFile() )
+            if (!CreateLogFile())
             {
                 return;
             }
         }
 
-        size_t count = 0;
         for (size_t i = last_flushed_index_; i < logs_.size(); ++i)
         {
-                std::string s = FetchStringFromLog(logs_[i]);
-                file_ << s << std::endl;
-                    count++;
+            std::string s = FetchStringFromLog(logs_[i]);
+            file_ << s << std::endl;
         }
-        last_flushed_index_ += count; 
+        last_flushed_index_ = logs_.size();
         file_.flush();
     }
 

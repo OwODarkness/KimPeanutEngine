@@ -70,11 +70,9 @@ namespace kpengine
 
                 {material_map_type::NORMAL_MAP, "model/brickwall/brickwall_normal.jpg"},
             },
-            {{material_param_type::ROUGHNESS_PARAM, 0.25f},
-             {material_param_type::METALLIC_PARAM, 0.f},
-             {material_param_type::AO_PARAM, 1.f}
-
-            },
+            {{material_param_type::ROUGHNESS_PARAM, 0.7f},
+             {material_param_type::METALLIC_PARAM, 0.1f},
+             {material_param_type::AO_PARAM, 0.8f}},
             {});
         floor_mesh->SetMaterial(material, 0);
 
@@ -98,35 +96,35 @@ namespace kpengine
         sphere_mesh->SetMaterial(pbr_material, 0);
 
         MeshComponent *bunny_mesh_comp = dynamic_cast<MeshComponent *>(bunny->GetRootComponent());
-        std::shared_ptr<RenderMesh> bunny_mesh = bunny_mesh_comp->GetMesh(); 
-                std::shared_ptr<RenderMaterial> pbr_bunny_material = RenderMaterial::CreatePBRMaterial(
+        std::shared_ptr<RenderMesh> bunny_mesh = bunny_mesh_comp->GetMesh();
+        std::shared_ptr<RenderMaterial> pbr_bunny_material = RenderMaterial::CreatePBRMaterial(
 
             {
                 {material_map_type::ALBEDO_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_basecolor.png"},
             },
-            {
-            {material_param_type::ROUGHNESS_PARAM, 0.25f},
+            {{material_param_type::ROUGHNESS_PARAM, 0.25f},
              {material_param_type::METALLIC_PARAM, 0.f},
              {material_param_type::AO_PARAM, 1.f}
 
-            }, {
-                
+            },
+            {
+
             });
         bunny_mesh->SetMaterial(pbr_bunny_material, 0);
 
         MeshComponent *teapot_mesh_comp = dynamic_cast<MeshComponent *>(teapot->GetRootComponent());
-        std::shared_ptr<RenderMesh> teapot_mesh = teapot_mesh_comp->GetMesh(); 
-                std::shared_ptr<RenderMaterial> pbr_teapot_material = RenderMaterial::CreatePBRMaterial(
+        std::shared_ptr<RenderMesh> teapot_mesh = teapot_mesh_comp->GetMesh();
+        std::shared_ptr<RenderMaterial> pbr_teapot_material = RenderMaterial::CreatePBRMaterial(
             {
                 {material_map_type::ALBEDO_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_basecolor.png"},
             },
-                       {{material_param_type::ROUGHNESS_PARAM, 0.65f},
+            {{material_param_type::ROUGHNESS_PARAM, 0.65f},
              {material_param_type::METALLIC_PARAM, 0.5f},
              {material_param_type::AO_PARAM, 1.f}
 
-            }, {});
+            },
+            {});
         teapot_mesh->SetMaterial(pbr_teapot_material, 0);
-
 
         MeshComponent *gun_mesh_comp = dynamic_cast<MeshComponent *>(gun->GetRootComponent());
         std::shared_ptr<RenderMesh> gun_mesh = gun_mesh_comp->GetMesh();

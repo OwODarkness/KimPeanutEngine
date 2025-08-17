@@ -38,10 +38,11 @@ uniform mat4 spot_light_space_matrix[4];
 
 uniform float near_plane;
 uniform float far_plane;
-
+uniform float skylight_intensity = 0.1;
 uniform sampler2D directional_shadow_map;
 uniform samplerCube point_shadow_map[4];
 uniform sampler2D spot_shadow_map[4];
+
 
 uniform samplerCube irradiance_map;
 uniform samplerCube prefilter_map;
@@ -203,7 +204,32 @@ vec3 fresnelSchlickRoughness(vec3 f0, vec3 half_vec, vec3 view_vec, float roughn
     return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
 }  
 
-vec3 PBRLighting(vec3 normal_vec, vec3 view_vec, vec3 light_vec, vec3 radiance, Material material, float shadow)
+vec3 IndirectPBR(vec3 normal_vec, vec3 view_vec, Material material)
+{
+    vec3 albedo = material.albedo;
+    float roughness = material.roughness;
+    float metallic = material.metallic;
+    float ao = material.ao;
+
+    vec3 f0 = mix(vec3(0.04), albedo, metallic);
+
+    const vec3 ks = fresnelSchlickRoughness(f0, normalize(normal_vec + view_vec), view_vec, roughness);
+    const vec3 kd = (1.0 - ks) * (1.0 - metallic);
+
+    // diffuse
+    vec3 irradiance = texture(irradiance_map, normal_vec).rgb;
+    vec3 diffuse = irradiance * albedo / PI;
+
+    // specular
+    vec3 reflect_vec = reflect(-view_vec, normal_vec);
+    vec3 prefilter_color = textureLod(prefilter_map, reflect_vec, roughness * MAX_REFLECTION_LOD).rgb;
+    vec2 env_brdf = texture(brdf_map, vec2(max(dot(normal_vec, view_vec), 0.0), roughness)).rg;
+    vec3 specular = prefilter_color * (ks * env_brdf.x + env_brdf.y);
+
+    return kd * diffuse + specular;
+}
+
+vec3 DirectPBR(vec3 normal_vec, vec3 view_vec, vec3 light_vec, vec3 radiance, Material material, float shadow)
 {
     vec3 color;
     vec3 half_vec = CalculateHalfVector(light_vec, view_vec);
@@ -231,35 +257,13 @@ vec3 PBRLighting(vec3 normal_vec, vec3 view_vec, vec3 light_vec, vec3 radiance, 
     float denom = 4.0 * max(dot(normal_vec, view_vec), 0.0) * max(dot(normal_vec, light_vec), 0.0) + 0.0001;
     vec3 specular = numerator / denom;
 
-    // Diffuse and specular split
     vec3 ks = F;
     vec3 kd = vec3(1.0) - ks;
     kd *= (1.0 - metallic);
 
-    // Direct lighting contribution
     vec3 direct_light = (kd * Lambert(albedo) + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
 
-    // Ambient lighting (IBL)
-    ks = fresnelSchlickRoughness(f0, half_vec, view_vec, roughness);
-    kd = vec3(1.0) - ks;
-    kd *= (1.0 - metallic);
-    vec3 irradiance = texture(irradiance_map, normal_vec).rgb;
-    vec3 diffuse = irradiance * albedo;
-
-    vec3 prefilter_color = textureLod(prefilter_map, reflect_vec, roughness * MAX_REFLECTION_LOD).rgb;
-    vec2 env_brdf = texture(brdf_map, vec2(max(dot(normal_vec, view_vec), 0.0), roughness)).rg;
-    vec3 specular_brdf = prefilter_color * (F * env_brdf.x + env_brdf.y);
-
-    vec3 ambient = (kd * diffuse + specular_brdf) * ao;
-
-    // Combine lighting
-    color = ambient + direct_light;
-
-    // Tone mapping and gamma correction
-    color = color / (color + vec3(1.0));
-    color = pow(color, vec3(1.0 / 2.2));
-    
-    return color * (1.0 - shadow);
+    return direct_light * (1.0 - shadow);
 }
 
 vec3 CalculateDirectionalLight(LightData light, vec3 frag_position, vec3 normal_vec, Material material)
@@ -269,7 +273,7 @@ vec3 CalculateDirectionalLight(LightData light, vec3 frag_position, vec3 normal_
     vec4 light_space_pos = directional_light_space_matrix * vec4(frag_position, 1.0);
     float shadow = CalculateDirectionalShadowValue(light_space_pos, normal_vec, light_vec);
     vec3 radiance = light.intensity * light.color;
-    vec3 color = PBRLighting( normal_vec, view_vec, light_vec, radiance, material, shadow);
+    vec3 color = DirectPBR( normal_vec, view_vec, light_vec, radiance, material, shadow);
     return color;
 }
 vec3 CalculatePointLight(LightData light, vec3 frag_position, vec3 normal_vec, Material material)
@@ -285,7 +289,7 @@ vec3 CalculatePointLight(LightData light, vec3 frag_position, vec3 normal_vec, M
     }
     float attenuation = CalculateAttenuation(light.position, frag_position);
     vec3 radiance = light.intensity * attenuation * light.color;
-    vec3 color = PBRLighting(normal_vec, view_vec, light_vec, radiance, material, shadow);
+    vec3 color = DirectPBR(normal_vec, view_vec, light_vec, radiance, material, shadow);
     return color;
 }
 vec3 CalculateSpotLight(LightData light, vec3 frag_position, vec3 normal_vec, Material material)
@@ -305,7 +309,7 @@ vec3 CalculateSpotLight(LightData light, vec3 frag_position, vec3 normal_vec, Ma
     float intensity = clamp((theta - cos(light.outer_cutoff)) / epsilon, 0.0, 1.0);  
     float attenuation = CalculateAttenuation(light.position, frag_position);
     vec3 radiance = light.intensity * intensity * light.color * attenuation;
-    vec3 color = PBRLighting(normal_vec, view_vec, light_vec, radiance, material, shadow);
+    vec3 color = DirectPBR(normal_vec, view_vec, light_vec, radiance, material, shadow);
     return color;
 }
 
@@ -332,10 +336,13 @@ float linearize_depth(float z_ndc, float near, float far)
     return (near * far) / (far - z_ndc * (far - near));
 }
 
+
+
 void main()
 {
     vec3 frag_position = texture(g_position, uv).rgb;
     vec3 normal_vec = normalize(texture(g_normal, uv).rgb);
+    vec3 view_vec = normalize(view_position - frag_position);
 
     Material material;
     vec3 material_rma = texture(g_material, uv).rgb;
@@ -344,12 +351,16 @@ void main()
     material.metallic = material_rma.g;  
     material.ao = material_rma.b;        
 
-    vec3 color;
+    vec3 indirect_color = IndirectPBR(normal_vec, view_vec, material);
+    vec3 direct_color;
     for(int i = 0; i<light_num;i++)
     {
-        color += CalculateLight(lights[i], frag_position, normal_vec, material);
+        direct_color += CalculateLight(lights[i], frag_position, normal_vec, material);
     }
+    vec3 color = direct_color + skylight_intensity * indirect_color ;
 
+    color = color / (color + vec3(1.0));
+    color = pow(color, vec3(1.0 / 2.2));
     out_frag_color = vec4(color, 1.0);
 
 

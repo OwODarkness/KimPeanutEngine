@@ -2,7 +2,6 @@
 #define KPENGINE_EDITOR_LOG_MANAGER_H
 
 #include <memory>
-#include <string>
 namespace kpengine
 {
     class LogSystem;
