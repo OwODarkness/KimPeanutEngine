@@ -38,7 +38,7 @@ uniform mat4 spot_light_space_matrix[4];
 
 uniform float near_plane;
 uniform float far_plane;
-uniform float skylight_intensity = 0.1;
+uniform float skylight_intensity = 1.0;
 uniform sampler2D directional_shadow_map;
 uniform samplerCube point_shadow_map[4];
 uniform sampler2D spot_shadow_map[4];
@@ -287,7 +287,9 @@ vec3 CalculatePointLight(LightData light, vec3 frag_position, vec3 normal_vec, M
         int index = light.shadow_map_index - 1;
         shadow = CalculatePointShadowValue(frag_position, light.position, index);
     }
-    float attenuation = CalculateAttenuation(light.position, frag_position);
+    //float attenuation = CalculateAttenuation(light.position, frag_position);
+    float d = length(frag_position - light.position);
+    float attenuation = clamp(1.0 - (d / light.radius)*(d / light.radius), 0.0, 1.0);
     vec3 radiance = light.intensity * attenuation * light.color;
     vec3 color = DirectPBR(normal_vec, view_vec, light_vec, radiance, material, shadow);
     return color;

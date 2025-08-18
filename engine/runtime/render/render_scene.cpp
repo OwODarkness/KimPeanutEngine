@@ -58,9 +58,9 @@ namespace kpengine
 
         g_buffer_ = std::make_shared<FrameBuffer>(width_, height_);
         g_buffer_->Initialize();
-        g_buffer_->AddColorAttachment("g_position", GL_RGB16F, GL_RGB, GL_FLOAT);
+        g_buffer_->AddColorAttachment("g_position", GL_RGB32F, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_normal", GL_RGB16F, GL_RGB, GL_FLOAT);
-        g_buffer_->AddColorAttachment("g_albedo", GL_RGB8, GL_RGB, GL_FLOAT);
+        g_buffer_->AddColorAttachment("g_albedo", GL_SRGB8, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_material", GL_RGB8, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_object_id", GL_RGB16F, GL_RGB, GL_FLOAT);
         g_buffer_->AddColorAttachment("g_depth", GL_RGB16F, GL_RGB, GL_FLOAT);
@@ -97,14 +97,14 @@ namespace kpengine
         std::shared_ptr<PointLightData> light1 = std::make_shared<PointLightData>();
         lights_.push_back(light1);
         light1->position = {0.f, 2.f, 0.f};
-        light1->intensity = 1.f;
+        light1->intensity = 5.f;
         shadow_manager_->AddLight(light1);
 
-        std::shared_ptr<SpotLightData> light2 = std::make_shared<SpotLightData>();
-        light2->position = {0.f, 8.f, 0.f};
-        light2->direction = {0.2f, -1.f, -0.10f};
-        lights_.push_back(light2);
-        shadow_manager_->AddLight(light2);
+        // std::shared_ptr<SpotLightData> light2 = std::make_shared<SpotLightData>();
+        // light2->position = {0.f, 8.f, 0.f};
+        // light2->direction = {0.2f, -1.f, -0.10f};
+        // lights_.push_back(light2);
+        // shadow_manager_->AddLight(light2);
 
         shadow_manager_->Initialize();
     }

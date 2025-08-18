@@ -32,12 +32,14 @@ namespace kpengine
     class RenderTexture2D: public RenderTexture
     {
     public:
-        RenderTexture2D(const std::string &image_path);
+        RenderTexture2D(const std::string &image_path, bool is_color_texture = false);
         RenderTexture2D(const std::string &image_path, unsigned int handle);
 
         virtual bool Initialize() override;
 
         virtual ~RenderTexture2D();
+    private:
+        bool is_color_texture_;
     };
 
     

@@ -6,7 +6,7 @@ namespace kpengine{
         return texture_map.contains(key);
     }
 
-    std::shared_ptr<RenderTexture> TexturePool::FetchTexture2D(const std::string& path)
+    std::shared_ptr<RenderTexture> TexturePool::FetchTexture2D(const std::string& path, bool is_texture_color)
     {
         if(IsTextureCached(path))
         {
@@ -14,7 +14,7 @@ namespace kpengine{
         }
         else
         {
-            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(path);
+            std::shared_ptr<RenderTexture> texture = std::make_shared<RenderTexture2D>(path, is_texture_color);
             bool is_succeed = texture->Initialize();
             if(is_succeed)
             {

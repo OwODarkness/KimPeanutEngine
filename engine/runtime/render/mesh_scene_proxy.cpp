@@ -45,6 +45,7 @@ namespace kpengine
         GlElementBufferGuard ebo_guard(geometry_buffer_->ebo);
         context.shader->UseProgram();
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_);
+        
         for (std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
         {
             context.shader->SetMat("model", transform_mat.Transpose()[0]);
@@ -68,7 +69,6 @@ namespace kpengine
         for (std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
         {
             context.shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
-            iter->material->Render(context.shader, 0);
             glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));
         }
     }

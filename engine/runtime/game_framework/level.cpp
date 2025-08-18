@@ -57,6 +57,7 @@ namespace kpengine
         floor->SetActorScale({2.f, 1.f, 2.f});
         AddActor(floor);
 
+
         for (std::shared_ptr<Actor> &actor : actors_)
         {
             actor->Initialize();
@@ -70,8 +71,8 @@ namespace kpengine
 
                 {material_map_type::NORMAL_MAP, "model/brickwall/brickwall_normal.jpg"},
             },
-            {{material_param_type::ROUGHNESS_PARAM, 0.7f},
-             {material_param_type::METALLIC_PARAM, 0.1f},
+            {{material_param_type::ROUGHNESS_PARAM, 0.6f},
+             {material_param_type::METALLIC_PARAM, 0.f},
              {material_param_type::AO_PARAM, 0.8f}},
             {});
         floor_mesh->SetMaterial(material, 0);
@@ -135,6 +136,8 @@ namespace kpengine
                                                                                               {material_map_type::AO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_ao.png"}},
                                                                                              {}, {});
         gun_mesh->SetMaterial(gun_pbr_material, 0);
+
+
     }
 
     void Level::Tick(float delta_time)

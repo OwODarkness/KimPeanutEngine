@@ -60,12 +60,11 @@ float linearize_depth(float z_ndc, float near, float far)
 
 void main()
 {
-    vec3 normal_vec = material.has_normal_map == true ? 
-    normalize(TBN * normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): 
-    normalize(normal);
+    vec3 tangent_normal = texture(material.normal_map, texcoord).rgb * 2.0 - 1.0;
+    vec3 normal_vec = material.has_normal_map == true ?  normalize(TBN * tangent_normal) : normal;
 
     vec3 albedo_vec = material.has_albedo_map ? 
-    pow(texture(material.albedo_map, texcoord).rgb, vec3(2.2)) : 
+    texture(material.albedo_map, texcoord).rgb : 
     material.albedo;
 
     float roughness = material.has_roughness_map ? texture(material.roughness_map, texcoord).r : material.roughness;
