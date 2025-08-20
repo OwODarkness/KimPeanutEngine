@@ -24,4 +24,49 @@ namespace kpengine{
         }
         return res;
     }
+
+        bool AABB::Intersect(const Vector3f& origin, const Vector3f& dir, float out_t) const
+        {
+
+            float tmin = (min_.x_ - origin.x_) / dir.x_;
+            float tmax = (max_.x_ - origin.x_) / dir.x_;
+
+            if (tmin > tmax)
+                std::swap(tmin, tmax);
+
+            float tymin = (min_.y_ - origin.y_) / dir.y_;
+            float tymax = (max_.y_ - origin.y_) / dir.y_;
+
+            if (tymin > tymax)
+                std::swap(tymin, tymax);
+
+            if ((tmin > tymax) || (tymin > tmax))
+                return false;
+
+            if (tymin > tmin)
+                tmin = tymin;
+            if (tymax < tmax)
+                tmax = tymax;
+
+            float tzmin = (min_.z_ - origin.z_) / dir.z_;
+            float tzmax = (max_.z_ - origin.z_) / dir.z_;
+
+            if (tzmin > tzmax)
+                std::swap(tzmin, tzmax);
+
+            if ((tmin > tzmax) || (tzmin > tmax))
+                return false;
+
+            if (tzmin > tmin)
+                tmin = tzmin;
+            if (tzmax < tmax)
+                tmax = tzmax;
+
+            if (tmin < 0.0f && tmax < 0.0f)
+                return false;
+
+            out_t = tmin >= 0.0f ? tmin : tmax;
+            return true;
+        }
+
 }

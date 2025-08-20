@@ -194,7 +194,7 @@ namespace kpengine{
         glBindFramebuffer(GL_FRAMEBUFFER, capture_fbo_);
 
         glBindRenderbuffer(GL_RENDERBUFFER, capture_rbo_);
-        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, 128, 128);
+        glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24, 512, 512);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, brdf_map_handle_, 0);
         glViewport(0, 0, 512, 512);
         brdf_shader_->UseProgram();

@@ -128,7 +128,7 @@ namespace kpengine
         MeshComponent *mesh = dynamic_cast<MeshComponent *>(actor_->GetRootComponent());
         if (!mesh)
             return false;
-
+        const Rotatorf rotation = mesh->GetWorldRotation();
         const Vector3f &gizmos_loc = mesh->GetWorldAABB().Center();
         float min_dist = std::numeric_limits<float>::max();
 
@@ -138,7 +138,7 @@ namespace kpengine
         bool is_hit = false;
         // test (1, 0, 0) axis
         p1 = gizmos_loc;
-        p2 = gizmos_loc + Vector3f(1.f, 0.f, 0.f) * length_;
+        p2 = gizmos_loc + rotation.RotateVector(Vector3f(1.f, 0.f, 0.f)) * length_;
         dist = DistanceRayToSegment(origin, dir, p1, p2);
         if (dist < min_dist)
         {
@@ -147,7 +147,7 @@ namespace kpengine
             is_hit = true;
         }
 
-        p2 = gizmos_loc + Vector3f(0.f, 1.f, 0.f) * length_;
+        p2 = gizmos_loc + rotation.RotateVector(Vector3f(0.f, 1.f, 0.f)) * length_;
         dist = DistanceRayToSegment(origin, dir, p1, p2);
         if (dist < min_dist)
         {
@@ -157,7 +157,7 @@ namespace kpengine
 
         }
 
-        p2 = gizmos_loc + Vector3f(0.f, 0.f, 1.f) * length_;
+        p2 = gizmos_loc + rotation.RotateVector(Vector3f(0.f, 0.f, 1.f)) * length_;
         dist = DistanceRayToSegment(origin, dir, p1, p2);
         if (dist < min_dist)
         {

@@ -192,80 +192,72 @@ float GeometrySmith(vec3 normal_vec, vec3 view_vec, vec3 light_vec, float roughn
     return ggx1 * ggx2;
 }
 
-vec3 FresnelSchlick(vec3 f0, vec3 half_vec, vec3 view_vec)
+vec3 FresnelSchlick(float cosTheta, vec3 F0)
 {
-    float cos_theta = max(dot(half_vec, view_vec), 0.0);
-    return f0 + (1.0 - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
+    return F0 + (1.0 - F0) * pow(clamp(1 - cosTheta, 0.0, 1.0), 5.0);
 }
-
-vec3 fresnelSchlickRoughness(vec3 f0, vec3 half_vec, vec3 view_vec, float roughness)
+vec3 FresnelSchlickRoughness(float cosTheta, vec3 F0, float roughness)
 {
-    float cos_theta = max(dot(half_vec, view_vec), 0.0);
-    return f0 + (max(vec3(1.0 - roughness), f0) - f0) * pow(clamp(1.0 - cos_theta, 0.0, 1.0), 5.0);
-}  
-
-vec3 IndirectPBR(vec3 normal_vec, vec3 view_vec, Material material)
+    return F0 + (max(vec3(1.0 - roughness), F0) - F0) * pow(clamp(1 - cosTheta, 0.0, 1.0), 5.0);
+}
+vec3 IndirectPBR(vec3 N, vec3 V, Material material)
 {
     vec3 albedo = material.albedo;
     float roughness = material.roughness;
     float metallic = material.metallic;
     float ao = material.ao;
 
-    vec3 f0 = mix(vec3(0.04), albedo, metallic);
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    const vec3 ks = fresnelSchlickRoughness(f0, normalize(normal_vec + view_vec), view_vec, roughness);
-    const vec3 kd = (1.0 - ks) * (1.0 - metallic);
+    // Specular Fresnel for IBL
+    float NdotV = max(dot(normalize(N), normalize(V)), 0.0);
+    vec3 ks = FresnelSchlickRoughness(NdotV, F0, roughness);
+    vec3 kd = (1.0 - ks) * (1.0 - metallic);
 
-    // diffuse
-    vec3 irradiance = texture(irradiance_map, normal_vec).rgb;
+    // Diffuse IBL
+    vec3 irradiance = texture(irradiance_map, normalize(N)).rgb;
     vec3 diffuse = irradiance * albedo / PI;
 
-    // specular
-    vec3 reflect_vec = reflect(-view_vec, normal_vec);
-    vec3 prefilter_color = textureLod(prefilter_map, reflect_vec, roughness * MAX_REFLECTION_LOD).rgb;
-    vec2 env_brdf = texture(brdf_map, vec2(max(dot(normal_vec, view_vec), 0.0), roughness)).rg;
-    vec3 specular = prefilter_color * (ks * env_brdf.x + env_brdf.y);
+    // Specular IBL
+    vec3 R = reflect(-normalize(V), normalize(N));
+    vec3 prefilteredColor = textureLod(prefilter_map, R, roughness * float(MAX_REFLECTION_LOD)).rgb;
+    vec2 envBRDF = texture(brdf_map, vec2(NdotV, roughness)).rg;
+    vec3 specular = prefilteredColor * (ks * envBRDF.x + envBRDF.y);
 
-    return kd * diffuse + specular;
+    return (kd * diffuse + specular) * ao;
 }
 
-vec3 DirectPBR(vec3 normal_vec, vec3 view_vec, vec3 light_vec, vec3 radiance, Material material, float shadow)
+// Direct PBR (per-light)
+vec3 DirectPBR(vec3 N, vec3 V, vec3 L, vec3 radiance, Material material, float shadow)
 {
-    vec3 color;
-    vec3 half_vec = CalculateHalfVector(light_vec, view_vec);
-    vec3 reflect_vec = reflect(-view_vec, normal_vec);
     vec3 albedo = material.albedo;
     float roughness = material.roughness;
     float metallic = material.metallic;
-    float ao = material.ao;
 
-    // PBR f0 base reflectivity
-    vec3 f0 = vec3(0.04);
-    f0 = mix(f0, albedo, metallic);
+    vec3 F0 = mix(vec3(0.04), albedo, metallic);
 
-    // Calculate Fresnel term (correct half_vec param)
-    vec3 F = FresnelSchlick(f0, half_vec, view_vec);
+    vec3 H = normalize(L + V);
 
-    // Calculate normal distribution function (NDF)
-    float NDF = DistributionGGX(normal_vec, half_vec, roughness);
+    // Fresnel
+    float NdotV = max(dot(N, V), 0.0);
+    vec3 F = FresnelSchlick(max(dot(H, V), 0.0), F0);
 
-    // Geometry (shadowing-masking) term
-    float G = GeometrySmith(normal_vec, view_vec, light_vec, roughness);
+    // NDF and Geometry
+    float NDF = DistributionGGX(N, H, roughness);
+    float G = GeometrySmith(N, V, L, roughness);
 
-    // Cook-Torrance BRDF specular term
-    vec3 numerator = NDF * G * F;
-    float denom = 4.0 * max(dot(normal_vec, view_vec), 0.0) * max(dot(normal_vec, light_vec), 0.0) + 0.0001;
-    vec3 specular = numerator / denom;
+    // Cook-Torrance specular
+    float denom = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
+    vec3 specular = (NDF * G * F) / denom;
 
-    vec3 ks = F;
-    vec3 kd = vec3(1.0) - ks;
-    kd *= (1.0 - metallic);
+    // Diffuse
+    vec3 kd = (1.0 - F) * (1.0 - metallic);
+    vec3 diffuse = Lambert(albedo);
 
-    vec3 direct_light = (kd * Lambert(albedo) + specular) * radiance * max(dot(normal_vec, light_vec), 0.0);
-
-    return direct_light * (1.0 - shadow);
+    // Final direct light
+    vec3 Lo = (kd * diffuse + specular) * radiance * max(dot(N, L), 0.0);
+    return Lo * (1.0 - shadow);
 }
-
 vec3 CalculateDirectionalLight(LightData light, vec3 frag_position, vec3 normal_vec, Material material)
 {
     vec3 view_vec = normalize(view_position - frag_position);

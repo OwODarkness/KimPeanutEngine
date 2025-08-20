@@ -24,7 +24,6 @@ namespace kpengine
 
         std::shared_ptr<MeshActor> sphere = std::make_shared<MeshActor>("model/sphere/sphere.obj");
         AddActor(sphere);
-        sphere->SetActorScale({0.6f, 0.6f, 0.6f});
         sphere->SetActorLocation({2.f, 1.f, 2.f});
 
         std::shared_ptr<MeshActor> bunny = std::make_shared<MeshActor>("model/bunny/stanford-bunny.obj");
@@ -37,16 +36,6 @@ namespace kpengine
         teapot->SetActorLocation({0.5f, 0.2f, 0.5f});
         AddActor(teapot);
 
-        // std::shared_ptr<MeshActor> nanosuit = std::make_shared<MeshActor>("model/nanosuit/nanosuit.obj");
-        // nanosuit->SetActorScale({0.1f, 0.1f, 0.1f});
-        // nanosuit->SetActorLocation({4.6f, 0.0f, -0.6f});
-        // AddActor(nanosuit);
-
-        // std::shared_ptr<PointCloudActor> dragon = std::make_shared<PointCloudActor>("model/dragon/dragon.obj");
-        // dragon->SetActorScale({0.1f, 0.1f, 0.1f});
-        // dragon->SetActorLocation({1.6f, 0.0f, -2.6f});
-        // AddActor(dragon);
-
         std::shared_ptr<MeshActor> gun = std::make_shared<MeshActor>("model/cerberus/Cerberus_LP.FBX");
         gun->SetActorScale({0.01f, 0.01f, 0.01f});
         gun->SetActorLocation({2.f, 1.f, 0.f});
@@ -57,11 +46,30 @@ namespace kpengine
         floor->SetActorScale({2.f, 1.f, 2.f});
         AddActor(floor);
 
+        std::shared_ptr<MeshActor> rock = std::make_shared<MeshActor>("model/rock1-bl/rock2.obj");
+        rock->SetActorScale({0.01f, 0.01f, 0.01f});
+        rock->SetActorLocation({-2.f, 1.f, 0.f});
+        AddActor(rock);
 
         for (std::shared_ptr<Actor> &actor : actors_)
         {
             actor->Initialize();
         }
+
+        MeshComponent *rock_mesh_comp = dynamic_cast<MeshComponent *>(rock->GetRootComponent());
+        std::shared_ptr<RenderMesh> rock_mesh = rock_mesh_comp->GetMesh();
+        std::shared_ptr<RenderMaterial> rock_material = RenderMaterial::CreatePBRMaterial(
+            {
+                {material_map_type::ALBEDO_MAP, "model/rock1-bl/rock1-albedo.png"},
+                {material_map_type::NORMAL_MAP, "model/rock1-bl/rock1-normal_ogl.png"},
+                {material_map_type::ROUGHNESS_MAP, "model/rock1-bl/rock1-roughness.png"},
+                {material_map_type::METALLIC_MAP, "model/rock1-bl/rock1-metallic.png"},
+                {material_map_type::AO_MAP, "model/rock1-bl/rock1-ao.png"},
+
+            },
+            {},
+            {});
+        rock_mesh->SetMaterial(rock_material, 0);
 
         MeshComponent *floor_mesh_comp = dynamic_cast<MeshComponent *>(floor->GetRootComponent());
         std::shared_ptr<RenderMesh> floor_mesh = floor_mesh_comp->GetMesh();
@@ -71,29 +79,22 @@ namespace kpengine
 
                 {material_map_type::NORMAL_MAP, "model/brickwall/brickwall_normal.jpg"},
             },
-            {{material_param_type::ROUGHNESS_PARAM, 0.6f},
-             {material_param_type::METALLIC_PARAM, 0.f},
-             {material_param_type::AO_PARAM, 0.8f}},
+            {{material_param_type::ROUGHNESS_PARAM, 0.9f},
+             {material_param_type::METALLIC_PARAM, 0.1f},
+             {material_param_type::AO_PARAM, 1.0f}},
             {});
         floor_mesh->SetMaterial(material, 0);
 
         MeshComponent *sphere_mesh_comp = dynamic_cast<MeshComponent *>(sphere->GetRootComponent());
         std::shared_ptr<RenderMesh> sphere_mesh = sphere_mesh_comp->GetMesh();
         std::shared_ptr<RenderMaterial> pbr_material = RenderMaterial::CreatePBRMaterial(
-            {
-                {material_map_type::ALBEDO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_albedo.png"},
-                {material_map_type::ROUGHNESS_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_roughness.png"},
-                {material_map_type::METALLIC_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_metallic.png"},
-                {material_map_type::NORMAL_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_normal-ogl.png"},
-                {material_map_type::AO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_ao.png"}
-
-                // {material_map_type::ALBEDO_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_basecolor.png"},
-                // {material_map_type::METALLIC_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_metallic.png"},
-                // {material_map_type::ROUGHNESS_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_roughness.png"},
-                // {material_map_type::NORMAL_MAP, "texture/pbr/rustediron1-alt2-bl/rustediron2_normal.png"},
-                // {material_map_type::AO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_ao.png"}
+            {{material_map_type::ALBEDO_MAP, "texture/pbr/light-gold-bl/lightgold_albedo.png"},
+            {material_map_type::METALLIC_MAP, "texture/pbr/light-gold-bl/lightgold_metallic.png"},
+            {material_map_type::ROUGHNESS_MAP,"texture/pbr/light-gold-bl/lightgold_roughness.png"},
             },
-            {}, {});
+            {
+                {material_param_type::AO_PARAM, 1.f}
+            }, {});
         sphere_mesh->SetMaterial(pbr_material, 0);
 
         MeshComponent *bunny_mesh_comp = dynamic_cast<MeshComponent *>(bunny->GetRootComponent());
@@ -129,15 +130,14 @@ namespace kpengine
 
         MeshComponent *gun_mesh_comp = dynamic_cast<MeshComponent *>(gun->GetRootComponent());
         std::shared_ptr<RenderMesh> gun_mesh = gun_mesh_comp->GetMesh();
-        std::shared_ptr<RenderMaterial> gun_pbr_material = RenderMaterial::CreatePBRMaterial({{material_map_type::ALBEDO_MAP, "model/cerberus/Textures/Cerberus_A.tga"},
-                                                                                              {material_map_type::ROUGHNESS_MAP, "model/cerberus/Textures/Cerberus_R.tga"},
-                                                                                              {material_map_type::METALLIC_MAP, "model/cerberus/Textures/Cerberus_M.tga"},
-                                                                                              {material_map_type::NORMAL_MAP, "model/cerberus/Textures/Cerberus_N.tga"},
-                                                                                              {material_map_type::AO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_ao.png"}},
-                                                                                             {}, {});
+        std::shared_ptr<RenderMaterial> gun_pbr_material = RenderMaterial::CreatePBRMaterial
+        ({{material_map_type::ALBEDO_MAP, "model/cerberus/Textures/Cerberus_A.tga"},
+        {material_map_type::ROUGHNESS_MAP, "model/cerberus/Textures/Cerberus_R.tga"},
+        {material_map_type::METALLIC_MAP, "model/cerberus/Textures/Cerberus_M.tga"},
+        {material_map_type::NORMAL_MAP, "model/cerberus/Textures/Cerberus_N.tga"},
+        {material_map_type::AO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_ao.png"}},
+        {}, {});
         gun_mesh->SetMaterial(gun_pbr_material, 0);
-
-
     }
 
     void Level::Tick(float delta_time)

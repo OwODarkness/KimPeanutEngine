@@ -37,6 +37,8 @@ namespace kpengine
                 max_.z_ = point.z_;
         }
 
+        bool Intersect(const Vector3f& origin, const Vector3f& dir, float out_t) const;
+
         Vector3f Center() const { return 0.5f * (min_ + max_); }
         Vector3f Extent() const { return 0.5f * (max_ - min_); }
     };

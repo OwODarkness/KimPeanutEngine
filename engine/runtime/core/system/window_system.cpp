@@ -54,6 +54,7 @@ namespace kpengine
 
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
+        
     }
 
     void WindowSystem::ClearContext()

@@ -28,7 +28,8 @@ namespace kpengine
         mesh_resource_ = GetMeshResource(0);
         ModelLoader::Load(name_, *mesh_resource_);
 
-        lod_max_level = CalculateLODCount(mesh_resource_->index_buffer_.size() / 3);
+        //lod_max_level = CalculateLODCount(mesh_resource_->index_buffer_.size() / 3);
+        lod_max_level = 0;
         geometry_buf_ = CreateGeometryBuffer(mesh_resource_);
         geometry_buffers_.push_back(geometry_buf_);
 

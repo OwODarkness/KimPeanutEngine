@@ -30,61 +30,57 @@ namespace kpengine
 
     bool RenderTexture2D::Initialize()
     {
-  int width = 0, height = 0, nrChannels = 0;
-    stbi_set_flip_vertically_on_load(true);
+        int width = 0, height = 0, nrChannels = 0;
+        stbi_set_flip_vertically_on_load(true);
 
-    std::string absoluteImagePath = GetAssetDirectory() + image_id_;
-    unsigned char* imageData = stbi_load(absoluteImagePath.c_str(), &width, &height, &nrChannels, 0);
+        std::string absoluteImagePath = GetAssetDirectory() + image_id_;
+        unsigned char *imageData = stbi_load(absoluteImagePath.c_str(), &width, &height, &nrChannels, 0);
 
-    if (!imageData)
-    {
-        KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", absoluteImagePath.c_str());
-        return false;
-    }
+        if (!imageData)
+        {
+            KP_LOG("TextureLog", LOG_LEVEL_ERROR, "Failed to load texture from %s", absoluteImagePath.c_str());
+            return false;
+        }
 
-    glGenTextures(1, &texture_handle_);
-    glBindTexture(GL_TEXTURE_2D, texture_handle_);
+        glGenTextures(1, &texture_handle_);
+        glBindTexture(GL_TEXTURE_2D, texture_handle_);
 
-    // Determine external format
-    GLenum format = (nrChannels == 1) ? GL_RED :
-                    (nrChannels == 3) ? GL_RGB :
-                    (nrChannels == 4) ? GL_RGBA : 0;
+        // Determine external format
+        GLenum format = (nrChannels == 1) ? GL_RED : (nrChannels == 3) ? GL_RGB
+                                                 : (nrChannels == 4)   ? GL_RGBA
+                                                                       : 0;
 
-    // Determine internal format
-    GLenum internalFormat = 0;
-    if (is_color_texture_)
-    {
-        // sRGB internal format for color textures
-        internalFormat = (nrChannels == 3) ? GL_SRGB8 :
-                         (nrChannels == 4) ? GL_SRGB8_ALPHA8 : GL_R8;
-    }
-    else
-    {
-        // Linear internal format for data textures
-        internalFormat = (nrChannels == 1) ? GL_R8 :
-                         (nrChannels == 3) ? GL_RGB8 :
-                         (nrChannels == 4) ? GL_RGBA8 : GL_RGB8;
-    }
+        // Determine internal format
+        GLenum internalFormat = 0;
+        if (is_color_texture_)
+        {
+            // sRGB internal format for color textures
+            internalFormat = (nrChannels == 3) ? GL_SRGB8 : (nrChannels == 4) ? GL_SRGB8_ALPHA8
+                                                                              : GL_R8;
+        }
+        else
+        {
+            // Linear internal format for data textures
+            internalFormat = (nrChannels == 1) ? GL_R8 : (nrChannels == 3) ? GL_RGB8
+                                                     : (nrChannels == 4)   ? GL_RGBA8
+                                                                           : GL_RGB8;
+        }
 
-    // Fix row alignment issues
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+        // Fix row alignment issues
 
-    // Upload texture
-    glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE, imageData);
-    glGenerateMipmap(GL_TEXTURE_2D);
-    stbi_image_free(imageData);
+        // Upload texture
+        glTexImage2D(GL_TEXTURE_2D, 0, internalFormat, width, height, 0, format, GL_UNSIGNED_BYTE, imageData);
+        glGenerateMipmap(GL_TEXTURE_2D);
 
-    // Texture parameters
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        // Texture parameters
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
 
-    glBindTexture(GL_TEXTURE_2D, 0);
-
-
-
-    return true;
+        glBindTexture(GL_TEXTURE_2D, 0);
+        stbi_image_free(imageData);
+        return true;
     }
 
     RenderTexture2D::~RenderTexture2D() = default;
@@ -105,6 +101,7 @@ namespace kpengine
 
         glGenTextures(1, &texture_handle_);
         glBindTexture(GL_TEXTURE_CUBE_MAP, texture_handle_);
+        stbi_set_flip_vertically_on_load(true);
 
         int width = 0, height = 0, nr_channels = 0;
 

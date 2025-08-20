@@ -103,53 +103,6 @@ namespace kpengine
             return scene_ui_->is_scene_window_focus;
         }
 
-
-        bool EditorSceneManager::IntersectRayAABB(const Vector3f &origin, const Vector3f &ray_dir, const AABB &aabb, float &out_dist)
-        {
-            const Vector3f &min = aabb.min_;
-            const Vector3f &max = aabb.max_;
-
-            float tmin = (min.x_ - origin.x_) / ray_dir.x_;
-            float tmax = (max.x_ - origin.x_) / ray_dir.x_;
-
-            if (tmin > tmax)
-                std::swap(tmin, tmax);
-
-            float tymin = (min.y_ - origin.y_) / ray_dir.y_;
-            float tymax = (max.y_ - origin.y_) / ray_dir.y_;
-
-            if (tymin > tymax)
-                std::swap(tymin, tymax);
-
-            if ((tmin > tymax) || (tymin > tmax))
-                return false;
-
-            if (tymin > tmin)
-                tmin = tymin;
-            if (tymax < tmax)
-                tmax = tymax;
-
-            float tzmin = (min.z_ - origin.z_) / ray_dir.z_;
-            float tzmax = (max.z_ - origin.z_) / ray_dir.z_;
-
-            if (tzmin > tzmax)
-                std::swap(tzmin, tzmax);
-
-            if ((tmin > tzmax) || (tzmin > tmax))
-                return false;
-
-            if (tzmin > tmin)
-                tmin = tzmin;
-            if (tzmax < tmax)
-                tmax = tzmax;
-
-            if (tmin < 0.0f && tmax < 0.0f)
-                return false;
-
-            out_dist = tmin >= 0.0f ? tmin : tmax;
-            return true;
-        }
-
         void EditorSceneManager::ClearLastSelection()
         {
             if (last_select_actor_)
@@ -189,8 +142,8 @@ namespace kpengine
                 MeshComponent *mesh = dynamic_cast<MeshComponent *>(item->GetRootComponent());
                 if (!mesh)
                     continue;
-                float hit_dist;
-                bool should_update_selected = IntersectRayAABB(origin_pos, world_ray, mesh->GetWorldAABB(), hit_dist) && closest_dist > hit_dist;
+                float hit_dist = 0;
+                bool should_update_selected = mesh->GetWorldAABB().Intersect(origin_pos, world_ray, hit_dist) && closest_dist > hit_dist;
                 if (should_update_selected)
                 {
                     closest_dist = hit_dist;

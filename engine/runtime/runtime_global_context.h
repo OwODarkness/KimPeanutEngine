@@ -10,7 +10,7 @@ namespace kpengine::input{
 
 namespace kpengine
 {
-
+    constexpr float k_unit_scale = 0.01f; 
     class WindowSystem;
     class RenderSystem;
     class AssetSystem;

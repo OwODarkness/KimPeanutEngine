@@ -33,7 +33,6 @@ namespace editor{
         std::shared_ptr<input::InputContext> GetInputContext() const{return input_context_;}
     private:
         void OnClickMouseCallback(float mouse_pos_x, float mouse_pos_y);
-        bool IntersectRayAABB(const Vector3f& origin, const Vector3f& ray_dir, const AABB& aabb, float& out_dist);
         void ClearLastSelection();
     private:
         std::unique_ptr<ui::EditorSceneComponent> scene_ui_;
