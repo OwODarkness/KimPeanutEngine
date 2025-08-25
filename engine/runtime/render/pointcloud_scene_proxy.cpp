@@ -33,6 +33,6 @@ namespace kpengine
 
         cur_shader->UseProgram();
         cur_shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
-        glDrawArrays(GL_POINTS, 0, pointcloud_resource_ref_->vertex_buffer_.size() * sizeof(Vector3f));
+        glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(pointcloud_resource_ref_->vertex_buffer_.size() * sizeof(Vector3f)));
     }
 }

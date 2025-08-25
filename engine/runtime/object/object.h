@@ -5,6 +5,7 @@ namespace kpengine{
     class Object{
     public:
         Object() = default;
+        void Initialize();
     };
 }
 

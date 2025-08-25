@@ -1,13 +1,11 @@
 #include "runtime_global_context.h"
-
-#include <iostream>
-
 #include "runtime/core/system/window_system.h"
 #include "runtime/core/system/render_system.h"
 #include "runtime/core/system/log_system.h"
 #include "runtime/core/system/asset_system.h"
 #include "runtime/core/system/world_system.h"
 #include "runtime/core/system/input_system.h"
+
 namespace kpengine
 {
     namespace runtime{
@@ -21,7 +19,8 @@ namespace kpengine
         asset_system_(std::make_unique<AssetSystem>()),
         world_system_(std::make_unique<WorldSystem>()),
         input_system_(std::make_unique<input::InputSystem>()),
-        glfw_context_(std::make_shared<GLFWAppContext>())
+        glfw_context_(std::make_shared<GLFWAppContext>()),
+        graphics_backend_type_(GraphicsBackEndType::GRAPHICS_BACKEND_OPENGL)
         {
         }
         void RuntimeContext::Initialize()

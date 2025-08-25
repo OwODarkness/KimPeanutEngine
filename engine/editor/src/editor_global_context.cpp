@@ -26,6 +26,7 @@ namespace kpengine{
             input_system_ = init_info.input_system;
             runtime_engine_ = init_info.runtime_engine;
 
+            graphics_backend_type_ = init_info.graphics_backend_type;
 
             editor_scene_manager_->Initialize();
 

@@ -1,6 +1,9 @@
 #ifndef KPENGINE_EDITOR_GLOBAL_CONTEXT_H
 #define KPENGINE_EDITOR_GLOBAL_CONTEXT_H
+
 #include<memory>
+#include "runtime/graphics/backend/common/api.h"
+
 namespace kpengine{
     class WindowSystem;
     class RenderSystem;
@@ -28,6 +31,7 @@ namespace editor{
         WorldSystem* world_system;
         input::InputSystem* input_system;
         runtime::Engine* runtime_engine;
+        GraphicsBackEndType graphics_backend_type;
     };
 
     class EditorContext{
@@ -35,7 +39,7 @@ namespace editor{
         EditorContext();
         void Initialize(const EditorContextInitInfo& init_info);
         void Clear();
-
+    public:
         WindowSystem* window_system_{nullptr};
         RenderSystem* render_system_{nullptr};
         LogSystem* log_system_{nullptr};
@@ -46,6 +50,8 @@ namespace editor{
         EditorSceneManager* editor_scene_manager_;
         EditorLogManager* editor_log_manager_;
         Editor* editor;
+
+        GraphicsBackEndType graphics_backend_type_;
     };
 
     extern EditorContext global_editor_context;

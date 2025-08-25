@@ -7,6 +7,7 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 include_directories(
     third_party
     third_party/googletest/googletest/include
+    third_party/vulkan/
     )
 
 add_subdirectory(engine)

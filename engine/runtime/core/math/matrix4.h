@@ -5,12 +5,12 @@
 #include <cstddef>
 #include <algorithm>
 #include <cassert>
-#include "runtime/core/math/math.h"
-#include "runtime/core/math/vector4.h"
-#include "runtime/core/math/matrix3.h"
-#include "runtime/core/math/rotator.h"
-#include "runtime/core/math/quaternion.h"
-#include "runtime/core/math/transform.h"
+#include "math.h"
+#include "vector4.h"
+#include "matrix3.h"
+#include "rotator.h"
+#include "quaternion.h"
+#include "transform.h"
 
 namespace kpengine::math
 {

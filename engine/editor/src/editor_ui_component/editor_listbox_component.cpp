@@ -2,7 +2,6 @@
 #include "editor/include/editor_global_context.h"
 #include "runtime/core/system/render_system.h"
 
-#include <iostream>
 namespace kpengine{
 namespace  ui{
 
@@ -15,7 +14,7 @@ namespace  ui{
     void EditorListboxComponent::Render()
     {
         last_index = current_index;
-        ImGui::ListBox("Shader Mode", &current_index, list_items_.data(), list_items_.size(), 2);
+        ImGui::ListBox("Shader Mode", &current_index, list_items_.data(), static_cast<int>(list_items_.size()), 2);
         if(last_index != current_index)
         {
             OnItemSelected(last_index, current_index);

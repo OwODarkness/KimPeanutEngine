@@ -115,7 +115,7 @@ namespace kpengine::input
         {
             return;
         }
-        it->second->ProcessAxis1DInput({InputDevice::Mouse, KPENGINE_MOUSE_SCROLL}, yoffset);
+        it->second->ProcessAxis1DInput({InputDevice::Mouse, KPENGINE_MOUSE_SCROLL}, static_cast<float>(yoffset));
     }
 
     void InputSystem::OnMouseButtonCallback(GLFWwindow *window, int button, int action, int mods)

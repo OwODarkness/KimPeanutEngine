@@ -5,9 +5,8 @@
 #include <cstddef>
 #include <algorithm>
 #include <stdexcept>
-
-#include "runtime/core/math/math.h"
-#include "runtime/core/math/vector3.h"
+#include "math.h"
+#include "vector3.h"
 namespace kpengine::math{
     template<typename T>
     class Matrix3{

@@ -41,7 +41,7 @@ namespace kpengine
     void FrameBuffer::Finalize()
     {
         glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
-        glDrawBuffers(draw_buffers_.size(), draw_buffers_.data());
+        glDrawBuffers(static_cast<GLsizei>(draw_buffers_.size()), draw_buffers_.data());
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
     }
 

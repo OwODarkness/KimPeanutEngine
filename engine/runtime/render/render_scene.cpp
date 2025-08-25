@@ -152,7 +152,7 @@ namespace kpengine
         glBufferSubData(GL_UNIFORM_BUFFER, sizeof(Matrix4f), sizeof(Matrix4f), view_mat.Transpose()[0]);
         glBindBuffer(GL_UNIFORM_BUFFER, 0);
 
-        int current_light_count = lights_.size();
+        int current_light_count = static_cast<int>(lights_.size());
 
         if (current_light_count < KPENGINE_MAX_LIGHTS)
         {

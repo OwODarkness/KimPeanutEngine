@@ -101,7 +101,7 @@ namespace kpengine
         else
         {
             std::string shader_name = vertex_shader_path_;
-            int index = shader_name.find_last_of('/');
+            size_t index = shader_name.find_last_of('/');
             KP_LOG("ShaderLinkLog", LOG_LEVEL_DISPLAY, shader_name.substr(index + 1, shader_name.size() - index - 4) + " shader link successfully");
         }
 

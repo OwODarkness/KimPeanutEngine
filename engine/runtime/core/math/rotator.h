@@ -1,9 +1,9 @@
 #ifndef KPENGINE_RUNTIME_MATH_ROTATOR_H
 #define KPENGINE_RUNTIME_MATH_ROTATOR_H
 
-#include "runtime/core/math/math.h"
-#include "runtime/core/math/vector3.h"
-#include "runtime/core/math/quaternion.h"
+#include "math.h"
+#include "vector3.h"
+#include "quaternion.h"
 
 namespace kpengine::math
 {

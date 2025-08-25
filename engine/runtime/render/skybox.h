@@ -2,7 +2,7 @@
 #define KPENGINE_RUNTIME_SKYBOX_H
 
 #include <memory>
-
+#include <cstdint>
 namespace kpengine{
 
     
@@ -19,8 +19,8 @@ namespace kpengine{
         std::shared_ptr<RenderShader> shader_;
         std::shared_ptr<RenderTexture> cubemap_;
 
-        unsigned int vbo_;
-        unsigned int vao_;
+        uint32_t vbo_;
+        uint32_t vao_;
 
         static const float skybox_vertices[108];
     };

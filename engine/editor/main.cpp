@@ -1,7 +1,6 @@
 #include <memory>
 #include "runtime/engine.h"
-
-
+// #include "runtime/graphics/backend/common/render_backend.h"
 int main(int argc, char **argv)
 {
 
@@ -11,7 +10,6 @@ int main(int argc, char **argv)
     engine->Initialize();
     engine->Run();
     engine->Clear();
-
 
     return 0;
 }

@@ -9,9 +9,8 @@ file(GLOB RUNTIME_GAMEPLAY_FRAMEWORK_SRC "${CMAKE_CURRENT_SOURCE_DIR}/game_frame
 file(GLOB RUNTIME_INPUT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/input/*.cpp")
 file(GLOB RUNTIME_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp")
 
+add_subdirectory(graphics)
 
-
-#file(GLOB RUNTIME_MATH_SRC "${CMAKE_CURRENT_SOURCE_DIR}/core/math/*.cpp")
 add_library(RuntimeLib STATIC 
     ${RUNTIME_SRC}  
     ${RUNTIME_LOG_SRC}
@@ -28,3 +27,5 @@ add_library(RuntimeLib STATIC
 target_include_directories(RuntimeLib PUBLIC
 "${CMAKE_CURRENT_SOURCE_DIR}/core/log/"
 )
+
+target_link_libraries(RuntimeLib PRIVATE Graphics)

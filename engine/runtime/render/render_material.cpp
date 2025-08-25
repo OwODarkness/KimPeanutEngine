@@ -187,7 +187,7 @@ namespace kpengine
             shader->SetVec3(param_name, pair.second.Data());
         }
 
-        size_t map_count = 0;
+        int map_count = 0;
         for (const auto &pair : textures)
         {
             if (pair.second)

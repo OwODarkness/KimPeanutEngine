@@ -3,9 +3,9 @@
 
 #include <cmath>
 
-#include "runtime/core/math/math.h"
-#include "runtime/core/math/vector3.h"
-#include "runtime/core/math/rotator.h"
+#include "math.h"
+#include "vector3.h"
+#include "rotator.h"
 
 namespace kpengine::math
 {

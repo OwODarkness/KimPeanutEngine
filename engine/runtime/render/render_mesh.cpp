@@ -248,7 +248,7 @@ namespace kpengine
                 simplified_indices.end());
 
             lod_resource->mesh_sections_.push_back(MeshSection(index_offset,
-                                                               simplified_indices.size(),
+                                                               static_cast<unsigned int>(simplified_indices.size()),
                                                                section.material)
 
             );

@@ -1,8 +1,8 @@
 #ifndef KPENGINE_RUNTIME_MATH_TRANSFORM_H
 #define KPENGINE_RUNTIME_MATH_TRANSFORM_H
 
-#include "runtime/core/math/vector3.h"
-#include "runtime/core/math/rotator.h"
+#include "vector3.h"
+#include "rotator.h"
 namespace kpengine::math
 {
 
