@@ -8,7 +8,7 @@
 #include <vector>
 #include <cstdio>
 #include <fstream>
-#include "runtime/runtime_global_context.h"
+
 #include "log_entry.h"
 
 #define KP_LOG(LOG_NAME, LEVEL, MESSAGE, ...) \

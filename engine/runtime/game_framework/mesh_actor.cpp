@@ -1,6 +1,6 @@
 #include "mesh_actor.h"
-#include "runtime/component/mesh_component.h"
-#include "runtime/component/pointcloud_component.h"
+#include "component/mesh_component.h"
+#include "component/pointcloud_component.h"
 namespace kpengine{
     MeshActor::MeshActor(const std::string& relative_path):
     Actor()

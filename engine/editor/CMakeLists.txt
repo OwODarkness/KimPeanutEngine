@@ -10,3 +10,5 @@ target_include_directories(EditorLib PUBLIC
 "${CMAKE_CURRENT_SOURCE_DIR}/include/editor_ui_component"
 "${CMAKE_SOURCE_DIR}/engine/runtime"
 )
+
+target_link_libraries(EditorLib PRIVATE Input Component Object)

@@ -5,8 +5,7 @@
 #include <vector>
 
 #include "actor_component.h"
-#include "runtime/core/math/math_header.h"
-#include "runtime/core/system/delegate.h"
+#include "math/math_header.h"
 
 
 namespace kpengine{

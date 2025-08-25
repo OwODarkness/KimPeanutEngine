@@ -5,8 +5,8 @@
 #include <string>
 #include <memory>
 
-#include "runtime/object/object.h"
-#include "runtime/core/math/math_header.h"
+#include "object/object.h"
+#include "math/math_header.h"
 
 class ActorComponent;
 namespace kpengine{

@@ -1,6 +1,6 @@
 #include "actor.h"
-#include "runtime/component/actor_component.h"
-#include "runtime/component/scene_component.h"
+#include "component/actor_component.h"
+#include "component/scene_component.h"
 
 namespace kpengine{
     Actor::Actor():

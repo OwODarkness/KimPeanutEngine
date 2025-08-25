@@ -1,9 +1,10 @@
 #include "level.h"
 
-#include "runtime/game_framework/actor.h"
+#include "actor.h"
+#include "mesh_actor.h"
+#include "component/mesh_component.h"
+
 #include "runtime/core/log/logger.h"
-#include "runtime/game_framework/mesh_actor.h"
-#include "runtime/component/mesh_component.h"
 #include "runtime/render/render_mesh.h"
 #include "runtime/render/render_material.h"
 #include "runtime/render/mesh_vertex.h"

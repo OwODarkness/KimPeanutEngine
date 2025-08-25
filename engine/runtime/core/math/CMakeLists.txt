@@ -1,3 +1,7 @@
-cmake_minimum_required(VERSION 3.5.0)
+# runtime/core/math/CMakeLists.txt
 add_library(Math INTERFACE)
-target_include_directories(Math INTERFACE ${CMAKE_CURRENT_SOURCE_DIR})
+
+# expose 'core' so that 'math/math_header.h' works
+target_include_directories(Math INTERFACE
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+)

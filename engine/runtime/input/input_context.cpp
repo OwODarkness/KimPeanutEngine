@@ -1,7 +1,5 @@
 #include "input_context.h"
-#include <iostream>
-
-#include "runtime/core/log/logger.h"
+#include "log/logger.h"
 
 namespace kpengine::input
 {

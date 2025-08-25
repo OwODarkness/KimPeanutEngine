@@ -1,7 +1,7 @@
 #ifndef KPENGINE_RUNTIME_ACTOR_COMPONENT_H
 #define KPENGINE_RUNTIME_ACTOR_COMPONENT_H
 
-#include "runtime/object/object.h"
+#include "object/object.h"
 
 
 namespace kpengine{

@@ -14,3 +14,5 @@ target_include_directories(Graphics
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/backend
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tool
 )
+
+target_link_libraries(Graphics PRIVATE RuntimeLib Math)
