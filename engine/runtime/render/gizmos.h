@@ -2,7 +2,7 @@
 #define KPENGINE_RUNTIME_GIZMOS_H
 
 #include <memory>
-#include "runtime/core/math/math_header.h"
+#include "math/math_header.h"
 
 namespace kpengine
 {

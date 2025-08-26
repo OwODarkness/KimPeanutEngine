@@ -1,7 +1,7 @@
 #ifndef KPENGINE_RUNTIME_MESH_VERTEX_H
 #define KPENGINE_RUNTIME_MESH_VERTEX_H
 
-#include "runtime/core/math/math_header.h"
+#include "math/math_header.h"
 
 namespace kpengine
 {

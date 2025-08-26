@@ -8,7 +8,7 @@
 #include "editor_button_component.h"
 #include "editor_text_component.h"
 
-#include "runtime/core/system/delegate.h"
+#include "runtime/core/delegate/delegate.h"
 namespace kpengine{
     namespace ui{
         EditorCameraControlComponent::EditorCameraControlComponent(kpengine::RenderCamera* camera)

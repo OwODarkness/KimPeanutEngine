@@ -3,8 +3,8 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
-#include "runtime/core/log/logger.h"
-#include "runtime/runtime_global_context.h"
+#include "log/logger.h"
+#include "runtime_global_context.h"
 namespace kpengine
 {
 

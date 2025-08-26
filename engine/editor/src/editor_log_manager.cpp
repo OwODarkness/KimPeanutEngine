@@ -1,7 +1,7 @@
 #include "editor_log_manager.h"
 
 #include "editor/include/editor_ui_component/editor_log_component.h"
-#include "runtime/core/system/log_system.h"
+#include "runtime/core/log/log_system.h"
 
 namespace kpengine
 {

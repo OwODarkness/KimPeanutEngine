@@ -1,10 +1,12 @@
 #include "pointcloud_component.h"
 
-#include "runtime/runtime_header.h"
-#include "runtime/render/render_scene.h"
-#include "runtime/render/render_pointcloud.h"
-#include "runtime/render/pointcloud_scene_proxy.h"
-#include "runtime/core/log/logger.h"
+#include "runtime_global_context.h"
+#include "render/render_scene.h"
+#include "render/render_system.h"
+#include "render/render_pointcloud.h"
+#include "render/pointcloud_scene_proxy.h"
+#include "log/logger.h"
+
 
 
 namespace kpengine{

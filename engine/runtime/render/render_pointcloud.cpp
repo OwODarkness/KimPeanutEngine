@@ -1,8 +1,8 @@
 #include "render_pointcloud.h"
 
 #include <glad/glad.h>
-#include "runtime/render/model_loader.h"
-#include "runtime/render/render_pointcloud_resource.h"
+#include "model_loader.h"
+#include "render_pointcloud_resource.h"
 #include "runtime/core/utility/utility.h"
 
 namespace kpengine{

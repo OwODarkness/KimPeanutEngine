@@ -1,8 +1,8 @@
 #ifndef KPENGINE_RUNTIME_RENDER_CAMERA_H
 #define KPENGINE_RUNTIME_RENDER_CAMERA_H
 
-#include "runtime/core/math/math_header.h"
-#include "runtime/input/input_action.h"
+#include "math/math_header.h"
+#include "input/input_action.h"
 #include <memory>
 
 namespace kpengine::input{

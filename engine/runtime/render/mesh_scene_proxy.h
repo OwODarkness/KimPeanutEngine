@@ -1,11 +1,11 @@
 #ifndef KPENGINE_RUNTIME_MESH_SCENE_PROXY_H
 #define KPENGINE_RUNTIME_MESH_SCENE_PROXY_H
 
+#include <memory>
 
 #include "primitive_scene_proxy.h"
 #include "mesh_section.h"
-#include "runtime/core/math/math_header.h"
-#include <memory>
+#include "math/math_header.h"
 
 #define SHADER_PARAM_MODEL_TRANSFORM "model"
 

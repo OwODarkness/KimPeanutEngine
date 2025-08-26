@@ -1,9 +1,6 @@
 #include "window_system.h"
-#include "runtime/core/log/logger.h"
-#include "runtime/runtime_global_context.h"
-#include "runtime/core/system/render_system.h"
-#include "runtime/render/render_scene.h"
-#include "runtime/render/frame_buffer.h"
+#include "log/logger.h"
+#include "runtime_global_context.h"
 namespace kpengine
 {
     WindowSystem::WindowSystem()
@@ -12,6 +9,7 @@ namespace kpengine
 
     WindowSystem::~WindowSystem()
     {
+        glfwMakeContextCurrent(nullptr);
         glfwDestroyWindow(window_);
         glfwTerminate();
     }
@@ -22,8 +20,8 @@ namespace kpengine
 
         if (GLFW_FALSE == glfwInit())
         {
-            KP_LOG("GLFW Init", LOG_LEVEL_ERROR, "Failed to initialize glfw");
-            return;
+            KP_LOG("WindowSystemLog", LOG_LEVEL_ERROR, "Failed to initialize glfw");
+            throw std::runtime_error("Failed to initialize glfw");
         }
         glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
         glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
@@ -35,32 +33,19 @@ namespace kpengine
         window_ = glfwCreateWindow(window_info.width, window_info.height, "KimPeanut Engine", nullptr, nullptr);
         if (window_ == nullptr)
         {
-            KP_LOG("GLFW Window Create", LOG_LEVEL_ERROR, "Failed to create winodw");
-            return;
+            KP_LOG("WindowSystemLog", LOG_LEVEL_ERROR, "Failed to create winodw");
+            throw std::runtime_error("Failed to create winodw");
         }
     }
 
     void WindowSystem::MakeContext()
     {
-
         glfwMakeContextCurrent(window_);
         glfwSwapInterval(1);
-        if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-        {
-            KP_LOG("GLFW Window Create", LOG_LEVEL_ERROR, "Failed to initialize GLAD");
-            return;
-        }
+
         glfwSetFramebufferSizeCallback(window_, &WindowSystem::OnFrameBufferSizeCallback);
-
-        glEnable(GL_DEPTH_TEST);
-        glDepthFunc(GL_LESS);
-        
     }
 
-    void WindowSystem::ClearContext()
-    {
-        glfwMakeContextCurrent(nullptr);
-    }
 
     void WindowSystem::PollEvents() const
     {
@@ -71,9 +56,6 @@ namespace kpengine
     {
         glfwSwapBuffers(window_);
         PollEvents();
-
-        glClearColor(0.1f, 0.1f, 0.1f, 1.f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
     }
 
     bool WindowSystem::ShouldClose() const
@@ -88,7 +70,6 @@ namespace kpengine
 
     void WindowSystem::OnFrameBufferSizeCallback(GLFWwindow *window, int width, int height)
     {
-        glViewport(0, 0, width, height);
         GLFWAppContext *glfw_context = static_cast<GLFWAppContext *>(glfwGetWindowUserPointer(window));
         if (!glfw_context || !glfw_context->window_sys)
             return;

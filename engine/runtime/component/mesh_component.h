@@ -4,7 +4,7 @@
 #include <memory>
 #include <string>
 #include "primitive_component.h"
-#include "runtime/render/aabb.h"
+#include "render/aabb.h"
 namespace kpengine{
     class RenderMesh;    
 

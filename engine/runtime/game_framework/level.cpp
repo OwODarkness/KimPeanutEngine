@@ -4,15 +4,14 @@
 #include "mesh_actor.h"
 #include "component/mesh_component.h"
 
-#include "runtime/core/log/logger.h"
-#include "runtime/render/render_mesh.h"
-#include "runtime/render/render_material.h"
-#include "runtime/render/mesh_vertex.h"
-#include "runtime/render/mesh_section.h"
-#include "runtime/core/system/render_system.h"
-#include "runtime/render/texture_pool.h"
-#include "runtime/render/render_texture.h"
-
+#include "log/logger.h"
+#include "render/render_mesh.h"
+#include "render/render_material.h"
+#include "render/mesh_vertex.h"
+#include "render/mesh_section.h"
+#include "render/render_system.h"
+#include "render/texture_pool.h"
+#include "render/render_texture.h"
 namespace kpengine
 {
 

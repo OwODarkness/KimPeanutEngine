@@ -8,7 +8,7 @@
 
 #include "runtime/runtime_global_context.h"
 #include "runtime/core/system/window_system.h"
-#include "runtime/core/system/render_system.h"
+#include "runtime/render/render_system.h"
 #include "runtime/engine.h"
 #include "runtime/core/log/logger.h"
 

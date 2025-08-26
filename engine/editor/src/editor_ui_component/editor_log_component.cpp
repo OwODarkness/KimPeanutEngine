@@ -2,7 +2,7 @@
 
 #include <string>
 #include <vector>
-#include "runtime/core/system/log_system.h"
+#include "runtime/core/log/log_system.h"
 #include "runtime/core/log/logger.h"
 namespace kpengine
 {

@@ -34,8 +34,8 @@ namespace kpengine::math
         T *Data() { return &x_; }
         const T *Data() const { return &x_; }
 
-        inline double SquareLength() const { return x_ * x_ + y_ * y_ + z_ * z_; }
-        double Norm() const { return std::sqrt(SquareLength()); }
+        inline T SquareLength() const { return x_ * x_ + y_ * y_ + z_ * z_; }
+        T Norm() const { return static_cast<T>(std::sqrt(SquareLength())); }
 
         bool operator==(const Vector3 &v) const { return x_ == v.x_ && y_ == v.y_ && z_ == v.z_; }
         bool operator!=(const Vector3 &v) const { return x_ != v.x_ || y_ != v.y_ || z_ != v.z_; }

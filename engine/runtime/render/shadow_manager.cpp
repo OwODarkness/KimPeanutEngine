@@ -1,9 +1,9 @@
 #include "shadow_manager.h"
 
-#include "runtime/render/directional_shadow_caster.h"
-#include "runtime/render/point_shadow_caster.h"
-#include "runtime/render/spot_shadow_caster.h"
-#include "runtime/render/render_light.h"
+#include "directional_shadow_caster.h"
+#include "point_shadow_caster.h"
+#include "spot_shadow_caster.h"
+#include "render_light.h"
 
 namespace kpengine
 {

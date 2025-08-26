@@ -5,8 +5,8 @@
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#include "runtime/core/log/logger.h"
-#include "platform/path/path.h"
+#include "log/logger.h"
+#include "config/path.h"
 namespace kpengine
 {
 

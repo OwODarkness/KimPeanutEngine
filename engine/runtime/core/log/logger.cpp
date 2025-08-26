@@ -3,7 +3,7 @@
 #include <ctime>
 #include <filesystem>
 #include <magic_enum/magic_enum.hpp>
-#include "platform/path/path.h"
+#include "config/path.h"
 
 namespace kpengine::program
 {

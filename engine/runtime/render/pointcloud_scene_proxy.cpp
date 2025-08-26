@@ -2,10 +2,10 @@
 
 #include <glad/glad.h>
 
-#include "runtime/render/render_shader.h"
-#include "runtime/render/render_pointcloud_resource.h"
+#include "render_shader.h"
+#include "render_pointcloud_resource.h"
 #include "runtime/core/utility/gl_vertex_array_guard.h"
-#include "runtime/render/render_material.h"
+#include "render_material.h"
 
 namespace kpengine
 {

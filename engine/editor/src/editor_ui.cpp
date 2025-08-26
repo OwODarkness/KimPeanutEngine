@@ -21,9 +21,10 @@
 #include "editor/include/editor_ui_component/editor_container_component.h"
 #include "editor/include/editor_ui_component/editor_camera_component.h"
 #include "editor/include/editor_actor_control_panel.h"
-#include "runtime/core/system/render_system.h"
 #include "runtime/core/system/world_system.h"
 #include "runtime/engine.h"
+
+#include "runtime/render/render_system.h"
 #include "runtime/render/render_scene.h"
 #include "runtime/render/frame_buffer.h"
 

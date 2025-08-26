@@ -5,7 +5,7 @@
 #include <vector>
 
 
-#include "runtime/core/log/log_entry.h"
+#include "log/logger.h"
 
 namespace kpengine::program{
     struct LogEntry;

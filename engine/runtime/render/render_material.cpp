@@ -3,9 +3,10 @@
 #include <glad/glad.h>
 #include <iostream>
 #include <iostream>
-#include "runtime/render/render_shader.h"
+#include "render_shader.h"
 #include "runtime/render/render_texture.h"
-#include "runtime/runtime_header.h"
+#include "render_system.h"
+#include "runtime_global_context.h"
 #include "runtime/render/texture_pool.h"
 namespace kpengine
 {
@@ -195,8 +196,8 @@ namespace kpengine
                 std::string bool_name = "material.has_" + pair.first;
                 shader->SetBool(bool_name, true);
                 std::string texture_name = "material." + pair.first;
-                shader->SetInt(texture_name, texture_start_index + map_count);
-                glActiveTexture(GL_TEXTURE0 + texture_start_index + map_count);
+                shader->SetInt(texture_name, static_cast<int>(texture_start_index + map_count));
+                glActiveTexture(GL_TEXTURE0 + static_cast<GLenum>(texture_start_index + map_count));
                 glBindTexture(GL_TEXTURE_2D, pair.second->GetTexture());
 
                 map_count++;

@@ -1,14 +1,14 @@
 #include "model_loader.h"
 #include <iostream>
-#include "runtime/render/render_mesh.h"
-#include "runtime/render/render_material.h"
-#include "runtime/render/render_texture.h"
-#include "runtime/core/log/logger.h"
-#include "platform/path/path.h"
-#include "runtime/render/render_pointcloud_resource.h"
-#include "runtime/render/render_mesh_resource.h"
-#include "runtime/runtime_header.h"
-#include "runtime/render/shader_pool.h"
+#include "render_mesh.h"
+#include "render_material.h"
+#include "render_texture.h"
+#include "log/logger.h"
+#include "config/path.h"
+#include "render_pointcloud_resource.h"
+#include "render_mesh_resource.h"
+#include "shader_pool.h"
+
 
 namespace kpengine
 {

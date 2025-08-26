@@ -1,13 +1,13 @@
 #include "mesh_component.h"
 
-#include "runtime/runtime_header.h"
-#include "runtime/render/render_scene.h"
-#include "runtime/render/render_mesh.h"
-#include "runtime/render/mesh_scene_proxy.h"
-#include "runtime/render/render_mesh_resource.h"
-#include "runtime/render/render_camera.h"
-#include "runtime/core/log/logger.h"
-
+#include "render/render_scene.h"
+#include "render/render_mesh.h"
+#include "render/mesh_scene_proxy.h"
+#include "render/render_mesh_resource.h"
+#include "render/render_camera.h"
+#include "log/logger.h"
+#include "render/render_system.h"
+#include "runtime_global_context.h"
 namespace kpengine
 {
     MeshComponent::MeshComponent() : mesh_(nullptr) {}

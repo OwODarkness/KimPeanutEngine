@@ -5,7 +5,7 @@
 #include <functional>
 #include "editor/include/editor_ui_component.h"
 
-#include "runtime/core/system/delegate.h"
+#include "runtime/core/delegate/delegate.h"
 
 DECLARE_DELEGATE(FOnButtonClickNotify)
 

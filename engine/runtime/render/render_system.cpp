@@ -1,22 +1,26 @@
 #include "render_system.h"
 #include <iostream>
 #include <glad/glad.h>
-#include "runtime/render/render_scene.h"
-#include "runtime/render/render_camera.h"
-#include "runtime/render/texture_pool.h"
-
+#include <GLFW/glfw3.h>
+#include "render_scene.h"
+#include "render_camera.h"
+#include "texture_pool.h"
+#include "log/logger.h"
 namespace kpengine
 {
-    RenderSystem::RenderSystem():
-    render_camera_(std::make_shared<RenderCamera>()),
-    render_scene_(std::make_unique<RenderScene>()),
-    shader_pool_(std::make_unique<ShaderPool>()),
-    texture_pool_(std::make_unique<TexturePool>())
+    RenderSystem::RenderSystem() : render_camera_(std::make_shared<RenderCamera>()),
+                                   render_scene_(std::make_unique<RenderScene>()),
+                                   shader_pool_(std::make_unique<ShaderPool>()),
+                                   texture_pool_(std::make_unique<TexturePool>())
     {
-
     }
     void RenderSystem::Initialize()
     {
+        if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
+        {
+            KP_LOG("RenderSystemLog", LOG_LEVEL_ERROR, "Failed to initialize GLAD");
+            std::runtime_error("Failed to initialize GLAD");
+        }
         shader_pool_->Initialize();
         render_camera_->Initialize();
         render_scene_->Initialize(render_camera_);
@@ -31,7 +35,6 @@ namespace kpengine
     {
         GLuint query;
         glGenQueries(1, &query);
-
         glBeginQuery(GL_PRIMITIVES_GENERATED, query);
         render_scene_->Render(delta_time);
         glEndQuery(GL_PRIMITIVES_GENERATED);
@@ -41,7 +44,7 @@ namespace kpengine
         triangle_count_this_frame_ = primitives_generated;
     }
 
-    void RenderSystem::SetCurrentShaderMode(const std::string& target)
+    void RenderSystem::SetCurrentShaderMode(const std::string &target)
     {
         current_shader_mode_ = target;
         render_scene_->SetCurrentShader(shader_pool_->GetShader(current_shader_mode_));

@@ -10,7 +10,7 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 
-#include "runtime/render/mesh_vertex.h"
+#include "mesh_vertex.h"
 
 namespace kpengine{
 

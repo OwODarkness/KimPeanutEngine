@@ -1,8 +1,8 @@
 #include "skybox.h"
 #include <glad/glad.h>
 
-#include "runtime/render/render_shader.h"
-#include "runtime/render/render_texture.h"
+#include "render_shader.h"
+#include "render_texture.h"
 namespace kpengine{
 
 

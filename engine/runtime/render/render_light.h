@@ -1,7 +1,7 @@
 #ifndef KPENGINE_RUNTIME_RENDER_LIGHT_H
 #define KPENGINE_RUNTIME_RENDER_LIGHT_H
 
-#include "runtime/core/math/math_header.h"
+#include "math/math_header.h"
 namespace kpengine
 {
     enum class LightType : int

@@ -3,14 +3,13 @@
 #include <iostream>
 #include <glad/glad.h>
 #include <meshoptimizer/meshoptimizer.h>
-#include "runtime/core/log/logger.h"
-#include "runtime/render/render_shader.h"
-#include "runtime/render/render_material.h"
-#include "runtime/render/render_texture.h"
-#include "runtime/render/render_mesh_resource.h"
-#include "runtime/render/aabb.h"
-#include "runtime/render/model_loader.h"
-
+#include "log/logger.h"
+#include "render_shader.h"
+#include "render_material.h"
+#include "render_texture.h"
+#include "render_mesh_resource.h"
+#include "aabb.h"
+#include "model_loader.h"
 #include "runtime/core/utility/utility.h"
 
 namespace kpengine

@@ -4,7 +4,6 @@
 #include <memory>
 #include <vector>
 
-#include "runtime/core/math/math_header.h"
 
 namespace kpengine
 {

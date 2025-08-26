@@ -2,7 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_SYSTEM_H
 
 #include <memory>
-#include "runtime/render/shader_pool.h"
+#include "shader_pool.h"
 
 namespace kpengine{
     class RenderScene;

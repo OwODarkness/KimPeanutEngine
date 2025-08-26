@@ -4,8 +4,10 @@
 #include "runtime/core/utility/gl_vertex_array_guard.h"
 #include "runtime/core/utility/gl_vertex_buffer_guard.h"
 #include "runtime/core/utility/gl_element_buffer_guard.h"
-#include "runtime/runtime_header.h"
-#include "runtime/render/render_shader.h"
+#include "render_shader.h"
+#include "render_system.h"
+#include "runtime_global_context.h"
+#include "shader_pool.h"
 namespace kpengine{
 
 void AABBDebugger::Initialize(const AABB& aabb)

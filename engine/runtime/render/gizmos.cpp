@@ -4,11 +4,12 @@
 #include "runtime/core/utility/gl_vertex_array_guard.h"
 #include "runtime/core/utility/gl_vertex_buffer_guard.h"
 #include "runtime/core/utility/gl_element_buffer_guard.h"
-#include "runtime/runtime_header.h"
-#include "runtime/game_framework/actor.h"
-#include "runtime/render/render_shader.h"
-#include "runtime/component/mesh_component.h"
-
+#include "game_framework/actor.h"
+#include "shader_pool.h"
+#include "render_system.h"
+#include "render_shader.h"
+#include "component/mesh_component.h"
+#include "runtime_global_context.h"
 namespace kpengine
 {
     void Gizmos::Initialize()

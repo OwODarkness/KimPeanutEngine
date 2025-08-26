@@ -6,26 +6,24 @@
 #include <glad/glad.h>
 #include <glm/glm.hpp>
 
-#include "runtime/runtime_global_context.h"
-#include "runtime/core/system/render_system.h"
-#include "runtime/render/shader_pool.h"
-#include "runtime/render/render_texture.h"
-#include "runtime/render/frame_buffer.h"
-#include "runtime/test/render_object_test.h"
-#include "runtime/render/render_shader.h"
-#include "runtime/render/render_camera.h"
-#include "runtime/render/environment_map.h"
-#include "runtime/render/render_mesh_resource.h"
-#include "platform/path/path.h"
-#include "runtime/render/primitive_scene_proxy.h"
-#include "runtime/render/skybox.h"
-#include "runtime/render/aabb.h"
-#include "runtime/render/frustum.h"
-#include "runtime/render/gizmos.h"
-#include "runtime/render/postprocess_pipeline.h"
-#include "runtime/render/outline_effect.h"
-#include "runtime/render/shadow_manager.h"
-#include "runtime/render/render_light.h"
+#include "runtime_global_context.h"
+#include "render_system.h"
+#include "shader_pool.h"
+#include "render_texture.h"
+#include "frame_buffer.h"
+#include "render_shader.h"
+#include "render_camera.h"
+#include "environment_map.h"
+#include "render_mesh_resource.h"
+#include "primitive_scene_proxy.h"
+#include "skybox.h"
+#include "aabb.h"
+#include "frustum.h"
+#include "gizmos.h"
+#include "postprocess_pipeline.h"
+#include "outline_effect.h"
+#include "shadow_manager.h"
+#include "render_light.h"
 
 namespace kpengine
 {
@@ -111,6 +109,9 @@ namespace kpengine
 
     void RenderScene::Render(float deltatime)
     {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LESS);
+        
         Matrix4f proj_mat = render_camera_->GetProjectionMatrix();
         Matrix4f view_mat = render_camera_->GetViewMatrix();
         Frustum frustum = ExtractFrustumFromVPMat(proj_mat * view_mat);
@@ -144,7 +145,7 @@ namespace kpengine
         g_buffer_->UnBindFrameBuffer();
 
         debug_id = g_buffer_->GetTexture("g_normal");
-        
+
         scene_fb_->BindFrameBuffer();
 
         glBindBuffer(GL_UNIFORM_BUFFER, ubo_camera_matrices_);

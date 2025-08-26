@@ -3,8 +3,8 @@
 
 #include <memory>
 
-#include "runtime/render/aabb.h"
-#include "runtime/core/math/math_header.h"
+#include "aabb.h"
+#include "math/math_header.h"
 
 namespace kpengine{
 class AABBDebugger{

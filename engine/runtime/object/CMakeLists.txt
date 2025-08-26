@@ -6,4 +6,4 @@ add_library(Object STATIC
 
 target_include_directories(Object PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
-target_link_libraries(Object PRIVATE Log)
+target_link_libraries(Object PUBLIC Core)

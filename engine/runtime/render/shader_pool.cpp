@@ -1,8 +1,8 @@
 #include "shader_pool.h"
 
-#include "runtime/render/render_shader.h"
-#include "platform/path/path.h"
-#include "runtime/core/log/logger.h"
+#include "render_shader.h"
+#include "config/path.h"
+#include "log/logger.h"
 
 
 namespace kpengine{

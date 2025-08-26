@@ -23,7 +23,7 @@ namespace kpengine
 
         void EditorPlotComponent::Render()
         {
-            ImGui::PlotLines("function", samples.data(), samples.size());
+            ImGui::PlotLines("function", samples.data(), static_cast<int>(samples.size()));
         }
     }
 }

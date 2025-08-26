@@ -2,14 +2,13 @@
 
 #include <glad/glad.h>
 
-#include "runtime/runtime_header.h"
-#include "runtime/render/render_mesh_resource.h"
-#include "runtime/render/render_shader.h"
-#include "runtime/render/render_material.h"
+#include "render_mesh_resource.h"
+#include "render_shader.h"
+#include "render_material.h"
 #include "runtime/core/utility/utility.h"
-#include "runtime/core/log/logger.h"
+#include "log/logger.h"
 #include "geometry_buffer.h"
-#include "runtime/core/utility/aabb_debugger.h"
+#include "aabb_debugger.h"
 
 namespace kpengine
 {

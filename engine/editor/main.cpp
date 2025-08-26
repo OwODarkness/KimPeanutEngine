@@ -1,14 +1,21 @@
 #include <memory>
+#include <iostream>
+
 #include "runtime/engine.h"
+using namespace kpengine::runtime;
 int main(int argc, char **argv)
 {
-
-    using Engine = kpengine::runtime::Engine;
-    std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-
-    engine->Initialize();
-    engine->Run();
-    engine->Clear();
+    try
+    {
+        std::unique_ptr<Engine> engine = std::make_unique<Engine>();
+        engine->Initialize();
+        engine->Run();
+        engine->Clear();
+    }
+    catch (std::exception e)
+    {
+        std::cout << e.what() << std::endl;
+    }
 
     return 0;
 }

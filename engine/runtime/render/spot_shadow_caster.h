@@ -3,7 +3,7 @@
 
 #define SPOT_MAX_SHADOW_MAP_NUM 4
 #include "shadow_caster.h"
-#include "runtime/core/math/math_header.h"
+#include "math/math_header.h"
 #include<array>
 namespace kpengine
 {

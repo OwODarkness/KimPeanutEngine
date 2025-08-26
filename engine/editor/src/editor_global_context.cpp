@@ -1,7 +1,7 @@
 #include "editor_global_context.h"
 #include "runtime/core/system/window_system.h"
-#include "runtime/core/system/render_system.h"
-#include "runtime/core/system/log_system.h"
+#include "runtime/render/render_system.h"
+#include "runtime/core/log/log_system.h"
 
 #include "editor/include/editor_scene_manager.h"
 #include "editor/include/editor_log_manager.h"

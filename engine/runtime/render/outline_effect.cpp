@@ -3,8 +3,8 @@
 #include <glad/glad.h>
 #include "runtime/core/utility/gl_vertex_array_guard.h"
 #include "runtime/runtime_global_context.h"
-#include "runtime/core/system/render_system.h"
-#include "runtime/render/shader_pool.h"
+#include "render_system.h"
+#include "shader_pool.h"
 #include "render_shader.h"
 
 namespace kpengine

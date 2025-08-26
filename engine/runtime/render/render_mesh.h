@@ -4,8 +4,8 @@
 #include <vector>
 #include <string>
 #include <memory>
-#include "runtime/core/math/math_header.h"
-#include "runtime/render/aabb.h"
+#include "math/math_header.h"
+#include "aabb.h"
 #include "geometry_buffer.h"
 
 namespace kpengine{

@@ -4,7 +4,6 @@
 #include <functional>
 #include <vector>
 
-#include <glad/glad.h>
 #include <GLFW/glfw3.h>
 
 struct GLFWwinodw;
@@ -37,8 +36,6 @@ namespace kpengine
 
         //makecontext should bind into specify thread
         void MakeContext();
-
-        void ClearContext();
 
         bool ShouldClose() const;
 

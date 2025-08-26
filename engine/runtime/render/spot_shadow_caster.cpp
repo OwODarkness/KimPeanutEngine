@@ -1,14 +1,11 @@
 #include "spot_shadow_caster.h"
 #include <glad/glad.h>
-#include <glm/glm.hpp>
-#include <glm/gtc/matrix_transform.hpp>
-#include <iostream>
-#include "runtime/runtime_global_context.h"
-#include "runtime/core/system/render_system.h"
-#include "runtime/render/shader_pool.h"
-#include "runtime/render/render_shader.h"
-#include "runtime/render/primitive_scene_proxy.h"
-#include "runtime/render/render_light.h"
+#include "runtime_global_context.h"
+#include "render_system.h"
+#include "shader_pool.h"
+#include "render_shader.h"
+#include "primitive_scene_proxy.h"
+#include "render_light.h"
 namespace kpengine
 {
     void SpotShadowCaster::Initialize()

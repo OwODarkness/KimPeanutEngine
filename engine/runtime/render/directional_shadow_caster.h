@@ -2,7 +2,7 @@
 #define KPENGINE_RUNTIME_DIRECTIONAL_SHADOW_CASTER_H
 
 #include "shadow_caster.h"
-
+#include "math/math_header.h"
 namespace kpengine
 {
 

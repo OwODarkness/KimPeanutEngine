@@ -6,4 +6,4 @@ target_include_directories(GameFramework PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(GameFramework PUBLIC Math Object RuntimeLib )
+target_link_libraries(GameFramework PUBLIC Core Object Render)

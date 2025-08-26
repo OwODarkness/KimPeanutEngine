@@ -1,10 +1,11 @@
 #include "environment_map.h"
 #include <iostream>
 #include <glad/glad.h>
-#include "runtime/render/render_shader.h"
-#include "runtime/render/render_texture.h"
-#include "runtime/runtime_header.h"
-
+#include "render_shader.h"
+#include "render_texture.h"
+#include "shader_pool.h"
+#include "render_system.h"
+#include "runtime_global_context.h"
 namespace kpengine{
     EnvironmentMapWrapper::EnvironmentMapWrapper(const std::string& hdr_path):
     hdr_texture_(std::make_shared<RenderTextureHDR>(hdr_path)),
@@ -17,6 +18,7 @@ namespace kpengine{
 
     bool EnvironmentMapWrapper::Initialize()
     {
+        
         glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
 
         hdr_texture_->Initialize();

@@ -2,9 +2,10 @@
 #define KPENGINE_RUNTIME_POINT_SHADOW_CASTER_H
 
 #define POINT_MAX_SHADOW_MAP_NUM 4
+#include <array>
 
 #include "shadow_caster.h"
-#include <array>
+#include "math/math_header.h"
 namespace kpengine
 {
     struct PointLightData;

@@ -1,5 +1,5 @@
 #include "primitive_component.h"
-#include "runtime/render/primitive_scene_proxy.h"
+#include "render/primitive_scene_proxy.h"
 
 namespace kpengine{
     void PrimitiveComponent::Initialize()
