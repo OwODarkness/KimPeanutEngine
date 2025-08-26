@@ -3,12 +3,16 @@
 
 #include "common/render_backend.h"
 
-namespace kpengine::graphics{
-    class OpenglBackend: public RenderBackend{
+namespace kpengine::graphics
+{
+    class OpenglBackend : public RenderBackend
+    {
     public:
         virtual void Initialize() override;
         virtual void BeginFrame() override;
         virtual void EndFrame() override;
+        virtual void Present() override;
+        virtual void Cleanup() override;
     };
 }
 

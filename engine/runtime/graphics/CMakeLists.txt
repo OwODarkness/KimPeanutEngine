@@ -15,4 +15,4 @@ target_include_directories(Graphics
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tool
 )
 
-target_link_libraries(Graphics PRIVATE RuntimeLib Math)
+target_link_libraries(Graphics PUBLIC Core )

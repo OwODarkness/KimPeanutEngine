@@ -3,12 +3,10 @@
 #include <iostream>
 #include <cmath>
 #include <algorithm>
-
+#include <GLFW/glfw3.h>
 #include "runtime_global_context.h"
-#include "runtime/core/system/window_system.h"
-#include "editor/include/editor_global_context.h"
-#include "runtime/input/input_context.h"
-#include "runtime/core/system/input_system.h"
+#include "input/input_context.h"
+#include "input/input_system.h"
 
 namespace kpengine
 {

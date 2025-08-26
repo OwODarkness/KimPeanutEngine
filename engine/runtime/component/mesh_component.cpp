@@ -63,7 +63,7 @@ namespace kpengine
         proxy_handle_ = runtime::global_runtime_context.render_system_->GetRenderScene()->AddProxy(scene_proxy_);
         if (proxy_handle_.IsValid())
         {
-            KP_LOG("MeshLog", LOG_LEVEL_DISPLAY, "proxy %s register succeed", mesh_->GetName().c_str());
+            KP_LOG("MeshLog", LOG_LEVEL_INFO, "proxy %s register succeed", mesh_->GetName().c_str());
         }
         else
         {

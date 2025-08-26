@@ -4,7 +4,7 @@
 #include <GLFW/glfw3.h>
 #include "runtime/render/frame_buffer.h"
 #include "editor/include/editor_global_context.h"
-#include "runtime/core/system/window_system.h"
+#include "runtime/window/window_system.h"
 namespace kpengine
 {
     namespace ui
@@ -23,7 +23,7 @@ namespace kpengine
         void EditorSceneComponent::RenderContent()
         {
             EditorWindowComponent::RenderContent();
-            GLFWwindow *window = editor::global_editor_context.window_system_->GetOpenGLWndow();
+            GLFWwindow *window = static_cast<GLFWwindow*>(editor::global_editor_context.window_system_->GetNativeHandle());
             // ImGui::SetMouseCursor(ImGuiMouseCursor_None);
             // ImGui::SetNextFrameWantCaptureMouse(true);
             ImGui::BeginChild("render target");

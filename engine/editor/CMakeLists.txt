@@ -11,4 +11,4 @@ target_include_directories(EditorLib PUBLIC
 "${CMAKE_SOURCE_DIR}/engine/runtime"
 )
 
-target_link_libraries(EditorLib PRIVATE Input Component Object System Delegate Render)
+target_link_libraries(EditorLib PRIVATE RuntimeLib)

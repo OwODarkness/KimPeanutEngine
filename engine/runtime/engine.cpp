@@ -1,7 +1,7 @@
 #include "engine.h"
 #include <cassert>
 #include "runtime/runtime_global_context.h"
-#include "runtime/core/system/window_system.h"
+#include "runtime/window/window_system.h"
 #include "runtime/core/system/asset_system.h"
 #include "render/render_system.h"
 #include "runtime/core/system/world_system.h"
@@ -28,14 +28,14 @@ namespace kpengine
 
         void Engine::Initialize()
         {
-            KP_LOG("EngineLog", LOG_LEVEL_DISPLAY, "Engine initializing...");
+            KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initializing...");
             global_runtime_context.Initialize();
             assert(editor_);
             editor_->Initialize(this);
             global_runtime_context.PostInitialize();
             global_runtime_context.render_thread_id_ = std::this_thread::get_id();
             game_thread_ = std::thread(&Engine::GameThreadFunc, this);
-            KP_LOG("EngineLog", LOG_LEVEL_DISPLAY, "Engine initialize successfully");
+            KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initialize successfully");
         }
 
         void Engine::Clear()

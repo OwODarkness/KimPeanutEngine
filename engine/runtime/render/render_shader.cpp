@@ -102,7 +102,7 @@ namespace kpengine
         {
             std::string shader_name = vertex_shader_path_;
             size_t index = shader_name.find_last_of('/');
-            KP_LOG("ShaderLinkLog", LOG_LEVEL_DISPLAY, shader_name.substr(index + 1, shader_name.size() - index - 4) + " shader link successfully");
+            KP_LOG("ShaderLinkLog", LOG_LEVEL_INFO, shader_name.substr(index + 1, shader_name.size() - index - 4) + " shader link successfully");
         }
 
         glDeleteShader(vertex_shader);

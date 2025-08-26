@@ -1,10 +1,10 @@
 #include "runtime_global_context.h"
-#include "runtime/core/system/window_system.h"
+#include "runtime/window/window_system.h"
 #include "render/render_system.h"
 #include "core/log/log_system.h"
 #include "runtime/core/system/asset_system.h"
 #include "runtime/core/system/world_system.h"
-#include "runtime/core/system/input_system.h"
+#include "runtime/input/input_system.h"
 
 namespace kpengine
 {
@@ -13,26 +13,31 @@ namespace kpengine
        RuntimeContext global_runtime_context;
 
         RuntimeContext::RuntimeContext():
-        window_system_(std::make_unique<WindowSystem>()),        
+        window_system_(WindowSystem::CreateWindow(WindowAPIType::WINDOW_API_GLFW)),        
         render_system_(std::make_unique<RenderSystem>()),
         log_system_(std::make_unique<LogSystem>()),
         asset_system_(std::make_unique<AssetSystem>()),
         world_system_(std::make_unique<WorldSystem>()),
         input_system_(std::make_unique<input::InputSystem>()),
-        glfw_context_(std::make_shared<GLFWAppContext>()),
-        graphics_backend_type_(GraphicsBackEndType::GRAPHICS_BACKEND_OPENGL)
+        graphics_api_type_(GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
         }
         void RuntimeContext::Initialize()
         {
-            glfw_context_->window_sys = window_system_.get();
-            glfw_context_->input_sys = input_system_.get();
             
-            window_system_->Initialize(WindowInitInfo::GetDefaultWindowInfo());
-            GLFWwindow* window = window_system_->GetOpenGLWndow();
-            glfwSetWindowUserPointer(window, glfw_context_.get());
-            window_system_->MakeContext();
-            input_system_->Initialize(window);
+            WindowCreateInfo window_create_info{};
+            window_create_info.width = 1920;
+            window_create_info.height = 1080;
+            window_create_info.title = "KimPeanut Engine";
+            window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
+            window_system_->Initialize(window_create_info);
+            
+            input_system_->BindCursorEvent(window_system_->cursor_event_dispatcher_);
+            input_system_->BindKeyEvent(window_system_->key_event_dispatcher_);
+            input_system_->BindCursorEvent(window_system_->cursor_event_dispatcher_);
+            input_system_->BindScrollEvent(window_system_->scroll_event_dispatcher_);
+            input_system_->Initialize();
+
             asset_system_->Initialize();
 
             render_system_->Initialize();

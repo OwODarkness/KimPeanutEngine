@@ -1,18 +1,21 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_RENDER_BACKEND_H
 #define KPENGINE_RUNTIME_GRAPHICS_RENDER_BACKEND_H
 
-#include "api.h"
+#include "common/common.h"
+
 #include <memory>
 namespace kpengine::graphics{
 
     
 class RenderBackend{
 public:
-    static std::unique_ptr<RenderBackend> CreateGraphicsBackEnd(GraphicsBackEndType backend_type);
+    static std::unique_ptr<RenderBackend> CreateGraphicsBackEnd(GraphicsAPIType backend_type);
 public:
     virtual void Initialize() = 0;
     virtual void BeginFrame() = 0;
     virtual void EndFrame() = 0;
+    virtual void Cleanup() = 0;
+    virtual void Present() = 0;
 public:
     RenderBackend() = default;
     virtual ~RenderBackend() = default;

@@ -1,5 +1,5 @@
 #include "editor/include/editor_actor_control_panel.h"
-
+#include <GLFW/glfw3.h>
 #include "runtime/game_framework/actor.h"
 #include "component/mesh_component.h"
 #include "runtime/render/render_material.h"
@@ -8,7 +8,7 @@
 #include "editor/include/editor_ui_component/editor_text_component.h"
 #include "editor/include/editor_ui_component/editor_drag_component.h"
 #include "editor/include/editor_global_context.h"
-#include "runtime/core/system/window_system.h"
+#include "runtime/window/window_system.h"
 
 namespace kpengine
 {
@@ -24,7 +24,7 @@ namespace kpengine
         {
             if (actor_)
             {
-                GLFWwindow *window = editor::global_editor_context.window_system_->GetOpenGLWndow();
+                GLFWwindow *window = static_cast<GLFWwindow*>(editor::global_editor_context.window_system_->GetNativeHandle());
 
                     const Vector3f& new_location = actor_->GetActorLocation();
                     location[0] = new_location[0];

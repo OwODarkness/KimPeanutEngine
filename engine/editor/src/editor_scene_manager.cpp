@@ -4,7 +4,7 @@
 #include "editor/include/editor_actor_control_panel.h"
 #include "editor/include/editor_global_context.h"
 #include "runtime/input/input_context.h"
-#include "runtime/core/system/input_system.h"
+#include "runtime/input/input_system.h"
 #include "runtime/core/system/world_system.h"
 
 #include "runtime/game_framework/world.h"

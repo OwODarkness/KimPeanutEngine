@@ -1,7 +1,5 @@
 add_library(System 
     asset_system.cpp
-    input_system.cpp
-    window_system.cpp
     world_system.cpp
     )
 

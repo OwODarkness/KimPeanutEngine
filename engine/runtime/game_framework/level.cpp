@@ -20,7 +20,7 @@ namespace kpengine
     }
     void Level::Initialize()
     {
-        KP_LOG("LevelLog", LOG_LEVEL_DISPLAY, "Level Init...");
+        KP_LOG("LevelLog", LOG_LEVEL_INFO, "Level Init...");
 
         std::shared_ptr<MeshActor> sphere = std::make_shared<MeshActor>("model/sphere/sphere.obj");
         AddActor(sphere);

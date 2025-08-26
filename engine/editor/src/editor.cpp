@@ -7,7 +7,7 @@
 #include "editor/include/editor_log_manager.h"
 
 #include "runtime/runtime_global_context.h"
-#include "runtime/core/system/window_system.h"
+#include "runtime/window/window_system.h"
 #include "runtime/render/render_system.h"
 #include "runtime/engine.h"
 #include "runtime/core/log/logger.h"
@@ -26,7 +26,7 @@ namespace kpengine::editor
 
     void Editor::Initialize(kpengine::runtime::Engine *engine)
     {
-        KP_LOG("EditorLog", LOG_LEVEL_DISPLAY, "Editor initializing...");
+        KP_LOG("EditorLog", LOG_LEVEL_INFO, "Editor initializing...");
         engine_ = engine;
         assert(engine_);
         assert(editor_ui);
@@ -38,13 +38,13 @@ namespace kpengine::editor
         global_editor_context_init_info.world_system = runtime::global_runtime_context.world_system_.get();
         global_editor_context_init_info.input_system = runtime::global_runtime_context.input_system_.get();
         global_editor_context_init_info.runtime_engine = engine;
-        global_editor_context_init_info.graphics_backend_type = runtime::global_runtime_context.graphics_backend_type_;
+        global_editor_context_init_info.graphics_api_type = runtime::global_runtime_context.graphics_api_type_;
         editor::global_editor_context.editor = this;
         editor::global_editor_context.Initialize(global_editor_context_init_info);
 
-        editor_ui->Initialize(global_editor_context.window_system_->GetOpenGLWndow());
+        editor_ui->Initialize(static_cast<GLFWwindow*>(global_editor_context.window_system_->GetNativeHandle()));
         is_initialized_ = true;
-        KP_LOG("EditorLog", LOG_LEVEL_DISPLAY, "Editor initialize successfully");
+        KP_LOG("EditorLog", LOG_LEVEL_INFO, "Editor initialize successfully");
     }
 
     void Editor::Tick()

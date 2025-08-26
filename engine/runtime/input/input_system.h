@@ -1,22 +1,28 @@
 #ifndef KPENGINE_RUNTIME_INPUT_SYSTEM_H
 #define KPENGINE_RUNTIME_INPUT_SYSTEM_H
 
-
 #include <memory>
 #include <unordered_map>
 #include <string>
+
+#include "delegate/event_dispatcher.h"
+#include "common/common.h"
+
 struct GLFWwindow;
 namespace kpengine::input{
     class InputContext;
 
     class InputSystem{
-
-  
     public:
-        void Initialize(GLFWwindow* window);
+        void Initialize();
         void AddContext(const std::string& name, std::shared_ptr<InputContext> context);
         void SetActiveContext(const std::string& name);
         std::shared_ptr<InputContext> GetInputContext(const std::string& name);
+
+        void BindMouseButtonEvent(EventDispatcher<MouseButtonEvent>& dispatcher);
+        void BindKeyEvent(EventDispatcher<KeyEvent>& dispatcher);
+        void BindCursorEvent(EventDispatcher<CursorEvent>& dispatcher);
+        void BindScrollEvent(EventDispatcher<ScrollEvent>& dispatcher);
     private:
         std::unordered_map<std::string, std::shared_ptr<InputContext>> contexts_;
         std::string active_context_;
@@ -25,15 +31,12 @@ namespace kpengine::input{
         double last_cursor_ypos_;
         bool is_first_cursor_;
     private:
-        void MouseButtonExec(int code, int action, int mods);
-        void KeyExec(int key, int code, int action, int mods);
-        void CursorPosExec(double xpos, double ypos);
-        void ScrollExec(double xoffset, double yoffset);
+        void MouseButtonExec(const MouseButtonEvent& event);
+        void KeyExec(const KeyEvent& event);
+        void CursorPosExec(const CursorEvent& event);
+        void ScrollExec(const ScrollEvent& event);
         
-        static void OnMouseButtonCallback(GLFWwindow* window, int button, int action, int mods);
-        static void OnKeyCallback(GLFWwindow* window, int key, int scancode, int action, int mods);
-        static void OnCursorPosCallback(GLFWwindow* window, double xpos, double ypos);
-        static void OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
+
     
     };
 }

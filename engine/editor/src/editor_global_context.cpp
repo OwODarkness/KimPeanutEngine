@@ -1,8 +1,7 @@
 #include "editor_global_context.h"
-#include "runtime/core/system/window_system.h"
+#include "runtime/window/window_system.h"
 #include "runtime/render/render_system.h"
 #include "runtime/core/log/log_system.h"
-
 #include "editor/include/editor_scene_manager.h"
 #include "editor/include/editor_log_manager.h"
 namespace kpengine{
@@ -26,7 +25,7 @@ namespace kpengine{
             input_system_ = init_info.input_system;
             runtime_engine_ = init_info.runtime_engine;
 
-            graphics_backend_type_ = init_info.graphics_backend_type;
+            graphics_api_type_ = init_info.graphics_api_type;
 
             editor_scene_manager_->Initialize();
 

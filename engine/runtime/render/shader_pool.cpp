@@ -86,7 +86,7 @@ namespace kpengine{
 
     void ShaderPool::Initialize()
     {
-        KP_LOG("ShaderManagerLog", LOG_LEVEL_DISPLAY, "shader compiling...");
+        KP_LOG("ShaderManagerLog", LOG_LEVEL_INFO, "shader compiling...");
         std::unordered_map<std::string, std::shared_ptr<RenderShader>>::iterator iter;
         for(iter = shader_cache.begin();iter !=shader_cache.end();++iter)
         {
@@ -95,7 +95,7 @@ namespace kpengine{
                 iter->second->Initialize();
             }
         }
-        KP_LOG("ShaderManagerLog", LOG_LEVEL_DISPLAY, "shader compile end");
+        KP_LOG("ShaderManagerLog", LOG_LEVEL_INFO, "shader compile end");
 
     }
 

@@ -3,7 +3,7 @@
 
 #include <memory>
 #include <thread>
-#include "graphics/backend/common/api.h"
+#include "common/common.h"
 
 namespace kpengine::input
 {
@@ -20,11 +20,6 @@ namespace kpengine
     class LogSystem;
     class WorldSystem;
 
-    struct GLFWAppContext
-    {
-        WindowSystem *window_sys;
-        input::InputSystem *input_sys;
-    };
 
     namespace runtime
     {
@@ -50,10 +45,8 @@ namespace kpengine
             std::thread::id game_thread_id_;
             std::thread::id render_thread_id_;
 
-            GraphicsBackEndType graphics_backend_type_;
+            GraphicsAPIType graphics_api_type_;
 
-        private:
-            std::shared_ptr<GLFWAppContext> glfw_context_;
         };
 
         extern RuntimeContext global_runtime_context;

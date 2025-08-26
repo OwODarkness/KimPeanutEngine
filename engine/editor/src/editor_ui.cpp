@@ -43,14 +43,14 @@ namespace kpengine
             ImGui::CreateContext();
             ImGui::StyleColorsDark();
 
-            GraphicsBackEndType backend_type = editor::global_editor_context.graphics_backend_type_;
-            if (backend_type == GraphicsBackEndType::GRAPHICS_BACKEND_OPENGL)
+            GraphicsAPIType backend_type = editor::global_editor_context.graphics_api_type_;
+            if (backend_type == GraphicsAPIType::GRAPHICS_API_OPENGL)
             {
                 ImGui_ImplGlfw_InitForOpenGL(window, true);
                 const char *glsl_version = "#version 460";
                 ImGui_ImplOpenGL3_Init(glsl_version);
             }
-            else if(backend_type == GraphicsBackEndType::GRAPHICS_BACKEND_VULKAN)
+            else if(backend_type == GraphicsAPIType::GRAPHICS_API_VULKAN)
             {
                 // ImGui_ImplGlfw_InitForVulkan(window, true);
                 // ImGui_ImplVulkan_InitInfo init_info{};
