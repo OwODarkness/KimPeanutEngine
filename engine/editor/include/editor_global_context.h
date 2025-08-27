@@ -2,7 +2,8 @@
 #define KPENGINE_EDITOR_GLOBAL_CONTEXT_H
 
 #include<memory>
-#include "common/common.h"
+#include "base/base.h"
+
 namespace kpengine{
     class WindowSystem;
     class RenderSystem;

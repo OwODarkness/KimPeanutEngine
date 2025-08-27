@@ -4,9 +4,9 @@
 #include <glad/glad.h>
 #include "common/enum.h"
 
-namespace kpengine
+namespace kpengine::graphics
 {
-    inline GLenum ToOpenGLTextureFormat(TextureFormat format)
+    inline GLenum ConvertToOpenglTextureFormat(TextureFormat format)
     {
         switch (format)
         {
@@ -27,7 +27,7 @@ namespace kpengine
         }
     }
 
-    inline GLenum ToOpenGLTextureType(TextureType type)
+    inline GLenum ConvertToOpenglTextureType(TextureType type)
     {
         switch (type)
         {
@@ -50,7 +50,7 @@ namespace kpengine
         bool is_storage = false; // image load/store
     };
 
-    inline GLTextureUsage TextureUsageToGL(TextureUsage usage)
+    inline GLTextureUsage ConvertToOpenglTextureUsageTo(TextureUsage usage)
     {
         GLTextureUsage result;
         if ((uint32_t)usage & (uint32_t)TextureUsage::TEXTURE_USAGE_SAMPLE)

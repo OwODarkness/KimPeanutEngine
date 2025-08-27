@@ -4,10 +4,10 @@
 #include <iostream>
 #include <iostream>
 #include "render_shader.h"
-#include "runtime/render/render_texture.h"
+#include "render_texture.h"
 #include "render_system.h"
 #include "runtime_global_context.h"
-#include "runtime/render/texture_pool.h"
+#include "texture_pool.h"
 namespace kpengine
 {
     std::shared_ptr<RenderMaterial> RenderMaterial::CreatePBRMaterial(const std::vector<MaterialMapInfo> &map_info_container, const std::vector<MaterialFloatParamInfo> &float_param_info_container, const std::vector<MaterialVec3ParamInfo> &vec3_param_info_container)

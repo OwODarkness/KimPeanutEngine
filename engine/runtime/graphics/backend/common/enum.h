@@ -2,7 +2,7 @@
 #define KPENGINE_RUNTIME_GRAPHICS_BACKEND_ENUM_H
 
 #include <cstdint>
-namespace kpengine
+namespace kpengine::graphics
 {
     enum class TextureFormat
     {

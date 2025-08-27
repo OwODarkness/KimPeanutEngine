@@ -40,6 +40,8 @@ namespace kpengine::graphics
         virtual void Present() override;
         virtual void Cleanup() override;
 
+    public:
+        VkDevice GetLogicialDevice() const{return logical_device_;}
     private:
         void CreateInstance();
         void CreateDebugMessager();

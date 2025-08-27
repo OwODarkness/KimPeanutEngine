@@ -3,9 +3,9 @@
 
 #include <vulkan/vulkan.h>
 #include "common/enum.h"
-namespace kpengine
+namespace kpengine::graphics
 {
-    inline VkFormat ToVulkanTextureFormat(TextureFormat format)
+    inline VkFormat ConvertToVulkanTextureFormat(TextureFormat format)
     {
         switch (format)
         {
@@ -27,7 +27,7 @@ namespace kpengine
         }
     }
 
-    inline VkImageType ToVulkanTextureType(TextureType type)
+    inline VkImageType ConvertToVulkanTextureType(TextureType type)
     {
         switch (type)
         {
@@ -42,7 +42,7 @@ namespace kpengine
         }
     }
 
-    inline VkImageUsageFlags ToVulkanTextureUsage(TextureUsage usage)
+    inline VkImageUsageFlags ConvertToVulkanTextureUsage(TextureUsage usage)
     {
         VkImageUsageFlags flags = 0;
         if ((uint32_t)usage & (uint32_t)TextureUsage::TEXTURE_USAGE_SAMPLE)
@@ -60,7 +60,7 @@ namespace kpengine
         return flags;
     }
 
-    inline VkSampleCountFlagBits ToSampleCount(uint32_t sample_count)
+    inline VkSampleCountFlagBits ConvertToSampleCount(uint32_t sample_count)
     {
         switch (sample_count)
         {
