@@ -1,9 +1,6 @@
 #include "gizmos.h"
 #include <iostream>
 #include <glad/glad.h>
-#include "runtime/core/utility/gl_vertex_array_guard.h"
-#include "runtime/core/utility/gl_vertex_buffer_guard.h"
-#include "runtime/core/utility/gl_element_buffer_guard.h"
 #include "game_framework/actor.h"
 #include "shader_pool.h"
 #include "render_system.h"
@@ -36,15 +33,17 @@ namespace kpengine
 
         glGenVertexArrays(1, &vao_);
         glGenBuffers(1, &vbo_);
-        GlVertexArrayGuard vao_guard(vao_);
+        glBindVertexArray(vao_);
 
-        GlVertexBufferGuard vbo_guard(vbo_);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo_);
         glBufferData(GL_ARRAY_BUFFER, sizeof(axis_lines), axis_lines, GL_STATIC_DRAW);
 
         glEnableVertexAttribArray(0);
         glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)0);
         glEnableVertexAttribArray(1);
         glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex), (void *)(offsetof(Vertex, color)));
+
+        glBindVertexArray(0);
     }
 
     void Gizmos::SetActor(std::shared_ptr<Actor> actor)
@@ -155,7 +154,6 @@ namespace kpengine
             min_dist = dist;
             pre_selected_axis = 1;
             is_hit = true;
-
         }
 
         p2 = gizmos_loc + rotation.RotateVector(Vector3f(0.f, 0.f, 1.f)) * length_;
@@ -165,10 +163,9 @@ namespace kpengine
             min_dist = dist;
             pre_selected_axis = 2;
             is_hit = true;
-
         }
 
-        if(!is_hit)
+        if (!is_hit)
         {
             pre_selected_axis = -1;
         }
@@ -204,10 +201,10 @@ namespace kpengine
             s = (b * e - c * d) / denom;
         }
 
-        s = std::max(s, 0.0f); 
+        s = std::max(s, 0.0f);
 
-        t = (b * s + e) / c;            
-        t = std::clamp(t, 0.0f, 1.0f); 
+        t = (b * s + e) / c;
+        t = std::clamp(t, 0.0f, 1.0f);
 
         Vector3f closest_ray = ray_origin + s * u;
         Vector3f closest_seg = seg_start + t * v;
@@ -220,7 +217,8 @@ namespace kpengine
             return;
 
         glDisable(GL_DEPTH_TEST);
-        GlVertexArrayGuard vao_guard(vao_);
+        glBindVertexArray(vao_);
+
         shader_->UseProgram();
         MeshComponent *mesh = dynamic_cast<MeshComponent *>(actor_->GetRootComponent());
         if (!mesh)
@@ -233,6 +231,8 @@ namespace kpengine
         shader_->SetMat("model", Matrix4f::MakeTransformMatrix(transform).Transpose()[0]);
         glDrawArrays(GL_LINES, 0, 6);
         glEnable(GL_DEPTH_TEST);
+
+        glBindVertexArray(0);
     }
 
     Gizmos::~Gizmos()

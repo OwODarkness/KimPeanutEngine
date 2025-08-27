@@ -3,10 +3,10 @@
 
 #include "render_shader.h"
 #include "render_texture.h"
-namespace kpengine{
+namespace kpengine
+{
 
-
-    Skybox::Skybox(std::shared_ptr<RenderShader> skybox_shader, std::shared_ptr<RenderTexture> cubemap):shader_(skybox_shader), cubemap_(cubemap){}
+    Skybox::Skybox(std::shared_ptr<RenderShader> skybox_shader, std::shared_ptr<RenderTexture> cubemap) : shader_(skybox_shader), cubemap_(cubemap) {}
 
     void Skybox::Initialize()
     {
@@ -14,32 +14,32 @@ namespace kpengine{
         glGenBuffers(1, &vbo_);
 
         glBindVertexArray(vao_);
-        
+
         glBindBuffer(GL_ARRAY_BUFFER, vbo_);
         glBufferData(GL_ARRAY_BUFFER, sizeof(skybox_vertices), skybox_vertices, GL_STATIC_DRAW);
         glEnableVertexAttribArray(0);
-        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void*)0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), (void *)0);
 
         glBindVertexArray(0);
     }
 
     void Skybox::Render()
     {
-glDepthFunc(GL_LEQUAL);   // Let it pass where depth == 1.0
-    glDepthMask(GL_FALSE);    // Don’t write to depth
+        glDepthFunc(GL_LEQUAL); // Let it pass where depth == 1.0
+        glDepthMask(GL_FALSE);  // Don’t write to depth
 
-    shader_->UseProgram();
+        shader_->UseProgram();
 
-    glBindVertexArray(vao_);
-    glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap_->GetTexture());
+        glBindVertexArray(vao_);
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_CUBE_MAP, cubemap_->GetTexture());
 
-    glDrawArrays(GL_TRIANGLES, 0, 36);
+        glDrawArrays(GL_TRIANGLES, 0, 36);
 
-    glBindVertexArray(0);
+        glBindVertexArray(0);
 
-    glDepthFunc(GL_LESS);     // Reset
-    glDepthMask(GL_TRUE);
+        glDepthFunc(GL_LESS); // Reset
+        glDepthMask(GL_TRUE);
     }
 
     const float Skybox::skybox_vertices[108] = {

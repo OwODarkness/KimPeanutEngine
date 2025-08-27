@@ -11,4 +11,4 @@ ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
 target_link_libraries(Component 
-PUBLIC Math Object RuntimeLib PRIVATE Log Render)
+PUBLIC Math Object PRIVATE Render RuntimeLib )

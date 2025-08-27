@@ -1,6 +1,6 @@
 #include "world_system.h"
-#include "game_framework/level.h"
-#include "game_framework/world.h"
+#include "level.h"
+#include "world.h"
 namespace kpengine{
     WorldSystem::WorldSystem()
     {

@@ -3,12 +3,34 @@
 
 #include <vector>
 #include <cstdint>
+#include <optional>
 #include <vulkan/vulkan.h>
 
 #include "common/render_backend.h"
 
 namespace kpengine::graphics
 {
+    struct QueueFamilyIndices
+    {
+        std::optional<uint32_t> graphics_family;
+        std::optional<uint32_t> present_family;
+        bool IsComplete() const
+        {
+            return graphics_family.has_value() && present_family.has_value();
+        }
+
+        static QueueFamilyIndices FindQueueFamilyIndices(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
+    };
+
+    struct SwapchainSupportDetail
+    {
+        VkSurfaceCapabilitiesKHR capacities;
+        std::vector<VkSurfaceFormatKHR> surface_formats;
+        std::vector<VkPresentModeKHR> present_modes;
+
+        static SwapchainSupportDetail FindSwapchainSupports(VkPhysicalDevice device, VkSurfaceKHR surface);
+    };
+
     class VulkanBackend : public RenderBackend
     {
     public:
@@ -21,17 +43,39 @@ namespace kpengine::graphics
     private:
         void CreateInstance();
         void CreateDebugMessager();
+        void CreateSurface();
+        void CreatePhysicalDevice();
+        void CreateLogicalDevice();
+        void CreateSwapchain();
+
     private:
-        std::vector<const char *> GetRequiredExtensions() const;
+        std::vector<const char *> FindRequiredExtensions() const;
         bool CheckValidationLayerSupport(const std::vector<const char *> &validation_layers) const;
+        bool CheckDeviceExtensionsSupport(VkPhysicalDevice device, const std::vector<const char *> &extensions) const;
+        bool CheckPhysicalDeviceSuitable(VkPhysicalDevice device) const;
+
+        VkSurfaceFormatKHR ChooseSwapChainSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &available_formats) const;
+        VkPresentModeKHR ChooseSwapChainPresentMode(const std::vector<VkPresentModeKHR> &available_modes) const;
+        VkExtent2D ChooseSwapChainExtent(const VkSurfaceCapabilitiesKHR &capacity) const;
+
     private:
         VkInstance instance_;
         VkDebugUtilsMessengerEXT debug_messager_;
+        VkSurfaceKHR surface_;
+        VkPhysicalDevice physical_device_;
+        VkDevice logical_device_;
+        VkQueue graphics_queue_;
+        VkQueue present_queue_;
+        VkSwapchainKHR swapchain_;
+        VkExtent2D resolution_;
+        VkFormat swapchain_image_format_;
+        std::vector<VkImage> swapchain_images_;
 
         std::vector<const char *> validation_layers = {
             "VK_LAYER_KHRONOS_validation"};
         std::vector<const char *> device_extensions = {
             VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        float queue_priority = 1.f;
     };
 }
 

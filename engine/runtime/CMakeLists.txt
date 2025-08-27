@@ -1,8 +1,6 @@
-file(GLOB RUNTIME_UTILITY_SRC "${CMAKE_CURRENT_SOURCE_DIR}/core/utility/*.cpp")
 file(GLOB RUNTIME_TEST_SRC "${CMAKE_CURRENT_SOURCE_DIR}/test/*.cpp")
 
 add_subdirectory(core)
-add_subdirectory(core/system)
 add_subdirectory(object)
 add_subdirectory(window)
 add_subdirectory(graphics)
@@ -14,7 +12,6 @@ add_subdirectory(render)
 add_library(RuntimeLib STATIC 
     engine.cpp 
     runtime_global_context.cpp
-    ${RUNTIME_UTILITY_SRC}
     ${RUNTIME_TEST_SRC}
     )
 
@@ -22,4 +19,4 @@ target_include_directories(RuntimeLib PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(RuntimeLib PUBLIC Core  PRIVATE Object Window Graphics Input Component GameFramework System Render)
+target_link_libraries(RuntimeLib PUBLIC Core Graphics PRIVATE Object Window  Input Component GameFramework Render)

@@ -4,7 +4,6 @@
 
 #include "render_shader.h"
 #include "render_pointcloud_resource.h"
-#include "runtime/core/utility/gl_vertex_array_guard.h"
 #include "render_material.h"
 
 namespace kpengine
@@ -26,7 +25,7 @@ namespace kpengine
 
     void PointCloudSceneProxy::Draw(const RenderContext &context) const
     {
-        GlVertexArrayGuard vao_guard(vao_);
+        glBindVertexArray(vao_);
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_).Transpose();
 
         std::shared_ptr<RenderShader> cur_shader = pointcloud_resource_ref_->material_->shader_;
@@ -34,5 +33,8 @@ namespace kpengine
         cur_shader->UseProgram();
         cur_shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
         glDrawArrays(GL_POINTS, 0, static_cast<GLsizei>(pointcloud_resource_ref_->vertex_buffer_.size() * sizeof(Vector3f)));
+    
+        glBindVertexArray(0);
+    
     }
 }

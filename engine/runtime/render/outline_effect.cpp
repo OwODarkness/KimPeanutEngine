@@ -1,8 +1,7 @@
 #include "outline_effect.h"
 
 #include <glad/glad.h>
-#include "runtime/core/utility/gl_vertex_array_guard.h"
-#include "runtime/runtime_global_context.h"
+#include "runtime_global_context.h"
 #include "render_system.h"
 #include "shader_pool.h"
 #include "render_shader.h"
@@ -57,7 +56,11 @@ namespace kpengine
         glBindTexture(GL_TEXTURE_2D, context.g_object_id);
         shader_->SetVec2("texel_size", context.texel_size.Data());
         shader_->SetVec3("border_color", border_color_.Data());
-        GlVertexArrayGuard vao_guard(vao_);
+
+        glBindVertexArray(vao_);
+
         glDrawArrays(GL_TRIANGLES, 0, 6);
+        glBindVertexArray(0);
+
     }
 }

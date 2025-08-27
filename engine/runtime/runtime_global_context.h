@@ -38,7 +38,6 @@ namespace kpengine
             std::unique_ptr<WindowSystem> window_system_;
             std::unique_ptr<RenderSystem> render_system_;
             std::unique_ptr<LogSystem> log_system_;
-            std::unique_ptr<AssetSystem> asset_system_;
             std::unique_ptr<WorldSystem> world_system_;
             std::unique_ptr<input::InputSystem> input_system_;
 

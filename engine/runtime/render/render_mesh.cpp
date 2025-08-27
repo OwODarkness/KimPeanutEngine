@@ -10,7 +10,6 @@
 #include "render_mesh_resource.h"
 #include "aabb.h"
 #include "model_loader.h"
-#include "runtime/core/utility/utility.h"
 
 namespace kpengine
 {
@@ -27,12 +26,12 @@ namespace kpengine
         mesh_resource_ = GetMeshResource(0);
         ModelLoader::Load(name_, *mesh_resource_);
 
-        //lod_max_level = CalculateLODCount(mesh_resource_->index_buffer_.size() / 3);
+        // lod_max_level = CalculateLODCount(mesh_resource_->index_buffer_.size() / 3);
         lod_max_level = 0;
         geometry_buf_ = CreateGeometryBuffer(mesh_resource_);
         geometry_buffers_.push_back(geometry_buf_);
 
-        for(unsigned int i = 1 ; i<=lod_max_level;i++)
+        for (unsigned int i = 1; i <= lod_max_level; i++)
         {
             BuildLODMeshResource(i);
         }
@@ -50,12 +49,13 @@ namespace kpengine
         glGenBuffers(1, &vbo);
         glGenBuffers(1, &ebo);
 
-        GlVertexArrayGuard vao_guard(vao);
+        glBindVertexArray(vao);
 
-        GlVertexBufferGuard vbo_guard(vbo);
+        // bind and fill VBO
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
         glBufferData(GL_ARRAY_BUFFER, mesh_resource->vertex_buffer_.size() * sizeof(MeshVertex), mesh_resource->vertex_buffer_.data(), GL_STATIC_DRAW);
 
-        GlElementBufferGuard ebo_guard(ebo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
         glBufferData(GL_ELEMENT_ARRAY_BUFFER, mesh_resource->index_buffer_.size() * sizeof(unsigned int), mesh_resource->index_buffer_.data(), GL_STATIC_DRAW);
 
         // position
@@ -73,15 +73,16 @@ namespace kpengine
         // bitangent
         glEnableVertexAttribArray(4);
         glVertexAttribPointer(4, 3, GL_FLOAT, GL_FALSE, sizeof(MeshVertex), (void *)(offsetof(MeshVertex, bitangent)));
-
+        
+        glBindVertexArray(0);
         return GeometryBuffer(vao, vbo, ebo);
     }
-    RenderMeshResource *RenderMesh::GetMeshResource(size_t  index)
+    RenderMeshResource *RenderMesh::GetMeshResource(size_t index)
     {
         return lod_mesh_resources_.at(index) ? lod_mesh_resources_[index].get() : nullptr;
     }
 
-    void RenderMesh::SetMaterial(const std::shared_ptr<RenderMaterial> &material, size_t  section_index)
+    void RenderMesh::SetMaterial(const std::shared_ptr<RenderMaterial> &material, size_t section_index)
     {
 
         bool is_index_valid = section_index >= 0 && section_index < mesh_resource_->mesh_sections_.size();
@@ -93,7 +94,7 @@ namespace kpengine
         mesh_resource_->mesh_sections_.at(section_index).material = material;
     }
 
-    std::shared_ptr<RenderMaterial> RenderMesh::GetMaterial(size_t  section_index)
+    std::shared_ptr<RenderMaterial> RenderMesh::GetMaterial(size_t section_index)
     {
         bool is_index_valid = section_index >= 0 && section_index < mesh_resource_->mesh_sections_.size();
         if (!is_index_valid)
@@ -105,7 +106,7 @@ namespace kpengine
         return mesh_resource_->mesh_sections_.at(section_index).material;
     }
 
-    size_t  RenderMesh::CalculateLODCount(size_t triangle_count)
+    size_t RenderMesh::CalculateLODCount(size_t triangle_count)
     {
         if (triangle_count < 500)
         {
@@ -130,7 +131,7 @@ namespace kpengine
         Vector3f world_aabb_center = GetWorldAABB(mesh_resource_->aabb_, transform).Center();
         float distance = (float)(camera_pos - world_aabb_center).Norm();
         // match LOD
-        size_t  new_lod = std::min(GetLODLevelFromDistance(distance), lod_max_level);
+        size_t new_lod = std::min(GetLODLevelFromDistance(distance), lod_max_level);
         if (new_lod == lod_level)
         {
             return;
@@ -140,7 +141,7 @@ namespace kpengine
         geometry_buf_ = geometry_buffers_[lod_level];
     }
 
-    size_t  RenderMesh::GetLODLevelFromDistance(float distance)
+    size_t RenderMesh::GetLODLevelFromDistance(float distance)
     {
         if (distance < 20)
         {
@@ -165,14 +166,14 @@ namespace kpengine
         return mesh_resource_ ? mesh_resource_->aabb_ : AABB();
     }
 
-    void RenderMesh::BuildLODMeshResource(size_t  level)
+    void RenderMesh::BuildLODMeshResource(size_t level)
     {
         std::unique_ptr<RenderMeshResource> lod_resource = std::make_unique<RenderMeshResource>();
 
         for (const MeshSection &section : mesh_resource_->mesh_sections_)
         {
-            size_t  start = section.index_start;
-            size_t  count = section.index_count;
+            size_t start = section.index_start;
+            size_t count = section.index_count;
 
             std::vector<unsigned int> input_indices(
                 mesh_resource_->index_buffer_.begin() + start,

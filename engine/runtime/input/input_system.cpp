@@ -2,7 +2,6 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "input_context.h"
-#include "runtime_global_context.h"
 
 namespace kpengine::input
 {

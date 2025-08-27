@@ -1,12 +1,11 @@
 #include "engine.h"
 #include <cassert>
-#include "runtime/runtime_global_context.h"
-#include "runtime/window/window_system.h"
-#include "runtime/core/system/asset_system.h"
+#include "runtime_global_context.h"
+#include "window/window_system.h"
 #include "render/render_system.h"
-#include "runtime/core/system/world_system.h"
-#include "runtime/core/log/log_system.h"
-#include "runtime/core/log/logger.h"
+#include "game_framework/world_system.h"
+#include "log/log_system.h"
+#include "log/logger.h"
 #include "editor/include/editor_global_context.h"
 #include "editor/include/editor.h"
 

@@ -1,8 +1,0 @@
-#ifndef KPENGINE_RUNTIME_GRAPHICS_BACKEND_API_H
-#define KPENGINE_RUNTIME_GRAPHICS_BACKEND_API_H
-
-namespace kpengine{
-
-}
-
-#endif

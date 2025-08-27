@@ -1,9 +1,10 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_RENDER_BACKEND_H
 #define KPENGINE_RUNTIME_GRAPHICS_RENDER_BACKEND_H
 
+#include <memory>
 #include "common/common.h"
 
-#include <memory>
+struct GLFWwindow;
 namespace kpengine::graphics{
 
     
@@ -21,9 +22,8 @@ public:
     virtual ~RenderBackend() = default;
     RenderBackend(const RenderBackend & ) = delete;
     RenderBackend& operator=(const RenderBackend &) = delete;
-
-private:
-    friend class RuntimeContext;
+public:
+    GLFWwindow* window_;
 };
 }
 

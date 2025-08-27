@@ -5,7 +5,6 @@
 #include "render_mesh_resource.h"
 #include "render_shader.h"
 #include "render_material.h"
-#include "runtime/core/utility/utility.h"
 #include "log/logger.h"
 #include "geometry_buffer.h"
 #include "aabb_debugger.h"
@@ -40,11 +39,13 @@ namespace kpengine
         {
             return;
         }
-        GlVertexArrayGuard vao_guard(geometry_buffer_->vao);
-        GlElementBufferGuard ebo_guard(geometry_buffer_->ebo);
+
+        glBindVertexArray(geometry_buffer_->vao);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, geometry_buffer_->ebo);
+
         context.shader->UseProgram();
         Matrix4f transform_mat = Matrix4f::MakeTransformMatrix(transfrom_);
-        
+
         for (std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
         {
             context.shader->SetMat("model", transform_mat.Transpose()[0]);
@@ -55,6 +56,7 @@ namespace kpengine
             iter->material->Render(context.shader, 0);
             glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));
         }
+        glBindVertexArray(0);
     }
 
     void MeshSceneProxy::DrawRenderable(const RenderContext &context, const Matrix4f &transform_mat) const
@@ -62,14 +64,16 @@ namespace kpengine
         if (!context.shader)
             return;
         // unsigned int current_shader_id = 0;
-        GlVertexArrayGuard vao_guard(geometry_buffer_->vao);
-        GlElementBufferGuard ebo_guard(geometry_buffer_->ebo);
+        glBindVertexArray(geometry_buffer_->vao);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, geometry_buffer_->ebo);
+
         context.shader->UseProgram();
         for (std::vector<MeshSection>::iterator iter = mesh_resourece_ref_->mesh_sections_.begin(); iter != mesh_resourece_ref_->mesh_sections_.end(); iter++)
         {
             context.shader->SetMat(SHADER_PARAM_MODEL_TRANSFORM, transform_mat[0]);
             glDrawElements(GL_TRIANGLES, iter->index_count, GL_UNSIGNED_INT, (void *)(iter->index_start * sizeof(unsigned int)));
         }
+        glBindVertexArray(0);
     }
 
     void MeshSceneProxy::SetOutlineVisibility(bool visible)
