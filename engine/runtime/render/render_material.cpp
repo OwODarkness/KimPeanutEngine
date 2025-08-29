@@ -26,6 +26,12 @@ namespace kpengine
                                    nullptr});
         material->textures.insert({material_map_type::AO_MAP,
                                    nullptr});
+                        
+        material->vec3_params.insert({material_param_type::ALBEDO_PARAM, {0.f, 0.f, 0.f}});
+        material->float_params.insert({material_param_type::ROUGHNESS_PARAM, 0.f});
+        material->float_params.insert({material_param_type::METALLIC_PARAM, 0.f});
+        material->float_params.insert({material_param_type::ALBEDO_PARAM, 0.f});
+
 
         for (const MaterialMapInfo &map_info : map_info_container)
         {
@@ -44,7 +50,7 @@ namespace kpengine
         {
             if (float_param_info.param_type != "")
             {
-                material->float_params.insert({float_param_info.param_type, float_param_info.value});
+                material->float_params[float_param_info.param_type] = float_param_info.value;
             }
         }
 
@@ -52,7 +58,7 @@ namespace kpengine
         {
             if (vec3_param_info.param_type != "")
             {
-                material->vec3_params.insert({vec3_param_info.param_type, vec3_param_info.value});
+                material->vec3_params[vec3_param_info.param_type] = vec3_param_info.value;
             }
         }
 

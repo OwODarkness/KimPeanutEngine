@@ -1,8 +1,10 @@
 #ifndef KPENGINE_RUNTIME_GLFW_WINDOW_SYSTEM_H
 #define KPENGINE_RUNTIME_GLFW_WINDOW_SYSTEM_H
 
-#include <GLFW/glfw3.h>
+
 #include "window_system.h"
+
+struct GLFWwindow;
 namespace kpengine
 {
     class GLFWWindowSystem : public WindowSystem
@@ -13,7 +15,7 @@ namespace kpengine
         void SwapBuffers() override;
         WindowHandle GetNativeHandle() const override;
         bool ShouldClose() const override;
-
+        void Tick(float delta_time) override;
         ~GLFWWindowSystem();
 
     private:
@@ -26,7 +28,7 @@ namespace kpengine
         static void OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
     
     private:
-        GLFWwindow *window_;
+        GLFWwindow* window_;
     };
 }
 

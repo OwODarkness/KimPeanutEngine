@@ -109,9 +109,11 @@ namespace kpengine
 
     void RenderScene::Render(float deltatime)
     {
+        glClearColor(0.1f, 0.1f, 0.1f, 1.f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LESS);
-        
+
         Matrix4f proj_mat = render_camera_->GetProjectionMatrix();
         Matrix4f view_mat = render_camera_->GetViewMatrix();
         Frustum frustum = ExtractFrustumFromVPMat(proj_mat * view_mat);

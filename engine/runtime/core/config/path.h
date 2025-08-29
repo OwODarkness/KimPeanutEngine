@@ -9,6 +9,7 @@
 namespace kpengine
 {
     inline const std::filesystem::path project_root =PROJECT_ROOT_DIR;
+    inline const std::filesystem::path binary_root = PROJECT_BINARY_DIR;
 
     inline std::string GetAssetDirectory()
     {
@@ -28,6 +29,11 @@ namespace kpengine
     inline std::string GetShaderDirectory()
     {
         return (project_root / "engine/shader/").generic_string();
+    }
+
+    inline std::string GetSPVShaderDirectory()
+    {
+        return (binary_root / "shaders/").generic_string();        
     }
 
     inline std::string GetLogDirectory()

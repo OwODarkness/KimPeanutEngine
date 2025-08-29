@@ -49,6 +49,9 @@ namespace kpengine::graphics
         void CreatePhysicalDevice();
         void CreateLogicalDevice();
         void CreateSwapchain();
+        void CreateSwapchainImageViews();
+        void CreateSwapchainRenderPass();
+        void CreateGraphicsPipeline();
 
     private:
         std::vector<const char *> FindRequiredExtensions() const;
@@ -72,6 +75,8 @@ namespace kpengine::graphics
         VkExtent2D resolution_;
         VkFormat swapchain_image_format_;
         std::vector<VkImage> swapchain_images_;
+        std::vector<VkImageView> swapchain_imageviews_;
+        VkRenderPass swapchain_renderpass_;
 
         std::vector<const char *> validation_layers = {
             "VK_LAYER_KHRONOS_validation"};

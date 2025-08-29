@@ -32,6 +32,7 @@ namespace kpengine::graphics
         res.image = reinterpret_cast<TextureImage>(handle.image);
         res.view = reinterpret_cast<TextureView>(handle.view);
         res.sampler = reinterpret_cast<TextureSampler>(handle.sampler);
+        return res;
     }
 
 

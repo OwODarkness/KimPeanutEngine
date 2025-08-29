@@ -1,4 +1,11 @@
-#version 460 core
+#version 450
+
+#define IN_LOCATION(n) layout(location = n) in
+#define OUT_LOCATION(n) layout(location = n) out
+
+IN_LOCATION(0) vec2 in_uv;
+OUT_LOCATION(0) vec4 out_color;
+
 struct LightData{
     int type;
     int shadow_map_index;
@@ -52,9 +59,7 @@ uniform sampler2D g_normal;
 uniform sampler2D g_albedo;
 uniform sampler2D g_material;
 
-in vec2 uv;
 
-out vec4 out_frag_color;
 
 float CalculateDirectionalShadowValue(vec4 light_space_pos, vec3 normal_vec, vec3 light_vec)
 {
@@ -334,6 +339,7 @@ float linearize_depth(float z_ndc, float near, float far)
 
 void main()
 {
+    vec2 uv = in_uv;
     vec3 frag_position = texture(g_position, uv).rgb;
     vec3 normal_vec = normalize(texture(g_normal, uv).rgb);
     vec3 view_vec = normalize(view_position - frag_position);
@@ -355,7 +361,7 @@ void main()
 
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0 / 2.2));
-    out_frag_color = vec4(color, 1.0);
+    out_color = vec4(color, 1.0);
 
 
 }

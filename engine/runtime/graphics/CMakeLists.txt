@@ -6,8 +6,12 @@ option(USE_VULKAN "Use Vulkan backend" ON)
 add_library(Graphics STATIC
     backend/common/render_backend.cpp
     backend/opengl/opengl_backend.cpp
+    backend/opengl/opengl_texture.cpp
+
     backend/vulkan/vulkan_backend.cpp
-    tool/spirv_compiler.cpp    
+    backend/vulkan/vulkan_texture.cpp
+
+    tool/shaderloader.cpp
 )
 
 target_include_directories(Graphics 
@@ -16,3 +20,49 @@ target_include_directories(Graphics
 )
 
 target_link_libraries(Graphics PUBLIC Core )
+
+find_program(GLSLC glslc
+    HINTS
+        "${CMAKE_SOURCE_DIR}/third_party/vulkan/bin"
+)
+
+if(NOT GLSLC AND DEFINED ENV{VULKAN_SDK})
+    find_program(GLSLC glslc
+        HINTS
+            "$ENV{VULKAN_SDK}/Bin"
+            "$ENV{VULKAN_SDK}/bin"
+    )
+endif()
+
+if(NOT GLSLC)
+    find_program(GLSLC glslc) # search in PATH
+endif()
+
+if(NOT GLSLC)
+    message(FATAL_ERROR "glslc not found! Please install Vulkan SDK or put glslc in third_party/vulkan/bin")
+else()
+    message(STATUS "Found glslc: ${GLSLC}")
+    set(SHADER_PATH ${CMAKE_SOURCE_DIR}/engine/shader)
+    file(GLOB_RECURSE GLSL_SHADERS
+        "${SHADER_PATH}/*.vert"
+        "${SHADER_PATH}/*.frag"
+        "${SHADER_PATH}/*.geom"
+    )
+    set(COMPILED_SHADERS "")
+
+    foreach(GLSL ${GLSL_SHADERS})
+        get_filename_component(FILE_NAME ${GLSL} NAME)
+        set(SPIRV "${CMAKE_BINARY_DIR}/shaders/${FILE_NAME}.spv")
+        add_custom_command(
+            OUTPUT ${SPIRV}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+            COMMAND ${GLSLC} -DUSE_VULKAN_BACKEND -o ${SPIRV} ${GLSL}
+            DEPENDS ${GLSL}
+            COMMENT "Compiling shader ${FILE_NAME}"
+        )
+
+        list(APPEND COMPILED_SHADERS ${SPIRV})
+    endforeach()
+   # add_custom_target(Shaders ALL DEPENDS ${COMPILED_SHADERS})
+endif()
+

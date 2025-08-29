@@ -1,5 +1,6 @@
 # Generate global.h in the build folder
 set(PROJECT_ROOT_DIR ${CMAKE_SOURCE_DIR})
+set(PROJECT_BINARY_DIR ${CMAKE_BINARY_DIR})
 
 configure_file(
     ${CMAKE_CURRENT_SOURCE_DIR}/global.h.in

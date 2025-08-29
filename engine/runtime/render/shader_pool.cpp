@@ -11,76 +11,76 @@ namespace kpengine{
         shader_cache.insert(
         {
             SHADER_CATEGORY_PHONG, 
-            std::make_shared<RenderShader>("phong.vs", "phong.fs")
+            std::make_shared<RenderShader>("phong", "phong")
         });
         shader_cache.insert({
             SHADER_CATEGORY_SKYBOX,
-            std::make_shared<RenderShader>("skybox.vs", "skybox.fs")
+            std::make_shared<RenderShader>("skybox", "skybox")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_NORMAL,
-            std::make_shared<RenderShader>("normal.vs", "normal.fs")
+            std::make_shared<RenderShader>("normal", "normal")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_POINTCLOUD,
-            std::make_shared<RenderShader>("pointcloud.vs", "pointcloud.fs")
+            std::make_shared<RenderShader>("pointcloud", "pointcloud")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_PBR,
-            std::make_shared<RenderShader>("pbr.vs", "pbr.fs")
+            std::make_shared<RenderShader>("pbr", "pbr")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_EQUIRECTANGULAR,
-            std::make_shared<RenderShader>("equiretangular_to_cubemap.vs", "equiretangular_to_cubemap.fs")
+            std::make_shared<RenderShader>("equiretangular_to_cubemap", "equiretangular_to_cubemap")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_IRRADIANCE,
-            std::make_shared<RenderShader>("irradiance.vs", "irradiance.fs")
+            std::make_shared<RenderShader>("irradiance", "irradiance")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_PREFILTER,
-            std::make_shared<RenderShader>("prefilter_map.vs", "prefilter_map.fs")
+            std::make_shared<RenderShader>("prefilter_map", "prefilter_map")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_BRDF,
-            std::make_shared<RenderShader>("brdf.vs", "brdf.fs")
+            std::make_shared<RenderShader>("brdf", "brdf")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_DEBUGCUBIC,
-            std::make_shared<RenderShader>("debug_cubic.vs", "debug_cubic.fs")
+            std::make_shared<RenderShader>("debug_cubic", "debug_cubic")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_AXIS,
-            std::make_shared<RenderShader>("axis.vs", "axis.fs")
+            std::make_shared<RenderShader>("axis", "axis")
         });
 
         shader_cache.insert({
             SHADER_CATEGORY_OUTLINING,
-            std::make_shared<RenderShader>("screen_quad.vs", "outline.fs")
+            std::make_shared<RenderShader>("screen_quad", "outline")
         });
         
         shader_cache.insert({
             SHADER_CATEGORY_DEFER_PBR,
-            std::make_shared<RenderShader>("defer_pbr.vs", "defer_pbr.fs")
+            std::make_shared<RenderShader>("defer_pbr", "defer_pbr")
         });
 
                 shader_cache.insert({
             SHADER_CATEGORY_DIRECTIONALSHADOW,
-            std::make_shared<RenderShader>("directionalshadow_mapping_depth.vs", "directionalshadow_mapping_depth.fs")
+            std::make_shared<RenderShader>("directionalshadow_mapping_depth", "directionalshadow_mapping_depth")
         });
 
                 shader_cache.insert({
             SHADER_CATEGORY_POINTSHADOW,
-            std::make_shared<RenderShader>("pointshadow_mapping_depth.vs", "pointshadow_mapping_depth.fs", "pointshadow_mapping_depth.gs")
+            std::make_shared<RenderShader>("pointshadow_mapping_depth", "pointshadow_mapping_depth", "pointshadow_mapping_depth")
         });
     }
 

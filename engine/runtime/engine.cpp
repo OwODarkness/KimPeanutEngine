@@ -100,8 +100,8 @@ namespace kpengine
 
             float delta = 1.f / target_fps;
             global_runtime_context.log_system_->Tick(delta);
-            global_runtime_context.render_system_->Tick(delta);
             global_runtime_context.window_system_->Tick(delta);
+            global_runtime_context.render_system_->Tick(delta);
             editor_->Tick();
 
             auto frame_end = clock::now();

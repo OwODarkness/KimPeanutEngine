@@ -6,65 +6,85 @@
 #include <unordered_map>
 #include <string>
 #include "math/math_header.h"
-namespace kpengine{
+namespace kpengine
+{
 
-    class RenderTexture; 
+    class RenderTexture;
     class RenderShader;
 
-    namespace material_map_type{
-        constexpr const char* DIFFUSE_MAP = "diffuse_map";
-        constexpr const char* SPECULAR_MAP = "specular_map";
-        constexpr const char* ALBEDO_MAP = "albedo_map";
-        constexpr const char* NORMAL_MAP = "normal_map";
-        constexpr const char* ROUGHNESS_MAP = "roughness_map";
-        constexpr const char* METALLIC_MAP = "metallic_map";
-        constexpr const char* AO_MAP = "ao_map";
-        constexpr const char* BUMP_MAP = "bump_map";
-        constexpr const char* DISPLACEMENT_MAP = "displacement_map";
+    namespace material_map_type
+    {
+        constexpr const char *DIFFUSE_MAP = "diffuse_map";
+        constexpr const char *SPECULAR_MAP = "specular_map";
+        constexpr const char *ALBEDO_MAP = "albedo_map";
+        constexpr const char *NORMAL_MAP = "normal_map";
+        constexpr const char *ROUGHNESS_MAP = "roughness_map";
+        constexpr const char *METALLIC_MAP = "metallic_map";
+        constexpr const char *AO_MAP = "ao_map";
+        constexpr const char *BUMP_MAP = "bump_map";
+        constexpr const char *DISPLACEMENT_MAP = "displacement_map";
     };
 
-    namespace material_param_type{
-        constexpr const char* SHINESS_PARAM = "shininess";
-        constexpr const char* ALBEDO_PARAM = "albedo";
-        constexpr const char* ROUGHNESS_PARAM = "roughness";
-        constexpr const char* METALLIC_PARAM = "metallic";
-        constexpr const char* AO_PARAM = "ao";
+    namespace material_param_type
+    {
+        constexpr const char *SHINESS_PARAM = "shininess";
+        constexpr const char *ALBEDO_PARAM = "albedo";
+        constexpr const char *ROUGHNESS_PARAM = "roughness";
+        constexpr const char *METALLIC_PARAM = "metallic";
+        constexpr const char *AO_PARAM = "ao";
     };
 
-    struct MaterialMapInfo{
+    struct MaterialMapInfo
+    {
         std::string map_type;
         std::string map_path;
     };
 
-    struct MaterialFloatParamInfo{
+    struct MaterialFloatParamInfo
+    {
         std::string param_type;
         float value;
     };
 
-    struct MaterialVec3ParamInfo{
+    struct MaterialVec3ParamInfo
+    {
         std::string param_type;
         Vector3f value;
     };
 
+    struct MaterialGPUData
+    {
+        Vector3f albedo;
+        float roughness;
+        float metallic;
+        float ao;
+        int has_albedo_map;
+        int has_roughness_map;
+        int has_metallic_map;
+        int has_normal_map;
+        int has_ao_map;
+    };
 
-    class RenderMaterial{
-    
+    class RenderMaterial
+    {
+
     public:
-        static std::shared_ptr<RenderMaterial> CreatePBRMaterial(const std::vector<MaterialMapInfo>& map_info_container, const std::vector<MaterialFloatParamInfo>& float_param_info_container, const std::vector<MaterialVec3ParamInfo>& vec3_param_info_container);
-        static std::shared_ptr<RenderMaterial> CreatePhongMaterial(const std::vector<MaterialMapInfo>& map_info_container, const std::vector<MaterialFloatParamInfo>& float_param_info_container, const std::vector<MaterialVec3ParamInfo>& vec3_param_info_container);
-        static std::shared_ptr<RenderMaterial> CreateMaterial(const std::string& shader_name);
-        
-        void Initialize(const std::shared_ptr<RenderShader>& shader);
+
+        static std::shared_ptr<RenderMaterial> CreatePBRMaterial(const std::vector<MaterialMapInfo> &map_info_container, const std::vector<MaterialFloatParamInfo> &float_param_info_container, const std::vector<MaterialVec3ParamInfo> &vec3_param_info_container);
+        static std::shared_ptr<RenderMaterial> CreatePhongMaterial(const std::vector<MaterialMapInfo> &map_info_container, const std::vector<MaterialFloatParamInfo> &float_param_info_container, const std::vector<MaterialVec3ParamInfo> &vec3_param_info_container);
+        static std::shared_ptr<RenderMaterial> CreateMaterial(const std::string &shader_name);
+
+        void Initialize(const std::shared_ptr<RenderShader> &shader);
         /*
-        *  texture_start_index: GL_TEXTURE index start
-        *  return: the number of texture slots that has been used
-        */
-        int Render(const std::shared_ptr<RenderShader>& shader, size_t texture_start_index) const;
-        void AddTexture(const MaterialMapInfo& map_info);
+         *  texture_start_index: GL_TEXTURE index start
+         *  return: the number of texture slots that has been used
+         */
+        int Render(const std::shared_ptr<RenderShader> &shader, size_t texture_start_index) const;
+        void AddTexture(const MaterialMapInfo &map_info);
 
         std::shared_ptr<RenderTexture> GetTexture(const std::string key) const;
-        float* GetFloatParamRef(const std::string& key);
-        Vector3f* GetVectorParamRef(const std::string& key);
+        float *GetFloatParamRef(const std::string &key);
+        Vector3f *GetVectorParamRef(const std::string &key);
 
     public:
         std::shared_ptr<RenderShader> shader_;
@@ -75,8 +95,6 @@ namespace kpengine{
 
         unsigned int last_use_shader_id_ = 0;
     };
-
-
 
 }
 

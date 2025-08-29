@@ -1,3 +1,5 @@
 #pragma once
 
 #define PROJECT_ROOT_DIR "@PROJECT_ROOT_DIR@"
+#define PROJECT_BINARY_DIR "@PROJECT_BINARY_DIR@"
+

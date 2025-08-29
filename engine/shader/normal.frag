@@ -1,4 +1,7 @@
-#version 460 core
+#version 450 
+
+#define IN_LOCATION(n) layout(location = n) in
+#define OUT_LOCATION(n) layout(location = n) out
 
 struct Material{
 
@@ -25,18 +28,20 @@ uniform int object_id;
 uniform float far_plane;
 uniform float near_plane;
 
-in vec3 frag_pos;
-in vec3 normal;
-in vec2 texcoord;
-in mat3 TBN;
-in vec3 ndc_coord;
 
-layout (location = 0) out vec3 gPosition;
-layout (location = 1) out vec3 gNormal;
-layout (location = 2) out vec3 gAlbedo;
-layout (location = 3) out vec3 gMaterial; 
-layout (location = 4) out vec3 gObjectID;
-layout (location = 5) out vec3 gDepth;
+IN_LOCATION(0) vec3 in_frag_pos;
+IN_LOCATION(2) vec2 in_texcoord;
+IN_LOCATION(3) vec3 in_T;
+IN_LOCATION(4) vec3 in_B;
+IN_LOCATION(5) vec3 in_N;
+IN_LOCATION(6) vec3 in_ndc_coord;
+
+OUT_LOCATION(0) vec3 gPosition;
+OUT_LOCATION(1)  vec3 gNormal;
+OUT_LOCATION(2)  vec3 gAlbedo;
+OUT_LOCATION(3)  vec3 gMaterial; 
+OUT_LOCATION(4)  vec3 gObjectID;
+OUT_LOCATION(5)  vec3 gDepth;
 
 vec3 IDToColor(int id) {
     // Use a pseudo-random hash based on the ID
@@ -60,8 +65,10 @@ float linearize_depth(float z_ndc, float near, float far)
 
 void main()
 {
+    vec2 texcoord = in_texcoord;
     vec3 tangent_normal = texture(material.normal_map, texcoord).rgb * 2.0 - 1.0;
-    vec3 normal_vec = material.has_normal_map == true ?  normalize(TBN * tangent_normal) : normal;
+    mat3 TBN = mat3(in_T, in_B, in_N);
+    vec3 normal_vec = material.has_normal_map == true ?  normalize(TBN * tangent_normal) : in_N;
 
     vec3 albedo_vec = material.has_albedo_map ? 
     texture(material.albedo_map, texcoord).rgb : 
@@ -70,11 +77,11 @@ void main()
     float roughness = material.has_roughness_map ? texture(material.roughness_map, texcoord).r : material.roughness;
     float metallic = material.has_metallic_map ? texture(material.metallic_map, texcoord).r : material.metallic;
     float ao = material.has_ao_map ? texture(material.ao_map, texcoord).r : material.ao;
-    float linear_depth = linearize_depth(0.5 * ndc_coord.z + 0.5, near_plane, far_plane);
+    float linear_depth = linearize_depth(0.5 * in_ndc_coord.z + 0.5, near_plane, far_plane);
 
     float depth_vis = (linear_depth - near_plane ) / (far_plane - near_plane);
 
-    gPosition = frag_pos;
+    gPosition = in_frag_pos;
     gNormal = normal_vec;
     gAlbedo = albedo_vec;
     gMaterial = vec3(roughness, metallic, ao);

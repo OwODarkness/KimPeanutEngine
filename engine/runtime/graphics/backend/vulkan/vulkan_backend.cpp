@@ -140,13 +140,14 @@ namespace kpengine::graphics
         CreatePhysicalDevice();
         CreateLogicalDevice();
         CreateSwapchain();
+        CreateSwapchainImageViews();
+        CreateSwapchainRenderPass();
     }
     void VulkanBackend::BeginFrame()
     {
     }
     void VulkanBackend::EndFrame()
     {
-    
     }
 
     void VulkanBackend::Present()
@@ -155,6 +156,12 @@ namespace kpengine::graphics
 
     void VulkanBackend::Cleanup()
     {
+        
+        vkDestroyRenderPass(logical_device_, swapchain_renderpass_, nullptr);
+        for (size_t i = 0; i < swapchain_imageviews_.size(); i++)
+        {
+            vkDestroyImageView(logical_device_, swapchain_imageviews_[i], nullptr);
+        }
         vkDestroySwapchainKHR(logical_device_, swapchain_, nullptr);
         vkDestroyDevice(logical_device_, nullptr);
         vkDestroySurfaceKHR(instance_, surface_, nullptr);
@@ -381,13 +388,97 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to find swapchain");
         }
 
-        //local store
+        // local store
         resolution_ = resolution;
         swapchain_image_format_ = surface_format.format;
         uint32_t swapchain_image_count = 0;
         vkGetSwapchainImagesKHR(logical_device_, swapchain_, &swapchain_image_count, nullptr);
         swapchain_images_.resize(swapchain_image_count);
         vkGetSwapchainImagesKHR(logical_device_, swapchain_, &swapchain_image_count, swapchain_images_.data());
+    }
+
+    void VulkanBackend::CreateSwapchainImageViews()
+    {
+        swapchain_imageviews_.resize(swapchain_images_.size());
+        for (size_t i = 0; i < swapchain_images_.size(); i++)
+        {
+            VkImageViewCreateInfo create_info{};
+            create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            create_info.image = swapchain_images_[i];
+            create_info.format = swapchain_image_format_;
+            create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+
+            create_info.components.r = VK_COMPONENT_SWIZZLE_IDENTITY;
+            create_info.components.g = VK_COMPONENT_SWIZZLE_IDENTITY;
+            create_info.components.b = VK_COMPONENT_SWIZZLE_IDENTITY;
+            create_info.components.a = VK_COMPONENT_SWIZZLE_IDENTITY;
+
+            create_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            create_info.subresourceRange.baseMipLevel = 0;
+            create_info.subresourceRange.levelCount = 1;
+            create_info.subresourceRange.baseArrayLayer = 0;
+            create_info.subresourceRange.layerCount = 1;
+
+            if (vkCreateImageView(logical_device_, &create_info, nullptr, &swapchain_imageviews_[i]) != VK_SUCCESS)
+            {
+                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create image view");
+                throw std::runtime_error("Failed to create image view");
+            }
+        }
+    }
+
+    void VulkanBackend::CreateSwapchainRenderPass()
+    {
+        VkRenderPassCreateInfo renderpass_create_info{};
+        renderpass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+
+        VkAttachmentReference color_attachment_ref{};
+        color_attachment_ref.attachment = 0;
+        color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass{};
+        subpass.colorAttachmentCount = 1;
+        subpass.pColorAttachments = &color_attachment_ref;
+
+        // set subpass
+        renderpass_create_info.subpassCount = 1;
+        renderpass_create_info.pSubpasses = &subpass;
+
+        VkSubpassDependency subpass_dependency{};
+        subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        subpass_dependency.dstSubpass = 0;
+        subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        subpass_dependency.srcAccessMask = 0;
+        subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        // set dependency
+        renderpass_create_info.dependencyCount = 1;
+        renderpass_create_info.pDependencies = &subpass_dependency;
+
+        VkAttachmentDescription attachment_desc{};
+        attachment_desc.samples = VK_SAMPLE_COUNT_1_BIT;
+        attachment_desc.format = swapchain_image_format_;
+        attachment_desc.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        attachment_desc.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        attachment_desc.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        attachment_desc.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        attachment_desc.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        attachment_desc.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+
+        renderpass_create_info.attachmentCount = 1;
+        renderpass_create_info.pAttachments = &attachment_desc;
+
+        if (vkCreateRenderPass(logical_device_, &renderpass_create_info, nullptr, &swapchain_renderpass_) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create swapchain renderpass");
+            throw std::runtime_error("Failed to create swapchain renderpass");
+        }
+    }
+
+    void VulkanBackend::CreateGraphicsPipeline()
+    {
+        
     }
 
     std::vector<const char *> VulkanBackend::FindRequiredExtensions() const

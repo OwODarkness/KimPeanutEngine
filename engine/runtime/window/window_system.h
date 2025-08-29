@@ -29,7 +29,7 @@ namespace kpengine
         virtual bool ShouldClose() const = 0;
 
         void SetWindowSize(int width, int height);
-        void Tick(float delta_time);
+        virtual void Tick(float delta_time);
         static std::unique_ptr<WindowSystem> CreateWindow(WindowAPIType window_api_type);
 
     public:

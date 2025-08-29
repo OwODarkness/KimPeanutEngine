@@ -13,6 +13,21 @@ include_directories(
 add_subdirectory(engine)
 add_subdirectory(third_party)
 
+set(THIRD_PARTY_DLLS
+    ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll
+)
+
+function(copy_thirdparty_dlls target)
+    foreach(dll ${THIRD_PARTY_DLLS})
+        add_custom_command(TARGET ${target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            ${dll}
+            $<TARGET_FILE_DIR:${target}>
+        )
+    endforeach()
+endfunction()
+
+
 add_executable(KimPeanutEngine 
     engine/editor/main.cpp
 )
@@ -20,6 +35,8 @@ target_link_libraries(KimPeanutEngine
     EngineLib
     ThirdPartyLib
 )
+
+copy_thirdparty_dlls(KimPeanutEngine)
 
 #TEST
 # enable_testing()

@@ -1,4 +1,6 @@
 #include "glfw_window_system.h"
+
+#include <GLFW/glfw3.h>
 #include "log/logger.h"
 namespace kpengine
 {
@@ -60,6 +62,14 @@ namespace kpengine
     {
         glfwSwapBuffers(window_);
     }
+
+    void GLFWWindowSystem::Tick(float delta_time)
+    {
+        PollEvents();
+        SwapBuffers();
+
+    }
+
     WindowHandle GLFWWindowSystem::GetNativeHandle() const
     {
         return static_cast<WindowHandle>(window_);
@@ -68,7 +78,6 @@ namespace kpengine
     bool GLFWWindowSystem::ShouldClose() const
     {
         return glfwWindowShouldClose(window_);
-    
     }
 
     GLFWWindowSystem::~GLFWWindowSystem()

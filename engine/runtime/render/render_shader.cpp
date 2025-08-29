@@ -11,15 +11,15 @@ namespace kpengine
 {
 
     RenderShader::RenderShader(const std::string& vertex_shader_path,const std::string& fragment_shader_path):
-    vertex_shader_path_(vertex_shader_path),
-    fragment_shader_path_(fragment_shader_path)
+    vertex_shader_path_(vertex_shader_path + ".vert"),
+    fragment_shader_path_(fragment_shader_path + ".frag")
     {
     }
 
     RenderShader::RenderShader(const std::string& vertex_shader_path,const std::string& fragment_shader_path, const std::string& geometry_shader_path):
-    vertex_shader_path_(vertex_shader_path),
-    fragment_shader_path_(fragment_shader_path),
-    geometry_shader_path_(geometry_shader_path)
+    vertex_shader_path_(vertex_shader_path + ".vert"),
+    fragment_shader_path_(fragment_shader_path + ".frag"),
+    geometry_shader_path_(geometry_shader_path + ".geom")
     {
     }
 
