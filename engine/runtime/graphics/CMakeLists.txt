@@ -5,18 +5,21 @@ option(USE_VULKAN "Use Vulkan backend" ON)
 
 add_library(Graphics STATIC
     backend/common/render_backend.cpp
+    
     backend/opengl/opengl_backend.cpp
     backend/opengl/opengl_texture.cpp
+    backend/opengl/opengl_shader.cpp
 
     backend/vulkan/vulkan_backend.cpp
     backend/vulkan/vulkan_texture.cpp
+    backend/vulkan/vulkan_shader.cpp
 
     tool/shaderloader.cpp
 )
 
 target_include_directories(Graphics 
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/backend
-    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tool
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tool/..
 )
 
 target_link_libraries(Graphics PUBLIC Core )

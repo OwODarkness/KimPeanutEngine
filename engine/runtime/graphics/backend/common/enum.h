@@ -32,6 +32,12 @@ namespace kpengine::graphics
         TEXTURE_USAGE_TRANSFER_DST = 1 << 5,
     };
 
+    enum class ShaderType{
+        None,
+        SHADER_TYPE_VERTEX,
+        SHADER_TYPE_FRAGMENT,
+        SHADER_TYPE_GEOMETRY
+    };
 }
 
 #endif

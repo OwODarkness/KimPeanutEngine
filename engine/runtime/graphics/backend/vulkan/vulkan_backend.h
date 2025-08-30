@@ -41,7 +41,8 @@ namespace kpengine::graphics
         virtual void Cleanup() override;
 
     public:
-        VkDevice GetLogicialDevice() const{return logical_device_;}
+        VkDevice GetLogicialDevice() const { return logical_device_; }
+
     private:
         void CreateInstance();
         void CreateDebugMessager();
@@ -52,6 +53,20 @@ namespace kpengine::graphics
         void CreateSwapchainImageViews();
         void CreateSwapchainRenderPass();
         void CreateGraphicsPipeline();
+        void CreateFrameBuffers();
+        void CreateCommandPool();
+        void CreateCommandBuffer();
+        void CreateSyncObjects();
+        void CreateVertexBuffers();
+        void CreateBuffer(
+            VkDeviceSize size,
+            VkBufferUsageFlags usage,
+            VkMemoryPropertyFlags properties,
+            VkBuffer &buffer,
+            VkDeviceMemory &buffer_memory);
+
+    private:
+        void RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index);
 
     private:
         std::vector<const char *> FindRequiredExtensions() const;
@@ -77,6 +92,19 @@ namespace kpengine::graphics
         std::vector<VkImage> swapchain_images_;
         std::vector<VkImageView> swapchain_imageviews_;
         VkRenderPass swapchain_renderpass_;
+        VkPipelineLayout pipeline_layout_;
+        VkPipeline pipeline_;
+        std::vector<VkFramebuffer> swapchain_framebuffers_;
+        VkCommandPool command_pool_;
+        VkCommandBuffer command_buffer_;
+        VkSemaphore available_image_sepmaphore_;
+        std::vector<VkSemaphore> render_finished_semaphores_;
+        VkFence in_flight_fence_;
+
+        VkBuffer pos_buffer_;
+        VkBuffer color_buffer_;
+        VkDeviceMemory pos_memory_;
+        VkDeviceMemory color_memory_;
 
         std::vector<const char *> validation_layers = {
             "VK_LAYER_KHRONOS_validation"};
