@@ -5,17 +5,18 @@
 #include "math/math_header.h"
 #include "log/logger.h"
 #include "vulkan_shader.h"
+#include "common/vertex.h"
 #include "config/path.h"
 
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
 namespace kpengine::graphics
 {
-
-    std::vector<Vector3f> positions = {
-        {0.0f, -0.5f, 0.0f},
-        {0.5f, 0.5f, 0.0f},
-        {-0.5f, 0.5f, 0.0f}};
-
+    std::vector<Vertex> vertex = {
+        {{0.f, -0.5f, 0.f}},
+        {{0.5f, 0.5f, 0.f}},
+        {{-0.5f, 0.5f, 0.0f}}
+    };
+    
     // colors (r, g, b, a)
     std::vector<Vector3f> colors = {
         {1.0f, 0.0f, 0.0f},
@@ -577,7 +578,7 @@ namespace kpengine::graphics
 
         // set vertex stage
         VkVertexInputBindingDescription bindings[2] = {
-            {0, sizeof(Vector3f), VK_VERTEX_INPUT_RATE_VERTEX}, // pos
+            {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX}, // pos
             {1, sizeof(Vector3f), VK_VERTEX_INPUT_RATE_VERTEX}, // color
         };
         VkVertexInputAttributeDescription attributes[2] = {
@@ -749,17 +750,17 @@ namespace kpengine::graphics
 
     void VulkanBackend::CreateVertexBuffers()
     {
-        VkDeviceSize pos_size = sizeof(Vector3f) * positions.size();
+        VkDeviceSize pos_size = sizeof(Vertex) * vertex.size();
         // setup pos
         CreateBuffer(pos_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, pos_buffer_, pos_memory_);
 
         void *data;
         vkMapMemory(logical_device_, pos_memory_, 0, pos_size, 0, &data);
-        memcpy(data, positions.data(), static_cast<size_t>(pos_size));
+        memcpy(data, vertex.data(), static_cast<size_t>(pos_size));
         vkUnmapMemory(logical_device_, pos_memory_);
-
+        
         // setup color
-        VkDeviceSize color_size = sizeof(Vector3f) * positions.size();
+        VkDeviceSize color_size = sizeof(Vector3f) * colors.size();
         CreateBuffer(color_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, color_buffer_, color_memory_);
 
         vkMapMemory(logical_device_, color_memory_, 0, color_size, 0, &data);

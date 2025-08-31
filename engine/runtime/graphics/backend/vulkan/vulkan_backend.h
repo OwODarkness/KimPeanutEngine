@@ -31,6 +31,7 @@ namespace kpengine::graphics
         static SwapchainSupportDetail FindSwapchainSupports(VkPhysicalDevice device, VkSurfaceKHR surface);
     };
 
+
     class VulkanBackend : public RenderBackend
     {
     public:
@@ -40,6 +41,7 @@ namespace kpengine::graphics
         virtual void Present() override;
         virtual void Cleanup() override;
 
+    
     public:
         VkDevice GetLogicialDevice() const { return logical_device_; }
 
@@ -105,6 +107,8 @@ namespace kpengine::graphics
         VkBuffer color_buffer_;
         VkDeviceMemory pos_memory_;
         VkDeviceMemory color_memory_;
+
+
 
         std::vector<const char *> validation_layers = {
             "VK_LAYER_KHRONOS_validation"};
