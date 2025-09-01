@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.h>
 
 #include "common/render_backend.h"
+#include "vulkan_buffer_pool.h"
 
 namespace kpengine::graphics
 {
@@ -60,12 +61,7 @@ namespace kpengine::graphics
         void CreateCommandBuffer();
         void CreateSyncObjects();
         void CreateVertexBuffers();
-        void CreateBuffer(
-            VkDeviceSize size,
-            VkBufferUsageFlags usage,
-            VkMemoryPropertyFlags properties,
-            VkBuffer &buffer,
-            VkDeviceMemory &buffer_memory);
+
 
     private:
         void RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index);
@@ -103,11 +99,9 @@ namespace kpengine::graphics
         std::vector<VkSemaphore> render_finished_semaphores_;
         VkFence in_flight_fence_;
 
-        VkBuffer pos_buffer_;
-        VkBuffer color_buffer_;
-        VkDeviceMemory pos_memory_;
-        VkDeviceMemory color_memory_;
-
+        VulkanBufferPool buffer_pool_;
+        BufferHandle pos_handle_;
+        BufferHandle color_handle_;
 
 
         std::vector<const char *> validation_layers = {

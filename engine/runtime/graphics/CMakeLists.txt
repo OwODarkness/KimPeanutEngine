@@ -13,6 +13,7 @@ add_library(Graphics STATIC
     backend/vulkan/vulkan_backend.cpp
     backend/vulkan/vulkan_texture.cpp
     backend/vulkan/vulkan_shader.cpp
+    backend/vulkan/vulkan_buffer_pool.cpp
 
     tool/shaderloader.cpp
 )

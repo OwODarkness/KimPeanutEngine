@@ -8,22 +8,20 @@
 namespace kpengine::graphics{
 
     struct VulkanBufferResource{
-        VkBuffer buffer = VK_NULL_HANDLE;
-        VkDeviceMemory memory = VK_NULL_HANDLE;
+        VkBuffer buffer ;
+        VkDeviceMemory memory ;
         uint32_t generation = 0;
         bool alive = false;
     };
 
     class VulkanBufferPool{
     public:
-        VulkanBufferPool(VkPhysicalDevice physical_device, VkDevice logicial_device);
-        BufferHandle CreateBufferResource(VkBufferCreateInfo buffer_create_info);
-        bool DestroyBufferResource();
-        void BindBufferData(size_t size, void* data);
+        //TODO: add memory propities
+        BufferHandle CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logicial_device, VkBufferCreateInfo buffer_create_info, VkMemoryPropertyFlags properties);
+        bool DestroyBufferResource(VkDevice logicial_device, BufferHandle handle);
         VulkanBufferResource* GetBufferResource(BufferHandle handle);
+        void BindBufferData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, void* src);
     private:
-        VkPhysicalDevice physical_device_;
-        VkDevice logicial_device_;
         std::vector<VulkanBufferResource> buffer_resources_;
         std::vector<uint32_t> free_slots;
     

@@ -1,12 +1,10 @@
 #include "vulkan_buffer_pool.h"
+#include <iostream>
 #include "log/logger.h"
 namespace kpengine::graphics
 {
-    VulkanBufferPool::VulkanBufferPool(VkPhysicalDevice physical_device, VkDevice logicial_device) : physical_device_(physical_device), logicial_device_(logicial_device)
-    {
-    }
 
-    BufferHandle VulkanBufferPool::CreateBufferResource(VkBufferCreateInfo buffer_create_info)
+    BufferHandle VulkanBufferPool::CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logicial_device, VkBufferCreateInfo buffer_create_info, VkMemoryPropertyFlags properties)
     {
         uint32_t id = 0;
         if (!free_slots.empty())
@@ -16,29 +14,30 @@ namespace kpengine::graphics
         }
         else
         {
-            id = static_cast<uint32_t>(free_slots.size());
+            id = static_cast<uint32_t>(buffer_resources_.size());
             buffer_resources_.emplace_back();
         }
 
         VulkanBufferResource &buffer_resource = buffer_resources_[id];
 
-        if (vkCreateBuffer(logicial_device_, &buffer_create_info, nullptr, &buffer_resource.buffer) != VK_SUCCESS)
+        if (vkCreateBuffer(logicial_device, &buffer_create_info, nullptr, &buffer_resource.buffer) != VK_SUCCESS)
         {
             KP_LOG("VulkanBufferPool", LOG_LEVEL_ERROR, "Failed to create buffer");
             throw std::runtime_error("Failed to create buffer");
         }
 
         VkMemoryRequirements memory_requires;
-        vkGetBufferMemoryRequirements(logicial_device_, buffer_resource.buffer, &memory_requires);
+        vkGetBufferMemoryRequirements(logicial_device, buffer_resource.buffer, &memory_requires);
+
 
         VkPhysicalDeviceMemoryProperties memory_props;
-        vkGetPhysicalDeviceMemoryProperties(physical_device_, &memory_props);
+        vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_props);
 
         uint32_t memory_type_index = 0;
         bool is_found = false;
         for (uint32_t i = 0; i < memory_props.memoryTypeCount; i++)
         {
-            if (memory_requires.memoryTypeBits & (i << 1) && (memory_requires.memoryTypeBits & memory_props.memoryTypes[i].propertyFlags) == memory_props.memoryTypes[i].propertyFlags)
+            if ((memory_requires.memoryTypeBits & (1 << i)) && (memory_props.memoryTypes[i].propertyFlags & properties) == properties)
             {
                 is_found = true;
                 memory_type_index = i;
@@ -54,26 +53,64 @@ namespace kpengine::graphics
 
         VkMemoryAllocateInfo memory_allocate_info{};
         memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memory_allocate_info.allocationSize = buffer_create_info.size;
+        memory_allocate_info.allocationSize = memory_requires.size;
         memory_allocate_info.memoryTypeIndex = memory_type_index;
 
-        if (vkAllocateMemory(logicial_device_, &memory_allocate_info, nullptr, &buffer_resource.memory) != VK_SUCCESS)
+        if (vkAllocateMemory(logicial_device, &memory_allocate_info, nullptr, &buffer_resource.memory) != VK_SUCCESS)
         {
             KP_LOG("VulkanBufferPool", LOG_LEVEL_ERROR, "Failed to allocate memory");
             throw std::runtime_error("Failed to allocate memory");
         }
     
+        vkBindBufferMemory(logicial_device, buffer_resource.buffer, buffer_resource.memory, 0);
+
         buffer_resource.alive = true;
         return {id, buffer_resource.generation};
     }
 
-    bool VulkanBufferPool::DestroyBufferResource()
+    bool VulkanBufferPool::DestroyBufferResource(VkDevice logicial_device,BufferHandle handle)
     {
+        if(handle.id > buffer_resources_.size())
+        {
+            KP_LOG("VulkanBufferPool", LOG_LEVEL_WARNNING, "Failed to destory buffer resource,  out of range");
+            return false;
+        }
+
+        VulkanBufferResource& buffer_resource = buffer_resources_[handle.id];
+        vkDestroyBuffer(logicial_device, buffer_resource.buffer, nullptr);
+        vkFreeMemory(logicial_device, buffer_resource.memory, nullptr);
+        buffer_resource.alive = false;
+        buffer_resource.generation++;
         return true;
     }
 
-    VulkanBufferResource *VulkanBufferPool::GetBufferResource(BufferHandle handle)
+    VulkanBufferResource* VulkanBufferPool::GetBufferResource(BufferHandle handle)
     {
+        if(handle.id > buffer_resources_.size())
+        {
+            KP_LOG("VulkanBufferPool", LOG_LEVEL_ERROR, "Failed to get buffer resource, out of range");
+            return nullptr;
+        }
+
+        VulkanBufferResource& buffer_resource = buffer_resources_[handle.id];
+        if(handle.generation != buffer_resource.generation || !buffer_resource.alive)
+        {
+            KP_LOG("VulkanBufferPool", LOG_LEVEL_ERROR, "Failed to get buffer resource, generation mismatch or not alive");
+            return nullptr;
+        }
+
+        return &buffer_resource;
+    }
+
+    void VulkanBufferPool::BindBufferData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, void* src)
+    {
+        VulkanBufferResource* buffer_resource = GetBufferResource(handle);
+
+        void* target;
+        
+        vkMapMemory(logicial_device, buffer_resource->memory, 0, size, 0, &target);
+        memcpy(target, src, static_cast<size_t>(size));
+        vkUnmapMemory(logicial_device, buffer_resource->memory);
     }
 
 }

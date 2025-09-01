@@ -236,10 +236,9 @@ namespace kpengine::graphics
 
         vkDestroyCommandPool(logical_device_, command_pool_, nullptr);
 
-        vkDestroyBuffer(logical_device_, pos_buffer_, nullptr);
-        vkDestroyBuffer(logical_device_, color_buffer_, nullptr);
-        vkFreeMemory(logical_device_, pos_memory_, nullptr);
-        vkFreeMemory(logical_device_, color_memory_, nullptr);
+        buffer_pool_.DestroyBufferResource(logical_device_, pos_handle_);
+        buffer_pool_.DestroyBufferResource(logical_device_, color_handle_);
+
 
                 for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
         {
@@ -751,21 +750,28 @@ namespace kpengine::graphics
     void VulkanBackend::CreateVertexBuffers()
     {
         VkDeviceSize pos_size = sizeof(Vertex) * vertex.size();
-        // setup pos
-        CreateBuffer(pos_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, pos_buffer_, pos_memory_);
 
-        void *data;
-        vkMapMemory(logical_device_, pos_memory_, 0, pos_size, 0, &data);
-        memcpy(data, vertex.data(), static_cast<size_t>(pos_size));
-        vkUnmapMemory(logical_device_, pos_memory_);
-        
-        // setup color
+        VkBufferCreateInfo pos_buffer_create_info{};
+        pos_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        pos_buffer_create_info.size = pos_size;
+        pos_buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        pos_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        pos_handle_ = buffer_pool_.CreateBufferResource(physical_device_, logical_device_,pos_buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        buffer_pool_.BindBufferData(logical_device_, pos_handle_, pos_size, vertex.data());
+
         VkDeviceSize color_size = sizeof(Vector3f) * colors.size();
-        CreateBuffer(color_size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT, color_buffer_, color_memory_);
+        VkBufferCreateInfo color_buffer_create_info{};
+        color_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        color_buffer_create_info.size = color_size;
+        color_buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        color_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        vkMapMemory(logical_device_, color_memory_, 0, color_size, 0, &data);
-        memcpy(data, colors.data(), static_cast<size_t>(color_size));
-        vkUnmapMemory(logical_device_, color_memory_);
+        color_handle_ = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, color_buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+
+        buffer_pool_.BindBufferData(logical_device_, color_handle_, color_size, colors.data());
+
     }
 
     void VulkanBackend::CreateSyncObjects()
@@ -798,56 +804,6 @@ namespace kpengine::graphics
                 throw std::runtime_error("Failed to create render_finished_semaphores_");
             }
         }
-    }
-
-    void VulkanBackend::CreateBuffer(VkDeviceSize size,
-                                     VkBufferUsageFlags usage,
-                                     VkMemoryPropertyFlags properties,
-                                     VkBuffer &buffer,
-                                     VkDeviceMemory &buffer_memory)
-    {
-        VkBufferCreateInfo buffer_create_info{};
-        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buffer_create_info.size = size;
-        buffer_create_info.usage = usage;
-        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        vkCreateBuffer(logical_device_, &buffer_create_info, nullptr, &buffer);
-
-        // Allocate memory for the buffer
-        VkMemoryRequirements mem_requirements;
-        vkGetBufferMemoryRequirements(logical_device_, buffer, &mem_requirements);
-
-        VkMemoryAllocateInfo allocInfo{};
-        allocInfo.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        allocInfo.allocationSize = mem_requirements.size;
-
-        // find proper memory type
-        VkPhysicalDeviceMemoryProperties mem_properties;
-        vkGetPhysicalDeviceMemoryProperties(physical_device_, &mem_properties);
-
-        bool found = false;
-        for (uint32_t i = 0; i < mem_properties.memoryTypeCount; ++i)
-        {
-            if ((mem_requirements.memoryTypeBits & (1 << i)) &&
-                (mem_properties.memoryTypes[i].propertyFlags & properties) == properties)
-            {
-                allocInfo.memoryTypeIndex = i;
-                found = true;
-                break;
-            }
-        }
-
-        if (!found)
-            throw std::runtime_error("Failed to find suitable memory type!");
-
-        if (vkAllocateMemory(logical_device_, &allocInfo, nullptr, &buffer_memory) != VK_SUCCESS)
-        {
-            throw std::runtime_error("Failed to allocate buffer memory!");
-        }
-
-        //  Bind buffer to memory
-        vkBindBufferMemory(logical_device_, buffer, buffer_memory, 0);
     }
 
     void VulkanBackend::RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index)
@@ -898,7 +854,11 @@ namespace kpengine::graphics
             scissor.offset.y = 0;
             vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
 
-            VkBuffer vertexBuffers[] = {pos_buffer_, color_buffer_};
+            //TODO: GetBufferResource by bufferhandle;
+            VulkanBufferResource* pos_buffer_resource = buffer_pool_.GetBufferResource(pos_handle_);
+            VulkanBufferResource* color_buffer_resource = buffer_pool_.GetBufferResource(color_handle_);
+
+            VkBuffer vertexBuffers[] = {pos_buffer_resource->buffer, color_buffer_resource->buffer};
             VkDeviceSize offsets[] = {0, 0};
             vkCmdBindVertexBuffers(commandbuffer, 0, 2, vertexBuffers, offsets);
 
