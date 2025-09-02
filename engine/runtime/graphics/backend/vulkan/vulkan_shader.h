@@ -1,5 +1,5 @@
-#ifndef KPENGINE_RUNTIME_GRAPHICS_VULKAN_SAHDER_PROGRAM_H
-#define KPENGINE_RUNTIME_GRAPHICS_VULKAN_SHADER_PROGRAM_H
+#ifndef KPENGINE_RUNTIME_GRAPHICS_VULKAN_SHADER_H
+#define KPENGINE_RUNTIME_GRAPHICS_VULKAN_SHADER_H
 
 #include <vector>
 #include <cstdint>
@@ -9,14 +9,16 @@
 namespace kpengine::graphics{
 class VulkanShader: public Shader{
 public:
-    VulkanShader(VkDevice device, const std::string& name, ShaderType type, const std::string& path);
-    ~VulkanShader();
-    VkPipelineShaderStageCreateInfo GetPipelineShaderStageCreateInfo() const;
+    VulkanShader(ShaderType type, const std::string& path);
+    ~VulkanShader() = default;
+
+        const void* GetCode() const override{return shader_code_.data();}
+        size_t GetCodeSize() const override{return shader_code_.size() * sizeof(uint32_t);}
+
 private:
-    void CreateShaderModule(const std::string& path, VkShaderModule& module);
+    void LoadShaderCode();
 private:
-    VkDevice device_;
-    VkShaderModule  shader_module_;
+    std::vector<uint32_t> shader_code_;
 };
 }
 

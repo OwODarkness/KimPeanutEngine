@@ -23,7 +23,7 @@ namespace kpengine::graphics
         TextureUsage usage = TextureUsage::TEXTURE_USAGE_SAMPLE;
     };
 
-    struct TextureHandle{
+    struct TextureResource{
         TextureImage image = nullptr;
         TextureView view = nullptr;
         TextureSampler sampler = nullptr;
@@ -34,7 +34,7 @@ namespace kpengine::graphics
         virtual void Initialize(const TextureDesc& desc) = 0;
         virtual void Destroy() = 0;
     
-        virtual TextureHandle GetTextueHandle() const = 0;
+        virtual TextureResource GetTextueHandle() const = 0;
     };
 }
 

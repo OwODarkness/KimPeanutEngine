@@ -3,15 +3,47 @@
 
 #include <cstdint>
 
-namespace kpengine::graphics{
+namespace kpengine::graphics
+{
 
-    struct BufferHandle{
+    struct BufferHandle
+    {
         uint32_t id = UINT32_MAX;
         uint32_t generation = 0;
 
         bool IsValid() const
         {
-            return id == UINT32_MAX;
+            return id != UINT32_MAX;
+        }
+    };
+
+    struct MeshHandle
+    {
+        uint32_t id = UINT32_MAX;
+        uint32_t generation = 0;
+        bool IsValid() const
+        {
+            return id != UINT32_MAX;
+        }
+    };
+
+    struct TextureHandle
+    {
+        uint32_t id = UINT32_MAX;
+        uint32_t generation = 0;
+        bool IsValid() const
+        {
+            return id != UINT32_MAX;
+        }
+    };
+
+    struct ShaderHandle
+    {
+        uint32_t id = UINT32_MAX;
+        uint32_t generation = 0;
+        bool IsValid() const
+        {
+            return id != UINT32_MAX;
         }
     };
 }

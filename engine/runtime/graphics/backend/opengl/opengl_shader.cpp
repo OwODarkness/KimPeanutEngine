@@ -8,7 +8,7 @@
 namespace kpengine::graphics
 {
 
-    OpenglShader::OpenglShader(const std::string &name, ShaderType type, const std::string &path) : Shader(name, type)
+    OpenglShader::OpenglShader(ShaderType type, const std::string &path) : Shader(type, path)
     {
         if (type == ShaderType::SHADER_TYPE_VERTEX)
         {
@@ -24,13 +24,13 @@ namespace kpengine::graphics
         }
     }
 
-    GLuint OpenglShader::CompileShader(const std::string &path, GLenum shader_type) const
+    GLuint OpenglShader::CompileShader(const std::string &path, GLenum shader_type) 
     {
-        std::vector<char> shader_code = ShaderLoader::ReadTextFile(path);
+        shader_code_ = ShaderLoader::ReadTextFile(path);
         GLuint shader_handle = glCreateShader(shader_type);
 
-        const char *source = shader_code.data();
-        GLint shader_size = static_cast<GLint>(shader_code.size());
+        const char *source = shader_code_.data();
+        GLint shader_size = static_cast<GLint>(shader_code_.size());
         glShaderSource(shader_handle, 1, &source, &shader_size);
         glCompileShader(shader_handle);
 

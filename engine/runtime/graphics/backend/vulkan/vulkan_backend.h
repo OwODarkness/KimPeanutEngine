@@ -32,7 +32,6 @@ namespace kpengine::graphics
         static SwapchainSupportDetail FindSwapchainSupports(VkPhysicalDevice device, VkSurfaceKHR surface);
     };
 
-
     class VulkanBackend : public RenderBackend
     {
     public:
@@ -42,7 +41,12 @@ namespace kpengine::graphics
         virtual void Present() override;
         virtual void Cleanup() override;
 
-    
+
+    protected:
+        BufferHandle CreateVertexBuffer(const void* data, size_t size) override;
+        BufferHandle CreateIndexBuffer(const void* data, size_t size) override;
+        void DestroyBuffer(BufferHandle handle) override;
+
     public:
         VkDevice GetLogicialDevice() const { return logical_device_; }
 
@@ -62,6 +66,7 @@ namespace kpengine::graphics
         void CreateSyncObjects();
         void CreateVertexBuffers();
 
+        void CreateShaderModule(const void* data, size_t size, VkShaderModule &shader_module);
 
     private:
         void RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index);
@@ -102,7 +107,7 @@ namespace kpengine::graphics
         VulkanBufferPool buffer_pool_;
         BufferHandle pos_handle_;
         BufferHandle color_handle_;
-
+        BufferHandle index_handle_;
 
         std::vector<const char *> validation_layers = {
             "VK_LAYER_KHRONOS_validation"};

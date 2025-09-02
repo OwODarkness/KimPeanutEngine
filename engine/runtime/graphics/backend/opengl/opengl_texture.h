@@ -7,22 +7,22 @@
 
 namespace kpengine::graphics
 {
-    struct OpenglTextureHandle{
+    struct OpenglTextureResource{
         GLuint image = 0;
         GLuint sampler = 0;
     };
 
-    inline OpenglTextureHandle ConvertToOpenglTextureHandle(const TextureHandle& handle)
+    inline OpenglTextureResource ConvertToOpenglTextureResource(const TextureResource& handle)
     {
-        OpenglTextureHandle res{};
+        OpenglTextureResource res{};
         res.image = static_cast<GLuint>(reinterpret_cast<uintptr_t>(handle.image));
         res.sampler = static_cast<GLuint>(reinterpret_cast<uintptr_t>(handle.sampler));
         return res;
     }
 
-    inline TextureHandle ConvertToTextureHandle(const OpenglTextureHandle& handle)
+    inline TextureResource ConvertToTextureResource(const OpenglTextureResource& handle)
     {
-        TextureHandle res{};
+        TextureResource res{};
         res.image = reinterpret_cast<TextureImage>(static_cast<uintptr_t>(handle.image));
         res.sampler = reinterpret_cast<TextureImage>(static_cast<uintptr_t>(handle.sampler));
         return res;
@@ -33,9 +33,9 @@ namespace kpengine::graphics
     public:
         void Initialize(const TextureDesc &desc) override;
         void Destroy() override;
-        TextureHandle GetTextueHandle() const override{return ConvertToTextureHandle(handle_);}
+        TextureResource GetTextueHandle() const override{return ConvertToTextureResource(resource_);}
     private:
-        OpenglTextureHandle handle_;
+        OpenglTextureResource resource_;
     };
 }
 

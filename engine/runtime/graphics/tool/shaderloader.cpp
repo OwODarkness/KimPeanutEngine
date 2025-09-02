@@ -15,17 +15,24 @@ namespace kpengine::graphics
         return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
     }
 
-    std::vector<char> ShaderLoader::ReadBinaryFile(const std::string &path)
+    std::vector<uint32_t> ShaderLoader::ReadBinaryFile(const std::string &path)
     {
         std::ifstream file(path, std::ios_base::ate | std::ios_base::binary);
         if (!file.is_open())
         {
-            throw std::runtime_error("failed to open text file");
+            throw std::runtime_error("failed to open binary file: " + path);
         }
+
         size_t file_size = static_cast<size_t>(file.tellg());
-        std::vector<char> buffer(file_size);
+        if (file_size % 4 != 0)
+        {
+            throw std::runtime_error("SPIR-V file size is not a multiple of 4: " + path);
+        }
+
+        std::vector<uint32_t> buffer(file_size / 4);
         file.seekg(0);
-        file.read(buffer.data(), file_size);
+        file.read(reinterpret_cast<char *>(buffer.data()), file_size);
+
         return buffer;
     }
 

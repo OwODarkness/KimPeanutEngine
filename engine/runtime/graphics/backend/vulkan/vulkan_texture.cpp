@@ -2,20 +2,31 @@
 #include "vulkan_backend.h"
 namespace kpengine::graphics
 {
-    VulkanTexture::VulkanTexture(VulkanBackend* backend) : Texture(), backend_(backend){}
+    VulkanTexture::VulkanTexture(VkDevice device) : Texture(), device_(device){}
 
     void VulkanTexture::Initialize(const TextureDesc &desc)
     {
         VkImageCreateInfo image_create_info{};
+        image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
+        image_create_info.format = ConvertToVulkanTextureFormat(desc.format);
+        image_create_info.imageType = ConvertToVulkanTextureType(desc.type);
+        image_create_info.usage = ConvertToVulkanTextureUsage(desc.usage);
+        image_create_info.mipLevels = desc.mip_levels;
+        image_create_info.extent.width = desc.width;
+        image_create_info.extent.height = desc.height;
+        image_create_info.extent.depth = desc.depth;
+        
         VkImageViewCreateInfo view_create_info{};
+
         VkSamplerCreateInfo sampler_create_info{};
+
+        
     }
     void VulkanTexture::Destroy()
     {
-        VkDevice device = backend_->GetLogicialDevice();
-        vkDestroyImage(device, handle_.image, nullptr);
-        vkDestroyImageView(device, handle_.view, nullptr);
-        vkDestroySampler(device, handle_.sampler, nullptr);
+        vkDestroyImage(device_, resource_.image, nullptr);
+        vkDestroyImageView(device_, resource_.view, nullptr);
+        vkDestroySampler(device_, resource_.sampler, nullptr);
     }
 
 }

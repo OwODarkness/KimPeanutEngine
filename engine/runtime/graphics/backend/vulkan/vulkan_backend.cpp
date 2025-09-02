@@ -14,14 +14,15 @@ namespace kpengine::graphics
     std::vector<Vertex> vertex = {
         {{0.f, -0.5f, 0.f}},
         {{0.5f, 0.5f, 0.f}},
-        {{-0.5f, 0.5f, 0.0f}}
-    };
-    
+        {{-0.5f, 0.5f, 0.0f}}};
+
     // colors (r, g, b, a)
     std::vector<Vector3f> colors = {
         {1.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f},
         {0.0f, 0.0f, 1.0f}};
+
+    std::vector<uint32_t> indices = {0, 1, 2};
 
     VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pDebugMessenger)
     {
@@ -225,7 +226,7 @@ namespace kpengine::graphics
 
     void VulkanBackend::Cleanup()
     {
-         vkDeviceWaitIdle(logical_device_);
+        vkDeviceWaitIdle(logical_device_);
 
         vkDestroySemaphore(logical_device_, available_image_sepmaphore_, nullptr);
         for (size_t i = 0; i < render_finished_semaphores_.size(); i++)
@@ -236,11 +237,11 @@ namespace kpengine::graphics
 
         vkDestroyCommandPool(logical_device_, command_pool_, nullptr);
 
-        buffer_pool_.DestroyBufferResource(logical_device_, pos_handle_);
-        buffer_pool_.DestroyBufferResource(logical_device_, color_handle_);
+        DestroyBuffer(pos_handle_);
+        DestroyBuffer(color_handle_);
+        DestroyBuffer(index_handle_);
 
-
-                for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
+        for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
         {
             vkDestroyFramebuffer(logical_device_, swapchain_framebuffers_[i], nullptr);
         }
@@ -264,6 +265,37 @@ namespace kpengine::graphics
             DestroyDebugUtilsMessengerEXT(instance_, debug_messager_, nullptr);
         }
         vkDestroyInstance(instance_, nullptr);
+    }
+
+    BufferHandle VulkanBackend::CreateVertexBuffer(const void *data, size_t size)
+    {
+        VkBufferCreateInfo buffer_create_info{};
+        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_create_info.size = size;
+        buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        BufferHandle handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        buffer_pool_.BindBufferData(logical_device_, handle, size, data);
+        return handle;
+    }
+
+    BufferHandle VulkanBackend::CreateIndexBuffer(const void *data, size_t size)
+    {
+        VkBufferCreateInfo buffer_create_info{};
+        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_create_info.size = size;
+        buffer_create_info.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+
+        BufferHandle handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        buffer_pool_.BindBufferData(logical_device_, handle, size, data);
+        return handle;
+    }
+
+    void VulkanBackend::DestroyBuffer(BufferHandle handle)
+    {
+        buffer_pool_.DestroyBufferResource(logical_device_, handle);
     }
 
     void VulkanBackend::CreateInstance()
@@ -569,15 +601,36 @@ namespace kpengine::graphics
     {
         // set shader stage
         std::string spv_shader_dir = GetSPVShaderDirectory();
-        VulkanShader vert_shader(logical_device_, "main", ShaderType::SHADER_TYPE_VERTEX, spv_shader_dir + "/simple_triangle.vert.spv");
-        VulkanShader frag_shader(logical_device_, "main", ShaderType::SHADER_TYPE_FRAGMENT, spv_shader_dir + "/simple_triangle.frag.spv");
-        VkPipelineShaderStageCreateInfo vert_stage_create_info = vert_shader.GetPipelineShaderStageCreateInfo();
-        VkPipelineShaderStageCreateInfo frag_stage_create_info = frag_shader.GetPipelineShaderStageCreateInfo();
+        ShaderHandle vert_handle = shader_manager_.LoadShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_VERTEX, spv_shader_dir + "/simple_triangle.vert.spv");
+        Shader* vert_shader = shader_manager_.GetShader(vert_handle);
+        ShaderHandle frag_handle = shader_manager_.LoadShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_FRAGMENT, spv_shader_dir + "/simple_triangle.frag.spv");
+        Shader* frag_shader = shader_manager_.GetShader(frag_handle);
+
+        VkShaderModule vert_shader_module;
+        CreateShaderModule(vert_shader->GetCode(), vert_shader->GetCodeSize(), vert_shader_module);
+        VkShaderModule frag_shader_module;
+        CreateShaderModule(frag_shader->GetCode(), frag_shader->GetCodeSize(), frag_shader_module);
+
+
+        VkPipelineShaderStageCreateInfo vert_stage_create_info{};
+        vert_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        vert_stage_create_info.module = vert_shader_module;
+        vert_stage_create_info.pName = "main";
+        vert_stage_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;;
+
+
+
+        VkPipelineShaderStageCreateInfo frag_stage_create_info{};
+        frag_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
+        frag_stage_create_info.module = frag_shader_module;
+        frag_stage_create_info.pName = "main";
+        frag_stage_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;;
+
         std::array<VkPipelineShaderStageCreateInfo, 2> stages = {vert_stage_create_info, frag_stage_create_info};
 
         // set vertex stage
         VkVertexInputBindingDescription bindings[2] = {
-            {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX}, // pos
+            {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX},   // pos
             {1, sizeof(Vector3f), VK_VERTEX_INPUT_RATE_VERTEX}, // color
         };
         VkVertexInputAttributeDescription attributes[2] = {
@@ -692,6 +745,9 @@ namespace kpengine::graphics
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create pipeline");
             throw std::runtime_error("Failed to create pipeline");
         }
+
+        vkDestroyShaderModule(logical_device_, vert_shader_module, nullptr);
+        vkDestroyShaderModule(logical_device_, frag_shader_module, nullptr);
     }
 
     void VulkanBackend::CreateFrameBuffers()
@@ -750,28 +806,28 @@ namespace kpengine::graphics
     void VulkanBackend::CreateVertexBuffers()
     {
         VkDeviceSize pos_size = sizeof(Vertex) * vertex.size();
-
-        VkBufferCreateInfo pos_buffer_create_info{};
-        pos_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        pos_buffer_create_info.size = pos_size;
-        pos_buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        pos_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        pos_handle_ = buffer_pool_.CreateBufferResource(physical_device_, logical_device_,pos_buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-
-        buffer_pool_.BindBufferData(logical_device_, pos_handle_, pos_size, vertex.data());
+        pos_handle_ = CreateVertexBuffer(vertex.data(), pos_size);
 
         VkDeviceSize color_size = sizeof(Vector3f) * colors.size();
-        VkBufferCreateInfo color_buffer_create_info{};
-        color_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        color_buffer_create_info.size = color_size;
-        color_buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        color_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        color_handle_ = CreateVertexBuffer(colors.data(), color_size);
 
-        color_handle_ = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, color_buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        VkDeviceSize indices_size = sizeof(uint32_t) * indices.size();
+        index_handle_ = CreateIndexBuffer(indices.data(), indices_size);
+    }
 
-        buffer_pool_.BindBufferData(logical_device_, color_handle_, color_size, colors.data());
+    void VulkanBackend::CreateShaderModule(const void *data, size_t size, VkShaderModule &shader_module)
+    {
 
+        VkShaderModuleCreateInfo shader_module_create_info{};
+        shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
+        shader_module_create_info.codeSize = static_cast<uint32_t>(size);
+        shader_module_create_info.pCode = reinterpret_cast<const uint32_t *>(data);
+
+        if (vkCreateShaderModule(logical_device_, &shader_module_create_info, nullptr, &shader_module) != VK_SUCCESS)
+        {
+            KP_LOG("VulkanShaderLog", LOG_LEVEL_ERROR, "Failed to create shader module:");
+            throw std::runtime_error("Failed to create shader module");
+        }
     }
 
     void VulkanBackend::CreateSyncObjects()
@@ -854,15 +910,19 @@ namespace kpengine::graphics
             scissor.offset.y = 0;
             vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
 
-            //TODO: GetBufferResource by bufferhandle;
-            VulkanBufferResource* pos_buffer_resource = buffer_pool_.GetBufferResource(pos_handle_);
-            VulkanBufferResource* color_buffer_resource = buffer_pool_.GetBufferResource(color_handle_);
+            // TODO: GetBufferResource by bufferhandle;
+            VulkanBufferResource *index_buffer_resource = buffer_pool_.GetBufferResource(index_handle_);
+            VulkanBufferResource *pos_buffer_resource = buffer_pool_.GetBufferResource(pos_handle_);
+            VulkanBufferResource *color_buffer_resource = buffer_pool_.GetBufferResource(color_handle_);
 
             VkBuffer vertexBuffers[] = {pos_buffer_resource->buffer, color_buffer_resource->buffer};
             VkDeviceSize offsets[] = {0, 0};
             vkCmdBindVertexBuffers(commandbuffer, 0, 2, vertexBuffers, offsets);
 
-            vkCmdDraw(commandbuffer, 3, 1, 0, 0);
+            uint32_t index_count = static_cast<uint32_t>(indices.size());
+            vkCmdBindIndexBuffer(commandbuffer, index_buffer_resource->buffer, 0, VK_INDEX_TYPE_UINT32);
+
+            vkCmdDrawIndexed(commandbuffer, index_count, 1, 0, 0, 0);
         }
         vkCmdEndRenderPass(commandbuffer);
         if (vkEndCommandBuffer(commandbuffer) != VK_SUCCESS)

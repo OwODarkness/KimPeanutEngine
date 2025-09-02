@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_GRAPHICS_SHADER_LOADER_H
 
 #include <vector>
+#include <cstdint>
 #include <string>
 
 namespace kpengine::graphics
@@ -10,7 +11,7 @@ namespace kpengine::graphics
     {
     public:
         static std::vector<char> ReadTextFile(const std::string &path);
-        static std::vector<char> ReadBinaryFile(const std::string &path);
+        static std::vector<uint32_t> ReadBinaryFile(const std::string &path);
     };
 }
 

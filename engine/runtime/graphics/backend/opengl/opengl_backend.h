@@ -13,6 +13,10 @@ namespace kpengine::graphics
         virtual void EndFrame() override;
         virtual void Present() override;
         virtual void Cleanup() override;
+    protected:
+        BufferHandle CreateVertexBuffer(const void* data, size_t size) override;
+        BufferHandle CreateIndexBuffer(const void* data, size_t size) override;
+        void DestroyBuffer(BufferHandle handle) override;
     };
 }
 

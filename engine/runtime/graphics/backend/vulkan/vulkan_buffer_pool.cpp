@@ -70,7 +70,7 @@ namespace kpengine::graphics
 
     bool VulkanBufferPool::DestroyBufferResource(VkDevice logicial_device,BufferHandle handle)
     {
-        if(handle.id > buffer_resources_.size())
+        if(handle.id >= buffer_resources_.size())
         {
             KP_LOG("VulkanBufferPool", LOG_LEVEL_WARNNING, "Failed to destory buffer resource,  out of range");
             return false;
@@ -86,14 +86,14 @@ namespace kpengine::graphics
 
     VulkanBufferResource* VulkanBufferPool::GetBufferResource(BufferHandle handle)
     {
-        if(handle.id > buffer_resources_.size())
+        if(handle.id >= buffer_resources_.size())
         {
             KP_LOG("VulkanBufferPool", LOG_LEVEL_ERROR, "Failed to get buffer resource, out of range");
             return nullptr;
         }
 
         VulkanBufferResource& buffer_resource = buffer_resources_[handle.id];
-        if(handle.generation != buffer_resource.generation || !buffer_resource.alive)
+        if(!handle.IsValid() || handle.generation != buffer_resource.generation || !buffer_resource.alive)
         {
             KP_LOG("VulkanBufferPool", LOG_LEVEL_ERROR, "Failed to get buffer resource, generation mismatch or not alive");
             return nullptr;
@@ -102,7 +102,7 @@ namespace kpengine::graphics
         return &buffer_resource;
     }
 
-    void VulkanBufferPool::BindBufferData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, void* src)
+    void VulkanBufferPool::BindBufferData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, const void* src)
     {
         VulkanBufferResource* buffer_resource = GetBufferResource(handle);
 

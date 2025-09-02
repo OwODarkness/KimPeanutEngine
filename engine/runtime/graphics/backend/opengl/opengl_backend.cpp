@@ -28,4 +28,29 @@ namespace kpengine::graphics{
     {
 
     }
+
+    BufferHandle OpenglBackend::CreateVertexBuffer(const void* data, size_t size)
+    {
+        GLuint vbo{};
+        glGenBuffers(1, &vbo);
+        glBindBuffer(GL_ARRAY_BUFFER, vbo);
+        glBufferData(GL_ARRAY_BUFFER, size, data, GL_STATIC_DRAW);
+        
+        return {vbo, 0};
+    }
+
+    BufferHandle OpenglBackend::CreateIndexBuffer(const void* data, size_t size)
+    {
+        GLuint ebo{};
+        glGenBuffers(1, &ebo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, size, data, GL_STATIC_DRAW);
+
+        return {ebo, 0};
+    }
+
+    void OpenglBackend::DestroyBuffer(BufferHandle handle)
+    {
+        glDeleteBuffers(1, &handle.id);
+    }
 }

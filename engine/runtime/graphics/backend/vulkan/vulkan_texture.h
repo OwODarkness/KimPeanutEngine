@@ -10,28 +10,28 @@ namespace kpengine::graphics
 
     class VulkanBackend;
 
-    struct VulkanTextureHandle
+    struct VulkanTextureResource
     {
         VkImage image = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
         VkSampler sampler = VK_NULL_HANDLE;
     };
 
-    inline VulkanTextureHandle ConvertToVulkanTextureHandle(const TextureHandle &handle)
+    inline VulkanTextureResource ConvertToVulkanTextureResource(const TextureResource &resource)
     {
-        VulkanTextureHandle res;
-        res.image = reinterpret_cast<VkImage>(handle.image);
-        res.view = reinterpret_cast<VkImageView>(handle.view);
-        res.sampler = reinterpret_cast<VkSampler>(handle.sampler);
+        VulkanTextureResource res;
+        res.image = reinterpret_cast<VkImage>(resource.image);
+        res.view = reinterpret_cast<VkImageView>(resource.view);
+        res.sampler = reinterpret_cast<VkSampler>(resource.sampler);
         return res;
     }
 
-    inline TextureHandle ConvertToTextureHandle(const VulkanTextureHandle &handle)
+    inline TextureResource ConvertToTextureResource(const VulkanTextureResource &resource)
     {
-        TextureHandle res;
-        res.image = reinterpret_cast<TextureImage>(handle.image);
-        res.view = reinterpret_cast<TextureView>(handle.view);
-        res.sampler = reinterpret_cast<TextureSampler>(handle.sampler);
+        TextureResource res;
+        res.image = reinterpret_cast<TextureImage>(resource.image);
+        res.view = reinterpret_cast<TextureView>(resource.view);
+        res.sampler = reinterpret_cast<TextureSampler>(resource.sampler);
         return res;
     }
 
@@ -39,14 +39,14 @@ namespace kpengine::graphics
     class VulkanTexture : public Texture
     {
     public:
-        VulkanTexture(VulkanBackend* backend);
+        VulkanTexture(VkDevice device);
         void Initialize(const TextureDesc &desc) override;
         void Destroy() override;
-        TextureHandle GetTextueHandle() const override{return ConvertToTextureHandle(handle_);}
+        TextureResource GetTextueHandle() const override{return ConvertToTextureResource(resource_);}
 
     private:
-        VulkanBackend* backend_;
-        VulkanTextureHandle handle_;
+        VkDevice device_;
+        VulkanTextureResource resource_;
     };
 }
 
