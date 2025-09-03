@@ -9,15 +9,17 @@
 #include "common/render_backend.h"
 #include "vulkan_buffer_pool.h"
 
+
 namespace kpengine::graphics
 {
     struct QueueFamilyIndices
     {
         std::optional<uint32_t> graphics_family;
         std::optional<uint32_t> present_family;
+        std::optional<uint32_t> transfer_family;
         bool IsComplete() const
         {
-            return graphics_family.has_value() && present_family.has_value();
+            return graphics_family.has_value() && present_family.has_value() && transfer_family.has_value(); 
         }
 
         static QueueFamilyIndices FindQueueFamilyIndices(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
@@ -30,6 +32,11 @@ namespace kpengine::graphics
         std::vector<VkPresentModeKHR> present_modes;
 
         static SwapchainSupportDetail FindSwapchainSupports(VkPhysicalDevice device, VkSurfaceKHR surface);
+    };
+
+    struct VulkanQueue{
+        uint32_t index = UINT_MAX;
+        VkQueue queue;
     };
 
     class VulkanBackend : public RenderBackend
@@ -49,7 +56,6 @@ namespace kpengine::graphics
 
     public:
         VkDevice GetLogicialDevice() const { return logical_device_; }
-
     private:
         void CreateInstance();
         void CreateDebugMessager();
@@ -61,15 +67,20 @@ namespace kpengine::graphics
         void CreateSwapchainRenderPass();
         void CreateGraphicsPipeline();
         void CreateFrameBuffers();
-        void CreateCommandPool();
-        void CreateCommandBuffer();
+        void CreateCommandPools();
+        void CreateCommandBuffers();
         void CreateSyncObjects();
         void CreateVertexBuffers();
+        BufferHandle CreateBuffer(const void* data, size_t size, VkBufferUsageFlags usage);
 
         void CreateShaderModule(const void* data, size_t size, VkShaderModule &shader_module);
 
+        void CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size);
+        void RecreateSwapchain();
+        void CleanupSwapchain();
     private:
         void RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index);
+        void FramebufferResizeCallback(const ResizeEvent& event) override;
 
     private:
         std::vector<const char *> FindRequiredExtensions() const;
@@ -87,8 +98,11 @@ namespace kpengine::graphics
         VkSurfaceKHR surface_;
         VkPhysicalDevice physical_device_;
         VkDevice logical_device_;
-        VkQueue graphics_queue_;
-        VkQueue present_queue_;
+
+        VulkanQueue graphics_queue_;
+        VulkanQueue present_queue_;
+        VulkanQueue transfer_queue_;
+
         VkSwapchainKHR swapchain_;
         VkExtent2D resolution_;
         VkFormat swapchain_image_format_;
@@ -98,11 +112,17 @@ namespace kpengine::graphics
         VkPipelineLayout pipeline_layout_;
         VkPipeline pipeline_;
         std::vector<VkFramebuffer> swapchain_framebuffers_;
-        VkCommandPool command_pool_;
-        VkCommandBuffer command_buffer_;
-        VkSemaphore available_image_sepmaphore_;
+        
+        VkCommandPool graphics_command_pool_;
+        VkCommandPool transfer_command_pool_;
+
+        std::vector<VkCommandBuffer> command_buffers_;
+        std::vector<VkSemaphore> available_image_sepmaphores_;
         std::vector<VkSemaphore> render_finished_semaphores_;
-        VkFence in_flight_fence_;
+        std::vector<VkFence> in_flight_fences_;
+
+        uint32_t current_frame = 0;
+        bool has_resized = false;
 
         VulkanBufferPool buffer_pool_;
         BufferHandle pos_handle_;

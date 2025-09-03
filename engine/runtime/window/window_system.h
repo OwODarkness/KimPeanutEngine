@@ -37,6 +37,7 @@ namespace kpengine
         EventDispatcher<KeyEvent> key_event_dispatcher_;
         EventDispatcher<CursorEvent> cursor_event_dispatcher_;
         EventDispatcher<ScrollEvent> scroll_event_dispatcher_;
+        EventDispatcher<ResizeEvent> resize_event_dispatcher_;
 
     protected:
         std::string title_;

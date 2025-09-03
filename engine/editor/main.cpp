@@ -30,6 +30,7 @@ int main(int argc, char **argv)
         window_create_info.title = "test";
         window->Initialize(window_create_info);
         std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(window_create_info.graphics_api_type);
+        rhi->BindWindowResize(window->resize_event_dispatcher_);
         rhi->window_ = static_cast<GLFWwindow*>(window->GetNativeHandle());
         rhi->Initialize();
         while(!window->ShouldClose())

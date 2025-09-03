@@ -47,6 +47,7 @@ namespace kpengine
             glfwSwapInterval(1); // vsync
         }
 
+        glfwSetFramebufferSizeCallback(window_, GLFWWindowSystem::OnFrameBufferSizeCallback);
         glfwSetMouseButtonCallback(window_, GLFWWindowSystem::OnMouseButtonCallback);
         glfwSetKeyCallback(window_, GLFWWindowSystem::OnKeyCallback);
         glfwSetCursorPosCallback(window_, GLFWWindowSystem::OnCursorPosCallback);
@@ -100,6 +101,10 @@ namespace kpengine
             throw std::runtime_error("Failed to cast window_user_pointer to WindowSystem*");
         }
         window_sys->SetWindowSize(width, height);
+        ResizeEvent event{};
+        event.width = width;
+        event.height = height;
+        window_sys->resize_event_dispatcher_.Dispatch(event);
     }
 
     void GLFWWindowSystem::OnMouseButtonCallback(GLFWwindow *window, int button, int action, int mods)

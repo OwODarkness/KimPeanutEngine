@@ -11,13 +11,14 @@ namespace kpengine::graphics{
         VkBuffer buffer ;
         VkDeviceMemory memory ;
         uint32_t generation = 0;
+        VkMemoryPropertyFlags mem_prop_flags;
         bool alive = false;
     };
 
     class VulkanBufferPool{
     public:
         //TODO: add memory propities
-        BufferHandle CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logicial_device, VkBufferCreateInfo buffer_create_info, VkMemoryPropertyFlags properties);
+        BufferHandle CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logicial_device, const VkBufferCreateInfo* buffer_create_info, VkMemoryPropertyFlags properties);
         bool DestroyBufferResource(VkDevice logicial_device, BufferHandle handle);
         VulkanBufferResource* GetBufferResource(BufferHandle handle);
         void BindBufferData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, const void* src);

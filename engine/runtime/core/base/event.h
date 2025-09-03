@@ -22,6 +22,10 @@ namespace kpengine{
         double yoffset;
     };
 
+    struct ResizeEvent{
+        int width;
+        int height;
+    };
 }
 
 #endif

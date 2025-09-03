@@ -68,6 +68,34 @@ namespace kpengine::graphics
         return result;
     }
 
+        inline GLenum ConvertToOpenglPrimitiveTopology(PrimitiveTopologyType topology_type)
+    {
+        switch (topology_type)
+        {
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_POINT_LIST:
+            return GL_POINTS;
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_LINE_LIST:
+            return GL_LINES;
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_LINE_STRIP:
+            return GL_LINE_STRIP;
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST:
+            return GL_TRIANGLES;
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP:
+            return GL_TRIANGLE_STRIP;
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_TRIANGLE_FAN:
+            return GL_TRIANGLE_FAN;
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_LINE_LIST_ADJACENCY:
+            return GL_LINES_ADJACENCY;
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_LINE_STRIP_ADJACENCY:
+            return GL_LINE_STRIP_ADJACENCY;
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST_ADJACENCY:
+            return GL_TRIANGLES_ADJACENCY;
+        case PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_ADJACENCY:
+            return GL_TRIANGLE_STRIP_ADJACENCY;
+        default:
+            return GL_TRIANGLES;
+        }
+    }
 
 }
 

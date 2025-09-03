@@ -1,6 +1,7 @@
 #include "vulkan_backend.h"
 #include <iostream>
 #include <set>
+#include <functional>
 #include <GLFW/glfw3.h>
 #include "math/math_header.h"
 #include "log/logger.h"
@@ -9,6 +10,7 @@
 #include "config/path.h"
 
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
+const int MAX_FRAMES_IN_FLIGHT = 2;
 namespace kpengine::graphics
 {
     std::vector<Vertex> vertex = {
@@ -113,6 +115,10 @@ namespace kpengine::graphics
             {
                 queue_family_indices.graphics_family = index;
             }
+            else if (prop.queueFlags & VK_QUEUE_TRANSFER_BIT)
+            {
+                queue_family_indices.transfer_family = index;
+            }
 
             VkBool32 is_support_present = false;
             vkGetPhysicalDeviceSurfaceSupportKHR(physical_device, index, surface, &is_support_present);
@@ -121,7 +127,7 @@ namespace kpengine::graphics
                 queue_family_indices.present_family = index;
             }
 
-            if (queue_family_indices.graphics_family.has_value() && queue_family_indices.present_family.has_value())
+            if (queue_family_indices.IsComplete())
             {
                 break;
             }
@@ -160,8 +166,8 @@ namespace kpengine::graphics
         CreateSwapchainRenderPass();
         CreateGraphicsPipeline();
         CreateFrameBuffers();
-        CreateCommandPool();
-        CreateCommandBuffer();
+        CreateCommandPools();
+        CreateCommandBuffers();
         CreateVertexBuffers();
         CreateSyncObjects();
     }
@@ -172,30 +178,43 @@ namespace kpengine::graphics
         // 3. submit draw command buffer
         // 3. wait for render and present
 
-        vkWaitForFences(logical_device_, 1, &in_flight_fence_, VK_TRUE, UINT64_MAX);
-        vkResetFences(logical_device_, 1, &in_flight_fence_);
+        vkWaitForFences(logical_device_, 1, &in_flight_fences_[current_frame], VK_TRUE, UINT64_MAX);
 
         uint32_t image_index;
-        vkAcquireNextImageKHR(logical_device_, swapchain_, UINT64_MAX, available_image_sepmaphore_, VK_NULL_HANDLE, &image_index);
+        VkResult acquire_image_res = vkAcquireNextImageKHR(logical_device_, swapchain_, UINT64_MAX, available_image_sepmaphores_[current_frame], VK_NULL_HANDLE, &image_index);
 
-        vkResetCommandBuffer(command_buffer_, 0);
-        RecordCommandBuffer(command_buffer_, image_index);
+        if (acquire_image_res == VK_ERROR_OUT_OF_DATE_KHR)
+        {
+            RecreateSwapchain();
+            return;
+        }
+        else if (acquire_image_res != VK_SUCCESS && acquire_image_res != VK_SUBOPTIMAL_KHR)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to acquire image");
+            throw std::runtime_error("Failed to acquire image");
+        }
+        vkResetFences(logical_device_, 1, &in_flight_fences_[current_frame]);
 
-        std::array<VkSemaphore, 1> wait_semaphores = {available_image_sepmaphore_};
+        vkResetCommandBuffer(command_buffers_[current_frame], 0);
+        RecordCommandBuffer(command_buffers_[current_frame], image_index);
+
+        size_t render_finished_index = swapchain_images_.size() * current_frame + image_index;
+
+        std::array<VkSemaphore, 1> wait_semaphores = {available_image_sepmaphores_[current_frame]};
         std::array<VkPipelineStageFlags, 1> wait_stages = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
-        std::array<VkSemaphore, 1> signal_semaphores = {render_finished_semaphores_[image_index]};
+        std::array<VkSemaphore, 1> signal_semaphores = {render_finished_semaphores_[render_finished_index]};
 
         VkSubmitInfo submit_info{};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &command_buffer_;
+        submit_info.pCommandBuffers = &command_buffers_[current_frame];
         submit_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
         submit_info.pWaitSemaphores = wait_semaphores.data();
         submit_info.signalSemaphoreCount = static_cast<uint32_t>(signal_semaphores.size());
         submit_info.pSignalSemaphores = signal_semaphores.data();
         submit_info.pWaitDstStageMask = wait_stages.data();
 
-        if (vkQueueSubmit(graphics_queue_, 1, &submit_info, in_flight_fence_) != VK_SUCCESS)
+        if (vkQueueSubmit(graphics_queue_.queue, 1, &submit_info, in_flight_fences_[current_frame]) != VK_SUCCESS)
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to submit commandbuffer");
             throw std::runtime_error("Failed to submit commandbuffer");
@@ -206,11 +225,17 @@ namespace kpengine::graphics
         present_info.pImageIndices = &image_index;
         present_info.swapchainCount = 1;
         present_info.pSwapchains = &swapchain_;
-        present_info.waitSemaphoreCount = 1;
-        present_info.pWaitSemaphores = &render_finished_semaphores_[image_index];
+        present_info.waitSemaphoreCount = static_cast<uint32_t>(signal_semaphores.size());
+        present_info.pWaitSemaphores = signal_semaphores.data();
         present_info.pResults = nullptr;
 
-        if (vkQueuePresentKHR(present_queue_, &present_info) != VK_SUCCESS)
+        VkResult present_res = vkQueuePresentKHR(present_queue_.queue, &present_info);
+        if (present_res == VK_ERROR_OUT_OF_DATE_KHR || present_res == VK_SUBOPTIMAL_KHR || has_resized)
+        {
+            RecreateSwapchain();
+            has_resized = false;
+        }
+        else if (present_res != VK_SUCCESS)
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to present");
             throw std::runtime_error("Failed to present");
@@ -218,6 +243,7 @@ namespace kpengine::graphics
     }
     void VulkanBackend::EndFrame()
     {
+        current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
     void VulkanBackend::Present()
@@ -228,31 +254,34 @@ namespace kpengine::graphics
     {
         vkDeviceWaitIdle(logical_device_);
 
-        vkDestroySemaphore(logical_device_, available_image_sepmaphore_, nullptr);
-        for (size_t i = 0; i < render_finished_semaphores_.size(); i++)
-        {
-            vkDestroySemaphore(logical_device_, render_finished_semaphores_[i], nullptr);
-        }
-        vkDestroyFence(logical_device_, in_flight_fence_, nullptr);
+        CleanupSwapchain();
 
-        vkDestroyCommandPool(logical_device_, command_pool_, nullptr);
+        vkDestroyPipeline(logical_device_, pipeline_, nullptr);
+        vkDestroyPipelineLayout(logical_device_, pipeline_layout_, nullptr);
+        vkDestroyRenderPass(logical_device_, swapchain_renderpass_, nullptr);
 
         DestroyBuffer(pos_handle_);
         DestroyBuffer(color_handle_);
         DestroyBuffer(index_handle_);
 
-        for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
+        for (size_t i = 0; i < available_image_sepmaphores_.size(); i++)
         {
-            vkDestroyFramebuffer(logical_device_, swapchain_framebuffers_[i], nullptr);
+            vkDestroySemaphore(logical_device_, available_image_sepmaphores_[i], nullptr);
         }
-        vkDestroyPipeline(logical_device_, pipeline_, nullptr);
-        vkDestroyPipelineLayout(logical_device_, pipeline_layout_, nullptr);
-        vkDestroyRenderPass(logical_device_, swapchain_renderpass_, nullptr);
-        for (size_t i = 0; i < swapchain_imageviews_.size(); i++)
+
+        for (size_t i = 0; i < render_finished_semaphores_.size(); i++)
         {
-            vkDestroyImageView(logical_device_, swapchain_imageviews_[i], nullptr);
+            vkDestroySemaphore(logical_device_, render_finished_semaphores_[i], nullptr);
         }
-        vkDestroySwapchainKHR(logical_device_, swapchain_, nullptr);
+
+        for (size_t i = 0; i < in_flight_fences_.size(); i++)
+        {
+            vkDestroyFence(logical_device_, in_flight_fences_[i], nullptr);
+        }
+
+        vkDestroyCommandPool(logical_device_, graphics_command_pool_, nullptr);
+        vkDestroyCommandPool(logical_device_, transfer_command_pool_, nullptr);
+
         vkDestroyDevice(logical_device_, nullptr);
         vkDestroySurfaceKHR(instance_, surface_, nullptr);
 #ifdef NDEBUG
@@ -269,33 +298,23 @@ namespace kpengine::graphics
 
     BufferHandle VulkanBackend::CreateVertexBuffer(const void *data, size_t size)
     {
-        VkBufferCreateInfo buffer_create_info{};
-        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buffer_create_info.size = size;
-        buffer_create_info.usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
-        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        BufferHandle handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        buffer_pool_.BindBufferData(logical_device_, handle, size, data);
-        return handle;
+        return CreateBuffer(data, size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     }
 
     BufferHandle VulkanBackend::CreateIndexBuffer(const void *data, size_t size)
     {
-        VkBufferCreateInfo buffer_create_info{};
-        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        buffer_create_info.size = size;
-        buffer_create_info.usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
-        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        BufferHandle handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        buffer_pool_.BindBufferData(logical_device_, handle, size, data);
-        return handle;
+        return CreateBuffer(data, size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     }
 
     void VulkanBackend::DestroyBuffer(BufferHandle handle)
     {
         buffer_pool_.DestroyBufferResource(logical_device_, handle);
+    }
+
+    void VulkanBackend::FramebufferResizeCallback(const ResizeEvent &event)
+    {
+        RenderBackend::FramebufferResizeCallback(event);
+        has_resized = true;
     }
 
     void VulkanBackend::CreateInstance()
@@ -424,10 +443,11 @@ namespace kpengine::graphics
     void VulkanBackend::CreateLogicalDevice()
     {
         QueueFamilyIndices queue_family_indices = QueueFamilyIndices::FindQueueFamilyIndices(physical_device_, surface_);
-        uint32_t graphics_family_index = queue_family_indices.graphics_family.value();
-        uint32_t present_family_index = queue_family_indices.present_family.value();
+        graphics_queue_.index = queue_family_indices.graphics_family.value();
+        present_queue_.index = queue_family_indices.present_family.value();
+        transfer_queue_.index = queue_family_indices.transfer_family.value();
 
-        std::set<uint32_t> queue_family_raw_indices = {graphics_family_index, present_family_index};
+        std::set<uint32_t> queue_family_raw_indices = {graphics_queue_.index, present_queue_.index, transfer_queue_.index};
         std::vector<VkDeviceQueueCreateInfo> queue_create_infos{};
         for (uint32_t family_index : queue_family_raw_indices)
         {
@@ -456,8 +476,9 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to find logicial device");
         }
 
-        vkGetDeviceQueue(logical_device_, graphics_family_index, 0, &graphics_queue_);
-        vkGetDeviceQueue(logical_device_, present_family_index, 0, &present_queue_);
+        vkGetDeviceQueue(logical_device_, graphics_queue_.index, 0, &graphics_queue_.queue);
+        vkGetDeviceQueue(logical_device_, present_queue_.index, 0, &present_queue_.queue);
+        vkGetDeviceQueue(logical_device_, transfer_queue_.index, 0, &transfer_queue_.queue);
     }
 
     void VulkanBackend::CreateSwapchain()
@@ -485,9 +506,8 @@ namespace kpengine::graphics
         swapchain_create_info.imageColorSpace = surface_format.colorSpace;
         swapchain_create_info.presentMode = present_mode;
 
-        QueueFamilyIndices queue_family_indices = QueueFamilyIndices::FindQueueFamilyIndices(physical_device_, surface_);
-        std::array<uint32_t, 2> queue_family_raw_indices = {queue_family_indices.graphics_family.value(), queue_family_indices.present_family.value()};
-        if (queue_family_indices.graphics_family != queue_family_indices.present_family)
+        std::array<uint32_t, 2> queue_family_raw_indices = {graphics_queue_.index, present_queue_.index};
+        if (graphics_queue_.index != present_queue_.index)
         {
             swapchain_create_info.imageSharingMode = VK_SHARING_MODE_CONCURRENT;
             swapchain_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_raw_indices.size());
@@ -602,29 +622,28 @@ namespace kpengine::graphics
         // set shader stage
         std::string spv_shader_dir = GetSPVShaderDirectory();
         ShaderHandle vert_handle = shader_manager_.LoadShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_VERTEX, spv_shader_dir + "/simple_triangle.vert.spv");
-        Shader* vert_shader = shader_manager_.GetShader(vert_handle);
+        Shader *vert_shader = shader_manager_.GetShader(vert_handle);
         ShaderHandle frag_handle = shader_manager_.LoadShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_FRAGMENT, spv_shader_dir + "/simple_triangle.frag.spv");
-        Shader* frag_shader = shader_manager_.GetShader(frag_handle);
+        Shader *frag_shader = shader_manager_.GetShader(frag_handle);
 
         VkShaderModule vert_shader_module;
         CreateShaderModule(vert_shader->GetCode(), vert_shader->GetCodeSize(), vert_shader_module);
         VkShaderModule frag_shader_module;
         CreateShaderModule(frag_shader->GetCode(), frag_shader->GetCodeSize(), frag_shader_module);
 
-
         VkPipelineShaderStageCreateInfo vert_stage_create_info{};
         vert_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         vert_stage_create_info.module = vert_shader_module;
         vert_stage_create_info.pName = "main";
-        vert_stage_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;;
-
-
+        vert_stage_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
+        ;
 
         VkPipelineShaderStageCreateInfo frag_stage_create_info{};
         frag_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         frag_stage_create_info.module = frag_shader_module;
         frag_stage_create_info.pName = "main";
-        frag_stage_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;;
+        frag_stage_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
+        ;
 
         std::array<VkPipelineShaderStageCreateInfo, 2> stages = {vert_stage_create_info, frag_stage_create_info};
 
@@ -772,31 +791,43 @@ namespace kpengine::graphics
         }
     }
 
-    void VulkanBackend::CreateCommandPool()
+    void VulkanBackend::CreateCommandPools()
     {
-        QueueFamilyIndices queue_family_indices = QueueFamilyIndices::FindQueueFamilyIndices(physical_device_, surface_);
+        // graphics pool create
+        VkCommandPoolCreateInfo graphics_command_pool_create_info{};
+        graphics_command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        graphics_command_pool_create_info.queueFamilyIndex = graphics_queue_.index;
+        graphics_command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-        VkCommandPoolCreateInfo command_pool_create_info{};
-        command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        command_pool_create_info.queueFamilyIndex = queue_family_indices.graphics_family.value();
-        command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
-
-        if (vkCreateCommandPool(logical_device_, &command_pool_create_info, nullptr, &command_pool_) != VK_SUCCESS)
+        if (vkCreateCommandPool(logical_device_, &graphics_command_pool_create_info, nullptr, &graphics_command_pool_) != VK_SUCCESS)
         {
-            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create command pool");
-            throw std::runtime_error("Failed to create command pool");
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create graphics command pool");
+            throw std::runtime_error("Failed to create graphics command pool");
+        }
+
+        // transfer pool create
+        VkCommandPoolCreateInfo transfer_command_pool_create_info{};
+        transfer_command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        transfer_command_pool_create_info.queueFamilyIndex = transfer_queue_.index;
+        transfer_command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+
+        if (vkCreateCommandPool(logical_device_, &transfer_command_pool_create_info, nullptr, &transfer_command_pool_) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create transfer command pool");
+            throw std::runtime_error("Failed to create transfer command pool");
         }
     }
 
-    void VulkanBackend::CreateCommandBuffer()
+    void VulkanBackend::CreateCommandBuffers()
     {
         VkCommandBufferAllocateInfo allocate_info{};
         allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocate_info.commandBufferCount = 1;
-        allocate_info.commandPool = command_pool_;
+        allocate_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
+        allocate_info.commandPool = graphics_command_pool_;
         allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-        if (vkAllocateCommandBuffers(logical_device_, &allocate_info, &command_buffer_) != VK_SUCCESS)
+        command_buffers_.resize(MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateCommandBuffers(logical_device_, &allocate_info, command_buffers_.data()) != VK_SUCCESS)
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocate command buffer");
             throw std::runtime_error("Failed to allocate command buffer");
@@ -813,6 +844,38 @@ namespace kpengine::graphics
 
         VkDeviceSize indices_size = sizeof(uint32_t) * indices.size();
         index_handle_ = CreateIndexBuffer(indices.data(), indices_size);
+    }
+
+    BufferHandle VulkanBackend::CreateBuffer(const void* data, size_t size, VkBufferUsageFlags usage)
+    {
+        std::array<uint32_t, 2> queue_family_indices = {graphics_queue_.index, transfer_queue_.index};
+
+        // stage buffer
+        VkBufferCreateInfo stage_buffer_create_info{};
+        stage_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stage_buffer_create_info.size = size;
+        stage_buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        stage_buffer_create_info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+        stage_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
+        stage_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
+        BufferHandle stage_handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        buffer_pool_.BindBufferData(logical_device_, stage_handle, size, data);
+
+        VkBufferCreateInfo dst_buffer_create_info{};
+        dst_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        dst_buffer_create_info.size = size;
+        dst_buffer_create_info.usage = usage;
+        dst_buffer_create_info.sharingMode = VK_SHARING_MODE_CONCURRENT;
+        dst_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
+        dst_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
+
+        BufferHandle dst_handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, &dst_buffer_create_info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        CopyBuffer(stage_handle, dst_handle, size);
+
+        buffer_pool_.DestroyBufferResource(logical_device_, stage_handle);
+
+        return dst_handle;
     }
 
     void VulkanBackend::CreateShaderModule(const void *data, size_t size, VkShaderModule &shader_module)
@@ -839,27 +902,107 @@ namespace kpengine::graphics
         fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-        if (vkCreateSemaphore(logical_device_, &semaphore_create_info, nullptr, &available_image_sepmaphore_) != VK_SUCCESS)
+        available_image_sepmaphores_.resize(MAX_FRAMES_IN_FLIGHT);
+        for (size_t i = 0; i < available_image_sepmaphores_.size(); i++)
         {
-            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create avaiable_image_semaphore");
-            throw std::runtime_error("Failed to create avaiable_image_semaphore");
+            if (vkCreateSemaphore(logical_device_, &semaphore_create_info, nullptr, &available_image_sepmaphores_[i]) != VK_SUCCESS)
+            {
+                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create avaiable_image_semaphore");
+                throw std::runtime_error("Failed to create avaiable_image_semaphore");
+            }
         }
 
-        if (vkCreateFence(logical_device_, &fence_create_info, nullptr, &in_flight_fence_) != VK_SUCCESS)
+        in_flight_fences_.resize(MAX_FRAMES_IN_FLIGHT);
+        for (size_t i = 0; i < in_flight_fences_.size(); i++)
         {
-            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create in flight fence");
-            throw std::runtime_error("Failed to create in_flight_fence");
+            if (vkCreateFence(logical_device_, &fence_create_info, nullptr, &in_flight_fences_[i]) != VK_SUCCESS)
+            {
+                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create in flight fence");
+                throw std::runtime_error("Failed to create in_flight_fence");
+            }
         }
 
-        render_finished_semaphores_.resize(swapchain_imageviews_.size());
+        render_finished_semaphores_.resize(MAX_FRAMES_IN_FLIGHT * swapchain_images_.size());
         for (size_t i = 0; i < render_finished_semaphores_.size(); i++)
         {
             if (vkCreateSemaphore(logical_device_, &semaphore_create_info, nullptr, &render_finished_semaphores_[i]) != VK_SUCCESS)
             {
-                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create render_finished_semaphores_ %d", i);
-                throw std::runtime_error("Failed to create render_finished_semaphores_");
+                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create render_finished_semaphore", );
+                throw std::runtime_error("Failed to create render_finished_semaphores");
             }
         }
+    }
+
+    void VulkanBackend::CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size)
+    {
+        VkCommandBufferAllocateInfo command_buffer_allocate_info{};
+        command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        command_buffer_allocate_info.commandPool = transfer_command_pool_;
+        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        command_buffer_allocate_info.commandBufferCount = 1;
+
+        VkCommandBuffer copy_command_buffer;
+        if (vkAllocateCommandBuffers(logical_device_, &command_buffer_allocate_info, &copy_command_buffer) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocate copy command buffer");
+            throw std::runtime_error("Failed to allocate copy command buffer");
+        }
+
+        VkCommandBufferBeginInfo command_buffer_begin_info{};
+        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        vkBeginCommandBuffer(copy_command_buffer, &command_buffer_begin_info);
+        {
+            VkBufferCopy copy_region{};
+            copy_region.srcOffset = 0;
+            copy_region.dstOffset = 0;
+            copy_region.size = size;
+
+            VkBuffer src_buffer = buffer_pool_.GetBufferResource(src_handle)->buffer;
+            VkBuffer dst_buffer = buffer_pool_.GetBufferResource(dst_handle)->buffer;
+            vkCmdCopyBuffer(copy_command_buffer, src_buffer, dst_buffer, 1, &copy_region);
+        }
+        vkEndCommandBuffer(copy_command_buffer);
+
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &copy_command_buffer;
+
+        vkQueueSubmit(transfer_queue_.queue, 1, &submit_info, VK_NULL_HANDLE);
+        vkQueueWaitIdle(transfer_queue_.queue);
+
+        vkFreeCommandBuffers(logical_device_, transfer_command_pool_, 1, &copy_command_buffer);
+    }
+
+    void VulkanBackend::RecreateSwapchain()
+    {
+        while (height_ == 0 || width_ == 0)
+        {
+            glfwWaitEvents();
+        }
+
+        vkDeviceWaitIdle(logical_device_);
+        CleanupSwapchain();
+        CreateSwapchain();
+        CreateSwapchainImageViews();
+        CreateFrameBuffers();
+    }
+
+    void VulkanBackend::CleanupSwapchain()
+    {
+
+        for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
+        {
+            vkDestroyFramebuffer(logical_device_, swapchain_framebuffers_[i], nullptr);
+        }
+
+        for (size_t i = 0; i < swapchain_imageviews_.size(); i++)
+        {
+            vkDestroyImageView(logical_device_, swapchain_imageviews_[i], nullptr);
+        }
+        vkDestroySwapchainKHR(logical_device_, swapchain_, nullptr);
     }
 
     void VulkanBackend::RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index)
@@ -1032,7 +1175,15 @@ namespace kpengine::graphics
         {
             int height{};
             int width{};
-            glfwGetWindowSize(window_, &width, &height);
+            if (has_resized)
+            {
+                width = width_;
+                height = height_;
+            }
+            else
+            {
+                glfwGetWindowSize(window_, &width, &height);
+            }
             VkExtent2D actual_size{static_cast<uint32_t>(width), static_cast<uint32_t>(height)};
             actual_size.width = std::clamp(actual_size.width, capacity.minImageExtent.width, capacity.maxImageExtent.width);
             actual_size.height = std::clamp(actual_size.height, capacity.minImageExtent.height, capacity.maxImageExtent.height);

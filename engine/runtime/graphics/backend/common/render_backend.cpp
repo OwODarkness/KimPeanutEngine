@@ -14,5 +14,16 @@ namespace kpengine::graphics{
         }
         return nullptr;
     }
+
+    void RenderBackend::BindWindowResize(EventDispatcher<ResizeEvent>& dispatcher)
+    {
+        dispatcher.Bind(std::bind(&RenderBackend::FramebufferResizeCallback, this, std::placeholders::_1));
+    }
+
+    void RenderBackend::FramebufferResizeCallback(const ResizeEvent& event) 
+    {
+        width_ = event.width;
+        height_ = event.height;
+    }
     
 }
