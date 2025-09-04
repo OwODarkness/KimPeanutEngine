@@ -264,6 +264,8 @@ namespace kpengine::graphics
         DestroyBuffer(color_handle_);
         DestroyBuffer(index_handle_);
 
+        buffer_pool_.FreeMemory(logical_device_);
+
         for (size_t i = 0; i < available_image_sepmaphores_.size(); i++)
         {
             vkDestroySemaphore(logical_device_, available_image_sepmaphores_[i], nullptr);
@@ -1054,9 +1056,9 @@ namespace kpengine::graphics
             vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
 
             // TODO: GetBufferResource by bufferhandle;
-            VulkanBufferResource *index_buffer_resource = buffer_pool_.GetBufferResource(index_handle_);
-            VulkanBufferResource *pos_buffer_resource = buffer_pool_.GetBufferResource(pos_handle_);
-            VulkanBufferResource *color_buffer_resource = buffer_pool_.GetBufferResource(color_handle_);
+            VulkanBufferResourceV2 *index_buffer_resource = buffer_pool_.GetBufferResource(index_handle_);
+            VulkanBufferResourceV2 *pos_buffer_resource = buffer_pool_.GetBufferResource(pos_handle_);
+            VulkanBufferResourceV2 *color_buffer_resource = buffer_pool_.GetBufferResource(color_handle_);
 
             VkBuffer vertexBuffers[] = {pos_buffer_resource->buffer, color_buffer_resource->buffer};
             VkDeviceSize offsets[] = {0, 0};
