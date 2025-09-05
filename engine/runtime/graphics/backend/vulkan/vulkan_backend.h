@@ -124,7 +124,7 @@ namespace kpengine::graphics
         uint32_t current_frame = 0;
         bool has_resized = false;
 
-        VulkanBufferPoolV2 buffer_pool_;
+        VulkanBufferPool buffer_pool_;
         BufferHandle pos_handle_;
         BufferHandle color_handle_;
         BufferHandle index_handle_;

@@ -861,6 +861,7 @@ namespace kpengine::graphics
         stage_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
         stage_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
         BufferHandle stage_handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        
         buffer_pool_.BindBufferData(logical_device_, stage_handle, size, data);
 
         VkBufferCreateInfo dst_buffer_create_info{};
@@ -1056,9 +1057,9 @@ namespace kpengine::graphics
             vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
 
             // TODO: GetBufferResource by bufferhandle;
-            VulkanBufferResourceV2 *index_buffer_resource = buffer_pool_.GetBufferResource(index_handle_);
-            VulkanBufferResourceV2 *pos_buffer_resource = buffer_pool_.GetBufferResource(pos_handle_);
-            VulkanBufferResourceV2 *color_buffer_resource = buffer_pool_.GetBufferResource(color_handle_);
+            VulkanBufferResource *index_buffer_resource = buffer_pool_.GetBufferResource(index_handle_);
+            VulkanBufferResource *pos_buffer_resource = buffer_pool_.GetBufferResource(pos_handle_);
+            VulkanBufferResource *color_buffer_resource = buffer_pool_.GetBufferResource(color_handle_);
 
             VkBuffer vertexBuffers[] = {pos_buffer_resource->buffer, color_buffer_resource->buffer};
             VkDeviceSize offsets[] = {0, 0};
