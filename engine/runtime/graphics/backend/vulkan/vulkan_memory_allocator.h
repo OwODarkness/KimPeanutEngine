@@ -6,19 +6,19 @@
 
 
 namespace kpengine::graphics{
-   
-    struct MemoryAllocation
+   struct VulkanMemoryAllocation
     {
         VkDeviceMemory memory;
         VkDeviceSize size;
         VkDeviceSize offset;
-        class IMemoryAllocator* owner = nullptr;
+        uint32_t block_index;
+        class IVulkanMemoryAllocator* owner = nullptr;
     };
-        class IMemoryAllocator
+        class IVulkanMemoryAllocator
     {
     public:
-        virtual MemoryAllocation Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index) = 0;
-        virtual void Free(VkDevice logicial_device, VkDeviceMemory memory) = 0;
+        virtual VulkanMemoryAllocation Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index) = 0;
+        virtual void Free(VkDevice logicial_device, VulkanMemoryAllocation allocation) = 0;
         virtual void Destroy(VkDevice logicial_device) = 0;
     };
 }

@@ -4,9 +4,9 @@
 namespace kpengine::graphics
 {
 
-  MemoryAllocation DedicatedAllocator::Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index)
+  VulkanMemoryAllocation VulkanMemoryDedicatedAllocator::Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index)
   {
-    MemoryAllocation memory_allocation{};
+    VulkanMemoryAllocation memory_allocation{};
     VkMemoryAllocateInfo memory_allocate_info{};
 
     memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
@@ -22,16 +22,17 @@ namespace kpengine::graphics
 
     memory_allocation.offset = 0;
     memory_allocation.size = size;
+    memory_allocation.block_index = 0;
     memory_allocation.owner = this;
     return memory_allocation;
   }
-  void DedicatedAllocator::Free(VkDevice logicial_device, VkDeviceMemory memory)
+  void VulkanMemoryDedicatedAllocator::Free(VkDevice logicial_device, VulkanMemoryAllocation allocation)
   {
-    vkFreeMemory(logicial_device, memory, nullptr);
-    allocated_memory_blocks_.erase(std::remove(allocated_memory_blocks_.begin(), allocated_memory_blocks_.end(), memory), allocated_memory_blocks_.end());
+    vkFreeMemory(logicial_device, allocation.memory, nullptr);
+    allocated_memory_blocks_.erase(std::remove(allocated_memory_blocks_.begin(), allocated_memory_blocks_.end(), allocation.memory), allocated_memory_blocks_.end());
   }
 
-  void DedicatedAllocator::Destroy(VkDevice logicial_device)
+  void VulkanMemoryDedicatedAllocator::Destroy(VkDevice logicial_device)
   {
     for (size_t i = 0; i < allocated_memory_blocks_.size(); i++)
     {

@@ -12,7 +12,7 @@ namespace kpengine::graphics
     struct VulkanBufferResource
     {
         VkBuffer buffer;
-        MemoryAllocation allocation;
+        VulkanMemoryAllocation allocation;
         uint32_t generation = 0;
         VkMemoryPropertyFlags mem_prop_flags;
         bool alive = false;
@@ -35,8 +35,8 @@ namespace kpengine::graphics
         std::vector<VulkanBufferResource> buffer_resources_;
         std::vector<uint32_t> free_slots;
 
-        std::unique_ptr<IMemoryAllocator> host_vis_memory_allocator;
-        std::unique_ptr<IMemoryAllocator> device_local_memory_allocator;
+        std::unique_ptr<IVulkanMemoryAllocator> host_vis_memory_allocator;
+        std::unique_ptr<IVulkanMemoryAllocator> device_local_memory_allocator;
     };
 }
 

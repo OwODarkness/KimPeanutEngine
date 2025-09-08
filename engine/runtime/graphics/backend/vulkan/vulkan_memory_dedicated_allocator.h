@@ -4,11 +4,11 @@
 #include "vulkan_memory_allocator.h"
 #include <vector>
 namespace kpengine::graphics{
-    class DedicatedAllocator : public IMemoryAllocator
+    class VulkanMemoryDedicatedAllocator : public IVulkanMemoryAllocator
     {
     public:
-        MemoryAllocation Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index) override;
-        void Free(VkDevice logicial_device, VkDeviceMemory memory) override;
+        VulkanMemoryAllocation Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index) override;
+        void Free(VkDevice logicial_device, VulkanMemoryAllocation allocation) override;
         void Destroy(VkDevice logicial_device) override;      
     private:   
         std::vector<VkDeviceMemory> allocated_memory_blocks_;

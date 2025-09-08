@@ -2,6 +2,7 @@
 #include "log/logger.h"
 #include "vulkan_memory_dedicated_allocator.h"
 #include "vulkan_memory_linear_allocator.h"
+#include "vulkan_memory_pool_allocator.h"
 namespace kpengine::graphics
 {
     uint32_t VulkanBufferPool::RequestMemoryTypeIndex(VkMemoryPropertyFlags memory_prop_flags, const VkMemoryRequirements &memory_require, const VkPhysicalDeviceMemoryProperties physcial_memory_props)
@@ -60,11 +61,10 @@ namespace kpengine::graphics
 
         if (host_vis_flags == properties)
         {
-
             if (!host_vis_memory_allocator)
             {
 
-                host_vis_memory_allocator = std::make_unique<DedicatedAllocator>();
+                host_vis_memory_allocator = std::make_unique<VulkanMemoryPoolAllocator>();
             }
             buffer_resource.allocation = host_vis_memory_allocator->Allocate(logicial_device, memory_requires.size, memory_requires.alignment, memory_type_index);
         }
@@ -73,7 +73,7 @@ namespace kpengine::graphics
         {
             if (!device_local_memory_allocator)
             {
-                device_local_memory_allocator = std::make_unique<DedicatedAllocator>();
+                device_local_memory_allocator = std::make_unique<VulkanMemoryPoolAllocator>();
             }
 
             buffer_resource.allocation = device_local_memory_allocator->Allocate(logicial_device, memory_requires.size, memory_requires.alignment, memory_type_index);
@@ -103,7 +103,7 @@ namespace kpengine::graphics
         else
         {
 
-            buffer_resource.allocation.owner->Free(logicial_device, buffer_resource.allocation.memory);
+            buffer_resource.allocation.owner->Free(logicial_device, buffer_resource.allocation);
         }
 
         buffer_resource.alive = false;
@@ -132,10 +132,10 @@ namespace kpengine::graphics
     void VulkanBufferPool::BindBufferData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, const void *src)
     {
         VulkanBufferResource *buffer_resource = GetBufferResource(handle);
-        if((buffer_resource->mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
+        if ((buffer_resource->mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
         {
             KP_LOG("VulkanBufferPool", LOG_LEVEL_WARNNING, "Try to bindbuffer data by mapmemory, but memory prop flags don't hold VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT");
-            return ;
+            return;
         }
         void *target;
         vkMapMemory(logicial_device, buffer_resource->allocation.memory, buffer_resource->allocation.offset, size, 0, &target);

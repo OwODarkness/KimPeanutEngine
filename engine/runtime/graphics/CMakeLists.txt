@@ -17,7 +17,7 @@ add_library(Graphics STATIC
     backend/vulkan/vulkan_buffer_pool.cpp
     backend/vulkan/vulkan_memory_linear_allocator.cpp
     backend/vulkan/vulkan_memory_dedicated_allocator.cpp
-
+    backend/vulkan/vulkan_memory_pool_allocator.cpp
     tool/shaderloader.cpp
 )
 
