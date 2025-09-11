@@ -46,6 +46,17 @@ namespace kpengine::graphics
             return id != UINT32_MAX;
         }
     };
+
+    struct PipelineHandle
+    {
+         uint32_t id = UINT32_MAX;
+        uint32_t generation = 0;
+        bool IsValid() const
+        {
+            return id != UINT32_MAX;
+        }
+    };
+
 }
 
 #endif

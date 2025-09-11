@@ -138,6 +138,96 @@ namespace kpengine::graphics
             return VK_PRIMITIVE_TOPOLOGY_LINE_LIST;
         }
     }
+
+    inline VkCullModeFlags ConvertToVulkanCullMode(CullMode cull_mode)
+    {
+        switch (cull_mode)
+        {
+        case CullMode::CULL_MODE_FRONT:
+            return VK_CULL_MODE_FRONT_BIT;
+        case CullMode::CULL_MODE_BACK:
+            return VK_CULL_MODE_BACK_BIT;
+        case CullMode::CULL_MODE_FRONT_AND_BACK:
+            return VK_CULL_MODE_FRONT_AND_BACK;
+        default:
+            return VK_CULL_MODE_FLAG_BITS_MAX_ENUM;
+        }
+    }
+
+    inline VkFrontFace ConvertToVulkanFrontFace(FrontFace front_face)
+    {
+        switch (front_face)
+        {
+        case FrontFace::FRONT_FACE_CLOCKWISE:
+            return VK_FRONT_FACE_CLOCKWISE;
+        case FrontFace::FRONT_FACE_COUNTER_CLOCKWISE:
+            return VK_FRONT_FACE_COUNTER_CLOCKWISE;
+        default:
+            return VK_FRONT_FACE_MAX_ENUM;
+        }
+    }
+
+    inline VkPolygonMode ConvertToVulkanPolygonMode(PolygonMode polygon_mode)
+    {
+        switch (polygon_mode)
+        {
+        case PolygonMode::POLYGON_MODE_FILL:
+            return VK_POLYGON_MODE_FILL;
+        case PolygonMode::POLYGON_MODE_LINE:
+            return VK_POLYGON_MODE_LINE;
+        case PolygonMode::POLYGON_MODE_POINT:
+            return VK_POLYGON_MODE_POINT;
+        default:
+            return VK_POLYGON_MODE_MAX_ENUM;
+        }
+    }
+
+    inline VkBlendFactor ConvertToVkBlendFactor(BlendFactor factor)
+    {
+        switch (factor)
+        {
+        case BlendFactor::BLEND_FACTOR_ZERO:
+            return VK_BLEND_FACTOR_ZERO;
+        case BlendFactor::BLEND_FACTOR_ONE:
+            return VK_BLEND_FACTOR_ONE;
+        case BlendFactor::BLEND_FACTOR_SRC_COLOR:
+            return VK_BLEND_FACTOR_SRC_COLOR;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+            return VK_BLEND_FACTOR_ONE_MINUS_SRC_COLOR;
+        case BlendFactor::BLEND_FACTOR_DST_COLOR:
+            return VK_BLEND_FACTOR_DST_COLOR;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_DST_COLOR:
+            return VK_BLEND_FACTOR_ONE_MINUS_DST_COLOR;
+        case BlendFactor::BLEND_FACTOR_SRC_ALPHA:
+            return VK_BLEND_FACTOR_SRC_ALPHA;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+            return VK_BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+        case BlendFactor::BLEND_FACTOR_DST_ALPHA:
+            return VK_BLEND_FACTOR_DST_ALPHA;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+            return VK_BLEND_FACTOR_ONE_MINUS_DST_ALPHA;
+        case BlendFactor::BLEND_FACTOR_CONSTANT_COLOR:
+            return VK_BLEND_FACTOR_CONSTANT_COLOR;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+            return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR;
+        case BlendFactor::BLEND_FACTOR_CONSTANT_ALPHA:
+            return VK_BLEND_FACTOR_CONSTANT_ALPHA;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+            return VK_BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA;
+        }
+        return VK_BLEND_FACTOR_ONE;
+    }
+
+    VkBlendOp ConvertToVkBlendOp(BlendOp op) {
+    switch (op) {
+        case BlendOp::BLEND_OP_ADD: return VK_BLEND_OP_ADD;
+        case BlendOp::BLEND_OP_SUBTRACT: return VK_BLEND_OP_SUBTRACT;
+        case BlendOp::BLEND_OP_REVERSE_SUBTRACT: return VK_BLEND_OP_REVERSE_SUBTRACT;
+        case BlendOp::BLEND_OP_MIN: return VK_BLEND_OP_MIN;
+        case BlendOp::BLEND_OP_MAX: return VK_BLEND_OP_MAX;
+    }
+    return VK_BLEND_OP_ADD;
+}
 }
 
 #endif

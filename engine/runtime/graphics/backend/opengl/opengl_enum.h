@@ -68,7 +68,7 @@ namespace kpengine::graphics
         return result;
     }
 
-        inline GLenum ConvertToOpenglPrimitiveTopology(PrimitiveTopologyType topology_type)
+    inline GLenum ConvertToOpenglPrimitiveTopology(PrimitiveTopologyType topology_type)
     {
         switch (topology_type)
         {
@@ -95,6 +95,59 @@ namespace kpengine::graphics
         default:
             return GL_TRIANGLES;
         }
+    }
+    GLenum ConvertToGLBlendFactor(BlendFactor factor)
+    {
+        switch (factor)
+        {
+        case BlendFactor::BLEND_FACTOR_ZERO:
+            return GL_ZERO;
+        case BlendFactor::BLEND_FACTOR_ONE:
+            return GL_ONE;
+        case BlendFactor::BLEND_FACTOR_SRC_COLOR:
+            return GL_SRC_COLOR;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_COLOR:
+            return GL_ONE_MINUS_SRC_COLOR;
+        case BlendFactor::BLEND_FACTOR_DST_COLOR:
+            return GL_DST_COLOR;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_DST_COLOR:
+            return GL_ONE_MINUS_DST_COLOR;
+        case BlendFactor::BLEND_FACTOR_SRC_ALPHA:
+            return GL_SRC_ALPHA;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA:
+            return GL_ONE_MINUS_SRC_ALPHA;
+        case BlendFactor::BLEND_FACTOR_DST_ALPHA:
+            return GL_DST_ALPHA;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_DST_ALPHA:
+            return GL_ONE_MINUS_DST_ALPHA;
+        case BlendFactor::BLEND_FACTOR_CONSTANT_COLOR:
+            return GL_CONSTANT_COLOR;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR:
+            return GL_ONE_MINUS_CONSTANT_COLOR;
+        case BlendFactor::BLEND_FACTOR_CONSTANT_ALPHA:
+            return GL_CONSTANT_ALPHA;
+        case BlendFactor::BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA:
+            return GL_ONE_MINUS_CONSTANT_ALPHA;
+        }
+        return GL_ONE;
+    }
+
+    GLenum ConvertToGLBlendOp(BlendOp op)
+    {
+        switch (op)
+        {
+        case BlendOp::BLEND_OP_ADD:
+            return GL_FUNC_ADD;
+        case BlendOp::BLEND_OP_SUBTRACT:
+            return GL_FUNC_SUBTRACT;
+        case BlendOp::BLEND_OP_REVERSE_SUBTRACT:
+            return GL_FUNC_REVERSE_SUBTRACT;
+        case BlendOp::BLEND_OP_MIN:
+            return GL_MIN;
+        case BlendOp::BLEND_OP_MAX:
+            return GL_MAX;
+        }
+        return GL_FUNC_ADD;
     }
 
 }

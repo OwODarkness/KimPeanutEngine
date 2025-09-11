@@ -7,7 +7,7 @@ namespace kpengine{
 namespace math{
 
     constexpr float Math_PI_FLOAT = 3.14159265358979323846264338327950288f;
-    constexpr float Math_PI_DOUBLE = 3.14159265358979323846264338327950288f;
+    constexpr double Math_PI_DOUBLE = 3.14159265358979323846264338327950288;
 
 
     inline bool IsNearlyZero(float value, float tolerance = 1e-6)

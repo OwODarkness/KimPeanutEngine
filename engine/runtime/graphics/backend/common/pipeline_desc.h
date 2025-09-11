@@ -6,28 +6,71 @@
 #include "api.h"
 #include "enum.h"
 
-namespace kpengine::graphics{
-    struct VertexBindingDesc{
+namespace kpengine::graphics
+{
+    struct VertexBindingDesc
+    {
         uint32_t binding;
         uint32_t stride;
         bool per_instance;
     };
 
-    struct VertexAttributionDesc{
+    struct VertexAttributionDesc
+    {
         uint32_t location;
         uint32_t binding;
         uint32_t offset;
         VertexFormat format;
     };
 
-    struct PipelineDesc{
-        ShaderHandle vert_shader_handle;
-        ShaderHandle frag_shader_handle;
-        ShaderHandle geom_shader_handle;
+    struct RasterState
+    {
+        bool depth_clamp_enable = false;
+        bool rasterizer_disacrd_enable = false;
+        PolygonMode polygon_mode = PolygonMode::POLYGON_MODE_FILL;
+        CullMode cull_mode = CullMode::CULL_MODE_BACK;
+        FrontFace front_face = FrontFace::FRONT_FACE_CLOCKWISE;
+        bool depth_bias_enable = false;
+        float depth_bias_constant = 0.f;
+        float depth_bias_slope = 0.f;
+        float line_width = 0.f;
+    };
+
+    struct MultisampleState
+    {
+        uint32_t rasterization_samples = 1; 
+        bool sample_shading_enable = false;
+        float min_sample_shading = 1.0f;
+        //uint32_t sampleMask = 0xFFFFFFFF; 
+        bool alpha_to_coverage_enable = false;
+        bool alpha_to_one_enable = false;
+    };
+
+    struct BlendAttachmentState
+    {
+        bool blend_enable = false;
+        BlendFactor src_color_blend_factor;
+        BlendFactor dst_color_blend_factor;
+        BlendOp color_blend_op;
+        BlendFactor src_alpha_blend_factor;
+        BlendFactor dst_alpha_blend_factor;
+        BlendOp alpha_blend_op;
+        uint8_t color_write_mask = 0xF;
+    };
+
+    //Cross Graphics API Pipeline DESC, used for pipeline create
+    struct PipelineDesc
+    {
+        class Shader *vert_shader;
+        class Shader *frag_shader;
+        class Shader *geom_shader;
         std::vector<VertexBindingDesc> binding_descs;
         std::vector<VertexAttributionDesc> attri_descs;
+        PrimitiveTopologyType primitive_topology_type;
+        RasterState raster_state;
+        MultisampleState multisample_state;
+        BlendAttachmentState blend_attachment_state;
     };
 }
-
 
 #endif

@@ -14,17 +14,21 @@ const int MAX_FRAMES_IN_FLIGHT = 2;
 namespace kpengine::graphics
 {
     std::vector<Vertex> vertex = {
-        {{0.f, -0.5f, 0.f}},
+        {{-0.5f, -0.5f, 0.f}},
+        {{0.5f, -0.5f, 0.f}},
         {{0.5f, 0.5f, 0.f}},
-        {{-0.5f, 0.5f, 0.0f}}};
+        {{-0.5f, 0.5f, 0.f}}
+    };
 
     // colors (r, g, b, a)
     std::vector<Vector3f> colors = {
         {1.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f},
-        {0.0f, 0.0f, 1.0f}};
+        {0.0f, 0.0f, 1.0f},
+        {1.f, 1.f, 1.f}
+    };
 
-    std::vector<uint32_t> indices = {0, 1, 2};
+    std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
 
     VkResult CreateDebugUtilsMessengerEXT(VkInstance instance, const VkDebugUtilsMessengerCreateInfoEXT *pCreateInfo, const VkAllocationCallbacks *pAllocator, VkDebugUtilsMessengerEXT *pDebugMessenger)
     {
@@ -638,14 +642,14 @@ namespace kpengine::graphics
         vert_stage_create_info.module = vert_shader_module;
         vert_stage_create_info.pName = "main";
         vert_stage_create_info.stage = VK_SHADER_STAGE_VERTEX_BIT;
-        ;
+        
 
         VkPipelineShaderStageCreateInfo frag_stage_create_info{};
         frag_stage_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
         frag_stage_create_info.module = frag_shader_module;
         frag_stage_create_info.pName = "main";
         frag_stage_create_info.stage = VK_SHADER_STAGE_FRAGMENT_BIT;
-        ;
+        
 
         std::array<VkPipelineShaderStageCreateInfo, 2> stages = {vert_stage_create_info, frag_stage_create_info};
 
@@ -697,6 +701,7 @@ namespace kpengine::graphics
         dynamic_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_DYNAMIC_STATE_CREATE_INFO;
         dynamic_state_create_info.dynamicStateCount = static_cast<uint32_t>(dynamic_states.size());
         dynamic_state_create_info.pDynamicStates = dynamic_states.data();
+    
 
         // set multi sample
         VkPipelineMultisampleStateCreateInfo multisample_state_create_info{};

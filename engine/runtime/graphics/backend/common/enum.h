@@ -32,14 +32,16 @@ namespace kpengine::graphics
         TEXTURE_USAGE_TRANSFER_DST = 1 << 5,
     };
 
-    enum class ShaderType{
+    enum class ShaderType
+    {
         None,
         SHADER_TYPE_VERTEX,
         SHADER_TYPE_FRAGMENT,
         SHADER_TYPE_GEOMETRY
     };
 
-    enum class VertexFormat{
+    enum class VertexFormat
+    {
         VERTEX_FORMAT_ONE_FLOAT,
         VERTEX_FORMAT_TWO_FLOATS,
         VERTEX_FORMAT_THREE_FLOATS,
@@ -50,7 +52,8 @@ namespace kpengine::graphics
         VERTEX_FORMAT_FOUR_INTS
     };
 
-    enum class PrimitiveTopologyType{
+    enum class PrimitiveTopologyType
+    {
         PRIMITIVE_TOPOLOGY_POINT_LIST,
         PRIMITIVE_TOPOLOGY_LINE_LIST,
         PRIMITIVE_TOPOLOGY_LINE_STRIP,
@@ -63,6 +66,55 @@ namespace kpengine::graphics
         PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP_ADJACENCY,
         PRIMITIVE_TOPOLOGY_PATCH_LIST
     };
+
+    enum class CullMode
+    {
+        CULL_MODE_FRONT,
+        CULL_MODE_BACK,
+        CULL_MODE_FRONT_AND_BACK
+    };
+
+    enum class FrontFace
+    {
+        FRONT_FACE_COUNTER_CLOCKWISE,
+        FRONT_FACE_CLOCKWISE
+    };
+
+    enum class PolygonMode
+    {
+        POLYGON_MODE_FILL,
+        POLYGON_MODE_LINE,
+        POLYGON_MODE_POINT
+    };
+
+
+    enum class BlendFactor
+    {
+        BLEND_FACTOR_ZERO,
+        BLEND_FACTOR_ONE,
+        BLEND_FACTOR_SRC_COLOR,
+        BLEND_FACTOR_ONE_MINUS_SRC_COLOR,
+        BLEND_FACTOR_DST_COLOR,
+        BLEND_FACTOR_ONE_MINUS_DST_COLOR,
+        BLEND_FACTOR_SRC_ALPHA,
+        BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+        BLEND_FACTOR_DST_ALPHA,
+        BLEND_FACTOR_ONE_MINUS_DST_ALPHA,
+        BLEND_FACTOR_CONSTANT_COLOR,
+        BLEND_FACTOR_ONE_MINUS_CONSTANT_COLOR,
+        BLEND_FACTOR_CONSTANT_ALPHA,
+        BLEND_FACTOR_ONE_MINUS_CONSTANT_ALPHA
+    };
+
+    enum class BlendOp
+    {
+        BLEND_OP_ADD,
+        BLEND_OP_SUBTRACT,
+        BLEND_OP_REVERSE_SUBTRACT,
+        BLEND_OP_MIN,
+        BLEND_OP_MAX
+    };
+
 }
 
 #endif
