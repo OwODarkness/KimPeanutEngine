@@ -1,4 +1,5 @@
 #include "vulkan_pipeline_manager.h"
+#include <array>
 #include "log/logger.h"
 #include "common/shader.h"
 #include "vulkan_enum.h"
@@ -7,7 +8,7 @@ namespace kpengine::graphics
 
 {
 
-    PipelineHandle VulkanPipelineManager::CreatePipeline(VkDevice logical_device, const PipelineDesc &pipeline_desc)
+    PipelineHandle VulkanPipelineManager::CreatePipelineResource(VkDevice logical_device, const PipelineDesc &pipeline_desc, VkRenderPass render_pass)
     {
         uint32_t id = UINT32_MAX;
         if (!free_slots_.empty())
@@ -135,12 +136,12 @@ namespace kpengine::graphics
             VkPipelineColorBlendAttachmentState colorblend_attachment{};
             colorblend_attachment.colorWriteMask = pipeline_desc.blend_attachment_state.color_write_mask;
             colorblend_attachment.blendEnable = pipeline_desc.blend_attachment_state.blend_enable;
-            colorblend_attachment.srcColorBlendFactor = ConvertToVkBlendFactor(pipeline_desc.blend_attachment_state.src_color_blend_factor);
-            colorblend_attachment.dstColorBlendFactor = ConvertToVkBlendFactor(pipeline_desc.blend_attachment_state.dst_color_blend_factor);
-            colorblend_attachment.colorBlendOp = ConvertToVkBlendOp(pipeline_desc.blend_attachment_state.color_blend_op);
-            colorblend_attachment.srcAlphaBlendFactor = ConvertToVkBlendFactor(pipeline_desc.blend_attachment_state.src_alpha_blend_factor);
-            colorblend_attachment.dstAlphaBlendFactor = ConvertToVkBlendFactor(pipeline_desc.blend_attachment_state.dst_alpha_blend_factor);
-            colorblend_attachment.alphaBlendOp = ConvertToVkBlendOp(pipeline_desc.blend_attachment_state.alpha_blend_op);
+            colorblend_attachment.srcColorBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.src_color_blend_factor);
+            colorblend_attachment.dstColorBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.dst_color_blend_factor);
+            colorblend_attachment.colorBlendOp = ConvertToVulkanBlendOp(pipeline_desc.blend_attachment_state.color_blend_op);
+            colorblend_attachment.srcAlphaBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.src_alpha_blend_factor);
+            colorblend_attachment.dstAlphaBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.dst_alpha_blend_factor);
+            colorblend_attachment.alphaBlendOp = ConvertToVulkanBlendOp(pipeline_desc.blend_attachment_state.alpha_blend_op);
 
             VkPipelineColorBlendStateCreateInfo colorblend_state_create_info{};
             colorblend_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
@@ -179,7 +180,7 @@ namespace kpengine::graphics
             pipeline_create_info.pColorBlendState = &colorblend_state_create_info;
             pipeline_create_info.pDynamicState = &dynamic_state_create_info;
             pipeline_create_info.layout = pipeline_resource.layout;
-            // pipeline_create_info.renderPass = swapchain_renderpass_;
+            pipeline_create_info.renderPass = render_pass;
             pipeline_create_info.subpass = 0;
             pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
             pipeline_create_info.basePipelineIndex = -1;
@@ -229,6 +230,43 @@ namespace kpengine::graphics
             vkDestroyShaderModule(logical_device, geom_shader_module, nullptr);
             geom_shader_module = VK_NULL_HANDLE;
         }
+
+        return {id, pipeline_resource.generation};
+    }
+
+    void VulkanPipelineManager::DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle)
+    {
+        VulkanPipelineResource* pipeline_resource = GetPipelineResource(handle);
+
+        vkDestroyPipeline(logical_device, pipeline_resource->pipeline, nullptr);
+        vkDestroyPipelineLayout(logical_device, pipeline_resource->layout, nullptr);
+
+        pipeline_resource->pipeline = VK_NULL_HANDLE;
+        pipeline_resource->layout = VK_NULL_HANDLE;
+        pipeline_resource->generation++;
+        free_slots_.push_back(handle.id);
+    }
+
+    VulkanPipelineResource* VulkanPipelineManager::GetPipelineResource(PipelineHandle handle)
+    {
+        if(!handle.IsValid())
+        {
+            KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "handle is invalid");
+            return nullptr;
+           }
+        if(handle.id >= pipelines_.size())
+        {
+            KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Failed to find pipeline resource, out of range");
+            return nullptr;
+        }
+
+        VulkanPipelineResource& pipeline_resource = pipelines_[handle.id];
+        if(handle.generation != pipeline_resource.generation)
+        {
+            KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Faile to find pipeline resource, generation mismatch");
+            return nullptr;
+        }
+        return &pipeline_resource;
     }
 
     void VulkanPipelineManager::CreateShaderModule(VkDevice logicial_device, const void *data, size_t size, VkShaderModule &shader_module)

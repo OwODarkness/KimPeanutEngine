@@ -8,7 +8,7 @@
 
 #include "common/render_backend.h"
 #include "vulkan_buffer_pool.h"
-
+#include "vulkan_pipeline_manager.h"
 
 namespace kpengine::graphics
 {
@@ -109,8 +109,6 @@ namespace kpengine::graphics
         std::vector<VkImage> swapchain_images_;
         std::vector<VkImageView> swapchain_imageviews_;
         VkRenderPass swapchain_renderpass_;
-        VkPipelineLayout pipeline_layout_;
-        VkPipeline pipeline_;
         std::vector<VkFramebuffer> swapchain_framebuffers_;
         
         VkCommandPool graphics_command_pool_;
@@ -128,6 +126,9 @@ namespace kpengine::graphics
         BufferHandle pos_handle_;
         BufferHandle color_handle_;
         BufferHandle index_handle_;
+
+        VulkanPipelineManager pipeline_manager_;
+        PipelineHandle pipeline_handle;
 
         std::vector<const char *> validation_layers = {
             "VK_LAYER_KHRONOS_validation"};

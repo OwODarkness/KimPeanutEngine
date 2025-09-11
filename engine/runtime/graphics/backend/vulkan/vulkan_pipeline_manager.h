@@ -12,15 +12,18 @@ namespace kpengine::graphics{
 
     struct VulkanPipelineResource{
 
-        VkPipelineLayout layout;
-        VkPipeline pipeline;
+        VkPipelineLayout layout = VK_NULL_HANDLE;
+        VkPipeline pipeline = VK_NULL_HANDLE;
+        uint32_t generation = 0;
     };
 
     class VulkanPipelineManager{
     public:
-        PipelineHandle CreatePipeline(VkDevice logicial_device, const PipelineDesc& pipeline_desc);
+        PipelineHandle CreatePipelineResource(VkDevice logical_device, const PipelineDesc& pipeline_desc, VkRenderPass renderpass);
+        void DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle);
+        VulkanPipelineResource* GetPipelineResource(PipelineHandle handle);
     private:
-        void CreateShaderModule(VkDevice logicial_device, const void* data, size_t, VkShaderModule& shader_module);
+        void CreateShaderModule(VkDevice logiccal_device, const void* data, size_t, VkShaderModule& shader_module);
     private:
         std::vector<VulkanPipelineResource> pipelines_;
         std::vector<uint32_t> free_slots_;

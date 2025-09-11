@@ -19,9 +19,8 @@ namespace kpengine::graphics
     {
         uint32_t location;
         uint32_t binding;
-        uint32_t offset;
-        VertexFormat format;
-    };
+       VertexFormat format;     uint32_t offset;
+        };
 
     struct RasterState
     {
@@ -33,7 +32,7 @@ namespace kpengine::graphics
         bool depth_bias_enable = false;
         float depth_bias_constant = 0.f;
         float depth_bias_slope = 0.f;
-        float line_width = 0.f;
+        float line_width = 1.f;
     };
 
     struct MultisampleState
@@ -49,12 +48,12 @@ namespace kpengine::graphics
     struct BlendAttachmentState
     {
         bool blend_enable = false;
-        BlendFactor src_color_blend_factor;
-        BlendFactor dst_color_blend_factor;
-        BlendOp color_blend_op;
-        BlendFactor src_alpha_blend_factor;
-        BlendFactor dst_alpha_blend_factor;
-        BlendOp alpha_blend_op;
+        BlendFactor src_color_blend_factor = BlendFactor::BLEND_FACTOR_ONE;
+        BlendFactor dst_color_blend_factor = BlendFactor::BLEND_FACTOR_ZERO;
+        BlendOp color_blend_op = BlendOp::BLEND_OP_ADD;
+        BlendFactor src_alpha_blend_factor = BlendFactor::BLEND_FACTOR_ONE;
+        BlendFactor dst_alpha_blend_factor = BlendFactor::BLEND_FACTOR_ZERO;
+        BlendOp alpha_blend_op = BlendOp::BLEND_OP_ADD;
         uint8_t color_write_mask = 0xF;
     };
 
@@ -66,7 +65,7 @@ namespace kpengine::graphics
         class Shader *geom_shader;
         std::vector<VertexBindingDesc> binding_descs;
         std::vector<VertexAttributionDesc> attri_descs;
-        PrimitiveTopologyType primitive_topology_type;
+        PrimitiveTopologyType primitive_topology_type = PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;
         RasterState raster_state;
         MultisampleState multisample_state;
         BlendAttachmentState blend_attachment_state;

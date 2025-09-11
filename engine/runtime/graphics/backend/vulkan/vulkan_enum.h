@@ -182,7 +182,7 @@ namespace kpengine::graphics
         }
     }
 
-    inline VkBlendFactor ConvertToVkBlendFactor(BlendFactor factor)
+    inline VkBlendFactor ConvertToVulkanBlendFactor(BlendFactor factor)
     {
         switch (factor)
         {
@@ -218,7 +218,7 @@ namespace kpengine::graphics
         return VK_BLEND_FACTOR_ONE;
     }
 
-    VkBlendOp ConvertToVkBlendOp(BlendOp op) {
+    inline VkBlendOp ConvertToVulkanBlendOp(BlendOp op) {
     switch (op) {
         case BlendOp::BLEND_OP_ADD: return VK_BLEND_OP_ADD;
         case BlendOp::BLEND_OP_SUBTRACT: return VK_BLEND_OP_SUBTRACT;
