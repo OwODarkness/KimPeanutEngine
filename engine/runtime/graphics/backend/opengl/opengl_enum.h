@@ -10,6 +10,10 @@ namespace kpengine::graphics
     {
         switch (format)
         {
+        case TextureFormat::TEXTURE_FORMAT_R8_UNORM:
+            return GL_R8;
+        case TextureFormat::TEXTURE_FORMAT_RG8_UNORM:
+            return GL_RG8;
         case TextureFormat::TEXTURE_FORMAT_RGB8_UNORM:
             return GL_RGB8;
         case TextureFormat::TEXTURE_FORMAT_RGB8_SRGB:

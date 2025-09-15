@@ -6,6 +6,9 @@ namespace kpengine::graphics
 {
     enum class TextureFormat
     {
+        TEXTURE_FORMAT_UNKOWN,
+        TEXTURE_FORMAT_R8_UNORM,
+        TEXTURE_FORMAT_RG8_UNORM,
         TEXTURE_FORMAT_RGB8_UNORM,
         TEXTURE_FORMAT_RGB8_SRGB,
         TEXTURE_FORMAT_RGBA8_UNORM,
@@ -87,7 +90,6 @@ namespace kpengine::graphics
         POLYGON_MODE_POINT
     };
 
-
     enum class BlendFactor
     {
         BLEND_FACTOR_ZERO,
@@ -113,6 +115,21 @@ namespace kpengine::graphics
         BLEND_OP_REVERSE_SUBTRACT,
         BLEND_OP_MIN,
         BLEND_OP_MAX
+    };
+
+    enum class DescriptorType
+    {
+        DESCRIPTOR_TYPE_UNIFORM,
+        DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
+        DESCRIPTOR_TYPE_SAMPLER
+    };
+
+    enum class ShaderStage : uint32_t
+    {
+        SHADER_STAGE_VERTEX = 0x01,
+        SHADER_STAGE_FRAGMENT = 0x02,
+        SHADER_STAGE_GEOMETRY = 0X04
+
     };
 
 }

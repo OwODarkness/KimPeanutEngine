@@ -22,10 +22,12 @@ namespace kpengine::graphics
     {
 
     public:
-        BufferHandle CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logicial_device, const VkBufferCreateInfo *buffer_create_info, VkMemoryPropertyFlags properties);
-        bool DestroyBufferResource(VkDevice logicial_device, BufferHandle handle);
+        BufferHandle CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logical_device, const VkBufferCreateInfo *buffer_create_info, VkMemoryPropertyFlags properties);
+        bool DestroyBufferResource(VkDevice logical_device, BufferHandle handle);
         VulkanBufferResource *GetBufferResource(BufferHandle handle);
-        void BindBufferData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, const void *src);
+        //upload data in src into gpu memory
+        void UploadData(VkDevice logical_device, BufferHandle handle, VkDeviceSize size, const void *src);
+        void MapBuffer(VkDevice logical_device, BufferHandle handle, VkDeviceSize size, void** mapped_ptr);
         void FreeMemory(VkDevice logicial_device);
 
     private:

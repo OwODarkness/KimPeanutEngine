@@ -129,7 +129,7 @@ namespace kpengine::graphics
         return &buffer_resource;
     }
 
-    void VulkanBufferPool::BindBufferData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, const void *src)
+    void VulkanBufferPool::UploadData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, const void *src)
     {
         VulkanBufferResource *buffer_resource = GetBufferResource(handle);
         if ((buffer_resource->mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
@@ -141,6 +141,18 @@ namespace kpengine::graphics
         vkMapMemory(logicial_device, buffer_resource->allocation.memory, buffer_resource->allocation.offset, size, 0, &target);
         memcpy(target, src, static_cast<size_t>(size));
         vkUnmapMemory(logicial_device, buffer_resource->allocation.memory);
+    }
+
+    void VulkanBufferPool::MapBuffer(VkDevice logical_device, BufferHandle handle, VkDeviceSize size, void** mapped_ptr)
+    {
+         VulkanBufferResource *buffer_resource = GetBufferResource(handle);
+        if ((buffer_resource->mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
+        {
+            KP_LOG("VulkanBufferPool", LOG_LEVEL_WARNNING, "Try to bindbuffer data by mapmemory, but memory prop flags don't hold VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT");
+            return;
+        }
+
+        vkMapMemory(logical_device, buffer_resource->allocation.memory, buffer_resource->allocation.offset, size, 0, mapped_ptr);
     }
 
     void VulkanBufferPool::FreeMemory(VkDevice logicial_device)

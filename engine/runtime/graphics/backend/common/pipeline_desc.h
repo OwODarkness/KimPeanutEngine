@@ -57,6 +57,13 @@ namespace kpengine::graphics
         uint8_t color_write_mask = 0xF;
     };
 
+    struct DescriptorBindingDesc{
+        uint32_t binding;
+        uint32_t descriptor_count;
+        DescriptorType descriptor_type;
+        ShaderStage stage_flag;
+    };
+
     //Cross Graphics API Pipeline DESC, used for pipeline create
     struct PipelineDesc
     {
@@ -69,6 +76,7 @@ namespace kpengine::graphics
         RasterState raster_state;
         MultisampleState multisample_state;
         BlendAttachmentState blend_attachment_state;
+        std::vector<std::vector<DescriptorBindingDesc>> descriptor_binding_descs;//descs[i] means descs in set i
     };
 }
 

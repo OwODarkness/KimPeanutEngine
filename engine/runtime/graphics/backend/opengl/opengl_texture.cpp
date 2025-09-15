@@ -2,17 +2,17 @@
 
 namespace kpengine::graphics
 {
-    void OpenglTexture::Initialize(const TextureDesc &desc)
+    void OpenglTexture::Initialize(GraphicsDevice device)
     {
-        if(desc.usage == TextureUsage::TEXTURE_USAGE_SAMPLE)
-        {
-            glGenTextures(1, &resource_.image);
-            glGenSamplers(1, &resource_.sampler);
-        }   
+        // if(desc.usage == TextureUsage::TEXTURE_USAGE_SAMPLE)
+        // {
+        //     glGenTextures(1, &resource_.image);
+        //     glGenSamplers(1, &resource_.sampler);
+        // }   
     }
-    void OpenglTexture::Destroy()
+    void OpenglTexture::Destroy(GraphicsDevice device)
     {
-        glDeleteTextures(1, &resource_.image);
-        glDeleteSamplers(1, &resource_.sampler);
+        // glDeleteTextures(1, &resource_.image);
+        // glDeleteSamplers(1, &resource_.sampler);
     }
 }

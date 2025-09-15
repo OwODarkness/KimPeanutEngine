@@ -31,10 +31,15 @@ namespace kpengine::graphics
             uint32_t block_index;
             uint32_t slot_index;
         };
-
-        std::vector<std::unique_ptr<VulkanMemoryBlock>> blocks_;
-
-        std::vector<FreeSlot> free_slots_;
+        struct VulkanMemoryPool
+        {
+            VkDeviceSize block_size;
+            VkDeviceSize slot_size;
+            std::vector<std::unique_ptr<VulkanMemoryBlock>> blocks_;
+            std::vector<FreeSlot> free_slots_;
+        };
+    private:
+        std::vector<VulkanMemoryPool> pools_;
     };
 }
 

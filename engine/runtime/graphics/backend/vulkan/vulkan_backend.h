@@ -6,6 +6,7 @@
 #include <optional>
 #include <vulkan/vulkan.h>
 
+#include "math/math_header.h"
 #include "common/render_backend.h"
 #include "vulkan_buffer_pool.h"
 #include "vulkan_pipeline_manager.h"
@@ -37,6 +38,13 @@ namespace kpengine::graphics
     struct VulkanQueue{
         uint32_t index = UINT_MAX;
         VkQueue queue;
+    };
+
+
+    struct UniformBufferObject{
+        Matrix4f model;
+        Matrix4f view;
+        Matrix4f proj;
     };
 
     class VulkanBackend : public RenderBackend
@@ -72,8 +80,11 @@ namespace kpengine::graphics
         void CreateSyncObjects();
         void CreateVertexBuffers();
         BufferHandle CreateBuffer(const void* data, size_t size, VkBufferUsageFlags usage);
-
-        void CreateShaderModule(const void* data, size_t size, VkShaderModule &shader_module);
+        
+        void CreateUniformBuffers();
+        void CreateDescriptorPool();
+        void CreateDescriptorSets();
+        void UpdateUniformBuffer(uint32_t current_image);
 
         void CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size);
         void RecreateSwapchain();
@@ -127,8 +138,14 @@ namespace kpengine::graphics
         BufferHandle color_handle_;
         BufferHandle index_handle_;
 
+        std::vector<BufferHandle> uniform_buffer_handles_;
+        std::vector<void*> uniform_buffer_mapped_ptr_;
+
         VulkanPipelineManager pipeline_manager_;
         PipelineHandle pipeline_handle;
+
+        VkDescriptorPool descriptor_pool_;
+        std::vector<VkDescriptorSet> descriptor_sets_;
 
         std::vector<const char *> validation_layers = {
             "VK_LAYER_KHRONOS_validation"};

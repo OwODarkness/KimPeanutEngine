@@ -1,6 +1,7 @@
 #include "vulkan_backend.h"
 #include <iostream>
 #include <set>
+#include <chrono>
 #include <functional>
 #include <GLFW/glfw3.h>
 #include "math/math_header.h"
@@ -17,16 +18,14 @@ namespace kpengine::graphics
         {{-0.5f, -0.5f, 0.f}},
         {{0.5f, -0.5f, 0.f}},
         {{0.5f, 0.5f, 0.f}},
-        {{-0.5f, 0.5f, 0.f}}
-    };
+        {{-0.5f, 0.5f, 0.f}}};
 
     // colors (r, g, b, a)
     std::vector<Vector3f> colors = {
         {1.0f, 0.0f, 0.0f},
         {0.0f, 1.0f, 0.0f},
         {0.0f, 0.0f, 1.0f},
-        {1.f, 1.f, 1.f}
-    };
+        {1.f, 1.f, 1.f}};
 
     std::vector<uint32_t> indices = {0, 1, 2, 2, 3, 0};
 
@@ -173,6 +172,9 @@ namespace kpengine::graphics
         CreateCommandPools();
         CreateCommandBuffers();
         CreateVertexBuffers();
+        CreateUniformBuffers();
+        CreateDescriptorPool();
+        CreateDescriptorSets();
         CreateSyncObjects();
     }
     void VulkanBackend::BeginFrame()
@@ -198,6 +200,7 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to acquire image");
         }
         vkResetFences(logical_device_, 1, &in_flight_fences_[current_frame]);
+        UpdateUniformBuffer(current_frame);
 
         vkResetCommandBuffer(command_buffers_[current_frame], 0);
         RecordCommandBuffer(command_buffers_[current_frame], image_index);
@@ -260,6 +263,11 @@ namespace kpengine::graphics
 
         CleanupSwapchain();
 
+        for (size_t i = 0; i < uniform_buffer_handles_.size(); i++)
+        {
+            buffer_pool_.DestroyBufferResource(logical_device_, uniform_buffer_handles_[i]);
+        }
+        vkDestroyDescriptorPool(logical_device_, descriptor_pool_, nullptr);
         pipeline_manager_.DestroyPipelineResource(logical_device_, pipeline_handle);
         vkDestroyRenderPass(logical_device_, swapchain_renderpass_, nullptr);
 
@@ -627,15 +635,13 @@ namespace kpengine::graphics
         PipelineDesc pipeline_desc{};
         // set shader stage
         std::string spv_shader_dir = GetSPVShaderDirectory();
-        ShaderHandle vert_handle = shader_manager_.LoadShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_VERTEX, spv_shader_dir + "/simple_triangle.vert.spv");
+        ShaderHandle vert_handle = shader_manager_.LoadShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_VERTEX, spv_shader_dir + "/mvp_test.vert.spv");
         Shader *vert_shader = shader_manager_.GetShader(vert_handle);
         ShaderHandle frag_handle = shader_manager_.LoadShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_FRAGMENT, spv_shader_dir + "/simple_triangle.frag.spv");
         Shader *frag_shader = shader_manager_.GetShader(frag_handle);
 
         pipeline_desc.vert_shader = vert_shader;
         pipeline_desc.frag_shader = frag_shader;
-
-
 
         // set vertex stage
         pipeline_desc.binding_descs = {
@@ -647,6 +653,14 @@ namespace kpengine::graphics
             {0, 0, VertexFormat::VERTEX_FORMAT_THREE_FLOATS, 0},
             {1, 1, VertexFormat::VERTEX_FORMAT_THREE_FLOATS, 0},
         };
+
+        pipeline_desc.descriptor_binding_descs = {
+            {{0, 1, DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX}}};
+
+        RasterState state{};
+        state.cull_mode = CullMode::CULL_MODE_BACK;
+        state.front_face = FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+        pipeline_desc.raster_state = state;
         pipeline_handle = pipeline_manager_.CreatePipelineResource(logical_device_, pipeline_desc, swapchain_renderpass_);
     }
 
@@ -727,7 +741,7 @@ namespace kpengine::graphics
         index_handle_ = CreateIndexBuffer(indices.data(), indices_size);
     }
 
-    BufferHandle VulkanBackend::CreateBuffer(const void* data, size_t size, VkBufferUsageFlags usage)
+    BufferHandle VulkanBackend::CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage)
     {
         std::array<uint32_t, 2> queue_family_indices = {graphics_queue_.index, transfer_queue_.index};
 
@@ -740,8 +754,8 @@ namespace kpengine::graphics
         stage_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
         stage_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
         BufferHandle stage_handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
-        
-        buffer_pool_.BindBufferData(logical_device_, stage_handle, size, data);
+
+        buffer_pool_.UploadData(logical_device_, stage_handle, size, data);
 
         VkBufferCreateInfo dst_buffer_create_info{};
         dst_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -758,21 +772,6 @@ namespace kpengine::graphics
         buffer_pool_.DestroyBufferResource(logical_device_, stage_handle);
 
         return dst_handle;
-    }
-
-    void VulkanBackend::CreateShaderModule(const void *data, size_t size, VkShaderModule &shader_module)
-    {
-
-        VkShaderModuleCreateInfo shader_module_create_info{};
-        shader_module_create_info.sType = VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO;
-        shader_module_create_info.codeSize = static_cast<uint32_t>(size);
-        shader_module_create_info.pCode = reinterpret_cast<const uint32_t *>(data);
-
-        if (vkCreateShaderModule(logical_device_, &shader_module_create_info, nullptr, &shader_module) != VK_SUCCESS)
-        {
-            KP_LOG("VulkanShaderLog", LOG_LEVEL_ERROR, "Failed to create shader module:");
-            throw std::runtime_error("Failed to create shader module");
-        }
     }
 
     void VulkanBackend::CreateSyncObjects()
@@ -812,6 +811,119 @@ namespace kpengine::graphics
                 KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create render_finished_semaphore", );
                 throw std::runtime_error("Failed to create render_finished_semaphores");
             }
+        }
+    }
+
+    void VulkanBackend::CreateUniformBuffers()
+    {
+        VkDeviceSize buffer_size = sizeof(UniformBufferObject);
+
+        uniform_buffer_handles_.resize(MAX_FRAMES_IN_FLIGHT);
+        uniform_buffer_mapped_ptr_.resize(MAX_FRAMES_IN_FLIGHT);
+
+        VkBufferCreateInfo buffer_create_info{};
+        buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        buffer_create_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+        buffer_create_info.queueFamilyIndexCount = 0;
+        buffer_create_info.pQueueFamilyIndices = nullptr;
+        buffer_create_info.size = buffer_size;
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            uniform_buffer_handles_[i] = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, &buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        }
+        VkPhysicalDeviceProperties physical_device_props;
+        vkGetPhysicalDeviceProperties(physical_device_, &physical_device_props);
+        VkDeviceSize alignment = physical_device_props.limits.minUniformBufferOffsetAlignment;
+        VkDeviceSize aligned_buffer_size = (buffer_size + alignment - 1) & ~(alignment - 1);
+        void* mapped_ptr = nullptr;
+        buffer_pool_.MapBuffer(logical_device_, uniform_buffer_handles_.back(), aligned_buffer_size * uniform_buffer_handles_.size(), &mapped_ptr);
+        VkDeviceSize base_offset = buffer_pool_.GetBufferResource(uniform_buffer_handles_.back())->allocation.offset; 
+        for(size_t i = 0;i<MAX_FRAMES_IN_FLIGHT;i++)
+        {
+            
+            VulkanBufferResource* resource = buffer_pool_.GetBufferResource(uniform_buffer_handles_[i]);
+            uniform_buffer_mapped_ptr_[i] = static_cast<char*>(mapped_ptr) + resource->allocation.offset - base_offset;
+        }
+    }
+
+    void VulkanBackend::CreateDescriptorPool()
+    {
+        VkDescriptorPoolSize pool_size;
+        pool_size.type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        pool_size.descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+
+        VkDescriptorPoolCreateInfo descriptor_pool_create_info{};
+        descriptor_pool_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        descriptor_pool_create_info.maxSets = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        descriptor_pool_create_info.poolSizeCount = 1;
+        descriptor_pool_create_info.pPoolSizes = &pool_size;
+
+        if (vkCreateDescriptorPool(logical_device_, &descriptor_pool_create_info, nullptr, &descriptor_pool_) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create descriptor pool", );
+            throw std::runtime_error("Failed to create descriptor pool");
+        }
+    }
+
+    void VulkanBackend::CreateDescriptorSets()
+    {
+        VulkanPipelineResource *resource = pipeline_manager_.GetPipelineResource(pipeline_handle);
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, resource->descriptor_set_layouts[0]);
+        VkDescriptorSetAllocateInfo allocate_info{};
+        allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
+        allocate_info.descriptorPool = descriptor_pool_;
+        allocate_info.descriptorSetCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        allocate_info.pSetLayouts = layouts.data();
+
+        descriptor_sets_.resize(MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateDescriptorSets(logical_device_, &allocate_info, descriptor_sets_.data()) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocate descriptor set");
+            throw std::runtime_error("Failed to allocate descriptor set");
+        }
+
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        {
+            VkDescriptorBufferInfo buffer_info{};
+            VulkanBufferResource *buf_resource = buffer_pool_.GetBufferResource(uniform_buffer_handles_[i]);
+
+            buffer_info.buffer = buf_resource->buffer;
+            buffer_info.offset = 0;
+            buffer_info.range = sizeof(UniformBufferObject);
+
+            VkWriteDescriptorSet descriptor_write{};
+            descriptor_write.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+            descriptor_write.dstSet = descriptor_sets_[i];
+            descriptor_write.dstBinding = 0;
+            descriptor_write.dstArrayElement = 0;
+            descriptor_write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+            descriptor_write.descriptorCount = 1;
+            descriptor_write.pBufferInfo = &buffer_info;
+
+            vkUpdateDescriptorSets(logical_device_, 1, &descriptor_write, 0, nullptr);
+        }
+    }
+
+    void VulkanBackend::UpdateUniformBuffer(uint32_t current_image)
+    {
+        static auto start_time = std::chrono::high_resolution_clock::now();
+        auto current_time = std::chrono::high_resolution_clock::now();
+        float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
+        UniformBufferObject ubo{};
+        Transform3f model{};
+        // model.rotator_.pitch_ = -90.f;
+        model.rotator_.roll_ = time * 90.f;
+        ubo.model = Matrix4f::MakeTransformMatrix(model).Transpose();
+        ubo.view = Matrix4f::MakeCameraMatrix({0.f, 0.f, 2.f}, {0.f, 0.f, -1.f}, {0.f, 1.f, 0.f}).Transpose(); 
+        float aspect = resolution_.width / (float)resolution_.height;
+        ubo.proj = Matrix4f::MakePerProjMatrix(math::DegreeToRadian(45.f), aspect, 0.1f, 10.f).Transpose();
+        ubo.proj[1][1] *= -1;
+        if (uniform_buffer_mapped_ptr_[current_image])
+        {
+            void *start_address = static_cast<char *>(uniform_buffer_mapped_ptr_[current_image]) + current_image * sizeof(UniformBufferObject);
+            memcpy(uniform_buffer_mapped_ptr_[current_image], &ubo, sizeof(ubo));
         }
     }
 
@@ -918,7 +1030,7 @@ namespace kpengine::graphics
 
         vkCmdBeginRenderPass(commandbuffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
         {
-            VulkanPipelineResource* pipeline_resource = pipeline_manager_.GetPipelineResource(pipeline_handle);
+            VulkanPipelineResource *pipeline_resource = pipeline_manager_.GetPipelineResource(pipeline_handle);
             vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_resource->pipeline);
 
             VkViewport viewport{};
@@ -936,7 +1048,6 @@ namespace kpengine::graphics
             scissor.offset.y = 0;
             vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
 
-            // TODO: GetBufferResource by bufferhandle;
             VulkanBufferResource *index_buffer_resource = buffer_pool_.GetBufferResource(index_handle_);
             VulkanBufferResource *pos_buffer_resource = buffer_pool_.GetBufferResource(pos_handle_);
             VulkanBufferResource *color_buffer_resource = buffer_pool_.GetBufferResource(color_handle_);
@@ -947,6 +1058,8 @@ namespace kpengine::graphics
 
             uint32_t index_count = static_cast<uint32_t>(indices.size());
             vkCmdBindIndexBuffer(commandbuffer, index_buffer_resource->buffer, 0, VK_INDEX_TYPE_UINT32);
+
+            vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_resource->layout, 0, 1, &descriptor_sets_[current_frame], 0, nullptr);
 
             vkCmdDrawIndexed(commandbuffer, index_count, 1, 0, 0, 0);
         }

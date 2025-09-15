@@ -9,6 +9,10 @@ namespace kpengine::graphics
     {
         switch (format)
         {
+        case TextureFormat::TEXTURE_FORMAT_R8_UNORM:
+            return VK_FORMAT_R8_SNORM;
+        case TextureFormat::TEXTURE_FORMAT_RG8_UNORM:
+            return VK_FORMAT_R8G8_SNORM;
         case TextureFormat::TEXTURE_FORMAT_RGB8_UNORM:
             return VK_FORMAT_R8G8B8_SNORM;
         case TextureFormat::TEXTURE_FORMAT_RGB8_SRGB:
@@ -218,16 +222,52 @@ namespace kpengine::graphics
         return VK_BLEND_FACTOR_ONE;
     }
 
-    inline VkBlendOp ConvertToVulkanBlendOp(BlendOp op) {
-    switch (op) {
-        case BlendOp::BLEND_OP_ADD: return VK_BLEND_OP_ADD;
-        case BlendOp::BLEND_OP_SUBTRACT: return VK_BLEND_OP_SUBTRACT;
-        case BlendOp::BLEND_OP_REVERSE_SUBTRACT: return VK_BLEND_OP_REVERSE_SUBTRACT;
-        case BlendOp::BLEND_OP_MIN: return VK_BLEND_OP_MIN;
-        case BlendOp::BLEND_OP_MAX: return VK_BLEND_OP_MAX;
+    inline VkBlendOp ConvertToVulkanBlendOp(BlendOp op)
+    {
+        switch (op)
+        {
+        case BlendOp::BLEND_OP_ADD:
+            return VK_BLEND_OP_ADD;
+        case BlendOp::BLEND_OP_SUBTRACT:
+            return VK_BLEND_OP_SUBTRACT;
+        case BlendOp::BLEND_OP_REVERSE_SUBTRACT:
+            return VK_BLEND_OP_REVERSE_SUBTRACT;
+        case BlendOp::BLEND_OP_MIN:
+            return VK_BLEND_OP_MIN;
+        case BlendOp::BLEND_OP_MAX:
+            return VK_BLEND_OP_MAX;
+        }
+        return VK_BLEND_OP_ADD;
     }
-    return VK_BLEND_OP_ADD;
-}
+
+    inline VkDescriptorType ConvertToVulkanDescriptorType(DescriptorType type)
+    {
+        switch (type)
+        {
+        case DescriptorType::DESCRIPTOR_TYPE_UNIFORM:
+            return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        case DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC:
+            return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
+        case DescriptorType::DESCRIPTOR_TYPE_SAMPLER:
+            return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        default:
+            return VK_DESCRIPTOR_TYPE_MAX_ENUM; // fallback / invalid
+        }
+    }
+
+    inline VkShaderStageFlags ConvertToVulkanShaderStageFlags(ShaderStage stage)
+    {
+        VkShaderStageFlags flags = 0;
+        if (static_cast<uint32_t>(stage) & static_cast<uint32_t>(ShaderStage::SHADER_STAGE_VERTEX))
+            flags |= VK_SHADER_STAGE_VERTEX_BIT;
+        if (static_cast<uint32_t>(stage) & static_cast<uint32_t>(ShaderStage::SHADER_STAGE_FRAGMENT))
+            flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
+        if (static_cast<uint32_t>(stage) & static_cast<uint32_t>(ShaderStage::SHADER_STAGE_GEOMETRY))
+            flags |= VK_SHADER_STAGE_GEOMETRY_BIT;
+
+        return flags;
+    }
+
 }
 
 #endif

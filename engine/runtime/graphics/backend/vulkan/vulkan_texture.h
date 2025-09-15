@@ -40,8 +40,8 @@ namespace kpengine::graphics
     {
     public:
         VulkanTexture(VkDevice device);
-        void Initialize(const TextureDesc &desc) override;
-        void Destroy() override;
+        void Initialize(GraphicsDevice device = nullptr) override;
+        void Destroy(GraphicsDevice device = nullptr) override;
         TextureResource GetTextueHandle() const override{return ConvertToTextureResource(resource_);}
 
     private:

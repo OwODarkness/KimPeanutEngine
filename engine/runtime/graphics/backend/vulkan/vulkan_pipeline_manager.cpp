@@ -154,10 +154,35 @@ namespace kpengine::graphics
             colorblend_state_create_info.blendConstants[2] = 0.f;
             colorblend_state_create_info.blendConstants[3] = 0.f;
 
+            //set descriptor set layout
+            pipeline_resource.descriptor_set_layouts.resize(pipeline_desc.descriptor_binding_descs.size());
+            for (size_t i = 0; i < pipeline_resource.descriptor_set_layouts.size(); i++)
+            {
+                std::vector<VkDescriptorSetLayoutBinding> descriptor_set_layout_bindings(pipeline_desc.descriptor_binding_descs[i].size());
+                for (size_t j = 0; j < pipeline_desc.descriptor_binding_descs[i].size(); j++)
+                {
+                    descriptor_set_layout_bindings[j].binding = pipeline_desc.descriptor_binding_descs[i][j].binding;
+                    descriptor_set_layout_bindings[j].descriptorCount = pipeline_desc.descriptor_binding_descs[i][j].descriptor_count;
+                    descriptor_set_layout_bindings[j].descriptorType = ConvertToVulkanDescriptorType(pipeline_desc.descriptor_binding_descs[i][j].descriptor_type);
+                    descriptor_set_layout_bindings[j].stageFlags = ConvertToVulkanShaderStageFlags(pipeline_desc.descriptor_binding_descs[i][j].stage_flag);
+                    descriptor_set_layout_bindings[j].pImmutableSamplers = nullptr;
+                }
+                VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info{};
+                descriptor_set_layout_create_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO;
+                descriptor_set_layout_create_info.bindingCount = static_cast<uint32_t>(descriptor_set_layout_bindings.size());
+                descriptor_set_layout_create_info.pBindings = descriptor_set_layout_bindings.data();
+
+                if (vkCreateDescriptorSetLayout(logical_device, &descriptor_set_layout_create_info, nullptr, &pipeline_resource.descriptor_set_layouts[i]) != VK_SUCCESS)
+                {
+                    KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Failed to create DescriptorSetLayout");
+                    throw std::runtime_error("Failed to create DescriptorSetLayout");
+                }
+            }
+            //set pipeline_layout
             VkPipelineLayoutCreateInfo layout_create_info{};
             layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
-            layout_create_info.setLayoutCount = 0;
-            layout_create_info.pSetLayouts = nullptr;
+            layout_create_info.setLayoutCount = static_cast<uint32_t>(pipeline_resource.descriptor_set_layouts.size());
+            layout_create_info.pSetLayouts = pipeline_resource.descriptor_set_layouts.data();
             layout_create_info.pushConstantRangeCount = 0;
             layout_create_info.pPushConstantRanges = nullptr;
 
@@ -236,8 +261,12 @@ namespace kpengine::graphics
 
     void VulkanPipelineManager::DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle)
     {
-        VulkanPipelineResource* pipeline_resource = GetPipelineResource(handle);
+        VulkanPipelineResource *pipeline_resource = GetPipelineResource(handle);
 
+        for (size_t i = 0; i < pipeline_resource->descriptor_set_layouts.size(); i++)
+        {
+            vkDestroyDescriptorSetLayout(logical_device, pipeline_resource->descriptor_set_layouts[i], nullptr);
+        }
         vkDestroyPipeline(logical_device, pipeline_resource->pipeline, nullptr);
         vkDestroyPipelineLayout(logical_device, pipeline_resource->layout, nullptr);
 
@@ -247,21 +276,21 @@ namespace kpengine::graphics
         free_slots_.push_back(handle.id);
     }
 
-    VulkanPipelineResource* VulkanPipelineManager::GetPipelineResource(PipelineHandle handle)
+    VulkanPipelineResource *VulkanPipelineManager::GetPipelineResource(PipelineHandle handle)
     {
-        if(!handle.IsValid())
+        if (!handle.IsValid())
         {
             KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "handle is invalid");
             return nullptr;
-           }
-        if(handle.id >= pipelines_.size())
+        }
+        if (handle.id >= pipelines_.size())
         {
             KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Failed to find pipeline resource, out of range");
             return nullptr;
         }
 
-        VulkanPipelineResource& pipeline_resource = pipelines_[handle.id];
-        if(handle.generation != pipeline_resource.generation)
+        VulkanPipelineResource &pipeline_resource = pipelines_[handle.id];
+        if (handle.generation != pipeline_resource.generation)
         {
             KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Faile to find pipeline resource, generation mismatch");
             return nullptr;

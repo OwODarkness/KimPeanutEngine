@@ -11,7 +11,7 @@
 namespace kpengine::graphics{
 
     struct VulkanPipelineResource{
-
+        std::vector<VkDescriptorSetLayout> descriptor_set_layouts; 
         VkPipelineLayout layout = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
         uint32_t generation = 0;
