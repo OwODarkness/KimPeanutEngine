@@ -18,7 +18,7 @@ namespace kpengine::graphics
         throw std::runtime_error("Failed to find suitable memory type index");
     }
 
-    BufferHandle VulkanBufferPool::CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logicial_device, const VkBufferCreateInfo *buffer_create_info, VkMemoryPropertyFlags properties)
+    BufferHandle VulkanBufferPool::CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logicial_device, const VkBufferCreateInfo *buffer_create_info, VulkanMemoryUsageType memory_type)
     {
         uint32_t id = 0;
         if (!free_slots.empty())
@@ -46,8 +46,15 @@ namespace kpengine::graphics
         VkPhysicalDeviceMemoryProperties memory_props;
         vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_props);
 
-        VkMemoryPropertyFlags host_vis_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
-        VkMemoryPropertyFlags device_local_flags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        VkMemoryPropertyFlags properties;
+        if (memory_type == VulkanMemoryUsageType::MEMORY_USAGE_DEVICE)
+        {
+            properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        }
+        else if (memory_type == VulkanMemoryUsageType::MEMORY_USAGE_STAGING || memory_type == VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM)
+        {
+            properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
+        }
         uint32_t memory_type_index = UINT32_MAX;
         try
         {
@@ -59,25 +66,11 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to find suitable memory type!");
         }
 
-        if (host_vis_flags == properties)
+        if (!memory_allocators_.contains(memory_type) || memory_allocators_[memory_type] == nullptr)
         {
-            if (!host_vis_memory_allocator)
-            {
-
-                host_vis_memory_allocator = std::make_unique<VulkanMemoryPoolAllocator>();
-            }
-            buffer_resource.allocation = host_vis_memory_allocator->Allocate(logicial_device, memory_requires.size, memory_requires.alignment, memory_type_index);
+            memory_allocators_[memory_type] = std::make_unique<VulkanMemoryPoolAllocator>();
         }
-
-        if (device_local_flags == properties)
-        {
-            if (!device_local_memory_allocator)
-            {
-                device_local_memory_allocator = std::make_unique<VulkanMemoryPoolAllocator>();
-            }
-
-            buffer_resource.allocation = device_local_memory_allocator->Allocate(logicial_device, memory_requires.size, memory_requires.alignment, memory_type_index);
-        }
+        buffer_resource.allocation = memory_allocators_[memory_type]->Allocate(logicial_device, memory_requires.size, memory_requires.alignment, memory_type_index);
 
         vkBindBufferMemory(logicial_device, buffer_resource.buffer, buffer_resource.allocation.memory, buffer_resource.allocation.offset);
 
@@ -143,9 +136,9 @@ namespace kpengine::graphics
         vkUnmapMemory(logicial_device, buffer_resource->allocation.memory);
     }
 
-    void VulkanBufferPool::MapBuffer(VkDevice logical_device, BufferHandle handle, VkDeviceSize size, void** mapped_ptr)
+    void VulkanBufferPool::MapBuffer(VkDevice logical_device, BufferHandle handle, VkDeviceSize size, void **mapped_ptr)
     {
-         VulkanBufferResource *buffer_resource = GetBufferResource(handle);
+        VulkanBufferResource *buffer_resource = GetBufferResource(handle);
         if ((buffer_resource->mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
         {
             KP_LOG("VulkanBufferPool", LOG_LEVEL_WARNNING, "Try to bindbuffer data by mapmemory, but memory prop flags don't hold VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT");
@@ -157,10 +150,10 @@ namespace kpengine::graphics
 
     void VulkanBufferPool::FreeMemory(VkDevice logicial_device)
     {
-        if (host_vis_memory_allocator)
-            host_vis_memory_allocator->Destroy(logicial_device);
-        if (device_local_memory_allocator)
-            device_local_memory_allocator->Destroy(logicial_device);
+        for(auto& allocator: memory_allocators_)
+        {
+            allocator.second->Destroy(logicial_device);
+        }
     }
 
 }

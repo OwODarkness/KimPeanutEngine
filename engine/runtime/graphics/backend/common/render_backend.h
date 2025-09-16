@@ -24,7 +24,7 @@ public:
 protected:
     virtual BufferHandle CreateVertexBuffer(const void* data, size_t size) = 0;
     virtual BufferHandle CreateIndexBuffer(const void* data, size_t size) = 0;
-    virtual void DestroyBuffer(BufferHandle) = 0;
+    virtual bool DestroyBufferResource(BufferHandle) = 0;
     virtual void FramebufferResizeCallback(const ResizeEvent& event) ;
 public:
     RenderBackend() = default;

@@ -3,6 +3,7 @@
 
 #include <vector>
 #include <memory>
+#include <unordered_map>
 #include <vulkan/vulkan.h>
 #include "common/api.h"
 #include "vulkan_memory_allocator.h"
@@ -18,11 +19,17 @@ namespace kpengine::graphics
         bool alive = false;
     };
 
+    enum class VulkanMemoryUsageType{
+        MEMORY_USAGE_STAGING,
+        MEMORY_USAGE_DEVICE,
+        MEMORY_USAGE_UNIFORM
+    };
+    
     class VulkanBufferPool
     {
 
     public:
-        BufferHandle CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logical_device, const VkBufferCreateInfo *buffer_create_info, VkMemoryPropertyFlags properties);
+        BufferHandle CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logical_device, const VkBufferCreateInfo *buffer_create_info, VulkanMemoryUsageType memory_type);
         bool DestroyBufferResource(VkDevice logical_device, BufferHandle handle);
         VulkanBufferResource *GetBufferResource(BufferHandle handle);
         //upload data in src into gpu memory
@@ -36,9 +43,7 @@ namespace kpengine::graphics
     private:
         std::vector<VulkanBufferResource> buffer_resources_;
         std::vector<uint32_t> free_slots;
-
-        std::unique_ptr<IVulkanMemoryAllocator> host_vis_memory_allocator;
-        std::unique_ptr<IVulkanMemoryAllocator> device_local_memory_allocator;
+        std::unordered_map<VulkanMemoryUsageType, std::unique_ptr<IVulkanMemoryAllocator>> memory_allocators_;
     };
 }
 

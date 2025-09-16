@@ -4,12 +4,13 @@
 #include <vector>
 #include <cstdint>
 #include <optional>
+#include <memory>
 #include <vulkan/vulkan.h>
 
 #include "math/math_header.h"
 #include "common/render_backend.h"
-#include "vulkan_buffer_pool.h"
-#include "vulkan_pipeline_manager.h"
+#include "vulkan_context.h"
+
 
 namespace kpengine::graphics
 {
@@ -50,26 +51,30 @@ namespace kpengine::graphics
     class VulkanBackend : public RenderBackend
     {
     public:
+        VulkanBackend();
         virtual void Initialize() override;
         virtual void BeginFrame() override;
         virtual void EndFrame() override;
         virtual void Present() override;
         virtual void Cleanup() override;
 
+        BufferHandle CreateStageBufferResource(size_t size);
+        bool DestroyBufferResource(BufferHandle handle) override;
+        void UploadDataToBuffer(BufferHandle handle, size_t size, const void* data);
+        struct VulkanBufferResource* GetBufferResource(BufferHandle handle) ;
 
+        class VulkanImageMemoryPool* GetImageMemoryPool() const{return image_memory_pool_.get();}
     protected:
         BufferHandle CreateVertexBuffer(const void* data, size_t size) override;
         BufferHandle CreateIndexBuffer(const void* data, size_t size) override;
-        void DestroyBuffer(BufferHandle handle) override;
 
-    public:
-        VkDevice GetLogicialDevice() const { return logical_device_; }
     private:
         void CreateInstance();
         void CreateDebugMessager();
         void CreateSurface();
         void CreatePhysicalDevice();
         void CreateLogicalDevice();
+        void InitVulkanContext();
         void CreateSwapchain();
         void CreateSwapchainImageViews();
         void CreateSwapchainRenderPass();
@@ -91,6 +96,10 @@ namespace kpengine::graphics
         void CleanupSwapchain();
     private:
         void RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index);
+
+        VkCommandBuffer BeginSingleTimeCommands(VkCommandPool commandpool);
+        void EndSingleTimeCommands(VkCommandBuffer commandbuffer, VkCommandPool commandpool, VkQueue queue);
+    
         void FramebufferResizeCallback(const ResizeEvent& event) override;
 
     private:
@@ -109,7 +118,9 @@ namespace kpengine::graphics
         VkSurfaceKHR surface_;
         VkPhysicalDevice physical_device_;
         VkDevice logical_device_;
+        VulkanContext context_;
 
+            
         VulkanQueue graphics_queue_;
         VulkanQueue present_queue_;
         VulkanQueue transfer_queue_;
@@ -133,7 +144,7 @@ namespace kpengine::graphics
         uint32_t current_frame = 0;
         bool has_resized = false;
 
-        VulkanBufferPool buffer_pool_;
+        std::unique_ptr<class VulkanBufferPool> buffer_pool_;
         BufferHandle pos_handle_;
         BufferHandle color_handle_;
         BufferHandle index_handle_;
@@ -141,9 +152,11 @@ namespace kpengine::graphics
         std::vector<BufferHandle> uniform_buffer_handles_;
         std::vector<void*> uniform_buffer_mapped_ptr_;
 
-        VulkanPipelineManager pipeline_manager_;
+        std::unique_ptr<class VulkanPipelineManager> pipeline_manager_;
         PipelineHandle pipeline_handle;
 
+        std::unique_ptr<class VulkanImageMemoryPool> image_memory_pool_;
+ 
         VkDescriptorPool descriptor_pool_;
         std::vector<VkDescriptorSet> descriptor_sets_;
 

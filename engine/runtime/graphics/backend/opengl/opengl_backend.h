@@ -16,7 +16,7 @@ namespace kpengine::graphics
     protected:
         BufferHandle CreateVertexBuffer(const void* data, size_t size) override;
         BufferHandle CreateIndexBuffer(const void* data, size_t size) override;
-        void DestroyBuffer(BufferHandle handle) override;
+        bool DestroyBufferResource(BufferHandle handle) override;
     };
 }
 

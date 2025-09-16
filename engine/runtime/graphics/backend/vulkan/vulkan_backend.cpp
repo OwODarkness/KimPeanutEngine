@@ -9,7 +9,9 @@
 #include "vulkan_shader.h"
 #include "common/vertex.h"
 #include "config/path.h"
-
+#include "vulkan_buffer_pool.h"
+#include "vulkan_pipeline_manager.h"
+#include "vulkan_image_memory_pool.h"
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
 const int MAX_FRAMES_IN_FLIGHT = 2;
 namespace kpengine::graphics
@@ -157,13 +159,21 @@ namespace kpengine::graphics
         return swap_chain_support_detail;
     }
 
+    VulkanBackend::VulkanBackend() : buffer_pool_(std::make_unique<VulkanBufferPool>()),
+                                     pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
+                                     image_memory_pool_(std::make_unique<VulkanImageMemoryPool>())
+    {
+    }
+
     void VulkanBackend::Initialize()
     {
+
         CreateInstance();
         CreateDebugMessager();
         CreateSurface();
         CreatePhysicalDevice();
         CreateLogicalDevice();
+        InitVulkanContext();
         CreateSwapchain();
         CreateSwapchainImageViews();
         CreateSwapchainRenderPass();
@@ -265,17 +275,17 @@ namespace kpengine::graphics
 
         for (size_t i = 0; i < uniform_buffer_handles_.size(); i++)
         {
-            buffer_pool_.DestroyBufferResource(logical_device_, uniform_buffer_handles_[i]);
+            buffer_pool_->DestroyBufferResource(logical_device_, uniform_buffer_handles_[i]);
         }
         vkDestroyDescriptorPool(logical_device_, descriptor_pool_, nullptr);
-        pipeline_manager_.DestroyPipelineResource(logical_device_, pipeline_handle);
+        pipeline_manager_->DestroyPipelineResource(logical_device_, pipeline_handle);
         vkDestroyRenderPass(logical_device_, swapchain_renderpass_, nullptr);
 
-        DestroyBuffer(pos_handle_);
-        DestroyBuffer(color_handle_);
-        DestroyBuffer(index_handle_);
+        DestroyBufferResource(pos_handle_);
+        DestroyBufferResource(color_handle_);
+        DestroyBufferResource(index_handle_);
 
-        buffer_pool_.FreeMemory(logical_device_);
+        buffer_pool_->FreeMemory(logical_device_);
 
         for (size_t i = 0; i < available_image_sepmaphores_.size(); i++)
         {
@@ -317,11 +327,6 @@ namespace kpengine::graphics
     BufferHandle VulkanBackend::CreateIndexBuffer(const void *data, size_t size)
     {
         return CreateBuffer(data, size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
-    }
-
-    void VulkanBackend::DestroyBuffer(BufferHandle handle)
-    {
-        buffer_pool_.DestroyBufferResource(logical_device_, handle);
     }
 
     void VulkanBackend::FramebufferResizeCallback(const ResizeEvent &event)
@@ -494,6 +499,14 @@ namespace kpengine::graphics
         vkGetDeviceQueue(logical_device_, transfer_queue_.index, 0, &transfer_queue_.queue);
     }
 
+    void VulkanBackend::InitVulkanContext()
+    {
+        context_.backend = this;
+    
+        context_.physical_device = physical_device_;
+        context_.logical_device = logical_device_;
+    }
+
     void VulkanBackend::CreateSwapchain()
     {
         VkSwapchainCreateInfoKHR swapchain_create_info{};
@@ -661,7 +674,7 @@ namespace kpengine::graphics
         state.cull_mode = CullMode::CULL_MODE_BACK;
         state.front_face = FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
         pipeline_desc.raster_state = state;
-        pipeline_handle = pipeline_manager_.CreatePipelineResource(logical_device_, pipeline_desc, swapchain_renderpass_);
+        pipeline_handle = pipeline_manager_->CreatePipelineResource(logical_device_, pipeline_desc, swapchain_renderpass_);
     }
 
     void VulkanBackend::CreateFrameBuffers()
@@ -741,35 +754,56 @@ namespace kpengine::graphics
         index_handle_ = CreateIndexBuffer(indices.data(), indices_size);
     }
 
-    BufferHandle VulkanBackend::CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage)
+    BufferHandle VulkanBackend::CreateStageBufferResource(size_t size)
     {
         std::array<uint32_t, 2> queue_family_indices = {graphics_queue_.index, transfer_queue_.index};
-
         // stage buffer
         VkBufferCreateInfo stage_buffer_create_info{};
         stage_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         stage_buffer_create_info.size = size;
         stage_buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
-        stage_buffer_create_info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        stage_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
-        stage_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
-        BufferHandle stage_handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+        stage_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        buffer_pool_.UploadData(logical_device_, stage_handle, size, data);
+    //    stage_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
+    //    stage_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
+        return buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
+    
+        
+    }
+
+    bool VulkanBackend::DestroyBufferResource(BufferHandle handle)
+    {
+        return buffer_pool_->DestroyBufferResource(logical_device_, handle);
+    }
+
+    void VulkanBackend::UploadDataToBuffer(BufferHandle handle, size_t size, const void *data)
+    {
+        buffer_pool_->UploadData(logical_device_, handle, size, data);
+    }
+
+    VulkanBufferResource *VulkanBackend::GetBufferResource(BufferHandle handle)
+    {
+        return buffer_pool_->GetBufferResource(handle);
+    }
+
+    BufferHandle VulkanBackend::CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage)
+    {
+        BufferHandle stage_handle = CreateStageBufferResource(size);
+
+        UploadDataToBuffer(stage_handle, size, data);
 
         VkBufferCreateInfo dst_buffer_create_info{};
         dst_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         dst_buffer_create_info.size = size;
         dst_buffer_create_info.usage = usage;
-        dst_buffer_create_info.sharingMode = VK_SHARING_MODE_CONCURRENT;
-        dst_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
-        dst_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
+        dst_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        BufferHandle dst_handle = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, &dst_buffer_create_info, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT);
+
+        BufferHandle dst_handle = buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &dst_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
 
         CopyBuffer(stage_handle, dst_handle, size);
 
-        buffer_pool_.DestroyBufferResource(logical_device_, stage_handle);
+        DestroyBufferResource(stage_handle);
 
         return dst_handle;
     }
@@ -831,20 +865,20 @@ namespace kpengine::graphics
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
-            uniform_buffer_handles_[i] = buffer_pool_.CreateBufferResource(physical_device_, logical_device_, &buffer_create_info, VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT);
+            uniform_buffer_handles_[i] = buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
         }
         VkPhysicalDeviceProperties physical_device_props;
         vkGetPhysicalDeviceProperties(physical_device_, &physical_device_props);
         VkDeviceSize alignment = physical_device_props.limits.minUniformBufferOffsetAlignment;
         VkDeviceSize aligned_buffer_size = (buffer_size + alignment - 1) & ~(alignment - 1);
-        void* mapped_ptr = nullptr;
-        buffer_pool_.MapBuffer(logical_device_, uniform_buffer_handles_.back(), aligned_buffer_size * uniform_buffer_handles_.size(), &mapped_ptr);
-        VkDeviceSize base_offset = buffer_pool_.GetBufferResource(uniform_buffer_handles_.back())->allocation.offset; 
-        for(size_t i = 0;i<MAX_FRAMES_IN_FLIGHT;i++)
+        void *mapped_ptr = nullptr;
+        buffer_pool_->MapBuffer(logical_device_, uniform_buffer_handles_.back(), aligned_buffer_size * uniform_buffer_handles_.size(), &mapped_ptr);
+        VkDeviceSize base_offset = buffer_pool_->GetBufferResource(uniform_buffer_handles_.back())->allocation.offset;
+        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
-            
-            VulkanBufferResource* resource = buffer_pool_.GetBufferResource(uniform_buffer_handles_[i]);
-            uniform_buffer_mapped_ptr_[i] = static_cast<char*>(mapped_ptr) + resource->allocation.offset - base_offset;
+
+            VulkanBufferResource *resource = buffer_pool_->GetBufferResource(uniform_buffer_handles_[i]);
+            uniform_buffer_mapped_ptr_[i] = static_cast<char *>(mapped_ptr) + resource->allocation.offset - base_offset;
         }
     }
 
@@ -869,7 +903,7 @@ namespace kpengine::graphics
 
     void VulkanBackend::CreateDescriptorSets()
     {
-        VulkanPipelineResource *resource = pipeline_manager_.GetPipelineResource(pipeline_handle);
+        VulkanPipelineResource *resource = pipeline_manager_->GetPipelineResource(pipeline_handle);
         std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, resource->descriptor_set_layouts[0]);
         VkDescriptorSetAllocateInfo allocate_info{};
         allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -887,7 +921,7 @@ namespace kpengine::graphics
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
             VkDescriptorBufferInfo buffer_info{};
-            VulkanBufferResource *buf_resource = buffer_pool_.GetBufferResource(uniform_buffer_handles_[i]);
+            VulkanBufferResource *buf_resource = buffer_pool_->GetBufferResource(uniform_buffer_handles_[i]);
 
             buffer_info.buffer = buf_resource->buffer;
             buffer_info.offset = 0;
@@ -916,7 +950,7 @@ namespace kpengine::graphics
         // model.rotator_.pitch_ = -90.f;
         model.rotator_.roll_ = time * 90.f;
         ubo.model = Matrix4f::MakeTransformMatrix(model).Transpose();
-        ubo.view = Matrix4f::MakeCameraMatrix({0.f, 0.f, 2.f}, {0.f, 0.f, -1.f}, {0.f, 1.f, 0.f}).Transpose(); 
+        ubo.view = Matrix4f::MakeCameraMatrix({0.f, 0.f, 2.f}, {0.f, 0.f, -1.f}, {0.f, 1.f, 0.f}).Transpose();
         float aspect = resolution_.width / (float)resolution_.height;
         ubo.proj = Matrix4f::MakePerProjMatrix(math::DegreeToRadian(45.f), aspect, 0.1f, 10.f).Transpose();
         ubo.proj[1][1] *= -1;
@@ -927,16 +961,16 @@ namespace kpengine::graphics
         }
     }
 
-    void VulkanBackend::CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size)
+    VkCommandBuffer VulkanBackend::BeginSingleTimeCommands(VkCommandPool command_pool)
     {
         VkCommandBufferAllocateInfo command_buffer_allocate_info{};
         command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        command_buffer_allocate_info.commandPool = transfer_command_pool_;
+        command_buffer_allocate_info.commandPool = command_pool;
         command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
         command_buffer_allocate_info.commandBufferCount = 1;
 
-        VkCommandBuffer copy_command_buffer;
-        if (vkAllocateCommandBuffers(logical_device_, &command_buffer_allocate_info, &copy_command_buffer) != VK_SUCCESS)
+        VkCommandBuffer commandbuffer;
+        if (vkAllocateCommandBuffers(logical_device_, &command_buffer_allocate_info, &commandbuffer) != VK_SUCCESS)
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocate copy command buffer");
             throw std::runtime_error("Failed to allocate copy command buffer");
@@ -946,28 +980,42 @@ namespace kpengine::graphics
         command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-        vkBeginCommandBuffer(copy_command_buffer, &command_buffer_begin_info);
+        vkBeginCommandBuffer(commandbuffer, &command_buffer_begin_info);
+
+        return commandbuffer;
+    }
+
+    void VulkanBackend::EndSingleTimeCommands(VkCommandBuffer commandbuffer, VkCommandPool commandpool, VkQueue queue)
+    {
+        vkEndCommandBuffer(commandbuffer);
+
+        VkSubmitInfo submit_info{};
+        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        submit_info.commandBufferCount = 1;
+        submit_info.pCommandBuffers = &commandbuffer;
+
+        vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+        vkQueueWaitIdle(queue);
+
+        vkFreeCommandBuffers(logical_device_, commandpool, 1, &commandbuffer);
+    }
+
+    void VulkanBackend::CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size)
+    {
+        VkCommandBuffer copy_command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
         {
             VkBufferCopy copy_region{};
             copy_region.srcOffset = 0;
             copy_region.dstOffset = 0;
             copy_region.size = size;
 
-            VkBuffer src_buffer = buffer_pool_.GetBufferResource(src_handle)->buffer;
-            VkBuffer dst_buffer = buffer_pool_.GetBufferResource(dst_handle)->buffer;
+            VkBuffer src_buffer = buffer_pool_->GetBufferResource(src_handle)->buffer;
+            VkBuffer dst_buffer = buffer_pool_->GetBufferResource(dst_handle)->buffer;
+            
             vkCmdCopyBuffer(copy_command_buffer, src_buffer, dst_buffer, 1, &copy_region);
         }
-        vkEndCommandBuffer(copy_command_buffer);
 
-        VkSubmitInfo submit_info{};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &copy_command_buffer;
-
-        vkQueueSubmit(transfer_queue_.queue, 1, &submit_info, VK_NULL_HANDLE);
-        vkQueueWaitIdle(transfer_queue_.queue);
-
-        vkFreeCommandBuffers(logical_device_, transfer_command_pool_, 1, &copy_command_buffer);
+        EndSingleTimeCommands(copy_command_buffer, transfer_command_pool_, transfer_queue_.queue);
     }
 
     void VulkanBackend::RecreateSwapchain()
@@ -1030,7 +1078,7 @@ namespace kpengine::graphics
 
         vkCmdBeginRenderPass(commandbuffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
         {
-            VulkanPipelineResource *pipeline_resource = pipeline_manager_.GetPipelineResource(pipeline_handle);
+            VulkanPipelineResource *pipeline_resource = pipeline_manager_->GetPipelineResource(pipeline_handle);
             vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_resource->pipeline);
 
             VkViewport viewport{};
@@ -1048,9 +1096,9 @@ namespace kpengine::graphics
             scissor.offset.y = 0;
             vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
 
-            VulkanBufferResource *index_buffer_resource = buffer_pool_.GetBufferResource(index_handle_);
-            VulkanBufferResource *pos_buffer_resource = buffer_pool_.GetBufferResource(pos_handle_);
-            VulkanBufferResource *color_buffer_resource = buffer_pool_.GetBufferResource(color_handle_);
+            VulkanBufferResource *index_buffer_resource = buffer_pool_->GetBufferResource(index_handle_);
+            VulkanBufferResource *pos_buffer_resource = buffer_pool_->GetBufferResource(pos_handle_);
+            VulkanBufferResource *color_buffer_resource = buffer_pool_->GetBufferResource(color_handle_);
 
             VkBuffer vertexBuffers[] = {pos_buffer_resource->buffer, color_buffer_resource->buffer};
             VkDeviceSize offsets[] = {0, 0};

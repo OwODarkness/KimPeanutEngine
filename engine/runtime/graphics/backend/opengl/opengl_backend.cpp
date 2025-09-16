@@ -49,8 +49,9 @@ namespace kpengine::graphics{
         return {ebo, 0};
     }
 
-    void OpenglBackend::DestroyBuffer(BufferHandle handle)
+    bool OpenglBackend::DestroyBufferResource(BufferHandle handle)
     {
         glDeleteBuffers(1, &handle.id);
+        return true;
     }
 }
