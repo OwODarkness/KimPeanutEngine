@@ -3,6 +3,12 @@
 namespace kpengine::graphics
 {
 
+    VulkanImageMemoryPool::VulkanImageMemoryPool(): allocator_(std::make_unique<VulkanMemoryPoolAllocator>())
+    {
+
+    }
+
+
     uint32_t VulkanImageMemoryPool::RequestMemoryTypeIndex(VkMemoryPropertyFlags memory_prop_flags, const VkMemoryRequirements &memory_require, const VkPhysicalDeviceMemoryProperties& physcial_memory_props)
     {
         for (uint32_t i = 0; i < physcial_memory_props.memoryTypeCount; i++)
@@ -36,6 +42,8 @@ namespace kpengine::graphics
 
         VulkanMemoryAllocation allocation = allocator_->Allocate(logical_device, memory_requires.size, memory_requires.alignment, memory_type_index);
         vkBindImageMemory(logical_device, image, allocation.memory, allocation.offset);
+
+        return allocation;
     }
     void VulkanImageMemoryPool::Free(VkDevice logical_device, const VulkanMemoryAllocation &allocation)
     {

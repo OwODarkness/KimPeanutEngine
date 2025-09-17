@@ -31,8 +31,8 @@ namespace kpengine::graphics
     class OpenglTexture : public Texture
     {
     public:
-        void Initialize(GraphicsContext device, const TextureData& data, const TextureSettings& settings) override;
-        void Destroy(GraphicsContext device)override;
+        void Initialize(GraphicsContext context, const TextureData& data, const TextureSettings& settings) override;
+        void Destroy(GraphicsContext context)override;
         TextureResource GetTextueHandle() const override{return ConvertToTextureResource(resource_);}
     private:
         OpenglTextureResource resource_;

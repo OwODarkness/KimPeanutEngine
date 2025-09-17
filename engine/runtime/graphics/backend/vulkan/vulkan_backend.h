@@ -11,7 +11,6 @@
 #include "common/render_backend.h"
 #include "vulkan_context.h"
 
-
 namespace kpengine::graphics
 {
     struct QueueFamilyIndices
@@ -21,7 +20,7 @@ namespace kpengine::graphics
         std::optional<uint32_t> transfer_family;
         bool IsComplete() const
         {
-            return graphics_family.has_value() && present_family.has_value() && transfer_family.has_value(); 
+            return graphics_family.has_value() && present_family.has_value() && transfer_family.has_value();
         }
 
         static QueueFamilyIndices FindQueueFamilyIndices(VkPhysicalDevice physical_device, VkSurfaceKHR surface);
@@ -36,13 +35,14 @@ namespace kpengine::graphics
         static SwapchainSupportDetail FindSwapchainSupports(VkPhysicalDevice device, VkSurfaceKHR surface);
     };
 
-    struct VulkanQueue{
+    struct VulkanQueue
+    {
         uint32_t index = UINT_MAX;
         VkQueue queue;
     };
 
-
-    struct UniformBufferObject{
+    struct UniformBufferObject
+    {
         Matrix4f model;
         Matrix4f view;
         Matrix4f proj;
@@ -52,6 +52,7 @@ namespace kpengine::graphics
     {
     public:
         VulkanBackend();
+        ~VulkanBackend();
         virtual void Initialize() override;
         virtual void BeginFrame() override;
         virtual void EndFrame() override;
@@ -60,13 +61,16 @@ namespace kpengine::graphics
 
         BufferHandle CreateStageBufferResource(size_t size);
         bool DestroyBufferResource(BufferHandle handle) override;
-        void UploadDataToBuffer(BufferHandle handle, size_t size, const void* data);
-        struct VulkanBufferResource* GetBufferResource(BufferHandle handle) ;
+        void UploadDataToBuffer(BufferHandle handle, size_t size, const void *data);
+        struct VulkanBufferResource *GetBufferResource(BufferHandle handle);
+        void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
+        void CopyBufferToImage(BufferHandle handle, VkImage image, uint32_t width, uint32_t height);
 
-        class VulkanImageMemoryPool* GetImageMemoryPool() const{return image_memory_pool_.get();}
+        class VulkanImageMemoryPool *GetImageMemoryPool() const { return image_memory_pool_.get(); }
+
     protected:
-        BufferHandle CreateVertexBuffer(const void* data, size_t size) override;
-        BufferHandle CreateIndexBuffer(const void* data, size_t size) override;
+        BufferHandle CreateVertexBuffer(const void *data, size_t size) override;
+        BufferHandle CreateIndexBuffer(const void *data, size_t size) override;
 
     private:
         void CreateInstance();
@@ -84,8 +88,8 @@ namespace kpengine::graphics
         void CreateCommandBuffers();
         void CreateSyncObjects();
         void CreateVertexBuffers();
-        BufferHandle CreateBuffer(const void* data, size_t size, VkBufferUsageFlags usage);
-        
+        BufferHandle CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage);
+        void CreateTextures();
         void CreateUniformBuffers();
         void CreateDescriptorPool();
         void CreateDescriptorSets();
@@ -94,13 +98,14 @@ namespace kpengine::graphics
         void CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size);
         void RecreateSwapchain();
         void CleanupSwapchain();
+
     private:
         void RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index);
 
         VkCommandBuffer BeginSingleTimeCommands(VkCommandPool commandpool);
         void EndSingleTimeCommands(VkCommandBuffer commandbuffer, VkCommandPool commandpool, VkQueue queue);
-    
-        void FramebufferResizeCallback(const ResizeEvent& event) override;
+
+        void FramebufferResizeCallback(const ResizeEvent &event) override;
 
     private:
         std::vector<const char *> FindRequiredExtensions() const;
@@ -120,7 +125,6 @@ namespace kpengine::graphics
         VkDevice logical_device_;
         VulkanContext context_;
 
-            
         VulkanQueue graphics_queue_;
         VulkanQueue present_queue_;
         VulkanQueue transfer_queue_;
@@ -132,7 +136,7 @@ namespace kpengine::graphics
         std::vector<VkImageView> swapchain_imageviews_;
         VkRenderPass swapchain_renderpass_;
         std::vector<VkFramebuffer> swapchain_framebuffers_;
-        
+
         VkCommandPool graphics_command_pool_;
         VkCommandPool transfer_command_pool_;
 
@@ -150,13 +154,17 @@ namespace kpengine::graphics
         BufferHandle index_handle_;
 
         std::vector<BufferHandle> uniform_buffer_handles_;
-        std::vector<void*> uniform_buffer_mapped_ptr_;
+        std::vector<void *> uniform_buffer_mapped_ptr_;
 
         std::unique_ptr<class VulkanPipelineManager> pipeline_manager_;
         PipelineHandle pipeline_handle;
 
         std::unique_ptr<class VulkanImageMemoryPool> image_memory_pool_;
- 
+
+        std::unique_ptr<class TextureManager> texture_manager_;
+
+        TextureHandle texture_handle;
+
         VkDescriptorPool descriptor_pool_;
         std::vector<VkDescriptorSet> descriptor_sets_;
 

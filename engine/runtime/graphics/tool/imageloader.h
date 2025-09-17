@@ -18,6 +18,7 @@ namespace kpengine::graphics{
 
 
     class ImageLoader{
+    public:
         static bool ReadFromFile(const std::string& path, TextureData& data);
     };
 }

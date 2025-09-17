@@ -32,12 +32,13 @@ namespace kpengine::graphics
 
     class Texture
     {
-     
+
     protected:
-        virtual void Initialize(GraphicsContext device, const TextureData& data, const TextureSettings& settings) = 0;
-        virtual void Destroy(GraphicsContext device ) = 0;
+        virtual void Initialize(GraphicsContext context, const TextureData& data, const TextureSettings& settings) = 0;
+        virtual void Destroy(GraphicsContext context) = 0;
         virtual TextureResource GetTextueHandle() const = 0;
-    protected:
+    private:
+        friend class TextureManager; 
         
     };
 }

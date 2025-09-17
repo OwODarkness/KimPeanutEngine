@@ -100,7 +100,7 @@ namespace kpengine::graphics
             return GL_TRIANGLES;
         }
     }
-    GLenum ConvertToGLBlendFactor(BlendFactor factor)
+    inline GLenum ConvertToGLBlendFactor(BlendFactor factor)
     {
         switch (factor)
         {
@@ -136,7 +136,7 @@ namespace kpengine::graphics
         return GL_ONE;
     }
 
-    GLenum ConvertToGLBlendOp(BlendOp op)
+    inline GLenum ConvertToGLBlendOp(BlendOp op)
     {
         switch (op)
         {

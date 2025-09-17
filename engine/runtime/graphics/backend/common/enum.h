@@ -35,6 +35,14 @@ namespace kpengine::graphics
         TEXTURE_USAGE_TRANSFER_DST = 1 << 5,
     };
 
+    inline TextureUsage operator|(TextureUsage lhs, TextureUsage rhs)
+    {
+        return static_cast<TextureUsage>(
+            static_cast<uint32_t>(lhs) |
+            static_cast<uint32_t>(rhs)
+        );
+    }
+
     enum class ShaderType
     {
         None,

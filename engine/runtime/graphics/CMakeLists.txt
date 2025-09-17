@@ -6,6 +6,7 @@ option(USE_VULKAN "Use Vulkan backend" ON)
 add_library(Graphics STATIC
     backend/common/render_backend.cpp
     backend/common/shader_manager.cpp
+    backend/common/texture_manager.cpp
     
     backend/opengl/opengl_backend.cpp
     backend/opengl/opengl_texture.cpp

@@ -39,8 +39,10 @@ namespace kpengine::graphics
     class VulkanTexture : public Texture
     {
     public:
-        void Initialize(GraphicsContext device, const TextureData& data, const TextureSettings& settings) override;
-        void Destroy(GraphicsContext device) override;
+        ~VulkanTexture();
+    protected:
+        void Initialize(GraphicsContext context, const TextureData& data, const TextureSettings& settings) override;
+        void Destroy(GraphicsContext context) override;
         TextureResource GetTextueHandle() const override{return ConvertToTextureResource(resource_);}
 
     private:

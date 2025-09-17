@@ -11,7 +11,10 @@
 #include "config/path.h"
 #include "vulkan_buffer_pool.h"
 #include "vulkan_pipeline_manager.h"
+#include "common/texture.h"
 #include "vulkan_image_memory_pool.h"
+#include "common/texture_manager.h"
+
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
 const int MAX_FRAMES_IN_FLIGHT = 2;
 namespace kpengine::graphics
@@ -161,7 +164,8 @@ namespace kpengine::graphics
 
     VulkanBackend::VulkanBackend() : buffer_pool_(std::make_unique<VulkanBufferPool>()),
                                      pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
-                                     image_memory_pool_(std::make_unique<VulkanImageMemoryPool>())
+                                     image_memory_pool_(std::make_unique<VulkanImageMemoryPool>()),
+                                     texture_manager_(std::make_unique<TextureManager>())
     {
     }
 
@@ -181,6 +185,7 @@ namespace kpengine::graphics
         CreateFrameBuffers();
         CreateCommandPools();
         CreateCommandBuffers();
+        CreateTextures();
         CreateVertexBuffers();
         CreateUniformBuffers();
         CreateDescriptorPool();
@@ -284,6 +289,11 @@ namespace kpengine::graphics
         DestroyBufferResource(pos_handle_);
         DestroyBufferResource(color_handle_);
         DestroyBufferResource(index_handle_);
+
+        GraphicsContext context;
+        context.native = static_cast<void*>(&context_);
+        context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        texture_manager_->DestroyTexture(context,  texture_handle);
 
         buffer_pool_->FreeMemory(logical_device_);
 
@@ -502,7 +512,7 @@ namespace kpengine::graphics
     void VulkanBackend::InitVulkanContext()
     {
         context_.backend = this;
-    
+
         context_.physical_device = physical_device_;
         context_.logical_device = logical_device_;
     }
@@ -742,6 +752,21 @@ namespace kpengine::graphics
         }
     }
 
+    void VulkanBackend::CreateTextures()
+    {
+        std::string texture_path = GetTextureDirectory() + "default.png";
+        GraphicsContext context{};
+        context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        context.native = static_cast<void*>(&context_);
+        TextureSettings settings{};
+        settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        settings.mip_levels = 1;
+        settings.type = TextureType::TEXTURE_TYPE_2D;
+        settings.sample_count = 1;
+        settings.usage = TextureUsage::TEXTURE_USAGE_TRANSFER_DST | TextureUsage::TEXTURE_USAGE_SAMPLE;
+        texture_handle = texture_manager_->CreateTexture(context, texture_path, settings);
+    }
+
     void VulkanBackend::CreateVertexBuffers()
     {
         VkDeviceSize pos_size = sizeof(Vertex) * vertex.size();
@@ -764,11 +789,9 @@ namespace kpengine::graphics
         stage_buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         stage_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-    //    stage_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
-    //    stage_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
+        //    stage_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
+        //    stage_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
         return buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
-    
-        
     }
 
     bool VulkanBackend::DestroyBufferResource(BufferHandle handle)
@@ -797,7 +820,6 @@ namespace kpengine::graphics
         dst_buffer_create_info.size = size;
         dst_buffer_create_info.usage = usage;
         dst_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
 
         BufferHandle dst_handle = buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &dst_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
 
@@ -1002,7 +1024,7 @@ namespace kpengine::graphics
 
     void VulkanBackend::CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size)
     {
-        VkCommandBuffer copy_command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
+        VkCommandBuffer command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
         {
             VkBufferCopy copy_region{};
             copy_region.srcOffset = 0;
@@ -1011,11 +1033,77 @@ namespace kpengine::graphics
 
             VkBuffer src_buffer = buffer_pool_->GetBufferResource(src_handle)->buffer;
             VkBuffer dst_buffer = buffer_pool_->GetBufferResource(dst_handle)->buffer;
-            
-            vkCmdCopyBuffer(copy_command_buffer, src_buffer, dst_buffer, 1, &copy_region);
+
+            vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
         }
 
-        EndSingleTimeCommands(copy_command_buffer, transfer_command_pool_, transfer_queue_.queue);
+        EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
+    }
+    void VulkanBackend::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout)
+    {
+        VkCommandBuffer command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
+
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.oldLayout = old_layout;
+        barrier.newLayout = new_layout;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.image = image;
+        barrier.subresourceRange.baseMipLevel = 0;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+
+        VkPipelineStageFlags src_stage_flags;
+        VkPipelineStageFlags dst_stage_flags;
+
+        if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+        {
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            src_stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            dst_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        }
+        else if(old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        {
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            src_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            dst_stage_flags = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+        }
+        else
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Unsupport layout transition");
+            throw std::runtime_error("Unsupport layout transition");
+        }
+
+        vkCmdPipelineBarrier(command_buffer, src_stage_flags, dst_stage_flags, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+        EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
+    }
+    
+    void VulkanBackend::CopyBufferToImage(BufferHandle buffer_handle, VkImage image, uint32_t width, uint32_t height)
+    {
+        VulkanBufferResource* buffer_resource = buffer_pool_->GetBufferResource(buffer_handle);
+        VkCommandBuffer command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
+
+        VkBufferImageCopy region{};
+        region.bufferRowLength = 0;
+        region.bufferOffset = 0;
+        region.bufferImageHeight = 0;
+        region.imageOffset = {0, 0, 0};
+        region.imageExtent = {width, height, 1};
+        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        region.imageSubresource.mipLevel = 0;
+        region.imageSubresource.baseArrayLayer = 0;
+        region.imageSubresource.layerCount = 1;
+
+        vkCmdCopyBufferToImage(command_buffer, buffer_resource->buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+
+        EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
+        
     }
 
     void VulkanBackend::RecreateSwapchain()
@@ -1234,4 +1322,6 @@ namespace kpengine::graphics
             return actual_size;
         }
     }
+
+    VulkanBackend::~VulkanBackend() = default;
 }
