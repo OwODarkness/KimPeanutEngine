@@ -268,6 +268,51 @@ namespace kpengine::graphics
         return flags;
     }
 
+
+    inline VkFilter ConvertToVulkanFilter(SamplerFilterType filter)
+    {
+        switch(filter)
+        {
+            case SamplerFilterType::SAMPLER_FILTER_LINEAR:
+                return VK_FILTER_LINEAR;
+            case SamplerFilterType::SAMPLER_FILTER_NEAREST:
+                return VK_FILTER_NEAREST;
+            default:
+                return VK_FILTER_LINEAR;
+        }
+    }
+
+    inline VkSamplerAddressMode ConvertToVulkanAddressMode(SamplerAddressMode mode)
+    {
+        switch(mode)
+        {
+            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT:
+                return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT:
+                return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE:
+                return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE:
+                return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER:
+                return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+            default:
+                return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        }   
+    }
+
+    inline VkSamplerMipmapMode ConvertToVulkanMipmapMode(SamplerMipmapMode mode)
+    {
+        switch(mode)
+        {
+            case SamplerMipmapMode::SAMPLER_MIPMAP_MODE_LINEAR:
+                return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+            case SamplerMipmapMode::SAMPLER_MIPMAP_MODE_NEAREST:
+                return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+            default:
+                return VK_SAMPLER_MIPMAP_MODE_MAX_ENUM;
+        }
+    }
 }
 
 #endif

@@ -11,7 +11,6 @@ namespace kpengine::graphics
 {
     using TextureImage = void *;
     using TextureView = void *;
-    using TextureSampler = void *;
 
 
     struct TextureSettings
@@ -21,13 +20,12 @@ namespace kpengine::graphics
         TextureType type = TextureType::TEXTURE_TYPE_2D;
         TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         TextureUsage usage = TextureUsage::TEXTURE_USAGE_SAMPLE;
-    };
+        };
 
     struct TextureResource
     {
         TextureImage image = nullptr;
         TextureView view = nullptr;
-        TextureSampler sampler = nullptr;
     };
 
     class Texture

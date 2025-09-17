@@ -291,9 +291,9 @@ namespace kpengine::graphics
         DestroyBufferResource(index_handle_);
 
         GraphicsContext context;
-        context.native = static_cast<void*>(&context_);
+        context.native = static_cast<void *>(&context_);
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
-        texture_manager_->DestroyTexture(context,  texture_handle);
+        texture_manager_->DestroyTexture(context, texture_handle);
 
         buffer_pool_->FreeMemory(logical_device_);
 
@@ -757,7 +757,7 @@ namespace kpengine::graphics
         std::string texture_path = GetTextureDirectory() + "default.png";
         GraphicsContext context{};
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
-        context.native = static_cast<void*>(&context_);
+        context.native = static_cast<void *>(&context_);
         TextureSettings settings{};
         settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         settings.mip_levels = 1;
@@ -781,16 +781,12 @@ namespace kpengine::graphics
 
     BufferHandle VulkanBackend::CreateStageBufferResource(size_t size)
     {
-        std::array<uint32_t, 2> queue_family_indices = {graphics_queue_.index, transfer_queue_.index};
         // stage buffer
         VkBufferCreateInfo stage_buffer_create_info{};
         stage_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         stage_buffer_create_info.size = size;
         stage_buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         stage_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-
-        //    stage_buffer_create_info.queueFamilyIndexCount = static_cast<uint32_t>(queue_family_indices.size());
-        //    stage_buffer_create_info.pQueueFamilyIndices = queue_family_indices.data();
         return buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
     }
 
@@ -822,9 +818,9 @@ namespace kpengine::graphics
         dst_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
         BufferHandle dst_handle = buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &dst_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
-
+        TransferBufferOwnership(dst_handle, graphics_queue_.index, transfer_queue_.index);
         CopyBuffer(stage_handle, dst_handle, size);
-
+        TransferBufferOwnership(dst_handle, transfer_queue_.index, graphics_queue_.index);
         DestroyBufferResource(stage_handle);
 
         return dst_handle;
@@ -1022,6 +1018,81 @@ namespace kpengine::graphics
         vkFreeCommandBuffers(logical_device_, commandpool, 1, &commandbuffer);
     }
 
+    void VulkanBackend::TransferBufferOwnership(BufferHandle buffer_handle, uint32_t src_queue_family, uint32_t dst_queue_family)
+    {
+        VkCommandPool release_command_pool;
+        VkQueue release_queue;
+        VkCommandPool acquire_command_pool;
+        VkQueue acquire_queue;
+
+        VkPipelineStageFlags release_src_stage_flags;
+        VkPipelineStageFlags release_dst_stage_flags;
+        VkPipelineStageFlags acquire_src_stage_flags;
+        VkPipelineStageFlags acquire_dst_stage_flags;
+
+
+        VulkanBufferResource* resource = buffer_pool_->GetBufferResource(buffer_handle);
+
+        VkBufferMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
+        barrier.buffer = resource->buffer;
+        barrier.size = VK_WHOLE_SIZE;
+        barrier.offset = 0;
+
+        if(dst_queue_family == graphics_queue_.index)
+        {
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_VERTEX_ATTRIBUTE_READ_BIT;
+            barrier.srcQueueFamilyIndex = transfer_queue_.index;
+            barrier.dstQueueFamilyIndex = graphics_queue_.index;
+
+            release_command_pool = transfer_command_pool_;
+            release_queue = transfer_queue_.queue;
+            acquire_command_pool = graphics_command_pool_;
+            acquire_queue = graphics_queue_.queue;
+            
+            release_src_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            release_dst_stage_flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+            acquire_src_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            acquire_dst_stage_flags = VK_PIPELINE_STAGE_VERTEX_INPUT_BIT;
+          }
+        else if(dst_queue_family == transfer_queue_.index)
+        {
+            barrier.srcAccessMask = 0;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.srcQueueFamilyIndex = graphics_queue_.index;
+            barrier.dstQueueFamilyIndex = transfer_queue_.index;
+
+            release_command_pool = graphics_command_pool_;
+            release_queue = graphics_queue_.queue;
+            acquire_command_pool = transfer_command_pool_;
+            acquire_queue = transfer_queue_.queue;
+        
+            release_src_stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            release_dst_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            acquire_src_stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            acquire_dst_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+        }
+        
+        //release 
+        VkCommandBuffer release_command_buffer = BeginSingleTimeCommands(release_command_pool);
+        vkCmdPipelineBarrier(release_command_buffer, release_src_stage_flags, release_dst_stage_flags, 0, 
+            0, nullptr, 
+            1, &barrier, 
+            0, nullptr); 
+        EndSingleTimeCommands(release_command_buffer, release_command_pool, release_queue);
+
+        //acquire
+        VkCommandBuffer acquire_command_buffer = BeginSingleTimeCommands(acquire_command_pool);
+        vkCmdPipelineBarrier(acquire_command_buffer, acquire_src_stage_flags, acquire_dst_stage_flags, 0, 
+            0, nullptr,
+            1, &barrier,
+            0, nullptr 
+        );
+        EndSingleTimeCommands(acquire_command_buffer, acquire_command_pool, acquire_queue);
+       
+    }
+
     void VulkanBackend::CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size)
     {
         VkCommandBuffer command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
@@ -1039,16 +1110,15 @@ namespace kpengine::graphics
 
         EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
     }
+
     void VulkanBackend::TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout)
     {
-        VkCommandBuffer command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
 
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
         barrier.oldLayout = old_layout;
         barrier.newLayout = new_layout;
-        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
         barrier.image = image;
         barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
@@ -1056,22 +1126,51 @@ namespace kpengine::graphics
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = 1;
 
-        VkPipelineStageFlags src_stage_flags;
-        VkPipelineStageFlags dst_stage_flags;
+        VkPipelineStageFlags release_src_stage_flags;
+        VkPipelineStageFlags release_dst_stage_flags;
+        VkPipelineStageFlags acquire_src_stage_flags;
+        VkPipelineStageFlags acquire_dst_stage_flags;
 
-        if(old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
+        VkCommandPool release_command_pool;
+        VkQueue release_queue;
+        VkCommandPool acquire_command_pool;
+        VkQueue acquire_queue;
+
+        if (old_layout == VK_IMAGE_LAYOUT_UNDEFINED && new_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL)
         {
             barrier.srcAccessMask = 0;
             barrier.dstAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            src_stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
-            dst_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            barrier.srcQueueFamilyIndex = graphics_queue_.index;
+            barrier.dstQueueFamilyIndex = transfer_queue_.index;
+
+            release_src_stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            release_dst_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            acquire_src_stage_flags = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            acquire_dst_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+
+            release_command_pool = graphics_command_pool_;
+            release_queue = graphics_queue_.queue;
+
+            acquire_command_pool = transfer_command_pool_;
+            acquire_queue = transfer_queue_.queue;
         }
-        else if(old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
+        else if (old_layout == VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL && new_layout == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
         {
             barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
-            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
-            src_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
-            dst_stage_flags = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            barrier.srcQueueFamilyIndex = transfer_queue_.index;
+            barrier.dstQueueFamilyIndex = graphics_queue_.index;
+
+            release_src_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            release_dst_stage_flags = VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT;
+            acquire_src_stage_flags = VK_PIPELINE_STAGE_TRANSFER_BIT;
+            acquire_dst_stage_flags = VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT;
+
+            release_command_pool = transfer_command_pool_;
+            release_queue = transfer_queue_.queue;
+
+            acquire_command_pool = graphics_command_pool_;
+            acquire_queue = graphics_queue_.queue;
         }
         else
         {
@@ -1079,14 +1178,20 @@ namespace kpengine::graphics
             throw std::runtime_error("Unsupport layout transition");
         }
 
-        vkCmdPipelineBarrier(command_buffer, src_stage_flags, dst_stage_flags, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        // release
+        VkCommandBuffer release_command_buffer = BeginSingleTimeCommands(release_command_pool);
+        vkCmdPipelineBarrier(release_command_buffer, release_src_stage_flags, release_dst_stage_flags, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        EndSingleTimeCommands(release_command_buffer, release_command_pool, release_queue);
 
-        EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
+        // acquire
+        VkCommandBuffer acquire_command_buffer = BeginSingleTimeCommands(acquire_command_pool);
+        vkCmdPipelineBarrier(acquire_command_buffer, acquire_src_stage_flags, acquire_dst_stage_flags, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+        EndSingleTimeCommands(acquire_command_buffer, acquire_command_pool, acquire_queue);
     }
-    
+
     void VulkanBackend::CopyBufferToImage(BufferHandle buffer_handle, VkImage image, uint32_t width, uint32_t height)
     {
-        VulkanBufferResource* buffer_resource = buffer_pool_->GetBufferResource(buffer_handle);
+        VulkanBufferResource *buffer_resource = buffer_pool_->GetBufferResource(buffer_handle);
         VkCommandBuffer command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
 
         VkBufferImageCopy region{};
@@ -1103,7 +1208,6 @@ namespace kpengine::graphics
         vkCmdCopyBufferToImage(command_buffer, buffer_resource->buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
 
         EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
-        
     }
 
     void VulkanBackend::RecreateSwapchain()

@@ -137,7 +137,25 @@ namespace kpengine::graphics
         SHADER_STAGE_VERTEX = 0x01,
         SHADER_STAGE_FRAGMENT = 0x02,
         SHADER_STAGE_GEOMETRY = 0X04
+    };
 
+    enum class SamplerFilterType{
+        SAMPLER_FILTER_LINEAR,
+        SAMPLER_FILTER_NEAREST
+    };
+
+    enum class SamplerMipmapMode{
+        None,
+        SAMPLER_MIPMAP_MODE_LINEAR,
+        SAMPLER_MIPMAP_MODE_NEAREST
+    };
+
+    enum class SamplerAddressMode{
+        SAMPLER_ADDRESS_MODE_REPEAT,
+        SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT,
+        SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+        SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE,
+        SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
     };
 
 }

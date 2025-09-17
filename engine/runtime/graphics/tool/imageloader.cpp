@@ -18,6 +18,7 @@ namespace kpengine::graphics
         }
         data.width = w;
         data.height = h;
+        data.path = path;
         data.pixels.assign(pixels, pixels + 4 * w * h);
         stbi_image_free(pixels);
         return true;

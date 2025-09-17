@@ -100,6 +100,8 @@ namespace kpengine::graphics
         void CleanupSwapchain();
 
     private:
+        void TransferBufferOwnership(BufferHandle buffer_handle, uint32_t src_queue_family, uint32_t dst_queue_family);
+
         void RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index);
 
         VkCommandBuffer BeginSingleTimeCommands(VkCommandPool commandpool);

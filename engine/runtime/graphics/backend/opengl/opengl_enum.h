@@ -154,6 +154,53 @@ namespace kpengine::graphics
         return GL_FUNC_ADD;
     }
 
+    inline GLenum ConvertToGLSamplerFilter(SamplerFilterType filter)
+    {
+        switch (filter)
+        {
+        case SamplerFilterType::SAMPLER_FILTER_LINEAR:
+            return GL_LINEAR;
+        case SamplerFilterType::SAMPLER_FILTER_NEAREST:
+            return GL_NEAREST;
+        default:
+            return GL_LINEAR;
+        }
+    }
+
+    inline GLenum ConvertToGLSamplerAddressMode(SamplerAddressMode mode)
+    {
+        switch (mode)
+        {
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT:
+            return GL_REPEAT;
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT:
+            return GL_MIRRORED_REPEAT;
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE:
+            return GL_CLAMP_TO_EDGE;
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE:
+            return GL_MIRROR_CLAMP_TO_EDGE;
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER:
+            return GL_CLAMP_TO_BORDER;
+
+            return GL_REPEAT;
+        }
+    }
+
+    inline GLenum ConvertToGLSampleMinFilter(SamplerFilterType filter, SamplerMipmapMode mode)
+    {
+            if(mode == SamplerMipmapMode::SAMPLER_MIPMAP_MODE_LINEAR && filter == SamplerFilterType::SAMPLER_FILTER_LINEAR)
+            {
+                return GL_LINEAR_MIPMAP_LINEAR;
+            }
+            else if(mode == SamplerMipmapMode::SAMPLER_MIPMAP_MODE_NEAREST && filter == SamplerFilterType::SAMPLER_FILTER_NEAREST)
+            {
+                return GL_NEAREST_MIPMAP_NEAREST;
+            }
+            else
+            {
+                return ConvertToGLSamplerFilter(filter);
+            }
+    }
 }
 
 #endif

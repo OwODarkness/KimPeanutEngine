@@ -14,7 +14,6 @@ namespace kpengine::graphics
     {
         VkImage image = VK_NULL_HANDLE;
         VkImageView view = VK_NULL_HANDLE;
-        VkSampler sampler = VK_NULL_HANDLE;
     };
 
     inline VulkanTextureResource ConvertToVulkanTextureResource(const TextureResource &resource)
@@ -22,7 +21,6 @@ namespace kpengine::graphics
         VulkanTextureResource res;
         res.image = reinterpret_cast<VkImage>(resource.image);
         res.view = reinterpret_cast<VkImageView>(resource.view);
-        res.sampler = reinterpret_cast<VkSampler>(resource.sampler);
         return res;
     }
 
@@ -31,7 +29,6 @@ namespace kpengine::graphics
         TextureResource res;
         res.image = reinterpret_cast<TextureImage>(resource.image);
         res.view = reinterpret_cast<TextureView>(resource.view);
-        res.sampler = reinterpret_cast<TextureSampler>(resource.sampler);
         return res;
     }
 

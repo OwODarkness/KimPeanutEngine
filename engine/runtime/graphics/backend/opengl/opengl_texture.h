@@ -16,7 +16,6 @@ namespace kpengine::graphics
     {
         OpenglTextureResource res{};
         res.image = static_cast<GLuint>(reinterpret_cast<uintptr_t>(handle.image));
-        res.sampler = static_cast<GLuint>(reinterpret_cast<uintptr_t>(handle.sampler));
         return res;
     }
 
@@ -24,7 +23,6 @@ namespace kpengine::graphics
     {
         TextureResource res{};
         res.image = reinterpret_cast<TextureImage>(static_cast<uintptr_t>(handle.image));
-        res.sampler = reinterpret_cast<TextureImage>(static_cast<uintptr_t>(handle.sampler));
         return res;
     }
 
