@@ -7,10 +7,12 @@ add_library(Graphics STATIC
     backend/common/render_backend.cpp
     backend/common/shader_manager.cpp
     backend/common/texture_manager.cpp
+    backend/common/sampler_manager.cpp
     
     backend/opengl/opengl_backend.cpp
     backend/opengl/opengl_texture.cpp
     backend/opengl/opengl_shader.cpp
+    backend/opengl/opengl_sampler.cpp
 
     backend/vulkan/vulkan_backend.cpp
     backend/vulkan/vulkan_texture.cpp
@@ -21,6 +23,7 @@ add_library(Graphics STATIC
     backend/vulkan/vulkan_memory_pool_allocator.cpp
     backend/vulkan/vulkan_pipeline_manager.cpp
     backend/vulkan/vulkan_image_memory_pool.cpp
+    backend/vulkan/vulkan_sampler.cpp
     
     tool/shaderloader.cpp
     tool/imageloader.cpp

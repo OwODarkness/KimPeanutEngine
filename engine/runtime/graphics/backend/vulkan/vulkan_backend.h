@@ -167,6 +167,9 @@ namespace kpengine::graphics
 
         TextureHandle texture_handle;
 
+        std::unique_ptr<class SamplerManager> sampler_manager_;
+        SamplerHandle sampler_handle;
+        
         VkDescriptorPool descriptor_pool_;
         std::vector<VkDescriptorSet> descriptor_sets_;
 

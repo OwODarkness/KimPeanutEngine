@@ -14,6 +14,7 @@
 #include "common/texture.h"
 #include "vulkan_image_memory_pool.h"
 #include "common/texture_manager.h"
+#include "common/sampler_manager.h"
 
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
 const int MAX_FRAMES_IN_FLIGHT = 2;
@@ -165,7 +166,8 @@ namespace kpengine::graphics
     VulkanBackend::VulkanBackend() : buffer_pool_(std::make_unique<VulkanBufferPool>()),
                                      pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
                                      image_memory_pool_(std::make_unique<VulkanImageMemoryPool>()),
-                                     texture_manager_(std::make_unique<TextureManager>())
+                                     texture_manager_(std::make_unique<TextureManager>()),
+                                     sampler_manager_(std::make_unique<SamplerManager>())
     {
     }
 
@@ -294,6 +296,8 @@ namespace kpengine::graphics
         context.native = static_cast<void *>(&context_);
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
         texture_manager_->DestroyTexture(context, texture_handle);
+        sampler_manager_->DestroySampler(context, sampler_handle);
+
 
         buffer_pool_->FreeMemory(logical_device_);
 
@@ -487,6 +491,7 @@ namespace kpengine::graphics
             queue_create_infos.push_back(queue_create_info);
         }
         VkPhysicalDeviceFeatures device_feature{};
+        device_feature.samplerAnisotropy = VK_TRUE;
 
         VkDeviceCreateInfo device_create_info{};
         device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -497,6 +502,7 @@ namespace kpengine::graphics
         device_create_info.pQueueCreateInfos = queue_create_infos.data();
         device_create_info.enabledLayerCount = 0;
         device_create_info.ppEnabledLayerNames = nullptr;
+        device_create_info.pEnabledFeatures = &device_feature;
 
         if (vkCreateDevice(physical_device_, &device_create_info, nullptr, &logical_device_) != VK_SUCCESS)
         {
@@ -758,13 +764,33 @@ namespace kpengine::graphics
         GraphicsContext context{};
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
         context.native = static_cast<void *>(&context_);
-        TextureSettings settings{};
-        settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
-        settings.mip_levels = 1;
-        settings.type = TextureType::TEXTURE_TYPE_2D;
-        settings.sample_count = 1;
-        settings.usage = TextureUsage::TEXTURE_USAGE_TRANSFER_DST | TextureUsage::TEXTURE_USAGE_SAMPLE;
-        texture_handle = texture_manager_->CreateTexture(context, texture_path, settings);
+        TextureSettings texture_settings{};
+        texture_settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        texture_settings.mip_levels = 1;
+        texture_settings.type = TextureType::TEXTURE_TYPE_2D;
+        texture_settings.sample_count = 1;
+        texture_settings.usage = TextureUsage::TEXTURE_USAGE_TRANSFER_DST | TextureUsage::TEXTURE_USAGE_SAMPLE;
+        texture_handle = texture_manager_->CreateTexture(context, texture_path, texture_settings);
+
+        SamplerSettings sampler_settings{};
+        sampler_settings.address_mode_u= SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler_settings.address_mode_v= SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler_settings.address_mode_w= SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
+        sampler_settings.enable_anisotropy = true;
+
+        VkPhysicalDeviceProperties properties;
+        vkGetPhysicalDeviceProperties(physical_device_, &properties);
+        sampler_settings.max_anisotropy = properties.limits.maxSamplerAnisotropy;
+        sampler_settings.mag_filter = SamplerFilterType::SAMPLER_FILTER_LINEAR;
+        sampler_settings.min_filter = SamplerFilterType::SAMPLER_FILTER_LINEAR;
+        sampler_settings.mip_lod_bias = 0.f;
+        sampler_settings.min_lod = 0.f;
+        sampler_settings.max_lod = 0.f;
+
+        sampler_handle = sampler_manager_->CreateSampler(context, sampler_settings);
+
+
+
     }
 
     void VulkanBackend::CreateVertexBuffers()
@@ -1366,6 +1392,9 @@ namespace kpengine::graphics
 
         bool is_swapchain_supported = CheckDeviceExtensionsSupport(device, device_extensions);
 
+        VkPhysicalDeviceFeatures physical_device_features{};
+        vkGetPhysicalDeviceFeatures(device, &physical_device_features);
+
         bool is_swap_adequate = false;
         if (is_swapchain_supported)
         {
@@ -1373,7 +1402,7 @@ namespace kpengine::graphics
             is_swap_adequate = !swap_chain_details.surface_formats.empty() && !swap_chain_details.present_modes.empty();
         }
 
-        return queue_family_indices.IsComplete() && is_swapchain_supported && is_swap_adequate;
+        return queue_family_indices.IsComplete() && is_swapchain_supported && is_swap_adequate && physical_device_features.samplerAnisotropy;
     }
 
     VkSurfaceFormatKHR VulkanBackend::ChooseSwapChainSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &available_formats) const

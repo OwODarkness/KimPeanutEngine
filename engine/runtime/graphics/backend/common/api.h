@@ -37,6 +37,16 @@ namespace kpengine::graphics
         }
     };
 
+    struct SamplerHandle
+    {
+        uint32_t id = UINT32_MAX;
+        uint32_t generation = 0;
+        bool IsValid() const
+        {
+            return id != UINT32_MAX;
+        }
+    };
+
     struct ShaderHandle
     {
         uint32_t id = UINT32_MAX;

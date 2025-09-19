@@ -30,8 +30,9 @@ namespace kpengine::graphics
       virtual SamplerResource GetSampleHandle() const = 0;  
     protected:
         virtual void Initialize(GraphicsContext context, const SamplerSettings& settings) = 0;
-        virtual bool Destroy(GraphicsContext context);
-    
+        virtual bool Destroy(GraphicsContext context) = 0;
+    private:
+        friend class SamplerManager;
     };
 }
 
