@@ -1,9 +1,13 @@
 #include "vulkan_image_memory_pool.h"
 #include "log/logger.h"
+#include "vulkan_memory_dedicated_allocator.h"
+#include "vulkan_memory_pool_allocator.h"
 namespace kpengine::graphics
 {
 
-    VulkanImageMemoryPool::VulkanImageMemoryPool(): allocator_(std::make_unique<VulkanMemoryPoolAllocator>())
+    VulkanImageMemoryPool::VulkanImageMemoryPool(): 
+    pool_allocator_(std::make_unique<VulkanMemoryPoolAllocator>()),
+    dedicated_allocator_(std::make_unique<VulkanMemoryDedicatedAllocator>())
     {
 
     }
@@ -40,17 +44,28 @@ namespace kpengine::graphics
             throw e;
         }
 
-        VulkanMemoryAllocation allocation = allocator_->Allocate(logical_device, memory_requires.size, memory_requires.alignment, memory_type_index);
+        IVulkanMemoryAllocator* allocator = nullptr;
+        if(memory_requires.size > (1<<22))
+        {
+            allocator = dedicated_allocator_.get();
+        }
+        else
+        {
+            allocator = pool_allocator_.get();
+        }
+
+        VulkanMemoryAllocation allocation = allocator->Allocate(logical_device, memory_requires.size, memory_requires.alignment, memory_type_index);
         vkBindImageMemory(logical_device, image, allocation.memory, allocation.offset);
 
         return allocation;
     }
     void VulkanImageMemoryPool::Free(VkDevice logical_device, const VulkanMemoryAllocation &allocation)
     {
-        allocator_->Free(logical_device, allocation);
+        allocation.owner->Free(logical_device, allocation);
     }
     void VulkanImageMemoryPool::Destroy(VkDevice logical_device)
     {
-        allocator_->Destroy(logical_device);
+        pool_allocator_->Destroy(logical_device);
+        dedicated_allocator_->Destroy(logical_device);
     }
 }

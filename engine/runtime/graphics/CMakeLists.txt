@@ -25,9 +25,10 @@ add_library(Graphics STATIC
     backend/vulkan/vulkan_image_memory_pool.cpp
     backend/vulkan/vulkan_sampler.cpp
     
-    tool/shaderloader.cpp
-    tool/imageloader.cpp
-)
+    tool/shader_loader.cpp
+    tool/image_loader.cpp
+    tool/assimp_model_loader.cpp
+    )
 
 target_include_directories(Graphics 
     PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/backend

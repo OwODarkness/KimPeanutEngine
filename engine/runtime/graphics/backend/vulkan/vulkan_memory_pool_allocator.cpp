@@ -7,6 +7,11 @@ namespace kpengine::graphics
     constexpr VkDeviceSize pool_block_default_size = 1 << 26;
     constexpr std::array<VkDeviceSize, 3> pool_slot_sizes = {1 << 12, 1 << 16, 1 << 22};
 
+        VkDeviceSize VulkanMemoryPoolAllocator::GetMaxSupportedPoolSize() const
+        {
+            return pool_slot_sizes.back();
+        }
+
     VulkanMemoryAllocation VulkanMemoryPoolAllocator::Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index)
     {
         if (size > pool_slot_sizes.back())

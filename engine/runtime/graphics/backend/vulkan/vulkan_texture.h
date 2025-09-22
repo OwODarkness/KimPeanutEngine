@@ -4,7 +4,7 @@
 #include <vulkan/vulkan.h>
 #include "vulkan_enum.h"
 #include "common/texture.h"
-
+#include "vulkan_memory_allocator.h"
 namespace kpengine::graphics
 {
 
@@ -37,13 +37,15 @@ namespace kpengine::graphics
     {
     public:
         ~VulkanTexture();
+        TextureResource GetTextueHandle() const override{return ConvertToTextureResource(resource_);}
     protected:
         void Initialize(GraphicsContext context, const TextureData& data, const TextureSettings& settings) override;
         void Destroy(GraphicsContext context) override;
-        TextureResource GetTextueHandle() const override{return ConvertToTextureResource(resource_);}
+        
 
     private:
         VulkanTextureResource resource_;
+        VulkanMemoryAllocation allocation_;
     };
 }
 

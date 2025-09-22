@@ -11,7 +11,7 @@ namespace kpengine::graphics{
     {
         uint32_t width = 0;
         uint32_t height = 0;
-        TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM;
+        TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         std::string path;
         std::vector<uint8_t> pixels;
     };

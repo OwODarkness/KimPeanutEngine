@@ -10,6 +10,7 @@
 #include "math/math_header.h"
 #include "common/render_backend.h"
 #include "vulkan_context.h"
+#include "common/mesh_resource.h"
 
 namespace kpengine::graphics
 {
@@ -63,9 +64,12 @@ namespace kpengine::graphics
         bool DestroyBufferResource(BufferHandle handle) override;
         void UploadDataToBuffer(BufferHandle handle, size_t size, const void *data);
         struct VulkanBufferResource *GetBufferResource(BufferHandle handle);
-        void TransitionImageLayout(VkImage image, VkFormat format, VkImageLayout old_layout, VkImageLayout new_layout);
-        void CopyBufferToImage(BufferHandle handle, VkImage image, uint32_t width, uint32_t height);
+        
+        void TransitionImageLayout(VkImage image, TextureUsage src_usage, TextureUsage dst_usage);
+        void ReleaseImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage);
+        void AcquireImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage);
 
+        void CopyBufferToImage(BufferHandle handle, VkImage image, uint32_t width, uint32_t height);
         class VulkanImageMemoryPool *GetImageMemoryPool() const { return image_memory_pool_.get(); }
 
     protected:
@@ -94,6 +98,10 @@ namespace kpengine::graphics
         void CreateDescriptorPool();
         void CreateDescriptorSets();
         void UpdateUniformBuffer(uint32_t current_image);
+
+        void TransitionImageLayout(VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask);
+        void ReleaseImageOwnerShip(VkImage image, VkImageLayout current_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue);
+        void AcquireImageOwnerShip(VkImage image, VkImageLayout expected_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags dst_stage, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue);
 
         void CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size);
         void RecreateSwapchain();
@@ -152,7 +160,7 @@ namespace kpengine::graphics
 
         std::unique_ptr<class VulkanBufferPool> buffer_pool_;
         BufferHandle pos_handle_;
-        BufferHandle color_handle_;
+
         BufferHandle index_handle_;
 
         std::vector<BufferHandle> uniform_buffer_handles_;
@@ -166,10 +174,14 @@ namespace kpengine::graphics
         std::unique_ptr<class TextureManager> texture_manager_;
 
         TextureHandle texture_handle;
+        TextureHandle depth_handle;
 
         std::unique_ptr<class SamplerManager> sampler_manager_;
         SamplerHandle sampler_handle;
-        
+
+        std::unique_ptr<class IModelLoader> model_loader_;
+        MeshResource mesh_resource;
+
         VkDescriptorPool descriptor_pool_;
         std::vector<VkDescriptorSet> descriptor_sets_;
 

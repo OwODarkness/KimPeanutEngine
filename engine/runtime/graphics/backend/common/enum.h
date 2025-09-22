@@ -43,6 +43,14 @@ namespace kpengine::graphics
         );
     }
 
+    inline TextureUsage operator&(TextureUsage lhs, TextureUsage rhs)
+    {
+                return static_cast<TextureUsage>(
+            static_cast<uint32_t>(lhs) &
+            static_cast<uint32_t>(rhs)
+        );
+    }
+
     enum class ShaderType
     {
         None,
@@ -156,6 +164,13 @@ namespace kpengine::graphics
         SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
         SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE,
         SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER
+    };
+
+    enum class ImageAspect{
+        IMAGE_ASPECT_COLOR,
+        IMAGE_ASPECT_DEPTH,
+        IMAGE_ASPECT_STENCIL,
+        IMAGE_ASPECT_DEPTH_STENCIL
     };
 
 }

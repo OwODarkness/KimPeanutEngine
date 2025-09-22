@@ -1,11 +1,12 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_VULKAN_IMAGE_MEMORY_POOL_H
 #define KPENGINE_RUNTIME_GRAPHICS_VULKAN_IMAGE_MEMORY_POOL_H
 
-#include "vulkan_memory_pool_allocator.h"
+#include "vulkan_memory_allocator.h"
 #include <vulkan/vulkan.h>
-
+#include <memory>
 namespace kpengine::graphics
 {
+
     class VulkanImageMemoryPool
     {
     public:
@@ -18,7 +19,8 @@ namespace kpengine::graphics
         uint32_t RequestMemoryTypeIndex(VkMemoryPropertyFlags memory_prop_flags, const VkMemoryRequirements &memory_require, const VkPhysicalDeviceMemoryProperties &physcial_memory_props);
 
     private:
-        std::unique_ptr<VulkanMemoryPoolAllocator> allocator_;
+        std::unique_ptr<IVulkanMemoryAllocator> pool_allocator_;
+        std::unique_ptr<IVulkanMemoryAllocator> dedicated_allocator_;
     };
 }
 

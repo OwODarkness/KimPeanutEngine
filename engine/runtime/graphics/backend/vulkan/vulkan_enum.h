@@ -313,6 +313,23 @@ namespace kpengine::graphics
                 return VK_SAMPLER_MIPMAP_MODE_MAX_ENUM;
         }
     }
+
+    inline VkImageAspectFlags ConvertToVulkanImageAspect(ImageAspect aspect)
+    {
+        switch(aspect)
+        {
+            case ImageAspect::IMAGE_ASPECT_COLOR:
+                return VK_IMAGE_ASPECT_COLOR_BIT;
+            case ImageAspect::IMAGE_ASPECT_DEPTH:
+                return VK_IMAGE_ASPECT_DEPTH_BIT;
+            case ImageAspect::IMAGE_ASPECT_STENCIL:
+                return VK_IMAGE_ASPECT_STENCIL_BIT;
+            case ImageAspect::IMAGE_ASPECT_DEPTH_STENCIL:
+                return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+            default:
+                return VK_IMAGE_ASPECT_NONE;
+            }
+    }
 }
 
 #endif

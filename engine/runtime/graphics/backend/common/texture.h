@@ -5,7 +5,7 @@
 #include <cstdint>
 #include "enum.h"
 #include "graphics_context.h"
-#include "tool/imageloader.h"
+#include "tool/image_loader.h"
 
 namespace kpengine::graphics
 {
@@ -20,6 +20,7 @@ namespace kpengine::graphics
         TextureType type = TextureType::TEXTURE_TYPE_2D;
         TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         TextureUsage usage = TextureUsage::TEXTURE_USAGE_SAMPLE;
+        ImageAspect aspect = ImageAspect::IMAGE_ASPECT_COLOR;
         };
 
     struct TextureResource
@@ -30,11 +31,12 @@ namespace kpengine::graphics
 
     class Texture
     {
-
+    public:
+        virtual TextureResource GetTextueHandle() const = 0;
     protected:
         virtual void Initialize(GraphicsContext context, const TextureData& data, const TextureSettings& settings) = 0;
         virtual void Destroy(GraphicsContext context) = 0;
-        virtual TextureResource GetTextueHandle() const = 0;
+        
     private:
         friend class TextureManager; 
         

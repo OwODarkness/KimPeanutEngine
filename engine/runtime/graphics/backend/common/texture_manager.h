@@ -17,11 +17,13 @@ class TextureManager{
 public:
     TextureManager();
     ~TextureManager();
-    TextureHandle CreateTexture(GraphicsContext context, const std::string& path, const TextureSettings& settings);
+
+    TextureHandle CreateTexture(GraphicsContext context, const TextureData& data,  const TextureSettings& settings);
     Texture* GetTexture(TextureHandle handle);
     bool DestroyTexture(GraphicsContext context, TextureHandle handle);
 private:
     TextureSlot& GetTextureSlot(TextureHandle handle);
+    uint32_t CreateTextureSlot();
 private:
     std::vector<TextureSlot> textures_;
     std::vector<uint32_t> free_slots_;

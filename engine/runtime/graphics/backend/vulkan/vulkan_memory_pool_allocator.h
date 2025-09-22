@@ -14,7 +14,7 @@ namespace kpengine::graphics
         virtual VulkanMemoryAllocation Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index) override;
         virtual void Free(VkDevice logicial_device, VulkanMemoryAllocation allocation) override;
         virtual void Destroy(VkDevice logicial_device) override;
-
+        VkDeviceSize GetMaxSupportedPoolSize() const;
     private:
         void CreateMemoryBlock(VkDevice logicial_device, VkDeviceSize block_size, VkDeviceSize slot_size, VkDeviceSize alignment, uint32_t memory_type_index);
 

@@ -66,11 +66,25 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to find suitable memory type!");
         }
 
-        if (!memory_allocators_.contains(memory_type) || memory_allocators_[memory_type] == nullptr)
+        IVulkanMemoryAllocator* allocator = nullptr;
+        if(buffer_create_info->size > pool_max_size)
         {
-            memory_allocators_[memory_type] = std::make_unique<VulkanMemoryPoolAllocator>();
+            if (!memory_allocators_.contains(memory_type) || memory_allocators_[memory_type] == nullptr)
+            {
+                dedicated_allocators_[memory_type] = std::make_unique<VulkanMemoryDedicatedAllocator>();
+            }
+            allocator = dedicated_allocators_[memory_type].get();
         }
-        buffer_resource.allocation = memory_allocators_[memory_type]->Allocate(logicial_device, memory_requires.size, memory_requires.alignment, memory_type_index);
+        else
+        {
+            if (!memory_allocators_.contains(memory_type) || memory_allocators_[memory_type] == nullptr)
+            {
+                memory_allocators_[memory_type] = std::make_unique<VulkanMemoryPoolAllocator>();
+            }
+            allocator = memory_allocators_[memory_type].get();
+        }
+
+        buffer_resource.allocation = allocator->Allocate(logicial_device, memory_requires.size, memory_requires.alignment, memory_type_index);
 
         vkBindBufferMemory(logicial_device, buffer_resource.buffer, buffer_resource.allocation.memory, buffer_resource.allocation.offset);
 

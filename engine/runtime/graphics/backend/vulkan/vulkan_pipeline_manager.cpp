@@ -154,6 +154,18 @@ namespace kpengine::graphics
             colorblend_state_create_info.blendConstants[2] = 0.f;
             colorblend_state_create_info.blendConstants[3] = 0.f;
 
+            VkPipelineDepthStencilStateCreateInfo depth_stencil{};
+            depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
+            depth_stencil.depthTestEnable = VK_TRUE;
+            depth_stencil.depthWriteEnable = VK_TRUE;
+            depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
+            depth_stencil.depthBoundsTestEnable = VK_FALSE;
+            depth_stencil.minDepthBounds = 0.f;
+            depth_stencil.maxDepthBounds = 1.f;
+            depth_stencil.stencilTestEnable = VK_FALSE;
+            depth_stencil.front = {};
+            depth_stencil.back = {};
+
             //set descriptor set layout
             pipeline_resource.descriptor_set_layouts.resize(pipeline_desc.descriptor_binding_descs.size());
             for (size_t i = 0; i < pipeline_resource.descriptor_set_layouts.size(); i++)
@@ -207,6 +219,7 @@ namespace kpengine::graphics
             pipeline_create_info.layout = pipeline_resource.layout;
             pipeline_create_info.renderPass = render_pass;
             pipeline_create_info.subpass = 0;
+            pipeline_create_info.pDepthStencilState = &depth_stencil;
             pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
             pipeline_create_info.basePipelineIndex = -1;
 

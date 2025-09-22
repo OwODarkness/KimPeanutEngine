@@ -44,6 +44,8 @@ namespace kpengine::graphics
         std::vector<VulkanBufferResource> buffer_resources_;
         std::vector<uint32_t> free_slots;
         std::unordered_map<VulkanMemoryUsageType, std::unique_ptr<IVulkanMemoryAllocator>> memory_allocators_;
+        std::unordered_map<VulkanMemoryUsageType, std::unique_ptr<IVulkanMemoryAllocator>> dedicated_allocators_;
+        VkDeviceSize pool_max_size = 1 << 22;
     };
 }
 
