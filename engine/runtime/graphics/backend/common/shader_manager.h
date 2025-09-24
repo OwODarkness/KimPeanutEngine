@@ -10,6 +10,7 @@
 #include "vulkan/vulkan_shader.h"
 #include "base/base.h"
 #include "api.h"
+#include "graphics_context.h"
 
 namespace kpengine::graphics
 {
@@ -17,20 +18,19 @@ namespace kpengine::graphics
     struct ShaderSlot
     {
         std::unique_ptr<Shader> shader;
-        uint32_t generation = 0;
+        std::string path;
     };
 
-
-    template<GraphicsAPIType type>
+    template <GraphicsAPIType type>
     struct ShaderTypeTrait;
-    
-    template<>
+
+    template <>
     struct ShaderTypeTrait<GraphicsAPIType::GRAPHICS_API_OPENGL>
     {
         using ShaderClass = OpenglShader;
     };
 
-    template<>
+    template <>
     struct ShaderTypeTrait<GraphicsAPIType::GRAPHICS_API_VULKAN>
     {
         using ShaderClass = VulkanShader;
@@ -39,31 +39,27 @@ namespace kpengine::graphics
     class ShaderManager
     {
     public:
-        template<GraphicsAPIType graphics_type>
-        ShaderHandle LoadShader(const ShaderType type, const std::string &path)
+        template <GraphicsAPIType graphicstype>
+        ShaderHandle CreateShader(ShaderType type, const std::string &path)
         {
-            if(path_to_handle_.contains(path))
+            if (path_to_handle_.contains(path))
             {
                 return path_to_handle_[path];
             }
 
-            using ShaderClass = typename ShaderTypeTrait<graphics_type>::ShaderClass;
+            ShaderHandle handle = handle_system_.Create();
 
-            std::unique_ptr<ShaderClass> shader = std::make_unique<ShaderClass>(type, path);
-            uint32_t id = UINT32_MAX;
+            if (handle.id == resources_.size())
+            {
+                resources_.emplace_back();
+            }
 
-            if (!free_slots_.empty())
-            {
-                id = free_slots_.back();
-                free_slots_.pop_back();
-                shaders_[id].shader = std::move(shader);
-            }
-            else
-            {
-                id = static_cast<uint32_t>(shaders_.size());
-                shaders_.push_back({std::move(shader), 0});
-            }
-            ShaderHandle handle = {id, shaders_[id].generation};
+            ShaderSlot &resource = resources_[handle.id];
+
+            resource.path = path;
+            using ShaderClass = ShaderTypeTrait<graphicstype>::ShaderClass;
+            resource.shader = std::make_unique<ShaderClass>(type, path);
+
             path_to_handle_[path] = handle;
             return handle;
         }
@@ -71,9 +67,12 @@ namespace kpengine::graphics
         bool DestroyShader(ShaderHandle handle);
 
     private:
+        ShaderSlot *GetShaderResource(ShaderHandle handle);
+
+    private:
         std::unordered_map<std::string, ShaderHandle> path_to_handle_;
-        std::vector<ShaderSlot> shaders_;
-        std::vector<uint32_t> free_slots_;
+        std::vector<ShaderSlot> resources_;
+        HandleSystem<ShaderHandle> handle_system_;
     };
 }
 

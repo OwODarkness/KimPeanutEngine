@@ -6,59 +6,59 @@ namespace kpengine::graphics
 {
     SamplerHandle SamplerManager::CreateSampler(GraphicsContext context, const SamplerSettings &settings)
     {
-        uint32_t id{};
-        if (!free_slots_.empty())
+        SamplerHandle handle = handle_system_.Create();
+        if (handle.id == resources_.size())
         {
-            id = free_slots_.back();
-            free_slots_.pop_back();
+            resources_.emplace_back();
         }
-        else
-        {
-            id = static_cast<uint32_t>(samplers_.size());
-            samplers_.emplace_back();
-        }
+
+        SamplerSlot& resource = resources_[handle.id];
 
         if (context.type == GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
-            samplers_[id].sampler = std::make_unique<VulkanSampler>();
+            resource.sampler = std::make_unique<VulkanSampler>();
         }
         else if (context.type == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
-            samplers_[id].sampler = std::make_unique<OpenglSampler>();
+            resource.sampler = std::make_unique<OpenglSampler>();
         }
 
-        samplers_[id].sampler->Initialize(context, settings);
+        resource.sampler->Initialize(context, settings);
 
-        return {id, samplers_[id].generation};
+        return handle;
     }
 
-    SamplerSlot &SamplerManager::GetSamplerSlot(SamplerHandle handle)
+    SamplerSlot* SamplerManager::GetSamplerSlot(SamplerHandle handle)
     {
-        if (handle.id >= samplers_.size())
+        uint32_t index = handle_system_.Get(handle);
+
+        if (index >= resources_.size())
         {
             KP_LOG("SamplerManagerLog", LOG_LEVEL_ERROR, "Failed to get sampler slot, out of range");
             throw std::runtime_error("Failed to get sampler slot, out of range");
         }
 
-        return samplers_[handle.id];
+        return &resources_[index];
     }
 
     Sampler *SamplerManager::GetSampler(SamplerHandle handle)
     {
-        return GetSamplerSlot(handle).sampler.get();
+        SamplerSlot* resource = GetSamplerSlot(handle);
+        if(resource)
+        {
+            return resource->sampler.get();
+        }
+        return nullptr;
     }
     bool SamplerManager::DestroySampler(GraphicsContext context, SamplerHandle handle)
     {
-        SamplerSlot& slot = GetSamplerSlot(handle);
-        if(!slot.sampler)
+        Sampler*sampler = GetSampler(handle);
+        if(!sampler)
         {
             return false;
         }
-        slot.sampler->Destroy(context);
-
-        slot.generation++;
-        free_slots_.push_back(handle.id);
-        return true;
+        sampler->Destroy(context);
+        return handle_system_.Destroy(handle);
     }
 
 }

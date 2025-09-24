@@ -3,15 +3,25 @@
 
 #include <memory>
 #include <cstdint>
+#include <vector>
+#include <string>
 #include "enum.h"
 #include "graphics_context.h"
-#include "tool/image_loader.h"
 
 namespace kpengine::graphics
 {
     using TextureImage = void *;
     using TextureView = void *;
 
+    struct TextureData
+    {
+        int32_t width = 0;
+        int32_t height = 0;
+        int32_t depth = 1;
+        TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        std::string path;
+        std::vector<uint8_t> pixels;
+    };
 
     struct TextureSettings
     {

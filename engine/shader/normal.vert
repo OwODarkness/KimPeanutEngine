@@ -2,6 +2,7 @@
 
 #define IN_LOCATION(n) layout(location = n) in
 #define OUT_LOCATION(n) layout(location = n) out
+#define BIND_UNIFORM(x, y) layout(set = x, binding = y) uniform
 
 IN_LOCATION(0) vec3 in_position;
 IN_LOCATION(1) vec3 in_normal;
@@ -16,11 +17,10 @@ OUT_LOCATION(4) vec3 out_B;
 OUT_LOCATION(5) vec3 out_N;
 OUT_LOCATION(6) vec3 out_ndc_coord;
 
-layout (std140, binding=0) uniform CameraMatrices{
+BIND_UNIFORM(0, 0) CameraMatrices{
     mat4 projection;
     mat4 view;
 };
-
 
 uniform mat4 model;
 

@@ -31,18 +31,44 @@ namespace kpengine::graphics
         }
     }
 
-    inline VkImageType ConvertToVulkanTextureType(TextureType type)
+    inline VkImageType ConvertToVulkanImageType(TextureType type)
     {
         switch (type)
         {
         case TextureType::TEXTURE_TYPE_1D:
+        case TextureType::TEXTURE_TYPE_1D_ARRAY:
             return VK_IMAGE_TYPE_1D;
         case TextureType::TEXTURE_TYPE_2D:
+        case TextureType::TEXTURE_TYPE_2D_ARRAY:
             return VK_IMAGE_TYPE_2D;
         case TextureType::TEXTURE_TYPE_3D:
+        case TextureType::TEXTURE_TYPE_CUBE:
+        case TextureType::TEXTURE_TYPE_CUBE_ARRAY:
             return VK_IMAGE_TYPE_3D;
         default:
             return VK_IMAGE_TYPE_MAX_ENUM;
+        }
+    }
+    inline VkImageViewType ConvertToVulkanImageViewType(TextureType type)
+    {
+        switch (type)
+        {
+        case TextureType::TEXTURE_TYPE_1D:
+            return VK_IMAGE_VIEW_TYPE_1D;
+        case TextureType::TEXTURE_TYPE_2D:
+            return VK_IMAGE_VIEW_TYPE_2D;
+        case TextureType::TEXTURE_TYPE_3D:
+            return VK_IMAGE_VIEW_TYPE_3D;
+        case TextureType::TEXTURE_TYPE_1D_ARRAY:
+            return VK_IMAGE_VIEW_TYPE_1D_ARRAY;
+        case TextureType::TEXTURE_TYPE_2D_ARRAY:
+            return VK_IMAGE_VIEW_TYPE_2D_ARRAY;
+        case TextureType::TEXTURE_TYPE_CUBE:
+            return VK_IMAGE_VIEW_TYPE_CUBE;
+        case TextureType::TEXTURE_TYPE_CUBE_ARRAY:
+            return VK_IMAGE_VIEW_TYPE_CUBE_ARRAY;
+        default:
+            return VK_IMAGE_VIEW_TYPE_MAX_ENUM;
         }
     }
 

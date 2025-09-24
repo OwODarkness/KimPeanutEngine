@@ -4,7 +4,6 @@
 #include <chrono>
 #include <functional>
 #include <GLFW/glfw3.h>
-#include "math/math_header.h"
 #include "log/logger.h"
 #include "vulkan_shader.h"
 #include "common/vertex.h"
@@ -177,6 +176,8 @@ namespace kpengine::graphics
         CreateCommandPools();
         CreateCommandBuffers();
         CreateTextures();
+        CreateDepthResource();
+        CreateColorResource();
         CreateVertexBuffers();
         CreateFrameBuffers();
         CreateUniformBuffers();
@@ -286,7 +287,6 @@ namespace kpengine::graphics
         context.native = static_cast<void *>(&context_);
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
         texture_manager_->DestroyTexture(context, texture_handle);
-        texture_manager_->DestroyTexture(context, depth_handle);
         sampler_manager_->DestroySampler(context, sampler_handle);
 
         buffer_pool_->FreeMemory(logical_device_);
@@ -460,6 +460,8 @@ namespace kpengine::graphics
             std::string message = props.deviceName;
             message += " is ready";
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_INFO, message);
+
+            msaa_sampe_count_ = GetMaxUsableSampleCount();
         }
     }
 
@@ -605,24 +607,34 @@ namespace kpengine::graphics
     {
 
         VkAttachmentDescription color_attachment{};
-        color_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        color_attachment.samples = ConvertToVulkanSampleCount(msaa_sampe_count_);
         color_attachment.format = swapchain_image_format_;
         color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        color_attachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
         VkAttachmentDescription depth_attachment{};
         depth_attachment.format = VK_FORMAT_D32_SFLOAT;
-        depth_attachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        depth_attachment.samples = ConvertToVulkanSampleCount(msaa_sampe_count_);
         depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
         depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
         depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
         depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentDescription color_attachment_resolve{};
+        color_attachment_resolve.samples = VK_SAMPLE_COUNT_1_BIT;
+        color_attachment_resolve.format = swapchain_image_format_;
+        color_attachment_resolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        color_attachment_resolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment_resolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        color_attachment_resolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        color_attachment_resolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        color_attachment_resolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
         VkAttachmentReference color_attachment_ref{};
         color_attachment_ref.attachment = 0;
@@ -632,21 +644,26 @@ namespace kpengine::graphics
         depth_attachment_ref.attachment = 1;
         depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
+        VkAttachmentReference color_attachment_resolve_ref{};
+        color_attachment_resolve_ref.attachment = 2;
+        color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
         VkSubpassDescription subpass{};
         subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
         subpass.colorAttachmentCount = 1;
         subpass.pColorAttachments = &color_attachment_ref;
         subpass.pDepthStencilAttachment = &depth_attachment_ref;
+        subpass.pResolveAttachments = &color_attachment_resolve_ref;
 
         VkSubpassDependency subpass_dependency{};
         subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
         subpass_dependency.dstSubpass = 0;
         subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
         subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        subpass_dependency.srcAccessMask = VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+        subpass_dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
         subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-        std::array<VkAttachmentDescription, 2> attachments = {color_attachment, depth_attachment};
+        std::array<VkAttachmentDescription, 3> attachments = {color_attachment, depth_attachment, color_attachment_resolve};
 
         VkRenderPassCreateInfo renderpass_create_info{};
         renderpass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
@@ -672,9 +689,9 @@ namespace kpengine::graphics
         PipelineDesc pipeline_desc{};
         // set shader stage
         std::string spv_shader_dir = GetSPVShaderDirectory();
-        ShaderHandle vert_handle = shader_manager_.LoadShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_VERTEX, spv_shader_dir + "/simple_triangle.vert.spv");
+        ShaderHandle vert_handle = shader_manager_.CreateShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_VERTEX, spv_shader_dir + "/simple_triangle.vert.spv");
         Shader *vert_shader = shader_manager_.GetShader(vert_handle);
-        ShaderHandle frag_handle = shader_manager_.LoadShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_FRAGMENT, spv_shader_dir + "/simple_triangle.frag.spv");
+        ShaderHandle frag_handle = shader_manager_.CreateShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_FRAGMENT, spv_shader_dir + "/simple_triangle.frag.spv");
         Shader *frag_shader = shader_manager_.GetShader(frag_handle);
 
         pipeline_desc.vert_shader = vert_shader;
@@ -695,6 +712,8 @@ namespace kpengine::graphics
              {1, 1, DescriptorType::DESCRIPTOR_TYPE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
 
+        pipeline_desc.multisample_state.rasterization_samples = msaa_sampe_count_;
+
         RasterState state{};
         state.cull_mode = CullMode::CULL_MODE_BACK;
         state.front_face = FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
@@ -708,9 +727,12 @@ namespace kpengine::graphics
         Texture *depth_textrue = texture_manager_->GetTexture(depth_handle);
         VkImageView depth_view = ConvertToVulkanTextureResource(depth_textrue->GetTextueHandle()).view;
 
+        Texture* color_texture = texture_manager_->GetTexture(color_handle);
+        VkImageView color_view = ConvertToVulkanTextureResource(color_texture->GetTextueHandle()).view;
+
         for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
         {
-            std::array<VkImageView, 2> attachments = {swapchain_imageviews_[i], depth_view};
+            std::array<VkImageView, 3> attachments = {color_view, depth_view, swapchain_imageviews_[i]};
             VkFramebufferCreateInfo framebuffer_create_info{};
             framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
             framebuffer_create_info.width = resolution_.width;
@@ -773,26 +795,20 @@ namespace kpengine::graphics
 
     void VulkanBackend::CreateTextures()
     {
-        std::string texture_path = GetTextureDirectory() + "default.png";
+        std::string texture_path = GetTextureDirectory() + "wallpaper.jpg";
         GraphicsContext context{};
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
         context.native = static_cast<void *>(&context_);
 
-        TextureSettings texture_settings{};
-        texture_settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
-        texture_settings.usage = TextureUsage::TEXTURE_USAGE_TRANSFER_DST | TextureUsage::TEXTURE_USAGE_SAMPLE;
         TextureData texture_data{};
         ImageLoader::ReadFromFile(texture_path, texture_data);
-        texture_handle = texture_manager_->CreateTexture(context, texture_data, texture_settings);
 
-        TextureSettings depth_settings{};
-        depth_settings.format = TextureFormat::TEXTURE_FORMAT_D32;
-        depth_settings.usage = TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT;
-        depth_settings.aspect = ImageAspect::IMAGE_ASPECT_DEPTH;
-        TextureData depth_data{};
-        depth_data.width = resolution_.width;
-        depth_data.height = resolution_.height;
-        depth_handle = texture_manager_->CreateTexture(context, depth_data, depth_settings);
+        TextureSettings texture_settings{};
+        texture_settings.mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(texture_data.width, texture_data.height)))) + 1;
+        texture_settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        texture_settings.usage = TextureUsage::TEXTURE_USAGE_TRANSFER_DST | TextureUsage::TEXTURE_USAGE_TRANSFER_SRC | TextureUsage::TEXTURE_USAGE_SAMPLE;
+        texture_settings.sample_count = 1;
+        texture_handle = texture_manager_->CreateTexture(context, texture_data, texture_settings);
 
         SamplerSettings sampler_settings{};
         sampler_settings.address_mode_u = SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
@@ -812,17 +828,52 @@ namespace kpengine::graphics
         sampler_handle = sampler_manager_->CreateSampler(context, sampler_settings);
     }
 
+    void VulkanBackend::CreateDepthResource()
+    {
+        GraphicsContext context{};
+        context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        context.native = static_cast<void *>(&context_);
+
+        TextureSettings depth_settings{};
+        depth_settings.mip_levels = 1;
+        depth_settings.format = TextureFormat::TEXTURE_FORMAT_D32;
+        depth_settings.usage = TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT;
+        depth_settings.aspect = ImageAspect::IMAGE_ASPECT_DEPTH;
+        depth_settings.sample_count = msaa_sampe_count_;
+        TextureData depth_data{};
+        depth_data.width = resolution_.width;
+        depth_data.height = resolution_.height;
+        depth_handle = texture_manager_->CreateTexture(context, depth_data, depth_settings);
+    }
+
+    void VulkanBackend::CreateColorResource()
+    {
+        GraphicsContext context{};
+        context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        context.native = static_cast<void *>(&context_);
+
+        TextureSettings color_settings{};
+        color_settings.mip_levels = 1;
+        color_settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        color_settings.usage = TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT;
+        color_settings.aspect = ImageAspect::IMAGE_ASPECT_COLOR;
+        color_settings.sample_count = msaa_sampe_count_;
+        TextureData color_data{};
+        color_data.width = resolution_.width;
+        color_data.height = resolution_.height;
+        color_handle = texture_manager_->CreateTexture(context, color_data, color_settings);
+    }
+
     void VulkanBackend::CreateVertexBuffers()
     {
 
         std::string model_path = GetModelDirectory() + "sphere/sphere.obj";
         model_loader_->Load(model_path, mesh_resource);
 
+        const VkDeviceSize vertices_size = sizeof(Vertex) * mesh_resource.vertices.size();
+        pos_handle_ = CreateVertexBuffer(mesh_resource.vertices.data(), vertices_size);
 
-        VkDeviceSize pos_size = sizeof(Vertex) * mesh_resource.vertices.size();
-        pos_handle_ = CreateVertexBuffer(mesh_resource.vertices.data(), pos_size);
-
-        VkDeviceSize indices_size = sizeof(uint32_t) * mesh_resource.indices.size();
+        const VkDeviceSize indices_size = sizeof(uint32_t) * mesh_resource.indices.size();
         index_handle_ = CreateIndexBuffer(mesh_resource.indices.data(), indices_size);
     }
 
@@ -1179,7 +1230,7 @@ namespace kpengine::graphics
         EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
     }
 
-    void VulkanBackend::TransitionImageLayout(VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask)
+    void VulkanBackend::TransitionImageLayout(VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count)
     {
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1190,9 +1241,9 @@ namespace kpengine::graphics
         barrier.dstAccessMask = dst_access;
         barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
         barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
-        barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.aspectMask = aspect_mask;
-        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseMipLevel = base_mip_level;
+        barrier.subresourceRange.levelCount = level_count;
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = 1;
 
@@ -1200,7 +1251,7 @@ namespace kpengine::graphics
         vkCmdPipelineBarrier(command_buffer, src_stage, dst_stage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
         EndSingleTimeCommands(command_buffer, graphics_command_pool_, graphics_queue_.queue);
     }
-    void VulkanBackend::ReleaseImageOwnerShip(VkImage image, VkImageLayout current_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue)
+    void VulkanBackend::ReleaseImageOwnerShip(VkImage image, VkImageLayout current_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue, uint32_t base_mip_level, uint32_t level_count)
     {
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1211,9 +1262,9 @@ namespace kpengine::graphics
         barrier.dstAccessMask = 0;
         barrier.srcQueueFamilyIndex = src_queue_family;
         barrier.dstQueueFamilyIndex = dst_queue_family;
-        barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.aspectMask = aspect_mask;
-        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseMipLevel = base_mip_level;
+        barrier.subresourceRange.levelCount = level_count;
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = 1;
 
@@ -1221,7 +1272,7 @@ namespace kpengine::graphics
         vkCmdPipelineBarrier(command_buffer, src_stage, VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
         EndSingleTimeCommands(command_buffer, command_pool, queue);
     }
-    void VulkanBackend::AcquireImageOwnerShip(VkImage image, VkImageLayout expected_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags dst_stage, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue)
+    void VulkanBackend::AcquireImageOwnerShip(VkImage image, VkImageLayout expected_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags dst_stage, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue, uint32_t base_mip_level, uint32_t level_count)
     {
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1232,9 +1283,9 @@ namespace kpengine::graphics
         barrier.dstAccessMask = dst_access;
         barrier.srcQueueFamilyIndex = src_queue_family;
         barrier.dstQueueFamilyIndex = dst_queue_family;
-        barrier.subresourceRange.baseMipLevel = 0;
         barrier.subresourceRange.aspectMask = aspect_mask;
-        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseMipLevel = base_mip_level;
+        barrier.subresourceRange.levelCount = level_count;
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = 1;
 
@@ -1243,7 +1294,7 @@ namespace kpengine::graphics
         EndSingleTimeCommands(command_buffer, command_pool, queue);
     }
 
-    void VulkanBackend::TransitionImageLayout(VkImage image, TextureUsage src_usage, TextureUsage dst_usage)
+    void VulkanBackend::TransitionImageLayout(VkImage image, TextureUsage src_usage, TextureUsage dst_usage, uint32_t base_mip_level, uint32_t level_count)
     {
         if (src_usage == TextureUsage::None && dst_usage == TextureUsage::TEXTURE_USAGE_TRANSFER_DST)
         {
@@ -1255,7 +1306,8 @@ namespace kpengine::graphics
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
                 0,
                 VK_ACCESS_TRANSFER_WRITE_BIT,
-                VK_IMAGE_ASPECT_COLOR_BIT);
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                base_mip_level, level_count);
         }
         else if (src_usage == TextureUsage::TEXTURE_USAGE_TRANSFER_DST && dst_usage == TextureUsage::TEXTURE_USAGE_SAMPLE)
         {
@@ -1267,18 +1319,35 @@ namespace kpengine::graphics
                 VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT,
                 VK_ACCESS_TRANSFER_WRITE_BIT,
                 VK_ACCESS_SHADER_READ_BIT,
-                VK_IMAGE_ASPECT_COLOR_BIT);
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                base_mip_level, level_count);
         }
         else if (src_usage == TextureUsage::None && dst_usage == TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT)
         {
-            TransitionImageLayout(image,
-                                  VK_IMAGE_LAYOUT_UNDEFINED,
-                                  VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
-                                  VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
-                                  VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
-                                  0,
-                                  VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                                  VK_IMAGE_ASPECT_DEPTH_BIT);
+            TransitionImageLayout(
+                image,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT,
+                0,
+                VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_READ_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                VK_IMAGE_ASPECT_DEPTH_BIT,
+                base_mip_level, level_count);
+        }
+        else if (src_usage == TextureUsage::None && dst_usage == TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT)
+        {
+
+            TransitionImageLayout(
+                image,
+                VK_IMAGE_LAYOUT_UNDEFINED,
+                VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+                0,
+                VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_IMAGE_ASPECT_COLOR_BIT,
+                base_mip_level, level_count);
         }
         else
         {
@@ -1287,7 +1356,7 @@ namespace kpengine::graphics
         }
     }
 
-    void VulkanBackend::ReleaseImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage)
+    void VulkanBackend::ReleaseImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage, uint32_t base_mip_level, uint32_t level_count)
     {
         if (src_usage == TextureUsage::None && dst_usage == TextureUsage::TEXTURE_USAGE_TRANSFER_DST)
         {
@@ -1300,7 +1369,8 @@ namespace kpengine::graphics
                 0,
                 VK_IMAGE_ASPECT_COLOR_BIT,
                 graphics_command_pool_,
-                graphics_queue_.queue);
+                graphics_queue_.queue,
+                base_mip_level, level_count);
         }
         else if (src_usage == TextureUsage::TEXTURE_USAGE_TRANSFER_DST && dst_usage == TextureUsage::TEXTURE_USAGE_SAMPLE)
         {
@@ -1313,10 +1383,11 @@ namespace kpengine::graphics
                 VK_ACCESS_TRANSFER_WRITE_BIT,
                 VK_IMAGE_ASPECT_COLOR_BIT,
                 transfer_command_pool_,
-                transfer_queue_.queue);
+                transfer_queue_.queue,
+                base_mip_level, level_count);
         }
     }
-    void VulkanBackend::AcquireImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage)
+    void VulkanBackend::AcquireImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage, uint32_t base_mip_level, uint32_t level_count)
     {
         if (src_usage == TextureUsage::None &&
             dst_usage == TextureUsage::TEXTURE_USAGE_TRANSFER_DST)
@@ -1331,7 +1402,8 @@ namespace kpengine::graphics
                 VK_ACCESS_TRANSFER_WRITE_BIT,
                 VK_IMAGE_ASPECT_COLOR_BIT,
                 transfer_command_pool_,
-                transfer_queue_.queue);
+                transfer_queue_.queue,
+                base_mip_level, level_count);
         }
         else if (src_usage == TextureUsage::TEXTURE_USAGE_TRANSFER_DST &&
                  dst_usage == TextureUsage::TEXTURE_USAGE_SAMPLE)
@@ -1345,8 +1417,73 @@ namespace kpengine::graphics
                 VK_ACCESS_SHADER_READ_BIT,
                 VK_IMAGE_ASPECT_COLOR_BIT,
                 graphics_command_pool_,
-                graphics_queue_.queue);
+                graphics_queue_.queue,
+                base_mip_level, level_count);
         }
+    }
+
+    void VulkanBackend::GenerateMipmaps(VkImage image, int32_t width, int32_t height, uint32_t mip_levels)
+    {
+        VkImageMemoryBarrier barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
+        barrier.image = image;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+        barrier.subresourceRange.levelCount = 1;
+        barrier.subresourceRange.baseArrayLayer = 0;
+        barrier.subresourceRange.layerCount = 1;
+
+        int32_t mip_width = width;
+        int32_t mip_height = height;
+        VkCommandBuffer command_buffer = BeginSingleTimeCommands(graphics_command_pool_);
+        for (uint32_t i = 1; i < mip_levels; i++)
+        {
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_WRITE_BIT;
+            barrier.dstAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.subresourceRange.baseMipLevel = i - 1;
+
+            vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+            VkImageBlit blit{};
+            blit.srcSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blit.srcSubresource.mipLevel = i - 1;
+            blit.srcSubresource.baseArrayLayer = 0;
+            blit.srcSubresource.layerCount = 1;
+            blit.srcOffsets[0] = {0, 0, 0};
+            blit.srcOffsets[1] = {mip_width, mip_height, 1};
+
+            blit.dstSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            blit.dstSubresource.mipLevel = i;
+            blit.dstSubresource.baseArrayLayer = 0;
+            blit.dstSubresource.layerCount = 1;
+            blit.dstOffsets[0] = {0, 0, 0};
+            blit.dstOffsets[1] = {mip_width > 1 ? mip_width / 2 : 1, mip_height > 1 ? mip_height / 2 : 1, 1};
+
+            vkCmdBlitImage(
+                command_buffer,
+                image, VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL,
+                image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                1, &blit, VK_FILTER_LINEAR);
+
+            barrier.oldLayout = VK_IMAGE_LAYOUT_TRANSFER_SRC_OPTIMAL;
+            barrier.newLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            barrier.srcAccessMask = VK_ACCESS_TRANSFER_READ_BIT;
+            barrier.dstAccessMask = VK_ACCESS_SHADER_READ_BIT;
+            vkCmdPipelineBarrier(command_buffer, VK_PIPELINE_STAGE_TRANSFER_BIT, VK_PIPELINE_STAGE_FRAGMENT_SHADER_BIT, 0, 0, nullptr, 0, nullptr, 1, &barrier);
+
+            if (mip_width > 1)
+            {
+                mip_width /= 2;
+            }
+            if (mip_height > 1)
+            {
+                mip_height /= 2;
+            }
+        }
+        EndSingleTimeCommands(command_buffer, graphics_command_pool_, graphics_queue_.queue);
     }
 
     void VulkanBackend::CopyBufferToImage(BufferHandle buffer_handle, VkImage image, uint32_t width, uint32_t height)
@@ -1381,6 +1518,8 @@ namespace kpengine::graphics
         CleanupSwapchain();
         CreateSwapchain();
         CreateSwapchainImageViews();
+        CreateDepthResource();
+        CreateColorResource();
         CreateFrameBuffers();
     }
 
@@ -1391,6 +1530,11 @@ namespace kpengine::graphics
         {
             vkDestroyFramebuffer(logical_device_, swapchain_framebuffers_[i], nullptr);
         }
+        GraphicsContext context{};
+        context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        context.native = static_cast<void *>(&context_);
+        texture_manager_->DestroyTexture(context, depth_handle);
+        texture_manager_->DestroyTexture(context, color_handle);
 
         for (size_t i = 0; i < swapchain_imageviews_.size(); i++)
         {
@@ -1545,7 +1689,7 @@ namespace kpengine::graphics
     {
         for (const auto &avail_format : available_formats)
         {
-            if (avail_format.format == VK_FORMAT_B8G8R8A8_SRGB &&
+            if (avail_format.format == VK_FORMAT_R8G8B8A8_SRGB &&
                 avail_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
             {
                 return avail_format;
@@ -1590,6 +1734,39 @@ namespace kpengine::graphics
             actual_size.height = std::clamp(actual_size.height, capacity.minImageExtent.height, capacity.maxImageExtent.height);
             return actual_size;
         }
+    }
+
+    uint32_t VulkanBackend::GetMaxUsableSampleCount()
+    {
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(physical_device_, &properties);
+
+        VkSampleCountFlags sample_count = properties.limits.framebufferColorSampleCounts & properties.limits.framebufferDepthSampleCounts;
+        if (sample_count & VK_SAMPLE_COUNT_64_BIT)
+        {
+            return 64;
+        }
+        if (sample_count & VK_SAMPLE_COUNT_32_BIT)
+        {
+            return 32;
+        }
+        if (sample_count & VK_SAMPLE_COUNT_16_BIT)
+        {
+            return 16;
+        }
+        if (sample_count & VK_SAMPLE_COUNT_8_BIT)
+        {
+            return 8;
+        }
+        if (sample_count & VK_SAMPLE_COUNT_4_BIT)
+        {
+            return 4;
+        }
+        if (sample_count & VK_SAMPLE_COUNT_2_BIT)
+        {
+            return 2;
+        }
+        return 1;
     }
 
     VulkanBackend::~VulkanBackend() = default;

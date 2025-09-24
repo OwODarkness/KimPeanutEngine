@@ -2,72 +2,22 @@
 #define KPENGINE_RUNTIME_GRAPHICS_API_H
 
 #include <cstdint>
-
+#include "base/handle.h"
 namespace kpengine::graphics
 {
+    struct TextureTag{};
+    struct SamplerTag{};
+    struct ShaderTag{};
+    struct PipelineTag{};
+    struct BufferTag{};
+    struct MeshTag{};
 
-    struct BufferHandle
-    {
-        uint32_t id = UINT32_MAX;
-        uint32_t generation = 0;
-
-        bool IsValid() const
-        {
-            return id != UINT32_MAX;
-        }
-    };
-
-    struct MeshHandle
-    {
-        uint32_t id = UINT32_MAX;
-        uint32_t generation = 0;
-        bool IsValid() const
-        {
-            return id != UINT32_MAX;
-        }
-    };
-
-    struct TextureHandle
-    {
-        uint32_t id = UINT32_MAX;
-        uint32_t generation = 0;
-        bool IsValid() const
-        {
-            return id != UINT32_MAX;
-        }
-    };
-
-    struct SamplerHandle
-    {
-        uint32_t id = UINT32_MAX;
-        uint32_t generation = 0;
-        bool IsValid() const
-        {
-            return id != UINT32_MAX;
-        }
-    };
-
-    struct ShaderHandle
-    {
-        uint32_t id = UINT32_MAX;
-        uint32_t generation = 0;
-        bool IsValid() const
-        {
-            return id != UINT32_MAX;
-        }
-    };
-
-    struct PipelineHandle
-    {
-         uint32_t id = UINT32_MAX;
-        uint32_t generation = 0;
-        bool IsValid() const
-        {
-            return id != UINT32_MAX;
-        }
-    };
-
-    
+    using TextureHandle = Handle<TextureTag>;
+    using SamplerHandle = Handle<SamplerTag>;
+    using ShaderHandle = Handle<ShaderTag>;
+    using PipelineHandle = Handle<PipelineTag>;
+    using BufferHandle = Handle<BufferTag>;
+    using MeshHandle = Handle<MeshTag>;
 
 }
 

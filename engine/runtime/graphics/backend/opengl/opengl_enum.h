@@ -6,7 +6,7 @@
 
 namespace kpengine::graphics
 {
-    inline GLenum ConvertToOpenglTextureFormat(TextureFormat format)
+    inline GLenum ConvertToOpenglTextureInternalFormat(TextureFormat format)
     {
         switch (format)
         {
@@ -31,6 +31,50 @@ namespace kpengine::graphics
         }
     }
 
+    inline GLenum ConvertToOpenglTextureUploadFormat(TextureFormat format)
+    {
+        switch (format)
+        {
+        case TextureFormat::TEXTURE_FORMAT_R8_UNORM:
+            return GL_RED;
+        case TextureFormat::TEXTURE_FORMAT_RG8_UNORM:
+            return GL_RG;
+        case TextureFormat::TEXTURE_FORMAT_RGB8_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_RGB8_SRGB:
+            return GL_RGB;
+        case TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
+            return GL_RGBA;
+        case TextureFormat::TEXTURE_FORMAT_D24S8:
+            return GL_DEPTH_STENCIL;
+        case TextureFormat::TEXTURE_FORMAT_D32:
+            return GL_DEPTH_COMPONENT;
+        default:
+            return 0;
+        }
+    }
+
+    inline GLenum ConvertToOpenglTextureUploadType(TextureFormat format)
+    {
+        switch (format)
+        {
+        case TextureFormat::TEXTURE_FORMAT_R8_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_RG8_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_RGB8_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_RGB8_SRGB:
+        case TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
+            return GL_UNSIGNED_BYTE;
+
+        case TextureFormat::TEXTURE_FORMAT_D24S8:
+            return GL_UNSIGNED_INT_24_8;
+        case TextureFormat::TEXTURE_FORMAT_D32:
+            return GL_FLOAT;
+        default:
+            return 0;
+        }
+    }
+
     inline GLenum ConvertToOpenglTextureType(TextureType type)
     {
         switch (type)
@@ -41,6 +85,14 @@ namespace kpengine::graphics
             return GL_TEXTURE_2D;
         case TextureType::TEXTURE_TYPE_3D:
             return GL_TEXTURE_3D;
+        case TextureType::TEXTURE_TYPE_1D_ARRAY:
+            return GL_TEXTURE_1D_ARRAY;
+        case TextureType::TEXTURE_TYPE_2D_ARRAY:
+            return GL_TEXTURE_2D_ARRAY;
+        case TextureType::TEXTURE_TYPE_CUBE:
+            return GL_TEXTURE_CUBE_MAP;
+        case TextureType::TEXTURE_TYPE_CUBE_ARRAY:
+            return GL_TEXTURE_CUBE_MAP_ARRAY;
         default:
             return 0;
         }
@@ -100,7 +152,7 @@ namespace kpengine::graphics
             return GL_TRIANGLES;
         }
     }
-    inline GLenum ConvertToGLBlendFactor(BlendFactor factor)
+    inline GLenum ConvertToOpenglBlendFactor(BlendFactor factor)
     {
         switch (factor)
         {
@@ -136,7 +188,7 @@ namespace kpengine::graphics
         return GL_ONE;
     }
 
-    inline GLenum ConvertToGLBlendOp(BlendOp op)
+    inline GLenum ConvertToOpenglBlendOp(BlendOp op)
     {
         switch (op)
         {
@@ -154,7 +206,7 @@ namespace kpengine::graphics
         return GL_FUNC_ADD;
     }
 
-    inline GLenum ConvertToGLSamplerFilter(SamplerFilterType filter)
+    inline GLenum ConvertToOpenglSamplerFilter(SamplerFilterType filter)
     {
         switch (filter)
         {
@@ -167,7 +219,7 @@ namespace kpengine::graphics
         }
     }
 
-    inline GLenum ConvertToGLSamplerAddressMode(SamplerAddressMode mode)
+    inline GLenum ConvertToOpenglSamplerAddressMode(SamplerAddressMode mode)
     {
         switch (mode)
         {
@@ -181,25 +233,25 @@ namespace kpengine::graphics
             return GL_MIRROR_CLAMP_TO_EDGE;
         case SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER:
             return GL_CLAMP_TO_BORDER;
-
+        default:
             return GL_REPEAT;
         }
     }
 
-    inline GLenum ConvertToGLSampleMinFilter(SamplerFilterType filter, SamplerMipmapMode mode)
+    inline GLenum ConvertToOpenglSampleMinFilter(SamplerFilterType filter, SamplerMipmapMode mode)
     {
-            if(mode == SamplerMipmapMode::SAMPLER_MIPMAP_MODE_LINEAR && filter == SamplerFilterType::SAMPLER_FILTER_LINEAR)
-            {
-                return GL_LINEAR_MIPMAP_LINEAR;
-            }
-            else if(mode == SamplerMipmapMode::SAMPLER_MIPMAP_MODE_NEAREST && filter == SamplerFilterType::SAMPLER_FILTER_NEAREST)
-            {
-                return GL_NEAREST_MIPMAP_NEAREST;
-            }
-            else
-            {
-                return ConvertToGLSamplerFilter(filter);
-            }
+        if (mode == SamplerMipmapMode::SAMPLER_MIPMAP_MODE_LINEAR && filter == SamplerFilterType::SAMPLER_FILTER_LINEAR)
+        {
+            return GL_LINEAR_MIPMAP_LINEAR;
+        }
+        else if (mode == SamplerMipmapMode::SAMPLER_MIPMAP_MODE_NEAREST && filter == SamplerFilterType::SAMPLER_FILTER_NEAREST)
+        {
+            return GL_NEAREST_MIPMAP_NEAREST;
+        }
+        else
+        {
+            return ConvertToOpenglSamplerFilter(filter);
+        }
     }
 }
 

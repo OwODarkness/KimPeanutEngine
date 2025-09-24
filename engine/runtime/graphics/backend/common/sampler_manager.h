@@ -11,7 +11,6 @@ namespace kpengine::graphics{
 
     struct SamplerSlot{
         std::unique_ptr<Sampler> sampler;
-        uint32_t generation = 0;
     };
 
     class SamplerManager{
@@ -20,10 +19,10 @@ namespace kpengine::graphics{
         Sampler* GetSampler(SamplerHandle handle);
         bool DestroySampler(GraphicsContext context, SamplerHandle handle);
     private:
-        SamplerSlot& GetSamplerSlot(SamplerHandle handle);
+        SamplerSlot* GetSamplerSlot(SamplerHandle handle);
     private:
-        std::vector<SamplerSlot> samplers_;
-        std::vector<uint32_t> free_slots_;
+        std::vector<SamplerSlot> resources_;
+        HandleSystem<SamplerHandle> handle_system_;
     };
 }
 

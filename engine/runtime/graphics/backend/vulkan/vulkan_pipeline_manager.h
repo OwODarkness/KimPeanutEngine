@@ -7,14 +7,12 @@
 #include <vulkan/vulkan.h>
 #include "common/api.h"
 #include "common/pipeline_desc.h"
-
 namespace kpengine::graphics{
 
     struct VulkanPipelineResource{
         std::vector<VkDescriptorSetLayout> descriptor_set_layouts; 
         VkPipelineLayout layout = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
-        uint32_t generation = 0;
     };
 
     class VulkanPipelineManager{
@@ -25,8 +23,8 @@ namespace kpengine::graphics{
     private:
         void CreateShaderModule(VkDevice logiccal_device, const void* data, size_t, VkShaderModule& shader_module);
     private:
-        std::vector<VulkanPipelineResource> pipelines_;
-        std::vector<uint32_t> free_slots_;
+        std::vector<VulkanPipelineResource> resources_;
+        HandleSystem<PipelineHandle> handle_system_;
     };
 }
 

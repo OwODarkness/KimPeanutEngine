@@ -5,16 +5,9 @@
 #include <string>
 #include <cstdint>
 #include "common/enum.h"
-
+#include "common/texture.h"
 namespace kpengine::graphics{
-    struct TextureData
-    {
-        uint32_t width = 0;
-        uint32_t height = 0;
-        TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
-        std::string path;
-        std::vector<uint8_t> pixels;
-    };
+
 
 
     class ImageLoader{

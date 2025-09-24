@@ -21,7 +21,11 @@ namespace kpengine::graphics
     {
         TEXTURE_TYPE_1D,
         TEXTURE_TYPE_2D,
-        TEXTURE_TYPE_3D
+        TEXTURE_TYPE_3D,
+        TEXTURE_TYPE_1D_ARRAY,
+        TEXTURE_TYPE_2D_ARRAY,
+        TEXTURE_TYPE_CUBE,
+        TEXTURE_TYPE_CUBE_ARRAY
     };
 
     enum class TextureUsage : uint32_t

@@ -6,11 +6,11 @@
 #include <optional>
 #include <memory>
 #include <vulkan/vulkan.h>
-
 #include "math/math_header.h"
 #include "common/render_backend.h"
 #include "vulkan_context.h"
 #include "common/mesh_resource.h"
+#include "common/texture.h"
 
 namespace kpengine::graphics
 {
@@ -44,9 +44,9 @@ namespace kpengine::graphics
 
     struct UniformBufferObject
     {
-        Matrix4f model;
-        Matrix4f view;
-        Matrix4f proj;
+        alignas(16) Matrix4f model;
+        alignas(16) Matrix4f view;
+        alignas(16) Matrix4f proj;
     };
 
     class VulkanBackend : public RenderBackend
@@ -64,10 +64,17 @@ namespace kpengine::graphics
         bool DestroyBufferResource(BufferHandle handle) override;
         void UploadDataToBuffer(BufferHandle handle, size_t size, const void *data);
         struct VulkanBufferResource *GetBufferResource(BufferHandle handle);
-        
-        void TransitionImageLayout(VkImage image, TextureUsage src_usage, TextureUsage dst_usage);
-        void ReleaseImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage);
-        void AcquireImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage);
+
+        void TransitionImageLayout(VkImage image, TextureUsage src_usage, TextureUsage dst_usage, uint32_t base_mip_level, uint32_t level_count);
+        void ReleaseImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage, uint32_t base_mip_level, uint32_t level_count);
+        void AcquireImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage, uint32_t base_mip_level, uint32_t level_count);
+
+        /**
+         * runtime mipmaps generate function. 
+         * Note: Usually they are pre-generated and stored in the texture file alongside the base level to improve loading speed.
+         * 
+         */
+        void GenerateMipmaps(VkImage image, int32_t width, int32_t height, uint32_t mip_levels);
 
         void CopyBufferToImage(BufferHandle handle, VkImage image, uint32_t width, uint32_t height);
         class VulkanImageMemoryPool *GetImageMemoryPool() const { return image_memory_pool_.get(); }
@@ -97,11 +104,13 @@ namespace kpengine::graphics
         void CreateUniformBuffers();
         void CreateDescriptorPool();
         void CreateDescriptorSets();
+        void CreateDepthResource();
+        void CreateColorResource();
         void UpdateUniformBuffer(uint32_t current_image);
 
-        void TransitionImageLayout(VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask);
-        void ReleaseImageOwnerShip(VkImage image, VkImageLayout current_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue);
-        void AcquireImageOwnerShip(VkImage image, VkImageLayout expected_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags dst_stage, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue);
+        void TransitionImageLayout(VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count);
+        void ReleaseImageOwnerShip(VkImage image, VkImageLayout current_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue, uint32_t base_mip_level, uint32_t level_count);
+        void AcquireImageOwnerShip(VkImage image, VkImageLayout expected_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags dst_stage, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue, uint32_t base_mip_level, uint32_t level_count);
 
         void CopyBuffer(BufferHandle src_handle, BufferHandle dst_handle, VkDeviceSize size);
         void RecreateSwapchain();
@@ -126,7 +135,7 @@ namespace kpengine::graphics
         VkSurfaceFormatKHR ChooseSwapChainSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &available_formats) const;
         VkPresentModeKHR ChooseSwapChainPresentMode(const std::vector<VkPresentModeKHR> &available_modes) const;
         VkExtent2D ChooseSwapChainExtent(const VkSurfaceCapabilitiesKHR &capacity) const;
-
+        uint32_t GetMaxUsableSampleCount();
     private:
         VkInstance instance_;
         VkDebugUtilsMessengerEXT debug_messager_;
@@ -175,6 +184,7 @@ namespace kpengine::graphics
 
         TextureHandle texture_handle;
         TextureHandle depth_handle;
+        TextureHandle color_handle;
 
         std::unique_ptr<class SamplerManager> sampler_manager_;
         SamplerHandle sampler_handle;
@@ -184,6 +194,8 @@ namespace kpengine::graphics
 
         VkDescriptorPool descriptor_pool_;
         std::vector<VkDescriptorSet> descriptor_sets_;
+
+        uint32_t msaa_sampe_count_;
 
         std::vector<const char *> validation_layers = {
             "VK_LAYER_KHRONOS_validation"};

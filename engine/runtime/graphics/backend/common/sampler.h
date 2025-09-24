@@ -13,7 +13,7 @@ namespace kpengine::graphics
         SamplerAddressMode address_mode_u = SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
         SamplerAddressMode address_mode_v = SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
         SamplerAddressMode address_mode_w = SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
-
+        SamplerMipmapMode mipmap_mode = SamplerMipmapMode::SAMPLER_MIPMAP_MODE_LINEAR;
         bool enable_anisotropy = true;
         float max_anisotropy = 1.f;
         float mip_lod_bias = 0.f;

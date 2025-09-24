@@ -4,6 +4,7 @@
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
+#include <unordered_map>
 #include "model_loader.h"
 
 namespace kpengine::graphics{
@@ -11,8 +12,8 @@ namespace kpengine::graphics{
     public:
         bool Load(const std::string& path, MeshResource& mesh) override;
     private:
-        void ProcessNode(aiNode* node, const aiScene* scene, MeshResource& resource);
-        void ProcessMesh(aiMesh* mesh, const aiScene* scene, MeshResource& resource);
+        void ProcessNode(aiNode* node, const aiScene* scene, MeshResource& resource, std::unordered_map<Vertex, uint32_t, VertexHash>& unique_vertices);
+        void ProcessMesh(aiMesh* mesh, const aiScene* scene, MeshResource& resource, std::unordered_map<Vertex, uint32_t, VertexHash>& unique_vertices);
     };
 }
 

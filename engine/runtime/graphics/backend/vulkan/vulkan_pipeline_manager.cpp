@@ -5,24 +5,23 @@
 #include "vulkan_enum.h"
 
 namespace kpengine::graphics
-
 {
 
     PipelineHandle VulkanPipelineManager::CreatePipelineResource(VkDevice logical_device, const PipelineDesc &pipeline_desc, VkRenderPass render_pass)
     {
-        uint32_t id = UINT32_MAX;
-        if (!free_slots_.empty())
+
+        PipelineHandle handle = handle_system_.Create();
+
+        if (handle.id == resources_.size())
         {
-            id = free_slots_.back();
-            free_slots_.pop_back();
+            resources_.emplace_back();
         }
-        else
+        else if (handle.id > resources_.size())
         {
-            id = static_cast<uint32_t>(pipelines_.size());
-            pipelines_.emplace_back();
+            throw std::runtime_error("handle system hand out a invalid handle");
         }
 
-        VulkanPipelineResource &pipeline_resource = pipelines_[id];
+        VulkanPipelineResource &pipeline_resource = resources_[handle.id];
 
         // shader_stage
         std::vector<VkPipelineShaderStageCreateInfo> stages{};
@@ -166,7 +165,7 @@ namespace kpengine::graphics
             depth_stencil.front = {};
             depth_stencil.back = {};
 
-            //set descriptor set layout
+            // set descriptor set layout
             pipeline_resource.descriptor_set_layouts.resize(pipeline_desc.descriptor_binding_descs.size());
             for (size_t i = 0; i < pipeline_resource.descriptor_set_layouts.size(); i++)
             {
@@ -190,7 +189,7 @@ namespace kpengine::graphics
                     throw std::runtime_error("Failed to create DescriptorSetLayout");
                 }
             }
-            //set pipeline_layout
+            // set pipeline_layout
             VkPipelineLayoutCreateInfo layout_create_info{};
             layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
             layout_create_info.setLayoutCount = static_cast<uint32_t>(pipeline_resource.descriptor_set_layouts.size());
@@ -269,7 +268,7 @@ namespace kpengine::graphics
             geom_shader_module = VK_NULL_HANDLE;
         }
 
-        return {id, pipeline_resource.generation};
+        return handle;
     }
 
     void VulkanPipelineManager::DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle)
@@ -285,30 +284,20 @@ namespace kpengine::graphics
 
         pipeline_resource->pipeline = VK_NULL_HANDLE;
         pipeline_resource->layout = VK_NULL_HANDLE;
-        pipeline_resource->generation++;
-        free_slots_.push_back(handle.id);
+        handle_system_.Destroy(handle);
     }
 
     VulkanPipelineResource *VulkanPipelineManager::GetPipelineResource(PipelineHandle handle)
     {
-        if (!handle.IsValid())
+        uint32_t index = handle_system_.Get(handle);
+
+        if (index >= resources_.size())
         {
-            KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "handle is invalid");
-            return nullptr;
-        }
-        if (handle.id >= pipelines_.size())
-        {
-            KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Failed to find pipeline resource, out of range");
-            return nullptr;
+            KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Failed to find pipeline resource");
+            throw std::runtime_error("Failed to find pipeline resource");
         }
 
-        VulkanPipelineResource &pipeline_resource = pipelines_[handle.id];
-        if (handle.generation != pipeline_resource.generation)
-        {
-            KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Faile to find pipeline resource, generation mismatch");
-            return nullptr;
-        }
-        return &pipeline_resource;
+        return &resources_[index];
     }
 
     void VulkanPipelineManager::CreateShaderModule(VkDevice logicial_device, const void *data, size_t size, VkShaderModule &shader_module)

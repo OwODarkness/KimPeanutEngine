@@ -29,15 +29,20 @@ namespace kpengine::graphics
             backend->UploadDataToBuffer(stage_handle, image_size, data.pixels.data());
         }
 
+        width_ = data.width;
+        height_ = data.height;        
+        settings_ = settings;
+
+
         VkImageCreateInfo image_create_info{};
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         image_create_info.format = ConvertToVulkanTextureFormat(settings.format);
-        image_create_info.imageType = ConvertToVulkanTextureType(settings.type);
+        image_create_info.imageType = ConvertToVulkanImageType(settings.type);
         image_create_info.usage = ConvertToVulkanTextureUsage(settings.usage);
         image_create_info.mipLevels = settings.mip_levels;
         image_create_info.extent.width = data.width;
         image_create_info.extent.height = data.height;
-        image_create_info.extent.depth = 1;
+        image_create_info.extent.depth = data.depth;
         image_create_info.arrayLayers = 1;
         image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
         image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
@@ -56,18 +61,23 @@ namespace kpengine::graphics
 
         if ((settings.usage & TextureUsage::TEXTURE_USAGE_SAMPLE) == TextureUsage::TEXTURE_USAGE_SAMPLE)
         {
-            backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST);
-            backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST);
-            backend->AcquireImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST);
+            backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
+            backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
+            backend->AcquireImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
             backend->CopyBufferToImage(stage_handle, resource_.image, data.width, data.height);
-            backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE);
-            backend->AcquireImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE);
-            backend->TransitionImageLayout(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE);
+            backend->GenerateMipmaps(resource_.image, width_, height_, settings.mip_levels);
+            backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
+            backend->AcquireImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
+            backend->TransitionImageLayout(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
             backend->DestroyBufferResource(stage_handle);
         }
         else if((settings.usage & TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT) == TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT)
         {
-            backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT);
+            backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT, 0, 1);
+        }
+        else if((settings.usage & TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT) == TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT)
+        {
+            backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT, 0, 1);
         }
 
 
@@ -75,10 +85,10 @@ namespace kpengine::graphics
         view_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
         view_create_info.image = resource_.image;
         view_create_info.format = ConvertToVulkanTextureFormat(settings.format);
-        view_create_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+        view_create_info.viewType = ConvertToVulkanImageViewType(settings.type);
         view_create_info.subresourceRange.aspectMask = ConvertToVulkanImageAspect(settings.aspect);
         view_create_info.subresourceRange.baseMipLevel = 0;
-        view_create_info.subresourceRange.levelCount = 1;
+        view_create_info.subresourceRange.levelCount = settings.mip_levels;
         view_create_info.subresourceRange.baseArrayLayer = 0;
         view_create_info.subresourceRange.layerCount = 1;
 

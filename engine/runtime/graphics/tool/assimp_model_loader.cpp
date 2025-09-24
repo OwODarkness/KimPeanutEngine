@@ -14,11 +14,13 @@ namespace kpengine::graphics
             KP_LOG("ModelLoadLog", LOG_LEVEL_ERROR, "%s failed to load model", import.GetErrorString());
             return false;
         }
-        ProcessNode(scene->mRootNode, scene, resource);
+
+        std::unordered_map<Vertex, uint32_t, VertexHash> unique_vertices{};
+        ProcessNode(scene->mRootNode, scene, resource, unique_vertices);
         return true;
     }
 
-    void AssimpModelLoader::ProcessNode(aiNode *node, const aiScene *scene, MeshResource &resource)
+    void AssimpModelLoader::ProcessNode(aiNode *node, const aiScene *scene, MeshResource &resource, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
     {
         if (node == nullptr)
         {
@@ -28,16 +30,17 @@ namespace kpengine::graphics
         for (uint32_t i = 0; i < node->mNumMeshes; i++)
         {
             aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
-            ProcessMesh(mesh, scene, resource);
+            ProcessMesh(mesh, scene, resource, unique_vertices);
         }
 
         for (uint32_t i = 0; i < node->mNumChildren; i++)
         {
-            ProcessNode(node->mChildren[i], scene, resource);
+            ProcessNode(node->mChildren[i], scene, resource, unique_vertices);
         }
     }
-    void AssimpModelLoader::ProcessMesh(aiMesh *mesh, const aiScene *scene, MeshResource &resource)
+    void AssimpModelLoader::ProcessMesh(aiMesh *mesh, const aiScene *scene, MeshResource &resource, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
     {
+        uint32_t index_start = static_cast<uint32_t>(resource.indices.size());
         const uint32_t vertex_count = static_cast<uint32_t>(resource.vertices.size());
         const bool has_normal = mesh->HasNormals();
         const bool has_texcoord = mesh->mTextureCoords[0];
@@ -45,9 +48,8 @@ namespace kpengine::graphics
         for (uint32_t i = 0; i < mesh->mNumVertices; i++)
         {
             Vertex vertex{};
-
             vertex.position = {mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z};
-            
+
             if (has_normal)
             {
                 vertex.normal = {mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z};
@@ -62,25 +64,21 @@ namespace kpengine::graphics
                 vertex.bitangent = {mesh->mBitangents[i].x, mesh->mBitangents[i].y, mesh->mBitangents[i].z};
             }
 
-            resource.vertices.push_back(vertex);
+            if (!unique_vertices.contains(vertex))
+            {
+                uint32_t index = static_cast<uint32_t>(resource.vertices.size());
+                unique_vertices[vertex] = index;
+                resource.vertices.push_back(vertex);
+            }
+            resource.indices.push_back(unique_vertices[vertex]);
         }
 
-        const uint32_t index_start = static_cast<uint32_t>(resource.indices.size());
-        uint32_t index_count = 0;
-        for(uint32_t i = 0;i<mesh->mNumFaces;i++)
-        {
-            for(uint32_t j = 0;j<mesh->mFaces[i].mNumIndices;j++)
-            {
-                uint32_t vertex_index = mesh->mFaces[i].mIndices[j] + vertex_count;
-                resource.indices.push_back(vertex_index);
-            }
-            index_count += (mesh->mNumFaces) * (mesh->mFaces[i].mNumIndices);
-        }
+        uint32_t index_count = static_cast<uint32_t>(resource.indices.size()) - index_start;
 
         MeshSection section{};
         section.index_start = index_start;
         section.index_count = index_count;
- 
+
         resource.sections.push_back(section);
     }
 

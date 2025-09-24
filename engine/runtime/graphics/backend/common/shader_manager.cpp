@@ -4,37 +4,37 @@
 namespace kpengine::graphics
 {
 
-
     Shader* ShaderManager::GetShader(ShaderHandle handle)
     {
-        if (handle.id >= shaders_.size())
+        ShaderSlot* resource = GetShaderResource(handle);
+        if(resource)
         {
-            KP_LOG("OpenglShaderManagerLog", LOG_LEVEL_ERROR, "Faile to found shader, out of range");
-            return nullptr;
+            return resource->shader.get();
         }
+        return nullptr;
+    }
 
-        ShaderSlot &slot = shaders_[handle.id];
-
-        if(slot.generation != handle.generation || !slot.shader)
+    ShaderSlot* ShaderManager::GetShaderResource(ShaderHandle handle)
+    {
+        uint32_t index = handle_system_.Get(handle);
+        if(index >= resources_.size())
         {
             KP_LOG("OpenglShaderManagerLog", LOG_LEVEL_ERROR, "Faile to found shader, generation mismatch or shader is null");
             return nullptr;
         }
-        return slot.shader.get();
+        return &resources_[index];
     }
     bool ShaderManager::DestroyShader(ShaderHandle handle)
     {
-        if (handle.id >= shaders_.size())
+        ShaderSlot* slot = GetShaderResource(handle);
+        if(!slot)
         {
-            KP_LOG("OpenglShaderManagerLog", LOG_LEVEL_ERROR, "Faile to destroy shader, out of range");
             return false;
         }
-
-        ShaderSlot &slot = shaders_[handle.id];
-        path_to_handle_.erase(slot.shader->GetPath());
-        slot.shader.reset();
-        slot.generation++;
-        return true;
-    }
+        path_to_handle_.erase(slot->path);
+        slot->shader.reset();
+        slot->path.clear();
+        return handle_system_.Destroy(handle);
+   }
 
 }

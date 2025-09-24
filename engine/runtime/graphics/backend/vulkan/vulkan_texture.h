@@ -46,6 +46,10 @@ namespace kpengine::graphics
     private:
         VulkanTextureResource resource_;
         VulkanMemoryAllocation allocation_;
+
+        int32_t width_ = 0;
+        int32_t height_ = 0;
+        TextureSettings settings_;
     };
 }
 

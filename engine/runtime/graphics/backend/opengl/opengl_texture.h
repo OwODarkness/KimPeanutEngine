@@ -9,7 +9,6 @@ namespace kpengine::graphics
 {
     struct OpenglTextureResource{
         GLuint image = 0;
-
     };
 
     inline OpenglTextureResource ConvertToOpenglTextureResource(const TextureResource& handle)
