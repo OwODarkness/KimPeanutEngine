@@ -32,7 +32,7 @@ namespace kpengine{
     template<typename HandleT>
     class HandleSystem{ 
     public:
-        
+        HandleSystem(): generations_({}), free_slots_({}){}
         HandleT Create()
         {
             uint32_t id = KPENGINE_NULL_HANDLE;

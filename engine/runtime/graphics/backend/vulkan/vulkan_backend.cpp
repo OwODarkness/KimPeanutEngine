@@ -17,7 +17,8 @@
 #include "common/sampler_manager.h"
 #include "tool/image_loader.h"
 #include "tool/assimp_model_loader.h"
-
+#include "common/mesh_manager.h"
+#include "vulkan_mesh.h"
 namespace kpengine::graphics
 {
 
@@ -157,7 +158,8 @@ namespace kpengine::graphics
                                      image_memory_pool_(std::make_unique<VulkanImageMemoryPool>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
                                      sampler_manager_(std::make_unique<SamplerManager>()),
-                                     model_loader_(std::make_unique<AssimpModelLoader>())
+                                     model_loader_(std::make_unique<AssimpModelLoader>()),
+                                     mesh_manager_(std::make_unique<MeshManager>())
     {
     }
 
@@ -279,9 +281,7 @@ namespace kpengine::graphics
         pipeline_manager_->DestroyPipelineResource(logical_device_, pipeline_handle);
         vkDestroyRenderPass(logical_device_, swapchain_renderpass_, nullptr);
 
-        DestroyBufferResource(pos_handle_);
 
-        DestroyBufferResource(index_handle_);
 
         GraphicsContext context;
         context.native = static_cast<void *>(&context_);
@@ -289,6 +289,7 @@ namespace kpengine::graphics
         texture_manager_->DestroyTexture(context, texture_handle);
         sampler_manager_->DestroySampler(context, sampler_handle);
 
+        mesh_manager_->DestroyMesh(context, mesh_handle);
         buffer_pool_->FreeMemory(logical_device_);
         image_memory_pool_->Destroy(logical_device_);
 
@@ -868,14 +869,15 @@ namespace kpengine::graphics
     {
 
         std::string model_path = GetModelDirectory() + "sphere/sphere.obj";
-        model_loader_->Load(model_path, mesh_resource);
+        MeshData data;
+        model_loader_->Load(model_path, data);
 
-        const VkDeviceSize vertices_size = sizeof(Vertex) * mesh_resource.vertices.size();
-        pos_handle_ = CreateVertexBuffer(mesh_resource.vertices.data(), vertices_size);
+        GraphicsContext context;
+        context.native = &context_;
+        context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
 
-        const VkDeviceSize indices_size = sizeof(uint32_t) * mesh_resource.indices.size();
-        index_handle_ = CreateIndexBuffer(mesh_resource.indices.data(), indices_size);
-    }
+        mesh_handle = mesh_manager_->CreateMesh(context, data);
+   }
 
     BufferHandle VulkanBackend::CreateStageBufferResource(size_t size)
     {
@@ -1595,14 +1597,18 @@ namespace kpengine::graphics
             scissor.offset.y = 0;
             vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
 
-            VulkanBufferResource *index_buffer_resource = buffer_pool_->GetBufferResource(index_handle_);
-            VulkanBufferResource *pos_buffer_resource = buffer_pool_->GetBufferResource(pos_handle_);
+            MeshResource mesh_resource =mesh_manager_->GetMesh(mesh_handle)->GetMeshHandle();
+            const VulkanMeshResource* vk_mesh_resource = static_cast<const VulkanMeshResource*>(mesh_resource.native);
+            BufferHandle vertex_handle = vk_mesh_resource->vertex_handle;
+            BufferHandle index_handle = vk_mesh_resource->index_handle;
+            VulkanBufferResource *index_buffer_resource = buffer_pool_->GetBufferResource(index_handle);
+            VulkanBufferResource* vertex_buffer_resource = buffer_pool_->GetBufferResource(vertex_handle);
 
-            VkBuffer vertexBuffers[] = {pos_buffer_resource->buffer};
+            VkBuffer vertexBuffers[] = {vertex_buffer_resource->buffer};
             VkDeviceSize offsets[] = {0};
             vkCmdBindVertexBuffers(commandbuffer, 0, 1, vertexBuffers, offsets);
 
-            uint32_t index_count = static_cast<uint32_t>(mesh_resource.indices.size());
+            uint32_t index_count = static_cast<uint32_t>(vk_mesh_resource->sections[0].index_count);
             vkCmdBindIndexBuffer(commandbuffer, index_buffer_resource->buffer, 0, VK_INDEX_TYPE_UINT32);
 
             vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_resource->layout, 0, 1, &descriptor_sets_[current_frame], 0, nullptr);

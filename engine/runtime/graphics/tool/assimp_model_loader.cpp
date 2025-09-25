@@ -2,7 +2,7 @@
 #include "log/logger.h"
 namespace kpengine::graphics
 {
-    bool AssimpModelLoader::Load(const std::string &path, MeshResource &resource)
+    bool AssimpModelLoader::Load(const std::string &path, MeshData &resource)
     {
         Assimp::Importer import;
         const aiScene *scene = import.ReadFile(
@@ -20,7 +20,7 @@ namespace kpengine::graphics
         return true;
     }
 
-    void AssimpModelLoader::ProcessNode(aiNode *node, const aiScene *scene, MeshResource &resource, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
+    void AssimpModelLoader::ProcessNode(aiNode *node, const aiScene *scene, MeshData &resource, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
     {
         if (node == nullptr)
         {
@@ -38,7 +38,7 @@ namespace kpengine::graphics
             ProcessNode(node->mChildren[i], scene, resource, unique_vertices);
         }
     }
-    void AssimpModelLoader::ProcessMesh(aiMesh *mesh, const aiScene *scene, MeshResource &resource, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
+    void AssimpModelLoader::ProcessMesh(aiMesh *mesh, const aiScene *scene, MeshData &resource, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
     {
         uint32_t index_start = static_cast<uint32_t>(resource.indices.size());
         const uint32_t vertex_count = static_cast<uint32_t>(resource.vertices.size());

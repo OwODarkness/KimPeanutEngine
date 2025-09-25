@@ -9,7 +9,6 @@
 #include "math/math_header.h"
 #include "common/render_backend.h"
 #include "vulkan_context.h"
-#include "common/mesh_resource.h"
 #include "common/texture.h"
 
 namespace kpengine::graphics
@@ -61,6 +60,8 @@ namespace kpengine::graphics
         virtual void Cleanup() override;
 
         BufferHandle CreateStageBufferResource(size_t size);
+                BufferHandle CreateVertexBuffer(const void *data, size_t size) override;
+        BufferHandle CreateIndexBuffer(const void *data, size_t size) override;
         bool DestroyBufferResource(BufferHandle handle) override;
         void UploadDataToBuffer(BufferHandle handle, size_t size, const void *data);
         struct VulkanBufferResource *GetBufferResource(BufferHandle handle);
@@ -78,11 +79,6 @@ namespace kpengine::graphics
 
         void CopyBufferToImage(BufferHandle handle, VkImage image, uint32_t width, uint32_t height);
         class VulkanImageMemoryPool *GetImageMemoryPool() const { return image_memory_pool_.get(); }
-
-    protected:
-        BufferHandle CreateVertexBuffer(const void *data, size_t size) override;
-        BufferHandle CreateIndexBuffer(const void *data, size_t size) override;
-
     private:
         void CreateInstance();
         void CreateDebugMessager();
@@ -168,9 +164,7 @@ namespace kpengine::graphics
         bool has_resized = false;
 
         std::unique_ptr<class VulkanBufferPool> buffer_pool_;
-        BufferHandle pos_handle_;
 
-        BufferHandle index_handle_;
 
         std::vector<BufferHandle> uniform_buffer_handles_;
         std::vector<void *> uniform_buffer_mapped_ptr_;
@@ -190,7 +184,8 @@ namespace kpengine::graphics
         SamplerHandle sampler_handle;
 
         std::unique_ptr<class IModelLoader> model_loader_;
-        MeshResource mesh_resource;
+        std::unique_ptr<class MeshManager> mesh_manager_;
+        MeshHandle mesh_handle;
 
         VkDescriptorPool descriptor_pool_;
         std::vector<VkDescriptorSet> descriptor_sets_;

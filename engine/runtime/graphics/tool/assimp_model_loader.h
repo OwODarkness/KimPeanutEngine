@@ -10,10 +10,10 @@
 namespace kpengine::graphics{
     class AssimpModelLoader: public IModelLoader{
     public:
-        bool Load(const std::string& path, MeshResource& mesh) override;
+        bool Load(const std::string& path, MeshData& mesh) override;
     private:
-        void ProcessNode(aiNode* node, const aiScene* scene, MeshResource& resource, std::unordered_map<Vertex, uint32_t, VertexHash>& unique_vertices);
-        void ProcessMesh(aiMesh* mesh, const aiScene* scene, MeshResource& resource, std::unordered_map<Vertex, uint32_t, VertexHash>& unique_vertices);
+        void ProcessNode(aiNode* node, const aiScene* scene, MeshData& resource, std::unordered_map<Vertex, uint32_t, VertexHash>& unique_vertices);
+        void ProcessMesh(aiMesh* mesh, const aiScene* scene, MeshData& resource, std::unordered_map<Vertex, uint32_t, VertexHash>& unique_vertices);
     };
 }
 

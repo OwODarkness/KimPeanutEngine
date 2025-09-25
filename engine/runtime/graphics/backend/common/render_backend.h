@@ -21,10 +21,11 @@ public:
     virtual void Present() = 0;
     void BindWindowResize(EventDispatcher<ResizeEvent> &dispatcher);
 
-protected:
+public:
     virtual BufferHandle CreateVertexBuffer(const void* data, size_t size) = 0;
     virtual BufferHandle CreateIndexBuffer(const void* data, size_t size) = 0;
     virtual bool DestroyBufferResource(BufferHandle) = 0;
+protected:
     virtual void FramebufferResizeCallback(const ResizeEvent& event) ;
 public:
     RenderBackend() = default;

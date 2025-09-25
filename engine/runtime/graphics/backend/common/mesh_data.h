@@ -6,7 +6,7 @@
 #include "vertex.h"
 
 namespace kpengine::graphics{
-    struct MeshResource{
+    struct MeshData{
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
         std::vector<MeshSection> sections;
