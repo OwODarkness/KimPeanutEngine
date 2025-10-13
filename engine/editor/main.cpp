@@ -24,7 +24,8 @@ int main(int argc, char **argv)
         std::unique_ptr<WindowSystem> window = WindowSystem::CreateWindow(WindowAPIType::WINDOW_API_GLFW);
 
         WindowCreateInfo window_create_info;
-        window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        //window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
         window_create_info.width = 1920;
         window_create_info.height = 1080;
         window_create_info.title = "test";
@@ -35,6 +36,10 @@ int main(int argc, char **argv)
         rhi->Initialize();
         while(!window->ShouldClose())
         {
+            if(window_create_info.graphics_api_type == GraphicsAPIType::GRAPHICS_API_OPENGL)
+            {
+                window->SwapBuffers();
+            }
             window->PollEvents();
             rhi->BeginFrame();
             rhi->EndFrame();

@@ -15,6 +15,7 @@ add_library(Graphics STATIC
     backend/opengl/opengl_shader.cpp
     backend/opengl/opengl_sampler.cpp
     backend/opengl/opengl_mesh.cpp
+    backend/opengl/opengl_pipeline.cpp
 
     backend/vulkan/vulkan_backend.cpp
     backend/vulkan/vulkan_texture.cpp

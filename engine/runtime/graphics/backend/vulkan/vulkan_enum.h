@@ -173,6 +173,8 @@ namespace kpengine::graphics
     {
         switch (cull_mode)
         {
+        case CullMode::CULL_MODE_NONE:
+            return VK_CULL_MODE_NONE;
         case CullMode::CULL_MODE_FRONT:
             return VK_CULL_MODE_FRONT_BIT;
         case CullMode::CULL_MODE_BACK:
@@ -180,7 +182,7 @@ namespace kpengine::graphics
         case CullMode::CULL_MODE_FRONT_AND_BACK:
             return VK_CULL_MODE_FRONT_AND_BACK;
         default:
-            return VK_CULL_MODE_FLAG_BITS_MAX_ENUM;
+            return VK_CULL_MODE_BACK_BIT;
         }
     }
 

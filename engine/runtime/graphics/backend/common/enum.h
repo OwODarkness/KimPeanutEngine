@@ -92,6 +92,7 @@ namespace kpengine::graphics
 
     enum class CullMode
     {
+        CULL_MODE_NONE,
         CULL_MODE_FRONT,
         CULL_MODE_BACK,
         CULL_MODE_FRONT_AND_BACK

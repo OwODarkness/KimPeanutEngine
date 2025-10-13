@@ -41,7 +41,7 @@ namespace kpengine::graphics
         if (!success)
         {
             glGetShaderInfoLog(shader_handle, SHADER_LOG_BUF_MAX_SIZE, nullptr, log);
-            KP_LOG("OpenglShaderLog", LOG_LEVEL_ERROR, log);
+            KP_LOG("OpenglShaderLog", LOG_LEVEL_ERROR,  log);
             throw std::runtime_error(log);
         }
         return shader_handle;

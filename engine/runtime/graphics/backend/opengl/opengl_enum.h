@@ -152,6 +152,51 @@ namespace kpengine::graphics
             return GL_TRIANGLES;
         }
     }
+
+    inline GLenum ConvertToOpenglPolygonMode(PolygonMode mode)
+    {
+        switch(mode)
+        {
+            case PolygonMode::POLYGON_MODE_FILL:
+                return GL_FILL;
+            case PolygonMode::POLYGON_MODE_LINE:
+                return GL_LINE;
+            case PolygonMode::POLYGON_MODE_POINT:
+                return GL_POINT;
+            default:
+                return GL_FILL;
+        }
+    }
+
+    inline GLenum ConvertToOpenglFrontFaceMode(FrontFace mode)
+    {
+        switch(mode)
+        {
+            case FrontFace::FRONT_FACE_CLOCKWISE:
+                return GL_CW;
+            case FrontFace::FRONT_FACE_COUNTER_CLOCKWISE:
+                return GL_CCW;
+            default:
+                return GL_CW;
+        }
+    }
+
+    inline GLenum ConvertTooPENGLCullMode(CullMode mode)
+    {
+        switch (mode)
+        {
+        case CullMode::CULL_MODE_NONE:
+            return GL_NONE;
+        case CullMode::CULL_MODE_FRONT:
+            return GL_FRONT;
+        case CullMode::CULL_MODE_BACK:
+            return GL_BACK;
+        case CullMode::CULL_MODE_FRONT_AND_BACK:
+            return GL_FRONT_AND_BACK;
+        default:    return GL_BACK;
+        }
+    }
+
     inline GLenum ConvertToOpenglBlendFactor(BlendFactor factor)
     {
         switch (factor)
@@ -253,6 +298,8 @@ namespace kpengine::graphics
             return ConvertToOpenglSamplerFilter(filter);
         }
     }
+
+
 }
 
 #endif

@@ -60,7 +60,7 @@ namespace kpengine::graphics
         virtual void Cleanup() override;
 
         BufferHandle CreateStageBufferResource(size_t size);
-                BufferHandle CreateVertexBuffer(const void *data, size_t size) override;
+        BufferHandle CreateVertexBuffer(const void *data, size_t size) override;
         BufferHandle CreateIndexBuffer(const void *data, size_t size) override;
         bool DestroyBufferResource(BufferHandle handle) override;
         void UploadDataToBuffer(BufferHandle handle, size_t size, const void *data);
@@ -71,14 +71,15 @@ namespace kpengine::graphics
         void AcquireImageOwnerShip(VkImage image, TextureUsage src_usage, TextureUsage dst_usage, uint32_t base_mip_level, uint32_t level_count);
 
         /**
-         * runtime mipmaps generate function. 
+         * runtime mipmaps generate function.
          * Note: Usually they are pre-generated and stored in the texture file alongside the base level to improve loading speed.
-         * 
+         *
          */
         void GenerateMipmaps(VkImage image, int32_t width, int32_t height, uint32_t mip_levels);
 
         void CopyBufferToImage(BufferHandle handle, VkImage image, uint32_t width, uint32_t height);
         class VulkanImageMemoryPool *GetImageMemoryPool() const { return image_memory_pool_.get(); }
+
     private:
         void CreateInstance();
         void CreateDebugMessager();
@@ -132,6 +133,7 @@ namespace kpengine::graphics
         VkPresentModeKHR ChooseSwapChainPresentMode(const std::vector<VkPresentModeKHR> &available_modes) const;
         VkExtent2D ChooseSwapChainExtent(const VkSurfaceCapabilitiesKHR &capacity) const;
         uint32_t GetMaxUsableSampleCount();
+
     private:
         VkInstance instance_;
         VkDebugUtilsMessengerEXT debug_messager_;
@@ -164,7 +166,6 @@ namespace kpengine::graphics
         bool has_resized = false;
 
         std::unique_ptr<class VulkanBufferPool> buffer_pool_;
-
 
         std::vector<BufferHandle> uniform_buffer_handles_;
         std::vector<void *> uniform_buffer_mapped_ptr_;

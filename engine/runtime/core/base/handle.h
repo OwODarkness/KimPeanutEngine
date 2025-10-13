@@ -3,7 +3,7 @@
 
 #include <cstdint>
 #include <vector>
-
+#include <functional>
 #define KPENGINE_NULL_HANDLE UINT32_MAX
 namespace kpengine{
 
@@ -24,6 +24,7 @@ namespace kpengine{
             return id == rhs.id && generation == rhs.generation;
         }
     };
+
 
     /**
      * T is the struct or type of resource you want to use handle system to manager
@@ -81,6 +82,15 @@ namespace kpengine{
         std::vector<uint32_t> free_slots_;
     };
 
+}
+
+template<typename Tag>
+struct std::hash<kpengine::Handle<Tag>> {
+    size_t operator()(const kpengine::Handle<Tag>& h) const noexcept {
+        // combine id and generation
+        return (size_t(h.id) << 32) ^ size_t(h.generation);
+    }
 };
+
 
 #endif

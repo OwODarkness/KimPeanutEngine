@@ -3,7 +3,7 @@
 
 namespace kpengine::graphics{
     struct OpenglContext{
-
+        class OpenglBackend* backend;
     };
 }
 

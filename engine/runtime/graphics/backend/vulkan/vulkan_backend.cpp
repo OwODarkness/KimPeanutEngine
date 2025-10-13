@@ -281,8 +281,6 @@ namespace kpengine::graphics
         pipeline_manager_->DestroyPipelineResource(logical_device_, pipeline_handle);
         vkDestroyRenderPass(logical_device_, swapchain_renderpass_, nullptr);
 
-
-
         GraphicsContext context;
         context.native = static_cast<void *>(&context_);
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
@@ -728,7 +726,7 @@ namespace kpengine::graphics
         Texture *depth_textrue = texture_manager_->GetTexture(depth_handle);
         VkImageView depth_view = ConvertToVulkanTextureResource(depth_textrue->GetTextueHandle()).view;
 
-        Texture* color_texture = texture_manager_->GetTexture(color_handle);
+        Texture *color_texture = texture_manager_->GetTexture(color_handle);
         VkImageView color_view = ConvertToVulkanTextureResource(color_texture->GetTextueHandle()).view;
 
         for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
@@ -877,7 +875,7 @@ namespace kpengine::graphics
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
 
         mesh_handle = mesh_manager_->CreateMesh(context, data);
-   }
+    }
 
     BufferHandle VulkanBackend::CreateStageBufferResource(size_t size)
     {
@@ -1597,12 +1595,12 @@ namespace kpengine::graphics
             scissor.offset.y = 0;
             vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
 
-            MeshResource mesh_resource =mesh_manager_->GetMesh(mesh_handle)->GetMeshHandle();
-            const VulkanMeshResource* vk_mesh_resource = static_cast<const VulkanMeshResource*>(mesh_resource.native);
+            MeshResource mesh_resource = mesh_manager_->GetMesh(mesh_handle)->GetMeshHandle();
+            const VulkanMeshResource *vk_mesh_resource = static_cast<const VulkanMeshResource *>(mesh_resource.native);
             BufferHandle vertex_handle = vk_mesh_resource->vertex_handle;
             BufferHandle index_handle = vk_mesh_resource->index_handle;
             VulkanBufferResource *index_buffer_resource = buffer_pool_->GetBufferResource(index_handle);
-            VulkanBufferResource* vertex_buffer_resource = buffer_pool_->GetBufferResource(vertex_handle);
+            VulkanBufferResource *vertex_buffer_resource = buffer_pool_->GetBufferResource(vertex_handle);
 
             VkBuffer vertexBuffers[] = {vertex_buffer_resource->buffer};
             VkDeviceSize offsets[] = {0};

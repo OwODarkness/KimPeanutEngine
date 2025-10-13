@@ -5,7 +5,6 @@
 #include "glad/glad.h"
 namespace kpengine::graphics{
     struct OpenglMeshResource{
-        GLuint vao;
         GLuint vbo;
         GLuint ebo;
         std::vector<MeshSection> sections;

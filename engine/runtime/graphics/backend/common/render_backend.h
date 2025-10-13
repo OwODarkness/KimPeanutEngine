@@ -22,6 +22,7 @@ public:
     void BindWindowResize(EventDispatcher<ResizeEvent> &dispatcher);
 
 public:
+    //bytes
     virtual BufferHandle CreateVertexBuffer(const void* data, size_t size) = 0;
     virtual BufferHandle CreateIndexBuffer(const void* data, size_t size) = 0;
     virtual bool DestroyBufferResource(BufferHandle) = 0;

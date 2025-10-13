@@ -81,6 +81,7 @@ namespace kpengine::graphics
                 attributes.push_back({attri_desc.location, attri_desc.binding, ConvertToVulkanVertexFormat(attri_desc.format), attri_desc.offset});
             }
 
+            //set vertex state
             VkPipelineVertexInputStateCreateInfo vertex_state_create_info{};
             vertex_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_VERTEX_INPUT_STATE_CREATE_INFO;
             vertex_state_create_info.vertexBindingDescriptionCount = static_cast<uint32_t>(bindings.size());
@@ -88,7 +89,7 @@ namespace kpengine::graphics
             vertex_state_create_info.vertexAttributeDescriptionCount = static_cast<uint32_t>(attributes.size());
             vertex_state_create_info.pVertexAttributeDescriptions = attributes.data();
 
-            // set assemblystate
+            // set assembly state
             VkPipelineInputAssemblyStateCreateInfo assembly_state_create_info{};
             assembly_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_INPUT_ASSEMBLY_STATE_CREATE_INFO;
             assembly_state_create_info.topology = ConvertToVulkanPrimitiveTopology(pipeline_desc.primitive_topology_type);
@@ -104,12 +105,12 @@ namespace kpengine::graphics
             VkPipelineRasterizationStateCreateInfo raster_state_create_info{};
             raster_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO;
             raster_state_create_info.frontFace = ConvertToVulkanFrontFace(pipeline_desc.raster_state.front_face);
-            raster_state_create_info.depthClampEnable = pipeline_desc.raster_state.depth_clamp_enable;
+            raster_state_create_info.depthClampEnable = pipeline_desc.raster_state.depth_clamp_enabled;
             raster_state_create_info.polygonMode = ConvertToVulkanPolygonMode(pipeline_desc.raster_state.polygon_mode);
-            raster_state_create_info.rasterizerDiscardEnable = pipeline_desc.raster_state.rasterizer_disacrd_enable;
+            raster_state_create_info.rasterizerDiscardEnable = pipeline_desc.raster_state.rasterizer_discard_enabled;
             raster_state_create_info.lineWidth = pipeline_desc.raster_state.line_width;
             raster_state_create_info.cullMode = ConvertToVulkanCullMode(pipeline_desc.raster_state.cull_mode);
-            raster_state_create_info.depthBiasEnable = pipeline_desc.raster_state.depth_bias_enable;
+            raster_state_create_info.depthBiasEnable = pipeline_desc.raster_state.depth_bias_enabled;
             raster_state_create_info.depthBiasConstantFactor = pipeline_desc.raster_state.depth_bias_constant;
             raster_state_create_info.depthBiasClamp = 0.f;
             raster_state_create_info.depthBiasSlopeFactor = pipeline_desc.raster_state.depth_bias_slope;
@@ -125,16 +126,17 @@ namespace kpengine::graphics
             // set multi sample
             VkPipelineMultisampleStateCreateInfo multisample_state_create_info{};
             multisample_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
-            multisample_state_create_info.sampleShadingEnable = pipeline_desc.multisample_state.sample_shading_enable;
+            multisample_state_create_info.sampleShadingEnable = pipeline_desc.multisample_state.sample_shading_enabled;
             multisample_state_create_info.rasterizationSamples = ConvertToVulkanSampleCount(pipeline_desc.multisample_state.rasterization_samples);
             multisample_state_create_info.minSampleShading = pipeline_desc.multisample_state.min_sample_shading;
             multisample_state_create_info.pSampleMask = nullptr;
             multisample_state_create_info.alphaToCoverageEnable = pipeline_desc.multisample_state.alpha_to_coverage_enable;
             multisample_state_create_info.alphaToOneEnable = pipeline_desc.multisample_state.alpha_to_one_enable;
 
+            //set color blend attachment
             VkPipelineColorBlendAttachmentState colorblend_attachment{};
             colorblend_attachment.colorWriteMask = pipeline_desc.blend_attachment_state.color_write_mask;
-            colorblend_attachment.blendEnable = pipeline_desc.blend_attachment_state.blend_enable;
+            colorblend_attachment.blendEnable = pipeline_desc.blend_attachment_state.blend_enabled;
             colorblend_attachment.srcColorBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.src_color_blend_factor);
             colorblend_attachment.dstColorBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.dst_color_blend_factor);
             colorblend_attachment.colorBlendOp = ConvertToVulkanBlendOp(pipeline_desc.blend_attachment_state.color_blend_op);
@@ -142,6 +144,7 @@ namespace kpengine::graphics
             colorblend_attachment.dstAlphaBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.dst_alpha_blend_factor);
             colorblend_attachment.alphaBlendOp = ConvertToVulkanBlendOp(pipeline_desc.blend_attachment_state.alpha_blend_op);
 
+            //set color blend state
             VkPipelineColorBlendStateCreateInfo colorblend_state_create_info{};
             colorblend_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
             colorblend_state_create_info.attachmentCount = 1;
@@ -153,6 +156,7 @@ namespace kpengine::graphics
             colorblend_state_create_info.blendConstants[2] = 0.f;
             colorblend_state_create_info.blendConstants[3] = 0.f;
 
+            //set depth and stencil state
             VkPipelineDepthStencilStateCreateInfo depth_stencil{};
             depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
             depth_stencil.depthTestEnable = VK_TRUE;
@@ -165,7 +169,7 @@ namespace kpengine::graphics
             depth_stencil.front = {};
             depth_stencil.back = {};
 
-            // set descriptor set layout
+            // set descriptor sets layout
             pipeline_resource.descriptor_set_layouts.resize(pipeline_desc.descriptor_binding_descs.size());
             for (size_t i = 0; i < pipeline_resource.descriptor_set_layouts.size(); i++)
             {
@@ -203,6 +207,7 @@ namespace kpengine::graphics
                 throw std::runtime_error("Failed to create pipeline layout");
             }
 
+            //create graphics pipeline
             VkGraphicsPipelineCreateInfo pipeline_create_info{};
             pipeline_create_info.sType = VK_STRUCTURE_TYPE_GRAPHICS_PIPELINE_CREATE_INFO;
             pipeline_create_info.stageCount = static_cast<uint32_t>(stages.size());
