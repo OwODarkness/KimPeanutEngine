@@ -6,15 +6,22 @@ KimPeanut Engine(KP Engine) 采用分层体系架构。
 
 ## 第三方说明
 
-图形API：OpenGL
+图形API：OpenGL(GLFW) 4.3, Vulkan
 
-着色器语言：GLSL
+
+OpenGL管理工具: glad, khrplatform(被glad依赖)
 
 UI框架：imgui
 
 3D模型读取工具：assimp
 
 图像读取工具：stb_image
+
+mesh优化工具：meshoptimizer
+
+magic_enum
+
+窗口工具：
 
 ## 引擎线程
 

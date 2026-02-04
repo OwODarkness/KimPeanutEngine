@@ -213,6 +213,7 @@ vec3 IndirectPBR(vec3 N, vec3 V, Material material)
     float ao = material.ao;
 
     vec3 F0 = mix(vec3(0.04), albedo, metallic);
+    
 
     // Specular Fresnel for IBL
     float NdotV = max(dot(normalize(N), normalize(V)), 0.0);
@@ -228,8 +229,7 @@ vec3 IndirectPBR(vec3 N, vec3 V, Material material)
     vec3 prefilteredColor = textureLod(prefilter_map, R, roughness * float(MAX_REFLECTION_LOD)).rgb;
     vec2 envBRDF = texture(brdf_map, vec2(NdotV, roughness)).rg;
     vec3 specular = prefilteredColor * (ks * envBRDF.x + envBRDF.y);
-
-    return (kd * diffuse + specular) * ao;
+    return kd * diffuse +  specular;
 }
 
 // Direct PBR (per-light)
@@ -341,7 +341,7 @@ void main()
 {
     vec2 uv = in_uv;
     vec3 frag_position = texture(g_position, uv).rgb;
-    vec3 normal_vec = normalize(texture(g_normal, uv).rgb);
+    vec3 normal_vec =normalize(texture(g_normal, uv).rgb * 2.0 - 1.0);
     vec3 view_vec = normalize(view_position - frag_position);
 
     Material material;
@@ -357,7 +357,7 @@ void main()
     {
         direct_color += CalculateLight(lights[i], frag_position, normal_vec, material);
     }
-    vec3 color = direct_color + skylight_intensity * indirect_color ;
+    vec3 color = direct_color +  indirect_color ;
 
     color = color / (color + vec3(1.0));
     color = pow(color, vec3(1.0 / 2.2));

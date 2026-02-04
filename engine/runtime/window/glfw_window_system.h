@@ -16,6 +16,7 @@ namespace kpengine
         WindowHandle GetNativeHandle() const override;
         bool ShouldClose() const override;
         void Tick(float delta_time) override;
+        void Cleanup() override;
         ~GLFWWindowSystem();
 
     private:
@@ -28,7 +29,8 @@ namespace kpengine
         static void OnScrollCallback(GLFWwindow* window, double xoffset, double yoffset);
     
     private:
-        GLFWwindow* window_;
+        bool should_make_context_ = false;
+        GLFWwindow* window_ = nullptr;
     };
 }
 

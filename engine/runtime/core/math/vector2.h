@@ -3,7 +3,6 @@
 
 #include <cstddef>
 #include <cassert>
-#include "math.h"
 
 namespace kpengine::math
 {
@@ -15,28 +14,29 @@ namespace kpengine::math
         static_assert(std::is_floating_point_v<T>, "T must be floating point");
 
     public:
-        Vector2() : x_{}, y_{} {}
-        explicit Vector2(T value) : x_(value), y_(value) {}
-        Vector2(T x, T y) : x_(x), y_(y) {}
-        explicit Vector2(const T arr[2]) : x_(arr[0]), y_(arr[1]) {}
-
+        Vector2();
+        explicit Vector2(T value);
+        Vector2(T x, T y);
+        explicit Vector2(const T arr[2]);
         T operator[](size_t index) const
         {
-            assert(index >= 0 && index < 2);
+            assert(index < 2);
             return *(&this->x_ + index);
         }
 
         T &operator[](size_t index)
         {
-            assert(index >= 0 && index < 2);
+            assert(index < 2);
             return *(&this->x_ + index);
         }
 
         T *Data() { return &x_; }
         const T *Data() const { return &x_; }
 
-        inline double SquareLength() const { return x_ * x_ + y_ * y_; }
-        double Norm() const { return std::sqrt(SquareLength()); }
+        T SquareLength() const;
+        T Norm() const;
+        T DotProduct(const Vector2 &v) const;
+        void Normalize();
 
         bool operator==(const Vector2 &v) const { return x_ == v.x_ && y_ == v.y_; }
         bool operator!=(const Vector2 &v) const { return x_ != v.x_ || y_ != v.y_; }
@@ -50,18 +50,63 @@ namespace kpengine::math
         Vector2 operator/(T scalar) const { return Vector2(x_ / scalar, y_ / scalar); }
         Vector2 operator-() const { return Vector2(-x_, -y_); }
 
-        Vector2 &operator+=(T scalar);
-        Vector2 &operator-=(T scalar);
-        Vector2 &operator*=(T scalar);
-        Vector2 &operator/=(T scalar);
+        Vector2<T> &operator+=(T scalar)
+        {
+            x_ += scalar;
+            y_ += scalar;
+            return *this;
+        }
 
-        Vector2 &operator+=(const Vector2 &v);
-        Vector2 &operator-=(const Vector2 &v);
-        Vector2 &operator*=(const Vector2 &v);
-        Vector2 &operator/=(const Vector2 &v);
+        Vector2<T> &operator-=(T scalar)
+        {
+            x_ -= scalar;
+            y_ -= scalar;
+            return *this;
+        }
 
-        T DotProduct(const Vector2 &v) const;
-        void Normalize();
+        Vector2<T> &operator*=(T scalar)
+        {
+            x_ *= scalar;
+            y_ *= scalar;
+            return *this;
+        }
+
+        Vector2<T> &operator/=(T scalar)
+        {
+            assert(scalar != T(0));
+            x_ /= scalar;
+            y_ /= scalar;
+            return *this;
+        }
+
+        Vector2<T> &operator+=(const Vector2 &v)
+        {
+            x_ += v.x_;
+            y_ += v.y_;
+            return *this;
+        }
+
+        Vector2<T> &operator-=(const Vector2 &v)
+        {
+            x_ -= v.x_;
+            y_ -= v.y_;
+            return *this;
+        }
+
+        Vector2<T> &operator*=(const Vector2 &v)
+        {
+            x_ *= v.x_;
+            y_ *= v.y_;
+            return *this;
+        }
+
+        Vector2<T> &operator/=(const Vector2 &v)
+        {
+            assert(v.x_ != T(0) && v.y_ != T(0));
+            x_ /= v.x_;
+            y_ /= v.y_;
+            return *this;
+        }
 
         template <typename U>
         friend Vector2<U> operator+(U scalar, const Vector2<U> &v);
@@ -84,92 +129,6 @@ namespace kpengine::math
     public:
         T x_, y_;
     };
-
-    template <typename T>
-    Vector2<T> &Vector2<T>::operator+=(T scalar)
-    {
-        x_ += scalar;
-        y_ += scalar;
-        return *this;
-    }
-
-    template <typename T>
-    Vector2<T> &Vector2<T>::operator-=(T scalar)
-    {
-        x_ -= scalar;
-        y_ -= scalar;
-        return *this;
-    }
-
-    template <typename T>
-    Vector2<T> &Vector2<T>::operator*=(T scalar)
-    {
-        x_ *= scalar;
-        y_ *= scalar;
-        return *this;
-    }
-
-    template <typename T>
-    Vector2<T> &Vector2<T>::operator/=(T scalar)
-    {
-        assert(scalar != T(0));
-        x_ /= scalar;
-        y_ /= scalar;
-        return *this;
-    }
-
-    template <typename T>
-    Vector2<T> &Vector2<T>::operator+=(const Vector2 &v)
-    {
-        x_ += v.x_;
-        y_ += v.y_;
-        return *this;
-    }
-
-    template <typename T>
-    Vector2<T> &Vector2<T>::operator-=(const Vector2 &v)
-    {
-        x_ -= v.x_;
-        y_ -= v.y_;
-        return *this;
-    }
-
-    template <typename T>
-    Vector2<T> &Vector2<T>::operator*=(const Vector2 &v)
-    {
-        x_ *= v.x_;
-        y_ *= v.y_;
-        return *this;
-    }
-
-    template <typename T>
-    Vector2<T> &Vector2<T>::operator/=(const Vector2 &v)
-    {
-        assert(v.x_ != T(0) && v.y_ != T(0));
-        x_ /= v.x_;
-        y_ /= v.y_;
-        return *this;
-    }
-
-    template <typename T>
-    T Vector2<T>::DotProduct(const Vector2 &v) const
-    {
-        return x_ * v.x_ + y_ * v.y_;
-    }
-
-    template <typename T>
-    void Vector2<T>::Normalize()
-    {
-        double length = Norm();
-        if (length == 0.)
-        {
-            return;
-        }
-
-        T coeff = static_cast<T>(1. / length);
-        x_ *= coeff;
-        y_ *= coeff;
-    }
 
     template <typename T>
     Vector2<T> operator+(T scalar, const Vector2<T> &v)

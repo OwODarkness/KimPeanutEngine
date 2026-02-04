@@ -2,7 +2,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include "input_context.h"
-
+#include "log/logger.h"
 namespace kpengine::input
 {
 
@@ -115,11 +115,13 @@ namespace kpengine::input
         last_cursor_ypos_ = event.ypos;
 
         auto it = contexts_.find(active_context_);
+
         if (it == contexts_.end())
         {
             return;
         }
         it->second->ProcessAxis2DInput({InputDevice::Mouse, KPENGINE_MOUSE_CURSOR}, delta_x, delta_y);
+        
     }
 
     void InputSystem::ScrollExec(const ScrollEvent& event)

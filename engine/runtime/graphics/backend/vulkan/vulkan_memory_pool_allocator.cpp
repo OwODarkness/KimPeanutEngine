@@ -4,13 +4,15 @@
 
 namespace kpengine::graphics
 {
+    //64M Pool Default
     constexpr VkDeviceSize pool_block_default_size = 1 << 26;
+    //4k, 64K, 4M Slot Size
     constexpr std::array<VkDeviceSize, 3> pool_slot_sizes = {1 << 12, 1 << 16, 1 << 22};
 
-        VkDeviceSize VulkanMemoryPoolAllocator::GetMaxSupportedPoolSize() const
-        {
-            return pool_slot_sizes.back();
-        }
+    VkDeviceSize VulkanMemoryPoolAllocator::GetMaxSupportedPoolSize() const
+    {
+        return pool_slot_sizes.back();
+    }
 
     VulkanMemoryAllocation VulkanMemoryPoolAllocator::Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index)
     {
@@ -88,12 +90,14 @@ namespace kpengine::graphics
                 break;
             }
         }
-
+        //create a new pool if not found pool with fit slot size 
         if (is_pool_found == false)
         {
             pools_.push_back({block_size, slot_size, {}, {}});
             pool_index = pools_.size() - 1;
         }
+
+        VulkanMemoryPool &pool = pools_[pool_index];
 
         VkDeviceSize adjust_slot_size = (slot_size + alignment - 1) & ~(alignment - 1);
         uint32_t pre_compute_slot_count = static_cast<uint32_t>(block_size / adjust_slot_size);
@@ -102,23 +106,21 @@ namespace kpengine::graphics
             KP_LOG("VulkanMemoryPoolAllocatorLog", LOG_LEVEL_WARNNING, "Failed to allocate memory,  the slot size is larger than block size");
         }
 
-
-
-        pools_[pool_index].blocks_.emplace_back(std::make_unique<VulkanMemoryBlock>());
+        //allocate the block for pool
+        pool.blocks_.emplace_back(std::make_unique<VulkanMemoryBlock>());
 
         VkMemoryAllocateInfo memory_allocate_info{};
         memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         memory_allocate_info.memoryTypeIndex = memory_type_index;
         memory_allocate_info.allocationSize = block_size;
 
-        VulkanMemoryPool &pool = pools_[pool_index];
 
         if (vkAllocateMemory(logicial_device, &memory_allocate_info, nullptr, &pool.blocks_.back()->memory) != VK_SUCCESS)
         {
             KP_LOG("VulkanMemoryPoolAllocatorLog", LOG_LEVEL_ERROR, "Failed to allocate memory during using vkAllocateMemory");
             throw std::runtime_error("Failed to allocate memory");
         }
-
+        //init
         pool.blocks_.back()->block_size = block_size;
         pool.blocks_.back()->slot_size = slot_size;
         pool.blocks_.back()->slot_count = pre_compute_slot_count;

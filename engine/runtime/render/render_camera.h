@@ -84,6 +84,7 @@ public:
     float z_far_ = 25.f;
     float pitch_ = 0.f;
     float yaw_ = -90.f;
+    bool capture = false;
 };
 }
 

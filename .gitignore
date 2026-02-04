@@ -33,7 +33,13 @@
 *.out
 *.app
 
+# Asset
+*.hdr
+
 build/*
+
 
 .VSCodeCounter/
 logs/*
+
+third_party/*

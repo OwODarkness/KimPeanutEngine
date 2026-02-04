@@ -27,10 +27,10 @@ namespace kpengine{
         Vector3f GetWorldScale() const;
         Rotatorf GetWorldRotation() const;
 
-        void SetRelativeLocation(const Vector3f& new_location);
-        void SetRelativeRotation(const Rotatorf& new_rotator);
-        void SetRelativeScale(const Vector3f& new_scale);
-        void SetRelativeTransform(const Transform3f& new_transform);
+        virtual void SetRelativeLocation(const Vector3f& new_location);
+        virtual void SetRelativeRotation(const Rotatorf& new_rotator);
+        virtual void SetRelativeScale(const Vector3f& new_scale);
+        virtual void SetRelativeTransform(const Transform3f& new_transform);
 
         ~SceneComponent() override;
     protected:

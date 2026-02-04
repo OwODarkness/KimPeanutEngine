@@ -31,6 +31,47 @@ namespace kpengine::graphics
         }
     }
 
+    inline void ConvertToOpenglVertexFormat(VertexFormat format, GLint &size, GLenum &type)
+    {
+        switch (format)
+        {
+        case VertexFormat::VERTEX_FORMAT_ONE_INT:
+            size = 1;
+            type = GL_INT;
+            break;
+        case VertexFormat::VERTEX_FORMAT_TWO_INTS:
+            size = 2;
+            type = GL_INT;
+            break;
+        case VertexFormat::VERTEX_FORMAT_THREE_INTS:
+            size = 3;
+            type = GL_INT;
+            break;
+        case VertexFormat::VERTEX_FORMAT_FOUR_INTS:
+            size = 4;
+            type = GL_INT;
+            break;
+        case VertexFormat::VERTEX_FORMAT_ONE_FLOAT:
+            size = 1;
+            type = GL_FLOAT;
+            break;
+        case VertexFormat::VERTEX_FORMAT_TWO_FLOATS:
+            size = 2;
+            type = GL_FLOAT;
+            break;
+        case VertexFormat::VERTEX_FORMAT_THREE_FLOATS:
+            size = 3;
+            type = GL_FLOAT;
+            break;
+        case VertexFormat::VERTEX_FORMAT_FOUR_FLOATS:
+            size = 4;
+            type = GL_FLOAT;
+            break;
+        default:
+            break;
+        }
+    }
+
     inline GLenum ConvertToOpenglTextureUploadFormat(TextureFormat format)
     {
         switch (format)
@@ -155,29 +196,29 @@ namespace kpengine::graphics
 
     inline GLenum ConvertToOpenglPolygonMode(PolygonMode mode)
     {
-        switch(mode)
+        switch (mode)
         {
-            case PolygonMode::POLYGON_MODE_FILL:
-                return GL_FILL;
-            case PolygonMode::POLYGON_MODE_LINE:
-                return GL_LINE;
-            case PolygonMode::POLYGON_MODE_POINT:
-                return GL_POINT;
-            default:
-                return GL_FILL;
+        case PolygonMode::POLYGON_MODE_FILL:
+            return GL_FILL;
+        case PolygonMode::POLYGON_MODE_LINE:
+            return GL_LINE;
+        case PolygonMode::POLYGON_MODE_POINT:
+            return GL_POINT;
+        default:
+            return GL_FILL;
         }
     }
 
     inline GLenum ConvertToOpenglFrontFaceMode(FrontFace mode)
     {
-        switch(mode)
+        switch (mode)
         {
-            case FrontFace::FRONT_FACE_CLOCKWISE:
-                return GL_CW;
-            case FrontFace::FRONT_FACE_COUNTER_CLOCKWISE:
-                return GL_CCW;
-            default:
-                return GL_CW;
+        case FrontFace::FRONT_FACE_CLOCKWISE:
+            return GL_CW;
+        case FrontFace::FRONT_FACE_COUNTER_CLOCKWISE:
+            return GL_CCW;
+        default:
+            return GL_CW;
         }
     }
 
@@ -193,7 +234,8 @@ namespace kpengine::graphics
             return GL_BACK;
         case CullMode::CULL_MODE_FRONT_AND_BACK:
             return GL_FRONT_AND_BACK;
-        default:    return GL_BACK;
+        default:
+            return GL_BACK;
         }
     }
 
@@ -298,7 +340,6 @@ namespace kpengine::graphics
             return ConvertToOpenglSamplerFilter(filter);
         }
     }
-
 
 }
 

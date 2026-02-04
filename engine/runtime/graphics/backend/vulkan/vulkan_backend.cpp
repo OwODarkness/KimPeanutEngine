@@ -8,11 +8,11 @@
 #include "vulkan_shader.h"
 #include "common/vertex.h"
 #include "config/path.h"
-#include "vulkan_buffer_pool.h"
+#include "vulkan_buffer_manager.h"
 #include "vulkan_pipeline_manager.h"
 #include "vulkan_texture.h"
 #include "vulkan_sampler.h"
-#include "vulkan_image_memory_pool.h"
+#include "vulkan_image_memory_manager.h"
 #include "common/texture_manager.h"
 #include "common/sampler_manager.h"
 #include "tool/image_loader.h"
@@ -153,9 +153,9 @@ namespace kpengine::graphics
         return swap_chain_support_detail;
     }
 
-    VulkanBackend::VulkanBackend() : buffer_pool_(std::make_unique<VulkanBufferPool>()),
+    VulkanBackend::VulkanBackend() : buffer_manager_(std::make_unique<VulkanBufferManager>()),
                                      pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
-                                     image_memory_pool_(std::make_unique<VulkanImageMemoryPool>()),
+                                     image_memory_manager_(std::make_unique<VulkanImageMemoryManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
                                      sampler_manager_(std::make_unique<SamplerManager>()),
                                      model_loader_(std::make_unique<AssimpModelLoader>()),
@@ -275,7 +275,7 @@ namespace kpengine::graphics
 
         for (size_t i = 0; i < uniform_buffer_handles_.size(); i++)
         {
-            buffer_pool_->DestroyBufferResource(logical_device_, uniform_buffer_handles_[i]);
+            buffer_manager_->DestroyBufferResource(logical_device_, uniform_buffer_handles_[i]);
         }
         vkDestroyDescriptorPool(logical_device_, descriptor_pool_, nullptr);
         pipeline_manager_->DestroyPipelineResource(logical_device_, pipeline_handle);
@@ -288,8 +288,8 @@ namespace kpengine::graphics
         sampler_manager_->DestroySampler(context, sampler_handle);
 
         mesh_manager_->DestroyMesh(context, mesh_handle);
-        buffer_pool_->FreeMemory(logical_device_);
-        image_memory_pool_->Destroy(logical_device_);
+        buffer_manager_->FreeMemory(logical_device_);
+        image_memory_manager_->Destroy(logical_device_);
 
         for (size_t i = 0; i < available_image_sepmaphores_.size(); i++)
         {
@@ -708,7 +708,7 @@ namespace kpengine::graphics
 
         pipeline_desc.descriptor_binding_descs = {
             {{0, 1, DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
-             {1, 1, DescriptorType::DESCRIPTOR_TYPE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+             {1, 1, DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
 
         pipeline_desc.multisample_state.rasterization_samples = msaa_sampe_count_;
@@ -885,22 +885,22 @@ namespace kpengine::graphics
         stage_buffer_create_info.size = size;
         stage_buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         stage_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        return buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
+        return buffer_manager_->CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
     }
 
     bool VulkanBackend::DestroyBufferResource(BufferHandle handle)
     {
-        return buffer_pool_->DestroyBufferResource(logical_device_, handle);
+        return buffer_manager_->DestroyBufferResource(logical_device_, handle);
     }
 
     void VulkanBackend::UploadDataToBuffer(BufferHandle handle, size_t size, const void *data)
     {
-        buffer_pool_->UploadData(logical_device_, handle, size, data);
+        buffer_manager_->UploadData(logical_device_, handle, size, data);
     }
 
     VulkanBufferResource *VulkanBackend::GetBufferResource(BufferHandle handle)
     {
-        return buffer_pool_->GetBufferResource(handle);
+        return buffer_manager_->GetBufferResource(handle);
     }
 
     BufferHandle VulkanBackend::CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage)
@@ -915,7 +915,7 @@ namespace kpengine::graphics
         dst_buffer_create_info.usage = usage;
         dst_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        BufferHandle dst_handle = buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &dst_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
+        BufferHandle dst_handle = buffer_manager_->CreateBufferResource(physical_device_, logical_device_, &dst_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
         TransferBufferOwnership(dst_handle, graphics_queue_.index, transfer_queue_.index);
         CopyBuffer(stage_handle, dst_handle, size);
         TransferBufferOwnership(dst_handle, transfer_queue_.index, graphics_queue_.index);
@@ -981,19 +981,19 @@ namespace kpengine::graphics
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
-            uniform_buffer_handles_[i] = buffer_pool_->CreateBufferResource(physical_device_, logical_device_, &buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
+            uniform_buffer_handles_[i] = buffer_manager_->CreateBufferResource(physical_device_, logical_device_, &buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
         }
         VkPhysicalDeviceProperties physical_device_props;
         vkGetPhysicalDeviceProperties(physical_device_, &physical_device_props);
         VkDeviceSize alignment = physical_device_props.limits.minUniformBufferOffsetAlignment;
         VkDeviceSize aligned_buffer_size = (buffer_size + alignment - 1) & ~(alignment - 1);
         void *mapped_ptr = nullptr;
-        buffer_pool_->MapBuffer(logical_device_, uniform_buffer_handles_.back(), aligned_buffer_size * uniform_buffer_handles_.size(), &mapped_ptr);
-        VkDeviceSize base_offset = buffer_pool_->GetBufferResource(uniform_buffer_handles_.back())->allocation.offset;
+        buffer_manager_->MapBuffer(logical_device_, uniform_buffer_handles_.back(), aligned_buffer_size * uniform_buffer_handles_.size(), &mapped_ptr);
+        VkDeviceSize base_offset = buffer_manager_->GetBufferResource(uniform_buffer_handles_.back())->allocation.offset;
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
 
-            VulkanBufferResource *resource = buffer_pool_->GetBufferResource(uniform_buffer_handles_[i]);
+            VulkanBufferResource *resource = buffer_manager_->GetBufferResource(uniform_buffer_handles_[i]);
             uniform_buffer_mapped_ptr_[i] = static_cast<char *>(mapped_ptr) + resource->allocation.offset - base_offset;
         }
     }
@@ -1022,7 +1022,7 @@ namespace kpengine::graphics
     void VulkanBackend::CreateDescriptorSets()
     {
         VulkanPipelineResource *resource = pipeline_manager_->GetPipelineResource(pipeline_handle);
-        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, resource->descriptor_set_layouts[0]);
+        std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, resource->descriptor_set_layouts[0].layout);
         VkDescriptorSetAllocateInfo allocate_info{};
         allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
         allocate_info.descriptorPool = descriptor_pool_;
@@ -1039,7 +1039,7 @@ namespace kpengine::graphics
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
             VkDescriptorBufferInfo buffer_info{};
-            VulkanBufferResource *buf_resource = buffer_pool_->GetBufferResource(uniform_buffer_handles_[i]);
+            VulkanBufferResource *buf_resource = buffer_manager_->GetBufferResource(uniform_buffer_handles_[i]);
             buffer_info.buffer = buf_resource->buffer;
             buffer_info.offset = 0;
             buffer_info.range = sizeof(UniformBufferObject);
@@ -1057,18 +1057,18 @@ namespace kpengine::graphics
             std::array<VkWriteDescriptorSet, 2> descriptor_writes{};
             descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_writes[0].dstSet = descriptor_sets_[i];
-            descriptor_writes[0].dstBinding = 0;
+            descriptor_writes[0].dstBinding = resource->descriptor_set_layouts[0].bindings[0].binding;
             descriptor_writes[0].dstArrayElement = 0;
-            descriptor_writes[0].descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-            descriptor_writes[0].descriptorCount = 1;
+            descriptor_writes[0].descriptorType = resource->descriptor_set_layouts[0].bindings[0].descriptorType;
+            descriptor_writes[0].descriptorCount = resource->descriptor_set_layouts[0].bindings[0].descriptorCount;
             descriptor_writes[0].pBufferInfo = &buffer_info;
 
             descriptor_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
             descriptor_writes[1].dstSet = descriptor_sets_[i];
-            descriptor_writes[1].dstBinding = 1;
+            descriptor_writes[1].dstBinding = resource->descriptor_set_layouts[0].bindings[1].binding;
             descriptor_writes[1].dstArrayElement = 0;
-            descriptor_writes[1].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
-            descriptor_writes[1].descriptorCount = 1;
+            descriptor_writes[1].descriptorType = resource->descriptor_set_layouts[0].bindings[1].descriptorType;
+            descriptor_writes[1].descriptorCount = resource->descriptor_set_layouts[0].bindings[1].descriptorCount;
             descriptor_writes[1].pImageInfo = &image_info;
 
             vkUpdateDescriptorSets(logical_device_, static_cast<uint32_t>(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
@@ -1152,7 +1152,7 @@ namespace kpengine::graphics
         VkPipelineStageFlags acquire_src_stage_flags;
         VkPipelineStageFlags acquire_dst_stage_flags;
 
-        VulkanBufferResource *resource = buffer_pool_->GetBufferResource(buffer_handle);
+        VulkanBufferResource *resource = buffer_manager_->GetBufferResource(buffer_handle);
 
         VkBufferMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER;
@@ -1221,8 +1221,8 @@ namespace kpengine::graphics
             copy_region.dstOffset = 0;
             copy_region.size = size;
 
-            VkBuffer src_buffer = buffer_pool_->GetBufferResource(src_handle)->buffer;
-            VkBuffer dst_buffer = buffer_pool_->GetBufferResource(dst_handle)->buffer;
+            VkBuffer src_buffer = buffer_manager_->GetBufferResource(src_handle)->buffer;
+            VkBuffer dst_buffer = buffer_manager_->GetBufferResource(dst_handle)->buffer;
 
             vkCmdCopyBuffer(command_buffer, src_buffer, dst_buffer, 1, &copy_region);
         }
@@ -1488,7 +1488,7 @@ namespace kpengine::graphics
 
     void VulkanBackend::CopyBufferToImage(BufferHandle buffer_handle, VkImage image, uint32_t width, uint32_t height)
     {
-        VulkanBufferResource *buffer_resource = buffer_pool_->GetBufferResource(buffer_handle);
+        VulkanBufferResource *buffer_resource = buffer_manager_->GetBufferResource(buffer_handle);
         VkCommandBuffer command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
 
         VkBufferImageCopy region{};
@@ -1599,8 +1599,9 @@ namespace kpengine::graphics
             const VulkanMeshResource *vk_mesh_resource = static_cast<const VulkanMeshResource *>(mesh_resource.native);
             BufferHandle vertex_handle = vk_mesh_resource->vertex_handle;
             BufferHandle index_handle = vk_mesh_resource->index_handle;
-            VulkanBufferResource *index_buffer_resource = buffer_pool_->GetBufferResource(index_handle);
-            VulkanBufferResource *vertex_buffer_resource = buffer_pool_->GetBufferResource(vertex_handle);
+            
+            VulkanBufferResource *index_buffer_resource = buffer_manager_->GetBufferResource(index_handle);
+            VulkanBufferResource *vertex_buffer_resource = buffer_manager_->GetBufferResource(vertex_handle);
 
             VkBuffer vertexBuffers[] = {vertex_buffer_resource->buffer};
             VkDeviceSize offsets[] = {0};

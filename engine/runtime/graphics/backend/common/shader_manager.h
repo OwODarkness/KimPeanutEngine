@@ -42,7 +42,8 @@ namespace kpengine::graphics
         template <GraphicsAPIType graphicstype>
         ShaderHandle CreateShader(ShaderType type, const std::string &path)
         {
-            if (path_to_handle_.contains(path))
+            
+            if (path_to_handle_.find(path) != path_to_handle_.end())
             {
                 return path_to_handle_[path];
             }

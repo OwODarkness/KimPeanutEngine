@@ -171,6 +171,8 @@ namespace kpengine::graphics
 
             // set descriptor sets layout
             pipeline_resource.descriptor_set_layouts.resize(pipeline_desc.descriptor_binding_descs.size());
+            std::vector<VkDescriptorSetLayout> layouts(pipeline_desc.descriptor_binding_descs.size());
+
             for (size_t i = 0; i < pipeline_resource.descriptor_set_layouts.size(); i++)
             {
                 std::vector<VkDescriptorSetLayoutBinding> descriptor_set_layout_bindings(pipeline_desc.descriptor_binding_descs[i].size());
@@ -187,17 +189,20 @@ namespace kpengine::graphics
                 descriptor_set_layout_create_info.bindingCount = static_cast<uint32_t>(descriptor_set_layout_bindings.size());
                 descriptor_set_layout_create_info.pBindings = descriptor_set_layout_bindings.data();
 
-                if (vkCreateDescriptorSetLayout(logical_device, &descriptor_set_layout_create_info, nullptr, &pipeline_resource.descriptor_set_layouts[i]) != VK_SUCCESS)
+                if (vkCreateDescriptorSetLayout(logical_device, &descriptor_set_layout_create_info, nullptr, &layouts[i]) != VK_SUCCESS)
                 {
                     KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Failed to create DescriptorSetLayout");
                     throw std::runtime_error("Failed to create DescriptorSetLayout");
                 }
+
+                pipeline_resource.descriptor_set_layouts[i].layout = layouts[i];
+                pipeline_resource.descriptor_set_layouts[i].bindings = descriptor_set_layout_bindings;
             }
             // set pipeline_layout
             VkPipelineLayoutCreateInfo layout_create_info{};
             layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
             layout_create_info.setLayoutCount = static_cast<uint32_t>(pipeline_resource.descriptor_set_layouts.size());
-            layout_create_info.pSetLayouts = pipeline_resource.descriptor_set_layouts.data();
+            layout_create_info.pSetLayouts = layouts.data();
             layout_create_info.pushConstantRangeCount = 0;
             layout_create_info.pPushConstantRanges = nullptr;
 
@@ -282,7 +287,7 @@ namespace kpengine::graphics
 
         for (size_t i = 0; i < pipeline_resource->descriptor_set_layouts.size(); i++)
         {
-            vkDestroyDescriptorSetLayout(logical_device, pipeline_resource->descriptor_set_layouts[i], nullptr);
+            vkDestroyDescriptorSetLayout(logical_device, pipeline_resource->descriptor_set_layouts[i].layout, nullptr);
         }
         vkDestroyPipeline(logical_device, pipeline_resource->pipeline, nullptr);
         vkDestroyPipelineLayout(logical_device, pipeline_resource->layout, nullptr);

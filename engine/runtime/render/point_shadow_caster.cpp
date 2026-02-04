@@ -59,7 +59,8 @@ namespace kpengine
                 glViewport(0, 0, width_, height_);
                 glBindFramebuffer(GL_FRAMEBUFFER, fbos_[current_shaodow_num]);
                 glClear(GL_DEPTH_BUFFER_BIT);
-                RenderContext point_shader_context{.shader = shader_};
+                RenderContext point_shader_context{};
+                point_shader_context.shader = shader_;
                 shader_->UseProgram();
                 std::array<Matrix4f, 6> light_space_matrices = CalculateLighSpaceMatrices(light->position);
                 for (int i = 0; i < 6; i++)

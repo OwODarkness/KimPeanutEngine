@@ -59,7 +59,8 @@ namespace kpengine
         glBindFramebuffer(GL_FRAMEBUFFER, fbo_);
         glClear(GL_DEPTH_BUFFER_BIT);
         glCullFace(GL_FRONT);
-        RenderContext shader_context{.shader = shader_};
+        RenderContext shader_context{};
+        shader_context.shader = shader_;
         for (const auto &proxy : proxies)
         {
             if (!proxy->IsVisible())

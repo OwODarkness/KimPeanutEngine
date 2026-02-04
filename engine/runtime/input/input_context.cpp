@@ -93,7 +93,7 @@ namespace kpengine::input
         if (input_action == nullptr)
             return;
         // TODO: Modifier?
-        InputState state{.triggle_type = triggle_type, .value = input_action->default_value};
+        InputState state{triggle_type, input_action->default_value};
         input_action->callback_(state);
     }
 
@@ -102,7 +102,7 @@ namespace kpengine::input
         std::shared_ptr<InputAction> input_action = GetInputActionByInputKey(key);
             if(input_action == nullptr)
                 return ;
-        InputState state{.value = delta};
+        InputState state{InputTriggleType::Held, delta};
         input_action->callback_(state);
     }
 
@@ -111,7 +111,7 @@ namespace kpengine::input
         std::shared_ptr<InputAction> input_action = GetInputActionByInputKey(key);
         if (input_action == nullptr)
             return;
-        InputState state{.value = Vector2f(deltax, deltay)};
+        InputState state{ InputTriggleType::Held, Vector2f(deltax, deltay)};
         input_action->callback_(state);
     }
 }

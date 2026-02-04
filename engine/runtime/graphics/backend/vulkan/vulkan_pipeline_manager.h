@@ -6,11 +6,16 @@
 #include <cstdint>
 #include <vulkan/vulkan.h>
 #include "common/api.h"
-#include "common/pipeline_desc.h"
+#include "common/pipeline_types.h"
 namespace kpengine::graphics{
 
+    struct VulkanDescriptorSetLayout{
+        VkDescriptorSetLayout layout;
+        std::vector<VkDescriptorSetLayoutBinding> bindings;
+    };
+
     struct VulkanPipelineResource{
-        std::vector<VkDescriptorSetLayout> descriptor_set_layouts; 
+        std::vector<VulkanDescriptorSetLayout> descriptor_set_layouts; 
         VkPipelineLayout layout = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
     };

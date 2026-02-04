@@ -27,7 +27,7 @@ namespace kpengine
             glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
             float borderColor[] = {1.0, 1.0, 1.0, 1.0};
             glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, borderColor);
-            
+
             glBindFramebuffer(GL_FRAMEBUFFER, fbos_[i]);
             glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT, GL_TEXTURE_2D, shadow_maps_[i], 0);
             glDrawBuffer(GL_NONE);
@@ -56,13 +56,14 @@ namespace kpengine
             if (current_shadow_count < SPOT_MAX_SHADOW_MAP_NUM)
             {
                 light_space_matrices[current_shadow_count] = CalculateLighSpaceMatrix(light);
-                float* data = light_space_matrices[current_shadow_count].Transpose()[0];
+                float *data = light_space_matrices[current_shadow_count].Transpose()[0];
 
-                shader_->SetMat("light_space_matrix",data);
+                shader_->SetMat("light_space_matrix", data);
                 glViewport(0, 0, width_, height_);
                 glBindFramebuffer(GL_FRAMEBUFFER, fbos_[current_shadow_count]);
                 glClear(GL_DEPTH_BUFFER_BIT);
-                RenderContext shader_context{.shader = shader_};
+                RenderContext shader_context{};
+                shader_context.shader = shader_;
                 for (const auto &proxy : proxies)
                 {
                     if (!proxy->IsVisible())
@@ -87,7 +88,7 @@ namespace kpengine
         if (!light)
             return {};
         Matrix4f view = Matrix4f::MakeCameraMatrix(light->position, light->direction, Vector3f(0.f, 1.f, 0.f));
-        float fov = math::DegreeToRadian(light->outer_cutoff * 2.f) ;
+        float fov = math::DegreeToRadian(light->outer_cutoff * 2.f);
         float aspect = static_cast<float>(width_) / static_cast<float>(height_);
         Matrix4f proj = Matrix4f::MakePerProjMatrix(fov, aspect, near_plane_, light->radius);
         return proj * view;

@@ -4,6 +4,7 @@ mesh_component.cpp
 pointcloud_component.cpp
 primitive_component.cpp
 scene_component.cpp
+camera_component.cpp
 )
 
 target_include_directories(Component PUBLIC

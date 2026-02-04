@@ -101,7 +101,7 @@ namespace kpengine{
 
     std::shared_ptr<RenderShader> ShaderPool::GetShader(const std::string& shader_type)
     {
-        if(!shader_cache.contains(shader_type))
+        if(shader_cache.find(shader_type) == shader_cache.end())
         {
             return nullptr;
         }

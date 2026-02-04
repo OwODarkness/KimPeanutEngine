@@ -64,7 +64,7 @@ namespace kpengine::graphics
                 vertex.bitangent = {mesh->mBitangents[i].x, mesh->mBitangents[i].y, mesh->mBitangents[i].z};
             }
 
-            if (!unique_vertices.contains(vertex))
+            if (unique_vertices.find(vertex) == unique_vertices.end())
             {
                 uint32_t index = static_cast<uint32_t>(resource.vertices.size());
                 unique_vertices[vertex] = index;

@@ -1,11 +1,10 @@
 #include "render_scene.h"
 
-#include <iostream>
+#include <fstream>
 #include <cassert>
 #include <array>
 #include <glad/glad.h>
-#include <glm/glm.hpp>
-
+#include <stb_image/stb_image_write.h>
 #include "runtime_global_context.h"
 #include "render_system.h"
 #include "shader_pool.h"
@@ -33,6 +32,20 @@ namespace kpengine
         SceneMode_Editor
     };
 
+    void saveTextureToFile(GLuint textureID, int width, int height, const std::string &filename)
+    {
+        // Bind the texture
+        glBindTexture(GL_TEXTURE_2D, textureID);
+
+        std::vector<unsigned char> pixels(width * height * 4); // RGBA
+
+        glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
+
+        stbi_flip_vertically_on_write(true);
+        // Save to file (using stb_image_write)
+        stbi_write_png(filename.c_str(), width, height, 4, pixels.data(), width * 4);
+    }
+
     RenderScene::RenderScene() : width_(1280), height_(720)
     {
     }
@@ -48,7 +61,7 @@ namespace kpengine
         scene_fb_->Finalize();
 
         // environment map
-        environment_map_wrapper = std::make_shared<EnvironmentMapWrapper>("texture/hdr/venice_sunset_1k.hdr");
+        environment_map_wrapper = std::make_shared<EnvironmentMapWrapper>("texture/hdr/HDR_041_Path.hdr");
         environment_map_wrapper->Initialize();
         // skybox
         skybox = std::make_shared<Skybox>(runtime::global_runtime_context.render_system_->GetShaderPool()->GetShader(SHADER_CATEGORY_SKYBOX), environment_map_wrapper->GetEnvironmentMap());
@@ -129,10 +142,10 @@ namespace kpengine
         shadow_manager_->Render(scene_proxies);
 
         // GBuffer update
-        RenderContext geo_pass_context{
-            .shader = geometry_shader_,
-            .near_plane = render_camera_->z_near_,
-            .far_plane = render_camera_->z_far_};
+        RenderContext geo_pass_context{};
+        geo_pass_context.shader = geometry_shader_;
+        geo_pass_context.near_plane = render_camera_->z_near_;
+        geo_pass_context.far_plane = render_camera_->z_far_;
         g_buffer_->BindFrameBuffer();
 
         for (auto &proxy : scene_proxies)
@@ -174,25 +187,24 @@ namespace kpengine
         // render skybox
         Vector3f cam_pos = render_camera_->GetPosition();
 
-        RenderContext lighting_pass_context = {
-            .shader = light_pass_shader_,
-            .light_num = current_light_count,
-            .near_plane = render_camera_->z_near_,
-            .far_plane = render_camera_->z_far_,
-            .view_position = cam_pos.Data(),
-            .directional_light_space_matrix = shadow_manager_->GetDirectionalLightSpaceMatrix().Transpose()[0],
-            .spot_light_space_matrix = shadow_manager_->GetSpotLightSpaceMatrix(),
-            .directional_shadow_map = shadow_manager_->GetDirectionalShadowMap(),
-            .point_shadow_map = shadow_manager_->GetPointShadowMap(),
-            .spot_shadow_map = shadow_manager_->GetSpotShadowMap(),
-            .irradiance_map = environment_map_wrapper->GetIrradianceMap()->GetTexture(),
-            .prefilter_map = environment_map_wrapper->GetPrefilterMap()->GetTexture(),
-            .brdf_map = environment_map_wrapper->GetBRDFMap()->GetTexture(),
-            .g_position = g_buffer_->GetTexture("g_position"),
-            .g_normal = g_buffer_->GetTexture("g_normal"),
-            .g_albedo = g_buffer_->GetTexture("g_albedo"),
-            .g_material = g_buffer_->GetTexture("g_material")};
-
+        RenderContext lighting_pass_context{};
+        lighting_pass_context.shader = light_pass_shader_;
+        lighting_pass_context.light_num = current_light_count;
+        lighting_pass_context.near_plane = render_camera_->z_near_;
+        lighting_pass_context.far_plane = render_camera_->z_far_;
+        lighting_pass_context.view_position = cam_pos.Data();
+        lighting_pass_context.directional_light_space_matrix = shadow_manager_->GetDirectionalLightSpaceMatrix().Transpose()[0];
+        lighting_pass_context.spot_light_space_matrix = shadow_manager_->GetSpotLightSpaceMatrix();
+        lighting_pass_context.directional_shadow_map = shadow_manager_->GetDirectionalShadowMap();
+        lighting_pass_context.point_shadow_map = shadow_manager_->GetPointShadowMap();
+        lighting_pass_context.spot_shadow_map = shadow_manager_->GetSpotShadowMap();
+        lighting_pass_context.irradiance_map = environment_map_wrapper->GetIrradianceMap()->GetTexture();
+        lighting_pass_context.prefilter_map = environment_map_wrapper->GetPrefilterMap()->GetTexture();
+        lighting_pass_context.brdf_map = environment_map_wrapper->GetBRDFMap()->GetTexture();
+        lighting_pass_context.g_position = g_buffer_->GetTexture("g_position");
+        lighting_pass_context.g_normal = g_buffer_->GetTexture("g_normal");
+        lighting_pass_context.g_albedo = g_buffer_->GetTexture("g_albedo");
+        lighting_pass_context.g_material = g_buffer_->GetTexture("g_material");
         ExecLightingRenderPass(lighting_pass_context);
 
         glEnable(GL_DEPTH_TEST);
@@ -211,8 +223,9 @@ namespace kpengine
 
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-        postprocess_pipeline_->Execute({.g_object_id = g_buffer_->GetTexture("g_object_id"),
-                                        .texel_size = {1.f / static_cast<float>(width_), 1.f / static_cast<float>(height_)}});
+        PostProcessContext post_process_context{g_buffer_->GetTexture("g_object_id"),
+                                                {1.f / static_cast<float>(width_), 1.f / static_cast<float>(height_)}};
+        postprocess_pipeline_->Execute(post_process_context);
         glDisable(GL_BLEND);
 
         if (gizmos_)
@@ -221,6 +234,12 @@ namespace kpengine
         }
 
         scene_fb_->UnBindFrameBuffer();
+
+        if (!do_once && render_camera_->capture)
+        {
+            saveTextureToFile(environment_map_wrapper->GetBRDFMap()->GetTexture(), 512, 512, "brdf.png");
+            do_once = true;
+        }
     }
 
     void RenderScene::SetCurrentShader(const std::shared_ptr<RenderShader> &shader)

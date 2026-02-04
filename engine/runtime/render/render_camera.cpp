@@ -172,6 +172,7 @@ namespace kpengine
         MoveForward(res.x_);
         MoveRight(res.y_);
         MoveUp(res.z_);
+        capture = true;
     }
 
     void RenderCamera::OnCameraScrollCallback(const input::InputState &state)

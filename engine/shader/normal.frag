@@ -69,7 +69,7 @@ void main()
     vec3 tangent_normal = texture(material.normal_map, texcoord).rgb * 2.0 - 1.0;
     mat3 TBN = mat3(in_T, in_B, in_N);
     vec3 normal_vec = material.has_normal_map == true ?  normalize(TBN * tangent_normal) : in_N;
-
+    normal_vec = normal_vec * 0.5 + 0.5;
     vec3 albedo_vec = material.has_albedo_map ? 
     texture(material.albedo_map, texcoord).rgb : 
     material.albedo;

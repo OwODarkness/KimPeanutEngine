@@ -46,15 +46,15 @@ namespace kpengine::graphics
                 glAttachShader(shader_program_, gl_frag_shader);
             }
         }
-        
+
         GLuint gl_geom_shader = glCreateShader(GL_GEOMETRY_SHADER);
-        if(desc.geom_shader)
+        if (desc.geom_shader)
         {
-            const char* geom_shader_code = reinterpret_cast<const char*>(desc.geom_shader->GetCode());
+            const char *geom_shader_code = reinterpret_cast<const char *>(desc.geom_shader->GetCode());
             glShaderSource(gl_geom_shader, 1, &geom_shader_code, nullptr);
             glCompileShader(gl_geom_shader);
             glGetShaderiv(gl_geom_shader, GL_COMPILE_STATUS, &bsucceed);
-            if(!bsucceed)
+            if (!bsucceed)
             {
                 glGetShaderInfoLog(gl_geom_shader, 512, nullptr, log);
                 KP_LOG("OpenglShaderCompilerLog", LOG_LEVEL_ERROR, log);
@@ -67,12 +67,12 @@ namespace kpengine::graphics
 
         glLinkProgram(shader_program_);
         glGetProgramiv(shader_program_, GL_LINK_STATUS, &bsucceed);
-        if(!bsucceed)
+        if (!bsucceed)
         {
             glGetProgramInfoLog(shader_program_, 512, nullptr, log);
             KP_LOG("OpenglShaderLinkerLog", LOG_LEVEL_ERROR, log);
         }
-      
+
         glDeleteShader(gl_vertex_shader);
         glDeleteShader(gl_frag_shader);
         glDeleteShader(gl_geom_shader);
@@ -81,12 +81,12 @@ namespace kpengine::graphics
         attri_descs_ = desc.attri_descs;
 
         primitive_topology_type_ = ConvertToOpenglPrimitiveTopology(desc.primitive_topology_type);
-        
+
         depth_clamp_enabled_ = desc.raster_state.depth_clamp_enabled;
         rasterizer_discard_enabled_ = desc.raster_state.rasterizer_discard_enabled;
 
         polygon_mode_ = ConvertToOpenglPolygonMode(desc.raster_state.polygon_mode);
-        if(desc.raster_state.cull_mode == CullMode::CULL_MODE_NONE)
+        if (desc.raster_state.cull_mode == CullMode::CULL_MODE_NONE)
         {
             cull_face_enabled_ = false;
         }
@@ -102,11 +102,16 @@ namespace kpengine::graphics
         depth_bias_slope = desc.raster_state.depth_bias_slope;
 
         line_width_ = desc.raster_state.line_width;
+
+        descriptor_binding_descs_ = desc.descriptor_binding_descs;
     }
 
     void OpenglPipeline::Bind() const
     {
-        if(depth_clamp_enabled_)
+        glEnable(GL_FRAMEBUFFER_SRGB);
+        glUseProgram(shader_program_);
+
+        if (depth_clamp_enabled_)
         {
             glEnable(GL_DEPTH_CLAMP);
         }
@@ -115,9 +120,9 @@ namespace kpengine::graphics
             glDisable(GL_DEPTH_CLAMP);
         }
 
-        if(rasterizer_discard_enabled_)
+        if (rasterizer_discard_enabled_)
         {
-            glEnable(GL_RASTERIZER_DISCARD);   
+            glEnable(GL_RASTERIZER_DISCARD);
         }
         else
         {
@@ -126,7 +131,7 @@ namespace kpengine::graphics
 
         glPolygonMode(GL_FRONT_AND_BACK, polygon_mode_);
 
-        if(cull_face_enabled_)
+        if (cull_face_enabled_)
         {
             glEnable(GL_CULL_FACE);
             glCullFace(cull_mode_);
@@ -138,7 +143,7 @@ namespace kpengine::graphics
 
         glFrontFace(front_face_mode_);
 
-        if(depth_bias_enabled_)
+        if (depth_bias_enabled_)
         {
             glEnable(GL_POLYGON_OFFSET_FILL);
             glPolygonOffset(depth_bias_slope, depth_bias_constant);

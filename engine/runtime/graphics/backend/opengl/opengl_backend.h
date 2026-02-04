@@ -6,12 +6,12 @@
 #include <glad/glad.h>
 
 #include "common/render_backend.h"
+#include "math/math_header.h"
 #include "opengl_context.h"
-
 
 namespace kpengine::graphics
 {   
-     struct UniformBufferObject
+     struct UniformBuffer
     {
         alignas(16) Matrix4f model;
         alignas(16) Matrix4f view;
@@ -38,7 +38,10 @@ namespace kpengine::graphics
         void CreatePipeline();
         void CreateMeshes();
         void CreateUniformBuffers();
+        void CreateTextures();
         void UpdateUniformBuffers();
+        GraphicsContext CreateGraphicsContext();
+        void CreateDescriptorSets();
     private:
         std::unique_ptr<class MeshManager> mesh_manager_;
         std::unique_ptr<class TextureManager> texture_manager_;
@@ -50,6 +53,9 @@ namespace kpengine::graphics
 
         std::unordered_map<MeshHandle, uint32_t> meshes_;
         OpenglContext context_;
+        std::unique_ptr<class OpenglDescriptorSet> descriptor_set;
+        TextureHandle texture_handle;
+        SamplerHandle sampler_handle;
 
         GLuint camera_ubo_;
 

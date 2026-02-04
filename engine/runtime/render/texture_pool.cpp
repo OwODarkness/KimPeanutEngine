@@ -3,7 +3,7 @@
 namespace kpengine{
     bool TexturePool::IsTextureCached(const std::string& key) const
     {
-        return texture_map.contains(key);
+        return texture_map.find(key) != texture_map.end();
     }
 
     std::shared_ptr<RenderTexture> TexturePool::FetchTexture2D(const std::string& path, bool is_texture_color)
@@ -40,7 +40,7 @@ namespace kpengine{
 
     std::shared_ptr<RenderTexture> TexturePool::FindTextureByKey(const std::string& key) const
     {
-        if(!texture_map.contains(key))
+        if(!IsTextureCached(key))
         {
             return nullptr;
         }
@@ -59,7 +59,7 @@ namespace kpengine{
     }
     unsigned int TexturePool::FindHandleByKey(const std::string& key) const
     {
-        if(!texture_map.contains(key))
+        if(!IsTextureCached(key))
         {
             return 0;
         }

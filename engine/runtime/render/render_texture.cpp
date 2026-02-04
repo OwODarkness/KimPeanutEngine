@@ -1,7 +1,7 @@
 #include "render_texture.h"
 
 #include <filesystem>
-#include <stb_image/image_helper.h>
+#include <stb_image/stb_image.h>
 #include <glad/glad.h>
 
 #include "log/logger.h"
@@ -108,7 +108,7 @@ namespace kpengine
         for (int i = 0; i < 6; i++)
         {
             CubemapSlotName slot_name = static_cast<CubemapSlotName>(i);
-            if (!cubemap_slots_.contains(slot_name))
+            if (cubemap_slots_.find(slot_name) == cubemap_slots_.end())
             {
                 KP_LOG("CubeMapTextureLog", LOG_LEVEL_ERROR, "Couldn't find desired slot");
                 return false;

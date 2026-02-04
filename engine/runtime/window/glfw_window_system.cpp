@@ -44,6 +44,7 @@ namespace kpengine
         if (create_info.graphics_api_type == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
             glfwMakeContextCurrent(window_);
+            should_make_context_ = true;
             glfwSwapInterval(1); // vsync
         }
 
@@ -68,7 +69,16 @@ namespace kpengine
     {
         PollEvents();
         SwapBuffers();
+    }
 
+    void GLFWWindowSystem::Cleanup()
+    {
+        if (should_make_context_)
+        {
+            glfwMakeContextCurrent(nullptr);
+        }
+        glfwDestroyWindow(window_);
+        glfwTerminate();
     }
 
     WindowHandle GLFWWindowSystem::GetNativeHandle() const
@@ -83,9 +93,6 @@ namespace kpengine
 
     GLFWWindowSystem::~GLFWWindowSystem()
     {
-        glfwMakeContextCurrent(nullptr);
-        glfwDestroyWindow(window_);
-        glfwTerminate();
     }
 
     void GLFWWindowSystem::OnErrorCallback(int error_code, const char *msg)

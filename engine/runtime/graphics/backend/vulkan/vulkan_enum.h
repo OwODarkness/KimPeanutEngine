@@ -277,6 +277,8 @@ namespace kpengine::graphics
         case DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC:
             return VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC;
         case DescriptorType::DESCRIPTOR_TYPE_SAMPLER:
+            return VK_DESCRIPTOR_TYPE_SAMPLER;
+        case DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER:
             return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         default:
             return VK_DESCRIPTOR_TYPE_MAX_ENUM; // fallback / invalid

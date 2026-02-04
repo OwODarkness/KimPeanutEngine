@@ -35,7 +35,7 @@ namespace kpengine
 
         for (const MaterialMapInfo &map_info : map_info_container)
         {
-            if (!map_info.map_path.empty() && material->textures.contains(map_info.map_type))
+            if (!map_info.map_path.empty() && material->textures.find(map_info.map_type) != material->textures.end())
             {
                 bool is_texture_color = map_info.map_type == material_map_type::ALBEDO_MAP ? true : false;
                 std::shared_ptr<RenderTexture> texture = texture_pool->FetchTexture2D(map_info.map_path, is_texture_color);
@@ -81,7 +81,7 @@ namespace kpengine
 
         for (const MaterialMapInfo &map_info : map_info_container)
         {
-            if (!map_info.map_path.empty() && material->textures.contains(map_info.map_type))
+            if (!map_info.map_path.empty() && material->textures.find(map_info.map_type) != material->textures.end())
             {
                 std::shared_ptr<RenderTexture> texture = texture_pool->FetchTexture2D(map_info.map_path);
                 if (texture)
@@ -122,7 +122,7 @@ namespace kpengine
     void RenderMaterial::AddTexture(const MaterialMapInfo &map_info)
     {
 
-        if (map_info.map_path != "" && textures.contains(map_info.map_type))
+        if (map_info.map_path != "" && textures.find(map_info.map_type) != textures.end())
         {
             TexturePool *texture_pool = runtime::global_runtime_context.render_system_->GetTexturePool();
             textures[map_info.map_type] = texture_pool->FetchTexture2D(map_info.map_path);
@@ -144,7 +144,7 @@ namespace kpengine
 
     std::shared_ptr<RenderTexture> RenderMaterial::GetTexture(const std::string key) const
     {
-        if (textures.contains(key))
+        if (textures.find(key) != textures.end())
         {
             return textures.at(key);
         }
@@ -156,7 +156,7 @@ namespace kpengine
 
     float *RenderMaterial::GetFloatParamRef(const std::string &key)
     {
-        if (float_params.contains(key))
+        if (float_params.find(key) != float_params.end())
         {
             return &float_params[key];
         }
@@ -168,7 +168,7 @@ namespace kpengine
 
     Vector3f *RenderMaterial::GetVectorParamRef(const std::string &key)
     {
-        if (vec3_params.contains(key))
+        if (vec3_params.find(key) != vec3_params.end())
         {
             return &vec3_params[key];
         }

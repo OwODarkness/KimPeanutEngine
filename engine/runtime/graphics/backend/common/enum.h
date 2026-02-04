@@ -142,7 +142,8 @@ namespace kpengine::graphics
     {
         DESCRIPTOR_TYPE_UNIFORM,
         DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
-        DESCRIPTOR_TYPE_SAMPLER
+        DESCRIPTOR_TYPE_SAMPLER,
+        DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER
     };
 
     enum class ShaderStage : uint32_t

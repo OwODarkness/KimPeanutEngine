@@ -3,7 +3,6 @@
 
 #include <string>
 #include <mutex>
-#include <format>
 #include <chrono>
 #include <vector>
 #include <cstdio>
@@ -43,7 +42,7 @@ namespace kpengine::program
         const std::vector<LogEntry> &Get() const { return logs_; }
 
     private:
-        void WriteLog(const std::string &name, LogLevel level, const std::string msg, int line, const std::string &file, std::chrono::system_clock::time_point timestamp);
+        void WriteLog(const std::string &name, LogLevel level, const std::string msg, int line, const std::string &file);
         void FlushToFile();
         bool CreateLogFile();
         void Reset();
@@ -66,13 +65,12 @@ namespace kpengine::program
     template <typename... Args>
     void Logger::Log(const std::string &log_name, LogLevel level, int line, const std::string &file, const std::string &msg, Args &&...args)
     {
-        std::chrono::system_clock::time_point now = std::chrono::system_clock::now();
         int size = std::snprintf(nullptr, 0, msg.c_str(), std::forward<Args>(args)...) + 1;
         std::vector<char> buffer(size);
         std::snprintf(buffer.data(), buffer.size(), msg.c_str(), std::forward<Args>(args)...);
         std::string message = std::string(buffer.data(), buffer.size() - 1);
 
-        WriteLog(log_name, level, message, line, file, now);
+        WriteLog(log_name, level, message, line, file);
     }
 }
 

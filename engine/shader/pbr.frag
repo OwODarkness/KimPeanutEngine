@@ -210,7 +210,7 @@ void main()
     float point_shadow = CalculatePointShadowValue(frag_position, point_light);
 
     vec3 normal_vec = material.has_normal_map == true ? 
-    normalize(TBN * normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal);
+    normalize(TBN * normalize(texture(material.normal_map, texcoord).rgb * 2.0 - 1.0)): normalize(normal* 2.0 - 1.0);
 
     vec3 view_vec = normalize(view_position - frag_position);
     vec3 L0 = vec3(0.);

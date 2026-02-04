@@ -16,16 +16,17 @@ add_library(Graphics STATIC
     backend/opengl/opengl_sampler.cpp
     backend/opengl/opengl_mesh.cpp
     backend/opengl/opengl_pipeline.cpp
+    backend/opengl/opengl_descriptorset.cpp
 
     backend/vulkan/vulkan_backend.cpp
     backend/vulkan/vulkan_texture.cpp
     backend/vulkan/vulkan_shader.cpp
-    backend/vulkan/vulkan_buffer_pool.cpp
+    backend/vulkan/vulkan_buffer_manager.cpp
     backend/vulkan/vulkan_memory_linear_allocator.cpp
     backend/vulkan/vulkan_memory_dedicated_allocator.cpp
     backend/vulkan/vulkan_memory_pool_allocator.cpp
     backend/vulkan/vulkan_pipeline_manager.cpp
-    backend/vulkan/vulkan_image_memory_pool.cpp
+    backend/vulkan/vulkan_image_memory_manager.cpp
     backend/vulkan/vulkan_sampler.cpp
     backend/vulkan/vulkan_mesh.cpp
     

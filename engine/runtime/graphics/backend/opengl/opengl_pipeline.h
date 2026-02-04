@@ -2,7 +2,7 @@
 #define KPENGINE_RUNTIME_GRAPHICS_OPENGL_PIPELINE_H
 
 #include <glad/glad.h>
-#include "common/pipeline_desc.h"
+#include "common/pipeline_types.h"
 
 namespace kpengine::graphics
 {
@@ -33,6 +33,7 @@ namespace kpengine::graphics
     public:
         std::vector<VertexBindingDesc> binding_descs_;
         std::vector<VertexAttributionDesc> attri_descs_;
+        std::vector<std::vector<DescriptorBindingDesc>> descriptor_binding_descs_;
         GLenum primitive_topology_type_;
     };
 }

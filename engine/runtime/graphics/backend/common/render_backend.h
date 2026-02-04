@@ -5,11 +5,17 @@
 #include "base/base.h"
 #include "delegate/event_dispatcher.h"
 #include "shader_manager.h"
+#include "math/math_header.h"
 #include "api.h"
+
+
 struct GLFWwindow;
 namespace kpengine::graphics{
 
-    
+struct CameraData{
+    Matrix4f view;
+    Matrix4f proj;
+};
 class RenderBackend{
 public:
     static std::unique_ptr<RenderBackend> CreateGraphicsBackEnd(GraphicsAPIType backend_type);
@@ -34,7 +40,10 @@ public:
     RenderBackend(const RenderBackend & ) = delete;
     RenderBackend& operator=(const RenderBackend &) = delete;
 public:
+    //TODO: just expose for test purpose, should be remove later
     GLFWwindow* window_;
+    CameraData camera_data;
+
 protected:
     ShaderManager shader_manager_;
     int width_ = 0;

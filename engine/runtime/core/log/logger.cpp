@@ -2,6 +2,7 @@
 #include <iostream>
 #include <ctime>
 #include <filesystem>
+#include <sstream>
 #include <magic_enum/magic_enum.hpp>
 #include "config/path.h"
 
@@ -62,9 +63,11 @@ namespace kpengine::program
         localtime_r(&t, &tm);
 #endif
 
-        std::ostringstream oss;
-        oss << std::put_time(&tm, "%Y-%m-%d");
-        std::string date_dir_name = oss.str();
+        std::stringstream ss;
+        ss << std::put_time(&tm, "%Y-%m-%d");
+        std::string date_dir_name = ss.str();
+        ss.str("");
+        ss.clear();
 
         std::filesystem::path full_path = log_dir / date_dir_name;
 
@@ -81,11 +84,11 @@ namespace kpengine::program
             }
         }
 
-        // file
-        std::ostringstream oss1;
+        ss << std::put_time(&tm, "%Y.%m.%d-%H.%M.%S");
+        std::string file_create_time_name = ss.str();
+        ss.str("");
+        ss.clear();
 
-        oss1 << std::put_time(&tm, "%Y.%m.%d-%H.%M.%S");
-        std::string file_create_time_name = oss1.str();
         std::string file_name = "KimPeanutEngineLog-" + file_create_time_name + ".txt";
         std::filesystem::path log_file = full_path / file_name;
         file_ = std::ofstream(log_file, std::ios::out | std::ios::app);
@@ -127,10 +130,9 @@ namespace kpengine::program
         file_.flush();
     }
 
-    void Logger::WriteLog(const std::string &name, LogLevel level, const std::string msg, int line, const std::string &file, std::chrono::system_clock::time_point timestamp)
+    void Logger::WriteLog(const std::string &name, LogLevel level, const std::string msg, int line, const std::string &file)
     {
-        std::time_t time = std::chrono::system_clock::to_time_t(timestamp);
-        LogEntry log{.name = name, .level = level, .message = msg, .line = line, .file = file, .timestamp = timestamp};
+        LogEntry log(name, level, msg, line, file);
 
         std::lock_guard<std::mutex> lock(log_mutex);
         if (logs_.size() > max_buf_size)

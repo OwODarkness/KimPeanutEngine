@@ -3,7 +3,7 @@
 #include "vulkan_context.h"
 #include "log/logger.h"
 #include "vulkan_backend.h"
-#include "vulkan_image_memory_pool.h"
+#include "vulkan_image_memory_manager.h"
 namespace kpengine::graphics
 {
 
@@ -57,7 +57,7 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to create image");
         }
 
-        allocation_ = backend->GetImageMemoryPool()->AllocateImageMemory(physical_device, logical_device, resource_.image);
+        allocation_ = backend->GetImageMemoryManager()->AllocateImageMemory(physical_device, logical_device, resource_.image);
 
         if ((settings.usage & TextureUsage::TEXTURE_USAGE_SAMPLE) == TextureUsage::TEXTURE_USAGE_SAMPLE)
         {
@@ -114,7 +114,7 @@ namespace kpengine::graphics
 
         vkDestroyImageView(logical_device, resource_.view, nullptr);
         vkDestroyImage(logical_device, resource_.image, nullptr);
-        backend->GetImageMemoryPool()->Free(logical_device, allocation_);
+        backend->GetImageMemoryManager()->Free(logical_device, allocation_);
     }
 
     VulkanTexture::~VulkanTexture() = default;

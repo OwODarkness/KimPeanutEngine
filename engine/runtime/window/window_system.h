@@ -27,6 +27,7 @@ namespace kpengine
         virtual void SwapBuffers() = 0;
         virtual WindowHandle GetNativeHandle() const = 0; 
         virtual bool ShouldClose() const = 0;
+        virtual void Cleanup() = 0;
 
         void SetWindowSize(int width, int height);
         virtual void Tick(float delta_time);

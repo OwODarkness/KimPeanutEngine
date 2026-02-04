@@ -78,7 +78,7 @@ namespace kpengine::graphics
         void GenerateMipmaps(VkImage image, int32_t width, int32_t height, uint32_t mip_levels);
 
         void CopyBufferToImage(BufferHandle handle, VkImage image, uint32_t width, uint32_t height);
-        class VulkanImageMemoryPool *GetImageMemoryPool() const { return image_memory_pool_.get(); }
+        class VulkanImageMemoryManager *GetImageMemoryManager() const { return image_memory_manager_.get(); }
 
     private:
         void CreateInstance();
@@ -165,7 +165,7 @@ namespace kpengine::graphics
         uint32_t current_frame = 0;
         bool has_resized = false;
 
-        std::unique_ptr<class VulkanBufferPool> buffer_pool_;
+        std::unique_ptr<class VulkanBufferManager> buffer_manager_;
 
         std::vector<BufferHandle> uniform_buffer_handles_;
         std::vector<void *> uniform_buffer_mapped_ptr_;
@@ -173,7 +173,7 @@ namespace kpengine::graphics
         std::unique_ptr<class VulkanPipelineManager> pipeline_manager_;
         PipelineHandle pipeline_handle;
 
-        std::unique_ptr<class VulkanImageMemoryPool> image_memory_pool_;
+        std::unique_ptr<class VulkanImageMemoryManager> image_memory_manager_;
 
         std::unique_ptr<class TextureManager> texture_manager_;
 

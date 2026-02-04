@@ -63,6 +63,8 @@ namespace kpengine
         unsigned int fullscreen_vao{};
         unsigned int fullscreen_vbo{};
 
+        bool do_once = false;
+
         std::shared_ptr<RenderShader> current_shader;
         std::shared_ptr<RenderShader> geometry_shader_;
         std::shared_ptr<RenderShader> light_pass_shader_{};
