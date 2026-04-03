@@ -10,10 +10,8 @@
 #include "editor/include/editor_global_context.h"
 #include "runtime/window/window_system.h"
 
-namespace kpengine
+namespace kpengine::editor
 {
-    namespace ui
-    {
         EditorActorControlPanel::EditorActorControlPanel() : EditorWindowComponent("Actor Control Panel"),
                                                              actor_(nullptr), last_actor_(nullptr)
         {
@@ -77,5 +75,4 @@ namespace kpengine
             return changed;
         }
 
-    }
 }

@@ -2,11 +2,11 @@
 #define KPENGINE_EDITOR_LOG_COMPONENT_H
 
 
-#include "editor/include/editor_ui_component/editor_window_component.h"
+#include "editor_window_component.h"
 
 namespace kpengine{
     class LogSystem;
-    namespace ui{
+    namespace editor{
         class EditorLogComponent: public EditorWindowComponent{
         public:
             EditorLogComponent(LogSystem* log_system);

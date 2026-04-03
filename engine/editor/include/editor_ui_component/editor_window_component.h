@@ -4,11 +4,11 @@
 #include <vector>
 #include <string>
 #include <memory>
-#include "editor/include/editor_ui_component.h"
+#include "editor_ui_component.h"
 
 
 namespace kpengine{
-    namespace ui{
+    namespace editor{
         class EditorWindowComponent : public EditorUIComponent{
 
         public:

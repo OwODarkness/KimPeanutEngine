@@ -5,8 +5,7 @@
 
 #include <vector>
 
-namespace kpengine{
-namespace ui{
+namespace kpengine::editor{
 
     class EditorListboxComponent: public EditorUIComponent{
     public:
@@ -20,7 +19,6 @@ namespace ui{
         int last_index = 0;
     };
 
-}
 }
 
 #endif

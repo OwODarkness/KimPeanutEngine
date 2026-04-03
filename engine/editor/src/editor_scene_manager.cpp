@@ -26,10 +26,10 @@ namespace kpengine
         }
         void EditorSceneManager::Initialize()
         {
-            scene_ui_ = std::make_unique<ui::EditorSceneComponent>(global_editor_context.render_system_->GetRenderScene()->scene_fb_.get());
+            scene_ui_ = std::make_unique<EditorSceneComponent>(global_editor_context.render_system_->GetRenderScene()->scene_fb_.get());
             scene_ui_->on_mouse_click_callback_.Bind<EditorSceneManager, &EditorSceneManager::OnClickMouseCallback>(this);
 
-            actor_panel_ = std::make_unique<ui::EditorActorControlPanel>();
+            actor_panel_ = std::make_unique<EditorActorControlPanel>();
 
             input_context_ = std::make_shared<input::InputContext>();
             editor::global_editor_context.input_system_->AddContext("SceneInputContext", input_context_);

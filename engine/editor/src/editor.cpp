@@ -15,7 +15,7 @@
 namespace kpengine::editor
 {
 
-    Editor::Editor() : editor_ui(std::make_shared<kpengine::ui::EditorUI>()),
+    Editor::Editor() : editor_ui(std::make_shared<EditorUI>()),
                        is_initialized_(false)
     {
     }

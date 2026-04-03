@@ -10,7 +10,7 @@ namespace kpengine
 
         void EditorLogManager::Initialize(LogSystem* log_system)
         {
-            log_ui_ = std::make_shared<ui::EditorLogComponent>(log_system);
+            log_ui_ = std::make_shared<EditorLogComponent>(log_system);
         }
 
         void EditorLogManager::Tick()

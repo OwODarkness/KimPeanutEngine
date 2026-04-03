@@ -11,4 +11,4 @@ ${CMAKE_CURRENT_SOURCE_DIR}
 "${CMAKE_CURRENT_SOURCE_DIR}/include/editor_ui_component"
 )
 
-target_link_libraries(EditorLib PRIVATE RuntimeLib )
+target_link_libraries(EditorLib PRIVATE RuntimeLib ThirdPartyLib)

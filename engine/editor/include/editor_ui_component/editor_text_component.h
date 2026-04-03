@@ -2,10 +2,9 @@
 #define KPENGINE_EDITOR_TEXT_COMPONENT_H
 
 #include <string>
-#include "editor/include/editor_ui_component.h"
+#include "editor_ui_component.h"
 
-namespace kpengine{
-    namespace ui{
+namespace kpengine::editor{
 
         class EditorTextComponent: public EditorUIComponent{
         public:
@@ -44,7 +43,6 @@ namespace kpengine{
             }
             EditorTextComponent::Render();
         }
-    }
 }
 
 #endif

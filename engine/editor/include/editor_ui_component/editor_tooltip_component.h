@@ -2,26 +2,22 @@
 #define KPENGINE_EDITOR_TOOLTIP_COMPONENT_H
 
 #include <string>
+#include "editor_ui_component.h"
 
-#include "editor/include/editor_ui_component.h"
-
-namespace kpengine
+namespace kpengine::editor
 {
-    namespace ui
+    class EditorTooltipComponent : public EditorUIComponent
     {
-        class EditorTooltipComponent : public EditorUIComponent
-        {
-        public:
-            EditorTooltipComponent(const std::string &content, ImVec4 color = ImVec4(1.f, 1.f, 1.f, 1.f));
-            EditorTooltipComponent(EditorUIComponent *inner_comp);
-            virtual ~EditorTooltipComponent();
+    public:
+        EditorTooltipComponent(const std::string &content, ImVec4 color = ImVec4(1.f, 1.f, 1.f, 1.f));
+        EditorTooltipComponent(EditorUIComponent *inner_comp);
+        virtual ~EditorTooltipComponent();
 
-            virtual void Render() override;
+        virtual void Render() override;
 
-        private:
-            EditorUIComponent *inner_comp_;
-        };
-    }
+    private:
+        EditorUIComponent *inner_comp_;
+    };
 }
 
 #endif

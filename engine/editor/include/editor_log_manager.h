@@ -5,10 +5,7 @@
 namespace kpengine
 {
     class LogSystem;
-    namespace ui
-    {
-        class EditorLogComponent;
-    }
+
     namespace editor
     {
         class EditorLogManager
@@ -19,7 +16,7 @@ namespace kpengine
             void Tick();
 
         private:
-            std::shared_ptr<ui::EditorLogComponent> log_ui_;
+            std::shared_ptr<class EditorLogComponent> log_ui_;
         };
     }
 }

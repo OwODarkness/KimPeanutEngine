@@ -10,7 +10,7 @@ struct GLFWwindow;
 namespace kpengine{
     class Actor;
 
-namespace ui{
+namespace editor{
     template<typename T> class EditorDragComponent;
 
     class EditorActorControlPanel: public EditorWindowComponent{

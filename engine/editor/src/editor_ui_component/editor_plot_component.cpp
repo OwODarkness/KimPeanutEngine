@@ -1,9 +1,7 @@
 #include "editor_plot_component.h"
 
-namespace kpengine
+namespace kpengine::editor
 {
-    namespace ui
-    {
         EditorPlotComponent::EditorPlotComponent(FuncType func, float begin, float end, float step) : 
         func_(func), 
         begin_(begin), 
@@ -25,5 +23,4 @@ namespace kpengine
         {
             ImGui::PlotLines("function", samples.data(), static_cast<int>(samples.size()));
         }
-    }
 }

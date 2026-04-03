@@ -3,10 +3,9 @@
 
 #include <functional>
 
-#include "editor/include/editor_ui_component.h"
+#include "editor_ui_component.h"
 
-namespace kpengine{
-    namespace ui{
+namespace kpengine::editor{
         using FuncType =  std::function<float(float)>;
         class EditorPlotComponent: public EditorUIComponent
         {
@@ -21,7 +20,6 @@ namespace kpengine{
             float end_;
             float step_;
         };
-    }
 }
 
 #endif

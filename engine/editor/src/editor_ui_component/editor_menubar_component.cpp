@@ -1,8 +1,6 @@
 #include "editor_menubar_component.h"
 
-namespace kpengine{
-    namespace ui
-    {
+namespace kpengine::editor{
 
         EditorMenuBarComponent::EditorMenuBarComponent(const std::vector<Menu>& menus):
         menus_(menus)
@@ -47,5 +45,4 @@ namespace kpengine{
             EditorMenuBarComponent::Render();
             ImGui::EndMainMenuBar();
         }
-    }
 }

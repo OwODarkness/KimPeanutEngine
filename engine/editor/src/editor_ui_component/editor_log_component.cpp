@@ -4,10 +4,8 @@
 #include <vector>
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/log/logger.h"
-namespace kpengine
+namespace kpengine::editor
 {
-    namespace ui
-    {
 
     void ExtractTipColorFromLogLevel(float (&color)[4], program::LogLevel level)
     {
@@ -42,23 +40,21 @@ namespace kpengine
         }
     }
 
+    EditorLogComponent::EditorLogComponent(LogSystem *log_system) : EditorWindowComponent("OutputLog"),
+                                                                    log_system_(log_system) {}
 
-        EditorLogComponent::EditorLogComponent(LogSystem *log_system) : EditorWindowComponent("OutputLog"),
-                                                                        log_system_(log_system) {}
-
-        void EditorLogComponent::RenderContent()
+    void EditorLogComponent::RenderContent()
+    {
+        EditorWindowComponent::RenderContent();
+        assert(log_system_ != nullptr);
+        const std::vector<program::LogEntry> &logs = log_system_->GetLogs();
+        for (const auto &log : logs)
         {
-            EditorWindowComponent::RenderContent();
-            assert(log_system_ != nullptr);
-            const std::vector<program::LogEntry> &logs = log_system_->GetLogs();
-            for (const auto& log : logs)
-            {
-                float color[4];
-                ExtractTipColorFromLogLevel(color, log.level);
-                ImVec4 imgui_color(color[0], color[1], color[2], color[3]);
-                ImGui::TextColored(imgui_color, program::Logger::FetchStringFromLog(log).c_str());
-            }
+            float color[4];
+            ExtractTipColorFromLogLevel(color, log.level);
+            ImVec4 imgui_color(color[0], color[1], color[2], color[3]);
+            ImGui::TextColored(imgui_color, program::Logger::FetchStringFromLog(log).c_str());
         }
-
     }
+
 }

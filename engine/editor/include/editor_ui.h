@@ -5,9 +5,8 @@
 #include <memory>
 struct GLFWwindow;
 
-namespace kpengine{
+namespace kpengine::editor{
 
-namespace ui{
     
     class EditorUIComponent;
     class EditorWindowComponent;
@@ -23,10 +22,12 @@ namespace ui{
         void BeginDraw();
         void EndDraw();
     private:
+        std::unique_ptr<class IEditorImguiRenderer> renderer_;
+        std::unique_ptr<class IEditorImguiWSI> wsi_;
+
         std::vector<std::unique_ptr<EditorUIComponent>> components_;
     };
     
-}
 }
 
 #endif //KPENGINE_EDITOR_UI_H

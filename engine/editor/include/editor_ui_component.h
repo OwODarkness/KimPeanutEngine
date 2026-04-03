@@ -1,28 +1,17 @@
 #ifndef KPENGINE_EDITOR_UI_COMPONENT_H
 #define KPENGINE_EDITOR_UI_COMPONENT_H
 
-#include <string>
-
 #include <imgui/imgui.h>
-#include <imgui/imgui_impl_glfw.h>
-#include <imgui/imgui_impl_opengl3.h>
 
-namespace kpengine
+namespace kpengine::editor
 {
-    namespace ui
+    class EditorUIComponent
     {
-        class EditorUIComponent
-        {
-        public:
-            EditorUIComponent();
-            virtual ~EditorUIComponent();
+    public:
+        virtual ~EditorUIComponent() = default;
+        virtual void Render() = 0;
+    };
 
-            virtual void Render() = 0;
-        };
-
-
-
-    }
 }
 
 #endif

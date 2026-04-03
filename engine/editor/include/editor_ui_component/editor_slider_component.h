@@ -1,9 +1,8 @@
 #ifndef KPENGINE_EDITOR_SLIDER_COMPONENT_H
 #define KPENGINE_EDITOR_SLIDER_COMPONENT_H
-#include "editor/include/editor_ui_component.h"
+#include "editor_ui_component.h"
 #include <string>
-namespace kpengine{
-namespace ui{
+namespace kpengine::editor{
     template<typename T>
     class EditorSliderComponent: public EditorUIComponent{
     public:
@@ -77,7 +76,6 @@ namespace ui{
        int min_bound_;
        int max_bound_;
    };
-}
 }
 
 #endif

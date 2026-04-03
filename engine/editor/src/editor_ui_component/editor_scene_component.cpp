@@ -5,10 +5,8 @@
 #include "runtime/render/frame_buffer.h"
 #include "editor/include/editor_global_context.h"
 #include "runtime/window/window_system.h"
-namespace kpengine
+namespace kpengine::editor
 {
-    namespace ui
-    {
         EditorSceneComponent::EditorSceneComponent(FrameBuffer *scene) : EditorWindowComponent("scene"),
                                                                          scene_(scene)
         {
@@ -31,9 +29,7 @@ namespace kpengine
             // Render the scene texture
             ImGui::Image(
                 static_cast<ImTextureID>(scene_->GetTexture(0)),
-                ImGui::GetContentRegionAvail(),
-                ImVec2(0, 1),
-                ImVec2(1, 0));
+                ImGui::GetContentRegionAvail());
             
             ImVec2 screen_size =   ImGui::GetCursorScreenPos();
             ImVec2 mouse_abs_pos = ImGui::GetMousePos();
@@ -68,8 +64,5 @@ namespace kpengine
             ImGui::EndChild();
         }
 
-        EditorSceneComponent::~EditorSceneComponent()
-        {
-        }
-    }
+        EditorSceneComponent::~EditorSceneComponent() = default;
 }

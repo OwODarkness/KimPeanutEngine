@@ -5,13 +5,13 @@
 #include <memory>
 
 #include "runtime/core/delegate/delegate.h"
-#include "editor/include/editor_ui_component/editor_window_component.h"
+#include "editor_window_component.h"
 
 DECLARE_DELEGATE_TwoParams(FOnMouseClickCallback, float, float)
 
 namespace kpengine{
     class FrameBuffer;
-    namespace ui{
+    namespace editor{
         class EditorSceneComponent : public EditorWindowComponent{
         public:
             //EditorSceneComponent() = delete;

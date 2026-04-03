@@ -3,33 +3,35 @@
 
 #include <string>
 #include <functional>
-#include "editor/include/editor_ui_component.h"
+#include "editor_ui_component.h"
 
 #include "runtime/core/delegate/delegate.h"
 
 DECLARE_DELEGATE(FOnButtonClickNotify)
 
-namespace kpengine{
-    namespace ui{
+namespace kpengine::editor
+{
 
-        struct ButtonStyle{
-            ImVec4 text_color;
-            ImVec4 background_normal_color;
-            ImVec4 background_hovered_color;
-            ImVec4 background_active_color;
-        };
+    struct ButtonStyle
+    {
+        ImVec4 text_color;
+        ImVec4 background_normal_color;
+        ImVec4 background_hovered_color;
+        ImVec4 background_active_color;
+    };
 
-        class EditorButtonComponent: public EditorUIComponent{
-        public:
-            EditorButtonComponent(const std::string& label);
-            virtual void Render() override;
-        public:
-            std::string label_;
-            ButtonStyle button_style;
+    class EditorButtonComponent : public EditorUIComponent
+    {
+    public:
+        EditorButtonComponent(const std::string &label);
+        virtual void Render() override;
 
-            FOnButtonClickNotify on_click_notify_;
-        };
-    }
+    public:
+        std::string label_;
+        ButtonStyle button_style;
+
+        FOnButtonClickNotify on_click_notify_;
+    };
 }
 
 #endif
