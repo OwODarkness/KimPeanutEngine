@@ -35,6 +35,8 @@
 
 # Asset
 *.hdr
+engine/resource/*
+
 
 build/*
 
