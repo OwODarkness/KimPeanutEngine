@@ -15,6 +15,16 @@ namespace kpengine
         WINDOW_API_SDL,
         WINDOW_API_Win32
     };
+
+    using WindowHandle = void *;
+
+    struct GraphicsContext
+    {
+        GraphicsAPIType type;
+        void *native = nullptr;
+    };
+
+
 }
 
 #endif

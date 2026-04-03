@@ -11,7 +11,7 @@
 #include "log_entry.h"
 
 #define KP_LOG(LOG_NAME, LEVEL, MESSAGE, ...) \
-    kpengine::program::Logger::GetLogger().Log(LOG_NAME, LEVEL, __LINE__, __FILE__, MESSAGE, ##__VA_ARGS__)
+kpengine::program::Logger::GetLogger().Log(LOG_NAME, LEVEL, __LINE__, __FILE__, MESSAGE, ##__VA_ARGS__)
 
 #define LOG_LEVEL_DEBUG kpengine::program::LogLevel::Debug
 #define LOG_LEVEL_INFO kpengine::program::LogLevel::Info

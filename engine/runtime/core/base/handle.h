@@ -14,9 +14,13 @@ namespace kpengine{
      
     template<typename Tag>
     struct Handle{  
-        uint32_t id = KPENGINE_NULL_HANDLE;
-        uint32_t generation = 0;
+        uint32_t id;
+        uint16_t generation ;
     
+        Handle():id(KPENGINE_NULL_HANDLE), generation(0){}
+        Handle(uint32_t in_id, uint16_t in_generation):id(in_id), generation(in_generation){}
+
+
         bool IsValid() const{return id != KPENGINE_NULL_HANDLE;}
 
         bool operator==(const Handle& rhs) const
@@ -71,14 +75,13 @@ namespace kpengine{
             return false;
         }
 
-    private:
         bool IsHandleValid(const HandleT& handle)
         {
             return handle.IsValid() && handle.generation == generations_[handle.id];
         }
 
     private:
-        std::vector<uint32_t> generations_;
+        std::vector<uint16_t> generations_;
         std::vector<uint32_t> free_slots_;
     };
 

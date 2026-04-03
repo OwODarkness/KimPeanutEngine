@@ -13,17 +13,17 @@ namespace kpengine
 
     inline std::string GetAssetDirectory()
     {
-        return (project_root / "engine/asset/").generic_string();
+        return (project_root / "engine/resource/").generic_string();
     }
 
     inline std::string GetTextureDirectory()
     {
-        return (project_root / "engine/asset/texture/").generic_string();
+        return (project_root / "engine/resource/texture/").generic_string();
     }
 
     inline std::string GetModelDirectory()
     {
-        return (project_root / "engine/asset/model/").generic_string();
+        return (project_root / "engine/resource/model/").generic_string();
     }
 
     inline std::string GetShaderDirectory()
