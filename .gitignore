@@ -44,4 +44,4 @@ build/*
 .VSCodeCounter/
 logs/*
 
-third_party/*
+third_party/
