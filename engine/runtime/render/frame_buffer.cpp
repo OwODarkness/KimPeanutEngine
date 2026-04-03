@@ -2,7 +2,7 @@
 
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-
+#include <type_traits>
 #include "log/logger.h"
 #include "runtime_global_context.h"
 namespace kpengine

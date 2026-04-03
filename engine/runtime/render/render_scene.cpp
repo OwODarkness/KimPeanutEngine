@@ -4,7 +4,6 @@
 #include <cassert>
 #include <array>
 #include <glad/glad.h>
-#include <stb_image/stb_image_write.h>
 #include "runtime_global_context.h"
 #include "render_system.h"
 #include "shader_pool.h"
@@ -41,9 +40,9 @@ namespace kpengine
 
         glGetTexImage(GL_TEXTURE_2D, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels.data());
 
-        stbi_flip_vertically_on_write(true);
-        // Save to file (using stb_image_write)
-        stbi_write_png(filename.c_str(), width, height, 4, pixels.data(), width * 4);
+        // stbi_flip_vertically_on_write(true);
+        //  Save to file (using stb_image_write)
+        // stbi_write_png(filename.c_str(), width, height, 4, pixels.data(), width * 4);
     }
 
     RenderScene::RenderScene() : width_(1280), height_(720)

@@ -8,6 +8,7 @@ add_subdirectory(input)
 add_subdirectory(component)
 add_subdirectory(game_framework)
 add_subdirectory(render)
+add_subdirectory(asset)
 
 add_library(RuntimeLib STATIC 
     engine.cpp 
@@ -19,4 +20,4 @@ target_include_directories(RuntimeLib PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(RuntimeLib PUBLIC Core Graphics PRIVATE Object Window  Input Component GameFramework Render)
+target_link_libraries(RuntimeLib PUBLIC Core Graphics PRIVATE ThirdPartyLib EditorLib Object Window  Input Component GameFramework Render)

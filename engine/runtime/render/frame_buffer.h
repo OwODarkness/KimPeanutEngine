@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_FRAME_BUFFER_H
 
 #include <string>
+#include <vector>
 #include <unordered_map>
 namespace kpengine
 {

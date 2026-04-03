@@ -228,7 +228,7 @@ vec3 IndirectPBR(vec3 N, vec3 V, Material material)
     vec3 R = reflect(-normalize(V), normalize(N));
     vec3 prefilteredColor = textureLod(prefilter_map, R, roughness * float(MAX_REFLECTION_LOD)).rgb;
     vec2 envBRDF = texture(brdf_map, vec2(NdotV, roughness)).rg;
-    vec3 specular = prefilteredColor * (ks * envBRDF.x + envBRDF.y);
+    vec3 specular = prefilteredColor * (F0 * envBRDF.x + envBRDF.y);
     return kd * diffuse +  specular;
 }
 

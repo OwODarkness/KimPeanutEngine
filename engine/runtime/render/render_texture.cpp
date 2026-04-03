@@ -146,7 +146,7 @@ namespace kpengine
     {
 
         int width = 0, height = 0, nr_channels = 0;
-        stbi_set_flip_vertically_on_load(true);
+        stbi_set_flip_vertically_on_load(false);
 
         std::string absoulte_image_path = GetAssetDirectory() + image_id_;
         float *data = stbi_loadf(absoulte_image_path.c_str(), &width, &height, &nr_channels, 0);

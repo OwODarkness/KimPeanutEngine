@@ -8,7 +8,6 @@
 namespace kpengine
 {
 
-    using WindowHandle = void *;
 
     struct WindowCreateInfo
     {
