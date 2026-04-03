@@ -41,7 +41,6 @@ namespace kpengine::graphics
     protected:
         void Initialize(GraphicsContext context, const TextureData& data, const TextureSettings& settings) override;
         void Destroy(GraphicsContext context) override;
-        
 
     private:
         VulkanTextureResource resource_;
@@ -49,7 +48,6 @@ namespace kpengine::graphics
 
         int32_t width_ = 0;
         int32_t height_ = 0;
-        TextureSettings settings_;
     };
 }
 

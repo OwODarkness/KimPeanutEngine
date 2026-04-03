@@ -1,5 +1,5 @@
 #include "vulkan_memory_dedicated_allocator.h"
-
+#include <algorithm>
 #include "log/logger.h"
 namespace kpengine::graphics
 {
@@ -29,7 +29,10 @@ namespace kpengine::graphics
   void VulkanMemoryDedicatedAllocator::Free(VkDevice logicial_device, VulkanMemoryAllocation allocation)
   {
     vkFreeMemory(logicial_device, allocation.memory, nullptr);
-    allocated_memory_blocks_.erase(std::remove(allocated_memory_blocks_.begin(), allocated_memory_blocks_.end(), allocation.memory), allocated_memory_blocks_.end());
+       auto it = std::remove(allocated_memory_blocks_.begin(), 
+                          allocated_memory_blocks_.end(), 
+                          allocation.memory);
+    allocated_memory_blocks_.erase(it, allocated_memory_blocks_.end());
   }
 
   void VulkanMemoryDedicatedAllocator::Destroy(VkDevice logicial_device)

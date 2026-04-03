@@ -1,24 +1,19 @@
 #include "vulkan_pipeline_manager.h"
 #include <array>
+#include <iostream>
 #include "log/logger.h"
 #include "common/shader.h"
 #include "vulkan_enum.h"
-
 namespace kpengine::graphics
 {
 
-    PipelineHandle VulkanPipelineManager::CreatePipelineResource(VkDevice logical_device, const PipelineDesc &pipeline_desc, VkRenderPass render_pass)
+    PipelineHandle VulkanPipelineManager::CreatePipelineResource(VkDevice logical_device, const PipelineDesc &pipeline_desc)
     {
-
         PipelineHandle handle = handle_system_.Create();
 
         if (handle.id == resources_.size())
         {
             resources_.emplace_back();
-        }
-        else if (handle.id > resources_.size())
-        {
-            throw std::runtime_error("handle system hand out a invalid handle");
         }
 
         VulkanPipelineResource &pipeline_resource = resources_[handle.id];
@@ -128,6 +123,7 @@ namespace kpengine::graphics
             multisample_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_MULTISAMPLE_STATE_CREATE_INFO;
             multisample_state_create_info.sampleShadingEnable = pipeline_desc.multisample_state.sample_shading_enabled;
             multisample_state_create_info.rasterizationSamples = ConvertToVulkanSampleCount(pipeline_desc.multisample_state.rasterization_samples);
+            
             multisample_state_create_info.minSampleShading = pipeline_desc.multisample_state.min_sample_shading;
             multisample_state_create_info.pSampleMask = nullptr;
             multisample_state_create_info.alphaToCoverageEnable = pipeline_desc.multisample_state.alpha_to_coverage_enable;
@@ -198,7 +194,6 @@ namespace kpengine::graphics
                 pipeline_resource.descriptor_set_layouts[i].layout = layouts[i];
                 pipeline_resource.descriptor_set_layouts[i].bindings = descriptor_set_layout_bindings;
             }
-            // set pipeline_layout
             VkPipelineLayoutCreateInfo layout_create_info{};
             layout_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO;
             layout_create_info.setLayoutCount = static_cast<uint32_t>(pipeline_resource.descriptor_set_layouts.size());
@@ -211,6 +206,20 @@ namespace kpengine::graphics
                 KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Failed to create pipeline layout");
                 throw std::runtime_error("Failed to create pipeline layout");
             }
+
+            //set color attachment
+            uint32_t color_attachment_count = static_cast<uint32_t>(pipeline_desc.color_attachment_formats.size());
+            std::vector<VkFormat> color_attachment_formats(color_attachment_count);
+            for(uint32_t i = 0;i<color_attachment_count;i++)
+            {
+                color_attachment_formats[i] = ConvertToVulkanTextureFormat(pipeline_desc.color_attachment_formats[i]); 
+            }
+
+            VkPipelineRenderingCreateInfo pipeline_rendering_create_info{};
+            pipeline_rendering_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+            pipeline_rendering_create_info.colorAttachmentCount = color_attachment_count; 
+            pipeline_rendering_create_info.pColorAttachmentFormats = color_attachment_formats.data();
+            pipeline_rendering_create_info.depthAttachmentFormat = ConvertToVulkanTextureFormat(pipeline_desc.depth_attachment_format);
 
             //create graphics pipeline
             VkGraphicsPipelineCreateInfo pipeline_create_info{};
@@ -226,11 +235,12 @@ namespace kpengine::graphics
             pipeline_create_info.pColorBlendState = &colorblend_state_create_info;
             pipeline_create_info.pDynamicState = &dynamic_state_create_info;
             pipeline_create_info.layout = pipeline_resource.layout;
-            pipeline_create_info.renderPass = render_pass;
-            pipeline_create_info.subpass = 0;
+            //pipeline_create_info.renderPass = render_pass;
             pipeline_create_info.pDepthStencilState = &depth_stencil;
             pipeline_create_info.basePipelineHandle = VK_NULL_HANDLE;
             pipeline_create_info.basePipelineIndex = -1;
+            pipeline_create_info.renderPass = nullptr;
+            pipeline_create_info.pNext = &pipeline_rendering_create_info;
 
             if (vkCreateGraphicsPipelines(logical_device, VK_NULL_HANDLE, 1, &pipeline_create_info, nullptr, &pipeline_resource.pipeline) != VK_SUCCESS)
             {

@@ -10,8 +10,10 @@
 #include "common/shader_manager.h"
 #include "opengl_pipeline.h"
 #include "common/pipeline_types.h"
-#include "tool/assimp_model_loader.h"
-#include "tool/image_loader.h"
+#include "asset/asset_manager.h"
+#include "asset/model.h"
+#include "asset/mesh.h"
+#include "asset/texture.h"
 #include "opengl_mesh.h"
 #include "opengl_enum.h"
 #include "opengl_texture.h"
@@ -23,11 +25,13 @@ namespace kpengine::graphics
     OpenglBackend::OpenglBackend() : mesh_manager_(std::make_unique<MeshManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
                                      sampler_manager_(std::make_unique<SamplerManager>()),
-                                     shader_manager_(std::make_unique<ShaderManager>()),
-                                     model_loader_(std::make_unique<AssimpModelLoader>())
+                                     shader_manager_(std::make_unique<ShaderManager>())
+
     {
         context_.backend = this;
     }
+
+    OpenglBackend::~OpenglBackend() = default;
 
     void OpenglBackend::Initialize()
     {
@@ -59,18 +63,21 @@ namespace kpengine::graphics
         pipeline_->Bind();
 
         UpdateUniformBuffers();
-        for (const auto &mesh : meshes_)
+
+        Mesh *mesh_entity = mesh_manager_->GetMesh(mesh_handle);
+        MeshResource resource = mesh_entity->GetMeshHandle();
+        const OpenglMeshResource *mesh_resource = static_cast<const OpenglMeshResource *>(resource.native);
+
+        glBindVertexArray(pipeline_->vao);
+
+        for (const VertexBindingDesc binding_desc : pipeline_->binding_descs_)
         {
-            Mesh *mesh_entity = mesh_manager_->GetMesh(mesh.first);
-            MeshResource resource = mesh_entity->GetMeshHandle();
-            const OpenglMeshResource *mesh_resource = static_cast<const OpenglMeshResource *>(resource.native);
-            glBindVertexArray(mesh.second);
+            glBindVertexBuffer(binding_desc.binding, mesh_resource->vbo, 0, binding_desc.stride);
             glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh_resource->ebo);
             for (size_t i = 0; i < mesh_resource->sections.size(); i++)
             {
                 glDrawElements(pipeline_->primitive_topology_type_, mesh_resource->sections[i].index_count, GL_UNSIGNED_INT, (void *)(mesh_resource->sections[i].index_start * sizeof(uint32_t)));
             }
-            glBindVertexArray(0);
         }
     }
 
@@ -127,7 +134,8 @@ namespace kpengine::graphics
 
         pipeline_settings.descriptor_binding_descs = {
             {{0, 1, DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
-             {1, 1, DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+             {1, 1, DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
+             {2, 1, DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
 
         pipeline_ = std::make_unique<OpenglPipeline>();
@@ -137,47 +145,33 @@ namespace kpengine::graphics
     void OpenglBackend::CreateMeshes()
     {
         std::string model_path = GetModelDirectory() + "sphere/sphere.obj";
-        MeshData data{};
-        model_loader_->Load(model_path, data);
-        GraphicsContext context;
-        context.native = static_cast<void *>(&context_);
-        context.type = GraphicsAPIType::GRAPHICS_API_OPENGL;
-        MeshHandle mesh_handle = mesh_manager_->CreateMesh(context, data);
-        Mesh *mesh = mesh_manager_->GetMesh(mesh_handle);
-        MeshResource mesh_resource = mesh->GetMeshHandle();
-        const OpenglMeshResource *gl_mesh_resource = static_cast<const OpenglMeshResource *>(mesh_resource.native);
-
-        GLuint vao{};
-        glGenVertexArrays(1, &vao);
-
-        glBindVertexArray(vao);
-
-        glBindBuffer(GL_ARRAY_BUFFER, gl_mesh_resource->vbo);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, gl_mesh_resource->ebo);
-
-        for (size_t i = 0; i < pipeline_->attri_descs_.size(); i++)
+        asset::AssetID model_id = asset::AssetManager::GetInstance().LoadSync(model_path);
+        std::shared_ptr<asset::ModelResource> model_ptr = asset::AssetManager::GetInstance().GetResource<asset::ModelResource>(model_id);
+        if (model_ptr)
         {
-            const VertexAttributionDesc &attrib = pipeline_->attri_descs_[i];
-            const VertexBindingDesc &binding = pipeline_->binding_descs_[attrib.binding];
-            GLint size;
-            GLenum type;
-            ConvertToOpenglVertexFormat(attrib.format, size, type);
-            GLuint index = static_cast<GLuint>(attrib.location);
-            glEnableVertexAttribArray(index);
-            glVertexAttribPointer(index, size, type, GL_FALSE, binding.stride,
-                                  (void *)(uintptr_t)attrib.offset);
+            asset::AssetID mesh_id = model_ptr->GetData(asset::ModelGeometryType::KPMG_Mesh);
+            std::shared_ptr<asset::MeshResource> mesh_ptr = asset::AssetManager::GetInstance().GetResource<asset::MeshResource>(mesh_id);
+            if (mesh_ptr)
+            {
+                GraphicsContext context;
+                context.native = &context_;
+                context.type = GraphicsAPIType::GRAPHICS_API_OPENGL;
+
+                mesh_handle = mesh_manager_->CreateMesh(context, *mesh_ptr->data);
+            }
         }
-
-        glBindVertexArray(0);
-
-        meshes_.insert({mesh_handle, vao});
+        asset::AssetManager::GetInstance().UnRegisterAsset(model_id);
+        asset::AssetManager::GetInstance().UnRegisterAsset(model_ptr->GetData(asset::ModelGeometryType::KPMG_Mesh));
     }
 
     void OpenglBackend::CreateUniformBuffers()
     {
-        glGenBuffers(1, &camera_ubo_);
-        glBindBuffer(GL_UNIFORM_BUFFER, camera_ubo_);
-        glBufferData(GL_UNIFORM_BUFFER, sizeof(UniformBuffer), nullptr, GL_DYNAMIC_DRAW);
+        ubos_.resize(2);
+        glGenBuffers(2, ubos_.data());
+        glBindBuffer(GL_UNIFORM_BUFFER, ubos_[0]);
+        glBufferData(GL_UNIFORM_BUFFER, sizeof(PerPassData), nullptr, GL_DYNAMIC_DRAW);
+        glBindBuffer(GL_UNIFORM_BUFFER, ubos_[1]);
+        glBufferData(GL_UNIFORM_BUFFER, sizeof(PerObjectData), nullptr, GL_DYNAMIC_DRAW);
         glBindBuffer(GL_UNIFORM_BUFFER, 0);
     }
 
@@ -185,8 +179,13 @@ namespace kpengine::graphics
     {
         GraphicsContext context = CreateGraphicsContext();
         std::string texture_path = GetTextureDirectory() + "wallpaper.jpg";
-        TextureData texture_data{};
-        ImageLoader::ReadFromFile(texture_path, texture_data);
+        asset::AssetID id = asset::AssetManager::GetInstance().LoadSync(texture_path);
+        auto texture_ptr = asset::AssetManager::GetInstance().GetResource<asset::TextureResource>(id);
+        if (texture_ptr == nullptr)
+        {
+            return;
+        }
+        TextureData &texture_data = *(texture_ptr->resource);
 
         TextureSettings texture_settings{};
         texture_settings.mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(texture_data.width, texture_data.height)))) + 1;
@@ -207,6 +206,7 @@ namespace kpengine::graphics
         sampler_settings.max_lod = 0.f;
 
         sampler_handle = sampler_manager_->CreateSampler(context, sampler_settings);
+        asset::AssetManager::GetInstance().UnRegisterAsset(id);
     }
 
     GraphicsContext OpenglBackend::CreateGraphicsContext()
@@ -226,7 +226,7 @@ namespace kpengine::graphics
         {
             if (binding.descriptor_type == DescriptorType::DESCRIPTOR_TYPE_UNIFORM)
             {
-                descriptor_set->SetUniformBuffer(binding.binding, camera_ubo_);
+                descriptor_set->SetUniformBuffer(binding.binding, ubos_[binding.binding]);
             }
             else if (binding.descriptor_type == DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER)
             {
@@ -247,23 +247,27 @@ namespace kpengine::graphics
         auto current_time = std::chrono::high_resolution_clock::now();
         float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
 
-        UniformBuffer ubo;
+        Vector3f camera = {0.f, 0.f, 2.f};
+        Vector3f target = {0.f, 0.f, 0.f};
+        Vector3f dir = target - camera;
+
+        PerPassData per_pass_data{};
+        per_pass_data.camera_data.view = Matrix4f::MakeCameraMatrix(camera, dir, {0.f, 1.f, 0.f}).Transpose();
+        float aspect = width_ / (float)height_;
+        per_pass_data.camera_data.proj = Matrix4f::MakePerProjMatrix(math::DegreeToRadian(45.f), aspect, 0.1f, 10.f).Transpose();
+        per_pass_data.camera_data.proj[1][1] *= -1.0;
+
         Transform3f model{};
         model.scale_ = {0.5f, 0.5f, 0.5f};
         model.rotator_.pitch_ = time * 90.f;
 
-        ubo.model = Matrix4f::MakeTransformMatrix(model).Transpose();
-        // Vector3f camera = {0.f, 0.f, 2.f};
-        // Vector3f target = {0.f, 0.f, 0.f};
-        // Vector3f dir = target - camera;
-        // ubo.view = Matrix4f::MakeCameraMatrix(camera, dir, {0.f, 1.f, 0.f}).Transpose();
-        // float aspect = width_ / (float)height_;
-        // ubo.proj = Matrix4f::MakePerProjMatrix(math::DegreeToRadian(45.f), aspect, 0.1f, 10.f).Transpose();
-        
-        ubo.view = camera_data.view;
-        ubo.proj = camera_data.proj;
-        glBindBuffer(GL_UNIFORM_BUFFER, camera_ubo_);
-        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(UniformBuffer), &ubo);
+        PerObjectData per_object_data{};
+        per_object_data.model = Matrix4f::MakeTransformMatrix(model).Transpose();
+
+        glBindBuffer(GL_UNIFORM_BUFFER, ubos_[0]);
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(PerPassData), &per_pass_data);
+        glBindBuffer(GL_UNIFORM_BUFFER, ubos_[1]);
+        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(PerObjectData), &per_object_data);
         glBindBuffer(GL_UNIFORM_BUFFER, 0);
     }
 }

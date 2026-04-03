@@ -31,8 +31,6 @@ add_library(Graphics STATIC
     backend/vulkan/vulkan_mesh.cpp
     
     tool/shader_loader.cpp
-    tool/image_loader.cpp
-    tool/assimp_model_loader.cpp
     )
 
 target_include_directories(Graphics 
@@ -40,7 +38,9 @@ target_include_directories(Graphics
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tool/..
 )
 
-target_link_libraries(Graphics PUBLIC Core )
+target_link_libraries(Graphics 
+    PUBLIC Core 
+    PRIVATE Asset)
 
 find_program(GLSLC glslc
     HINTS
@@ -62,12 +62,11 @@ endif()
 if(NOT GLSLC)
     message(FATAL_ERROR "glslc not found! Please install Vulkan SDK or put glslc in third_party/vulkan/bin")
 else()
-    message(STATUS "Found glslc: ${GLSLC}")
+    message(STATUS "Found glslc: ${GLSLC}, ready to compile the shaders which can be found in ${CMAKE_BINARY_DIR}/shaders")
     set(SHADER_PATH ${CMAKE_SOURCE_DIR}/engine/shader)
     file(GLOB_RECURSE GLSL_SHADERS
-        "${SHADER_PATH}/*.vert"
-        "${SHADER_PATH}/*.frag"
-        "${SHADER_PATH}/*.geom"
+        "${SHADER_PATH}/simple_triangle.vert"
+        "${SHADER_PATH}/simple_triangle.frag"
     )
     set(COMPILED_SHADERS "")
 
@@ -84,6 +83,6 @@ else()
 
         list(APPEND COMPILED_SHADERS ${SPIRV})
     endforeach()
-   # add_custom_target(Shaders ALL DEPENDS ${COMPILED_SHADERS})
+   add_custom_target(Shaders ALL DEPENDS ${COMPILED_SHADERS})
 endif()
 

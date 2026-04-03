@@ -11,6 +11,8 @@
 #include "vulkan_context.h"
 #include "common/texture.h"
 
+
+
 namespace kpengine::graphics
 {
     struct QueueFamilyIndices
@@ -41,11 +43,11 @@ namespace kpengine::graphics
         VkQueue queue;
     };
 
-    struct UniformBufferObject
+    struct UniformBufferData
     {
-        alignas(16) Matrix4f model;
-        alignas(16) Matrix4f view;
-        alignas(16) Matrix4f proj;
+        std::vector<BufferHandle> buffer_handles_;
+        std::vector<void *> buffer_mapped_ptr_;
+        uint32_t element_size;
     };
 
     class VulkanBackend : public RenderBackend
@@ -59,7 +61,9 @@ namespace kpengine::graphics
         virtual void Present() override;
         virtual void Cleanup() override;
 
-        BufferHandle CreateStageBufferResource(size_t size);
+        BufferHandle CreateUploadStageBufferResource(size_t size);
+        BufferHandle CreateDownloadStageBufferResource(size_t size);
+
         BufferHandle CreateVertexBuffer(const void *data, size_t size) override;
         BufferHandle CreateIndexBuffer(const void *data, size_t size) override;
         bool DestroyBufferResource(BufferHandle handle) override;
@@ -79,6 +83,7 @@ namespace kpengine::graphics
 
         void CopyBufferToImage(BufferHandle handle, VkImage image, uint32_t width, uint32_t height);
         class VulkanImageMemoryManager *GetImageMemoryManager() const { return image_memory_manager_.get(); }
+        VkCommandBuffer GetCurrentUICommandBuffer() const;
 
     private:
         void CreateInstance();
@@ -97,15 +102,24 @@ namespace kpengine::graphics
         void CreateSyncObjects();
         void CreateVertexBuffers();
         BufferHandle CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage);
-        void CreateTextures();
+        void CreateTextures(TextureData& data);
+
         void CreateUniformBuffers();
+        void CreateUniformBuffer(uint32_t size, uint32_t element_count, UniformBufferData& ubo_data);
+
         void CreateDescriptorPool();
         void CreateDescriptorSets();
+        void WriteUniformBufferDescriptorSet(VkWriteDescriptorSet& out,VkDescriptorBufferInfo & desc_info, VkDescriptorSet descriptor_set, const UniformBufferData& ubo_data, VkDescriptorSetLayoutBinding binding, uint32_t frame_index);
+        void WriteImageDescriptorSet(VkWriteDescriptorSet& out, VkDescriptorImageInfo& image_info, VkDescriptorSet descriptor_set, TextureHandle texture_handle, SamplerHandle sampler_handle, VkDescriptorSetLayoutBinding binding, uint32_t frame_index);
+
+        void SetupResource();
         void CreateDepthResource();
         void CreateColorResource();
         void UpdateUniformBuffer(uint32_t current_image);
+        void CopyToUniformBuffer(void* buffer_mapped_ptr,  const void* data, uint32_t size);
 
-        void TransitionImageLayout(VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count);
+        void TransitionImageLayout(VkImage image, VkCommandBuffer cmd, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count);
+        void TransitionImageLayout2(VkImage image, VkCommandBuffer cmd, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage, VkAccessFlags2 src_access, VkAccessFlags2 dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count);
         void ReleaseImageOwnerShip(VkImage image, VkImageLayout current_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue, uint32_t base_mip_level, uint32_t level_count);
         void AcquireImageOwnerShip(VkImage image, VkImageLayout expected_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags dst_stage, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue, uint32_t base_mip_level, uint32_t level_count);
 
@@ -151,52 +165,57 @@ namespace kpengine::graphics
         VkFormat swapchain_image_format_;
         std::vector<VkImage> swapchain_images_;
         std::vector<VkImageView> swapchain_imageviews_;
-        VkRenderPass swapchain_renderpass_;
-        std::vector<VkFramebuffer> swapchain_framebuffers_;
+        // VkRenderPass swapchain_renderpass_;
+        // std::vector<VkFramebuffer> swapchain_framebuffers_;
 
         VkCommandPool graphics_command_pool_;
         VkCommandPool transfer_command_pool_;
 
-        std::vector<VkCommandBuffer> command_buffers_;
-        std::vector<VkSemaphore> available_image_sepmaphores_;
+        VkCommandBuffer dst_command_buffer_;
+        VkCommandBuffer shader_command_buffer_;
+        VkCommandBuffer copy_command_buffer_;
+        VkSemaphore transition_dst_semaphore_;
+        VkSemaphore copy_semaphore_;
+
+        std::vector<VkCommandBuffer> scene_command_buffers_;
+        std::vector<VkCommandBuffer> ui_command_buffers_;
+        std::vector<VkSemaphore> available_image_semaphores_;
         std::vector<VkSemaphore> render_finished_semaphores_;
         std::vector<VkFence> in_flight_fences_;
 
-        uint32_t current_frame = 0;
+        uint32_t current_frame_index = 0;
         bool has_resized = false;
 
         std::unique_ptr<class VulkanBufferManager> buffer_manager_;
 
-        std::vector<BufferHandle> uniform_buffer_handles_;
-        std::vector<void *> uniform_buffer_mapped_ptr_;
+        UniformBufferData per_pass_ubo_;
+        UniformBufferData per_object_ubo_;
 
         std::unique_ptr<class VulkanPipelineManager> pipeline_manager_;
-        PipelineHandle pipeline_handle;
+        PipelineHandle pipeline_handle_;
 
         std::unique_ptr<class VulkanImageMemoryManager> image_memory_manager_;
 
         std::unique_ptr<class TextureManager> texture_manager_;
 
-        TextureHandle texture_handle;
-        TextureHandle depth_handle;
-        TextureHandle color_handle;
+        TextureHandle texture_handle_;
+        TextureHandle depth_handle_;
+        TextureHandle color_handle_;
 
         std::unique_ptr<class SamplerManager> sampler_manager_;
-        SamplerHandle sampler_handle;
+        SamplerHandle sampler_handle_;
 
-        std::unique_ptr<class IModelLoader> model_loader_;
         std::unique_ptr<class MeshManager> mesh_manager_;
-        MeshHandle mesh_handle;
+        MeshHandle mesh_handle_;
 
         VkDescriptorPool descriptor_pool_;
         std::vector<VkDescriptorSet> descriptor_sets_;
 
-        uint32_t msaa_sampe_count_;
+        uint32_t msaa_sampe_count_ = 1;
 
         std::vector<const char *> validation_layers = {
             "VK_LAYER_KHRONOS_validation"};
-        std::vector<const char *> device_extensions = {
-            VK_KHR_SWAPCHAIN_EXTENSION_NAME};
+        std::vector<const char *> device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};
         float queue_priority = 1.f;
     };
 }

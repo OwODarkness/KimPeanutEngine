@@ -10,7 +10,7 @@
 #include "vulkan/vulkan_shader.h"
 #include "base/base.h"
 #include "api.h"
-#include "graphics_context.h"
+
 
 namespace kpengine::graphics
 {
@@ -58,7 +58,7 @@ namespace kpengine::graphics
             ShaderSlot &resource = resources_[handle.id];
 
             resource.path = path;
-            using ShaderClass = ShaderTypeTrait<graphicstype>::ShaderClass;
+            using ShaderClass = typename ShaderTypeTrait<graphicstype>::ShaderClass;
             resource.shader = std::make_unique<ShaderClass>(type, path);
 
             path_to_handle_[path] = handle;

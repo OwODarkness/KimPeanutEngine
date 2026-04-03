@@ -4,6 +4,7 @@
 #include <vulkan/vulkan.h>
 namespace kpengine::graphics{
     struct VulkanContext{
+        VkInstance instance = VK_NULL_HANDLE;
         VkDevice logical_device = VK_NULL_HANDLE;
         VkPhysicalDevice physical_device = VK_NULL_HANDLE;
         class VulkanBackend* backend = nullptr;

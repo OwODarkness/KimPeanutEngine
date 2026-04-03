@@ -8,7 +8,7 @@
 #include "descriptor_types.h"
 #include "state_types.h"
 #include "buffer_types.h"
-
+#include "base/graphics_type.h"
 namespace kpengine::graphics
 {
 
@@ -25,6 +25,8 @@ namespace kpengine::graphics
         MultisampleState multisample_state;
         BlendAttachmentState blend_attachment_state;
         std::vector<std::vector<DescriptorBindingDesc>> descriptor_binding_descs; // descs[i] means descs in set i
+        std::vector<TextureFormat> color_attachment_formats;
+        TextureFormat depth_attachment_format;
     };
 }
 

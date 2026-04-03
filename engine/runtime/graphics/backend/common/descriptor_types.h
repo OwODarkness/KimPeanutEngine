@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_GRAPHICS_DESCRIPTOR_TYPES_H
 
 #include "enum.h"
+#include "base/graphics_type.h"
 
 namespace kpengine::graphics{
       struct DescriptorBindingDesc

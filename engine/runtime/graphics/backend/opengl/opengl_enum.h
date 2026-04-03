@@ -3,6 +3,7 @@
 
 #include <glad/glad.h>
 #include "common/enum.h"
+#include "base/graphics_type.h"
 
 namespace kpengine::graphics
 {

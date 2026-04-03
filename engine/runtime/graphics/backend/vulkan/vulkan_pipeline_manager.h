@@ -22,7 +22,7 @@ namespace kpengine::graphics{
 
     class VulkanPipelineManager{
     public:
-        PipelineHandle CreatePipelineResource(VkDevice logical_device, const PipelineDesc& pipeline_desc, VkRenderPass renderpass);
+        PipelineHandle CreatePipelineResource(VkDevice logical_device, const PipelineDesc& pipeline_desc);
         void DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle);
         VulkanPipelineResource* GetPipelineResource(PipelineHandle handle);
     private:

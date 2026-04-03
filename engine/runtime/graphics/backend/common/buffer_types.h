@@ -4,7 +4,7 @@
 #include "enum.h"
 
 namespace kpengine::graphics{
-        struct VertexBindingDesc
+    struct VertexBindingDesc
     {
         uint32_t binding;
         uint32_t stride;

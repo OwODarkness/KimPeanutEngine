@@ -2,7 +2,7 @@
 #define KPENGINE_RUNTIME_GRAPHICS_SAMPLER_H
 
 #include "enum.h"
-#include "graphics_context.h"
+#include "base/base.h"
 
 namespace kpengine::graphics
 {
@@ -27,6 +27,7 @@ namespace kpengine::graphics
 
     class Sampler{
     public:
+        virtual ~Sampler() = default;
       virtual SamplerResource GetSampleHandle() const = 0;  
     protected:
         virtual void Initialize(GraphicsContext context, const SamplerSettings& settings) = 0;

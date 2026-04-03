@@ -35,6 +35,7 @@ namespace kpengine::graphics
         std::vector<VertexAttributionDesc> attri_descs_;
         std::vector<std::vector<DescriptorBindingDesc>> descriptor_binding_descs_;
         GLenum primitive_topology_type_;
+        GLuint vao;
     };
 }
 

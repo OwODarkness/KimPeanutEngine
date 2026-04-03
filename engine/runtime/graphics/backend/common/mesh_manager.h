@@ -5,7 +5,7 @@
 #include <vector>
 #include "api.h"
 #include "mesh.h"
-#include "graphics_context.h"
+#include "base/base.h"
 namespace kpengine::graphics
 {
     struct MeshSlot

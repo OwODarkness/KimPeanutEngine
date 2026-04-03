@@ -1,8 +1,8 @@
 #include "vulkan_texture.h"
 #include "vulkan_backend.h"
 #include "vulkan_context.h"
+#include <iostream>
 #include "log/logger.h"
-#include "vulkan_backend.h"
 #include "vulkan_image_memory_manager.h"
 namespace kpengine::graphics
 {
@@ -20,19 +20,9 @@ namespace kpengine::graphics
         VkDevice logical_device = context_ptr->logical_device;
         VulkanBackend *backend = context_ptr->backend;
 
-        size_t image_size = data.pixels.size();
-
-        BufferHandle stage_handle;
-        if (!data.pixels.empty())
-        {
-            stage_handle = backend->CreateStageBufferResource(image_size);
-            backend->UploadDataToBuffer(stage_handle, image_size, data.pixels.data());
-        }
-
         width_ = data.width;
-        height_ = data.height;        
+        height_ = data.height;
         settings_ = settings;
-
 
         VkImageCreateInfo image_create_info{};
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
@@ -43,7 +33,7 @@ namespace kpengine::graphics
         image_create_info.extent.width = data.width;
         image_create_info.extent.height = data.height;
         image_create_info.extent.depth = data.depth;
-        image_create_info.arrayLayers = 1;
+        image_create_info.arrayLayers = data.array_layers;
         image_create_info.tiling = VK_IMAGE_TILING_OPTIMAL;
         image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
@@ -52,33 +42,11 @@ namespace kpengine::graphics
 
         if (vkCreateImage(logical_device, &image_create_info, nullptr, &resource_.image) != VK_SUCCESS)
         {
-            backend->DestroyBufferResource(stage_handle);
             KP_LOG("VulkanTextureLog", LOG_LEVEL_ERROR, "Failed to create Image");
             throw std::runtime_error("Failed to create image");
         }
 
         allocation_ = backend->GetImageMemoryManager()->AllocateImageMemory(physical_device, logical_device, resource_.image);
-
-        if ((settings.usage & TextureUsage::TEXTURE_USAGE_SAMPLE) == TextureUsage::TEXTURE_USAGE_SAMPLE)
-        {
-            backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
-            backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
-            backend->AcquireImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
-            backend->CopyBufferToImage(stage_handle, resource_.image, data.width, data.height);
-            backend->GenerateMipmaps(resource_.image, width_, height_, settings.mip_levels);
-            backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
-            backend->AcquireImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
-            backend->TransitionImageLayout(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
-            backend->DestroyBufferResource(stage_handle);
-        }
-        else if((settings.usage & TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT) == TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT)
-        {
-            backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT, 0, 1);
-        }
-        else if((settings.usage & TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT) == TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT)
-        {
-            backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT, 0, 1);
-        }
 
 
         VkImageViewCreateInfo view_create_info{};
@@ -91,12 +59,43 @@ namespace kpengine::graphics
         view_create_info.subresourceRange.levelCount = settings.mip_levels;
         view_create_info.subresourceRange.baseArrayLayer = 0;
         view_create_info.subresourceRange.layerCount = 1;
-
         if (vkCreateImageView(logical_device, &view_create_info, nullptr, &resource_.view) != VK_SUCCESS)
         {
             KP_LOG("VulkanTextureLog", LOG_LEVEL_ERROR, "Failed to create image view");
             throw std::runtime_error("Failed to create image view");
         }
+
+        // if ((settings.usage & TextureUsage::TEXTURE_USAGE_SAMPLE) == TextureUsage::TEXTURE_USAGE_SAMPLE)
+        // {
+
+        //     size_t image_size = data.pixels.size();
+
+        //     BufferHandle stage_handle;
+        //     if (!data.pixels.empty())
+        //     {
+        //         stage_handle = backend->CreateUploadStageBufferResource(image_size);
+        //         backend->UploadDataToBuffer(stage_handle, image_size, data.pixels.data());
+        //     }
+
+        //     backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
+        //     //  backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
+        //     // backend->AcquireImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
+        //     backend->CopyBufferToImage(stage_handle, resource_.image, data.width, data.height);
+        //     // backend->GenerateMipmaps(resource_.image, width_, height_, settings.mip_levels);
+        //     // backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
+        //     // backend->AcquireImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
+        //     backend->TransitionImageLayout(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, 0, settings.mip_levels);
+        //     // backend->DestroyBufferResource(stage_handle);
+        // }
+        // else if ((settings.usage & TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT) == TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT)
+        // {
+        //     backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT, 0, 1);
+        // }
+        // else if ((settings.usage & TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT) == TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT)
+        // {
+        //     backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT, 0, 1);
+        // }
+
 
     }
     void VulkanTexture::Destroy(GraphicsContext context)

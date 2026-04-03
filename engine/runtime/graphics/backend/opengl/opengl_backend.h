@@ -23,6 +23,7 @@ namespace kpengine::graphics
     {
     public:
         OpenglBackend();
+        ~OpenglBackend();
     public:
         virtual void Initialize() override;
         virtual void BeginFrame() override;
@@ -48,16 +49,14 @@ namespace kpengine::graphics
         std::unique_ptr<class SamplerManager> sampler_manager_;
         std::unique_ptr<class ShaderManager> shader_manager_;
         std::unique_ptr<class OpenglPipeline> pipeline_;
-        std::unique_ptr<class IModelLoader> model_loader_;
 
 
-        std::unordered_map<MeshHandle, uint32_t> meshes_;
         OpenglContext context_;
         std::unique_ptr<class OpenglDescriptorSet> descriptor_set;
         TextureHandle texture_handle;
         SamplerHandle sampler_handle;
-
-        GLuint camera_ubo_;
+        MeshHandle mesh_handle;
+        std::vector<GLuint> ubos_;
 
     };
 }

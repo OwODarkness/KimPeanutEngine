@@ -104,6 +104,22 @@ namespace kpengine::graphics
         line_width_ = desc.raster_state.line_width;
 
         descriptor_binding_descs_ = desc.descriptor_binding_descs;
+
+        glCreateVertexArrays(1, &vao);
+        for (size_t i = 0; i < attri_descs_.size(); i++)
+        {
+            const VertexAttributionDesc &attrib = attri_descs_[i];
+            const VertexBindingDesc &binding = binding_descs_[attrib.binding];
+            GLint size;
+            GLenum type;
+            ConvertToOpenglVertexFormat(attrib.format, size, type);
+            GLuint location = static_cast<GLuint>(attrib.location);
+
+            glEnableVertexArrayAttrib(vao, location);
+            glVertexArrayAttribFormat(vao, location, size, type, GL_FALSE, attrib.offset);
+            glVertexArrayAttribBinding(vao, location, binding.binding);
+        }
+
     }
 
     void OpenglPipeline::Bind() const

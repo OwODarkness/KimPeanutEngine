@@ -6,7 +6,6 @@
 #include <GLFW/glfw3.h>
 #include "log/logger.h"
 #include "vulkan_shader.h"
-#include "common/vertex.h"
 #include "config/path.h"
 #include "vulkan_buffer_manager.h"
 #include "vulkan_pipeline_manager.h"
@@ -15,12 +14,25 @@
 #include "vulkan_image_memory_manager.h"
 #include "common/texture_manager.h"
 #include "common/sampler_manager.h"
-#include "tool/image_loader.h"
-#include "tool/assimp_model_loader.h"
 #include "common/mesh_manager.h"
 #include "vulkan_mesh.h"
+#include "asset/asset_manager.h"
+#include "asset/model.h"
+#include "asset/mesh.h"
+#include "asset/texture.h"
+
 namespace kpengine::graphics
 {
+
+#define VK_CHECK(x)                                                                                                       \
+    do                                                                                                                    \
+    {                                                                                                                     \
+        VkResult err = x;                                                                                                 \
+        if (err != VK_SUCCESS)                                                                                            \
+        {                                                                                                                 \
+            std::cout << "Vulkan error at " << __FILE__ << ":" << __LINE__ << " - " << string_VkResult(err) << std::endl; \
+        }                                                                                                                 \
+    } while (0)
 
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
     constexpr int MAX_FRAMES_IN_FLIGHT = 2;
@@ -56,6 +68,7 @@ namespace kpengine::graphics
         if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, pCallbackData->pMessage);
+            // throw std::runtime_error(pCallbackData->pMessage);
             return VK_FALSE;
         }
         else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
@@ -125,7 +138,6 @@ namespace kpengine::graphics
             {
                 queue_family_indices.present_family = index;
             }
-
             if (queue_family_indices.IsComplete())
             {
                 break;
@@ -158,7 +170,6 @@ namespace kpengine::graphics
                                      image_memory_manager_(std::make_unique<VulkanImageMemoryManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
                                      sampler_manager_(std::make_unique<SamplerManager>()),
-                                     model_loader_(std::make_unique<AssimpModelLoader>()),
                                      mesh_manager_(std::make_unique<MeshManager>())
     {
     }
@@ -173,19 +184,17 @@ namespace kpengine::graphics
         InitVulkanContext();
         CreateSwapchain();
         CreateSwapchainImageViews();
-        CreateSwapchainRenderPass();
         CreateGraphicsPipeline();
         CreateCommandPools();
         CreateCommandBuffers();
-        CreateTextures();
-        CreateDepthResource();
-        CreateColorResource();
+        CreateSyncObjects();
+
+        SetupResource();
+
         CreateVertexBuffers();
-        CreateFrameBuffers();
         CreateUniformBuffers();
         CreateDescriptorPool();
         CreateDescriptorSets();
-        CreateSyncObjects();
     }
     void VulkanBackend::BeginFrame()
     {
@@ -194,10 +203,10 @@ namespace kpengine::graphics
         // 3. submit draw command buffer
         // 3. wait for render and present
 
-        vkWaitForFences(logical_device_, 1, &in_flight_fences_[current_frame], VK_TRUE, UINT64_MAX);
+        vkWaitForFences(logical_device_, 1, &in_flight_fences_[current_frame_index], VK_TRUE, UINT64_MAX);
 
         uint32_t image_index;
-        VkResult acquire_image_res = vkAcquireNextImageKHR(logical_device_, swapchain_, UINT64_MAX, available_image_sepmaphores_[current_frame], VK_NULL_HANDLE, &image_index);
+        VkResult acquire_image_res = vkAcquireNextImageKHR(logical_device_, swapchain_, UINT64_MAX, available_image_semaphores_[current_frame_index], VK_NULL_HANDLE, &image_index);
 
         if (acquire_image_res == VK_ERROR_OUT_OF_DATE_KHR)
         {
@@ -209,29 +218,29 @@ namespace kpengine::graphics
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to acquire image");
             throw std::runtime_error("Failed to acquire image");
         }
-        vkResetFences(logical_device_, 1, &in_flight_fences_[current_frame]);
-        UpdateUniformBuffer(current_frame);
+        vkResetFences(logical_device_, 1, &in_flight_fences_[current_frame_index]);
+        UpdateUniformBuffer(current_frame_index);
 
-        vkResetCommandBuffer(command_buffers_[current_frame], 0);
-        RecordCommandBuffer(command_buffers_[current_frame], image_index);
+        vkResetCommandBuffer(scene_command_buffers_[current_frame_index], 0);
+        RecordCommandBuffer(scene_command_buffers_[current_frame_index], image_index);
 
-        size_t render_finished_index = swapchain_images_.size() * current_frame + image_index;
+        size_t render_finished_index = swapchain_images_.size() * current_frame_index + image_index;
 
-        std::array<VkSemaphore, 1> wait_semaphores = {available_image_sepmaphores_[current_frame]};
+        std::array<VkSemaphore, 1> wait_semaphores = {available_image_semaphores_[current_frame_index]};
         std::array<VkPipelineStageFlags, 1> wait_stages = {VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT};
         std::array<VkSemaphore, 1> signal_semaphores = {render_finished_semaphores_[render_finished_index]};
 
         VkSubmitInfo submit_info{};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &command_buffers_[current_frame];
+        submit_info.pCommandBuffers = &scene_command_buffers_[current_frame_index];
         submit_info.waitSemaphoreCount = static_cast<uint32_t>(wait_semaphores.size());
         submit_info.pWaitSemaphores = wait_semaphores.data();
         submit_info.signalSemaphoreCount = static_cast<uint32_t>(signal_semaphores.size());
         submit_info.pSignalSemaphores = signal_semaphores.data();
         submit_info.pWaitDstStageMask = wait_stages.data();
 
-        if (vkQueueSubmit(graphics_queue_.queue, 1, &submit_info, in_flight_fences_[current_frame]) != VK_SUCCESS)
+        if (vkQueueSubmit(graphics_queue_.queue, 1, &submit_info, in_flight_fences_[current_frame_index]) != VK_SUCCESS)
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to submit commandbuffer");
             throw std::runtime_error("Failed to submit commandbuffer");
@@ -260,7 +269,7 @@ namespace kpengine::graphics
     }
     void VulkanBackend::EndFrame()
     {
-        current_frame = (current_frame + 1) % MAX_FRAMES_IN_FLIGHT;
+        current_frame_index = (current_frame_index + 1) % MAX_FRAMES_IN_FLIGHT;
     }
 
     void VulkanBackend::Present()
@@ -273,39 +282,45 @@ namespace kpengine::graphics
 
         CleanupSwapchain();
 
-        for (size_t i = 0; i < uniform_buffer_handles_.size(); i++)
+        for (size_t i = 0; i < per_pass_ubo_.buffer_handles_.size(); i++)
         {
-            buffer_manager_->DestroyBufferResource(logical_device_, uniform_buffer_handles_[i]);
+            buffer_manager_->DestroyBufferResource(logical_device_, per_pass_ubo_.buffer_handles_[i]);
         }
+
+        for (size_t i = 0; i < per_object_ubo_.buffer_handles_.size(); i++)
+        {
+            buffer_manager_->DestroyBufferResource(logical_device_, per_object_ubo_.buffer_handles_[i]);
+        }
+
         vkDestroyDescriptorPool(logical_device_, descriptor_pool_, nullptr);
-        pipeline_manager_->DestroyPipelineResource(logical_device_, pipeline_handle);
-        vkDestroyRenderPass(logical_device_, swapchain_renderpass_, nullptr);
+        pipeline_manager_->DestroyPipelineResource(logical_device_, pipeline_handle_);
 
         GraphicsContext context;
         context.native = static_cast<void *>(&context_);
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
-        texture_manager_->DestroyTexture(context, texture_handle);
-        sampler_manager_->DestroySampler(context, sampler_handle);
+        texture_manager_->DestroyTexture(context, texture_handle_);
+        sampler_manager_->DestroySampler(context, sampler_handle_);
 
-        mesh_manager_->DestroyMesh(context, mesh_handle);
+        mesh_manager_->DestroyMesh(context, mesh_handle_);
         buffer_manager_->FreeMemory(logical_device_);
         image_memory_manager_->Destroy(logical_device_);
 
-        for (size_t i = 0; i < available_image_sepmaphores_.size(); i++)
+        for (VkSemaphore &semaphore : available_image_semaphores_)
         {
-            vkDestroySemaphore(logical_device_, available_image_sepmaphores_[i], nullptr);
+            vkDestroySemaphore(logical_device_, semaphore, nullptr);
+        }
+        for (VkSemaphore &semaphore : render_finished_semaphores_)
+        {
+            vkDestroySemaphore(logical_device_, semaphore, nullptr);
         }
 
-        for (size_t i = 0; i < render_finished_semaphores_.size(); i++)
-        {
-            vkDestroySemaphore(logical_device_, render_finished_semaphores_[i], nullptr);
-        }
+        vkDestroySemaphore(logical_device_, transition_dst_semaphore_, nullptr);
+        vkDestroySemaphore(logical_device_, copy_semaphore_, nullptr);
 
-        for (size_t i = 0; i < in_flight_fences_.size(); i++)
+        for (VkFence &fence : in_flight_fences_)
         {
-            vkDestroyFence(logical_device_, in_flight_fences_[i], nullptr);
+            vkDestroyFence(logical_device_, fence, nullptr);
         }
-
         vkDestroyCommandPool(logical_device_, graphics_command_pool_, nullptr);
         vkDestroyCommandPool(logical_device_, transfer_command_pool_, nullptr);
 
@@ -347,7 +362,7 @@ namespace kpengine::graphics
         app_info.applicationVersion = VK_MAKE_VERSION(1, 0, 0);
         app_info.pEngineName = "No Engine";
         app_info.engineVersion = VK_MAKE_VERSION(1, 0, 0);
-        app_info.apiVersion = VK_API_VERSION_1_0;
+        app_info.apiVersion = VK_API_VERSION_1_3;
 
         VkInstanceCreateInfo instance_create_info{};
         instance_create_info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
@@ -482,19 +497,30 @@ namespace kpengine::graphics
             queue_create_info.pQueuePriorities = &queue_priority;
             queue_create_infos.push_back(queue_create_info);
         }
-        VkPhysicalDeviceFeatures device_feature{};
-        device_feature.samplerAnisotropy = VK_TRUE;
+
+        VkPhysicalDeviceFeatures2 features2{};
+        features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features2.features.samplerAnisotropy = VK_TRUE;
+
+        VkPhysicalDeviceVulkan13Features device13_feature{};
+        device13_feature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
+        device13_feature.dynamicRendering = VK_TRUE;
+        device13_feature.synchronization2 = VK_TRUE;
+
+        features2.pNext = &device13_feature;
+
+        // Now in device creation:
 
         VkDeviceCreateInfo device_create_info{};
         device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        device_create_info.pEnabledFeatures = &device_feature;
         device_create_info.enabledExtensionCount = static_cast<uint32_t>(device_extensions.size());
         device_create_info.ppEnabledExtensionNames = device_extensions.data();
         device_create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
         device_create_info.pQueueCreateInfos = queue_create_infos.data();
         device_create_info.enabledLayerCount = 0;
         device_create_info.ppEnabledLayerNames = nullptr;
-        device_create_info.pEnabledFeatures = &device_feature;
+        device_create_info.pEnabledFeatures = nullptr;
+        device_create_info.pNext = &features2;
 
         if (vkCreateDevice(physical_device_, &device_create_info, nullptr, &logical_device_) != VK_SUCCESS)
         {
@@ -510,7 +536,7 @@ namespace kpengine::graphics
     void VulkanBackend::InitVulkanContext()
     {
         context_.backend = this;
-
+        context_.instance = instance_;
         context_.physical_device = physical_device_;
         context_.logical_device = logical_device_;
     }
@@ -563,7 +589,7 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to find swapchain");
         }
 
-        // local store
+        // get swapchain image
         resolution_ = resolution;
         swapchain_image_format_ = surface_format.format;
         uint32_t swapchain_image_count = 0;
@@ -602,86 +628,86 @@ namespace kpengine::graphics
         }
     }
 
-    void VulkanBackend::CreateSwapchainRenderPass()
-    {
+    // void VulkanBackend::CreateSwapchainRenderPass()
+    // {
 
-        VkAttachmentDescription color_attachment{};
-        color_attachment.samples = ConvertToVulkanSampleCount(msaa_sampe_count_);
-        color_attachment.format = swapchain_image_format_;
-        color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    //     VkAttachmentDescription color_attachment{};
+    //     color_attachment.samples = ConvertToVulkanSampleCount(msaa_sampe_count_);
+    //     color_attachment.format = swapchain_image_format_;
+    //     color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    //     color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    //     color_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    //     color_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    //     color_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    //     color_attachment.finalLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-        VkAttachmentDescription depth_attachment{};
-        depth_attachment.format = VK_FORMAT_D32_SFLOAT;
-        depth_attachment.samples = ConvertToVulkanSampleCount(msaa_sampe_count_);
-        depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    //     VkAttachmentDescription depth_attachment{};
+    //     depth_attachment.format = VK_FORMAT_D32_SFLOAT;
+    //     depth_attachment.samples = ConvertToVulkanSampleCount(msaa_sampe_count_);
+    //     depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+    //     depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    //     depth_attachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    //     depth_attachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    //     depth_attachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    //     depth_attachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-        VkAttachmentDescription color_attachment_resolve{};
-        color_attachment_resolve.samples = VK_SAMPLE_COUNT_1_BIT;
-        color_attachment_resolve.format = swapchain_image_format_;
-        color_attachment_resolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        color_attachment_resolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color_attachment_resolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
-        color_attachment_resolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        color_attachment_resolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
-        color_attachment_resolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+    //     VkAttachmentDescription color_attachment_resolve{};
+    //     color_attachment_resolve.samples = VK_SAMPLE_COUNT_1_BIT;
+    //     color_attachment_resolve.format = swapchain_image_format_;
+    //     color_attachment_resolve.loadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    //     color_attachment_resolve.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+    //     color_attachment_resolve.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+    //     color_attachment_resolve.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+    //     color_attachment_resolve.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+    //     color_attachment_resolve.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
 
-        VkAttachmentReference color_attachment_ref{};
-        color_attachment_ref.attachment = 0;
-        color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    //     VkAttachmentReference color_attachment_ref{};
+    //     color_attachment_ref.attachment = 0;
+    //     color_attachment_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-        VkAttachmentReference depth_attachment_ref{};
-        depth_attachment_ref.attachment = 1;
-        depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+    //     VkAttachmentReference depth_attachment_ref{};
+    //     depth_attachment_ref.attachment = 1;
+    //     depth_attachment_ref.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
 
-        VkAttachmentReference color_attachment_resolve_ref{};
-        color_attachment_resolve_ref.attachment = 2;
-        color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+    //     VkAttachmentReference color_attachment_resolve_ref{};
+    //     color_attachment_resolve_ref.attachment = 2;
+    //     color_attachment_resolve_ref.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
 
-        VkSubpassDescription subpass{};
-        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
-        subpass.colorAttachmentCount = 1;
-        subpass.pColorAttachments = &color_attachment_ref;
-        subpass.pDepthStencilAttachment = &depth_attachment_ref;
-        subpass.pResolveAttachments = &color_attachment_resolve_ref;
+    //     VkSubpassDescription subpass{};
+    //     subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+    //     subpass.colorAttachmentCount = 1;
+    //     subpass.pColorAttachments = &color_attachment_ref;
+    //     subpass.pDepthStencilAttachment = &depth_attachment_ref;
+    //     subpass.pResolveAttachments = &color_attachment_resolve_ref;
 
-        VkSubpassDependency subpass_dependency{};
-        subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
-        subpass_dependency.dstSubpass = 0;
-        subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
-        subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
-        subpass_dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
-        subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    //     VkSubpassDependency subpass_dependency{};
+    //     subpass_dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+    //     subpass_dependency.dstSubpass = 0;
+    //     subpass_dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_LATE_FRAGMENT_TESTS_BIT;
+    //     subpass_dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT | VK_PIPELINE_STAGE_EARLY_FRAGMENT_TESTS_BIT;
+    //     subpass_dependency.srcAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
+    //     subpass_dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT | VK_ACCESS_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT;
 
-        std::array<VkAttachmentDescription, 3> attachments = {color_attachment, depth_attachment, color_attachment_resolve};
+    //     std::array<VkAttachmentDescription, 3> attachments = {color_attachment, depth_attachment, color_attachment_resolve};
 
-        VkRenderPassCreateInfo renderpass_create_info{};
-        renderpass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
-        // set subpass
-        renderpass_create_info.subpassCount = 1;
-        renderpass_create_info.pSubpasses = &subpass;
-        // set dependency
-        renderpass_create_info.dependencyCount = 1;
-        renderpass_create_info.pDependencies = &subpass_dependency;
-        // set attachment
-        renderpass_create_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-        renderpass_create_info.pAttachments = attachments.data();
+    //     VkRenderPassCreateInfo renderpass_create_info{};
+    //     renderpass_create_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO;
+    //     // set subpass
+    //     renderpass_create_info.subpassCount = 1;
+    //     renderpass_create_info.pSubpasses = &subpass;
+    //     // set dependency
+    //     renderpass_create_info.dependencyCount = 1;
+    //     renderpass_create_info.pDependencies = &subpass_dependency;
+    //     // set attachment
+    //     renderpass_create_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+    //     renderpass_create_info.pAttachments = attachments.data();
 
-        if (vkCreateRenderPass(logical_device_, &renderpass_create_info, nullptr, &swapchain_renderpass_) != VK_SUCCESS)
-        {
-            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create swapchain renderpass");
-            throw std::runtime_error("Failed to create swapchain renderpass");
-        }
-    }
+    //     if (vkCreateRenderPass(logical_device_, &renderpass_create_info, nullptr, &swapchain_renderpass_) != VK_SUCCESS)
+    //     {
+    //         KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create swapchain renderpass");
+    //         throw std::runtime_error("Failed to create swapchain renderpass");
+    //     }
+    // }
 
     void VulkanBackend::CreateGraphicsPipeline()
     {
@@ -698,7 +724,6 @@ namespace kpengine::graphics
 
         // set vertex stage
         pipeline_desc.binding_descs = {
-
             {0, sizeof(Vertex), VK_VERTEX_INPUT_RATE_VERTEX}, // pos
         };
         pipeline_desc.attri_descs = {
@@ -708,46 +733,49 @@ namespace kpengine::graphics
 
         pipeline_desc.descriptor_binding_descs = {
             {{0, 1, DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
-             {1, 1, DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+             {1, 1, DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
+             {2, 1, DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
 
-        pipeline_desc.multisample_state.rasterization_samples = msaa_sampe_count_;
+        // pipeline_desc.multisample_state.rasterization_samples = msaa_sampe_count_;
+        pipeline_desc.color_attachment_formats = {ConvertFromVulkanTextureFormat(swapchain_image_format_)};
+        pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
 
         RasterState state{};
         state.cull_mode = CullMode::CULL_MODE_BACK;
         state.front_face = FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
         pipeline_desc.raster_state = state;
-        pipeline_handle = pipeline_manager_->CreatePipelineResource(logical_device_, pipeline_desc, swapchain_renderpass_);
+        pipeline_handle_ = pipeline_manager_->CreatePipelineResource(logical_device_, pipeline_desc);
     }
 
-    void VulkanBackend::CreateFrameBuffers()
-    {
-        swapchain_framebuffers_.resize(swapchain_imageviews_.size());
-        Texture *depth_textrue = texture_manager_->GetTexture(depth_handle);
-        VkImageView depth_view = ConvertToVulkanTextureResource(depth_textrue->GetTextueHandle()).view;
+    // void VulkanBackend::CreateFrameBuffers()
+    // {
+    //     swapchain_framebuffers_.resize(swapchain_imageviews_.size());
+    //     Texture *depth_textrue = texture_manager_->GetTexture(depth_handle);
+    //     VkImageView depth_view = ConvertToVulkanTextureResource(depth_textrue->GetTextueHandle()).view;
 
-        Texture *color_texture = texture_manager_->GetTexture(color_handle);
-        VkImageView color_view = ConvertToVulkanTextureResource(color_texture->GetTextueHandle()).view;
+    //     Texture *color_texture = texture_manager_->GetTexture(color_handle);
+    //     VkImageView color_view = ConvertToVulkanTextureResource(color_texture->GetTextueHandle()).view;
 
-        for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
-        {
-            std::array<VkImageView, 3> attachments = {color_view, depth_view, swapchain_imageviews_[i]};
-            VkFramebufferCreateInfo framebuffer_create_info{};
-            framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
-            framebuffer_create_info.width = resolution_.width;
-            framebuffer_create_info.height = resolution_.height;
-            framebuffer_create_info.renderPass = swapchain_renderpass_;
-            framebuffer_create_info.layers = 1;
-            framebuffer_create_info.attachmentCount = static_cast<uint32_t>(attachments.size());
-            framebuffer_create_info.pAttachments = attachments.data();
+    //     for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
+    //     {
+    //         std::array<VkImageView, 3> attachments = {color_view, depth_view, swapchain_imageviews_[i]};
+    //         VkFramebufferCreateInfo framebuffer_create_info{};
+    //         framebuffer_create_info.sType = VK_STRUCTURE_TYPE_FRAMEBUFFER_CREATE_INFO;
+    //         framebuffer_create_info.width = resolution_.width;
+    //         framebuffer_create_info.height = resolution_.height;
+    //         framebuffer_create_info.renderPass = swapchain_renderpass_;
+    //         framebuffer_create_info.layers = 1;
+    //         framebuffer_create_info.attachmentCount = static_cast<uint32_t>(attachments.size());
+    //         framebuffer_create_info.pAttachments = attachments.data();
 
-            if (vkCreateFramebuffer(logical_device_, &framebuffer_create_info, nullptr, &swapchain_framebuffers_[i]))
-            {
-                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create framebuffer");
-                throw std::runtime_error("Failed to create framebuffer");
-            }
-        }
-    }
+    //         if (vkCreateFramebuffer(logical_device_, &framebuffer_create_info, nullptr, &swapchain_framebuffers_[i]))
+    //         {
+    //             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create framebuffer");
+    //             throw std::runtime_error("Failed to create framebuffer");
+    //         }
+    //     }
+    // }
 
     void VulkanBackend::CreateCommandPools()
     {
@@ -778,36 +806,193 @@ namespace kpengine::graphics
 
     void VulkanBackend::CreateCommandBuffers()
     {
-        VkCommandBufferAllocateInfo allocate_info{};
-        allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        allocate_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
-        allocate_info.commandPool = graphics_command_pool_;
-        allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+        VkCommandBufferAllocateInfo scene_allocate_info{};
+        scene_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        scene_allocate_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
+        scene_allocate_info.commandPool = graphics_command_pool_;
+        scene_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
 
-        command_buffers_.resize(MAX_FRAMES_IN_FLIGHT);
-        if (vkAllocateCommandBuffers(logical_device_, &allocate_info, command_buffers_.data()) != VK_SUCCESS)
+        scene_command_buffers_.resize(MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateCommandBuffers(logical_device_, &scene_allocate_info, scene_command_buffers_.data()) != VK_SUCCESS)
         {
-            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocate command buffer");
-            throw std::runtime_error("Failed to allocate command buffer");
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocatei scene command buffer");
+            throw std::runtime_error("Failed to allocate scene command buffer");
+        }
+
+        VkCommandBufferAllocateInfo ui_allocate_info{};
+        ui_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        ui_allocate_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
+        ui_allocate_info.commandPool = graphics_command_pool_;
+        ui_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
+
+        ui_command_buffers_.resize(MAX_FRAMES_IN_FLIGHT);
+        if (vkAllocateCommandBuffers(logical_device_, &ui_allocate_info, ui_command_buffers_.data()) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocatei ui command buffer");
+            throw std::runtime_error("Failed to allocate ui command buffer");
+        }
+
+        VkCommandBufferAllocateInfo layout_allocate_info{};
+        layout_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        layout_allocate_info.commandBufferCount = 1;
+        layout_allocate_info.commandPool = graphics_command_pool_;
+        layout_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+        if (vkAllocateCommandBuffers(logical_device_, &layout_allocate_info, &dst_command_buffer_) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocatei setup command buffer");
+            throw std::runtime_error("Failed to allocate setup command buffer");
+        }
+        if (vkAllocateCommandBuffers(logical_device_, &layout_allocate_info, &shader_command_buffer_) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocatei shader command buffer");
+            throw std::runtime_error("Failed to allocate shader command buffer");
+        }
+
+        VkCommandBufferAllocateInfo copy_allocate_info{};
+        copy_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
+        copy_allocate_info.commandBufferCount = 1;
+        copy_allocate_info.commandPool = transfer_command_pool_;
+        copy_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+
+        if (vkAllocateCommandBuffers(logical_device_, &copy_allocate_info, &copy_command_buffer_) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocatei shader command buffer");
+            throw std::runtime_error("Failed to allocate shader command buffer");
         }
     }
 
-    void VulkanBackend::CreateTextures()
+    void VulkanBackend::SetupResource()
     {
         std::string texture_path = GetTextureDirectory() + "wallpaper.jpg";
+        asset::AssetID id = asset::AssetManager::GetInstance().LoadSync(texture_path);
+        auto texture_ptr = asset::AssetManager::GetInstance().GetResource<asset::TextureResource>(id);
+        if(texture_ptr == nullptr)
+        {
+            return ;
+        }
+        TextureData& texture_data = *(texture_ptr->resource);
+        
+        CreateTextures(texture_data);
+
+        CreateDepthResource();
+        CreateColorResource();
+
+        VkCommandBufferBeginInfo command_buffer_begin_info{};
+        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+
+        Texture *texture = texture_manager_->GetTexture(texture_handle_);
+        Texture *depth = texture_manager_->GetTexture(depth_handle_);
+        Texture *color = texture_manager_->GetTexture(color_handle_);
+
+        assert(texture);
+        assert(depth);
+        assert(color);
+
+        VkImage tex_image = ConvertToVulkanTextureResource(texture->GetTextueHandle()).image;
+        VkImage depth_image = ConvertToVulkanTextureResource(depth->GetTextueHandle()).image;
+        VkImage color_image = ConvertToVulkanTextureResource(color->GetTextueHandle()).image;
+
+        size_t image_size = texture_data.pixels.size();
+
+        BufferHandle stage_handle;
+        if (!texture_data.pixels.empty())
+        {
+            stage_handle = CreateUploadStageBufferResource(image_size);
+            UploadDataToBuffer(stage_handle, image_size, texture_data.pixels.data());
+        }
+
+        vkBeginCommandBuffer(dst_command_buffer_, &command_buffer_begin_info);
+        {
+            TransitionImageLayout(tex_image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, texture->settings_.mip_levels);
+            TransitionImageLayout(depth_image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT, 0, 1);
+            TransitionImageLayout(color_image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT, 0, 1);
+
+            CopyBufferToImage(stage_handle, tex_image, texture_data.width, texture_data.height);
+
+            TransitionImageLayout(tex_image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, 0, texture->settings_.mip_levels);
+        }
+        vkEndCommandBuffer(dst_command_buffer_);
+
+        VkSubmitInfo dst_submit_info{};
+        dst_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        dst_submit_info.commandBufferCount = 1;
+        dst_submit_info.pCommandBuffers = &dst_command_buffer_;
+        dst_submit_info.signalSemaphoreCount = 1;
+        dst_submit_info.pSignalSemaphores = &transition_dst_semaphore_;
+
+        if (vkQueueSubmit(graphics_queue_.queue, 1, &dst_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to submit dst command buffer");
+            throw std::runtime_error("Failed to submit dst command buffer");
+        }
+        vkQueueWaitIdle(graphics_queue_.queue);
+        DestroyBufferResource(stage_handle);
+        asset::AssetManager::GetInstance().UnRegisterAsset(id);
+        vkFreeCommandBuffers(logical_device_, graphics_command_pool_, 1, &dst_command_buffer_);
+
+        // VkSubmitInfo dst_submit_info{};
+        // dst_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        // dst_submit_info.commandBufferCount = 1;
+        // dst_submit_info.pCommandBuffers = &dst_command_buffer_;
+        // dst_submit_info.signalSemaphoreCount = 1;
+        // dst_submit_info.pSignalSemaphores = &transition_dst_semaphore_;
+
+        // if (vkQueueSubmit(graphics_queue_.queue, 1, &dst_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+        // {
+        //     KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to submit dst command buffer");
+        //     throw std::runtime_error("Failed to submit dst command buffer");
+        // }
+
+        // // Second submission: Copy (transfer queue) - WAIT for transition
+        // VkPipelineStageFlags copy_wait_stages[] = {VK_PIPELINE_STAGE_TRANSFER_BIT}; // 👈 ADD THIS!
+
+        // VkSubmitInfo copy_submit_info{};
+        // copy_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        // copy_submit_info.commandBufferCount = 1;
+        // copy_submit_info.pCommandBuffers = &copy_command_buffer_;
+        // copy_submit_info.waitSemaphoreCount = 1;
+        // copy_submit_info.pWaitSemaphores = &transition_dst_semaphore_;
+        // copy_submit_info.pWaitDstStageMask = copy_wait_stages; //
+        // copy_submit_info.signalSemaphoreCount = 1;
+        // copy_submit_info.pSignalSemaphores = &copy_semaphore_;
+
+        // if (vkQueueSubmit(transfer_queue_.queue, 1, &copy_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+        // {
+        //     KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to submit copy command buffer");
+        //     throw std::runtime_error("Failed to submit copy command buffer");
+        // }
+
+        // // Third submission: Transition to SHADER_READ (graphics queue) - WAIT for copy
+        // VkPipelineStageFlags shader_wait_stages[] = {VK_PIPELINE_STAGE_TRANSFER_BIT}; // 👈 ADD THIS!
+
+        // VkSubmitInfo shader_submit_info{};
+        // shader_submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
+        // shader_submit_info.commandBufferCount = 1;
+        // shader_submit_info.pCommandBuffers = &shader_command_buffer_;
+        // shader_submit_info.waitSemaphoreCount = 1;
+        // shader_submit_info.pWaitSemaphores = &copy_semaphore_;
+        // shader_submit_info.pWaitDstStageMask = shader_wait_stages; //
+
+        // if (vkQueueSubmit(graphics_queue_.queue, 1, &shader_submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+        // {
+        //     KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to submit shader command buffer");
+        //     throw std::runtime_error("Failed to submit shader command buffer");
+        // }
+    }
+
+    void VulkanBackend::CreateTextures(TextureData& texture_data)
+    {
         GraphicsContext context{};
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
         context.native = static_cast<void *>(&context_);
-
-        TextureData texture_data{};
-        ImageLoader::ReadFromFile(texture_path, texture_data);
-
         TextureSettings texture_settings{};
         texture_settings.mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(texture_data.width, texture_data.height)))) + 1;
-        texture_settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
-        texture_settings.usage = TextureUsage::TEXTURE_USAGE_TRANSFER_DST | TextureUsage::TEXTURE_USAGE_TRANSFER_SRC | TextureUsage::TEXTURE_USAGE_SAMPLE;
+        texture_settings.format = texture_data.format;  
+        texture_settings.usage = TextureUsage::TEXTURE_USAGE_TRANSFER_DST | TextureUsage::TEXTURE_USAGE_SAMPLE;
         texture_settings.sample_count = 1;
-        texture_handle = texture_manager_->CreateTexture(context, texture_data, texture_settings);
+        texture_handle_ = texture_manager_->CreateTexture(context, texture_data, texture_settings);
 
         SamplerSettings sampler_settings{};
         sampler_settings.address_mode_u = SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
@@ -824,7 +1009,7 @@ namespace kpengine::graphics
         sampler_settings.min_lod = 0.f;
         sampler_settings.max_lod = 0.f;
 
-        sampler_handle = sampler_manager_->CreateSampler(context, sampler_settings);
+        sampler_handle_ = sampler_manager_->CreateSampler(context, sampler_settings);
     }
 
     void VulkanBackend::CreateDepthResource()
@@ -838,11 +1023,11 @@ namespace kpengine::graphics
         depth_settings.format = TextureFormat::TEXTURE_FORMAT_D32;
         depth_settings.usage = TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT;
         depth_settings.aspect = ImageAspect::IMAGE_ASPECT_DEPTH;
-        depth_settings.sample_count = msaa_sampe_count_;
+        depth_settings.sample_count = 1;
         TextureData depth_data{};
         depth_data.width = resolution_.width;
         depth_data.height = resolution_.height;
-        depth_handle = texture_manager_->CreateTexture(context, depth_data, depth_settings);
+        depth_handle_ = texture_manager_->CreateTexture(context, depth_data, depth_settings);
     }
 
     void VulkanBackend::CreateColorResource()
@@ -860,30 +1045,47 @@ namespace kpengine::graphics
         TextureData color_data{};
         color_data.width = resolution_.width;
         color_data.height = resolution_.height;
-        color_handle = texture_manager_->CreateTexture(context, color_data, color_settings);
+        color_handle_ = texture_manager_->CreateTexture(context, color_data, color_settings);
     }
 
     void VulkanBackend::CreateVertexBuffers()
     {
-
         std::string model_path = GetModelDirectory() + "sphere/sphere.obj";
-        MeshData data;
-        model_loader_->Load(model_path, data);
+        asset::AssetID model_id = asset::AssetManager::GetInstance().LoadSync(model_path);
+        std::shared_ptr<asset::ModelResource> model_ptr = asset::AssetManager::GetInstance().GetResource<asset::ModelResource>(model_id);
+        if (model_ptr)
+        {
+            std::shared_ptr<asset::MeshResource> mesh_ptr = model_ptr->GetMesh();
+            if (mesh_ptr)
+            {
+                GraphicsContext context;
+                context.native = &context_;
+                context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
 
-        GraphicsContext context;
-        context.native = &context_;
-        context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+                mesh_handle_ = mesh_manager_->CreateMesh(context, *mesh_ptr->data);
+                asset::AssetManager::GetInstance().UnRegisterAsset(model_id);
+                asset::AssetManager::GetInstance().UnRegisterAsset(model_ptr->GetData(asset::ModelGeometryType::KPMG_Mesh));
 
-        mesh_handle = mesh_manager_->CreateMesh(context, data);
+            }
+        }
     }
 
-    BufferHandle VulkanBackend::CreateStageBufferResource(size_t size)
+    BufferHandle VulkanBackend::CreateUploadStageBufferResource(size_t size)
     {
-        // stage buffer
         VkBufferCreateInfo stage_buffer_create_info{};
         stage_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
         stage_buffer_create_info.size = size;
         stage_buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
+        stage_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        return buffer_manager_->CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
+    }
+
+    BufferHandle VulkanBackend::CreateDownloadStageBufferResource(size_t size)
+    {
+        VkBufferCreateInfo stage_buffer_create_info{};
+        stage_buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        stage_buffer_create_info.size = size;
+        stage_buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         stage_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         return buffer_manager_->CreateBufferResource(physical_device_, logical_device_, &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
     }
@@ -905,7 +1107,7 @@ namespace kpengine::graphics
 
     BufferHandle VulkanBackend::CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage)
     {
-        BufferHandle stage_handle = CreateStageBufferResource(size);
+        BufferHandle stage_handle = CreateUploadStageBufferResource(size);
 
         UploadDataToBuffer(stage_handle, size, data);
 
@@ -916,9 +1118,9 @@ namespace kpengine::graphics
         dst_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
         BufferHandle dst_handle = buffer_manager_->CreateBufferResource(physical_device_, logical_device_, &dst_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
-        TransferBufferOwnership(dst_handle, graphics_queue_.index, transfer_queue_.index);
+        // TransferBufferOwnership(dst_handle, graphics_queue_.index, transfer_queue_.index);
         CopyBuffer(stage_handle, dst_handle, size);
-        TransferBufferOwnership(dst_handle, transfer_queue_.index, graphics_queue_.index);
+        // TransferBufferOwnership(dst_handle, transfer_queue_.index, graphics_queue_.index);
         DestroyBufferResource(stage_handle);
 
         return dst_handle;
@@ -929,14 +1131,26 @@ namespace kpengine::graphics
         VkSemaphoreCreateInfo semaphore_create_info{};
         semaphore_create_info.sType = VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO;
 
+        if (vkCreateSemaphore(logical_device_, &semaphore_create_info, nullptr, &copy_semaphore_) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create copy semaphore");
+            throw std::runtime_error("Failed to create copy semaphore");
+        }
+
+        if (vkCreateSemaphore(logical_device_, &semaphore_create_info, nullptr, &transition_dst_semaphore_) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create transition_dst_semaphore");
+            throw std::runtime_error("Failed to create transition_dst_semaphore");
+        }
+
         VkFenceCreateInfo fence_create_info{};
         fence_create_info.sType = VK_STRUCTURE_TYPE_FENCE_CREATE_INFO;
         fence_create_info.flags = VK_FENCE_CREATE_SIGNALED_BIT;
 
-        available_image_sepmaphores_.resize(MAX_FRAMES_IN_FLIGHT);
-        for (size_t i = 0; i < available_image_sepmaphores_.size(); i++)
+        available_image_semaphores_.resize(MAX_FRAMES_IN_FLIGHT);
+        for (size_t i = 0; i < available_image_semaphores_.size(); i++)
         {
-            if (vkCreateSemaphore(logical_device_, &semaphore_create_info, nullptr, &available_image_sepmaphores_[i]) != VK_SUCCESS)
+            if (vkCreateSemaphore(logical_device_, &semaphore_create_info, nullptr, &available_image_semaphores_[i]) != VK_SUCCESS)
             {
                 KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create avaiable_image_semaphore");
                 throw std::runtime_error("Failed to create avaiable_image_semaphore");
@@ -958,7 +1172,7 @@ namespace kpengine::graphics
         {
             if (vkCreateSemaphore(logical_device_, &semaphore_create_info, nullptr, &render_finished_semaphores_[i]) != VK_SUCCESS)
             {
-                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create render_finished_semaphore", );
+                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create render_finished_semaphore");
                 throw std::runtime_error("Failed to create render_finished_semaphores");
             }
         }
@@ -966,10 +1180,60 @@ namespace kpengine::graphics
 
     void VulkanBackend::CreateUniformBuffers()
     {
-        VkDeviceSize buffer_size = sizeof(UniformBufferObject);
+        CreateUniformBuffer(sizeof(PerPassData), MAX_FRAMES_IN_FLIGHT, per_pass_ubo_);
+        CreateUniformBuffer(sizeof(PerObjectData), MAX_FRAMES_IN_FLIGHT, per_object_ubo_);
 
-        uniform_buffer_handles_.resize(MAX_FRAMES_IN_FLIGHT);
-        uniform_buffer_mapped_ptr_.resize(MAX_FRAMES_IN_FLIGHT);
+        VkPhysicalDeviceProperties physical_device_props;
+        vkGetPhysicalDeviceProperties(physical_device_, &physical_device_props);
+        VkDeviceSize alignment = physical_device_props.limits.minUniformBufferOffsetAlignment;
+
+        std::vector<BufferHandle> all_buffers;
+        std::vector<UniformBufferData *> all_ubos = {&per_pass_ubo_, &per_object_ubo_};
+        VkDeviceSize total_size = 0;
+        for (auto *ubo : all_ubos)
+        {
+            for (auto handle : ubo->buffer_handles_)
+            {
+                all_buffers.push_back(handle);
+            }
+        }
+
+        for (auto *ubo : all_ubos)
+        {
+            VkDeviceSize aligned_size = (ubo->element_size + alignment - 1) & ~(alignment - 1);
+            for (size_t i = 0; i < ubo->buffer_handles_.size(); i++)
+            {
+                total_size += aligned_size;
+            }
+        }
+
+        void *base_mapped_ptr = nullptr;
+        buffer_manager_->MapBuffer(
+            logical_device_,
+            all_buffers.back(),
+            total_size,
+            &base_mapped_ptr);
+
+        // Calculate offsets and assign mapped pointers
+        VkDeviceSize base_offset = buffer_manager_->GetBufferResource(all_buffers.back())->allocation.offset;
+        for (auto *ubo : all_ubos)
+        {
+            for (size_t i = 0; i < ubo->buffer_handles_.size(); i++)
+            {
+                auto *resource = buffer_manager_->GetBufferResource(ubo->buffer_handles_[i]);
+                assert(resource->allocation.offset >= base_offset);
+                ubo->buffer_mapped_ptr_[i] = reinterpret_cast<char *>(base_mapped_ptr) + resource->allocation.offset - base_offset;
+            }
+        }
+    }
+
+    void VulkanBackend::CreateUniformBuffer(uint32_t size, uint32_t element_count, UniformBufferData &ubo_data)
+    {
+        VkDeviceSize buffer_size = size;
+
+        ubo_data.element_size = size;
+        ubo_data.buffer_handles_.resize(element_count);
+        ubo_data.buffer_mapped_ptr_.resize(element_count);
 
         VkBufferCreateInfo buffer_create_info{};
         buffer_create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -981,20 +1245,7 @@ namespace kpengine::graphics
 
         for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
-            uniform_buffer_handles_[i] = buffer_manager_->CreateBufferResource(physical_device_, logical_device_, &buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
-        }
-        VkPhysicalDeviceProperties physical_device_props;
-        vkGetPhysicalDeviceProperties(physical_device_, &physical_device_props);
-        VkDeviceSize alignment = physical_device_props.limits.minUniformBufferOffsetAlignment;
-        VkDeviceSize aligned_buffer_size = (buffer_size + alignment - 1) & ~(alignment - 1);
-        void *mapped_ptr = nullptr;
-        buffer_manager_->MapBuffer(logical_device_, uniform_buffer_handles_.back(), aligned_buffer_size * uniform_buffer_handles_.size(), &mapped_ptr);
-        VkDeviceSize base_offset = buffer_manager_->GetBufferResource(uniform_buffer_handles_.back())->allocation.offset;
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
-        {
-
-            VulkanBufferResource *resource = buffer_manager_->GetBufferResource(uniform_buffer_handles_[i]);
-            uniform_buffer_mapped_ptr_[i] = static_cast<char *>(mapped_ptr) + resource->allocation.offset - base_offset;
+            ubo_data.buffer_handles_[i] = buffer_manager_->CreateBufferResource(physical_device_, logical_device_, &buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
         }
     }
 
@@ -1002,7 +1253,7 @@ namespace kpengine::graphics
     {
         std::array<VkDescriptorPoolSize, 2> pool_sizes;
         pool_sizes[0].type = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
-        pool_sizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
+        pool_sizes[0].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT * 2);
         pool_sizes[1].type = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         pool_sizes[1].descriptorCount = static_cast<uint32_t>(MAX_FRAMES_IN_FLIGHT);
 
@@ -1014,14 +1265,14 @@ namespace kpengine::graphics
 
         if (vkCreateDescriptorPool(logical_device_, &descriptor_pool_create_info, nullptr, &descriptor_pool_) != VK_SUCCESS)
         {
-            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create descriptor pool", );
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create descriptor pool");
             throw std::runtime_error("Failed to create descriptor pool");
         }
     }
 
     void VulkanBackend::CreateDescriptorSets()
     {
-        VulkanPipelineResource *resource = pipeline_manager_->GetPipelineResource(pipeline_handle);
+        VulkanPipelineResource *resource = pipeline_manager_->GetPipelineResource(pipeline_handle_);
         std::vector<VkDescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, resource->descriptor_set_layouts[0].layout);
         VkDescriptorSetAllocateInfo allocate_info{};
         allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -1036,43 +1287,55 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to allocate descriptor set");
         }
 
-        for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
+        for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++)
         {
-            VkDescriptorBufferInfo buffer_info{};
-            VulkanBufferResource *buf_resource = buffer_manager_->GetBufferResource(uniform_buffer_handles_[i]);
-            buffer_info.buffer = buf_resource->buffer;
-            buffer_info.offset = 0;
-            buffer_info.range = sizeof(UniformBufferObject);
-
+            std::array<VkWriteDescriptorSet, 3> descriptor_writes{};
+            VkDescriptorBufferInfo pass_descriptor_buffer_info{};
+            VkDescriptorBufferInfo object_descriptor_buffer_info{};
             VkDescriptorImageInfo image_info{};
-            image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            Texture *texture = texture_manager_->GetTexture(texture_handle);
-            VulkanTextureResource texture_resource = ConvertToVulkanTextureResource(texture->GetTextueHandle());
-            image_info.imageView = texture_resource.view;
-            Sampler *sampler = sampler_manager_->GetSampler(sampler_handle);
-            VulkanSamplerResource sample_resource = ConvertToVulkanSamplerResource(sampler->GetSampleHandle());
-            image_info.sampler = sample_resource.sampler;
 
-            // 0 buffer, 1 image
-            std::array<VkWriteDescriptorSet, 2> descriptor_writes{};
-            descriptor_writes[0].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptor_writes[0].dstSet = descriptor_sets_[i];
-            descriptor_writes[0].dstBinding = resource->descriptor_set_layouts[0].bindings[0].binding;
-            descriptor_writes[0].dstArrayElement = 0;
-            descriptor_writes[0].descriptorType = resource->descriptor_set_layouts[0].bindings[0].descriptorType;
-            descriptor_writes[0].descriptorCount = resource->descriptor_set_layouts[0].bindings[0].descriptorCount;
-            descriptor_writes[0].pBufferInfo = &buffer_info;
-
-            descriptor_writes[1].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
-            descriptor_writes[1].dstSet = descriptor_sets_[i];
-            descriptor_writes[1].dstBinding = resource->descriptor_set_layouts[0].bindings[1].binding;
-            descriptor_writes[1].dstArrayElement = 0;
-            descriptor_writes[1].descriptorType = resource->descriptor_set_layouts[0].bindings[1].descriptorType;
-            descriptor_writes[1].descriptorCount = resource->descriptor_set_layouts[0].bindings[1].descriptorCount;
-            descriptor_writes[1].pImageInfo = &image_info;
+            WriteUniformBufferDescriptorSet(descriptor_writes[0], pass_descriptor_buffer_info, descriptor_sets_[i], per_pass_ubo_, resource->descriptor_set_layouts[0].bindings[0], i);
+            WriteUniformBufferDescriptorSet(descriptor_writes[1], object_descriptor_buffer_info, descriptor_sets_[i], per_object_ubo_, resource->descriptor_set_layouts[0].bindings[1], i);
+            WriteImageDescriptorSet(descriptor_writes[2], image_info, descriptor_sets_[i], texture_handle_, sampler_handle_, resource->descriptor_set_layouts[0].bindings[2], i);
 
             vkUpdateDescriptorSets(logical_device_, static_cast<uint32_t>(descriptor_writes.size()), descriptor_writes.data(), 0, nullptr);
         }
+    }
+
+    void VulkanBackend::WriteUniformBufferDescriptorSet(VkWriteDescriptorSet &out, VkDescriptorBufferInfo &desc_info, VkDescriptorSet descriptor_set, const UniformBufferData &ubo_data, VkDescriptorSetLayoutBinding binding, uint32_t frame_index)
+    {
+        VulkanBufferResource *buffer_resource = buffer_manager_->GetBufferResource(ubo_data.buffer_handles_[frame_index]);
+        desc_info.buffer = buffer_resource->buffer;
+        desc_info.offset = 0;
+        desc_info.range = ubo_data.element_size;
+
+        out.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        out.dstSet = descriptor_set;
+        out.dstBinding = binding.binding;
+        out.dstArrayElement = 0;
+        out.descriptorType = binding.descriptorType;
+        out.descriptorCount = binding.descriptorCount;
+        out.pBufferInfo = &desc_info;
+    }
+
+    void VulkanBackend::WriteImageDescriptorSet(VkWriteDescriptorSet &out, VkDescriptorImageInfo &image_info, VkDescriptorSet descriptor_set, TextureHandle texture_handle, SamplerHandle sampler_handle, VkDescriptorSetLayoutBinding binding, uint32_t frame_index)
+    {
+
+        image_info.imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+        Texture *texture = texture_manager_->GetTexture(texture_handle);
+        VulkanTextureResource texture_resource = ConvertToVulkanTextureResource(texture->GetTextueHandle());
+        image_info.imageView = texture_resource.view;
+        Sampler *sampler = sampler_manager_->GetSampler(sampler_handle);
+        VulkanSamplerResource sample_resource = ConvertToVulkanSamplerResource(sampler->GetSampleHandle());
+        image_info.sampler = sample_resource.sampler;
+
+        out.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET;
+        out.dstSet = descriptor_set;
+        out.dstBinding = binding.binding;
+        out.dstArrayElement = 0;
+        out.descriptorType = binding.descriptorType;
+        out.descriptorCount = binding.descriptorCount;
+        out.pImageInfo = &image_info;
     }
 
     void VulkanBackend::UpdateUniformBuffer(uint32_t current_image)
@@ -1080,25 +1343,31 @@ namespace kpengine::graphics
         static auto start_time = std::chrono::high_resolution_clock::now();
         auto current_time = std::chrono::high_resolution_clock::now();
         float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
-        UniformBufferObject ubo{};
-        Transform3f model{};
-        // model.rotator_.pitch_ = -90.f;
-        model.scale_ = {0.5f, 0.5f, 0.5f};
-        model.rotator_.pitch_ = time * 90.f;
 
-        ubo.model = Matrix4f::MakeTransformMatrix(model).Transpose();
         Vector3f camera = {0.f, 0.f, 2.f};
         Vector3f target = {0.f, 0.f, 0.f};
         Vector3f dir = target - camera;
-        ubo.view = Matrix4f::MakeCameraMatrix(camera, dir, {0.f, 1.f, 0.f}).Transpose();
+
+        PerPassData per_pass_data{};
+        per_pass_data.camera_data.view = Matrix4f::MakeCameraMatrix(camera, dir, {0.f, 1.f, 0.f}).Transpose();
         float aspect = resolution_.width / (float)resolution_.height;
-        ubo.proj = Matrix4f::MakePerProjMatrix(math::DegreeToRadian(45.f), aspect, 0.1f, 10.f).Transpose();
-        ubo.proj[1][1] *= -1;
-        if (uniform_buffer_mapped_ptr_[current_image])
-        {
-            void *start_address = static_cast<char *>(uniform_buffer_mapped_ptr_[current_image]) + current_image * sizeof(UniformBufferObject);
-            memcpy(uniform_buffer_mapped_ptr_[current_image], &ubo, sizeof(ubo));
-        }
+        per_pass_data.camera_data.proj = Matrix4f::MakePerProjMatrix(math::DegreeToRadian(45.f), aspect, 0.1f, 10.f).Transpose();
+        CopyToUniformBuffer(per_pass_ubo_.buffer_mapped_ptr_[current_image], &per_pass_data, per_pass_ubo_.element_size);
+
+        Transform3f model{};
+        model.scale_ = {0.5f, 0.5f, 0.5f};
+        model.rotator_.pitch_ = time * 90.f;
+
+        PerObjectData per_object_data{};
+        per_object_data.model = Matrix4f::MakeTransformMatrix(model).Transpose();
+
+        CopyToUniformBuffer(per_object_ubo_.buffer_mapped_ptr_[current_image], &per_object_data, per_object_ubo_.element_size);
+    }
+
+    void VulkanBackend::CopyToUniformBuffer(void *buffer_mapped_ptr, const void *data, uint32_t size)
+    {
+        assert(buffer_mapped_ptr);
+        memcpy(buffer_mapped_ptr, data, size);
     }
 
     VkCommandBuffer VulkanBackend::BeginSingleTimeCommands(VkCommandPool command_pool)
@@ -1120,7 +1389,11 @@ namespace kpengine::graphics
         command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
         command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
 
-        vkBeginCommandBuffer(commandbuffer, &command_buffer_begin_info);
+        if (vkBeginCommandBuffer(commandbuffer, &command_buffer_begin_info) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to begin command buffer");
+            throw std::runtime_error("Failed to Failed to begin command buffer");
+        }
 
         return commandbuffer;
     }
@@ -1230,7 +1503,7 @@ namespace kpengine::graphics
         EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
     }
 
-    void VulkanBackend::TransitionImageLayout(VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count)
+    void VulkanBackend::TransitionImageLayout(VkImage image, VkCommandBuffer cmd, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags src_stage, VkPipelineStageFlags dst_stage, VkAccessFlags src_access, VkAccessFlags dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count)
     {
         VkImageMemoryBarrier barrier{};
         barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER;
@@ -1247,10 +1520,49 @@ namespace kpengine::graphics
         barrier.subresourceRange.baseArrayLayer = 0;
         barrier.subresourceRange.layerCount = 1;
 
-        VkCommandBuffer command_buffer = BeginSingleTimeCommands(graphics_command_pool_);
-        vkCmdPipelineBarrier(command_buffer, src_stage, dst_stage, 0, 0, nullptr, 0, nullptr, 1, &barrier);
-        EndSingleTimeCommands(command_buffer, graphics_command_pool_, graphics_queue_.queue);
+        // VkCommandBuffer command_buffer = BeginSingleTimeCommands(graphics_command_pool_);
+        vkCmdPipelineBarrier(
+            cmd,
+            src_stage, dst_stage,
+            0,
+            0, nullptr,
+            0, nullptr,
+            1, &barrier);
+
+        // EndSingleTimeCommands(command_buffer, graphics_command_pool_, graphics_queue_.queue);
     }
+
+    void VulkanBackend::TransitionImageLayout2(VkImage image, VkCommandBuffer cmd, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage, VkAccessFlags2 src_access, VkAccessFlags2 dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count)
+    {
+        VkImageMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER_2;
+        barrier.image = image;
+        barrier.oldLayout = old_layout;
+        barrier.newLayout = new_layout;
+        barrier.srcStageMask = src_stage;
+        barrier.dstStageMask = dst_stage;
+        barrier.srcAccessMask = src_access;
+        barrier.dstAccessMask = dst_access;
+        barrier.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+        barrier.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+
+        VkImageSubresourceRange subresource_range{};
+        subresource_range.aspectMask = aspect_mask;
+        subresource_range.baseMipLevel = base_mip_level;
+        subresource_range.levelCount = level_count;
+        subresource_range.baseArrayLayer = 0;
+        subresource_range.layerCount = 1;
+        barrier.subresourceRange = subresource_range;
+
+        VkDependencyInfo depend_info{};
+        depend_info.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        depend_info.dependencyFlags = {};
+        depend_info.imageMemoryBarrierCount = 1;
+        depend_info.pImageMemoryBarriers = &barrier;
+
+        vkCmdPipelineBarrier2(cmd, &depend_info);
+    }
+
     void VulkanBackend::ReleaseImageOwnerShip(VkImage image, VkImageLayout current_layout, uint32_t src_queue_family, uint32_t dst_queue_family, VkPipelineStageFlags src_stage, VkAccessFlags src_access, VkImageAspectFlags aspect_mask, VkCommandPool command_pool, VkQueue queue, uint32_t base_mip_level, uint32_t level_count)
     {
         VkImageMemoryBarrier barrier{};
@@ -1300,6 +1612,7 @@ namespace kpengine::graphics
         {
             TransitionImageLayout(
                 image,
+                dst_command_buffer_,
                 VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -1313,6 +1626,7 @@ namespace kpengine::graphics
         {
             TransitionImageLayout(
                 image,
+                dst_command_buffer_,
                 VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
                 VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                 VK_PIPELINE_STAGE_TRANSFER_BIT,
@@ -1326,6 +1640,7 @@ namespace kpengine::graphics
         {
             TransitionImageLayout(
                 image,
+                dst_command_buffer_,
                 VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL,
                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -1340,6 +1655,7 @@ namespace kpengine::graphics
 
             TransitionImageLayout(
                 image,
+                dst_command_buffer_,
                 VK_IMAGE_LAYOUT_UNDEFINED,
                 VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
@@ -1486,10 +1802,14 @@ namespace kpengine::graphics
         EndSingleTimeCommands(command_buffer, graphics_command_pool_, graphics_queue_.queue);
     }
 
+    VkCommandBuffer VulkanBackend::GetCurrentUICommandBuffer() const
+    {
+        return ui_command_buffers_[current_frame_index];
+    }
+
     void VulkanBackend::CopyBufferToImage(BufferHandle buffer_handle, VkImage image, uint32_t width, uint32_t height)
     {
         VulkanBufferResource *buffer_resource = buffer_manager_->GetBufferResource(buffer_handle);
-        VkCommandBuffer command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
 
         VkBufferImageCopy region{};
         region.bufferRowLength = 0;
@@ -1502,9 +1822,9 @@ namespace kpengine::graphics
         region.imageSubresource.baseArrayLayer = 0;
         region.imageSubresource.layerCount = 1;
 
-        vkCmdCopyBufferToImage(command_buffer, buffer_resource->buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
-
-        EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
+        // VkCommandBuffer command_buffer = BeginSingleTimeCommands(transfer_command_pool_);
+        vkCmdCopyBufferToImage(dst_command_buffer_, buffer_resource->buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        // EndSingleTimeCommands(command_buffer, transfer_command_pool_, transfer_queue_.queue);
     }
 
     void VulkanBackend::RecreateSwapchain()
@@ -1520,21 +1840,16 @@ namespace kpengine::graphics
         CreateSwapchainImageViews();
         CreateDepthResource();
         CreateColorResource();
-        CreateFrameBuffers();
     }
 
     void VulkanBackend::CleanupSwapchain()
     {
 
-        for (size_t i = 0; i < swapchain_framebuffers_.size(); i++)
-        {
-            vkDestroyFramebuffer(logical_device_, swapchain_framebuffers_[i], nullptr);
-        }
         GraphicsContext context{};
         context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
         context.native = static_cast<void *>(&context_);
-        texture_manager_->DestroyTexture(context, depth_handle);
-        texture_manager_->DestroyTexture(context, color_handle);
+        texture_manager_->DestroyTexture(context, depth_handle_);
+        texture_manager_->DestroyTexture(context, color_handle_);
 
         for (size_t i = 0; i < swapchain_imageviews_.size(); i++)
         {
@@ -1556,28 +1871,70 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to begin command buffer");
         }
 
+        std::array<VkClearValue, 2> clear_values;
+        clear_values[0].color = {0.f, 0.f, 0.f, 1.f};
+        clear_values[1].depthStencil = {1.f, 0};
+
+        VkRenderingAttachmentInfo color_attachment_info{};
+        color_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        color_attachment_info.imageView = swapchain_imageviews_[image_index];
+        color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment_info.clearValue = clear_values[0];
+
+        Texture *depth_tex = texture_manager_->GetTexture(depth_handle_);
+
+        VulkanTextureResource depth_resource = ConvertToVulkanTextureResource(depth_tex->GetTextueHandle());
+
+        VkRenderingAttachmentInfo depth_attachment_info{};
+        depth_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depth_attachment_info.imageView = depth_resource.view;
+        depth_attachment_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depth_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depth_attachment_info.clearValue = clear_values[1];
+
         VkRect2D render_area{};
         render_area.extent = resolution_;
         render_area.offset.x = 0;
         render_area.offset.y = 0;
 
-        std::array<VkClearValue, 2> clear_values;
-        clear_values[0].color = {0.f, 0.f, 0.f, 1.f};
-        clear_values[1].depthStencil = {1.f, 0};
+        VkRenderingInfo render_info{};
+        render_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        render_info.renderArea = render_area;
+        render_info.layerCount = 1;
+        render_info.colorAttachmentCount = 1;
+        render_info.pColorAttachments = &color_attachment_info;
+        render_info.pDepthAttachment = &depth_attachment_info;
 
-        VkRenderPassBeginInfo render_pass_begin_info{};
-        render_pass_begin_info.sType = VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO;
-        render_pass_begin_info.renderPass = swapchain_renderpass_;
+        // TODO: transition image layout for presentation
 
-        render_pass_begin_info.framebuffer = swapchain_framebuffers_[image_index];
+        TransitionImageLayout2(
+            swapchain_images_[image_index],
+            commandbuffer,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            {}, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+            VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
 
-        render_pass_begin_info.renderArea = render_area;
-        render_pass_begin_info.clearValueCount = static_cast<uint32_t>(clear_values.size());
-        render_pass_begin_info.pClearValues = clear_values.data();
+        TransitionImageLayout2(
+            depth_resource.image,
+            commandbuffer,
+            VK_IMAGE_LAYOUT_UNDEFINED,
+            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+            VK_IMAGE_ASPECT_DEPTH_BIT,
+            0, 1);
 
-        vkCmdBeginRenderPass(commandbuffer, &render_pass_begin_info, VK_SUBPASS_CONTENTS_INLINE);
+        vkCmdBeginRendering(commandbuffer, &render_info);
         {
-            VulkanPipelineResource *pipeline_resource = pipeline_manager_->GetPipelineResource(pipeline_handle);
+            VulkanPipelineResource *pipeline_resource = pipeline_manager_->GetPipelineResource(pipeline_handle_);
             vkCmdBindPipeline(commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_resource->pipeline);
 
             VkViewport viewport{};
@@ -1595,11 +1952,11 @@ namespace kpengine::graphics
             scissor.offset.y = 0;
             vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
 
-            MeshResource mesh_resource = mesh_manager_->GetMesh(mesh_handle)->GetMeshHandle();
+            MeshResource mesh_resource = mesh_manager_->GetMesh(mesh_handle_)->GetMeshHandle();
             const VulkanMeshResource *vk_mesh_resource = static_cast<const VulkanMeshResource *>(mesh_resource.native);
             BufferHandle vertex_handle = vk_mesh_resource->vertex_handle;
             BufferHandle index_handle = vk_mesh_resource->index_handle;
-            
+
             VulkanBufferResource *index_buffer_resource = buffer_manager_->GetBufferResource(index_handle);
             VulkanBufferResource *vertex_buffer_resource = buffer_manager_->GetBufferResource(vertex_handle);
 
@@ -1610,11 +1967,21 @@ namespace kpengine::graphics
             uint32_t index_count = static_cast<uint32_t>(vk_mesh_resource->sections[0].index_count);
             vkCmdBindIndexBuffer(commandbuffer, index_buffer_resource->buffer, 0, VK_INDEX_TYPE_UINT32);
 
-            vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_resource->layout, 0, 1, &descriptor_sets_[current_frame], 0, nullptr);
+            vkCmdBindDescriptorSets(commandbuffer, VK_PIPELINE_BIND_POINT_GRAPHICS, pipeline_resource->layout, 0, 1, &descriptor_sets_[current_frame_index], 0, nullptr);
 
             vkCmdDrawIndexed(commandbuffer, index_count, 1, 0, 0, 0);
         }
-        vkCmdEndRenderPass(commandbuffer);
+        vkCmdEndRendering(commandbuffer);
+        TransitionImageLayout2(
+            swapchain_images_[image_index],
+            commandbuffer,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, {},
+            VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+
         if (vkEndCommandBuffer(commandbuffer) != VK_SUCCESS)
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to end record command buffer");
@@ -1627,6 +1994,7 @@ namespace kpengine::graphics
         uint32_t count{};
         const char **extensions_name = glfwGetRequiredInstanceExtensions(&count);
         std::vector<const char *> extensions(extensions_name, extensions_name + count);
+
 #ifdef NDEBUG
         const bool enable_validation_layers = false;
 #else

@@ -7,7 +7,7 @@ namespace kpengine::graphics
     //64M Pool Default
     constexpr VkDeviceSize pool_block_default_size = 1 << 26;
     //4k, 64K, 4M Slot Size
-    constexpr std::array<VkDeviceSize, 3> pool_slot_sizes = {1 << 12, 1 << 16, 1 << 22};
+    constexpr std::array<VkDeviceSize, 3> pool_slot_sizes = {1 << 8, 1 << 16, 1 << 22};
 
     VkDeviceSize VulkanMemoryPoolAllocator::GetMaxSupportedPoolSize() const
     {

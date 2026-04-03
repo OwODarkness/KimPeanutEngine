@@ -4,18 +4,7 @@
 #include <cstdint>
 namespace kpengine::graphics
 {
-    enum class TextureFormat
-    {
-        TEXTURE_FORMAT_UNKOWN,
-        TEXTURE_FORMAT_R8_UNORM,
-        TEXTURE_FORMAT_RG8_UNORM,
-        TEXTURE_FORMAT_RGB8_UNORM,
-        TEXTURE_FORMAT_RGB8_SRGB,
-        TEXTURE_FORMAT_RGBA8_UNORM,
-        TEXTURE_FORMAT_RGBA8_SRGB,
-        TEXTURE_FORMAT_D24S8,
-        TEXTURE_FORMAT_D32
-    };
+
 
     enum class TextureType
     {
@@ -146,12 +135,7 @@ namespace kpengine::graphics
         DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER
     };
 
-    enum class ShaderStage : uint32_t
-    {
-        SHADER_STAGE_VERTEX = 0x01,
-        SHADER_STAGE_FRAGMENT = 0x02,
-        SHADER_STAGE_GEOMETRY = 0X04
-    };
+
 
     enum class SamplerFilterType{
         SAMPLER_FILTER_LINEAR,

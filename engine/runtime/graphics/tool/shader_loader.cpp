@@ -26,12 +26,15 @@ namespace kpengine::graphics
         if (!file.is_open())
         {
             KP_LOG("ShaderLoaderLog", LOG_LEVEL_ERROR, "failed to open binary file: " + path);
+            throw std::runtime_error("Failed to find binary file: "+ path);
         }
 
         size_t file_size = static_cast<size_t>(file.tellg());
         if (file_size % 4 != 0)
         {
-            throw std::runtime_error("SPIR-V file size is not a multiple of 4: " + path);
+            std::string msg = "failed to open binary file: " + path;
+            KP_LOG("ShaderLoaderLog", LOG_LEVEL_ERROR, msg);
+            throw std::runtime_error(msg);
         }
 
         std::vector<uint32_t> buffer(file_size / 4);

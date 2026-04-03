@@ -1,5 +1,6 @@
 #include "vulkan_buffer_manager.h"
 #include "log/logger.h"
+#include <iostream>
 #include "vulkan_memory_dedicated_allocator.h"
 #include "vulkan_memory_linear_allocator.h"
 #include "vulkan_memory_pool_allocator.h"
@@ -20,6 +21,7 @@ namespace kpengine::graphics
 
     BufferHandle VulkanBufferManager::CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logicial_device, const VkBufferCreateInfo *buffer_create_info, VulkanMemoryUsageType memory_type)
     {
+
         BufferHandle handle = handle_system_.Create();
         if(handle.id == buffer_resources_.size())
         {
@@ -30,7 +32,7 @@ namespace kpengine::graphics
 
         if (vkCreateBuffer(logicial_device, buffer_create_info, nullptr, &buffer_resource.buffer) != VK_SUCCESS)
         {
-            KP_LOG("VulkanBufferManager", LOG_LEVEL_ERROR, "Failed to create buffer");
+            KP_LOG("VulkanBufferManagerLog", LOG_LEVEL_ERROR, "Failed to create buffer");
             throw std::runtime_error("Failed to create buffer");
         }
 
@@ -56,8 +58,8 @@ namespace kpengine::graphics
         }
         catch (std::exception e)
         {
-            KP_LOG("VulkanBufferManager", LOG_LEVEL_ERROR, "Failed to find suitable memory type");
-            throw std::runtime_error("Failed to find suitable memory type!");
+            KP_LOG("VulkanBufferManagerLog", LOG_LEVEL_ERROR, e.what());
+            throw e;
         }
 
         IVulkanMemoryAllocator* allocator = nullptr;
@@ -76,9 +78,15 @@ namespace kpengine::graphics
                 memory_allocators_[memory_type] = std::make_unique<VulkanMemoryPoolAllocator>();
             }
             allocator = memory_allocators_[memory_type].get();
+            
         }
 
+
+
         buffer_resource.allocation = allocator->Allocate(logicial_device, memory_requires.size, memory_requires.alignment, memory_type_index);
+
+
+ 
 
         vkBindBufferMemory(logicial_device, buffer_resource.buffer, buffer_resource.allocation.memory, buffer_resource.allocation.offset);
 

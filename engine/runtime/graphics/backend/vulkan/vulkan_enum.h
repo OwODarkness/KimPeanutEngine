@@ -3,6 +3,7 @@
 
 #include <vulkan/vulkan.h>
 #include "common/enum.h"
+#include "base/graphics_type.h"
 namespace kpengine::graphics
 {
     inline VkFormat ConvertToVulkanTextureFormat(TextureFormat format)
@@ -10,15 +11,19 @@ namespace kpengine::graphics
         switch (format)
         {
         case TextureFormat::TEXTURE_FORMAT_R8_UNORM:
-            return VK_FORMAT_R8_SNORM;
+            return VK_FORMAT_R8_UNORM;
+        case TextureFormat::TEXTURE_FORMAT_R8_SRGB:
+            return VK_FORMAT_R8_SRGB;
         case TextureFormat::TEXTURE_FORMAT_RG8_UNORM:
-            return VK_FORMAT_R8G8_SNORM;
+            return VK_FORMAT_R8G8_UNORM;
+        case TextureFormat::TEXTURE_FORMAT_RG8_SRGB:
+            return VK_FORMAT_R8G8_SRGB;
         case TextureFormat::TEXTURE_FORMAT_RGB8_UNORM:
-            return VK_FORMAT_R8G8B8_SNORM;
+            return VK_FORMAT_R8G8B8_UNORM;
         case TextureFormat::TEXTURE_FORMAT_RGB8_SRGB:
             return VK_FORMAT_R8G8B8_SRGB;
         case TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM:
-            return VK_FORMAT_R8G8B8A8_SNORM;
+            return VK_FORMAT_R8G8B8A8_UNORM;
         case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
             return VK_FORMAT_R8G8B8A8_SRGB;
         case TextureFormat::TEXTURE_FORMAT_D24S8:
@@ -30,6 +35,35 @@ namespace kpengine::graphics
             return VK_FORMAT_UNDEFINED;
         }
     }
+
+inline TextureFormat ConvertFromVulkanTextureFormat(VkFormat format)
+{
+    switch (format)
+    {
+    case VK_FORMAT_R8_UNORM:
+        return TextureFormat::TEXTURE_FORMAT_R8_UNORM;
+    case VK_FORMAT_R8_SRGB:
+        return TextureFormat::TEXTURE_FORMAT_R8_SRGB;
+    case VK_FORMAT_R8G8_UNORM:
+        return TextureFormat::TEXTURE_FORMAT_RG8_UNORM;
+    case VK_FORMAT_R8G8_SRGB:
+        return TextureFormat::TEXTURE_FORMAT_RG8_SRGB;
+    case VK_FORMAT_R8G8B8_UNORM:
+        return TextureFormat::TEXTURE_FORMAT_RGB8_UNORM;
+    case VK_FORMAT_R8G8B8_SRGB:
+        return TextureFormat::TEXTURE_FORMAT_RGB8_SRGB;
+    case VK_FORMAT_R8G8B8A8_UNORM:
+        return TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM;
+    case VK_FORMAT_R8G8B8A8_SRGB:
+        return TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+    case VK_FORMAT_D24_UNORM_S8_UINT:
+        return TextureFormat::TEXTURE_FORMAT_D24S8;
+    case VK_FORMAT_D32_SFLOAT:
+        return TextureFormat::TEXTURE_FORMAT_D32;
+    default:
+        return TextureFormat::TEXTURE_FORMAT_UNKNOW; 
+    }
+}
 
     inline VkImageType ConvertToVulkanImageType(TextureType type)
     {
@@ -298,67 +332,66 @@ namespace kpengine::graphics
         return flags;
     }
 
-
     inline VkFilter ConvertToVulkanFilter(SamplerFilterType filter)
     {
-        switch(filter)
+        switch (filter)
         {
-            case SamplerFilterType::SAMPLER_FILTER_LINEAR:
-                return VK_FILTER_LINEAR;
-            case SamplerFilterType::SAMPLER_FILTER_NEAREST:
-                return VK_FILTER_NEAREST;
-            default:
-                return VK_FILTER_LINEAR;
+        case SamplerFilterType::SAMPLER_FILTER_LINEAR:
+            return VK_FILTER_LINEAR;
+        case SamplerFilterType::SAMPLER_FILTER_NEAREST:
+            return VK_FILTER_NEAREST;
+        default:
+            return VK_FILTER_LINEAR;
         }
     }
 
     inline VkSamplerAddressMode ConvertToVulkanAddressMode(SamplerAddressMode mode)
     {
-        switch(mode)
+        switch (mode)
         {
-            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT:
-                return VK_SAMPLER_ADDRESS_MODE_REPEAT;
-            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT:
-                return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
-            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE:
-                return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
-            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE:
-                return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
-            case SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER:
-                return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
-            default:
-                return VK_SAMPLER_ADDRESS_MODE_REPEAT;
-        }   
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT:
+            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT:
+            return VK_SAMPLER_ADDRESS_MODE_MIRRORED_REPEAT;
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE:
+            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE:
+            return VK_SAMPLER_ADDRESS_MODE_MIRROR_CLAMP_TO_EDGE;
+        case SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER:
+            return VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_BORDER;
+        default:
+            return VK_SAMPLER_ADDRESS_MODE_REPEAT;
+        }
     }
 
     inline VkSamplerMipmapMode ConvertToVulkanMipmapMode(SamplerMipmapMode mode)
     {
-        switch(mode)
+        switch (mode)
         {
-            case SamplerMipmapMode::SAMPLER_MIPMAP_MODE_LINEAR:
-                return VK_SAMPLER_MIPMAP_MODE_LINEAR;
-            case SamplerMipmapMode::SAMPLER_MIPMAP_MODE_NEAREST:
-                return VK_SAMPLER_MIPMAP_MODE_NEAREST;
-            default:
-                return VK_SAMPLER_MIPMAP_MODE_MAX_ENUM;
+        case SamplerMipmapMode::SAMPLER_MIPMAP_MODE_LINEAR:
+            return VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        case SamplerMipmapMode::SAMPLER_MIPMAP_MODE_NEAREST:
+            return VK_SAMPLER_MIPMAP_MODE_NEAREST;
+        default:
+            return VK_SAMPLER_MIPMAP_MODE_MAX_ENUM;
         }
     }
 
     inline VkImageAspectFlags ConvertToVulkanImageAspect(ImageAspect aspect)
     {
-        switch(aspect)
+        switch (aspect)
         {
-            case ImageAspect::IMAGE_ASPECT_COLOR:
-                return VK_IMAGE_ASPECT_COLOR_BIT;
-            case ImageAspect::IMAGE_ASPECT_DEPTH:
-                return VK_IMAGE_ASPECT_DEPTH_BIT;
-            case ImageAspect::IMAGE_ASPECT_STENCIL:
-                return VK_IMAGE_ASPECT_STENCIL_BIT;
-            case ImageAspect::IMAGE_ASPECT_DEPTH_STENCIL:
-                return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
-            default:
-                return VK_IMAGE_ASPECT_NONE;
-            }
+        case ImageAspect::IMAGE_ASPECT_COLOR:
+            return VK_IMAGE_ASPECT_COLOR_BIT;
+        case ImageAspect::IMAGE_ASPECT_DEPTH:
+            return VK_IMAGE_ASPECT_DEPTH_BIT;
+        case ImageAspect::IMAGE_ASPECT_STENCIL:
+            return VK_IMAGE_ASPECT_STENCIL_BIT;
+        case ImageAspect::IMAGE_ASPECT_DEPTH_STENCIL:
+            return VK_IMAGE_ASPECT_DEPTH_BIT | VK_IMAGE_ASPECT_STENCIL_BIT;
+        default:
+            return VK_IMAGE_ASPECT_NONE;
+        }
     }
 }
 

@@ -6,7 +6,7 @@
 #include <string>
 #include "api.h"
 #include "texture.h"
-#include "graphics_context.h"
+#include "base/type.h"
 
 namespace kpengine::graphics{
 struct TextureSlot{

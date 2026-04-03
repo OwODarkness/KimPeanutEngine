@@ -3,6 +3,8 @@
 
 #include "common/mesh.h"
 #include "glad/glad.h"
+
+using MeshSection = kpengine::data::MeshSection;
 namespace kpengine::graphics{
     struct OpenglMeshResource{
         GLuint vbo;

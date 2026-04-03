@@ -6,7 +6,7 @@
 #include <memory>
 #include "sampler.h"
 #include "api.h"
-#include "graphics_context.h"
+#include "base/base.h"
 namespace kpengine::graphics{
 
     struct SamplerSlot{

@@ -6,22 +6,14 @@
 #include <vector>
 #include <string>
 #include "enum.h"
-#include "graphics_context.h"
-
+#include "base/type.h"
+#include "data/texture.h"
 namespace kpengine::graphics
 {
     using TextureImage = void *;
     using TextureView = void *;
 
-    struct TextureData
-    {
-        int32_t width = 0;
-        int32_t height = 0;
-        int32_t depth = 1;
-        TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
-        std::string path;
-        std::vector<uint8_t> pixels;
-    };
+    using TextureData = data::TextureData;
 
     struct TextureSettings
     {
@@ -42,6 +34,7 @@ namespace kpengine::graphics
     class Texture
     {
     public:
+        virtual ~Texture() = default;
         virtual TextureResource GetTextueHandle() const = 0;
     protected:
         virtual void Initialize(GraphicsContext context, const TextureData& data, const TextureSettings& settings) = 0;
@@ -49,7 +42,8 @@ namespace kpengine::graphics
         
     private:
         friend class TextureManager; 
-        
+    public:
+        TextureSettings settings_;
     };
 }
 
