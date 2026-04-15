@@ -1,5 +1,5 @@
 # KimPeanut Engine 
-![](./images/image1.png)
+![](./images/main.png)
 
 ## 架构
 KimPeanut Engine(KP Engine) 采用分层体系架构。
