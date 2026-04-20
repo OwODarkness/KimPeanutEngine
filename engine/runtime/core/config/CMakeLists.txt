@@ -8,7 +8,7 @@ configure_file(
 )
 
 # Create interface library
-add_library(Config INTERFACE)
+add_library(Config INTERFACE )
 
 target_include_directories(Config INTERFACE
     ${CMAKE_CURRENT_BINARY_DIR}

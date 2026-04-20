@@ -4,6 +4,10 @@
 #include "log/logger.h"
 #include "common/shader.h"
 #include "vulkan_enum.h"
+#include "asset/asset_manager.h"
+#include "config/path.h"
+#include "asset/shader_meta.h"
+
 namespace kpengine::graphics
 {
 
@@ -23,6 +27,25 @@ namespace kpengine::graphics
         VkShaderModule vert_shader_module = VK_NULL_HANDLE;
         VkShaderModule frag_shader_module = VK_NULL_HANDLE;
         VkShaderModule geom_shader_module = VK_NULL_HANDLE;
+
+        // resource::ShaderLoader loader;
+        // loader.Initialize(GraphicsAPIType::GRAPHICS_API_OPENGL);
+        // std::string shader_meta_path = GetShaderDirectory() + "simple_triangle.shader";
+        // asset::AssetID shader_meta_id = asset::AssetManager::GetInstance().LoadSync(shader_meta_path);
+        // auto shader_meta = asset::AssetManager::GetInstance().GetResource<asset::ShaderMetaResource>(shader_meta_id); 
+        // if(shader_meta)
+        // {
+        //     auto shader = shader_meta->GetShader(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
+        //     if(shader)
+        //     {
+        //         shader->resource = loader.Load(shader->meta.file, shader->meta.stage, shader->format, shader->meta.entry);
+        //         if(shader->resource)
+        //             KP_LOG("ShaderLog", LOG_LEVEL_DEBUG, "shader: %d", shader->resource->glsl.size());
+        //     }
+        // }
+
+
+        //resource::ShaderLoader()
 
         if (pipeline_desc.vert_shader)
         {

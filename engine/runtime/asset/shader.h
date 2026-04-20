@@ -15,12 +15,6 @@ enum class ShaderStatus {
     Ready       
 };
 
-enum class ShaderFormat
-{
-    Unknown,
-    GLSL,
-    SPIRV,
-};
 
 struct ShaderMeta{
     std::string file = "";

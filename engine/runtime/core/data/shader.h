@@ -8,8 +8,7 @@
 namespace kpengine::data{
     struct ShaderData{
         ShaderStage stage;
-        std::vector<uint32_t> spirv;
-        std::string glsl;
+        std::vector<uint8_t> byte_code;
         std::string entry = "main";
     };
 }

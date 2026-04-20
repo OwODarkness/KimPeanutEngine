@@ -1,19 +1,18 @@
-#include "shader_loader.h"
+#include "shader_meta_loader.h"
 #include <fstream>
-#include "nlohmann/json.hpp"
+#include <nlohmann/json.hpp>
 #include "utility.h"
 #include "log/logger.h"
 #include "shader.h"
 #include "shader_meta.h"
 #include "asset_manager.h"
+
 namespace kpengine::asset
 {
     ShaderFormat ParseFormat(const std::string &format)
     {
         if (format == "glsl")
-            return ShaderFormat::GLSL;
-        if (format == "spirv")
-            return ShaderFormat::SPIRV;
+            return ShaderFormat::SHADER_FORMAT_GLSL;
         return ShaderFormat::Unknown;
     }
 
@@ -31,7 +30,7 @@ namespace kpengine::asset
     }
 
     using json = nlohmann::json;
-    bool ShaderLoader::Load(const std::string &path, AssetRegisterInfo &info)
+    bool ShaderMetaLoader::Load(const std::string &path, AssetRegisterInfo &info)
     {
         std::ifstream file(path);
         if (!file.is_open())
@@ -79,19 +78,20 @@ namespace kpengine::asset
 
             std::string s_entry = item.value("entry", "main");
 
+            std::string dir = ExtractDirectoryFromPath(path);
+            std::string abs_path = dir + s_file;
 
             shader->format = shader_format;
             shader->meta.stage = shader_stage;
-            shader->meta.file = s_file;
+            shader->meta.file = abs_path;
             shader->meta.entry = s_entry;
 
-            std::string dir = ExtractDirectoryFromPath(path);
 
             AssetRegisterInfo shader_register_info{};
             shader_register_info.type = AssetType::KPAT_Shader;
-            shader_register_info.resource = shader;
+            shader_register_info.resource = std::move(shader);
             shader_register_info.name = s_file;
-            shader_register_info.path = dir + s_file;
+            shader_register_info.path = abs_path;
 
             AssetID shader_id = AssetManager::GetInstance().RegisterAsset(shader_register_info);
             

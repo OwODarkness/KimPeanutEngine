@@ -35,7 +35,9 @@
 
 # Asset
 *.hdr
-engine/resource/*
+engine/resource/
+engine/shader/cache/
+engine/shader/bin/
 
 
 build/*

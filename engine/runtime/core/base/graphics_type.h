@@ -27,4 +27,12 @@ enum class ShaderStage : uint8_t
     SHADER_STAGE_COMPUTE
 };
 
+enum class ShaderFormat
+{
+    Unknown,
+    SHADER_FORMAT_GLSL,
+    SHADER_FORMAT_HLSL
+};
+
+
 #endif

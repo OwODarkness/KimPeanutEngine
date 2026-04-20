@@ -6,5 +6,6 @@ add_subdirectory(config)
 add_subdirectory(log)
 add_subdirectory(delegate)
 add_subdirectory(data)
+add_subdirectory(resource)
 
-target_link_libraries(Core INTERFACE Math Config Log Delegate Base)
+target_link_libraries(Core INTERFACE Math Config Log Delegate Base Data Resource)

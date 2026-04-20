@@ -12,7 +12,7 @@ namespace kpengine::asset
     AssetManager::AssetManager() : 
     model_loader_(std::make_unique<AssimpModelLoader>()),
     image_loader_(std::make_unique<StbImageLoader>()),
-    shader_loader_(std::make_unique<ShaderLoader>())
+    shader_meta_loader_(std::make_unique<ShaderMetaLoader>())
     {
     }
 
@@ -235,8 +235,8 @@ namespace kpengine::asset
         }
         else if(type == AssetType::KPAT_ShaderMeta)
         {
-            assert(shader_loader_);
-            return shader_loader_->Load(path, info);
+            assert(shader_meta_loader_);
+            return shader_meta_loader_->Load(path, info);
         }
         std::string name = std::string(magic_enum::enum_name(type));
         KP_LOG("AssetManagerLog", LOG_LEVEL_WARNNING, "Failed to found suitable loader for Assettype: %s", name.c_str());
