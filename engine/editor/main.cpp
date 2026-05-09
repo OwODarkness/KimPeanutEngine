@@ -11,9 +11,8 @@
 #include "runtime/asset/asset_manager.h"
 #include "runtime/core/config/path.h"
 #include "runtime/asset/shader_meta.h"
-#include "runtime/core/resource/shader_processor.h"
+#include "runtime/core/resource/resource_pipeline.h"
 #include "runtime/core/resource/spirv_compiler.h"
-#include "runtime/core/resource/shader_cache.h"
 
 using namespace kpengine::runtime;
 using namespace kpengine;
@@ -89,22 +88,24 @@ void foo_test()
     auto& asset_manager = AssetManager::GetInstance();
     std::string shader_meta_path = GetShaderDirectory() + "simple_triangle.shader";
     AssetID shader_meta_id = asset_manager.LoadSync(shader_meta_path);
-    ShaderCache cache;
-    cache.Initialize(GraphicsAPIType::GRAPHICS_API_VULKAN);
-    ShaderProcessor processor(&cache);
-    processor.Initialize(GraphicsAPIType::GRAPHICS_API_VULKAN);
     auto shader_meta = asset_manager.GetResource<ShaderMetaResource>(shader_meta_id);
-    //auto shader = shader_meta->GetShader(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
+    auto shader = shader_meta->GetShader(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
     AssetID shader_id = shader_meta->GetData(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
-    std::vector<AssetPtr> assets;
-    assets.push_back(asset_manager.GetAsset(shader_id));
-    processor.Process(assets);
+    std::vector<ShaderPtr> assets;
+    assets.push_back(shader);
+
+    ResourcePipeline pipeline;
+    ResourcePipelineContext context;
+    context.graphics_type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+    pipeline.Initialize(context);
+    pipeline.ProcessShader(assets);
+
 }
 
 int main(int argc, char **argv)
 {
-    //rhi_test();
+    rhi_test();
     //renderer_test();
-    foo_test();
+    //foo_test();
     return 0;
 }

@@ -3,6 +3,7 @@ add_library(Resource STATIC
     spirv_compiler.cpp
     shader_cache.cpp
     shader_processor.cpp
+    resource_pipeline.cpp
     utility.cpp
 )
 target_include_directories(Resource PUBLIC

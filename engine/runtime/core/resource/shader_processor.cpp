@@ -25,42 +25,42 @@ namespace kpengine::resource
         compiler_->Initialize(api_);
     }
 
-    void ShaderProcessor::PreProcess(const std::vector<AssetPtr> &assets)
+    void ShaderProcessor::PreProcess(const std::vector<std::shared_ptr<asset::ShaderResource>> &assets)
     {
         
     }
 
-    void ShaderProcessor::Process(const std::vector<AssetPtr> &assets)
+    void ShaderProcessor::Process(const std::vector<std::shared_ptr<asset::ShaderResource>> &assets)
     {
-        for(const auto& asset: assets)
+        for(const auto& shader: assets)
         {
-            auto shader = asset->GetResource<asset::ShaderResource>();
-            std::string content = ReadText(asset->GetPath());
+            std::string file_name = shader->meta.file;
+            std::string content = ReadText(file_name);
             std::string stage_str = std::string(magic_enum::enum_name(shader->meta.stage));
 
             uint64_t hash = GenerateShaderHash(content, stage_str, shader->meta.entry, {});
 
             if(cache_->Has(hash))
             {
-                KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s has been cached", asset->GetPath().c_str());
+                KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s has been cached", file_name.c_str());
                 std::vector<uint8_t> byte_codes = cache_->Load(hash);
             }
             else
             {
                 ShaderCompileInput input;
-                input.file_name = asset->GetPath();
+                input.file_name = file_name;
                 input.format = shader->format;
                 input.source = content;
                 input.stage = shader->meta.stage;
                 std::vector<uint8_t> byte_codes = compiler_->Compile(input);
                 if(byte_codes.empty())
                 {
-                    KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s failed to compile with binary", asset->GetPath().c_str());
+                    KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s failed to compile with binary", file_name.c_str());
                 }
                 else
                 {
-                          cache_->Save(hash, byte_codes);
-                KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s ready to cache", asset->GetPath().c_str());          
+                    cache_->Save(hash, byte_codes);
+                    KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s ready to cache", file_name.c_str());          
                 }
 
             }
