@@ -40,7 +40,7 @@ target_include_directories(Graphics
 
 target_link_libraries(Graphics 
     PUBLIC Core 
-    PRIVATE Asset)
+    PRIVATE Asset ThirdPartyLib)
 
 # find_program(GLSLC glslc
 #     HINTS

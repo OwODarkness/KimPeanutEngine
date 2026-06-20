@@ -1,4 +1,4 @@
-#include <memory>
+﻿#include <memory>
 #include <iostream>
 
 #include "runtime/engine.h"
@@ -13,7 +13,7 @@
 #include "runtime/asset/shader_meta.h"
 #include "runtime/core/resource/resource_pipeline.h"
 #include "runtime/core/resource/spirv_compiler.h"
-
+#include "module/tts/gpt_sovits_tts.h"
 using namespace kpengine::runtime;
 using namespace kpengine;
 
@@ -102,10 +102,31 @@ void foo_test()
 
 }
 
+void tts_test()
+{
+    using namespace tts;
+    std::shared_ptr<GPTSovitsTTS> tts = std::make_shared<GPTSovitsTTS>();
+    GPTSovitsConfig config;
+    config.host = "127.0.0.1";
+    config.port = 9880;
+    config.api_path = "/tts";
+    config.prompt_lang = "ja";
+    config.timeout = 180;
+
+    std::string prompt_text = u8"極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。";
+    config.prompt_text = prompt_text;
+
+    config.ref_audio_path = "E:\\VoiceSource\\kurisu\\voice1\\voice1.wav";
+     tts->LoadConfig(config);
+     std::string target_text = u8"その現象は偶然じゃないと思う。データを見れば、ちゃんと理由があるはずよ。";
+    tts->Synthesis(target_text);
+}
+
 int main(int argc, char **argv)
 {
-    rhi_test();
+    //rhi_test();
     //renderer_test();
     //foo_test();
+    tts_test();
     return 0;
 }
