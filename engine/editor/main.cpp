@@ -14,6 +14,8 @@
 #include "runtime/core/resource/resource_pipeline.h"
 #include "runtime/core/resource/spirv_compiler.h"
 #include "module/tts/gpt_sovits_tts.h"
+#include "runtime/audio/miniaudio_audio_system.h"
+#include "runtime/audio/audio_player.h"
 using namespace kpengine::runtime;
 using namespace kpengine;
 
@@ -119,7 +121,23 @@ void tts_test()
     config.ref_audio_path = "E:\\VoiceSource\\kurisu\\voice1\\voice1.wav";
      tts->LoadConfig(config);
      std::string target_text = u8"その現象は偶然じゃないと思う。データを見れば、ちゃんと理由があるはずよ。";
-    tts->Synthesis(target_text);
+    AudioClip clip = tts->Synthesis(target_text);
+
+    audio::MiniAudioSystem sys;
+    audio::AudioPlayer * player = sys.CreateAudioPlayer();
+    player->SetClip(std::make_shared<AudioClip>(clip));
+    player->Play();
+    sys.Initialize();
+    while(1)
+    {
+        ;
+    }
+
+}
+
+void audio_test()
+{
+
 }
 
 int main(int argc, char **argv)
@@ -128,5 +146,7 @@ int main(int argc, char **argv)
     //renderer_test();
     //foo_test();
     tts_test();
+    //audio_test();
+    
     return 0;
 }

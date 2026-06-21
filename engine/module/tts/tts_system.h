@@ -2,12 +2,10 @@
 #define KPENGINE_MODULE_TTS_H
 
 #include <string>
+#include "audio/audio_clip.h"
 
 namespace kpengine::tts{
-
-    struct AudioClip{
-
-    };
+    using AudioClip = kpengine::audio::AudioClip;
 
     class TTSSystem{
     public:

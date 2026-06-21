@@ -8,7 +8,6 @@
 namespace kpengine::tts
 {
 
-
     void GPTSovitsTTS::LoadConfig(const GPTSovitsConfig &config)
     {
         config_ = config;
@@ -40,15 +39,12 @@ namespace kpengine::tts
             json_body,
             "application/json");
 
-
-
-
         if (!res)
         {
-            std::string msg = "HTTP request failed" + httplib::to_string(res.error()) + ".";
+            std::string msg = httplib::to_string(res.error()) + ".";
             KP_LOG("GPTSOVITSTTSLOG",
                    LOG_LEVEL_ERROR,
-                    msg.c_str() );
+                   msg.c_str());
             return {};
         }
 
@@ -65,51 +61,62 @@ namespace kpengine::tts
             res->body.begin(),
             res->body.end());
 
-        KP_LOG("GPTSOVITSTTSLOG",
-               LOG_LEVEL_INFO,
-               "receive data length: %d",
-               response_data.size());
+        std::ofstream file("tts_debug.wav", std::ios::binary);
+        file.write((char *)response_data.data(), response_data.size());
+        file.close();
 
+        ma_decoder decoder;
 
-               std::ofstream file("tts_debug.wav", std::ios::binary);
-file.write((char*)response_data.data(), response_data.size());
-file.close();
-    ma_engine engine;
-    ma_engine_init(NULL, &engine);
+        ma_decoder_config config =
+            ma_decoder_config_init(ma_format_f32, 1, 0);
 
-    ma_decoder decoder;
-    ma_decoder_init_memory(
-        response_data.data(),
-        response_data.size(),
-        NULL,
-        &decoder
-    );
+        if (ma_decoder_init_memory(
+                response_data.data(),
+                response_data.size(),
+                &config,
+                &decoder) != MA_SUCCESS)
+        {
+            return {};
+        }
 
-    ma_sound sound;
-    ma_sound_init_from_data_source(
-        &engine,
-        &decoder,
-        0,
-        NULL,
-        &sound
-    );
+        printf("%d", decoder.outputFormat);
+        ma_uint32 channels = decoder.outputChannels;
+        ma_uint32 sampleRate = decoder.outputSampleRate;
 
-    ma_sound_start(&sound);
+        ma_uint64 totalFrames = 0;
 
-    // TEMP: keep alive so audio can play
-    std::this_thread::sleep_for(std::chrono::seconds(10));
+        if (ma_decoder_get_length_in_pcm_frames(&decoder, &totalFrames) != MA_SUCCESS)
+        {
+            ma_decoder_uninit(&decoder);
+            return {};
+        }
 
-    // ma_sound_uninit(&sound);
-    // ma_decoder_uninit(&decoder);
-    // ma_engine_uninit(&engine);
+        // IMPORTANT: allocate max possible buffer
+        std::vector<float> pcm(totalFrames * channels);
+
+        ma_uint64 framesRead = 0;
+
+        ma_result result = ma_decoder_read_pcm_frames(
+            &decoder,
+            pcm.data(),
+            totalFrames,
+            &framesRead);
+
+        ma_decoder_uninit(&decoder);
+
+        if (result != MA_SUCCESS || framesRead == 0)
+        {
+            return {};
+        }
+
+        // CRITICAL FIX: resize to actual decoded size
+        pcm.resize(framesRead * channels);
 
         AudioClip clip;
-
-        // TODO:
-        // parse WAV data in response_data
-        // fill clip.sample_rate
-        // fill clip.channels
-        // fill clip.samples
+        clip.pcm = std::move(pcm);
+        clip.channels = channels;
+        clip.sample_rate = sampleRate;
+        clip.frame_count = framesRead;
 
         return clip;
     }

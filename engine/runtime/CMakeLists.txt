@@ -9,6 +9,7 @@ add_subdirectory(component)
 add_subdirectory(game_framework)
 add_subdirectory(render)
 add_subdirectory(asset)
+add_subdirectory(audio)
 
 add_library(RuntimeLib STATIC 
     engine.cpp 
