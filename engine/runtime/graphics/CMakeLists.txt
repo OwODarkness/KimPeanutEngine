@@ -42,47 +42,47 @@ target_link_libraries(Graphics
     PUBLIC Core 
     PRIVATE Asset)
 
-# find_program(GLSLC glslc
-#     HINTS
-#         "${CMAKE_SOURCE_DIR}/third_party/vulkan/bin"
-# )
+find_program(GLSLC glslc
+    HINTS
+        "${CMAKE_SOURCE_DIR}/third_party/vulkan/bin"
+)
 
-# if(NOT GLSLC AND DEFINED ENV{VULKAN_SDK})
-#     find_program(GLSLC glslc
-#         HINTS
-#             "$ENV{VULKAN_SDK}/Bin"
-#             "$ENV{VULKAN_SDK}/bin"
-#     )
-# endif()
+if(NOT GLSLC AND DEFINED ENV{VULKAN_SDK})
+    find_program(GLSLC glslc
+        HINTS
+            "$ENV{VULKAN_SDK}/Bin"
+            "$ENV{VULKAN_SDK}/bin"
+    )
+endif()
 
-# if(NOT GLSLC)
-#     find_program(GLSLC glslc) # search in PATH
-# endif()
+if(NOT GLSLC)
+    find_program(GLSLC glslc) # search in PATH
+endif()
 
-# if(NOT GLSLC)
-#     message(FATAL_ERROR "glslc not found! Please install Vulkan SDK or put glslc in third_party/vulkan/bin")
-# else()
-#     message(STATUS "Found glslc: ${GLSLC}, ready to compile the shaders which can be found in ${CMAKE_BINARY_DIR}/shaders")
-#     set(SHADER_PATH ${CMAKE_SOURCE_DIR}/engine/shader)
-#     file(GLOB_RECURSE GLSL_SHADERS
-#         "${SHADER_PATH}/simple_triangle.vert"
-#         "${SHADER_PATH}/simple_triangle.frag"
-#     )
-#     set(COMPILED_SHADERS "")
+if(NOT GLSLC)
+    message(FATAL_ERROR "glslc not found! Please install Vulkan SDK or put glslc in third_party/vulkan/bin")
+else()
+    message(STATUS "Found glslc: ${GLSLC}, ready to compile the shaders which can be found in ${CMAKE_BINARY_DIR}/shaders")
+    set(SHADER_PATH ${CMAKE_SOURCE_DIR}/engine/shader)
+    file(GLOB_RECURSE GLSL_SHADERS
+        "${SHADER_PATH}/simple_triangle.vert"
+        "${SHADER_PATH}/simple_triangle.frag"
+    )
+    set(COMPILED_SHADERS "")
 
-#     foreach(GLSL ${GLSL_SHADERS})
-#         get_filename_component(FILE_NAME ${GLSL} NAME)
-#         set(SPIRV "${CMAKE_BINARY_DIR}/shaders/${FILE_NAME}.spv")
-#         add_custom_command(
-#             OUTPUT ${SPIRV}
-#             COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
-#             COMMAND ${GLSLC} -DUSE_VULKAN_BACKEND -o ${SPIRV} ${GLSL}
-#             DEPENDS ${GLSL}
-#             COMMENT "Compiling shader ${FILE_NAME}"
-#         )
+    foreach(GLSL ${GLSL_SHADERS})
+        get_filename_component(FILE_NAME ${GLSL} NAME)
+        set(SPIRV "${CMAKE_BINARY_DIR}/shaders/${FILE_NAME}.spv")
+        add_custom_command(
+            OUTPUT ${SPIRV}
+            COMMAND ${CMAKE_COMMAND} -E make_directory "${CMAKE_BINARY_DIR}/shaders"
+            COMMAND ${GLSLC} -DUSE_VULKAN_BACKEND -o ${SPIRV} ${GLSL}
+            DEPENDS ${GLSL}
+            COMMENT "Compiling shader ${FILE_NAME}"
+        )
 
-#         list(APPEND COMPILED_SHADERS ${SPIRV})
-#     endforeach()
-#    add_custom_target(Shaders ALL DEPENDS ${COMPILED_SHADERS})
-# endif()
+        list(APPEND COMPILED_SHADERS ${SPIRV})
+    endforeach()
+   add_custom_target(Shaders ALL DEPENDS ${COMPILED_SHADERS})
+endif()
 
