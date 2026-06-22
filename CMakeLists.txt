@@ -6,30 +6,16 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 
 
-include_directories(
-    third_party
-    third_party/googletest/googletest/include
-    third_party/vulkan/
-    )
+# include_directories(
+#     third_party
+#     third_party/googletest/googletest/include
+#     third_party/vulkan/
+#     )
 
 add_subdirectory(engine)
 add_subdirectory(third_party)
 
 
-function(copy_thirdparty_dlls target)
-    foreach(dll ${THIRD_PARTY_DLLS})
-        add_custom_command(TARGET ${target} POST_BUILD
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            ${dll}
-            $<TARGET_FILE_DIR:${target}>
-        )
-    endforeach()
-endfunction()
-
-
-set(THIRD_PARTY_DLLS
-    ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll #assimp
-)
 
 add_executable(KimPeanutEngine 
     engine/editor/main.cpp

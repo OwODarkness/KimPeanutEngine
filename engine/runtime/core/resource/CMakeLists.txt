@@ -9,4 +9,4 @@ add_library(Resource STATIC
 target_include_directories(Resource PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
-target_link_libraries(Resource PRIVATE Asset Log Data Base Config)
+target_link_libraries(Resource PRIVATE Asset Log Data Base Config ThirdPartyLib thirdparty_magic_enum)

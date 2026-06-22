@@ -9,4 +9,4 @@ shader_meta_loader.cpp
 target_include_directories(Asset PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
-target_link_libraries(Asset PUBLIC Data PRIVATE Log)
+target_link_libraries(Asset PUBLIC Data PRIVATE Log ThirdPartyLib thirdparty_magic_enum)

@@ -6,4 +6,4 @@ add_library(Log STATIC
 target_include_directories(Log PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
-target_link_libraries(Log PRIVATE Config)
+target_link_libraries(Log PRIVATE Config thirdparty_magic_enum)
