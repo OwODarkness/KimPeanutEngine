@@ -107,7 +107,7 @@ namespace kpengine::graphics
         vkDestroyBuffer(logicial_device, buffer_resource->buffer, nullptr);
         if (!buffer_resource->allocation.owner)
         {
-            KP_LOG("VulkanBufferManager", LOG_LEVEL_WARNNING, "missing owner of MemoryAllocation, could cause memory leak");
+            KP_LOG("VulkanBufferManager", LOG_LEVEL_WARNING, "missing owner of MemoryAllocation, could cause memory leak");
         }
         else
         {
@@ -136,7 +136,7 @@ namespace kpengine::graphics
         VulkanBufferResource *buffer_resource = GetBufferResource(handle);
         if ((buffer_resource->mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
         {
-            KP_LOG("VulkanBufferManager", LOG_LEVEL_WARNNING, "Try to bindbuffer data by mapmemory, but memory prop flags don't hold VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT");
+            KP_LOG("VulkanBufferManager", LOG_LEVEL_WARNING, "Try to bindbuffer data by mapmemory, but memory prop flags don't hold VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT");
             return;
         }
         void *target;
@@ -150,7 +150,7 @@ namespace kpengine::graphics
         VulkanBufferResource *buffer_resource = GetBufferResource(handle);
         if ((buffer_resource->mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
         {
-            KP_LOG("VulkanBufferManager", LOG_LEVEL_WARNNING, "Try to bindbuffer data by mapmemory, but memory prop flags don't hold VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT");
+            KP_LOG("VulkanBufferManager", LOG_LEVEL_WARNING, "Try to bindbuffer data by mapmemory, but memory prop flags don't hold VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT");
             return;
         }
 

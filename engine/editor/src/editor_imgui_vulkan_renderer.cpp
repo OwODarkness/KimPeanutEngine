@@ -1,6 +1,6 @@
 #include "editor_imgui_vulkan_renderer.h"
 #include <cassert>
-#include "imgui/imgui_impl_vulkan.h"
+#include "imgui_impl_vulkan.h"
 #include "log/logger.h"
 #include "graphics/backend/vulkan/vulkan_context.h"
 #include "graphics/backend/vulkan/vulkan_backend.h"

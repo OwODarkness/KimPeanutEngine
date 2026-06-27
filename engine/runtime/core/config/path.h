@@ -28,8 +28,14 @@ namespace kpengine
 
     inline std::string GetShaderDirectory()
     {
-        return (project_root / "engine/shader/").generic_string();
+        return (project_root / "engine/resource/shader/").generic_string();
     }
+
+    inline std::string GetScriptDirectory()
+    {
+        return (project_root / "engine/resource/script/").generic_string();
+    }
+
 
     inline std::string GetSPVShaderDirectory()
     {

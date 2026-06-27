@@ -8,4 +8,4 @@ shadow_manager.cpp skybox.cpp spot_shadow_caster.cpp texture_pool.cpp
 
 target_include_directories(Render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 
-target_link_libraries(Render PUBLIC Core PRIVATE GameFramework Component Input ThirdPartyLib)
+target_link_libraries(Render PUBLIC Core PRIVATE GameFramework Component Input  glfw glad assimp stb_image)

@@ -11,6 +11,8 @@ namespace kpengine::graphics
     struct PipelineTag{};
     struct BufferTag{};
     struct MeshTag{};
+    struct AudioTag{};
+
 
     using TextureHandle = Handle<TextureTag>;
     using SamplerHandle = Handle<SamplerTag>;

@@ -5,7 +5,6 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 
-
 # include_directories(
 #     third_party
 #     third_party/googletest/googletest/include
@@ -13,13 +12,21 @@ set(CMAKE_CXX_STANDARD_REQUIRED True)
 #     )
 
 add_subdirectory(engine)
+
 add_subdirectory(third_party)
+
 
 
 
 add_executable(KimPeanutEngine 
     engine/editor/main.cpp
 )
+
+if(MSVC)
+    target_compile_options(KimPeanutEngine PRIVATE /utf-8)
+endif()
+
+
 target_link_libraries(KimPeanutEngine 
     EngineLib
     ThirdPartyLib

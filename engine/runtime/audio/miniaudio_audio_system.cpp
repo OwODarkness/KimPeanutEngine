@@ -1,6 +1,7 @@
 #include "miniaudio_audio_system.h"
 #include "log/logger.h"
 #include "audio_player.h"
+
 namespace kpengine::audio
 {
     namespace
@@ -23,17 +24,16 @@ namespace kpengine::audio
         }
     }
 
-        MiniAudioSystem::MiniAudioSystem()
-        {
-
-        }
+    MiniAudioSystem::MiniAudioSystem()
+    {
+    }
 
     bool MiniAudioSystem::Initialize()
     {
         ma_device_config config = ma_device_config_init(ma_device_type_playback);
         config.playback.format = ma_format_f32;
-        config.playback.channels = 1;
-        config.sampleRate = 32000;
+        config.playback.channels = 2;
+        config.sampleRate = 48000;
         config.dataCallback = DataCallback;
         config.pUserData = this;
 
@@ -42,9 +42,9 @@ namespace kpengine::audio
             return false;
         }
         ma_device_start(&device_);
-KP_LOG("Audio", LOG_LEVEL_INFO,
-    "Device sample rate: %u",
-    device_.sampleRate);
+        KP_LOG("Audio", LOG_LEVEL_INFO,
+               "Device sample rate: %u",
+               device_.sampleRate);
 
         KP_LOG("AudioSysLog", LOG_LEVEL_INFO, "Audio Init succeed");
         return true;
@@ -52,57 +52,67 @@ KP_LOG("Audio", LOG_LEVEL_INFO,
     void MiniAudioSystem::ShutDown()
     {
     }
-    AudioPlayer *MiniAudioSystem::CreateAudioPlayer()
+
+    void MiniAudioSystem::Mix(float *output, uint32_t frame_count)
     {
-        players_.emplace_back(std::make_unique<AudioPlayer>());
-        return players_.back().get();
-    }
-
-void MiniAudioSystem::Mix(float* output, uint32_t frame_count)
-{
-    // mono = 1 channel ONLY
-    memset(output, 0, sizeof(float) * frame_count);
-
-    for (auto& player_ptr : players_)
-    {
-        AudioPlayer* player = player_ptr.get();
-
-        if (!player->IsPlaying() || !player->clip_)
-            continue;
-
-        auto& clip = *player->clip_;
-
-        uint32_t inChannels = clip.channels;
-
-        for (uint32_t i = 0; i < frame_count; i++)
+        uint32_t out_channels = device_.playback.channels;
+        if(out_channels != 2)
         {
-            if (player->current_frame_ >= clip.frame_count)
+            KP_LOG("MiniAudioSystemLog", LOG_LEVEL_WARNING, "channel %d mismatch, desired 2", out_channels);
+            return ;
+        }
+        ClearOutputBuffer(output, frame_count * out_channels);
+
+        for (auto &player_ptr : players_)
+        {
+            AudioPlayer *player = player_ptr.get();
+
+            if (!player->IsPlaying() || !player->GetClip())
+                continue;
+
+            auto &clip = *player->GetClip();
+
+            uint32_t in_channels = clip.channels;
+
+            for (uint32_t i = 0; i < frame_count; i++)
             {
-                player->playing = false;
-                break;
+                if (player->IsFinished())
+                {
+                    player->Stop();
+                    break;
+                }
+
+                uint64_t frame = player->GetCurrentFrame();
+                uint64_t src = frame  * in_channels;
+                uint64_t dst = i * out_channels;
+                uint64_t left = dst;
+                uint64_t right = dst + 1;
+
+                float volume = player->GetVolume();
+
+                if(out_channels == 1)
+                {
+
+                    float res = volume * clip.pcm[src];
+                    output[left] = res;
+                    output[right] = res;
+                }
+                else if(out_channels == 2)
+                {
+                    output[left] = volume * clip.pcm[src];
+                    output[right] = volume * clip.pcm[src + 1];
+                }
+
+                player->SetCurrentFrame(frame+ 1);
             }
-
-            uint64_t frame = player->current_frame_;
-            uint64_t idx = frame * inChannels;
-
-            float sample;
-                sample = clip.pcm[idx];
-
-            // mono / stereo safe downmix
-            if (inChannels == 1)
-            {
-            }
-            else
-            {
-                sample = 0.5f * (clip.pcm[idx + 0] + clip.pcm[idx + 1]);
-            }
-
-            output[i] += sample * player->volume;
-
-            player->current_frame_++;
         }
     }
-}
+
+        void MiniAudioSystem::ClearOutputBuffer(float* output, uint32_t size)
+        {
+            memset(output, 0, size);
+        }
+
     MiniAudioSystem::~MiniAudioSystem()
     {
     }

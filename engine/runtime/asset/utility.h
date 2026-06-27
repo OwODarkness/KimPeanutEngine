@@ -33,7 +33,7 @@ namespace kpengine::asset
 
     inline bool IsAudioExtension(const std::string &ext)
     {
-        static const std::vector<std::string> audio_exts = {"png", "jpg", "jpeg", "tga"};
+        static const std::vector<std::string> audio_exts = {"wav", "mp3", "flac", "ogg"};
         return std::find(audio_exts.begin(), audio_exts.end(), ext) != audio_exts.end();
     }
 

@@ -13,7 +13,7 @@ namespace kpengine::tts
         config_ = config;
     }
 
-    AudioClip GPTSovitsTTS::Synthesis(const std::string &text)
+    std::vector<uint8_t> GPTSovitsTTS::Synthesis(const std::string &text)
     {
         using json = nlohmann::json;
 
@@ -31,8 +31,11 @@ namespace kpengine::tts
         j["text_split_method"] = "cut4";
         j["batch_size"] = 1;
         j["streaming_mode"] = false;
+        j["sample_steps"] = 48;
 
         std::string json_body = j.dump();
+
+
 
         auto res = client.Post(
             config_.api_path.c_str(), // "/tts"
@@ -41,7 +44,7 @@ namespace kpengine::tts
 
         if (!res)
         {
-            std::string msg = httplib::to_string(res.error()) + ".";
+            std::string msg = httplib::to_string(res.error()) + "." ;
             KP_LOG("GPTSOVITSTTSLOG",
                    LOG_LEVEL_ERROR,
                    msg.c_str());
@@ -52,8 +55,8 @@ namespace kpengine::tts
         {
             KP_LOG("GPTSOVITSTTSLOG",
                    LOG_LEVEL_ERROR,
-                   "HTTP status: %d",
-                   res->status);
+                   "HTTP status: %d %s",
+                   res->status, json_body.c_str());
             return {};
         }
 
@@ -65,59 +68,6 @@ namespace kpengine::tts
         file.write((char *)response_data.data(), response_data.size());
         file.close();
 
-        ma_decoder decoder;
-
-        ma_decoder_config config =
-            ma_decoder_config_init(ma_format_f32, 1, 0);
-
-        if (ma_decoder_init_memory(
-                response_data.data(),
-                response_data.size(),
-                &config,
-                &decoder) != MA_SUCCESS)
-        {
-            return {};
-        }
-
-        printf("%d", decoder.outputFormat);
-        ma_uint32 channels = decoder.outputChannels;
-        ma_uint32 sampleRate = decoder.outputSampleRate;
-
-        ma_uint64 totalFrames = 0;
-
-        if (ma_decoder_get_length_in_pcm_frames(&decoder, &totalFrames) != MA_SUCCESS)
-        {
-            ma_decoder_uninit(&decoder);
-            return {};
-        }
-
-        // IMPORTANT: allocate max possible buffer
-        std::vector<float> pcm(totalFrames * channels);
-
-        ma_uint64 framesRead = 0;
-
-        ma_result result = ma_decoder_read_pcm_frames(
-            &decoder,
-            pcm.data(),
-            totalFrames,
-            &framesRead);
-
-        ma_decoder_uninit(&decoder);
-
-        if (result != MA_SUCCESS || framesRead == 0)
-        {
-            return {};
-        }
-
-        // CRITICAL FIX: resize to actual decoded size
-        pcm.resize(framesRead * channels);
-
-        AudioClip clip;
-        clip.pcm = std::move(pcm);
-        clip.channels = channels;
-        clip.sample_rate = sampleRate;
-        clip.frame_count = framesRead;
-
-        return clip;
+       return response_data;
     }
 }

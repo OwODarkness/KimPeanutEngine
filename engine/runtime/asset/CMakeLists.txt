@@ -5,8 +5,9 @@ model.cpp
 stb_image_loader.cpp
 shader_meta.cpp
 shader_meta_loader.cpp
+miniaudio_audio_loader.cpp
 )
 target_include_directories(Asset PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
-target_link_libraries(Asset PUBLIC Data PRIVATE Log ThirdPartyLib thirdparty_magic_enum)
+target_link_libraries(Asset PUBLIC Data PRIVATE Log magic_enum stb_image nlohmann assimp miniaudio)

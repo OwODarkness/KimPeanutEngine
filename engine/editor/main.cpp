@@ -1,6 +1,5 @@
 ﻿#include <memory>
 #include <iostream>
-
 #include "runtime/engine.h"
 #include "runtime/window/glfw_window_system.h"
 #include "runtime/input/input_system.h"
@@ -16,6 +15,10 @@
 #include "module/tts/gpt_sovits_tts.h"
 #include "runtime/audio/miniaudio_audio_system.h"
 #include "runtime/audio/audio_player.h"
+#include "runtime/asset/miniaudio_audio_loader.h"
+
+#include "script/lua/lua_vm.h"
+
 using namespace kpengine::runtime;
 using namespace kpengine;
 
@@ -38,7 +41,7 @@ void rhi_test()
 {
     try
     {
-        std::unique_ptr<WindowSystem> window = WindowSystem::CreateWindow(WindowAPIType::WINDOW_API_GLFW);
+        std::unique_ptr<WindowSystem> window = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
         WindowCreateInfo window_create_info;
         window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_VULKAN;
         //window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
@@ -118,14 +121,18 @@ void tts_test()
     std::string prompt_text = u8"極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。";
     config.prompt_text = prompt_text;
 
-    config.ref_audio_path = "E:\\VoiceSource\\kurisu\\voice1\\voice1.wav";
+    config.ref_audio_path = "D:\\dataset\\voice\\kurisu\\voice1\\voice1.wav";
      tts->LoadConfig(config);
      std::string target_text = u8"その現象は偶然じゃないと思う。データを見れば、ちゃんと理由があるはずよ。";
-    AudioClip clip = tts->Synthesis(target_text);
+    std::vector<uint8_t> raw_data = tts->Synthesis(target_text);
+
+    kpengine::asset::MiniAudio_AudioLoader loader;
+    auto clip = loader.LoadFromMemory((char*)raw_data.data(), raw_data.size()).resource;
 
     audio::MiniAudioSystem sys;
-    audio::AudioPlayer * player = sys.CreateAudioPlayer();
-    player->SetClip(std::make_shared<AudioClip>(clip));
+    auto handle =  sys.CreateAudioPlayer();
+    audio::AudioPlayer * player = sys.GetAudioPlayer(handle); 
+    player->SetClip(clip);
     player->Play();
     sys.Initialize();
     while(1)
@@ -137,16 +144,52 @@ void tts_test()
 
 void audio_test()
 {
+    using namespace asset;
 
+    auto& manager = AssetManager::GetInstance();
+
+    asset::AssetID id = manager.LoadSync("D:\\dataset\\voice\\kurisu\\voice3\\voice3.mp3");
+
+    auto resource = manager.GetResource<asset::AudioResource>(id);
+    
+    auto clip = resource->resource;
+
+         audio::MiniAudioSystem sys;
+    auto handle =  sys.CreateAudioPlayer();
+    audio::AudioPlayer * player = sys.GetAudioPlayer(handle); 
+    player->SetClip(clip);
+    player->Play();
+
+    sys.Initialize();
+    while(1)
+    {
+        ;
+    }
+}
+
+void lua_test()
+{
+    using namespace kpengine::script::lua;
+    LuaVM vm;
+
+    vm.Initialize();
+    auto func = [](){audio_test();};
+    vm.RegisterFunction("audio_test", func);
+
+    std::string script_path = GetScriptDirectory() + "test.lua";
+
+    vm.ExecuteFile(script_path);
 }
 
 int main(int argc, char **argv)
 {
+
     //rhi_test();
     //renderer_test();
     //foo_test();
-    tts_test();
+    //tts_test();
+
     //audio_test();
-    
+    lua_test();
     return 0;
 }

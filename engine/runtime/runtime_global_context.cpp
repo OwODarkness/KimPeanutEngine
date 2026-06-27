@@ -12,7 +12,7 @@ namespace kpengine
        RuntimeContext global_runtime_context;
 
         RuntimeContext::RuntimeContext():
-        window_system_(WindowSystem::CreateWindow(WindowAPIType::WINDOW_API_GLFW)),        
+        window_system_(WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW)),        
         render_system_(std::make_unique<RenderSystem>()),
         log_system_(std::make_unique<LogSystem>()),
         world_system_(std::make_unique<WorldSystem>()),

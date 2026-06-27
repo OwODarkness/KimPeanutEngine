@@ -103,7 +103,7 @@ namespace kpengine::graphics
         uint32_t pre_compute_slot_count = static_cast<uint32_t>(block_size / adjust_slot_size);
         if (pre_compute_slot_count == 0)
         {
-            KP_LOG("VulkanMemoryPoolAllocatorLog", LOG_LEVEL_WARNNING, "Failed to allocate memory,  the slot size is larger than block size");
+            KP_LOG("VulkanMemoryPoolAllocatorLog", LOG_LEVEL_WARNING, "Failed to allocate memory,  the slot size is larger than block size");
         }
 
         //allocate the block for pool

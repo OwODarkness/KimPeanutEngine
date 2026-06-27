@@ -1,9 +1,11 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_OPENGL_SHADER_H
 #define KPENGINE_RUNTIME_GRAPHICS_OPENGL_SHADER_H
 
-#include "common/shader.h"
-#include <glad/glad.h>
 #include <vector>
+
+#include <glad/glad.h>
+#include "common/shader.h"
+
 namespace kpengine::graphics
 {
     class OpenglShader : public Shader

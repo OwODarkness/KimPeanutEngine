@@ -2,6 +2,7 @@
 #include <magic_enum/magic_enum.hpp>
 #include "assimp_model_loader.h"
 #include "stb_image_loader.h"
+#include "miniaudio_audio_loader.h"
 #include "utility.h"
 #include "model.h"
 #include "log/logger.h"
@@ -12,7 +13,8 @@ namespace kpengine::asset
     AssetManager::AssetManager() : 
     model_loader_(std::make_unique<AssimpModelLoader>()),
     image_loader_(std::make_unique<StbImageLoader>()),
-    shader_meta_loader_(std::make_unique<ShaderMetaLoader>())
+    shader_meta_loader_(std::make_unique<ShaderMetaLoader>()),
+    audio_loader_(std::make_unique<MiniAudio_AudioLoader>())
     {
     }
 
@@ -29,7 +31,7 @@ namespace kpengine::asset
         AssetType type = ExtractAssetType(extension);
         if(type == AssetType::Undefined)
         {
-            KP_LOG("AssetManagerLog", LOG_LEVEL_WARNNING, "Unrecognize asset extension: %s ", extension.c_str());
+            KP_LOG("AssetManagerLog", LOG_LEVEL_WARNING, "Unrecognize asset extension: %s ", extension.c_str());
             return AssetID();
         }
 
@@ -238,8 +240,14 @@ namespace kpengine::asset
             assert(shader_meta_loader_);
             return shader_meta_loader_->Load(path, info);
         }
+        else if(type == AssetType::KPAT_Audio)
+        {
+            assert(audio_loader_);
+            return audio_loader_->LoadFromFile(path, info);
+        }
+
         std::string name = std::string(magic_enum::enum_name(type));
-        KP_LOG("AssetManagerLog", LOG_LEVEL_WARNNING, "Failed to found suitable loader for Assettype: %s", name.c_str());
+        KP_LOG("AssetManagerLog", LOG_LEVEL_WARNING, "Failed to found suitable loader for Assettype: %s", name.c_str());
         return false;
     }
 

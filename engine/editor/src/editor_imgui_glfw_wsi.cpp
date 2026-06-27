@@ -1,7 +1,7 @@
 #include "editor_imgui_glfw_wsi.h"
-#include "imgui/imgui.h"
-#include "imgui/imgui_impl_glfw.h"
-#include "GLFW/glfw3.h"
+#include <imgui.h>
+#include <imgui_impl_glfw.h>
+#include <glfw/glfw3.h>
 
 namespace kpengine::editor{
     void EditorImguiGLFWWSI::Initialize(WindowHandle handle, GraphicsAPIType type)

@@ -20,7 +20,7 @@ namespace kpengine::tts
     {
     public:
         void LoadConfig(const GPTSovitsConfig& config);
-        AudioClip Synthesis(const std::string &text) override;
+        std::vector<uint8_t>  Synthesis(const std::string &text) override;
 
     private:
         GPTSovitsConfig config_;

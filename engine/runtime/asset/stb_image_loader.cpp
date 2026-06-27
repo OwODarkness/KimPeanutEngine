@@ -1,6 +1,6 @@
 #include "stb_image_loader.h"
 #include <magic_enum/magic_enum.hpp>
-#include "stb_image/image_helper.h"
+#include <stb_image/image_helper.h>
 #include "log/logger.h"
 #include "texture.h"
 #include "utility.h"

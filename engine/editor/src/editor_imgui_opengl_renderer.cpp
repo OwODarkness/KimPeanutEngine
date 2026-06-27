@@ -1,5 +1,5 @@
 #include "editor_imgui_opengl_renderer.h"
-#include <imgui/imgui_impl_opengl3.h>
+#include <imgui_impl_opengl3.h>
 #include <glad/glad.h>
 #include "log/logger.h"
 namespace kpengine::editor

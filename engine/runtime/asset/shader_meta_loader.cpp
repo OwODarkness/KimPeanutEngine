@@ -56,7 +56,7 @@ namespace kpengine::asset
             ShaderStage shader_stage = ParseStage(s_stage);
             if (shader_stage == ShaderStage::SHADER_STAGE_UNKNOW)
             {
-                KP_LOG("ShaderLoaderLog", LOG_LEVEL_WARNNING,
+                KP_LOG("ShaderLoaderLog", LOG_LEVEL_WARNING,
                        "Unknown ShaderStage: %s", s_stage.c_str());
             }
 
@@ -65,12 +65,12 @@ namespace kpengine::asset
 
             if (shader_format == ShaderFormat::Unknown)
             {
-                KP_LOG("ShaderLoaderLog", LOG_LEVEL_WARNNING,
+                KP_LOG("ShaderLoaderLog", LOG_LEVEL_WARNING,
                        "Unknown ShaderFormat: %s", s_format.c_str());
             }
             if (!item.contains("file"))
             {
-                KP_LOG("ShaderLoaderLog", LOG_LEVEL_WARNNING,
+                KP_LOG("ShaderLoaderLog", LOG_LEVEL_WARNING,
                        "Shader missing file field");
             }
 

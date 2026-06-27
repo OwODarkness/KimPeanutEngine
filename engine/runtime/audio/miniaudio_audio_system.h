@@ -1,11 +1,8 @@
 #ifndef KPENGINE_RUNTIME_MINI_AUDIO_SYSTEM_H
 #define KPENGINE_RUNTIME_MINI_AUDIO_SYSTEM_H
 
-#include <memory>
-#include <vector>
-#include "miniaudio/miniaudio.h"
+#include <miniaudio/miniaudio.h>
 #include "audio_system.h"
-
 namespace kpengine::audio
 {
     namespace
@@ -23,13 +20,13 @@ namespace kpengine::audio
     public:
         bool Initialize() override;
         void ShutDown() override;
-        AudioPlayer *CreateAudioPlayer() override;
         void Mix(float* source, uint32_t frame_count) override;
         MiniAudioSystem();
         ~MiniAudioSystem();
     private:
+        void ClearOutputBuffer(float* source, uint32_t size);
+    private:
         ma_device device_;
-        std::vector<std::unique_ptr<class AudioPlayer>> players_;
     };
 }
 

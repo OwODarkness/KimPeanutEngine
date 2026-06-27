@@ -2,7 +2,7 @@
 #include "glfw_window_system.h"
 namespace kpengine
 {
-    std::unique_ptr<WindowSystem> WindowSystem::CreateWindow(WindowAPIType window_api_type)
+    std::unique_ptr<WindowSystem> WindowSystem::CreateWindowSystem(WindowAPIType window_api_type)
     {
         switch (window_api_type)
         {

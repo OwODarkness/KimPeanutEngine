@@ -8,6 +8,7 @@
 #include "model_loader.h"
 #include "image_loader.h"
 #include "shader_meta_loader.h"
+#include "audio_loader.h"
 #define DEBUG
 
 namespace kpengine::asset{
@@ -56,7 +57,9 @@ namespace kpengine::asset{
         std::unique_ptr<IModelLoader> model_loader_;
         std::unique_ptr<ImageLoader> image_loader_;
         std::unique_ptr<ShaderMetaLoader> shader_meta_loader_;
+        std::unique_ptr<IAudioLoader> audio_loader_;
         std::unordered_map<AssetType, AssetCache> caches_;
+        
     };
 }
 

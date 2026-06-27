@@ -1,9 +1,10 @@
 add_subdirectory(editor)
 add_subdirectory(runtime)
 add_subdirectory(module)
+add_subdirectory(script)
 add_library(EngineLib INTERFACE)
 
-target_link_libraries(EngineLib INTERFACE RuntimeLib EditorLib Module
+target_link_libraries(EngineLib INTERFACE RuntimeLib EditorLib Module Script
 )
 
 target_include_directories(EngineLib

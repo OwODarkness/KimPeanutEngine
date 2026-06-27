@@ -1,7 +1,7 @@
 #ifndef KPENGINE_EDITOR_UI_COMPONENT_H
 #define KPENGINE_EDITOR_UI_COMPONENT_H
 
-#include <imgui/imgui.h>
+#include <imgui.h>
 
 namespace kpengine::editor
 {

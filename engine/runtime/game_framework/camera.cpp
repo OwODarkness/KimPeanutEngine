@@ -1,5 +1,5 @@
 #include "camera.h"
-#include <GLFW/glfw3.h>
+#include <glfw/glfw3.h>
 #include "log/logger.h"
 
 namespace kpengine

@@ -35,6 +35,11 @@ namespace kpengine::graphics
     {
         uint32_t index = handle_system_.Get(handle);
 
+        if(!handle.IsValid())
+        {
+            KP_LOG("TextureManagerLog", LOG_LEVEL_ERROR, "Invalid handle");
+            return nullptr;
+        }
         if (index >= resources_.size())
         {
             KP_LOG("TextureManagerLog", LOG_LEVEL_ERROR, "Failed to get texture, out of range");

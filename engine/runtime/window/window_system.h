@@ -30,7 +30,7 @@ namespace kpengine
 
         void SetWindowSize(int width, int height);
         virtual void Tick(float delta_time);
-        static std::unique_ptr<WindowSystem> CreateWindow(WindowAPIType window_api_type);
+        static std::unique_ptr<WindowSystem> CreateWindowSystem(WindowAPIType window_api_type);
 
     public:
         EventDispatcher<MouseButtonEvent> mouse_button_event_dispatcher_;

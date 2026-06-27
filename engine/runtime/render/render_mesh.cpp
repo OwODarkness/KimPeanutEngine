@@ -2,7 +2,6 @@
 
 #include <iostream>
 #include <glad/glad.h>
-#include <meshoptimizer/meshoptimizer.h>
 #include "log/logger.h"
 #include "render_shader.h"
 #include "render_material.h"
@@ -168,6 +167,7 @@ namespace kpengine
 
     void RenderMesh::BuildLODMeshResource(size_t level)
     {
+        return ;
         std::unique_ptr<RenderMeshResource> lod_resource = std::make_unique<RenderMeshResource>();
 
         for (const MeshSection &section : mesh_resource_->mesh_sections_)
@@ -182,28 +182,28 @@ namespace kpengine
             std::vector<unsigned int> remap(count);
             size_t vertex_count = mesh_resource_->vertex_buffer_.size();
 
-            size_t unique_vertex_count = meshopt_generateVertexRemap(
-                remap.data(),
-                input_indices.data(),
-                count,
-                mesh_resource_->vertex_buffer_.data(),
-                vertex_count,
-                sizeof(MeshVertex));
+            // size_t unique_vertex_count = meshopt_generateVertexRemap(
+            //     remap.data(),
+            //     input_indices.data(),
+            //     count,
+            //     mesh_resource_->vertex_buffer_.data(),
+            //     vertex_count,
+            //     sizeof(MeshVertex));
 
-            std::vector<MeshVertex> remapped_vertices(unique_vertex_count);
-            meshopt_remapVertexBuffer(
-                remapped_vertices.data(),
-                mesh_resource_->vertex_buffer_.data(),
-                vertex_count,
-                sizeof(MeshVertex),
-                remap.data());
+            // std::vector<MeshVertex> remapped_vertices(unique_vertex_count);
+            // meshopt_remapVertexBuffer(
+            //     remapped_vertices.data(),
+            //     mesh_resource_->vertex_buffer_.data(),
+            //     vertex_count,
+            //     sizeof(MeshVertex),
+            //     remap.data());
 
-            std::vector<unsigned int> remapped_indices(count);
-            meshopt_remapIndexBuffer(
-                remapped_indices.data(),
-                input_indices.data(),
-                count,
-                remap.data());
+            // std::vector<unsigned int> remapped_indices(count);
+            // meshopt_remapIndexBuffer(
+            //     remapped_indices.data(),
+            //     input_indices.data(),
+            //     count,
+            //     remap.data());
 
             const float simplify_ratio = 1.f - level * 0.2f;
             unsigned int target_index_count = static_cast<unsigned int>(simplify_ratio * count);
@@ -211,18 +211,18 @@ namespace kpengine
             float result_error = 0.0f;
 
             std::vector<unsigned int> simplified_indices(count);
-            size_t simplified_index_count = meshopt_simplify(
-                simplified_indices.data(),
-                remapped_indices.data(),
-                remapped_indices.size(),
-                reinterpret_cast<const float *>(&remapped_vertices[0].position),
-                remapped_vertices.size(),
-                sizeof(MeshVertex),
-                target_index_count,
-                error_threshold,
-                0,
-                &result_error);
-            simplified_indices.resize(simplified_index_count);
+            // size_t simplified_index_count = meshopt_simplify(
+            //     simplified_indices.data(),
+            //     remapped_indices.data(),
+            //     remapped_indices.size(),
+            //     reinterpret_cast<const float *>(&remapped_vertices[0].position),
+            //     remapped_vertices.size(),
+            //     sizeof(MeshVertex),
+            //     target_index_count,
+            //     error_threshold,
+            //     0,
+            //     &result_error);
+            //simplified_indices.resize(simplified_index_count);
 
             // std::cout << "[LOD] Simplified from " << remapped_indices.size()
             //           << " to " << simplified_index_count
@@ -237,15 +237,15 @@ namespace kpengine
             for (unsigned int &index : simplified_indices)
                 index += vertex_offset;
 
-            lod_resource->vertex_buffer_.insert(
-                lod_resource->vertex_buffer_.end(),
-                remapped_vertices.begin(),
-                remapped_vertices.end());
+            // lod_resource->vertex_buffer_.insert(
+            //     lod_resource->vertex_buffer_.end(),
+            //     remapped_vertices.begin(),
+            //     remapped_vertices.end());
 
-            lod_resource->index_buffer_.insert(
-                lod_resource->index_buffer_.end(),
-                simplified_indices.begin(),
-                simplified_indices.end());
+            // lod_resource->index_buffer_.insert(
+            //     lod_resource->index_buffer_.end(),
+            //     simplified_indices.begin(),
+            //     simplified_indices.end());
 
             lod_resource->mesh_sections_.push_back(MeshSection(index_offset,
                                                                static_cast<unsigned int>(simplified_indices.size()),

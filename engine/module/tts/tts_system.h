@@ -2,14 +2,13 @@
 #define KPENGINE_MODULE_TTS_H
 
 #include <string>
-#include "audio/audio_clip.h"
-
+#include <cstdint>
+#include <vector>
 namespace kpengine::tts{
-    using AudioClip = kpengine::audio::AudioClip;
 
     class TTSSystem{
     public:
-        virtual AudioClip Synthesis(const std::string& text) = 0;
+        virtual std::vector<uint8_t> Synthesis(const std::string& text) = 0;
     };
 
 

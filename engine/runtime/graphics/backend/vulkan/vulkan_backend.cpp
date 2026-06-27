@@ -73,7 +73,7 @@ namespace kpengine::graphics
         }
         else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
         {
-            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_WARNNING, pCallbackData->pMessage);
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_WARNING, pCallbackData->pMessage);
             return VK_TRUE;
         }
         return VK_FALSE;
