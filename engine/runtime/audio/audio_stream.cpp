@@ -3,7 +3,7 @@
 
 namespace kpengine::audio
 {
-    constexpr uint32_t BUFFER_SECONDS = 10;
+    constexpr uint32_t BUFFER_SECONDS = 20;
 
     AudioStream::AudioStream(const data::AudioFormat& format)
         : format_(format)

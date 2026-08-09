@@ -51,7 +51,13 @@ namespace kpengine::audio
         if (!header_parsed_)
         {
             header_parsed_ = ParseHeader();
-            return header_parsed_;
+            if (!header_parsed_)
+            {
+                return false;
+            }
+            // Fall through: the rest of this packet after the header is
+            // audio, decode it right away so playback can start from the
+            // very first chunk instead of waiting for the next one.
         }
 
         return DecodePCM();

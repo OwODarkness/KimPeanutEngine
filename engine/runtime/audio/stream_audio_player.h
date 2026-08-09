@@ -24,6 +24,8 @@ public:
 
     void Play() override;
 
+    bool FillBuffer() override;
+
     float GetCurrentSecond() const override;
     float GetRemainSecond() const override;
     bool SeekSeconds(float seconds) override;
@@ -35,6 +37,11 @@ protected:
     bool ResolveFrame(uint64_t& new_frame) override;
 
 private:
+    // Pull more frames from the stream into the ring buffer so that the
+    // window around `at_frame` stays above the low-water mark. Caller must
+    // hold buffer_mutex_.
+    void Refill(uint64_t at_frame);
+
     struct RingBuffer {
         std::vector<float> data;
         uint64_t start_frame = 0;      

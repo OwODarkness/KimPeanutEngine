@@ -95,6 +95,9 @@ namespace kpengine::audio
                 const float* data;
                 if(!player->GetFrameData(src, data))
                 {
+                    // No playable frame yet (e.g. a streaming source waiting
+                    // for more data): ask it to pull more, output silence.
+                    player->FillBuffer();
                     continue;
                 }
 
@@ -113,7 +116,12 @@ namespace kpengine::audio
 
                 if (player->AdvanceFrame() == false)
                 {
-                    player->Stop();
+                    // Only tear the player down when the source is actually
+                    // finished; a temporary underrun must not stop playback.
+                    if (player->IsFinished())
+                    {
+                        player->Stop();
+                    }
                     continue;
                 }
             }

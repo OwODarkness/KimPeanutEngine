@@ -44,12 +44,14 @@ namespace kpengine::audio
 
     bool AudioPlayer::SetCurrentFrame(uint64_t new_frame)
     {
-        if(!ResolveFrame(new_frame))
-        {
-            return false;
-        }
+        bool ready = ResolveFrame(new_frame);
+
+        // Always sync the playhead with the buffer window. For a streaming
+        // player, ResolveFrame moves the window even when the requested frame
+        // is not available yet (it is waiting on a dry source); the playhead
+        // must follow, otherwise it would rewind and repeat the last frame.
         current_frame_ = new_frame;
-        return true;
+        return ready;
     }
 
 

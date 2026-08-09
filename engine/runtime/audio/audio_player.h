@@ -22,6 +22,11 @@ namespace kpengine::audio
         virtual bool GetFrameData(uint64_t src, const float* & out_data) const = 0;
         virtual const std::vector<float>& GetPCM() const = 0;
 
+        // Pull more source data into the player's internal buffer so a frame
+        // that is not yet available can become available. No-op for players
+        // that have their whole clip buffered up front.
+        virtual bool FillBuffer() { return true; }
+
         bool IsPlaying() const { return state_ == AudioState::Playing;}
         bool IsFinished() const {return state_ == AudioState::Finished;}
         virtual AudioFormat GetAudioFormat() const = 0;
@@ -41,7 +46,7 @@ namespace kpengine::audio
         bool AdvanceSecond();
         bool SeekFrames(uint64_t new_frame);
 
-    protected: 
+    protected:
         bool SetCurrentFrame(uint64_t new_frame);
 
         virtual bool ResolveFrame(uint64_t& new_frame) = 0;
