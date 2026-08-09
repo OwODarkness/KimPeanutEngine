@@ -2,40 +2,54 @@
 #define KPENGINE_RUNTIME_AUDIO_PLAYER_H
 
 #include <memory>
-#include "data/audioclip.h"
-
+#include "data/audio.h"
+#include "audio_types.h"
 namespace kpengine::audio
 {
     using AudioClip = kpengine::data::AudioClip;
+    using AudioFormat = kpengine::data::AudioFormat;
 
 
     class AudioPlayer
     {
     public:
-        ~AudioPlayer() = default;
-        void SetClip(std::shared_ptr<AudioClip> clip);
-        AudioClip* GetClip() const{return clip_.get();}
-        void Play();
-        void Stop();
-        void Pause();
-        void Reset();
-        
-        bool IsPlaying() const { return playing_; }
-        bool IsFinished() const;
+        virtual ~AudioPlayer() = default;
+        virtual void Play();
+        virtual void Stop();
+        virtual void Pause();
+        virtual void Reset();
+        virtual void Restart();
+        virtual bool GetFrameData(uint64_t src, const float* & out_data) const = 0;
+        virtual const std::vector<float>& GetPCM() const = 0;
 
-        void SetVolume(float volume);
-        float GetVolume() const{return volume_;}
+        bool IsPlaying() const { return state_ == AudioState::Playing;}
+        bool IsFinished() const {return state_ == AudioState::Finished;}
+        virtual AudioFormat GetAudioFormat() const = 0;
+        AudioState GetCurrentState() const{return state_;}
+        uint64_t GetCurrentFrame() const { return current_frame_; }
 
-        uint64_t GetCurrentFrame() const{return current_frame_;}
-        void SetCurrentFrame(uint64_t new_frame);
+        virtual void SetVolume(float volume);
+        virtual float GetVolume() const { return volume_; }
 
-    private:
-        std::shared_ptr<AudioClip> clip_;
+        virtual float GetCurrentSecond() const = 0;
+        virtual float GetRemainSecond() const = 0;
+        virtual bool SeekSeconds(float new_seconds) = 0;
+
+        virtual void SetShouldLoop(bool looping);
+
+        bool AdvanceFrame();
+        bool AdvanceSecond();
+        bool SeekFrames(uint64_t new_frame);
+
+    protected: 
+        bool SetCurrentFrame(uint64_t new_frame);
+
+        virtual bool ResolveFrame(uint64_t& new_frame) = 0;
+    protected:
+        AudioState state_ = AudioState::Stopped;
         uint64_t current_frame_ = 0;
         bool looping_ = false;
         float volume_ = 1.0;
-        bool playing_ = false;
-
     };
 }
 

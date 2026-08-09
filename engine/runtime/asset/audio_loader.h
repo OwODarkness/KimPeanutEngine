@@ -8,8 +8,10 @@
 namespace kpengine::asset{
     class IAudioLoader{
     public:
+        virtual ~IAudioLoader() = default;
         virtual bool LoadFromFile(const std::string& path, AssetRegisterInfo& info) = 0; 
-        //temporary return 
+        virtual AudioResource LoadFromMemory(const char* src, size_t size) = 0;
+         
     };
 }
 

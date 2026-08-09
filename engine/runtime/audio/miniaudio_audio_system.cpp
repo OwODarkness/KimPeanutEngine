@@ -1,9 +1,16 @@
 #include "miniaudio_audio_system.h"
 #include "log/logger.h"
 #include "audio_player.h"
+#include <miniaudio/miniaudio.h>
 
 namespace kpengine::audio
 {
+    class MiniAudioSystem::MiniAudioWrapper{
+    public:
+        ma_device device;
+    };
+
+    static const char *LogName = "Miniaudio_AudioSystemLog";
     namespace
     {
         void DataCallback(
@@ -24,7 +31,8 @@ namespace kpengine::audio
         }
     }
 
-    MiniAudioSystem::MiniAudioSystem()
+    MiniAudioSystem::MiniAudioSystem():
+    wrapper_(std::make_unique<MiniAudioWrapper>())
     {
     }
 
@@ -37,16 +45,14 @@ namespace kpengine::audio
         config.dataCallback = DataCallback;
         config.pUserData = this;
 
-        if (ma_device_init(nullptr, &config, &device_) != MA_SUCCESS)
+
+        if (ma_device_init(nullptr, &config, &(wrapper_->device)) != MA_SUCCESS)
         {
             return false;
         }
-        ma_device_start(&device_);
-        KP_LOG("Audio", LOG_LEVEL_INFO,
-               "Device sample rate: %u",
-               device_.sampleRate);
+        ma_device_start(&(wrapper_->device));
 
-        KP_LOG("AudioSysLog", LOG_LEVEL_INFO, "Audio Init succeed");
+        KP_LOG(LogName, LOG_LEVEL_INFO, "Audio Init succeed");
         return true;
     }
     void MiniAudioSystem::ShutDown()
@@ -55,63 +61,69 @@ namespace kpengine::audio
 
     void MiniAudioSystem::Mix(float *output, uint32_t frame_count)
     {
-        uint32_t out_channels = device_.playback.channels;
-        if(out_channels != 2)
+        uint32_t out_channels = wrapper_->device.playback.channels;
+        if (out_channels != 2)
         {
-            KP_LOG("MiniAudioSystemLog", LOG_LEVEL_WARNING, "channel %d mismatch, desired 2", out_channels);
-            return ;
+            KP_LOG(LogName, LOG_LEVEL_WARNING, "channel %d mismatch, desired 2", out_channels);
+            return;
         }
         ClearOutputBuffer(output, frame_count * out_channels);
 
-        for (auto &player_ptr : players_)
+        for (uint32_t i = 0; i < frame_count; i++)
         {
-            AudioPlayer *player = player_ptr.get();
-
-            if (!player->IsPlaying() || !player->GetClip())
-                continue;
-
-            auto &clip = *player->GetClip();
-
-            uint32_t in_channels = clip.channels;
-
-            for (uint32_t i = 0; i < frame_count; i++)
+            for (auto &player_ptr : players_)
             {
-                if (player->IsFinished())
-                {
-                    player->Stop();
-                    break;
-                }
+                AudioPlayer *player = player_ptr.get();
+
+                if (!player->IsPlaying())
+                    continue;
+
+
+
+                AudioFormat audio_format = player->GetAudioFormat();
+
+                uint32_t in_channels = audio_format.channels;
 
                 uint64_t frame = player->GetCurrentFrame();
-                uint64_t src = frame  * in_channels;
+                uint64_t src = frame * in_channels;
                 uint64_t dst = i * out_channels;
                 uint64_t left = dst;
                 uint64_t right = dst + 1;
 
                 float volume = player->GetVolume();
 
-                if(out_channels == 1)
+                const float* data;
+                if(!player->GetFrameData(src, data))
                 {
-
-                    float res = volume * clip.pcm[src];
-                    output[left] = res;
-                    output[right] = res;
-                }
-                else if(out_channels == 2)
-                {
-                    output[left] = volume * clip.pcm[src];
-                    output[right] = volume * clip.pcm[src + 1];
+                    continue;
                 }
 
-                player->SetCurrentFrame(frame+ 1);
+                if (out_channels == 1)
+                {
+
+                    float res = volume * data[0];
+                    output[left] += res;
+                    output[right] += res;
+                }
+                else if (out_channels == 2)
+                {
+                    output[left] += volume *  data[0];
+                    output[right] += volume *  data[1];
+                }
+
+                if (player->AdvanceFrame() == false)
+                {
+                    player->Stop();
+                    continue;
+                }
             }
         }
     }
 
-        void MiniAudioSystem::ClearOutputBuffer(float* output, uint32_t size)
-        {
-            memset(output, 0, size);
-        }
+    void MiniAudioSystem::ClearOutputBuffer(float *output, uint32_t size)
+    {
+        memset(output, 0, size);
+    }
 
     MiniAudioSystem::~MiniAudioSystem()
     {

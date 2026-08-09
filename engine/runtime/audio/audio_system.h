@@ -5,12 +5,11 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
-#include "base/handle.h"
+#include "audio_types.h"
 
 namespace kpengine::audio{
     class AudioPlayer;
-    struct AudioTag{};
-    using AudioHandle = Handle<AudioTag>;
+
 
     class AudioSystem{
     public:
@@ -21,7 +20,7 @@ namespace kpengine::audio{
         virtual void Mix(float* source, uint32_t frame_count) = 0;
 
         virtual AudioPlayer* GetAudioPlayer(AudioHandle handle);
-        virtual AudioHandle CreateAudioPlayer() ;
+        virtual AudioHandle CreateAudioPlayer(AudioPlayerType type) ;
         virtual bool DestroyAudioPlayer(AudioHandle handle);
     protected:
         HandleSystem<AudioHandle> handle_system_;
