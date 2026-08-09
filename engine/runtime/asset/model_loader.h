@@ -10,6 +10,7 @@
 namespace kpengine::asset{
     class IModelLoader{
     public:
+        virtual ~IModelLoader() = default;
         virtual bool Load(const std::string& path, ModelGeometryType type,  AssetRegisterInfo &info) = 0;
     };
 }

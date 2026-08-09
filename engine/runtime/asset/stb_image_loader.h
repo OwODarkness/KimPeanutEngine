@@ -4,8 +4,9 @@
 #include "image_loader.h"
 
 namespace kpengine::asset{
-    class StbImageLoader: public ImageLoader{
+    class Stb_ImageLoader: public ImageLoader{
     public:
+        ~Stb_ImageLoader() override = default;
         virtual bool Load(const std::string& path, AssetRegisterInfo& info) override; 
     };
 }

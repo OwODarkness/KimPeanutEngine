@@ -7,6 +7,7 @@
 namespace kpengine::asset{
     class ImageLoader{
     public:
+        virtual ~ImageLoader() = default;
         virtual bool Load(const std::string& path, AssetRegisterInfo& info) = 0; 
     };
 }

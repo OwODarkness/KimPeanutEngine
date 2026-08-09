@@ -1,5 +1,8 @@
 #include "assimp_model_loader.h"
 #include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#include <assimp/Importer.hpp>
+#include <memory>
 #include <magic_enum/magic_enum.hpp>
 #include "log/logger.h"
 #include "asset_manager.h"
@@ -8,7 +11,16 @@
 namespace kpengine::asset
 {
 
-    bool AssimpModelLoader::Load(const std::string &path, ModelGeometryType type, AssetRegisterInfo &info )
+    // Defined only here so the public header never needs Assimp.
+    struct Assimp_ModelLoader::Impl
+    {
+        Assimp::Importer import;
+    };
+
+    Assimp_ModelLoader::Assimp_ModelLoader() : impl_(std::make_unique<Impl>()) {}
+    Assimp_ModelLoader::~Assimp_ModelLoader() = default;
+
+    bool Assimp_ModelLoader::Load(const std::string &path, ModelGeometryType type, AssetRegisterInfo &info )
     {
 
         AssetID id{};
@@ -42,16 +54,16 @@ namespace kpengine::asset
         return false;
     }
 
-    AssetID AssimpModelLoader::LoadMesh(const std::string &path)
+    AssetID Assimp_ModelLoader::LoadMesh(const std::string &path)
     {
 
-        const aiScene *scene = import.ReadFile(
+        const aiScene *scene = impl_->import.ReadFile(
             path,
             aiProcess_Triangulate | aiProcess_GenSmoothNormals | aiProcess_CalcTangentSpace);
 
         if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
         {
-            KP_LOG("ModelLoadLog", LOG_LEVEL_ERROR, "%s failed to load model", import.GetErrorString());
+            KP_LOG("ModelLoadLog", LOG_LEVEL_ERROR, "%s failed to load model", impl_->import.GetErrorString());
             return AssetID();
         }
 
@@ -77,7 +89,7 @@ namespace kpengine::asset
         return AssetManager::GetInstance().RegisterAsset(info);
     }
 
-    void AssimpModelLoader::ProcessNode(aiNode *node, const aiScene *scene, MeshPtr mesh_asset, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
+    void Assimp_ModelLoader::ProcessNode(aiNode *node, const aiScene *scene, MeshPtr mesh_asset, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
     {
         if (node == nullptr)
         {
@@ -95,7 +107,7 @@ namespace kpengine::asset
             ProcessNode(node->mChildren[i], scene, mesh_asset, unique_vertices);
         }
     }
-    void AssimpModelLoader::ProcessMesh(aiMesh *mesh, const aiScene *scene, MeshPtr mesh_asset, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
+    void Assimp_ModelLoader::ProcessMesh(aiMesh *mesh, const aiScene *scene, MeshPtr mesh_asset, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
     {
         std::shared_ptr<MeshData> resource = mesh_asset->data;
         uint32_t index_start = static_cast<uint32_t>(resource->indices.size());

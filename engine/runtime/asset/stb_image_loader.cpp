@@ -4,15 +4,16 @@
 #include "log/logger.h"
 #include "texture.h"
 #include "utility.h"
-namespace kpengine::asset{
-    bool StbImageLoader::Load(const std::string& path, AssetRegisterInfo& info)
+namespace kpengine::asset
+{
+    bool Stb_ImageLoader::Load(const std::string &path, AssetRegisterInfo &info)
     {
         int width = 0;
         int height = 0;
         int channels = 0;
 
-        stbi_uc* pixles = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
-        if(!pixles)
+        stbi_uc *pixles = stbi_load(path.c_str(), &width, &height, &channels, STBI_rgb_alpha);
+        if (!pixles)
         {
             KP_LOG("ImageLoaderLog", LOG_LEVEL_ERROR, "Failed to load image from %s", path.c_str());
             return false;
@@ -21,10 +22,18 @@ namespace kpengine::asset{
         TextureFormat format;
         switch (channels)
         {
-        case 1: format = TextureFormat::TEXTURE_FORMAT_R8_SRGB;break;
-        case 2: format = TextureFormat::TEXTURE_FORMAT_RG8_SRGB;break;
-        case 3: format = TextureFormat::TEXTURE_FORMAT_RGB8_SRGB;break;
-        case 4:format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;break;
+        case 1:
+            format = TextureFormat::TEXTURE_FORMAT_R8_SRGB;
+            break;
+        case 2:
+            format = TextureFormat::TEXTURE_FORMAT_RG8_SRGB;
+            break;
+        case 3:
+            format = TextureFormat::TEXTURE_FORMAT_RGB8_SRGB;
+            break;
+        case 4:
+            format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+            break;
         default:
             stbi_image_free(pixles);
             KP_LOG("ImageLoaderLog", LOG_LEVEL_ERROR, "Unsupported image %s channel count: %d", path.c_str(), channels);
@@ -40,7 +49,7 @@ namespace kpengine::asset{
         tex->channel_count = channels;
         memcpy(tex->resource->pixels.data(), pixles, total_bytes);
         stbi_image_free(pixles);
-        
+
         info.type = AssetType::KPAT_Texture;
         info.path = path;
         info.name = std::string(magic_enum::enum_name(info.type)) + ExtractNameFromPath(path);
