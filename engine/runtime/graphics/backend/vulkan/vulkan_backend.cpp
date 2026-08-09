@@ -719,6 +719,9 @@ namespace kpengine::graphics
         ShaderHandle frag_handle = shader_manager_.CreateShader<GraphicsAPIType::GRAPHICS_API_VULKAN>(ShaderType::SHADER_TYPE_FRAGMENT, spv_shader_dir + "/simple_triangle.frag.spv");
         Shader *frag_shader = shader_manager_.GetShader(frag_handle);
 
+
+        
+
         pipeline_desc.vert_shader = vert_shader;
         pipeline_desc.frag_shader = frag_shader;
 

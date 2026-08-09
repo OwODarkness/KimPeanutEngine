@@ -9,9 +9,8 @@
 namespace kpengine::resource
 {
 
-    ShaderProcessor::ShaderProcessor(ShaderCache* cache) : 
-    compiler_(std::make_unique<SPIRVCompiler>()),
-    cache_(cache)
+    ShaderProcessor::ShaderProcessor() : 
+    compiler_(std::make_unique<SPIRVCompiler>())
     {
     }
     ShaderProcessor::~ShaderProcessor()
@@ -20,18 +19,17 @@ namespace kpengine::resource
 
     void ShaderProcessor::Initialize(GraphicsAPIType api_type)
     {
-        assert(cache_);
         api_ = api_type;
         compiler_->Initialize(api_);
     }
 
-    void ShaderProcessor::PreProcess(const std::vector<std::shared_ptr<asset::ShaderResource>> &assets)
+    void ShaderProcessor::Process(ShaderCache* cache, const std::vector<std::shared_ptr<asset::ShaderResource>> &assets)
     {
-        
-    }
+        if(!cache)
+        {
+            return ;
+        }
 
-    void ShaderProcessor::Process(const std::vector<std::shared_ptr<asset::ShaderResource>> &assets)
-    {
         for(const auto& shader: assets)
         {
             std::string file_name = shader->meta.file;
@@ -39,11 +37,11 @@ namespace kpengine::resource
             std::string stage_str = std::string(magic_enum::enum_name(shader->meta.stage));
 
             uint64_t hash = GenerateShaderHash(content, stage_str, shader->meta.entry, {});
-
-            if(cache_->Has(hash))
+            std::vector<uint8_t> byte_codes;
+            if(cache->Has(hash))
             {
                 KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s has been cached", file_name.c_str());
-                std::vector<uint8_t> byte_codes = cache_->Load(hash);
+                byte_codes = cache->Load(hash);
             }
             else
             {
@@ -52,18 +50,31 @@ namespace kpengine::resource
                 input.format = shader->format;
                 input.source = content;
                 input.stage = shader->meta.stage;
-                std::vector<uint8_t> byte_codes = compiler_->Compile(input);
+                shader->status = asset::ShaderStatus::Compiling;
+
+                byte_codes = compiler_->Compile(input);
                 if(byte_codes.empty())
                 {
                     KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s failed to compile with binary", file_name.c_str());
+                    return ;
                 }
                 else
                 {
-                    cache_->Save(hash, byte_codes);
+                    cache->Save(hash, byte_codes);
                     KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s ready to cache", file_name.c_str());          
                 }
 
             }
+            //TODO: write back
+            if(!shader->resource)
+            {
+                shader->resource = std::make_shared<data::ShaderData>();
+            }
+            shader->resource->byte_code = std::move(byte_codes);
+            shader->resource->stage = shader->meta.stage;
+            shader->resource->entry = shader->meta.entry;
+            shader->status = asset::ShaderStatus::Ready;
+            //shader->resource
         }
     }
 }

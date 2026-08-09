@@ -30,7 +30,7 @@ add_library(Graphics STATIC
     backend/vulkan/vulkan_sampler.cpp
     backend/vulkan/vulkan_mesh.cpp
     
-    tool/shader_loader.cpp
+    backend/common/shader_loader.cpp
     )
 
 target_include_directories(Graphics 
@@ -39,8 +39,8 @@ target_include_directories(Graphics
 )
 
 target_link_libraries(Graphics 
-    PUBLIC Core 
-    PRIVATE Data Asset glfw glad ThirdPartyLib)
+    PUBLIC Core glad VulkanSDK
+    PRIVATE Data Asset glfw )
 
 find_program(GLSLC glslc
     HINTS
@@ -63,7 +63,7 @@ if(NOT GLSLC)
     message(FATAL_ERROR "glslc not found! Please install Vulkan SDK or put glslc in third_party/vulkan/bin")
 else()
     message(STATUS "Found glslc: ${GLSLC}, ready to compile the shaders which can be found in ${CMAKE_BINARY_DIR}/resource/shaders")
-    set(SHADER_PATH ${CMAKE_SOURCE_DIR}/engine/resource/shader)
+    set(SHADER_PATH ${CMAKE_SOURCE_DIR}/asset/shader)
     file(GLOB_RECURSE GLSL_SHADERS
         "${SHADER_PATH}/simple_triangle.vert"
         "${SHADER_PATH}/simple_triangle.frag"

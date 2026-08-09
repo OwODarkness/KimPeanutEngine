@@ -135,8 +135,10 @@ namespace kpengine
         {material_map_type::ROUGHNESS_MAP, "model/cerberus/Textures/Cerberus_R.tga"},
         {material_map_type::METALLIC_MAP, "model/cerberus/Textures/Cerberus_M.tga"},
         {material_map_type::NORMAL_MAP, "model/cerberus/Textures/Cerberus_N.tga"},
-        {material_map_type::AO_MAP, "texture/pbr/speckled-rust-bl/speckled-rust_ao.png"}},
-        {}, {});
+        },
+        {
+             {material_param_type::AO_PARAM, 1.f}
+        }, {});
         gun_mesh->SetMaterial(gun_pbr_material, 0);
     }
 

@@ -1,4 +1,5 @@
 .vscode/
+.idea/
 
 # Prerequisites
 *.d
@@ -33,16 +34,34 @@
 *.out
 *.app
 
-# Asset
+# Asset content (migrated from engine/resource/)
 *.hdr
-engine/resource/
-engine/shader/cache/
-engine/shader/bin/
+/asset/
 
+# Build output
+build/
+out/
+x64/
+cmake-build-*/
+.cache/
+compile_commands.json
+Testing/
+.ninja_*
 
-build/*
+# CMake user settings
+CMakeUserPresets.json
 
+# IDE / editor user files
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+.clangd/
+.clion/
+.DS_Store
+Thumbs.db
+
+# Logs
+logs/
 
 .VSCodeCounter/
-logs/*
-

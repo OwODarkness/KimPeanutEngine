@@ -3,7 +3,6 @@
 
 #include <vector>
 #include <cstdint>
-#include <vulkan/vulkan.h>
 #include "common/shader.h"
 
 namespace kpengine::graphics{

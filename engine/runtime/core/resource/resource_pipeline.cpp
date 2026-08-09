@@ -13,14 +13,14 @@ namespace kpengine::resource{
         shader_cache_ = std::make_unique<ShaderCache>();
         shader_cache_->Initialize(context_.graphics_type);
 
-        shader_processor_  = std::make_unique<ShaderProcessor>(shader_cache_.get());
+        shader_processor_  = std::make_unique<ShaderProcessor>();
         shader_processor_->Initialize(context_.graphics_type);
 
     }
 
     void ResourcePipeline::ProcessShader(const std::vector<asset::ShaderPtr>& shaders)
     {
-        shader_processor_->Process(shaders);
+        shader_processor_->Process(shader_cache_.get(), shaders);
     }
 
 

@@ -9,7 +9,6 @@
 namespace kpengine::graphics
 {
 
-
     class Shader
     {
     public:
