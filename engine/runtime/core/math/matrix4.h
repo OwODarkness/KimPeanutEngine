@@ -90,5 +90,5 @@ namespace kpengine::math
 
     
 } // namespace kpengine::math
-
+#include "matrix4.tpp"
 #endif

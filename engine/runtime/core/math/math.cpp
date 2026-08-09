@@ -8,14 +8,7 @@
 #include "matrix4.h"
 
 
-#include "vector2.tpp"
-#include "vector3.tpp"
-#include "vector4.tpp"
-#include "quaternion.tpp"
-#include "rotator.tpp"
-#include "transform.tpp"
-#include "matrix3.tpp"
-#include "matrix4.tpp"
+
 
 namespace kpengine::math
 {

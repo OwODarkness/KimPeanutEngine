@@ -193,5 +193,6 @@ namespace kpengine::math
             scalar_u * v.w_);
     }
 }
+#include "vector4.tpp"
 
 #endif

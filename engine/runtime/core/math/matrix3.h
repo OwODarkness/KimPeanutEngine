@@ -76,5 +76,5 @@ namespace kpengine::math{
 
     
 }
-
+#include "matrix3.tpp" 
 #endif

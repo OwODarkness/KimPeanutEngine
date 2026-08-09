@@ -50,5 +50,5 @@ namespace kpengine::math
 
 
 }
-
+#include "rotator.tpp"
 #endif

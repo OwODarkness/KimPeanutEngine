@@ -176,5 +176,5 @@ namespace kpengine::math
     }
 
 }
-
+#include "vector2.tpp"
 #endif

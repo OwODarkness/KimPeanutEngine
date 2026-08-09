@@ -215,5 +215,5 @@ namespace kpengine::math
             scalar_u * v.z_);
     }
 }
-
+#include "vector3.tpp"
 #endif

@@ -41,5 +41,5 @@ namespace kpengine::math
     };
 
 }
-
+#include "quaternion.tpp"
 #endif // KPENGINE_RUNTIME_MATH_QUATERNION_H

@@ -47,5 +47,5 @@ namespace kpengine::math
     };
 
 }
-
+#include "transform.tpp"
 #endif // KPENGINE_RUNTIME_MATH_TRANSFORM_H
