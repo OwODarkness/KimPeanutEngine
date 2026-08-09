@@ -7,7 +7,7 @@
 struct GLFWwindow;
 namespace kpengine
 {
-    class GLFWWindowSystem : public WindowSystem
+    class GLFW_WindowSystem : public WindowSystem
     {
     public:
         bool Initialize(const WindowCreateInfo &create_info) override;
@@ -17,7 +17,7 @@ namespace kpengine
         bool ShouldClose() const override;
         void Tick(float delta_time) override;
         void Cleanup() override;
-        ~GLFWWindowSystem();
+        ~GLFW_WindowSystem();
 
     private:
         static void OnErrorCallback(int error_code, const char *msg);

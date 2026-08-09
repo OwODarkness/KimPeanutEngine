@@ -5,13 +5,13 @@
 namespace kpengine
 {
 
-    bool GLFWWindowSystem::Initialize(const WindowCreateInfo &create_info)
+    bool GLFW_WindowSystem::Initialize(const WindowCreateInfo &create_info)
     {
         width_ = create_info.width;
         height_ = create_info.height;
         title_ = create_info.title;
 
-        glfwSetErrorCallback(&GLFWWindowSystem::OnErrorCallback);
+        glfwSetErrorCallback(&GLFW_WindowSystem::OnErrorCallback);
 
         if (glfwInit() == GLFW_FALSE)
         {
@@ -48,30 +48,30 @@ namespace kpengine
             glfwSwapInterval(1); // vsync
         }
 
-        glfwSetFramebufferSizeCallback(window_, GLFWWindowSystem::OnFrameBufferSizeCallback);
-        glfwSetMouseButtonCallback(window_, GLFWWindowSystem::OnMouseButtonCallback);
-        glfwSetKeyCallback(window_, GLFWWindowSystem::OnKeyCallback);
-        glfwSetCursorPosCallback(window_, GLFWWindowSystem::OnCursorPosCallback);
-        glfwSetScrollCallback(window_, GLFWWindowSystem::OnScrollCallback);
+        glfwSetFramebufferSizeCallback(window_, GLFW_WindowSystem::OnFrameBufferSizeCallback);
+        glfwSetMouseButtonCallback(window_, GLFW_WindowSystem::OnMouseButtonCallback);
+        glfwSetKeyCallback(window_, GLFW_WindowSystem::OnKeyCallback);
+        glfwSetCursorPosCallback(window_, GLFW_WindowSystem::OnCursorPosCallback);
+        glfwSetScrollCallback(window_, GLFW_WindowSystem::OnScrollCallback);
 
         return true;
     }
-    void GLFWWindowSystem::PollEvents()
+    void GLFW_WindowSystem::PollEvents()
     {
         glfwPollEvents();
     }
-    void GLFWWindowSystem::SwapBuffers()
+    void GLFW_WindowSystem::SwapBuffers()
     {
         glfwSwapBuffers(window_);
     }
 
-    void GLFWWindowSystem::Tick(float delta_time)
+    void GLFW_WindowSystem::Tick(float delta_time)
     {
         PollEvents();
         SwapBuffers();
     }
 
-    void GLFWWindowSystem::Cleanup()
+    void GLFW_WindowSystem::Cleanup()
     {
         if (should_make_context_)
         {
@@ -81,25 +81,25 @@ namespace kpengine
         glfwTerminate();
     }
 
-    WindowHandle GLFWWindowSystem::GetNativeHandle() const
+    WindowHandle GLFW_WindowSystem::GetNativeHandle() const
     {
         return static_cast<WindowHandle>(window_);
     }
 
-    bool GLFWWindowSystem::ShouldClose() const
+    bool GLFW_WindowSystem::ShouldClose() const
     {
         return glfwWindowShouldClose(window_);
     }
 
-    GLFWWindowSystem::~GLFWWindowSystem()
+    GLFW_WindowSystem::~GLFW_WindowSystem()
     {
     }
 
-    void GLFWWindowSystem::OnErrorCallback(int error_code, const char *msg)
+    void GLFW_WindowSystem::OnErrorCallback(int error_code, const char *msg)
     {
         KP_LOG("GLFWWindowSystemLog", LOG_LEVEL_ERROR, msg);
     }
-    void GLFWWindowSystem::OnFrameBufferSizeCallback(GLFWwindow *window, int width, int height)
+    void GLFW_WindowSystem::OnFrameBufferSizeCallback(GLFWwindow *window, int width, int height)
     {
         WindowSystem *window_sys = static_cast<WindowSystem *>(glfwGetWindowUserPointer(window));
         if (!window_sys)
@@ -114,7 +114,7 @@ namespace kpengine
         window_sys->resize_event_dispatcher_.Dispatch(event);
     }
 
-    void GLFWWindowSystem::OnMouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
+    void GLFW_WindowSystem::OnMouseButtonCallback(GLFWwindow *window, int button, int action, int mods)
     {
         WindowSystem *window_sys = static_cast<WindowSystem *>(glfwGetWindowUserPointer(window));
         if (!window_sys)
@@ -128,7 +128,7 @@ namespace kpengine
         event.mods = mods;
         window_sys->mouse_button_event_dispatcher_.Dispatch(event);
     }
-    void GLFWWindowSystem::OnKeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
+    void GLFW_WindowSystem::OnKeyCallback(GLFWwindow *window, int key, int scancode, int action, int mods)
     {
         WindowSystem *window_sys = static_cast<WindowSystem *>(glfwGetWindowUserPointer(window));
         if (!window_sys)
@@ -143,7 +143,7 @@ namespace kpengine
         event.mods = mods;
         window_sys->key_event_dispatcher_.Dispatch(event);
     }
-    void GLFWWindowSystem::OnCursorPosCallback(GLFWwindow *window, double xpos, double ypos)
+    void GLFW_WindowSystem::OnCursorPosCallback(GLFWwindow *window, double xpos, double ypos)
     {
         WindowSystem *window_sys = static_cast<WindowSystem *>(glfwGetWindowUserPointer(window));
         if (!window_sys)
@@ -156,7 +156,7 @@ namespace kpengine
         event.ypos = ypos;
         window_sys->cursor_event_dispatcher_.Dispatch(event);
     }
-    void GLFWWindowSystem::OnScrollCallback(GLFWwindow *window, double xoffset, double yoffset)
+    void GLFW_WindowSystem::OnScrollCallback(GLFWwindow *window, double xoffset, double yoffset)
     {
         WindowSystem *window_sys = static_cast<WindowSystem *>(glfwGetWindowUserPointer(window));
         if (!window_sys)

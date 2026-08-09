@@ -7,7 +7,7 @@ namespace kpengine
         switch (window_api_type)
         {
         case WindowAPIType::WINDOW_API_GLFW:
-            return std::make_unique<GLFWWindowSystem>();
+            return std::make_unique<GLFW_WindowSystem>();
             break;
         default:
             return nullptr;

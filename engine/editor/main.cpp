@@ -12,9 +12,10 @@
 #include "runtime/asset/shader_meta.h"
 #include "runtime/core/resource/resource_pipeline.h"
 #include "runtime/core/resource/spirv_compiler.h"
-#include "module/tts/gpt_sovits_tts.h"
+#include "module/tts/tts_system.h"
 #include "runtime/audio/miniaudio_audio_system.h"
 #include "runtime/audio/audio_player.h"
+#include "runtime/audio/buffer_audio_player.h"
 #include "runtime/asset/miniaudio_audio_loader.h"
 
 #include "script/lua/lua_vm.h"
@@ -22,149 +23,120 @@
 using namespace kpengine::runtime;
 using namespace kpengine;
 
-void renderer_test()
-{
-    try
-    {
-        std::unique_ptr<Engine> engine = std::make_unique<Engine>();
-        engine->Initialize();
-        engine->Run();
-        engine->Clear();
-    }
-    catch (std::exception e)
-    {
-        std::cout << e.what() << std::endl;
-    }
-}
-
-void rhi_test()
-{
-    try
-    {
-        std::unique_ptr<WindowSystem> window = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
-        WindowCreateInfo window_create_info;
-        window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_VULKAN;
-        //window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
-        window_create_info.width = 1600;
-        window_create_info.height = 1024;
-        window_create_info.title = "RHI";
-        window->Initialize(window_create_info);
-
-        std::unique_ptr<input::InputSystem> input = std::make_unique<input::InputSystem>();
-        input->BindKeyEvent(window->key_event_dispatcher_);
-        input->BindCursorEvent(window->cursor_event_dispatcher_);
-        input->BindScrollEvent(window->scroll_event_dispatcher_);
-        std::shared_ptr<input::InputContext> context = std::make_shared<input::InputContext>();
-        input->AddContext("SceneInputContext", context);
-        input->SetActiveContext("SceneInputContext");
-        std::unique_ptr<Camera> camera = std::make_unique<Camera>();
-        camera->Initialize(context.get());
-
-        std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(window_create_info.graphics_api_type);
-        rhi->BindWindowResize(window->resize_event_dispatcher_);
-        rhi->window_ = static_cast<GLFWwindow *>(window->GetNativeHandle());
-        rhi->Initialize();
-        while (!window->ShouldClose())
-        {
-            if (window_create_info.graphics_api_type == GraphicsAPIType::GRAPHICS_API_OPENGL)
-            {
-                window->SwapBuffers();
-            }
-            window->PollEvents();
-            CameraData camera_data = camera->GetCameraData();
-            rhi->camera_data.view = camera_data.view;
-            rhi->camera_data.proj = camera_data.proj;
-            rhi->BeginFrame();
-            rhi->EndFrame();
-        }
-        rhi->Cleanup();
-        window->Cleanup();
-    }
-    catch (std::exception e)
-    {
-        std::cout << e.what() << std::endl;
-    }
-}
-
-void foo_test()
-{
-    using namespace resource;
-    using namespace asset;
-    auto& asset_manager = AssetManager::GetInstance();
-    std::string shader_meta_path = GetShaderDirectory() + "simple_triangle.shader";
-    AssetID shader_meta_id = asset_manager.LoadSync(shader_meta_path);
-    auto shader_meta = asset_manager.GetResource<ShaderMetaResource>(shader_meta_id);
-    auto shader = shader_meta->GetShader(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
-    AssetID shader_id = shader_meta->GetData(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
-    std::vector<ShaderPtr> assets;
-    assets.push_back(shader);
-
-    ResourcePipeline pipeline;
-    ResourcePipelineContext context;
-    context.graphics_type = GraphicsAPIType::GRAPHICS_API_VULKAN;
-    pipeline.Initialize(context);
-    pipeline.ProcessShader(assets);
-
-}
 
 void tts_test()
 {
     using namespace tts;
-    std::shared_ptr<GPTSovitsTTS> tts = std::make_shared<GPTSovitsTTS>();
-    GPTSovitsConfig config;
+
+    ServerConfig config;
     config.host = "127.0.0.1";
     config.port = 9880;
     config.api_path = "/tts";
-    config.prompt_lang = "ja";
     config.timeout = 180;
 
+    std::unique_ptr<TTSSystem> tts = std::make_unique<TTSSystem>();
+    tts->Initialize(TTSProviderType::GPT_SOVITS, config);
+
     std::string prompt_text = u8"極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。";
-    config.prompt_text = prompt_text;
+    std::string ref_audio_path = "D:\\dataset\\voice\\kurisu\\voice1\\voice1.wav";
+    std::string target_text = u8"その現象は偶然じゃないと思う。データを見れば、ちゃんと理由があるはずよ。";
 
-    config.ref_audio_path = "D:\\dataset\\voice\\kurisu\\voice1\\voice1.wav";
-     tts->LoadConfig(config);
-     std::string target_text = u8"その現象は偶然じゃないと思う。データを見れば、ちゃんと理由があるはずよ。";
-    std::vector<uint8_t> raw_data = tts->Synthesis(target_text);
+    audio::MiniAudioSystem audio_sys;
+    audio_sys.Initialize();
+    tts->audio_system = &audio_sys;
+  
 
-    kpengine::asset::MiniAudio_AudioLoader loader;
-    auto clip = loader.LoadFromMemory((char*)raw_data.data(), raw_data.size()).resource;
+    TTSRequest request;
+    request.prompt_lang = "ja";
+    request.prompt_text = prompt_text;
+    request.ref_audio_path = ref_audio_path;
+    request.text = target_text;
+    request.text_lang = "ja";
+    request.streaming = true;
 
-    audio::MiniAudioSystem sys;
-    auto handle =  sys.CreateAudioPlayer();
-    audio::AudioPlayer * player = sys.GetAudioPlayer(handle); 
-    player->SetClip(clip);
-    player->Play();
-    sys.Initialize();
-    while(1)
+    // tts->AsyncSynthesize(request, [&loader, player](const TTSResult & result){
+    //     std::vector<uint8_t> raw_data = result.bytes;
+    //     auto clip = loader.LoadFromMemory((char *)raw_data.data(), raw_data.size()).resource;
+    //     player->SetClip(clip);
+    //     player->Play();
+    // });
+
+    TTSResult result = tts->SyncSynthesize(request);
+
+    while (1)
     {
         ;
     }
-
 }
 
 void audio_test()
 {
+    std::unique_ptr<WindowSystem> window = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
+    WindowCreateInfo window_create_info;
+    window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+    // window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
+    window_create_info.width = 1600;
+    window_create_info.height = 1024;
+    window_create_info.title = "Audio";
+    window->Initialize(window_create_info);
     using namespace asset;
 
-    auto& manager = AssetManager::GetInstance();
+    auto &manager = AssetManager::GetInstance();
 
-    asset::AssetID id = manager.LoadSync("D:\\dataset\\voice\\kurisu\\voice3\\voice3.mp3");
+    // audio_paths.push_back("D:\\dataset\\voice\\kurisu\\voice3\\voice3.mp3");
+    auto audio_path = std::string("D:\\dataset\\voice\\kurisu\\voice1\\voice1.wav");
+
+    audio::MiniAudioSystem sys;
+
+    asset::AssetID id = manager.LoadSync(audio_path);
 
     auto resource = manager.GetResource<asset::AudioResource>(id);
-    
+
     auto clip = resource->resource;
 
-         audio::MiniAudioSystem sys;
-    auto handle =  sys.CreateAudioPlayer();
-    audio::AudioPlayer * player = sys.GetAudioPlayer(handle); 
+    audio::MiniAudioSystem audio_sys;
+    audio_sys.Initialize();
+    auto handle = audio_sys.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+    audio::BufferAudioPlayer *player = dynamic_cast<audio::BufferAudioPlayer *>(audio_sys.GetAudioPlayer(handle));
+    player->SetShouldLoop(true);
     player->SetClip(clip);
     player->Play();
 
     sys.Initialize();
-    while(1)
+
+    using namespace kpengine::script::lua;
+    LuaVM vm;
+
+    vm.Initialize();
+    auto pause_func = [player]()
+    { player->Pause(); };
+    vm.RegisterFunction("pause_audio", pause_func);
+
+    auto resume_func = [player]()
+    { player->Play(); };
+    vm.RegisterFunction("resume_audio", resume_func);
+
+    auto restart_func = [player]()
+    { player->Restart(); };
+    vm.RegisterFunction("restart_audio", restart_func);
+
+    std::string script_path = GetScriptDirectory() + "test.lua";
+    vm.ExecuteFile(script_path);
+
+    window->key_event_dispatcher_.Bind([&vm](const KeyEvent &event)
+                                       {
+        if (event.action == 1) {
+            vm.CallFunction("on_key_press", event.key);
+        } });
+    while (!window->ShouldClose())
     {
-        ;
+        if (window_create_info.graphics_api_type == GraphicsAPIType::GRAPHICS_API_OPENGL)
+        {
+            window->SwapBuffers();
+        }
+        window->PollEvents();
     }
+    window->Cleanup();
 }
 
 void lua_test()
@@ -173,7 +145,8 @@ void lua_test()
     LuaVM vm;
 
     vm.Initialize();
-    auto func = [](){audio_test();};
+    auto func = []()
+    { audio_test(); };
     vm.RegisterFunction("audio_test", func);
 
     std::string script_path = GetScriptDirectory() + "test.lua";
@@ -181,15 +154,26 @@ void lua_test()
     vm.ExecuteFile(script_path);
 }
 
+#include "example/audio/audio_example.h"
+#include "example/graphics/graphics_example.h"
+#include "example/tts/tts_example.h"
+#include "example/asset/asset_example.h"
 int main(int argc, char **argv)
 {
 
     //rhi_test();
-    //renderer_test();
-    //foo_test();
+    // renderer_test();
+    // foo_test();
     //tts_test();
 
+    // audio_test();
+    // lua_test();
+    
     //audio_test();
-    lua_test();
+    //example::ExampleAudioPlay();
+    //example::RenderExample();
+    //example::RHIExample();
+    //example::TTSExample();
+    example::TextureLoad();
     return 0;
 }
