@@ -3,8 +3,8 @@ asset_manager.cpp
 assimp_model_loader.cpp
 model.cpp
 stb_image_loader.cpp
-shader_meta.cpp
-shader_meta_loader.cpp
+shader_program.cpp
+shader_program_loader.cpp
 miniaudio_audio_loader.cpp
 )
 target_include_directories(Asset PUBLIC

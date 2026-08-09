@@ -11,10 +11,13 @@
 namespace kpengine::resource{
     struct ShaderCompileInput
     {
-        std::string source; 
+        std::string source;
         std::string file_name;
         ShaderStage stage;
         ShaderFormat format;
+        // Preprocessor macros, e.g. "MAX_LIGHTS 4"; fed to the compiler and
+        // part of the artifact cache key.
+        std::vector<std::string> defines;
     };
 
     class ShaderCompiler{

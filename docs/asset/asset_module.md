@@ -11,7 +11,7 @@ The asset module is the engine's "get me this file as a typed resource" layer. I
 ```cpp
 enum class AssetType : uint16_t {
     Undefined, KPAT_Model, KPAT_Texture, KPAT_Audio,
-    KPAT_Shader, KPAT_ShaderMeta, KPAT_Mesh,
+    KPAT_Shader, KPAT_ShaderProgram, KPAT_Mesh,
 };
 ```
 
@@ -28,7 +28,7 @@ enum class AssetType : uint16_t {
 The module is **two-tier**:
 
 - **`Asset`** — the metadata wrapper: `AssetID`, `name`, `abs_path`, the payload, and the dependency graph (`ref_assets` = who uses me, `dependencies` = what I use). Owned by the cache.
-- **`AssetResource`** — the payload, a `std::variant` of `shared_ptr<ModelResource | MeshResource | TextureResource | AudioResource | ShaderResource | ShaderMetaResource>`. Ref-counted, borrowed by subsystems, and **may outlive its wrapper**.
+- **`AssetResource`** — the payload, a `std::variant` of `shared_ptr<ModelResource | MeshResource | TextureResource | AudioResource | ShaderResource | ShaderProgramResource>`. Ref-counted, borrowed by subsystems, and **may outlive its wrapper**.
 
 `AssetRegisterInfo` is the struct loaders fill in: the payload, path, name, type, and declared dependencies.
 
@@ -97,9 +97,32 @@ Consequence: loads are **serialized**, not parallelized — async loading wins o
 - `KPAT_Model` → `Assimp_ModelLoader` (also emits `KPAT_Mesh` sub-resources)
 - `KPAT_Texture` → `Stb_ImageLoader`
 - `KPAT_Audio` → `MiniAudio_AudioLoader`
-- `KPAT_ShaderMeta` → `ShaderMetaLoader` (emits `KPAT_Shader` sub-resources)
+- `KPAT_ShaderProgram` → `ShaderProgramLoader` (emits `KPAT_Shader` sub-resources)
 
-Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h`, `shader_meta_loader.h`); the concrete implementations are swappable. The manager owns them as `unique_ptr` and currently hard-codes the concrete types in its constructor.
+Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h`, `shader_program_loader.h`); the concrete implementations are swappable. The manager owns them as `unique_ptr` and currently hard-codes the concrete types in its constructor.
+
+## Shader pipeline — identity vs. artifact
+
+**The idea.** Shader *source* does not ship with a game — what ships is the baked artifact (SPIR-V for Vulkan, source for OpenGL). A caller (the graphics backend, once the API is chosen) tells the asset system to load a shader and compile it. `LoadSync`/`LoadAsync` must **not** auto-compile: the target API isn't known until the backend is created. The pipeline is two stages with a strict boundary.
+
+**Stage 1 — identity (metadata, API-agnostic).** `ShaderProgramLoader` parses a `.shader` JSON into one `ShaderResource` per stage. A `ShaderResource` holds `ShaderStageDesc { file, stage, entry, defines }` + `format` (the *source* language: GLSL/HLSL), registered with status `Uncompiled` and no byte code. `ShaderProgramResource` binds `(stage, source_format) → AssetID`. This is "who the shader is", independent of any graphics API — the same `.shader` works on a Vulkan-only or OpenGL-only build.
+
+**Stage 2 — artifact (baked result, API-specific).** [`ShaderProcessor::Process`](../../engine/runtime/core/resource/shader_processor.cpp) is the "caller that compiles": it reads the source, hashes it, consults `ShaderCache`, and on a miss compiles via `SPIRVCompiler` (shaderc). The result lands in `shader->resource` — a `ShaderData { stage, api, byte_code, entry }` — and status flips to `Ready`.
+
+**The boundary.** `ShaderData::api` (`GraphicsAPIType`) is a property of the **artifact, not the metadata**. One GLSL shader is one identity but N artifacts: SPIR-V for Vulkan, GLSL source for OpenGL. The metadata key stays `(stage, source_format)`; the artifact is self-describing via `api`. Consumers read `api` + `byte_code` and reject a mismatched API. (Keying the metadata by API was considered and rejected — that would fork one shader into two "identities" and leak engine API support into data files.)
+
+**Disk cache.** `ShaderCache` is content-addressed, not path-based: key = hash of (source content + stage + entry + defines) (`GenerateShaderHash`), file = `<hex hash>.spv` under `asset/shader/cache/<api>/`. Because the artifact is API-specific, the cache must be keyed per API — today only `GRAPHICS_API_VULKAN` has an entry. A path-based key would serve stale SPIR-V after a source edit.
+
+**Artifacts per API.**
+- Vulkan → SPIR-V binary (shaderc).
+- OpenGL → the shipped artifact is *source*: GL has no portable precompiled format. The compile pipeline still applies (validation, in-editor error checking), but the stored artifact for GL is version-normalized GLSL, not bytes.
+
+**Design notes.**
+- The natural compile unit is the **meta** (all stages of a material), not one shader.
+- `ShaderStatus` is `Uncompiled/Compiling/Ready` — it needs a `CompileFailed` state carrying the compiler error text, so a broken shader isn't silently consumed or recompiled every frame.
+- One identity → N artifacts raises a storage question: keep artifacts in the asset graph (e.g. a per-resource artifact map keyed by API) or in a render-side cache keyed by `(meta AssetID, api)`. Compiled bytes are *derived data*, so the latter is the cleaner fit.
+
+**Legacy paths to reconcile.** `ShaderPool`/`RenderShader` still `glCompileShader` from source at runtime, and `vulkan_backend` loads prebuilt `.spv` files — both bypass the asset system and should eventually consume `ShaderResource.byte_code`. `opengl_shader_module.cpp`/`vulkan_shader_module.cpp` reference `shader->glsl`/`shader->spirv` (fields that don't exist on `ShaderData`) and are **not in the build** — stale; the real consumers should read `ShaderData::api` + `byte_code`.
 
 ## Invariants
 
@@ -118,3 +141,10 @@ Complete. The migration from "shared_ptr everywhere + `weak_ptr` path map" to th
 - `ref_assets`/`dependencies` are `vector<AssetID>` with linear `find`/erase — O(n²) on large scenes; a `set` on the packed `uint64` would scale.
 - Loads are serialized on `load_mutex_` because the loaders are shared instances; per-thread loader instances or a loader pool would unlock parallel loading. `GetAsset` locks on every call — uncontended that's cheap, but an unlocked variant is the escape hatch if it ever becomes a hot path (do **not** revert to returning `shared_ptr`).
 - Unloading today is manual in the backends (e.g. `vulkan_backend.cpp` unregisters a model *and* its sub-mesh by hand). Consider cascading eviction: when `UnRegisterAsset` empties a dependency's `ref_assets`, evict it too.
+- `ModelResource` is already a container keyed by `ModelGeometryType` (a model = a set of geometry sub-assets) — the right shape for extending to point clouds — but "mesh" is hardcoded in the three places that would have to become geometry-aware:
+  - `GetMesh()` ([`model.h`](../../engine/runtime/asset/model.h)) returns only the `KPMG_Mesh` slot; there is no generic `GetGeometry(type)` accessor.
+  - `LoadByExtension` always calls the model loader with `ModelGeometryType::KPMG_Mesh`, so **no point cloud can be loaded at all** — `LoadSync`/`LoadAsync` take only a path and never a geometry type.
+  - Neither `AssetType` nor the `AssetResource` variant has a point-cloud payload slot; adding one means growing the variant and touching its visitors.
+  
+  Before wiring this up, decide whether a file is *either* mesh or point cloud (geometry type becomes a load parameter, defaulting to `KPMG_Mesh`) or *can carry both* (the loader emits multiple geometry sub-assets and binds them all into one `ModelResource`). Keep `GetMesh()` as sugar on top of a generic accessor rather than the only way in.
+- Shader compile has no `CompileFailed` status, the render layer still compiles from source / loads prebuilt `.spv` bypassing the asset graph, and two stale shader-module files aren't in the build — see the **Shader pipeline** section above.

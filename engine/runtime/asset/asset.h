@@ -13,16 +13,16 @@ namespace kpengine::asset
     struct ModelResource;
     struct TextureResource;
     struct ShaderResource;
-    struct ShaderMetaResource;
+    struct ShaderProgramResource;
     struct AudioResource;
 
     using ModelPtr = std::shared_ptr<ModelResource>;
     using MeshPtr = std::shared_ptr<MeshResource>;
     using TexturePtr = std::shared_ptr<TextureResource>;
     using ShaderPtr = std::shared_ptr<ShaderResource>;
-    using ShaderMetaPtr = std::shared_ptr<ShaderMetaResource>;
+    using ShaderProgramPtr = std::shared_ptr<ShaderProgramResource>;
     using AudioPtr = std::shared_ptr<AudioResource>;
-    using AssetResource = std::variant<ModelPtr, MeshPtr, TexturePtr, AudioPtr, ShaderPtr, ShaderMetaPtr>;
+    using AssetResource = std::variant<ModelPtr, MeshPtr, TexturePtr, AudioPtr, ShaderPtr, ShaderProgramPtr>;
 
     inline bool IsValidResource(const AssetResource &resource)
     {

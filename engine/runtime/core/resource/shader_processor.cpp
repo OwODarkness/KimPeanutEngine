@@ -32,11 +32,11 @@ namespace kpengine::resource
 
         for(const auto& shader: assets)
         {
-            std::string file_name = shader->meta.file;
+            std::string file_name = shader->desc.file;
             std::string content = ReadText(file_name);
-            std::string stage_str = std::string(magic_enum::enum_name(shader->meta.stage));
+            std::string stage_str = std::string(magic_enum::enum_name(shader->desc.stage));
 
-            uint64_t hash = GenerateShaderHash(content, stage_str, shader->meta.entry, {});
+            uint64_t hash = GenerateShaderHash(content, stage_str, shader->desc.entry, shader->desc.defines);
             std::vector<uint8_t> byte_codes;
             if(cache->Has(hash))
             {
@@ -49,7 +49,8 @@ namespace kpengine::resource
                 input.file_name = file_name;
                 input.format = shader->format;
                 input.source = content;
-                input.stage = shader->meta.stage;
+                input.stage = shader->desc.stage;
+                input.defines = shader->desc.defines;
                 shader->status = asset::ShaderStatus::Compiling;
 
                 byte_codes = compiler_->Compile(input);
@@ -71,8 +72,9 @@ namespace kpengine::resource
                 shader->resource = std::make_shared<data::ShaderData>();
             }
             shader->resource->byte_code = std::move(byte_codes);
-            shader->resource->stage = shader->meta.stage;
-            shader->resource->entry = shader->meta.entry;
+            shader->resource->stage = shader->desc.stage;
+            shader->resource->entry = shader->desc.entry;
+            shader->resource->api = api_;
             shader->status = asset::ShaderStatus::Ready;
             //shader->resource
         }

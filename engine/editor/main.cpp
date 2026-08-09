@@ -9,7 +9,7 @@
 
 #include "runtime/asset/asset_manager.h"
 #include "runtime/core/config/path.h"
-#include "runtime/asset/shader_meta.h"
+#include "runtime/asset/shader_program.h"
 #include "runtime/core/resource/resource_pipeline.h"
 #include "runtime/core/resource/spirv_compiler.h"
 #include "module/tts/tts_system.h"
@@ -174,6 +174,9 @@ int main(int argc, char **argv)
     //example::RenderExample();
     //example::RHIExample();
     //example::TTSExample();
-    example::TextureLoad();
+    //example::TextureLoadSync();
+    //example::TextureLoadAsync();
+    //example::ModelLoadSync();
+    example::ShaderProgramLoad();
     return 0;
 }

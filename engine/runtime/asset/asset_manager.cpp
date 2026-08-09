@@ -4,6 +4,7 @@
 #include <magic_enum/magic_enum.hpp>
 #include "assimp_model_loader.h"
 #include "stb_image_loader.h"
+#include "shader_program_loader.h"
 #include "miniaudio_audio_loader.h"
 #include "utility.h"
 #include "model.h"
@@ -14,9 +15,10 @@ namespace kpengine::asset
 {
 
     AssetManager AssetManager::instance_;
+    AssetManager::~AssetManager() = default;
     AssetManager::AssetManager() : model_loader_(std::make_unique<Assimp_ModelLoader>()),
                                    image_loader_(std::make_unique<Stb_ImageLoader>()),
-                                   shader_meta_loader_(std::make_unique<ShaderMetaLoader>()),
+                                   shader_program_loader_(std::make_unique<ShaderProgramLoader>()),
                                    audio_loader_(std::make_unique<MiniAudio_AudioLoader>())
     {
     }
@@ -49,7 +51,8 @@ namespace kpengine::asset
 
         // Already loaded? Re-checked after loading too, so two concurrent
         // requests for the same file don't both register.
-        auto find_cached = [this](AssetType type, const std::string &path) -> AssetID {
+        auto find_cached = [this](AssetType type, const std::string &path) -> AssetID
+        {
             const AssetCache *cache = FindCache(type);
             if (!cache)
             {
@@ -85,7 +88,7 @@ namespace kpengine::asset
             std::lock_guard<std::recursive_mutex> lock(state_mutex_);
             if (AssetID cached = find_cached(type, path); cached.IsValid())
             {
-                return cached;  // another thread loaded it while we were reading
+                return cached; // another thread loaded it while we were reading
             }
             AssetID id = RegisterAsset(register_info);
             if (id.IsValid())
@@ -102,7 +105,8 @@ namespace kpengine::asset
         // on load_mutex_, so concurrent calls never race the shared loaders.
         // Note: destroying this future without get()/wait() blocks until the load
         // finishes (std::async semantics).
-        return std::async(std::launch::async, [this, path]() { return LoadSync(path); });
+        return std::async(std::launch::async, [this, path]()
+                          { return LoadSync(path); });
     }
 
     const AssetCache *AssetManager::FindCache(AssetType type) const
@@ -125,7 +129,7 @@ namespace kpengine::asset
         return &it->second;
     }
 
-    AssetCache& AssetManager::Cache(AssetType type)
+    AssetCache &AssetManager::Cache(AssetType type)
     {
         return caches_[type];
     }
@@ -171,7 +175,7 @@ namespace kpengine::asset
         return id;
     }
 
-    Asset* AssetManager::GetAsset(const AssetID &id)
+    Asset *AssetManager::GetAsset(const AssetID &id)
     {
         if (!id.IsValid())
         {
@@ -228,7 +232,7 @@ namespace kpengine::asset
         cache->handles.Destroy(AssetHandle(id.id, id.generation));
     }
 
-    bool AssetManager::CanDelete(const Asset* asset)
+    bool AssetManager::CanDelete(const Asset *asset)
     {
         if (!asset)
             return true;
@@ -308,10 +312,10 @@ namespace kpengine::asset
             assert(image_loader_);
             return image_loader_->Load(path, info);
         }
-        else if (type == AssetType::KPAT_ShaderMeta)
+        else if (type == AssetType::KPAT_ShaderProgram)
         {
-            assert(shader_meta_loader_);
-            return shader_meta_loader_->Load(path, info);
+            assert(shader_program_loader_);
+            return shader_program_loader_->Load(path, info);
         }
         else if (type == AssetType::KPAT_Audio)
         {

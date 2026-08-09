@@ -15,8 +15,27 @@ namespace kpengine::resource
 
         if (input.format == ShaderFormat::SHADER_FORMAT_GLSL)
         {
-            result = compiler.CompileGlslToSpv(input.source, shader_kind, input.file_name.c_str());
-            
+            // Copy the shared options (optimization level, etc.) and layer the
+            // per-shader macros on top, so defines never leak between compiles.
+            shaderc::CompileOptions local_options = options;
+            for (const auto &define : input.defines)
+            {
+                std::string name = define;
+                std::string value;
+                size_t sep = define.find_first_of(" \t=");
+                if (sep != std::string::npos)
+                {
+                    name = define.substr(0, sep);
+                    size_t start = define.find_first_not_of(" \t=", sep);
+                    if (start != std::string::npos)
+                    {
+                        value = define.substr(start);
+                    }
+                }
+                local_options.AddMacroDefinition(name, value.empty() ? "1" : value);
+            }
+            result = compiler.CompileGlslToSpv(input.source, shader_kind, input.file_name.c_str(), local_options);
+
             if(result.GetCompilationStatus() != shaderc_compilation_status_success)
             {
                 std::string msg = result.GetErrorMessage();

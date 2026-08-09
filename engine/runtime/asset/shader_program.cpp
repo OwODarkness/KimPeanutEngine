@@ -1,9 +1,9 @@
-#include "shader_meta.h"
+#include "shader_program.h"
 #include "asset_manager.h"
 #include "shader.h"
 namespace kpengine::asset
 {
-    void ShaderMetaResource::BindData(ShaderStage stage, ShaderFormat format, AssetID id)
+    void ShaderProgramResource::BindData(ShaderStage stage, ShaderFormat format, AssetID id)
     {
         auto &list = datas[stage];
 
@@ -16,9 +16,9 @@ namespace kpengine::asset
             }
         }
 
-        list.emplace_back(ShaderMetaEntry{format, id});
+        list.emplace_back(ShaderProgramEntry{format, id});
     }
-    AssetID ShaderMetaResource::GetData(ShaderStage stage, ShaderFormat format)
+    AssetID ShaderProgramResource::GetData(ShaderStage stage, ShaderFormat format)
     {
         auto it = datas.find(stage);
         if (it == datas.end())
@@ -36,7 +36,7 @@ namespace kpengine::asset
 
         return AssetID();
     }
-    std::shared_ptr<ShaderResource> ShaderMetaResource::GetShader(ShaderStage stage, ShaderFormat format)
+    std::shared_ptr<ShaderResource> ShaderProgramResource::GetShader(ShaderStage stage, ShaderFormat format)
     {
         AssetID id = GetData(stage, format);
 

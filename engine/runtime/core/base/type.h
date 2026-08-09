@@ -5,6 +5,7 @@ namespace kpengine
 {
     enum class GraphicsAPIType
     {
+        GRAPHICS_API_UNKNOW,
         GRAPHICS_API_OPENGL,
         GRAPHICS_API_VULKAN
     };

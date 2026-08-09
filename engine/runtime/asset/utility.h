@@ -37,7 +37,7 @@ namespace kpengine::asset
         return std::find(audio_exts.begin(), audio_exts.end(), ext) != audio_exts.end();
     }
 
-    inline bool IsShaderMetaExtension(const std::string& ext)
+    inline bool IsShaderProgramExtension(const std::string& ext)
     {
         return ext == "shader";
     }
@@ -66,9 +66,9 @@ namespace kpengine::asset
         {
             return AssetType::KPAT_Shader;
         }
-        else if(IsShaderMetaExtension(ext))
+        else if(IsShaderProgramExtension(ext))
         {
-            return AssetType::KPAT_ShaderMeta;
+            return AssetType::KPAT_ShaderProgram;
         }
         else
         {

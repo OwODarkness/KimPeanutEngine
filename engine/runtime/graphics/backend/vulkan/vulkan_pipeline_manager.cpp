@@ -6,7 +6,7 @@
 #include "vulkan_enum.h"
 #include "asset/asset_manager.h"
 #include "config/path.h"
-#include "asset/shader_meta.h"
+#include "asset/shader_program.h"
 
 namespace kpengine::graphics
 {
@@ -30,17 +30,17 @@ namespace kpengine::graphics
 
         // resource::ShaderLoader loader;
         // loader.Initialize(GraphicsAPIType::GRAPHICS_API_OPENGL);
-        // std::string shader_meta_path = GetShaderDirectory() + "simple_triangle.shader";
-        // asset::AssetID shader_meta_id = asset::AssetManager::GetInstance().LoadSync(shader_meta_path);
-        // auto shader_meta = asset::AssetManager::GetInstance().GetResource<asset::ShaderMetaResource>(shader_meta_id); 
-        // if(shader_meta)
+        // std::string shader_program_path = GetShaderDirectory() + "simple_triangle.shader";
+        // asset::AssetID shader_program_id = asset::AssetManager::GetInstance().LoadSync(shader_program_path);
+        // auto shader_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(shader_program_id);
+        // if(shader_program)
         // {
-        //     auto shader = shader_meta->GetShader(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
+        //     auto shader = shader_program->GetShader(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
         //     if(shader)
         //     {
-        //         shader->resource = loader.Load(shader->meta.file, shader->meta.stage, shader->format, shader->meta.entry);
+        //         shader->resource = loader.Load(shader->desc.file, shader->desc.stage, shader->format, shader->desc.entry);
         //         if(shader->resource)
-        //             KP_LOG("ShaderLog", LOG_LEVEL_DEBUG, "shader: %d", shader->resource->glsl.size());
+        //             KP_LOG("ShaderLog", LOG_LEVEL_DEBUG, "shader: %d", shader->resource->byte_code.size());
         //     }
         // }
 

@@ -13,7 +13,7 @@ namespace kpengine::asset
         KPAT_Texture,
         KPAT_Audio,
         KPAT_Shader,
-        KPAT_ShaderMeta,
+        KPAT_ShaderProgram,
         KPAT_Mesh,
     };
 
