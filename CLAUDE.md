@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 KimPeanut Engine — a C++17 game engine. Layered architecture: Editor → Engine → Resource System → RHI → Vulkan/OpenGL. The README (written in Chinese) is the broad reference; core principles there: data-driven resources (Asset → Processor → GPU data), decoupled shader/texture/mesh via the resource pipeline, cross-platform via RHI, and a disk shader cache.
 
+## Project status
+
+The current state of the world lives in [docs/status.md](docs/status.md) (done / in progress / next) and [docs/dead_code.md](docs/dead_code.md) (not-in-build, stale, and slated-for-retirement code — don't "fix" it as if live). Update these as work lands. Slash commands: `/status`, `/build`, `/test`, `/run`.
+
 ## Build
 
 MSVC, Visual Studio 17 2022 generator, C++17 (`/utf-8`). Build tree is `build/`:
@@ -43,3 +47,13 @@ The full design reference lives in [docs/asset/asset_module.md](docs/asset/asset
 ### Refactor status
 
 Complete. The migration to the ownership model above (shared_ptr → unique_ptr wrappers, `weak_ptr` path_map → `path_index`) is done and the manager is thread-safe per the mutex model.
+
+## Graphics (RHI) and render modules
+
+Design references: [docs/graphics/graphics_module.md](docs/graphics/graphics_module.md) (the RHI) and [docs/render/render_module.md](docs/render/render_module.md) (the render module — **legacy, OpenGL-hardcoded, slated for reconstruction**). The facts that matter for working in this code:
+
+- **The render module is the caller.** It asks `asset` for shader identity, asks `resource` to bake it, fills a `graphics::PipelineDesc`, and hands it to the RHI. The RHI **responds, it never initiates**: it knows nothing about `.shader` files, compilers, or asset IDs.
+- **`PipelineDesc`** ([engine/runtime/graphics/backend/common/pipeline_types.h](engine/runtime/graphics/backend/common/pipeline_types.h)) is the cross-API contract. Its shaders are `graphics::Shader*`; the intended backing is a thin wrapper over `ShaderData::byte_code` (resource-pipeline output), not a file path.
+- **Known RHI leaks (being fixed):** `ShaderManager` is path-keyed and reads shader files itself ([shader_manager.cpp](engine/runtime/graphics/backend/common/shader_manager.cpp)); `VulkanBackend::CreateGraphicsPipeline` builds the `PipelineDesc` internally ([vulkan_backend.cpp:712](engine/runtime/graphics/backend/vulkan/vulkan_backend.cpp#L712)); backends load prebuilt `.spv`/`.vert` files instead of `ShaderData`. `ShaderModule` takes `data::ShaderData` but its implementations are stale and not in the build.
+- **The resource pipeline is orphaned:** `ResourcePipeline::ProcessShader` has no callers yet. The render-module request path and a startup warmup pass (manifest → `LoadSync` + `ProcessShader`) are the reconstruction's first wiring step.
+- **Build wiring:** `RuntimeLib` links `Graphics` PUBLIC, `Render` PRIVATE; `Render` does **not** link `Graphics` today — the legacy GL renderer and the RHI are two disconnected worlds.
