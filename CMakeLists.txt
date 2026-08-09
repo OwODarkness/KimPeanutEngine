@@ -5,16 +5,20 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 
 
+list(APPEND CMAKE_MODULE_PATH
+    ${CMAKE_CURRENT_SOURCE_DIR}/cmake
+)
+
+include(RuntimeDependencies)
+
 # include_directories(
 #     third_party
 #     third_party/googletest/googletest/include
 #     third_party/vulkan/
 #     )
-
-add_subdirectory(engine)
-
 add_subdirectory(third_party)
 
+add_subdirectory(engine)
 
 
 
@@ -35,5 +39,4 @@ target_link_libraries(KimPeanutEngine
 copy_thirdparty_dlls(KimPeanutEngine)
 
 #TEST
-# enable_testing()
-# add_subdirectory(engine/test)
+add_subdirectory(engine/test)
