@@ -2,6 +2,7 @@
 #include <iostream>
 #include <future>
 #include <string>
+#include <vector>
 #include "asset/asset_manager.h"
 #include "asset/texture.h"
 #include "asset/model.h"
@@ -9,6 +10,7 @@
 #include "asset/shader.h"
 #include "asset/shader_program.h"
 #include "config/path.h"
+#include "resource/resource_pipeline.h"
 
 namespace kpengine::example{
 
@@ -178,6 +180,133 @@ namespace kpengine::example{
                       << ", entry: " << shader->desc.entry
                       << ", defines: " << shader->desc.defines.size()
                       << ", status: uncompiled (meta only)" << std::endl;
+        }
+    }
+
+    void CompileShaderSPIRV()
+    {
+        std::cout  << "Compile Shader Example\n";
+        using namespace asset;
+
+        // The resource pipeline is the CPU-side baking layer: it compiles each
+        // stage's source into a per-API artifact (GLSL -> SPIR-V for Vulkan via
+        // shaderc) and keeps a content-addressed cache so identical sources only
+        // compile once.
+        resource::ResourcePipeline pipeline;
+        resource::ResourcePipelineContext context;
+        context.graphics_type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        pipeline.Initialize(context);
+
+        AssetManager &asset_manager = AssetManager::GetInstance();
+
+        std::string path = GetShaderDirectory() + "simple_triangle.shader";
+
+        // Loading the .shader meta parses the program and registers each stage
+        // as its own KPAT_Shader asset. Only the stage resources are handed to
+        // the pipeline — it writes the baked byte code back into shader->data.
+        AssetID id = asset_manager.LoadSync(path);
+        if (!id.IsValid())
+        {
+            std::cout << "[CompileShader] failed to load " << path << std::endl;
+            return;
+        }
+
+        auto program = asset_manager.GetResource<ShaderProgramResource>(id);
+        if (!program)
+        {
+            std::cout << "[CompileShader] loaded asset holds no shader program resource" << std::endl;
+            return;
+        }
+
+        std::vector<ShaderPtr> shaders;
+        const ShaderStage stages[] = {
+            ShaderStage::SHADER_STAGE_VERTEX,
+            ShaderStage::SHADER_STAGE_FRAGMENT,
+        };
+        for (ShaderStage stage : stages)
+        {
+            auto shader = program->GetShader(stage, ShaderFormat::SHADER_FORMAT_GLSL);
+            if (shader)
+            {
+                shaders.push_back(shader);
+            }
+        }
+
+        pipeline.ProcessShader(shaders);
+
+        for (const auto &shader : shaders)
+        {
+            if (shader->status != ShaderStatus::Ready || !shader->data)
+            {
+                std::cout << "[CompileShader] " << shader->desc.file
+                          << " failed to compile" << std::endl;
+                continue;
+            }
+            std::cout << "[CompileShader] " << shader->desc.file << " -> "
+                      << shader->data->byte_code.size() << " SPIR-V bytes, entry: "
+                      << shader->data->entry << std::endl;
+        }
+    }
+
+    void CompileShaderGL()
+    {
+        using namespace asset;
+
+        // OpenGL's artifact is not binary bytes but the assembled GLSL source:
+        // the pipeline preprocesses each stage (defines injected, includes
+        // expanded) and writes the result into ShaderData::source. GL compiles
+        // that source at runtime via glShaderSource — no binary, no disk cache,
+        // and no GL context needed here (shaderc preprocesses CPU-side).
+        resource::ResourcePipeline pipeline;
+        resource::ResourcePipelineContext context;
+        context.graphics_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
+        pipeline.Initialize(context);
+
+        AssetManager &asset_manager = AssetManager::GetInstance();
+
+        std::string path = GetShaderDirectory() + "simple_triangle.shader";
+
+        AssetID id = asset_manager.LoadSync(path);
+        if (!id.IsValid())
+        {
+            std::cout << "[CompileShaderGL] failed to load " << path << std::endl;
+            return;
+        }
+
+        auto program = asset_manager.GetResource<ShaderProgramResource>(id);
+        if (!program)
+        {
+            std::cout << "[CompileShaderGL] loaded asset holds no shader program resource" << std::endl;
+            return;
+        }
+
+        std::vector<ShaderPtr> shaders;
+        const ShaderStage stages[] = {
+            ShaderStage::SHADER_STAGE_VERTEX,
+            ShaderStage::SHADER_STAGE_FRAGMENT,
+        };
+        for (ShaderStage stage : stages)
+        {
+            auto shader = program->GetShader(stage, ShaderFormat::SHADER_FORMAT_GLSL);
+            if (shader)
+            {
+                shaders.push_back(shader);
+            }
+        }
+
+        pipeline.ProcessShader(shaders);
+
+        for (const auto &shader : shaders)
+        {
+            if (shader->status != ShaderStatus::Ready || !shader->data)
+            {
+                std::cout << "[CompileShaderGL] " << shader->desc.file
+                          << " failed to preprocess" << std::endl;
+                continue;
+            }
+            std::cout << "[CompileShaderGL] " << shader->desc.file << " -> "
+                      << shader->data->source.size() << " chars of GLSL source, entry: "
+                      << shader->data->entry << std::endl;
         }
     }
 }

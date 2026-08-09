@@ -177,6 +177,7 @@ int main(int argc, char **argv)
     //example::TextureLoadSync();
     //example::TextureLoadAsync();
     //example::ModelLoadSync();
-    example::ShaderProgramLoad();
+    //example::CompileShaderSPIRV();
+    example::CompileShaderGL();
     return 0;
 }

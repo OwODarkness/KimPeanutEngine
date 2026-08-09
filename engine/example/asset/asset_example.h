@@ -7,6 +7,9 @@ namespace kpengine::example{
     void ModelLoadSync();
     void ModelLoadAsync();
     void ShaderProgramLoad();
+
+    void CompileShaderSPIRV();
+    void CompileShaderGL();
 }
 
 #endif

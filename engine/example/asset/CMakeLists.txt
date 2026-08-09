@@ -8,6 +8,7 @@ ${CMAKE_CURRENT_SOURCE_DIR}/..
 target_link_libraries(AssetExample
 PRIVATE
 Asset
+Resource
 Config
 )
 
