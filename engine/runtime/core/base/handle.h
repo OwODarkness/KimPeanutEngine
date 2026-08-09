@@ -75,7 +75,7 @@ namespace kpengine{
             return false;
         }
 
-        bool IsHandleValid(const HandleT& handle)
+        bool IsHandleValid(const HandleT& handle) const
         {
             return handle.IsValid() && handle.generation == generations_[handle.id];
         }

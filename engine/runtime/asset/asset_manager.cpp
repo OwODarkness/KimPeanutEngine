@@ -1,4 +1,6 @@
 #include "asset_manager.h"
+#include <algorithm>
+#include <cctype>
 #include <magic_enum/magic_enum.hpp>
 #include "assimp_model_loader.h"
 #include "stb_image_loader.h"
@@ -6,21 +8,31 @@
 #include "utility.h"
 #include "model.h"
 #include "log/logger.h"
+#define DEBUG
+
 namespace kpengine::asset
 {
 
     AssetManager AssetManager::instance_;
-    AssetManager::AssetManager() : 
-    model_loader_(std::make_unique<AssimpModelLoader>()),
-    image_loader_(std::make_unique<StbImageLoader>()),
-    shader_meta_loader_(std::make_unique<ShaderMetaLoader>()),
-    audio_loader_(std::make_unique<MiniAudio_AudioLoader>())
+    AssetManager::AssetManager() : model_loader_(std::make_unique<Assimp_ModelLoader>()),
+                                   image_loader_(std::make_unique<Stb_ImageLoader>()),
+                                   shader_meta_loader_(std::make_unique<ShaderMetaLoader>()),
+                                   audio_loader_(std::make_unique<MiniAudio_AudioLoader>())
     {
+    }
+
+    std::string AssetManager::Key(const std::string &path)
+    {
+        std::string key = path;
+        std::replace(key.begin(), key.end(), '\\', '/');
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c)
+                       { return std::tolower(c); });
+        return key;
     }
 
     AssetID AssetManager::LoadSync(const std::string &path)
     {
-
         std::string extension = GetFileExtension(path);
 
         if (extension.empty())
@@ -29,133 +41,194 @@ namespace kpengine::asset
         }
 
         AssetType type = ExtractAssetType(extension);
-        if(type == AssetType::Undefined)
+        if (type == AssetType::Undefined)
         {
             KP_LOG("AssetManagerLog", LOG_LEVEL_WARNING, "Unrecognize asset extension: %s ", extension.c_str());
             return AssetID();
         }
 
-        auto cache_it = caches_.find(type);
-        if (cache_it != caches_.end())
-        {
-            auto &path_map = cache_it->second.path_map;
-            auto asset_it = path_map.find(path);
-
-            if (asset_it != path_map.end())
+        // Already loaded? Re-checked after loading too, so two concurrent
+        // requests for the same file don't both register.
+        auto find_cached = [this](AssetType type, const std::string &path) -> AssetID {
+            const AssetCache *cache = FindCache(type);
+            if (!cache)
             {
-                auto asset = asset_it->second.lock();
-                if (asset)
-                {
-                    return asset->GetID();
-                }
+                return AssetID();
+            }
+            auto it = cache->path_index.find(Key(path));
+            if (it == cache->path_index.end())
+            {
+                return AssetID();
+            }
+            return GetAsset(it->second) ? it->second : AssetID();
+        };
+
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+            if (AssetID cached = find_cached(type, path); cached.IsValid())
+            {
+                return cached;
             }
         }
 
+        // Disk I/O + parse under the loader lock: the loaders are shared instances.
         AssetRegisterInfo register_info{};
-        bool bsucceed = LoadByExtension(path, type, register_info);
-        if (bsucceed)
         {
-            return RegisterAsset(register_info);
+            std::lock_guard<std::mutex> lock(load_mutex_);
+            if (!LoadByExtension(path, type, register_info))
+            {
+                return AssetID();
+            }
         }
 
-        return AssetID();
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+            if (AssetID cached = find_cached(type, path); cached.IsValid())
+            {
+                return cached;  // another thread loaded it while we were reading
+            }
+            AssetID id = RegisterAsset(register_info);
+            if (id.IsValid())
+            {
+                Cache(type).path_index[Key(GetAsset(id)->GetPath())] = id;
+            }
+            return id;
+        }
+    }
+
+    std::future<AssetID> AssetManager::LoadAsync(const std::string &path)
+    {
+        // Same pipeline as LoadSync, offloaded to a worker thread. Loads serialize
+        // on load_mutex_, so concurrent calls never race the shared loaders.
+        // Note: destroying this future without get()/wait() blocks until the load
+        // finishes (std::async semantics).
+        return std::async(std::launch::async, [this, path]() { return LoadSync(path); });
+    }
+
+    const AssetCache *AssetManager::FindCache(AssetType type) const
+    {
+        auto it = caches_.find(type);
+        if (it == caches_.end())
+        {
+            return nullptr;
+        }
+        return &it->second;
+    }
+
+    AssetCache *AssetManager::FindCache(AssetType type)
+    {
+        auto it = caches_.find(type);
+        if (it == caches_.end())
+        {
+            return nullptr;
+        }
+        return &it->second;
+    }
+
+    AssetCache& AssetManager::Cache(AssetType type)
+    {
+        return caches_[type];
     }
 
     AssetID AssetManager::RegisterAsset(AssetRegisterInfo &info)
     {
-        bool valid = std::visit([](auto &&ptr)
-                                { return ptr != nullptr; }, info.resource);
-
-        if (!valid)
+        if (!IsValidResource(info.resource))
         {
             return AssetID();
         }
 
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+
         AssetType type = info.type;
+        AssetCache &cache = Cache(type);
+        AssetHandle handle = cache.handles.Create();
 
-        AssetHandle handle = caches_[type].handles.Create();
-
-        if (handle.id == caches_[type].assets.size())
+        if (handle.id == cache.assets.size())
         {
-            caches_[type].assets.emplace_back();
+            cache.assets.emplace_back();
         }
 
-        std::shared_ptr<Asset> asset = std::make_shared<Asset>();
+        std::unique_ptr<Asset> asset = std::make_unique<Asset>();
         asset->resource = std::move(info.resource);
         asset->id.type = type;
         asset->id.id = handle.id;
         asset->id.generation = handle.generation;
-        asset->abs_path = info.path;
-        asset->name = info.name;
-        asset->ref_assets = info.ref_assets;
-        asset->dependencies = info.dependencies;
-        caches_[type].assets[handle.id] = asset;
+        asset->abs_path = std::move(info.path);
+        asset->name = std::move(info.name);
+        asset->ref_assets = std::move(info.ref_assets);
+        asset->dependencies = std::move(info.dependencies);
 
+        AssetID id(handle.id, handle.generation, type);
+        cache.assets[handle.id] = std::move(asset);
+        AddReferences(id, cache.assets[handle.id]->dependencies);
 
-
-        AssetID id = AssetID(handle.id, handle.generation, type);
         std::string type_name = std::string(magic_enum::enum_name(type));
-        KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG, "Register Aseset [%s|%s|%llu] from %s successfully", 
-            type_name.c_str(),
-            asset->GetName().c_str(), 
-            id.Pack(),
-            asset->GetPath().c_str()
-        );
-        AddReferences(id, asset->dependencies);
+        KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG, "Register Aseset [%s|%s|%llu] from %s successfully",
+               type_name.c_str(),
+               cache.assets[handle.id]->GetName().c_str(),
+               id.Pack(),
+               cache.assets[handle.id]->GetPath().c_str());
         return id;
     }
 
-    std::shared_ptr<Asset> AssetManager::GetAsset(const AssetID &id)
+    Asset* AssetManager::GetAsset(const AssetID &id)
     {
         if (!id.IsValid())
         {
             return nullptr;
         }
-        AssetType type = id.type;
-        uint32_t index = id.id;
-        auto cache_it = caches_.find(type);
-        if (cache_it != caches_.end())
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+        const AssetCache *cache = FindCache(id.type);
+        if (!cache || id.id >= cache->assets.size())
         {
-            auto &assets = cache_it->second.assets;
-            if (assets.size() <= index)
-            {
-                return nullptr;
-            }
-            return assets[index];
+            return nullptr;
         }
-        return nullptr;
+        // Stale id (recycled slot) must resolve to null, never to the new occupant.
+        if (!cache->handles.IsHandleValid(AssetHandle(id.id, id.generation)))
+        {
+            return nullptr;
+        }
+        return cache->assets[id.id].get();
     }
 
     void AssetManager::UnRegisterAsset(const AssetID &id)
     {
-        AssetHandle handle(id.id, id.generation);
-        AssetType type = id.type;
-        auto cache_it = caches_.find(type);
-        if (cache_it != caches_.end())
+        if (!id.IsValid())
         {
-            auto &cache = cache_it->second;
-            auto &handle_sys = cache.handles;
-            auto &assets = cache.assets;
-
-            auto asset = assets[handle.id];
-            if (!asset)
-                return;
-            CanDelete(asset);
-            RemoveReferences(asset->GetID(), asset->GetDependencies());
-
-            cache.path_map.erase(asset->GetPath());
-
-            KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG,
-                "Unregister asset[%s, %llu] successfully",
-                asset->GetName().c_str(), id.Pack());
-
-            assets[handle.id].reset();
-
-            handle_sys.Destroy(handle);
+            return;
         }
+
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+        AssetCache *cache = FindCache(id.type);
+        if (!cache || id.id >= cache->assets.size())
+        {
+            return;
+        }
+        // Stale id must not unregister the new occupant of a recycled slot.
+        if (!cache->handles.IsHandleValid(AssetHandle(id.id, id.generation)))
+        {
+            return;
+        }
+
+        Asset *asset = cache->assets[id.id].get();
+        if (!asset || !CanDelete(asset))
+        {
+            return;
+        }
+
+        RemoveReferences(asset->GetID(), asset->GetDependencies());
+
+        cache->path_index.erase(Key(asset->GetPath()));
+
+        KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG,
+               "Unregister asset[%s, %llu] successfully",
+               asset->GetName().c_str(), id.Pack());
+
+        cache->assets[id.id].reset();
+        cache->handles.Destroy(AssetHandle(id.id, id.generation));
     }
 
-    bool AssetManager::CanDelete(const std::shared_ptr<Asset>& asset)
+    bool AssetManager::CanDelete(const Asset* asset)
     {
         if (!asset)
             return true;
@@ -163,16 +236,16 @@ namespace kpengine::asset
         if (!asset->GetRefs().empty())
         {
             KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG,
-                "Asset [%s, %llu] is still referenced by %zu assets",
-                asset->GetName().c_str(),
-                asset->GetID().Pack(),
-                asset->GetRefs().size());
+                   "Asset [%s, %llu] is still referenced by %zu assets",
+                   asset->GetName().c_str(),
+                   asset->GetID().Pack(),
+                   asset->GetRefs().size());
 
             // Print who references it (very useful for debugging)
-            for (const auto& ref_id : asset->GetRefs())
+            for (const auto &ref_id : asset->GetRefs())
             {
-                KP_LOG("AssetManagerLog",  LOG_LEVEL_DEBUG,
-                    "  Referenced by AssetID: %llu", ref_id.Pack());
+                KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG,
+                       "  Referenced by AssetID: %llu", ref_id.Pack());
             }
 
             return false;
@@ -183,6 +256,7 @@ namespace kpengine::asset
 
     void AssetManager::AddReferences(const AssetID &from, const std::vector<AssetID> &to_list)
     {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
 
         for (const auto &to : to_list)
         {
@@ -196,15 +270,15 @@ namespace kpengine::asset
 #ifdef DEBUG
                 KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG, "asset[%s] ref %llu", asset->GetName().c_str(), from.Pack());
 #endif
-
             }
         }
     }
     void AssetManager::RemoveReferences(const AssetID &from, const std::vector<AssetID> &to_list)
     {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
         for (const auto &to_id : to_list)
         {
-            std::shared_ptr<Asset> target_asset = GetAsset(to_id);
+            Asset *target_asset = GetAsset(to_id);
             if (!target_asset)
             {
                 continue;
@@ -217,7 +291,7 @@ namespace kpengine::asset
                                { return id == from; }),
                 refs.end());
 #ifdef DEBUG
-                KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG, "asset[%s, %llu] unref %llu", target_asset->GetName().c_str(), target_asset->GetID().Pack(), from.Pack());
+            KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG, "asset[%s, %llu] unref %llu", target_asset->GetName().c_str(), target_asset->GetID().Pack(), from.Pack());
 #endif
         }
     }
@@ -227,20 +301,19 @@ namespace kpengine::asset
         if (type == AssetType::KPAT_Model)
         {
             assert(model_loader_);
-           return  model_loader_->Load(path, ModelGeometryType::KPMG_Mesh, info);
-            
+            return model_loader_->Load(path, ModelGeometryType::KPMG_Mesh, info);
         }
-        else if(type == AssetType::KPAT_Texture)
+        else if (type == AssetType::KPAT_Texture)
         {
             assert(image_loader_);
             return image_loader_->Load(path, info);
         }
-        else if(type == AssetType::KPAT_ShaderMeta)
+        else if (type == AssetType::KPAT_ShaderMeta)
         {
             assert(shader_meta_loader_);
             return shader_meta_loader_->Load(path, info);
         }
-        else if(type == AssetType::KPAT_Audio)
+        else if (type == AssetType::KPAT_Audio)
         {
             assert(audio_loader_);
             return audio_loader_->LoadFromFile(path, info);

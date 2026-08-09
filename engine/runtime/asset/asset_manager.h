@@ -2,6 +2,8 @@
 #define KPENGINE_RUNTIME_ASSET_MANAGER_H
 
 #include <memory>
+#include <mutex>
+#include <future>
 #include <unordered_map>
 #include "asset.h"
 #include "base/handle.h"
@@ -9,46 +11,62 @@
 #include "image_loader.h"
 #include "shader_meta_loader.h"
 #include "audio_loader.h"
-#define DEBUG
 
 namespace kpengine::asset{
 
     using AssetHandle = Handle<Asset>;
 
     struct AssetCache{
-        std::vector<std::shared_ptr<Asset>> assets;
         HandleSystem<AssetHandle> handles;
-        std::unordered_map<std::string, std::weak_ptr<Asset>> path_map;
+
+        std::vector<std::unique_ptr<Asset>> assets;
+
+        std::unordered_map<std::string, AssetID> path_index;
     };
 
     class AssetManager{
     public:
         static AssetManager& GetInstance(){return instance_;}
+    public:
         AssetID LoadSync(const std::string& path);
+        std::future<AssetID> LoadAsync(const std::string& path);
+
         AssetID RegisterAsset(AssetRegisterInfo& info);
-        std::shared_ptr<Asset> GetAsset(const AssetID& id);
         void UnRegisterAsset(const AssetID& id);
-        bool CanDelete(const std::shared_ptr<Asset>& asset);
+
+        Asset* GetAsset(const AssetID& id);
 
         //Get Resource From Asset(AssetData)
         template<typename T>
-        std::shared_ptr<T> GetResource(const AssetID id)
+        std::shared_ptr<T> GetResource(const AssetID& id)
         {
-            std::shared_ptr<asset::Asset> asset = GetInstance().GetAsset(id);
+            Asset* asset = GetInstance().GetAsset(id);
             if(!asset)
             {
                 return nullptr;
             }
             return asset->GetResource<T>();
         }
+
         void AddReferences(const AssetID& from, const std::vector<AssetID>& to_list);
         void RemoveReferences(const AssetID& from, const std::vector<AssetID>& to_list);
+    private:
+        bool CanDelete(const Asset* asset);
+
+        const AssetCache* FindCache(AssetType type) const;
+        AssetCache* FindCache(AssetType type);
+        AssetCache& Cache(AssetType type);
+
     private:
         AssetManager();
         AssetManager(const AssetManager&) = delete;
         AssetManager& operator=(const AssetManager&) = delete;
         AssetManager(AssetManager&& ) = delete;
         AssetManager& operator=(AssetManager&& ) = delete;
+
+        // Canonical path key for the path index: uniform separators + case-fold,
+        // so lookup/insert/erase always agree on the same file.
+        static std::string Key(const std::string& path);
 
         bool LoadByExtension(const std::string& path, AssetType type, AssetRegisterInfo& info);
 
@@ -59,6 +77,9 @@ namespace kpengine::asset{
         std::unique_ptr<ShaderMetaLoader> shader_meta_loader_;
         std::unique_ptr<IAudioLoader> audio_loader_;
         std::unordered_map<AssetType, AssetCache> caches_;
+
+        std::recursive_mutex state_mutex_;  // guards caches_ and path_index
+        std::mutex load_mutex_;             // serializes shared loader access
         
     };
 }

@@ -24,6 +24,12 @@ namespace kpengine::asset
     using AudioPtr = std::shared_ptr<AudioResource>;
     using AssetResource = std::variant<ModelPtr, MeshPtr, TexturePtr, AudioPtr, ShaderPtr, ShaderMetaPtr>;
 
+    inline bool IsValidResource(const AssetResource &resource)
+    {
+        return std::visit([](auto &&ptr)
+                          { return ptr != nullptr; }, resource);
+    }
+
     struct AssetRegisterInfo
     {
         AssetResource resource;
@@ -35,6 +41,9 @@ namespace kpengine::asset
         uint32_t flags = 0;
     };
 
+    /**
+     * AssetWrapper
+     */
     class Asset
     {
     public:
@@ -44,6 +53,7 @@ namespace kpengine::asset
         std::string GetPath() const { return abs_path; }
         std::vector<AssetID> GetRefs() const{return ref_assets;}
         std::vector<AssetID> GetDependencies() const{return dependencies;}
+        bool IsValid() const { return IsValidResource(resource); }
         template <typename T>
         std::shared_ptr<T> GetResource()
         {

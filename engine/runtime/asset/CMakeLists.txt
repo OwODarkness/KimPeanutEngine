@@ -9,5 +9,7 @@ miniaudio_audio_loader.cpp
 )
 target_include_directories(Asset PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}/..
+${CMAKE_CURRENT_SOURCE_DIR}/../..
+
 )
-target_link_libraries(Asset PUBLIC Data PRIVATE Log magic_enum stb_image nlohmann assimp miniaudio)
+target_link_libraries(Asset PUBLIC Data Base PRIVATE Log magic_enum stb_image nlohmann assimp miniaudio)
