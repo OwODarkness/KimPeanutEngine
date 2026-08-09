@@ -185,7 +185,7 @@ namespace kpengine::graphics
         {
             return;
         }
-        TextureData &texture_data = *(texture_ptr->resource);
+        TextureData &texture_data = *(texture_ptr->data);
 
         TextureSettings texture_settings{};
         texture_settings.mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(texture_data.width, texture_data.height)))) + 1;

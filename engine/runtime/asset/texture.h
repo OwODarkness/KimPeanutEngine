@@ -10,9 +10,9 @@ namespace kpengine::asset{
     using TextureData = kpengine::data::TextureData;
 
     struct TextureResource{
-        std::shared_ptr<TextureData> resource;
+        std::shared_ptr<TextureData> data;
         uint32_t channel_count;
-        TextureResource():resource(std::make_shared<TextureData>()){}
+        TextureResource():data(std::make_shared<TextureData>()){}
     };
 }
 

@@ -42,12 +42,12 @@ namespace kpengine::asset
         std::shared_ptr<TextureResource> tex = std::make_shared<TextureResource>();
         size_t total_bytes = static_cast<size_t>(width * height * channels);
 
-        tex->resource->pixels.resize(total_bytes);
-        tex->resource->width = width;
-        tex->resource->height = height;
-        tex->resource->format = format;
+        tex->data->pixels.resize(total_bytes);
+        tex->data->width = width;
+        tex->data->height = height;
+        tex->data->format = format;
         tex->channel_count = channels;
-        memcpy(tex->resource->pixels.data(), pixles, total_bytes);
+        memcpy(tex->data->pixels.data(), pixles, total_bytes);
         stbi_image_free(pixles);
 
         info.type = AssetType::KPAT_Texture;

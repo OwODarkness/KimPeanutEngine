@@ -22,7 +22,7 @@ namespace kpengine::example
 
         auto resource = manager.GetResource<asset::AudioResource>(id);
 
-        auto clip = resource->resource;
+        auto clip = resource->data;
 
         audio::MiniAudioSystem audio_sys;
         audio_sys.Initialize();

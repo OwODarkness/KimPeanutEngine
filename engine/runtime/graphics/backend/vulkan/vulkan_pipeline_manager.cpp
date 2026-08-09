@@ -38,9 +38,9 @@ namespace kpengine::graphics
         //     auto shader = shader_program->GetShader(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
         //     if(shader)
         //     {
-        //         shader->resource = loader.Load(shader->desc.file, shader->desc.stage, shader->format, shader->desc.entry);
-        //         if(shader->resource)
-        //             KP_LOG("ShaderLog", LOG_LEVEL_DEBUG, "shader: %d", shader->resource->byte_code.size());
+        //         shader->data = loader.Load(shader->desc.file, shader->desc.stage, shader->format, shader->desc.entry);
+        //         if(shader->data)
+        //             KP_LOG("ShaderLog", LOG_LEVEL_DEBUG, "shader: %d", shader->data->byte_code.size());
         //     }
         // }
 

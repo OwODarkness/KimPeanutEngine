@@ -12,9 +12,12 @@ namespace kpengine::asset{
 using ShaderData = kpengine::data::ShaderData;
 
 enum class ShaderStatus {
-    Uncompiled, 
-    Compiling,  
-    Ready       
+    Uncompiled,
+    Compiling,
+    Ready,
+    // A processing stage failed (e.g. compile); no usable data was produced.
+    // Consumers must check status before reading ShaderResource::data.
+    CompileFailed
 };
 
 
@@ -31,7 +34,7 @@ struct ShaderStageDesc{
 };
 
 struct ShaderResource{
-    std::shared_ptr<ShaderData> resource;
+    std::shared_ptr<ShaderData> data;
     ShaderStageDesc desc;
     ShaderFormat format;
     ShaderStatus status;

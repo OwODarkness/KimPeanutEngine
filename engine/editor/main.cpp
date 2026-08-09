@@ -56,7 +56,7 @@ void tts_test()
 
     // tts->AsyncSynthesize(request, [&loader, player](const TTSResult & result){
     //     std::vector<uint8_t> raw_data = result.bytes;
-    //     auto clip = loader.LoadFromMemory((char *)raw_data.data(), raw_data.size()).resource;
+    //     auto clip = loader.LoadFromMemory((char *)raw_data.data(), raw_data.size()).data;
     //     player->SetClip(clip);
     //     player->Play();
     // });
@@ -92,7 +92,7 @@ void audio_test()
 
     auto resource = manager.GetResource<asset::AudioResource>(id);
 
-    auto clip = resource->resource;
+    auto clip = resource->data;
 
     audio::MiniAudioSystem audio_sys;
     audio_sys.Initialize();

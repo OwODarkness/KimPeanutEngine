@@ -134,7 +134,7 @@ namespace kpengine::tts
             {
                   player->SetClip(audio_loader_->LoadFromMemory(
                         reinterpret_cast<const char*>(data),
-                        size).resource);
+                        size).data);
                     player->Play();
                 result.player_handle = audio_handle;
                     return true;

@@ -28,7 +28,7 @@ namespace kpengine::example{
             return;
         }
 
-                const TextureData &data = *texture->resource;
+                const TextureData &data = *texture->data;
         std::cout << "[TextureLoadAsync] loaded " << data.width << "x" << data.height
                   << ", " << data.pixels.size() << " bytes" << std::endl;
     }
@@ -61,7 +61,7 @@ namespace kpengine::example{
             return;
         }
 
-        const TextureData &data = *texture->resource;
+        const TextureData &data = *texture->data;
         std::cout << "[TextureLoadAsync] loaded " << data.width << "x" << data.height
                   << ", " << data.pixels.size() << " bytes" << std::endl;
     }

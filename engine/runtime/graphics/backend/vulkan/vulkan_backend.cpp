@@ -874,7 +874,7 @@ namespace kpengine::graphics
         {
             return ;
         }
-        TextureData& texture_data = *(texture_ptr->resource);
+        TextureData& texture_data = *(texture_ptr->data);
         
         CreateTextures(texture_data);
 

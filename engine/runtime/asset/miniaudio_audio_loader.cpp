@@ -88,7 +88,7 @@ namespace kpengine::asset
         clip->frame_count = frames_read;
 
         AudioResource res;
-        res.resource = clip;
+        res.data = clip;
         return res;
     }
     MiniAudio_AudioLoader::MiniAudio_AudioLoader() : impl_(std::make_unique<Impl>())
@@ -164,7 +164,7 @@ namespace kpengine::asset
         clip->frame_count = frames_read;
 
         std::shared_ptr<AudioResource> wrapper = std::make_shared<AudioResource>();
-        wrapper->resource = clip;
+        wrapper->data = clip;
         info.resource = wrapper;
         info.type = AssetType::KPAT_Audio;
         info.path = path;

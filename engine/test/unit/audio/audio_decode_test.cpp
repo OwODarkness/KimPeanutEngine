@@ -18,7 +18,7 @@ TEST(AudioDecodeTest, LoopingPlayback) {
     //  asset::AssetID id = manager.LoadSync(audio_path);
     //  auto resource = manager.GetResource<asset::AudioResource>(id);
     //  ASSERT_NE(resource, nullptr) << "Resource not found after load";
-    // auto clip = resource->resource;
+    // auto clip = resource->data;
     // auto duration = clip->GetDuration();
     
     // auto handle = audio_sys_->CreateAudioPlayer(audio::AudioPlayerType::Buffer);
