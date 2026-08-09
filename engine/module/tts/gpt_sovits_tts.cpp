@@ -1,73 +1,126 @@
-﻿#include <vector>
-#include <httplib/httplib.h>
-#include <nlohmann/json.hpp>
-#include <miniaudio/miniaudio.h>
-#include "gpt_sovits_tts.h"
+﻿#include "gpt_sovits_tts.h"
 #include "log/logger.h"
+#include <nlohmann/json.hpp>
+#include <httplib/httplib.h>
 
 namespace kpengine::tts
 {
-
-    void GPTSovitsTTS::LoadConfig(const GPTSovitsConfig &config)
+    GPTSovitsTTS::GPTSovitsTTS()
     {
-        config_ = config;
     }
 
-    std::vector<uint8_t> GPTSovitsTTS::Synthesis(const std::string &text)
+    GPTSovitsTTS::~GPTSovitsTTS()
     {
-        using json = nlohmann::json;
+    }
 
-        httplib::Client client(config_.host, config_.port);
+    bool GPTSovitsTTS::Initialize(const ServerConfig &config)
+    {
+        config_ = config;
+        client_ = std::make_unique<httplib::Client>(config.host, config.port);
+        client_->set_connection_timeout(config_.timeout);
+        client_->set_read_timeout(config_.timeout);
+        initialized_ = true;
+        return true;
+    }
 
-        client.set_connection_timeout(config_.timeout);
-        client.set_read_timeout(config_.timeout);
+    void GPTSovitsTTS::ShutDown()
+    {
+        if (initialized_)
+        {
+            client_->stop();
+        }
+        initialized_ = false;
+    }
 
-        json j;
-        j["text"] = text;
-        j["text_lang"] = "ja";
-        j["ref_audio_path"] = config_.ref_audio_path;
-        j["prompt_lang"] = config_.prompt_lang;
-        j["prompt_text"] = config_.prompt_text;
+    size_t total = 0;
+
+    std::string GPTSovitsTTS::BuildRequest(const TTSRequest &request) const
+    {
+        nlohmann::json j;
+        j["text"] = request.text;
+        j["text_lang"] = request.text_lang;
+        j["ref_audio_path"] = request.ref_audio_path;
+        j["prompt_lang"] = request.prompt_lang;
+        j["prompt_text"] = request.prompt_text;
         j["text_split_method"] = "cut4";
         j["batch_size"] = 1;
-        j["streaming_mode"] = false;
-        j["sample_steps"] = 48;
+        j["streaming_mode"] = request.streaming;
+        j["sample_steps"] = 16;
+        j["overlap_length"] = 2;
+        j["min_chunk_length"] = 16;
 
-        std::string json_body = j.dump();
+        return j.dump();
+    }
 
+    bool GPTSovitsTTS::SynthesizeBuffer(const TTSRequest &request, AudioDataCallback OnData, ErrorCallback OnError)
+    {
+        std::string json_body = BuildRequest(request);
 
-
-        auto res = client.Post(
+        auto response = client_->Post(
             config_.api_path.c_str(), // "/tts"
             json_body,
             "application/json");
 
-        if (!res)
+        if (!response)
         {
-            std::string msg = httplib::to_string(res.error()) + "." ;
-            KP_LOG("GPTSOVITSTTSLOG",
-                   LOG_LEVEL_ERROR,
-                   msg.c_str());
-            return {};
+            OnError(httplib::to_string(response.error()));
+            return false;
         }
 
-        if (res->status != 200)
+        if (response->status != 200)
         {
-            KP_LOG("GPTSOVITSTTSLOG",
-                   LOG_LEVEL_ERROR,
-                   "HTTP status: %d %s",
-                   res->status, json_body.c_str());
-            return {};
+            OnError(httplib::to_string(response.error()));
+            return false;
         }
 
-        std::vector<uint8_t> response_data(
-            res->body.begin(),
-            res->body.end());
+        std::vector<uint8_t> data(
+            response->body.begin(),
+            response->body.end());
 
-        std::ofstream file("tts_debug.wav", std::ios::binary);
-        file.write((char *)response_data.data(), response_data.size());
-        file.close();
+        OnData(reinterpret_cast<const uint8_t*>(response->body.data()), response->body.size());
 
-       return response_data;
+        return true;
     }
+
+    bool GPTSovitsTTS::SynthesizeStream(const TTSRequest &request, AudioDataCallback OnData, FinishCallback OnFinish, ErrorCallback OnError)
+    {
+        std::string json_body = BuildRequest(request);
+
+        httplib::Headers headers;
+
+
+        auto receiver = [&](const char *data, size_t len)
+        {
+
+            OnData(reinterpret_cast<const uint8_t *>(data), len);
+            return true; 
+        };
+
+        auto progress = [&](uint64_t current, uint64_t total)
+        {
+
+            return true;
+        };
+        auto response = client_->Post( config_.api_path, headers, json_body, "application/json", receiver, progress);
+
+        if (response)
+        {
+            OnFinish();
+            return true;
+        }
+        if (!response)
+        {
+            OnError(httplib::to_string(response.error()));
+            return false;
+        }
+
+        if (response->status != 200)
+        {
+            OnError(httplib::to_string(response.error()));
+            return false;
+        }
+
+        return false;
+    }
+
 }
