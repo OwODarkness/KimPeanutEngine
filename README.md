@@ -1,5 +1,5 @@
 # KimPeanut Engine 
-![](./images/main.png)
+![](./docs/images/main.png)
 
 # KimPeanut Engine (KP Engine)
 
@@ -222,3 +222,6 @@ engine/runtime/core/math
 - Unreal Engine
 - Piccolo Engine
 
+# 设计
+
+Asset负责管理
