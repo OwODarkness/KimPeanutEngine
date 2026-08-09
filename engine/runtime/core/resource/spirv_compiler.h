@@ -10,8 +10,6 @@ namespace kpengine::resource{
         void Initialize(GraphicsAPIType api_type) override;
         std::vector<uint8_t> Compile(const ShaderCompileInput& input) override;
     private:
-        shaderc_shader_kind MatchShaderKind(ShaderStage stage);
-    private:
         shaderc::Compiler compiler;
         shaderc::CompileOptions options;
     };

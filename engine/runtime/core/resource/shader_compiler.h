@@ -7,6 +7,7 @@
 #include "data/shader.h"
 #include "base/type.h"
 #include "base/graphics_type.h"
+#include "shader_operation.h"
 
 namespace kpengine::resource{
     struct ShaderCompileInput
@@ -20,10 +21,17 @@ namespace kpengine::resource{
         std::vector<std::string> defines;
     };
 
-    class ShaderCompiler{
+    // The compiler is the Compile stage of the shader processing pipeline.
+    // SPIRVCompiler implements Compile(); the ShaderOperation seam lets the
+    // processor drive it through the same Run/observer path as the future
+    // preprocess/reflect/save stages.
+    class ShaderCompiler : public ShaderOperation{
     public:
-        virtual void Initialize(GraphicsAPIType api_type);
+        virtual void Initialize(GraphicsAPIType api_type) = 0;
         virtual std::vector<uint8_t> Compile(const ShaderCompileInput& input ) = 0;
+        ShaderProcessPhase GetPhase() const override { return ShaderProcessPhase::Compile; }
+        const char* GetName() const override { return "compile"; }
+        bool Run(ShaderProcessContext& context) override;
         virtual ~ShaderCompiler() = default;
     protected:
         GraphicsAPIType api;

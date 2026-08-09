@@ -1,4 +1,5 @@
 #include "spirv_compiler.h"
+#include "shaderc_util.h"
 #include "log/logger.h"
 namespace kpengine::resource
 {
@@ -18,29 +19,15 @@ namespace kpengine::resource
             // Copy the shared options (optimization level, etc.) and layer the
             // per-shader macros on top, so defines never leak between compiles.
             shaderc::CompileOptions local_options = options;
-            for (const auto &define : input.defines)
-            {
-                std::string name = define;
-                std::string value;
-                size_t sep = define.find_first_of(" \t=");
-                if (sep != std::string::npos)
-                {
-                    name = define.substr(0, sep);
-                    size_t start = define.find_first_not_of(" \t=", sep);
-                    if (start != std::string::npos)
-                    {
-                        value = define.substr(start);
-                    }
-                }
-                local_options.AddMacroDefinition(name, value.empty() ? "1" : value);
-            }
+            AddMacroDefinitions(local_options, input.defines);
             result = compiler.CompileGlslToSpv(input.source, shader_kind, input.file_name.c_str(), local_options);
 
             if(result.GetCompilationStatus() != shaderc_compilation_status_success)
             {
                 std::string msg = result.GetErrorMessage();
                 KP_LOG("SPIRVCompilerLog", LOG_LEVEL_ERROR, "Failed to compile %s to spirv, %s", input.file_name.c_str(), msg.c_str());
-                throw std::runtime_error(msg);
+
+                return {};
             }
             size_t count = result.end() - result.begin();
             std::vector<uint8_t> out(count * 4);
@@ -49,23 +36,6 @@ namespace kpengine::resource
         }
 
         return {};
-    }
-
-    shaderc_shader_kind SPIRVCompiler::MatchShaderKind(ShaderStage stage)
-    {
-        switch (stage)
-        {
-        case ShaderStage::SHADER_STAGE_VERTEX:
-            return shaderc_vertex_shader;
-        case ShaderStage::SHADER_STAGE_FRAGMENT:
-            return shaderc_fragment_shader;
-        case ShaderStage::SHADER_STAGE_GEOMETRY:
-            return shaderc_geometry_shader;
-        case ShaderStage::SHADER_STAGE_COMPUTE:
-            return shaderc_compute_shader;
-        default:
-            return shaderc_miss_shader;
-        }
     }
 
 }

@@ -1,6 +1,7 @@
 #include "shader_processor.h"
 #include <magic_enum/magic_enum.hpp>
 #include "asset/shader.h"
+#include "preprocess_operation.h"
 #include "spirv_compiler.h"
 #include "utility.h"
 #include "log/logger.h"
@@ -9,8 +10,7 @@
 namespace kpengine::resource
 {
 
-    ShaderProcessor::ShaderProcessor() : 
-    compiler_(std::make_unique<SPIRVCompiler>())
+    ShaderProcessor::ShaderProcessor()
     {
     }
     ShaderProcessor::~ShaderProcessor()
@@ -20,63 +20,114 @@ namespace kpengine::resource
     void ShaderProcessor::Initialize(GraphicsAPIType api_type)
     {
         api_ = api_type;
-        compiler_->Initialize(api_);
+        // OpenGL's artifact is the assembled GLSL source, produced cheaply, so it
+        // skips the content-addressed cache; Vulkan's artifact is SPIR-V and goes
+        // through it. keep_source_ drives both the operation built and the field
+        // the write-back fills — no API checks scattered through Process.
+        keep_source_ = (api_type == GraphicsAPIType::GRAPHICS_API_OPENGL);
+
+        operations_.clear();
+        if (keep_source_)
+        {
+            operations_.push_back(std::make_unique<PreprocessOperation>());
+        }
+        else
+        {
+            operations_.push_back(std::make_unique<SPIRVCompiler>());
+        }
+        for (auto &operation : operations_)
+        {
+            operation->Initialize(api_);
+        }
     }
 
-    void ShaderProcessor::Process(ShaderCache* cache, const std::vector<std::shared_ptr<asset::ShaderResource>> &assets)
+    void ShaderProcessor::Process(ShaderCache *cache,
+                                  const std::vector<std::shared_ptr<asset::ShaderResource>> &assets,
+                                  ShaderProcessObserver observer)
     {
-        if(!cache)
+        if (!cache)
         {
-            return ;
+            return;
         }
 
-        for(const auto& shader: assets)
-        {
-            std::string file_name = shader->desc.file;
-            std::string content = ReadText(file_name);
-            std::string stage_str = std::string(magic_enum::enum_name(shader->desc.stage));
+        const int total = static_cast<int>(assets.size());
+        int done = 0;
+        const bool has_observer = static_cast<bool>(observer);
 
-            uint64_t hash = GenerateShaderHash(content, stage_str, shader->desc.entry, shader->desc.defines);
-            std::vector<uint8_t> byte_codes;
-            if(cache->Has(hash))
+        for (const auto &shader : assets)
+        {
+            // The pipeline's data carrier: identity in, artifact out. Built once
+            // per shader and threaded through every stage (preprocess -> compile
+            // -> ...), each stage reading what it needs and writing what it
+            // produces for the next one.
+            ShaderProcessContext context;
+            context.file_name = shader->desc.file;
+            context.source = ReadText(context.file_name);
+            context.stage = shader->desc.stage;
+            context.format = shader->format;
+            context.defines = shader->desc.defines;
+
+            const std::string stage_str = std::string(magic_enum::enum_name(shader->desc.stage));
+            const uint64_t hash = GenerateShaderHash(context.source, stage_str, shader->desc.entry, context.defines);
+
+            if (has_observer && !operations_.empty())
             {
-                KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s has been cached", file_name.c_str());
-                byte_codes = cache->Load(hash);
+                observer(operations_.front()->GetPhase(), done, total, shader.get());
+            }
+
+            if (!keep_source_ && cache->Has(hash))
+            {
+                KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s has been cached", context.file_name.c_str());
+                context.byte_code = cache->Load(hash);
             }
             else
             {
-                ShaderCompileInput input;
-                input.file_name = file_name;
-                input.format = shader->format;
-                input.source = content;
-                input.stage = shader->desc.stage;
-                input.defines = shader->desc.defines;
                 shader->status = asset::ShaderStatus::Compiling;
-
-                byte_codes = compiler_->Compile(input);
-                if(byte_codes.empty())
+                bool ok = true;
+                for (auto &operation : operations_)
                 {
-                    KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s failed to compile with binary", file_name.c_str());
-                    return ;
+                    if (!operation->Run(context))
+                    {
+                        // One broken shader must not kill the whole batch (e.g. a
+                        // warmup load). Mark it failed and move on.
+                        KP_LOG("ShaderProcessorLog", LOG_LEVEL_ERROR, "%s %s failed",
+                               context.file_name.c_str(), operation->GetName());
+                        shader->status = asset::ShaderStatus::CompileFailed;
+                        ok = false;
+                        break;
+                    }
                 }
-                else
+                if (!ok)
                 {
-                    cache->Save(hash, byte_codes);
-                    KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s ready to cache", file_name.c_str());          
+                    ++done;
+                    continue;
                 }
-
+                if (!keep_source_)
+                {
+                    cache->Save(hash, context.byte_code);
+                    KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s ready to cache", context.file_name.c_str());
+                }
             }
-            //TODO: write back
-            if(!shader->resource)
+
+            // Write back. The GL artifact is the assembled source, the Vulkan
+            // artifact the SPIR-V bytes; keep_source_ picks the field.
+            if (!shader->data)
             {
-                shader->resource = std::make_shared<data::ShaderData>();
+                shader->data = std::make_shared<data::ShaderData>();
             }
-            shader->resource->byte_code = std::move(byte_codes);
-            shader->resource->stage = shader->desc.stage;
-            shader->resource->entry = shader->desc.entry;
-            shader->resource->api = api_;
+            if (keep_source_)
+            {
+                shader->data->source = std::move(context.source);
+            }
+            else
+            {
+                shader->data->byte_code = std::move(context.byte_code);
+            }
+            shader->data->stage = context.stage;
+            shader->data->entry = shader->desc.entry;
+            shader->data->api = api_;
             shader->status = asset::ShaderStatus::Ready;
-            //shader->resource
+            ++done;
         }
     }
 }
