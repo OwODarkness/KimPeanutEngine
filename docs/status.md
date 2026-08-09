@@ -1,19 +1,19 @@
 # Project Status
 
-**Snapshot: 2026-08-09.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/render_module.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-08-09.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/render_module.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
 
 ## Done
 
 - **Asset module** — two-tier ownership (unique_ptr wrappers, ref-counted payloads), thread-safe (load → state mutex order), content-addressed `path_index`. Refactor complete. → [asset_module.md](asset/asset_module.md)
-- **Shader identity + artifact pipeline** — `ShaderProgramLoader` (`.shader` meta → per-stage `ShaderResource`), `ShaderProcessor` + `SPIRVCompiler` (GLSL → SPIR-V), `ShaderCache` (content-addressed disk cache). Built, but **not wired** — see below.
+- **Shader identity + artifact pipeline** — `ShaderProgramLoader` (`.shader` meta → per-stage `ShaderResource`), `ShaderProcessor` + `SPIRVCompiler` (GLSL → SPIR-V, content-addressed cache), `PreprocessOperation` (GLSL → preprocessed source, no cache). Per-API artifact via `ShaderProcessor::keep_source_` → `ShaderData` `byte_code` (Vulkan) or `source` (OpenGL). Wired end-to-end by the asset example; the render module is not — see below.
 - **RHI** — Vulkan + OpenGL backends behind `RenderBackend::CreateGraphicsBackEnd`; cross-API handles, `PipelineDesc`, `TextureManager`/`MeshManager`/`SamplerManager`. → [graphics_module.md](graphics/graphics_module.md)
 - **Audio + TTS modules** — miniaudio system, buffer player, GPT-SoVITS client.
 - **Unit tests** — math (vector/matrix) + audio decode.
-- **Module design docs** — asset, graphics, render written.
+- **Module design docs** — asset, graphics, render, resource written. → [resource_module.md](resource/resource_module.md) (CPU-side processing layer: compiles/bakes, does not load or touch GPU).
 
 ## In progress / built but not wired
 
-- **`ResourcePipeline::ProcessShader` has no callers** — the asset→resource→graphics bridge exists and is orphaned on both ends.
+- **`ResourcePipeline::ProcessShader` has a caller, but only on the asset end** — the `CompileShader()` example bakes `simple_triangle` GLSL → SPIR-V through the pipeline (verified: fresh compile + cache hit); the **graphics end is still orphaned** — backends don't consume `ShaderData`.
 - **Graphics backends still load prebuilt `.spv`/`.vert` by path** — they do not consume `ShaderData` from the resource pipeline; the path-keyed `ShaderManager` still owns shader creation inside the RHI.
 - **Render module is legacy, OpenGL-hardcoded** — the whole `engine/runtime/render/` tree predates the RHI and does not link `Graphics`.
 

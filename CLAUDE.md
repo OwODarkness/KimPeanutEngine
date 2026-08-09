@@ -36,7 +36,7 @@ ctest --test-dir build -C Debug -R AudioUnitTest   # one suite by target name
 The full design reference lives in [docs/asset/asset_module.md](docs/asset/asset_module.md). The facts that matter for working in this code:
 
 - `AssetManager` is a singleton. Public API: `LoadSync(path) -> AssetID`, `LoadAsync(path) -> std::future<AssetID>` (same pipeline on a worker thread), `RegisterAsset(info)`, `GetAsset(id) -> Asset*` (**non-owning**), `UnRegisterAsset(id)`, and `GetResource<T>(id) -> shared_ptr<T>`.
-- **Two-tier model.** `Asset` is a metadata wrapper (id, name, path, dependency graph, payload). The payload `AssetResource` is a `variant` of `shared_ptr<T>` (Model/Mesh/Texture/Audio/Shader/ShaderProgram). The cache owns the wrapper; the payload is ref-counted and may outlive its wrapper (borrowed by renderers via `GetResource`).
+- **Two-tier model.** `Asset` is a metadata wrapper (id, name, path, dependency graph, payload). The payload `AssetPayload` is a `variant` of `shared_ptr<T>` (Model/Mesh/Texture/Audio/Shader/ShaderProgram). The cache owns the wrapper; the payload is ref-counted and may outlive its wrapper (borrowed by renderers via `GetResource`).
 - **`AssetID` = (slot, generation, AssetType)**, packed into a `uint64` for logging. Slots are recycled, so the generation is the stale-id guard: `GetAsset` validates it and a stale id returns `nullptr`, never a different asset.
 - **One `AssetCache` per `AssetType`**, holding `vector<unique_ptr<Asset>>` slots (owner of record), a `HandleSystem` (generation counters, in `engine/runtime/core/base/handle.h`), and `path_index` — `unordered_map<string, AssetID>` for dedup.
 - **`Key(path)`** normalizes separators + case. Invariant: the `path_index` lookup/insert/erase keys must all be `Key()` of the same string. Only `LoadSync` populates the index; loader sub-resources register directly and bypass it.
@@ -57,3 +57,12 @@ Design references: [docs/graphics/graphics_module.md](docs/graphics/graphics_mod
 - **Known RHI leaks (being fixed):** `ShaderManager` is path-keyed and reads shader files itself ([shader_manager.cpp](engine/runtime/graphics/backend/common/shader_manager.cpp)); `VulkanBackend::CreateGraphicsPipeline` builds the `PipelineDesc` internally ([vulkan_backend.cpp:712](engine/runtime/graphics/backend/vulkan/vulkan_backend.cpp#L712)); backends load prebuilt `.spv`/`.vert` files instead of `ShaderData`. `ShaderModule` takes `data::ShaderData` but its implementations are stale and not in the build.
 - **The resource pipeline is orphaned:** `ResourcePipeline::ProcessShader` has no callers yet. The render-module request path and a startup warmup pass (manifest → `LoadSync` + `ProcessShader`) are the reconstruction's first wiring step.
 - **Build wiring:** `RuntimeLib` links `Graphics` PUBLIC, `Render` PRIVATE; `Render` does **not** link `Graphics` today — the legacy GL renderer and the RHI are two disconnected worlds.
+
+## Resource module (`engine/runtime/core/resource`)
+
+Design reference: [docs/resource/resource_module.md](docs/resource/resource_module.md). The resource module is the **CPU-side processing layer** — the middle of Asset → Process → GPU. It **processes** (compiles/bakes) CPU-side data into artifacts; it does **not** load/unload (that's asset) and does **not** touch the GPU (that's the RHI). The facts that matter:
+
+- `ResourcePipeline` (facade) → `ShaderProcessor` → `ShaderCompiler`/`SPIRVCompiler` (shaderc) → `ShaderCache` (content-addressed, per-API). In: `asset::ShaderResource` (identity). Out: `data::ShaderData { stage, api, byte_code, source, entry }` — `byte_code` is the binary artifact (SPIR-V, Vulkan), `source` the text artifact (preprocessed GLSL, OpenGL); `api` picks which is set.
+- **Currently orphaned:** `ResourcePipeline::ProcessShader` has no callers. The render-module reconstruction is what gives it a caller + warmup.
+- `Resource` is already its own static library inside core (links `Asset` PRIVATE), so hoisting it out of core later is a three-line move — deferred unless it outgrows shaders.
+- Known gaps to close while wiring: `ProcessShader` returns void and takes a flat stage list (compile unit should be the whole program). `CompileFailed` status and the `ShaderOperation` seam are already in.

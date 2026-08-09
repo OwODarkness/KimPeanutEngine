@@ -23,12 +23,12 @@ enum class AssetType : uint16_t {
 
 **The generation is not decoration.** Slots are recycled, so `(slot, generation)` is what distinguishes "the mesh that used to be at slot 3" from "the texture that is now at slot 3." A stale `AssetID` must resolve to `nullptr`, never to a different asset.
 
-### `Asset` vs `AssetResource` — [`asset.h`](../../engine/runtime/asset/asset.h)
+### `Asset` vs `AssetPayload` — [`asset.h`](../../engine/runtime/asset/asset.h)
 
 The module is **two-tier**:
 
 - **`Asset`** — the metadata wrapper: `AssetID`, `name`, `abs_path`, the payload, and the dependency graph (`ref_assets` = who uses me, `dependencies` = what I use). Owned by the cache.
-- **`AssetResource`** — the payload, a `std::variant` of `shared_ptr<ModelResource | MeshResource | TextureResource | AudioResource | ShaderResource | ShaderProgramResource>`. Ref-counted, borrowed by subsystems, and **may outlive its wrapper**.
+- **`AssetPayload`** — the payload, a `std::variant` of `shared_ptr<ModelResource | MeshResource | TextureResource | AudioResource | ShaderResource | ShaderProgramResource>`. Ref-counted, borrowed by subsystems, and **may outlive its wrapper**.
 
 `AssetRegisterInfo` is the struct loaders fill in: the payload, path, name, type, and declared dependencies.
 
@@ -107,7 +107,7 @@ Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h
 
 **Stage 1 — identity (metadata, API-agnostic).** `ShaderProgramLoader` parses a `.shader` JSON into one `ShaderResource` per stage. A `ShaderResource` holds `ShaderStageDesc { file, stage, entry, defines }` + `format` (the *source* language: GLSL/HLSL), registered with status `Uncompiled` and no byte code. `ShaderProgramResource` binds `(stage, source_format) → AssetID`. This is "who the shader is", independent of any graphics API — the same `.shader` works on a Vulkan-only or OpenGL-only build.
 
-**Stage 2 — artifact (baked result, API-specific).** [`ShaderProcessor::Process`](../../engine/runtime/core/resource/shader_processor.cpp) is the "caller that compiles": it reads the source, hashes it, consults `ShaderCache`, and on a miss compiles via `SPIRVCompiler` (shaderc). The result lands in `shader->resource` — a `ShaderData { stage, api, byte_code, entry }` — and status flips to `Ready`.
+**Stage 2 — artifact (baked result, API-specific).** [`ShaderProcessor::Process`](../../engine/runtime/core/resource/shader_processor.cpp) is the "caller that compiles": it reads the source, hashes it, consults `ShaderCache`, and on a miss compiles via `SPIRVCompiler` (shaderc). The result lands in `shader->data` — a `ShaderData { stage, api, byte_code, source, entry }` — and status flips to `Ready`.
 
 **The boundary.** `ShaderData::api` (`GraphicsAPIType`) is a property of the **artifact, not the metadata**. One GLSL shader is one identity but N artifacts: SPIR-V for Vulkan, GLSL source for OpenGL. The metadata key stays `(stage, source_format)`; the artifact is self-describing via `api`. Consumers read `api` + `byte_code` and reject a mismatched API. (Keying the metadata by API was considered and rejected — that would fork one shader into two "identities" and leak engine API support into data files.)
 
@@ -119,7 +119,7 @@ Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h
 
 **Design notes.**
 - The natural compile unit is the **meta** (all stages of a material), not one shader.
-- `ShaderStatus` is `Uncompiled/Compiling/Ready` — it needs a `CompileFailed` state carrying the compiler error text, so a broken shader isn't silently consumed or recompiled every frame.
+- `ShaderStatus` is `Uncompiled/Compiling/Ready/CompileFailed` — `CompileFailed` exists but does not yet carry the compiler error text; add the error message so a broken shader isn't silently consumed or recompiled every frame.
 - One identity → N artifacts raises a storage question: keep artifacts in the asset graph (e.g. a per-resource artifact map keyed by API) or in a render-side cache keyed by `(meta AssetID, api)`. Compiled bytes are *derived data*, so the latter is the cleaner fit.
 
 **Legacy paths to reconcile.** `ShaderPool`/`RenderShader` still `glCompileShader` from source at runtime, and `vulkan_backend` loads prebuilt `.spv` files — both bypass the asset system and should eventually consume `ShaderResource.byte_code`. `opengl_shader_module.cpp`/`vulkan_shader_module.cpp` reference `shader->glsl`/`shader->spirv` (fields that don't exist on `ShaderData`) and are **not in the build** — stale; the real consumers should read `ShaderData::api` + `byte_code`.
@@ -144,7 +144,7 @@ Complete. The migration from "shared_ptr everywhere + `weak_ptr` path map" to th
 - `ModelResource` is already a container keyed by `ModelGeometryType` (a model = a set of geometry sub-assets) — the right shape for extending to point clouds — but "mesh" is hardcoded in the three places that would have to become geometry-aware:
   - `GetMesh()` ([`model.h`](../../engine/runtime/asset/model.h)) returns only the `KPMG_Mesh` slot; there is no generic `GetGeometry(type)` accessor.
   - `LoadByExtension` always calls the model loader with `ModelGeometryType::KPMG_Mesh`, so **no point cloud can be loaded at all** — `LoadSync`/`LoadAsync` take only a path and never a geometry type.
-  - Neither `AssetType` nor the `AssetResource` variant has a point-cloud payload slot; adding one means growing the variant and touching its visitors.
+  - Neither `AssetType` nor the `AssetPayload` variant has a point-cloud payload slot; adding one means growing the variant and touching its visitors.
   
   Before wiring this up, decide whether a file is *either* mesh or point cloud (geometry type becomes a load parameter, defaulting to `KPMG_Mesh`) or *can carry both* (the loader emits multiple geometry sub-assets and binds them all into one `ModelResource`). Keep `GetMesh()` as sugar on top of a generic accessor rather than the only way in.
-- Shader compile has no `CompileFailed` status, the render layer still compiles from source / loads prebuilt `.spv` bypassing the asset graph, and two stale shader-module files aren't in the build — see the **Shader pipeline** section above.
+- `CompileFailed` status exists but carries no error text; the render layer still compiles from source / loads prebuilt `.spv` bypassing the asset graph, and two stale shader-module files aren't in the build — see the **Shader pipeline** section above.

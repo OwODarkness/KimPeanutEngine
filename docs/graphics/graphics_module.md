@@ -124,10 +124,10 @@ It should know:
 
 ## Design notes
 
-- **Two shader seams, one target.** `graphics::Shader` (byte source) and `ShaderModule` (device module) both point at the same fix: consume `data::ShaderData { stage, api, byte_code, entry }` instead of paths. Prefer the smaller change first — a `ShaderData`-backed `Shader` implementation keeps `PipelineDesc` and `CreatePipelineResource` untouched.
+- **Two shader seams, one target.** `graphics::Shader` (byte source) and `ShaderModule` (device module) both point at the same fix: consume `data::ShaderData { stage, api, byte_code, source, entry }` instead of paths. Prefer the smaller change first — a `ShaderData`-backed `Shader` implementation keeps `PipelineDesc` and `CreatePipelineResource` untouched.
 - **Managers are the model.** `TextureManager`/`MeshManager`/`SamplerManager` (slot + HandleSystem + create-from-data) are the right RHI pattern. `ShaderManager` (path-keyed, reads files) is the anti-pattern to delete.
 - **Pipeline cache ownership.** Per the asset module's design note, a render-side pipeline cache keyed by `(program AssetID, api)` is cleaner than stuffing artifacts into the asset graph. The RHI should expose "bake this `PipelineDesc`", not "find me a cached shader".
-- **Derived data stays out of the RHI.** Compiling source → bytes is `resource/`. The RHI only ever sees bytes.
+- **Derived data stays out of the RHI.** Compiling source → bytes is the CPU-side processing layer — `resource/` (see [resource_module.md](../resource/resource_module.md)). The RHI only ever sees bytes.
 
 ## Refactor status
 

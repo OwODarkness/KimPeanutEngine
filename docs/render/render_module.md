@@ -65,7 +65,7 @@ render module
 | Concern | Owner |
 |---|---|
 | Shader identity (`.shader` meta, stage descs) | `asset/` |
-| Compile source → artifact (`ShaderData`, disk cache) | `resource/` |
+| Compile source → artifact (`ShaderData`, disk cache) | `resource/` → [resource_module.md](../resource/resource_module.md) |
 | "I want this pipeline" — load, compile, fill desc, request | **render module** |
 | Bake desc → GPU objects | `graphics/` RHI |
 
