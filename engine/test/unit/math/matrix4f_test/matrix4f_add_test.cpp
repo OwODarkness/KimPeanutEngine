@@ -1,5 +1,5 @@
 #include "gtest/gtest.h"
-#include "runtime/core/math/math_header.h"
+#include "math/math_header.h"
 
 TEST(Matrix4AddTest, AddTwoMatrices)
 {
