@@ -2,13 +2,14 @@ add_subdirectory(editor)
 add_subdirectory(runtime)
 add_subdirectory(module)
 add_subdirectory(script)
+add_subdirectory(example)
 add_library(EngineLib INTERFACE)
 
-target_link_libraries(EngineLib INTERFACE RuntimeLib EditorLib Module Script
+target_link_libraries(EngineLib INTERFACE RuntimeLib EditorLib Module Script ExampleLib
 )
 
 target_include_directories(EngineLib
-    INTERFACE ${CMAKE_SOURCE_DIR}/engine   # gives you "runtime/..."
+    INTERFACE ${CMAKE_SOURCE_DIR}/engine   
 )
 target_include_directories(EditorLib PUBLIC
 "${CMAKE_CURRENT_SOURCE_DIR}")
