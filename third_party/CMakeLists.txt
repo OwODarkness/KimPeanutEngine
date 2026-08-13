@@ -99,9 +99,10 @@ target_include_directories(nlohmann INTERFACE
     ${CMAKE_CURRENT_SOURCE_DIR}/nlohmann/include
 )
 
-#stb_image
-add_library(stb_image INTERFACE)
-target_include_directories(stb_image INTERFACE
+#stb_image — compiled once (STB_IMAGE_IMPLEMENTATION lives in stb_image_impl.cpp);
+#consumers include <stb_image/...> for declarations only.
+add_library(stb_image STATIC stb_image/stb_image_impl.cpp)
+target_include_directories(stb_image PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/stb_image/include
 )
 

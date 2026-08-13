@@ -1,6 +1,8 @@
 #include "glfw_window_system.h"
 
 #include <GLFW/glfw3.h>
+#include <stb_image/image_helper.h>
+#include "config/path.h"
 #include "log/logger.h"
 namespace kpengine
 {
@@ -53,6 +55,27 @@ namespace kpengine
         glfwSetKeyCallback(window_, GLFW_WindowSystem::OnKeyCallback);
         glfwSetCursorPosCallback(window_, GLFW_WindowSystem::OnCursorPosCallback);
         glfwSetScrollCallback(window_, GLFW_WindowSystem::OnScrollCallback);
+
+        // Window icon from config/icon.png. glfwSetWindowIcon copies the pixels, so
+        // the decode buffer is freed immediately. Non-fatal: window still works bare.
+        {
+            int w = 0, h = 0, ch = 0;
+            stbi_uc *pixels = stbi_load(GetIconPath().c_str(), &w, &h, &ch, STBI_rgb_alpha);
+            if (pixels)
+            {
+                GLFWimage image{};
+                image.width = static_cast<unsigned int>(w);
+                image.height = static_cast<unsigned int>(h);
+                image.pixels = pixels;
+                glfwSetWindowIcon(window_, 1, &image);
+                stbi_image_free(pixels);
+                KP_LOG("GLFWWindowSystemLog", LOG_LEVEL_INFO, "Window icon set from %s (%dx%d)", GetIconPath().c_str(), w, h);
+            }
+            else
+            {
+                KP_LOG("GLFWWindowSystemLog", LOG_LEVEL_WARNING, "Failed to load window icon from %s", GetIconPath().c_str());
+            }
+        }
 
         return true;
     }
