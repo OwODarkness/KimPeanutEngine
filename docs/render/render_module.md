@@ -4,48 +4,28 @@ Location: `engine/runtime/render/`
 
 The render module is the engine's "what to draw and how" layer — the module that owns scenes, materials, cameras, render passes, and the requests for GPU pipelines. This is where the *call* originates: the render module asks the asset system for shader identity, asks the resource pipeline to bake it into artifacts, fills a `PipelineDesc`, and hands it to the RHI.
 
-**Current state: the module is legacy and OpenGL-hardcoded.** It predates the RHI (`engine/runtime/graphics`) and calls raw GL directly everywhere. It is slated for reconstruction — the rest of this doc describes both what is there now and the target shape.
+## Current state — the skeleton
 
-## Current state — the legacy GL renderer
+The legacy OpenGL renderer (RenderShader, ShaderPool, RenderMaterial, RenderScene and the raw-GL pass code) has been **deprecated and removed** from the build. What remains is the reconstruction's starting point: `RenderSystem` (the facade) and a temp `RenderCamera` (camera data). `Render` still does not link `Graphics`; `RuntimeLib` links it PRIVATE.
 
-The module compiles and runs, but it is a self-contained OpenGL renderer that ignores the asset system, the resource pipeline, and the RHI.
+### `RenderSystem` — the facade — [`render_system.h`](../../engine/runtime/render/render_system.h)
 
-### `RenderShader` — raw GL shader objects — [`render_shader.h`](../../engine/runtime/render/render_shader.h)
+The render-module facade. It now owns the `ResourcePipeline` (baked at `Initialize` with the chosen `GraphicsAPIType`) and **drains the async load queue** (`RuntimeContext::async_load_queue_`, passed in by pointer) in two modes: `PostInitialize` full-drains the bootstrap batch, and `Tick` budget-drains a bounded number of requests per frame — both load via `asset.LoadSync`, process shaders via `resource.ProcessShader`, and pin the result into a render cache keyed by `request_id` (polled via `IsReady` / `GetCached`). It still owns one `RenderCamera` reachable via `GetRenderCamera()`. In the target shape it also owns the RHI backend and the scene graph; `Tick` will additionally issue the RHI draw calls that complete the render task.
 
-Reads `.vert`/`.frag`/`.geom` GLSL **from disk at runtime**, calls `glCompileShader`/`glLinkProgram`, and exposes `glUniform*` setters (`SetFloat`, `SetVec3`, `SetMat`…). It is the old "shader = source path → GL program" model. It has no concept of stages as assets, no `ShaderData`, no compilation cache — every program is recompiled from source on first use.
+### `RenderCamera` — camera data — [`render_camera.h`](../../engine/runtime/render/render_camera.h)
 
-### `ShaderPool` — hardcoded shader catalogue — [`shader_pool.h`](../../engine/runtime/render/shader_pool.h)
-
-A `unordered_map<string, shared_ptr<RenderShader>>` keyed by a hardcoded list of categories:
+A **pure data holder**, not a system — no lifecycle, no input, no movement, no rendering. It stores the camera parameters (position, rotation, fov/near/far/aspect) and derives the view/proj matrices the render pass needs:
 
 ```cpp
-SHADER_CATEGORY_PHONG "phong_shader"         SHADER_CATEGORY_PBR "pbr_shader"
-SHADER_CATEGORY_SKYBOX "skybox_shader"       SHADER_CATEGORY_NORMAL "normal_shader"
-SHADER_CATEGORY_DIRECTIONALSHADOW …          SHADER_CATEGORY_POINTSHADOW …
-SHADER_CATEGORY_OUTLINING …                  SHADER_CATEGORY_DEFER_PBR …
+struct CameraData {
+    alignas(16) Matrix4f view;
+    alignas(16) Matrix4f proj;
+};
+
+CameraData GetCameraData() const;   // {view.Transpose(), proj.Transpose()}
 ```
 
-Every shader the game needs is a `#define` string. There is no data-driven `.shader` meta, no defines, no API selection.
-
-### `RenderMaterial` — PBR/Phong factories — [`render_material.h`](../../engine/runtime/render/render_material.h)
-
-`CreatePBRMaterial`/`CreatePhongMaterial`/`CreateMaterial(shader_name)` build a material from texture maps (`diffuse/albedo/normal/roughness/metallic/ao…`) and scalar/vec3 params. `Render()` binds textures by GL slot index (`texture_start_index`) and sets uniforms. Material identity is a shader name + a map list, not an asset program.
-
-### `RenderScene` — the deferred renderer — [`render_scene.h`](../../engine/runtime/render/render_scene.h)
-
-The biggest legacy piece: a hardcoded deferred pipeline with `g_buffer_`, a lighting pass (`ExecLightingRenderPass`), shadow passes (`ShadowManager`, directional/point/spot casters), skybox + environment map, post-process pipeline, a fullscreen triangle (`InitFullScreenTriangle`), and UBO/SSBO state (`ubo_camera_matrices_`, `light_ssbo_`). Raw `GLuint` handles for VAOs, VBOs, FBOs, UBOs, SSBOs are member fields. The render passes and their fixed-function GL state are baked into this one class.
-
-### `RenderSystem` — the facade — [`render_system.cpp`](../../engine/runtime/render/render_system.cpp)
-
-Owns `RenderScene`, `ShaderPool`, `TexturePool`, `RenderCamera`; per frame it runs `glBeginQuery(GL_PRIMITIVES_GENERATED)` / render / `glEndQuery` to count triangles. Called from `RuntimeContext::Tick`. This is the GL-only entry point the reconstruction replaces.
-
-### Raw GL everywhere
-
-GL state is threaded through the whole module: `FrameBuffer`, `RenderTexture`, `TexturePool`, `RenderMesh`, `render_pointcloud`, `skybox`, `gizmos`, `aabb_debugger` — all built directly on `GLuint` handles and `glad`. There is no `GraphicsContext`, no handle system, no backend abstraction.
-
-### Build wiring
-
-`Render` links `Core GameFramework Component Input glfw glad assimp stb_image` — **it does not link `Graphics`** ([`render/CMakeLists.txt`](../../engine/runtime/render/CMakeLists.txt)). `RuntimeLib` links it PRIVATE ([`runtime/CMakeLists.txt`](../../engine/runtime/CMakeLists.txt)). So today the legacy renderer and the RHI are two disconnected worlds: `Render` calls GL directly, `Graphics` is used only by examples and the editor. [`architecture_overview.md`](../architecture_overview.md) already flags `render: old version, need rebuild later`.
+Modeled on the deprecated `CameraComponent` (git history: `engine/runtime/component/camera_component.*`), stripped of the scene hierarchy and input. Its role is to be **used by `RenderSystem`**: the game sets position/rotation; `RenderSystem` feeds the resulting `CameraData` to the RHI as part of the frame.
 
 ## Target architecture
 
@@ -81,7 +61,7 @@ render module
 
 ### Warmup at init
 
-A real game compiles its shaders at startup so first-frame pipeline requests are cache hits. The render module owns this: at init it reads a manifest of `.shader` paths, calls `asset.LoadSync` + `resource.ProcessShader` for each, populating `resource::ShaderCache` (disk) + `shader->data` (memory). Later backend requests hit the cache. Same `ProcessShader` API — just called eagerly at boot. (Later: material traversal instead of a manifest, and async compile off the main thread.)
+A real game compiles its shaders at startup so first-frame pipeline requests are cache hits. The render module owns this: at init it reads a manifest of `.shader` paths, calls `asset.LoadSync` + `resource.ProcessShader` for each, populating `resource::ShaderCache` (disk) + `shader->data` (memory). Later backend requests hit the cache. Same `ProcessShader` API — just called eagerly at boot. (Later: material traversal instead of a manifest.) The async half of this is the **async resource queue** — [async_resource_queue.md](../async/async_resource_queue.md): a loading thread runs `LoadSync` + `ProcessShader` off-frame, and the render thread drains finished artifacts under a frame budget, so runtime loads never block a frame.
 
 ## Reconstruction plan (ordered)
 
@@ -90,7 +70,7 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 3. **Move `PipelineDesc` construction out of the backend** into render-module pipeline/material code. `VulkanBackend::CreateGraphicsPipeline` should only *bake* what it is handed.
 4. **Add the render-module request path:** `asset.LoadSync(.shader)` → `resource.ProcessShader` → fill `PipelineDesc` → `backend.CreatePipelineResource`. Add a warmup pass in render init.
 5. **Close the resource-pipeline gaps it will hit:** `ProcessShader` should take the whole `ShaderProgramResource` (all stages) as one unit, not a flat stage list; and add a `CompileFailed` status carrying the compiler error, so the render module can distinguish failure and not bake empty bytes.
-6. **Retire the legacy path progressively.** `ShaderPool`/`RenderShader`/`RenderMaterial`/`RenderScene` raw-GL code gets replaced pass-by-pass with render-module code that consumes the RHI (meshes via `MeshManager`, textures via `TextureManager`, pipelines via `PipelineDesc`). Keep the module building at each step — the legacy and RHI-backed paths coexist until the last pass, then the GL-only code is deleted.
+6. **Give the skeleton its content.** The legacy GL code is already retired, so there is no coexisting path to replace pass-by-pass. `RenderSystem` grows: it owns the RHI backend (via `RenderBackend`), the async queue drain + ready cache, and the scene graph; `RenderCamera` data feeds the frame's `PerPassData`.
 7. **Finish:** `Render` links `Graphics`; `RenderSystem` becomes the render-module facade that owns the backend, the warmup, and the scene graph.
 
 ## Invariants
@@ -102,4 +82,8 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 
 ## Refactor status
 
-**Legacy, OpenGL-hardcoded — reconstruction not started.** Target shape and ordering are captured above; see [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
+**In progress — legacy deprecated, queue consumer in place.** The legacy OpenGL renderer is removed from the build; `RenderSystem` now owns the `ResourcePipeline` and drains the async load queue in two modes (bootstrap full-drain + per-frame budgeted drain), caching loaded/processed assets in a render cache. `Render` now links `Asset`. The target design (render → asset → resource → graphics, `PipelineDesc` seam, async warmup) is unchanged and captured above; the RHI backend + scene graph are still unowned. The dedicated loading thread is deferred — the render thread loads in-place, budgeted. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
+
+## Future work
+
+- **Render graph (very future, not started).** Long-term the render module moves from direct pass code to a render graph: passes recorded as nodes with explicit resource dependencies (textures, buffers, pipeline state), then culled/ordered and baked into RHI draw calls. `RenderSystem` becomes the graph executor — it records the frame's passes, drains the async queue, and issues the RHI calls that complete the render task. Listed now so the design doesn't lock in a pass order prematurely.

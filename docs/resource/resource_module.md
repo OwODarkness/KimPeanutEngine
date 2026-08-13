@@ -66,6 +66,7 @@ Key = hash of (source + stage + entry + defines), file = `<hex hash>.spv` under 
 
 - **Stays in `core/`** (decision 2026-08-09). It is the one core-nested library that depends on a top-level module (`Asset`) — a mild layering smell — but because `Resource` is already its own static lib, hoisting it to `engine/runtime/resource/` later is a three-line move. Defer unless it outgrows shaders.
 - **Warmup is the caller's job.** The render module, at init, reads a manifest of `.shader` paths and calls `asset.LoadSync` + `ProcessShader` for each, feeding the disk cache so later RHI requests are hits. The resource module only ever responds to `ProcessShader`; it never initiates.
+- **Async callers ride a request queue.** The runtime half of the story — the render module's "async compile off the main thread" step — is the async resource queue ([async_resource_queue.md](../async/async_resource_queue.md)): a loading thread runs `ProcessShader` off-frame, the render thread drains finished artifacts under a frame budget. The queue exchanges requests, not payloads, so it stays type-agnostic as texture/mesh processing join. The module still only responds to `ProcessShader`; it never initiates.
 - **Natural compile unit is the whole program**, not a stage — plan for `ProcessShaderProgram(const ShaderProgramResource&)`.
 - **Artifacts are derived data** — they belong in the resource pipeline's cache, not in the asset graph.
 

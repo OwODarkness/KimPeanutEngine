@@ -196,7 +196,7 @@ engine/runtime/core/math
 
 # Editor 架构
 
-- `editor_global_context`：Editor 系统上下文
+- `EditorContext` / `global_editor_context`：Editor 系统上下文（hub）
 - 依赖 `runtime_global_context`
 - 提供 UI 与输入系统
 

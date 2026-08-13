@@ -31,6 +31,10 @@ ctest --test-dir build -C Debug                    # all suites
 ctest --test-dir build -C Debug -R AudioUnitTest   # one suite by target name
 ```
 
+## Code style
+
+Source-code comments stay short — the *why*, not the *what*, max 3 lines; long rationale goes in `docs/`. Full rules: `/concise-comments` skill ([.claude/skills/concise-comments/SKILL.md](.claude/skills/concise-comments/SKILL.md)).
+
 ## Asset module (`engine/runtime/asset`)
 
 The full design reference lives in [docs/asset/asset_module.md](docs/asset/asset_module.md). The facts that matter for working in this code:
@@ -66,3 +70,24 @@ Design reference: [docs/resource/resource_module.md](docs/resource/resource_modu
 - **Currently orphaned:** `ResourcePipeline::ProcessShader` has no callers. The render-module reconstruction is what gives it a caller + warmup.
 - `Resource` is already its own static library inside core (links `Asset` PRIVATE), so hoisting it out of core later is a three-line move — deferred unless it outgrows shaders.
 - Known gaps to close while wiring: `ProcessShader` returns void and takes a flat stage list (compile unit should be the whole program). `CompileFailed` status and the `ShaderOperation` seam are already in.
+
+## Script module (`engine/runtime/script`)
+
+Design reference: [docs/script/script_module.md](docs/script/script_module.md). Two layers, hosted inside the runtime engine (never the editor):
+
+- **`ScriptLua` / `LuaVM`** (`engine/runtime/script/lua/`) — the generic Lua hosting layer. Owns one sol2 state; **engine-agnostic** (no asset paths, no `kpengine` classes; only `lua`/`sol2`/`Log`). Non-throwing API: `bool` + `KP_LOG`/`LastError()` for failures, `std::optional` for lookups. `std::optional<sol::protected_function_result> CallFunction(...)` — `nullopt` = missing function, engaged + `!valid()` = Lua error.
+- **`Script`** (`engine/runtime/script/script_core.cpp`) — the engine-binding seam, currently empty. Engine bindings, `package.path` wiring to `GetScriptDirectory()` (`asset/script/`), asset-pipeline script loading, hot-reload all land here.
+- `RuntimeLib` links `Script` PUBLIC. The script layer must never depend on the editor.
+- **Sandbox:** opens only `base/string/table/math/package`; `package.loadlib` + `package.cpath` stripped; per-execution instruction budget (`lua_sethook`, default 10M) aborts runaway scripts instead of hanging the game thread; `SOL_ALL_SAFETIES_ON` on `ScriptLua`.
+- **Gotcha:** `sol::safe_script`/`safe_script_file` **throw** with the default on-error handler — always pass `sol::script_pass_on_error` when the caller handles the result (as `LuaVM` does).
+- Headless unit tests: `engine/test/unit/script/` (`ScriptUnitTest`, no DLL copy — static-only deps).
+
+## Editor module (`engine/editor`)
+
+Design reference: [docs/editor/editor_module.md](docs/editor/editor_module.md). The editor is the **core center** — a thin application shell hosting the runtime and owning the ImGui tool UI. Facts that matter:
+
+- **Layout (2026-08-13 restructure)** — headers sit beside their sources, grouped by concern: `editor.h` (the shell), `context/` (`EditorContext` hub), `ui/` (`EditorUI` manager) + `ui/component/` (the widget tree), `platform/` (WSI/renderer backends), `log/`. All editor includes use the engine root (`"editor/..."`).
+- **The shell** — `Engine` owns `editor::Editor` (`RuntimeLib` PRIVATE-links `EditorLib` and vice-versa — a known circularity). `Initialize` (main) → `InitEditorUI`/`Tick`/`CloseUI` (render thread) → `Clear` (main, after join). All ImGui work runs on the render thread where the GL/Vulkan context exists.
+- **No GLFW/API hardcoding** — `EditorUI` owns `IEditorImguiWSI` (GLFW impl today) + `IEditorImguiRenderer` (GL + Vulkan impls), chosen by `GraphicsAPIType`. Components only ever see ImGui. The Vulkan renderer isn't usable yet (`GraphicsContext::native` is passed null).
+- **Component UI** — a composable tree of `EditorUIComponent` (one virtual `Render()`); `EditorWindowComponent` is the panel base. Data binding is raw pointers re-read each frame (ImGui immediate-mode idiom).
+- **Dead seeds** — `EditorSceneManager`/`EditorActorControlPanel` and the scene/camera component impls were all-comment and got **deleted** in the restructure; recover from git history when rebuilding scene picking.
