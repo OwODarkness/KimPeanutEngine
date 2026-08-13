@@ -3,13 +3,10 @@
 
 namespace kpengine::audio
 {
-    constexpr uint32_t BUFFER_SECONDS = 20;
-
-    AudioStream::AudioStream(const data::AudioFormat& format)
-        : format_(format)
+    AudioStream::AudioStream(const data::AudioFormat& format, uint32_t buffer_seconds)
+        : format_(format), buffer_seconds_(buffer_seconds)
     {
-        // 1 second of samples.
-        capacity_ = format.sample_rate * format.channels * BUFFER_SECONDS;
+        capacity_ = format.sample_rate * format.channels * buffer_seconds;
 
         buffer_.resize(capacity_);
     }

@@ -12,7 +12,11 @@ namespace kpengine::audio
     class AudioStream
     {
     public:
-        AudioStream(const data::AudioFormat& format);
+        // `buffer_seconds` sizes the FIFO capacity in seconds of audio. It is
+        // a caller's trade-off: large enough to absorb a producer that bursts
+        // faster than real-time playback, small enough to bound memory. The
+        // default matches the tuned streaming-TTS behavior.
+        AudioStream(const data::AudioFormat& format, uint32_t buffer_seconds = 20);
     
         void PushFrames(const float *data, uint64_t frames);
 
@@ -30,6 +34,7 @@ namespace kpengine::audio
     private:
         bool is_finished = false;
         data::AudioFormat format_;
+        uint32_t buffer_seconds_ = 20;
         std::vector<float> buffer_;
         size_t write_pos_ = 0;
         size_t read_pos_ = 0;

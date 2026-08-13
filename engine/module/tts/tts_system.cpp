@@ -7,6 +7,29 @@
 #include "audio/buffer_audio_player.h"
 #include "audio/stream_audio_player.h"
 #include "audio/audio_stream.h"
+#include <algorithm>
+
+namespace
+{
+    // Size the streaming FIFO from the request text. The server may deliver
+    // audio faster than real-time playback, so the FIFO must hold the whole
+    // lead; under-sizing drops the head of the clip, over-sizing only costs
+    // memory. Heuristic: UTF-8 CJK is ~3 bytes/char at a conservative
+    // ~5 chars/sec of speech -> ~15 bytes/sec, clamped to a sane range.
+    constexpr uint32_t kMinStreamBufferSeconds = 5;
+    constexpr uint32_t kMaxStreamBufferSeconds = 60;
+    constexpr double kStreamBytesPerSecond = 10.0;
+
+    uint32_t EstimateStreamBufferSeconds(const std::string& text)
+    {
+        double seconds = static_cast<double>(text.size()) / kStreamBytesPerSecond;
+        return std::clamp(
+            static_cast<uint32_t>(seconds),
+            kMinStreamBufferSeconds,
+            kMaxStreamBufferSeconds);
+    }
+}
+
 namespace kpengine::tts
 {
     TTSSystem::TTSSystem():
@@ -99,7 +122,12 @@ namespace kpengine::tts
             data::AudioFormat audio_format;
             audio_format.channels = 1;
             audio_format.sample_rate = 48000;
-            std::shared_ptr<audio::AudioStream> stream = std::make_shared<audio::AudioStream>(audio_format);
+            uint32_t buffer_seconds = EstimateStreamBufferSeconds(request.text);
+            std::shared_ptr<audio::AudioStream> stream =
+                std::make_shared<audio::AudioStream>(audio_format, buffer_seconds);
+            KP_LOG("LogTTSSystem", LOG_LEVEL_DEBUG,
+                   "Streaming FIFO sized to %u seconds for %zu-byte text",
+                   buffer_seconds, request.text.size());
             audio::AudioStreamDecoder decoder(stream);
             player->SetStream(stream);
            
