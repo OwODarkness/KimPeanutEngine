@@ -10,7 +10,8 @@ namespace kpengine{
     namespace editor{
         class EditorLogComponent: public EditorWindowComponent{
         public:
-            EditorLogComponent(LogSystem* log_system, const LogLevelColorTable& colors);
+            EditorLogComponent(LogSystem* log_system, const LogLevelColorTable& colors,
+                               EditorWindowConfig config = {});
             void RenderContent() override;
         private:
             LogSystem* log_system_;

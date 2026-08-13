@@ -6,6 +6,11 @@ namespace kpengine
         return program::Logger::GetLogger().Get();
     }
 
+    std::vector<program::LogEntry> LogSystem::GetLogSnapshot() const
+    {
+        return program::Logger::GetLogger().GetSnapshot();
+    }
+
     void LogSystem::Tick(float delta_time)
     {
         program::Logger::GetLogger().Tick();

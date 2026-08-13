@@ -40,6 +40,9 @@ namespace kpengine::program
         void Log(const std::string &log_name, LogLevel level, int line, const std::string &file, const std::string &msg, Args &&...args);
         static std::string FetchStringFromLog(const LogEntry &log);
         const std::vector<LogEntry> &Get() const { return logs_; }
+        // Thread-safe copy of the buffer (locks log_mutex); editors read this instead
+        // of the live vector, which a writer thread pushes/clears concurrently.
+        std::vector<LogEntry> GetSnapshot() const;
 
     private:
         void WriteLog(const std::string &name, LogLevel level, const std::string msg, int line, const std::string &file);
@@ -48,7 +51,7 @@ namespace kpengine::program
         void Reset();
 
     private:
-        std::mutex log_mutex;
+        mutable std::mutex log_mutex;
 
         std::vector<LogEntry> logs_;
         size_t last_flushed_index_{};

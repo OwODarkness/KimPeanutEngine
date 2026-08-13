@@ -21,6 +21,12 @@ namespace kpengine::program
         return instance;
     }
 
+    std::vector<LogEntry> Logger::GetSnapshot() const
+    {
+        std::lock_guard<std::mutex> lock(log_mutex);
+        return logs_;
+    }
+
     void Logger::Tick()
     {
         std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
