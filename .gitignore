@@ -1,6 +1,9 @@
 .vscode/
 .idea/
 
+# Retired code kept for reference only (not built, see docs/dead_code.md)
+/deprecated/
+
 # Prerequisites
 *.d
 
@@ -60,6 +63,9 @@ CMakeUserPresets.json
 .clion/
 .DS_Store
 Thumbs.db
+
+# ImGui runtime state (window layout)
+imgui.ini
 
 # Logs
 logs/
