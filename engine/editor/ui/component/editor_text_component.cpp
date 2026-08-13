@@ -1,0 +1,16 @@
+#include "editor/ui/component/editor_text_component.h"
+
+namespace kpengine::editor
+{
+
+    EditorTextComponent::EditorTextComponent(const std::string &content, ImVec4 color) : content_(content),
+                                                                                         color_(color)
+    {
+    }
+
+    void EditorTextComponent::Render()
+    {
+        ImGui::TextColored(color_, content_.c_str());
+    }
+
+}

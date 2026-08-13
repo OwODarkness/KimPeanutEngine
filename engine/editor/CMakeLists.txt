@@ -1,14 +1,21 @@
-#Editor CMakeListsts.txt
-file(GLOB EDITOR_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp")
-file(GLOB EDITOR_UICOMPONENT_SRC "${CMAKE_CURRENT_SOURCE_DIR}/src/editor_ui_component/*.cpp")
-
-# Create a library or executable from the editor source files
-add_library(EditorLib STATIC ${EDITOR_SRC}  ${EDITOR_UICOMPONENT_SRC})
-
-target_include_directories(EditorLib PUBLIC
-${CMAKE_CURRENT_SOURCE_DIR}
-"${CMAKE_CURRENT_SOURCE_DIR}/include"
-"${CMAKE_CURRENT_SOURCE_DIR}/include/editor_ui_component"
+# EditorLib — the tool layer. One cohesive library: this file owns the target and
+# the shared config, and each subdirectory's CMakeLists.txt explicitly lists its
+# own sources via target_sources (no GLOB, so a stray .cpp can't silently join the
+# build). Headers sit beside their sources and are included via the engine root
+# ("editor/..." paths), matching the runtime convention. main.cpp is the exe entry
+# (root CMakeLists.txt) and deliberately stays out of the lib.
+add_library(EditorLib STATIC
+    editor.cpp
 )
 
-target_link_libraries(EditorLib PRIVATE RuntimeLib imgui glad)
+add_subdirectory(context)
+add_subdirectory(ui)
+add_subdirectory(platform)
+add_subdirectory(log)
+add_subdirectory(settings)
+
+target_include_directories(EditorLib PUBLIC
+    ${CMAKE_SOURCE_DIR}/engine
+)
+
+target_link_libraries(EditorLib PRIVATE RuntimeLib imgui glad nlohmann)
