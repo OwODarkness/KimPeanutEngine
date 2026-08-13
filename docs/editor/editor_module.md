@@ -43,6 +43,11 @@ engine/editor/
   settings/
     CMakeLists.txt                   explicit sources → EditorLib
     editor_settings.*                config/settings.json loader (log colors; EditorLib-only)
+  profile/
+    CMakeLists.txt                   explicit sources → EditorLib
+    editor_metric.*                  EditorMetric base + EditorFuncMetric (the metric seam)
+    editor_builtin_metrics.*         FPS / frame-time / memory metrics (sampler-injected)
+    editor_profile_bar.*             bottom status bar component
 ```
 
 Headers sit beside their sources, and everything is included via the **engine root** (`"editor/..."` paths), matching how runtime code is included. `EditorLib` PUBLIC-exposes `${CMAKE_SOURCE_DIR}/engine` itself, so the parent no longer supplies an editor include path.
@@ -58,7 +63,7 @@ Headers sit beside their sources, and everything is included via the **engine ro
 | Method | Thread | What it does |
 |---|---|---|
 | `Initialize(engine)` | main | Stores the `runtime::Engine*`, fills `EditorContext` from the runtime's global context, sets `global_editor_context.editor = this`. No GPU work. |
-| `InitEditorUI()` | render | `editor_ui_->Initialize(window, graphics_api_type)` — ImGui + backend init must run where the GL/Vulkan context lives. |
+| `InitEditorUI()` | render | `editor_ui_->Initialize(EditorUIInitInfo{...})` — ImGui + backend init must run where the GL/Vulkan context lives; the init fields are filled from `EditorContext`. |
 | `Tick()` | render | `BeginDraw()` → `Render()` → `EndDraw()` on `EditorUI`. |
 | `CloseUI()` | render | Shuts ImGui down before window teardown. |
 | `Clear()` | main | Resets editor state after the render thread has joined (ImGui was already torn down there). |
@@ -82,7 +87,7 @@ Components and panels pull what they need from `global_editor_context` rather th
 - `renderer_` (`unique_ptr<IEditorImguiRenderer>`)
 - `components_` (`vector<unique_ptr<EditorUIComponent>>`) — the tool UI tree
 
-`Initialize(window, backend_type, log_system)` runs on the render thread: `ImGui::CreateContext` + `StyleColorsDark`, then a factory picks the concrete WSI and renderer by `backend_type`, and finally the initial component tree is built — including the log window, which reads `LogSystem` each frame. `BeginDraw`/`EndDraw` bracket the frame (`renderer_->NewFrame()` → `wsi_->NewFrame()` → `ImGui::NewFrame()`; the end side is currently a no-op), and `Render` iterates the components, then calls `ImGui::Render()` + `renderer_->Render()`.
+`Initialize(EditorUIInitInfo)` runs on the render thread: `ImGui::CreateContext` + `StyleColorsDark`, then `CreateImguiBackends` picks the concrete WSI and renderer by `init_info.backend_type`, and finally the tool tree is assembled by one private builder per panel — `BuildMenuBar`, `BuildPlaceholderWindow`, `BuildLogWindow` (reads `LogSystem` each frame), `BuildProfileBar` (reads `engine` FPS and the platform `memory_sampler` via injected metric samplers). The init fields are a defaulted bundle (`EditorUIInitInfo` in `editor_ui.h`), mirroring `EditorContextInitInfo`; the builders keep `Initialize` an orchestration list so adding a panel is one more builder call, not more inline code. `BeginDraw`/`EndDraw` bracket the frame (`renderer_->NewFrame()` → `wsi_->NewFrame()` → `ImGui::NewFrame()`; the end side is currently a no-op), and `Render` iterates the components, then calls `ImGui::Render()` + `renderer_->Render()`.
 
 Component code touches **only ImGui** — it never sees `GLFWwindow*` or a `Vk*` handle. That is the payoff of the next two seams.
 
@@ -111,7 +116,7 @@ Editor-wide preferences live in `config/settings.json` (beside `bootstrap.json`)
 `EditorUIComponent` ([editor_ui_component.h](../../engine/editor/ui/component/editor_ui_component.h)) is a single virtual `Render()`. Components hold `shared_ptr<EditorUIComponent>` children (`AddComponent`), so the UI is a **tree** drawn depth-first each frame — the ImGui immediate-mode idiom. Windows and containers add children; leaves draw one widget.
 
 ### Windows and containers
-- **`EditorWindowComponent`** — the top-level shell: an ImGui window (`Begin(title_, &is_open_)` → `RenderContent()` → `End()`). Tracks `pos_x/pos_y/width_/height_` from ImGui each frame; subclasses override `RenderContent()` to draw panel-specific content and children. Most editor panels are this subclass.
+- **`EditorWindowComponent`** — the top-level shell: an ImGui window (`Begin(title_, &is_open_)` → `RenderContent()` → `End()`) whose geometry is an `EditorWindowConfig` of viewport fractions (`pos_x/pos_y/width/height` ratios + `locked`). Unlocked (`locked=false`) applies the geometry once (`ImGuiCond_FirstUseEver`), so the window moves/resizes freely; locked (`locked=true`, default) pins it to the viewport every frame (`ImGuiCond_Always` + `NoMove`/`NoResize`), so it follows the OS window but can't be moved/resized. Each window draws a lock/unlock toggle in its title bar (next to the close button); `SetLocked`/`IsLocked` are the programmatic seam. Tracks `pos_x/pos_y/width_/height_` from ImGui each frame; subclasses override `RenderContent()` to draw panel-specific content and children. Most editor panels are this subclass.
 - **`EditorContainerComponent`** — a bare child container.
 
 ### Primitive controls
@@ -127,6 +132,12 @@ Editor-wide preferences live in `config/settings.json` (beside `bootstrap.json`)
 - **`EditorSceneComponent`** — a window presenting a `FrameBuffer` (the scene view) that tracks mouse state (`is_left_mouse_down/drag/release/click`, position) and exposes `FOnMouseClickCallback` + `is_scene_window_focus`. It is the input seam for scene picking.
 - **`EditorCameraControlComponent`** — camera config window (fov, move/rotate speed, near/far, reset) over a `RenderCamera*`.
 - **`EditorLogComponent`** — the log window (`log/`). Created by `EditorUI` with the context's `LogSystem*` plus the `LogLevelColorTable` and rendered through the component tree; each entry is `TextColored` with its level's color, which comes from `config/settings.json` ([Project settings](#project-settings-configsettingsjson)).
+- **`EditorProfileBarComponent`** — the bottom status bar (`profile/`). Samples a list of injected `EditorMetric`s and draws them in one row, anchored to the bottom of the main viewport via public ImGui API only. It never sees the engine or Win32 — the metrics are the decoupling seam.
+
+### Profile metrics (status bar)
+- **`EditorMetric`** ([editor_metric.h](../../engine/editor/profile/editor_metric.h)) — the extension seam. `Name()` + `Sample()` (the latter returns the formatted string for the frame); the base owns an optional plot history (`history_capacity`, `0` opts out) that drives the sparkline. `EditorFuncMetric` wraps a value/plot sampler-lambda pair for ad-hoc readouts without a subclass.
+- **Built-ins** ([editor_builtin_metrics.h](../../engine/editor/profile/editor_builtin_metrics.h)): `EditorFPSMetric` (engine FPS via an injected sampler), `EditorFrameTimeMetric` (ms, derived from the fps sampler by the caller — a self-measured clock would see the render loop's pacing sleep, not frame cost), `EditorMemoryMetric` (process + system free via an injected stats sampler).
+- **Measurement lives in the platform layer, not the editor — and not the engine.** FPS is game-loop timing, so it stays in the engine (`Engine::GetFPS`). Memory is an OS query, so it lives behind a **platform seam**: `MemoryStatsSampler` (interface + `CreateMemoryStatsSampler(PlatformType)` factory, mirroring `WindowSystem`) with `WindowsMemoryStatsSampler` under `engine/runtime/platform/win/` (PSAPI/GlobalMemory, `psapi` linked into the `Platform` lib). `RuntimeContext` owns the instance; the editor reaches it through `EditorContext::memory_sampler_` and only consumes it through the injected sampler. The engine never touches the OS — it is platform-agnostic.
 
 ### Data binding style
 Components hold **raw pointers** to engine data (`T*`, `const T*`, `RenderCamera*`, `LogSystem*`, `FrameBuffer`) and re-read them each frame; writes go straight back into the engine object. This is deliberate — it matches ImGui's immediate mode and keeps the editor dependency-light. The null guards on every bind are what keep an unset panel from crashing a frame.
@@ -137,7 +148,7 @@ ImGui is not thread-safe and its backends require a live GL/Vulkan context, so *
 
 ## Current state
 
-- **Minimal UI.** Today the tree is a `"window"` + `"hello imgui"` label window plus the **log window** (`OutputLog`, fed by `LogSystem`). Log entry colors are configured in `config/settings.json` (per level, with in-code defaults as fallback). Menus exist as components but aren't wired in; the scene view and camera panels are declared but unimplemented.
+- **Minimal UI.** Today the tree is a **top menu bar** (`File`/`Edit`/`Tool`/`Help`, no items or event bindings yet), a `"window"` + `"hello imgui"` label window, the **log window** (`OutputLog`, fed by `LogSystem`), and the **profile bar** (bottom status bar: FPS, frame ms, memory, each with optional sparklines). Log entry colors are configured in `config/settings.json` (per level, with in-code defaults as fallback). The scene view and camera panels are declared but unimplemented.
 - **Deleted seeds (2026-08-13 restructure).** `EditorSceneManager`, `EditorActorControlPanel`, and the scene/camera component implementations were all-comment files and were **removed** during the directory restructure. They are the resurrection seeds for scene-picking + gizmos + the actor transform panel — recover them from git history, don't expect them in the tree.
 - **Vulkan renderer unusable** — native context not passed to `GraphicsContext`; asserts if selected. The GL path is the working one.
 - **GL renderer owns the frame clear** — a stopgap until the render-module reconstruction restores the scene renderer.
@@ -146,7 +157,7 @@ ImGui is not thread-safe and its backends require a live GL/Vulkan context, so *
 
 - **Wire the native context to the Vulkan renderer** — pass the real `graphics::VulkanContext*` through `GraphicsContext::native` and push the `ImGui_ImplVulkan_Init` command pool/queue setup down into the renderer; better, make the renderer query a small `EditorRenderInterface` from the render system instead of static_casting into `VulkanContext` directly.
 - **Rebuild the scene manager** — resurrect `EditorSceneManager`/`EditorActorControlPanel` against the reconstructed render module (scene viewport, click-to-pick, gizmos, actor transform panel).
-- **Log window polish** — the `OutputLog` window re-reads `LogSystem::GetLogs()` every frame with no clipping; add auto-scroll/follow, a level filter, and a thread-safe snapshot (the logger's vector is read unlocked on the render thread).
+- **Log window polish** — the `OutputLog` window is virtualized (`ImGuiListClipper` — only visible rows are laid out + formatted) and reads a thread-safe snapshot (`LogSystem::GetLogSnapshot()` copies the buffer under the logger mutex), so the render loop never walks the live vector. Remaining: auto-scroll/follow, a level filter, and handling very long lines (they currently overflow horizontally, single-line).
 - **Swap WSI abstraction** — SDL/Win32 `IEditorImguiWSI` implementations when the runtime supports those `WindowAPIType`s.
 - **Break the RuntimeLib ↔ EditorLib cycle** — prefer an editor-owned engine-interface (`Engine` declares what the editor may call, editor implements the rest) or move `Engine::editor_` ownership out of `RuntimeLib`.
 - **Simplify `EditorContext`** — let the hub own fewer raw system pointers as the runtime formalizes its own context API.
