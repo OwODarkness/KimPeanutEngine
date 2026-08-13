@@ -7,7 +7,6 @@ add_subdirectory(asset)
 target_link_libraries(ExampleLib INTERFACE 
 AudioExample
 GraphicsExample 
-GameFramework 
 TTSExample
 AssetExample
 )

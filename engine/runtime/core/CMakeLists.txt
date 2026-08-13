@@ -7,5 +7,6 @@ add_subdirectory(log)
 add_subdirectory(delegate)
 add_subdirectory(data)
 add_subdirectory(resource)
+add_subdirectory(async)
 
-target_link_libraries(Core INTERFACE Math Config Log Delegate Base Data Resource)
+target_link_libraries(Core INTERFACE Math Config Log Delegate Base Data Resource Async)

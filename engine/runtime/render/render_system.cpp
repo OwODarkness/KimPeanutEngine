@@ -1,62 +1,132 @@
 #include "render_system.h"
-#include <iostream>
-#include <glad/glad.h>
-#include <GLFW/glfw3.h>
-#include "render_scene.h"
-#include "render_camera.h"
-#include "texture_pool.h"
+
+#include "asset/asset_manager.h"
+#include "asset/audio.h"
+#include "asset/mesh.h"
+#include "asset/model.h"
+#include "asset/shader.h"
+#include "asset/shader_program.h"
+#include "asset/texture.h"
 #include "log/logger.h"
-namespace kpengine
+#include "resource/resource_pipeline.h"
+
+namespace kpengine::render
 {
-    RenderSystem::RenderSystem() : render_camera_(std::make_shared<RenderCamera>()),
-                                   render_scene_(std::make_unique<RenderScene>()),
-                                   shader_pool_(std::make_unique<ShaderPool>()),
-                                   texture_pool_(std::make_unique<TexturePool>())
+    namespace
+    {
+        // Runtime frame budget: cap the per-frame load+compile work so a burst of
+        // requests never stalls a frame. 0 means "no budget" (the bootstrap pass).
+        constexpr std::size_t kMaxRuntimeLoadsPerFrame = 2;
+    }
+
+    RenderSystem::RenderSystem() : render_camera_(std::make_unique<RenderCamera>())
     {
     }
-    void RenderSystem::Initialize()
+
+    RenderSystem::~RenderSystem() = default;
+
+    void RenderSystem::Initialize(GraphicsAPIType api_type, async::AsyncQueue<asset::AssetLoadRequest> *load_queue)
     {
-        if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
-        {
-            KP_LOG("RenderSystemLog", LOG_LEVEL_ERROR, "Failed to initialize GLAD");
-            std::runtime_error("Failed to initialize GLAD");
-        }
-        shader_pool_->Initialize();
-        render_camera_->Initialize();
-        render_scene_->Initialize(render_camera_);
+        load_queue_ = load_queue;
+
+        resource_pipeline_ = std::make_unique<resource::ResourcePipeline>();
+        resource::ResourcePipelineContext context;
+        context.graphics_type = api_type;
+        resource_pipeline_->Initialize(context);
     }
 
     void RenderSystem::PostInitialize()
     {
-        render_camera_->PostInitialize();
+        // Bootstrap: load + process everything already queued, before the main loop.
+        ConsumeRequests(0);
     }
 
     void RenderSystem::Tick(float delta_time)
     {
-        GLuint query;
-        glGenQueries(1, &query);
-        glBeginQuery(GL_PRIMITIVES_GENERATED, query);
-        render_scene_->Render(delta_time);
-        glEndQuery(GL_PRIMITIVES_GENERATED);
-        GLuint primitives_generated = 0;
-        glGetQueryObjectuiv(query, GL_QUERY_RESULT, &primitives_generated);
-        glDeleteQueries(1, &query);
-        triangle_count_this_frame_ = primitives_generated;
+        (void)delta_time;
+        ConsumeRequests(kMaxRuntimeLoadsPerFrame);
     }
 
-    void RenderSystem::SetCurrentShaderMode(const std::string &target)
+    bool RenderSystem::IsReady(asset::RequestID request_id) const
     {
-        current_shader_mode_ = target;
-        render_scene_->SetCurrentShader(shader_pool_->GetShader(current_shader_mode_));
+        return render_cache_.find(request_id) != render_cache_.end();
     }
 
-    void RenderSystem::SetVisibleAxis(std::shared_ptr<Gizmos> gizmos)
+    const RenderCacheEntry *RenderSystem::GetCached(asset::RequestID request_id) const
     {
-        render_scene_->SetRenderAxis(gizmos);
+        auto it = render_cache_.find(request_id);
+        return it == render_cache_.end() ? nullptr : &it->second;
     }
 
-    RenderSystem::~RenderSystem()
+    void RenderSystem::ConsumeRequests(std::size_t max_items)
     {
-        render_scene_.reset();
+        if (!load_queue_)
+        {
+            return;
+        }
+
+        std::size_t consumed = 0;
+        asset::AssetLoadRequest request;
+        while (load_queue_->TryPop(request))
+        {
+            if (max_items != 0 && consumed >= max_items)
+            {
+                break;
+            }
+
+            RenderCacheEntry entry;
+            if (ConsumeOne(request, entry))
+            {
+                render_cache_[request.request_id] = std::move(entry);
+            }
+            ++consumed;
+        }
+    }
+
+    bool RenderSystem::ConsumeOne(const asset::AssetLoadRequest &request, RenderCacheEntry &entry)
+    {
+        auto &asset_manager = asset::AssetManager::GetInstance();
+        const asset::AssetID id = asset_manager.LoadSync(request.path);
+        if (!id.IsValid())
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Failed to load asset: %s", request.path.c_str());
+            return false;
+        }
+
+        entry.asset_id = id;
+
+        // Bake shader programs through the resource pipeline, then pin the payload
+        // per type so it can't be unloaded while the renderer still holds it.
+        switch (request.type)
+        {
+        case asset::AssetType::KPAT_ShaderProgram:
+        {
+            auto program = asset_manager.GetResource<asset::ShaderProgramResource>(id);
+            if (!program)
+            {
+                return false;
+            }
+            resource_pipeline_->ProcessShader(program->GatherShaders());
+            entry.payload = std::move(program);
+            return true;
+        }
+        case asset::AssetType::KPAT_Shader:
+            entry.payload = asset_manager.GetResource<asset::ShaderResource>(id);
+            return true;
+        case asset::AssetType::KPAT_Texture:
+            entry.payload = asset_manager.GetResource<asset::TextureResource>(id);
+            return true;
+        case asset::AssetType::KPAT_Mesh:
+            entry.payload = asset_manager.GetResource<asset::MeshResource>(id);
+            return true;
+        case asset::AssetType::KPAT_Model:
+            entry.payload = asset_manager.GetResource<asset::ModelResource>(id);
+            return true;
+        case asset::AssetType::KPAT_Audio:
+            entry.payload = asset_manager.GetResource<asset::AudioResource>(id);
+            return true;
+        default:
+            return false;
+        }
     }
 }

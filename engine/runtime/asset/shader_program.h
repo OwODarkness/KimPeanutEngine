@@ -26,6 +26,8 @@ namespace kpengine::asset{
         void BindData(ShaderStage stage, ShaderFormat format, AssetID id);
         AssetID GetData(ShaderStage stage, ShaderFormat format);
         std::shared_ptr<struct ShaderResource> GetShader(ShaderStage stage, ShaderFormat format);
+        // Every bound stage, across all formats, as a flat list for ProcessShader.
+        std::vector<std::shared_ptr<struct ShaderResource>> GatherShaders() const;
     private:
         std::unordered_map<ShaderStage, std::vector<ShaderProgramEntry>> datas;
     };

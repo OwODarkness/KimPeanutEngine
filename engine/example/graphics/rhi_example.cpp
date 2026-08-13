@@ -1,10 +1,9 @@
 
 #include "runtime/window/glfw_window_system.h"
-#include "runtime/game_framework/camera.h"
 #include "runtime/input/input_system.h"
 #include "runtime/input/input_context.h"
 #include "runtime/graphics/backend/vulkan/vulkan_backend.h"
-
+#include "runtime/render/render_camera.h"
 namespace kpengine::example
 {
     
@@ -30,12 +29,14 @@ namespace kpengine::example
             std::shared_ptr<input::InputContext> context = std::make_shared<input::InputContext>();
             input->AddContext("SceneInputContext", context);
             input->SetActiveContext("SceneInputContext");
-            std::unique_ptr<Camera> camera = std::make_unique<Camera>();
-            camera->Initialize(context.get());
+
             std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(window_create_info.graphics_api_type);
             rhi->BindWindowResize(window->resize_event_dispatcher_);
             rhi->window_ = static_cast<GLFWwindow *>(window->GetNativeHandle());
             rhi->Initialize();
+
+            std::unique_ptr<render::RenderCamera> camera = std::make_unique<render::RenderCamera>();
+
             while (!window->ShouldClose())
             {
                 if (window_create_info.graphics_api_type == GraphicsAPIType::GRAPHICS_API_OPENGL)
@@ -43,7 +44,7 @@ namespace kpengine::example
                     window->SwapBuffers();
                 }
                 window->PollEvents();
-                CameraData camera_data = camera->GetCameraData();
+                render::CameraData camera_data = camera->GetCameraData();
                 rhi->camera_data.view = camera_data.view;
                 rhi->camera_data.proj = camera_data.proj;
                 rhi->BeginFrame();

@@ -1,4 +1,5 @@
 #include "shader_program.h"
+#include <unordered_set>
 #include "asset_manager.h"
 #include "shader.h"
 namespace kpengine::asset
@@ -46,5 +47,33 @@ namespace kpengine::asset
         }
 
         return AssetManager::GetInstance().GetResource<ShaderResource>(id);
+    }
+
+    std::vector<std::shared_ptr<ShaderResource>> ShaderProgramResource::GatherShaders() const
+    {
+        std::vector<std::shared_ptr<ShaderResource>> shaders;
+
+        // Each stage/format pair is a distinct asset, but guard against a shared
+        // stage being bound twice so ProcessShader never compiles the same unit twice.
+        std::unordered_set<uint64_t> seen;
+        for (const auto &[stage, entries] : datas)
+        {
+            (void)stage;
+            for (const auto &entry : entries)
+            {
+                if (!entry.asset.IsValid() || !seen.insert(entry.asset.Pack()).second)
+                {
+                    continue;
+                }
+
+                auto shader = AssetManager::GetInstance().GetResource<ShaderResource>(entry.asset);
+                if (shader)
+                {
+                    shaders.push_back(std::move(shader));
+                }
+            }
+        }
+
+        return shaders;
     }
 }

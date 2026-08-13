@@ -9,6 +9,7 @@ ${CMAKE_CURRENT_SOURCE_DIR}/..
 target_link_libraries(GraphicsExample 
 PRIVATE
 Graphics
+Render
 Window
 Input
 )
