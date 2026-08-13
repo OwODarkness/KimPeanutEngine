@@ -8,6 +8,11 @@
 namespace kpengine
 {
     class LogSystem;
+    class MemoryStatsSampler;
+    namespace runtime
+    {
+        class Engine;
+    }
 }
 
 namespace kpengine::editor
@@ -17,19 +22,40 @@ namespace kpengine::editor
     class IEditorImguiWSI;
     class EditorUIComponent;
 
+    // Parameter bundle for EditorUI::Initialize, so the signature doesn't grow with each
+    // injected dependency (mirrors EditorContextInitInfo / WindowCreateInfo). Members are
+    // defaulted: a null engine/memory_sampler just omits the profile bar.
+    struct EditorUIInitInfo
+    {
+        WindowHandle window = nullptr;
+        GraphicsAPIType backend_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
+        LogSystem *log_system = nullptr;
+        runtime::Engine *engine = nullptr;
+        MemoryStatsSampler *memory_sampler = nullptr;
+    };
+
     class EditorUI
     {
     public:
         EditorUI();
         ~EditorUI();
 
-        void Initialize(WindowHandle window, GraphicsAPIType backend_type, LogSystem* log_system);
+        void Initialize(const EditorUIInitInfo &init_info);
         bool Render();
         void Close();
         void BeginDraw();
         void EndDraw();
 
     private:
+        // Backend factory (chosen by the active graphics API) and the panel builders
+        // that assemble the tool tree. Each panel is one helper — Initialize stays an
+        // orchestration list instead of one long build routine.
+        void CreateImguiBackends(WindowHandle window, GraphicsAPIType backend_type);
+        void BuildMenuBar();
+        void BuildPlaceholderWindow();
+        void BuildLogWindow(LogSystem *log_system);
+        void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler);
+
         // The UI is decoupled from any graphics API: the WSI feeds ImGui window
         // events, the renderer draws ImGui with the active backend (GL/Vulkan).
         std::unique_ptr<IEditorImguiRenderer> renderer_;

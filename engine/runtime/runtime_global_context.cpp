@@ -1,5 +1,6 @@
 #include "runtime_global_context.h"
 #include "window/window_system.h"
+#include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
 #include "log/log_system.h"
 #include "log/logger.h"
@@ -19,6 +20,7 @@ namespace kpengine
         log_system_(std::make_unique<LogSystem>()),
         input_system_(std::make_unique<input::InputSystem>()),
         lua_vm_(std::make_unique<script::lua::LuaVM>()),
+        memory_sampler_(MemoryStatsSampler::CreateMemoryStatsSampler(PlatformType::PLATFORM_WINDOWS)),
         graphics_api_type_(GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
             
@@ -67,6 +69,7 @@ namespace kpengine
             render_system_.reset();
             log_system_.reset();
             lua_vm_.reset();
+            memory_sampler_.reset();
         }
 
         RuntimeContext::~RuntimeContext() = default;

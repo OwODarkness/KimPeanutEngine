@@ -1,5 +1,6 @@
 
 add_subdirectory(core)
+add_subdirectory(platform)
 add_subdirectory(window)
 add_subdirectory(graphics)
 add_subdirectory(input)
@@ -18,4 +19,4 @@ target_include_directories(RuntimeLib PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(RuntimeLib PUBLIC Core Graphics Script PRIVATE ThirdPartyLib EditorLib  Window  Input Render Bootstrap)
+target_link_libraries(RuntimeLib PUBLIC Core Graphics Script PRIVATE ThirdPartyLib EditorLib Window Input Render Bootstrap Platform)

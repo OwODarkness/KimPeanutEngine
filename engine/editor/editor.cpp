@@ -32,6 +32,7 @@ namespace kpengine::editor
         init_info.log_system = runtime_ctx.log_system_.get();
         init_info.input_system = runtime_ctx.input_system_.get();
         init_info.runtime_engine = engine;
+        init_info.memory_sampler = runtime_ctx.memory_sampler_.get();
         init_info.graphics_api_type = runtime_ctx.graphics_api_type_;
 
         global_editor_context.editor = this;
@@ -47,8 +48,13 @@ namespace kpengine::editor
         assert(global_editor_context.window_system_);
 
         // Runs on the render thread — ImGui + GL/Vulkan context affinity requires it.
-        WindowHandle window = global_editor_context.window_system_->GetNativeHandle();
-        editor_ui_->Initialize(window, global_editor_context.graphics_api_type_, global_editor_context.log_system_);
+        EditorUIInitInfo init_info{};
+        init_info.window = global_editor_context.window_system_->GetNativeHandle();
+        init_info.backend_type = global_editor_context.graphics_api_type_;
+        init_info.log_system = global_editor_context.log_system_;
+        init_info.engine = engine_;
+        init_info.memory_sampler = global_editor_context.memory_sampler_;
+        editor_ui_->Initialize(init_info);
     }
 
     void Editor::Tick()

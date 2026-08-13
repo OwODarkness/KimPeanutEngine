@@ -29,6 +29,7 @@ namespace kpengine
     class LevelSystem;
     class LogSystem;
     class WorldSystem;
+    class MemoryStatsSampler;
 
 
     namespace runtime
@@ -49,6 +50,10 @@ namespace kpengine
             std::unique_ptr<render::RenderSystem> render_system_;
             std::unique_ptr<LogSystem> log_system_;
             std::unique_ptr<input::InputSystem> input_system_;
+
+            // Platform seam for OS-level measurement (memory stats). Chosen by PlatformType
+            // like the window system; the editor reads it through EditorContext, never the OS.
+            std::unique_ptr<MemoryStatsSampler> memory_sampler_;
 
             // Script hosting. LuaVM is engine-agnostic (script/lua/lua_vm.h); the
             // future ScriptSystem binding layer will sit above it (docs/status.md item 7).

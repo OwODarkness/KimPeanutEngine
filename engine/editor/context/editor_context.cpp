@@ -14,6 +14,7 @@ namespace kpengine{
             log_system_ = init_info.log_system;
             input_system_ = init_info.input_system;
             runtime_engine_ = init_info.runtime_engine;
+            memory_sampler_ = init_info.memory_sampler;
 
             graphics_api_type_ = init_info.graphics_api_type;
         }

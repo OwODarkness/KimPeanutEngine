@@ -7,6 +7,7 @@
 namespace kpengine{
     class WindowSystem;
     class LogSystem;
+    class MemoryStatsSampler;
 
     namespace render { class RenderSystem; }
 
@@ -28,6 +29,7 @@ namespace editor{
         LogSystem* log_system;
         input::InputSystem* input_system;
         runtime::Engine* runtime_engine;
+        MemoryStatsSampler* memory_sampler;
         GraphicsAPIType graphics_api_type;
     };
 
@@ -41,6 +43,7 @@ namespace editor{
         LogSystem* log_system_{nullptr};
         input::InputSystem* input_system_{nullptr};
         runtime::Engine* runtime_engine_{nullptr};
+        MemoryStatsSampler* memory_sampler_{nullptr};
 
         Editor* editor;
 

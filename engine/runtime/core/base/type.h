@@ -17,6 +17,13 @@ namespace kpengine
         WINDOW_API_Win32
     };
 
+    // Host platform. Drives the platform seam factories (e.g. memory sampling); the
+    // runtime core stays platform-agnostic and the impls live under platform/<name>/.
+    enum class PlatformType
+    {
+        PLATFORM_WINDOWS
+    };
+
     using WindowHandle = void *;
 
     struct GraphicsContext

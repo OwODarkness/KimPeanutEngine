@@ -13,6 +13,7 @@ add_subdirectory(ui)
 add_subdirectory(platform)
 add_subdirectory(log)
 add_subdirectory(settings)
+add_subdirectory(profile)
 
 target_include_directories(EditorLib PUBLIC
     ${CMAKE_SOURCE_DIR}/engine
