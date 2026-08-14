@@ -1,8 +1,11 @@
 #ifndef KPENGINE_RUNTIME_RESOURCE_SHADER_PROCESSOR_H
 #define KPENGINE_RUNTIME_RESOURCE_SHADER_PROCESSOR_H
 
+#include <cstddef>
+#include <cstdint>
 #include <functional>
 #include <memory>
+#include <unordered_set>
 #include <vector>
 #include "asset/shader.h"
 #include "base/type.h"
@@ -29,6 +32,10 @@ namespace kpengine::resource{
         void Process(ShaderCache* cache,
                      const std::vector<std::shared_ptr<asset::ShaderResource>>& assets,
                      ShaderProcessObserver observer = nullptr);
+        // Distinct shader references (content hash — the ShaderCache key) that
+        // finished processing this run. Reference-based: a stage shared across
+        // programs counts once instead of once per program.
+        std::size_t GetProcessedShaderCount() const { return processed_hashes_.size(); }
     private:
         std::vector<std::unique_ptr<ShaderOperation>> operations_;
         GraphicsAPIType api_;
@@ -37,6 +44,7 @@ namespace kpengine::resource{
         // skips the content-addressed cache (source is cheap to produce), and
         // tells the write-back which ShaderData field to fill.
         bool keep_source_ = false;
+        std::unordered_set<uint64_t> processed_hashes_;
     };
 }
 

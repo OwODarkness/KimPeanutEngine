@@ -18,9 +18,15 @@ namespace kpengine::resource{
 
     }
 
-    void ResourcePipeline::ProcessShader(const std::vector<asset::ShaderPtr>& shaders)
+    void ResourcePipeline::ProcessShader(const std::vector<asset::ShaderPtr>& shaders,
+                                         ShaderProcessObserver observer)
     {
-        shader_processor_->Process(shader_cache_.get(), shaders);
+        shader_processor_->Process(shader_cache_.get(), shaders, std::move(observer));
+    }
+
+    std::size_t ResourcePipeline::GetProcessedShaderCount() const
+    {
+        return shader_processor_ ? shader_processor_->GetProcessedShaderCount() : 0;
     }
 
 

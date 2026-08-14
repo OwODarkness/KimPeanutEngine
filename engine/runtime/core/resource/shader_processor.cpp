@@ -127,6 +127,9 @@ namespace kpengine::resource
             shader->data->entry = shader->desc.entry;
             shader->data->api = api_;
             shader->status = asset::ShaderStatus::Ready;
+            // Reference-based tally: same content hash (same stage/entry/defines)
+            // is one shader, however many programs reference it.
+            processed_hashes_.insert(hash);
             ++done;
         }
     }
