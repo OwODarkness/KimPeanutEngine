@@ -219,8 +219,16 @@ engine/runtime/core/math
 
 # 参考项目
 
-- Unreal Engine
-- Piccolo Engine
+- Unreal Engine — [EpicGames/UnrealEngine](https://github.com/EpicGames/UnrealEngine)（非公开，需 Epic 授权）
+- Piccolo — [BoomingTech/Piccolo](https://github.com/BoomingTech/Piccolo)（games104 迷你引擎，架构同源）
+- Sakura Engine — [SakuraEngine/SakuraEngine](https://github.com/SakuraEngine/SakuraEngine)（渲染图 / ECS / 编辑器，活跃维护）
+- bgfx — [bkaradzic/bgfx](https://github.com/bkaradzic/bgfx)（跨图形 API 的后端抽象）
+- Godot — [godotengine/godot](https://github.com/godotengine/godot)（RenderingServer / ShaderCache）
+- Ogre — [Ogre3D/ogre](https://github.com/Ogre3D/ogre)（RenderSystem / 材质与 Shader 管理）
+- Urho3D — [urho3d/urho3d](https://github.com/urho3d/urho3d)（精简引擎，Graphics / ResourceCache）
+- Bevy — [bevyengine/bevy](https://github.com/bevyengine/bevy)（ECS 范式参考）
+
+以上是 `engine-reference` skill 的设计学习来源：通过 GitHub MCP 阅读其源码，把模式映射回本引擎的模块设计。
 
 # 设计
 

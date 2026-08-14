@@ -132,3 +132,5 @@ It should know:
 ## Refactor status
 
 **Not started — leaks present.** The RHI still builds pipeline descriptions and reads shader files by path. The seam (`ShaderModule` taking `ShaderData`) is defined but its implementations are stale and unbuilt. Target state: `PipelineDesc` built by the render module, shaders backed by `ShaderData`, `ShaderManager` retired. See [the render module doc](../render/render_module.md) for the reconstruction that drives this.
+
+Task ledger: [TODO.md](TODO.md) (the working list, tick as items land) · design references: [sakura_reference.md](sakura_reference.md) (how Sakura Engine shapes its render backends — learn from, not copy) and [rhi_design_material.md](rhi_design_material.md) (RHI design material from a Zhihu thread on wrapping a modern-game-engine RHI layer — critical synthesis).
