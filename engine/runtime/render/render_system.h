@@ -49,6 +49,10 @@ namespace kpengine::render
         bool IsReady(asset::RequestID request_id) const;
         const RenderCacheEntry *GetCached(asset::RequestID request_id) const;
 
+        // Distinct shader references loaded so far, reference-based on the content
+        // hash (the ShaderCache key) so a stage shared across programs counts once.
+        int GetLoadedShaderCount() const;
+
     private:
         // Lifecycle belongs to RuntimeContext: it owns this object and is the only
         // caller allowed to bring it up, so no one else can re-initialize it.
