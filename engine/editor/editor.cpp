@@ -54,6 +54,7 @@ namespace kpengine::editor
         init_info.log_system = global_editor_context.log_system_;
         init_info.engine = engine_;
         init_info.memory_sampler = global_editor_context.memory_sampler_;
+        init_info.render_system = global_editor_context.render_system_;
         editor_ui_->Initialize(init_info);
     }
 

@@ -13,6 +13,10 @@ namespace kpengine
     {
         class Engine;
     }
+    namespace render
+    {
+        class RenderSystem;
+    }
 }
 
 namespace kpengine::editor
@@ -32,6 +36,7 @@ namespace kpengine::editor
         LogSystem *log_system = nullptr;
         runtime::Engine *engine = nullptr;
         MemoryStatsSampler *memory_sampler = nullptr;
+        render::RenderSystem *render_system = nullptr;
     };
 
     class EditorUI
@@ -54,7 +59,8 @@ namespace kpengine::editor
         void BuildMenuBar();
         void BuildPlaceholderWindow();
         void BuildLogWindow(LogSystem *log_system);
-        void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler);
+        void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
+                             render::RenderSystem *render_system);
 
         // The UI is decoupled from any graphics API: the WSI feeds ImGui window
         // events, the renderer draws ImGui with the active backend (GL/Vulkan).

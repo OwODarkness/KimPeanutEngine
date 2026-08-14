@@ -14,6 +14,7 @@
 #include "editor/profile/editor_profile_bar.h"
 #include "platform/memory_stats_sampler.h"
 #include "runtime/engine.h"
+#include "runtime/render/render_system.h"
 #include "log/logger.h"
 
 namespace kpengine::editor
@@ -37,7 +38,7 @@ namespace kpengine::editor
         BuildMenuBar();
         BuildPlaceholderWindow();
         BuildLogWindow(init_info.log_system);
-        BuildProfileBar(init_info.engine, init_info.memory_sampler);
+        BuildProfileBar(init_info.engine, init_info.memory_sampler, init_info.render_system);
     }
 
     void EditorUI::CreateImguiBackends(WindowHandle window, GraphicsAPIType backend_type)
@@ -105,12 +106,13 @@ namespace kpengine::editor
         components_.push_back(std::make_unique<EditorLogComponent>(log_system, log_colors, log_config));
     }
 
-    void EditorUI::BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler)
+    void EditorUI::BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
+                                   render::RenderSystem *render_system)
     {
         // Bottom status bar. Metrics are injected via samplers, so the bar never sees
         // the engine or the OS — FPS from the engine (render-thread counter, race-free
         // here), memory from the platform sampler via EditorContext.
-        if (!engine || !memory_sampler)
+        if (!engine || !memory_sampler || !render_system)
         {
             return;
         }
@@ -131,6 +133,10 @@ namespace kpengine::editor
                 const MemoryStats stats = memory_sampler->Sample();
                 return {stats.process_mb, stats.system_available_mb};
             }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "Shaders",
+            [render_system]
+            { return std::to_string(render_system->GetLoadedShaderCount()); }));
         components_.push_back(
             std::make_unique<EditorProfileBarComponent>(std::move(profile_metrics)));
     }
