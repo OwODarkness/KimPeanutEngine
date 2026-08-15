@@ -4,12 +4,18 @@
 #include <cstddef>
 #include <memory>
 #include <unordered_map>
+#include <vector>
 
 #include "asset/asset.h"
 #include "asset/asset_load_request.h"
 #include "async/async_queue.h"
 #include "base/type.h"
 #include "render_camera.h"
+
+namespace kpengine::asset
+{
+    struct ShaderProgramResource;
+}
 
 namespace kpengine::resource
 {
@@ -66,6 +72,12 @@ namespace kpengine::render
         // Drain up to max_items requests (0 = unlimited, the bootstrap pass).
         void ConsumeRequests(std::size_t max_items);
         bool ConsumeOne(const asset::AssetLoadRequest &request, RenderCacheEntry &entry);
+
+        // The stages of a loaded program whose data finished baking — what the
+        // render-module reconstruction feeds into a graphics::PipelineDesc.
+        // Stages that failed to compile are skipped; the pipeline must not see them.
+        std::vector<asset::ShaderPtr> GetCachedShaders(
+            const asset::ShaderProgramResource *program) const;
 
     private:
         std::unique_ptr<RenderCamera> render_camera_;

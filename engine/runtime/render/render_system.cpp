@@ -67,6 +67,26 @@ namespace kpengine::render
                    : 0;
     }
 
+    std::vector<asset::ShaderPtr> RenderSystem::GetCachedShaders(
+        const asset::ShaderProgramResource *program) const
+    {
+        std::vector<asset::ShaderPtr> shaders;
+        if (!program)
+        {
+            return shaders;
+        }
+        for (auto &shader : program->GatherShaders())
+        {
+            // Only stages whose data finished baking can back a pipeline; a failed
+            // stage must never reach the RHI as part of a PipelineDesc.
+            if (shader && shader->status == asset::ShaderStatus::Ready)
+            {
+                shaders.push_back(shader);
+            }
+        }
+        return shaders;
+    }
+
     void RenderSystem::ConsumeRequests(std::size_t max_items)
     {
         if (!load_queue_)
