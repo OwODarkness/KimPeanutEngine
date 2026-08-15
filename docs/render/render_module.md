@@ -55,7 +55,7 @@ render module
 
 1. `asset.LoadSync(path)` → `ShaderProgramResource` (all stages, `Uncompiled`).
 2. `resource.ProcessShader(stages)` → each stage's `ShaderData` is `Ready` (`byte_code`, `api`, `entry`).
-3. Wrap each stage in a thin `graphics::Shader` implementation whose `GetCode()` returns `data->byte_code.data()` — the RHI interface **does not change** (`PipelineDesc` takes `graphics::Shader*`; the backend just stops receiving path-backed shaders).
+3. Hand each stage's `ShaderData` straight to the `PipelineDesc` — `PipelineDesc` takes `data::ShaderData*` directly (landed 2026-08-15; no `graphics::Shader` wrapper).
 4. Fill the rest of `PipelineDesc` (vertex layout, blend/raster/multisample state, descriptor bindings, attachment formats) from render-module-owned material/pipeline definitions.
 5. `backend.CreatePipelineResource(desc)`.
 
@@ -66,7 +66,7 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 ## Reconstruction plan (ordered)
 
 1. **Wire the resource pipeline in.** Give the render module (or `RuntimeContext`) an owned `ResourcePipeline`, initialized with the chosen `GraphicsAPIType`. It currently has no owner and no callers.
-2. **Make the RHI a pure receiver.** In the backend, replace path-based `ShaderManager::CreateShader<API>(path)` with a `ShaderData`-backed `graphics::Shader` (wrap `ShaderData::byte_code`), and delete the commented-out asset-loading block in `VulkanPipelineManager` by doing it for real. Retire the `ShaderManager` path-keyed cache.
+2. **Make the RHI a pure receiver.** ✅ Landed 2026-08-15: `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired; `PipelineDesc` carries `data::ShaderData*`; the commented-out asset-loading block in `VulkanPipelineManager` was deleted. Remaining under this step: the build-time `glslc` step.
 3. **Move `PipelineDesc` construction out of the backend** into render-module pipeline/material code. `VulkanBackend::CreateGraphicsPipeline` should only *bake* what it is handed.
 4. **Add the render-module request path:** `asset.LoadSync(.shader)` → `resource.ProcessShader` → fill `PipelineDesc` → `backend.CreatePipelineResource`. Add a warmup pass in render init.
 5. **Close the resource-pipeline gaps it will hit:** `ProcessShader` should take the whole `ShaderProgramResource` (all stages) as one unit, not a flat stage list; and add a `CompileFailed` status carrying the compiler error, so the render module can distinguish failure and not bake empty bytes.

@@ -83,7 +83,7 @@ void DrainFrameBudget(AsyncAssetQueue& ready, size_t max_items, TimePoint max_ti
 
 ### `ReadyCache` — render-side, keyed by request
 
-`unordered_map<uint64_t request_id, BakedResult>` where `BakedResult` is whatever the render module baked (a `PipelineHandle` + the `ShaderData`-backed `graphics::Shader` wrappers for a program, a `TextureHandle` for a texture). Callers poll:
+`unordered_map<uint64_t request_id, BakedResult>` where `BakedResult` is whatever the render module baked (a `PipelineHandle` + the `data::ShaderData`s that filled the program's `PipelineDesc`, a `TextureHandle` for a texture). Callers poll:
 
 ```cpp
 bool IsReady(uint64_t request_id);          // present in ready cache?

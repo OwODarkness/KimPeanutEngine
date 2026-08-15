@@ -51,12 +51,13 @@ struct PipelineDesc {
 };
 ```
 
-This is deliberately **cross-API**: no Vulkan struct, no GL enum, no render pass. Nothing in it is API-specific, which is what lets a render module build it once and hand it to either backend. The shader members are `graphics::Shader*` — see the seam below.
+This is deliberately **cross-API**: no Vulkan struct, no GL enum, no render pass. Nothing in it is API-specific, which is what lets a render module build it once and hand it to either backend. The shader members are `data::ShaderData*` — see below.
 
-### `Shader` and `ShaderModule` — the two shader seams — [`common/shader.h`](../../engine/runtime/graphics/backend/common/shader.h)
+### Shader input — `data::ShaderData` in `PipelineDesc` (Phase 0 landed 2026-08-15)
 
-- **`graphics::Shader`** — the current seam. Contract is just `GetCode()/GetCodeSize()`. Today it is implemented as *path-backed* (`OpenglShader`/`VulkanShader` constructed from a file path). The intended consumer shape is a **`ShaderData`-backed** implementation: a thin `ResourceShader : Shader` whose `GetCode()` returns `shader_data->byte_code.data()`. The RHI interface does not change; only what backs it does.
-- **`ShaderModule`** — [`common/shader_module.h`](../../engine/runtime/graphics/backend/common/shader_module.h) — the *other*, more API-shaped seam that already takes compiled bytes: `Initialize(GraphicsContext, std::shared_ptr<data::ShaderData>)`. Its implementations ([`vulkan_shader_module.cpp`](../../engine/runtime/graphics/backend/vulkan/vulkan_shader_module.cpp), [`opengl_shader_module.cpp`](../../engine/runtime/graphics/backend/opengl/opengl_shader_module.cpp)) reference `shader->glsl`/`shader->spirv` — fields that don't exist on `ShaderData` — and are **not in the build** (see the Graphics CMakeLists). Stale; the real consumers should read `data::ShaderData::api` + `byte_code`.
+`PipelineDesc`'s shader members are `data::ShaderData*` directly — the resource pipeline's baked artifact *is* the RHI's input, no wrapper. Each backend reads the field its own API needs: Vulkan `byte_code` (SPIR-V), OpenGL `source` (preprocessed GLSL). The old `graphics::Shader` abstraction (`GetCode()`/`GetCodeSize()`, path-backed `OpenglShader`/`VulkanShader`, then the `ResourceShader` wrapper) is **retired** — its `api`-based dispatch was redundant because each backend *is* its own API.
+
+- **`ShaderModule`** — [`common/shader_module.h`](../../engine/runtime/graphics/backend/common/shader_module.h) — the other, stale seam that already takes compiled bytes: `Initialize(GraphicsContext, std::shared_ptr<data::ShaderData>)`. Its implementations ([`vulkan_shader_module.cpp`](../../engine/runtime/graphics/backend/vulkan/vulkan_shader_module.cpp), [`opengl_shader_module.cpp`](../../engine/runtime/graphics/backend/opengl/opengl_shader_module.cpp)) reference `shader->glsl`/`shader->spirv` — fields that don't exist on `ShaderData` — and are **not in the build**. Reconcile it with `ShaderData::api` + `byte_code` or delete it ([TODO 1.2](TODO.md)).
 
 ### Texture / Mesh / Sampler + managers — the good pattern
 
@@ -69,7 +70,7 @@ Every manager follows the same pattern ([`texture_manager.h`](../../engine/runti
 | `resources_` | `vector<unique_ptr<Slot>>` | slot storage — **owner of record** |
 | `handle_system_` | `HandleSystem<T>` | generation counters for slot validity |
 
-`ShaderManager` is the one manager that **breaks** this pattern: it is path-keyed (`unordered_map<string, ShaderHandle>`) and its `CreateShader<API>(type, path)` reads the file itself ([`shader_manager.cpp`](../../engine/runtime/graphics/backend/common/shader_manager.cpp)). That is the RHI reaching up into the resource layer, and it is the piece to retire.
+`ShaderManager` was the one manager that **broke** this pattern: it was path-keyed (`unordered_map<string, ShaderHandle>`) and its `CreateShader<API>(type, path)` read the file itself — the RHI reaching up into the resource layer. **Retired and deleted 2026-08-15** (`shader_manager.*`, `shader_factory.h`, `vulkan_shader.*`, `opengl_shader.*`).
 
 ### `RenderBackend` — the facade — [`common/render_backend.h`](../../engine/runtime/graphics/backend/common/render_backend.h)
 
@@ -82,20 +83,18 @@ virtual BufferHandle CreateVertexBuffer(const void*, size_t) = 0;
 virtual BufferHandle CreateIndexBuffer(const void*, size_t) = 0;
 ```
 
-Two known leaks live here, both flagged in the code:
-- `ShaderManager shader_manager_` is a **member** — the RHI owns a shader cache. Shader caching belongs to the render module (or the resource pipeline), not the RHI.
-- `GLFWwindow *window_` is marked "just expose for test purpose, should be removed later."
+One known leak lives here, flagged in the code: `GLFWwindow *window_` is marked "just expose for test purpose, should be removed later" ([TODO 3.1](TODO.md)). The `ShaderManager shader_manager_` member that used to live here was **deleted 2026-08-15** — shader caching belongs to the render module / resource pipeline.
 
-`VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. What is **not** fine is that `VulkanBackend::CreateGraphicsPipeline()` *builds* the `PipelineDesc` itself ([`vulkan_backend.cpp:712`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.cpp#L712-L752)): it decides shader stage, vertex layout, and descriptor bindings. Building a pipeline description is render-module work; the backend should only *bake* the desc it is handed.
+`VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. Since 2026-08-15 `VulkanBackend::CreateGraphicsPipeline(PipelineDesc)` **takes** the desc and bakes it (completing attachment formats from the swapchain format, an RHI-owned invariant) — it no longer builds the desc itself.
 
-## Current state — leaks to fix
+## Current state — leaks fixed vs remaining
 
-The RHI does four things it should not:
+Leaks 1–2 were **fixed 2026-08-15** (Phase 0 of the [Vulkan decoupling](vulkanbackend.md)); 3 is now the demo's job, not the RHI's; 4 remains.
 
-1. **Builds `PipelineDesc` internally.** `VulkanBackend::CreateGraphicsPipeline` hardcodes the `simple_triangle` pipeline — stage, layout, bindings ([`vulkan_backend.cpp:712-751`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.cpp#L712-L751)).
-2. **Reads shader files by path.** `ShaderManager::CreateShader<API>(type, path)` loads the file itself ([`shader_manager.cpp:42-66`](../../engine/runtime/graphics/backend/common/shader_manager.cpp#L42-L66)).
-3. **Loads prebuilt `.spv` / `.vert` at init** instead of consuming `ShaderData` from the resource pipeline — Vulkan reads build-time `.spv` ([`vulkan_backend.cpp:717-720`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.cpp#L717-L720)), OpenGL reads `.vert/.frag` source ([`opengl_backend.cpp:119-122`](../../engine/runtime/graphics/backend/opengl/opengl_backend.cpp#L119-L122)).
-4. **The build-time glslc step.** `Graphics/CMakeLists.txt` runs `glslc` at configure/build time to precompile `asset/shader/simple_triangle.vert/.frag` → `.spv` into `CMAKE_BINARY_DIR/shaders/`, feeding leak #3. This is the "vulkan_backend loads prebuilt .spv" legacy path; it should be reconciled with the content-addressed `resource::ShaderCache`.
+1. ~~**Builds `PipelineDesc` internally.**~~ Fixed — `CreateGraphicsPipeline(PipelineDesc)` takes the desc and bakes it.
+2. ~~**Reads shader files by path.**~~ Fixed — `ShaderManager` retired; shaders arrive as `data::ShaderData*` in `PipelineDesc`.
+3. **Prebuilt `.spv` / `.vert` still read at init** — but now by the `rhi_example` demo as the *caller*, not by the backends. Retires with the glslc step when the render module owns shader sourcing.
+4. **The build-time glslc step.** `Graphics/CMakeLists.txt` runs `glslc` at configure/build time to precompile `asset/shader/simple_triangle.vert/.frag` → `.spv` into `CMAKE_BINARY_DIR/shaders/`, feeding the demo's reads. Reconcile with the content-addressed `resource::ShaderCache` ([TODO 2.3](TODO.md)).
 
 ## The intended contract — RHI as pure receiver
 
@@ -114,7 +113,7 @@ The RHI must not know:
 
 It should know:
 - `PipelineDesc` (pipeline contract), `GraphicsContext`, `data::*` payloads.
-- The `Shader` interface — implemented by the render module over `ShaderData` (or the `ShaderModule` seam, once its implementations read `ShaderData::api` + `byte_code`).
+- `data::ShaderData*` — the baked artifact, carried in `PipelineDesc`. (The `ShaderModule` seam stays pending [TODO 1.2](TODO.md).)
 
 ## Build wiring
 
@@ -124,13 +123,13 @@ It should know:
 
 ## Design notes
 
-- **Two shader seams, one target.** `graphics::Shader` (byte source) and `ShaderModule` (device module) both point at the same fix: consume `data::ShaderData { stage, api, byte_code, source, entry }` instead of paths. Prefer the smaller change first — a `ShaderData`-backed `Shader` implementation keeps `PipelineDesc` and `CreatePipelineResource` untouched.
+- **One shader seam now.** `PipelineDesc` carries `data::ShaderData { stage, api, byte_code, source, entry }` directly — the `graphics::Shader` wrapper is retired (2026-08-15); its `api` dispatch was redundant since each backend reads the field its own API needs. Only the stale `ShaderModule` device-module seam remains ([TODO 1.2](TODO.md)).
 - **Managers are the model.** `TextureManager`/`MeshManager`/`SamplerManager` (slot + HandleSystem + create-from-data) are the right RHI pattern. `ShaderManager` (path-keyed, reads files) is the anti-pattern to delete.
 - **Pipeline cache ownership.** Per the asset module's design note, a render-side pipeline cache keyed by `(program AssetID, api)` is cleaner than stuffing artifacts into the asset graph. The RHI should expose "bake this `PipelineDesc`", not "find me a cached shader".
 - **Derived data stays out of the RHI.** Compiling source → bytes is the CPU-side processing layer — `resource/` (see [resource_module.md](../resource/resource_module.md)). The RHI only ever sees bytes.
 
 ## Refactor status
 
-**Not started — leaks present.** The RHI still builds pipeline descriptions and reads shader files by path. The seam (`ShaderModule` taking `ShaderData`) is defined but its implementations are stale and unbuilt. Target state: `PipelineDesc` built by the render module, shaders backed by `ShaderData`, `ShaderManager` retired. See [the render module doc](../render/render_module.md) for the reconstruction that drives this.
+**Phase 0 landed (2026-08-15).** Shaders arrive as `data::ShaderData*` in `PipelineDesc`; `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired. Remaining: the build-time `glslc` step ([TODO 2.3](TODO.md)), the stale `ShaderModule` seam ([TODO 1.2](TODO.md)), and the Vulkan backend decoupling ([vulkanbackend.md](vulkanbackend.md) Phases 1–5). See [the render module doc](../render/render_module.md) for the reconstruction that drives this.
 
 Task ledger: [TODO.md](TODO.md) (the working list, tick as items land) · design references: [sakura_reference.md](sakura_reference.md) (how Sakura Engine shapes its render backends — learn from, not copy) and [rhi_design_material.md](rhi_design_material.md) (RHI design material from a Zhihu thread on wrapping a modern-game-engine RHI layer — critical synthesis).
