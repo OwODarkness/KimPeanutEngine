@@ -4,9 +4,9 @@
 #include <memory>
 #include "base/base.h"
 #include "delegate/event_dispatcher.h"
-#include "shader_manager.h"
 #include "math/math_header.h"
 #include "api.h"
+#include "pipeline_types.h"
 
 struct GLFWwindow;
 namespace kpengine::graphics
@@ -34,7 +34,7 @@ namespace kpengine::graphics
         static std::unique_ptr<RenderBackend> CreateGraphicsBackEnd(GraphicsAPIType backend_type);
 
     public:
-        virtual void Initialize() = 0;
+        virtual void Initialize(const PipelineDesc &pipeline_desc) = 0;
         virtual void BeginFrame() = 0;
         virtual void EndFrame() = 0;
         virtual void Cleanup() = 0;
@@ -62,7 +62,6 @@ namespace kpengine::graphics
         CameraData camera_data;
 
     protected:
-        ShaderManager shader_manager_;
         int width_ = 0;
         int height_ = 0;
     };

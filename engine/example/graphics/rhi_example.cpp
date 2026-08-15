@@ -1,13 +1,52 @@
 
+#include <cstddef>
+#include <cstring>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include "runtime/window/glfw_window_system.h"
 #include "runtime/input/input_system.h"
 #include "runtime/input/input_context.h"
 #include "runtime/graphics/backend/vulkan/vulkan_backend.h"
 #include "runtime/render/render_camera.h"
+#include "runtime/graphics/backend/common/pipeline_types.h"
+#include "runtime/core/data/shader.h"
+#include "runtime/core/data/mesh.h"
+#include "runtime/core/config/path.h"
+
 namespace kpengine::example
 {
-    
-    
+    // The example owns the pipeline contract. Shaders arrive as baked bytes — SPIR-V
+    // for Vulkan, source text for OpenGL — as data::ShaderData; the RHI never reads
+    // shader files itself. (File reading is a stopgap: the render module will source
+    // these from the resource pipeline instead of the demo reading disk.)
+    static std::vector<char> ReadFileBytes(const std::string &path)
+    {
+        std::ifstream file(path, std::ios::binary);
+        return std::vector<char>(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
+    }
+
+    static std::shared_ptr<data::ShaderData> LoadShaderData(GraphicsAPIType api, ShaderStage stage, const std::string &path)
+    {
+        auto shader_data = std::make_shared<data::ShaderData>();
+        shader_data->api = api;
+        shader_data->stage = stage;
+        std::vector<char> bytes = ReadFileBytes(path);
+        if (api == GraphicsAPIType::GRAPHICS_API_OPENGL)
+        {
+            shader_data->source.assign(bytes.begin(), bytes.end());
+        }
+        else
+        {
+            shader_data->byte_code.resize(bytes.size());
+            std::memcpy(shader_data->byte_code.data(), bytes.data(), bytes.size());
+        }
+        return shader_data;
+    }
 
     void RHIExample()
     {
@@ -30,16 +69,48 @@ namespace kpengine::example
             input->AddContext("SceneInputContext", context);
             input->SetActiveContext("SceneInputContext");
 
-            std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(window_create_info.graphics_api_type);
+            const GraphicsAPIType api = window_create_info.graphics_api_type;
+            const bool is_opengl = api == GraphicsAPIType::GRAPHICS_API_OPENGL;
+            const std::string shader_dir = is_opengl ? GetShaderDirectory() : GetSPVShaderDirectory();
+
+            std::shared_ptr<data::ShaderData> vert_data = LoadShaderData(
+                api, ShaderStage::SHADER_STAGE_VERTEX,
+                shader_dir + (is_opengl ? std::string("simple_triangle.vert") : std::string("simple_triangle.vert.spv")));
+            std::shared_ptr<data::ShaderData> frag_data = LoadShaderData(
+                api, ShaderStage::SHADER_STAGE_FRAGMENT,
+                shader_dir + (is_opengl ? std::string("simple_triangle.frag") : std::string("simple_triangle.frag.spv")));
+
+            graphics::PipelineDesc pipeline_desc{};
+            pipeline_desc.vert_shader = vert_data.get();
+            pipeline_desc.frag_shader = frag_data.get();
+
+            pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+            pipeline_desc.attri_descs = {
+                {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS, offsetof(data::Vertex, position)},
+                {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, tex_coord)},
+            };
+
+            pipeline_desc.descriptor_binding_descs = {
+                {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
+                 {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
+                 {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+            };
+
+            graphics::RasterState raster_state{};
+            raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
+            raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+            pipeline_desc.raster_state = raster_state;
+
+            std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(api);
             rhi->BindWindowResize(window->resize_event_dispatcher_);
             rhi->window_ = static_cast<GLFWwindow *>(window->GetNativeHandle());
-            rhi->Initialize();
+            rhi->Initialize(pipeline_desc);
 
             std::unique_ptr<render::RenderCamera> camera = std::make_unique<render::RenderCamera>();
 
             while (!window->ShouldClose())
             {
-                if (window_create_info.graphics_api_type == GraphicsAPIType::GRAPHICS_API_OPENGL)
+                if (is_opengl)
                 {
                     window->SwapBuffers();
                 }

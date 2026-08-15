@@ -44,14 +44,6 @@ namespace kpengine::graphics
         );
     }
 
-    enum class ShaderType
-    {
-        None,
-        SHADER_TYPE_VERTEX,
-        SHADER_TYPE_FRAGMENT,
-        SHADER_TYPE_GEOMETRY
-    };
-
     enum class VertexFormat
     {
         VERTEX_FORMAT_ONE_FLOAT,

@@ -7,7 +7,6 @@
 #include "common/mesh_manager.h"
 #include "common/texture_manager.h"
 #include "common/sampler_manager.h"
-#include "common/shader_manager.h"
 #include "opengl_pipeline.h"
 #include "common/pipeline_types.h"
 #include "asset/asset_manager.h"
@@ -24,16 +23,14 @@ namespace kpengine::graphics
 {
     OpenglBackend::OpenglBackend() : mesh_manager_(std::make_unique<MeshManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
-                                     sampler_manager_(std::make_unique<SamplerManager>()),
-                                     shader_manager_(std::make_unique<ShaderManager>())
-
+                                     sampler_manager_(std::make_unique<SamplerManager>())
     {
         context_.backend = this;
     }
 
     OpenglBackend::~OpenglBackend() = default;
 
-    void OpenglBackend::Initialize()
+    void OpenglBackend::Initialize(const PipelineDesc &pipeline_desc)
     {
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         {
@@ -42,7 +39,7 @@ namespace kpengine::graphics
         }
 
         glfwGetWindowSize(window_, &width_, &height_);
-        CreatePipeline();
+        CreatePipeline(pipeline_desc);
         CreateUniformBuffers();
         CreateTextures();
         CreateDescriptorSets();
@@ -112,34 +109,11 @@ namespace kpengine::graphics
         return true;
     }
 
-    void OpenglBackend::CreatePipeline()
+    void OpenglBackend::CreatePipeline(const PipelineDesc &pipeline_desc)
     {
-        PipelineDesc pipeline_settings{};
-        std::string shader_path = GetShaderDirectory();
-        ShaderHandle vert_handle = shader_manager_->CreateShader<GraphicsAPIType::GRAPHICS_API_OPENGL>(ShaderType::SHADER_TYPE_VERTEX, shader_path + "simple_triangle.vert");
-        Shader *vert_shader = shader_manager_->GetShader(vert_handle);
-        ShaderHandle frag_handle = shader_manager_->CreateShader<GraphicsAPIType::GRAPHICS_API_OPENGL>(ShaderType::SHADER_TYPE_FRAGMENT, shader_path + "simple_triangle.frag");
-        Shader *frag_shader = shader_manager_->GetShader(frag_handle);
-
-        pipeline_settings.vert_shader = vert_shader;
-        pipeline_settings.frag_shader = frag_shader;
-
-        pipeline_settings.binding_descs =
-            {
-                {0, sizeof(Vertex), 0}};
-
-        pipeline_settings.attri_descs = {
-            {0, 0, VertexFormat::VERTEX_FORMAT_THREE_FLOATS, offsetof(Vertex, position)},
-            {1, 0, VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(Vertex, tex_coord)}};
-
-        pipeline_settings.descriptor_binding_descs = {
-            {{0, 1, DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
-             {1, 1, DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
-             {2, 1, DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
-        };
-
+        // The caller owns shaders/stage/layout/bindings; the backend bakes only.
         pipeline_ = std::make_unique<OpenglPipeline>();
-        pipeline_->Initialize(pipeline_settings);
+        pipeline_->Initialize(pipeline_desc);
     }
 
     void OpenglBackend::CreateMeshes()

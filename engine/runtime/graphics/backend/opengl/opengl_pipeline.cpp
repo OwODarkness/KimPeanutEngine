@@ -1,6 +1,6 @@
 #include "opengl_pipeline.h"
 #include "log/logger.h"
-#include "common/shader.h"
+#include "data/shader.h"
 #include "opengl_enum.h"
 namespace kpengine::graphics
 {
@@ -15,7 +15,7 @@ namespace kpengine::graphics
         GLuint gl_vertex_shader = glCreateShader(GL_VERTEX_SHADER);
         if (desc.vert_shader)
         {
-            const char *vertex_shader_code = reinterpret_cast<const char *>(desc.vert_shader->GetCode());
+            const char *vertex_shader_code = desc.vert_shader->source.data();
             glShaderSource(gl_vertex_shader, 1, &vertex_shader_code, nullptr);
             glCompileShader(gl_vertex_shader);
             glGetShaderiv(gl_vertex_shader, GL_COMPILE_STATUS, &bsucceed);
@@ -32,10 +32,10 @@ namespace kpengine::graphics
         GLuint gl_frag_shader = glCreateShader(GL_FRAGMENT_SHADER);
         if (desc.frag_shader)
         {
-            const char *frag_shader_code = reinterpret_cast<const char *>(desc.frag_shader->GetCode());
+            const char *frag_shader_code = desc.frag_shader->source.data();
             glShaderSource(gl_frag_shader, 1, &frag_shader_code, nullptr);
             glCompileShader(gl_frag_shader);
-            glGetShaderiv(gl_vertex_shader, GL_COMPILE_STATUS, &bsucceed);
+            glGetShaderiv(gl_frag_shader, GL_COMPILE_STATUS, &bsucceed);
             if (!bsucceed)
             {
                 glGetShaderInfoLog(gl_frag_shader, 512, nullptr, log);
@@ -50,7 +50,7 @@ namespace kpengine::graphics
         GLuint gl_geom_shader = glCreateShader(GL_GEOMETRY_SHADER);
         if (desc.geom_shader)
         {
-            const char *geom_shader_code = reinterpret_cast<const char *>(desc.geom_shader->GetCode());
+            const char *geom_shader_code = desc.geom_shader->source.data();
             glShaderSource(gl_geom_shader, 1, &geom_shader_code, nullptr);
             glCompileShader(gl_geom_shader);
             glGetShaderiv(gl_geom_shader, GL_COMPILE_STATUS, &bsucceed);

@@ -9,15 +9,19 @@
 #include "state_types.h"
 #include "buffer_types.h"
 #include "base/graphics_type.h"
+namespace kpengine::data
+{
+    struct ShaderData;
+}
 namespace kpengine::graphics
 {
 
     // Cross Graphics API Pipeline DESC, used for pipeline create
     struct PipelineDesc
     {
-        class Shader *vert_shader;
-        class Shader *frag_shader;
-        class Shader *geom_shader;
+        data::ShaderData *vert_shader;
+        data::ShaderData *frag_shader;
+        data::ShaderData *geom_shader;
         std::vector<VertexBindingDesc> binding_descs;
         std::vector<VertexAttributionDesc> attri_descs;
         PrimitiveTopologyType primitive_topology_type = PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_TRIANGLE_LIST;

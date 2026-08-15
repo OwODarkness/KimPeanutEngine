@@ -65,38 +65,6 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to create image view");
         }
 
-        // if ((settings.usage & TextureUsage::TEXTURE_USAGE_SAMPLE) == TextureUsage::TEXTURE_USAGE_SAMPLE)
-        // {
-
-        //     size_t image_size = data.pixels.size();
-
-        //     BufferHandle stage_handle;
-        //     if (!data.pixels.empty())
-        //     {
-        //         stage_handle = backend->CreateUploadStageBufferResource(image_size);
-        //         backend->UploadDataToBuffer(stage_handle, image_size, data.pixels.data());
-        //     }
-
-        //     backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
-        //     //  backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
-        //     // backend->AcquireImageOwnerShip(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, settings.mip_levels);
-        //     backend->CopyBufferToImage(stage_handle, resource_.image, data.width, data.height);
-        //     // backend->GenerateMipmaps(resource_.image, width_, height_, settings.mip_levels);
-        //     // backend->ReleaseImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
-        //     // backend->AcquireImageOwnerShip(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, settings.mip_levels - 1, 1);
-        //     backend->TransitionImageLayout(resource_.image, TextureUsage::TEXTURE_USAGE_TRANSFER_DST, TextureUsage::TEXTURE_USAGE_SAMPLE, 0, settings.mip_levels);
-        //     // backend->DestroyBufferResource(stage_handle);
-        // }
-        // else if ((settings.usage & TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT) == TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT)
-        // {
-        //     backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT, 0, 1);
-        // }
-        // else if ((settings.usage & TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT) == TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT)
-        // {
-        //     backend->TransitionImageLayout(resource_.image, TextureUsage::None, TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT, 0, 1);
-        // }
-
-
     }
     void VulkanTexture::Destroy(GraphicsContext context)
     {

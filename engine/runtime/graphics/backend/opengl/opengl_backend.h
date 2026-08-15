@@ -25,7 +25,7 @@ namespace kpengine::graphics
         OpenglBackend();
         ~OpenglBackend();
     public:
-        virtual void Initialize() override;
+        virtual void Initialize(const PipelineDesc &pipeline_desc) override;
         virtual void BeginFrame() override;
         virtual void EndFrame() override;
         virtual void Present() override;
@@ -36,7 +36,7 @@ namespace kpengine::graphics
         bool DestroyBufferResource(BufferHandle handle) override;
 
     private:
-        void CreatePipeline();
+        void CreatePipeline(const PipelineDesc &pipeline_desc);
         void CreateMeshes();
         void CreateUniformBuffers();
         void CreateTextures();
@@ -47,7 +47,6 @@ namespace kpengine::graphics
         std::unique_ptr<class MeshManager> mesh_manager_;
         std::unique_ptr<class TextureManager> texture_manager_;
         std::unique_ptr<class SamplerManager> sampler_manager_;
-        std::unique_ptr<class ShaderManager> shader_manager_;
         std::unique_ptr<class OpenglPipeline> pipeline_;
 
 

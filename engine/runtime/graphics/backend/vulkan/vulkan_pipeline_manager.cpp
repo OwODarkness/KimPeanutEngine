@@ -1,12 +1,8 @@
 #include "vulkan_pipeline_manager.h"
 #include <array>
-#include <iostream>
 #include "log/logger.h"
-#include "common/shader.h"
+#include "data/shader.h"
 #include "vulkan_enum.h"
-#include "asset/asset_manager.h"
-#include "config/path.h"
-#include "asset/shader_program.h"
 
 namespace kpengine::graphics
 {
@@ -28,28 +24,9 @@ namespace kpengine::graphics
         VkShaderModule frag_shader_module = VK_NULL_HANDLE;
         VkShaderModule geom_shader_module = VK_NULL_HANDLE;
 
-        // resource::ShaderLoader loader;
-        // loader.Initialize(GraphicsAPIType::GRAPHICS_API_OPENGL);
-        // std::string shader_program_path = GetShaderDirectory() + "simple_triangle.shader";
-        // asset::AssetID shader_program_id = asset::AssetManager::GetInstance().LoadSync(shader_program_path);
-        // auto shader_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(shader_program_id);
-        // if(shader_program)
-        // {
-        //     auto shader = shader_program->GetShader(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
-        //     if(shader)
-        //     {
-        //         shader->data = loader.Load(shader->desc.file, shader->desc.stage, shader->format, shader->desc.entry);
-        //         if(shader->data)
-        //             KP_LOG("ShaderLog", LOG_LEVEL_DEBUG, "shader: %d", shader->data->byte_code.size());
-        //     }
-        // }
-
-
-        //resource::ShaderLoader()
-
         if (pipeline_desc.vert_shader)
         {
-            CreateShaderModule(logical_device, pipeline_desc.vert_shader->GetCode(), pipeline_desc.vert_shader->GetCodeSize(), vert_shader_module);
+            CreateShaderModule(logical_device, pipeline_desc.vert_shader->byte_code.data(), pipeline_desc.vert_shader->byte_code.size(), vert_shader_module);
 
             VkPipelineShaderStageCreateInfo shader_stage_info{};
             shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -61,7 +38,7 @@ namespace kpengine::graphics
 
         if (pipeline_desc.frag_shader)
         {
-            CreateShaderModule(logical_device, pipeline_desc.frag_shader->GetCode(), pipeline_desc.frag_shader->GetCodeSize(), frag_shader_module);
+            CreateShaderModule(logical_device, pipeline_desc.frag_shader->byte_code.data(), pipeline_desc.frag_shader->byte_code.size(), frag_shader_module);
 
             VkPipelineShaderStageCreateInfo shader_stage_info{};
             shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
@@ -73,7 +50,7 @@ namespace kpengine::graphics
 
         if (pipeline_desc.geom_shader)
         {
-            CreateShaderModule(logical_device, pipeline_desc.geom_shader->GetCode(), pipeline_desc.geom_shader->GetCodeSize(), geom_shader_module);
+            CreateShaderModule(logical_device, pipeline_desc.geom_shader->byte_code.data(), pipeline_desc.geom_shader->byte_code.size(), geom_shader_module);
 
             VkPipelineShaderStageCreateInfo shader_stage_info{};
             shader_stage_info.sType = VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO;
