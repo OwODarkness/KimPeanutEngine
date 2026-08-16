@@ -87,6 +87,16 @@ One known leak lives here, flagged in the code: `GLFWwindow *window_` is marked 
 
 `VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. Since 2026-08-15 `VulkanBackend::CreateGraphicsPipeline(PipelineDesc)` **takes** the desc and bakes it (completing attachment formats from the swapchain format, an RHI-owned invariant) — it no longer builds the desc itself.
 
+#### The frame-recording API (Phase 4 landed 2026-08-15)
+
+The Vulkan backend now splits the frame lifecycle so **a caller records the draws** ([vulkanbackend.md](vulkanbackend.md) Phase 4):
+
+- `BeginFrame()` — waits on the in-flight fence, acquires the next swapchain image, resets the fence, and prepares the frame's **scene command buffer** (`GetCurrentSceneCommandBuffer()`): begin, color/depth transitions to attachment-optimal, `vkCmdBeginRendering`, viewport/scissor. Callers issue draws against that buffer between `BeginFrame`/`EndFrame`.
+- `EndFrame()` — ends rendering, transitions the swapchain image to present, submits, presents, handles resize.
+- Scene-side facilities — `CreateUniformBuffer`/`MapUniformBuffer` (persistent per-buffer mapping), `UploadTexturePixels` (stage → one-shot copy → sample), and the manager getters (`GetTextureManager`/`GetMeshManager`/`GetSamplerManager`, `GetBufferResource`).
+
+The demo that used to live inside the backend is now the render module's first real scene, [`render::RenderScene`](../../engine/runtime/render/render_scene.h), recording through this API (raw `vkCmd*` for now — Vulkan-specific stopgap). The RHI still never initiates; it exposes where the frame is and the caller decides what's in it.
+
 ## Current state — leaks fixed vs remaining
 
 Leaks 1–2 were **fixed 2026-08-15** (Phase 0 of the [Vulkan decoupling](vulkanbackend.md)); 3 is now the demo's job, not the RHI's; 4 remains.
@@ -130,6 +140,6 @@ It should know:
 
 ## Refactor status
 
-**Phase 0 landed (2026-08-15).** Shaders arrive as `data::ShaderData*` in `PipelineDesc`; `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired. Remaining: the build-time `glslc` step ([TODO 2.3](TODO.md)), the stale `ShaderModule` seam ([TODO 1.2](TODO.md)), and the Vulkan backend decoupling ([vulkanbackend.md](vulkanbackend.md) Phases 1–5). See [the render module doc](../render/render_module.md) for the reconstruction that drives this.
+**Phases 0–4 landed (2026-08-15).** Shaders arrive as `data::ShaderData*` in `PipelineDesc`; `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired; `VulkanDevice`/`VulkanSwapchain`/`VulkanFrameContext` extracted; scene recording extracted — the backend exposes the frame's command buffer and the demo lives as `render::RenderScene`. Remaining: the build-time `glslc` step ([TODO 2.3](TODO.md)), the stale `ShaderModule` seam ([TODO 1.2](TODO.md)), and the Vulkan decoupling's Phase 5 facade cleanup ([vulkanbackend.md](vulkanbackend.md)). See [the render module doc](../render/render_module.md) for the reconstruction that drives this.
 
 Task ledger: [TODO.md](TODO.md) (the working list, tick as items land) · design references: [sakura_reference.md](sakura_reference.md) (how Sakura Engine shapes its render backends — learn from, not copy) and [rhi_design_material.md](rhi_design_material.md) (RHI design material from a Zhihu thread on wrapping a modern-game-engine RHI layer — critical synthesis).

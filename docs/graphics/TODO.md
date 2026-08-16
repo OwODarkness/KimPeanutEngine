@@ -27,7 +27,7 @@ Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_re
 
 ## 5. Wiring
 
-- [ ] **`Render` links `Graphics`** — today `Render` never links `Graphics`; the legacy GL renderer and the RHI are two disconnected worlds ([status.md](../status.md)).
+- [x] **`Render` links `Graphics`** — landed 2026-08-15 (Phase 4 of [vulkanbackend.md](vulkanbackend.md)): `Render` links `Graphics` PRIVATE. The demo scene (`render::RenderScene`) records through the RHI's frame API; `RenderSystem` itself stays API-agnostic. The legacy GL renderer and the RHI are no longer fully disconnected, but `RenderSystem` is still un-reconstructed.
 - [x] **Render-side queue drain + bootstrap preload → render cache** landed 2026-08-13 ([async_resource_queue.md](../async/async_resource_queue.md)) — this is the caller the reconstruction builds on.
 
 ## 6. Testing (headless, no GPU)

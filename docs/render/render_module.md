@@ -6,7 +6,7 @@ The render module is the engine's "what to draw and how" layer — the module th
 
 ## Current state — the skeleton
 
-The legacy OpenGL renderer (RenderShader, ShaderPool, RenderMaterial, RenderScene and the raw-GL pass code) has been **deprecated and removed** from the build. What remains is the reconstruction's starting point: `RenderSystem` (the facade) and a temp `RenderCamera` (camera data). `Render` still does not link `Graphics`; `RuntimeLib` links it PRIVATE.
+The legacy OpenGL renderer (RenderShader, ShaderPool, RenderMaterial, RenderScene and the raw-GL pass code) has been **deprecated and removed** from the build. What remains is the reconstruction's starting point: `RenderSystem` (the facade), a temp `RenderCamera` (camera data), and — since the Vulkan decoupling's Phase 4 (2026-08-15) — **`RenderScene`**, the demo as the render module's first real scene. `Render` now links `Graphics` (PRIVATE) so the scene can record through the RHI; `RenderSystem` itself stays API-agnostic.
 
 ### `RenderSystem` — the facade — [`render_system.h`](../../engine/runtime/render/render_system.h)
 
@@ -26,6 +26,17 @@ CameraData GetCameraData() const;   // {view.Transpose(), proj.Transpose()}
 ```
 
 Modeled on the deprecated `CameraComponent` (git history: `engine/runtime/component/camera_component.*`), stripped of the scene hierarchy and input. Its role is to be **used by `RenderSystem`**: the game sets position/rotation; `RenderSystem` feeds the resulting `CameraData` to the RHI as part of the frame.
+
+### `RenderScene` — the demo as the first real scene — [`render_scene.h`](../../engine/runtime/render/render_scene.h)
+
+The triangle demo, moved out of the Vulkan backend (Phase 4 of the [Vulkan decoupling](../graphics/vulkanbackend.md)) and into the render module. It owns the mesh (sphere), texture (wallpaper), per-frame uniform buffers + descriptor sets and the animated camera, and it records the frame's draws against the RHI's scene command buffer:
+
+- `Initialize(VulkanBackend*)` — loads texture + mesh through the asset manager, creates the GPU objects via the backend managers, allocates the UBOs (persistently mapped) and descriptor sets.
+- `Tick(delta)` — writes the per-pass (camera, from the swapchain extent) and per-object (spinning) UBOs for the current frame in flight.
+- `Record()` — binds the pipeline, vertex/index buffers, descriptor set and issues `vkCmdDrawIndexed` into `GetCurrentSceneCommandBuffer()`.
+- `Cleanup()` — destroys descriptor pool, UBO buffers, mesh/sampler/texture through the backend managers.
+
+**Vulkan-specific for now** — draws are raw `vkCmd*` and the constructor takes the concrete `VulkanBackend`. It is deliberately a stopgap: the demo it replaced was the backend's only regression test, and this is the first real `Render` ↔ `Graphics` wiring (TODO 5.1, landed with the phase). A cross-API scene abstraction (records against an RHI interface, not the Vulkan backend) is part of the reconstruction below.
 
 ## Target architecture
 
@@ -71,7 +82,7 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 4. **Add the render-module request path:** `asset.LoadSync(.shader)` → `resource.ProcessShader` → fill `PipelineDesc` → `backend.CreatePipelineResource`. Add a warmup pass in render init.
 5. **Close the resource-pipeline gaps it will hit:** `ProcessShader` should take the whole `ShaderProgramResource` (all stages) as one unit, not a flat stage list; and add a `CompileFailed` status carrying the compiler error, so the render module can distinguish failure and not bake empty bytes.
 6. **Give the skeleton its content.** The legacy GL code is already retired, so there is no coexisting path to replace pass-by-pass. `RenderSystem` grows: it owns the RHI backend (via `RenderBackend`), the async queue drain + ready cache, and the scene graph; `RenderCamera` data feeds the frame's `PerPassData`.
-7. **Finish:** `Render` links `Graphics`; `RenderSystem` becomes the render-module facade that owns the backend, the warmup, and the scene graph.
+7. **Finish:** `Render` links `Graphics` — ✅ landed 2026-08-15 (Phase 4 of the Vulkan decoupling, TODO 5.1; PRIVATE link, the demo `RenderScene` records through the RHI). The second half remains: `RenderSystem` becomes the render-module facade that owns the backend, the warmup, and the scene graph (only `RenderScene` does that today).
 
 ## Invariants
 
@@ -82,7 +93,7 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 
 ## Refactor status
 
-**In progress — legacy deprecated, queue consumer in place.** The legacy OpenGL renderer is removed from the build; `RenderSystem` now owns the `ResourcePipeline` and drains the async load queue in two modes (bootstrap full-drain + per-frame budgeted drain), caching loaded/processed assets in a render cache. `Render` now links `Asset`. The target design (render → asset → resource → graphics, `PipelineDesc` seam, async warmup) is unchanged and captured above; the RHI backend + scene graph are still unowned. The dedicated loading thread is deferred — the render thread loads in-place, budgeted. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
+**In progress — legacy deprecated, queue consumer in place, first scene in.** The legacy OpenGL renderer is removed from the build; `RenderSystem` now owns the `ResourcePipeline` and drains the async load queue in two modes (bootstrap full-drain + per-frame budgeted drain), caching loaded/processed assets in a render cache. `Render` links `Asset` and now `Graphics` (PRIVATE, 2026-08-15). **The demo scene landed as `RenderScene` (2026-08-15)** — the render module's first real scene, recording through the RHI's frame API (Vulkan-specific stopgap). The target design (render → asset → resource → graphics, `PipelineDesc` seam, async warmup) is unchanged and captured above; the RHI backend + scene graph are still unowned by `RenderSystem` itself. The dedicated loading thread is deferred — the render thread loads in-place, budgeted. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
 
 ## Future work
 

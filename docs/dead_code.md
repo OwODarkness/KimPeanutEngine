@@ -12,6 +12,8 @@
 
 **Deleted 2026-08-15 (Phase 3 of the [Vulkan decoupling](graphics/vulkanbackend.md)):** the backend's shared one-shot command buffers (`dst_command_buffer_`/`shader_command_buffer_`/`copy_command_buffer_`) and their `transition_dst_semaphore_`/`copy_semaphore_`, plus the dead transfer/mipmap helpers (`TransferBufferOwnership`, `CopyBuffer` — inlined into `CreateBuffer`, both `ReleaseImageOwnerShip`/`AcquireImageOwnerShip` overloads, `GenerateMipmaps`) were deleted. The one-shot primitives + the sync2 barrier now live on `VulkanFrameContext`, which allocates a fresh command buffer per one-shot op instead of stomping a shared field.
 
+**Moved out 2026-08-15 (Phase 4 of the [Vulkan decoupling](graphics/vulkanbackend.md)):** all scene content was deleted from the live `VulkanBackend` — `SetupResource`, `CreateVertexBuffers`, `CreateUniformBuffers`/`CreateUniformBuffer`, `CreateDescriptorPool`/`CreateDescriptorSets`, `UpdateUniformBuffer`, `CopyBufferToImage`, `RecordCommandBuffer`, and the `per_pass_ubo_`/`per_object_ubo_`/`descriptor_sets_` members. The demo lives on as **`render::RenderScene`** ([render_scene.cpp](../../engine/runtime/render/render_scene.cpp)), the render module's first real scene, recording through the backend's frame API. Don't reintroduce scene content into the backend — the scene belongs above the RHI.
+
 ## Not in the build (stale)
 
 | File | Problem |
@@ -31,5 +33,5 @@ The `ShaderModule` interface ([`common/shader_module.h`](../../engine/runtime/gr
 | Code | Why it's going | Replaced by |
 |---|---|---|
 | `glslc` build step in [`graphics/CMakeLists.txt`](../../engine/runtime/graphics/CMakeLists.txt) | Precompiles hardcoded `.vert/.frag` → `.spv` at build time, feeding the prebuilt-shader path (which only the `rhi_example` reads). | `resource::ShaderCache` (content-addressed, per-API). |
-| The whole legacy [`engine/runtime/render/`](../../engine/runtime/render/) tree (`ShaderPool`, `RenderShader`, `RenderMaterial`, `RenderScene`, raw `GLuint` render passes) | OpenGL-hardcoded, predates the RHI, doesn't link `Graphics`. | Reconstructed render module per [render_module.md](render/render_module.md). |
+| The legacy [`engine/runtime/render/`](../../engine/runtime/render/) tree (`ShaderPool`, `RenderShader`, `RenderMaterial`, raw `GLuint` render passes; `RenderScene` is taken by the new [`render_scene.cpp`](../../engine/runtime/render/render_scene.cpp)) | OpenGL-hardcoded, predates the RHI. `Render` links `Graphics` PRIVATE now (2026-08-15), but `RenderSystem` itself is still un-reconstructed. | Reconstructed render module per [render_module.md](render/render_module.md). |
 | `RenderBackend::window_` member ([`render_backend.h`](../../engine/runtime/graphics/backend/common/render_backend.h)) | Marked in code: "for test, remove later". | Engine-owned backend. (`ShaderManager` member already deleted 2026-08-15.) |
