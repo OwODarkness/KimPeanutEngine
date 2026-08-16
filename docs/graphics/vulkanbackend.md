@@ -59,10 +59,10 @@ Everything downstream is easier to verify once the backend stops *choosing* shad
 - [x] `PipelineDesc` shaders are now `data::ShaderData*` directly ([TODO 1.1](TODO.md)) — no `graphics::Shader` wrapper. `Shader`, `ResourceShader`, and `ShaderLoader` were retired: the wrapper's `api`-based dispatch was redundant because each backend *is* its own API (Vulkan reads `byte_code`, OpenGL reads `source`).
 - [x] `VulkanBackend::CreateGraphicsPipeline(PipelineDesc)` **takes** the desc instead of building it ([TODO 1.3](TODO.md)). The backend bakes only; a swapchain-bound desc gets its attachment formats completed from the swapchain format (an RHI-owned invariant). The caller (today: the `rhi_example`, later: the render module) owns stage/layout/bindings.
 - [x] Retire the path-keyed `ShaderManager` ([TODO 2](TODO.md)) — `shader_manager.*`, `shader_factory.h`, `vulkan_shader.*`, `opengl_shader.*` deleted and dropped from the build.
-- [ ] Build-time `glslc` → `.spv` step ([TODO 2.3](TODO.md)) — **deferred**: the `rhi_example` still reads prebuilt `.spv`/`.vert` files as the *caller* (the RHI no longer reads them). Remove once the render module owns shader sourcing.
-- [ ] `ShaderModule` reconcile/retire ([TODO 1.2](TODO.md)) — the stale seam is untouched here.
+- [x] Build-time `glslc` → `.spv` step ([TODO 2.3](TODO.md)) — **removed 2026-08-16**. The `Shaders` custom target and the `glslc` build requirement are gone; the `rhi_example` now bakes its shaders at runtime through the resource pipeline (`asset.LoadSync(.shader)` → `ProcessShader` → `ShaderData`).
+- [x] `ShaderModule` retire ([TODO 1.2](TODO.md)) — landed 2026-08-16: the stale seam is deleted; the raw-data → `VkShaderModule` step stays in `VulkanPipelineManager::CreateShaderModule` (the *right* shape, inline in the bake).
 
-**Landed:** `PipelineDesc` holds `data::ShaderData*` (`byte_code` for Vulkan, `source` for OpenGL — the resource pipeline's artifact *is* the RHI's input, no wrapper). Both backends read the field their own API needs and touch no shader files. `RenderBackend::Initialize(PipelineDesc)` is the RHI entry; the demo `rhi_example.cpp` builds the full desc with `data::ShaderData`s (reading `.spv`/`.vert` from disk as a stopgap until the render module owns sourcing) and hands it over.
+**Landed:** `PipelineDesc` holds `data::ShaderData*` (`byte_code` for Vulkan, `source` for OpenGL — the resource pipeline's artifact *is* the RHI's input, no wrapper). Both backends read the field their own API needs and touch no shader files. `RenderBackend::Initialize(PipelineDesc)` is the RHI entry; the demo `rhi_example.cpp` builds the full desc with `data::ShaderData`s and hands it over. Since 2026-08-16 those `ShaderData`s are baked at runtime: `LoadSync(simple_triangle.shader)` → `ResourcePipeline::ProcessShader` fills `byte_code`/`source` per API — the build-time `glslc` step ([TODO 2.3](TODO.md)) is gone.
 
 ### Phase 1 — Extract `VulkanDevice` ✅ landed 2026-08-15 (reconstruction, not a mechanical move)
 
@@ -116,4 +116,4 @@ The backend keeps owning GPU state (the managers) and the frame submission skele
 
 - The OpenGL backend is untouched by this plan; it is the port, Vulkan is the reference ([rhi_design_material.md](rhi_design_material.md) §6.5).
 - Descriptor bindless, compute/transfer queues as separate paths, render-graph reordering ([rhi_design_material.md](rhi_design_material.md) §2, §6.6) are future work, not this decoupling.
-- The `ShaderModule` seam is handled by [TODO 1.2](TODO.md), not by this plan.
+- The `ShaderModule` seam was retired by [TODO 1.2](TODO.md), not by this plan.

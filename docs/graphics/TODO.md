@@ -7,14 +7,14 @@ Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_re
 ## 1. Pipeline seams — shaders become `ShaderData`
 
 - [x] **`PipelineDesc` shaders are `data::ShaderData*` directly** — no `graphics::Shader` wrapper. Landed 2026-08-15: `Shader`/`ResourceShader`/`ShaderLoader` retired (the single-impl seam's `api` dispatch was redundant — each backend reads the field its own API needs: Vulkan `byte_code`, OpenGL `source`).
-- [ ] **Reconcile the `ShaderModule` seam or retire it** — `vulkan_shader_module`/`opengl_shader_module` read `shader->glsl`/`shader->spirv` (fields `ShaderData` doesn't have) and are **not in the build** ([dead_code.md](../dead_code.md)). Either make them consume `ShaderData::api` + `byte_code`, or delete them.
+- [x] **Retire the `ShaderModule` seam** — landed 2026-08-16. `common/shader_module.h` + `vulkan_shader_module.*`/`opengl_shader_module.*` deleted: the seam's two impls read `shader->glsl`/`shader->spirv` (fields `ShaderData` doesn't have), `GetHandle() → const void*` was a leaky abstraction (Vulkan's module and GL's compiled-shader object have different lifetimes), and the work already lives inline in the pipeline bakes — `VulkanPipelineManager::CreateShaderModule(device, bytes, size, &module)` for Vulkan, `glCreateShader/glCompileShader/glAttachShader/glLinkProgram` in `OpenglPipeline::Initialize` for OpenGL. Each backend wraps the raw-data → API-object step where the shader is needed.
 - [x] **`VulkanBackend::CreateGraphicsPipeline` stops building `PipelineDesc`** — landed 2026-08-15. It now **takes** the desc and bakes it (completing attachment formats from the swapchain format, an RHI-owned invariant); `OpenglBackend::CreatePipeline` likewise. Building the desc is render-module/example work.
 
 ## 2. Ownership — retire the path-keyed `ShaderManager`
 
 - [x] **Remove the `ShaderManager` member from `RenderBackend`** — landed 2026-08-15, the whole manager is gone (the RHI owning a shader cache was the leak; caching belongs to the render module / resource pipeline).
 - [x] **Retire `ShaderManager::CreateShader<API>(type, path)`**, which read the file itself — landed 2026-08-15. `shader_manager.*`, `shader_factory.h`, `vulkan_shader.*`, `opengl_shader.*` deleted; shaders arrive as `ShaderData` bytes.
-- [ ] **Remove the build-time `glslc` → `.spv` step** in [Graphics/CMakeLists.txt](../../engine/runtime/graphics/CMakeLists.txt) — it feeds the prebuilt-`.spv` path and makes `glslc` a hard build requirement. Reconcile with the content-addressed `resource::ShaderCache`. *Deferred (2026-08-15): the `rhi_example` demo still reads `.spv`/`.vert` files as the caller; the RHI no longer reads shader files.*
+- [x] **Remove the build-time `glslc` → `.spv` step** in [Graphics/CMakeLists.txt](../../engine/runtime/graphics/CMakeLists.txt) — landed 2026-08-16 (TODO 2.3). The `Shaders` custom target and the `glslc` build requirement are gone; `glslc` is no longer findable-at-configure. The `rhi_example` demo now bakes its shaders at runtime through `ResourcePipeline::ProcessShader` (`asset.LoadSync(.shader)` → `ProcessShader` → `ShaderData`), the same flow the asset example proves — `ProcessShader`'s first graphics-end caller.
 
 ## 3. `RenderBackend` facade cleanup
 

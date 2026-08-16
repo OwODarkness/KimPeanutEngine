@@ -1,10 +1,7 @@
 
-#include <cstddef>
-#include <cstring>
-#include <fstream>
 #include <iostream>
-#include <iterator>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -17,35 +14,46 @@
 #include "runtime/core/data/shader.h"
 #include "runtime/core/data/mesh.h"
 #include "runtime/core/config/path.h"
+#include "runtime/asset/asset_manager.h"
+#include "runtime/asset/shader.h"
+#include "runtime/asset/shader_program.h"
+#include "runtime/core/resource/resource_pipeline.h"
 
 namespace kpengine::example
 {
-    // The example owns the pipeline contract. Shaders arrive as baked bytes — SPIR-V
-    // for Vulkan, source text for OpenGL — as data::ShaderData; the RHI never reads
-    // shader files itself. (File reading is a stopgap: the render module will source
-    // these from the resource pipeline instead of the demo reading disk.)
-    static std::vector<char> ReadFileBytes(const std::string &path)
+    // The demo bakes its shaders at runtime through the resource pipeline
+    // (GLSL -> per-API artifact, content-addressed cache) instead of reading
+    // prebuilt files — the RHI never reads shader files itself.
+    static std::vector<asset::ShaderPtr> CompileTriangleShaders(GraphicsAPIType api)
     {
-        std::ifstream file(path, std::ios::binary);
-        return std::vector<char>(std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>());
-    }
+        resource::ResourcePipeline pipeline;
+        resource::ResourcePipelineContext pipeline_context{api};
+        pipeline.Initialize(pipeline_context);
 
-    static std::shared_ptr<data::ShaderData> LoadShaderData(GraphicsAPIType api, ShaderStage stage, const std::string &path)
-    {
-        auto shader_data = std::make_shared<data::ShaderData>();
-        shader_data->api = api;
-        shader_data->stage = stage;
-        std::vector<char> bytes = ReadFileBytes(path);
-        if (api == GraphicsAPIType::GRAPHICS_API_OPENGL)
+        const std::string path = GetShaderDirectory() + "simple_triangle.shader";
+        asset::AssetID id = asset::AssetManager::GetInstance().LoadSync(path);
+        if (!id.IsValid())
         {
-            shader_data->source.assign(bytes.begin(), bytes.end());
+            throw std::runtime_error("failed to load shader program: " + path);
         }
-        else
+        auto program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(id);
+        if (!program)
         {
-            shader_data->byte_code.resize(bytes.size());
-            std::memcpy(shader_data->byte_code.data(), bytes.data(), bytes.size());
+            throw std::runtime_error("loaded asset holds no shader program resource");
         }
-        return shader_data;
+
+        // The pipeline writes the baked artifact (byte_code for Vulkan, source
+        // for OpenGL) back into each stage's data.
+        std::vector<asset::ShaderPtr> shaders;
+        for (ShaderStage stage : {ShaderStage::SHADER_STAGE_VERTEX, ShaderStage::SHADER_STAGE_FRAGMENT})
+        {
+            if (auto shader = program->GetShader(stage, ShaderFormat::SHADER_FORMAT_GLSL))
+            {
+                shaders.push_back(shader);
+            }
+        }
+        pipeline.ProcessShader(shaders);
+        return shaders;
     }
 
     void RHIExample()
@@ -71,18 +79,16 @@ namespace kpengine::example
 
             const GraphicsAPIType api = window_create_info.graphics_api_type;
             const bool is_opengl = api == GraphicsAPIType::GRAPHICS_API_OPENGL;
-            const std::string shader_dir = is_opengl ? GetShaderDirectory() : GetSPVShaderDirectory();
 
-            std::shared_ptr<data::ShaderData> vert_data = LoadShaderData(
-                api, ShaderStage::SHADER_STAGE_VERTEX,
-                shader_dir + (is_opengl ? std::string("simple_triangle.vert") : std::string("simple_triangle.vert.spv")));
-            std::shared_ptr<data::ShaderData> frag_data = LoadShaderData(
-                api, ShaderStage::SHADER_STAGE_FRAGMENT,
-                shader_dir + (is_opengl ? std::string("simple_triangle.frag") : std::string("simple_triangle.frag.spv")));
+            std::vector<asset::ShaderPtr> shaders = CompileTriangleShaders(api);
+            if (shaders.size() != 2 || !shaders[0]->data || !shaders[1]->data)
+            {
+                throw std::runtime_error("triangle shaders failed to compile");
+            }
 
             graphics::PipelineDesc pipeline_desc{};
-            pipeline_desc.vert_shader = vert_data.get();
-            pipeline_desc.frag_shader = frag_data.get();
+            pipeline_desc.vert_shader = shaders[0]->data.get();
+            pipeline_desc.frag_shader = shaders[1]->data.get();
 
             pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
             pipeline_desc.attri_descs = {

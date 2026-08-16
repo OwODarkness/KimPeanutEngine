@@ -56,9 +56,9 @@ Key = hash of (source + stage + entry + defines), file = `<hex hash>.spv` under 
 
 `ShaderData` is defined in [`core/data/shader.h`](../../engine/runtime/core/data/shader.h) — the shared structs are `data/`'s job, the processing that fills them is `resource/`'s job. That is the split within core: **data/ = what is processed, resource/ = how it is processed.**
 
-## Current state — built, caller is the asset example
+## Current state — built, callers on both ends
 
-- `ResourcePipeline::ProcessShader` has **one caller**: the `CompileShader()` asset example ([asset_example.cpp](../../engine/example/asset/asset_example.cpp)) loads `simple_triangle.shader` and bakes both stages to SPIR-V through the pipeline (verified: fresh compile + cache hit). The **render module still has no caller** — the warmup pass and the RHI request path (the reconstruction's first wiring step) are still planned; the graphics end of the bridge is still unplugged.
+- `ResourcePipeline::ProcessShader` has **two callers**: the `CompileShader()` asset example ([asset_example.cpp](../../engine/example/asset/asset_example.cpp)) loads `simple_triangle.shader` and bakes both stages to SPIR-V through the pipeline (verified: fresh compile + cache hit), and the `rhi_example` demo (2026-08-16, TODO 2.3 of the [Vulkan decoupling](graphics/vulkanbackend.md)) bakes its shaders the same way at startup — replacing the build-time `glslc` step and giving the pipeline its first graphics-end caller. The **render module still has no caller** — the warmup pass and the RHI request path (the reconstruction's first wiring step) are still planned.
 - Build: `Resource` is its **own static library** inside `core/` ([`resource/CMakeLists.txt`](../../engine/runtime/core/resource/CMakeLists.txt)); `Core` is just an interface aggregator that links it ([`core/CMakeLists.txt`](../../engine/runtime/core/CMakeLists.txt)). It links `Asset` PRIVATE.
 - Known gaps: `ProcessShader` takes a flat stage vector when the natural compile unit is the whole program; it returns void so callers can't distinguish success from failure (per-shader `CompileFailed` status exists, but the caller must scan each shader's status to find it).
 
@@ -88,4 +88,4 @@ Key = hash of (source + stage + entry + defines), file = `<hex hash>.spv` under 
 
 ## Refactor status
 
-**Started — exercised by the asset example, no render-module caller yet.** `CompileShader()` in the asset example drives `ProcessShader` end-to-end (fresh compile + cache hit), but there are still no tests and the render module's warmup caller is still the reconstruction's job. The `ShaderOperation` seam and `CompileFailed` status are in; still planned while wiring: whole-program `ProcessShader`, a success signal, and the compiler error text.
+**Started — exercised by the asset example and the `rhi_example` demo (2026-08-16), no render-module caller yet.** `CompileShader()` in the asset example and the demo's startup bake both drive `ProcessShader` end-to-end (fresh compile + cache hit), but there are still no tests and the render module's warmup caller is still the reconstruction's job. The `ShaderOperation` seam and `CompileFailed` status are in; still planned while wiring: whole-program `ProcessShader`, a success signal, and the compiler error text.

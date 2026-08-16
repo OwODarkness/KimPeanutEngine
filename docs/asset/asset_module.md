@@ -122,7 +122,7 @@ Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h
 - `ShaderStatus` is `Uncompiled/Compiling/Ready/CompileFailed` — `CompileFailed` exists but does not yet carry the compiler error text; add the error message so a broken shader isn't silently consumed or recompiled every frame.
 - One identity → N artifacts raises a storage question: keep artifacts in the asset graph (e.g. a per-resource artifact map keyed by API) or in a render-side cache keyed by `(meta AssetID, api)`. Compiled bytes are *derived data*, so the latter is the cleaner fit.
 
-**Legacy paths to reconcile.** `ShaderPool`/`RenderShader` still `glCompileShader` from source at runtime, and `vulkan_backend` loads prebuilt `.spv` files — both bypass the asset system and should eventually consume `ShaderResource.byte_code`. `opengl_shader_module.cpp`/`vulkan_shader_module.cpp` reference `shader->glsl`/`shader->spirv` (fields that don't exist on `ShaderData`) and are **not in the build** — stale; the real consumers should read `ShaderData::api` + `byte_code`.
+**Legacy paths to reconcile.** `ShaderPool`/`RenderShader` still `glCompileShader` from source at runtime — they bypass the asset system and should eventually consume `ShaderResource.byte_code`/`source`. (The stale `opengl_shader_module`/`vulkan_shader_module` that referenced the wrong `ShaderData` fields were **deleted 2026-08-16**, TODO 1.2.)
 
 ## Invariants
 

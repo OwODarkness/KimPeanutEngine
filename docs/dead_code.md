@@ -1,6 +1,6 @@
 # Known Dead Code & Stale Paths
 
-**Last audited: 2026-08-15.** One place listing code that is *not in the build*, *not wired*, or *slated for retirement*. Rules of thumb for agents working in this repo:
+**Last audited: 2026-08-16.** One place listing code that is *not in the build*, *not wired*, or *slated for retirement*. Rules of thumb for agents working in this repo:
 
 - **"Not in the build"** → don't fix it as if it were live. Either delete it or (if it's the seed of the intended design) resurrect it deliberately.
 - **"Slated for retirement"** → don't extend it; replace it per the reconstruction docs.
@@ -14,15 +14,15 @@
 
 **Moved out 2026-08-15 (Phase 4 of the [Vulkan decoupling](graphics/vulkanbackend.md)):** all scene content was deleted from the live `VulkanBackend` — `SetupResource`, `CreateVertexBuffers`, `CreateUniformBuffers`/`CreateUniformBuffer`, `CreateDescriptorPool`/`CreateDescriptorSets`, `UpdateUniformBuffer`, `CopyBufferToImage`, `RecordCommandBuffer`, and the `per_pass_ubo_`/`per_object_ubo_`/`descriptor_sets_` members. The demo lives on as **`render::RenderScene`** ([render_scene.cpp](../../engine/runtime/render/render_scene.cpp)), the render module's first real scene, recording through the backend's frame API. Don't reintroduce scene content into the backend — the scene belongs above the RHI.
 
+**Removed 2026-08-16 (TODO 2.3 of the [Vulkan decoupling](graphics/vulkanbackend.md)):** the build-time `glslc` → `.spv` step — the three `find_program(GLSLC …)` blocks, the `Shaders` custom target, and the `add_custom_command` ×2 — are deleted from [`graphics/CMakeLists.txt`](../../engine/runtime/graphics/CMakeLists.txt); `glslc` is no longer a build requirement. The `rhi_example` demo now bakes its shaders at runtime through `ResourcePipeline::ProcessShader`. The dead `GetSPVShaderDirectory()` helper (and `binary_root`/`PROJECT_BINARY_DIR` that only fed it) were deleted from `core/config/path.h`.
+
+**Removed 2026-08-16 (TODO 1.2 of the [Vulkan decoupling](graphics/vulkanbackend.md)):** the `ShaderModule` seam — [`common/shader_module.h`](../../engine/runtime/graphics/backend/common/shader_module.h), [`opengl_shader_module.h/.cpp`](../../engine/runtime/graphics/backend/opengl/opengl_shader_module.h), [`vulkan_shader_module.h/.cpp`](../../engine/runtime/graphics/backend/vulkan/vulkan_shader_module.h) — is deleted. Its impls read `shader->glsl`/`shader->spirv` (fields `ShaderData` doesn't have) and were never in the build. The raw-data → API-object step lives inline in the pipeline bakes instead: `VulkanPipelineManager::CreateShaderModule(device, bytes, size, &module)` and `OpenglPipeline::Initialize`'s `glCreateShader/glCompileShader/glAttachShader/glLinkProgram`.
+
 ## Not in the build (stale)
 
 | File | Problem |
 |---|---|
 | [`deprecated/vulkan_backend.h/.cpp`](../../engine/runtime/graphics/backend/vulkan/deprecated/vulkan_backend.h) | The pre-Phase-1 fused backend, archived 2026-08-15. **Not in the build** — `Graphics/CMakeLists.txt` compiles the `VulkanDevice`-based reconstruction. Kept as the source reference for the rewrite; the line numbers in [vulkanbackend.md](graphics/vulkanbackend.md) point here. |
-| [`opengl_shader_module.h/.cpp`](../../engine/runtime/graphics/backend/opengl/opengl_shader_module.h) | Implements `ShaderModule`; references `shader->glsl`, which does **not** exist on `data::ShaderData`. Not in `Graphics/CMakeLists.txt`. |
-| [`vulkan_shader_module.h/.cpp`](../../engine/runtime/graphics/backend/vulkan/vulkan_shader_module.h) | Same — references `shader->spirv` ([line 24](../../engine/runtime/graphics/backend/vulkan/vulkan_shader_module.cpp#L24)). Not in the build. |
-
-The `ShaderModule` interface ([`common/shader_module.h`](../../engine/runtime/graphics/backend/common/shader_module.h)) itself has **no live consumers** — only the two unbuilt implementations include it. Its signature (`Initialize(context, shared_ptr<ShaderData>)`) is the *right* seam; if you resurrect it, fix the implementations to read `ShaderData::api` + `byte_code`.
 
 ## Commented-out cruft (live files)
 
@@ -32,5 +32,4 @@ The `ShaderModule` interface ([`common/shader_module.h`](../../engine/runtime/gr
 
 | Code | Why it's going | Replaced by |
 |---|---|---|
-| `glslc` build step in [`graphics/CMakeLists.txt`](../../engine/runtime/graphics/CMakeLists.txt) | Precompiles hardcoded `.vert/.frag` → `.spv` at build time, feeding the prebuilt-shader path (which only the `rhi_example` reads). | `resource::ShaderCache` (content-addressed, per-API). |
 | The legacy [`engine/runtime/render/`](../../engine/runtime/render/) tree (`ShaderPool`, `RenderShader`, `RenderMaterial`, raw `GLuint` render passes; `RenderScene` is taken by the new [`render_scene.cpp`](../../engine/runtime/render/render_scene.cpp)) | OpenGL-hardcoded, predates the RHI. `Render` links `Graphics` PRIVATE now (2026-08-15), but `RenderSystem` itself is still un-reconstructed. | Reconstructed render module per [render_module.md](render/render_module.md). |

@@ -9,7 +9,6 @@
 namespace kpengine
 {
     inline const std::filesystem::path project_root = PROJECT_ROOT_DIR;
-    inline const std::filesystem::path binary_root = PROJECT_BINARY_DIR;
 
     // Compose <root>/<relative> into a portable string. Preserves any trailing
     // slash carried by `relative`, so the per-type getters keep their exact
@@ -57,11 +56,6 @@ namespace kpengine
     inline std::string GetScriptDirectory()
     {
         return ComposePath(project_root, "asset/script/");
-    }
-
-    inline std::string GetSPVShaderDirectory()
-    {
-        return ComposePath(binary_root, "shaders/");
     }
 
     inline std::string GetLogDirectory()
