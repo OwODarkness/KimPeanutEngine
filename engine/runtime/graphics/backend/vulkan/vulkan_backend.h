@@ -12,16 +12,9 @@
 #include "vulkan_context.h"
 #include "vulkan_device.h"
 
-
-
 namespace kpengine::graphics
 {
-    struct UniformBufferData
-    {
-        std::vector<BufferHandle> buffer_handles_;
-        std::vector<void *> buffer_mapped_ptr_;
-        uint32_t element_size;
-    };
+    struct VulkanPipelineResource;
 
     class VulkanBackend : public RenderBackend
     {
@@ -43,37 +36,46 @@ namespace kpengine::graphics
         void UploadDataToBuffer(BufferHandle handle, size_t size, const void *data);
         struct VulkanBufferResource *GetBufferResource(BufferHandle handle);
 
-        void CopyBufferToImage(VkCommandBuffer cmd, BufferHandle handle, VkImage image, uint32_t width, uint32_t height);
+        // Scene-side resource facilities. The caller (today: the demo scene in the
+        // render module) composes these; the backend only provides the RHI pieces.
+        BufferHandle CreateUniformBuffer(uint32_t size);
+        void *MapUniformBuffer(BufferHandle handle, size_t size);
+        void UploadTexturePixels(TextureHandle texture, const void *pixels, size_t pixel_size, uint32_t width, uint32_t height, uint32_t mip_levels);
+
         class VulkanImageMemoryManager *GetImageMemoryManager() const { return image_memory_manager_.get(); }
         VkCommandBuffer GetCurrentUICommandBuffer() const;
+
+        // Frame-recording API: BeginFrame prepares the frame's scene command
+        // buffer (acquisition, attachment transitions, rendering begun); the
+        // caller records draws into it, then EndFrame submits and presents.
+        VkCommandBuffer GetCurrentSceneCommandBuffer() const;
+        uint32_t GetCurrentFrameIndex() const;
+        uint32_t GetCurrentImageIndex() const { return current_image_index_; }
+        VkExtent2D GetSwapchainExtent() const;
+
+        const VulkanPipelineResource *GetPipelineResource() const;
+        VulkanContext &GetVulkanContext() { return context_; }
+        class TextureManager *GetTextureManager() const { return texture_manager_.get(); }
+        class SamplerManager *GetSamplerManager() const { return sampler_manager_.get(); }
+        class MeshManager *GetMeshManager() const { return mesh_manager_.get(); }
 
     private:
         void InitVulkanContext();
         void CreateGraphicsPipeline(const PipelineDesc &pipeline_desc);
-        void CreateVertexBuffers();
         BufferHandle CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage);
-        void CreateTextures(TextureData& data);
 
-        void CreateUniformBuffers();
-        void CreateUniformBuffer(uint32_t size, uint32_t element_count, UniformBufferData& ubo_data);
-
-        void CreateDescriptorPool();
-        void CreateDescriptorSets();
-        void WriteUniformBufferDescriptorSet(VkWriteDescriptorSet& out,VkDescriptorBufferInfo & desc_info, VkDescriptorSet descriptor_set, const UniformBufferData& ubo_data, VkDescriptorSetLayoutBinding binding, uint32_t frame_index);
-        void WriteImageDescriptorSet(VkWriteDescriptorSet& out, VkDescriptorImageInfo& image_info, VkDescriptorSet descriptor_set, TextureHandle texture_handle, SamplerHandle sampler_handle, VkDescriptorSetLayoutBinding binding, uint32_t frame_index);
-
-        void SetupResource();
+        // Swapchain-bound render targets — RHI-owned, sized to the swapchain.
         void CreateDepthResource();
         void CreateColorResource();
-        void UpdateUniformBuffer(uint32_t current_image);
-        void CopyToUniformBuffer(void* buffer_mapped_ptr,  const void* data, uint32_t size);
+
+        // frame skeleton: transitions + dynamic-rendering begin/end around the
+        // caller's draws
+        void BeginSceneFrame(VkCommandBuffer commandbuffer, uint32_t image_index);
+        void EndSceneFrame(VkCommandBuffer commandbuffer, uint32_t image_index);
 
         void RecreateSwapchain();
         void CleanupSwapchain();
         void DestroyAttachmentResources();
-
-    private:
-        void RecordCommandBuffer(VkCommandBuffer commandbuffer, uint32_t image_index);
 
         void FramebufferResizeCallback(const ResizeEvent &event) override;
 
@@ -85,30 +87,21 @@ namespace kpengine::graphics
 
         std::unique_ptr<class VulkanBufferManager> buffer_manager_;
 
-        UniformBufferData per_pass_ubo_;
-        UniformBufferData per_object_ubo_;
-
         std::unique_ptr<class VulkanPipelineManager> pipeline_manager_;
         PipelineHandle pipeline_handle_;
 
         std::unique_ptr<class VulkanImageMemoryManager> image_memory_manager_;
 
         std::unique_ptr<class TextureManager> texture_manager_;
+        std::unique_ptr<class SamplerManager> sampler_manager_;
+        std::unique_ptr<class MeshManager> mesh_manager_;
 
-        TextureHandle texture_handle_;
         TextureHandle depth_handle_;
         TextureHandle color_handle_;
 
-        std::unique_ptr<class SamplerManager> sampler_manager_;
-        SamplerHandle sampler_handle_;
-
-        std::unique_ptr<class MeshManager> mesh_manager_;
-        MeshHandle mesh_handle_;
-
-        VkDescriptorPool descriptor_pool_;
-        std::vector<VkDescriptorSet> descriptor_sets_;
-
         uint32_t msaa_sampe_count_ = 1;
+        uint32_t current_image_index_ = 0;
+        bool frame_active_ = false;
     };
 }
 

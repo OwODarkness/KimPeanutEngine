@@ -12,7 +12,7 @@
 #include "runtime/input/input_system.h"
 #include "runtime/input/input_context.h"
 #include "runtime/graphics/backend/vulkan/vulkan_backend.h"
-#include "runtime/render/render_camera.h"
+#include "runtime/render/render_scene.h"
 #include "runtime/graphics/backend/common/pipeline_types.h"
 #include "runtime/core/data/shader.h"
 #include "runtime/core/data/mesh.h"
@@ -106,7 +106,15 @@ namespace kpengine::example
             rhi->window_ = static_cast<GLFWwindow *>(window->GetNativeHandle());
             rhi->Initialize(pipeline_desc);
 
-            std::unique_ptr<render::RenderCamera> camera = std::make_unique<render::RenderCamera>();
+            // The demo is the render module's first real scene: for Vulkan it
+            // records the frame's draws through the backend's recording API. The
+            // OpenGL backend still owns its baked scene for now.
+            std::unique_ptr<render::RenderScene> scene;
+            if (!is_opengl)
+            {
+                scene = std::make_unique<render::RenderScene>();
+                scene->Initialize(static_cast<graphics::VulkanBackend *>(rhi.get()));
+            }
 
             while (!window->ShouldClose())
             {
@@ -115,11 +123,17 @@ namespace kpengine::example
                     window->SwapBuffers();
                 }
                 window->PollEvents();
-                render::CameraData camera_data = camera->GetCameraData();
-                rhi->camera_data.view = camera_data.view;
-                rhi->camera_data.proj = camera_data.proj;
                 rhi->BeginFrame();
+                if (scene)
+                {
+                    scene->Tick(0.f);
+                    scene->Record();
+                }
                 rhi->EndFrame();
+            }
+            if (scene)
+            {
+                scene->Cleanup();
             }
             rhi->Cleanup();
             window->Cleanup();
