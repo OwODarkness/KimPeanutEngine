@@ -2,7 +2,7 @@
 .idea/
 
 # Retired code kept for reference only (not built, see docs/dead_code.md)
-/deprecated/
+deprecated/
 
 # Prerequisites
 *.d
