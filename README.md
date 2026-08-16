@@ -217,6 +217,25 @@ engine/runtime/core/math
 
 ------
 
+# 提交约定（Commit Attribution）
+
+提交信息中，正文与署名之间用空行作为 **分割线**：
+
+- **分割线上方**：本次提交的工作内容，即项目维护者完成的贡献
+- **分割线下方**：AI 辅助署名（`Co-Authored-By`），并标记参与起始日期
+
+```
+<主题行>
+
+<正文：本次贡献说明>
+
+Co-Authored-By: Claude <noreply@anthropic.com> (2026-08-09)
+```
+
+`2026-08-09` 是 AI 参与本项目的起始日期（即 `CLAUDE.md` 的创建时间，参见提交 `2901797`）：分割线上方的工作均在此日期之前完成，属于独立贡献；此日期之后由 AI 协助完成的提交，在分割线下方追加上述署名。
+
+------
+
 # 参考项目
 
 - Unreal Engine — [EpicGames/UnrealEngine](https://github.com/EpicGames/UnrealEngine)（非公开，需 Epic 授权）
