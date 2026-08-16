@@ -103,8 +103,7 @@ namespace kpengine::example
 
             std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(api);
             rhi->BindWindowResize(window->resize_event_dispatcher_);
-            rhi->window_ = static_cast<GLFWwindow *>(window->GetNativeHandle());
-            rhi->Initialize(pipeline_desc);
+            rhi->Initialize(pipeline_desc, window->GetNativeHandle());
 
             // The demo is the render module's first real scene: for Vulkan it
             // records the frame's draws through the backend's recording API. The

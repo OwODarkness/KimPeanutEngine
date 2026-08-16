@@ -30,7 +30,7 @@ namespace kpengine::graphics
 
     OpenglBackend::~OpenglBackend() = default;
 
-    void OpenglBackend::Initialize(const PipelineDesc &pipeline_desc)
+    void OpenglBackend::Initialize(const PipelineDesc &pipeline_desc, WindowHandle native_window)
     {
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         {
@@ -38,7 +38,8 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to load OpenGL Loader");
         }
 
-        glfwGetWindowSize(window_, &width_, &height_);
+        GLFWwindow *window = static_cast<GLFWwindow *>(native_window);
+        glfwGetWindowSize(window, &width_, &height_);
         CreatePipeline(pipeline_desc);
         CreateUniformBuffers();
         CreateTextures();

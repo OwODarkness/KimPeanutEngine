@@ -8,7 +8,6 @@
 #include "api.h"
 #include "pipeline_types.h"
 
-struct GLFWwindow;
 namespace kpengine::graphics
 {
 
@@ -34,7 +33,10 @@ namespace kpengine::graphics
         static std::unique_ptr<RenderBackend> CreateGraphicsBackEnd(GraphicsAPIType backend_type);
 
     public:
-        virtual void Initialize(const PipelineDesc &pipeline_desc) = 0;
+        // The native window handle (WindowHandle = void*) is the WSI surface the
+        // backend creates its swapchain/present surface on. Explicit param, not a
+        // mutable public member — the RHI never needs to reach back for it.
+        virtual void Initialize(const PipelineDesc &pipeline_desc, WindowHandle native_window) = 0;
         virtual void BeginFrame() = 0;
         virtual void EndFrame() = 0;
         virtual void Cleanup() = 0;
@@ -55,11 +57,6 @@ namespace kpengine::graphics
         virtual ~RenderBackend() = default;
         RenderBackend(const RenderBackend &) = delete;
         RenderBackend &operator=(const RenderBackend &) = delete;
-
-    public:
-        // TODO: just expose for test purpose, should be remove later
-        GLFWwindow *window_;
-        CameraData camera_data;
 
     protected:
         int width_ = 0;

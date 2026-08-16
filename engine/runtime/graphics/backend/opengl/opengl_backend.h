@@ -25,7 +25,7 @@ namespace kpengine::graphics
         OpenglBackend();
         ~OpenglBackend();
     public:
-        virtual void Initialize(const PipelineDesc &pipeline_desc) override;
+        virtual void Initialize(const PipelineDesc &pipeline_desc, WindowHandle native_window) override;
         virtual void BeginFrame() override;
         virtual void EndFrame() override;
         virtual void Present() override;

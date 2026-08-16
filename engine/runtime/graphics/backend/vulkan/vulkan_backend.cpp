@@ -26,13 +26,17 @@ namespace kpengine::graphics
     {
     }
 
-    void VulkanBackend::Initialize(const PipelineDesc &pipeline_desc)
+    void VulkanBackend::Initialize(const PipelineDesc &pipeline_desc, WindowHandle native_window)
     {
+        // The native window (WindowHandle = void*) is cast back to GLFW here — the
+        // Vulkan surface + swapchain need it; the common facade never sees GLFW.
+        GLFWwindow *window = static_cast<GLFWwindow *>(native_window);
+
         device_ = std::make_unique<VulkanDevice>();
-        device_->Initialize(window_);
+        device_->Initialize(window);
 
         swapchain_ = std::make_unique<VulkanSwapchain>();
-        swapchain_->Initialize(device_.get(), window_);
+        swapchain_->Initialize(device_.get(), window);
         msaa_sampe_count_ = swapchain_->GetMaxUsableSampleCount();
         InitVulkanContext();
 
