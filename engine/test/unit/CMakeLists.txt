@@ -1,6 +1,4 @@
 add_subdirectory(audio)
-add_subdirectory(math)
 add_subdirectory(bootstrap)
 add_subdirectory(script)
-add_subdirectory(settings)
 add_subdirectory(profile)
