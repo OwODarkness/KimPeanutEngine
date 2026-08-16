@@ -83,7 +83,7 @@ virtual BufferHandle CreateVertexBuffer(const void*, size_t) = 0;
 virtual BufferHandle CreateIndexBuffer(const void*, size_t) = 0;
 ```
 
-One known leak lives here, flagged in the code: `GLFWwindow *window_` is marked "just expose for test purpose, should be removed later" ([TODO 3.1](TODO.md)). The `ShaderManager shader_manager_` member that used to live here was **deleted 2026-08-15** — shader caching belongs to the render module / resource pipeline.
+The `window_` test seam is gone (Phase 5, 2026-08-16): `Initialize` takes the native window handle (`WindowHandle` = `void*`) as an explicit parameter — the backends cast it back to `GLFWwindow*` internally, so the common interface never sees GLFW. The dead public `CameraData camera_data` member was removed with it. The `ShaderManager shader_manager_` member was **deleted 2026-08-15** — shader caching belongs to the render module / resource pipeline.
 
 `VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. Since 2026-08-15 `VulkanBackend::CreateGraphicsPipeline(PipelineDesc)` **takes** the desc and bakes it (completing attachment formats from the swapchain format, an RHI-owned invariant) — it no longer builds the desc itself.
 
@@ -140,6 +140,6 @@ It should know:
 
 ## Refactor status
 
-**Phases 0–4 landed (2026-08-15).** Shaders arrive as `data::ShaderData*` in `PipelineDesc`; `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired; `VulkanDevice`/`VulkanSwapchain`/`VulkanFrameContext` extracted; scene recording extracted — the backend exposes the frame's command buffer and the demo lives as `render::RenderScene`. Remaining: the build-time `glslc` step ([TODO 2.3](TODO.md)), the stale `ShaderModule` seam ([TODO 1.2](TODO.md)), and the Vulkan decoupling's Phase 5 facade cleanup ([vulkanbackend.md](vulkanbackend.md)). See [the render module doc](../render/render_module.md) for the reconstruction that drives this.
+**Phases 0–5 landed (2026-08-15/16).** Shaders arrive as `data::ShaderData*` in `PipelineDesc`; `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired; `VulkanDevice`/`VulkanSwapchain`/`VulkanFrameContext` extracted; scene recording extracted — the backend exposes the frame's command buffer and the demo lives as `render::RenderScene`. Phase 5 (2026-08-16): the `window_`/`camera_data` public seams are gone — `Initialize` takes the native window handle explicitly — and the sakura split is decided (the facade keeps the frame loop; the device/frame split lives inside the backend). Remaining: the build-time `glslc` step ([TODO 2.3](TODO.md)) and the stale `ShaderModule` seam ([TODO 1.2](TODO.md)). See [the render module doc](../render/render_module.md) for the reconstruction that drives this.
 
 Task ledger: [TODO.md](TODO.md) (the working list, tick as items land) · design references: [sakura_reference.md](sakura_reference.md) (how Sakura Engine shapes its render backends — learn from, not copy) and [rhi_design_material.md](rhi_design_material.md) (RHI design material from a Zhihu thread on wrapping a modern-game-engine RHI layer — critical synthesis).

@@ -1,6 +1,6 @@
 # Graphics (RHI) Work TODO
 
-**Snapshot: 2026-08-15.** The working task list for the RHI leak-fixes and the render-module reconstruction. State-of-the-world lives in [status.md](../status.md) and [graphics_module.md](graphics_module.md); this page is the ledger that drives them — tick items here as they land, then fold the result into those two.
+**Snapshot: 2026-08-16.** The working task list for the RHI leak-fixes and the render-module reconstruction. State-of-the-world lives in [status.md](../status.md) and [graphics_module.md](graphics_module.md); this page is the ledger that drives them — tick items here as they land, then fold the result into those two.
 
 Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_reference.md) — *learned, not copied*.
 
@@ -18,8 +18,8 @@ Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_re
 
 ## 3. `RenderBackend` facade cleanup
 
-- [ ] **Drop the `GLFWwindow *window_` test seam** — flagged "should be removed later" in [render_backend.h](../../engine/runtime/graphics/backend/common/render_backend.h); the editor's Vulkan renderer already passes a null native handle.
-- [ ] ← sakura **Split `RenderDevice` from frame lifecycle.** Our `RenderBackend` fuses device/resource-owner and `BeginFrame`/`EndFrame`/`Present`. Sakura separates a pure device (queues + resources, no per-frame state) from frame execution. Decide whether `RenderBackend` becomes the device seam or keeps the frame loop — the render module should talk to a stable device.
+- [x] **Drop the `GLFWwindow *window_` test seam** — landed 2026-08-16. `window_` and the dead public `CameraData camera_data` are gone from [render_backend.h](../../engine/runtime/graphics/backend/common/render_backend.h); `RenderBackend::Initialize` now takes the native window handle (`WindowHandle` = `void*`) as an explicit parameter, and each backend casts it back to `GLFWwindow*` internally (the editor's `EditorImguiGLFWWSI` pattern). The common facade no longer knows GLFW.
+- [x] ← sakura **Split `RenderDevice` from frame lifecycle — decided 2026-08-16: keep the frame loop.** `RenderBackend` stays the facade with `BeginFrame`/`EndFrame`/`Present`; the device/frame split already lives *inside* the backend (`VulkanDevice` = pure device + queues, `VulkanSwapchain`/`VulkanFrameContext` = frame lifecycle). A frame executor above the facade would re-fuse what Phases 1–3 separated, with no consumer that needs it — the render module talks to the facade today.
 
 ## 4. Pipeline cache — `PipelineDesc` as a *key* (← sakura)
 
