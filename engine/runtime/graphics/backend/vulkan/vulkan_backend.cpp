@@ -1,4 +1,5 @@
 #include "vulkan_backend.h"
+#include <algorithm>
 #include <array>
 #include <GLFW/glfw3.h>
 #include "log/logger.h"
@@ -6,11 +7,13 @@
 #include "vulkan_swapchain.h"
 #include "vulkan_frame_context.h"
 #include "vulkan_pipeline_manager.h"
+#include "vulkan_descriptor_set_manager.h"
 #include "vulkan_image_memory_manager.h"
 #include "vulkan_texture.h"
 #include "common/texture_manager.h"
 #include "common/sampler_manager.h"
 #include "common/mesh_manager.h"
+#include "vulkan_mesh.h"
 
 namespace kpengine::graphics
 {
@@ -19,6 +22,7 @@ namespace kpengine::graphics
 
     VulkanBackend::VulkanBackend() : buffer_manager_(std::make_unique<VulkanBufferManager>()),
                                      pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
+                                     descriptor_set_manager_(std::make_unique<VulkanDescriptorSetManager>()),
                                      image_memory_manager_(std::make_unique<VulkanImageMemoryManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
                                      sampler_manager_(std::make_unique<SamplerManager>()),
@@ -26,7 +30,7 @@ namespace kpengine::graphics
     {
     }
 
-    void VulkanBackend::Initialize(const PipelineDesc &pipeline_desc, WindowHandle native_window)
+    void VulkanBackend::Initialize(WindowHandle native_window)
     {
         // The native window (WindowHandle = void*) is cast back to GLFW here — the
         // Vulkan surface + swapchain need it; the common facade never sees GLFW.
@@ -42,8 +46,6 @@ namespace kpengine::graphics
 
         frame_context_ = std::make_unique<VulkanFrameContext>();
         frame_context_->Initialize(device_.get(), static_cast<uint32_t>(swapchain_->GetImageCount()));
-
-        CreateGraphicsPipeline(pipeline_desc);
 
         // Swapchain-bound render targets — RHI-owned, sized to the swapchain.
         CreateDepthResource();
@@ -111,8 +113,90 @@ namespace kpengine::graphics
         frame_active_ = false;
     }
 
-    void VulkanBackend::Present()
+    CommandRecorder *VulkanBackend::GetCommandRecorder()
     {
+        return frame_active_ ? static_cast<CommandRecorder *>(this) : nullptr;
+    }
+
+    void VulkanBackend::BindPipeline(PipelineHandle pipeline)
+    {
+        const VulkanPipelineResource *resource = GetPipelineResource(pipeline);
+        if (resource)
+        {
+            vkCmdBindPipeline(GetCurrentSceneCommandBuffer(), VK_PIPELINE_BIND_POINT_GRAPHICS,
+                              resource->pipeline);
+        }
+    }
+
+    void VulkanBackend::BindMesh(MeshHandle mesh)
+    {
+        Mesh *mesh_object = mesh_manager_->GetMesh(mesh);
+        if (!mesh_object)
+        {
+            return;
+        }
+        const auto *mesh_resource = static_cast<const VulkanMeshResource *>(
+            mesh_object->GetMeshHandle().native);
+        if (!mesh_resource)
+        {
+            return;
+        }
+
+        VulkanBufferResource *vertex = GetBufferResource(mesh_resource->vertex_handle);
+        VulkanBufferResource *index = GetBufferResource(mesh_resource->index_handle);
+        if (!vertex || !index || mesh_resource->sections.empty())
+        {
+            return;
+        }
+
+        VkBuffer vertex_buffers[] = {vertex->buffer};
+        VkDeviceSize offsets[] = {0};
+        VkCommandBuffer command_buffer = GetCurrentSceneCommandBuffer();
+        vkCmdBindVertexBuffers(command_buffer, 0, 1, vertex_buffers, offsets);
+        vkCmdBindIndexBuffer(command_buffer, index->buffer, 0, VK_INDEX_TYPE_UINT32);
+        recorded_mesh_ = mesh;
+        recorded_index_count_ = static_cast<uint32_t>(mesh_resource->sections[0].index_count);
+    }
+
+    void VulkanBackend::BindResourceBindings(PipelineHandle pipeline,
+                                             DescriptorSetHandle bindings)
+    {
+        BindResourceBindingSet(pipeline, bindings);
+    }
+
+    void VulkanBackend::SetViewport(const Viewport &viewport)
+    {
+        VkViewport native{};
+        native.x = viewport.x;
+        native.y = viewport.y;
+        native.width = viewport.width;
+        native.height = viewport.height;
+        native.minDepth = viewport.min_depth;
+        native.maxDepth = viewport.max_depth;
+        vkCmdSetViewport(GetCurrentSceneCommandBuffer(), 0, 1, &native);
+    }
+
+    void VulkanBackend::SetScissor(const Scissor &scissor)
+    {
+        VkRect2D native{};
+        native.offset = {scissor.x, scissor.y};
+        native.extent = {scissor.width, scissor.height};
+        vkCmdSetScissor(GetCurrentSceneCommandBuffer(), 0, 1, &native);
+    }
+
+    void VulkanBackend::DrawIndexed(uint32_t index_count, uint32_t instance_count,
+                                    uint32_t first_index, int32_t vertex_offset,
+                                    uint32_t first_instance)
+    {
+        if (index_count == 0)
+        {
+            index_count = recorded_index_count_;
+        }
+        if (index_count != 0)
+        {
+            vkCmdDrawIndexed(GetCurrentSceneCommandBuffer(), index_count, instance_count,
+                             first_index, vertex_offset, first_instance);
+        }
     }
 
     void VulkanBackend::Cleanup()
@@ -123,7 +207,8 @@ namespace kpengine::graphics
 
         // The demo scene owns its mesh/texture/UBO/descriptor handles and destroys
         // them before the backend; only backend-owned GPU state lives here now.
-        pipeline_manager_->DestroyPipelineResource(device_->GetLogicalDevice(), pipeline_handle_);
+        descriptor_set_manager_->DestroyAll(device_->GetLogicalDevice());
+        pipeline_manager_->DestroyAll(device_->GetLogicalDevice());
 
         buffer_manager_->FreeMemory(device_->GetLogicalDevice());
         image_memory_manager_->Destroy(device_->GetLogicalDevice());
@@ -157,7 +242,15 @@ namespace kpengine::graphics
         context_.logical_device = device_->GetLogicalDevice();
     }
 
-    void VulkanBackend::CreateGraphicsPipeline(const PipelineDesc &pipeline_desc)
+    GraphicsContext VulkanBackend::CreateGraphicsContext() const
+    {
+        GraphicsContext context{};
+        context.type = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        context.native = const_cast<VulkanContext *>(&context_);
+        return context;
+    }
+
+    PipelineHandle VulkanBackend::CreatePipelineResource(const PipelineDesc &pipeline_desc)
     {
         // The caller owns shaders/stage/layout/bindings; the backend bakes only. The
         // swapchain is RHI-owned, so its format completes a desc that left the
@@ -171,7 +264,87 @@ namespace kpengine::graphics
         {
             desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
         }
-        pipeline_handle_ = pipeline_manager_->CreatePipelineResource(device_->GetLogicalDevice(), desc);
+        return pipeline_manager_->CreatePipelineResource(device_->GetLogicalDevice(), desc);
+    }
+
+    bool VulkanBackend::DestroyPipelineResource(PipelineHandle handle)
+    {
+        return pipeline_manager_->DestroyPipelineResource(device_->GetLogicalDevice(), handle);
+    }
+
+    MeshHandle VulkanBackend::CreateMesh(const data::MeshData &data)
+    {
+        return mesh_manager_->CreateMesh(CreateGraphicsContext(), data);
+    }
+
+    bool VulkanBackend::DestroyMesh(MeshHandle handle)
+    {
+        return mesh_manager_->DestroyMesh(CreateGraphicsContext(), handle);
+    }
+
+    TextureHandle VulkanBackend::CreateTexture(const data::TextureData &data,
+                                               const TextureSettings &settings)
+    {
+        const TextureHandle handle = texture_manager_->CreateTexture(CreateGraphicsContext(), data, settings);
+        if (handle.IsValid() && !data.pixels.empty())
+        {
+            UploadTexturePixels(handle, data.pixels.data(), data.pixels.size(),
+                                data.width, data.height, settings.mip_levels);
+        }
+        return handle;
+    }
+
+    bool VulkanBackend::DestroyTexture(TextureHandle handle)
+    {
+        return texture_manager_->DestroyTexture(CreateGraphicsContext(), handle);
+    }
+
+    SamplerHandle VulkanBackend::CreateSampler(const SamplerSettings &settings)
+    {
+        SamplerSettings effective_settings = settings;
+        if (effective_settings.enable_anisotropy)
+        {
+            VkPhysicalDeviceProperties properties{};
+            vkGetPhysicalDeviceProperties(device_->GetPhysicalDevice(), &properties);
+            effective_settings.max_anisotropy = std::min(effective_settings.max_anisotropy,
+                                                         properties.limits.maxSamplerAnisotropy);
+        }
+        return sampler_manager_->CreateSampler(CreateGraphicsContext(), effective_settings);
+    }
+
+    bool VulkanBackend::DestroySampler(SamplerHandle handle)
+    {
+        return sampler_manager_->DestroySampler(CreateGraphicsContext(), handle);
+    }
+
+    DescriptorSetHandle VulkanBackend::CreateResourceBindingSet(
+        PipelineHandle pipeline, const ResourceBindingSetDesc &desc)
+    {
+        VulkanPipelineResource *pipeline_resource = pipeline_manager_->GetPipelineResource(pipeline);
+        if (!pipeline_resource)
+        {
+            return {};
+        }
+        return descriptor_set_manager_->CreateResourceBindingSet(
+            device_->GetLogicalDevice(), *pipeline_resource, desc, *buffer_manager_,
+            *texture_manager_, *sampler_manager_);
+    }
+
+    bool VulkanBackend::DestroyResourceBindingSet(DescriptorSetHandle handle)
+    {
+        return descriptor_set_manager_->DestroyResourceBindingSet(device_->GetLogicalDevice(), handle);
+    }
+
+    void VulkanBackend::BindResourceBindingSet(PipelineHandle pipeline, DescriptorSetHandle handle)
+    {
+        VulkanPipelineResource *pipeline_resource = pipeline_manager_->GetPipelineResource(pipeline);
+        const VkDescriptorSet descriptor_set = descriptor_set_manager_->GetDescriptorSet(handle);
+        if (!pipeline_resource || descriptor_set == VK_NULL_HANDLE)
+        {
+            return;
+        }
+        vkCmdBindDescriptorSets(GetCurrentSceneCommandBuffer(), VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                pipeline_resource->layout, 0, 1, &descriptor_set, 0, nullptr);
     }
 
     void VulkanBackend::CreateDepthResource()
@@ -286,14 +459,27 @@ namespace kpengine::graphics
         return frame_context_->GetCurrentFrameIndex();
     }
 
-    VkExtent2D VulkanBackend::GetSwapchainExtent() const
+    uint32_t VulkanBackend::GetFramesInFlight() const
     {
-        return swapchain_->GetExtent();
+        return VulkanFrameContext::MAX_FRAMES_IN_FLIGHT;
     }
 
-    const VulkanPipelineResource *VulkanBackend::GetPipelineResource() const
+    size_t VulkanBackend::GetUniformBufferAlignment() const
     {
-        return pipeline_manager_->GetPipelineResource(pipeline_handle_);
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(device_->GetPhysicalDevice(), &properties);
+        return static_cast<size_t>(properties.limits.minUniformBufferOffsetAlignment);
+    }
+
+    Extent2D VulkanBackend::GetRenderExtent() const
+    {
+        const VkExtent2D extent = swapchain_->GetExtent();
+        return {extent.width, extent.height};
+    }
+
+    const VulkanPipelineResource *VulkanBackend::GetPipelineResource(PipelineHandle handle) const
+    {
+        return pipeline_manager_->GetPipelineResource(handle);
     }
 
     BufferHandle VulkanBackend::CreateUniformBuffer(uint32_t size)

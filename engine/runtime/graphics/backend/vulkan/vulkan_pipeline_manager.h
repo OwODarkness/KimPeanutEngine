@@ -23,7 +23,8 @@ namespace kpengine::graphics{
     class VulkanPipelineManager{
     public:
         PipelineHandle CreatePipelineResource(VkDevice logical_device, const PipelineDesc& pipeline_desc);
-        void DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle);
+        bool DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle);
+        void DestroyAll(VkDevice logical_device);
         VulkanPipelineResource* GetPipelineResource(PipelineHandle handle);
     private:
         void CreateShaderModule(VkDevice logiccal_device, const void* data, size_t, VkShaderModule& shader_module);

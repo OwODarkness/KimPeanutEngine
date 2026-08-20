@@ -9,6 +9,7 @@ namespace kpengine::graphics
     struct SamplerTag{};
     struct ShaderTag{};
     struct PipelineTag{};
+    struct DescriptorSetTag{};
     struct BufferTag{};
     struct MeshTag{};
     struct AudioTag{};
@@ -18,6 +19,7 @@ namespace kpengine::graphics
     using SamplerHandle = Handle<SamplerTag>;
     using ShaderHandle = Handle<ShaderTag>;
     using PipelineHandle = Handle<PipelineTag>;
+    using DescriptorSetHandle = Handle<DescriptorSetTag>;
     using BufferHandle = Handle<BufferTag>;
     using MeshHandle = Handle<MeshTag>;
 

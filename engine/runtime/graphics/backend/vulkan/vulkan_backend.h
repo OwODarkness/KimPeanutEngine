@@ -16,15 +16,44 @@ namespace kpengine::graphics
 {
     struct VulkanPipelineResource;
 
-    class VulkanBackend : public RenderBackend
+    class VulkanBackend : public RenderBackend, public CommandRecorder
     {
     public:
         VulkanBackend();
         ~VulkanBackend();
-        virtual void Initialize(const PipelineDesc &pipeline_desc, WindowHandle native_window) override;
+        virtual void Initialize(WindowHandle native_window) override;
+        PipelineHandle CreatePipelineResource(const PipelineDesc &pipeline_desc) override;
+        bool DestroyPipelineResource(PipelineHandle handle) override;
+        MeshHandle CreateMesh(const data::MeshData &data) override;
+        bool DestroyMesh(MeshHandle handle) override;
+        TextureHandle CreateTexture(const data::TextureData &data,
+                                    const TextureSettings &settings) override;
+        bool DestroyTexture(TextureHandle handle) override;
+        SamplerHandle CreateSampler(const SamplerSettings &settings) override;
+        bool DestroySampler(SamplerHandle handle) override;
+        DescriptorSetHandle CreateResourceBindingSet(
+            PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
+        bool DestroyResourceBindingSet(DescriptorSetHandle handle) override;
+        void BindResourceBindingSet(PipelineHandle pipeline,
+                                    DescriptorSetHandle handle) override;
         virtual void BeginFrame() override;
+        CommandRecorder *GetCommandRecorder() override;
+        void BindPipeline(PipelineHandle pipeline) override;
+        void BindMesh(MeshHandle mesh) override;
+        void BindResourceBindings(PipelineHandle pipeline,
+                                   DescriptorSetHandle bindings) override;
+        void SetViewport(const Viewport &viewport) override;
+        void SetScissor(const Scissor &scissor) override;
+        void DrawIndexed(uint32_t index_count, uint32_t instance_count,
+                         uint32_t first_index, int32_t vertex_offset,
+                         uint32_t first_instance) override;
         virtual void EndFrame() override;
-        virtual void Present() override;
+        BufferHandle CreateUniformBuffer(uint32_t size) override;
+        void *MapUniformBuffer(BufferHandle handle, size_t size) override;
+        uint32_t GetCurrentFrameIndex() const override;
+        uint32_t GetFramesInFlight() const override;
+        size_t GetUniformBufferAlignment() const override;
+        Extent2D GetRenderExtent() const override;
         virtual void Cleanup() override;
 
         BufferHandle CreateUploadStageBufferResource(size_t size);
@@ -38,8 +67,6 @@ namespace kpengine::graphics
 
         // Scene-side resource facilities. The caller (today: the demo scene in the
         // render module) composes these; the backend only provides the RHI pieces.
-        BufferHandle CreateUniformBuffer(uint32_t size);
-        void *MapUniformBuffer(BufferHandle handle, size_t size);
         void UploadTexturePixels(TextureHandle texture, const void *pixels, size_t pixel_size, uint32_t width, uint32_t height, uint32_t mip_levels);
 
         class VulkanImageMemoryManager *GetImageMemoryManager() const { return image_memory_manager_.get(); }
@@ -49,11 +76,9 @@ namespace kpengine::graphics
         // buffer (acquisition, attachment transitions, rendering begun); the
         // caller records draws into it, then EndFrame submits and presents.
         VkCommandBuffer GetCurrentSceneCommandBuffer() const;
-        uint32_t GetCurrentFrameIndex() const;
         uint32_t GetCurrentImageIndex() const { return current_image_index_; }
-        VkExtent2D GetSwapchainExtent() const;
 
-        const VulkanPipelineResource *GetPipelineResource() const;
+        const VulkanPipelineResource *GetPipelineResource(PipelineHandle handle) const;
         VulkanContext &GetVulkanContext() { return context_; }
         class TextureManager *GetTextureManager() const { return texture_manager_.get(); }
         class SamplerManager *GetSamplerManager() const { return sampler_manager_.get(); }
@@ -61,7 +86,7 @@ namespace kpengine::graphics
 
     private:
         void InitVulkanContext();
-        void CreateGraphicsPipeline(const PipelineDesc &pipeline_desc);
+        GraphicsContext CreateGraphicsContext() const;
         BufferHandle CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage);
 
         // Swapchain-bound render targets — RHI-owned, sized to the swapchain.
@@ -88,7 +113,7 @@ namespace kpengine::graphics
         std::unique_ptr<class VulkanBufferManager> buffer_manager_;
 
         std::unique_ptr<class VulkanPipelineManager> pipeline_manager_;
-        PipelineHandle pipeline_handle_;
+        std::unique_ptr<class VulkanDescriptorSetManager> descriptor_set_manager_;
 
         std::unique_ptr<class VulkanImageMemoryManager> image_memory_manager_;
 
@@ -102,6 +127,8 @@ namespace kpengine::graphics
         uint32_t msaa_sampe_count_ = 1;
         uint32_t current_image_index_ = 0;
         bool frame_active_ = false;
+        MeshHandle recorded_mesh_;
+        uint32_t recorded_index_count_ = 0;
     };
 }
 

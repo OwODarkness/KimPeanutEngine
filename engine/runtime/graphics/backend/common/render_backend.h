@@ -6,7 +6,12 @@
 #include "delegate/event_dispatcher.h"
 #include "math/math_header.h"
 #include "api.h"
+#include "command_recorder.h"
+#include "mesh.h"
 #include "pipeline_types.h"
+#include "resource_binding.h"
+#include "sampler.h"
+#include "texture.h"
 
 namespace kpengine::graphics
 {
@@ -27,20 +32,43 @@ namespace kpengine::graphics
         Matrix4f model;
     };
 
+    struct Extent2D
+    {
+        uint32_t width = 0;
+        uint32_t height = 0;
+    };
+
     class RenderBackend
     {
     public:
         static std::unique_ptr<RenderBackend> CreateGraphicsBackEnd(GraphicsAPIType backend_type);
 
     public:
-        // The native window handle (WindowHandle = void*) is the WSI surface the
-        // backend creates its swapchain/present surface on. Explicit param, not a
-        // mutable public member — the RHI never needs to reach back for it.
-        virtual void Initialize(const PipelineDesc &pipeline_desc, WindowHandle native_window) = 0;
+        virtual void Initialize(WindowHandle native_window) = 0;
+        virtual PipelineHandle CreatePipelineResource(const PipelineDesc &pipeline_desc) = 0;
+        virtual bool DestroyPipelineResource(PipelineHandle handle) = 0;
+        virtual MeshHandle CreateMesh(const data::MeshData &data) = 0;
+        virtual bool DestroyMesh(MeshHandle handle) = 0;
+        virtual TextureHandle CreateTexture(const data::TextureData &data,
+                                            const TextureSettings &settings) = 0;
+        virtual bool DestroyTexture(TextureHandle handle) = 0;
+        virtual SamplerHandle CreateSampler(const SamplerSettings &settings) = 0;
+        virtual bool DestroySampler(SamplerHandle handle) = 0;
+        virtual DescriptorSetHandle CreateResourceBindingSet(
+            PipelineHandle pipeline, const ResourceBindingSetDesc &desc) = 0;
+        virtual bool DestroyResourceBindingSet(DescriptorSetHandle handle) = 0;
+        virtual void BindResourceBindingSet(PipelineHandle pipeline,
+                                            DescriptorSetHandle handle) = 0;
         virtual void BeginFrame() = 0;
+        virtual CommandRecorder *GetCommandRecorder() = 0;
         virtual void EndFrame() = 0;
+        virtual BufferHandle CreateUniformBuffer(uint32_t size) = 0;
+        virtual void *MapUniformBuffer(BufferHandle handle, size_t size) = 0;
+        virtual uint32_t GetCurrentFrameIndex() const = 0;
+        virtual uint32_t GetFramesInFlight() const = 0;
+        virtual size_t GetUniformBufferAlignment() const = 0;
+        virtual Extent2D GetRenderExtent() const = 0;
         virtual void Cleanup() = 0;
-        virtual void Present() = 0;
         void BindWindowResize(EventDispatcher<ResizeEvent> &dispatcher);
 
     public:

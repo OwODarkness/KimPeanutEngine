@@ -31,5 +31,15 @@ namespace kpengine::graphics
     }
     void OpenglMesh::Destroy(const GraphicsContext &context)
     {
+        if (resource_.vbo)
+        {
+            glDeleteBuffers(1, &resource_.vbo);
+            resource_.vbo = 0;
+        }
+        if (resource_.ebo)
+        {
+            glDeleteBuffers(1, &resource_.ebo);
+            resource_.ebo = 0;
+        }
     }
 }

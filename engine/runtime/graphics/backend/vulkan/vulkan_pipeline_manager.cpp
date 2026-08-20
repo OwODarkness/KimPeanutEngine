@@ -291,9 +291,13 @@ namespace kpengine::graphics
         return handle;
     }
 
-    void VulkanPipelineManager::DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle)
+    bool VulkanPipelineManager::DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle)
     {
         VulkanPipelineResource *pipeline_resource = GetPipelineResource(handle);
+        if (!pipeline_resource)
+        {
+            return false;
+        }
 
         for (size_t i = 0; i < pipeline_resource->descriptor_set_layouts.size(); i++)
         {
@@ -302,9 +306,35 @@ namespace kpengine::graphics
         vkDestroyPipeline(logical_device, pipeline_resource->pipeline, nullptr);
         vkDestroyPipelineLayout(logical_device, pipeline_resource->layout, nullptr);
 
+        pipeline_resource->descriptor_set_layouts.clear();
         pipeline_resource->pipeline = VK_NULL_HANDLE;
         pipeline_resource->layout = VK_NULL_HANDLE;
-        handle_system_.Destroy(handle);
+        return handle_system_.Destroy(handle);
+    }
+
+    void VulkanPipelineManager::DestroyAll(VkDevice logical_device)
+    {
+        for (VulkanPipelineResource &resource : resources_)
+        {
+            for (const VulkanDescriptorSetLayout &set_layout : resource.descriptor_set_layouts)
+            {
+                if (set_layout.layout != VK_NULL_HANDLE)
+                {
+                    vkDestroyDescriptorSetLayout(logical_device, set_layout.layout, nullptr);
+                }
+            }
+            if (resource.pipeline != VK_NULL_HANDLE)
+            {
+                vkDestroyPipeline(logical_device, resource.pipeline, nullptr);
+            }
+            if (resource.layout != VK_NULL_HANDLE)
+            {
+                vkDestroyPipelineLayout(logical_device, resource.layout, nullptr);
+            }
+            resource.descriptor_set_layouts.clear();
+            resource.pipeline = VK_NULL_HANDLE;
+            resource.layout = VK_NULL_HANDLE;
+        }
     }
 
     VulkanPipelineResource *VulkanPipelineManager::GetPipelineResource(PipelineHandle handle)
@@ -314,7 +344,7 @@ namespace kpengine::graphics
         if (index >= resources_.size())
         {
             KP_LOG("VulkanPipelineManagerLog", LOG_LEVEL_ERROR, "Failed to find pipeline resource");
-            throw std::runtime_error("Failed to find pipeline resource");
+            return nullptr;
         }
 
         return &resources_[index];
