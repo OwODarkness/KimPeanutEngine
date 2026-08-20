@@ -6,11 +6,18 @@ The render module is the engine's "what to draw and how" layer — the module th
 
 ## Current state — the skeleton
 
-The legacy OpenGL renderer (RenderShader, ShaderPool, RenderMaterial, RenderScene and the raw-GL pass code) has been **deprecated and removed** from the build. What remains is the reconstruction's starting point: `RenderSystem` (the facade), a temp `RenderCamera` (camera data), and — since the Vulkan decoupling's Phase 4 (2026-08-15) — **`RenderScene`**, the demo as the render module's first real scene. `Render` now links `Graphics` (PRIVATE) so the scene can record through the RHI; `RenderSystem` itself stays API-agnostic.
+The legacy OpenGL renderer (RenderShader, ShaderPool, RenderMaterial, RenderScene and the raw-GL pass code) has been **deprecated and removed** from the build. What remains is the reconstruction's starting point: `RenderSystem` (the facade) and — since the Vulkan decoupling's Phase 4 (2026-08-15) — **`RenderScene`**, the demo as the render module's first real scene. `Render` now links `Graphics` (PRIVATE) so the scene can record through the RHI; `RenderSystem` itself stays API-agnostic.
 
 ### `RenderSystem` — the facade — [`render_system.h`](../../engine/runtime/render/render_system.h)
 
-The render-module facade. It now owns the `ResourcePipeline` (baked at `Initialize` with the chosen `GraphicsAPIType`) and **drains the async load queue** (`RuntimeContext::async_load_queue_`, passed in by pointer) in two modes: `PostInitialize` full-drains the bootstrap batch, and `Tick` budget-drains a bounded number of requests per frame — both load via `asset.LoadSync`, process shaders via `resource.ProcessShader`, and pin the result into a render cache keyed by `request_id` (polled via `IsReady` / `GetCached`). It still owns one `RenderCamera` reachable via `GetRenderCamera()`. In the target shape it also owns the RHI backend and the scene graph; `Tick` will additionally issue the RHI draw calls that complete the render task.
+The render-module facade. It owns the `ResourcePipeline` and the `RenderBackend` (both initialized with the chosen `GraphicsAPIType`) and **drains the async load queue** (`RuntimeContext::async_load_queue_`, passed in by pointer) in two modes: `PostInitialize` full-drains the bootstrap batch, and `Tick` budget-drains a bounded number of requests per frame. Shader-program requests load via `asset.LoadSync`, process through `resource.ProcessShader`, build the fixed `BuildDefaultPipelineDesc`, and enter a render-side `PipelineHandle` cache keyed by program `AssetID`. `RenderCacheEntry` is a request-result record: it pins the asset payload and holds exactly one typed `RenderResource` result (`PipelineHandle`, `MeshHandle`, or `TextureBinding { TextureHandle, SamplerHandle }`), keyed by `request_id` and polled via `IsReady` / `GetCached`. The separate type-specific caches own the deduplicated handles. `Tick` owns the RHI frame bracket; scenes own their camera/view state.
+
+Initialization is bundle-based so dependencies can grow without an unstable
+positional signature: `RenderSystemInitInfo` carries the API, native window,
+resize dispatcher, and load queue. `RenderSceneInitInfo` groups its backend and
+`RenderSceneResources` (pipeline, mesh, texture/sampler material binding). The
+scene bundle now names the common `RenderBackend`; its dynamic UBO path uses
+common buffer/extent/frame APIs, and its draw path uses `CommandRecorder`.
 
 ### `RenderCamera` — camera data — [`render_camera.h`](../../engine/runtime/render/render_camera.h)
 
@@ -25,18 +32,18 @@ struct CameraData {
 CameraData GetCameraData() const;   // {view.Transpose(), proj.Transpose()}
 ```
 
-Modeled on the deprecated `CameraComponent` (git history: `engine/runtime/component/camera_component.*`), stripped of the scene hierarchy and input. Its role is to be **used by `RenderSystem`**: the game sets position/rotation; `RenderSystem` feeds the resulting `CameraData` to the RHI as part of the frame.
+Modeled on the deprecated `CameraComponent` (git history: `engine/runtime/component/camera_component.*`), stripped of the scene hierarchy and input. Its role is to be **owned by `RenderScene`**: the game sets position/rotation through `RenderScene::GetCamera()`; the scene writes the resulting `CameraData` into its per-frame UBO.
 
 ### `RenderScene` — the demo as the first real scene — [`render_scene.h`](../../engine/runtime/render/render_scene.h)
 
-The triangle demo, moved out of the Vulkan backend (Phase 4 of the [Vulkan decoupling](../graphics/vulkanbackend.md)) and into the render module. It owns the mesh (sphere), texture (wallpaper), per-frame uniform buffers + descriptor sets and the animated camera, and it records the frame's draws against the RHI's scene command buffer:
+The triangle demo, moved out of the Vulkan backend (Phase 4 of the [Vulkan decoupling](../graphics/vulkanbackend.md)) and into the render module. It borrows static mesh/texture/pipeline handles from the render-resource cache, owns per-frame uniform buffers + descriptor sets and its `RenderCamera`, and records the frame's draws against the RHI's scene command buffer:
 
 - `Initialize(VulkanBackend*)` — loads texture + mesh through the asset manager, creates the GPU objects via the backend managers, allocates the UBOs (persistently mapped) and descriptor sets.
 - `Tick(delta)` — writes the per-pass (camera, from the swapchain extent) and per-object (spinning) UBOs for the current frame in flight.
 - `Record()` — binds the pipeline, vertex/index buffers, descriptor set and issues `vkCmdDrawIndexed` into `GetCurrentSceneCommandBuffer()`.
 - `Cleanup()` — destroys descriptor pool, UBO buffers, mesh/sampler/texture through the backend managers.
 
-**Vulkan-specific for now** — draws are raw `vkCmd*` and the constructor takes the concrete `VulkanBackend`. It is deliberately a stopgap: the demo it replaced was the backend's only regression test, and this is the first real `Render` ↔ `Graphics` wiring (TODO 5.1, landed with the phase). A cross-API scene abstraction (records against an RHI interface, not the Vulkan backend) is part of the reconstruction below.
+**Cross-API recording** — `Record(CommandRecorder&)` describes the draw with common handles. The backend owns native command-buffer access and translates the recorder operations for its graphics API.
 
 ## Target architecture
 
@@ -78,7 +85,7 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 
 1. **Wire the resource pipeline in.** Give the render module (or `RuntimeContext`) an owned `ResourcePipeline`, initialized with the chosen `GraphicsAPIType`. It currently has no owner and no callers.
 2. **Make the RHI a pure receiver.** ✅ Landed 2026-08-15/16: `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired; `PipelineDesc` carries `data::ShaderData*`; the commented-out asset-loading block in `VulkanPipelineManager` was deleted. The build-time `glslc` step is gone too (2026-08-16, TODO 2.3) — the `rhi_example` demo bakes shaders at runtime via `ProcessShader`, the first graphics-end caller of step 1's pipeline.
-3. **Move `PipelineDesc` construction out of the backend** into render-module pipeline/material code. `VulkanBackend::CreateGraphicsPipeline` should only *bake* what it is handed.
+3. **Move `PipelineDesc` construction out of the backend** into render-module pipeline/material code. `RenderBackend::CreatePipelineResource` only *bakes* what it is handed.
 4. **Add the render-module request path:** `asset.LoadSync(.shader)` → `resource.ProcessShader` → fill `PipelineDesc` → `backend.CreatePipelineResource`. Add a warmup pass in render init.
 5. **Close the resource-pipeline gaps it will hit:** `ProcessShader` should take the whole `ShaderProgramResource` (all stages) as one unit, not a flat stage list; and add a `CompileFailed` status carrying the compiler error, so the render module can distinguish failure and not bake empty bytes.
 6. **Give the skeleton its content.** The legacy GL code is already retired, so there is no coexisting path to replace pass-by-pass. `RenderSystem` grows: it owns the RHI backend (via `RenderBackend`), the async queue drain + ready cache, and the scene graph; `RenderCamera` data feeds the frame's `PerPassData`.
@@ -93,8 +100,13 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 
 ## Refactor status
 
-**In progress — legacy deprecated, queue consumer in place, first scene in.** The legacy OpenGL renderer is removed from the build; `RenderSystem` now owns the `ResourcePipeline` and drains the async load queue in two modes (bootstrap full-drain + per-frame budgeted drain), caching loaded/processed assets in a render cache. `Render` links `Asset` and now `Graphics` (PRIVATE, 2026-08-15). **The demo scene landed as `RenderScene` (2026-08-15)** — the render module's first real scene, recording through the RHI's frame API (Vulkan-specific stopgap). The target design (render → asset → resource → graphics, `PipelineDesc` seam, async warmup) is unchanged and captured above; the RHI backend + scene graph are still unowned by `RenderSystem` itself. The dedicated loading thread is deferred — the render thread loads in-place, budgeted. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
+**In progress — legacy deprecated, queue consumer and pipeline/static-resource ownership in place, first scene in.** `RenderSystem` owns the `ResourcePipeline`, the `RenderBackend`, the RHI frame bracket, and fixed-default pipeline/mesh/texture/sampler caches. It drains the async load queue in two modes (bootstrap full-drain + per-frame budgeted drain), building one `PipelineHandle` per loaded shader program/default state and render-ready handles for queued mesh/texture/model assets. `Render` links `Asset` and `Graphics` (PRIVATE). **The demo scene landed as `RenderScene` (2026-08-15)** — it receives non-owning RHI handles, owns logical camera state, and describes UBO/texture bindings through `ResourceBindingSetDesc`; Vulkan descriptor pools, sets, and writes are hidden behind `DescriptorSetHandle`. **Phase 3.3 gives the scene an API-neutral `CommandRecorder`; Phase 3.4 introduces `FrameContext` so transient UBO and binding-set allocation belongs to the current frame rather than the scene.** The target design (render → asset → resource → graphics, `PipelineDesc` seam, async warmup) is unchanged. The dedicated loading thread is deferred — the render thread loads in-place, budgeted. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
 
 ## Future work
+
+- **Frame-local transient data (Phase 3.4, in progress).** `RenderSystem` owns
+  a `FrameContext` for every backend frame slot. The context owns the transient
+  uniform-buffer arena and returns aligned buffer/range allocations; scenes will
+  next consume these allocations instead of retaining UBOs and descriptor sets.
 
 - **Render graph (very future, not started).** Long-term the render module moves from direct pass code to a render graph: passes recorded as nodes with explicit resource dependencies (textures, buffers, pipeline state), then culled/ordered and baked into RHI draw calls. `RenderSystem` becomes the graph executor — it records the frame's passes, drains the async queue, and issues the RHI calls that complete the render task. Listed now so the design doesn't lock in a pass order prematurely.

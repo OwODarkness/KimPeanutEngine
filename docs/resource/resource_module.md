@@ -80,7 +80,7 @@ Key = hash of (source + stage + entry + defines), file = `<hex hash>.spv` under 
 | **Preprocessing** (done — GL) | `ShaderData::source`: the final assembled GLSL — includes resolved, defines injected | GL's artifact is source, not bytes; GL compiles it at runtime via `glShaderSource` |
 | **Per-API artifact dispatch** (done) | SPIR-V for Vulkan, preprocessed GLSL for OpenGL, picked by `keep_source_` | one identity → N artifacts; no API checks scattered through the processor |
 | **Diagnostics** (partial) | `CompileFailed` status (in) + compiler error text (not yet) | a broken shader must be visible to the caller, not silently consumed or recompiled every frame |
-| **Reflection** | a reflection struct: vertex attribs, UBO/sampler/push-constant bindings, descriptor sets | turns hardcoded `PipelineDesc` construction — today `VulkanBackend::CreateGraphicsPipeline` hand-writes stage/layout/bindings — into data the render module reads |
+| **Reflection** | a reflection struct: vertex attribs, UBO/sampler/push-constant bindings, descriptor sets | turns hardcoded `PipelineDesc` construction into data the render module reads before it calls `RenderBackend::CreatePipelineResource` |
 
 **Ordering.** The `CompileFailed` status half of diagnostics is in; the compiler error text is next. Then reflection (the big payoff — it's what makes the render module's `PipelineDesc` data-driven instead of hardcoded). GL-side preprocessing for shared snippets / generated binding blocks extends the `PreprocessOperation` when they appear.
 
