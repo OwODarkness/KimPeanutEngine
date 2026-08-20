@@ -104,8 +104,10 @@ Resource binding follows the same rule (Phase 3.2, 2026-08-20).
 `DescriptorSetHandle`; Vulkan's pool, set allocation, update writes, image
 layouts, and native binding stay inside `VulkanDescriptorSetManager`. OpenGL
 stores the equivalent binding state behind the same handle. The current
-`BindResourceBindingSet` call is transitional; Phase 3.3 moves it onto a common
-frame command recorder.
+`CommandRecorder::BindResourceBindings` is the scene-facing call. Vulkan
+translates it to descriptor-set binding; OpenGL stores equivalent binding state
+and uses `glBindBufferRange` for uniform ranges plus texture/sampler binding
+points. These are backend-only differences.
 
 `VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. Since 2026-08-20 the common facade initializes independently of pipelines, then `CreatePipelineResource(PipelineDesc)` bakes any caller-owned description into a `PipelineHandle`. Vulkan completes omitted attachment formats from the swapchain format, an RHI-owned invariant.
 
@@ -113,11 +115,12 @@ frame command recorder.
 
 The Vulkan backend now splits the frame lifecycle so **a caller records the draws** ([vulkanbackend.md](vulkanbackend.md) Phase 4):
 
-- `BeginFrame()` — waits on the in-flight fence, acquires the next swapchain image, resets the fence, and prepares the frame's **scene command buffer** (`GetCurrentSceneCommandBuffer()`): begin, color/depth transitions to attachment-optimal, `vkCmdBeginRendering`, viewport/scissor. Callers issue draws against that buffer between `BeginFrame`/`EndFrame`.
-- `EndFrame()` — ends rendering, transitions the swapchain image to present, submits, presents, handles resize.
+- `BeginFrame()` — waits on the in-flight fence, acquires the next swapchain image, resets the fence, and begins the frame command buffer. It does not select a render attachment.
+- `CommandRecorder::BeginRenderTarget` / `EndRenderTarget` — select and clear an offscreen target, set its viewport/scissor, and bracket the caller's draws. Vulkan performs dynamic rendering and transitions the stored color result to shader-read layout; OpenGL binds/unbinds its framebuffer.
+- `EndFrame()` — closes any open target, makes the acquired swapchain image presentable, submits, presents, and handles resize. A later editor/UI or runtime composite pass will write the scene target into that swapchain image.
 - Scene-side facilities — `CreateUniformBuffer`/`MapUniformBuffer` (persistent per-buffer mapping), `UploadTexturePixels` (stage → one-shot copy → sample), and the manager getters (`GetTextureManager`/`GetMeshManager`/`GetSamplerManager`, `GetBufferResource`).
 
-The demo that used to live inside the backend is now the render module's first real scene, [`render::RenderScene`](../../engine/runtime/render/render_scene.h), recording through this API (raw `vkCmd*` for now — Vulkan-specific stopgap). The RHI still never initiates; it exposes where the frame is and the caller decides what's in it.
+The demo that used to live inside the backend is now the render module's first real scene, [`render::RenderScene`](../../engine/runtime/render/render_scene.h). It records API-neutral commands through `CommandRecorder`, and the active render `FrameContext` owns transient UBO ranges and binding sets. Vulkan encodes the commands with `vkCmd*`; OpenGL issues the corresponding `gl*` calls. The RHI still never initiates; it exposes where the frame is and the caller decides what's in it.
 
 ## Current state — leaks fixed vs remaining
 

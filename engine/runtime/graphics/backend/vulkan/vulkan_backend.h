@@ -31,6 +31,9 @@ namespace kpengine::graphics
         bool DestroyTexture(TextureHandle handle) override;
         SamplerHandle CreateSampler(const SamplerSettings &settings) override;
         bool DestroySampler(SamplerHandle handle) override;
+        RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) override;
+        bool DestroyRenderTarget(RenderTargetHandle handle) override;
+        TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
         DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
         bool DestroyResourceBindingSet(DescriptorSetHandle handle) override;
@@ -38,6 +41,8 @@ namespace kpengine::graphics
                                     DescriptorSetHandle handle) override;
         virtual void BeginFrame() override;
         CommandRecorder *GetCommandRecorder() override;
+        void BeginRenderTarget(RenderTargetHandle target) override;
+        void EndRenderTarget() override;
         void BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
         void BindResourceBindings(PipelineHandle pipeline,
@@ -72,9 +77,8 @@ namespace kpengine::graphics
         class VulkanImageMemoryManager *GetImageMemoryManager() const { return image_memory_manager_.get(); }
         VkCommandBuffer GetCurrentUICommandBuffer() const;
 
-        // Frame-recording API: BeginFrame prepares the frame's scene command
-        // buffer (acquisition, attachment transitions, rendering begun); the
-        // caller records draws into it, then EndFrame submits and presents.
+        // Frame-recording API: BeginFrame prepares the command buffer;
+        // CommandRecorder selects attachments and records render passes.
         VkCommandBuffer GetCurrentSceneCommandBuffer() const;
         uint32_t GetCurrentImageIndex() const { return current_image_index_; }
 
@@ -93,10 +97,7 @@ namespace kpengine::graphics
         void CreateDepthResource();
         void CreateColorResource();
 
-        // frame skeleton: transitions + dynamic-rendering begin/end around the
-        // caller's draws
-        void BeginSceneFrame(VkCommandBuffer commandbuffer, uint32_t image_index);
-        void EndSceneFrame(VkCommandBuffer commandbuffer, uint32_t image_index);
+        void FinishFrame(VkCommandBuffer commandbuffer, uint32_t image_index);
 
         void RecreateSwapchain();
         void CleanupSwapchain();
@@ -121,12 +122,23 @@ namespace kpengine::graphics
         std::unique_ptr<class SamplerManager> sampler_manager_;
         std::unique_ptr<class MeshManager> mesh_manager_;
 
+        std::vector<RenderTargetResource> render_targets_;
+        struct VulkanRenderTargetState
+        {
+            VkImageLayout color_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            VkImageLayout depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+        };
+        std::vector<VulkanRenderTargetState> render_target_states_;
+        HandleSystem<RenderTargetHandle> render_target_handles_;
+
         TextureHandle depth_handle_;
         TextureHandle color_handle_;
 
         uint32_t msaa_sampe_count_ = 1;
         uint32_t current_image_index_ = 0;
         bool frame_active_ = false;
+        bool render_target_active_ = false;
+        RenderTargetHandle active_render_target_;
         MeshHandle recorded_mesh_;
         uint32_t recorded_index_count_ = 0;
     };

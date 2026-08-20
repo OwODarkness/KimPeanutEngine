@@ -4,20 +4,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
-#include <type_traits>
+#include <vector>
 
-#include "graphics/backend/common/api.h"
-
-namespace kpengine::graphics
-{
-    class RenderBackend;
-}
+#include "graphics/backend/common/render_backend.h"
 
 namespace kpengine::render
 {
-    // Data shared by all scene work submitted for one render frame. It is
-    // deliberately CPU-only at this seam: Phase 3.4 will add frame-local GPU
-    // allocations without letting scenes own their backing buffers.
+    // Data shared by all scene work submitted for one render frame.
     struct FrameGlobals
     {
         uint64_t frame_number = 0;
@@ -46,14 +39,16 @@ namespace kpengine::render
         bool IsActive() const { return active_; }
         size_t GetUniformCapacity() const { return uniform_capacity_; }
         size_t GetUniformUsed() const { return uniform_cursor_; }
+        graphics::Extent2D GetRenderExtent() const { return render_extent_; }
 
         UniformAllocation AllocateUniform(size_t size);
+        graphics::DescriptorSetHandle AllocateResourceBindingSet(
+            graphics::PipelineHandle pipeline,
+            const graphics::ResourceBindingSetDesc &desc);
 
         template <typename T>
         UniformAllocation AllocateUniform(const T &value)
         {
-            static_assert(std::is_trivially_copyable_v<T>,
-                          "Frame uniform data must be trivially copyable");
             UniformAllocation allocation = AllocateUniform(sizeof(T));
             if (allocation.IsValid())
             {
@@ -62,15 +57,17 @@ namespace kpengine::render
             return allocation;
         }
 
-    private:
-        friend class RenderSystem;
-
+        // RenderSystem is the normal owner. The explicit lifecycle also keeps the
+        // standalone RHI example able to exercise the same render-layer path.
         void Initialize(graphics::RenderBackend &backend, size_t uniform_capacity);
-        void Begin(uint32_t frame_index, const FrameGlobals &globals);
+        void Begin(uint32_t frame_index, const FrameGlobals &globals,
+                   graphics::Extent2D render_extent);
         void End();
         void Cleanup();
 
     private:
+        void ReleaseTransientBindings();
+
         graphics::RenderBackend *backend_ = nullptr;
         graphics::BufferHandle uniform_buffer_;
         void *uniform_mapped_ = nullptr;
@@ -79,6 +76,8 @@ namespace kpengine::render
         size_t uniform_cursor_ = 0;
         uint32_t frame_index_ = 0;
         FrameGlobals globals_;
+        graphics::Extent2D render_extent_;
+        std::vector<graphics::DescriptorSetHandle> transient_binding_sets_;
         bool active_ = false;
     };
 }

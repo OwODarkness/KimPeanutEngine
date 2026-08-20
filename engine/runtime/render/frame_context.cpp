@@ -31,7 +31,8 @@ namespace kpengine::render
         }
     }
 
-    void FrameContext::Begin(uint32_t frame_index, const FrameGlobals &globals)
+    void FrameContext::Begin(uint32_t frame_index, const FrameGlobals &globals,
+                             graphics::Extent2D render_extent)
     {
         if (!backend_ || !uniform_mapped_)
         {
@@ -39,6 +40,8 @@ namespace kpengine::render
         }
         frame_index_ = frame_index;
         globals_ = globals;
+        render_extent_ = render_extent;
+        ReleaseTransientBindings();
         uniform_cursor_ = 0;
         active_ = true;
     }
@@ -64,8 +67,25 @@ namespace kpengine::render
                 static_cast<uint8_t *>(uniform_mapped_) + offset};
     }
 
+    graphics::DescriptorSetHandle FrameContext::AllocateResourceBindingSet(
+        graphics::PipelineHandle pipeline, const graphics::ResourceBindingSetDesc &desc)
+    {
+        if (!active_ || !backend_ || !pipeline.IsValid())
+        {
+            return {};
+        }
+        const graphics::DescriptorSetHandle handle =
+            backend_->CreateResourceBindingSet(pipeline, desc);
+        if (handle.IsValid())
+        {
+            transient_binding_sets_.push_back(handle);
+        }
+        return handle;
+    }
+
     void FrameContext::Cleanup()
     {
+        ReleaseTransientBindings();
         if (backend_ && uniform_buffer_.IsValid())
         {
             backend_->DestroyBufferResource(uniform_buffer_);
@@ -76,6 +96,19 @@ namespace kpengine::render
         uniform_capacity_ = 0;
         uniform_alignment_ = 1;
         uniform_cursor_ = 0;
+        render_extent_ = {};
         active_ = false;
+    }
+
+    void FrameContext::ReleaseTransientBindings()
+    {
+        if (backend_)
+        {
+            for (graphics::DescriptorSetHandle handle : transient_binding_sets_)
+            {
+                backend_->DestroyResourceBindingSet(handle);
+            }
+        }
+        transient_binding_sets_.clear();
     }
 }

@@ -55,8 +55,8 @@ namespace kpengine::graphics
     void VulkanBackend::BeginFrame()
     {
         // 1. wait for last frame to finish
-        // 2. acquire RT + prepare the frame's scene command buffer
-        // 3. caller records draws, EndFrame submits and presents
+        // 2. acquire the swapchain image and prepare the frame command buffer
+        // 3. caller selects render targets and records draws, then EndFrame submits
 
         frame_context_->WaitForInFlightFence();
 
@@ -77,12 +77,19 @@ namespace kpengine::graphics
 
         frame_context_->ResetInFlightFence();
         frame_context_->ResetCurrentSceneCommandBuffer();
-
-        VkCommandBuffer scene_command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
-        BeginSceneFrame(scene_command_buffer, image_index);
+        VkCommandBufferBeginInfo command_buffer_begin_info{};
+        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
+        if (vkBeginCommandBuffer(frame_context_->GetCurrentSceneCommandBuffer(),
+                                 &command_buffer_begin_info) != VK_SUCCESS)
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to begin command buffer");
+            throw std::runtime_error("Failed to begin command buffer");
+        }
 
         current_image_index_ = image_index;
         frame_active_ = true;
+        render_target_active_ = false;
+        active_render_target_ = {};
     }
 
     void VulkanBackend::EndFrame()
@@ -92,8 +99,13 @@ namespace kpengine::graphics
             return;
         }
 
+        if (render_target_active_)
+        {
+            EndRenderTarget();
+        }
+
         VkCommandBuffer scene_command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
-        EndSceneFrame(scene_command_buffer, current_image_index_);
+        FinishFrame(scene_command_buffer, current_image_index_);
 
         frame_context_->Submit(scene_command_buffer, current_image_index_);
 
@@ -116,6 +128,128 @@ namespace kpengine::graphics
     CommandRecorder *VulkanBackend::GetCommandRecorder()
     {
         return frame_active_ ? static_cast<CommandRecorder *>(this) : nullptr;
+    }
+
+    void VulkanBackend::BeginRenderTarget(RenderTargetHandle target)
+    {
+        if (!frame_active_ || render_target_active_)
+        {
+            return;
+        }
+        const uint32_t index = render_target_handles_.Get(target);
+        if (index >= render_targets_.size() || index >= render_target_states_.size())
+        {
+            return;
+        }
+        const RenderTargetResource &target_resource = render_targets_[index];
+        Texture *color_texture = texture_manager_->GetTexture(target_resource.color);
+        Texture *depth_texture = texture_manager_->GetTexture(target_resource.depth);
+        if (!color_texture || !depth_texture)
+        {
+            return;
+        }
+        const VulkanTextureResource color_resource =
+            ConvertToVulkanTextureResource(color_texture->GetTextueHandle());
+        const VulkanTextureResource depth_resource =
+            ConvertToVulkanTextureResource(depth_texture->GetTextueHandle());
+        if (color_resource.image == VK_NULL_HANDLE || color_resource.view == VK_NULL_HANDLE ||
+            depth_resource.image == VK_NULL_HANDLE || depth_resource.view == VK_NULL_HANDLE)
+        {
+            return;
+        }
+
+        VkCommandBuffer command_buffer = GetCurrentSceneCommandBuffer();
+        VulkanRenderTargetState &state = render_target_states_[index];
+        frame_context_->TransitionImageLayout(
+            command_buffer, color_resource.image, state.color_layout,
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            state.color_layout == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+        if (state.depth_layout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
+        {
+            frame_context_->TransitionImageLayout(
+                command_buffer, depth_resource.image, state.depth_layout,
+                VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+                state.depth_layout == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
+                VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1);
+            state.depth_layout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        }
+
+        VkClearValue color_clear{};
+        color_clear.color = {{0.f, 0.f, 0.f, 1.f}};
+        VkRenderingAttachmentInfo color_attachment{};
+        color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        color_attachment.imageView = color_resource.view;
+        color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment.clearValue = color_clear;
+
+        VkClearValue depth_clear{};
+        depth_clear.depthStencil = {1.f, 0};
+        VkRenderingAttachmentInfo depth_attachment{};
+        depth_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        depth_attachment.imageView = depth_resource.view;
+        depth_attachment.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+        depth_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depth_attachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depth_attachment.clearValue = depth_clear;
+
+        VkRenderingInfo rendering_info{};
+        rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        rendering_info.renderArea.extent = {target_resource.desc.width, target_resource.desc.height};
+        rendering_info.layerCount = 1;
+        rendering_info.colorAttachmentCount = 1;
+        rendering_info.pColorAttachments = &color_attachment;
+        rendering_info.pDepthAttachment = &depth_attachment;
+        vkCmdBeginRendering(command_buffer, &rendering_info);
+
+        VkViewport viewport{};
+        viewport.width = static_cast<float>(target_resource.desc.width);
+        viewport.height = static_cast<float>(target_resource.desc.height);
+        viewport.maxDepth = 1.f;
+        vkCmdSetViewport(command_buffer, 0, 1, &viewport);
+        VkRect2D scissor{};
+        scissor.extent = {target_resource.desc.width, target_resource.desc.height};
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+        state.color_layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        active_render_target_ = target;
+        render_target_active_ = true;
+    }
+
+    void VulkanBackend::EndRenderTarget()
+    {
+        if (!frame_active_ || !render_target_active_)
+        {
+            return;
+        }
+        vkCmdEndRendering(GetCurrentSceneCommandBuffer());
+        const uint32_t index = render_target_handles_.Get(active_render_target_);
+        if (index < render_targets_.size() && index < render_target_states_.size())
+        {
+            Texture *color_texture = texture_manager_->GetTexture(render_targets_[index].color);
+            if (color_texture)
+            {
+                const VulkanTextureResource color_resource =
+                    ConvertToVulkanTextureResource(color_texture->GetTextueHandle());
+                frame_context_->TransitionImageLayout(
+                    GetCurrentSceneCommandBuffer(), color_resource.image,
+                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
+                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+                render_target_states_[index].color_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
+            }
+        }
+        active_render_target_ = {};
+        render_target_active_ = false;
     }
 
     void VulkanBackend::BindPipeline(PipelineHandle pipeline)
@@ -202,6 +336,18 @@ namespace kpengine::graphics
     void VulkanBackend::Cleanup()
     {
         vkDeviceWaitIdle(device_->GetLogicalDevice());
+
+        for (RenderTargetResource &target : render_targets_)
+        {
+            if (target.color.IsValid())
+            {
+                DestroyTexture(target.color);
+                DestroyTexture(target.depth);
+                target = {};
+            }
+        }
+        render_targets_.clear();
+        render_target_states_.clear();
 
         CleanupSwapchain();
 
@@ -315,6 +461,69 @@ namespace kpengine::graphics
     bool VulkanBackend::DestroySampler(SamplerHandle handle)
     {
         return sampler_manager_->DestroySampler(CreateGraphicsContext(), handle);
+    }
+
+    RenderTargetHandle VulkanBackend::CreateRenderTarget(const RenderTargetDesc &desc)
+    {
+        if (desc.width == 0 || desc.height == 0)
+        {
+            return {};
+        }
+        const RenderTargetHandle handle = render_target_handles_.Create();
+        if (handle.id == render_targets_.size())
+        {
+            render_targets_.emplace_back();
+            render_target_states_.emplace_back();
+        }
+
+        TextureData target_data{};
+        target_data.width = desc.width;
+        target_data.height = desc.height;
+        TextureSettings color_settings{};
+        color_settings.format = desc.color_format;
+        color_settings.usage = TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT | TextureUsage::TEXTURE_USAGE_SAMPLE;
+        color_settings.aspect = ImageAspect::IMAGE_ASPECT_COLOR;
+        TextureSettings depth_settings{};
+        depth_settings.format = desc.depth_format;
+        depth_settings.usage = TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT;
+        depth_settings.aspect = ImageAspect::IMAGE_ASPECT_DEPTH;
+
+        RenderTargetResource target{};
+        target.desc = desc;
+        target.color = CreateTexture(target_data, color_settings);
+        target.depth = CreateTexture(target_data, depth_settings);
+        if (!target.color.IsValid() || !target.depth.IsValid())
+        {
+            if (target.color.IsValid()) DestroyTexture(target.color);
+            if (target.depth.IsValid()) DestroyTexture(target.depth);
+            render_target_handles_.Destroy(handle);
+            return {};
+        }
+        render_targets_[handle.id] = target;
+        render_target_states_[handle.id] = {};
+        return handle;
+    }
+
+    bool VulkanBackend::DestroyRenderTarget(RenderTargetHandle handle)
+    {
+        const uint32_t index = render_target_handles_.Get(handle);
+        if (index >= render_targets_.size()) return false;
+        RenderTargetResource &target = render_targets_[index];
+        if (!target.color.IsValid() || !target.depth.IsValid()) return false;
+        DestroyTexture(target.color);
+        DestroyTexture(target.depth);
+        target = {};
+        if (index < render_target_states_.size())
+        {
+            render_target_states_[index] = {};
+        }
+        return render_target_handles_.Destroy(handle);
+    }
+
+    TextureHandle VulkanBackend::GetRenderTargetColor(RenderTargetHandle handle)
+    {
+        const uint32_t index = render_target_handles_.Get(handle);
+        return index < render_targets_.size() ? render_targets_[index].color : TextureHandle{};
     }
 
     DescriptorSetHandle VulkanBackend::CreateResourceBindingSet(
@@ -553,107 +762,18 @@ namespace kpengine::graphics
         texture_manager_->DestroyTexture(context, color_handle_);
     }
 
-    void VulkanBackend::BeginSceneFrame(VkCommandBuffer commandbuffer, uint32_t image_index)
+    void VulkanBackend::FinishFrame(VkCommandBuffer commandbuffer, uint32_t image_index)
     {
-        VkCommandBufferBeginInfo command_buffer_begin_info{};
-        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        command_buffer_begin_info.pInheritanceInfo = nullptr;
-
-        if (vkBeginCommandBuffer(commandbuffer, &command_buffer_begin_info) != VK_SUCCESS)
-        {
-            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to begin command buffer");
-            throw std::runtime_error("Failed to begin command buffer");
-        }
-
-        std::array<VkClearValue, 2> clear_values;
-        clear_values[0].color = {0.f, 0.f, 0.f, 1.f};
-        clear_values[1].depthStencil = {1.f, 0};
-
-        VkRenderingAttachmentInfo color_attachment_info{};
-        color_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        color_attachment_info.imageView = swapchain_->GetImageView(image_index);
-        color_attachment_info.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
-        color_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        color_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
-        color_attachment_info.clearValue = clear_values[0];
-
-        Texture *depth_tex = texture_manager_->GetTexture(depth_handle_);
-        VulkanTextureResource depth_resource = ConvertToVulkanTextureResource(depth_tex->GetTextueHandle());
-
-        VkRenderingAttachmentInfo depth_attachment_info{};
-        depth_attachment_info.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
-        depth_attachment_info.imageView = depth_resource.view;
-        depth_attachment_info.imageLayout = VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
-        depth_attachment_info.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
-        depth_attachment_info.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
-        depth_attachment_info.clearValue = clear_values[1];
-
-        VkRect2D render_area{};
-        render_area.extent = swapchain_->GetExtent();
-        render_area.offset.x = 0;
-        render_area.offset.y = 0;
-
-        VkRenderingInfo render_info{};
-        render_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
-        render_info.renderArea = render_area;
-        render_info.layerCount = 1;
-        render_info.colorAttachmentCount = 1;
-        render_info.pColorAttachments = &color_attachment_info;
-        render_info.pDepthAttachment = &depth_attachment_info;
-
-        // swapchain image + depth into their attachment layouts before rendering
+        // The scene target is offscreen. The acquired swapchain image is not
+        // rendered this slice, but it must still be transitioned for present.
         frame_context_->TransitionImageLayout(
             commandbuffer,
             swapchain_->GetImage(image_index),
             VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
-            {}, VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
-            VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
-
-        frame_context_->TransitionImageLayout(
-            commandbuffer,
-            depth_resource.image,
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-            VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT | VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-            VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1);
-
-        vkCmdBeginRendering(commandbuffer, &render_info);
-
-        VkViewport viewport{};
-        viewport.width = static_cast<float>(swapchain_->GetExtent().width);
-        viewport.height = static_cast<float>(swapchain_->GetExtent().height);
-        viewport.maxDepth = 1.f;
-        viewport.minDepth = 0.f;
-        viewport.x = 0.f;
-        viewport.y = 0.f;
-        vkCmdSetViewport(commandbuffer, 0, 1, &viewport);
-
-        VkRect2D scissor{};
-        scissor.extent = swapchain_->GetExtent();
-        scissor.offset.x = 0;
-        scissor.offset.y = 0;
-        vkCmdSetScissor(commandbuffer, 0, 1, &scissor);
-    }
-
-    void VulkanBackend::EndSceneFrame(VkCommandBuffer commandbuffer, uint32_t image_index)
-    {
-        vkCmdEndRendering(commandbuffer);
-
-        // swapchain image back to presentable after the caller's draws
-        frame_context_->TransitionImageLayout(
-            commandbuffer,
-            swapchain_->GetImage(image_index),
-            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
             VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
             VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
-            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, {},
+            {}, {},
             VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
 
         if (vkEndCommandBuffer(commandbuffer) != VK_SUCCESS)

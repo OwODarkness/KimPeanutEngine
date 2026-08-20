@@ -1,5 +1,6 @@
 #include "render_system.h"
 
+#include <algorithm>
 #include <cstddef>
 
 #include "asset/asset_manager.h"
@@ -13,6 +14,7 @@
 #include "graphics/backend/common/sampler.h"
 #include "graphics/backend/common/texture.h"
 #include "log/logger.h"
+#include "render_scene.h"
 #include "resource/resource_pipeline.h"
 #include "resource/shader_operation.h"
 
@@ -109,6 +111,13 @@ namespace kpengine::render
         {
             context.Initialize(*backend_, kFrameUniformCapacity);
         }
+
+        const graphics::Extent2D extent = backend_->GetRenderExtent();
+        scene_render_target_.Initialize(*backend_, extent.width, extent.height);
+        if (!scene_render_target_.IsValid())
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Failed to create scene render target");
+        }
     }
 
     void RenderSystem::PostInitialize()
@@ -133,8 +142,20 @@ namespace kpengine::render
         {
             elapsed_seconds_ += delta_time;
             frame_context->Begin(backend_->GetCurrentFrameIndex(),
-                                 {frame_number_, elapsed_seconds_, delta_time});
-            // Scene scheduling will consume this context in the next Phase 3.4 slice.
+                                 {frame_number_, elapsed_seconds_, delta_time},
+                                 backend_->GetRenderExtent());
+            graphics::CommandRecorder *recorder = backend_->GetCommandRecorder();
+            if (recorder && scene_render_target_.BeginRecording(*recorder))
+            {
+                for (RenderScene *scene : scenes_)
+                {
+                    if (scene)
+                    {
+                        scene->Record(*frame_context, *recorder);
+                    }
+                }
+                scene_render_target_.EndRecording(*recorder);
+            }
             frame_context->End();
             ++frame_number_;
         }
@@ -164,6 +185,19 @@ namespace kpengine::render
         return resource_pipeline_
                    ? static_cast<int>(resource_pipeline_->GetProcessedShaderCount())
                    : 0;
+    }
+
+    void RenderSystem::AddScene(RenderScene &scene)
+    {
+        if (std::find(scenes_.begin(), scenes_.end(), &scene) == scenes_.end())
+        {
+            scenes_.push_back(&scene);
+        }
+    }
+
+    void RenderSystem::RemoveScene(RenderScene &scene)
+    {
+        scenes_.erase(std::remove(scenes_.begin(), scenes_.end(), &scene), scenes_.end());
     }
 
     std::vector<asset::ShaderPtr> RenderSystem::GetCachedShaders(
@@ -443,11 +477,13 @@ namespace kpengine::render
             return;
         }
 
+        scenes_.clear();
         for (FrameContext &context : frame_contexts_)
         {
             context.Cleanup();
         }
         frame_contexts_.clear();
+        scene_render_target_.Cleanup();
         for (const auto &[key, handle] : mesh_cache_)
         {
             (void)key;

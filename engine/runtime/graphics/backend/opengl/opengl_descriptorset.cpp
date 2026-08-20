@@ -1,11 +1,12 @@
 #include "opengl_descriptorset.h"
 #include <glad/glad.h>
 namespace kpengine::graphics{
-        void OpenglDescriptorSet::SetUniformBuffer(uint32_t binding, uint32_t buffer_id)
+        void OpenglDescriptorSet::SetUniformBuffer(uint32_t binding, uint32_t buffer_id,
+                                                    size_t offset, size_t range)
         {
             resources_[binding] = {
                 DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-                buffer_id
+                OpenglDescriptorData{OpenglUniformBufferBinding{buffer_id, offset, range}}
             };
         }
         
@@ -25,8 +26,18 @@ namespace kpengine::graphics{
                 OpenglDescriptorResource resource = resource_kv.second; 
                 if(resource.type == DescriptorType::DESCRIPTOR_TYPE_UNIFORM)
                 {
-                    uint32_t ubo = std::get<uint32_t>(resource.data);
-                    glBindBufferBase(GL_UNIFORM_BUFFER, binding, ubo);
+                    const OpenglUniformBufferBinding ubo =
+                        std::get<OpenglUniformBufferBinding>(resource.data);
+                    if (ubo.range == 0)
+                    {
+                        glBindBufferBase(GL_UNIFORM_BUFFER, binding, ubo.buffer);
+                    }
+                    else
+                    {
+                        glBindBufferRange(GL_UNIFORM_BUFFER, binding, ubo.buffer,
+                                          static_cast<GLintptr>(ubo.offset),
+                                          static_cast<GLsizeiptr>(ubo.range));
+                    }
                 }
                 else if(resource.type == DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER)
                 {

@@ -8,7 +8,6 @@
 #include "runtime/window/glfw_window_system.h"
 #include "runtime/input/input_system.h"
 #include "runtime/input/input_context.h"
-#include "runtime/graphics/backend/vulkan/vulkan_backend.h"
 #include "runtime/render/render_scene.h"
 #include "runtime/graphics/backend/common/pipeline_types.h"
 #include "runtime/graphics/backend/common/sampler.h"
@@ -104,14 +103,13 @@ namespace kpengine::example
         return handles;
     }
 
-    void RHIExample()
+    static bool RunRHI(GraphicsAPIType api, uint32_t max_frames, bool trigger_resize)
     {
         try
         {
             std::unique_ptr<WindowSystem> window = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
             WindowCreateInfo window_create_info;
-            window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_VULKAN;
-            // window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
+            window_create_info.graphics_api_type = api;
             window_create_info.width = 1600;
             window_create_info.height = 1024;
             window_create_info.title = "RHI";
@@ -124,9 +122,6 @@ namespace kpengine::example
             std::shared_ptr<input::InputContext> context = std::make_shared<input::InputContext>();
             input->AddContext("SceneInputContext", context);
             input->SetActiveContext("SceneInputContext");
-
-            const GraphicsAPIType api = window_create_info.graphics_api_type;
-            const bool is_opengl = api == GraphicsAPIType::GRAPHICS_API_OPENGL;
 
             std::vector<asset::ShaderPtr> shaders = CompileTriangleShaders(api);
             if (shaders.size() != 2 || !shaders[0]->data || !shaders[1]->data)
@@ -158,6 +153,15 @@ namespace kpengine::example
             std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(api);
             rhi->BindWindowResize(window->resize_event_dispatcher_);
             rhi->Initialize(window->GetNativeHandle());
+            graphics::RenderTargetDesc render_target_desc{};
+            render_target_desc.width = static_cast<uint32_t>(window_create_info.width);
+            render_target_desc.height = static_cast<uint32_t>(window_create_info.height);
+            const graphics::RenderTargetHandle scene_target =
+                rhi->CreateRenderTarget(render_target_desc);
+            if (!scene_target.IsValid() || !rhi->GetRenderTargetColor(scene_target).IsValid())
+            {
+                throw std::runtime_error("failed to create scene render target");
+            }
             const graphics::PipelineHandle primary_pipeline = rhi->CreatePipelineResource(pipeline_desc);
             const graphics::PipelineHandle secondary_pipeline = rhi->CreatePipelineResource(pipeline_desc);
             if (!primary_pipeline.IsValid() || !secondary_pipeline.IsValid())
@@ -165,55 +169,89 @@ namespace kpengine::example
                 throw std::runtime_error("failed to create graphics pipelines");
             }
 
-            // Vulkan records through the temporary backend-specific scene seam.
-            // OpenGL recording is the next shared-RHI milestone.
-            std::unique_ptr<render::RenderScene> scene;
-            DemoResourceHandles demo_resources{};
-            if (!is_opengl)
+            std::vector<render::FrameContext> frame_contexts(rhi->GetFramesInFlight());
+            for (render::FrameContext &frame_context : frame_contexts)
             {
-                demo_resources = CreateDemoResources(*rhi);
-                scene = std::make_unique<render::RenderScene>();
-                render::RenderSceneInitInfo scene_init_info{};
-                scene_init_info.backend = static_cast<graphics::VulkanBackend *>(rhi.get());
-                scene_init_info.resources.pipeline = primary_pipeline;
-                scene_init_info.resources.mesh = demo_resources.mesh;
-                scene_init_info.resources.material = {demo_resources.texture, demo_resources.sampler};
-                scene->Initialize(scene_init_info);
+                frame_context.Initialize(*rhi, 64 * 1024);
             }
 
-            while (!window->ShouldClose())
+            std::unique_ptr<render::RenderScene> scene;
+            DemoResourceHandles demo_resources = CreateDemoResources(*rhi);
+            scene = std::make_unique<render::RenderScene>();
+            render::RenderSceneInitInfo scene_init_info{};
+            scene_init_info.resources.pipeline = primary_pipeline;
+            scene_init_info.resources.mesh = demo_resources.mesh;
+            scene_init_info.resources.material = {demo_resources.texture, demo_resources.sampler};
+            scene->Initialize(scene_init_info);
+
+            uint64_t frame_number = 0;
+            float elapsed_seconds = 0.0f;
+            constexpr float kDemoDeltaSeconds = 1.0f / 60.0f;
+            uint32_t rendered_frames = 0;
+            while (!window->ShouldClose() && (max_frames == 0 || rendered_frames < max_frames))
             {
-                if (is_opengl)
-                {
-                    window->SwapBuffers();
-                }
                 window->PollEvents();
-                rhi->BeginFrame();
-                if (scene)
+                if (trigger_resize && rendered_frames == 1)
                 {
-                    scene->Tick(0.f);
-                    if (graphics::CommandRecorder *recorder = rhi->GetCommandRecorder())
+                    window->SetWindowSize(1024, 768);
+                    window->resize_event_dispatcher_.Dispatch({1024, 768});
+                }
+                rhi->BeginFrame();
+                if (rhi->GetCommandRecorder())
+                {
+                    const uint32_t frame_index = rhi->GetCurrentFrameIndex();
+                    if (frame_index < frame_contexts.size())
                     {
-                        scene->Record(*recorder);
+                        render::FrameContext &frame_context = frame_contexts[frame_index];
+                        elapsed_seconds += kDemoDeltaSeconds;
+                        frame_context.Begin(frame_index,
+                                           {frame_number, elapsed_seconds, kDemoDeltaSeconds},
+                                           rhi->GetRenderExtent());
+                        graphics::CommandRecorder *recorder = rhi->GetCommandRecorder();
+                        recorder->BeginRenderTarget(scene_target);
+                        scene->Record(frame_context, *recorder);
+                        recorder->EndRenderTarget();
+                        frame_context.End();
+                        ++frame_number;
                     }
                 }
                 rhi->EndFrame();
+                if (api == GraphicsAPIType::GRAPHICS_API_OPENGL)
+                {
+                    window->SwapBuffers();
+                }
+                ++rendered_frames;
             }
-            if (scene)
+            scene->Cleanup();
+            for (render::FrameContext &frame_context : frame_contexts)
             {
-                scene->Cleanup();
-                rhi->DestroyMesh(demo_resources.mesh);
-                rhi->DestroySampler(demo_resources.sampler);
-                rhi->DestroyTexture(demo_resources.texture);
+                frame_context.Cleanup();
             }
+            rhi->DestroyRenderTarget(scene_target);
+            rhi->DestroyMesh(demo_resources.mesh);
+            rhi->DestroySampler(demo_resources.sampler);
+            rhi->DestroyTexture(demo_resources.texture);
             rhi->DestroyPipelineResource(secondary_pipeline);
             rhi->DestroyPipelineResource(primary_pipeline);
             rhi->Cleanup();
             window->Cleanup();
+            return true;
         }
-        catch (std::exception e)
+        catch (const std::exception &e)
         {
             std::cout << e.what() << std::endl;
+            return false;
         }
+    }
+
+    void RHIExample()
+    {
+        (void)RunRHI(GraphicsAPIType::GRAPHICS_API_VULKAN, 0, false);
+    }
+
+    bool RunGraphicsSmokeSuite(uint32_t frames_per_api)
+    {
+        return RunRHI(GraphicsAPIType::GRAPHICS_API_VULKAN, frames_per_api, true) &&
+               RunRHI(GraphicsAPIType::GRAPHICS_API_OPENGL, frames_per_api, true);
     }
 }

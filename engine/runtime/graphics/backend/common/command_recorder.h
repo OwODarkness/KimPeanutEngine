@@ -32,6 +32,10 @@ namespace kpengine::graphics
     {
     public:
         virtual ~CommandRecorder() = default;
+        // Begins an offscreen render pass. The target must be ended before
+        // beginning another target or ending the frame.
+        virtual void BeginRenderTarget(RenderTargetHandle target) = 0;
+        virtual void EndRenderTarget() = 0;
         virtual void BindPipeline(PipelineHandle pipeline) = 0;
         virtual void BindMesh(MeshHandle mesh) = 0;
         virtual void BindResourceBindings(PipelineHandle pipeline,

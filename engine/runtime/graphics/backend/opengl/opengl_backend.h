@@ -7,19 +7,10 @@
 #include <glad/glad.h>
 
 #include "common/render_backend.h"
-#include "math/math_header.h"
 #include "opengl_context.h"
 
 namespace kpengine::graphics
-{   
-     struct UniformBuffer
-    {
-        alignas(16) Matrix4f model;
-        alignas(16) Matrix4f view;
-        alignas(16) Matrix4f proj;
-    };
-
-
+{
     class OpenglBackend : public RenderBackend, public CommandRecorder
     {
     public:
@@ -36,6 +27,9 @@ namespace kpengine::graphics
         bool DestroyTexture(TextureHandle handle) override;
         SamplerHandle CreateSampler(const SamplerSettings &settings) override;
         bool DestroySampler(SamplerHandle handle) override;
+        RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) override;
+        bool DestroyRenderTarget(RenderTargetHandle handle) override;
+        TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
         DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
         bool DestroyResourceBindingSet(DescriptorSetHandle handle) override;
@@ -43,6 +37,8 @@ namespace kpengine::graphics
                                     DescriptorSetHandle handle) override;
         virtual void BeginFrame() override;
         CommandRecorder *GetCommandRecorder() override;
+        void BeginRenderTarget(RenderTargetHandle target) override;
+        void EndRenderTarget() override;
         void BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
         void BindResourceBindings(PipelineHandle pipeline,
@@ -66,27 +62,21 @@ namespace kpengine::graphics
         bool DestroyBufferResource(BufferHandle handle) override;
 
     private:
-        void CreateMeshes();
-        void CreateUniformBuffers();
-        void CreateTextures();
-        void UpdateUniformBuffers();
         GraphicsContext CreateGraphicsContext();
-        void CreateDescriptorSets();
     private:
         std::unique_ptr<class MeshManager> mesh_manager_;
         std::unique_ptr<class TextureManager> texture_manager_;
         std::unique_ptr<class SamplerManager> sampler_manager_;
         std::unique_ptr<class OpenglPipelineManager> pipeline_manager_;
 
+        std::vector<RenderTargetResource> render_targets_;
+        std::vector<GLuint> render_target_framebuffers_;
+        HandleSystem<RenderTargetHandle> render_target_handles_;
+
 
         OpenglContext context_;
         std::vector<std::unique_ptr<class OpenglDescriptorSet>> resource_binding_sets_;
         HandleSystem<DescriptorSetHandle> resource_binding_set_handles_;
-        std::unique_ptr<class OpenglDescriptorSet> descriptor_set;
-        TextureHandle texture_handle;
-        SamplerHandle sampler_handle;
-        MeshHandle mesh_handle;
-        std::vector<GLuint> ubos_;
         struct MappedUniformBuffer
         {
             GLuint native = 0;
@@ -96,6 +86,7 @@ namespace kpengine::graphics
         MeshHandle recorded_mesh_;
         uint32_t recorded_index_count_ = 0;
         PipelineHandle recorded_pipeline_;
+        RenderTargetHandle active_render_target_;
         bool frame_active_ = false;
 
     };

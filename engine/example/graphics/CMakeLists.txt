@@ -14,4 +14,8 @@ Window
 Input
 )
 
+add_executable(GraphicsSmoke graphics_smoke_main.cpp)
+target_link_libraries(GraphicsSmoke PRIVATE GraphicsExample)
+copy_runtime_dependencies(GraphicsSmoke)
+
 

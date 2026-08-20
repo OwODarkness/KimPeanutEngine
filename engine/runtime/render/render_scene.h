@@ -2,11 +2,9 @@
 #define KPENGINE_RUNTIME_RENDER_RENDER_SCENE_H
 
 #include <cstdint>
-#include <vector>
-
 #include "graphics/backend/common/api.h"
 #include "graphics/backend/common/command_recorder.h"
-#include "graphics/backend/common/render_backend.h"
+#include "frame_context.h"
 #include "render_camera.h"
 #include "render_resource.h"
 
@@ -21,13 +19,11 @@ namespace kpengine::render
 
     struct RenderSceneInitInfo
     {
-        graphics::RenderBackend *backend = nullptr;
         RenderSceneResources resources;
     };
 
-    // The demo reappears here as the render module's first real scene: it owns the
-    // mesh, texture, uniform buffers and descriptor sets, and records the frame's
-    // draws through the API-neutral command recorder.
+    // The demo scene owns only logical camera/renderable/material state. Frame
+    // uniform storage and descriptor sets are allocated by the supplied context.
     class RenderScene
     {
     public:
@@ -35,8 +31,7 @@ namespace kpengine::render
         ~RenderScene() = default;
 
         void Initialize(const RenderSceneInitInfo &info);
-        void Tick(float delta_time);
-        void Record(graphics::CommandRecorder &recorder);
+        void Record(FrameContext &frame, graphics::CommandRecorder &recorder);
         void Cleanup();
 
         // Scene/view state belongs here; the system only schedules this scene.
@@ -44,27 +39,11 @@ namespace kpengine::render
         const RenderCamera &GetCamera() const { return camera_; }
 
     private:
-        struct UniformBuffer
-        {
-            std::vector<graphics::BufferHandle> handles;
-            std::vector<void *> mapped;
-            uint32_t element_size = 0;
-        };
-
-        void CreateUniformBuffers();
-        void CreateDescriptorSets();
-        void UpdateUniformBuffers(uint32_t frame_index);
-
-    private:
-        graphics::RenderBackend *backend_ = nullptr;
         RenderCamera camera_;
         graphics::PipelineHandle pipeline_handle_;
         graphics::TextureHandle texture_handle_;
         graphics::SamplerHandle sampler_handle_;
         graphics::MeshHandle mesh_handle_;
-        UniformBuffer per_pass_ubo_;
-        UniformBuffer per_object_ubo_;
-        std::vector<graphics::DescriptorSetHandle> descriptor_sets_;
     };
 }
 

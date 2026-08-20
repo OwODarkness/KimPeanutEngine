@@ -12,6 +12,7 @@ namespace kpengine::graphics
     struct DescriptorSetTag{};
     struct BufferTag{};
     struct MeshTag{};
+    struct RenderTargetTag{};
     struct AudioTag{};
 
 
@@ -22,6 +23,7 @@ namespace kpengine::graphics
     using DescriptorSetHandle = Handle<DescriptorSetTag>;
     using BufferHandle = Handle<BufferTag>;
     using MeshHandle = Handle<MeshTag>;
+    using RenderTargetHandle = Handle<RenderTargetTag>;
 
 }
 

@@ -38,12 +38,14 @@ Modeled on the deprecated `CameraComponent` (git history: `engine/runtime/compon
 
 The triangle demo, moved out of the Vulkan backend (Phase 4 of the [Vulkan decoupling](../graphics/vulkanbackend.md)) and into the render module. It borrows static mesh/texture/pipeline handles from the render-resource cache, owns per-frame uniform buffers + descriptor sets and its `RenderCamera`, and records the frame's draws against the RHI's scene command buffer:
 
-- `Initialize(VulkanBackend*)` — loads texture + mesh through the asset manager, creates the GPU objects via the backend managers, allocates the UBOs (persistently mapped) and descriptor sets.
-- `Tick(delta)` — writes the per-pass (camera, from the swapchain extent) and per-object (spinning) UBOs for the current frame in flight.
-- `Record()` — binds the pipeline, vertex/index buffers, descriptor set and issues `vkCmdDrawIndexed` into `GetCurrentSceneCommandBuffer()`.
-- `Cleanup()` — destroys descriptor pool, UBO buffers, mesh/sampler/texture through the backend managers.
+- `Initialize(RenderSceneInitInfo)` — receives borrowed static pipeline/mesh/material handles.
+- `Record(FrameContext&, CommandRecorder&)` — derives camera/object data, allocates
+  uniform ranges and a binding set from the active frame context, then describes
+  the indexed draw with common handles.
+- `Cleanup()` — releases only the scene's logical references; the frame context
+  owns transient GPU objects and `RenderSystem` owns cached static resources.
 
-**Cross-API recording** — `Record(CommandRecorder&)` describes the draw with common handles. The backend owns native command-buffer access and translates the recorder operations for its graphics API.
+**Cross-API recording and transient data** — `Record(FrameContext&, CommandRecorder&)` describes the draw with common handles. The backend owns native command-buffer access; `FrameContext` owns the per-slot UBO arena and binding sets; the scene owns no transient GPU handle.
 
 ## Target architecture
 
@@ -104,9 +106,17 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 
 ## Future work
 
-- **Frame-local transient data (Phase 3.4, in progress).** `RenderSystem` owns
-  a `FrameContext` for every backend frame slot. The context owns the transient
-  uniform-buffer arena and returns aligned buffer/range allocations; scenes will
-  next consume these allocations instead of retaining UBOs and descriptor sets.
+- **Scene render target (first slice landed).** `RenderSystem` owns a
+  render-level `RenderTarget`, backed by private RHI color/depth attachments.
+  Other modules can inspect the target's validity and extent, but cannot obtain
+  a graphics handle or texture directly. Vulkan/OpenGL create and destroy the
+  attachments privately. `RenderSystem::Tick` brackets its registered scenes
+  with target recording; a render-owned editor image bridge and final composite
+  pass are the next slices.
+
+- **Frame-local transient data (Phase 3.4, landed).** `RenderSystem` owns a
+  `FrameContext` for every backend frame slot and schedules registered scenes
+  with the active context plus common recorder. The context owns transient UBO
+  ranges and binding sets; scenes retain only logical and static resource state.
 
 - **Render graph (very future, not started).** Long-term the render module moves from direct pass code to a render graph: passes recorded as nodes with explicit resource dependencies (textures, buffers, pipeline state), then culled/ordered and baked into RHI draw calls. `RenderSystem` becomes the graph executor — it records the frame's passes, drains the async queue, and issues the RHI calls that complete the render task. Listed now so the design doesn't lock in a pass order prematurely.

@@ -10,6 +10,7 @@
 #include "mesh.h"
 #include "pipeline_types.h"
 #include "resource_binding.h"
+#include "render_target.h"
 #include "sampler.h"
 #include "texture.h"
 
@@ -54,6 +55,9 @@ namespace kpengine::graphics
         virtual bool DestroyTexture(TextureHandle handle) = 0;
         virtual SamplerHandle CreateSampler(const SamplerSettings &settings) = 0;
         virtual bool DestroySampler(SamplerHandle handle) = 0;
+        virtual RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) = 0;
+        virtual bool DestroyRenderTarget(RenderTargetHandle handle) = 0;
+        virtual TextureHandle GetRenderTargetColor(RenderTargetHandle handle) = 0;
         virtual DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) = 0;
         virtual bool DestroyResourceBindingSet(DescriptorSetHandle handle) = 0;

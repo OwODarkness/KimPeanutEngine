@@ -146,6 +146,9 @@ descriptors, while Vulkan owns every `VkDescriptor*` object (2026-08-20).
 - [x] Expose a recorder only during the `BeginFrame`/`EndFrame` interval.
 - [x] Support only the demo operations: bind pipeline, bind mesh, bind resource
   bindings, set viewport/scissor, and draw indexed.
+- [x] Add `BeginRenderTarget` / `EndRenderTarget` so render owns scene-output
+  attachment selection. Vulkan records dynamic rendering into API-private
+  color/depth textures; OpenGL binds the matching framebuffer. Landed 2026-08-20.
 - [x] Implement the recorder in Vulkan by issuing `vkCmd*`; keep the native
   command buffer private to the backend.
 - [x] Convert `RenderScene::Record` to take/use this common recorder and remove
@@ -163,9 +166,9 @@ recorder is available only during an active frame (2026-08-20).
 **Goal:** centralize per-frame GPU allocation and lifetime without returning
 scene-specific camera/object state to `RenderSystem`.
 
-**First seam:** `render::FrameContext` is declared in `render/frame_context.h`.
-It currently carries only frame identity/global CPU data; allocation and
-backend lifecycle wiring remain the work below.
+`RenderSystem` owns one logical `FrameContext` per backend frame slot. The
+backend remains authoritative for fences and slot reuse; the render context owns
+only transient render data for that safe-to-reuse slot.
 
 - [x] Add `FrameContext`, owned and rotated by `RenderSystem`: one context per
   frame in flight, carrying frame index, frame-global CPU data, and transient
@@ -173,54 +176,98 @@ backend lifecycle wiring remain the work below.
 - [x] Add a common dynamic-uniform allocator. `FrameContext::AllocateUniform<T>`
   returns a buffer/range valid only for its frame slot; the allocator resets or
   recycles only after that slot's GPU work is complete.
-- [ ] Add transient resource-binding-set allocation through `FrameContext`.
+- [x] Add transient resource-binding-set allocation through `FrameContext`.
   Binding sets that reference frame UBO ranges are released with the frame;
   scenes must not retain their handles across frames.
-- [ ] Move `RenderScene`'s persistent `UniformBuffer` storage, mapped pointers,
+- [x] Move `RenderScene`'s persistent `UniformBuffer` storage, mapped pointers,
   descriptor-set vector, and manual destruction out of the scene. The scene
   retains logical camera/renderable/material state and writes frame data through
   its supplied context.
-- [ ] Put truly global dynamic data (frame number, elapsed time, global
+- [x] Put truly global dynamic data (frame number, elapsed time, global
   lighting/environment) in `FrameContext`; keep camera data in a scene-created
   render view and per-object transforms in scene draw data.
-- [ ] Preserve static ownership: `RenderSystem` keeps cached mesh, texture,
+- [x] Preserve static ownership: `RenderSystem` keeps cached mesh, texture,
   sampler, and pipeline handles; a future material system may cache immutable
   texture/sampler binding sets separately.
-- [ ] Enforce the frame sequence: `BeginFrame` → acquire/begin `FrameContext`
+- [x] Enforce the frame sequence: `BeginFrame` → acquire/begin `FrameContext`
   → scenes build draw data and record through the common recorder → end context
   → `EndFrame`.
-- [ ] Verify destruction order: scene logical state → frame contexts/transient
+- [x] Verify destruction order: scene logical state → frame contexts/transient
   allocations → render cached static resources/pipelines → backend/device.
 
 **Done when:** scenes own no transient `BufferHandle` or per-frame
 `DescriptorSetHandle`; all such handles are valid only inside the supplied
 `FrameContext`, while the same scene-facing code remains Vulkan/OpenGL-neutral.
 
-**Landed so far:** `RenderSystem` creates one `FrameContext` for each backend
-frame slot. Each owns a 64 KiB persistently mapped uniform-buffer arena;
-allocations return an aligned buffer/offset/range/mapped-pointer record and the
-cursor resets only after `RenderBackend::BeginFrame` has made that slot reusable.
-Vulkan uses `minUniformBufferOffsetAlignment`; OpenGL uses
-`GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT` (2026-08-20).
+**Landed:** `RenderSystem` creates one `FrameContext` for each backend frame
+slot and schedules registered scenes between `BeginFrame`/`EndFrame`. Each
+context owns a 64 KiB persistently mapped uniform-buffer arena and its transient
+descriptor sets. Allocations return an aligned buffer/offset/range/mapped-pointer
+record; both the arena cursor and binding sets recycle only after
+`RenderBackend::BeginFrame` has made that slot reusable. Vulkan uses
+`minUniformBufferOffsetAlignment`; OpenGL uses
+`GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT` and `glBindBufferRange`. `RenderScene`
+now retains only logical state and static RHI handles (2026-08-20).
 
 ### Milestone 4 — remove legacy renderer behavior from OpenGL
 
 **Goal:** Vulkan and OpenGL are two implementations of one contract, not two
 different render architectures.
 
-- [ ] Remove direct `AssetManager` calls, hard-coded sphere/wallpaper paths,
-  camera animation, demo UBO ownership, and `glDrawElements` scene policy from
+#### 4.1 — remove dead OpenGL demo ownership
+
+- [x] Remove direct `AssetManager` calls and `config/path.h` from
   `OpenglBackend`.
-- [ ] Make OpenGL consume caller-provided mesh/texture/sampler/buffer/pipeline
-  resources and the common recording operations from milestone 3.
-- [ ] Match Vulkan resource ownership and destruction semantics: render owns
-  request/cache policy; the backend owns API object creation and destruction.
-- [ ] Keep API differences internal (SPIR-V vs GLSL, descriptor sets vs GL
+- [x] Delete hard-coded sphere/wallpaper paths, camera animation, and the old
+  demo UBO/descriptor setup helpers and members.
+- [x] Remove backend-owned `glDrawElements` scene policy that is not part of
+  `CommandRecorder` execution.
+
+**Done when:** `OpenglBackend` contains no asset loading, scene data, or
+demo-specific resource lifetime.
+
+**Landed:** all legacy OpenGL demo helpers and their asset/path dependencies
+are deleted. The remaining indexed-draw call exists only as the implementation
+of `CommandRecorder::DrawIndexed` (2026-08-20).
+
+#### 4.2 — complete the common OpenGL execution path
+
+- [x] Make OpenGL consume caller-provided mesh/texture/sampler/buffer/pipeline
+  handles and the common recording operations from milestones 3–4 only.
+- [x] Match Vulkan ownership: render owns request/cache and frame-transient
+  policy; the backend owns API object creation, translation, and destruction.
+- [x] Keep API differences internal (SPIR-V vs GLSL, descriptor sets vs GL
   binding points, dynamic rendering vs default framebuffer).
 
-**Done when:** no backend source includes `asset/`, `config/path.h`, or embeds
-scene-specific paths/data, and switching `GraphicsAPIType` changes only the
-backend implementation—not the render scene or warmup policy.
+**Done when:** the OpenGL backend can execute the same `RenderScene` and
+`FrameContext` path with no scene-specific branch.
+
+**Landed:** `GraphicsExample` now creates the same caller-owned
+`RenderScene`, static resources, and `FrameContext` path for Vulkan and
+OpenGL. OpenGL validates pipeline and binding inputs, uses `glBindBufferRange`
+for frame UBO ranges, and only translates common RHI calls (2026-08-20).
+
+#### 4.3 — verify Vulkan/OpenGL parity
+
+- [x] Run the one-object smoke scene through the same `RenderSystem` /
+  `RenderScene` path on Vulkan and OpenGL.
+- [x] Verify drawing, resize behavior, frame-slot reuse, and shutdown order on
+  both backends.
+- [x] Record any remaining API-only differences in the module documentation.
+
+**Done when:** switching `GraphicsAPIType` changes only backend implementation,
+not the render scene, warmup policy, or frame-data ownership.
+
+**Landed:** `GraphicsSmoke` runs the shared one-object scene for three frames
+on Vulkan and OpenGL, dispatching a resize event on its second frame. Three
+Vulkan frames exercise frame-slot reuse; both runs clean up frame contexts,
+static resources, backend, and window before returning. The smoke exits zero
+when both APIs complete; it is a no-crash contract test, not pixel comparison
+(2026-08-20).
+
+**Milestone done when:** no backend source includes `asset/`, `config/path.h`,
+or embeds scene-specific paths/data, and switching `GraphicsAPIType` changes
+only the backend implementation—not the render scene or warmup policy.
 
 ### Milestone 5 — harden the contract before adding a render graph
 

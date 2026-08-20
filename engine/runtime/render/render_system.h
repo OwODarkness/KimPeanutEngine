@@ -15,6 +15,7 @@
 #include "graphics/backend/common/api.h"
 #include "graphics/backend/common/pipeline_types.h"
 #include "frame_context.h"
+#include "render_target.h"
 #include "render_resource.h"
 
 namespace kpengine::asset
@@ -45,6 +46,8 @@ namespace kpengine::runtime
 
 namespace kpengine::render
 {
+    class RenderScene;
+
     struct RenderSystemInitInfo
     {
         GraphicsAPIType api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
@@ -84,6 +87,9 @@ namespace kpengine::render
         bool IsReady(asset::RequestID request_id) const;
         const RenderCacheEntry *GetCached(asset::RequestID request_id) const;
         graphics::PipelineHandle GetPipeline(asset::RequestID request_id) const;
+        const RenderTarget &GetSceneRenderTarget() const { return scene_render_target_; }
+        void AddScene(RenderScene &scene);
+        void RemoveScene(RenderScene &scene);
 
         // Distinct shader references loaded so far, reference-based on the content
         // hash (the ShaderCache key) so a stage shared across programs counts once.
@@ -121,7 +127,9 @@ namespace kpengine::render
     private:
         std::unique_ptr<resource::ResourcePipeline> resource_pipeline_;
         std::unique_ptr<graphics::RenderBackend> backend_;
+        RenderTarget scene_render_target_;
         std::vector<FrameContext> frame_contexts_;
+        std::vector<RenderScene *> scenes_;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;
         async::AsyncQueue<asset::AssetLoadRequest> *load_queue_ = nullptr;

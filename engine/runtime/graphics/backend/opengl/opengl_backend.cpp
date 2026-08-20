@@ -1,19 +1,14 @@
 #include "opengl_backend.h"
+#include <type_traits>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
-#include <chrono>
 #include "log/logger.h"
-#include "config/path.h"
 #include "common/mesh_manager.h"
 #include "common/texture_manager.h"
 #include "common/sampler_manager.h"
 #include "opengl_pipeline.h"
 #include "opengl_pipeline_manager.h"
 #include "common/pipeline_types.h"
-#include "asset/asset_manager.h"
-#include "asset/model.h"
-#include "asset/mesh.h"
-#include "asset/texture.h"
 #include "opengl_mesh.h"
 #include "common/mesh.h"
 #include "opengl_enum.h"
@@ -47,17 +42,55 @@ namespace kpengine::graphics
     void OpenglBackend::BeginFrame()
     {
         frame_active_ = true;
-        glClearColor(0.f, 0.f, 0.f, 1.f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        active_render_target_ = {};
     }
     void OpenglBackend::EndFrame()
     {
+        if (active_render_target_.IsValid())
+        {
+            EndRenderTarget();
+        }
         frame_active_ = false;
     }
 
     CommandRecorder *OpenglBackend::GetCommandRecorder()
     {
         return frame_active_ ? static_cast<CommandRecorder *>(this) : nullptr;
+    }
+
+    void OpenglBackend::BeginRenderTarget(RenderTargetHandle target)
+    {
+        if (!frame_active_ || active_render_target_.IsValid())
+        {
+            return;
+        }
+        const uint32_t index = render_target_handles_.Get(target);
+        if (index >= render_targets_.size() || index >= render_target_framebuffers_.size())
+        {
+            return;
+        }
+        const GLuint framebuffer = render_target_framebuffers_[index];
+        if (framebuffer == 0)
+        {
+            return;
+        }
+        const RenderTargetResource &resource = render_targets_[index];
+        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
+        glViewport(0, 0, static_cast<GLsizei>(resource.desc.width),
+                   static_cast<GLsizei>(resource.desc.height));
+        glClearColor(0.f, 0.f, 0.f, 1.f);
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+        active_render_target_ = target;
+    }
+
+    void OpenglBackend::EndRenderTarget()
+    {
+        if (!active_render_target_.IsValid())
+        {
+            return;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        active_render_target_ = {};
     }
 
     void OpenglBackend::BindPipeline(PipelineHandle pipeline)
@@ -170,6 +203,22 @@ namespace kpengine::graphics
 
     void OpenglBackend::Cleanup()
     {
+        for (size_t index = 0; index < render_targets_.size(); ++index)
+        {
+            RenderTargetResource &target = render_targets_[index];
+            if (index < render_target_framebuffers_.size() && render_target_framebuffers_[index] != 0)
+            {
+                glDeleteFramebuffers(1, &render_target_framebuffers_[index]);
+            }
+            if (target.color.IsValid())
+            {
+                DestroyTexture(target.color);
+                DestroyTexture(target.depth);
+                target = {};
+            }
+        }
+        render_targets_.clear();
+        render_target_framebuffers_.clear();
         pipeline_manager_->DestroyAll();
         resource_binding_sets_.clear();
     }
@@ -242,10 +291,103 @@ namespace kpengine::graphics
         return sampler_manager_->DestroySampler(CreateGraphicsContext(), handle);
     }
 
+    RenderTargetHandle OpenglBackend::CreateRenderTarget(const RenderTargetDesc &desc)
+    {
+        if (desc.width == 0 || desc.height == 0)
+        {
+            return {};
+        }
+        const RenderTargetHandle handle = render_target_handles_.Create();
+        if (handle.id == render_targets_.size())
+        {
+            render_targets_.emplace_back();
+            render_target_framebuffers_.emplace_back(0);
+        }
+
+        TextureData target_data{};
+        target_data.width = desc.width;
+        target_data.height = desc.height;
+        TextureSettings color_settings{};
+        color_settings.format = desc.color_format;
+        color_settings.usage = TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT | TextureUsage::TEXTURE_USAGE_SAMPLE;
+        color_settings.aspect = ImageAspect::IMAGE_ASPECT_COLOR;
+        TextureSettings depth_settings{};
+        depth_settings.format = desc.depth_format;
+        depth_settings.usage = TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT;
+        depth_settings.aspect = ImageAspect::IMAGE_ASPECT_DEPTH;
+
+        RenderTargetResource target{};
+        target.desc = desc;
+        target.color = CreateTexture(target_data, color_settings);
+        target.depth = CreateTexture(target_data, depth_settings);
+        if (!target.color.IsValid() || !target.depth.IsValid())
+        {
+            if (target.color.IsValid()) DestroyTexture(target.color);
+            if (target.depth.IsValid()) DestroyTexture(target.depth);
+            render_target_handles_.Destroy(handle);
+            return {};
+        }
+        Texture *color_texture = texture_manager_->GetTexture(target.color);
+        Texture *depth_texture = texture_manager_->GetTexture(target.depth);
+        if (!color_texture || !depth_texture)
+        {
+            DestroyTexture(target.color);
+            DestroyTexture(target.depth);
+            render_target_handles_.Destroy(handle);
+            return {};
+        }
+        const OpenglTextureResource color_resource =
+            ConvertToOpenglTextureResource(color_texture->GetTextueHandle());
+        const OpenglTextureResource depth_resource =
+            ConvertToOpenglTextureResource(depth_texture->GetTextueHandle());
+        GLuint framebuffer = 0;
+        glCreateFramebuffers(1, &framebuffer);
+        glNamedFramebufferTexture(framebuffer, GL_COLOR_ATTACHMENT0, color_resource.image, 0);
+        glNamedFramebufferTexture(framebuffer, GL_DEPTH_ATTACHMENT, depth_resource.image, 0);
+        glNamedFramebufferDrawBuffer(framebuffer, GL_COLOR_ATTACHMENT0);
+        if (glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
+        {
+            glDeleteFramebuffers(1, &framebuffer);
+            DestroyTexture(target.color);
+            DestroyTexture(target.depth);
+            render_target_handles_.Destroy(handle);
+            return {};
+        }
+        render_targets_[handle.id] = target;
+        render_target_framebuffers_[handle.id] = framebuffer;
+        return handle;
+    }
+
+    bool OpenglBackend::DestroyRenderTarget(RenderTargetHandle handle)
+    {
+        const uint32_t index = render_target_handles_.Get(handle);
+        if (index >= render_targets_.size()) return false;
+        RenderTargetResource &target = render_targets_[index];
+        if (!target.color.IsValid() || !target.depth.IsValid()) return false;
+        if (index < render_target_framebuffers_.size() && render_target_framebuffers_[index] != 0)
+        {
+            glDeleteFramebuffers(1, &render_target_framebuffers_[index]);
+            render_target_framebuffers_[index] = 0;
+        }
+        DestroyTexture(target.color);
+        DestroyTexture(target.depth);
+        target = {};
+        return render_target_handles_.Destroy(handle);
+    }
+
+    TextureHandle OpenglBackend::GetRenderTargetColor(RenderTargetHandle handle)
+    {
+        const uint32_t index = render_target_handles_.Get(handle);
+        return index < render_targets_.size() ? render_targets_[index].color : TextureHandle{};
+    }
+
     DescriptorSetHandle OpenglBackend::CreateResourceBindingSet(
         PipelineHandle pipeline, const ResourceBindingSetDesc &desc)
     {
-        (void)pipeline;
+        if (!pipeline_manager_->GetPipelineResource(pipeline))
+        {
+            return {};
+        }
         const DescriptorSetHandle handle = resource_binding_set_handles_.Create();
         if (handle.id == resource_binding_sets_.size())
         {
@@ -253,13 +395,20 @@ namespace kpengine::graphics
         }
 
         auto set = std::make_unique<OpenglDescriptorSet>();
+        bool valid = true;
         for (const ResourceBinding &binding : desc.bindings)
         {
             std::visit([&](const auto &value) {
                 using Binding = std::decay_t<decltype(value)>;
                 if constexpr (std::is_same_v<Binding, UniformBufferBinding>)
                 {
-                    set->SetUniformBuffer(value.binding, value.buffer.id);
+                    if (!value.buffer.IsValid() || value.range == 0)
+                    {
+                        valid = false;
+                        return;
+                    }
+                    set->SetUniformBuffer(value.binding, value.buffer.id,
+                                          value.offset, value.range);
                 }
                 else
                 {
@@ -267,6 +416,7 @@ namespace kpengine::graphics
                     Sampler *sampler = sampler_manager_->GetSampler(value.sampler);
                     if (!texture || !sampler)
                     {
+                        valid = false;
                         return;
                     }
                     const OpenglTextureResource texture_resource =
@@ -277,6 +427,11 @@ namespace kpengine::graphics
                                                  sampler_resource.sampler);
                 }
             }, binding);
+        }
+        if (!valid)
+        {
+            resource_binding_set_handles_.Destroy(handle);
+            return {};
         }
         resource_binding_sets_[handle.id] = std::move(set);
         return handle;
@@ -308,73 +463,6 @@ namespace kpengine::graphics
         }
     }
 
-    void OpenglBackend::CreateMeshes()
-    {
-        std::string model_path = GetModelDirectory() + "sphere/sphere.obj";
-        asset::AssetID model_id = asset::AssetManager::GetInstance().LoadSync(model_path);
-        std::shared_ptr<asset::ModelResource> model_ptr = asset::AssetManager::GetInstance().GetResource<asset::ModelResource>(model_id);
-        if (model_ptr)
-        {
-            asset::AssetID mesh_id = model_ptr->GetData(asset::ModelGeometryType::KPMG_Mesh);
-            std::shared_ptr<asset::MeshResource> mesh_ptr = asset::AssetManager::GetInstance().GetResource<asset::MeshResource>(mesh_id);
-            if (mesh_ptr)
-            {
-                GraphicsContext context;
-                context.native = &context_;
-                context.type = GraphicsAPIType::GRAPHICS_API_OPENGL;
-
-                mesh_handle = mesh_manager_->CreateMesh(context, *mesh_ptr->data);
-            }
-        }
-        asset::AssetManager::GetInstance().UnRegisterAsset(model_id);
-        asset::AssetManager::GetInstance().UnRegisterAsset(model_ptr->GetData(asset::ModelGeometryType::KPMG_Mesh));
-    }
-
-    void OpenglBackend::CreateUniformBuffers()
-    {
-        ubos_.resize(2);
-        glGenBuffers(2, ubos_.data());
-        glBindBuffer(GL_UNIFORM_BUFFER, ubos_[0]);
-        glBufferData(GL_UNIFORM_BUFFER, sizeof(PerPassData), nullptr, GL_DYNAMIC_DRAW);
-        glBindBuffer(GL_UNIFORM_BUFFER, ubos_[1]);
-        glBufferData(GL_UNIFORM_BUFFER, sizeof(PerObjectData), nullptr, GL_DYNAMIC_DRAW);
-        glBindBuffer(GL_UNIFORM_BUFFER, 0);
-    }
-
-    void OpenglBackend::CreateTextures()
-    {
-        GraphicsContext context = CreateGraphicsContext();
-        std::string texture_path = GetTextureDirectory() + "wallpaper.jpg";
-        asset::AssetID id = asset::AssetManager::GetInstance().LoadSync(texture_path);
-        auto texture_ptr = asset::AssetManager::GetInstance().GetResource<asset::TextureResource>(id);
-        if (texture_ptr == nullptr)
-        {
-            return;
-        }
-        TextureData &texture_data = *(texture_ptr->data);
-
-        TextureSettings texture_settings{};
-        texture_settings.mip_levels = static_cast<uint32_t>(std::floor(std::log2(std::max(texture_data.width, texture_data.height)))) + 1;
-        texture_settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
-        texture_settings.usage = TextureUsage::TEXTURE_USAGE_TRANSFER_DST | TextureUsage::TEXTURE_USAGE_TRANSFER_SRC | TextureUsage::TEXTURE_USAGE_SAMPLE;
-        texture_settings.sample_count = 1;
-        texture_handle = texture_manager_->CreateTexture(context, texture_data, texture_settings);
-
-        SamplerSettings sampler_settings{};
-        sampler_settings.address_mode_u = SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
-        sampler_settings.address_mode_v = SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
-        sampler_settings.address_mode_w = SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT;
-        sampler_settings.enable_anisotropy = true;
-        sampler_settings.mag_filter = SamplerFilterType::SAMPLER_FILTER_LINEAR;
-        sampler_settings.min_filter = SamplerFilterType::SAMPLER_FILTER_LINEAR;
-        sampler_settings.mip_lod_bias = 0.f;
-        sampler_settings.min_lod = 0.f;
-        sampler_settings.max_lod = 0.f;
-
-        sampler_handle = sampler_manager_->CreateSampler(context, sampler_settings);
-        asset::AssetManager::GetInstance().UnRegisterAsset(id);
-    }
-
     GraphicsContext OpenglBackend::CreateGraphicsContext()
     {
         GraphicsContext context;
@@ -383,58 +471,4 @@ namespace kpengine::graphics
         return context;
     }
 
-    void OpenglBackend::CreateDescriptorSets()
-    {
-        descriptor_set = std::make_unique<OpenglDescriptorSet>();
-        // Temporary legacy path; descriptor binding moves to the common recorder.
-        const auto &bindings = pipeline_manager_->GetPipelineResource(PipelineHandle{})->descriptor_binding_descs_[0];
-
-        for (const auto &binding : bindings)
-        {
-            if (binding.descriptor_type == DescriptorType::DESCRIPTOR_TYPE_UNIFORM)
-            {
-                descriptor_set->SetUniformBuffer(binding.binding, ubos_[binding.binding]);
-            }
-            else if (binding.descriptor_type == DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER)
-            {
-                Texture *texture = texture_manager_->GetTexture(texture_handle);
-                OpenglTextureResource texture_resource = ConvertToOpenglTextureResource(texture->GetTextueHandle());
-                Sampler *sampler = sampler_manager_->GetSampler(sampler_handle);
-                OpenglSamplerResource sampler_resource = ConvertToOpenglSamplerResource(sampler->GetSampleHandle());
-
-                descriptor_set->SetCombinedImageSampler(binding.binding, texture_resource.image, sampler_resource.sampler);
-            }
-        }
-        descriptor_set->Bind();
-    }
-
-    void OpenglBackend::UpdateUniformBuffers()
-    {
-        static auto start_time = std::chrono::high_resolution_clock::now();
-        auto current_time = std::chrono::high_resolution_clock::now();
-        float time = std::chrono::duration<float, std::chrono::seconds::period>(current_time - start_time).count();
-
-        Vector3f camera = {0.f, 0.f, 2.f};
-        Vector3f target = {0.f, 0.f, 0.f};
-        Vector3f dir = target - camera;
-
-        PerPassData per_pass_data{};
-        per_pass_data.camera_data.view = Matrix4f::MakeCameraMatrix(camera, dir, {0.f, 1.f, 0.f}).Transpose();
-        float aspect = width_ / (float)height_;
-        per_pass_data.camera_data.proj = Matrix4f::MakePerProjMatrix(math::DegreeToRadian(45.f), aspect, 0.1f, 10.f).Transpose();
-        per_pass_data.camera_data.proj[1][1] *= -1.0;
-
-        Transform3f model{};
-        model.scale_ = {0.5f, 0.5f, 0.5f};
-        model.rotator_.pitch_ = time * 90.f;
-
-        PerObjectData per_object_data{};
-        per_object_data.model = Matrix4f::MakeTransformMatrix(model).Transpose();
-
-        glBindBuffer(GL_UNIFORM_BUFFER, ubos_[0]);
-        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(PerPassData), &per_pass_data);
-        glBindBuffer(GL_UNIFORM_BUFFER, ubos_[1]);
-        glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(PerObjectData), &per_object_data);
-        glBindBuffer(GL_UNIFORM_BUFFER, 0);
-    }
 }
