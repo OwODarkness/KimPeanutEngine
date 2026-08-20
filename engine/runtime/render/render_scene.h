@@ -3,33 +3,45 @@
 
 #include <cstdint>
 #include <vector>
-#include <vulkan/vulkan.h>
 
 #include "graphics/backend/common/api.h"
-
-namespace kpengine::graphics
-{
-    class VulkanBackend;
-}
+#include "graphics/backend/common/command_recorder.h"
+#include "graphics/backend/common/render_backend.h"
+#include "render_camera.h"
+#include "render_resource.h"
 
 namespace kpengine::render
 {
+    struct RenderSceneResources
+    {
+        graphics::PipelineHandle pipeline;
+        graphics::MeshHandle mesh;
+        TextureBinding material;
+    };
+
+    struct RenderSceneInitInfo
+    {
+        graphics::RenderBackend *backend = nullptr;
+        RenderSceneResources resources;
+    };
+
     // The demo reappears here as the render module's first real scene: it owns the
     // mesh, texture, uniform buffers and descriptor sets, and records the frame's
-    // draws through the RHI's public frame API. Vulkan-specific for now — draws are
-    // recorded as raw vkCmd* against the backend's scene command buffer; a
-    // cross-API scene abstraction is the reconstruction's next step
-    // (docs/render/render_module.md).
+    // draws through the API-neutral command recorder.
     class RenderScene
     {
     public:
         RenderScene() = default;
         ~RenderScene() = default;
 
-        void Initialize(graphics::VulkanBackend *backend);
+        void Initialize(const RenderSceneInitInfo &info);
         void Tick(float delta_time);
-        void Record();
+        void Record(graphics::CommandRecorder &recorder);
         void Cleanup();
+
+        // Scene/view state belongs here; the system only schedules this scene.
+        RenderCamera &GetCamera() { return camera_; }
+        const RenderCamera &GetCamera() const { return camera_; }
 
     private:
         struct UniformBuffer
@@ -39,27 +51,20 @@ namespace kpengine::render
             uint32_t element_size = 0;
         };
 
-        void CreateTexture();
-        void CreateMesh();
         void CreateUniformBuffers();
         void CreateDescriptorSets();
-        void WriteUniformBufferDescriptor(VkWriteDescriptorSet &out, VkDescriptorBufferInfo &info,
-                                          VkDescriptorSet set, const UniformBuffer &ubo,
-                                          VkDescriptorSetLayoutBinding binding, uint32_t frame_index);
-        void WriteImageDescriptor(VkWriteDescriptorSet &out, VkDescriptorImageInfo &info,
-                                  VkDescriptorSet set, VkDescriptorSetLayoutBinding binding,
-                                  uint32_t frame_index);
         void UpdateUniformBuffers(uint32_t frame_index);
 
     private:
-        graphics::VulkanBackend *backend_ = nullptr;
+        graphics::RenderBackend *backend_ = nullptr;
+        RenderCamera camera_;
+        graphics::PipelineHandle pipeline_handle_;
         graphics::TextureHandle texture_handle_;
         graphics::SamplerHandle sampler_handle_;
         graphics::MeshHandle mesh_handle_;
         UniformBuffer per_pass_ubo_;
         UniformBuffer per_object_ubo_;
-        VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
-        std::vector<VkDescriptorSet> descriptor_sets_;
+        std::vector<graphics::DescriptorSetHandle> descriptor_sets_;
     };
 }
 

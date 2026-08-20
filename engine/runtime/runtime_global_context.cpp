@@ -34,6 +34,7 @@ namespace kpengine
             window_create_info.title = "KimPeanut Engine";
             window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
             window_system_->Initialize(window_create_info);
+            graphics_api_type_ = window_create_info.graphics_api_type;
 
             // Script state. Engine-agnostic VM; the binding layer lands on top of it
             // later (docs/script/script_module.md). One VM per game thread — creation
@@ -42,7 +43,12 @@ namespace kpengine
 
             // Render owns the resource pipeline and drains the async load queue the
             // bootstrap preload fed (docs/async/async_resource_queue.md).
-            render_system_->Initialize(graphics_api_type_, &async_load_queue_);
+            render::RenderSystemInitInfo render_init_info{};
+            render_init_info.api_type = graphics_api_type_;
+            render_init_info.native_window = window_system_->GetNativeHandle();
+            render_init_info.resize_dispatcher = &window_system_->resize_event_dispatcher_;
+            render_init_info.load_queue = &async_load_queue_;
+            render_system_->Initialize(render_init_info);
 
             // [reconstruction] Old design — input/render/world were wired and initialized
             // here; reconstructed later. The bootstrap preload flow (docs/status.md item 6)
@@ -65,8 +71,8 @@ namespace kpengine
 
         void RuntimeContext::Clear()
         {
-            window_system_.reset();
             render_system_.reset();
+            window_system_.reset();
             log_system_.reset();
             lua_vm_.reset();
             memory_sampler_.reset();

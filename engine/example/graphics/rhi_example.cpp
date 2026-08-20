@@ -11,12 +11,17 @@
 #include "runtime/graphics/backend/vulkan/vulkan_backend.h"
 #include "runtime/render/render_scene.h"
 #include "runtime/graphics/backend/common/pipeline_types.h"
+#include "runtime/graphics/backend/common/sampler.h"
+#include "runtime/graphics/backend/common/texture.h"
 #include "runtime/core/data/shader.h"
 #include "runtime/core/data/mesh.h"
 #include "runtime/core/config/path.h"
 #include "runtime/asset/asset_manager.h"
+#include "runtime/asset/model.h"
+#include "runtime/asset/mesh.h"
 #include "runtime/asset/shader.h"
 #include "runtime/asset/shader_program.h"
+#include "runtime/asset/texture.h"
 #include "runtime/core/resource/resource_pipeline.h"
 
 namespace kpengine::example
@@ -54,6 +59,49 @@ namespace kpengine::example
         }
         pipeline.ProcessShader(shaders);
         return shaders;
+    }
+
+    struct DemoResourceHandles
+    {
+        graphics::MeshHandle mesh;
+        graphics::TextureHandle texture;
+        graphics::SamplerHandle sampler;
+    };
+
+    static DemoResourceHandles CreateDemoResources(graphics::RenderBackend &backend)
+    {
+        DemoResourceHandles handles{};
+
+        const asset::AssetID texture_id = asset::AssetManager::GetInstance().LoadSync(
+            GetTextureDirectory() + "wallpaper.jpg");
+        auto texture = asset::AssetManager::GetInstance().GetResource<asset::TextureResource>(texture_id);
+        if (!texture || !texture->data)
+        {
+            throw std::runtime_error("failed to load demo texture");
+        }
+        graphics::TextureSettings texture_settings{};
+        texture_settings.mip_levels = 1;
+        texture_settings.format = texture->data->format;
+        texture_settings.usage = graphics::TextureUsage::TEXTURE_USAGE_TRANSFER_DST |
+                                 graphics::TextureUsage::TEXTURE_USAGE_SAMPLE;
+        handles.texture = backend.CreateTexture(*texture->data, texture_settings);
+        handles.sampler = backend.CreateSampler({});
+        asset::AssetManager::GetInstance().UnRegisterAsset(texture_id);
+
+        const asset::AssetID model_id = asset::AssetManager::GetInstance().LoadSync(
+            GetModelDirectory() + "sphere/sphere.obj");
+        auto model = asset::AssetManager::GetInstance().GetResource<asset::ModelResource>(model_id);
+        auto mesh = model ? model->GetMesh() : nullptr;
+        if (!mesh || !mesh->data)
+        {
+            throw std::runtime_error("failed to load demo mesh");
+        }
+        handles.mesh = backend.CreateMesh(*mesh->data);
+        const asset::AssetID mesh_id = model->GetData(asset::ModelGeometryType::KPMG_Mesh);
+        asset::AssetManager::GetInstance().UnRegisterAsset(model_id);
+        asset::AssetManager::GetInstance().UnRegisterAsset(mesh_id);
+
+        return handles;
     }
 
     void RHIExample()
@@ -109,16 +157,28 @@ namespace kpengine::example
 
             std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(api);
             rhi->BindWindowResize(window->resize_event_dispatcher_);
-            rhi->Initialize(pipeline_desc, window->GetNativeHandle());
+            rhi->Initialize(window->GetNativeHandle());
+            const graphics::PipelineHandle primary_pipeline = rhi->CreatePipelineResource(pipeline_desc);
+            const graphics::PipelineHandle secondary_pipeline = rhi->CreatePipelineResource(pipeline_desc);
+            if (!primary_pipeline.IsValid() || !secondary_pipeline.IsValid())
+            {
+                throw std::runtime_error("failed to create graphics pipelines");
+            }
 
-            // The demo is the render module's first real scene: for Vulkan it
-            // records the frame's draws through the backend's recording API. The
-            // OpenGL backend still owns its baked scene for now.
+            // Vulkan records through the temporary backend-specific scene seam.
+            // OpenGL recording is the next shared-RHI milestone.
             std::unique_ptr<render::RenderScene> scene;
+            DemoResourceHandles demo_resources{};
             if (!is_opengl)
             {
+                demo_resources = CreateDemoResources(*rhi);
                 scene = std::make_unique<render::RenderScene>();
-                scene->Initialize(static_cast<graphics::VulkanBackend *>(rhi.get()));
+                render::RenderSceneInitInfo scene_init_info{};
+                scene_init_info.backend = static_cast<graphics::VulkanBackend *>(rhi.get());
+                scene_init_info.resources.pipeline = primary_pipeline;
+                scene_init_info.resources.mesh = demo_resources.mesh;
+                scene_init_info.resources.material = {demo_resources.texture, demo_resources.sampler};
+                scene->Initialize(scene_init_info);
             }
 
             while (!window->ShouldClose())
@@ -132,14 +192,22 @@ namespace kpengine::example
                 if (scene)
                 {
                     scene->Tick(0.f);
-                    scene->Record();
+                    if (graphics::CommandRecorder *recorder = rhi->GetCommandRecorder())
+                    {
+                        scene->Record(*recorder);
+                    }
                 }
                 rhi->EndFrame();
             }
             if (scene)
             {
                 scene->Cleanup();
+                rhi->DestroyMesh(demo_resources.mesh);
+                rhi->DestroySampler(demo_resources.sampler);
+                rhi->DestroyTexture(demo_resources.texture);
             }
+            rhi->DestroyPipelineResource(secondary_pipeline);
+            rhi->DestroyPipelineResource(primary_pipeline);
             rhi->Cleanup();
             window->Cleanup();
         }

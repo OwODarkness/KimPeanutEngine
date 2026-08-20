@@ -11,10 +11,8 @@ namespace kpengine::render
         alignas(16) Matrix4f proj;
     };
 
-    // Temp camera: pure data holder, modeled on the deprecated CameraComponent
-    // (git history: engine/runtime/component/camera_component.*). No input, no
-    // movement, no scene hierarchy -- just the camera parameters and the
-    // view/proj derivation the render pass needs.
+    // A scene-owned view definition. Input and gameplay decide its transform;
+    // the render scene only derives the per-frame view/projection data from it.
     class RenderCamera
     {
     public:
@@ -34,7 +32,8 @@ namespace kpengine::render
         Matrix4f CalculateProjectionMatrix() const;
 
     private:
-        Vector3f position_{0.f, 0.f, 0.f};
+        // Preserve the demo's existing framing while making it scene state.
+        Vector3f position_{0.f, 0.f, 2.f};
         Rotatorf rotation_{0.f, -90.f, 0.f}; // yaw -90: look down -Z (old default)
         float fov_ = 45.f;
         float near_ = 0.1f;
