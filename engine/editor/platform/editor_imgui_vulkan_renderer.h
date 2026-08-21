@@ -1,6 +1,8 @@
 #ifndef KPENGINE_EDITOR_IMGUI_VULKAN_RENDERER_H
 #define KPENGINE_EDITOR_IMGUI_VULKAN_RENDERER_H
 
+#include <vulkan/vulkan.h>
+
 #include "editor/platform/editor_imgui_renderer.h"
 
 namespace kpengine::graphics{
@@ -19,8 +21,15 @@ namespace kpengine::editor
 
         void NewFrame() override;
         void Render() override;
+        void SetBackgroundColor(const LogColor &color) override;
+        ImTextureID GetTextureID(const graphics::RenderTargetView &view) override;
+        void DrawSceneImage(ImTextureID texture_id, const ImVec2 &size) override;
     private:
-        graphics::VulkanContext* vulkan_ctx;
+        void CreateDescriptorPool();
+
+        graphics::VulkanContext *vulkan_ctx = nullptr;
+        VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
+        LogColor background_color_{0.1f, 0.1f, 0.1f, 1.f};
     };
 
 }

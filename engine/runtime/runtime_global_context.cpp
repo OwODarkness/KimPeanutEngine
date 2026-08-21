@@ -32,9 +32,10 @@ namespace kpengine
             window_create_info.width = 1920;
             window_create_info.height = 1080;
             window_create_info.title = "KimPeanut Engine";
-            window_create_info.graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
+            // This is the one startup API choice. Window creation, RenderSystem,
+            // and EditorUI all derive from it; do not introduce local defaults.
+            window_create_info.graphics_api_type = graphics_api_type_;
             window_system_->Initialize(window_create_info);
-            graphics_api_type_ = window_create_info.graphics_api_type;
 
             // Script state. Engine-agnostic VM; the binding layer lands on top of it
             // later (docs/script/script_module.md). One VM per game thread — creation
@@ -48,6 +49,7 @@ namespace kpengine
             render_init_info.native_window = window_system_->GetNativeHandle();
             render_init_info.resize_dispatcher = &window_system_->resize_event_dispatcher_;
             render_init_info.load_queue = &async_load_queue_;
+            render_init_info.bootstrap_scene = bootstrap_scene_;
             render_system_->Initialize(render_init_info);
 
             // [reconstruction] Old design — input/render/world were wired and initialized
@@ -71,11 +73,27 @@ namespace kpengine
 
         void RuntimeContext::Clear()
         {
-            render_system_.reset();
-            window_system_.reset();
+            // This is called by the render thread after ImGui shuts down, while
+            // the graphics context is still current. Release GPU objects before
+            // the GLFW window/context they depend on.
+            if (render_system_)
+            {
+                render_system_->Shutdown();
+                render_system_.reset();
+            }
+            if (window_system_)
+            {
+                window_system_->Cleanup();
+                window_system_.reset();
+            }
             log_system_.reset();
             lua_vm_.reset();
             memory_sampler_.reset();
+        }
+
+        void RuntimeContext::SetBootstrapScene(render::BootstrapSceneInfo scene)
+        {
+            bootstrap_scene_ = std::move(scene);
         }
 
         RuntimeContext::~RuntimeContext() = default;

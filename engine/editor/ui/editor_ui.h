@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include "base/type.h"
+#include "editor/settings/editor_settings.h"
 
 namespace kpengine
 {
@@ -32,7 +33,7 @@ namespace kpengine::editor
     struct EditorUIInitInfo
     {
         WindowHandle window = nullptr;
-        GraphicsAPIType backend_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
+        GraphicsContext graphics_context{GraphicsAPIType::GRAPHICS_API_UNKNOW, nullptr};
         LogSystem *log_system = nullptr;
         runtime::Engine *engine = nullptr;
         MemoryStatsSampler *memory_sampler = nullptr;
@@ -55,10 +56,10 @@ namespace kpengine::editor
         // Backend factory (chosen by the active graphics API) and the panel builders
         // that assemble the tool tree. Each panel is one helper — Initialize stays an
         // orchestration list instead of one long build routine.
-        void CreateImguiBackends(WindowHandle window, GraphicsAPIType backend_type);
+        void CreateImguiBackends(WindowHandle window, GraphicsContext graphics_context);
         void BuildMenuBar();
-        void BuildPlaceholderWindow();
-        void BuildLogWindow(LogSystem *log_system);
+        void BuildViewportWindow(render::RenderSystem *render_system);
+        void BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors);
         void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                              render::RenderSystem *render_system);
 

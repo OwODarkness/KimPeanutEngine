@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -48,12 +49,26 @@ namespace kpengine::render
 {
     class RenderScene;
 
+    struct BootstrapSceneInfo
+    {
+        std::string shader_program_path;
+        std::string model_path;
+        std::string texture_path;
+
+        bool IsComplete() const
+        {
+            return !shader_program_path.empty() && !model_path.empty() &&
+                   !texture_path.empty();
+        }
+    };
+
     struct RenderSystemInitInfo
     {
         GraphicsAPIType api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         WindowHandle native_window = nullptr;
         EventDispatcher<ResizeEvent> *resize_dispatcher = nullptr;
         async::AsyncQueue<asset::AssetLoadRequest> *load_queue = nullptr;
+        BootstrapSceneInfo bootstrap_scene;
     };
 
     // `payload` pins CPU data; `resource` is the one render-ready result for this request.
@@ -87,7 +102,11 @@ namespace kpengine::render
         bool IsReady(asset::RequestID request_id) const;
         const RenderCacheEntry *GetCached(asset::RequestID request_id) const;
         graphics::PipelineHandle GetPipeline(asset::RequestID request_id) const;
+        GraphicsContext GetGraphicsContext();
         const RenderTarget &GetSceneRenderTarget() const { return scene_render_target_; }
+        // The editor provides its available viewport extent. Reallocation happens
+        // at the next safe frame boundary, never while UI is reading the view.
+        void RequestSceneRenderTargetExtent(uint32_t width, uint32_t height);
         void AddScene(RenderScene &scene);
         void RemoveScene(RenderScene &scene);
 
@@ -121,6 +140,9 @@ namespace kpengine::render
         graphics::TextureHandle GetOrCreateTexture(asset::AssetID asset_id,
                                                    const data::TextureData &data);
         graphics::SamplerHandle GetOrCreateDefaultSampler();
+        const RenderCacheEntry *FindCached(asset::AssetID asset_id) const;
+        void CreateBootstrapScene();
+        void ApplyPendingSceneRenderTargetExtent();
         FrameContext *GetCurrentFrameContext();
         void Shutdown();
 
@@ -128,8 +150,11 @@ namespace kpengine::render
         std::unique_ptr<resource::ResourcePipeline> resource_pipeline_;
         std::unique_ptr<graphics::RenderBackend> backend_;
         RenderTarget scene_render_target_;
+        graphics::Extent2D pending_scene_render_target_extent_;
         std::vector<FrameContext> frame_contexts_;
         std::vector<RenderScene *> scenes_;
+        std::unique_ptr<RenderScene> bootstrap_scene_;
+        BootstrapSceneInfo bootstrap_scene_info_;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;
         async::AsyncQueue<asset::AssetLoadRequest> *load_queue_ = nullptr;

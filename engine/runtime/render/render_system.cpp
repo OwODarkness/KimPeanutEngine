@@ -22,6 +22,20 @@ namespace kpengine::render
 {
     namespace
     {
+        constexpr const char *GetGraphicsApiName(GraphicsAPIType api_type)
+        {
+            switch (api_type)
+            {
+            case GraphicsAPIType::GRAPHICS_API_OPENGL:
+                return "OpenGL";
+            case GraphicsAPIType::GRAPHICS_API_VULKAN:
+                return "Vulkan";
+            case GraphicsAPIType::GRAPHICS_API_UNKNOW:
+            default:
+                return "Unknown";
+            }
+        }
+
         // Runtime frame budget: cap the per-frame load+compile work so a burst of
         // requests never stalls a frame. 0 means "no budget" (the bootstrap pass).
         constexpr std::size_t kMaxRuntimeLoadsPerFrame = 2;
@@ -89,6 +103,7 @@ namespace kpengine::render
             return;
         }
         load_queue_ = info.load_queue;
+        bootstrap_scene_info_ = info.bootstrap_scene;
 
         resource_pipeline_ = std::make_unique<resource::ResourcePipeline>();
         resource::ResourcePipelineContext context;
@@ -102,6 +117,8 @@ namespace kpengine::render
                    static_cast<int>(info.api_type));
             return;
         }
+        KP_LOG("RenderLog", LOG_LEVEL_INFO, "RenderSystem selected %s graphics backend",
+               GetGraphicsApiName(info.api_type));
         backend_->BindWindowResize(*info.resize_dispatcher);
         backend_->Initialize(info.native_window);
 
@@ -124,6 +141,7 @@ namespace kpengine::render
     {
         // Bootstrap: load + process everything already queued, before the main loop.
         ConsumeRequests(0);
+        CreateBootstrapScene();
         KP_LOG("RenderLog", LOG_LEVEL_INFO,
                "Bootstrap drained: %d distinct shader(s) loaded", GetLoadedShaderCount());
     }
@@ -136,6 +154,7 @@ namespace kpengine::render
             return;
         }
 
+        ApplyPendingSceneRenderTargetExtent();
         backend_->BeginFrame();
         FrameContext *frame_context = GetCurrentFrameContext();
         if (frame_context)
@@ -143,7 +162,8 @@ namespace kpengine::render
             elapsed_seconds_ += delta_time;
             frame_context->Begin(backend_->GetCurrentFrameIndex(),
                                  {frame_number_, elapsed_seconds_, delta_time},
-                                 backend_->GetRenderExtent());
+                                 {scene_render_target_.GetWidth(),
+                                  scene_render_target_.GetHeight()});
             graphics::CommandRecorder *recorder = backend_->GetCommandRecorder();
             if (recorder && scene_render_target_.BeginRecording(*recorder))
             {
@@ -160,6 +180,21 @@ namespace kpengine::render
             ++frame_number_;
         }
         backend_->EndFrame();
+    }
+
+    void RenderSystem::RequestSceneRenderTargetExtent(uint32_t width, uint32_t height)
+    {
+        if (width == 0 || height == 0)
+        {
+            return;
+        }
+        pending_scene_render_target_extent_ = {width, height};
+    }
+
+    GraphicsContext RenderSystem::GetGraphicsContext()
+    {
+        return backend_ ? backend_->GetGraphicsContext()
+                        : GraphicsContext{GraphicsAPIType::GRAPHICS_API_UNKNOW, nullptr};
     }
 
     bool RenderSystem::IsReady(asset::RequestID request_id) const
@@ -460,6 +495,83 @@ namespace kpengine::render
         return default_sampler_handle_;
     }
 
+    const RenderCacheEntry *RenderSystem::FindCached(asset::AssetID asset_id) const
+    {
+        for (const auto &[request_id, entry] : render_cache_)
+        {
+            (void)request_id;
+            if (entry.asset_id == asset_id)
+            {
+                return &entry;
+            }
+        }
+        return nullptr;
+    }
+
+    void RenderSystem::CreateBootstrapScene()
+    {
+        if (!bootstrap_scene_info_.IsComplete() || bootstrap_scene_)
+        {
+            return;
+        }
+
+        auto &asset_manager = asset::AssetManager::GetInstance();
+        const asset::AssetID pipeline_asset =
+            asset_manager.LoadSync(bootstrap_scene_info_.shader_program_path);
+        const asset::AssetID model_asset = asset_manager.LoadSync(bootstrap_scene_info_.model_path);
+        const asset::AssetID texture_asset = asset_manager.LoadSync(bootstrap_scene_info_.texture_path);
+        const RenderCacheEntry *pipeline_entry = FindCached(pipeline_asset);
+        const RenderCacheEntry *model_entry = FindCached(model_asset);
+        const RenderCacheEntry *texture_entry = FindCached(texture_asset);
+        const auto *pipeline = pipeline_entry
+            ? std::get_if<graphics::PipelineHandle>(&pipeline_entry->resource) : nullptr;
+        const auto *mesh = model_entry
+            ? std::get_if<graphics::MeshHandle>(&model_entry->resource) : nullptr;
+        const auto *material = texture_entry
+            ? std::get_if<TextureBinding>(&texture_entry->resource) : nullptr;
+        if (!pipeline || !mesh || !material)
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Bootstrap scene resources were not baked into the render cache");
+            return;
+        }
+
+        auto scene = std::make_unique<RenderScene>();
+        scene->Initialize({{*pipeline, *mesh, *material}});
+        AddScene(*scene);
+        bootstrap_scene_ = std::move(scene);
+        KP_LOG("RenderLog", LOG_LEVEL_INFO, "Bootstrap scene registered");
+    }
+
+    void RenderSystem::ApplyPendingSceneRenderTargetExtent()
+    {
+        if (!backend_ || pending_scene_render_target_extent_.width == 0 ||
+            pending_scene_render_target_extent_.height == 0)
+        {
+            return;
+        }
+
+        const graphics::Extent2D requested = pending_scene_render_target_extent_;
+        pending_scene_render_target_extent_ = {};
+        if (requested.width == scene_render_target_.GetWidth() &&
+            requested.height == scene_render_target_.GetHeight())
+        {
+            return;
+        }
+
+        // A target is shared by all backend frame slots. Resizing after only the
+        // current slot's fence could destroy an attachment used by another slot.
+        // This rare boundary waits once, before the next BeginFrame records work.
+        backend_->WaitIdle();
+        scene_render_target_.Initialize(*backend_, requested.width, requested.height);
+        if (!scene_render_target_.IsValid())
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Failed to resize scene render target to %u x %u", requested.width,
+                   requested.height);
+        }
+    }
+
     FrameContext *RenderSystem::GetCurrentFrameContext()
     {
         if (!backend_ || !backend_->GetCommandRecorder())
@@ -477,6 +589,17 @@ namespace kpengine::render
             return;
         }
 
+        // Render-owned pipelines, descriptors, buffers, and targets may still be
+        // referenced by an earlier frame slot. Retire all submitted work before
+        // releasing any of those shared GPU objects.
+        backend_->WaitIdle();
+
+        if (bootstrap_scene_)
+        {
+            RemoveScene(*bootstrap_scene_);
+            bootstrap_scene_->Cleanup();
+            bootstrap_scene_.reset();
+        }
         scenes_.clear();
         for (FrameContext &context : frame_contexts_)
         {

@@ -30,6 +30,7 @@ namespace kpengine::graphics
         RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) override;
         bool DestroyRenderTarget(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
+        RenderTargetView GetRenderTargetView(RenderTargetHandle handle) override;
         DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
         bool DestroyResourceBindingSet(DescriptorSetHandle handle) override;
@@ -49,12 +50,14 @@ namespace kpengine::graphics
                          uint32_t first_index, int32_t vertex_offset,
                          uint32_t first_instance) override;
         virtual void EndFrame() override;
+        GraphicsContext GetGraphicsContext() override;
         BufferHandle CreateUniformBuffer(uint32_t size) override;
         void *MapUniformBuffer(BufferHandle handle, size_t size) override;
         uint32_t GetCurrentFrameIndex() const override { return 0; }
         uint32_t GetFramesInFlight() const override { return 1; }
         size_t GetUniformBufferAlignment() const override;
         Extent2D GetRenderExtent() const override;
+        void WaitIdle() override;
         virtual void Cleanup() override;
     public:
         BufferHandle CreateVertexBuffer(const void* data, size_t size) override;

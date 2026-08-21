@@ -58,6 +58,7 @@ namespace kpengine::graphics
         virtual RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) = 0;
         virtual bool DestroyRenderTarget(RenderTargetHandle handle) = 0;
         virtual TextureHandle GetRenderTargetColor(RenderTargetHandle handle) = 0;
+        virtual RenderTargetView GetRenderTargetView(RenderTargetHandle handle) = 0;
         virtual DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) = 0;
         virtual bool DestroyResourceBindingSet(DescriptorSetHandle handle) = 0;
@@ -66,12 +67,16 @@ namespace kpengine::graphics
         virtual void BeginFrame() = 0;
         virtual CommandRecorder *GetCommandRecorder() = 0;
         virtual void EndFrame() = 0;
+        virtual GraphicsContext GetGraphicsContext() = 0;
         virtual BufferHandle CreateUniformBuffer(uint32_t size) = 0;
         virtual void *MapUniformBuffer(BufferHandle handle, size_t size) = 0;
         virtual uint32_t GetCurrentFrameIndex() const = 0;
         virtual uint32_t GetFramesInFlight() const = 0;
         virtual size_t GetUniformBufferAlignment() const = 0;
         virtual Extent2D GetRenderExtent() const = 0;
+        // Call only at a render-system ownership boundary before replacing GPU
+        // resources shared by previously submitted frames.
+        virtual void WaitIdle() = 0;
         virtual void Cleanup() = 0;
         void BindWindowResize(EventDispatcher<ResizeEvent> &dispatcher);
 

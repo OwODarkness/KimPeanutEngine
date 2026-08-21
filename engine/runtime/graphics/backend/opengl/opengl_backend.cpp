@@ -50,12 +50,26 @@ namespace kpengine::graphics
         {
             EndRenderTarget();
         }
+        // The editor's ImGui pass follows scene rendering on this context. It
+        // supplies display-space colors, so scene sRGB write conversion must
+        // never leak into the default framebuffer.
+        glDisable(GL_FRAMEBUFFER_SRGB);
         frame_active_ = false;
+    }
+
+    void OpenglBackend::WaitIdle()
+    {
+        glFinish();
     }
 
     CommandRecorder *OpenglBackend::GetCommandRecorder()
     {
         return frame_active_ ? static_cast<CommandRecorder *>(this) : nullptr;
+    }
+
+    GraphicsContext OpenglBackend::GetGraphicsContext()
+    {
+        return CreateGraphicsContext();
     }
 
     void OpenglBackend::BeginRenderTarget(RenderTargetHandle target)
@@ -90,6 +104,9 @@ namespace kpengine::graphics
             return;
         }
         glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        // OpenglPipeline enables this for the sRGB scene color attachment. The
+        // default framebuffer belongs to the subsequent UI renderer instead.
+        glDisable(GL_FRAMEBUFFER_SRGB);
         active_render_target_ = {};
     }
 
@@ -379,6 +396,24 @@ namespace kpengine::graphics
     {
         const uint32_t index = render_target_handles_.Get(handle);
         return index < render_targets_.size() ? render_targets_[index].color : TextureHandle{};
+    }
+
+    RenderTargetView OpenglBackend::GetRenderTargetView(RenderTargetHandle handle)
+    {
+        const uint32_t index = render_target_handles_.Get(handle);
+        if (index >= render_targets_.size())
+        {
+            return {};
+        }
+        const RenderTargetResource &target = render_targets_[index];
+        Texture *color_texture = texture_manager_->GetTexture(target.color);
+        if (!color_texture)
+        {
+            return {};
+        }
+        const OpenglTextureResource resource =
+            ConvertToOpenglTextureResource(color_texture->GetTextueHandle());
+        return {target.desc.width, target.desc.height, resource.image, resource.image};
     }
 
     DescriptorSetHandle OpenglBackend::CreateResourceBindingSet(

@@ -6,8 +6,8 @@
 #include "editor/platform/editor_imgui_opengl_renderer.h"
 #include "editor/platform/editor_imgui_vulkan_renderer.h"
 #include "editor/ui/component/editor_window_component.h"
-#include "editor/ui/component/editor_text_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
+#include "editor/ui/component/editor_viewport_component.h"
 #include "editor/log/editor_log_component.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/profile/editor_builtin_metrics.h"
@@ -27,7 +27,20 @@ namespace kpengine::editor
         ImGui::CreateContext();
         ImGui::StyleColorsDark();
 
-        CreateImguiBackends(init_info.window, init_info.backend_type);
+        CreateImguiBackends(init_info.window, init_info.graphics_context);
+
+        EditorSettings settings{};
+        settings.log_colors = DefaultLogColors();
+        try
+        {
+            settings = ReadEditorSettings(GetSettingsPath());
+        }
+        catch (const std::exception &e)
+        {
+            KP_LOG("LogEditorUI", LOG_LEVEL_WARNING,
+                   "editor settings unavailable (%s), using defaults", e.what());
+        }
+        renderer_->SetBackgroundColor(settings.background_color);
 
         ImGuiIO &io = ImGui::GetIO();
         io.ConfigWindowsMoveFromTitleBarOnly = true;
@@ -36,28 +49,27 @@ namespace kpengine::editor
         // Tool tree. Each panel is built by its own helper so Initialize stays an
         // orchestration list — add a panel as one more call, not more inline code.
         BuildMenuBar();
-        BuildPlaceholderWindow();
-        BuildLogWindow(init_info.log_system);
+        BuildViewportWindow(init_info.render_system);
+        BuildLogWindow(init_info.log_system, settings.log_colors);
         BuildProfileBar(init_info.engine, init_info.memory_sampler, init_info.render_system);
     }
 
-    void EditorUI::CreateImguiBackends(WindowHandle window, GraphicsAPIType backend_type)
+    void EditorUI::CreateImguiBackends(WindowHandle window, GraphicsContext graphics_context)
     {
         // WSI + renderer are chosen by the active graphics API, keeping the editor UI
         // decoupled from GL/Vulkan (the reconstruction seam).
         wsi_ = std::make_unique<EditorImguiGLFWWSI>();
-        if (backend_type == GraphicsAPIType::GRAPHICS_API_OPENGL)
+        if (graphics_context.type == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
             renderer_ = std::make_unique<EditorImguiOpenglRenderer>();
         }
-        else if (backend_type == GraphicsAPIType::GRAPHICS_API_VULKAN)
+        else if (graphics_context.type == GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
             renderer_ = std::make_unique<EditorImguiVulkanRenderer>();
         }
 
-        GraphicsContext context{backend_type, nullptr};
-        renderer_->Initialize(context);
-        wsi_->Initialize(window, backend_type);
+        renderer_->Initialize(graphics_context);
+        wsi_->Initialize(window, graphics_context.type);
     }
 
     void EditorUI::BuildMenuBar()
@@ -72,33 +84,20 @@ namespace kpengine::editor
         components_.push_back(std::make_unique<EditorMainMenuBarComponent>(menus));
     }
 
-    void EditorUI::BuildPlaceholderWindow()
+    void EditorUI::BuildViewportWindow(render::RenderSystem *render_system)
     {
-        // A label window as the placeholder tool surface. Replace with real panels
-        // (scene view, inspector, ...) as they land — each its own builder.
-                EditorWindowConfig config;
-        config.height_ratio = 0.5f;
+        EditorWindowConfig config;
+        config.height_ratio = 0.7f;
         std::unique_ptr<EditorWindowComponent> window_component =
-            std::make_unique<EditorWindowComponent>("window", config);
-        window_component->AddComponent(std::make_shared<EditorTextComponent>("hello imgui"));
+            std::make_unique<EditorWindowComponent>("Viewport", config);
+        window_component->AddComponent(std::make_shared<EditorViewportComponent>(
+            render_system, renderer_.get()));
 
-        components_.push_back(std::move(window_component ));
+        components_.push_back(std::move(window_component));
     }
 
-    void EditorUI::BuildLogWindow(LogSystem *log_system)
+    void EditorUI::BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors)
     {
-        // Re-reads the runtime log system each frame (ImGui immediate mode). Entry
-        // colors come from config/settings.json — cosmetic, defaults on any failure.
-        LogLevelColorTable log_colors = DefaultLogColors();
-        try
-        {
-            log_colors = ReadEditorSettings(GetSettingsPath()).log_colors;
-        }
-        catch (const std::exception &e)
-        {
-            KP_LOG("LogEditorUI", LOG_LEVEL_WARNING,
-                   "editor settings unavailable (%s), using default log colors", e.what());
-        }
         // Log console: top 30% of the viewport, full width.
         EditorWindowConfig log_config;
         log_config.height_ratio = 0.26f;

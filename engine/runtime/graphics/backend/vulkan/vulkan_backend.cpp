@@ -130,6 +130,11 @@ namespace kpengine::graphics
         return frame_active_ ? static_cast<CommandRecorder *>(this) : nullptr;
     }
 
+    GraphicsContext VulkanBackend::GetGraphicsContext()
+    {
+        return CreateGraphicsContext();
+    }
+
     void VulkanBackend::BeginRenderTarget(RenderTargetHandle target)
     {
         if (!frame_active_ || render_target_active_)
@@ -526,6 +531,26 @@ namespace kpengine::graphics
         return index < render_targets_.size() ? render_targets_[index].color : TextureHandle{};
     }
 
+    RenderTargetView VulkanBackend::GetRenderTargetView(RenderTargetHandle handle)
+    {
+        const uint32_t index = render_target_handles_.Get(handle);
+        if (index >= render_targets_.size())
+        {
+            return {};
+        }
+        const RenderTargetResource &target = render_targets_[index];
+        Texture *color_texture = texture_manager_->GetTexture(target.color);
+        if (!color_texture)
+        {
+            return {};
+        }
+        const VulkanTextureResource resource =
+            ConvertToVulkanTextureResource(color_texture->GetTextueHandle());
+        return {target.desc.width, target.desc.height,
+                reinterpret_cast<uintptr_t>(resource.image),
+                reinterpret_cast<uintptr_t>(resource.view)};
+    }
+
     DescriptorSetHandle VulkanBackend::CreateResourceBindingSet(
         PipelineHandle pipeline, const ResourceBindingSetDesc &desc)
     {
@@ -663,6 +688,21 @@ namespace kpengine::graphics
         return frame_context_->GetCurrentSceneCommandBuffer();
     }
 
+    uint32_t VulkanBackend::GetSwapchainImageCount() const
+    {
+        return static_cast<uint32_t>(swapchain_->GetImageCount());
+    }
+
+    VkFormat VulkanBackend::GetSwapchainImageFormat() const
+    {
+        return swapchain_->GetImageFormat();
+    }
+
+    const VulkanQueue &VulkanBackend::GetGraphicsQueue() const
+    {
+        return device_->GetGraphicsQueue();
+    }
+
     uint32_t VulkanBackend::GetCurrentFrameIndex() const
     {
         return frame_context_->GetCurrentFrameIndex();
@@ -684,6 +724,14 @@ namespace kpengine::graphics
     {
         const VkExtent2D extent = swapchain_->GetExtent();
         return {extent.width, extent.height};
+    }
+
+    void VulkanBackend::WaitIdle()
+    {
+        if (device_)
+        {
+            vkDeviceWaitIdle(device_->GetLogicalDevice());
+        }
     }
 
     const VulkanPipelineResource *VulkanBackend::GetPipelineResource(PipelineHandle handle) const

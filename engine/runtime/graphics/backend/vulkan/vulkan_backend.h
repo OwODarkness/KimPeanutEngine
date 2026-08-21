@@ -34,6 +34,7 @@ namespace kpengine::graphics
         RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) override;
         bool DestroyRenderTarget(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
+        RenderTargetView GetRenderTargetView(RenderTargetHandle handle) override;
         DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
         bool DestroyResourceBindingSet(DescriptorSetHandle handle) override;
@@ -53,12 +54,14 @@ namespace kpengine::graphics
                          uint32_t first_index, int32_t vertex_offset,
                          uint32_t first_instance) override;
         virtual void EndFrame() override;
+        GraphicsContext GetGraphicsContext() override;
         BufferHandle CreateUniformBuffer(uint32_t size) override;
         void *MapUniformBuffer(BufferHandle handle, size_t size) override;
         uint32_t GetCurrentFrameIndex() const override;
         uint32_t GetFramesInFlight() const override;
         size_t GetUniformBufferAlignment() const override;
         Extent2D GetRenderExtent() const override;
+        void WaitIdle() override;
         virtual void Cleanup() override;
 
         BufferHandle CreateUploadStageBufferResource(size_t size);
@@ -81,6 +84,9 @@ namespace kpengine::graphics
         // CommandRecorder selects attachments and records render passes.
         VkCommandBuffer GetCurrentSceneCommandBuffer() const;
         uint32_t GetCurrentImageIndex() const { return current_image_index_; }
+        uint32_t GetSwapchainImageCount() const;
+        VkFormat GetSwapchainImageFormat() const;
+        const VulkanQueue &GetGraphicsQueue() const;
 
         const VulkanPipelineResource *GetPipelineResource(PipelineHandle handle) const;
         VulkanContext &GetVulkanContext() { return context_; }
