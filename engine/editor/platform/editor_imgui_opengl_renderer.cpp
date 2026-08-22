@@ -5,6 +5,18 @@
 namespace kpengine::editor
 {
     constexpr const char* LogName = "EditorImguiOpenglRendererLog";
+    namespace
+    {
+        void EnableFramebufferSrgb(const ImDrawList *, const ImDrawCmd *)
+        {
+            glEnable(GL_FRAMEBUFFER_SRGB);
+        }
+
+        void DisableFramebufferSrgb(const ImDrawList *, const ImDrawCmd *)
+        {
+            glDisable(GL_FRAMEBUFFER_SRGB);
+        }
+    }
     void EditorImguiOpenglRenderer::Initialize(GraphicsContext context)
     {
         if(context.type != GraphicsAPIType::GRAPHICS_API_OPENGL)
@@ -32,12 +44,34 @@ namespace kpengine::editor
 
     void EditorImguiOpenglRenderer::Render()
     {
-        // Stopgap: the legacy scene renderer (which cleared the frame) is being
-        // rebuilt, so the editor owns the clear until it returns.
-        glClearColor(0.1f, 0.1f, 0.1f, 1.f);
+        glClearColor(background_color_.r, background_color_.g,
+                     background_color_.b, background_color_.a);
         glClear(GL_COLOR_BUFFER_BIT);
 
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
+
+    void EditorImguiOpenglRenderer::SetBackgroundColor(const LogColor &color)
+    {
+        background_color_ = color;
+    }
+
+    ImTextureID EditorImguiOpenglRenderer::GetTextureID(const graphics::RenderTargetView &view)
+    {
+        return view.IsValid()
+                   ? static_cast<ImTextureID>(view.native_image_view)
+                   : ImTextureID{};
+    }
+
+    void EditorImguiOpenglRenderer::DrawSceneImage(ImTextureID texture_id, const ImVec2 &size)
+    {
+        // Sampling the sRGB scene texture decodes it to linear. Re-enable the
+        // matching write conversion only for this image command; ordinary ImGui
+        // colors continue to render to the default framebuffer unchanged.
+        ImDrawList *draw_list = ImGui::GetWindowDrawList();
+        draw_list->AddCallback(EnableFramebufferSrgb, nullptr);
+        ImGui::Image(texture_id, size);
+        draw_list->AddCallback(DisableFramebufferSrgb, nullptr);
     }
 
 }

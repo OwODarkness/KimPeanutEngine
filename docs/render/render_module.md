@@ -108,11 +108,20 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 
 - **Scene render target (first slice landed).** `RenderSystem` owns a
   render-level `RenderTarget`, backed by private RHI color/depth attachments.
-  Other modules can inspect the target's validity and extent, but cannot obtain
-  a graphics handle or texture directly. Vulkan/OpenGL create and destroy the
-  attachments privately. `RenderSystem::Tick` brackets its registered scenes
-  with target recording; a render-owned editor image bridge and final composite
-  pass are the next slices.
+  `RenderTarget::GetView()` returns a borrowed `graphics::RenderTargetView`
+  for presentation only: extent plus opaque native color/image-view tokens. It
+  neither exposes an owning RHI handle nor transfers destruction responsibility;
+  the view expires when its target is resized or destroyed. Vulkan/OpenGL create
+  and destroy the attachments privately. `RenderSystem::Tick` brackets its
+  registered scenes with target recording; an editor image bridge and final
+  composite pass are the next slices.
+
+- **Bootstrap scene.** `config/bootstrap.json` may define a `scene` block with
+  `shader_program`, `model`, and `texture` paths. The engine passes this startup
+  policy into `RenderSystem`; after the bootstrap request batch has baked, the
+  system resolves the three cached render resources, owns a `RenderScene`, and
+  registers it. The configuration names the scene; neither the editor nor the
+  RHI contains a demo asset path.
 
 - **Frame-local transient data (Phase 3.4, landed).** `RenderSystem` owns a
   `FrameContext` for every backend frame slot and schedules registered scenes

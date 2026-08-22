@@ -26,9 +26,14 @@ namespace kpengine::editor
         void DrawSceneImage(ImTextureID texture_id, const ImVec2 &size) override;
     private:
         void CreateDescriptorPool();
+        void CreateSceneSampler();
+        void ReleaseSceneTexture();
 
         graphics::VulkanContext *vulkan_ctx = nullptr;
         VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
+        VkSampler scene_sampler_ = VK_NULL_HANDLE;
+        VkImageView scene_view_ = VK_NULL_HANDLE;
+        VkDescriptorSet scene_texture_ = VK_NULL_HANDLE;
         LogColor background_color_{0.1f, 0.1f, 0.1f, 1.f};
     };
 

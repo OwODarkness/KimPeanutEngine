@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <memory>
 
+#include "graphics/backend/common/render_target.h"
+
 namespace kpengine::graphics
 {
     class RenderBackend;
@@ -27,6 +29,7 @@ namespace kpengine::render
         bool IsValid() const;
         uint32_t GetWidth() const;
         uint32_t GetHeight() const;
+        graphics::RenderTargetView GetView() const;
 
     private:
         friend class RenderSystem;

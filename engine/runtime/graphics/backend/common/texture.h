@@ -23,6 +23,10 @@ namespace kpengine::graphics
         TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         TextureUsage usage = TextureUsage::TEXTURE_USAGE_SAMPLE;
         ImageAspect aspect = ImageAspect::IMAGE_ASPECT_COLOR;
+        // Allows backend-specific compatible image views. This is needed when an
+        // sRGB render target also needs a raw encoded preview view for a UNORM
+        // presentation surface.
+        bool mutable_format = false;
         };
 
     struct TextureResource

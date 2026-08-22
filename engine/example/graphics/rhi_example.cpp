@@ -132,6 +132,8 @@ namespace kpengine::example
             graphics::PipelineDesc pipeline_desc{};
             pipeline_desc.vert_shader = shaders[0]->data.get();
             pipeline_desc.frag_shader = shaders[1]->data.get();
+            pipeline_desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+            pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
 
             pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
             pipeline_desc.attri_descs = {
@@ -222,6 +224,9 @@ namespace kpengine::example
                 }
                 ++rendered_frames;
             }
+            // The smoke path owns RHI resources directly, so it must establish
+            // the same retirement boundary as RenderSystem before releasing them.
+            rhi->WaitIdle();
             scene->Cleanup();
             for (render::FrameContext &frame_context : frame_contexts)
             {

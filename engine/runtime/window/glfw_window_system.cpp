@@ -6,6 +6,10 @@
 #include "log/logger.h"
 namespace kpengine
 {
+    GLFW_WindowSystem::~GLFW_WindowSystem()
+    {
+    }
+
 
     bool GLFW_WindowSystem::Initialize(const WindowCreateInfo &create_info)
     {
@@ -88,11 +92,6 @@ namespace kpengine
         glfwSwapBuffers(window_);
     }
 
-    void GLFW_WindowSystem::Tick(float delta_time)
-    {
-        PollEvents();
-        SwapBuffers();
-    }
 
     void GLFW_WindowSystem::Cleanup()
     {
@@ -114,9 +113,6 @@ namespace kpengine
         return glfwWindowShouldClose(window_);
     }
 
-    GLFW_WindowSystem::~GLFW_WindowSystem()
-    {
-    }
 
     void GLFW_WindowSystem::OnErrorCallback(int error_code, const char *msg)
     {

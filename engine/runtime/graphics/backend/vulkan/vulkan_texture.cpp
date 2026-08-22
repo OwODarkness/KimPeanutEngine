@@ -38,7 +38,9 @@ namespace kpengine::graphics
         image_create_info.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
         image_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         image_create_info.samples = ConvertToVulkanSampleCount(settings.sample_count);
-        image_create_info.flags = 0;
+        image_create_info.flags = settings.mutable_format
+                                      ? VK_IMAGE_CREATE_MUTABLE_FORMAT_BIT
+                                      : 0;
 
         if (vkCreateImage(logical_device, &image_create_info, nullptr, &resource_.image) != VK_SUCCESS)
         {

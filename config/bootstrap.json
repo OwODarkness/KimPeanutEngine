@@ -2,10 +2,12 @@
     "version": 1,
     "assets": [
         "shader/simple_triangle.shader",
-        "shader/color_triangle.shader",
-        "texture/default.png",
         "texture/wallpaper.jpg",
-        "model/bunny/stanford-bunny.obj",
-        "model/teapot/teapot.obj"
-    ]
+        "model/sphere/sphere.obj"
+    ],
+    "scene": {
+        "shader_program": "shader/simple_triangle.shader",
+        "model": "model/sphere/sphere.obj",
+        "texture": "texture/wallpaper.jpg"
+    }
 }

@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include "log/logger.h"
 #include "vulkan_buffer_manager.h"
+#include "vulkan_memory_manager.h"
 #include "vulkan_swapchain.h"
 #include "vulkan_frame_context.h"
 #include "vulkan_pipeline_manager.h"
@@ -20,8 +21,7 @@ namespace kpengine::graphics
 
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
 
-    VulkanBackend::VulkanBackend() : buffer_manager_(std::make_unique<VulkanBufferManager>()),
-                                     pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
+    VulkanBackend::VulkanBackend() : pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
                                      descriptor_set_manager_(std::make_unique<VulkanDescriptorSetManager>()),
                                      image_memory_manager_(std::make_unique<VulkanImageMemoryManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
@@ -38,9 +38,13 @@ namespace kpengine::graphics
 
         device_ = std::make_unique<VulkanDevice>();
         device_->Initialize(window);
+        memory_manager_ = std::make_unique<VulkanMemoryManager>(
+            device_->GetPhysicalDevice(), device_->GetLogicalDevice());
+        buffer_manager_ = std::make_unique<VulkanBufferManager>(*memory_manager_);
 
         swapchain_ = std::make_unique<VulkanSwapchain>();
         swapchain_->Initialize(device_.get(), window);
+        swapchain_image_layouts_.assign(swapchain_->GetImageCount(), VK_IMAGE_LAYOUT_UNDEFINED);
         msaa_sampe_count_ = swapchain_->GetMaxUsableSampleCount();
         InitVulkanContext();
 
@@ -89,6 +93,7 @@ namespace kpengine::graphics
         current_image_index_ = image_index;
         frame_active_ = true;
         render_target_active_ = false;
+        editor_ui_active_ = false;
         active_render_target_ = {};
     }
 
@@ -102,6 +107,10 @@ namespace kpengine::graphics
         if (render_target_active_)
         {
             EndRenderTarget();
+        }
+        if (editor_ui_active_)
+        {
+            EndEditorUiRendering();
         }
 
         VkCommandBuffer scene_command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
@@ -342,10 +351,17 @@ namespace kpengine::graphics
     {
         vkDeviceWaitIdle(device_->GetLogicalDevice());
 
-        for (RenderTargetResource &target : render_targets_)
+        for (size_t index = 0; index < render_targets_.size(); ++index)
         {
+            RenderTargetResource &target = render_targets_[index];
             if (target.color.IsValid())
             {
+                if (index < render_target_states_.size() &&
+                    render_target_states_[index].editor_preview_view != VK_NULL_HANDLE)
+                {
+                    vkDestroyImageView(device_->GetLogicalDevice(),
+                                       render_target_states_[index].editor_preview_view, nullptr);
+                }
                 DestroyTexture(target.color);
                 DestroyTexture(target.depth);
                 target = {};
@@ -361,7 +377,8 @@ namespace kpengine::graphics
         descriptor_set_manager_->DestroyAll(device_->GetLogicalDevice());
         pipeline_manager_->DestroyAll(device_->GetLogicalDevice());
 
-        buffer_manager_->FreeMemory(device_->GetLogicalDevice());
+        buffer_manager_->DestroyAll(device_->GetLogicalDevice());
+        memory_manager_->Destroy();
         image_memory_manager_->Destroy(device_->GetLogicalDevice());
 
         frame_context_->Destroy();
@@ -403,13 +420,14 @@ namespace kpengine::graphics
 
     PipelineHandle VulkanBackend::CreatePipelineResource(const PipelineDesc &pipeline_desc)
     {
-        // The caller owns shaders/stage/layout/bindings; the backend bakes only. The
-        // swapchain is RHI-owned, so its format completes a desc that left the
-        // attachment formats unset — a swapchain-bound pipeline must match them.
+        // Pipelines render to offscreen targets by default. Presentation is a
+        // separate ImGui pass, so a swapchain format must never leak into this
+        // pipeline description. Non-default render targets must state their
+        // attachment formats explicitly at the call site.
         PipelineDesc desc = pipeline_desc;
         if (desc.color_attachment_formats.empty())
         {
-            desc.color_attachment_formats = {ConvertFromVulkanTextureFormat(swapchain_->GetImageFormat())};
+            desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
         }
         if (desc.depth_attachment_format == TextureFormat::TEXTURE_FORMAT_UNKNOW)
         {
@@ -488,6 +506,7 @@ namespace kpengine::graphics
         color_settings.format = desc.color_format;
         color_settings.usage = TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT | TextureUsage::TEXTURE_USAGE_SAMPLE;
         color_settings.aspect = ImageAspect::IMAGE_ASPECT_COLOR;
+        color_settings.mutable_format = desc.color_format == TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         TextureSettings depth_settings{};
         depth_settings.format = desc.depth_format;
         depth_settings.usage = TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT;
@@ -504,8 +523,35 @@ namespace kpengine::graphics
             render_target_handles_.Destroy(handle);
             return {};
         }
+        VulkanRenderTargetState state{};
+        if (color_settings.mutable_format)
+        {
+            Texture *color_texture = texture_manager_->GetTexture(target.color);
+            const VulkanTextureResource color_resource = color_texture
+                ? ConvertToVulkanTextureResource(color_texture->GetTextueHandle())
+                : VulkanTextureResource{};
+            VkImageViewCreateInfo preview_view_info{};
+            preview_view_info.sType = VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO;
+            preview_view_info.image = color_resource.image;
+            preview_view_info.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            preview_view_info.format = VK_FORMAT_R8G8B8A8_UNORM;
+            preview_view_info.subresourceRange.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            preview_view_info.subresourceRange.baseMipLevel = 0;
+            preview_view_info.subresourceRange.levelCount = 1;
+            preview_view_info.subresourceRange.baseArrayLayer = 0;
+            preview_view_info.subresourceRange.layerCount = 1;
+            if (color_resource.image == VK_NULL_HANDLE ||
+                vkCreateImageView(device_->GetLogicalDevice(), &preview_view_info, nullptr,
+                                  &state.editor_preview_view) != VK_SUCCESS)
+            {
+                DestroyTexture(target.color);
+                DestroyTexture(target.depth);
+                render_target_handles_.Destroy(handle);
+                return {};
+            }
+        }
         render_targets_[handle.id] = target;
-        render_target_states_[handle.id] = {};
+        render_target_states_[handle.id] = state;
         return handle;
     }
 
@@ -515,6 +561,12 @@ namespace kpengine::graphics
         if (index >= render_targets_.size()) return false;
         RenderTargetResource &target = render_targets_[index];
         if (!target.color.IsValid() || !target.depth.IsValid()) return false;
+        if (index < render_target_states_.size() &&
+            render_target_states_[index].editor_preview_view != VK_NULL_HANDLE)
+        {
+            vkDestroyImageView(device_->GetLogicalDevice(),
+                               render_target_states_[index].editor_preview_view, nullptr);
+        }
         DestroyTexture(target.color);
         DestroyTexture(target.depth);
         target = {};
@@ -546,9 +598,13 @@ namespace kpengine::graphics
         }
         const VulkanTextureResource resource =
             ConvertToVulkanTextureResource(color_texture->GetTextueHandle());
+        const VkImageView preview_view = index < render_target_states_.size() &&
+                                                render_target_states_[index].editor_preview_view != VK_NULL_HANDLE
+                                            ? render_target_states_[index].editor_preview_view
+                                            : resource.view;
         return {target.desc.width, target.desc.height,
                 reinterpret_cast<uintptr_t>(resource.image),
-                reinterpret_cast<uintptr_t>(resource.view)};
+                reinterpret_cast<uintptr_t>(preview_view)};
     }
 
     DescriptorSetHandle VulkanBackend::CreateResourceBindingSet(
@@ -624,7 +680,7 @@ namespace kpengine::graphics
         stage_buffer_create_info.size = size;
         stage_buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_SRC_BIT;
         stage_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        return buffer_manager_->CreateBufferResource(device_->GetPhysicalDevice(), device_->GetLogicalDevice(), &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
+        return buffer_manager_->CreateBufferResource(device_->GetLogicalDevice(), &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
     }
 
     BufferHandle VulkanBackend::CreateDownloadStageBufferResource(size_t size)
@@ -634,7 +690,7 @@ namespace kpengine::graphics
         stage_buffer_create_info.size = size;
         stage_buffer_create_info.usage = VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         stage_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        return buffer_manager_->CreateBufferResource(device_->GetPhysicalDevice(), device_->GetLogicalDevice(), &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
+        return buffer_manager_->CreateBufferResource(device_->GetLogicalDevice(), &stage_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_STAGING);
     }
 
     bool VulkanBackend::DestroyBufferResource(BufferHandle handle)
@@ -644,7 +700,7 @@ namespace kpengine::graphics
 
     void VulkanBackend::UploadDataToBuffer(BufferHandle handle, size_t size, const void *data)
     {
-        buffer_manager_->UploadData(device_->GetLogicalDevice(), handle, size, data);
+        buffer_manager_->UploadData(handle, size, data);
     }
 
     VulkanBufferResource *VulkanBackend::GetBufferResource(BufferHandle handle)
@@ -664,7 +720,7 @@ namespace kpengine::graphics
         dst_buffer_create_info.usage = usage;
         dst_buffer_create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
 
-        BufferHandle dst_handle = buffer_manager_->CreateBufferResource(device_->GetPhysicalDevice(), device_->GetLogicalDevice(), &dst_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
+        BufferHandle dst_handle = buffer_manager_->CreateBufferResource(device_->GetLogicalDevice(), &dst_buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
 
         // stage → device copy on the transfer queue, one-shot buffer
         VkCommandBuffer command_buffer = frame_context_->BeginSingleTimeCommands(frame_context_->GetTransferCommandPool());
@@ -681,6 +737,67 @@ namespace kpengine::graphics
     VkCommandBuffer VulkanBackend::GetCurrentUICommandBuffer() const
     {
         return frame_context_->GetCurrentUICommandBuffer();
+    }
+
+    bool VulkanBackend::BeginEditorUiRendering()
+    {
+        if (!frame_active_ || editor_ui_active_ ||
+            current_image_index_ >= swapchain_image_layouts_.size())
+        {
+            return false;
+        }
+
+        VkCommandBuffer command_buffer = GetCurrentSceneCommandBuffer();
+        const VkImage image = swapchain_->GetImage(current_image_index_);
+        frame_context_->TransitionImageLayout(
+            command_buffer, image, swapchain_image_layouts_[current_image_index_],
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
+            VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            swapchain_image_layouts_[current_image_index_] == VK_IMAGE_LAYOUT_UNDEFINED
+                ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+
+        VkClearValue clear_value{};
+        clear_value.color = {{0.1f, 0.1f, 0.1f, 1.0f}};
+        VkRenderingAttachmentInfo color_attachment{};
+        color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
+        color_attachment.imageView = swapchain_->GetImageView(current_image_index_);
+        color_attachment.imageLayout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        color_attachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        color_attachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        color_attachment.clearValue = clear_value;
+
+        VkRenderingInfo rendering_info{};
+        rendering_info.sType = VK_STRUCTURE_TYPE_RENDERING_INFO;
+        rendering_info.renderArea.extent = swapchain_->GetExtent();
+        rendering_info.layerCount = 1;
+        rendering_info.colorAttachmentCount = 1;
+        rendering_info.pColorAttachments = &color_attachment;
+        vkCmdBeginRendering(command_buffer, &rendering_info);
+        swapchain_image_layouts_[current_image_index_] = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        editor_ui_active_ = true;
+        return true;
+    }
+
+    void VulkanBackend::EndEditorUiRendering()
+    {
+        if (!frame_active_ || !editor_ui_active_ ||
+            current_image_index_ >= swapchain_image_layouts_.size())
+        {
+            return;
+        }
+
+        VkCommandBuffer command_buffer = GetCurrentSceneCommandBuffer();
+        vkCmdEndRendering(command_buffer);
+        frame_context_->TransitionImageLayout(
+            command_buffer, swapchain_->GetImage(current_image_index_),
+            VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+            VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+            VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, 0, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+        swapchain_image_layouts_[current_image_index_] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        editor_ui_active_ = false;
     }
 
     VkCommandBuffer VulkanBackend::GetCurrentSceneCommandBuffer() const
@@ -748,14 +865,12 @@ namespace kpengine::graphics
         buffer_create_info.queueFamilyIndexCount = 0;
         buffer_create_info.pQueueFamilyIndices = nullptr;
         buffer_create_info.size = size;
-        return buffer_manager_->CreateBufferResource(device_->GetPhysicalDevice(), device_->GetLogicalDevice(), &buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
+        return buffer_manager_->CreateBufferResource(device_->GetLogicalDevice(), &buffer_create_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
     }
 
     void *VulkanBackend::MapUniformBuffer(BufferHandle handle, size_t size)
     {
-        void *mapped_ptr = nullptr;
-        buffer_manager_->MapBuffer(device_->GetLogicalDevice(), handle, size, &mapped_ptr);
-        return mapped_ptr;
+        return buffer_manager_->GetMappedAddress(handle, size);
     }
 
     void VulkanBackend::UploadTexturePixels(TextureHandle texture, const void *pixels, size_t pixel_size, uint32_t width, uint32_t height, uint32_t mip_levels)
@@ -790,6 +905,7 @@ namespace kpengine::graphics
 
         DestroyAttachmentResources();
         swapchain_->Recreate(width_, height_);
+        swapchain_image_layouts_.assign(swapchain_->GetImageCount(), VK_IMAGE_LAYOUT_UNDEFINED);
         frame_context_->OnSwapchainRecreated(static_cast<uint32_t>(swapchain_->GetImageCount()));
         CreateDepthResource();
         CreateColorResource();
@@ -812,17 +928,21 @@ namespace kpengine::graphics
 
     void VulkanBackend::FinishFrame(VkCommandBuffer commandbuffer, uint32_t image_index)
     {
-        // The scene target is offscreen. The acquired swapchain image is not
-        // rendered this slice, but it must still be transitioned for present.
-        frame_context_->TransitionImageLayout(
-            commandbuffer,
-            swapchain_->GetImage(image_index),
-            VK_IMAGE_LAYOUT_UNDEFINED,
-            VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
-            VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT,
-            VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
-            {}, {},
-            VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+        // Headless/RHI examples may not record editor UI. Present a valid image
+        // layout in that case; editor frames transition it in EndEditorUiRendering.
+        if (image_index < swapchain_image_layouts_.size() &&
+            swapchain_image_layouts_[image_index] != VK_IMAGE_LAYOUT_PRESENT_SRC_KHR)
+        {
+            frame_context_->TransitionImageLayout(
+                commandbuffer, swapchain_->GetImage(image_index),
+                swapchain_image_layouts_[image_index], VK_IMAGE_LAYOUT_PRESENT_SRC_KHR,
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT,
+                swapchain_image_layouts_[image_index] == VK_IMAGE_LAYOUT_UNDEFINED
+                    ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
+                0, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+            swapchain_image_layouts_[image_index] = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+        }
 
         if (vkEndCommandBuffer(commandbuffer) != VK_SUCCESS)
         {

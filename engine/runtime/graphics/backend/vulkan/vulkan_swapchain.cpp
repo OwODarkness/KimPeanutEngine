@@ -126,14 +126,21 @@ namespace kpengine::graphics
 
     VkSurfaceFormatKHR VulkanSwapchain::ChooseSwapChainSurfaceFormat(const std::vector<VkSurfaceFormatKHR> &available_formats) const
     {
+        // ImGui colors are authored for a non-sRGB presentation attachment. Keep
+        // gamma conversion scoped to the offscreen scene render target instead of
+        // applying it to every editor widget through an sRGB swapchain write.
         for (const auto &avail_format : available_formats)
         {
-            if (avail_format.format == VK_FORMAT_R8G8B8A8_SRGB &&
+            if ((avail_format.format == VK_FORMAT_R8G8B8A8_UNORM ||
+                 avail_format.format == VK_FORMAT_B8G8R8A8_UNORM) &&
                 avail_format.colorSpace == VK_COLOR_SPACE_SRGB_NONLINEAR_KHR)
             {
                 return avail_format;
             }
         }
+
+        // Fall back to the usual sRGB format only when the surface exposes no
+        // compatible UNORM presentation format.
         return available_formats[0];
     }
 

@@ -24,6 +24,22 @@ namespace kpengine::graphics
         TextureHandle depth;
         RenderTargetDesc desc;
     };
+
+    // Borrowed presentation data for a render target's color attachment. The
+    // values are backend-native tokens only; their lifetime stays with the
+    // render target and callers must never destroy or retain them past resize.
+    struct RenderTargetView
+    {
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uintptr_t native_image = 0;
+        uintptr_t native_image_view = 0;
+
+        bool IsValid() const
+        {
+            return width != 0 && height != 0 && native_image_view != 0;
+        }
+    };
 }
 
 #endif

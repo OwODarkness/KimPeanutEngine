@@ -98,6 +98,10 @@ namespace kpengine::render
 
         // Runtime pass: drain a bounded number of requests so no frame stalls.
         void Tick(float delta_time);
+        // Split frame bracket for the editor: scene work is recorded first, then
+        // the API-specific editor renderer composites before submission/present.
+        void BeginFrame(float delta_time);
+        void EndFrame();
 
         bool IsReady(asset::RequestID request_id) const;
         const RenderCacheEntry *GetCached(asset::RequestID request_id) const;
@@ -164,6 +168,7 @@ namespace kpengine::render
         std::unordered_map<uint64_t, graphics::MeshHandle> mesh_cache_;
         std::unordered_map<uint64_t, graphics::TextureHandle> texture_cache_;
         graphics::SamplerHandle default_sampler_handle_;
+        FrameContext *active_frame_context_ = nullptr;
     };
 }
 

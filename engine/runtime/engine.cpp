@@ -36,6 +36,7 @@ namespace kpengine
         void Engine::Initialize()
         {
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initializing...");
+            shutdown_requested_.store(false);
 
             // Startup one-shot: read the need-list and enqueue it once (guarded
             // inside). Missing bootstrap.json is a hard boot error — fail fast so
@@ -54,7 +55,7 @@ namespace kpengine
             render_thread_ = std::thread(&Engine::RenderThreadFunc, this);
 
             // Wait for the render thread to finish window/context setup before
-            // returning, so Run() can query window_system_->ShouldClose() safely.
+            // returning, so the game thread can start producing frames safely.
             {
                 std::unique_lock<std::mutex> lock(render_start_mutex_);
                 render_start_cv_.wait(lock, [this]
@@ -75,6 +76,14 @@ namespace kpengine
             }
 
             const bootstrap::BootstrapConfig config = bootstrap::ReadBootstrap(GetBootstrapPath());
+            render::BootstrapSceneInfo scene_info{};
+            if (config.scene.IsComplete())
+            {
+                scene_info.shader_program_path = GetAssetDirectory() + config.scene.shader_program;
+                scene_info.model_path = GetAssetDirectory() + config.scene.model;
+                scene_info.texture_path = GetAssetDirectory() + config.scene.texture;
+            }
+            global_runtime_context.SetBootstrapScene(std::move(scene_info));
             std::vector<asset::AssetLoadRequest> requests = bootstrap::BuildLoadRequests(config);
             for (auto &request : requests)
             {
@@ -101,7 +110,7 @@ namespace kpengine
         void Engine::Run()
         {
             // [thread model] This runs on the main OS thread — the game thread.
-            while (!global_runtime_context.window_system_->ShouldClose())
+            while (!shutdown_requested_.load())
             {
                 GameTick();
             }
@@ -162,17 +171,21 @@ namespace kpengine
             // context — that is this thread, so the editor UI lives here.
             editor_->InitEditorUI();
 
-            while (!global_runtime_context.window_system_->ShouldClose())
+            while (!shutdown_requested_.load())
             {
                 RenderTick();
+                // GLFW event handling and its close flag are render-thread-owned.
+                // Publish close to the game thread instead of reading GLFW there.
+                if (global_runtime_context.window_system_->ShouldClose())
+                {
+                    shutdown_requested_.store(true);
+                }
             }
 
             // Shut ImGui down on the same thread that built it, before the window
             // teardown at exit.
             editor_->CloseUI();
-
-            // [reconstruction] Window teardown (Cleanup / glfwTerminate) goes here once
-            // RuntimeContext::Clear() actually releases the GLFW window.
+            global_runtime_context.Clear();
         }
 
         void Engine::RenderTick()
@@ -194,7 +207,7 @@ namespace kpengine
 
             float delta = 1.f / target_fps;
             global_runtime_context.log_system_->Tick(delta);
-            global_runtime_context.render_system_->Tick(delta);
+            global_runtime_context.render_system_->BeginFrame(delta);
 
             // Editor UI frames between input polling and presentation: PollEvents feeds
             // ImGui, the UI renders into the back buffer, SwapBuffers presents it. The
@@ -202,7 +215,11 @@ namespace kpengine
             // rebuilt — docs/render/render_module.md.
             global_runtime_context.window_system_->PollEvents();
             editor_->Tick();
-            global_runtime_context.window_system_->SwapBuffers();
+            global_runtime_context.render_system_->EndFrame();
+            if(global_runtime_context.graphics_api_type_ == GraphicsAPIType::GRAPHICS_API_OPENGL)
+            {
+                global_runtime_context.window_system_->SwapBuffers();
+            }
 
             auto frame_end = clock::now();
             std::chrono::duration<double> elapsed = frame_end - frame_start;

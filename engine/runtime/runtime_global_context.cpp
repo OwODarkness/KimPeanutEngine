@@ -21,7 +21,7 @@ namespace kpengine
         input_system_(std::make_unique<input::InputSystem>()),
         lua_vm_(std::make_unique<script::lua::LuaVM>()),
         memory_sampler_(MemoryStatsSampler::CreateMemoryStatsSampler(PlatformType::PLATFORM_WINDOWS)),
-        graphics_api_type_(GraphicsAPIType::GRAPHICS_API_OPENGL)
+        graphics_api_type_(GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
             
         }
@@ -32,14 +32,11 @@ namespace kpengine
             window_create_info.width = 1920;
             window_create_info.height = 1080;
             window_create_info.title = "KimPeanut Engine";
-            // This is the one startup API choice. Window creation, RenderSystem,
-            // and EditorUI all derive from it; do not introduce local defaults.
+
             window_create_info.graphics_api_type = graphics_api_type_;
             window_system_->Initialize(window_create_info);
 
-            // Script state. Engine-agnostic VM; the binding layer lands on top of it
-            // later (docs/script/script_module.md). One VM per game thread — creation
-            // here is fine, execution must stay on the game thread.
+
             lua_vm_->Initialize();
 
             // Render owns the resource pipeline and drains the async load queue the

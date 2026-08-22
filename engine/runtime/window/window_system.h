@@ -29,7 +29,6 @@ namespace kpengine
         virtual void Cleanup() = 0;
 
         void SetWindowSize(int width, int height);
-        virtual void Tick(float delta_time);
         static std::unique_ptr<WindowSystem> CreateWindowSystem(WindowAPIType window_api_type);
 
     public:

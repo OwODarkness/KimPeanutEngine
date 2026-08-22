@@ -16,11 +16,7 @@ namespace kpengine
         return nullptr;
     }
 
-        void WindowSystem::Tick(float delta_time)
-        {
-            PollEvents();
-            SwapBuffers();
-        }
+
 
     void WindowSystem::SetWindowSize(int width, int height)
     {

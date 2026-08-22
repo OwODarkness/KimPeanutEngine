@@ -8,6 +8,18 @@
 
 namespace kpengine::bootstrap
 {
+    struct BootstrapScene
+    {
+        std::string shader_program;
+        std::string model;
+        std::string texture;
+
+        bool IsComplete() const
+        {
+            return !shader_program.empty() && !model.empty() && !texture.empty();
+        }
+    };
+
     // The engine's startup need-list: the assets to preload before the main loop
     // (docs/status.md item 6). Mirrors config/bootstrap.json.
     //
@@ -20,6 +32,7 @@ namespace kpengine::bootstrap
     {
         int version = 0;                 // bootstrap.json schema version
         std::vector<std::string> assets; // asset paths, e.g. "shader/simple_triangle.shader"
+        BootstrapScene scene;
     };
 
     // Parses a bootstrap.json (GetBootstrapPath()) into a BootstrapConfig.

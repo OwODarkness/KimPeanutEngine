@@ -16,6 +16,12 @@ namespace kpengine::editor
 
         void NewFrame() override;
         void Render() override;
+        void SetBackgroundColor(const LogColor &color) override;
+        ImTextureID GetTextureID(const graphics::RenderTargetView &view) override;
+        void DrawSceneImage(ImTextureID texture_id, const ImVec2 &size) override;
+
+    private:
+        LogColor background_color_{0.1f, 0.1f, 0.1f, 1.f};
     };
 
 }

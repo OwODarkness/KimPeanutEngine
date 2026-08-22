@@ -23,6 +23,7 @@ namespace kpengine::editor
     struct EditorSettings
     {
         int version = 1;
+        LogColor background_color{0.1f, 0.1f, 0.1f, 1.f};
         LogLevelColorTable log_colors;
     };
 
@@ -32,8 +33,8 @@ namespace kpengine::editor
 
     // Parses config/settings.json into EditorSettings. Throws std::runtime_error if
     // the file is missing (mirrors ReadBootstrap) and propagates nlohmann parse
-    // errors on malformed JSON; missing/unknown "log_colors" entries fall back to
-    // DefaultLogColors() with a warning.
+    // errors on malformed JSON; malformed colors retain their defaults and unknown
+    // "log_colors" entries are ignored with a warning.
     EditorSettings ReadEditorSettings(const std::string &path);
 }
 

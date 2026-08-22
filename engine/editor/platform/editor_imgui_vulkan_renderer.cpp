@@ -18,6 +18,7 @@ namespace kpengine::editor
         vulkan_ctx = static_cast<graphics::VulkanContext*>(context.native);
         assert(vulkan_ctx);
         CreateDescriptorPool();
+        CreateSceneSampler();
 
         const graphics::VulkanQueue &graphics_queue = vulkan_ctx->backend->GetGraphicsQueue();
         ImGui_ImplVulkan_InitInfo init_info{};
@@ -43,11 +44,25 @@ namespace kpengine::editor
 
     void EditorImguiVulkanRenderer::Shutdown()
     {
+        // The most recently submitted frame can still reference ImGui's scene
+        // descriptor and transient vertex/index buffers. Retire it before any
+        // ImGui Vulkan destruction; RenderSystem's later shutdown wait is too
+        // late because this renderer owns the resources being released here.
+        if (vulkan_ctx && vulkan_ctx->backend)
+        {
+            vulkan_ctx->backend->WaitIdle();
+        }
+        ReleaseSceneTexture();
         ImGui_ImplVulkan_Shutdown();
         if (descriptor_pool_ != VK_NULL_HANDLE && vulkan_ctx)
         {
             vkDestroyDescriptorPool(vulkan_ctx->logical_device, descriptor_pool_, nullptr);
             descriptor_pool_ = VK_NULL_HANDLE;
+        }
+        if (scene_sampler_ != VK_NULL_HANDLE && vulkan_ctx)
+        {
+            vkDestroySampler(vulkan_ctx->logical_device, scene_sampler_, nullptr);
+            scene_sampler_ = VK_NULL_HANDLE;
         }
         vulkan_ctx = nullptr;
     }
@@ -59,17 +74,13 @@ namespace kpengine::editor
 
     void EditorImguiVulkanRenderer::Render()
     {
-        VkCommandBuffer cmd_buf = vulkan_ctx->backend->GetCurrentUICommandBuffer();
-        vkResetCommandBuffer(cmd_buf, 0);
-        VkCommandBufferBeginInfo cmd_buf_begin_info{};
-        cmd_buf_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        cmd_buf_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        vkBeginCommandBuffer(cmd_buf, &cmd_buf_begin_info);
-
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(), cmd_buf);
-    
-        vkEndCommandBuffer(cmd_buf);
+        if (!vulkan_ctx->backend->BeginEditorUiRendering())
+        {
+            return;
+        }
+        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
+                                        vulkan_ctx->backend->GetCurrentSceneCommandBuffer());
+        vulkan_ctx->backend->EndEditorUiRendering();
 
     }
 
@@ -80,11 +91,20 @@ namespace kpengine::editor
 
     ImTextureID EditorImguiVulkanRenderer::GetTextureID(const graphics::RenderTargetView &view)
     {
-        // Vulkan needs an ImGui descriptor set that owns the image-view/sampler
-        // registration. That bridge is not initialized yet, so do not expose a
-        // raw VkImageView as ImTextureID.
-        (void)view;
-        return ImTextureID{};
+        if (!view.IsValid() || !scene_sampler_)
+        {
+            return ImTextureID{};
+        }
+
+        const VkImageView image_view = reinterpret_cast<VkImageView>(view.native_image_view);
+        if (scene_texture_ == VK_NULL_HANDLE || scene_view_ != image_view)
+        {
+            ReleaseSceneTexture();
+            scene_texture_ = ImGui_ImplVulkan_AddTexture(
+                scene_sampler_, image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
+            scene_view_ = image_view;
+        }
+        return reinterpret_cast<ImTextureID>(scene_texture_);
     }
 
     void EditorImguiVulkanRenderer::DrawSceneImage(ImTextureID texture_id, const ImVec2 &size)
@@ -119,6 +139,34 @@ namespace kpengine::editor
         {
             throw std::runtime_error("Failed to create ImGui Vulkan descriptor pool");
         }
+    }
+
+    void EditorImguiVulkanRenderer::CreateSceneSampler()
+    {
+        VkSamplerCreateInfo sampler_info{};
+        sampler_info.sType = VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO;
+        sampler_info.magFilter = VK_FILTER_LINEAR;
+        sampler_info.minFilter = VK_FILTER_LINEAR;
+        sampler_info.mipmapMode = VK_SAMPLER_MIPMAP_MODE_LINEAR;
+        sampler_info.addressModeU = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_info.maxLod = 0.0f;
+        if (vkCreateSampler(vulkan_ctx->logical_device, &sampler_info, nullptr,
+                            &scene_sampler_) != VK_SUCCESS)
+        {
+            throw std::runtime_error("Failed to create ImGui scene sampler");
+        }
+    }
+
+    void EditorImguiVulkanRenderer::ReleaseSceneTexture()
+    {
+        if (scene_texture_ != VK_NULL_HANDLE)
+        {
+            ImGui_ImplVulkan_RemoveTexture(scene_texture_);
+            scene_texture_ = VK_NULL_HANDLE;
+        }
+        scene_view_ = VK_NULL_HANDLE;
     }
 
 } // namespace kpengine::editor

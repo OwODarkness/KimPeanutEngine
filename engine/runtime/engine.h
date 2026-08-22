@@ -68,6 +68,7 @@ namespace kpengine
             bool is_render_thread_loaded_ = false;
 
             std::thread render_thread_;
+            std::atomic_bool shutdown_requested_{false};
 
             // One-shot guard for PreloadBootstrap(). Set only after a successful
             // enqueue, so a failed read (missing bootstrap.json) can be retried.

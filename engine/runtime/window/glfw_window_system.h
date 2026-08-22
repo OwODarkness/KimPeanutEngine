@@ -15,7 +15,6 @@ namespace kpengine
         void SwapBuffers() override;
         WindowHandle GetNativeHandle() const override;
         bool ShouldClose() const override;
-        void Tick(float delta_time) override;
         void Cleanup() override;
         ~GLFW_WindowSystem();
 

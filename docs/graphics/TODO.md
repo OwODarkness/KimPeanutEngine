@@ -1,6 +1,6 @@
 # Graphics (RHI) Work TODO
 
-**Snapshot: 2026-08-20.** The working task list and ordered roadmap for the RHI leak-fixes and the render-module reconstruction. State-of-the-world lives in [status.md](../status.md) and [graphics_module.md](graphics_module.md); this page is the ledger that drives them — tick items here as they land, then fold the result into those two.
+**Snapshot: 2026-08-22.** The working task list and ordered roadmap for the RHI leak-fixes and the render-module reconstruction. State-of-the-world lives in [status.md](../status.md) and [graphics_module.md](graphics_module.md); this page is the ledger that drives them — tick items here as they land, then fold the result into those two.
 
 Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_reference.md) — *learned, not copied*.
 
@@ -208,6 +208,57 @@ record; both the arena cursor and binding sets recycle only after
 `minUniformBufferOffsetAlignment`; OpenGL uses
 `GL_UNIFORM_BUFFER_OFFSET_ALIGNMENT` and `glBindBufferRange`. `RenderScene`
 now retains only logical state and static RHI handles (2026-08-20).
+
+#### 3.5 — make Vulkan buffer-memory ownership explicit
+
+**Goal:** make `VulkanMemoryManager` the sole Vulkan owner of
+`VkDeviceMemory`, its mapping state, and suballocation lifetime. This fixes the
+current invalid path where multiple `FrameContext` uniform buffers can be
+allocated from one pooled `VkDeviceMemory` block and each calls `vkMapMemory`.
+The full design is in [vulkan_memory_manager_plan.md](vulkan_memory_manager_plan.md).
+
+- [x] Add a Vulkan-private `VulkanMemoryManager`, owned by `VulkanBackend`
+  before `VulkanBufferManager`. It owns move-only RAII shared blocks and
+  dedicated allocations; it is the only type allowed to call
+  `vkAllocateMemory`, `vkMapMemory`, `vkUnmapMemory`, or `vkFreeMemory`.
+- [x] Add one common `VulkanMemoryAllocation` record for buffer binding:
+  native memory, allocation offset/range, stable mapped CPU address, and a
+  Vulkan-private release route. The RHI and render layers must not observe
+  pooled-versus-dedicated policy or `VkDeviceMemory`.
+- [x] Implement the shared-block policy first. Persistently map every
+  host-visible block exactly once and return `mapped_base + allocation.offset`
+  for every suballocation. Convert `MapUniformBuffer` into an accessor for that
+  stored pointer, not a wrapper around `vkMapMemory`.
+- [x] Migrate `VulkanBufferManager`: create/destroy/bind `VkBuffer` only;
+  request/release allocations through the manager; replace temporary
+  map/unmap uploads with manager-owned writes. Remove its allocator maps,
+  `FreeMemory`, and direct native-memory lifetime calls.
+- [x] Add the dedicated policy for large buffers and Vulkan-required dedicated
+  allocations. It maps its distinct memory object at most once, then frees it
+  on allocation release; shared releases return a slot without unmapping the
+  block.
+- [x] Add non-coherent `Flush`/`Invalidate` range handling aligned to
+  `nonCoherentAtomSize`, even when the preferred desktop memory type is
+  host-coherent.
+- [x] Add validation smoke coverage: at least two `FrameContext` arenas from
+  one shared block, repeated frame-slot reuse, pooled and dedicated buffer
+  destruction, and backend shutdown. No mapped-memory or free-while-mapped
+  validation errors are acceptable.
+- [x] Verify teardown order: wait for GPU idle → destroy frame/transient and
+  cached buffer users → destroy `VkBuffer`s → destroy the memory manager →
+  destroy the Vulkan device.
+
+**Done when:** shared `VkDeviceMemory` blocks are mapped once for their entire
+live lifetime, every live host-visible allocation has a stable CPU address, and
+neither `FrameContext` nor `VulkanBufferManager` can independently map or free
+native Vulkan memory.
+
+**Landed 2026-08-22:** Vulkan buffer memory is now manager-owned. `GraphicsSmoke`
+passes three frames on Vulkan and OpenGL, and the engine editor starts with the
+Vulkan scene viewport registered through ImGui's descriptor bridge. A future
+targeted smoke case should force a buffer above the 4 MiB dedicated threshold;
+the policy and Vulkan-required dedicated-allocation path are implemented, but
+the current scene does not exercise that size class.
 
 ### Milestone 4 — remove legacy renderer behavior from OpenGL
 

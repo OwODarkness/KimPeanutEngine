@@ -89,6 +89,12 @@ namespace kpengine::editor
                    path.c_str(), settings.version, kSettingsVersion);
         }
 
+        if (json.contains("background_color"))
+        {
+            settings.background_color = ParseColor(json["background_color"],
+                                                   settings.background_color);
+        }
+
         if (!json.contains("log_colors"))
         {
             return settings;

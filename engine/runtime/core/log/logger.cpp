@@ -9,9 +9,11 @@
 namespace kpengine::program
 {
 
-    Logger::Logger() : last_flushed_index_(0), flush_interval(2.f), flush_size_threshold(200),
-                       max_buf_size(1000),
-                       max_log_file_size(5 << 20), request_immediate_flush(false)
+    Logger::Logger() : last_flushed_index_(0),
+                       last_flush_time_(std::chrono::steady_clock::now()),
+                       flush_interval(2.f), flush_size_threshold(200),
+                       max_buf_size(1000), max_log_file_size(5 << 20),
+                       request_immediate_flush(false)
     {
     }
 
@@ -19,6 +21,11 @@ namespace kpengine::program
     {
         static Logger instance;
         return instance;
+    }
+
+    std::vector<LogEntry> Logger::Get() const
+    {
+        return GetSnapshot();
     }
 
     std::vector<LogEntry> Logger::GetSnapshot() const
@@ -29,18 +36,22 @@ namespace kpengine::program
 
     void Logger::Tick()
     {
-        std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
-        float interval = std::chrono::duration<float>(now - last_flush_time_).count();
-        if (interval >= flush_interval)
+        std::lock_guard<std::mutex> lock(log_mutex);
+
+        const auto now = std::chrono::steady_clock::now();
+        const float interval = std::chrono::duration<float>(now - last_flush_time_).count();
+        if (request_immediate_flush || interval >= flush_interval)
         {
             FlushToFile();
             last_flush_time_ = now;
+            request_immediate_flush = false;
         }
 
-        size_t remain_log_num = logs_.size() - last_flushed_index_;
+        const size_t remain_log_num = logs_.size() - last_flushed_index_;
         if (remain_log_num >= flush_size_threshold)
         {
             FlushToFile();
+            last_flush_time_ = now;
         }
     }
 
@@ -150,7 +161,8 @@ namespace kpengine::program
         std::string log_string = FetchStringFromLog(log);
 
 #ifdef KPENGINE_DEBUG
-        std::cout << log_string << std::endl;
+        // Keep console output serialized with the file and in-memory log order.
+        std::cout << log_string << '\n';
 #endif
         logs_.push_back(std::move(log));
     }
@@ -177,6 +189,7 @@ namespace kpengine::program
 
     Logger::~Logger()
     {
+        std::lock_guard<std::mutex> lock(log_mutex);
         FlushToFile();
         file_.close();
     }

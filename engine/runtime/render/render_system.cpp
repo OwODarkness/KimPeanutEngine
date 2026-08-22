@@ -68,6 +68,8 @@ namespace kpengine::render
         graphics::PipelineDesc desc{};
         desc.vert_shader = vert_shader->data.get();
         desc.frag_shader = frag_shader->data.get();
+        desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
         desc.binding_descs = {{0, sizeof(data::Vertex), false}};
         desc.attri_descs = {
             {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
@@ -148,6 +150,12 @@ namespace kpengine::render
 
     void RenderSystem::Tick(float delta_time)
     {
+        BeginFrame(delta_time);
+        EndFrame();
+    }
+
+    void RenderSystem::BeginFrame(float delta_time)
+    {
         ConsumeRequests(kMaxRuntimeLoadsPerFrame);
         if (!backend_)
         {
@@ -156,14 +164,14 @@ namespace kpengine::render
 
         ApplyPendingSceneRenderTargetExtent();
         backend_->BeginFrame();
-        FrameContext *frame_context = GetCurrentFrameContext();
-        if (frame_context)
+        active_frame_context_ = GetCurrentFrameContext();
+        if (active_frame_context_)
         {
             elapsed_seconds_ += delta_time;
-            frame_context->Begin(backend_->GetCurrentFrameIndex(),
-                                 {frame_number_, elapsed_seconds_, delta_time},
-                                 {scene_render_target_.GetWidth(),
-                                  scene_render_target_.GetHeight()});
+            active_frame_context_->Begin(backend_->GetCurrentFrameIndex(),
+                                        {frame_number_, elapsed_seconds_, delta_time},
+                                        {scene_render_target_.GetWidth(),
+                                         scene_render_target_.GetHeight()});
             graphics::CommandRecorder *recorder = backend_->GetCommandRecorder();
             if (recorder && scene_render_target_.BeginRecording(*recorder))
             {
@@ -171,12 +179,24 @@ namespace kpengine::render
                 {
                     if (scene)
                     {
-                        scene->Record(*frame_context, *recorder);
+                        scene->Record(*active_frame_context_, *recorder);
                     }
                 }
                 scene_render_target_.EndRecording(*recorder);
             }
-            frame_context->End();
+        }
+    }
+
+    void RenderSystem::EndFrame()
+    {
+        if (!backend_)
+        {
+            return;
+        }
+        if (active_frame_context_)
+        {
+            active_frame_context_->End();
+            active_frame_context_ = nullptr;
             ++frame_number_;
         }
         backend_->EndFrame();
@@ -563,6 +583,7 @@ namespace kpengine::render
         // current slot's fence could destroy an attachment used by another slot.
         // This rare boundary waits once, before the next BeginFrame records work.
         backend_->WaitIdle();
+        active_frame_context_ = nullptr;
         scene_render_target_.Initialize(*backend_, requested.width, requested.height);
         if (!scene_render_target_.IsValid())
         {

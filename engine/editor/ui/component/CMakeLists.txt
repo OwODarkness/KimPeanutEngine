@@ -6,5 +6,6 @@ target_sources(EditorLib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_plot_component.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_text_component.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_tooltip_component.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/editor_viewport_component.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_window_component.cpp
 )

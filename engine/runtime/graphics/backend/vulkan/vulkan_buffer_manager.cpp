@@ -1,168 +1,155 @@
 #include "vulkan_buffer_manager.h"
+
+#include <stdexcept>
+
 #include "log/logger.h"
-#include <iostream>
-#include "vulkan_memory_dedicated_allocator.h"
-#include "vulkan_memory_linear_allocator.h"
-#include "vulkan_memory_pool_allocator.h"
+
 namespace kpengine::graphics
 {
-    uint32_t VulkanBufferManager::RequestMemoryTypeIndex(VkMemoryPropertyFlags memory_prop_flags, const VkMemoryRequirements &memory_require, const VkPhysicalDeviceMemoryProperties physcial_memory_props)
+    VulkanBufferManager::VulkanBufferManager(VulkanMemoryManager &memory_manager)
+        : memory_manager_(&memory_manager)
     {
-        for (uint32_t i = 0; i < physcial_memory_props.memoryTypeCount; i++)
-        {
-            if ((memory_require.memoryTypeBits & (1 << i)) && (physcial_memory_props.memoryTypes[i].propertyFlags & memory_prop_flags) == memory_prop_flags)
-            {
-                return i;
-            }
-        }
-
-        throw std::runtime_error("Failed to find suitable memory type index");
     }
 
-    BufferHandle VulkanBufferManager::CreateBufferResource(VkPhysicalDevice physical_device, VkDevice logicial_device, const VkBufferCreateInfo *buffer_create_info, VulkanMemoryUsageType memory_type)
+    BufferHandle VulkanBufferManager::CreateBufferResource(
+        VkDevice logical_device, const VkBufferCreateInfo *buffer_create_info,
+        VulkanMemoryUsageType memory_type)
     {
+        if (!buffer_create_info || !memory_manager_)
+        {
+            throw std::runtime_error("Vulkan buffer manager is not initialized");
+        }
 
-        BufferHandle handle = handle_system_.Create();
-        if(handle.id == buffer_resources_.size())
+        const BufferHandle handle = handle_system_.Create();
+        if (handle.id == buffer_resources_.size())
         {
             buffer_resources_.emplace_back();
         }
+        VulkanBufferResource &resource = buffer_resources_[handle.id];
 
-        VulkanBufferResource &buffer_resource = buffer_resources_[handle.id];
-
-        if (vkCreateBuffer(logicial_device, buffer_create_info, nullptr, &buffer_resource.buffer) != VK_SUCCESS)
+        if (vkCreateBuffer(logical_device, buffer_create_info, nullptr, &resource.buffer) != VK_SUCCESS)
         {
-            KP_LOG("VulkanBufferManagerLog", LOG_LEVEL_ERROR, "Failed to create buffer");
-            throw std::runtime_error("Failed to create buffer");
+            handle_system_.Destroy(handle);
+            throw std::runtime_error("failed to create Vulkan buffer");
         }
 
-        VkMemoryRequirements memory_requires;
-        vkGetBufferMemoryRequirements(logicial_device, buffer_resource.buffer, &memory_requires);
+        VkMemoryDedicatedRequirements dedicated_requirements{};
+        dedicated_requirements.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS;
+        VkMemoryRequirements2 requirements2{};
+        requirements2.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
+        requirements2.pNext = &dedicated_requirements;
+        VkBufferMemoryRequirementsInfo2 requirements_info{};
+        requirements_info.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_REQUIREMENTS_INFO_2;
+        requirements_info.buffer = resource.buffer;
+        vkGetBufferMemoryRequirements2(logical_device, &requirements_info, &requirements2);
 
-        VkPhysicalDeviceMemoryProperties memory_props;
-        vkGetPhysicalDeviceMemoryProperties(physical_device, &memory_props);
-
-        VkMemoryPropertyFlags properties;
-        if (memory_type == VulkanMemoryUsageType::MEMORY_USAGE_DEVICE)
-        {
-            properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
-        }
-        else if (memory_type == VulkanMemoryUsageType::MEMORY_USAGE_STAGING || memory_type == VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM)
+        VkMemoryPropertyFlags properties = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT;
+        if (memory_type == VulkanMemoryUsageType::MEMORY_USAGE_STAGING ||
+            memory_type == VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM)
         {
             properties = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT;
         }
-        uint32_t memory_type_index = UINT32_MAX;
+
         try
         {
-            memory_type_index = RequestMemoryTypeIndex(properties, memory_requires, memory_props);
-        }
-        catch (std::exception e)
-        {
-            KP_LOG("VulkanBufferManagerLog", LOG_LEVEL_ERROR, e.what());
-            throw e;
-        }
-
-        IVulkanMemoryAllocator* allocator = nullptr;
-        if(buffer_create_info->size > pool_max_size)
-        {
-            if (dedicated_allocators_.find(memory_type) == dedicated_allocators_.end() || dedicated_allocators_[memory_type] == nullptr)
+            VkMemoryDedicatedAllocateInfo dedicated_allocate_info{};
+            dedicated_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+            dedicated_allocate_info.buffer = resource.buffer;
+            const VulkanMemoryAllocationPolicy policy =
+                dedicated_requirements.requiresDedicatedAllocation
+                    ? VulkanMemoryAllocationPolicy::Dedicated
+                    : VulkanMemoryAllocationPolicy::SharedBlock;
+            resource.allocation = memory_manager_->Allocate(
+                requirements2.memoryRequirements, properties, policy,
+                policy == VulkanMemoryAllocationPolicy::Dedicated
+                    ? &dedicated_allocate_info : nullptr);
+            if (vkBindBufferMemory(logical_device, resource.buffer,
+                                   resource.allocation.memory,
+                                   resource.allocation.offset) != VK_SUCCESS)
             {
-                dedicated_allocators_[memory_type] = std::make_unique<VulkanMemoryDedicatedAllocator>();
+                memory_manager_->Free(resource.allocation);
+                throw std::runtime_error("failed to bind Vulkan buffer memory");
             }
-            allocator = dedicated_allocators_[memory_type].get();
         }
-        else
+        catch (...)
         {
-            if (memory_allocators_.find(memory_type) == memory_allocators_.end() || memory_allocators_[memory_type] == nullptr)
-            {
-                memory_allocators_[memory_type] = std::make_unique<VulkanMemoryPoolAllocator>();
-            }
-            allocator = memory_allocators_[memory_type].get();
-            
+            vkDestroyBuffer(logical_device, resource.buffer, nullptr);
+            resource = {};
+            handle_system_.Destroy(handle);
+            throw;
         }
 
-
-
-        buffer_resource.allocation = allocator->Allocate(logicial_device, memory_requires.size, memory_requires.alignment, memory_type_index);
-
-
- 
-
-        vkBindBufferMemory(logicial_device, buffer_resource.buffer, buffer_resource.allocation.memory, buffer_resource.allocation.offset);
-
-        buffer_resource.mem_prop_flags = properties;
-        buffer_resource.alive = true;
+        resource.mem_prop_flags = properties;
+        resource.alive = true;
         return handle;
     }
 
-    bool VulkanBufferManager::DestroyBufferResource(VkDevice logicial_device, BufferHandle handle)
+    bool VulkanBufferManager::DestroyBufferResource(VkDevice logical_device, BufferHandle handle)
     {
-        VulkanBufferResource* buffer_resource = GetBufferResource(handle);
-
-        if(!buffer_resource)
+        VulkanBufferResource *resource = GetBufferResource(handle);
+        if (!resource)
         {
             return false;
         }
 
-        vkDestroyBuffer(logicial_device, buffer_resource->buffer, nullptr);
-        if (!buffer_resource->allocation.owner)
-        {
-            KP_LOG("VulkanBufferManager", LOG_LEVEL_WARNING, "missing owner of MemoryAllocation, could cause memory leak");
-        }
-        else
-        {
-
-            buffer_resource->allocation.owner->Free(logicial_device, buffer_resource->allocation);
-        }
-
-        buffer_resource->alive = false;
+        vkDestroyBuffer(logical_device, resource->buffer, nullptr);
+        memory_manager_->Free(resource->allocation);
+        *resource = {};
         return handle_system_.Destroy(handle);
     }
 
-    VulkanBufferResource* VulkanBufferManager::GetBufferResource(BufferHandle handle)
+    void VulkanBufferManager::DestroyAll(VkDevice logical_device)
     {
-        uint32_t index = handle_system_.Get(handle);
+        for (VulkanBufferResource &resource : buffer_resources_)
+        {
+            if (!resource.alive)
+            {
+                continue;
+            }
+            vkDestroyBuffer(logical_device, resource.buffer, nullptr);
+            memory_manager_->Free(resource.allocation);
+            resource = {};
+        }
+    }
+
+    VulkanBufferResource *VulkanBufferManager::GetBufferResource(BufferHandle handle)
+    {
+        const uint32_t index = handle_system_.Get(handle);
         if (index >= buffer_resources_.size())
         {
-            KP_LOG("VulkanBufferManager", LOG_LEVEL_ERROR, "Failed to get buffer resource, out of range");
+            KP_LOG("VulkanBufferManager", LOG_LEVEL_ERROR,
+                   "failed to get buffer resource: handle is out of range");
             return nullptr;
         }
-
-        return &buffer_resources_[handle.id];
+        VulkanBufferResource &resource = buffer_resources_[index];
+        return resource.alive ? &resource : nullptr;
     }
 
-    void VulkanBufferManager::UploadData(VkDevice logicial_device, BufferHandle handle, VkDeviceSize size, const void *src)
+    void VulkanBufferManager::UploadData(BufferHandle handle, VkDeviceSize size,
+                                         const void *source)
     {
-        VulkanBufferResource *buffer_resource = GetBufferResource(handle);
-        if ((buffer_resource->mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
+        VulkanBufferResource *resource = GetBufferResource(handle);
+        if (!resource)
         {
-            KP_LOG("VulkanBufferManager", LOG_LEVEL_WARNING, "Try to bindbuffer data by mapmemory, but memory prop flags don't hold VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT");
-            return;
+            throw std::runtime_error("cannot upload to an invalid Vulkan buffer");
         }
-        void *target;
-        vkMapMemory(logicial_device, buffer_resource->allocation.memory, buffer_resource->allocation.offset, size, 0, &target);
-        memcpy(target, src, static_cast<size_t>(size));
-        vkUnmapMemory(logicial_device, buffer_resource->allocation.memory);
+        memory_manager_->Write(resource->allocation, source, size);
     }
 
-    void VulkanBufferManager::MapBuffer(VkDevice logical_device, BufferHandle handle, VkDeviceSize size, void **mapped_ptr)
+    void *VulkanBufferManager::GetMappedAddress(BufferHandle handle,
+                                                VkDeviceSize size)
     {
-        VulkanBufferResource *buffer_resource = GetBufferResource(handle);
-        if ((buffer_resource->mem_prop_flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) == 0)
+        const uint32_t index = handle_system_.Get(handle);
+        if (index >= buffer_resources_.size())
         {
-            KP_LOG("VulkanBufferManager", LOG_LEVEL_WARNING, "Try to bindbuffer data by mapmemory, but memory prop flags don't hold VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT");
-            return;
+            return nullptr;
         }
-
-        vkMapMemory(logical_device, buffer_resource->allocation.memory, buffer_resource->allocation.offset, size, 0, mapped_ptr);
-    }
-
-    void VulkanBufferManager::FreeMemory(VkDevice logicial_device)
-    {
-        for(auto& allocator: memory_allocators_)
+        const VulkanBufferResource &resource = buffer_resources_[index];
+        if (!resource.alive || !resource.allocation.mapped_address ||
+            size > resource.allocation.size)
         {
-            allocator.second->Destroy(logicial_device);
+            return nullptr;
         }
+        return resource.allocation.mapped_address;
     }
-
 }

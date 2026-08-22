@@ -79,6 +79,10 @@ namespace kpengine::graphics
 
         class VulkanImageMemoryManager *GetImageMemoryManager() const { return image_memory_manager_.get(); }
         VkCommandBuffer GetCurrentUICommandBuffer() const;
+        // Vulkan-private editor seam: the editor records ImGui into the active
+        // primary frame command buffer after render has finished its offscreen target.
+        bool BeginEditorUiRendering();
+        void EndEditorUiRendering();
 
         // Frame-recording API: BeginFrame prepares the command buffer;
         // CommandRecorder selects attachments and records render passes.
@@ -117,6 +121,7 @@ namespace kpengine::graphics
         std::unique_ptr<class VulkanFrameContext> frame_context_;
         VulkanContext context_;
 
+        std::unique_ptr<class VulkanMemoryManager> memory_manager_;
         std::unique_ptr<class VulkanBufferManager> buffer_manager_;
 
         std::unique_ptr<class VulkanPipelineManager> pipeline_manager_;
@@ -129,10 +134,14 @@ namespace kpengine::graphics
         std::unique_ptr<class MeshManager> mesh_manager_;
 
         std::vector<RenderTargetResource> render_targets_;
+        std::vector<VkImageLayout> swapchain_image_layouts_;
         struct VulkanRenderTargetState
         {
             VkImageLayout color_layout = VK_IMAGE_LAYOUT_UNDEFINED;
             VkImageLayout depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            // A compatible UNORM view of an sRGB scene target. It is owned by
+            // the render target and used only by the editor presentation path.
+            VkImageView editor_preview_view = VK_NULL_HANDLE;
         };
         std::vector<VulkanRenderTargetState> render_target_states_;
         HandleSystem<RenderTargetHandle> render_target_handles_;
@@ -144,6 +153,7 @@ namespace kpengine::graphics
         uint32_t current_image_index_ = 0;
         bool frame_active_ = false;
         bool render_target_active_ = false;
+        bool editor_ui_active_ = false;
         RenderTargetHandle active_render_target_;
         MeshHandle recorded_mesh_;
         uint32_t recorded_index_count_ = 0;

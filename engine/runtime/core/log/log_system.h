@@ -15,8 +15,8 @@ namespace kpengine {
 
     class LogSystem {
     public:
-        const std::vector<program::LogEntry>& GetLogs() const;
-        // Snapshot copy for cross-thread readers (the editor log window); see Logger::GetSnapshot.
+        // Returns a copy; the logger may mutate its storage on another thread.
+        std::vector<program::LogEntry> GetLogs() const;
         std::vector<program::LogEntry> GetLogSnapshot() const;
         void Tick(float delta_time);
         

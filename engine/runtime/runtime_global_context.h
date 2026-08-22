@@ -6,14 +6,11 @@
 #include "base/base.h"
 #include "async/async_queue.h"
 #include "asset/asset_load_request.h"
+#include "render/render_system.h"
 
 namespace kpengine::input
 {
     class InputSystem;
-}
-
-namespace kpengine::render{
-    class RenderSystem;
 }
 
 namespace kpengine::script::lua
@@ -44,6 +41,7 @@ namespace kpengine
             void Initialize();
             void PostInitialize();
             void Clear();
+            void SetBootstrapScene(render::BootstrapSceneInfo scene);
 
         public:
             std::unique_ptr<WindowSystem> window_system_;
@@ -63,6 +61,7 @@ namespace kpengine
             std::thread::id render_thread_id_;
 
             GraphicsAPIType graphics_api_type_;
+            render::BootstrapSceneInfo bootstrap_scene_;
 
             // Incoming leg of the async resource queue (docs/async/async_resource_queue.md).
             // Producers (the engine's bootstrap preload today, the render module later)

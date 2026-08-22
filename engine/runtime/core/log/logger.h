@@ -39,9 +39,10 @@ namespace kpengine::program
         template <typename... Args>
         void Log(const std::string &log_name, LogLevel level, int line, const std::string &file, const std::string &msg, Args &&...args);
         static std::string FetchStringFromLog(const LogEntry &log);
-        const std::vector<LogEntry> &Get() const { return logs_; }
-        // Thread-safe copy of the buffer (locks log_mutex); editors read this instead
-        // of the live vector, which a writer thread pushes/clears concurrently.
+        // Returns a stable copy. The logger owns the live buffer and may mutate it
+        // concurrently with readers.
+        std::vector<LogEntry> Get() const;
+        // Explicitly named alias for callers that want to document the copy.
         std::vector<LogEntry> GetSnapshot() const;
 
     private:
