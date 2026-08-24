@@ -100,7 +100,7 @@ namespace kpengine::editor
     {
         // Log console: top 30% of the viewport, full width.
         EditorWindowConfig log_config;
-        log_config.height_ratio = 0.26f;
+        log_config.height_ratio = 0.27f;
         log_config.pos_y_ratio = 0.7f;
         components_.push_back(std::make_unique<EditorLogComponent>(log_system, log_colors, log_config));
     }
