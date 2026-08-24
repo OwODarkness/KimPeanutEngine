@@ -97,6 +97,14 @@ This is what makes `Render` ↔ `Graphics` wiring ([TODO 5.1](TODO.md)) meaningf
 - [x] **`window_` test seam dropped** ([TODO 3.1](TODO.md)). `RenderBackend::Initialize` now takes the native window handle (`WindowHandle` = `void*`) as an explicit parameter instead of a public `GLFWwindow *window_` member; the backends cast it back to `GLFWwindow*` internally (the editor's `EditorImguiGLFWWSI` cast pattern). The dead public `CameraData camera_data` member went with it. The common facade no longer knows GLFW; `VulkanDevice`/`VulkanSwapchain` keep their GLFW pointer (surface creation needs the native window).
 - [x] **Sakura split decided** ([TODO 3.2](TODO.md)): **keep the frame loop.** `RenderBackend` stays the facade with `BeginFrame`/`EndFrame`/`Present`. The device/frame separation already lives inside the backend (`VulkanDevice` = pure device + queues; `VulkanSwapchain`/`VulkanFrameContext` = frame lifecycle). The facade is the stable seam the render module talks to (`RenderScene` records through it); a separate frame executor above it would re-fuse what Phases 1–3 separated, with no consumer that needs it.
 
+### Phases 6.3–6.4 — upload + editor-presentation services ✅ landed 2026-08-24
+
+`VulkanUploadContext` now owns synchronous staging allocation, one-shot command recording, queue submit/wait, and staging release; `VulkanBufferManager`/`VulkanMemoryManager` remain the allocation owners. `VulkanEditorBridge` owns the editor's frame-scoped external ImGui pass: it transitions the acquired swapchain image, begins/ends dynamic rendering, and restores present layout. `EditorImguiVulkanRenderer` receives only bridge initialization data and a `Record` callback capability; it no longer calls `VulkanBackend` or retrieves a command buffer, queue, or manager. The obsolete UI command buffers and one-shot helpers are removed from `VulkanFrameContext`; `VulkanBackend` retains frame coordination, service ownership, and submit/present.
+
+### Phase 6.5 — native escape hatches closed ✅ landed 2026-08-24
+
+`VulkanBackend` no longer publishes `VulkanContext`, queues, pipeline resources, managers, or native command buffers. `VulkanContext` is now a Vulkan-private dependency bundle: mesh adapters borrow only `VulkanBufferManager`/`VulkanUploadContext`, and texture adapters borrow only `VulkanImageMemoryManager`. Render code uses handles and `CommandRecorder`; editor Vulkan remains limited to `VulkanEditorBridge` and `EditorImguiVulkanRenderer`. `GraphicsSmoke` validates Vulkan/OpenGL rendering, resize, and normal shutdown after the extraction.
+
 ## Target shape
 
 ```

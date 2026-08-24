@@ -4,6 +4,11 @@ Location: `engine/runtime/render/`
 
 The render module is the engine's "what to draw and how" layer — the module that owns scenes, materials, cameras, render passes, and the requests for GPU pipelines. This is where the *call* originates: the render module asks the asset system for shader identity, asks the resource pipeline to bake it into artifacts, fills a `PipelineDesc`, and hands it to the RHI.
 
+As of 2026-08-24, a pipeline request is rejected before backend allocation when
+its baked shader artifacts, stage slots, vertex layout, descriptor bindings, or
+attachment formats are invalid. Render owns the valid description and its
+cache policy; graphics owns only the resulting handle and API object lifetime.
+
 ## Current state — the skeleton
 
 The legacy OpenGL renderer (RenderShader, ShaderPool, RenderMaterial, RenderScene and the raw-GL pass code) has been **deprecated and removed** from the build. What remains is the reconstruction's starting point: `RenderSystem` (the facade) and — since the Vulkan decoupling's Phase 4 (2026-08-15) — **`RenderScene`**, the demo as the render module's first real scene. `Render` now links `Graphics` (PRIVATE) so the scene can record through the RHI; `RenderSystem` itself stays API-agnostic.
@@ -104,17 +109,89 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 
 **In progress — legacy deprecated, queue consumer and pipeline/static-resource ownership in place, first scene in.** `RenderSystem` owns the `ResourcePipeline`, the `RenderBackend`, the RHI frame bracket, and fixed-default pipeline/mesh/texture/sampler caches. It drains the async load queue in two modes (bootstrap full-drain + per-frame budgeted drain), building one `PipelineHandle` per loaded shader program/default state and render-ready handles for queued mesh/texture/model assets. `Render` links `Asset` and `Graphics` (PRIVATE). **The demo scene landed as `RenderScene` (2026-08-15)** — it receives non-owning RHI handles, owns logical camera state, and describes UBO/texture bindings through `ResourceBindingSetDesc`; Vulkan descriptor pools, sets, and writes are hidden behind `DescriptorSetHandle`. **Phase 3.3 gives the scene an API-neutral `CommandRecorder`; Phase 3.4 introduces `FrameContext` so transient UBO and binding-set allocation belongs to the current frame rather than the scene.** The target design (render → asset → resource → graphics, `PipelineDesc` seam, async warmup) is unchanged. The dedicated loading thread is deferred — the render thread loads in-place, budgeted. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
 
+## Render roadmap
+
+Graphics is now a stable RHI executor: it owns native resources, synchronization,
+and API translation, while Vulkan-specific editor presentation is constrained to
+`VulkanEditorBridge`. The next work is therefore a **render-module phase**, not
+another graphics/Vulkan phase.
+
+### Render Phase 1 — explicit pass scheduling
+
+**Goal:** make `RenderSystem` own the frame's pass order and resource
+dependencies explicitly, without prematurely implementing a general render
+graph.
+
+- [x] Introduce a render-private pass interface or equivalent pass descriptor.
+  A pass declares its name, the render resources it reads and writes, and a
+  recording operation. `RenderPassSchedule` currently validates the ordered
+  declarations; its logical resources are render-owned names rather than RHI
+  handles. It names no `Vk*` objects, layouts, queues, or command buffers
+  (2026-08-24).
+- [x] Move the current implicit sequence into two registered passes:
+  `ScenePass` writes the scene `RenderTarget`; `EditorCompositePass` consumes
+  its borrowed presentation view and performs the terminal editor/UI
+  composition through the existing editor bridge (2026-08-24).
+- [x] Make `RenderSystem` create the active `FrameContext`, validate the
+  declared order, bracket `ScenePass` with common RHI recording, and retain
+  ownership of pass registration and lifetime. `RenderScene` becomes scene-pass
+  content, not the scheduler. The engine supplies an immediate external
+  composite callback only after input polling, so Render never links to Editor
+  (2026-08-24).
+- [x] Validate the two-pass sequence on Vulkan and OpenGL with the existing
+  `GraphicsSmoke` path, including resize and shutdown. Add a headless ordering
+  test: a read must follow its writer, and an unsatisfied dependency must be
+  rejected before recording. `RenderPassScheduleTest` covers accepted
+  Scene→Editor order, read-before-write rejection, and terminal-pass ordering
+  (2026-08-24).
+- [x] Document the pass/resource ownership rule: render owns logical pass
+  policy; graphics owns resource allocation and API-private synchronization;
+  the editor bridge is a constrained terminal external pass rather than a
+  general backend escape hatch (2026-08-24).
+
+**Done when:** the scene target and editor composite are represented as render
+passes with explicit dependencies, `RenderSystem` is their sole scheduler, and
+switching Vulkan/OpenGL changes only RHI execution. Do not add graph culling,
+automatic transient aliasing, or generalized barrier planning until this
+two-pass model has more than one real consumer. **Landed 2026-08-24.**
+
+### Render Phase 2 — Material System V1 (planned)
+
+Replace `MeshProxy`'s temporary material alias with real render-owned template
+and instance handles. Material policy, pipeline requests, static
+texture/sampler references, and parameter validation belong in Render; frame
+binding sets remain owned by `FrameContext`. See
+[material_system.md](material_system.md).
+
+### Render Phase 3 — renderable proxy input (planned)
+
+Before general graph work, reconstruct the gameplay-to-render input boundary:
+`MeshComponent` produces queued updates, while a render-owned `MeshProxy`
+registry supplies immutable frame snapshots for culling and draw-list creation.
+This gives shadow, G-buffer, and later graph passes real scene inputs instead
+of a bootstrap-only `RenderScene`. The design and task ledger are in
+[world/component_module.md](../world/component_module.md) and
+[world/mesh_proxy_TODO.md](../world/mesh_proxy_TODO.md).
+
+### Later render phases
+
+After Render Phase 3 supplies multiple real pass consumers, evolve the same
+declarations into a render graph: dependency sorting, dead-pass culling,
+transient-resource lifetime analysis, then backend-private barrier and aliasing
+plans. These remain render decisions expressed through the common RHI; Vulkan
+and OpenGL continue to own their native state transitions.
+
 ## Future work
 
-- **Scene render target (first slice landed).** `RenderSystem` owns a
+- **Scene render target + editor presentation (first slice landed).** `RenderSystem` owns a
   render-level `RenderTarget`, backed by private RHI color/depth attachments.
   `RenderTarget::GetView()` returns a borrowed `graphics::RenderTargetView`
   for presentation only: extent plus opaque native color/image-view tokens. It
   neither exposes an owning RHI handle nor transfers destruction responsibility;
   the view expires when its target is resized or destroyed. Vulkan/OpenGL create
-  and destroy the attachments privately. `RenderSystem::Tick` brackets its
-  registered scenes with target recording; an editor image bridge and final
-  composite pass are the next slices.
+  and destroy the attachments privately. The editor consumes the view through
+  its API-specific bridge; Render Phase 1 represents the composition sequence
+  as an explicit render pass dependency.
 
 - **Bootstrap scene.** `config/bootstrap.json` may define a `scene` block with
   `shader_program`, `model`, and `texture` paths. The engine passes this startup
@@ -128,4 +205,8 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
   with the active context plus common recorder. The context owns transient UBO
   ranges and binding sets; scenes retain only logical and static resource state.
 
-- **Render graph (very future, not started).** Long-term the render module moves from direct pass code to a render graph: passes recorded as nodes with explicit resource dependencies (textures, buffers, pipeline state), then culled/ordered and baked into RHI draw calls. `RenderSystem` becomes the graph executor — it records the frame's passes, drains the async queue, and issues the RHI calls that complete the render task. Listed now so the design doesn't lock in a pass order prematurely.
+- **Render graph (after Render Phase 1).** The long-term graph uses the pass
+  declarations above as nodes with explicit resource dependencies, then adds
+  culling, ordering, and lifetime analysis before issuing RHI recording calls.
+  `RenderSystem` remains the graph executor; graphics remains an executor rather
+  than a scheduler.

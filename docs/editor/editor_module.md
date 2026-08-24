@@ -1,6 +1,6 @@
 # Editor Module
 
-**Snapshot: 2026-08-13.** The editor is the engine's *core center*: a thin application shell that hosts the runtime engine and owns the tool UI on top of it. Its job is not to render or simulate — those belong to the runtime — but to be the hub that wires the runtime systems to the tooling UI, and to build/draw that UI.
+**Snapshot: 2026-08-24.** The editor is the engine's *core center*: a thin application shell that hosts the runtime engine and owns the tool UI on top of it. Its job is not to render or simulate — those belong to the runtime — but to be the hub that wires the runtime systems to the tooling UI, and to build/draw that UI.
 
 ## Core principles
 
@@ -102,7 +102,7 @@ Both seams live behind one virtual interface each and are selected once, by `Gra
 `Initialize(GraphicsContext)` / `Shutdown()` / `NewFrame()` / `Render()`. Two implementations:
 
 - **`EditorImguiOpenglRenderer`** ([.cpp](../../engine/editor/platform/editor_imgui_opengl_renderer.cpp)) — `imgui_impl_opengl3`, `#version 450`. Loads `glad` itself (the legacy GL backend that used to own the proc table isn't in the build) and owns the per-frame clear (`0.1` gray) as a stopgap until the reconstructed scene renderer returns. This is the working path today.
-- **`EditorImguiVulkanRenderer`** ([.cpp](../../engine/editor/platform/editor_imgui_vulkan_renderer.cpp)) — `imgui_impl_vulkan`, records draw data into a UI command buffer borrowed from the `graphics::VulkanContext`. **Not currently usable**: `EditorUI::Initialize` passes `GraphicsContext{backend_type, nullptr}`, so its `static_cast<VulkanContext*>(context.native)` asserts. Wiring the native context through is the outstanding seam (see below). It also reaches into `graphics::VulkanContext`/`VulkanBackend` directly, which is a partial leak of the renderer abstraction.
+- **`EditorImguiVulkanRenderer`** ([.cpp](../../engine/editor/platform/editor_imgui_vulkan_renderer.cpp)) — `imgui_impl_vulkan`, initialized from `VulkanEditorBridgeInfo` and records draw data through the frame-scoped `graphics::VulkanEditorBridge`. It owns ImGui's descriptor pool, sampler, and viewport texture descriptor, but only borrows backend device/swapchain/frame resources. It cannot retrieve a general command buffer, queue, context, or manager from `VulkanBackend`.
 
 The seam's value: swapping GL ↔ Vulkan, or GLFW ↔ SDL, is a one-line change in the factory. No component, and no `EditorUI` frame logic, is affected.
 
@@ -150,12 +150,11 @@ ImGui is not thread-safe and its backends require a live GL/Vulkan context, so *
 
 - **Minimal UI.** Today the tree is a **top menu bar** (`File`/`Edit`/`Tool`/`Help`, no items or event bindings yet), a **Viewport** window, the **log window** (`OutputLog`, fed by `LogSystem`), and the **profile bar** (bottom status bar: FPS, frame ms, memory, each with optional sparklines). `EditorViewportComponent` borrows `RenderSystem`'s `RenderTargetView` every frame and asks the selected ImGui renderer for its `ImTextureID`; it owns neither the render target nor the registration. The OpenGL renderer presents the color-texture token now; Vulkan presentation waits for its ImGui descriptor bridge. Log entry colors are configured in `config/settings.json` (per level, with in-code defaults as fallback).
 - **Deleted seeds (2026-08-13 restructure).** `EditorSceneManager`, `EditorActorControlPanel`, and the scene/camera component implementations were all-comment files and were **removed** during the directory restructure. They are the resurrection seeds for scene-picking + gizmos + the actor transform panel — recover them from git history, don't expect them in the tree.
-- **Vulkan renderer unusable** — native context not passed to `GraphicsContext`; asserts if selected. The GL path is the working one.
+- **Vulkan editor presentation** — `EditorImguiVulkanRenderer` records through `VulkanEditorBridge`, which brackets the swapchain UI pass and returns the image to present layout. The bridge is valid only during the active backend frame; Vulkan device/swapchain ownership and submit/present remain in graphics.
 - **GL renderer owns the frame clear** — a stopgap until the render-module reconstruction restores the scene renderer.
 
 ## Follow-up seams
 
-- **Wire the native context to the Vulkan renderer** — pass the real `graphics::VulkanContext*` through `GraphicsContext::native` and push the `ImGui_ImplVulkan_Init` command pool/queue setup down into the renderer; better, make the renderer query a small `EditorRenderInterface` from the render system instead of static_casting into `VulkanContext` directly.
 - **Rebuild the scene manager** — resurrect `EditorSceneManager`/`EditorActorControlPanel` against the reconstructed render module (scene viewport, click-to-pick, gizmos, actor transform panel).
 - **Log window polish** — the `OutputLog` window is virtualized (`ImGuiListClipper` — only visible rows are laid out + formatted) and reads a thread-safe snapshot (`LogSystem::GetLogSnapshot()` copies the buffer under the logger mutex), so the render loop never walks the live vector. Remaining: auto-scroll/follow, a level filter, and handling very long lines (they currently overflow horizontally, single-line).
 - **Swap WSI abstraction** — SDL/Win32 `IEditorImguiWSI` implementations when the runtime supports those `WindowAPIType`s.

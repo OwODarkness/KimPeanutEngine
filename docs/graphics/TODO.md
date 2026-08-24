@@ -255,10 +255,38 @@ native Vulkan memory.
 
 **Landed 2026-08-22:** Vulkan buffer memory is now manager-owned. `GraphicsSmoke`
 passes three frames on Vulkan and OpenGL, and the engine editor starts with the
-Vulkan scene viewport registered through ImGui's descriptor bridge. A future
-targeted smoke case should force a buffer above the 4 MiB dedicated threshold;
-the policy and Vulkan-required dedicated-allocation path are implemented, but
-the current scene does not exercise that size class.
+Vulkan scene viewport registered through ImGui's descriptor bridge. Milestone
+3.6 adds a >4 MiB mapped uniform-buffer smoke allocation to exercise the
+dedicated path and its destruction lifecycle.
+
+#### 3.6 — unify Vulkan shared and dedicated allocators
+
+**Goal:** make the existing allocator abstraction the single implementation path
+for Vulkan buffer and image memory, while keeping allocation policy private to the
+memory manager.
+
+- [x] Extend `IVulkanMemoryAllocator` allocation metadata with memory type,
+  mapped-base, offset/range, and shared-versus-dedicated ownership information.
+- [x] Replace fixed-slot pool allocation with aligned variable-range
+  suballocation, free-range merging, and block selection by compatible memory
+  type/properties.
+- [x] Add dedicated-allocation support for Vulkan's required/preferred dedicated
+  resource requirements, including correct `VkMemoryDedicatedAllocateInfo`
+  chaining.
+- [x] Make `VulkanMemoryManager` select memory type and shared/dedicated policy,
+  then delegate block allocation to the unified allocator implementations.
+- [x] Migrate `VulkanImageMemoryManager` and `VulkanBufferManager` to the same
+  allocator family and remove the parallel buffer-only allocation implementation.
+- [x] Exercise shared frame arenas, a >4 MiB dedicated mapped buffer, image
+  allocation, and safe teardown through `GraphicsSmoke` on Vulkan and OpenGL.
+- [ ] Add conditional hardware coverage that forces a non-coherent host-visible
+  memory type where the adapter exposes one. Free-range merge/reuse is covered
+  headlessly by `GraphicsContractTest` (2026-08-24).
+
+**Done when:** buffers and images use one allocator abstraction; callers receive
+only opaque allocation records; and no caller can observe or manually manage
+the shared-versus-dedicated policy. The implementation landed 2026-08-22;
+allocator-internal edge-case tests remain tracked above.
 
 ### Milestone 4 — remove legacy renderer behavior from OpenGL
 
@@ -325,22 +353,90 @@ only the backend implementation—not the render scene or warmup policy.
 **Goal:** verify the seam and ownership model before introducing pass scheduling
 or graph complexity.
 
-- [ ] Add headless tests for pipeline-cache key equality, stale resource handle
-  rejection, and `PipelineDesc` validation (required stages, valid bindings,
-  non-empty baked shader artifacts).
-- [ ] Add backend contract tests where possible: create/destroy multiple
-  resources and pipelines; verify cleanup order is render resources first,
-  backend/device second.
-- [ ] Add one visual smoke test for Vulkan and one for OpenGL using the same
-  `RenderScene` code path.
-- [ ] Document the stable common recording API in
-  [graphics_module.md](graphics_module.md), then update
-  [render_module.md](../render/render_module.md) and [status.md](../status.md).
+- [x] Add headless tests for pipeline-cache key equality, stale resource handle
+  rejection, and `PipelineDesc` validation (stages, bindings, artifacts) in
+  `GraphicsContractTest` (2026-08-24).
+- [x] Add backend contract coverage where possible: `GraphicsSmoke` creates and
+  destroys multiple pipelines/resources and verifies normal render-first,
+  backend-second teardown on Vulkan and OpenGL (2026-08-24).
+- [x] Add one visual execution smoke for Vulkan and one for OpenGL using the
+  same `RenderScene` code path. `GraphicsSmoke` draws three frames/API with a
+  resize; pixel comparison remains future regression infrastructure (2026-08-24).
+- [x] Document the stable common recording API in
+  [graphics_module.md](graphics_module.md), and update render/status docs
+  (2026-08-24).
 
 **Done when:** both APIs render the same simple scene through `RenderSystem`,
 all scene policy remains above `graphics/`, and the next abstraction pressure is
 multiple passes/resource dependencies—not backend leakage. Only then evaluate a
 render graph.
+
+### Milestone 6 — split Vulkan backend implementation services
+
+**Goal:** reduce `VulkanBackend` to the Vulkan composition root: device/swapchain
+startup, frame coordination, service ownership, and ordered teardown. This is
+an internal Vulkan refactor; it must not expand the common RHI surface.
+
+#### 6.1 — extract `VulkanCommandRecorder`
+
+- [x] Move `vkCmd*` translation, currently recorded pipeline/mesh state, and
+  active command-buffer access out of `VulkanBackend` into a Vulkan-private
+  `CommandRecorder` implementation created for each active frame (2026-08-24).
+- [x] Let `VulkanBackend::BeginFrame` prepare the native command buffer and
+  `GetCommandRecorder` return the active recorder; destroy it during `EndFrame`
+  before submission, preserving the common BeginFrame → record → EndFrame
+  lifetime rule (2026-08-24).
+- [x] Delete `GetCurrentSceneCommandBuffer` once its remaining editor use is
+  removed by 6.4 (2026-08-24).
+
+#### 6.2 — extract `VulkanRenderTargetManager`
+
+- [x] Move render-target handle storage, texture ownership, image-layout state,
+  compatible preview views, and create/destroy operations out of
+  `VulkanBackend` into `VulkanRenderTargetManager` (2026-08-24).
+- [x] Keep attachment selection and layout transitions Vulkan-private; the
+  common recorder continues to receive only `RenderTargetHandle` (2026-08-24).
+- [x] Put swapchain-sized color/depth attachment recreation behind this service
+  (2026-08-24).
+
+#### 6.3 — extract `VulkanUploadContext`
+
+- [x] Move staging-buffer creation, one-shot command recording, transfer
+  submission, and synchronous wait/release from `VulkanBackend` into
+  `VulkanUploadContext` (2026-08-24).
+- [x] Keep the first version synchronous and scoped; do not introduce async
+  uploads until a caller has a real batching/lifetime requirement (2026-08-24).
+- [x] Route buffer and texture uploads through the context, preserving memory
+  manager ownership of every staging allocation (2026-08-24).
+
+#### 6.4 — move editor presentation into an editor Vulkan bridge
+
+- [x] Move ImGui pass begin/end and swapchain UI transitions out of
+  `VulkanBackend`; `VulkanRenderTargetManager` already owns the sRGB scene
+  target's compatible UNORM preview view (2026-08-24).
+- [x] Give `EditorImguiVulkanRenderer` a narrow Vulkan-private external-pass
+  bridge rather than public command-buffer, queue, context, or manager getters
+  (2026-08-24).
+- [x] Delete `GetCurrentUICommandBuffer`, `BeginEditorUiRendering`, and
+  `EndEditorUiRendering` from `VulkanBackend` (2026-08-24).
+
+#### 6.5 — close native escape hatches
+
+- [x] Remove public `GetVulkanContext`, `GetGraphicsQueue`, `GetPipelineResource`,
+  resource-manager getters, and native command-buffer access after their last
+  Vulkan-private consumers are injected directly (2026-08-24).
+- [x] Verify no render/editor code names a `Vk*` type outside approved
+  Vulkan-private bridges (2026-08-24). `EditorImguiVulkanRenderer` and
+  `VulkanEditorBridge` are the approved editor Vulkan bridge.
+- [x] Add a shutdown smoke after each extraction; teardown remains GPU idle →
+  frame/transient users → resources → memory → device (2026-08-24).
+
+**Done:** `VulkanBackend` coordinates frame lifecycle and owns services, but no
+longer implements command encoding, render-target storage, upload work, or
+editor composition directly. Its public interface exposes only the common RHI
+contract; Vulkan-private resource adapters receive their specific services via
+`VulkanContext`. A render graph may now be evaluated for multiple passes and
+resource dependencies.
 
 ### Ownership guardrail
 

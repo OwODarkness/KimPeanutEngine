@@ -31,6 +31,9 @@ using MeshHandle     = Handle<MeshTag>;
 ```
 
 A handle is `(slot, generation)` — slots recycle, the generation guards stale handles.
+Destroying a handle advances its generation immediately, so a released handle is
+rejected even before its slot is recycled. Callers must treat every successful
+`Destroy*` call as the end of that handle's lifetime.
 
 ### `PipelineDesc` — the pipeline contract — [`common/pipeline_types.h`](../../engine/runtime/graphics/backend/common/pipeline_types.h)
 
@@ -52,6 +55,12 @@ struct PipelineDesc {
 ```
 
 This is deliberately **cross-API**: no Vulkan struct, no GL enum, no render pass. Nothing in it is API-specific, which is what lets a render module build it once and hand it to either backend. The shader members are `data::ShaderData*` — see below.
+
+`CreatePipelineResource` validates this contract before allocating API objects:
+vertex and fragment artifacts must be present, match the selected API and
+stages, and be non-empty; vertex binding/location and per-set descriptor
+binding indices must be unique; descriptor counts and attachment formats must
+be valid. Invalid descriptions return an invalid `PipelineHandle`.
 
 ### Shader input — `data::ShaderData` in `PipelineDesc` (Phase 0 landed 2026-08-15)
 
@@ -109,7 +118,7 @@ translates it to descriptor-set binding; OpenGL stores equivalent binding state
 and uses `glBindBufferRange` for uniform ranges plus texture/sampler binding
 points. These are backend-only differences.
 
-`VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. Since 2026-08-20 the common facade initializes independently of pipelines, then `CreatePipelineResource(PipelineDesc)` bakes any caller-owned description into a `PipelineHandle`. Vulkan completes omitted attachment formats from the swapchain format, an RHI-owned invariant.
+`VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_`, synchronous `VulkanUploadContext`, and `VulkanEditorBridge` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. The upload context owns staging-buffer creation and one-shot transfer submission, but delegates allocation and release to the buffer/memory managers. The editor bridge borrows the active frame/swapchain resources and brackets one external ImGui pass; it never owns or exposes general backend resources. `VulkanBackend` publishes none of these managers or native Vulkan objects: Vulkan mesh/texture adapters receive only the private buffer-upload and image-memory services they require through `VulkanContext`. Since 2026-08-20 the common facade initializes independently of pipelines, then `CreatePipelineResource(PipelineDesc)` bakes any caller-owned description into a `PipelineHandle`. Vulkan completes omitted attachment formats from the swapchain format, an RHI-owned invariant.
 
 #### The frame-recording API (Phase 4 landed 2026-08-15)
 
@@ -117,10 +126,31 @@ The Vulkan backend now splits the frame lifecycle so **a caller records the draw
 
 - `BeginFrame()` — waits on the in-flight fence, acquires the next swapchain image, resets the fence, and begins the frame command buffer. It does not select a render attachment.
 - `CommandRecorder::BeginRenderTarget` / `EndRenderTarget` — select and clear an offscreen target, set its viewport/scissor, and bracket the caller's draws. Vulkan performs dynamic rendering and transitions the stored color result to shader-read layout; OpenGL binds/unbinds its framebuffer.
-- `EndFrame()` — closes any open target, makes the acquired swapchain image presentable, submits, presents, and handles resize. A later editor/UI or runtime composite pass will write the scene target into that swapchain image.
-- Scene-side facilities — `CreateUniformBuffer`/`MapUniformBuffer` (persistent per-buffer mapping), `UploadTexturePixels` (stage → one-shot copy → sample), and the manager getters (`GetTextureManager`/`GetMeshManager`/`GetSamplerManager`, `GetBufferResource`).
+- `EndFrame()` — closes any open target, asks the editor bridge to make the acquired swapchain image presentable if no external pass recorded it, then submits, presents, and handles resize. The editor bridge composites the ImGui scene viewport into that swapchain image when the editor is active.
+- Scene-side facilities — `CreateUniformBuffer`/`MapUniformBuffer` (persistent per-buffer mapping), and `UploadTexturePixels` (the backend routes stage → one-shot copy → sample through `VulkanUploadContext`). Backend-private managers remain implementation details.
 
 The demo that used to live inside the backend is now the render module's first real scene, [`render::RenderScene`](../../engine/runtime/render/render_scene.h). It records API-neutral commands through `CommandRecorder`, and the active render `FrameContext` owns transient UBO ranges and binding sets. Vulkan encodes the commands with `vkCmd*`; OpenGL issues the corresponding `gl*` calls. The RHI still never initiates; it exposes where the frame is and the caller decides what's in it.
+
+The stable recording interval is deliberately small:
+
+```text
+BeginFrame → FrameContext allocation/bindings → BeginRenderTarget
+           → BindPipeline / BindMesh / BindResourceBindings
+           → SetViewport / SetScissor / DrawIndexed → EndRenderTarget → EndFrame
+```
+
+`CommandRecorder*` is available only between `BeginFrame` and `EndFrame`.
+Static resources and pipelines are render-owned; frame UBO ranges and binding
+sets are transient and must not be retained after their frame slot ends.
+
+### Contract verification (2026-08-24)
+
+`GraphicsContractTest` covers immediate stale/forged-handle rejection,
+`PipelineDesc` validation, and aligned shared-block free-range merging without
+requiring a GPU. `GraphicsSmoke` renders the same `RenderScene` through Vulkan
+and OpenGL for three frames, including resize, shared frame-slot reuse, a
+dedicated >4 MiB mapped uniform allocation, and normal teardown. It is a visual
+execution smoke, not yet a pixel-comparison test.
 
 ## Current state — leaks fixed vs remaining
 
@@ -165,6 +195,6 @@ It should know:
 
 ## Refactor status
 
-**Phases 0–5 landed (2026-08-15/16), plus TODO 2.3 and 1.2 (2026-08-16).** Shaders arrive as `data::ShaderData*` in `PipelineDesc`; `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired; `VulkanDevice`/`VulkanSwapchain`/`VulkanFrameContext` extracted; scene recording extracted — the backend exposes the frame's command buffer and the demo lives as `render::RenderScene`. Phase 5 (2026-08-16): the `window_`/`camera_data` public seams are gone — `Initialize` takes the native window handle explicitly — and the sakura split is decided (the facade keeps the frame loop; the device/frame split lives inside the backend). Milestone 1 (2026-08-20): backend initialization no longer takes a pipeline; `CreatePipelineResource`/`DestroyPipelineResource` own independent `PipelineHandle` lifetimes. TODO 2.3 (2026-08-16): the build-time `glslc` step is gone — the `rhi_example` bakes shaders at runtime via `ProcessShader`, giving the resource pipeline its first graphics-end caller. TODO 1.2 (2026-08-16): the `ShaderModule` seam is retired. See [the render module doc](../render/render_module.md) for the reconstruction that drives this.
+**Phases 0–5 and Milestone 6.1–6.5 landed (2026-08-24), plus TODO 2.3 and 1.2 (2026-08-16).** Shaders arrive as `data::ShaderData*` in `PipelineDesc`; `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired; `VulkanDevice`/`VulkanSwapchain`/`VulkanFrameContext` extracted; scene recording extracted — the backend exposes only common recording through `CommandRecorder`. Milestone 6.1 extracted Vulkan command encoding, 6.2 extracted render-target ownership, 6.3 extracted synchronous staging/transfer uploads into `VulkanUploadContext`, 6.4 moved editor composition behind `VulkanEditorBridge`, and 6.5 removed public native Vulkan/manager escape hatches; the common RHI surface did not expand. Phase 5 (2026-08-16): the `window_`/`camera_data` public seams are gone — `Initialize` takes the native window handle explicitly — and the sakura split is decided (the facade keeps the frame loop; the device/frame split lives inside the backend). Milestone 1 (2026-08-20): backend initialization no longer takes a pipeline; `CreatePipelineResource`/`DestroyPipelineResource` own independent `PipelineHandle` lifetimes. TODO 2.3 (2026-08-16): the build-time `glslc` step is gone — the `rhi_example` bakes shaders at runtime via `ProcessShader`, giving the resource pipeline its first graphics-end caller. TODO 1.2 (2026-08-16): the `ShaderModule` seam is retired. See [the render module doc](../render/render_module.md) for the reconstruction that drives this.
 
 Task ledger: [TODO.md](TODO.md) (the working list, tick as items land) · design references: [sakura_reference.md](sakura_reference.md) (how Sakura Engine shapes its render backends — learn from, not copy) and [rhi_design_material.md](rhi_design_material.md) (RHI design material from a Zhihu thread on wrapping a modern-game-engine RHI layer — critical synthesis).
