@@ -7,7 +7,10 @@ namespace kpengine::graphics{
         VkInstance instance = VK_NULL_HANDLE;
         VkDevice logical_device = VK_NULL_HANDLE;
         VkPhysicalDevice physical_device = VK_NULL_HANDLE;
-        class VulkanBackend* backend = nullptr;
+        class VulkanBufferManager* buffer_manager = nullptr;
+        class VulkanUploadContext* upload_context = nullptr;
+        class VulkanImageMemoryManager* image_memory_manager = nullptr;
+        class VulkanEditorBridge* editor_bridge = nullptr;
     };
 }
 

@@ -4,7 +4,7 @@
 #include "imgui_impl_vulkan.h"
 #include "log/logger.h"
 #include "graphics/backend/vulkan/vulkan_context.h"
-#include "graphics/backend/vulkan/vulkan_backend.h"
+#include "graphics/backend/vulkan/vulkan_editor_bridge.h"
 namespace kpengine::editor
 {
     constexpr const char* LogName = "EditorImguiVulkanRendererLog";
@@ -15,24 +15,26 @@ namespace kpengine::editor
             KP_LOG(LogName, LOG_LEVEL_ERROR, "Graphics api mismatch, current type is not OpenGL");
             throw std::runtime_error("Graphics api mismatch, current type is not OpenGL");
         }
-        vulkan_ctx = static_cast<graphics::VulkanContext*>(context.native);
-        assert(vulkan_ctx);
+        const auto *vulkan_context = static_cast<graphics::VulkanContext *>(context.native);
+        assert(vulkan_context && vulkan_context->editor_bridge);
+        editor_bridge_ = vulkan_context->editor_bridge;
+        const graphics::VulkanEditorBridgeInfo bridge_info = editor_bridge_->GetInfo();
+        logical_device_ = bridge_info.logical_device;
         CreateDescriptorPool();
         CreateSceneSampler();
 
-        const graphics::VulkanQueue &graphics_queue = vulkan_ctx->backend->GetGraphicsQueue();
         ImGui_ImplVulkan_InitInfo init_info{};
-        init_info.Instance = vulkan_ctx->instance;
-        init_info.PhysicalDevice = vulkan_ctx->physical_device;
-        init_info.Device = vulkan_ctx->logical_device;
-        init_info.QueueFamily = graphics_queue.index;
-        init_info.Queue = graphics_queue.queue;
+        init_info.Instance = bridge_info.instance;
+        init_info.PhysicalDevice = bridge_info.physical_device;
+        init_info.Device = bridge_info.logical_device;
+        init_info.QueueFamily = bridge_info.graphics_queue_family;
+        init_info.Queue = bridge_info.graphics_queue;
         init_info.DescriptorPool = descriptor_pool_;
         init_info.MinImageCount = 2;
-        init_info.ImageCount = vulkan_ctx->backend->GetSwapchainImageCount();
+        init_info.ImageCount = bridge_info.image_count;
         init_info.UseDynamicRendering = true;
 #ifdef IMGUI_IMPL_VULKAN_HAS_DYNAMIC_RENDERING
-        const VkFormat color_format = vulkan_ctx->backend->GetSwapchainImageFormat();
+        const VkFormat color_format = bridge_info.color_format;
         init_info.PipelineRenderingCreateInfo.sType =
             VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
         init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
@@ -48,23 +50,24 @@ namespace kpengine::editor
         // descriptor and transient vertex/index buffers. Retire it before any
         // ImGui Vulkan destruction; RenderSystem's later shutdown wait is too
         // late because this renderer owns the resources being released here.
-        if (vulkan_ctx && vulkan_ctx->backend)
+        if (editor_bridge_)
         {
-            vulkan_ctx->backend->WaitIdle();
+            editor_bridge_->WaitIdle();
         }
         ReleaseSceneTexture();
         ImGui_ImplVulkan_Shutdown();
-        if (descriptor_pool_ != VK_NULL_HANDLE && vulkan_ctx)
+        if (descriptor_pool_ != VK_NULL_HANDLE && logical_device_ != VK_NULL_HANDLE)
         {
-            vkDestroyDescriptorPool(vulkan_ctx->logical_device, descriptor_pool_, nullptr);
+            vkDestroyDescriptorPool(logical_device_, descriptor_pool_, nullptr);
             descriptor_pool_ = VK_NULL_HANDLE;
         }
-        if (scene_sampler_ != VK_NULL_HANDLE && vulkan_ctx)
+        if (scene_sampler_ != VK_NULL_HANDLE && logical_device_ != VK_NULL_HANDLE)
         {
-            vkDestroySampler(vulkan_ctx->logical_device, scene_sampler_, nullptr);
+            vkDestroySampler(logical_device_, scene_sampler_, nullptr);
             scene_sampler_ = VK_NULL_HANDLE;
         }
-        vulkan_ctx = nullptr;
+        logical_device_ = VK_NULL_HANDLE;
+        editor_bridge_ = nullptr;
     }
 
     void EditorImguiVulkanRenderer::NewFrame()
@@ -74,14 +77,15 @@ namespace kpengine::editor
 
     void EditorImguiVulkanRenderer::Render()
     {
-        if (!vulkan_ctx->backend->BeginEditorUiRendering())
+        if (!editor_bridge_)
         {
             return;
         }
-        ImGui_ImplVulkan_RenderDrawData(ImGui::GetDrawData(),
-                                        vulkan_ctx->backend->GetCurrentSceneCommandBuffer());
-        vulkan_ctx->backend->EndEditorUiRendering();
-
+        ImDrawData *draw_data = ImGui::GetDrawData();
+        editor_bridge_->Record([draw_data](VkCommandBuffer command_buffer)
+        {
+            ImGui_ImplVulkan_RenderDrawData(draw_data, command_buffer);
+        });
     }
 
     void EditorImguiVulkanRenderer::SetBackgroundColor(const LogColor &color)
@@ -134,7 +138,7 @@ namespace kpengine::editor
         pool_info.maxSets = kMaxDescriptorSets * static_cast<uint32_t>(pool_sizes.size());
         pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
         pool_info.pPoolSizes = pool_sizes.data();
-        if (vkCreateDescriptorPool(vulkan_ctx->logical_device, &pool_info, nullptr,
+        if (vkCreateDescriptorPool(logical_device_, &pool_info, nullptr,
                                    &descriptor_pool_) != VK_SUCCESS)
         {
             throw std::runtime_error("Failed to create ImGui Vulkan descriptor pool");
@@ -152,7 +156,7 @@ namespace kpengine::editor
         sampler_info.addressModeV = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         sampler_info.addressModeW = VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         sampler_info.maxLod = 0.0f;
-        if (vkCreateSampler(vulkan_ctx->logical_device, &sampler_info, nullptr,
+        if (vkCreateSampler(logical_device_, &sampler_info, nullptr,
                             &scene_sampler_) != VK_SUCCESS)
         {
             throw std::runtime_error("Failed to create ImGui scene sampler");

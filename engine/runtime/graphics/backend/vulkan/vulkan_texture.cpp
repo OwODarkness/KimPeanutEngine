@@ -1,5 +1,4 @@
 #include "vulkan_texture.h"
-#include "vulkan_backend.h"
 #include "vulkan_context.h"
 #include <iostream>
 #include "log/logger.h"
@@ -16,9 +15,12 @@ namespace kpengine::graphics
         }
 
         VulkanContext *context_ptr = static_cast<VulkanContext *>(context.native);
-        VkPhysicalDevice physical_device = context_ptr->physical_device;
         VkDevice logical_device = context_ptr->logical_device;
-        VulkanBackend *backend = context_ptr->backend;
+        VulkanImageMemoryManager *image_memory_manager = context_ptr->image_memory_manager;
+        if (!image_memory_manager)
+        {
+            throw std::runtime_error("Vulkan image memory manager is unavailable");
+        }
 
         width_ = data.width;
         height_ = data.height;
@@ -48,7 +50,8 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to create image");
         }
 
-        allocation_ = backend->GetImageMemoryManager()->AllocateImageMemory(physical_device, logical_device, resource_.image);
+        allocation_ = image_memory_manager->AllocateImageMemory(
+            logical_device, resource_.image);
 
 
         VkImageViewCreateInfo view_create_info{};
@@ -77,13 +80,15 @@ namespace kpengine::graphics
         }
 
         VulkanContext *context_ptr = static_cast<VulkanContext *>(context.native);
-        VkPhysicalDevice physical_device = context_ptr->physical_device;
         VkDevice logical_device = context_ptr->logical_device;
-        VulkanBackend *backend = context_ptr->backend;
+        VulkanImageMemoryManager *image_memory_manager = context_ptr->image_memory_manager;
 
         vkDestroyImageView(logical_device, resource_.view, nullptr);
         vkDestroyImage(logical_device, resource_.image, nullptr);
-        backend->GetImageMemoryManager()->Free(logical_device, allocation_);
+        if (image_memory_manager)
+        {
+            image_memory_manager->Free(allocation_);
+        }
     }
 
     VulkanTexture::~VulkanTexture() = default;

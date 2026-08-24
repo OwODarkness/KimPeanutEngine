@@ -45,7 +45,6 @@ namespace kpengine{
             {
                 id = free_slots_.back();
                 free_slots_.pop_back();
-                generations_[id]++;
             }
             else
             {
@@ -56,7 +55,7 @@ namespace kpengine{
             return {id, generations_[id]};
         }
 
-        uint32_t Get(const HandleT& handle)
+        uint32_t Get(const HandleT& handle) const
         {
             if(IsHandleValid(handle))
             {
@@ -69,6 +68,7 @@ namespace kpengine{
         {
             if(IsHandleValid(handle))
             {
+                ++generations_[handle.id];
                 free_slots_.push_back(handle.id);
                 return true;
             }
@@ -77,7 +77,8 @@ namespace kpengine{
 
         bool IsHandleValid(const HandleT& handle) const
         {
-            return handle.IsValid() && handle.generation == generations_[handle.id];
+            return handle.IsValid() && handle.id < generations_.size() &&
+                   handle.generation == generations_[handle.id];
         }
 
     private:

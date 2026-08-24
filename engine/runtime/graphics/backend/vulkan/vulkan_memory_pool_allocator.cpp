@@ -1,135 +1,138 @@
 #include "vulkan_memory_pool_allocator.h"
-#include <array>
-#include "log/logger.h"
+
+#include <algorithm>
+#include <stdexcept>
 
 namespace kpengine::graphics
 {
-    //64M Pool Default
-    constexpr VkDeviceSize pool_block_default_size = 1 << 26;
-    //4k, 64K, 4M Slot Size
-    constexpr std::array<VkDeviceSize, 3> pool_slot_sizes = {1 << 8, 1 << 16, 1 << 22};
-
-    VkDeviceSize VulkanMemoryPoolAllocator::GetMaxSupportedPoolSize() const
+    VulkanMemoryAllocation VulkanMemoryPoolAllocator::Allocate(
+        VkDevice logical_device, const VulkanMemoryAllocationRequest &request)
     {
-        return pool_slot_sizes.back();
-    }
-
-    VulkanMemoryAllocation VulkanMemoryPoolAllocator::Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index)
-    {
-        if (size > pool_slot_sizes.back())
+        if (request.size == 0)
         {
-            KP_LOG("VulkanMemoryPoolAllocatorLog", LOG_LEVEL_ERROR, "Failed to allocate memory, the max memory which pool supported is %d, but required %d", pool_slot_sizes.back(), size);
-            throw std::runtime_error("Failed to allocate memory");
+            throw std::runtime_error("cannot suballocate an empty Vulkan memory range");
         }
 
-        size_t best_fit_pool_index = UINT32_MAX;
-        VkDeviceSize min_slot_size = UINT32_MAX;
-        bool is_pool_found = false;
-        for (size_t i = 0; i < pools_.size(); i++)
+        for (uint32_t index = 0; index < blocks_.size(); ++index)
         {
-            if (size <= pools_[i].slot_size && min_slot_size > pools_[i].slot_size && !pools_[i].free_slots_.empty())
+            const MemoryBlock *block = blocks_[index].get();
+            if (!block || block->memory_type_index != request.memory_type_index ||
+                block->properties != request.properties)
             {
-                best_fit_pool_index = i;
-                min_slot_size = pools_[i].slot_size;
-                is_pool_found = true;
+                continue;
+            }
+            if (block->free_ranges.CanAllocate(request.size, request.alignment))
+            {
+                return AllocateFromBlock(index, request);
             }
         }
 
-        if (is_pool_found == false)
-        {
-            for (size_t i = 0; i < pool_slot_sizes.size(); i++)
-            {
-                if (size <= pool_slot_sizes[i])
-                {
-                    CreateMemoryBlock(logicial_device, pool_block_default_size, pool_slot_sizes[i], alignment, memory_type_index);
-                    best_fit_pool_index = pools_.size() - 1;
-                    break;
-                }
-            }
-        }
-
-        VulkanMemoryPool &pool = pools_[best_fit_pool_index];
-        FreeSlot slot = pool.free_slots_.back();
-        pool.free_slots_.pop_back();
-        const VulkanMemoryBlock *block = pool.blocks_[slot.block_index].get();
-        return {block->memory, block->slot_size, slot.slot_index * block->slot_size, slot.block_index, this};
+        const uint32_t block_index = CreateBlock(
+            logical_device, request, std::max(kDefaultBlockSize, request.size));
+        return AllocateFromBlock(block_index, request);
     }
-    void VulkanMemoryPoolAllocator::Free(VkDevice logicial_device, VulkanMemoryAllocation allocation)
+
+    void VulkanMemoryPoolAllocator::Free(VkDevice logical_device,
+                                         VulkanMemoryAllocation &allocation) noexcept
     {
-        for (auto &pool : pools_)
+        (void)logical_device;
+        if (allocation.owner != this ||
+            allocation.kind != VulkanMemoryAllocationKind::SharedBlock ||
+            allocation.block_index >= blocks_.size())
         {
-            if (allocation.size == pool.slot_size)
-            {
-                uint32_t block_index = allocation.block_index;
-                uint32_t slot_index = static_cast<uint32_t>(allocation.offset / pool.blocks_[block_index]->slot_size);
-                pool.free_slots_.push_back({block_index, slot_index});
-                break;
-            }
+            allocation = {};
+            return;
         }
+
+        MemoryBlock *block = blocks_[allocation.block_index].get();
+        if (!block || block->memory != allocation.memory)
+        {
+            allocation = {};
+            return;
+        }
+        block->free_ranges.Free(allocation.offset, allocation.size);
+        allocation = {};
     }
-    void VulkanMemoryPoolAllocator::Destroy(VkDevice logicial_device)
+
+    void VulkanMemoryPoolAllocator::Destroy(VkDevice logical_device) noexcept
     {
-        for (auto &pool : pools_)
+        for (const std::unique_ptr<MemoryBlock> &block : blocks_)
         {
-            for (size_t i = 0; i < pool.blocks_.size(); i++)
+            if (block)
             {
-                vkFreeMemory(logicial_device, pool.blocks_[i]->memory, nullptr);
+                ReleaseBlock(logical_device, *block);
             }
         }
+        blocks_.clear();
     }
-    void VulkanMemoryPoolAllocator::CreateMemoryBlock(VkDevice logicial_device, VkDeviceSize block_size, VkDeviceSize slot_size, VkDeviceSize alignment, uint32_t memory_type_index)
+
+    uint32_t VulkanMemoryPoolAllocator::CreateBlock(
+        VkDevice logical_device, const VulkanMemoryAllocationRequest &request,
+        VkDeviceSize block_size)
     {
-        size_t pool_index{};
-        bool is_pool_found = false;
-        for (size_t i = 0; i < pools_.size(); i++)
+        auto block = std::make_unique<MemoryBlock>();
+        block->size = block_size;
+        block->memory_type_index = request.memory_type_index;
+        block->properties = request.properties;
+
+        VkMemoryAllocateInfo allocate_info{};
+        allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        allocate_info.allocationSize = block_size;
+        allocate_info.memoryTypeIndex = request.memory_type_index;
+        if (vkAllocateMemory(logical_device, &allocate_info, nullptr, &block->memory) != VK_SUCCESS)
         {
-            if (pools_[i].slot_size == slot_size)
+            throw std::runtime_error("failed to allocate a Vulkan shared memory block");
+        }
+
+        if ((request.properties & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT) != 0)
+        {
+            // A shared VkDeviceMemory block is mapped exactly once. Every
+            // suballocation receives base + offset, preventing double mapping.
+            void *mapped = nullptr;
+            if (vkMapMemory(logical_device, block->memory, 0, VK_WHOLE_SIZE, 0, &mapped) != VK_SUCCESS)
             {
-                pool_index = i;
-                is_pool_found = true;
-                break;
+                vkFreeMemory(logical_device, block->memory, nullptr);
+                throw std::runtime_error("failed to persistently map a Vulkan shared memory block");
             }
+            block->mapped_base = static_cast<std::byte *>(mapped);
         }
-        //create a new pool if not found pool with fit slot size 
-        if (is_pool_found == false)
-        {
-            pools_.push_back({block_size, slot_size, {}, {}});
-            pool_index = pools_.size() - 1;
-        }
-
-        VulkanMemoryPool &pool = pools_[pool_index];
-
-        VkDeviceSize adjust_slot_size = (slot_size + alignment - 1) & ~(alignment - 1);
-        uint32_t pre_compute_slot_count = static_cast<uint32_t>(block_size / adjust_slot_size);
-        if (pre_compute_slot_count == 0)
-        {
-            KP_LOG("VulkanMemoryPoolAllocatorLog", LOG_LEVEL_WARNING, "Failed to allocate memory,  the slot size is larger than block size");
-        }
-
-        //allocate the block for pool
-        pool.blocks_.emplace_back(std::make_unique<VulkanMemoryBlock>());
-
-        VkMemoryAllocateInfo memory_allocate_info{};
-        memory_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
-        memory_allocate_info.memoryTypeIndex = memory_type_index;
-        memory_allocate_info.allocationSize = block_size;
-
-
-        if (vkAllocateMemory(logicial_device, &memory_allocate_info, nullptr, &pool.blocks_.back()->memory) != VK_SUCCESS)
-        {
-            KP_LOG("VulkanMemoryPoolAllocatorLog", LOG_LEVEL_ERROR, "Failed to allocate memory during using vkAllocateMemory");
-            throw std::runtime_error("Failed to allocate memory");
-        }
-        //init
-        pool.blocks_.back()->block_size = block_size;
-        pool.blocks_.back()->slot_size = slot_size;
-        pool.blocks_.back()->slot_count = pre_compute_slot_count;
-        // construct free slots
-        for (uint32_t i = 0; i < pre_compute_slot_count; i++)
-        {
-            FreeSlot slot{static_cast<uint32_t>(pool.blocks_.size() - 1), i};
-            pool.free_slots_.push_back(slot);
-        }
+        block->free_ranges.Reset(block_size);
+        blocks_.push_back(std::move(block));
+        return static_cast<uint32_t>(blocks_.size() - 1);
     }
 
+    VulkanMemoryAllocation VulkanMemoryPoolAllocator::AllocateFromBlock(
+        uint32_t block_index, const VulkanMemoryAllocationRequest &request)
+    {
+        MemoryBlock *block = blocks_[block_index].get();
+        if (!block)
+        {
+            throw std::runtime_error("invalid Vulkan shared memory block");
+        }
+        if (const std::optional<VkDeviceSize> offset =
+                block->free_ranges.Allocate(request.size, request.alignment))
+        {
+            // Keep the block mapped; Free returns only this range to the pool.
+            return {block->memory, *offset, request.size, block->size,
+                    block->mapped_base ? block->mapped_base + *offset : nullptr,
+                    block->memory_type_index, block->properties, block_index,
+                    VulkanMemoryAllocationKind::SharedBlock, this};
+        }
+        throw std::runtime_error("Vulkan shared memory block has no compatible free range");
+    }
+
+    void VulkanMemoryPoolAllocator::ReleaseBlock(VkDevice logical_device,
+                                                  MemoryBlock &block) noexcept
+    {
+        if (block.mapped_base)
+        {
+            vkUnmapMemory(logical_device, block.memory);
+            block.mapped_base = nullptr;
+        }
+        if (block.memory != VK_NULL_HANDLE)
+        {
+            vkFreeMemory(logical_device, block.memory, nullptr);
+            block.memory = VK_NULL_HANDLE;
+        }
+    }
 }

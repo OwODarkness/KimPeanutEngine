@@ -14,7 +14,7 @@ namespace kpengine::graphics
     struct VulkanBufferResource
     {
         VkBuffer buffer;
-        VulkanBufferMemoryAllocation allocation;
+        VulkanMemoryAllocation allocation;
         VkMemoryPropertyFlags mem_prop_flags;
         bool alive = false;
     };

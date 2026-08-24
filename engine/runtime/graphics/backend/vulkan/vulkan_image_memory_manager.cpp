@@ -1,71 +1,65 @@
 #include "vulkan_image_memory_manager.h"
-#include "log/logger.h"
-#include "vulkan_memory_dedicated_allocator.h"
-#include "vulkan_memory_pool_allocator.h"
+
+#include <stdexcept>
+
+#include "vulkan_memory_manager.h"
+
 namespace kpengine::graphics
 {
-
-    VulkanImageMemoryManager::VulkanImageMemoryManager(): 
-    pool_allocator_(std::make_unique<VulkanMemoryPoolAllocator>()),
-    dedicated_allocator_(std::make_unique<VulkanMemoryDedicatedAllocator>())
+    VulkanImageMemoryManager::VulkanImageMemoryManager(VulkanMemoryManager &memory_manager)
+        : memory_manager_(&memory_manager)
     {
-
     }
 
-
-    uint32_t VulkanImageMemoryManager::RequestMemoryTypeIndex(VkMemoryPropertyFlags memory_prop_flags, const VkMemoryRequirements &memory_require, const VkPhysicalDeviceMemoryProperties& physcial_memory_props)
+    VulkanMemoryAllocation VulkanImageMemoryManager::AllocateImageMemory(
+        VkDevice logical_device, VkImage image)
     {
-        for (uint32_t i = 0; i < physcial_memory_props.memoryTypeCount; i++)
+        if (!memory_manager_ || image == VK_NULL_HANDLE)
         {
-            if ((memory_require.memoryTypeBits & (1 << i)) && (physcial_memory_props.memoryTypes[i].propertyFlags & memory_prop_flags) == memory_prop_flags)
-            {
-                return i;
-            }
+            throw std::runtime_error("cannot allocate memory for an invalid Vulkan image");
         }
 
-        throw std::runtime_error("Failed to find suitable memory type index");
+        VkMemoryDedicatedRequirements dedicated_requirements{};
+        dedicated_requirements.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_REQUIREMENTS;
+        VkMemoryRequirements2 requirements{};
+        requirements.sType = VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2;
+        requirements.pNext = &dedicated_requirements;
+        VkImageMemoryRequirementsInfo2 requirements_info{};
+        requirements_info.sType = VK_STRUCTURE_TYPE_IMAGE_MEMORY_REQUIREMENTS_INFO_2;
+        requirements_info.image = image;
+        vkGetImageMemoryRequirements2(logical_device, &requirements_info, &requirements);
+
+        VkMemoryDedicatedAllocateInfo dedicated_info{};
+        dedicated_info.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
+        dedicated_info.image = image;
+        // Required/preferred dedicated image memory must carry this image in the
+        // allocation pNext chain; otherwise it may use a compatible shared block.
+        const VulkanMemoryAllocationPolicy policy =
+            dedicated_requirements.requiresDedicatedAllocation ||
+                    dedicated_requirements.prefersDedicatedAllocation
+                ? VulkanMemoryAllocationPolicy::Dedicated
+                : VulkanMemoryAllocationPolicy::SharedBlock;
+        VulkanMemoryAllocation allocation = memory_manager_->Allocate(
+            requirements.memoryRequirements, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
+            policy, policy == VulkanMemoryAllocationPolicy::Dedicated
+                        ? &dedicated_info : nullptr);
+        if (vkBindImageMemory(logical_device, image, allocation.memory, allocation.offset) != VK_SUCCESS)
+        {
+            memory_manager_->Free(allocation);
+            throw std::runtime_error("failed to bind Vulkan image memory");
+        }
+        return allocation;
     }
 
-    VulkanMemoryAllocation VulkanImageMemoryManager::AllocateImageMemory(VkPhysicalDevice physical_device, VkDevice logical_device, VkImage image)
+    void VulkanImageMemoryManager::Free(VulkanMemoryAllocation &allocation) noexcept
     {
-        VkPhysicalDeviceMemoryProperties properties{};
-        vkGetPhysicalDeviceMemoryProperties(physical_device, &properties);
-
-        VkMemoryRequirements memory_requires{};
-        vkGetImageMemoryRequirements(logical_device, image, &memory_requires);
-    
-
-        uint32_t memory_type_index = UINT32_MAX;
-        try{
-            memory_type_index = RequestMemoryTypeIndex(VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT, memory_requires, properties);
-        }catch(std::exception e)
+        if (memory_manager_)
         {
-            KP_LOG("VulkanImageMemoryManager", LOG_LEVEL_ERROR, "Failed to find suitable memory type index");
-            throw e;
-        }
-
-        IVulkanMemoryAllocator* allocator = nullptr;
-        if(memory_requires.size > (1<<22))
-        {
-            allocator = dedicated_allocator_.get();
+            memory_manager_->Free(allocation);
         }
         else
         {
-            allocator = pool_allocator_.get();
+            allocation = {};
         }
-
-        VulkanMemoryAllocation allocation = allocator->Allocate(logical_device, memory_requires.size, memory_requires.alignment, memory_type_index);
-        vkBindImageMemory(logical_device, image, allocation.memory, allocation.offset);
-
-        return allocation;
-    }
-    void VulkanImageMemoryManager::Free(VkDevice logical_device, const VulkanMemoryAllocation &allocation)
-    {
-        allocation.owner->Free(logical_device, allocation);
-    }
-    void VulkanImageMemoryManager::Destroy(VkDevice logical_device)
-    {
-        pool_allocator_->Destroy(logical_device);
-        dedicated_allocator_->Destroy(logical_device);
     }
 }

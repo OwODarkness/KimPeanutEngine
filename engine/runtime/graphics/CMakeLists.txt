@@ -5,6 +5,7 @@ option(USE_VULKAN "Use Vulkan backend" ON)
 
 add_library(Graphics STATIC
     backend/common/render_backend.cpp
+    backend/common/pipeline_validation.cpp
     backend/common/texture_manager.cpp
     backend/common/sampler_manager.cpp
     backend/common/mesh_manager.cpp
@@ -21,10 +22,13 @@ add_library(Graphics STATIC
     backend/vulkan/vulkan_device.cpp
     backend/vulkan/vulkan_swapchain.cpp
     backend/vulkan/vulkan_frame_context.cpp
+    backend/vulkan/vulkan_command_recorder.cpp
+    backend/vulkan/vulkan_render_target_manager.cpp
+    backend/vulkan/vulkan_editor_bridge.cpp
+    backend/vulkan/vulkan_upload_context.cpp
     backend/vulkan/vulkan_texture.cpp
     backend/vulkan/vulkan_buffer_manager.cpp
     backend/vulkan/vulkan_memory_manager.cpp
-    backend/vulkan/vulkan_memory_linear_allocator.cpp
     backend/vulkan/vulkan_memory_dedicated_allocator.cpp
     backend/vulkan/vulkan_memory_pool_allocator.cpp
     backend/vulkan/vulkan_pipeline_manager.cpp

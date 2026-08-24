@@ -12,11 +12,9 @@ namespace kpengine::graphics
 {
     /**
      * The command/sync half of the Vulkan backend. Owns the command pools, the
-     * per-frame scene/UI command buffers, the semaphores/fences and the in-flight
-     * index, plus the one-shot command-buffer primitives and the sync2 barrier.
-     * The backend delegates frame plumbing (wait/acquire/reset/submit/present)
-     * and the one-shot texture upload here. Each one-shot op allocates its own
-     * command buffer — there are no shared one-shot buffers left to stomp.
+     * per-frame scene command buffers, the semaphores/fences and the in-flight
+     * index, plus the sync2 barrier. The backend delegates frame plumbing
+     * (wait/acquire/reset/submit/present) here.
      */
     class VulkanFrameContext
     {
@@ -30,7 +28,6 @@ namespace kpengine::graphics
         void AdvanceFrame() { current_frame_index_ = (current_frame_index_ + 1) % MAX_FRAMES_IN_FLIGHT; }
 
         VkCommandBuffer GetCurrentSceneCommandBuffer() const { return scene_command_buffers_[current_frame_index_]; }
-        VkCommandBuffer GetCurrentUICommandBuffer() const { return ui_command_buffers_[current_frame_index_]; }
         VkCommandPool GetGraphicsCommandPool() const { return graphics_command_pool_; }
         VkCommandPool GetTransferCommandPool() const { return transfer_command_pool_; }
 
@@ -42,10 +39,6 @@ namespace kpengine::graphics
         void Submit(VkCommandBuffer command_buffer, uint32_t image_index);
         VkResult Present(VkSwapchainKHR swapchain, uint32_t image_index);
         void OnSwapchainRecreated(uint32_t swapchain_image_count);
-
-        // one-shot primitives — one command buffer per op, freed on the way out
-        VkCommandBuffer BeginSingleTimeCommands(VkCommandPool command_pool);
-        void EndSingleTimeCommands(VkCommandBuffer commandbuffer, VkCommandPool commandpool, VkQueue queue);
 
         // sync2 image barrier + TextureUsage-level transitions
         void TransitionImageLayout(VkCommandBuffer cmd, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage, VkAccessFlags2 src_access, VkAccessFlags2 dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count);
@@ -63,7 +56,6 @@ namespace kpengine::graphics
         VkCommandPool graphics_command_pool_ = VK_NULL_HANDLE;
         VkCommandPool transfer_command_pool_ = VK_NULL_HANDLE;
         std::vector<VkCommandBuffer> scene_command_buffers_;
-        std::vector<VkCommandBuffer> ui_command_buffers_;
         std::vector<VkSemaphore> available_image_semaphores_;
         std::vector<VkSemaphore> render_finished_semaphores_;
         std::vector<VkFence> in_flight_fences_;

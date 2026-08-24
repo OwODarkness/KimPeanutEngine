@@ -56,7 +56,8 @@ namespace kpengine::graphics
             dedicated_allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_DEDICATED_ALLOCATE_INFO;
             dedicated_allocate_info.buffer = resource.buffer;
             const VulkanMemoryAllocationPolicy policy =
-                dedicated_requirements.requiresDedicatedAllocation
+                dedicated_requirements.requiresDedicatedAllocation ||
+                        dedicated_requirements.prefersDedicatedAllocation
                     ? VulkanMemoryAllocationPolicy::Dedicated
                     : VulkanMemoryAllocationPolicy::SharedBlock;
             resource.allocation = memory_manager_->Allocate(
@@ -92,6 +93,8 @@ namespace kpengine::graphics
             return false;
         }
 
+        // The buffer must die before its bound allocation can be returned to a
+        // shared block or freed as dedicated VkDeviceMemory.
         vkDestroyBuffer(logical_device, resource->buffer, nullptr);
         memory_manager_->Free(resource->allocation);
         *resource = {};
@@ -106,6 +109,7 @@ namespace kpengine::graphics
             {
                 continue;
             }
+            // Preserve the same buffer-before-memory lifetime rule during bulk teardown.
             vkDestroyBuffer(logical_device, resource.buffer, nullptr);
             memory_manager_->Free(resource.allocation);
             resource = {};

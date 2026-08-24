@@ -155,6 +155,19 @@ namespace kpengine::example
             std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(api);
             rhi->BindWindowResize(window->resize_event_dispatcher_);
             rhi->Initialize(window->GetNativeHandle());
+            // Force the Vulkan dedicated-allocation policy while retaining the
+            // same public RHI path on OpenGL. The smoke only touches the first
+            // word; the resource exists to verify large mapped-buffer teardown.
+            constexpr uint32_t kDedicatedSmokeBufferSize = 4 * 1024 * 1024 + 1;
+            const graphics::BufferHandle dedicated_smoke_buffer =
+                rhi->CreateUniformBuffer(kDedicatedSmokeBufferSize);
+            uint32_t *const dedicated_smoke_data = static_cast<uint32_t *>(
+                rhi->MapUniformBuffer(dedicated_smoke_buffer, sizeof(uint32_t)));
+            if (!dedicated_smoke_buffer.IsValid() || !dedicated_smoke_data)
+            {
+                throw std::runtime_error("failed to create mapped dedicated smoke buffer");
+            }
+            *dedicated_smoke_data = 0xC0DEC0DEu;
             graphics::RenderTargetDesc render_target_desc{};
             render_target_desc.width = static_cast<uint32_t>(window_create_info.width);
             render_target_desc.height = static_cast<uint32_t>(window_create_info.height);
@@ -232,6 +245,7 @@ namespace kpengine::example
             {
                 frame_context.Cleanup();
             }
+            rhi->DestroyBufferResource(dedicated_smoke_buffer);
             rhi->DestroyRenderTarget(scene_target);
             rhi->DestroyMesh(demo_resources.mesh);
             rhi->DestroySampler(demo_resources.sampler);

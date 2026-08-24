@@ -1,26 +1,26 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_VULKAN_IMAGE_MEMORY_MANAGER_H
 #define KPENGINE_RUNTIME_GRAPHICS_VULKAN_IMAGE_MEMORY_MANAGER_H
 
-#include "vulkan_memory_allocator.h"
 #include <vulkan/vulkan.h>
-#include <memory>
+
+#include "vulkan_memory_allocator.h"
+
 namespace kpengine::graphics
 {
+    class VulkanMemoryManager;
 
+    // Image-specific requirements/binding adapter. Allocation policy and native
+    // lifetime live in VulkanMemoryManager and its shared allocator family.
     class VulkanImageMemoryManager
     {
     public:
-        VulkanImageMemoryManager();
-        VulkanMemoryAllocation AllocateImageMemory(VkPhysicalDevice physical_device, VkDevice logical_device, VkImage image);
-        void Free(VkDevice logical_device, const VulkanMemoryAllocation &allocation);
-        void Destroy(VkDevice logical_device);
+        explicit VulkanImageMemoryManager(VulkanMemoryManager &memory_manager);
+
+        VulkanMemoryAllocation AllocateImageMemory(VkDevice logical_device, VkImage image);
+        void Free(VulkanMemoryAllocation &allocation) noexcept;
 
     private:
-        uint32_t RequestMemoryTypeIndex(VkMemoryPropertyFlags memory_prop_flags, const VkMemoryRequirements &memory_require, const VkPhysicalDeviceMemoryProperties &physcial_memory_props);
-
-    private:
-        std::unique_ptr<IVulkanMemoryAllocator> pool_allocator_;
-        std::unique_ptr<IVulkanMemoryAllocator> dedicated_allocator_;
+        VulkanMemoryManager *memory_manager_ = nullptr;
     };
 }
 

@@ -1,54 +1,42 @@
-#ifndef KEPNGINE_RUNTIME_GRAPHICS_VULKAN_MEMORY_POOL_ALLOCATOR_H
+#ifndef KPENGINE_RUNTIME_GRAPHICS_VULKAN_MEMORY_POOL_ALLOCATOR_H
 #define KPENGINE_RUNTIME_GRAPHICS_VULKAN_MEMORY_POOL_ALLOCATOR_H
 
 #include <memory>
 #include <vector>
-#include <cstdint>
+
 #include "vulkan_memory_allocator.h"
+#include "vulkan_memory_free_range_list.h"
+
 namespace kpengine::graphics
 {
-    /**
-     * Pool based memory allocator for Vulkan
-     */
-    class VulkanMemoryPoolAllocator : public IVulkanMemoryAllocator
+    class VulkanMemoryPoolAllocator final : public IVulkanMemoryAllocator
     {
     public:
-        virtual VulkanMemoryAllocation Allocate(VkDevice logicial_device, VkDeviceSize size, VkDeviceSize alignment, uint32_t memory_type_index) override;
-        virtual void Free(VkDevice logicial_device, VulkanMemoryAllocation allocation) override;
-        virtual void Destroy(VkDevice logicial_device) override;
-        VkDeviceSize GetMaxSupportedPoolSize() const;
+        VulkanMemoryAllocation Allocate(
+            VkDevice logical_device, const VulkanMemoryAllocationRequest &request) override;
+        void Free(VkDevice logical_device, VulkanMemoryAllocation &allocation) noexcept override;
+        void Destroy(VkDevice logical_device) noexcept override;
 
     private:
-        void CreateMemoryBlock(VkDevice logicial_device, VkDeviceSize block_size, VkDeviceSize slot_size, VkDeviceSize alignment, uint32_t memory_type_index);
-
-    private:
-        // Memory block: VkDeviceMemory divided into fixed slots
-        struct VulkanMemoryBlock
+        struct MemoryBlock
         {
-            VkDeviceMemory memory;
-            VkDeviceSize block_size;
-            VkDeviceSize slot_size;
-            uint32_t slot_count;
+            VkDeviceMemory memory = VK_NULL_HANDLE;
+            std::byte *mapped_base = nullptr;
+            VkDeviceSize size = 0;
+            uint32_t memory_type_index = UINT32_MAX;
+            VkMemoryPropertyFlags properties = 0;
+            VulkanMemoryFreeRangeList free_ranges;
         };
 
-        struct FreeSlot
-        {
-            uint32_t block_index; // Index in pool's blocks_ vector
-            uint32_t slot_index;  // Slot index within block (0 to slot_count-1)
-        };
+        uint32_t CreateBlock(VkDevice logical_device,
+                             const VulkanMemoryAllocationRequest &request,
+                             VkDeviceSize block_size);
+        VulkanMemoryAllocation AllocateFromBlock(uint32_t block_index,
+                                                 const VulkanMemoryAllocationRequest &request);
+        void ReleaseBlock(VkDevice logical_device, MemoryBlock &block) noexcept;
 
-        // Memory pool: Collection of blocks with same slot size
-        struct VulkanMemoryPool
-        {
-            VkDeviceSize block_size;
-            VkDeviceSize slot_size;
-            std::vector<std::unique_ptr<VulkanMemoryBlock>> blocks_; // Owned blocks
-            std::vector<FreeSlot> free_slots_;                       // Available slots
-        };
-
-    private:
-        // the slot size of pool could be different
-        std::vector<VulkanMemoryPool> pools_;
+        static constexpr VkDeviceSize kDefaultBlockSize = 64ull * 1024ull * 1024ull;
+        std::vector<std::unique_ptr<MemoryBlock>> blocks_;
     };
 }
 

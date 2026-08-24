@@ -9,6 +9,7 @@
 #include "opengl_pipeline.h"
 #include "opengl_pipeline_manager.h"
 #include "common/pipeline_types.h"
+#include "common/pipeline_validation.h"
 #include "opengl_mesh.h"
 #include "common/mesh.h"
 #include "opengl_enum.h"
@@ -269,6 +270,12 @@ namespace kpengine::graphics
 
     PipelineHandle OpenglBackend::CreatePipelineResource(const PipelineDesc &pipeline_desc)
     {
+        if (!ValidatePipelineDesc(pipeline_desc, GraphicsAPIType::GRAPHICS_API_OPENGL))
+        {
+            KP_LOG("OpenglBackendLog", LOG_LEVEL_ERROR,
+                   "Rejected invalid OpenGL pipeline descriptor");
+            return {};
+        }
         return pipeline_manager_->CreatePipelineResource(pipeline_desc);
     }
 

@@ -6,7 +6,7 @@
 #include "editor/platform/editor_imgui_renderer.h"
 
 namespace kpengine::graphics{
-    struct VulkanContext;
+    class VulkanEditorBridge;
 }
 
 namespace kpengine::editor
@@ -29,7 +29,8 @@ namespace kpengine::editor
         void CreateSceneSampler();
         void ReleaseSceneTexture();
 
-        graphics::VulkanContext *vulkan_ctx = nullptr;
+        graphics::VulkanEditorBridge *editor_bridge_ = nullptr;
+        VkDevice logical_device_ = VK_NULL_HANDLE;
         VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
         VkSampler scene_sampler_ = VK_NULL_HANDLE;
         VkImageView scene_view_ = VK_NULL_HANDLE;

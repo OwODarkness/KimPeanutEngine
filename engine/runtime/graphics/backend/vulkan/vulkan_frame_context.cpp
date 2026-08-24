@@ -121,49 +121,6 @@ namespace kpengine::graphics
         }
     }
 
-    VkCommandBuffer VulkanFrameContext::BeginSingleTimeCommands(VkCommandPool command_pool)
-    {
-        VkCommandBufferAllocateInfo command_buffer_allocate_info{};
-        command_buffer_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        command_buffer_allocate_info.commandPool = command_pool;
-        command_buffer_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
-        command_buffer_allocate_info.commandBufferCount = 1;
-
-        VkCommandBuffer commandbuffer;
-        if (vkAllocateCommandBuffers(device_->GetLogicalDevice(), &command_buffer_allocate_info, &commandbuffer) != VK_SUCCESS)
-        {
-            KP_LOG(KP_VULKAN_FRAME_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocate copy command buffer");
-            throw std::runtime_error("Failed to allocate copy command buffer");
-        }
-
-        VkCommandBufferBeginInfo command_buffer_begin_info{};
-        command_buffer_begin_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO;
-        command_buffer_begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
-
-        if (vkBeginCommandBuffer(commandbuffer, &command_buffer_begin_info) != VK_SUCCESS)
-        {
-            KP_LOG(KP_VULKAN_FRAME_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR, "Failed to begin command buffer");
-            throw std::runtime_error("Failed to begin command buffer");
-        }
-
-        return commandbuffer;
-    }
-
-    void VulkanFrameContext::EndSingleTimeCommands(VkCommandBuffer commandbuffer, VkCommandPool commandpool, VkQueue queue)
-    {
-        vkEndCommandBuffer(commandbuffer);
-
-        VkSubmitInfo submit_info{};
-        submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
-        submit_info.commandBufferCount = 1;
-        submit_info.pCommandBuffers = &commandbuffer;
-
-        vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
-        vkQueueWaitIdle(queue);
-
-        vkFreeCommandBuffers(device_->GetLogicalDevice(), commandpool, 1, &commandbuffer);
-    }
-
     void VulkanFrameContext::TransitionImageLayout(VkCommandBuffer cmd, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage, VkAccessFlags2 src_access, VkAccessFlags2 dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count)
     {
         VkImageMemoryBarrier2 barrier{};
@@ -298,18 +255,6 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to allocate scene command buffer");
         }
 
-        VkCommandBufferAllocateInfo ui_allocate_info{};
-        ui_allocate_info.sType = VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO;
-        ui_allocate_info.commandBufferCount = MAX_FRAMES_IN_FLIGHT;
-        ui_allocate_info.commandPool = graphics_command_pool_;
-        ui_allocate_info.level = VK_COMMAND_BUFFER_LEVEL_SECONDARY;
-
-        ui_command_buffers_.resize(MAX_FRAMES_IN_FLIGHT);
-        if (vkAllocateCommandBuffers(device_->GetLogicalDevice(), &ui_allocate_info, ui_command_buffers_.data()) != VK_SUCCESS)
-        {
-            KP_LOG(KP_VULKAN_FRAME_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR, "Failed to allocate ui command buffer");
-            throw std::runtime_error("Failed to allocate ui command buffer");
-        }
     }
 
     void VulkanFrameContext::CreateSyncObjects()
