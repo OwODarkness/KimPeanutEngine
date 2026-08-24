@@ -9,7 +9,6 @@
 #include "utility.h"
 #include "model.h"
 #include "log/logger.h"
-#define DEBUG
 
 namespace kpengine::asset
 {
