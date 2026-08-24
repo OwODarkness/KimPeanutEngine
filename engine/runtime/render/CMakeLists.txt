@@ -1,6 +1,7 @@
 add_library(Render
 render_system.cpp
 frame_context.cpp
+render_pass.cpp
 render_target.cpp
 render_camera.cpp
 render_scene.cpp

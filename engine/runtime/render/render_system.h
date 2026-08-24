@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_RENDER_SYSTEM_H
 
 #include <cstddef>
+#include <functional>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -16,7 +17,9 @@
 #include "graphics/backend/common/api.h"
 #include "graphics/backend/common/pipeline_types.h"
 #include "frame_context.h"
+#include "render_pass.h"
 #include "render_target.h"
+#include "pipeline_cache_key.h"
 #include "render_resource.h"
 
 namespace kpengine::asset
@@ -102,6 +105,9 @@ namespace kpengine::render
         // the API-specific editor renderer composites before submission/present.
         void BeginFrame(float delta_time);
         void EndFrame();
+        // The editor owns ImGui frame construction, but RenderSystem owns when
+        // that external work runs: after ScenePass and before presentation.
+        bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
 
         bool IsReady(asset::RequestID request_id) const;
         const RenderCacheEntry *GetCached(asset::RequestID request_id) const;
@@ -146,6 +152,8 @@ namespace kpengine::render
         graphics::SamplerHandle GetOrCreateDefaultSampler();
         const RenderCacheEntry *FindCached(asset::AssetID asset_id) const;
         void CreateBootstrapScene();
+        void ConfigurePassSchedule();
+        void RecordScenePass();
         void ApplyPendingSceneRenderTargetExtent();
         FrameContext *GetCurrentFrameContext();
         void Shutdown();
@@ -154,6 +162,7 @@ namespace kpengine::render
         std::unique_ptr<resource::ResourcePipeline> resource_pipeline_;
         std::unique_ptr<graphics::RenderBackend> backend_;
         RenderTarget scene_render_target_;
+        RenderPassSchedule pass_schedule_;
         graphics::Extent2D pending_scene_render_target_extent_;
         std::vector<FrameContext> frame_contexts_;
         std::vector<RenderScene *> scenes_;
@@ -164,11 +173,13 @@ namespace kpengine::render
         async::AsyncQueue<asset::AssetLoadRequest> *load_queue_ = nullptr;
 
         std::unordered_map<asset::RequestID, RenderCacheEntry> render_cache_;
-        std::unordered_map<uint64_t, graphics::PipelineHandle> pipeline_cache_;
+        std::unordered_map<PipelineCacheKey, graphics::PipelineHandle, PipelineCacheKeyHash>
+            pipeline_cache_;
         std::unordered_map<uint64_t, graphics::MeshHandle> mesh_cache_;
         std::unordered_map<uint64_t, graphics::TextureHandle> texture_cache_;
         graphics::SamplerHandle default_sampler_handle_;
         FrameContext *active_frame_context_ = nullptr;
+        bool editor_composite_recorded_ = false;
     };
 }
 

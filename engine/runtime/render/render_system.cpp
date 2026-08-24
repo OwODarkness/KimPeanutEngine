@@ -39,6 +39,7 @@ namespace kpengine::render
         // Runtime frame budget: cap the per-frame load+compile work so a burst of
         // requests never stalls a frame. 0 means "no budget" (the bootstrap pass).
         constexpr std::size_t kMaxRuntimeLoadsPerFrame = 2;
+        constexpr uint64_t kDefaultPipelineStateLayoutSignature = 1;
 
         graphics::TextureSettings DefaultTextureSettings()
         {
@@ -137,6 +138,7 @@ namespace kpengine::render
         {
             KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Failed to create scene render target");
         }
+        ConfigurePassSchedule();
     }
 
     void RenderSystem::PostInitialize()
@@ -169,21 +171,11 @@ namespace kpengine::render
         {
             elapsed_seconds_ += delta_time;
             active_frame_context_->Begin(backend_->GetCurrentFrameIndex(),
-                                        {frame_number_, elapsed_seconds_, delta_time},
-                                        {scene_render_target_.GetWidth(),
-                                         scene_render_target_.GetHeight()});
-            graphics::CommandRecorder *recorder = backend_->GetCommandRecorder();
-            if (recorder && scene_render_target_.BeginRecording(*recorder))
-            {
-                for (RenderScene *scene : scenes_)
-                {
-                    if (scene)
-                    {
-                        scene->Record(*active_frame_context_, *recorder);
-                    }
-                }
-                scene_render_target_.EndRecording(*recorder);
-            }
+                                         {frame_number_, elapsed_seconds_, delta_time},
+                                         {scene_render_target_.GetWidth(),
+                                          scene_render_target_.GetHeight()});
+            editor_composite_recorded_ = false;
+            RecordScenePass();
         }
     }
 
@@ -200,6 +192,18 @@ namespace kpengine::render
             ++frame_number_;
         }
         backend_->EndFrame();
+    }
+
+    bool RenderSystem::ExecuteEditorCompositePass(const std::function<void()> &record_pass)
+    {
+        if (!active_frame_context_ || editor_composite_recorded_ || !record_pass ||
+            !pass_schedule_.IsValid())
+        {
+            return false;
+        }
+        record_pass();
+        editor_composite_recorded_ = true;
+        return true;
     }
 
     void RenderSystem::RequestSceneRenderTargetExtent(uint32_t width, uint32_t height)
@@ -253,6 +257,41 @@ namespace kpengine::render
     void RenderSystem::RemoveScene(RenderScene &scene)
     {
         scenes_.erase(std::remove(scenes_.begin(), scenes_.end(), &scene), scenes_.end());
+    }
+
+    void RenderSystem::ConfigurePassSchedule()
+    {
+        const bool added_scene = pass_schedule_.AddPass(
+            {"ScenePass", {{RenderPassResource::SceneColor, RenderPassAccess::Write}}, false});
+        const bool added_editor = pass_schedule_.AddPass(
+            {"EditorCompositePass", {{RenderPassResource::SceneColor, RenderPassAccess::Read}}, true});
+        std::string error;
+        if (!added_scene || !added_editor || !pass_schedule_.Validate(error))
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Invalid render pass schedule: %s", error.c_str());
+        }
+    }
+
+    void RenderSystem::RecordScenePass()
+    {
+        if (!active_frame_context_ || !pass_schedule_.IsValid())
+        {
+            return;
+        }
+
+        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        if (!recorder || !scene_render_target_.BeginRecording(*recorder))
+        {
+            return;
+        }
+        for (RenderScene *scene : scenes_)
+        {
+            if (scene)
+            {
+                scene->Record(*active_frame_context_, *recorder);
+            }
+        }
+        scene_render_target_.EndRecording(*recorder);
     }
 
     std::vector<asset::ShaderPtr> RenderSystem::GetCachedShaders(
@@ -342,7 +381,8 @@ namespace kpengine::render
             resource_pipeline_->ProcessShader(
                 program->GatherShaders(),
                 [](resource::ShaderProcessPhase phase, int done, int total,
-                   const asset::ShaderResource *shader) {
+                   const asset::ShaderResource *shader)
+                {
                     KP_LOG("RenderLog", LOG_LEVEL_INFO,
                            "Shader %d/%d: %s (phase %d)",
                            done + 1, total, shader->desc.file.c_str(),
@@ -426,7 +466,10 @@ namespace kpengine::render
     graphics::PipelineHandle RenderSystem::GetOrCreateDefaultPipeline(
         asset::AssetID program_id, asset::ShaderProgramResource &program)
     {
-        const uint64_t key = program_id.Pack();
+        const PipelineCacheKey key{program_id.Pack(),
+                                   backend_ ? backend_->GetGraphicsContext().type
+                                            : GraphicsAPIType::GRAPHICS_API_UNKNOW,
+                                   kDefaultPipelineStateLayoutSignature};
         const auto existing = pipeline_cache_.find(key);
         if (existing != pipeline_cache_.end())
         {
@@ -453,7 +496,7 @@ namespace kpengine::render
     }
 
     graphics::MeshHandle RenderSystem::GetOrCreateMesh(asset::AssetID asset_id,
-                                                        const data::MeshData &data)
+                                                       const data::MeshData &data)
     {
         const uint64_t key = asset_id.Pack();
         const auto existing = mesh_cache_.find(key);
@@ -475,7 +518,7 @@ namespace kpengine::render
     }
 
     graphics::TextureHandle RenderSystem::GetOrCreateTexture(asset::AssetID asset_id,
-                                                              const data::TextureData &data)
+                                                             const data::TextureData &data)
     {
         const uint64_t key = asset_id.Pack();
         const auto existing = texture_cache_.find(key);
@@ -544,11 +587,14 @@ namespace kpengine::render
         const RenderCacheEntry *model_entry = FindCached(model_asset);
         const RenderCacheEntry *texture_entry = FindCached(texture_asset);
         const auto *pipeline = pipeline_entry
-            ? std::get_if<graphics::PipelineHandle>(&pipeline_entry->resource) : nullptr;
+                                   ? std::get_if<graphics::PipelineHandle>(&pipeline_entry->resource)
+                                   : nullptr;
         const auto *mesh = model_entry
-            ? std::get_if<graphics::MeshHandle>(&model_entry->resource) : nullptr;
+                               ? std::get_if<graphics::MeshHandle>(&model_entry->resource)
+                               : nullptr;
         const auto *material = texture_entry
-            ? std::get_if<TextureBinding>(&texture_entry->resource) : nullptr;
+                                   ? std::get_if<TextureBinding>(&texture_entry->resource)
+                                   : nullptr;
         if (!pipeline || !mesh || !material)
         {
             KP_LOG("RenderLog", LOG_LEVEL_ERROR,

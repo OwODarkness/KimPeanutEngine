@@ -209,12 +209,15 @@ namespace kpengine
             global_runtime_context.log_system_->Tick(delta);
             global_runtime_context.render_system_->BeginFrame(delta);
 
-            // Editor UI frames between input polling and presentation: PollEvents feeds
-            // ImGui, the UI renders into the back buffer, SwapBuffers presents it. The
-            // legacy GL scene renderer (ticked here pre-reconstruction) is still being
-            // rebuilt — docs/render/render_module.md.
+            // Polling must precede ImGui frame construction. RenderSystem owns the
+            // terminal pass position; this callback supplies the editor's external
+            // ImGui recording without creating a Render -> Editor dependency.
             global_runtime_context.window_system_->PollEvents();
-            editor_->Tick();
+            if (!global_runtime_context.render_system_->ExecuteEditorCompositePass(
+                    [this] { editor_->Tick(); }))
+            {
+                editor_->Tick();
+            }
             global_runtime_context.render_system_->EndFrame();
             if(global_runtime_context.graphics_api_type_ == GraphicsAPIType::GRAPHICS_API_OPENGL)
             {
