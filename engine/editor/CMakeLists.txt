@@ -1,12 +1,13 @@
-# EditorLib — the tool layer. One cohesive library: this file owns the target and
-# the shared config, and each subdirectory's CMakeLists.txt explicitly lists its
-# own sources via target_sources (no GLOB, so a stray .cpp can't silently join the
-# build). Headers sit beside their sources and are included via the engine root
-# ("editor/..." paths), matching the runtime convention. main.cpp is the exe entry
-# (root CMakeLists.txt) and deliberately stays out of the lib.
+# EditorLib is the backend-agnostic editor-tool layer. EditorUILib owns ImGui,
+# WSI, and graphics-API-specific UI renderers; keeping it separate prevents
+# Vulkan/OpenGL implementation dependencies from leaking into editor tools.
+# Sources are listed explicitly through target_sources (no GLOB). main.cpp is
+# the exe entry (root CMakeLists.txt) and deliberately stays out of both libs.
 add_library(EditorLib STATIC
     editor.cpp
 )
+
+add_library(EditorUILib STATIC)
 
 add_subdirectory(context)
 add_subdirectory(ui)
@@ -19,4 +20,9 @@ target_include_directories(EditorLib PUBLIC
     ${CMAKE_SOURCE_DIR}/engine
 )
 
-target_link_libraries(EditorLib PRIVATE RuntimeLib imgui glad nlohmann)
+target_include_directories(EditorUILib PUBLIC
+    ${CMAKE_SOURCE_DIR}/engine
+)
+
+target_link_libraries(EditorLib PRIVATE RuntimeLib EditorUILib)
+target_link_libraries(EditorUILib PRIVATE RuntimeLib imgui glad VulkanSDK nlohmann)

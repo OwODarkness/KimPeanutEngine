@@ -56,8 +56,8 @@ namespace kpengine::editor
 
     void EditorUI::CreateImguiBackends(WindowHandle window, GraphicsContext graphics_context)
     {
-        // WSI + renderer are chosen by the active graphics API, keeping the editor UI
-        // decoupled from GL/Vulkan (the reconstruction seam).
+        // This module owns WSI + renderer selection. EditorLib only orchestrates
+        // tools through EditorUI and therefore stays decoupled from GL/Vulkan.
         wsi_ = std::make_unique<EditorImguiGLFWWSI>();
         if (graphics_context.type == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
