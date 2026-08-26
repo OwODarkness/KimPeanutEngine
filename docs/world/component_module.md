@@ -55,15 +55,15 @@ struct MeshProxy
     MaterialInstanceHandle material; // render-owned material identity
 
     Transform3f world_transform;
-    AABB world_bounds;
+    spatial::AABB world_bounds;
     RenderableFlags flags;         // visible, opaque, casts_shadow, etc.
 };
 ```
 
-`AABB` remains a temporary representation in
-[`mesh_proxy.h`](../../engine/runtime/render/render_world/mesh_proxy.h) until
-World owns its canonical bounds type. `MaterialInstanceHandle` is already a
-real render-owned generational handle. The invariants are not:
+`world_bounds` uses [`spatial::AABB`](../../engine/runtime/core/spatial/aabb.h),
+a dependency-free CoreSpatial value shared by World, Physics, Render, and
+editor tooling. `MaterialInstanceHandle` is already a real render-owned
+generational handle. The invariants are not:
 
 - no `Draw()` virtual function on the proxy;
 - no shader, VAO, descriptor, `Vk*`, or `gl*` field;
@@ -96,9 +96,12 @@ updates and stale destroys.
 
 The current `RenderWorld` implements this render-side boundary: value-only
 commands queue under a mutex, are applied at `RenderSystem::BeginFrame`, and
-produce value snapshots. The ScenePass currently submits every visible proxy
-with a valid mesh and ready material; it intentionally performs no frustum,
-partition, LOD, or occlusion culling yet.
+produce value snapshots. The render-owned `SceneVisibility` policy applies
+conservative CPU frustum culling to a snapshot before ScenePass submission:
+invalid bounds are kept visible, while AABBs definitely outside the camera
+frustum are rejected. `RenderSystem` schedules this work but does not own the
+visibility algorithm. World partition, LOD, and occlusion culling remain future
+render policy.
 
 ## Relationship to the render graph
 

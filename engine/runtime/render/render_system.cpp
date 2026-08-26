@@ -12,6 +12,8 @@
 #include "graphics/backend/common/command_recorder.h"
 #include "log/logger.h"
 #include "render/material/material_system.h"
+#include "render/render_world/scene_draw_list.h"
+#include "render/render_world/scene_visibility.h"
 #include "render_resource_resolver.h"
 #include "resource/resource_pipeline.h"
 #include "resource/shader_operation.h"
@@ -235,9 +237,17 @@ namespace kpengine::render
             graphics::PerPassData per_pass_data{};
             per_pass_data.camera_data.view = camera_data.view;
             per_pass_data.camera_data.proj = camera_data.proj;
-            for (const MeshProxy &proxy : render_world_.Snapshot())
+            const std::vector<MeshProxy> visible_proxies = SceneVisibility::BuildVisibleProxies(
+                scene_camera_.GetViewProjectionMatrix(), render_world_.Snapshot());
+            const SceneDrawLists draw_lists = SceneDrawListBuilder::Build(
+                visible_proxies, *material_system_, *resource_resolver_);
+            for (const SceneDrawItem &item : draw_lists.opaque)
             {
-                RecordMeshProxy(proxy, per_pass_data, *recorder);
+                RecordMeshProxy(item.proxy, per_pass_data, *recorder);
+            }
+            for (const SceneDrawItem &item : draw_lists.alpha_blend)
+            {
+                RecordMeshProxy(item.proxy, per_pass_data, *recorder);
             }
         }
         scene_render_target_.EndRecording(*recorder);

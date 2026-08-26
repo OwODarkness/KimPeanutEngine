@@ -25,6 +25,9 @@ namespace kpengine::render
         const Rotatorf &GetRotation() const { return rotation_; }
 
         CameraData GetCameraData() const;
+        // CPU-side visibility uses the math-library matrix convention directly.
+        // GetCameraData() remains GPU-facing and transposes its matrices for UBO upload.
+        Matrix4f GetViewProjectionMatrix() const;
 
     private:
         void Update();

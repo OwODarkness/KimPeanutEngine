@@ -15,9 +15,9 @@ TEST(MeshProxyTest, DefaultsToAnUnregisteredAndResourceFreeSnapshot)
     EXPECT_EQ(proxy.lod_bias, 0);
 }
 
-TEST(MeshProxyTest, UsesTemporarySixFloatBoundsStorage)
+TEST(MeshProxyTest, UsesSharedSpatialBounds)
 {
-    kpengine::render::AABB bounds{{-1.0f, -2.0f, -3.0f, 1.0f, 2.0f, 3.0f}};
+    const kpengine::spatial::AABB bounds{{-1.0f, -2.0f, -3.0f}, {1.0f, 2.0f, 3.0f}};
     kpengine::render::MeshProxy proxy{};
     proxy.world_bounds = bounds;
 

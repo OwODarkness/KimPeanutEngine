@@ -1,21 +1,16 @@
 #ifndef KPENGINE_RUNTIME_RENDER_RENDER_WORLD_MESH_PROXY_H
 #define KPENGINE_RUNTIME_RENDER_RENDER_WORLD_MESH_PROXY_H
 
-#include <array>
-
 #include "base/handle.h"
 #include "graphics/backend/common/api.h"
 #include "math/math_header.h"
 #include "render/material/material_system.h"
+#include "spatial/aabb.h"
 
 namespace kpengine::render
 {
     struct RenderableTag {};
     using RenderableHandle = Handle<RenderableTag>;
-
-    // AABB storage remains temporary until World owns the canonical spatial type.
-    // It is {min_x, min_y, min_z, max_x, max_y, max_z}; do not expose it outside render.
-    using AABB = std::array<float, 6>;
 
     struct RenderableFlags
     {
@@ -33,7 +28,7 @@ namespace kpengine::render
         graphics::MeshHandle mesh;
         MaterialInstanceHandle material;
         Transform3f world_transform;
-        AABB world_bounds{};
+        spatial::AABB world_bounds{};
         RenderableFlags flags;
         int lod_bias = 0;
     };

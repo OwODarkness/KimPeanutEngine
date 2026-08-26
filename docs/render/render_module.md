@@ -188,9 +188,14 @@ now consume a real `MaterialInstanceHandle`, rather than a raw texture binding.
 
 Before general graph work, reconstruct the gameplay-to-render input boundary:
 `RenderWorld` now owns queued create/update/destroy commands, the generational
-`MeshProxy` registry, and immutable frame snapshots. The ScenePass submits every
-visible ready proxy through `FrameContext` and the common command recorder;
-there is deliberately no culling or sorting yet. This gives later shadow,
+`MeshProxy` registry, and immutable frame snapshots. `SceneVisibility` derives
+a CPU frustum from the camera's non-transposed view-projection matrix and builds
+the ScenePass's visible proxy list; the pass submits that list through
+`FrameContext` and the common command recorder. `SceneDrawListBuilder` sorts
+opaque candidates by resolved pipeline, material instance, then mesh; alpha
+blend candidates remain separate pending pass-specific depth ordering. Invalid
+bounds fall back to visible. There is deliberately no partition, LOD, or
+occlusion culling yet. This gives later shadow,
 G-buffer, and graph passes real scene inputs instead of a bootstrap-only
 `RenderScene`. The design and task ledger are in
 [world/component_module.md](../world/component_module.md) and

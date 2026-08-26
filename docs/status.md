@@ -48,14 +48,19 @@
 
 ## In progress / built but not wired
 
-- **Mesh proxy foundation (MP1 + basic MP2, 2026-08-26)** — `RenderWorld`,
+- **Mesh proxy foundation (MP1 + basic MP2 + CPU frustum visibility, 2026-08-26)** — `RenderWorld`,
   owned by `RenderSystem`, accepts value-only create/update/destroy commands,
   applies them at the frame boundary, and returns immutable `MeshProxy`
   snapshots behind generational `RenderableHandle`s. The ScenePass now draws
   every visible ready proxy through Material V1 and `FrameContext`; the old
-  bootstrap `RenderScene` path is retired from the engine. Bounds remain
-  temporary, and frustum/partition/LOD/occlusion culling plus opaque sorting
-  are deliberately deferred.
+  bootstrap `RenderScene` path is retired from the engine. `SceneVisibility`
+  conservatively builds the ScenePass list by rejecting proxies whose shared
+  `spatial::AABB`s are outside the camera frustum; malformed bounds stay
+  visible. `CoreSpatial` owns this bounds value for future World, Physics,
+  Render, and editor consumers. World
+  partition, LOD, occlusion culling, shadow classification, and transparent
+  depth sorting are deliberately deferred. Opaque work is sorted by resolved
+  pipeline, material instance, then mesh before ScenePass recording.
   → [mesh proxy TODO](world/mesh_proxy_TODO.md)
 
 - **Material System V1 (M1–M4, 2026-08-26)** — Render owns real generational

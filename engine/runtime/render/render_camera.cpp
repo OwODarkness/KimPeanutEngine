@@ -26,6 +26,11 @@ namespace kpengine::render
         return {CalculateViewMatrix().Transpose(), CalculateProjectionMatrix().Transpose()};
     }
 
+    Matrix4f RenderCamera::GetViewProjectionMatrix() const
+    {
+        return CalculateProjectionMatrix() * CalculateViewMatrix();
+    }
+
     Matrix4f RenderCamera::CalculateViewMatrix() const
     {
         return Matrix4f::MakeCameraMatrix(position_, forward_, up_);

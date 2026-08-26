@@ -2,6 +2,7 @@ add_library(Core INTERFACE)
 
 add_subdirectory(base)
 add_subdirectory(math)
+add_subdirectory(spatial)
 add_subdirectory(config)
 add_subdirectory(log)
 add_subdirectory(delegate)
@@ -9,4 +10,4 @@ add_subdirectory(data)
 add_subdirectory(resource)
 add_subdirectory(async)
 
-target_link_libraries(Core INTERFACE Math Config Log Delegate Base Data Resource Async)
+target_link_libraries(Core INTERFACE Math Spatial Config Log Delegate Base Data Resource Async)

@@ -9,7 +9,7 @@ namespace
         kpengine::render::MeshProxyDesc desc{};
         desc.mesh = {mesh_id, 0};
         desc.material = {mesh_id, 0};
-        desc.world_bounds = {-1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f};
+        desc.world_bounds = {{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}};
         return desc;
     }
 }

@@ -16,7 +16,7 @@ namespace kpengine::render
         graphics::MeshHandle mesh;
         MaterialInstanceHandle material;
         Transform3f world_transform;
-        AABB world_bounds{};
+        spatial::AABB world_bounds{};
         RenderableFlags flags;
         int lod_bias = 0;
     };

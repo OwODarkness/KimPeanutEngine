@@ -104,15 +104,16 @@ same lifetime rules as the existing `FrameContext` resources. M4 landed and
 - [x] `MeshProxy` already stores the real `MaterialInstanceHandle` from M1.
 - [x] Extend future create/update renderable commands with material-instance
   identity; reject a draw when mesh or material is not ready.
-- [ ] Build future opaque draw sorting around pipeline → material → mesh, while
-  preserving transparent order requirements.
+- [x] Build opaque draw sorting around resolved pipeline → material instance →
+  mesh. `SceneDrawListBuilder` keeps alpha-blend candidates separate and
+  preserves their snapshot order until a camera-depth sort is introduced.
 - [x] Retire the bootstrap scene's ad-hoc pipeline/texture material binding
   once a registered mesh proxy can render through Material V1.
 
 **Done when:** a registered mesh proxy is drawn through a ready material
 instance, without any World-to-Graphics dependency or backend-native material
-object. The initial unsorted, no-culling path landed 2026-08-26; sorting and
-future World commands continue with Mesh Proxy MP2/MP3.
+object. Opaque pipeline/material/mesh sorting landed 2026-08-26; transparent
+depth sorting and future World commands continue with Mesh Proxy MP2/MP3.
 
 ## Explicitly deferred
 

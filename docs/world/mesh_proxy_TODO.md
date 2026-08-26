@@ -1,6 +1,6 @@
 # Mesh Proxy Reconstruction TODO
 
-**Status: MP1 complete; MP2 basic unsorted submission complete as of 2026-08-26.**
+**Status: MP1 complete; MP2 basic submission and CPU frustum visibility complete as of 2026-08-26.**
 
 Design context: [component_module.md](component_module.md). This is a render
 input reconstruction phase, intentionally before a general render graph.
@@ -17,9 +17,10 @@ renderables without reviving the deprecated OpenGL scene-proxy implementation.
 
 - [x] Define generational `RenderableHandle`, concrete `MeshProxy`,
   `RenderableFlags`, and a render-private mesh/material reference shape.
-  `AABB` (`std::array<float, 6>`) remains a deliberate temporary spatial
-  representation; `MaterialInstanceHandle` is now a real render-owned
-  generational handle (2026-08-25).
+  `world_bounds` uses the canonical `spatial::AABB` from `core/spatial`, so
+  Physics, World, Render, and editor tooling can share one bounds contract;
+  `MaterialInstanceHandle` is a real render-owned generational handle
+  (2026-08-26).
 - [x] Define value-based create/update/destroy command payloads. Transform,
   bounds, visibility, mesh/material identity, and shadow/opaque flags must be
   explicit; the payloads must not carry component pointers or native API types.
@@ -44,17 +45,26 @@ work.
 - [x] Build the initial no-culling list from the immutable proxy snapshot: every
   visible proxy with a valid mesh and ready material is submitted. Frustum
   culling is deliberately deferred.
-- [ ] Classify opaque, transparent, and shadow-casting renderables.
-- [ ] Sort opaque work by pipeline/material/mesh where the resulting order is
-  legal for the pass.
+- [x] Add conservative CPU frustum culling before draw submission.
+  `SceneVisibility` derives a `Frustum` with six normalized planes from the
+  pass camera's non-transposed view-projection matrix and rejects only AABBs
+  definitely outside a plane; malformed bounds remain visible rather than
+  disappearing. It is render policy only: no backend-native type, occlusion
+  query, world-partition, or LOD state is involved (2026-08-26).
+- [x] Classify opaque and alpha-blend renderables through the material draw
+  class. Alpha-blend candidates remain separately ordered by their immutable
+  snapshot until a pass-specific depth sort is added.
+- [x] Sort opaque work by resolved pipeline → material instance → mesh, where
+  the resulting order is legal for the pass.
 - [x] Make the current scene pass consume this list through `FrameContext` and
   `CommandRecorder` only.
 - [x] Keep static GPU resource ownership in render caches; proxies borrow
   resolved handles and never destroy them.
 
 **Done when:** the current scene image is produced from registered mesh proxies,
-not a hard-wired `RenderScene` demo instance. This basic path landed
-2026-08-26; frustum culling and opaque sorting remain the next MP2 tasks.
+not a hard-wired `RenderScene` demo instance. CPU frustum culling landed
+2026-08-26; opaque classification and sorting landed the same day. Shadow
+classification and transparent depth sorting remain MP2 work.
 
 ## Phase MP3 — world component reconstruction
 
