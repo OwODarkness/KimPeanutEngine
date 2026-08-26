@@ -1,0 +1,93 @@
+#ifndef KPENGINE_RUNTIME_RENDER_RENDER_RESOURCE_RESOLVER_H
+#define KPENGINE_RUNTIME_RENDER_RENDER_RESOURCE_RESOLVER_H
+
+#include <cstdint>
+#include <unordered_map>
+
+#include "asset/common.h"
+#include "graphics/backend/common/api.h"
+#include "graphics/backend/common/pipeline_types.h"
+#include "graphics/backend/common/texture.h"
+#include "pipeline_cache_key.h"
+#include "render/material/material_system.h"
+#include "render_resource.h"
+
+namespace kpengine::asset
+{
+    struct ShaderProgramResource;
+}
+
+namespace kpengine::data
+{
+    struct MeshData;
+    struct TextureData;
+}
+
+namespace kpengine::graphics
+{
+    class RenderBackend;
+}
+
+namespace kpengine::resource
+{
+    class ResourcePipeline;
+}
+
+namespace kpengine::render
+{
+    // Render-private owner for resolved static RHI resources. It accepts only
+    // render policy and asset-backed CPU data; it never exposes backend-native
+    // objects or lets callers access the backend directly.
+    class RenderResourceResolver final : public IMaterialResourceResolver
+    {
+    public:
+        struct ResolvedMaterialTextureBindings
+        {
+            std::unordered_map<uint32_t, TextureBinding> textures;
+        };
+        RenderResourceResolver(graphics::RenderBackend &backend,
+                               resource::ResourcePipeline &resource_pipeline);
+
+        graphics::PipelineHandle GetOrCreateDefaultPipeline(
+            asset::AssetID program_id, asset::ShaderProgramResource &program,
+            const MaterialPipelineState *material_state = nullptr);
+        graphics::MeshHandle GetOrCreateMesh(asset::AssetID asset_id,
+                                             const data::MeshData &data);
+        TextureBinding GetOrCreateTextureBinding(asset::AssetID asset_id,
+                                                 const data::TextureData &data,
+                                                 const MaterialSamplerDesc *sampler_desc = nullptr);
+        MaterialResolution ResolveTemplate(MaterialTemplateHandle handle,
+                                           const MaterialTemplateDesc &desc) override;
+        MaterialResolution ResolveInstance(MaterialInstanceHandle handle,
+            const MaterialTemplateDesc &desc,
+            const std::vector<MaterialParameterValue> &effective_values) override;
+        void ReleaseTemplate(MaterialTemplateHandle handle) override;
+        void ReleaseInstance(MaterialInstanceHandle handle) override;
+        graphics::PipelineHandle FindMaterialPipeline(MaterialTemplateHandle handle) const;
+        const ResolvedMaterialTextureBindings *FindTextureBindings(
+            MaterialInstanceHandle handle) const;
+        void Cleanup();
+
+    private:
+        static bool BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
+                                             graphics::PipelineDesc &out_desc,
+                                             const MaterialPipelineState *material_state);
+        static graphics::TextureSettings DefaultTextureSettings();
+        graphics::SamplerHandle GetOrCreateDefaultSampler();
+        graphics::SamplerHandle GetOrCreateSampler(const MaterialSamplerDesc &desc);
+
+        graphics::RenderBackend *backend_ = nullptr;
+        resource::ResourcePipeline *resource_pipeline_ = nullptr;
+        std::unordered_map<PipelineCacheKey, graphics::PipelineHandle, PipelineCacheKeyHash>
+            pipeline_cache_;
+        std::unordered_map<uint64_t, graphics::MeshHandle> mesh_cache_;
+        std::unordered_map<uint64_t, graphics::TextureHandle> texture_cache_;
+        std::unordered_map<uint64_t, graphics::SamplerHandle> material_sampler_cache_;
+        std::unordered_map<MaterialTemplateHandle, graphics::PipelineHandle> material_pipelines_;
+        std::unordered_map<MaterialInstanceHandle, ResolvedMaterialTextureBindings>
+            material_texture_bindings_;
+        graphics::SamplerHandle default_sampler_handle_;
+    };
+}
+
+#endif

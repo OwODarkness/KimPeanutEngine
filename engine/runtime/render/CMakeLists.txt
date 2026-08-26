@@ -1,5 +1,8 @@
 add_library(Render
 render_system.cpp
+render_resource_resolver.cpp
+material/material_system.cpp
+render_world/render_world.cpp
 frame_context.cpp
 render_pass.cpp
 render_target.cpp

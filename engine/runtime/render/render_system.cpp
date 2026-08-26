@@ -1,7 +1,6 @@
 #include "render_system.h"
 
 #include <algorithm>
-#include <cstddef>
 
 #include "asset/asset_manager.h"
 #include "asset/mesh.h"
@@ -9,12 +8,11 @@
 #include "asset/shader.h"
 #include "asset/shader_program.h"
 #include "asset/texture.h"
-#include "data/mesh.h"
 #include "graphics/backend/common/render_backend.h"
-#include "graphics/backend/common/sampler.h"
-#include "graphics/backend/common/texture.h"
+#include "graphics/backend/common/command_recorder.h"
 #include "log/logger.h"
-#include "render_scene.h"
+#include "render/material/material_system.h"
+#include "render_resource_resolver.h"
 #include "resource/resource_pipeline.h"
 #include "resource/shader_operation.h"
 
@@ -39,56 +37,6 @@ namespace kpengine::render
         // Runtime frame budget: cap the per-frame load+compile work so a burst of
         // requests never stalls a frame. 0 means "no budget" (the bootstrap pass).
         constexpr std::size_t kMaxRuntimeLoadsPerFrame = 2;
-        constexpr uint64_t kDefaultPipelineStateLayoutSignature = 1;
-
-        graphics::TextureSettings DefaultTextureSettings()
-        {
-            graphics::TextureSettings settings{};
-            settings.mip_levels = 1;
-            settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
-            settings.usage = graphics::TextureUsage::TEXTURE_USAGE_TRANSFER_DST |
-                             graphics::TextureUsage::TEXTURE_USAGE_SAMPLE;
-            return settings;
-        }
-    }
-
-    bool BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
-                                  graphics::PipelineDesc &out_desc)
-    {
-        const auto vert_shader = program.GetShader(ShaderStage::SHADER_STAGE_VERTEX,
-                                                   ShaderFormat::SHADER_FORMAT_GLSL);
-        const auto frag_shader = program.GetShader(ShaderStage::SHADER_STAGE_FRAGMENT,
-                                                   ShaderFormat::SHADER_FORMAT_GLSL);
-        if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
-            vert_shader->status != asset::ShaderStatus::Ready ||
-            frag_shader->status != asset::ShaderStatus::Ready)
-        {
-            return false;
-        }
-
-        graphics::PipelineDesc desc{};
-        desc.vert_shader = vert_shader->data.get();
-        desc.frag_shader = frag_shader->data.get();
-        desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
-        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
-        desc.binding_descs = {{0, sizeof(data::Vertex), false}};
-        desc.attri_descs = {
-            {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
-             offsetof(data::Vertex, position)},
-            {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
-             offsetof(data::Vertex, tex_coord)},
-        };
-        desc.descriptor_binding_descs = {
-            {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-              ShaderStage::SHADER_STAGE_VERTEX},
-             {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-              ShaderStage::SHADER_STAGE_VERTEX},
-             {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
-              ShaderStage::SHADER_STAGE_FRAGMENT}},
-        };
-        desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
-        out_desc = std::move(desc);
-        return true;
     }
 
     RenderSystem::RenderSystem() = default;
@@ -107,6 +55,7 @@ namespace kpengine::render
         }
         load_queue_ = info.load_queue;
         bootstrap_scene_info_ = info.bootstrap_scene;
+        material_system_ = std::make_unique<MaterialSystem>();
 
         resource_pipeline_ = std::make_unique<resource::ResourcePipeline>();
         resource::ResourcePipelineContext context;
@@ -124,6 +73,11 @@ namespace kpengine::render
                GetGraphicsApiName(info.api_type));
         backend_->BindWindowResize(*info.resize_dispatcher);
         backend_->Initialize(info.native_window);
+
+
+        resource_resolver_ =
+            std::make_unique<RenderResourceResolver>(*backend_, *resource_pipeline_);
+        material_system_->SetResourceResolver(resource_resolver_.get());
 
         constexpr size_t kFrameUniformCapacity = 64 * 1024;
         frame_contexts_.resize(backend_->GetFramesInFlight());
@@ -159,6 +113,8 @@ namespace kpengine::render
     void RenderSystem::BeginFrame(float delta_time)
     {
         ConsumeRequests(kMaxRuntimeLoadsPerFrame);
+        material_system_->RefreshResources();
+        render_world_.ApplyPendingCommands();
         if (!backend_)
         {
             return;
@@ -246,19 +202,6 @@ namespace kpengine::render
                    : 0;
     }
 
-    void RenderSystem::AddScene(RenderScene &scene)
-    {
-        if (std::find(scenes_.begin(), scenes_.end(), &scene) == scenes_.end())
-        {
-            scenes_.push_back(&scene);
-        }
-    }
-
-    void RenderSystem::RemoveScene(RenderScene &scene)
-    {
-        scenes_.erase(std::remove(scenes_.begin(), scenes_.end(), &scene), scenes_.end());
-    }
-
     void RenderSystem::ConfigurePassSchedule()
     {
         const bool added_scene = pass_schedule_.AddPass(
@@ -284,34 +227,55 @@ namespace kpengine::render
         {
             return;
         }
-        for (RenderScene *scene : scenes_)
+        const graphics::Extent2D extent = active_frame_context_->GetRenderExtent();
+        if (extent.height != 0)
         {
-            if (scene)
+            scene_camera_.SetAspect(static_cast<float>(extent.width) / static_cast<float>(extent.height));
+            const CameraData camera_data = scene_camera_.GetCameraData();
+            graphics::PerPassData per_pass_data{};
+            per_pass_data.camera_data.view = camera_data.view;
+            per_pass_data.camera_data.proj = camera_data.proj;
+            for (const MeshProxy &proxy : render_world_.Snapshot())
             {
-                scene->Record(*active_frame_context_, *recorder);
+                RecordMeshProxy(proxy, per_pass_data, *recorder);
             }
         }
         scene_render_target_.EndRecording(*recorder);
     }
 
-    std::vector<asset::ShaderPtr> RenderSystem::GetCachedShaders(
-        const asset::ShaderProgramResource *program) const
+    void RenderSystem::RecordMeshProxy(const MeshProxy &proxy,
+                                       const graphics::PerPassData &per_pass_data,
+                                       graphics::CommandRecorder &recorder)
     {
-        std::vector<asset::ShaderPtr> shaders;
-        if (!program)
+        if (!proxy.flags.visible || !proxy.mesh.IsValid())
         {
-            return shaders;
+            return;
         }
-        for (auto &shader : program->GatherShaders())
+
+        graphics::PerObjectData per_object_data{};
+        per_object_data.model = Matrix4f::MakeTransformMatrix(proxy.world_transform).Transpose();
+        const UniformAllocation per_pass = active_frame_context_->AllocateUniform(per_pass_data);
+        const UniformAllocation per_object = active_frame_context_->AllocateUniform(per_object_data);
+        if (!per_pass.IsValid() || !per_object.IsValid())
         {
-            // Only stages whose data finished baking can back a pipeline; a failed
-            // stage must never reach the RHI as part of a PipelineDesc.
-            if (shader && shader->status == asset::ShaderStatus::Ready)
-            {
-                shaders.push_back(shader);
-            }
+            return;
         }
-        return shaders;
+
+        const std::vector<graphics::ResourceBinding> draw_bindings{
+            graphics::UniformBufferBinding{0, 0, per_pass.buffer, per_pass.offset, per_pass.range},
+            graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset, per_object.range},
+        };
+        const FrameMaterialBinding material_binding = active_frame_context_->CreateMaterialBinding(
+            *material_system_, *resource_resolver_, proxy.material, draw_bindings);
+        if (!active_frame_context_->IsMaterialBindingCurrent(material_binding))
+        {
+            return;
+        }
+
+        recorder.BindPipeline(material_binding.pipeline);
+        recorder.BindMesh(proxy.mesh);
+        recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set);
+        recorder.DrawIndexed();
     }
 
     void RenderSystem::ConsumeRequests(std::size_t max_items)
@@ -388,7 +352,8 @@ namespace kpengine::render
                            done + 1, total, shader->desc.file.c_str(),
                            static_cast<int>(phase));
                 });
-            const graphics::PipelineHandle pipeline = GetOrCreateDefaultPipeline(id, *program);
+            const graphics::PipelineHandle pipeline =
+                resource_resolver_->GetOrCreateDefaultPipeline(id, *program);
             if (!pipeline.IsValid())
             {
                 KP_LOG("RenderLog", LOG_LEVEL_ERROR,
@@ -410,14 +375,14 @@ namespace kpengine::render
             {
                 return false;
             }
-            const graphics::TextureHandle texture_handle = GetOrCreateTexture(id, *texture->data);
-            const graphics::SamplerHandle sampler_handle = GetOrCreateDefaultSampler();
+            const TextureBinding texture_binding =
+                resource_resolver_->GetOrCreateTextureBinding(id, *texture->data);
             entry.payload = std::move(texture);
-            if (!texture_handle.IsValid() || !sampler_handle.IsValid())
+            if (!texture_binding.texture.IsValid() || !texture_binding.sampler.IsValid())
             {
                 return false;
             }
-            entry.resource = TextureBinding{texture_handle, sampler_handle};
+            entry.resource = texture_binding;
             return true;
         }
         case asset::AssetType::KPAT_Mesh:
@@ -427,7 +392,7 @@ namespace kpengine::render
             {
                 return false;
             }
-            const graphics::MeshHandle mesh_handle = GetOrCreateMesh(id, *mesh->data);
+            const graphics::MeshHandle mesh_handle = resource_resolver_->GetOrCreateMesh(id, *mesh->data);
             entry.payload = std::move(mesh);
             if (!mesh_handle.IsValid())
             {
@@ -449,7 +414,8 @@ namespace kpengine::render
             {
                 return false;
             }
-            const graphics::MeshHandle mesh_handle = GetOrCreateMesh(mesh_id, *mesh->data);
+            const graphics::MeshHandle mesh_handle =
+                resource_resolver_->GetOrCreateMesh(mesh_id, *mesh->data);
             entry.payload = std::move(model);
             if (!mesh_handle.IsValid())
             {
@@ -461,101 +427,6 @@ namespace kpengine::render
         default:
             return false;
         }
-    }
-
-    graphics::PipelineHandle RenderSystem::GetOrCreateDefaultPipeline(
-        asset::AssetID program_id, asset::ShaderProgramResource &program)
-    {
-        const PipelineCacheKey key{program_id.Pack(),
-                                   backend_ ? backend_->GetGraphicsContext().type
-                                            : GraphicsAPIType::GRAPHICS_API_UNKNOW,
-                                   kDefaultPipelineStateLayoutSignature};
-        const auto existing = pipeline_cache_.find(key);
-        if (existing != pipeline_cache_.end())
-        {
-            return existing->second;
-        }
-
-        if (!backend_)
-        {
-            return {};
-        }
-
-        graphics::PipelineDesc desc{};
-        if (!BuildDefaultPipelineDesc(program, desc))
-        {
-            return {};
-        }
-
-        const graphics::PipelineHandle handle = backend_->CreatePipelineResource(desc);
-        if (handle.IsValid())
-        {
-            pipeline_cache_.emplace(key, handle);
-        }
-        return handle;
-    }
-
-    graphics::MeshHandle RenderSystem::GetOrCreateMesh(asset::AssetID asset_id,
-                                                       const data::MeshData &data)
-    {
-        const uint64_t key = asset_id.Pack();
-        const auto existing = mesh_cache_.find(key);
-        if (existing != mesh_cache_.end())
-        {
-            return existing->second;
-        }
-        if (!backend_)
-        {
-            return {};
-        }
-
-        const graphics::MeshHandle handle = backend_->CreateMesh(data);
-        if (handle.IsValid())
-        {
-            mesh_cache_.emplace(key, handle);
-        }
-        return handle;
-    }
-
-    graphics::TextureHandle RenderSystem::GetOrCreateTexture(asset::AssetID asset_id,
-                                                             const data::TextureData &data)
-    {
-        const uint64_t key = asset_id.Pack();
-        const auto existing = texture_cache_.find(key);
-        if (existing != texture_cache_.end())
-        {
-            return existing->second;
-        }
-        if (!backend_)
-        {
-            return {};
-        }
-
-        graphics::TextureSettings settings = DefaultTextureSettings();
-        settings.format = data.format;
-        const graphics::TextureHandle handle = backend_->CreateTexture(data, settings);
-        if (handle.IsValid())
-        {
-            texture_cache_.emplace(key, handle);
-        }
-        return handle;
-    }
-
-    graphics::SamplerHandle RenderSystem::GetOrCreateDefaultSampler()
-    {
-        if (default_sampler_handle_.IsValid())
-        {
-            return default_sampler_handle_;
-        }
-        if (!backend_)
-        {
-            return {};
-        }
-
-        graphics::SamplerSettings settings{};
-        settings.max_anisotropy = 16.f;
-        default_sampler_handle_ = backend_->CreateSampler(settings);
-        return default_sampler_handle_;
     }
 
     const RenderCacheEntry *RenderSystem::FindCached(asset::AssetID asset_id) const
@@ -571,9 +442,32 @@ namespace kpengine::render
         return nullptr;
     }
 
+    MaterialInstanceHandle RenderSystem::CreateDefaultTexturedMaterial(
+        asset::AssetID shader_program, asset::AssetID texture_asset)
+    {
+        if (!material_system_ || !shader_program.IsValid() || !texture_asset.IsValid())
+        {
+            return {};
+        }
+
+        MaterialTemplateDesc desc{};
+        desc.shader_program = shader_program;
+        desc.shading_model = MaterialShadingModel::Unlit;
+        desc.parameters = {
+            {"base_color", Vector4f{1.0f, 1.0f, 1.0f, 1.0f}},
+            {"base_color_texture", MaterialTextureSamplerValue{texture_asset, {}}, 2},
+        };
+        bootstrap_material_template_ = material_system_->CreateTemplate(desc);
+        if (!bootstrap_material_template_.IsValid())
+        {
+            return {};
+        }
+        return material_system_->CreateInstance({bootstrap_material_template_, {}});
+    }
+
     void RenderSystem::CreateBootstrapScene()
     {
-        if (!bootstrap_scene_info_.IsComplete() || bootstrap_scene_)
+        if (!bootstrap_scene_info_.IsComplete() || bootstrap_renderable_.IsValid())
         {
             return;
         }
@@ -583,30 +477,24 @@ namespace kpengine::render
             asset_manager.LoadSync(bootstrap_scene_info_.shader_program_path);
         const asset::AssetID model_asset = asset_manager.LoadSync(bootstrap_scene_info_.model_path);
         const asset::AssetID texture_asset = asset_manager.LoadSync(bootstrap_scene_info_.texture_path);
-        const RenderCacheEntry *pipeline_entry = FindCached(pipeline_asset);
         const RenderCacheEntry *model_entry = FindCached(model_asset);
-        const RenderCacheEntry *texture_entry = FindCached(texture_asset);
-        const auto *pipeline = pipeline_entry
-                                   ? std::get_if<graphics::PipelineHandle>(&pipeline_entry->resource)
-                                   : nullptr;
         const auto *mesh = model_entry
                                ? std::get_if<graphics::MeshHandle>(&model_entry->resource)
                                : nullptr;
-        const auto *material = texture_entry
-                                   ? std::get_if<TextureBinding>(&texture_entry->resource)
-                                   : nullptr;
-        if (!pipeline || !mesh || !material)
+        bootstrap_material_instance_ = CreateDefaultTexturedMaterial(pipeline_asset, texture_asset);
+        if (!mesh || !bootstrap_material_instance_.IsValid())
         {
             KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                   "Bootstrap scene resources were not baked into the render cache");
+                   "Bootstrap scene could not create a mesh or material instance");
             return;
         }
 
-        auto scene = std::make_unique<RenderScene>();
-        scene->Initialize({{*pipeline, *mesh, *material}});
-        AddScene(*scene);
-        bootstrap_scene_ = std::move(scene);
-        KP_LOG("RenderLog", LOG_LEVEL_INFO, "Bootstrap scene registered");
+        MeshProxyDesc proxy_desc{};
+        proxy_desc.mesh = *mesh;
+        proxy_desc.material = bootstrap_material_instance_;
+        proxy_desc.world_transform.scale_ = {0.5f, 0.5f, 0.5f};
+        bootstrap_renderable_ = render_world_.EnqueueCreate(proxy_desc);
+        KP_LOG("RenderLog", LOG_LEVEL_INFO, "Bootstrap mesh proxy registered");
     }
 
     void RenderSystem::ApplyPendingSceneRenderTargetExtent()
@@ -653,6 +541,8 @@ namespace kpengine::render
     {
         if (!backend_)
         {
+            material_system_.reset();
+            resource_resolver_.reset();
             return;
         }
 
@@ -660,43 +550,27 @@ namespace kpengine::render
         // referenced by an earlier frame slot. Retire all submitted work before
         // releasing any of those shared GPU objects.
         backend_->WaitIdle();
-
-        if (bootstrap_scene_)
+        render_world_.Clear();
+        bootstrap_renderable_ = {};
+        if (bootstrap_material_instance_.IsValid())
         {
-            RemoveScene(*bootstrap_scene_);
-            bootstrap_scene_->Cleanup();
-            bootstrap_scene_.reset();
+            material_system_->DestroyInstance(bootstrap_material_instance_);
+            bootstrap_material_instance_ = {};
         }
-        scenes_.clear();
+        if (bootstrap_material_template_.IsValid())
+        {
+            material_system_->DestroyTemplate(bootstrap_material_template_);
+            bootstrap_material_template_ = {};
+        }
+        material_system_.reset();
         for (FrameContext &context : frame_contexts_)
         {
             context.Cleanup();
         }
         frame_contexts_.clear();
         scene_render_target_.Cleanup();
-        for (const auto &[key, handle] : mesh_cache_)
-        {
-            (void)key;
-            backend_->DestroyMesh(handle);
-        }
-        mesh_cache_.clear();
-        for (const auto &[key, handle] : texture_cache_)
-        {
-            (void)key;
-            backend_->DestroyTexture(handle);
-        }
-        texture_cache_.clear();
-        if (default_sampler_handle_.IsValid())
-        {
-            backend_->DestroySampler(default_sampler_handle_);
-            default_sampler_handle_ = {};
-        }
-        for (const auto &[key, handle] : pipeline_cache_)
-        {
-            (void)key;
-            backend_->DestroyPipelineResource(handle);
-        }
-        pipeline_cache_.clear();
+        resource_resolver_->Cleanup();
+        resource_resolver_.reset();
         backend_->Cleanup();
         backend_.reset();
     }

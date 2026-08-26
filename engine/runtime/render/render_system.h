@@ -15,23 +15,13 @@
 #include "base/type.h"
 #include "delegate/event_dispatcher.h"
 #include "graphics/backend/common/api.h"
-#include "graphics/backend/common/pipeline_types.h"
 #include "frame_context.h"
+#include "render/material/material_system.h"
+#include "render_camera.h"
 #include "render_pass.h"
 #include "render_target.h"
-#include "pipeline_cache_key.h"
 #include "render_resource.h"
-
-namespace kpengine::asset
-{
-    struct ShaderProgramResource;
-}
-
-namespace kpengine::data
-{
-    struct MeshData;
-    struct TextureData;
-}
+#include "render_world/render_world.h"
 
 namespace kpengine::graphics
 {
@@ -50,7 +40,7 @@ namespace kpengine::runtime
 
 namespace kpengine::render
 {
-    class RenderScene;
+    class RenderResourceResolver;
 
     struct BootstrapSceneInfo
     {
@@ -81,9 +71,6 @@ namespace kpengine::render
         asset::AssetPayload payload;
         RenderResource resource;
     };
-
-    bool BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
-                                  graphics::PipelineDesc &out_desc);
 
     // The render-module facade. Reconstruction re-owns the RHI backend, the
     // resource-queue drain + render cache, and the scene graph here
@@ -117,9 +104,6 @@ namespace kpengine::render
         // The editor provides its available viewport extent. Reallocation happens
         // at the next safe frame boundary, never while UI is reading the view.
         void RequestSceneRenderTargetExtent(uint32_t width, uint32_t height);
-        void AddScene(RenderScene &scene);
-        void RemoveScene(RenderScene &scene);
-
         // Distinct shader references loaded so far, reference-based on the content
         // hash (the ShaderCache key) so a stage shared across programs counts once.
         int GetLoadedShaderCount() const;
@@ -138,22 +122,14 @@ namespace kpengine::render
         void ConsumeRequests(std::size_t max_items);
         bool ConsumeOne(const asset::AssetLoadRequest &request, RenderCacheEntry &entry);
 
-        // The stages of a loaded program whose data finished baking — what the
-        // render-module reconstruction feeds into a graphics::PipelineDesc.
-        // Stages that failed to compile are skipped; the pipeline must not see them.
-        std::vector<asset::ShaderPtr> GetCachedShaders(
-            const asset::ShaderProgramResource *program) const;
-        graphics::PipelineHandle GetOrCreateDefaultPipeline(asset::AssetID program_id,
-                                                            asset::ShaderProgramResource &program);
-        graphics::MeshHandle GetOrCreateMesh(asset::AssetID asset_id,
-                                             const data::MeshData &data);
-        graphics::TextureHandle GetOrCreateTexture(asset::AssetID asset_id,
-                                                   const data::TextureData &data);
-        graphics::SamplerHandle GetOrCreateDefaultSampler();
         const RenderCacheEntry *FindCached(asset::AssetID asset_id) const;
+        MaterialInstanceHandle CreateDefaultTexturedMaterial(asset::AssetID shader_program,
+                                                              asset::AssetID texture_asset);
         void CreateBootstrapScene();
         void ConfigurePassSchedule();
         void RecordScenePass();
+        void RecordMeshProxy(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
+                             graphics::CommandRecorder &recorder);
         void ApplyPendingSceneRenderTargetExtent();
         FrameContext *GetCurrentFrameContext();
         void Shutdown();
@@ -161,23 +137,23 @@ namespace kpengine::render
     private:
         std::unique_ptr<resource::ResourcePipeline> resource_pipeline_;
         std::unique_ptr<graphics::RenderBackend> backend_;
+        std::unique_ptr<MaterialSystem> material_system_;
+        std::unique_ptr<RenderResourceResolver> resource_resolver_;
         RenderTarget scene_render_target_;
         RenderPassSchedule pass_schedule_;
         graphics::Extent2D pending_scene_render_target_extent_;
         std::vector<FrameContext> frame_contexts_;
-        std::vector<RenderScene *> scenes_;
-        std::unique_ptr<RenderScene> bootstrap_scene_;
+        RenderWorld render_world_;
+        RenderCamera scene_camera_;
+        RenderableHandle bootstrap_renderable_;
+        MaterialTemplateHandle bootstrap_material_template_;
+        MaterialInstanceHandle bootstrap_material_instance_;
         BootstrapSceneInfo bootstrap_scene_info_;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;
         async::AsyncQueue<asset::AssetLoadRequest> *load_queue_ = nullptr;
 
         std::unordered_map<asset::RequestID, RenderCacheEntry> render_cache_;
-        std::unordered_map<PipelineCacheKey, graphics::PipelineHandle, PipelineCacheKeyHash>
-            pipeline_cache_;
-        std::unordered_map<uint64_t, graphics::MeshHandle> mesh_cache_;
-        std::unordered_map<uint64_t, graphics::TextureHandle> texture_cache_;
-        graphics::SamplerHandle default_sampler_handle_;
         FrameContext *active_frame_context_ = nullptr;
         bool editor_composite_recorded_ = false;
     };

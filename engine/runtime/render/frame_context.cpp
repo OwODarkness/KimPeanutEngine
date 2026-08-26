@@ -3,14 +3,43 @@
 #include <stdexcept>
 
 #include "graphics/backend/common/render_backend.h"
+#include "render_resource_resolver.h"
 
 namespace kpengine::render
 {
     namespace
     {
+        constexpr size_t kUniformVectorAlignment = 16;
+
         size_t AlignUp(size_t value, size_t alignment)
         {
             return (value + alignment - 1) / alignment * alignment;
+        }
+
+        size_t GetMaterialConstantAlignment(const MaterialParameterValue &value)
+        {
+            return std::holds_alternative<Vector4f>(value) ? kUniformVectorAlignment : alignof(float);
+        }
+
+        size_t GetMaterialConstantSize(const MaterialParameterValue &value)
+        {
+            return std::holds_alternative<Vector4f>(value) ? sizeof(Vector4f) : sizeof(float);
+        }
+
+        bool HasBinding(const std::vector<graphics::ResourceBinding> &bindings,
+                        uint32_t binding_index)
+        {
+            for (const graphics::ResourceBinding &binding : bindings)
+            {
+                const bool matches = std::visit(
+                    [binding_index](const auto &value) { return value.binding == binding_index; },
+                    binding);
+                if (matches)
+                {
+                    return true;
+                }
+            }
+            return false;
         }
     }
 
@@ -81,6 +110,113 @@ namespace kpengine::render
             transient_binding_sets_.push_back(handle);
         }
         return handle;
+    }
+
+    FrameMaterialBinding FrameContext::CreateMaterialBinding(
+        const MaterialSystem &materials, const RenderResourceResolver &resolver,
+        MaterialInstanceHandle material_instance,
+        const std::vector<graphics::ResourceBinding> &draw_bindings)
+    {
+        if (!active_ ||
+            materials.GetInstanceResolution(material_instance).state != MaterialResourceState::Ready)
+        {
+            return {};
+        }
+
+        const MaterialTemplateHandle template_handle = materials.GetInstanceTemplate(material_instance);
+        const MaterialTemplateDesc *const material_template = materials.FindTemplate(template_handle);
+        const graphics::PipelineHandle pipeline = resolver.FindMaterialPipeline(template_handle);
+        const auto *const textures = resolver.FindTextureBindings(material_instance);
+        if (!material_template || !pipeline.IsValid() || !textures)
+        {
+            return {};
+        }
+
+        std::vector<graphics::ResourceBinding> bindings = draw_bindings;
+        if (HasBinding(bindings, kMaterialConstantsBinding))
+        {
+            return {};
+        }
+
+        size_t constant_size = 0;
+        for (uint32_t parameter_id = 0; parameter_id < material_template->parameters.size(); ++parameter_id)
+        {
+            const MaterialParameterValue *const value = materials.GetParameterValue(
+                material_instance, MaterialParameterID{parameter_id});
+            if (!value)
+            {
+                return {};
+            }
+            if (std::holds_alternative<MaterialTextureSamplerValue>(*value))
+            {
+                const std::optional<uint32_t> binding_index =
+                    material_template->parameters[parameter_id].resource_binding;
+                const auto texture_it = textures->textures.find(parameter_id);
+                if (!binding_index || *binding_index == kMaterialConstantsBinding ||
+                    HasBinding(bindings, *binding_index) || texture_it == textures->textures.end())
+                {
+                    return {};
+                }
+                bindings.push_back(graphics::SampledTextureBinding{
+                    0, *binding_index, texture_it->second.texture, texture_it->second.sampler});
+                continue;
+            }
+
+            constant_size = AlignUp(constant_size, GetMaterialConstantAlignment(*value));
+            constant_size += GetMaterialConstantSize(*value);
+        }
+
+        UniformAllocation constants;
+        if (constant_size != 0)
+        {
+            constants = AllocateUniform(AlignUp(constant_size, kUniformVectorAlignment));
+            if (!constants.IsValid())
+            {
+                return {};
+            }
+
+            size_t constant_offset = 0;
+            for (uint32_t parameter_id = 0; parameter_id < material_template->parameters.size(); ++parameter_id)
+            {
+                const MaterialParameterValue *const value = materials.GetParameterValue(
+                    material_instance, MaterialParameterID{parameter_id});
+                if (!value || std::holds_alternative<MaterialTextureSamplerValue>(*value))
+                {
+                    continue;
+                }
+                constant_offset = AlignUp(constant_offset, GetMaterialConstantAlignment(*value));
+                if (const auto *const scalar = std::get_if<float>(value))
+                {
+                    std::memcpy(static_cast<uint8_t *>(constants.mapped) + constant_offset,
+                                scalar, sizeof(*scalar));
+                }
+                else if (const auto *const vector = std::get_if<Vector4f>(value))
+                {
+                    std::memcpy(static_cast<uint8_t *>(constants.mapped) + constant_offset,
+                                vector, sizeof(*vector));
+                }
+                constant_offset += GetMaterialConstantSize(*value);
+            }
+            bindings.push_back(graphics::UniformBufferBinding{
+                0, kMaterialConstantsBinding, constants.buffer, constants.offset, constants.range});
+        }
+
+        graphics::ResourceBindingSetDesc descriptor_desc{};
+        descriptor_desc.set = 0;
+        descriptor_desc.bindings = std::move(bindings);
+        const graphics::DescriptorSetHandle descriptor_set =
+            AllocateResourceBindingSet(pipeline, descriptor_desc);
+        if (!descriptor_set.IsValid())
+        {
+            return {};
+        }
+        return {pipeline, descriptor_set, constants, frame_index_, globals_.frame_number};
+    }
+
+    bool FrameContext::IsMaterialBindingCurrent(const FrameMaterialBinding &binding) const
+    {
+        return active_ && binding.IsValid() && binding.frame_index == frame_index_ &&
+               binding.frame_number == globals_.frame_number;
     }
 
     void FrameContext::Cleanup()

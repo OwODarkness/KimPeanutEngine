@@ -8,7 +8,7 @@ TEST(MeshProxyTest, DefaultsToAnUnregisteredAndResourceFreeSnapshot)
 
     EXPECT_FALSE(proxy.handle.IsValid());
     EXPECT_FALSE(proxy.mesh.IsValid());
-    EXPECT_EQ(proxy.material, kpengine::render::kInvalidMaterialInstanceHandle);
+    EXPECT_FALSE(proxy.material.IsValid());
     EXPECT_TRUE(proxy.flags.visible);
     EXPECT_TRUE(proxy.flags.opaque);
     EXPECT_TRUE(proxy.flags.casts_shadow);

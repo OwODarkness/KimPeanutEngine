@@ -7,9 +7,13 @@
 #include <vector>
 
 #include "graphics/backend/common/render_backend.h"
+#include "render/material/material_system.h"
 
 namespace kpengine::render
 {
+    class MaterialSystem;
+    class RenderResourceResolver;
+
     // Data shared by all scene work submitted for one render frame.
     struct FrameGlobals
     {
@@ -26,6 +30,22 @@ namespace kpengine::render
         void *mapped = nullptr;
 
         bool IsValid() const { return buffer.IsValid() && mapped != nullptr && range != 0; }
+    };
+
+    // A transient, frame-slot-owned material binding. The contained descriptor
+    // set is released when its FrameContext is recycled.
+    struct FrameMaterialBinding
+    {
+        graphics::PipelineHandle pipeline;
+        graphics::DescriptorSetHandle descriptor_set;
+        UniformAllocation constants;
+        uint32_t frame_index = 0;
+        uint64_t frame_number = 0;
+
+        bool IsValid() const
+        {
+            return pipeline.IsValid() && descriptor_set.IsValid();
+        }
     };
 
     // RenderSystem owns one logical context per backend frame slot. The backend
@@ -45,6 +65,11 @@ namespace kpengine::render
         graphics::DescriptorSetHandle AllocateResourceBindingSet(
             graphics::PipelineHandle pipeline,
             const graphics::ResourceBindingSetDesc &desc);
+        FrameMaterialBinding CreateMaterialBinding(
+            const MaterialSystem &materials, const RenderResourceResolver &resolver,
+            MaterialInstanceHandle material_instance,
+            const std::vector<graphics::ResourceBinding> &draw_bindings);
+        bool IsMaterialBindingCurrent(const FrameMaterialBinding &binding) const;
 
         template <typename T>
         UniformAllocation AllocateUniform(const T &value)
@@ -66,6 +91,7 @@ namespace kpengine::render
         void Cleanup();
 
     private:
+        static constexpr uint32_t kMaterialConstantsBinding = 3;
         void ReleaseTransientBindings();
 
         graphics::RenderBackend *backend_ = nullptr;

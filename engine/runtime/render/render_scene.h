@@ -5,16 +5,18 @@
 #include "graphics/backend/common/api.h"
 #include "graphics/backend/common/command_recorder.h"
 #include "frame_context.h"
+#include "render/material/material_system.h"
 #include "render_camera.h"
 #include "render_resource.h"
 
 namespace kpengine::render
 {
+    class RenderResourceResolver;
+
     struct RenderSceneResources
     {
-        graphics::PipelineHandle pipeline;
         graphics::MeshHandle mesh;
-        TextureBinding material;
+        MaterialInstanceHandle material_instance;
     };
 
     struct RenderSceneInitInfo
@@ -31,7 +33,9 @@ namespace kpengine::render
         ~RenderScene() = default;
 
         void Initialize(const RenderSceneInitInfo &info);
-        void Record(FrameContext &frame, graphics::CommandRecorder &recorder);
+        void Record(FrameContext &frame, graphics::CommandRecorder &recorder,
+                    const MaterialSystem &materials,
+                    const RenderResourceResolver &resource_resolver);
         void Cleanup();
 
         // Scene/view state belongs here; the system only schedules this scene.
@@ -40,10 +44,8 @@ namespace kpengine::render
 
     private:
         RenderCamera camera_;
-        graphics::PipelineHandle pipeline_handle_;
-        graphics::TextureHandle texture_handle_;
-        graphics::SamplerHandle sampler_handle_;
         graphics::MeshHandle mesh_handle_;
+        MaterialInstanceHandle material_instance_;
     };
 }
 

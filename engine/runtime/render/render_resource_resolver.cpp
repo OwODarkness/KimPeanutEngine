@@ -1,0 +1,352 @@
+#include "render_resource_resolver.h"
+
+#include <cstddef>
+
+#include "asset/shader.h"
+#include "asset/shader_program.h"
+#include "asset/texture.h"
+#include "asset/asset_manager.h"
+#include "data/mesh.h"
+#include "graphics/backend/common/render_backend.h"
+#include "graphics/backend/common/sampler.h"
+#include "graphics/backend/common/texture.h"
+#include "resource/resource_pipeline.h"
+
+namespace kpengine::render
+{
+    namespace
+    {
+        constexpr uint64_t kDefaultPipelineStateLayoutSignature = 1;
+    }
+
+    RenderResourceResolver::RenderResourceResolver(graphics::RenderBackend &backend,
+                                                     resource::ResourcePipeline &resource_pipeline)
+        : backend_(&backend), resource_pipeline_(&resource_pipeline)
+    {
+    }
+
+    graphics::PipelineHandle RenderResourceResolver::GetOrCreateDefaultPipeline(
+        asset::AssetID program_id, asset::ShaderProgramResource &program,
+        const MaterialPipelineState *material_state)
+    {
+        const uint64_t state_signature = material_state
+                                             ? kDefaultPipelineStateLayoutSignature |
+                                                   (static_cast<uint64_t>(material_state->blend_mode) << 8) |
+                                                   (static_cast<uint64_t>(material_state->cull_mode) << 16) |
+                                                   (static_cast<uint64_t>(material_state->double_sided) << 24)
+                                             : kDefaultPipelineStateLayoutSignature;
+        const PipelineCacheKey key{program_id.Pack(), backend_->GetGraphicsContext().type,
+                                   state_signature};
+        const auto existing = pipeline_cache_.find(key);
+        if (existing != pipeline_cache_.end())
+        {
+            return existing->second;
+        }
+
+        graphics::PipelineDesc desc{};
+        if (!BuildDefaultPipelineDesc(program, desc, material_state))
+        {
+            return {};
+        }
+
+        const graphics::PipelineHandle handle = backend_->CreatePipelineResource(desc);
+        if (handle.IsValid())
+        {
+            pipeline_cache_.emplace(key, handle);
+        }
+        return handle;
+    }
+
+    graphics::MeshHandle RenderResourceResolver::GetOrCreateMesh(
+        asset::AssetID asset_id, const data::MeshData &data)
+    {
+        const uint64_t key = asset_id.Pack();
+        const auto existing = mesh_cache_.find(key);
+        if (existing != mesh_cache_.end())
+        {
+            return existing->second;
+        }
+
+        const graphics::MeshHandle handle = backend_->CreateMesh(data);
+        if (handle.IsValid())
+        {
+            mesh_cache_.emplace(key, handle);
+        }
+        return handle;
+    }
+
+    TextureBinding RenderResourceResolver::GetOrCreateTextureBinding(
+        asset::AssetID asset_id, const data::TextureData &data,
+        const MaterialSamplerDesc *sampler_desc)
+    {
+        const uint64_t key = asset_id.Pack();
+        const auto existing = texture_cache_.find(key);
+        graphics::TextureHandle texture;
+        if (existing != texture_cache_.end())
+        {
+            texture = existing->second;
+        }
+        else
+        {
+            graphics::TextureSettings settings = DefaultTextureSettings();
+            settings.format = data.format;
+            texture = backend_->CreateTexture(data, settings);
+            if (texture.IsValid())
+            {
+                texture_cache_.emplace(key, texture);
+            }
+        }
+        if (!texture.IsValid())
+        {
+            return {};
+        }
+        return {texture, sampler_desc ? GetOrCreateSampler(*sampler_desc) : GetOrCreateDefaultSampler()};
+    }
+
+    MaterialResolution RenderResourceResolver::ResolveTemplate(MaterialTemplateHandle handle,
+                                                                const MaterialTemplateDesc &desc)
+    {
+        auto program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(
+            desc.shader_program);
+        if (!program)
+        {
+            return {MaterialResourceState::Pending, "shader program asset is not loaded"};
+        }
+
+        resource_pipeline_->ProcessShader(program->GatherShaders());
+        for (const asset::ShaderPtr &shader : program->GatherShaders())
+        {
+            if (!shader || shader->status == asset::ShaderStatus::CompileFailed)
+            {
+                return {MaterialResourceState::Failed, "shader program compilation failed"};
+            }
+        }
+        const graphics::PipelineHandle pipeline =
+            GetOrCreateDefaultPipeline(desc.shader_program, *program, &desc.pipeline_state);
+        if (!pipeline.IsValid())
+        {
+            return {MaterialResourceState::Failed, "pipeline creation failed"};
+        }
+        material_pipelines_[handle] = pipeline;
+        return {MaterialResourceState::Ready, {}};
+    }
+
+    MaterialResolution RenderResourceResolver::ResolveInstance(MaterialInstanceHandle handle,
+        const MaterialTemplateDesc &desc,
+        const std::vector<MaterialParameterValue> &effective_values)
+    {
+        (void)desc;
+        material_texture_bindings_.erase(handle);
+        auto &asset_manager = asset::AssetManager::GetInstance();
+        ResolvedMaterialTextureBindings bindings;
+        for (uint32_t parameter_id = 0; parameter_id < effective_values.size(); ++parameter_id)
+        {
+            const MaterialParameterValue &value = effective_values[parameter_id];
+            const auto *texture_value = std::get_if<MaterialTextureSamplerValue>(&value);
+            if (!texture_value)
+            {
+                continue;
+            }
+            auto texture = asset_manager.GetResource<asset::TextureResource>(texture_value->texture_asset);
+            if (!texture || !texture->data)
+            {
+                return {MaterialResourceState::Pending, "material texture asset is not loaded"};
+            }
+            const TextureBinding binding =
+                GetOrCreateTextureBinding(texture_value->texture_asset, *texture->data,
+                                          &texture_value->sampler);
+            if (!binding.texture.IsValid() || !binding.sampler.IsValid())
+            {
+                return {MaterialResourceState::Failed, "material texture binding creation failed"};
+            }
+            bindings.textures.emplace(parameter_id, binding);
+        }
+        material_texture_bindings_[handle] = std::move(bindings);
+        return {MaterialResourceState::Ready, {}};
+    }
+
+    void RenderResourceResolver::ReleaseTemplate(MaterialTemplateHandle handle)
+    {
+        material_pipelines_.erase(handle);
+    }
+
+    void RenderResourceResolver::ReleaseInstance(MaterialInstanceHandle handle)
+    {
+        material_texture_bindings_.erase(handle);
+    }
+
+    graphics::PipelineHandle RenderResourceResolver::FindMaterialPipeline(
+        MaterialTemplateHandle handle) const
+    {
+        const auto it = material_pipelines_.find(handle);
+        return it != material_pipelines_.end() ? it->second : graphics::PipelineHandle{};
+    }
+
+    const RenderResourceResolver::ResolvedMaterialTextureBindings *
+    RenderResourceResolver::FindTextureBindings(MaterialInstanceHandle handle) const
+    {
+        const auto it = material_texture_bindings_.find(handle);
+        return it != material_texture_bindings_.end() ? &it->second : nullptr;
+    }
+
+    void RenderResourceResolver::Cleanup()
+    {
+        if (!backend_)
+        {
+            return;
+        }
+
+        for (const auto &[key, handle] : mesh_cache_)
+        {
+            (void)key;
+            backend_->DestroyMesh(handle);
+        }
+        mesh_cache_.clear();
+        for (const auto &[key, handle] : texture_cache_)
+        {
+            (void)key;
+            backend_->DestroyTexture(handle);
+        }
+        texture_cache_.clear();
+        if (default_sampler_handle_.IsValid())
+        {
+            backend_->DestroySampler(default_sampler_handle_);
+            default_sampler_handle_ = {};
+        }
+        for (const auto &[key, handle] : pipeline_cache_)
+        {
+            (void)key;
+            backend_->DestroyPipelineResource(handle);
+        }
+        pipeline_cache_.clear();
+        for (const auto &[key, handle] : material_sampler_cache_)
+        {
+            (void)key;
+            backend_->DestroySampler(handle);
+        }
+        material_sampler_cache_.clear();
+        backend_ = nullptr;
+        resource_pipeline_ = nullptr;
+        material_pipelines_.clear();
+        material_texture_bindings_.clear();
+    }
+
+    bool RenderResourceResolver::BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
+                                                           graphics::PipelineDesc &out_desc,
+                                                           const MaterialPipelineState *material_state)
+    {
+        const auto vert_shader = program.GetShader(ShaderStage::SHADER_STAGE_VERTEX,
+                                                   ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto frag_shader = program.GetShader(ShaderStage::SHADER_STAGE_FRAGMENT,
+                                                   ShaderFormat::SHADER_FORMAT_GLSL);
+        if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
+            vert_shader->status != asset::ShaderStatus::Ready ||
+            frag_shader->status != asset::ShaderStatus::Ready)
+        {
+            return false;
+        }
+
+        graphics::PipelineDesc desc{};
+        desc.vert_shader = vert_shader->data.get();
+        desc.frag_shader = frag_shader->data.get();
+        desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
+        desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+        desc.attri_descs = {
+            {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
+             offsetof(data::Vertex, position)},
+            {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
+             offsetof(data::Vertex, tex_coord)},
+        };
+        desc.descriptor_binding_descs = {
+            {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_VERTEX},
+             {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_VERTEX},
+             {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_FRAGMENT}},
+        };
+        desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+        if (material_state)
+        {
+            desc.raster_state.cull_mode = material_state->double_sided
+                                               ? graphics::CullMode::CULL_MODE_NONE
+                                               : material_state->cull_mode == MaterialCullMode::Back
+                                                     ? graphics::CullMode::CULL_MODE_BACK
+                                                     : graphics::CullMode::CULL_MODE_FRONT;
+            desc.blend_attachment_state.blend_enabled =
+                material_state->blend_mode == MaterialBlendMode::AlphaBlend;
+            if (desc.blend_attachment_state.blend_enabled)
+            {
+                desc.blend_attachment_state.src_color_blend_factor =
+                    graphics::BlendFactor::BLEND_FACTOR_SRC_ALPHA;
+                desc.blend_attachment_state.dst_color_blend_factor =
+                    graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            }
+        }
+        out_desc = std::move(desc);
+        return true;
+    }
+
+    graphics::TextureSettings RenderResourceResolver::DefaultTextureSettings()
+    {
+        graphics::TextureSettings settings{};
+        settings.mip_levels = 1;
+        settings.format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        settings.usage = graphics::TextureUsage::TEXTURE_USAGE_TRANSFER_DST |
+                         graphics::TextureUsage::TEXTURE_USAGE_SAMPLE;
+        return settings;
+    }
+
+    graphics::SamplerHandle RenderResourceResolver::GetOrCreateDefaultSampler()
+    {
+        if (default_sampler_handle_.IsValid())
+        {
+            return default_sampler_handle_;
+        }
+
+        graphics::SamplerSettings settings{};
+        settings.max_anisotropy = 16.0f;
+        default_sampler_handle_ = backend_->CreateSampler(settings);
+        return default_sampler_handle_;
+    }
+
+    graphics::SamplerHandle RenderResourceResolver::GetOrCreateSampler(
+        const MaterialSamplerDesc &desc)
+    {
+        const uint64_t key = static_cast<uint64_t>(desc.min_filter) |
+                             (static_cast<uint64_t>(desc.mag_filter) << 8) |
+                             (static_cast<uint64_t>(desc.address_u) << 16) |
+                             (static_cast<uint64_t>(desc.address_v) << 24) |
+                             (static_cast<uint64_t>(desc.address_w) << 32);
+        const auto existing = material_sampler_cache_.find(key);
+        if (existing != material_sampler_cache_.end())
+        {
+            return existing->second;
+        }
+        graphics::SamplerSettings settings{};
+        settings.min_filter = desc.min_filter == MaterialSamplerFilter::Linear
+                                  ? graphics::SamplerFilterType::SAMPLER_FILTER_LINEAR
+                                  : graphics::SamplerFilterType::SAMPLER_FILTER_NEAREST;
+        settings.mag_filter = desc.mag_filter == MaterialSamplerFilter::Linear
+                                  ? graphics::SamplerFilterType::SAMPLER_FILTER_LINEAR
+                                  : graphics::SamplerFilterType::SAMPLER_FILTER_NEAREST;
+        settings.address_mode_u = desc.address_u == MaterialSamplerAddressMode::Repeat
+                                      ? graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT
+                                      : graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        settings.address_mode_v = desc.address_v == MaterialSamplerAddressMode::Repeat
+                                      ? graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT
+                                      : graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        settings.address_mode_w = desc.address_w == MaterialSamplerAddressMode::Repeat
+                                      ? graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_REPEAT
+                                      : graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        const graphics::SamplerHandle handle = backend_->CreateSampler(settings);
+        if (handle.IsValid())
+        {
+            material_sampler_cache_.emplace(key, handle);
+        }
+        return handle;
+    }
+}

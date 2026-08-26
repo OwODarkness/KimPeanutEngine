@@ -8,8 +8,15 @@
 #include "runtime/window/glfw_window_system.h"
 #include "runtime/input/input_system.h"
 #include "runtime/input/input_context.h"
-#include "runtime/render/render_scene.h"
+#include "runtime/render/render_camera.h"
+#include "runtime/render/frame_context.h"
+#include "runtime/render/render_resource_resolver.h"
+#include "runtime/render/material/material_system.h"
+#include "runtime/render/render_world/render_world.h"
 #include "runtime/graphics/backend/common/pipeline_types.h"
+#include "runtime/graphics/backend/common/render_backend.h"
+#include "runtime/graphics/backend/common/render_target.h"
+#include "runtime/graphics/backend/common/resource_binding.h"
 #include "runtime/graphics/backend/common/sampler.h"
 #include "runtime/graphics/backend/common/texture.h"
 #include "runtime/core/data/shader.h"
@@ -28,14 +35,10 @@ namespace kpengine::example
     // The demo bakes its shaders at runtime through the resource pipeline
     // (GLSL -> per-API artifact, content-addressed cache) instead of reading
     // prebuilt files — the RHI never reads shader files itself.
-    static std::vector<asset::ShaderPtr> CompileTriangleShaders(GraphicsAPIType api)
+    static asset::AssetID LoadTriangleProgram(resource::ResourcePipeline &pipeline)
     {
-        resource::ResourcePipeline pipeline;
-        resource::ResourcePipelineContext pipeline_context{api};
-        pipeline.Initialize(pipeline_context);
-
         const std::string path = GetShaderDirectory() + "simple_triangle.shader";
-        asset::AssetID id = asset::AssetManager::GetInstance().LoadSync(path);
+        const asset::AssetID id = asset::AssetManager::GetInstance().LoadSync(path);
         if (!id.IsValid())
         {
             throw std::runtime_error("failed to load shader program: " + path);
@@ -46,46 +49,18 @@ namespace kpengine::example
             throw std::runtime_error("loaded asset holds no shader program resource");
         }
 
-        // The pipeline writes the baked artifact (byte_code for Vulkan, source
-        // for OpenGL) back into each stage's data.
-        std::vector<asset::ShaderPtr> shaders;
-        for (ShaderStage stage : {ShaderStage::SHADER_STAGE_VERTEX, ShaderStage::SHADER_STAGE_FRAGMENT})
-        {
-            if (auto shader = program->GetShader(stage, ShaderFormat::SHADER_FORMAT_GLSL))
-            {
-                shaders.push_back(shader);
-            }
-        }
-        pipeline.ProcessShader(shaders);
-        return shaders;
+        pipeline.ProcessShader(program->GatherShaders());
+        return id;
     }
 
     struct DemoResourceHandles
     {
         graphics::MeshHandle mesh;
-        graphics::TextureHandle texture;
-        graphics::SamplerHandle sampler;
     };
 
     static DemoResourceHandles CreateDemoResources(graphics::RenderBackend &backend)
     {
         DemoResourceHandles handles{};
-
-        const asset::AssetID texture_id = asset::AssetManager::GetInstance().LoadSync(
-            GetTextureDirectory() + "wallpaper.jpg");
-        auto texture = asset::AssetManager::GetInstance().GetResource<asset::TextureResource>(texture_id);
-        if (!texture || !texture->data)
-        {
-            throw std::runtime_error("failed to load demo texture");
-        }
-        graphics::TextureSettings texture_settings{};
-        texture_settings.mip_levels = 1;
-        texture_settings.format = texture->data->format;
-        texture_settings.usage = graphics::TextureUsage::TEXTURE_USAGE_TRANSFER_DST |
-                                 graphics::TextureUsage::TEXTURE_USAGE_SAMPLE;
-        handles.texture = backend.CreateTexture(*texture->data, texture_settings);
-        handles.sampler = backend.CreateSampler({});
-        asset::AssetManager::GetInstance().UnRegisterAsset(texture_id);
 
         const asset::AssetID model_id = asset::AssetManager::GetInstance().LoadSync(
             GetModelDirectory() + "sphere/sphere.obj");
@@ -123,15 +98,23 @@ namespace kpengine::example
             input->AddContext("SceneInputContext", context);
             input->SetActiveContext("SceneInputContext");
 
-            std::vector<asset::ShaderPtr> shaders = CompileTriangleShaders(api);
-            if (shaders.size() != 2 || !shaders[0]->data || !shaders[1]->data)
+            resource::ResourcePipeline resource_pipeline;
+            resource_pipeline.Initialize({api});
+            const asset::AssetID shader_program_id = LoadTriangleProgram(resource_pipeline);
+            auto program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(
+                shader_program_id);
+            const auto vertex_shader = program ? program->GetShader(
+                ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+            const auto fragment_shader = program ? program->GetShader(
+                ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+            if (!vertex_shader || !fragment_shader || !vertex_shader->data || !fragment_shader->data)
             {
                 throw std::runtime_error("triangle shaders failed to compile");
             }
 
             graphics::PipelineDesc pipeline_desc{};
-            pipeline_desc.vert_shader = shaders[0]->data.get();
-            pipeline_desc.frag_shader = shaders[1]->data.get();
+            pipeline_desc.vert_shader = vertex_shader->data.get();
+            pipeline_desc.frag_shader = fragment_shader->data.get();
             pipeline_desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
             pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
 
@@ -144,7 +127,8 @@ namespace kpengine::example
             pipeline_desc.descriptor_binding_descs = {
                 {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
                  {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
-                 {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+                 {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                 {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT}},
             };
 
             graphics::RasterState raster_state{};
@@ -177,12 +161,15 @@ namespace kpengine::example
             {
                 throw std::runtime_error("failed to create scene render target");
             }
-            const graphics::PipelineHandle primary_pipeline = rhi->CreatePipelineResource(pipeline_desc);
             const graphics::PipelineHandle secondary_pipeline = rhi->CreatePipelineResource(pipeline_desc);
-            if (!primary_pipeline.IsValid() || !secondary_pipeline.IsValid())
+            if (!secondary_pipeline.IsValid())
             {
-                throw std::runtime_error("failed to create graphics pipelines");
+                throw std::runtime_error("failed to create secondary graphics pipeline");
             }
+
+            render::RenderResourceResolver resource_resolver(*rhi, resource_pipeline);
+            render::MaterialSystem materials;
+            materials.SetResourceResolver(&resource_resolver);
 
             std::vector<render::FrameContext> frame_contexts(rhi->GetFramesInFlight());
             for (render::FrameContext &frame_context : frame_contexts)
@@ -190,14 +177,36 @@ namespace kpengine::example
                 frame_context.Initialize(*rhi, 64 * 1024);
             }
 
-            std::unique_ptr<render::RenderScene> scene;
             DemoResourceHandles demo_resources = CreateDemoResources(*rhi);
-            scene = std::make_unique<render::RenderScene>();
-            render::RenderSceneInitInfo scene_init_info{};
-            scene_init_info.resources.pipeline = primary_pipeline;
-            scene_init_info.resources.mesh = demo_resources.mesh;
-            scene_init_info.resources.material = {demo_resources.texture, demo_resources.sampler};
-            scene->Initialize(scene_init_info);
+            const asset::AssetID texture_id = asset::AssetManager::GetInstance().LoadSync(
+                GetTextureDirectory() + "wallpaper.jpg");
+            render::MaterialTemplateDesc material_template_desc{};
+            material_template_desc.shader_program = shader_program_id;
+            material_template_desc.shading_model = render::MaterialShadingModel::Unlit;
+            material_template_desc.parameters = {
+                {"base_color", Vector4f{1.0f, 1.0f, 1.0f, 1.0f}},
+                {"base_color_texture", render::MaterialTextureSamplerValue{texture_id, {}}, 2},
+            };
+            const render::MaterialTemplateHandle material_template =
+                materials.CreateTemplate(material_template_desc);
+            const render::MaterialInstanceHandle material_instance =
+                materials.CreateInstance({material_template, {}});
+            if (!material_instance.IsValid())
+            {
+                throw std::runtime_error("failed to create smoke material instance");
+            }
+            render::RenderWorld render_world{};
+            render::MeshProxyDesc proxy_desc{};
+            proxy_desc.mesh = demo_resources.mesh;
+            proxy_desc.material = material_instance;
+            proxy_desc.world_transform.scale_ = {0.5f, 0.5f, 0.5f};
+            const render::RenderableHandle renderable = render_world.EnqueueCreate(proxy_desc);
+            render_world.ApplyPendingCommands();
+            if (!render_world.IsRegistered(renderable))
+            {
+                throw std::runtime_error("failed to register smoke mesh proxy");
+            }
+            render::RenderCamera camera{};
 
             uint64_t frame_number = 0;
             float elapsed_seconds = 0.0f;
@@ -224,7 +233,53 @@ namespace kpengine::example
                                            rhi->GetRenderExtent());
                         graphics::CommandRecorder *recorder = rhi->GetCommandRecorder();
                         recorder->BeginRenderTarget(scene_target);
-                        scene->Record(frame_context, *recorder);
+                        const graphics::Extent2D extent = frame_context.GetRenderExtent();
+                        if (extent.height != 0)
+                        {
+                            camera.SetAspect(static_cast<float>(extent.width) /
+                                             static_cast<float>(extent.height));
+                            const render::CameraData camera_data = camera.GetCameraData();
+                            graphics::PerPassData per_pass_data{};
+                            per_pass_data.camera_data.view = camera_data.view;
+                            per_pass_data.camera_data.proj = camera_data.proj;
+                            const render::UniformAllocation per_pass =
+                                frame_context.AllocateUniform(per_pass_data);
+                            for (const render::MeshProxy &proxy : render_world.Snapshot())
+                            {
+                                if (!proxy.flags.visible || !proxy.mesh.IsValid() ||
+                                    !per_pass.IsValid())
+                                {
+                                    continue;
+                                }
+                                graphics::PerObjectData per_object_data{};
+                                per_object_data.model = Matrix4f::MakeTransformMatrix(
+                                    proxy.world_transform).Transpose();
+                                const render::UniformAllocation per_object =
+                                    frame_context.AllocateUniform(per_object_data);
+                                if (!per_object.IsValid())
+                                {
+                                    continue;
+                                }
+                                const std::vector<graphics::ResourceBinding> draw_bindings{
+                                    graphics::UniformBufferBinding{
+                                        0, 0, per_pass.buffer, per_pass.offset, per_pass.range},
+                                    graphics::UniformBufferBinding{
+                                        0, 1, per_object.buffer, per_object.offset, per_object.range},
+                                };
+                                const render::FrameMaterialBinding material_binding =
+                                    frame_context.CreateMaterialBinding(
+                                        materials, resource_resolver, proxy.material, draw_bindings);
+                                if (!frame_context.IsMaterialBindingCurrent(material_binding))
+                                {
+                                    continue;
+                                }
+                                recorder->BindPipeline(material_binding.pipeline);
+                                recorder->BindMesh(proxy.mesh);
+                                recorder->BindResourceBindings(material_binding.pipeline,
+                                                               material_binding.descriptor_set);
+                                recorder->DrawIndexed();
+                            }
+                        }
                         recorder->EndRenderTarget();
                         frame_context.End();
                         ++frame_number;
@@ -240,7 +295,9 @@ namespace kpengine::example
             // The smoke path owns RHI resources directly, so it must establish
             // the same retirement boundary as RenderSystem before releasing them.
             rhi->WaitIdle();
-            scene->Cleanup();
+            render_world.Clear();
+            materials.DestroyInstance(material_instance);
+            materials.DestroyTemplate(material_template);
             for (render::FrameContext &frame_context : frame_contexts)
             {
                 frame_context.Cleanup();
@@ -248,10 +305,8 @@ namespace kpengine::example
             rhi->DestroyBufferResource(dedicated_smoke_buffer);
             rhi->DestroyRenderTarget(scene_target);
             rhi->DestroyMesh(demo_resources.mesh);
-            rhi->DestroySampler(demo_resources.sampler);
-            rhi->DestroyTexture(demo_resources.texture);
             rhi->DestroyPipelineResource(secondary_pipeline);
-            rhi->DestroyPipelineResource(primary_pipeline);
+            resource_resolver.Cleanup();
             rhi->Cleanup();
             window->Cleanup();
             return true;

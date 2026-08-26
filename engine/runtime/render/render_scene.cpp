@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "math/math_header.h"
+#include "render_resource_resolver.h"
 
 namespace kpengine::render
 {
@@ -10,18 +11,17 @@ namespace kpengine::render
 
     void RenderScene::Initialize(const RenderSceneInitInfo &info)
     {
-        if (!info.resources.pipeline.IsValid() || !info.resources.mesh.IsValid() ||
-            !info.resources.material.texture.IsValid() || !info.resources.material.sampler.IsValid())
+        if (!info.resources.mesh.IsValid() || !info.resources.material_instance.IsValid())
         {
-            throw std::runtime_error("RenderScene requires valid backend and static resource handles");
+            throw std::runtime_error("RenderScene requires a mesh and material instance");
         }
-        pipeline_handle_ = info.resources.pipeline;
         mesh_handle_ = info.resources.mesh;
-        texture_handle_ = info.resources.material.texture;
-        sampler_handle_ = info.resources.material.sampler;
+        material_instance_ = info.resources.material_instance;
     }
 
-    void RenderScene::Record(FrameContext &frame, graphics::CommandRecorder &recorder)
+    void RenderScene::Record(FrameContext &frame, graphics::CommandRecorder &recorder,
+                             const MaterialSystem &materials,
+                             const RenderResourceResolver &resource_resolver)
     {
         if (!frame.IsActive())
         {
@@ -53,31 +53,26 @@ namespace kpengine::render
             return;
         }
 
-        graphics::ResourceBindingSetDesc bindings{};
-        bindings.set = 0;
-        bindings.bindings = {
+        const std::vector<graphics::ResourceBinding> draw_bindings{
             graphics::UniformBufferBinding{0, 0, per_pass.buffer, per_pass.offset, per_pass.range},
             graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset, per_object.range},
-            graphics::SampledTextureBinding{0, 2, texture_handle_, sampler_handle_},
         };
-        const graphics::DescriptorSetHandle binding_set =
-            frame.AllocateResourceBindingSet(pipeline_handle_, bindings);
-        if (!binding_set.IsValid())
+        const FrameMaterialBinding material_binding = frame.CreateMaterialBinding(
+            materials, resource_resolver, material_instance_, draw_bindings);
+        if (!frame.IsMaterialBindingCurrent(material_binding))
         {
             return;
         }
 
-        recorder.BindPipeline(pipeline_handle_);
+        recorder.BindPipeline(material_binding.pipeline);
         recorder.BindMesh(mesh_handle_);
-        recorder.BindResourceBindings(pipeline_handle_, binding_set);
+        recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set);
         recorder.DrawIndexed();
     }
 
     void RenderScene::Cleanup()
     {
-        pipeline_handle_ = {};
-        texture_handle_ = {};
-        sampler_handle_ = {};
         mesh_handle_ = {};
+        material_instance_ = {};
     }
 }
