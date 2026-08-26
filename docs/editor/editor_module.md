@@ -1,11 +1,11 @@
 # Editor Module
 
-**Snapshot: 2026-08-24.** The editor is the engine's *core center*: a thin application shell that hosts the runtime engine and owns the tool UI on top of it. Its job is not to render or simulate — those belong to the runtime — but to be the hub that wires the runtime systems to the tooling UI, and to build/draw that UI.
+**Snapshot: 2026-08-26.** The editor is the engine's *core center*: a thin application shell that hosts the runtime engine and owns the tool UI on top of it. Its job is not to render or simulate — those belong to the runtime — but to be the hub that wires the runtime systems to the tooling UI, and to build/draw that UI.
 
 ## Core principles
 
 1. **The editor is the core center.** One `Editor` object owns the whole tool surface, reaches every runtime system through a single hub (`EditorContext`), and is driven by the engine's boot/loop/teardown.
-2. **`EditorUI` is the UI manager.** It owns the ImGui context, the component tree, and the platform backends; components never talk to the window or the GPU.
+2. **`EditorUI` is the UI manager.** `EditorUILib` owns the ImGui context, component tree, and platform backends; `EditorLib` only orchestrates tools. Components never talk to the window or GPU.
 3. **WSI and render are wrapped behind interfaces** so the UI system never hardcodes GLFW or a graphics API. `IEditorImguiWSI` (window/event) and `IEditorImguiRenderer` (drawing) are chosen by the active API at startup; components see only ImGui.
 4. **Component UI design.** The UI is a composable tree of `EditorUIComponent`s — windows, controls, and editor-specific panels are all components that render themselves into the current ImGui context.
 
@@ -14,13 +14,13 @@
 ```
 engine/editor/
   main.cpp                           application entry (owns nothing; boots the engine)
-  CMakeLists.txt                     EditorLib (STATIC) — owns the target + shared config, add_subdirectory per subdir
+  CMakeLists.txt                     EditorLib + EditorUILib (STATIC); shared target wiring
   editor.h/.cpp                      Editor — the core center
   context/
     CMakeLists.txt                   explicit sources → EditorLib
     editor_context.h/.cpp            EditorContext + global_editor_context (the hub)
   ui/
-    CMakeLists.txt                   explicit sources → EditorLib; add_subdirectory(component)
+    CMakeLists.txt                   explicit sources → EditorUILib; add_subdirectory(component)
     editor_ui.h/.cpp                 EditorUI — the UI manager
     component/
       CMakeLists.txt                 the 8 widget .cpp files, explicit
@@ -31,30 +31,30 @@ engine/editor/
       editor_scene_component.h       scene viewport (declared; impl pending)
       editor_camera_component.h      camera panel (declared; impl pending)
   platform/
-    CMakeLists.txt                   explicit sources → EditorLib
+    CMakeLists.txt                   explicit sources → EditorUILib
     editor_imgui_wsi.h               IEditorImguiWSI       (platform seam)
     editor_imgui_glfw_wsi.*          EditorImguiGLFWWSI    (GLFW implementation)
     editor_imgui_renderer.h          IEditorImguiRenderer  (render seam)
     editor_imgui_opengl_renderer.*   EditorImguiOpenglRenderer
     editor_imgui_vulkan_renderer.*   EditorImguiVulkanRenderer
   log/
-    CMakeLists.txt                   explicit sources → EditorLib
+    CMakeLists.txt                   explicit sources → EditorUILib
     editor_log_component.*           the log window (a window component fed by LogSystem)
   settings/
-    CMakeLists.txt                   explicit sources → EditorLib
-    editor_settings.*                config/settings.json loader (log colors; EditorLib-only)
+    CMakeLists.txt                   explicit sources → EditorUILib
+    editor_settings.*                config/settings.json loader (log colors; EditorUI-only)
   profile/
-    CMakeLists.txt                   explicit sources → EditorLib
+    CMakeLists.txt                   explicit sources → EditorUILib
     editor_metric.*                  EditorMetric base + EditorFuncMetric (the metric seam)
     editor_builtin_metrics.*         FPS / frame-time / memory metrics (sampler-injected)
     editor_profile_bar.*             bottom status bar component
 ```
 
-Headers sit beside their sources, and everything is included via the **engine root** (`"editor/..."` paths), matching how runtime code is included. `EditorLib` PUBLIC-exposes `${CMAKE_SOURCE_DIR}/engine` itself, so the parent no longer supplies an editor include path.
+Headers sit beside their sources, and everything is included via the **engine root** (`"editor/..."` paths), matching how runtime code is included. Both editor targets expose `${CMAKE_SOURCE_DIR}/engine` only as their project include root; their native UI dependencies remain private.
 
-**Build structure.** `EditorLib` is one STATIC target: [engine/editor/CMakeLists.txt](../../engine/editor/CMakeLists.txt) owns the target, the include root, and the link set (`RuntimeLib imgui glad nlohmann`, all PRIVATE), then `add_subdirectory`es each concern. Every subdirectory has its own small `CMakeLists.txt` that adds its sources explicitly via `target_sources(EditorLib PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/...)` — no `file(GLOB)`, so a stray `.cpp` can't silently join the build. `main.cpp` is deliberately **not** part of `EditorLib`: the root [CMakeLists.txt](../../CMakeLists.txt) compiles it into the `KimPeanutEngine` executable itself (the glob the old build used pulled it into the lib too, a latent duplicate-`main`).
+**Build structure.** [engine/editor/CMakeLists.txt](../../engine/editor/CMakeLists.txt) defines two STATIC targets. `EditorLib` contains `Editor` and `EditorContext`, links `RuntimeLib` + `EditorUILib`, and has no native graphics/UI dependency. `EditorUILib` contains `ui/`, `platform/`, `log/`, `settings/`, and `profile/`; it privately links `RuntimeLib`, ImGui, glad, `VulkanSDK`, and nlohmann. Every subdirectory has its own small `CMakeLists.txt` that adds sources explicitly with `target_sources` — no `file(GLOB)`, so a stray `.cpp` cannot silently join the build. `main.cpp` is deliberately in neither library: the root [CMakeLists.txt](../../CMakeLists.txt) compiles it into `KimPeanutEngine` itself.
 
-`EditorLib` is a STATIC lib; the exe is `engine/editor/main.cpp` + `EngineLib` (which INTERFACE-links `RuntimeLib` + `EditorLib`). `Engine` (in `RuntimeLib`) owns the `editor::Editor` instance, which is why `RuntimeLib` PRIVATE-links `EditorLib` while `EditorLib` PRIVATE-links `RuntimeLib` — a two-way static-lib dependency. It resolves at link time, but it deviates from the clean `Editor → Engine → …` layering and is a known wrinkle (see [Follow-up seams](#follow-up-seams)).
+`EditorLib` and `EditorUILib` are STATIC libraries; the exe is `engine/editor/main.cpp` + `EngineLib` (which INTERFACE-links `RuntimeLib` + `EditorLib`). `Engine` (in `RuntimeLib`) owns the `editor::Editor` instance, which is why `RuntimeLib` PRIVATE-links `EditorLib` while `EditorLib` reaches `RuntimeLib` through its own code and `EditorUILib` — a two-way static-lib dependency. It resolves at link time, but it deviates from the clean `Editor → Engine → …` layering and is a known wrinkle (see [Follow-up seams](#follow-up-seams)).
 
 ## Editor — the core center
 
@@ -104,7 +104,7 @@ Both seams live behind one virtual interface each and are selected once, by `Gra
 - **`EditorImguiOpenglRenderer`** ([.cpp](../../engine/editor/platform/editor_imgui_opengl_renderer.cpp)) — `imgui_impl_opengl3`, `#version 450`. Loads `glad` itself (the legacy GL backend that used to own the proc table isn't in the build) and owns the per-frame clear (`0.1` gray) as a stopgap until the reconstructed scene renderer returns. This is the working path today.
 - **`EditorImguiVulkanRenderer`** ([.cpp](../../engine/editor/platform/editor_imgui_vulkan_renderer.cpp)) — `imgui_impl_vulkan`, initialized from `VulkanEditorBridgeInfo` and records draw data through the frame-scoped `graphics::VulkanEditorBridge`. It owns ImGui's descriptor pool, sampler, and viewport texture descriptor, but only borrows backend device/swapchain/frame resources. It cannot retrieve a general command buffer, queue, context, or manager from `VulkanBackend`.
 
-The seam's value: swapping GL ↔ Vulkan, or GLFW ↔ SDL, is a one-line change in the factory. No component, and no `EditorUI` frame logic, is affected.
+The seam's value: swapping GL ↔ Vulkan, or GLFW ↔ SDL, is a one-line change in the factory. No component or `EditorLib` tool logic is affected. Vulkan headers and `Vk*` values remain private to `EditorUILib`'s Vulkan renderer implementation.
 
 ## Project settings (`config/settings.json`)
 

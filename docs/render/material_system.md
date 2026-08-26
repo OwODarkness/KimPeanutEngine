@@ -1,8 +1,8 @@
 # Material System V1
 
-**Status: planned design (2026-08-24).** Material System V1 is the next render
-reconstruction phase after the initial `MeshProxy` type. It replaces the
-temporary `MaterialInstanceHandle` alias in
+**Status: M4 frame-local binding implemented (2026-08-26).** Material System V1 is the
+next render reconstruction phase after the initial `MeshProxy` type. M1 has
+replaced the temporary `MaterialInstanceHandle` alias in
 [`MeshProxy`](../../engine/runtime/render/render_world/mesh_proxy.h) with a
 real render-owned handle system before `RenderWorld` registration and draw-list
 work begin.
@@ -29,13 +29,19 @@ World MeshComponent
 |---|---|
 | Material asset/reference selected by a World component | `world/` (future) |
 | Template/instance registry, parameter validation, pipeline request policy | `render/MaterialSystem` |
-| Pipeline cache and static mesh/texture/sampler GPU handles | `RenderSystem` render caches |
+| Pipeline/static mesh/texture/sampler GPU handles | render-private `RenderResourceResolver`, owned by `RenderSystem` |
 | Per-frame uniform ranges and descriptor/resource binding sets | `FrameContext` |
 | Native descriptor sets, pipelines, images, samplers | `graphics/` private implementation |
 
 `MaterialInstance` may borrow resolved common `TextureHandle` / `SamplerHandle`
 and reference a render pipeline key. It must not own `VkDescriptorSet`,
 `VkPipeline`, OpenGL IDs, or a frame-local `DescriptorSetHandle`.
+
+The logical `MaterialInstanceRecord` remains the source of truth for template
+identity and overrides. `RenderResourceResolver` keeps separate derived caches
+keyed by the same generational handles: template → pipeline handle and instance
+→ texture/sampler bindings by `MaterialParameterID`. Constants remain logical
+values until `FrameContext` packs them for a frame.
 
 ## V1 data model
 
@@ -49,11 +55,11 @@ struct MaterialTemplateDesc
 {
     asset::AssetID shader_program;
     MaterialDomain domain;          // Surface only in V1
-    MaterialBlendMode blend_mode;   // Opaque or alpha-blend
-    bool double_sided = false;
+    MaterialShadingModel shading_model;
+    MaterialPipelineState pipeline_state; // blend + culling + double-sided
 
     MaterialParameterLayout parameters;
-    PipelineStateDesc pipeline_state;
+    std::vector<MaterialPass> compatible_passes;
 };
 ```
 
@@ -71,21 +77,23 @@ parameters:
 struct MaterialInstanceDesc
 {
     MaterialTemplateHandle template_handle;
-    MaterialParameterValues values;
+    std::vector<MaterialParameterOverride> overrides;
 };
 ```
 
 V1 parameter kinds:
 
 - scalar (`float`);
-- vector/color (`float2`, `float3`, `float4` once the shared math/value type is
-  selected);
-- texture + sampler reference;
+- vector/color (`Vector4f` from the shared math module);
+- texture + API-neutral sampler reference (`MaterialTextureSamplerValue`);
 - optional normal/base-color/metallic/roughness semantic names for the first
   surface template.
 
 Parameters not declared by the template are rejected. Missing parameters use a
-template-defined default. A material instance is stable across frames; its
+template-defined `MaterialParameterValue` (`std::variant` of those three
+types). Parameter names resolve to a compact `MaterialParameterID` when the
+template is created; instances and future draw recording use the ID, never a
+string lookup. A material instance is stable across frames; its
 resolved GPU binding set is not.
 
 ## Binding lifetime
@@ -111,6 +119,15 @@ The material system prepares a `ResourceBindingSetDesc`; `FrameContext` owns the
 returned binding set and releases it when the frame slot retires. An instance
 must never cache that returned handle.
 
+M4 is wired through the bootstrap scene and `GraphicsSmoke`: `RenderScene`
+stores a `MaterialInstanceHandle`, asks `FrameContext` for a transient binding,
+then records the returned common pipeline and descriptor-set handles. The V1
+template declares each texture parameter's descriptor binding explicitly;
+binding 3 is reserved for the frame-packed material constant block. `float`
+and `Vector4f` constants use the defined scalar/16-byte-vector alignment
+layout. This is a temporary V1 binding convention, not shader reflection; a
+future serialized template/shader pair decides which constants it consumes.
+
 ## V1 scope
 
 Material System V1 must provide:
@@ -135,10 +152,10 @@ V1 explicitly does **not** provide:
 ## Build order
 
 ```text
-M1. Material handles + immutable template / instance records
-M2. Validate values and resolve static texture/sampler/pipeline dependencies
-M3. Build frame-local binding descriptions through FrameContext
-M4. Replace MeshProxy's temporary material alias with MaterialInstanceHandle
+M1. Material handles + immutable template / instance records (done)
+M2. Validate data-driven instance values and logical texture/sampler references (done)
+M3. Resolve pipelines/static texture+sampler resources and classify draw intent (done)
+M4. Build frame-local binding descriptions through FrameContext (done)
 M5. Build RenderWorld proxy registry and draw lists
 M6. Add shadow, G-buffer, lighting, then expand toward a render graph
 ```
@@ -149,3 +166,8 @@ Material V1 is complete when a renderable can refer to one valid,
 render-owned `MaterialInstanceHandle`; Render can derive a common pipeline and
 frame-local resource bindings from it; and neither World nor Graphics needs to
 know the other's implementation objects.
+
+## Task ledger
+
+Implementation order and acceptance criteria are tracked in
+[material_system_TODO.md](material_system_TODO.md).

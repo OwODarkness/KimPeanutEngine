@@ -4,6 +4,21 @@
 
 Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_reference.md) — *learned, not copied*.
 
+## Build encapsulation
+
+- [x] Keep `Graphics` native SDK dependencies and backend include root private
+  (2026-08-26). `glad`, `VulkanSDK`, GLFW, and `backend/` no longer propagate
+  from the `Graphics` target; the explicit `EditorUILib` Vulkan bridge links
+  `VulkanSDK` itself.
+- [x] Make `USE_OPENGL` and `USE_VULKAN` select backend sources and factory
+  availability (2026-08-26). An isolated OpenGL-only `Graphics` build passes;
+  a disabled API returns no backend rather than constructing an unavailable
+  implementation.
+- [ ] Split common public headers from implementation headers physically. The
+  present broad `engine/runtime` include root still lets an internal target name
+  `graphics/backend/vulkan/...` directly, even though CMake no longer exports
+  that path or its native dependencies.
+
 ## 1. Pipeline seams — shaders become `ShaderData`
 
 - [x] **`PipelineDesc` shaders are `data::ShaderData*` directly** — no `graphics::Shader` wrapper. Landed 2026-08-15: `Shader`/`ResourceShader`/`ShaderLoader` retired (the single-impl seam's `api` dispatch was redundant — each backend reads the field its own API needs: Vulkan `byte_code`, OpenGL `source`).

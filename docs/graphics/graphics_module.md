@@ -15,6 +15,25 @@ engine/runtime/graphics/backend/
 
 The `common/` types are the contract. The two backends are swappable implementations behind `RenderBackend::CreateGraphicsBackEnd(GraphicsAPIType)` ([`render_backend.cpp`](../../engine/runtime/graphics/backend/common/render_backend.cpp)).
 
+## Build boundary
+
+`Graphics` compiles common sources plus the backend source lists selected by
+`USE_OPENGL` and `USE_VULKAN`. The native libraries (`glad`, `VulkanSDK`, and
+GLFW) and the `backend/` source include root are **PRIVATE** implementation
+dependencies. Consumers receive only the common RHI target contract through
+their own module headers; they do not inherit native SDK include paths or link
+requirements. The `EditorUILib` Vulkan ImGui bridge is the explicit exception:
+it links `VulkanSDK` itself because it deliberately records Vulkan-only UI
+work. `EditorLib` remains the backend-agnostic editor-tool layer and does not
+link `VulkanSDK`, glad, or ImGui.
+
+An OpenGL-only configuration (`-DUSE_OPENGL=ON -DUSE_VULKAN=OFF`) compiles only
+the common and OpenGL sources; requesting a disabled API from the factory
+returns no backend. The current repository-wide `engine/runtime` include root
+still permits a determined internal target to spell a private file path. A
+future physical public/private header-directory split will make that include
+rule mechanically enforceable too.
+
 ## Key types
 
 ### Handles — [`common/api.h`](../../engine/runtime/graphics/backend/common/api.h)

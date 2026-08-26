@@ -15,7 +15,20 @@ The legacy OpenGL renderer (RenderShader, ShaderPool, RenderMaterial, RenderScen
 
 ### `RenderSystem` — the facade — [`render_system.h`](../../engine/runtime/render/render_system.h)
 
-The render-module facade. It owns the `ResourcePipeline` and the `RenderBackend` (both initialized with the chosen `GraphicsAPIType`) and **drains the async load queue** (`RuntimeContext::async_load_queue_`, passed in by pointer) in two modes: `PostInitialize` full-drains the bootstrap batch, and `Tick` budget-drains a bounded number of requests per frame. Shader-program requests load via `asset.LoadSync`, process through `resource.ProcessShader`, build the fixed `BuildDefaultPipelineDesc`, and enter a render-side `PipelineHandle` cache keyed by program `AssetID`. `RenderCacheEntry` is a request-result record: it pins the asset payload and holds exactly one typed `RenderResource` result (`PipelineHandle`, `MeshHandle`, or `TextureBinding { TextureHandle, SamplerHandle }`), keyed by `request_id` and polled via `IsReady` / `GetCached`. The separate type-specific caches own the deduplicated handles. `Tick` owns the RHI frame bracket; scenes own their camera/view state.
+The render-module facade. It owns the `ResourcePipeline`, `RenderBackend`,
+`RenderResourceResolver`, and `MaterialSystem` (all initialized for the chosen
+`GraphicsAPIType`) and **drains the async load queue**
+(`RuntimeContext::async_load_queue_`, passed in by pointer) in two modes:
+`PostInitialize` full-drains the bootstrap batch, and `Tick` budget-drains a
+bounded number of requests per frame. Shader-program requests load via
+`asset.LoadSync`, process through `resource.ProcessShader`, then ask the
+resolver to build/cache the current default pipeline. `RenderCacheEntry` is a
+request-result record: it pins the asset payload and holds exactly one typed
+`RenderResource` result (`PipelineHandle`, `MeshHandle`, or
+`TextureBinding { TextureHandle, SamplerHandle }`), keyed by `request_id` and
+polled via `IsReady` / `GetCached`. The resolver owns the deduplicated static
+RHI handles and destroys them before backend teardown. `Tick` owns the RHI
+frame bracket; scenes own their camera/view state.
 
 Initialization is bundle-based so dependencies can grow without an unstable
 positional signature: `RenderSystemInitInfo` carries the API, native window,
@@ -107,7 +120,7 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 
 ## Refactor status
 
-**In progress — legacy deprecated, queue consumer and pipeline/static-resource ownership in place, first scene in.** `RenderSystem` owns the `ResourcePipeline`, the `RenderBackend`, the RHI frame bracket, and fixed-default pipeline/mesh/texture/sampler caches. It drains the async load queue in two modes (bootstrap full-drain + per-frame budgeted drain), building one `PipelineHandle` per loaded shader program/default state and render-ready handles for queued mesh/texture/model assets. `Render` links `Asset` and `Graphics` (PRIVATE). **The demo scene landed as `RenderScene` (2026-08-15)** — it receives non-owning RHI handles, owns logical camera state, and describes UBO/texture bindings through `ResourceBindingSetDesc`; Vulkan descriptor pools, sets, and writes are hidden behind `DescriptorSetHandle`. **Phase 3.3 gives the scene an API-neutral `CommandRecorder`; Phase 3.4 introduces `FrameContext` so transient UBO and binding-set allocation belongs to the current frame rather than the scene.** The target design (render → asset → resource → graphics, `PipelineDesc` seam, async warmup) is unchanged. The dedicated loading thread is deferred — the render thread loads in-place, budgeted. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
+**In progress — legacy deprecated, queue consumer and pipeline/static-resource ownership in place, first scene in.** `RenderSystem` owns the `ResourcePipeline`, `RenderBackend`, RHI frame bracket, and a render-private `RenderResourceResolver`. The resolver owns fixed-default pipeline/mesh/texture/sampler creation, deduplication, and destruction; `RenderSystem` only drains requests and coordinates the result. It drains the async load queue in two modes (bootstrap full-drain + per-frame budgeted drain), building one `PipelineHandle` per loaded shader program/default state and render-ready handles for queued mesh/texture/model assets. `Render` links `Asset` and `Graphics` (PRIVATE). **The demo scene landed as `RenderScene` (2026-08-15)** — it receives non-owning RHI handles, owns logical camera state, and describes UBO/texture bindings through `ResourceBindingSetDesc`; Vulkan descriptor pools, sets, and writes are hidden behind `DescriptorSetHandle`. **Phase 3.3 gives the scene an API-neutral `CommandRecorder`; Phase 3.4 introduces `FrameContext` so transient UBO and binding-set allocation belongs to the current frame rather than the scene.** The target design (render → asset → resource → graphics, `PipelineDesc` seam, async warmup) is unchanged. The dedicated loading thread is deferred — the render thread loads in-place, budgeted. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
 
 ## Render roadmap
 
@@ -155,21 +168,31 @@ switching Vulkan/OpenGL changes only RHI execution. Do not add graph culling,
 automatic transient aliasing, or generalized barrier planning until this
 two-pass model has more than one real consumer. **Landed 2026-08-24.**
 
-### Render Phase 2 — Material System V1 (planned)
+### Render Phase 2 — Material System V1 (M1–M4 landed 2026-08-26)
 
-Replace `MeshProxy`'s temporary material alias with real render-owned template
-and instance handles. Material policy, pipeline requests, static
-texture/sampler references, and parameter validation belong in Render; frame
-binding sets remain owned by `FrameContext`. See
-[material_system.md](material_system.md).
+M1 replaced `MeshProxy`'s temporary material alias with real render-owned
+template and instance handles, immutable surface policy, and template-instance
+lifetime protection. M2 adds compact parameter IDs, typed sparse overrides,
+and default fallback. M3 resolves material shader/pipeline state and
+texture+sampler references through the render-private
+[`RenderResourceResolver`](../../engine/runtime/render/render_resource_resolver.h)
+which owns static-resource resolution and cache lifetime; MaterialSystem holds
+only readiness/diagnostic state. M4 makes `FrameContext` pack material constants
+and allocate the transient binding set; the bootstrap scene and graphics smoke
+now consume a real `MaterialInstanceHandle`, rather than a raw texture binding.
+`FrameContext` remains the owner of frame-local bindings. See
+[material_system.md](material_system.md) and
+[material_system_TODO.md](material_system_TODO.md).
 
-### Render Phase 3 — renderable proxy input (planned)
+### Render Phase 3 — renderable proxy input (first slice landed 2026-08-26)
 
 Before general graph work, reconstruct the gameplay-to-render input boundary:
-`MeshComponent` produces queued updates, while a render-owned `MeshProxy`
-registry supplies immutable frame snapshots for culling and draw-list creation.
-This gives shadow, G-buffer, and later graph passes real scene inputs instead
-of a bootstrap-only `RenderScene`. The design and task ledger are in
+`RenderWorld` now owns queued create/update/destroy commands, the generational
+`MeshProxy` registry, and immutable frame snapshots. The ScenePass submits every
+visible ready proxy through `FrameContext` and the common command recorder;
+there is deliberately no culling or sorting yet. This gives later shadow,
+G-buffer, and graph passes real scene inputs instead of a bootstrap-only
+`RenderScene`. The design and task ledger are in
 [world/component_module.md](../world/component_module.md) and
 [world/mesh_proxy_TODO.md](../world/mesh_proxy_TODO.md).
 

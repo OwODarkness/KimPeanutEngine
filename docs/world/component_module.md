@@ -1,7 +1,7 @@
 # World Components and Renderable Proxies
 
-**Status: future reconstruction plan only (2026-08-24).** There is no active
-`world` or component runtime module yet. The archived implementation under
+**Status: render-side MP1 foundation landed (2026-08-26); no active `world` or
+component runtime module exists yet.** The archived implementation under
 [`deprecated/component/`](../../deprecated/component/) and
 [`deprecated/render/`](../../deprecated/render/) is design history, not code to
 restore unchanged.
@@ -52,7 +52,7 @@ struct MeshProxy
 {
     RenderableHandle handle;       // render-owned generational identity
     graphics::MeshHandle mesh;     // render-private resolved resource
-    MaterialInstanceHandle material; // temporary alias; future render material identity
+    MaterialInstanceHandle material; // render-owned material identity
 
     Transform3f world_transform;
     AABB world_bounds;
@@ -60,10 +60,10 @@ struct MeshProxy
 };
 ```
 
-`AABB` and `MaterialInstanceHandle` are temporary aliases in
+`AABB` remains a temporary representation in
 [`mesh_proxy.h`](../../engine/runtime/render/render_world/mesh_proxy.h) until
-the World bounds type and render material-instance system exist. The invariants
-are not:
+World owns its canonical bounds type. `MaterialInstanceHandle` is already a
+real render-owned generational handle. The invariants are not:
 
 - no `Draw()` virtual function on the proxy;
 - no shader, VAO, descriptor, `Vk*`, or `gl*` field;
@@ -93,6 +93,12 @@ ScenePass / ShadowPass / later graph passes read the snapshot only
 Destroy must be deferred until the render thread has consumed all work that
 references the proxy. `RenderableHandle` generation validation rejects stale
 updates and stale destroys.
+
+The current `RenderWorld` implements this render-side boundary: value-only
+commands queue under a mutex, are applied at `RenderSystem::BeginFrame`, and
+produce value snapshots. The ScenePass currently submits every visible proxy
+with a valid mesh and ready material; it intentionally performs no frustum,
+partition, LOD, or occlusion culling yet.
 
 ## Relationship to the render graph
 

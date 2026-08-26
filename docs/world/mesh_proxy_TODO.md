@@ -1,12 +1,14 @@
 # Mesh Proxy Reconstruction TODO
 
-**Status: planned; documentation only as of 2026-08-24.**
+**Status: MP1 complete; MP2 basic unsorted submission complete as of 2026-08-26.**
 
 Design context: [component_module.md](component_module.md). This is a render
 input reconstruction phase, intentionally before a general render graph.
-Material System V1 ([material_system.md](../render/material_system.md)) is the
-next prerequisite: it replaces `MeshProxy`'s temporary material alias before
-the proxy registry stores material references.
+Material System V1 M1–M2 ([material_system.md](../render/material_system.md))
+is complete: `MeshProxy` already carries its real render-owned material handle,
+and instances now validate sparse typed overrides. The next material
+prerequisite for drawing is M3–M4 resource/pipeline and frame-binding
+resolution.
 
 ## Phase MP1 — render-owned mesh proxy foundation
 
@@ -15,19 +17,19 @@ renderables without reviving the deprecated OpenGL scene-proxy implementation.
 
 - [x] Define generational `RenderableHandle`, concrete `MeshProxy`,
   `RenderableFlags`, and a render-private mesh/material reference shape.
-  `AABB` (`std::array<float, 6>`) and `MaterialInstanceHandle` (`uint64_t`) are
-  deliberate temporary aliases until their owning World/material systems exist
-  (2026-08-24).
-- [ ] Define value-based create/update/destroy command payloads. Transform,
+  `AABB` (`std::array<float, 6>`) remains a deliberate temporary spatial
+  representation; `MaterialInstanceHandle` is now a real render-owned
+  generational handle (2026-08-25).
+- [x] Define value-based create/update/destroy command payloads. Transform,
   bounds, visibility, mesh/material identity, and shadow/opaque flags must be
   explicit; the payloads must not carry component pointers or native API types.
-- [ ] Add a `RenderWorld`/renderable registry owned by `RenderSystem`. It is the
+- [x] Add a `RenderWorld`/renderable registry owned by `RenderSystem`. It is the
   sole owner of `MeshProxy` storage and validates all handles.
-- [ ] Apply queued proxy commands only at the render-frame boundary, then expose
+- [x] Apply queued proxy commands only at the render-frame boundary, then expose
   an immutable frame snapshot for culling and draw-list construction.
-- [ ] Add headless contract tests for stale/forged handles, update-after-destroy
+- [x] Add headless contract tests for stale/forged handles, update-after-destroy
   rejection, command ordering, and snapshot isolation.
-- [ ] Add a temporary render-side producer so `GraphicsSmoke` can render one
+- [x] Add a temporary render-side producer so `GraphicsSmoke` can render one
   registered proxy before any world/component module is rebuilt.
 
 **Done when:** the render module can register, update, remove, and snapshot a
@@ -39,17 +41,20 @@ types, or a direct cross-thread pointer.
 **Goal:** replace bootstrap-scene-only submission with renderable-derived draw
 work.
 
-- [ ] Build a frustum-visible list from the immutable proxy snapshot.
+- [x] Build the initial no-culling list from the immutable proxy snapshot: every
+  visible proxy with a valid mesh and ready material is submitted. Frustum
+  culling is deliberately deferred.
 - [ ] Classify opaque, transparent, and shadow-casting renderables.
 - [ ] Sort opaque work by pipeline/material/mesh where the resulting order is
   legal for the pass.
-- [ ] Make the current scene pass consume this list through `FrameContext` and
+- [x] Make the current scene pass consume this list through `FrameContext` and
   `CommandRecorder` only.
-- [ ] Keep static GPU resource ownership in render caches; proxies borrow
+- [x] Keep static GPU resource ownership in render caches; proxies borrow
   resolved handles and never destroy them.
 
 **Done when:** the current scene image is produced from registered mesh proxies,
-not a hard-wired `RenderScene` demo instance.
+not a hard-wired `RenderScene` demo instance. This basic path landed
+2026-08-26; frustum culling and opaque sorting remain the next MP2 tasks.
 
 ## Phase MP3 — world component reconstruction
 
