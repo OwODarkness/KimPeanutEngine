@@ -43,6 +43,7 @@ deprecated/
 
 # Build output
 build/
+build-*/
 out/
 x64/
 cmake-build-*/
