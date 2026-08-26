@@ -19,6 +19,17 @@ Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_re
   `graphics/backend/vulkan/...` directly, even though CMake no longer exports
   that path or its native dependencies.
 
+## Capability contract
+
+- [x] Publish immutable common `GraphicsCapabilities` from `RenderBackend`
+  (2026-08-26). It reports the initialized engine path, not raw native feature
+  structs: both backends report their sampled-texture-stage limit, and bindless
+  textures remain false until descriptor indexing/GL bindless is enabled behind
+  one common resource-table design.
+- [ ] Define the common bindless texture-table lifetime and binding contract,
+  then enable the required Vulkan descriptor-indexing and OpenGL paths only
+  where that contract is implemented.
+
 ## 1. Pipeline seams — shaders become `ShaderData`
 
 - [x] **`PipelineDesc` shaders are `data::ShaderData*` directly** — no `graphics::Shader` wrapper. Landed 2026-08-15: `Shader`/`ResourceShader`/`ShaderLoader` retired (the single-impl seam's `api` dispatch was redundant — each backend reads the field its own API needs: Vulkan `byte_code`, OpenGL `source`).

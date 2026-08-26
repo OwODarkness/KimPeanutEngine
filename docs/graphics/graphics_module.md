@@ -126,6 +126,16 @@ CPU `data::MeshData` / `data::TextureData` plus common settings to
 handle storage to its mesh/texture/sampler managers, and performs API-specific
 uploads internally. Callers never access a manager or Vulkan/OpenGL context.
 
+`RenderBackend::GetCapabilities()` returns an immutable
+`GraphicsCapabilities` value populated once during backend initialization. It
+reports the effective common-RHI path, rather than the complete native driver
+feature set: `max_sampled_textures_per_shader_stage` is queried from the active
+device, while `bindless_textures` becomes true only after a backend enables the
+native feature *and* the common RHI exposes a bindless resource-table contract.
+It is intentionally false today on Vulkan and OpenGL; neither backend has that
+common path yet. This lets render policy choose portable behavior without
+including Vulkan/OpenGL feature structures or probing the native device.
+
 Resource binding follows the same rule (Phase 3.2, 2026-08-20).
 `ResourceBindingSetDesc` is a small variant of `UniformBufferBinding` and
 `SampledTextureBinding`, expressed only with RHI handles. The backend returns a

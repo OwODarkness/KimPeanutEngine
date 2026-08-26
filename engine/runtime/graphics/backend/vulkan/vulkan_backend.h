@@ -58,6 +58,7 @@ namespace kpengine::graphics
         bool DestroyBufferResource(BufferHandle handle) override;
 
     private:
+        void InitializeCapabilities();
         void InitVulkanContext();
         GraphicsContext CreateGraphicsContext() const;
         BufferHandle CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage);

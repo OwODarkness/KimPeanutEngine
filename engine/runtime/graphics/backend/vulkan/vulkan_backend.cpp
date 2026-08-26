@@ -42,6 +42,7 @@ namespace kpengine::graphics
 
         device_ = std::make_unique<VulkanDevice>();
         device_->Initialize(window);
+        InitializeCapabilities();
         memory_manager_ = std::make_unique<VulkanMemoryManager>(
             device_->GetPhysicalDevice(), device_->GetLogicalDevice());
         image_memory_manager_ = std::make_unique<VulkanImageMemoryManager>(*memory_manager_);
@@ -186,6 +187,18 @@ namespace kpengine::graphics
     {
         RenderBackend::FramebufferResizeCallback(event);
         swapchain_->MarkResized();
+    }
+
+    void VulkanBackend::InitializeCapabilities()
+    {
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(device_->GetPhysicalDevice(), &properties);
+        capabilities_.max_sampled_textures_per_shader_stage =
+            properties.limits.maxPerStageDescriptorSampledImages;
+
+        // Descriptor indexing is neither enabled on this logical device nor
+        // represented by a common bindless resource-table contract yet.
+        capabilities_.bindless_textures = false;
     }
 
     void VulkanBackend::InitVulkanContext()

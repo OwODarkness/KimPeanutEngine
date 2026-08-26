@@ -39,7 +39,21 @@ namespace kpengine::graphics
 
         GLFWwindow *window = static_cast<GLFWwindow *>(native_window);
         glfwGetWindowSize(window, &width_, &height_);
+        InitializeCapabilities();
     }
+
+    void OpenglBackend::InitializeCapabilities()
+    {
+        GLint max_texture_units = 0;
+        glGetIntegerv(GL_MAX_TEXTURE_IMAGE_UNITS, &max_texture_units);
+        capabilities_.max_sampled_textures_per_shader_stage =
+            max_texture_units > 0 ? static_cast<uint32_t>(max_texture_units) : 0;
+
+        // The common RHI has no bindless table, regardless of any optional
+        // vendor extension the active OpenGL driver may advertise.
+        capabilities_.bindless_textures = false;
+    }
+
     void OpenglBackend::BeginFrame()
     {
         frame_active_ = true;

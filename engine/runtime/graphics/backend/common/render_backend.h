@@ -7,6 +7,7 @@
 #include "math/math_header.h"
 #include "api.h"
 #include "command_recorder.h"
+#include "graphics_capabilities.h"
 #include "mesh.h"
 #include "pipeline_types.h"
 #include "resource_binding.h"
@@ -68,6 +69,7 @@ namespace kpengine::graphics
         virtual CommandRecorder *GetCommandRecorder() = 0;
         virtual void EndFrame() = 0;
         virtual GraphicsContext GetGraphicsContext() = 0;
+        const GraphicsCapabilities &GetCapabilities() const { return capabilities_; }
         virtual BufferHandle CreateUniformBuffer(uint32_t size) = 0;
         virtual void *MapUniformBuffer(BufferHandle handle, size_t size) = 0;
         virtual uint32_t GetCurrentFrameIndex() const = 0;
@@ -98,6 +100,7 @@ namespace kpengine::graphics
     protected:
         int width_ = 0;
         int height_ = 0;
+        GraphicsCapabilities capabilities_{};
     };
 }
 

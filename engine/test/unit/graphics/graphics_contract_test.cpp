@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "base/handle.h"
+#include "common/graphics_capabilities.h"
 #include "common/pipeline_validation.h"
 #include "data/shader.h"
 #include "render/pipeline_cache_key.h"
@@ -54,6 +55,13 @@ TEST(HandleSystem, RejectsForgedAndStaleHandles)
     EXPECT_FALSE(handles.IsHandleValid(forged));
     EXPECT_EQ(handles.Get(forged), KPENGINE_NULL_HANDLE);
     EXPECT_FALSE(handles.Destroy(forged));
+}
+
+TEST(GraphicsCapabilities, DefaultsToThePortableBoundResourcePath)
+{
+    const kpengine::graphics::GraphicsCapabilities capabilities{};
+    EXPECT_EQ(capabilities.max_sampled_textures_per_shader_stage, 0u);
+    EXPECT_FALSE(capabilities.bindless_textures);
 }
 
 TEST(PipelineValidation, AcceptsCompleteOpenGlDescription)

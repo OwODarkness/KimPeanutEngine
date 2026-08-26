@@ -65,6 +65,7 @@ namespace kpengine::graphics
         bool DestroyBufferResource(BufferHandle handle) override;
 
     private:
+        void InitializeCapabilities();
         GraphicsContext CreateGraphicsContext();
     private:
         std::unique_ptr<class MeshManager> mesh_manager_;
