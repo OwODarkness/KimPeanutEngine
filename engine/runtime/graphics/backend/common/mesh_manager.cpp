@@ -1,6 +1,10 @@
 #include "mesh_manager.h"
+#if KPENGINE_GRAPHICS_ENABLE_OPENGL
 #include "opengl/opengl_mesh.h"
+#endif
+#if KPENGINE_GRAPHICS_ENABLE_VULKAN
 #include "vulkan/vulkan_mesh.h"
+#endif
 #include "log/logger.h"
 namespace kpengine::graphics
 {
@@ -17,11 +21,21 @@ namespace kpengine::graphics
         MeshSlot& resource = resources_[handle.id];
         if(context.type == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
+#if KPENGINE_GRAPHICS_ENABLE_OPENGL
             resource.mesh = std::make_unique<OpenglMesh>();
+#endif
         }
         else if(context.type == GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
+#if KPENGINE_GRAPHICS_ENABLE_VULKAN
             resource.mesh = std::make_unique<VulkanMesh>();
+#endif
+        }
+
+        if (!resource.mesh)
+        {
+            handle_system_.Destroy(handle);
+            return {};
         }
 
         resource.mesh->Initialize(context, data);

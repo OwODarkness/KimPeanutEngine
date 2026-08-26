@@ -1,8 +1,10 @@
 #include "texture_manager.h"
+#if KPENGINE_GRAPHICS_ENABLE_VULKAN
 #include "vulkan/vulkan_texture.h"
-#include "vulkan/vulkan_context.h"
+#endif
+#if KPENGINE_GRAPHICS_ENABLE_OPENGL
 #include "opengl/opengl_texture.h"
-#include "opengl/opengl_context.h"
+#endif
 #include "log/logger.h"
 namespace kpengine::graphics
 {
@@ -17,13 +19,21 @@ namespace kpengine::graphics
 
         if (context.type == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
-            OpenglContext *ol_context = static_cast<OpenglContext *>(context.native);
+#if KPENGINE_GRAPHICS_ENABLE_OPENGL
             resource.texture = std::make_unique<OpenglTexture>();
+#endif
         }
         else if (context.type == GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
-            VulkanContext *vulkan_context = static_cast<VulkanContext *>(context.native);
+#if KPENGINE_GRAPHICS_ENABLE_VULKAN
             resource.texture = std::make_unique<VulkanTexture>();
+#endif
+        }
+
+        if (!resource.texture)
+        {
+            handle_system_.Destroy(handle);
+            return {};
         }
 
         resource.texture->Initialize(context, data, settings);

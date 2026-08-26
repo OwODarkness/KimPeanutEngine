@@ -1,6 +1,10 @@
 #include "sampler_manager.h"
+#if KPENGINE_GRAPHICS_ENABLE_OPENGL
 #include "opengl/opengl_sampler.h"
+#endif
+#if KPENGINE_GRAPHICS_ENABLE_VULKAN
 #include "vulkan/vulkan_sampler.h"
+#endif
 #include "log/logger.h"
 namespace kpengine::graphics
 {
@@ -16,11 +20,21 @@ namespace kpengine::graphics
 
         if (context.type == GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
+#if KPENGINE_GRAPHICS_ENABLE_VULKAN
             resource.sampler = std::make_unique<VulkanSampler>();
+#endif
         }
         else if (context.type == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
+#if KPENGINE_GRAPHICS_ENABLE_OPENGL
             resource.sampler = std::make_unique<OpenglSampler>();
+#endif
+        }
+
+        if (!resource.sampler)
+        {
+            handle_system_.Destroy(handle);
+            return {};
         }
 
         resource.sampler->Initialize(context, settings);

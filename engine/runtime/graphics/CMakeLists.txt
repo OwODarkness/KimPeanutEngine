@@ -1,15 +1,19 @@
 cmake_minimum_required(VERSION 3.5.0)
 
-option(USE_OPENGL "Use OpenGL backend" ON)
-option(USE_VULKAN "Use Vulkan backend" ON)
+option(USE_OPENGL "Build the OpenGL backend" ON)
+option(USE_VULKAN "Build the Vulkan backend" ON)
 
-add_library(Graphics STATIC
+set(GRAPHICS_COMMON_SOURCES
     backend/common/render_backend.cpp
     backend/common/pipeline_validation.cpp
     backend/common/texture_manager.cpp
     backend/common/sampler_manager.cpp
     backend/common/mesh_manager.cpp
+)
 
+set(GRAPHICS_BACKEND_SOURCES)
+if(USE_OPENGL)
+    list(APPEND GRAPHICS_BACKEND_SOURCES
     backend/opengl/opengl_backend.cpp
     backend/opengl/opengl_texture.cpp
     backend/opengl/opengl_sampler.cpp
@@ -17,7 +21,11 @@ add_library(Graphics STATIC
     backend/opengl/opengl_pipeline.cpp
     backend/opengl/opengl_pipeline_manager.cpp
     backend/opengl/opengl_descriptorset.cpp
+    )
+endif()
 
+if(USE_VULKAN)
+    list(APPEND GRAPHICS_BACKEND_SOURCES
     backend/vulkan/vulkan_backend.cpp
     backend/vulkan/vulkan_device.cpp
     backend/vulkan/vulkan_swapchain.cpp
@@ -37,13 +45,31 @@ add_library(Graphics STATIC
     backend/vulkan/vulkan_sampler.cpp
     backend/vulkan/vulkan_mesh.cpp
     )
+endif()
 
-target_include_directories(Graphics 
-    PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/backend
+if(NOT USE_OPENGL AND NOT USE_VULKAN)
+    message(FATAL_ERROR "Graphics requires USE_OPENGL or USE_VULKAN")
+endif()
+
+add_library(Graphics STATIC
+    ${GRAPHICS_COMMON_SOURCES}
+    ${GRAPHICS_BACKEND_SOURCES}
+)
+
+target_include_directories(Graphics
+    # Backend source files can include common/, vulkan/, and opengl/ directly.
+    # Consumers receive no backend include root from this target.
+    PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/backend
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tool/..
 )
 
 target_link_libraries(Graphics
-    PUBLIC Core glad VulkanSDK
-    PRIVATE Data Asset glfw )
+    PUBLIC Core
+    PRIVATE Data Asset glfw glad VulkanSDK
+)
+
+target_compile_definitions(Graphics PRIVATE
+    KPENGINE_GRAPHICS_ENABLE_OPENGL=$<BOOL:${USE_OPENGL}>
+    KPENGINE_GRAPHICS_ENABLE_VULKAN=$<BOOL:${USE_VULKAN}>
+)
 
