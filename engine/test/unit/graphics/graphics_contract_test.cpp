@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "base/handle.h"
+#include "common/bindless_texture.h"
 #include "common/graphics_capabilities.h"
 #include "common/pipeline_validation.h"
 #include "data/shader.h"
@@ -62,6 +63,76 @@ TEST(GraphicsCapabilities, DefaultsToThePortableBoundResourcePath)
     const kpengine::graphics::GraphicsCapabilities capabilities{};
     EXPECT_EQ(capabilities.max_sampled_textures_per_shader_stage, 0u);
     EXPECT_FALSE(capabilities.bindless_textures);
+    EXPECT_EQ(capabilities.bindless_texture_table_capacity, 0u);
+    EXPECT_FALSE(capabilities.SupportsBindlessTextures());
+}
+
+TEST(BindlessTextureContract, DefinesAStableSampledTextureTableAbi)
+{
+    using kpengine::graphics::BindlessTextureTableLayout;
+    using kpengine::graphics::GraphicsCapabilities;
+
+    EXPECT_EQ(BindlessTextureTableLayout::shader_abi_version, 1u);
+    EXPECT_EQ(BindlessTextureTableLayout::descriptor_set, 1u);
+    EXPECT_EQ(BindlessTextureTableLayout::descriptor_binding, 0u);
+    EXPECT_TRUE(kpengine::graphics::IsBindlessTextureTableCapacityValid(1));
+    EXPECT_TRUE(kpengine::graphics::IsBindlessTextureTableCapacityValid(
+        BindlessTextureTableLayout::max_capacity));
+    EXPECT_FALSE(kpengine::graphics::IsBindlessTextureTableCapacityValid(0));
+    EXPECT_FALSE(kpengine::graphics::IsBindlessTextureTableCapacityValid(
+        BindlessTextureTableLayout::max_capacity + 1));
+
+    const GraphicsCapabilities incomplete{0, true, 0};
+    const GraphicsCapabilities ready{0, true, 64};
+    EXPECT_FALSE(incomplete.SupportsBindlessTextures());
+    EXPECT_TRUE(ready.SupportsBindlessTextures());
+}
+
+TEST(BindlessTextureContract, UsesTheCommonGenerationalHandleRepresentation)
+{
+    const kpengine::graphics::BindlessTextureHandle invalid{};
+    const kpengine::graphics::BindlessTextureHandle slot{7, 3};
+
+    EXPECT_FALSE(invalid.IsValid());
+    EXPECT_TRUE(slot.IsValid());
+    EXPECT_EQ(slot.id, 7u);
+    EXPECT_EQ(slot.generation, 3u);
+}
+
+TEST(BindlessTextureSlotAllocator, DefersReleasedSlotReuseUntilSubmissionCompletes)
+{
+    kpengine::graphics::BindlessTextureSlotAllocator allocator{2};
+    const auto first = allocator.Allocate();
+    const auto second = allocator.Allocate();
+    EXPECT_TRUE(first.IsValid());
+    EXPECT_TRUE(second.IsValid());
+    EXPECT_FALSE(allocator.Allocate().IsValid());
+    EXPECT_EQ(allocator.GetTelemetry().allocation_failures, 1u);
+
+    EXPECT_TRUE(allocator.Release(first, 5));
+    EXPECT_FALSE(allocator.IsAllocated(first));
+    EXPECT_FALSE(allocator.Release(first, 5));
+    EXPECT_EQ(allocator.GetTelemetry().retired_slots, 1u);
+    EXPECT_FALSE(allocator.Allocate().IsValid());
+
+    allocator.CollectCompleted(4);
+    EXPECT_FALSE(allocator.Allocate().IsValid());
+    allocator.CollectCompleted(5);
+
+    const auto reused = allocator.Allocate();
+    EXPECT_EQ(reused.id, first.id);
+    EXPECT_NE(reused.generation, first.generation);
+    EXPECT_TRUE(allocator.IsAllocated(reused));
+    EXPECT_EQ(allocator.GetTelemetry().retired_slots, 0u);
+}
+
+TEST(BindlessTextureSlotAllocator, RejectsInvalidCapacity)
+{
+    kpengine::graphics::BindlessTextureSlotAllocator allocator{
+        kpengine::graphics::BindlessTextureTableLayout::max_capacity + 1};
+
+    EXPECT_FALSE(allocator.Allocate().IsValid());
+    EXPECT_EQ(allocator.GetTelemetry().capacity, 0u);
 }
 
 TEST(PipelineValidation, AcceptsCompleteOpenGlDescription)

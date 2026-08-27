@@ -6,6 +6,7 @@
 #include "delegate/event_dispatcher.h"
 #include "math/math_header.h"
 #include "api.h"
+#include "bindless_texture.h"
 #include "command_recorder.h"
 #include "graphics_capabilities.h"
 #include "mesh.h"
@@ -63,6 +64,21 @@ namespace kpengine::graphics
         virtual DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) = 0;
         virtual bool DestroyResourceBindingSet(DescriptorSetHandle handle) = 0;
+        // Optional sampled-texture table. The default records no slot so a
+        // backend that has not enabled the full common contract cannot expose
+        // a partial native bindless feature.
+        virtual BindlessTextureHandle AcquireBindlessTexture(TextureHandle texture,
+                                                              SamplerHandle sampler)
+        {
+            (void)texture;
+            (void)sampler;
+            return {};
+        }
+        virtual bool ReleaseBindlessTexture(BindlessTextureHandle handle)
+        {
+            (void)handle;
+            return false;
+        }
         virtual void BindResourceBindingSet(PipelineHandle pipeline,
                                             DescriptorSetHandle handle) = 0;
         virtual void BeginFrame() = 0;
