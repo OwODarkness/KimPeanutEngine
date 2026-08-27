@@ -136,6 +136,129 @@ It is intentionally false today on Vulkan and OpenGL; neither backend has that
 common path yet. This lets render policy choose portable behavior without
 including Vulkan/OpenGL feature structures or probing the native device.
 
+### Planned bindless texture path
+
+Bindless is planned as an **optional sampled-texture binding mode**, not as a
+general escape hatch for native descriptor heaps or OpenGL texture handles. In
+the existing bound path, a material's texture is written into a transient
+`ResourceBindingSetDesc` and is selected before a draw. In the bindless path,
+the material carries a small common table index; shaders use that index to
+sample an RHI-owned global texture table. The render module still owns material
+policy and decides whether to use the path; Graphics owns the table's GPU
+representation, native descriptor/handle state, and deferred slot reuse.
+
+```text
+MaterialInstance -> common bindless texture slot -> shader table lookup
+                       |                         |
+                       +-- Graphics owns native --+
+                           Vulkan descriptor table / GL resident handle table
+```
+
+For an opt-in material template, `FrameContext` omits ordinary sampled-texture
+bindings and writes the table slot IDs into the beginning of its set-0,
+binding-3 material block. V1 is a `std140 uvec4 texture_indices[]` prefix with
+one 16-byte element per material parameter; the parameter ID is the array
+index and `.x` is the common generational slot ID. A compatible shader must
+use this table lookup; if the capability is absent or a slot cannot be acquired,
+the resolver clears the partial cache and retains ordinary material bindings.
+One shader-program asset carries both bound and bindless variants. Graphics
+capability selection chooses the bindless variant only when the table is
+available; otherwise it selects the ordinary variant and per-draw bindings.
+
+The normal engine bootstrap config names one `shader_program`. Changing the
+backend's effective `GraphicsCapabilities::bindless_textures` result changes
+the active variant at template resolution; it does not require a scene-code
+switch or a native API branch.
+
+`ShaderProcessor` supplies exactly one target macro to compatible shader
+sources: `KP_GRAPHICS_API_VULKAN` or `KP_GRAPHICS_API_OPENGL`. The V1 sample
+uses one fragment source with `KP_USE_BINDLESS` to declare Vulkan's set-1
+runtime sampler array or OpenGL's resident-handle SSBO without leaking either
+declaration into Render. Pipeline cache keys include the binding model, so a
+bound and bindless variant cannot reuse an incompatible descriptor layout.
+
+The first scope is sampled textures only. Buffers, storage images, acceleration
+structures, and arbitrary descriptor arrays are separate decisions: they must
+not be folded into a vague `bindless` flag simply because an API supports them.
+The common handle will be generational, so a released texture-table slot cannot
+silently refer to a newly allocated texture. A slot remains unavailable for
+reuse until every submitted frame that could read it has completed. The table
+must also have a fixed shader-visible layout/version, an explicit capacity, and
+a defined fallback when the capability is unavailable or exhausted.
+
+The B0 common ABI is version `1`: it reserves descriptor set `1`, binding `0`
+for the sampled-texture table and caps V1 at 4096 slots. Shader preprocessing
+publishes `KP_BINDLESS_TEXTURE_TABLE_ABI_VERSION`,
+`KP_BINDLESS_TEXTURE_TABLE_SET`, and `KP_BINDLESS_TEXTURE_TABLE_BINDING`; a
+compatible shader declares the backend-appropriate sampled-array form with
+those values. A material passes only the `BindlessTextureHandle` slot index,
+never a native resource handle. `GraphicsCapabilities` exposes only
+whether this complete common path is usable and its clamped table capacity. An
+invalid acquired slot, an unavailable capability, or an exhausted table means
+the renderer must use the ordinary `ResourceBindingSetDesc` material binding.
+The B0 API defines allocation/release requests, but the default backend
+implementation deliberately returns an invalid slot until B2/B3 establish
+native creation, visibility, and retirement semantics.
+
+### Bindless slot lifetime protocol (B1)
+
+`BindlessTextureSlotAllocator` is common, CPU-only lifetime policy that each
+backend-private table will own. It neither stores textures nor creates native
+descriptors/handles. Allocation returns a generational slot; release makes that
+slot immediately invalid to callers, increments its generation, and quarantines
+the physical table index behind the caller-supplied monotonic submission serial.
+Only `CollectCompleted(completed_serial)` may return a quarantined index to the
+allocator. This keeps a stale material slot from aliasing either a replacement
+or a later texture while earlier GPU work can still read the old entry.
+
+The required backend protocol is:
+
+1. Queue creates and replacements as pending table writes. Apply them before
+   command recording begins for their target frame; writes requested after
+   recording starts become visible no earlier than the following frame.
+2. When releasing a slot, include the last submission that could reference it:
+   the most recently submitted frame plus the current frame's pending serial if
+   it is recording. Keep the old native descriptor/resident handle alive until
+   that serial is complete.
+3. At a frame-slot fence completion point, report the completed submission to
+   `CollectCompleted`, then recycle matching indices. No normal update or
+   release may call `WaitIdle`.
+
+V1 capacity is fixed for the initialized table. The allocator publishes its
+configured capacity, allocated count, quarantined count, and allocation-failure
+count so B2/B3 can provide deterministic exhaustion telemetry. If a 16-bit
+generation would wrap to zero, the index stays permanently quarantined rather
+than making an old handle valid again.
+
+Vulkan will require a deliberately enabled descriptor-indexing feature set,
+descriptor-set layout/pool flags, and update/reuse synchronization. OpenGL will
+require the chosen bindless texture extension, a resident-handle lifetime, and
+the equivalent table upload. Those details stay private to their backends.
+`GraphicsCapabilities::bindless_textures` turns true only after the complete
+common contract exists and the initialized backend can honor it; a driver
+advertising an extension alone is insufficient.
+
+Vulkan completes this path when descriptor indexing supports runtime sampled
+arrays, non-uniform sampled-image indexing, partially bound descriptors, and
+the update-after-bind subset. It allocates one private global descriptor set per
+frame slot, applies requested table entries only after that slot fence completes,
+and binds the current set at the reserved layout position whenever a pipeline is
+bound. Pipeline layouts reserve set `1` while the table is enabled; ordinary
+set-`0` material bindings remain unchanged. A release invalidates the common
+slot immediately but retains both its descriptor reference and physical index
+until the recorded submission serial is complete. Unsupported devices expose
+zero table capacity and continue through ordinary resource bindings.
+
+OpenGL completes the same V1 contract only when both
+`GL_ARB_bindless_texture` and `GL_ARB_gpu_shader_int64` are present and the
+three resident-handle entry points load successfully. Its private table is a
+shader-storage buffer of resident `GLuint64` texture/sampler handles bound at
+the logical V1 binding. The current OpenGL backend has one frame slot: it fences
+the submitted frame, waits that fence before its next table update, and only
+makes released handles non-resident after it completes. A driver without the
+extension path reports zero capacity; ordinary texture-unit bindings remain the
+fallback.
+
 Resource binding follows the same rule (Phase 3.2, 2026-08-20).
 `ResourceBindingSetDesc` is a small variant of `UniformBufferBinding` and
 `SampledTextureBinding`, expressed only with RHI handles. The backend returns a

@@ -30,6 +30,104 @@ Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_re
   then enable the required Vulkan descriptor-indexing and OpenGL paths only
   where that contract is implemented.
 
+## Bindless textures — planned, optional path
+
+**Goal:** let material shaders address a large RHI-owned sampled-texture table
+by a common generational slot, while retaining the current per-draw bound
+resource path as a correct fallback. This is not a request to expose Vulkan
+descriptor sets, `VkDescriptorIndexing*`, or `GLuint64` texture handles above
+Graphics.
+
+### B0 — establish the common contract before enabling a backend
+
+- [x] Limit V1 to sampled textures. Explicitly defer bindless buffers, storage
+  images, acceleration structures, and generic descriptor arrays.
+- [x] Define a common `BindlessTextureHandle`/slot with generation validation,
+  invalid value semantics, and an explicit maximum table capacity.
+- [x] Define the table owner: Graphics owns GPU/native table state; Render owns
+  material selection and requests slot allocation/release using ordinary
+  `TextureHandle` and `SamplerHandle` inputs.
+- [x] Define the shader-visible table layout, binding/set convention, shader
+  preprocessor contract, and versioning rule. A material uses a table index,
+  never a backend-native handle.
+- [x] Specify fallback behavior: unsupported devices and capacity exhaustion
+  use ordinary `ResourceBindingSetDesc` bindings; no draw may silently sample a
+  different texture.
+- [x] Expand `GraphicsCapabilities` only with effective, common-path facts
+  needed by the decision (for example supported mode and usable table capacity),
+  never with native API structs or raw extension lists.
+
+### B1 — lifetime, update, and frame safety
+
+- [x] Design slot allocation, replacement, release, and generation validation.
+- [x] Define when a texture/sampler table write becomes visible to recording
+  and when it is legal to overwrite a descriptor or make a resident handle
+  non-resident.
+- [x] Defer slot reuse until all frame slots/submitted GPU work that could read
+  the old entry are complete; integrate this with the existing backend frame
+  lifecycle rather than adding a global `WaitIdle`.
+- [x] Decide table growth policy and telemetry (requested capacity, allocated
+  slots, exhaustion), including deterministic test limits.
+
+### B2 — Vulkan backend implementation
+
+**Completion rule:** B2 is one atomic Vulkan milestone. Do not mark any B2
+item complete, expose a usable table capacity, or set
+`GraphicsCapabilities::bindless_textures` until all six requirements below are
+implemented and validated together. A descriptor pool/table that no compatible
+pipeline can bind and sample is not an implementation milestone.
+
+- [x] Query and enable the required descriptor-indexing feature subset during
+  logical-device creation; report bindless unavailable if the enabled device
+  path cannot satisfy the B0 contract.
+- [x] Create backend-private descriptor-set layouts, pools, allocation, and
+  update strategy with the required binding/layout flags and variable-count
+  policy where chosen.
+- [x] Implement a backend-private slot allocator and deferred retirement tied
+  to frame completion. Do not publish `VkDescriptorSet`, `VkImageView`, or
+  descriptor-indexing feature structs.
+- [x] Update Vulkan pipeline layout/shader compilation inputs for the stable
+  bindless table convention, without breaking the ordinary bound-material path.
+- [x] Bind the global table for every compatible Vulkan pipeline through
+  `VulkanCommandRecorder`, and drive B1 retirement from the exact per-frame
+  submission serial whose fence completed.
+- [x] Enable the common capability only after the device feature path, table,
+  pipeline layout, recorder binding, and submission-safe reuse path all have
+  runtime validation.
+
+### B3 — OpenGL backend implementation
+
+- [x] Select and validate the required OpenGL bindless-texture extension path;
+  report unavailable when it is absent.
+- [x] Own resident texture-handle creation/non-residency and the GPU-visible
+  table privately; match B1 deferred-reuse guarantees.
+- [x] Apply the same common shader table convention and material fallback as
+  Vulkan. Do not expose `GLuint64` handles to Render or Editor.
+
+### B4 — render and material adoption
+
+- [x] Add material-template metadata that opts a compatible shader/pipeline
+  into the bindless convention; keep the template data serializable and API
+  neutral.
+- [x] Let the material resolver cache common bindless slots for ready texture
+  bindings and invalidate/retire them when source handles change.
+- [x] Let `FrameContext` select the bindless or ordinary binding path from
+  `GraphicsCapabilities`; `MeshProxy` remains unaware of native GPU bindings.
+- [x] Add one real multi-material scene that demonstrates fewer per-draw
+  texture-binding updates while preserving identical output on the fallback.
+
+### B5 — validation and rollout
+
+- [ ] Add headless tests for generational slots, capacity exhaustion, fallback
+  selection, and deferred reuse scheduling.
+- [ ] Add Vulkan conditional contract tests for unsupported and enabled paths;
+  retain explicit skip reporting when the machine lacks the required feature.
+- [ ] Extend `GraphicsSmoke` with multiple material textures and run it through
+  Vulkan and OpenGL. Compare the bindless path with the bound fallback where
+  both are available.
+- [x] Keep bindless opt-in until both backend behavior, lifetime rules, shader
+  convention, and fallback behavior have runtime evidence.
+
 ## 1. Pipeline seams — shaders become `ShaderData`
 
 - [x] **`PipelineDesc` shaders are `data::ShaderData*` directly** — no `graphics::Shader` wrapper. Landed 2026-08-15: `Shader`/`ResourceShader`/`ShaderLoader` retired (the single-impl seam's `api` dispatch was redundant — each backend reads the field its own API needs: Vulkan `byte_code`, OpenGL `source`).

@@ -19,6 +19,33 @@
   and OpenGL expose their sampled-texture-stage limit without leaking native
   properties; bindless textures deliberately report unavailable until one
   common resource-table contract enables them. → [graphics module](graphics/graphics_module.md)
+- **Vulkan bindless sampled-texture table (B2, 2026-08-27)** — Vulkan now
+  enables only the descriptor-indexing subset required by the common V1 table,
+  when available. Graphics privately owns per-frame descriptor sets, deferred
+  slot/resource retirement by completed submission serial, and global set-1
+  binding; unsupported devices retain the ordinary bound-resource path. The
+  smoke test exercised allocation, frame-boundary update, binding, retirement,
+  and Vulkan/OpenGL fallback. → [graphics module](graphics/graphics_module.md)
+- **OpenGL bindless sampled-texture table (B3, 2026-08-27)** — OpenGL now
+  enables the V1 table only with `GL_ARB_bindless_texture` plus GPU 64-bit
+  shader support. The backend owns resident handles in a private SSBO and uses
+  a frame fence for deferred non-residency/reuse; unsupported drivers retain
+  ordinary texture-unit bindings. → [graphics module](graphics/graphics_module.md)
+- **Bindless material adoption (B4, 2026-08-27)** — Material templates can
+  opt a compatible shader into the V1 texture-table convention. The resolver
+  owns per-instance common slots and falls back atomically to ordinary bindings
+  on unavailable capability or allocation failure; `FrameContext` supplies
+  the table indices in its material UBO prefix. → [graphics module](graphics/graphics_module.md)
+- **Bindless validation and rollout evidence (B5, 2026-08-27)** — The shader
+  processor selects target-specific bindless declarations without exposing
+  native APIs above Graphics; templates can select a bindless program while
+  retaining their ordinary fallback program. `GraphicsSmoke` renders two
+  textures through both bindless and bound material variants on Vulkan and
+  OpenGL, asserting mode selection and slot coverage. → [graphics module](graphics/graphics_module.md)
+- **Runtime bindless selection (2026-08-27)** — The bootstrap scene uses one
+  shader-program asset containing ordinary and bindless compile variants.
+  Render selects the bindless material path strictly from effective backend
+  capability, retaining bound materials as the fallback. → [graphics module](graphics/graphics_module.md)
 - **RHI shader/pipeline seam (2026-08-15–20)** — shaders reach the backends as `data::ShaderData`: `PipelineDesc` holds `data::ShaderData*` directly (no `graphics::Shader` wrapper — `Shader`/`ResourceShader`/`ShaderLoader` retired); `CreatePipelineResource(PipelineDesc)` bakes caller-built descriptions into independently destroyable `PipelineHandle`s, while `RenderBackend::Initialize(WindowHandle)` only creates backend/frame state. The path-keyed `ShaderManager` (+ `shader_factory`, `vulkan_shader`, `opengl_shader`) is **retired and deleted**. The `rhi_example` creates two pipeline handles after runtime shader baking. The build-time `glslc` step and the `ShaderModule` seam landed retired 2026-08-16 ([TODO](graphics/TODO.md)). → [vulkanbackend.md](graphics/vulkanbackend.md)
 - **Render-owned pipeline warmup (Phase 2 slice, 2026-08-20)** — `RenderSystem` now owns `RenderBackend`, initializes it with the runtime window/resize dispatcher, drives `BeginFrame`/`EndFrame`, and owns a fixed-default pipeline builder/cache. Bootstrap shader programs flow `LoadSync` → `ProcessShader` → `BuildDefaultPipelineDesc` → `CreatePipelineResource`; the cache keys packed program `AssetID`s and retains `PipelineHandle`s until render shutdown. Material-driven states and API-neutral recording remain next. → [render_module.md](render/render_module.md)
 - **Static GPU-resource ownership (Phase 3.1, 2026-08-20)** — `RenderBackend` now exposes common mesh/texture/sampler create/destroy APIs; its private managers and Vulkan/OpenGL upload details remain hidden. `RenderSystem` caches handles for queued mesh, model, and texture assets; each `RenderCacheEntry` exposes one type-safe result variant rather than a loose collection of optional handles. `RenderScene` accepts borrowed static resource handles and no longer loads assets, uploads GPU data, or destroys those resources. Vulkan descriptor/command code remains in the scene until Phases 3.2–3.3. → [TODO.md](graphics/TODO.md)
