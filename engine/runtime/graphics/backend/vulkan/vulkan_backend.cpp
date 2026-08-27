@@ -4,6 +4,7 @@
 #include <GLFW/glfw3.h>
 #include "log/logger.h"
 #include "vulkan_buffer_manager.h"
+#include "vulkan_bindless_texture_table.h"
 #include "vulkan_memory_manager.h"
 #include "vulkan_swapchain.h"
 #include "vulkan_frame_context.h"
@@ -42,7 +43,6 @@ namespace kpengine::graphics
 
         device_ = std::make_unique<VulkanDevice>();
         device_->Initialize(window);
-        InitializeCapabilities();
         memory_manager_ = std::make_unique<VulkanMemoryManager>(
             device_->GetPhysicalDevice(), device_->GetLogicalDevice());
         image_memory_manager_ = std::make_unique<VulkanImageMemoryManager>(*memory_manager_);
@@ -54,6 +54,22 @@ namespace kpengine::graphics
 
         frame_context_ = std::make_unique<VulkanFrameContext>();
         frame_context_->Initialize(device_.get(), static_cast<uint32_t>(swapchain_->GetImageCount()));
+        if (device_->SupportsBindlessTextures())
+        {
+            auto candidate = std::make_unique<VulkanBindlessTextureTable>();
+            if (candidate->Initialize(device_->GetLogicalDevice(),
+                                      device_->GetBindlessTextureTableCapacity(),
+                                      VulkanFrameContext::MAX_FRAMES_IN_FLIGHT))
+            {
+                bindless_texture_table_ = std::move(candidate);
+            }
+            else
+            {
+                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_WARNING,
+                       "Vulkan descriptor indexing is available, but bindless table creation failed; using bound resources");
+            }
+        }
+        InitializeCapabilities();
         editor_bridge_ = std::make_unique<VulkanEditorBridge>(*device_, *swapchain_, *frame_context_);
         upload_context_ = std::make_unique<VulkanUploadContext>();
         upload_context_->Initialize(device_.get(), frame_context_.get(), buffer_manager_.get());
@@ -72,6 +88,12 @@ namespace kpengine::graphics
         // 3. caller selects render targets and records draws, then EndFrame submits
 
         frame_context_->WaitForInFlightFence();
+        if (bindless_texture_table_)
+        {
+            bindless_texture_table_->PrepareFrame(
+                device_->GetLogicalDevice(), frame_context_->GetCurrentFrameIndex(),
+                frame_context_->GetCompletedSubmissionSerial(), *texture_manager_, *sampler_manager_);
+        }
 
         uint32_t image_index;
         VkResult acquire_image_res = frame_context_->AcquireNextImage(swapchain_->GetSwapchain(), image_index);
@@ -105,7 +127,8 @@ namespace kpengine::graphics
         command_recorder_ = std::make_unique<VulkanCommandRecorder>();
         command_recorder_->Begin(frame_context_->GetCurrentSceneCommandBuffer(), *pipeline_manager_,
                                  *descriptor_set_manager_, *buffer_manager_, *mesh_manager_,
-                                 *render_target_manager_);
+                                 *render_target_manager_, bindless_texture_table_.get(),
+                                 frame_context_->GetCurrentFrameIndex());
         frame_active_ = true;
     }
 
@@ -163,6 +186,11 @@ namespace kpengine::graphics
         // them before the backend; only backend-owned GPU state lives here now.
         descriptor_set_manager_->DestroyAll(device_->GetLogicalDevice());
         pipeline_manager_->DestroyAll(device_->GetLogicalDevice());
+        if (bindless_texture_table_)
+        {
+            bindless_texture_table_->Destroy(device_->GetLogicalDevice());
+            bindless_texture_table_.reset();
+        }
 
         buffer_manager_->DestroyAll(device_->GetLogicalDevice());
         image_memory_manager_.reset();
@@ -196,9 +224,10 @@ namespace kpengine::graphics
         capabilities_.max_sampled_textures_per_shader_stage =
             properties.limits.maxPerStageDescriptorSampledImages;
 
-        // Descriptor indexing is neither enabled on this logical device nor
-        // represented by a common bindless resource-table contract yet.
-        capabilities_.bindless_textures = false;
+        capabilities_.bindless_textures = bindless_texture_table_ && bindless_texture_table_->IsReady();
+        capabilities_.bindless_texture_table_capacity = capabilities_.bindless_textures
+                                                             ? device_->GetBindlessTextureTableCapacity()
+                                                             : 0;
     }
 
     void VulkanBackend::InitVulkanContext()
@@ -241,7 +270,17 @@ namespace kpengine::graphics
                    "Rejected invalid Vulkan pipeline descriptor");
             return {};
         }
-        return pipeline_manager_->CreatePipelineResource(device_->GetLogicalDevice(), desc);
+        if (bindless_texture_table_ && desc.descriptor_binding_descs.size() >
+                                           BindlessTextureTableLayout::descriptor_set &&
+            !desc.descriptor_binding_descs[BindlessTextureTableLayout::descriptor_set].empty())
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR,
+                   "Vulkan bindless ABI reserves descriptor set 1 for the sampled-texture table");
+            return {};
+        }
+        return pipeline_manager_->CreatePipelineResource(
+            device_->GetLogicalDevice(), desc,
+            bindless_texture_table_ ? bindless_texture_table_->GetLayout() : VK_NULL_HANDLE);
     }
 
     bool VulkanBackend::DestroyPipelineResource(PipelineHandle handle)
@@ -273,6 +312,12 @@ namespace kpengine::graphics
 
     bool VulkanBackend::DestroyTexture(TextureHandle handle)
     {
+        if (bindless_texture_table_ && bindless_texture_table_->ReferencesTexture(handle))
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_WARNING,
+                   "Cannot destroy a texture referenced by the Vulkan bindless table");
+            return false;
+        }
         return texture_manager_->DestroyTexture(CreateGraphicsContext(), handle);
     }
 
@@ -291,6 +336,12 @@ namespace kpengine::graphics
 
     bool VulkanBackend::DestroySampler(SamplerHandle handle)
     {
+        if (bindless_texture_table_ && bindless_texture_table_->ReferencesSampler(handle))
+        {
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_WARNING,
+                   "Cannot destroy a sampler referenced by the Vulkan bindless table");
+            return false;
+        }
         return sampler_manager_->DestroySampler(CreateGraphicsContext(), handle);
     }
 
@@ -330,6 +381,26 @@ namespace kpengine::graphics
     bool VulkanBackend::DestroyResourceBindingSet(DescriptorSetHandle handle)
     {
         return descriptor_set_manager_->DestroyResourceBindingSet(device_->GetLogicalDevice(), handle);
+    }
+
+    BindlessTextureHandle VulkanBackend::AcquireBindlessTexture(TextureHandle texture,
+                                                                 SamplerHandle sampler)
+    {
+        return bindless_texture_table_
+                   ? bindless_texture_table_->Acquire(texture, sampler, *texture_manager_, *sampler_manager_)
+                   : BindlessTextureHandle{};
+    }
+
+    bool VulkanBackend::ReleaseBindlessTexture(BindlessTextureHandle handle)
+    {
+        if (!bindless_texture_table_)
+        {
+            return false;
+        }
+        const BindlessSubmissionSerial retire_after = frame_active_
+                                                          ? frame_context_->GetCurrentPendingSubmissionSerial()
+                                                          : frame_context_->GetLastSubmittedSerial();
+        return bindless_texture_table_->Release(handle, retire_after);
     }
 
     void VulkanBackend::BindResourceBindingSet(PipelineHandle pipeline, DescriptorSetHandle handle)
@@ -398,6 +469,11 @@ namespace kpengine::graphics
         if (device_)
         {
             vkDeviceWaitIdle(device_->GetLogicalDevice());
+            if (bindless_texture_table_)
+            {
+                bindless_texture_table_->CollectCompletedSubmissions(
+                    frame_context_->GetLastSubmittedSerial());
+            }
         }
     }
 

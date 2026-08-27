@@ -61,6 +61,8 @@ namespace kpengine::graphics
         const VulkanQueue &GetGraphicsQueue() const { return graphics_queue_; }
         const VulkanQueue &GetPresentQueue() const { return present_queue_; }
         const VulkanQueue &GetTransferQueue() const { return transfer_queue_; }
+        bool SupportsBindlessTextures() const { return bindless_textures_enabled_; }
+        uint32_t GetBindlessTextureTableCapacity() const { return bindless_texture_table_capacity_; }
 
     private:
         void CreateInstance();
@@ -73,6 +75,7 @@ namespace kpengine::graphics
         bool CheckValidationLayerSupport(const std::vector<const char *> &validation_layers) const;
         bool CheckDeviceExtensionsSupport(VkPhysicalDevice device, const std::vector<const char *> &extensions) const;
         bool CheckPhysicalDeviceSuitable(VkPhysicalDevice device) const;
+        bool QueryBindlessTextureSupport(VkPhysicalDevice device, uint32_t &capacity) const;
 
         VkInstance instance_ = VK_NULL_HANDLE;
         VkDebugUtilsMessengerEXT debug_messager_ = VK_NULL_HANDLE;
@@ -83,6 +86,9 @@ namespace kpengine::graphics
         VulkanQueue graphics_queue_;
         VulkanQueue present_queue_;
         VulkanQueue transfer_queue_;
+
+        bool bindless_textures_enabled_ = false;
+        uint32_t bindless_texture_table_capacity_ = 0;
 
         std::vector<const char *> validation_layers = {"VK_LAYER_KHRONOS_validation"};
         std::vector<const char *> device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};

@@ -1,5 +1,6 @@
 #include "vulkan_frame_context.h"
 
+#include <algorithm>
 #include <array>
 
 #include "log/logger.h"
@@ -38,6 +39,8 @@ namespace kpengine::graphics
     void VulkanFrameContext::WaitForInFlightFence()
     {
         vkWaitForFences(device_->GetLogicalDevice(), 1, &in_flight_fences_[current_frame_index_], VK_TRUE, UINT64_MAX);
+        completed_submission_serial_ = std::max(completed_submission_serial_,
+                                                in_flight_submission_serials_[current_frame_index_]);
     }
 
     VkResult VulkanFrameContext::AcquireNextImage(VkSwapchainKHR swapchain, uint32_t &image_index)
@@ -78,6 +81,9 @@ namespace kpengine::graphics
             KP_LOG(KP_VULKAN_FRAME_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR, "Failed to submit commandbuffer");
             throw std::runtime_error("Failed to submit commandbuffer");
         }
+        in_flight_submission_serials_[current_frame_index_] = next_submission_serial_;
+        last_submitted_serial_ = next_submission_serial_;
+        ++next_submission_serial_;
     }
 
     VkResult VulkanFrameContext::Present(VkSwapchainKHR swapchain, uint32_t image_index)
@@ -277,6 +283,7 @@ namespace kpengine::graphics
         }
 
         in_flight_fences_.resize(MAX_FRAMES_IN_FLIGHT);
+        in_flight_submission_serials_.assign(MAX_FRAMES_IN_FLIGHT, 0);
         for (size_t i = 0; i < in_flight_fences_.size(); i++)
         {
             if (vkCreateFence(device_->GetLogicalDevice(), &fence_create_info, nullptr, &in_flight_fences_[i]) != VK_SUCCESS)

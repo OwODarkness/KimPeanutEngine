@@ -3,6 +3,7 @@
 #include "common/mesh.h"
 #include "common/mesh_manager.h"
 #include "vulkan_buffer_manager.h"
+#include "vulkan_bindless_texture_table.h"
 #include "vulkan_descriptor_set_manager.h"
 #include "vulkan_mesh.h"
 #include "vulkan_pipeline_manager.h"
@@ -14,7 +15,8 @@ namespace kpengine::graphics
         VkCommandBuffer command_buffer, VulkanPipelineManager &pipeline_manager,
         VulkanDescriptorSetManager &descriptor_set_manager,
         VulkanBufferManager &buffer_manager, MeshManager &mesh_manager,
-        VulkanRenderTargetManager &render_target_manager)
+        VulkanRenderTargetManager &render_target_manager,
+        VulkanBindlessTextureTable *bindless_table, uint32_t frame_index)
     {
         command_buffer_ = command_buffer;
         pipeline_manager_ = &pipeline_manager;
@@ -22,6 +24,8 @@ namespace kpengine::graphics
         buffer_manager_ = &buffer_manager;
         mesh_manager_ = &mesh_manager;
         render_target_manager_ = &render_target_manager;
+        bindless_table_ = bindless_table;
+        frame_index_ = frame_index;
         recorded_index_count_ = 0;
     }
 
@@ -51,6 +55,17 @@ namespace kpengine::graphics
         if (resource)
         {
             vkCmdBindPipeline(command_buffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, resource->pipeline);
+            if (bindless_table_ && bindless_table_->IsReady())
+            {
+                const VkDescriptorSet descriptor_set = bindless_table_->GetDescriptorSet(frame_index_);
+                if (descriptor_set != VK_NULL_HANDLE)
+                {
+                    vkCmdBindDescriptorSets(command_buffer_, VK_PIPELINE_BIND_POINT_GRAPHICS,
+                                            resource->layout,
+                                            BindlessTextureTableLayout::descriptor_set, 1,
+                                            &descriptor_set, 0, nullptr);
+                }
+            }
         }
     }
 

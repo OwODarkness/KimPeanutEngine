@@ -2,6 +2,7 @@
 
 #include <set>
 #include <string>
+#include <algorithm>
 
 #include <GLFW/glfw3.h>
 
@@ -314,7 +315,25 @@ namespace kpengine::graphics
         device13_feature.dynamicRendering = VK_TRUE;
         device13_feature.synchronization2 = VK_TRUE;
 
-        features2.pNext = &device13_feature;
+        VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing{};
+        descriptor_indexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+        uint32_t bindless_capacity = 0;
+        bindless_textures_enabled_ = QueryBindlessTextureSupport(physical_device_, bindless_capacity);
+        bindless_texture_table_capacity_ = bindless_textures_enabled_ ? bindless_capacity : 0;
+        if (bindless_textures_enabled_)
+        {
+            descriptor_indexing.runtimeDescriptorArray = VK_TRUE;
+            descriptor_indexing.shaderSampledImageArrayNonUniformIndexing = VK_TRUE;
+            descriptor_indexing.descriptorBindingPartiallyBound = VK_TRUE;
+            descriptor_indexing.descriptorBindingSampledImageUpdateAfterBind = VK_TRUE;
+            descriptor_indexing.descriptorBindingUpdateUnusedWhilePending = VK_TRUE;
+            features2.pNext = &descriptor_indexing;
+            descriptor_indexing.pNext = &device13_feature;
+        }
+        else
+        {
+            features2.pNext = &device13_feature;
+        }
 
         VkDeviceCreateInfo device_create_info{};
         device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
@@ -405,5 +424,37 @@ namespace kpengine::graphics
         }
 
         return queue_family_indices.IsComplete() && is_swapchain_supported && is_swap_adequate && physical_device_features.samplerAnisotropy;
+    }
+
+    bool VulkanDevice::QueryBindlessTextureSupport(VkPhysicalDevice device, uint32_t &capacity) const
+    {
+        VkPhysicalDeviceDescriptorIndexingFeatures descriptor_indexing{};
+        descriptor_indexing.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_FEATURES;
+        VkPhysicalDeviceFeatures2 features{};
+        features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features.pNext = &descriptor_indexing;
+        vkGetPhysicalDeviceFeatures2(device, &features);
+        if (!descriptor_indexing.runtimeDescriptorArray ||
+            !descriptor_indexing.shaderSampledImageArrayNonUniformIndexing ||
+            !descriptor_indexing.descriptorBindingPartiallyBound ||
+            !descriptor_indexing.descriptorBindingSampledImageUpdateAfterBind ||
+            !descriptor_indexing.descriptorBindingUpdateUnusedWhilePending)
+        {
+            capacity = 0;
+            return false;
+        }
+
+        VkPhysicalDeviceDescriptorIndexingProperties descriptor_properties{};
+        descriptor_properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DESCRIPTOR_INDEXING_PROPERTIES;
+        VkPhysicalDeviceProperties2 properties{};
+        properties.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_PROPERTIES_2;
+        properties.pNext = &descriptor_properties;
+        vkGetPhysicalDeviceProperties2(device, &properties);
+        capacity = std::min({descriptor_properties.maxDescriptorSetUpdateAfterBindSampledImages,
+                             descriptor_properties.maxDescriptorSetUpdateAfterBindSamplers,
+                             descriptor_properties.maxPerStageDescriptorUpdateAfterBindSampledImages,
+                             descriptor_properties.maxPerStageDescriptorUpdateAfterBindSamplers,
+                             4096u});
+        return capacity > 0;
     }
 }

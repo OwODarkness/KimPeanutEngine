@@ -34,6 +34,9 @@ namespace kpengine::graphics
         DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
         bool DestroyResourceBindingSet(DescriptorSetHandle handle) override;
+        BindlessTextureHandle AcquireBindlessTexture(TextureHandle texture,
+                                                     SamplerHandle sampler) override;
+        bool ReleaseBindlessTexture(BindlessTextureHandle handle) override;
         void BindResourceBindingSet(PipelineHandle pipeline,
                                     DescriptorSetHandle handle) override;
         virtual void BeginFrame() override;
@@ -72,6 +75,7 @@ namespace kpengine::graphics
         std::unique_ptr<class TextureManager> texture_manager_;
         std::unique_ptr<class SamplerManager> sampler_manager_;
         std::unique_ptr<class OpenglPipelineManager> pipeline_manager_;
+        std::unique_ptr<class OpenglBindlessTextureTable> bindless_texture_table_;
 
         std::vector<RenderTargetResource> render_targets_;
         std::vector<GLuint> render_target_framebuffers_;

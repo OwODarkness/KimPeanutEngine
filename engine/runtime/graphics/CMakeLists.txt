@@ -4,6 +4,7 @@ option(USE_OPENGL "Build the OpenGL backend" ON)
 option(USE_VULKAN "Build the Vulkan backend" ON)
 
 set(GRAPHICS_COMMON_SOURCES
+    backend/common/bindless_texture.cpp
     backend/common/render_backend.cpp
     backend/common/pipeline_validation.cpp
     backend/common/texture_manager.cpp
@@ -15,6 +16,7 @@ set(GRAPHICS_BACKEND_SOURCES)
 if(USE_OPENGL)
     list(APPEND GRAPHICS_BACKEND_SOURCES
     backend/opengl/opengl_backend.cpp
+    backend/opengl/opengl_bindless_texture_table.cpp
     backend/opengl/opengl_texture.cpp
     backend/opengl/opengl_sampler.cpp
     backend/opengl/opengl_mesh.cpp
@@ -27,6 +29,7 @@ endif()
 if(USE_VULKAN)
     list(APPEND GRAPHICS_BACKEND_SOURCES
     backend/vulkan/vulkan_backend.cpp
+    backend/vulkan/vulkan_bindless_texture_table.cpp
     backend/vulkan/vulkan_device.cpp
     backend/vulkan/vulkan_swapchain.cpp
     backend/vulkan/vulkan_frame_context.cpp

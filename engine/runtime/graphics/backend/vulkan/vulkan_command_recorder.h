@@ -12,6 +12,7 @@ namespace kpengine::graphics
     class VulkanDescriptorSetManager;
     class VulkanPipelineManager;
     class VulkanRenderTargetManager;
+    class VulkanBindlessTextureTable;
 
     // Valid only between VulkanBackend::BeginFrame and EndFrame. It borrows all
     // services; VulkanBackend remains their owner and controls submission.
@@ -21,7 +22,8 @@ namespace kpengine::graphics
         void Begin(VkCommandBuffer command_buffer, VulkanPipelineManager &pipeline_manager,
                    VulkanDescriptorSetManager &descriptor_set_manager,
                    VulkanBufferManager &buffer_manager, MeshManager &mesh_manager,
-                   VulkanRenderTargetManager &render_target_manager);
+                   VulkanRenderTargetManager &render_target_manager,
+                   VulkanBindlessTextureTable *bindless_table, uint32_t frame_index);
 
         void BeginRenderTarget(RenderTargetHandle target) override;
         void EndRenderTarget() override;
@@ -42,6 +44,8 @@ namespace kpengine::graphics
         VulkanBufferManager *buffer_manager_ = nullptr;
         MeshManager *mesh_manager_ = nullptr;
         VulkanRenderTargetManager *render_target_manager_ = nullptr;
+        VulkanBindlessTextureTable *bindless_table_ = nullptr;
+        uint32_t frame_index_ = 0;
         uint32_t recorded_index_count_ = 0;
     };
 }

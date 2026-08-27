@@ -25,6 +25,9 @@ namespace kpengine::graphics
         void Destroy();
 
         uint32_t GetCurrentFrameIndex() const { return current_frame_index_; }
+        uint64_t GetCurrentPendingSubmissionSerial() const { return next_submission_serial_; }
+        uint64_t GetLastSubmittedSerial() const { return last_submitted_serial_; }
+        uint64_t GetCompletedSubmissionSerial() const { return completed_submission_serial_; }
         void AdvanceFrame() { current_frame_index_ = (current_frame_index_ + 1) % MAX_FRAMES_IN_FLIGHT; }
 
         VkCommandBuffer GetCurrentSceneCommandBuffer() const { return scene_command_buffers_[current_frame_index_]; }
@@ -59,6 +62,10 @@ namespace kpengine::graphics
         std::vector<VkSemaphore> available_image_semaphores_;
         std::vector<VkSemaphore> render_finished_semaphores_;
         std::vector<VkFence> in_flight_fences_;
+        std::vector<uint64_t> in_flight_submission_serials_;
+        uint64_t next_submission_serial_ = 1;
+        uint64_t last_submitted_serial_ = 0;
+        uint64_t completed_submission_serial_ = 0;
         uint32_t current_frame_index_ = 0;
     };
 }

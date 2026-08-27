@@ -1,5 +1,7 @@
 #include "vulkan_pipeline_manager.h"
+#include <algorithm>
 #include <array>
+#include "common/bindless_texture.h"
 #include "log/logger.h"
 #include "data/shader.h"
 #include "vulkan_enum.h"
@@ -7,7 +9,8 @@
 namespace kpengine::graphics
 {
 
-    PipelineHandle VulkanPipelineManager::CreatePipelineResource(VkDevice logical_device, const PipelineDesc &pipeline_desc)
+    PipelineHandle VulkanPipelineManager::CreatePipelineResource(
+        VkDevice logical_device, const PipelineDesc &pipeline_desc, VkDescriptorSetLayout bindless_layout)
     {
         PipelineHandle handle = handle_system_.Create();
 
@@ -166,18 +169,33 @@ namespace kpengine::graphics
             depth_stencil.back = {};
 
             // set descriptor sets layout
-            pipeline_resource.descriptor_set_layouts.resize(pipeline_desc.descriptor_binding_descs.size());
-            std::vector<VkDescriptorSetLayout> layouts(pipeline_desc.descriptor_binding_descs.size());
+            const size_t layout_count = bindless_layout == VK_NULL_HANDLE
+                                            ? pipeline_desc.descriptor_binding_descs.size()
+                                            : std::max<size_t>(2, pipeline_desc.descriptor_binding_descs.size());
+            pipeline_resource.descriptor_set_layouts.resize(layout_count);
+            std::vector<VkDescriptorSetLayout> layouts(layout_count);
 
             for (size_t i = 0; i < pipeline_resource.descriptor_set_layouts.size(); i++)
             {
-                std::vector<VkDescriptorSetLayoutBinding> descriptor_set_layout_bindings(pipeline_desc.descriptor_binding_descs[i].size());
-                for (size_t j = 0; j < pipeline_desc.descriptor_binding_descs[i].size(); j++)
+                if (bindless_layout != VK_NULL_HANDLE &&
+                    i == BindlessTextureTableLayout::descriptor_set)
                 {
-                    descriptor_set_layout_bindings[j].binding = pipeline_desc.descriptor_binding_descs[i][j].binding;
-                    descriptor_set_layout_bindings[j].descriptorCount = pipeline_desc.descriptor_binding_descs[i][j].descriptor_count;
-                    descriptor_set_layout_bindings[j].descriptorType = ConvertToVulkanDescriptorType(pipeline_desc.descriptor_binding_descs[i][j].descriptor_type);
-                    descriptor_set_layout_bindings[j].stageFlags = ConvertToVulkanShaderStageFlags(pipeline_desc.descriptor_binding_descs[i][j].stage_flag);
+                    layouts[i] = bindless_layout;
+                    pipeline_resource.descriptor_set_layouts[i].layout = bindless_layout;
+                    pipeline_resource.descriptor_set_layouts[i].owned = false;
+                    continue;
+                }
+                const std::vector<DescriptorBindingDesc> empty_bindings;
+                const std::vector<DescriptorBindingDesc> &bindings_desc =
+                    i < pipeline_desc.descriptor_binding_descs.size()
+                        ? pipeline_desc.descriptor_binding_descs[i] : empty_bindings;
+                std::vector<VkDescriptorSetLayoutBinding> descriptor_set_layout_bindings(bindings_desc.size());
+                for (size_t j = 0; j < bindings_desc.size(); j++)
+                {
+                    descriptor_set_layout_bindings[j].binding = bindings_desc[j].binding;
+                    descriptor_set_layout_bindings[j].descriptorCount = bindings_desc[j].descriptor_count;
+                    descriptor_set_layout_bindings[j].descriptorType = ConvertToVulkanDescriptorType(bindings_desc[j].descriptor_type);
+                    descriptor_set_layout_bindings[j].stageFlags = ConvertToVulkanShaderStageFlags(bindings_desc[j].stage_flag);
                     descriptor_set_layout_bindings[j].pImmutableSamplers = nullptr;
                 }
                 VkDescriptorSetLayoutCreateInfo descriptor_set_layout_create_info{};
@@ -301,7 +319,10 @@ namespace kpengine::graphics
 
         for (size_t i = 0; i < pipeline_resource->descriptor_set_layouts.size(); i++)
         {
-            vkDestroyDescriptorSetLayout(logical_device, pipeline_resource->descriptor_set_layouts[i].layout, nullptr);
+            if (pipeline_resource->descriptor_set_layouts[i].owned)
+            {
+                vkDestroyDescriptorSetLayout(logical_device, pipeline_resource->descriptor_set_layouts[i].layout, nullptr);
+            }
         }
         vkDestroyPipeline(logical_device, pipeline_resource->pipeline, nullptr);
         vkDestroyPipelineLayout(logical_device, pipeline_resource->layout, nullptr);
@@ -318,7 +339,7 @@ namespace kpengine::graphics
         {
             for (const VulkanDescriptorSetLayout &set_layout : resource.descriptor_set_layouts)
             {
-                if (set_layout.layout != VK_NULL_HANDLE)
+                if (set_layout.owned && set_layout.layout != VK_NULL_HANDLE)
                 {
                     vkDestroyDescriptorSetLayout(logical_device, set_layout.layout, nullptr);
                 }

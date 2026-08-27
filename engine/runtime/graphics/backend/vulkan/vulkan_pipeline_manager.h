@@ -10,8 +10,9 @@
 namespace kpengine::graphics{
 
     struct VulkanDescriptorSetLayout{
-        VkDescriptorSetLayout layout;
+        VkDescriptorSetLayout layout = VK_NULL_HANDLE;
         std::vector<VkDescriptorSetLayoutBinding> bindings;
+        bool owned = true;
     };
 
     struct VulkanPipelineResource{
@@ -22,7 +23,8 @@ namespace kpengine::graphics{
 
     class VulkanPipelineManager{
     public:
-        PipelineHandle CreatePipelineResource(VkDevice logical_device, const PipelineDesc& pipeline_desc);
+        PipelineHandle CreatePipelineResource(VkDevice logical_device, const PipelineDesc& pipeline_desc,
+                                              VkDescriptorSetLayout bindless_layout = VK_NULL_HANDLE);
         bool DestroyPipelineResource(VkDevice logical_device, PipelineHandle handle);
         void DestroyAll(VkDevice logical_device);
         VulkanPipelineResource* GetPipelineResource(PipelineHandle handle);

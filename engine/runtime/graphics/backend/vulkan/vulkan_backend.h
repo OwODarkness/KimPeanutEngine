@@ -38,6 +38,9 @@ namespace kpengine::graphics
         DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
         bool DestroyResourceBindingSet(DescriptorSetHandle handle) override;
+        BindlessTextureHandle AcquireBindlessTexture(TextureHandle texture,
+                                                     SamplerHandle sampler) override;
+        bool ReleaseBindlessTexture(BindlessTextureHandle handle) override;
         void BindResourceBindingSet(PipelineHandle pipeline,
                                     DescriptorSetHandle handle) override;
         virtual void BeginFrame() override;
@@ -86,6 +89,7 @@ namespace kpengine::graphics
 
         std::unique_ptr<class VulkanPipelineManager> pipeline_manager_;
         std::unique_ptr<class VulkanDescriptorSetManager> descriptor_set_manager_;
+        std::unique_ptr<class VulkanBindlessTextureTable> bindless_texture_table_;
 
         std::unique_ptr<class VulkanImageMemoryManager> image_memory_manager_;
 

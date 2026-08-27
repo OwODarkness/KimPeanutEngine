@@ -16,6 +16,7 @@
 #include "opengl_texture.h"
 #include "opengl_sampler.h"
 #include "opengl_descriptorset.h"
+#include "opengl_bindless_texture_table.h"
 
 namespace kpengine::graphics
 {
@@ -39,6 +40,11 @@ namespace kpengine::graphics
 
         GLFWwindow *window = static_cast<GLFWwindow *>(native_window);
         glfwGetWindowSize(window, &width_, &height_);
+        auto bindless_table = std::make_unique<OpenglBindlessTextureTable>();
+        if (bindless_table->Initialize())
+        {
+            bindless_texture_table_ = std::move(bindless_table);
+        }
         InitializeCapabilities();
     }
 
@@ -49,13 +55,18 @@ namespace kpengine::graphics
         capabilities_.max_sampled_textures_per_shader_stage =
             max_texture_units > 0 ? static_cast<uint32_t>(max_texture_units) : 0;
 
-        // The common RHI has no bindless table, regardless of any optional
-        // vendor extension the active OpenGL driver may advertise.
-        capabilities_.bindless_textures = false;
+        capabilities_.bindless_textures = bindless_texture_table_ && bindless_texture_table_->IsReady();
+        capabilities_.bindless_texture_table_capacity = capabilities_.bindless_textures
+                                                             ? bindless_texture_table_->GetCapacity()
+                                                             : 0;
     }
 
     void OpenglBackend::BeginFrame()
     {
+        if (bindless_texture_table_)
+        {
+            bindless_texture_table_->BeginFrame(*texture_manager_, *sampler_manager_);
+        }
         frame_active_ = true;
         active_render_target_ = {};
     }
@@ -69,12 +80,20 @@ namespace kpengine::graphics
         // supplies display-space colors, so scene sRGB write conversion must
         // never leak into the default framebuffer.
         glDisable(GL_FRAMEBUFFER_SRGB);
+        if (bindless_texture_table_)
+        {
+            bindless_texture_table_->EndFrame();
+        }
         frame_active_ = false;
     }
 
     void OpenglBackend::WaitIdle()
     {
         glFinish();
+        if (bindless_texture_table_)
+        {
+            bindless_texture_table_->WaitIdle();
+        }
     }
 
     CommandRecorder *OpenglBackend::GetCommandRecorder()
@@ -131,6 +150,10 @@ namespace kpengine::graphics
         if (resource)
         {
             resource->Bind();
+            if (bindless_texture_table_)
+            {
+                bindless_texture_table_->Bind();
+            }
             glBindVertexArray(resource->vao);
             recorded_pipeline_ = pipeline;
         }
@@ -253,6 +276,11 @@ namespace kpengine::graphics
         render_target_framebuffers_.clear();
         pipeline_manager_->DestroyAll();
         resource_binding_sets_.clear();
+        if (bindless_texture_table_)
+        {
+            bindless_texture_table_->Destroy();
+            bindless_texture_table_.reset();
+        }
     }
 
     BufferHandle OpenglBackend::CreateVertexBuffer(const void *data, size_t size)
@@ -316,6 +344,12 @@ namespace kpengine::graphics
 
     bool OpenglBackend::DestroyTexture(TextureHandle handle)
     {
+        if (bindless_texture_table_ && bindless_texture_table_->ReferencesTexture(handle))
+        {
+            KP_LOG("OpenglBackendLog", LOG_LEVEL_WARNING,
+                   "Cannot destroy a texture referenced by the OpenGL bindless table");
+            return false;
+        }
         return texture_manager_->DestroyTexture(CreateGraphicsContext(), handle);
     }
 
@@ -326,6 +360,12 @@ namespace kpengine::graphics
 
     bool OpenglBackend::DestroySampler(SamplerHandle handle)
     {
+        if (bindless_texture_table_ && bindless_texture_table_->ReferencesSampler(handle))
+        {
+            KP_LOG("OpenglBackendLog", LOG_LEVEL_WARNING,
+                   "Cannot destroy a sampler referenced by the OpenGL bindless table");
+            return false;
+        }
         return sampler_manager_->DestroySampler(CreateGraphicsContext(), handle);
     }
 
@@ -502,6 +542,26 @@ namespace kpengine::graphics
         }
         resource_binding_sets_[index].reset();
         return resource_binding_set_handles_.Destroy(handle);
+    }
+
+    BindlessTextureHandle OpenglBackend::AcquireBindlessTexture(TextureHandle texture,
+                                                                 SamplerHandle sampler)
+    {
+        return bindless_texture_table_
+                   ? bindless_texture_table_->Acquire(texture, sampler, *texture_manager_, *sampler_manager_)
+                   : BindlessTextureHandle{};
+    }
+
+    bool OpenglBackend::ReleaseBindlessTexture(BindlessTextureHandle handle)
+    {
+        if (!bindless_texture_table_)
+        {
+            return false;
+        }
+        const BindlessSubmissionSerial retire_after = frame_active_
+                                                          ? bindless_texture_table_->GetPendingSubmissionSerial()
+                                                          : bindless_texture_table_->GetLastSubmittedSerial();
+        return bindless_texture_table_->Release(handle, retire_after);
     }
 
     void OpenglBackend::BindResourceBindingSet(PipelineHandle pipeline, DescriptorSetHandle handle)
