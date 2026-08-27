@@ -4,22 +4,24 @@
 #include "shader.h"
 namespace kpengine::asset
 {
-    void ShaderProgramResource::BindData(ShaderStage stage, ShaderFormat format, AssetID id)
+    void ShaderProgramResource::BindData(ShaderStage stage, ShaderFormat format, AssetID id,
+                                         ShaderProgramVariant variant)
     {
         auto &list = datas[stage];
 
         for (auto &entry : list)
         {
-            if (entry.format == format)
+            if (entry.format == format && entry.variant == variant)
             {
                 entry.asset = id;
                 return;
             }
         }
 
-        list.emplace_back(ShaderProgramEntry{format, id});
+        list.emplace_back(ShaderProgramEntry{format, variant, id});
     }
-    AssetID ShaderProgramResource::GetData(ShaderStage stage, ShaderFormat format)
+    AssetID ShaderProgramResource::GetData(ShaderStage stage, ShaderFormat format,
+                                           ShaderProgramVariant variant)
     {
         auto it = datas.find(stage);
         if (it == datas.end())
@@ -29,7 +31,7 @@ namespace kpengine::asset
 
         for (const auto &entry : it->second)
         {
-            if (entry.format == format)
+            if (entry.format == format && entry.variant == variant)
             {
                 return entry.asset;
             }
@@ -37,9 +39,10 @@ namespace kpengine::asset
 
         return AssetID();
     }
-    std::shared_ptr<ShaderResource> ShaderProgramResource::GetShader(ShaderStage stage, ShaderFormat format)
+    std::shared_ptr<ShaderResource> ShaderProgramResource::GetShader(
+        ShaderStage stage, ShaderFormat format, ShaderProgramVariant variant)
     {
-        AssetID id = GetData(stage, format);
+        AssetID id = GetData(stage, format, variant);
 
         if (!id.IsValid())
         {

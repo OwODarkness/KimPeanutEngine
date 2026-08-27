@@ -133,12 +133,20 @@ namespace kpengine::render
         }
 
         std::vector<graphics::ResourceBinding> bindings = draw_bindings;
+        const bool uses_bindless_textures = textures->uses_bindless_textures;
         if (HasBinding(bindings, kMaterialConstantsBinding))
         {
             return {};
         }
 
-        size_t constant_size = 0;
+        // V1 compatible shaders read uvec4 texture_indices[] from the start
+        // of the binding-3 material block; parameter ID is the array index.
+        // std140 gives each uvec4 a 16-byte stride, so the CPU layout is
+        // explicit and backend-neutral.
+        const size_t bindless_index_bytes = uses_bindless_textures
+                                                ? material_template->parameters.size() * kUniformVectorAlignment
+                                                : 0;
+        size_t constant_size = bindless_index_bytes;
         for (uint32_t parameter_id = 0; parameter_id < material_template->parameters.size(); ++parameter_id)
         {
             const MaterialParameterValue *const value = materials.GetParameterValue(
@@ -149,6 +157,14 @@ namespace kpengine::render
             }
             if (std::holds_alternative<MaterialTextureSamplerValue>(*value))
             {
+                if (uses_bindless_textures)
+                {
+                    if (textures->bindless_slots.find(parameter_id) == textures->bindless_slots.end())
+                    {
+                        return {};
+                    }
+                    continue;
+                }
                 const std::optional<uint32_t> binding_index =
                     material_template->parameters[parameter_id].resource_binding;
                 const auto texture_it = textures->textures.find(parameter_id);
@@ -175,7 +191,16 @@ namespace kpengine::render
                 return {};
             }
 
-            size_t constant_offset = 0;
+            if (uses_bindless_textures)
+            {
+                for (const auto &[parameter_id, slot] : textures->bindless_slots)
+                {
+                    std::memcpy(static_cast<uint8_t *>(constants.mapped) +
+                                    parameter_id * kUniformVectorAlignment,
+                                &slot.id, sizeof(slot.id));
+                }
+            }
+            size_t constant_offset = bindless_index_bytes;
             for (uint32_t parameter_id = 0; parameter_id < material_template->parameters.size(); ++parameter_id)
             {
                 const MaterialParameterValue *const value = materials.GetParameterValue(
@@ -210,7 +235,8 @@ namespace kpengine::render
         {
             return {};
         }
-        return {pipeline, descriptor_set, constants, frame_index_, globals_.frame_number};
+        return {pipeline, descriptor_set, constants, uses_bindless_textures,
+                frame_index_, globals_.frame_number};
     }
 
     bool FrameContext::IsMaterialBindingCurrent(const FrameMaterialBinding &binding) const

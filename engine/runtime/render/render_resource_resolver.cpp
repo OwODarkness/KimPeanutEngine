@@ -27,7 +27,7 @@ namespace kpengine::render
 
     graphics::PipelineHandle RenderResourceResolver::GetOrCreateDefaultPipeline(
         asset::AssetID program_id, asset::ShaderProgramResource &program,
-        const MaterialPipelineState *material_state)
+        const MaterialPipelineState *material_state, bool bindless_texture_table_compatible)
     {
         const uint64_t state_signature = material_state
                                              ? kDefaultPipelineStateLayoutSignature |
@@ -35,8 +35,9 @@ namespace kpengine::render
                                                    (static_cast<uint64_t>(material_state->cull_mode) << 16) |
                                                    (static_cast<uint64_t>(material_state->double_sided) << 24)
                                              : kDefaultPipelineStateLayoutSignature;
+        const uint64_t binding_model_signature = bindless_texture_table_compatible ? (1ull << 32) : 0;
         const PipelineCacheKey key{program_id.Pack(), backend_->GetGraphicsContext().type,
-                                   state_signature};
+                                   state_signature | binding_model_signature};
         const auto existing = pipeline_cache_.find(key);
         if (existing != pipeline_cache_.end())
         {
@@ -44,7 +45,8 @@ namespace kpengine::render
         }
 
         graphics::PipelineDesc desc{};
-        if (!BuildDefaultPipelineDesc(program, desc, material_state))
+        if (!BuildDefaultPipelineDesc(program, desc, material_state,
+                                      bindless_texture_table_compatible))
         {
             return {};
         }
@@ -121,8 +123,10 @@ namespace kpengine::render
                 return {MaterialResourceState::Failed, "shader program compilation failed"};
             }
         }
-        const graphics::PipelineHandle pipeline =
-            GetOrCreateDefaultPipeline(desc.shader_program, *program, &desc.pipeline_state);
+        const bool use_bindless_pipeline = desc.bindless_texture_table_compatible &&
+                                           backend_->GetCapabilities().SupportsBindlessTextures();
+        const graphics::PipelineHandle pipeline = GetOrCreateDefaultPipeline(
+            desc.shader_program, *program, &desc.pipeline_state, use_bindless_pipeline);
         if (!pipeline.IsValid())
         {
             return {MaterialResourceState::Failed, "pipeline creation failed"};
@@ -135,7 +139,7 @@ namespace kpengine::render
         const MaterialTemplateDesc &desc,
         const std::vector<MaterialParameterValue> &effective_values)
     {
-        (void)desc;
+        ReleaseInstance(handle);
         material_texture_bindings_.erase(handle);
         auto &asset_manager = asset::AssetManager::GetInstance();
         ResolvedMaterialTextureBindings bindings;
@@ -161,6 +165,35 @@ namespace kpengine::render
             }
             bindings.textures.emplace(parameter_id, binding);
         }
+        if (desc.bindless_texture_table_compatible &&
+            backend_->GetCapabilities().SupportsBindlessTextures())
+        {
+            bool acquired_all_slots = true;
+            for (const auto &[parameter_id, binding] : bindings.textures)
+            {
+                const graphics::BindlessTextureHandle slot =
+                    backend_->AcquireBindlessTexture(binding.texture, binding.sampler);
+                if (!slot.IsValid())
+                {
+                    acquired_all_slots = false;
+                    break;
+                }
+                bindings.bindless_slots.emplace(parameter_id, slot);
+            }
+            if (acquired_all_slots)
+            {
+                bindings.uses_bindless_textures = true;
+            }
+            else
+            {
+                for (const auto &[parameter_id, slot] : bindings.bindless_slots)
+                {
+                    (void)parameter_id;
+                    backend_->ReleaseBindlessTexture(slot);
+                }
+                bindings.bindless_slots.clear();
+            }
+        }
         material_texture_bindings_[handle] = std::move(bindings);
         return {MaterialResourceState::Ready, {}};
     }
@@ -172,7 +205,20 @@ namespace kpengine::render
 
     void RenderResourceResolver::ReleaseInstance(MaterialInstanceHandle handle)
     {
-        material_texture_bindings_.erase(handle);
+        const auto found = material_texture_bindings_.find(handle);
+        if (found == material_texture_bindings_.end())
+        {
+            return;
+        }
+        if (backend_)
+        {
+            for (const auto &[parameter_id, slot] : found->second.bindless_slots)
+            {
+                (void)parameter_id;
+                backend_->ReleaseBindlessTexture(slot);
+            }
+        }
+        material_texture_bindings_.erase(found);
     }
 
     graphics::PipelineHandle RenderResourceResolver::FindMaterialPipeline(
@@ -189,6 +235,12 @@ namespace kpengine::render
         return it != material_texture_bindings_.end() ? &it->second : nullptr;
     }
 
+    bool RenderResourceResolver::UsesBindlessTextures(MaterialInstanceHandle handle) const
+    {
+        const auto *bindings = FindTextureBindings(handle);
+        return bindings && bindings->uses_bindless_textures;
+    }
+
     void RenderResourceResolver::Cleanup()
     {
         if (!backend_)
@@ -196,6 +248,17 @@ namespace kpengine::render
             return;
         }
 
+        std::vector<MaterialInstanceHandle> instances;
+        instances.reserve(material_texture_bindings_.size());
+        for (const auto &[instance, bindings] : material_texture_bindings_)
+        {
+            (void)bindings;
+            instances.push_back(instance);
+        }
+        for (MaterialInstanceHandle instance : instances)
+        {
+            ReleaseInstance(instance);
+        }
         for (const auto &[key, handle] : mesh_cache_)
         {
             (void)key;
@@ -233,12 +296,16 @@ namespace kpengine::render
 
     bool RenderResourceResolver::BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
                                                            graphics::PipelineDesc &out_desc,
-                                                           const MaterialPipelineState *material_state)
+                                                           const MaterialPipelineState *material_state,
+                                                           bool bindless_texture_table_compatible)
     {
+        const asset::ShaderProgramVariant variant = bindless_texture_table_compatible
+                                                        ? asset::ShaderProgramVariant::Bindless
+                                                        : asset::ShaderProgramVariant::Bound;
         const auto vert_shader = program.GetShader(ShaderStage::SHADER_STAGE_VERTEX,
-                                                   ShaderFormat::SHADER_FORMAT_GLSL);
+                                                   ShaderFormat::SHADER_FORMAT_GLSL, variant);
         const auto frag_shader = program.GetShader(ShaderStage::SHADER_STAGE_FRAGMENT,
-                                                   ShaderFormat::SHADER_FORMAT_GLSL);
+                                                   ShaderFormat::SHADER_FORMAT_GLSL, variant);
         if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
             vert_shader->status != asset::ShaderStatus::Ready ||
             frag_shader->status != asset::ShaderStatus::Ready)
@@ -263,11 +330,16 @@ namespace kpengine::render
               ShaderStage::SHADER_STAGE_VERTEX},
              {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
               ShaderStage::SHADER_STAGE_VERTEX},
-             {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
-              ShaderStage::SHADER_STAGE_FRAGMENT},
              {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
               ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
+        if (!bindless_texture_table_compatible)
+        {
+            desc.descriptor_binding_descs[0].insert(
+                desc.descriptor_binding_descs[0].begin() + 2,
+                {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                 ShaderStage::SHADER_STAGE_FRAGMENT});
+        }
         desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
         if (material_state)
         {

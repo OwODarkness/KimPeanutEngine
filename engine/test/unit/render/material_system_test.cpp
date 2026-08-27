@@ -70,15 +70,30 @@ TEST(MaterialSystemTest, CopiesImmutableTemplateDescriptorAndKeepsDuplicatesInde
     desc.parameters.front().name = "changed_after_creation";
     desc.pipeline_state.cull_mode = kpengine::render::MaterialCullMode::Front;
     desc.pipeline_state.double_sided = true;
+    desc.bindless_texture_table_compatible = true;
 
     const auto *stored = materials.FindTemplate(first);
     ASSERT_NE(stored, nullptr);
     EXPECT_EQ(stored->parameters.front().name, "roughness");
     EXPECT_EQ(stored->pipeline_state.cull_mode, kpengine::render::MaterialCullMode::Back);
     EXPECT_FALSE(stored->pipeline_state.double_sided);
+    EXPECT_FALSE(stored->bindless_texture_table_compatible);
     EXPECT_FALSE(first == second);
     EXPECT_TRUE(materials.DestroyTemplate(first));
     EXPECT_TRUE(materials.IsTemplateValid(second));
+}
+
+TEST(MaterialSystemTest, RetainsBindlessTextureConventionMetadata)
+{
+    kpengine::render::MaterialSystem materials{};
+    auto desc = MakeTemplateDesc();
+    desc.bindless_texture_table_compatible = true;
+
+    const auto handle = materials.CreateTemplate(desc);
+    const auto *stored = materials.FindTemplate(handle);
+
+    ASSERT_NE(stored, nullptr);
+    EXPECT_TRUE(stored->bindless_texture_table_compatible);
 }
 
 TEST(MaterialSystemTest, RetainsTemplateUntilReferencingInstanceIsDestroyed)

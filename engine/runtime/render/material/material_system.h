@@ -127,6 +127,11 @@ namespace kpengine::render
         MaterialDomain domain = MaterialDomain::Surface;
         MaterialShadingModel shading_model = MaterialShadingModel::StandardPbr;
         MaterialPipelineState pipeline_state;
+        // Serialized pipeline metadata: the shader program follows the V1
+        // sampled-texture-table ABI and consumes texture indices rather than
+        // per-draw texture bindings when the backend supports it. Both variants
+        // are entries of shader_program; Render selects one by capability.
+        bool bindless_texture_table_compatible = false;
         MaterialParameterLayout parameters;
         std::vector<MaterialPass> compatible_passes{MaterialPass::Scene};
     };

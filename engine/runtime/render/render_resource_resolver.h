@@ -6,6 +6,7 @@
 
 #include "asset/common.h"
 #include "graphics/backend/common/api.h"
+#include "graphics/backend/common/bindless_texture.h"
 #include "graphics/backend/common/pipeline_types.h"
 #include "graphics/backend/common/texture.h"
 #include "pipeline_cache_key.h"
@@ -44,13 +45,16 @@ namespace kpengine::render
         struct ResolvedMaterialTextureBindings
         {
             std::unordered_map<uint32_t, TextureBinding> textures;
+            std::unordered_map<uint32_t, graphics::BindlessTextureHandle> bindless_slots;
+            bool uses_bindless_textures = false;
         };
         RenderResourceResolver(graphics::RenderBackend &backend,
                                resource::ResourcePipeline &resource_pipeline);
 
         graphics::PipelineHandle GetOrCreateDefaultPipeline(
             asset::AssetID program_id, asset::ShaderProgramResource &program,
-            const MaterialPipelineState *material_state = nullptr);
+            const MaterialPipelineState *material_state = nullptr,
+            bool bindless_texture_table_compatible = false);
         graphics::MeshHandle GetOrCreateMesh(asset::AssetID asset_id,
                                              const data::MeshData &data);
         TextureBinding GetOrCreateTextureBinding(asset::AssetID asset_id,
@@ -66,12 +70,14 @@ namespace kpengine::render
         graphics::PipelineHandle FindMaterialPipeline(MaterialTemplateHandle handle) const;
         const ResolvedMaterialTextureBindings *FindTextureBindings(
             MaterialInstanceHandle handle) const;
+        bool UsesBindlessTextures(MaterialInstanceHandle handle) const;
         void Cleanup();
 
     private:
         static bool BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
                                              graphics::PipelineDesc &out_desc,
-                                             const MaterialPipelineState *material_state);
+                                             const MaterialPipelineState *material_state,
+                                             bool bindless_texture_table_compatible);
         static graphics::TextureSettings DefaultTextureSettings();
         graphics::SamplerHandle GetOrCreateDefaultSampler();
         graphics::SamplerHandle GetOrCreateSampler(const MaterialSamplerDesc &desc);

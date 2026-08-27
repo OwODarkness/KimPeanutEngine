@@ -45,6 +45,24 @@ TEST(BootstrapTest, ParsesVersionAndAssets)
     RemoveTestFile();
 }
 
+TEST(BootstrapTest, ParsesSceneWithShaderVariants)
+{
+    WriteTestFile(R"({
+        "version": 1,
+        "assets": ["shader/simple_triangle.shader"],
+        "scene": {
+            "shader_program": "shader/simple_triangle.shader",
+            "model": "model/sphere/sphere.obj",
+            "texture": "texture/wallpaper.jpg"
+        }
+    })");
+
+    const auto config = kpengine::bootstrap::ReadBootstrap(BootstrapTestPath().string());
+    EXPECT_TRUE(config.scene.IsComplete());
+    EXPECT_EQ(config.scene.shader_program, "shader/simple_triangle.shader");
+    RemoveTestFile();
+}
+
 TEST(BootstrapTest, DefaultsVersionWhenMissing)
 {
     WriteTestFile(R"({

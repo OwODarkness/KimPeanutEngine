@@ -39,6 +39,7 @@ namespace kpengine::render
         graphics::PipelineHandle pipeline;
         graphics::DescriptorSetHandle descriptor_set;
         UniformAllocation constants;
+        bool uses_bindless_textures = false;
         uint32_t frame_index = 0;
         uint64_t frame_number = 0;
 

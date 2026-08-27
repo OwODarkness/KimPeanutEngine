@@ -58,10 +58,38 @@ namespace kpengine::asset
         info.path = path;
         info.resource = shader_program;
 
+        using VariantDefines = std::pair<ShaderProgramVariant, std::vector<std::string>>;
+        std::vector<VariantDefines> variants{{ShaderProgramVariant::Bound, {}}};
+        if (json.contains("variants") && json["variants"].is_array())
+        {
+            variants.clear();
+            for (const auto &variant : json["variants"])
+            {
+                const std::string name = variant.value("name", std::string{});
+                const ShaderProgramVariant kind = name == "bindless"
+                                                      ? ShaderProgramVariant::Bindless
+                                                      : ShaderProgramVariant::Bound;
+                std::vector<std::string> defines;
+                if (variant.contains("defines") && variant["defines"].is_array())
+                {
+                    for (const auto &define : variant["defines"])
+                    {
+                        if (define.is_string())
+                        {
+                            defines.push_back(define.get<std::string>());
+                        }
+                    }
+                }
+                variants.emplace_back(kind, std::move(defines));
+            }
+            if (variants.empty())
+            {
+                variants.emplace_back(ShaderProgramVariant::Bound, std::vector<std::string>{});
+            }
+        }
+
         for (const auto &item : json["shaders"])
         {
-            std::shared_ptr<ShaderResource> shader = std::make_shared<ShaderResource>();
-            shader->status = ShaderStatus::Uncompiled;
             std::string s_stage = item.value("stage", "");
             ShaderStage shader_stage = ParseStage(s_stage);
             if (shader_stage == ShaderStage::SHADER_STAGE_UNKNOW)
@@ -103,23 +131,28 @@ namespace kpengine::asset
             std::string dir = ExtractDirectoryFromPath(path);
             std::string abs_path = dir + s_file;
 
-            shader->format = shader_format;
-            shader->desc.stage = shader_stage;
-            shader->desc.file = abs_path;
-            shader->desc.entry = s_entry;
-            shader->desc.defines = std::move(defines);
+            for (const auto &[variant, variant_defines] : variants)
+            {
+                std::shared_ptr<ShaderResource> shader = std::make_shared<ShaderResource>();
+                shader->status = ShaderStatus::Uncompiled;
+                shader->format = shader_format;
+                shader->desc.stage = shader_stage;
+                shader->desc.file = abs_path;
+                shader->desc.entry = s_entry;
+                shader->desc.defines = defines;
+                shader->desc.defines.insert(shader->desc.defines.end(), variant_defines.begin(),
+                                            variant_defines.end());
 
+                AssetRegisterInfo shader_register_info{};
+                shader_register_info.type = AssetType::KPAT_Shader;
+                shader_register_info.resource = std::move(shader);
+                shader_register_info.name = s_file;
+                shader_register_info.path = abs_path;
 
-            AssetRegisterInfo shader_register_info{};
-            shader_register_info.type = AssetType::KPAT_Shader;
-            shader_register_info.resource = std::move(shader);
-            shader_register_info.name = s_file;
-            shader_register_info.path = abs_path;
-
-            AssetID shader_id = AssetManager::GetInstance().RegisterAsset(shader_register_info);
-
-            shader_program->BindData(shader_stage, shader_format, shader_id);
-            info.dependencies.push_back(shader_id);
+                const AssetID shader_id = AssetManager::GetInstance().RegisterAsset(shader_register_info);
+                shader_program->BindData(shader_stage, shader_format, shader_id, variant);
+                info.dependencies.push_back(shader_id);
+            }
         }
 
         return true;

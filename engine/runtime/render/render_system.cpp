@@ -462,6 +462,7 @@ namespace kpengine::render
 
         MaterialTemplateDesc desc{};
         desc.shader_program = shader_program;
+        desc.bindless_texture_table_compatible = true;
         desc.shading_model = MaterialShadingModel::Unlit;
         desc.parameters = {
             {"base_color", Vector4f{1.0f, 1.0f, 1.0f, 1.0f}},
@@ -556,10 +557,9 @@ namespace kpengine::render
             return;
         }
 
-        // Render-owned pipelines, descriptors, buffers, and targets may still be
-        // referenced by an earlier frame slot. Retire all submitted work before
-        // releasing any of those shared GPU objects.
-        backend_->WaitIdle();
+        // Releasing material instances first retires their bindless table slots.
+        // WaitIdle must follow that release so Graphics can collect the retired
+        // table references before the resolver destroys cached textures/samplers.
         render_world_.Clear();
         bootstrap_renderable_ = {};
         if (bootstrap_material_instance_.IsValid())
@@ -573,6 +573,7 @@ namespace kpengine::render
             bootstrap_material_template_ = {};
         }
         material_system_.reset();
+        backend_->WaitIdle();
         for (FrameContext &context : frame_contexts_)
         {
             context.Cleanup();

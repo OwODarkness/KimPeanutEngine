@@ -9,6 +9,31 @@
 #include "shader_cache.h"
 namespace kpengine::resource
 {
+    namespace
+    {
+        // The shared shader ABI is intentionally expressed as preprocessor
+        // values so a compatible shader can declare the table without pulling
+        // a Graphics backend header into Resource.
+        void AddBindlessTextureTableDefines(std::vector<std::string> &defines)
+        {
+            defines.push_back("KP_BINDLESS_TEXTURE_TABLE_ABI_VERSION 1");
+            defines.push_back("KP_BINDLESS_TEXTURE_TABLE_SET 1");
+            defines.push_back("KP_BINDLESS_TEXTURE_TABLE_BINDING 0");
+        }
+
+        void AddTargetApiDefine(std::vector<std::string> &defines, GraphicsAPIType api)
+        {
+            if (api == GraphicsAPIType::GRAPHICS_API_VULKAN)
+            {
+                defines.push_back("KP_GRAPHICS_API_VULKAN 1");
+            }
+            else if (api == GraphicsAPIType::GRAPHICS_API_OPENGL)
+            {
+                defines.push_back("KP_GRAPHICS_API_OPENGL 1");
+            }
+        }
+    }
+
 
     ShaderProcessor::ShaderProcessor()
     {
@@ -66,6 +91,8 @@ namespace kpengine::resource
             context.stage = shader->desc.stage;
             context.format = shader->format;
             context.defines = shader->desc.defines;
+            AddBindlessTextureTableDefines(context.defines);
+            AddTargetApiDefine(context.defines, api_);
 
             const std::string stage_str = std::string(magic_enum::enum_name(shader->desc.stage));
             const uint64_t hash = GenerateShaderHash(context.source, stage_str, shader->desc.entry, context.defines);

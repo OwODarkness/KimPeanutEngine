@@ -35,9 +35,10 @@ namespace kpengine::example
     // The demo bakes its shaders at runtime through the resource pipeline
     // (GLSL -> per-API artifact, content-addressed cache) instead of reading
     // prebuilt files — the RHI never reads shader files itself.
-    static asset::AssetID LoadTriangleProgram(resource::ResourcePipeline &pipeline)
+    static asset::AssetID LoadShaderProgram(resource::ResourcePipeline &pipeline,
+                                            const std::string &program_file)
     {
-        const std::string path = GetShaderDirectory() + "simple_triangle.shader";
+        const std::string path = GetShaderDirectory() + program_file;
         const asset::AssetID id = asset::AssetManager::GetInstance().LoadSync(path);
         if (!id.IsValid())
         {
@@ -100,7 +101,8 @@ namespace kpengine::example
 
             resource::ResourcePipeline resource_pipeline;
             resource_pipeline.Initialize({api});
-            const asset::AssetID shader_program_id = LoadTriangleProgram(resource_pipeline);
+            const asset::AssetID shader_program_id = LoadShaderProgram(
+                resource_pipeline, "simple_triangle.shader");
             auto program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(
                 shader_program_id);
             const auto vertex_shader = program ? program->GetShader(
@@ -139,6 +141,11 @@ namespace kpengine::example
             std::unique_ptr<graphics::RenderBackend> rhi = graphics::RenderBackend::CreateGraphicsBackEnd(api);
             rhi->BindWindowResize(window->resize_event_dispatcher_);
             rhi->Initialize(window->GetNativeHandle());
+            const bool bindless_enabled = rhi->GetCapabilities().SupportsBindlessTextures();
+            std::cout << (api == GraphicsAPIType::GRAPHICS_API_VULKAN ? "Vulkan" : "OpenGL")
+                      << " bindless textures: "
+                      << (bindless_enabled ? "enabled" : "unavailable (bound fallback)")
+                      << std::endl;
             // Force the Vulkan dedicated-allocation policy while retaining the
             // same public RHI path on OpenGL. The smoke only touches the first
             // word; the resource exists to verify large mapped-buffer teardown.
@@ -180,8 +187,15 @@ namespace kpengine::example
             DemoResourceHandles demo_resources = CreateDemoResources(*rhi);
             const asset::AssetID texture_id = asset::AssetManager::GetInstance().LoadSync(
                 GetTextureDirectory() + "wallpaper.jpg");
+            const asset::AssetID alternate_texture_id = asset::AssetManager::GetInstance().LoadSync(
+                GetTextureDirectory() + "default.png");
+            if (!texture_id.IsValid() || !alternate_texture_id.IsValid())
+            {
+                throw std::runtime_error("failed to load multi-material smoke textures");
+            }
             render::MaterialTemplateDesc material_template_desc{};
             material_template_desc.shader_program = shader_program_id;
+            material_template_desc.bindless_texture_table_compatible = true;
             material_template_desc.shading_model = render::MaterialShadingModel::Unlit;
             material_template_desc.parameters = {
                 {"base_color", Vector4f{1.0f, 1.0f, 1.0f, 1.0f}},
@@ -189,22 +203,73 @@ namespace kpengine::example
             };
             const render::MaterialTemplateHandle material_template =
                 materials.CreateTemplate(material_template_desc);
-            const render::MaterialInstanceHandle material_instance =
+            auto bound_material_template_desc = material_template_desc;
+            bound_material_template_desc.bindless_texture_table_compatible = false;
+            const render::MaterialTemplateHandle bound_material_template =
+                materials.CreateTemplate(bound_material_template_desc);
+            const render::MaterialInstanceHandle first_material_instance =
                 materials.CreateInstance({material_template, {}});
-            if (!material_instance.IsValid())
+            const render::MaterialInstanceHandle second_material_instance = materials.CreateInstance(
+                {material_template,
+                 {{render::MaterialParameterID{1},
+                   render::MaterialTextureSamplerValue{alternate_texture_id, {}}}}});
+            const render::MaterialInstanceHandle first_bound_material_instance =
+                materials.CreateInstance({bound_material_template, {}});
+            const render::MaterialInstanceHandle second_bound_material_instance = materials.CreateInstance(
+                {bound_material_template,
+                 {{render::MaterialParameterID{1},
+                   render::MaterialTextureSamplerValue{alternate_texture_id, {}}}}});
+            if (!first_material_instance.IsValid() || !second_material_instance.IsValid() ||
+                !first_bound_material_instance.IsValid() || !second_bound_material_instance.IsValid())
             {
-                throw std::runtime_error("failed to create smoke material instance");
+                throw std::runtime_error("failed to create multi-material smoke instances");
+            }
+            for (const render::MaterialInstanceHandle instance :
+                 {first_material_instance, second_material_instance})
+            {
+                const bool uses_bindless = resource_resolver.UsesBindlessTextures(instance);
+                if (uses_bindless != bindless_enabled)
+                {
+                    throw std::runtime_error("material binding mode did not match backend capability");
+                }
+                const auto *resolved = resource_resolver.FindTextureBindings(instance);
+                if (!resolved || (bindless_enabled &&
+                                  resolved->bindless_slots.size() != resolved->textures.size()))
+                {
+                    throw std::runtime_error("failed to resolve all multi-material bindless slots");
+                }
+            }
+            for (const render::MaterialInstanceHandle instance :
+                 {first_bound_material_instance, second_bound_material_instance})
+            {
+                if (resource_resolver.UsesBindlessTextures(instance))
+                {
+                    throw std::runtime_error("ordinary material unexpectedly selected bindless textures");
+                }
             }
             render::RenderWorld render_world{};
             render::MeshProxyDesc proxy_desc{};
             proxy_desc.mesh = demo_resources.mesh;
-            proxy_desc.material = material_instance;
-            proxy_desc.world_transform.scale_ = {0.5f, 0.5f, 0.5f};
-            const render::RenderableHandle renderable = render_world.EnqueueCreate(proxy_desc);
+            proxy_desc.material = first_material_instance;
+            proxy_desc.world_transform.position_ = {-0.75f, 0.0f, 0.0f};
+            proxy_desc.world_transform.scale_ = {0.25f, 0.25f, 0.25f};
+            const render::RenderableHandle first_renderable = render_world.EnqueueCreate(proxy_desc);
+            proxy_desc.material = second_material_instance;
+            proxy_desc.world_transform.position_ = {-0.25f, 0.0f, 0.0f};
+            const render::RenderableHandle second_renderable = render_world.EnqueueCreate(proxy_desc);
+            proxy_desc.material = first_bound_material_instance;
+            proxy_desc.world_transform.position_ = {0.25f, 0.0f, 0.0f};
+            const render::RenderableHandle first_bound_renderable = render_world.EnqueueCreate(proxy_desc);
+            proxy_desc.material = second_bound_material_instance;
+            proxy_desc.world_transform.position_ = {0.75f, 0.0f, 0.0f};
+            const render::RenderableHandle second_bound_renderable = render_world.EnqueueCreate(proxy_desc);
             render_world.ApplyPendingCommands();
-            if (!render_world.IsRegistered(renderable))
+            if (!render_world.IsRegistered(first_renderable) ||
+                !render_world.IsRegistered(second_renderable) ||
+                !render_world.IsRegistered(first_bound_renderable) ||
+                !render_world.IsRegistered(second_bound_renderable))
             {
-                throw std::runtime_error("failed to register smoke mesh proxy");
+                throw std::runtime_error("failed to register multi-material smoke mesh proxies");
             }
             render::RenderCamera camera{};
 
@@ -273,6 +338,14 @@ namespace kpengine::example
                                 {
                                     continue;
                                 }
+                                const bool expects_bindless =
+                                    materials.GetInstanceTemplate(proxy.material) == material_template &&
+                                    bindless_enabled;
+                                if (material_binding.uses_bindless_textures != expects_bindless)
+                                {
+                                    throw std::runtime_error(
+                                        "material draw binding mode did not match backend capability");
+                                }
                                 recorder->BindPipeline(material_binding.pipeline);
                                 recorder->BindMesh(proxy.mesh);
                                 recorder->BindResourceBindings(material_binding.pipeline,
@@ -294,10 +367,14 @@ namespace kpengine::example
             }
             // The smoke path owns RHI resources directly, so it must establish
             // the same retirement boundary as RenderSystem before releasing them.
-            rhi->WaitIdle();
             render_world.Clear();
-            materials.DestroyInstance(material_instance);
+            materials.DestroyInstance(first_material_instance);
+            materials.DestroyInstance(second_material_instance);
+            materials.DestroyInstance(first_bound_material_instance);
+            materials.DestroyInstance(second_bound_material_instance);
             materials.DestroyTemplate(material_template);
+            materials.DestroyTemplate(bound_material_template);
+            rhi->WaitIdle();
             for (render::FrameContext &frame_context : frame_contexts)
             {
                 frame_context.Cleanup();
