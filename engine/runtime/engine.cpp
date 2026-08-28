@@ -9,6 +9,7 @@
 #include "config/path.h"
 #include "bootstrap/bootstrap.h"
 #include "render/render_system.h"
+#include "gameplay/world/gameplay_world.h"
 #include "editor/editor.h"
 
 // [reconstruction] The legacy render/world systems are still being reconstructed;
@@ -62,6 +63,10 @@ namespace kpengine
                                       { return is_render_thread_loaded_; });
             }
 
+            // Runtime owns game-start composition; Engine only establishes the
+            // thread/lifecycle boundary after render startup is complete.
+            global_runtime_context.FinalizeGameStartup();
+
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initialize successfully");
         }
 
@@ -79,9 +84,8 @@ namespace kpengine
             render::BootstrapSceneInfo scene_info{};
             if (config.scene.IsComplete())
             {
-                scene_info.shader_program_path = GetAssetDirectory() + config.scene.shader_program;
                 scene_info.model_path = GetAssetDirectory() + config.scene.model;
-                scene_info.texture_path = GetAssetDirectory() + config.scene.texture;
+                scene_info.material_path = GetAssetDirectory() + config.scene.material;
             }
             global_runtime_context.SetBootstrapScene(std::move(scene_info));
             std::vector<asset::AssetLoadRequest> requests = bootstrap::BuildLoadRequests(config);
@@ -132,9 +136,10 @@ namespace kpengine
             const double target_frame_time = 1.0 / target_fps;
             auto frame_start = clock::now();
 
-            // [reconstruction] Old design — the legacy game framework was ticked here;
-            // re-wired by the reconstruction.
-            // global_runtime_context.world_system_->Tick(1.f / target_fps);
+            if (global_runtime_context.gameplay_world_)
+            {
+                global_runtime_context.gameplay_world_->Tick(1.0f / target_fps);
+            }
 
             {
                 std::lock_guard<std::mutex> lock(game_ready_mutex_);

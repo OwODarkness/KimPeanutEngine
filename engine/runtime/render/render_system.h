@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -21,6 +22,7 @@
 #include "render_pass.h"
 #include "render_target.h"
 #include "render_resource.h"
+#include "render_source_registry.h"
 #include "render_world/render_world.h"
 
 namespace kpengine::graphics
@@ -41,17 +43,16 @@ namespace kpengine::runtime
 namespace kpengine::render
 {
     class RenderResourceResolver;
+    class MaterialAssetResolver;
 
     struct BootstrapSceneInfo
     {
-        std::string shader_program_path;
         std::string model_path;
-        std::string texture_path;
+        std::string material_path;
 
         bool IsComplete() const
         {
-            return !shader_program_path.empty() && !model_path.empty() &&
-                   !texture_path.empty();
+            return !model_path.empty() && !material_path.empty();
         }
     };
 
@@ -107,6 +108,10 @@ namespace kpengine::render
         // Distinct shader references loaded so far, reference-based on the content
         // hash (the ShaderCache key) so a stage shared across programs counts once.
         int GetLoadedShaderCount() const;
+        IRenderableSourceSink *GetRenderableSourceSink() { return &source_registry_; }
+        // Transfers the one startup renderable as logical source data. Runtime
+        // consumes it on the game thread to create the regular Gameplay Actor.
+        std::optional<StaticMeshRenderableSourceDesc> TakeBootstrapRenderableSource();
 
     private:
         // Lifecycle belongs to RuntimeContext: it owns this object and is the only
@@ -121,11 +126,15 @@ namespace kpengine::render
         // Drain up to max_items requests (0 = unlimited, the bootstrap pass).
         void ConsumeRequests(std::size_t max_items);
         bool ConsumeOne(const asset::AssetLoadRequest &request, RenderCacheEntry &entry);
+        RenderableSourceResolution ResolveRenderableSource(
+            const PrimitiveRenderableSourceDesc &source);
+        MaterialResolution ResolveMaterialAsset(asset::AssetID material_asset,
+                                                MaterialInstanceHandle &out_instance);
+        void DrainRenderableSources();
 
         const RenderCacheEntry *FindCached(asset::AssetID asset_id) const;
-        MaterialInstanceHandle CreateDefaultTexturedMaterial(asset::AssetID shader_program,
-                                                              asset::AssetID texture_asset);
-        void CreateBootstrapScene();
+        void PrepareBootstrapRenderableSource();
+        void DestroyMaterialAssetRecords();
         void ConfigurePassSchedule();
         void RecordScenePass();
         void RecordMeshProxy(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
@@ -144,10 +153,10 @@ namespace kpengine::render
         graphics::Extent2D pending_scene_render_target_extent_;
         std::vector<FrameContext> frame_contexts_;
         RenderWorld render_world_;
+        RenderableSourceRegistry source_registry_;
         RenderCamera scene_camera_;
-        RenderableHandle bootstrap_renderable_;
-        MaterialTemplateHandle bootstrap_material_template_;
-        MaterialInstanceHandle bootstrap_material_instance_;
+        std::optional<StaticMeshRenderableSourceDesc> bootstrap_renderable_source_;
+        std::unique_ptr<MaterialAssetResolver> material_asset_resolver_;
         BootstrapSceneInfo bootstrap_scene_info_;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;

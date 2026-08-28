@@ -10,12 +10,6 @@
 
 namespace kpengine::asset{
 
-    enum class ShaderProgramVariant : uint8_t
-    {
-        Bound,
-        Bindless,
-    };
-
     // A stage bound into a ShaderProgramResource: the source format plus the
     // AssetID of the ShaderResource it refers to.
     struct ShaderProgramEntry
@@ -37,8 +31,12 @@ namespace kpengine::asset{
         std::shared_ptr<struct ShaderResource> GetShader(
             ShaderStage stage, ShaderFormat format,
             ShaderProgramVariant variant = ShaderProgramVariant::Bound);
-        // Every bound stage, across all formats, as a flat list for ProcessShader.
+        // Every stage from every variant, for explicit warm-all use only.
         std::vector<std::shared_ptr<struct ShaderResource>> GatherShaders() const;
+        // The stage set selected by one pipeline.  Normal render resolution
+        // processes this form so it does not compile an inactive variant.
+        std::vector<std::shared_ptr<struct ShaderResource>> GatherShaders(
+            ShaderProgramVariant variant) const;
     private:
         std::unordered_map<ShaderStage, std::vector<ShaderProgramEntry>> datas;
     };

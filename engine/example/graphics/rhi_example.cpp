@@ -13,6 +13,10 @@
 #include "runtime/render/render_resource_resolver.h"
 #include "runtime/render/material/material_system.h"
 #include "runtime/render/render_world/render_world.h"
+#include "runtime/render/render_source_registry.h"
+#include "runtime/gameplay/actor/actor.h"
+#include "runtime/gameplay/component/mesh_component.h"
+#include "runtime/gameplay/world/gameplay_world.h"
 #include "runtime/graphics/backend/common/pipeline_types.h"
 #include "runtime/graphics/backend/common/render_backend.h"
 #include "runtime/graphics/backend/common/render_target.h"
@@ -50,7 +54,9 @@ namespace kpengine::example
             throw std::runtime_error("loaded asset holds no shader program resource");
         }
 
-        pipeline.ProcessShader(program->GatherShaders());
+        // This direct smoke pipeline uses the conventional bound ABI. The
+        // Material checks below resolve their own bound and bindless variants.
+        pipeline.ProcessShader(program->GatherShaders(asset::ShaderProgramVariant::Bound));
         return id;
     }
 
@@ -263,6 +269,45 @@ namespace kpengine::example
             proxy_desc.material = second_bound_material_instance;
             proxy_desc.world_transform.position_ = {0.75f, 0.0f, 0.0f};
             const render::RenderableHandle second_bound_renderable = render_world.EnqueueCreate(proxy_desc);
+            render::RenderableSourceRegistry source_registry{};
+            gameplay::GameplayWorld gameplay_world{&source_registry};
+            const gameplay::ActorHandle gameplay_actor_handle = gameplay_world.CreateActor();
+            gameplay::Actor *const gameplay_actor = gameplay_world.FindActor(gameplay_actor_handle);
+            if (!gameplay_actor)
+            {
+                throw std::runtime_error("failed to create gameplay smoke actor");
+            }
+            auto *const gameplay_mesh = gameplay_actor->AddComponent<gameplay::MeshComponent>();
+            if (!gameplay_mesh || !gameplay_actor->SetRootComponent(gameplay_mesh))
+            {
+                throw std::runtime_error("failed to create gameplay smoke mesh component");
+            }
+            gameplay_mesh->SetMeshAsset({1, 0, asset::AssetType::KPAT_Mesh});
+            gameplay_mesh->SetMaterialAsset({1, 0, asset::AssetType::KPAT_Material});
+            gameplay_mesh->SetLocalBounds({{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}});
+            gameplay_mesh->SetLocalLocation({0.0f, 0.5f, 0.0f});
+            gameplay_mesh->SetLocalScale({0.2f, 0.2f, 0.2f});
+            if (!gameplay_world.InitializeActor(gameplay_actor_handle) ||
+                !gameplay_world.ActivateActor(gameplay_actor_handle))
+            {
+                throw std::runtime_error("failed to activate gameplay smoke actor");
+            }
+            const auto resolve_gameplay_source =
+                [&demo_resources, first_material_instance](const render::PrimitiveRenderableSourceDesc &source)
+            {
+                const auto &static_mesh = std::get<render::StaticMeshRenderableSourceDesc>(source);
+                render::MeshProxyDesc resolved{};
+                resolved.mesh = demo_resources.mesh;
+                resolved.material = first_material_instance;
+                resolved.world_transform = static_mesh.world_transform;
+                resolved.world_bounds = static_mesh.world_bounds;
+                resolved.flags = static_mesh.flags;
+                resolved.lod_bias = static_mesh.lod_bias;
+                return render::RenderableSourceResolution{
+                    render::RenderableSourceState::Ready, {}, resolved};
+            };
+            gameplay_world.Tick(0.0f);
+            source_registry.Drain(render_world, resolve_gameplay_source);
             render_world.ApplyPendingCommands();
             if (!render_world.IsRegistered(first_renderable) ||
                 !render_world.IsRegistered(second_renderable) ||
@@ -270,6 +315,10 @@ namespace kpengine::example
                 !render_world.IsRegistered(second_bound_renderable))
             {
                 throw std::runtime_error("failed to register multi-material smoke mesh proxies");
+            }
+            if (render_world.Snapshot().size() != 5U)
+            {
+                throw std::runtime_error("gameplay smoke mesh did not reach RenderWorld");
             }
             render::RenderCamera camera{};
 
@@ -280,6 +329,21 @@ namespace kpengine::example
             while (!window->ShouldClose() && (max_frames == 0 || rendered_frames < max_frames))
             {
                 window->PollEvents();
+                if (rendered_frames == 0)
+                {
+                    gameplay_mesh->SetLocalLocation({0.0f, -0.5f, 0.0f});
+                }
+                else if (rendered_frames == 1)
+                {
+                    gameplay_mesh->SetVisible(false);
+                }
+                else if (rendered_frames == 2)
+                {
+                    gameplay_mesh->SetVisible(true);
+                }
+                gameplay_world.Tick(kDemoDeltaSeconds);
+                source_registry.Drain(render_world, resolve_gameplay_source);
+                render_world.ApplyPendingCommands();
                 if (trigger_resize && rendered_frames == 1)
                 {
                     window->SetWindowSize(1024, 768);
@@ -365,9 +429,21 @@ namespace kpengine::example
                 }
                 ++rendered_frames;
             }
+            if (!gameplay_world.DestroyActor(gameplay_actor_handle))
+            {
+                throw std::runtime_error("failed to destroy gameplay smoke actor");
+            }
+            gameplay_world.Tick(kDemoDeltaSeconds);
+            source_registry.Drain(render_world, resolve_gameplay_source);
+            render_world.ApplyPendingCommands();
+            if (render_world.Snapshot().size() != 4U)
+            {
+                throw std::runtime_error("gameplay smoke mesh was not destroyed from RenderWorld");
+            }
             // The smoke path owns RHI resources directly, so it must establish
             // the same retirement boundary as RenderSystem before releasing them.
             render_world.Clear();
+            source_registry.Clear(render_world);
             materials.DestroyInstance(first_material_instance);
             materials.DestroyInstance(second_material_instance);
             materials.DestroyInstance(first_bound_material_instance);

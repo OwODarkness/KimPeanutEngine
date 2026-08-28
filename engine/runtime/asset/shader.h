@@ -20,6 +20,15 @@ enum class ShaderStatus {
     CompileFailed
 };
 
+// A program may provide source for the traditional per-material bindings and
+// for the shared bindless texture table.  This is authoring identity, not a
+// backend object; Render selects the active variant for a pipeline.
+enum class ShaderProgramVariant : uint8_t
+{
+    Bound,
+    Bindless,
+};
+
 
 // Identity of a single shader stage: where its source lives and how to compile
 // it. Distinct from ShaderProgramResource, which is the multi-stage composition
@@ -36,6 +45,7 @@ struct ShaderStageDesc{
 struct ShaderResource{
     std::shared_ptr<ShaderData> data;
     ShaderStageDesc desc;
+    ShaderProgramVariant variant = ShaderProgramVariant::Bound;
     ShaderFormat format;
     ShaderStatus status;
     ShaderResource():

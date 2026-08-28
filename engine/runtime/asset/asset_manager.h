@@ -16,6 +16,7 @@ namespace kpengine::asset{
     class ImageLoader;
     class ShaderProgramLoader;
     class IAudioLoader;
+    class MaterialLoader;
 
     using AssetHandle = Handle<Asset>;
 
@@ -81,6 +82,7 @@ namespace kpengine::asset{
         std::unique_ptr<ImageLoader> image_loader_;
         std::unique_ptr<ShaderProgramLoader> shader_program_loader_;
         std::unique_ptr<IAudioLoader> audio_loader_;
+        std::unique_ptr<MaterialLoader> material_loader_;
         std::unordered_map<AssetType, AssetCache> caches_;
 
         std::recursive_mutex state_mutex_;  // guards caches_ and path_index

@@ -115,16 +115,20 @@ namespace kpengine::render
             return {MaterialResourceState::Pending, "shader program asset is not loaded"};
         }
 
-        resource_pipeline_->ProcessShader(program->GatherShaders());
-        for (const asset::ShaderPtr &shader : program->GatherShaders())
+        const bool use_bindless_pipeline = desc.bindless_texture_table_compatible &&
+                                           backend_->GetCapabilities().SupportsBindlessTextures();
+        const asset::ShaderProgramVariant variant = use_bindless_pipeline
+                                                        ? asset::ShaderProgramVariant::Bindless
+                                                        : asset::ShaderProgramVariant::Bound;
+        const auto shaders = program->GatherShaders(variant);
+        resource_pipeline_->ProcessShader(shaders);
+        for (const asset::ShaderPtr &shader : shaders)
         {
             if (!shader || shader->status == asset::ShaderStatus::CompileFailed)
             {
                 return {MaterialResourceState::Failed, "shader program compilation failed"};
             }
         }
-        const bool use_bindless_pipeline = desc.bindless_texture_table_compatible &&
-                                           backend_->GetCapabilities().SupportsBindlessTextures();
         const graphics::PipelineHandle pipeline = GetOrCreateDefaultPipeline(
             desc.shader_program, *program, &desc.pipeline_state, use_bindless_pipeline);
         if (!pipeline.IsValid())

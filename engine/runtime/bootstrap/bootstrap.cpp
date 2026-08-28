@@ -81,9 +81,8 @@ namespace kpengine::bootstrap
         if (json.contains("scene") && json["scene"].is_object())
         {
             const auto &scene = json["scene"];
-            config.scene.shader_program = scene.value("shader_program", std::string{});
             config.scene.model = scene.value("model", std::string{});
-            config.scene.texture = scene.value("texture", std::string{});
+            config.scene.material = scene.value("material", std::string{});
             if (!config.scene.IsComplete())
             {
                 KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,

@@ -127,14 +127,78 @@
 
 ## Planned (next up)
 
-- **World component and mesh-proxy reconstruction** — a future world
-   module will make `PrimitiveComponent`/`MeshComponent` logical scene-state
-   producers only. A render-owned, thread-safe `MeshProxy` registry receives
-   queued create/update/destroy commands, supplies immutable frame snapshots,
-   and feeds culling/draw lists before the general render graph phase. This
-   deliberately replaces—not restores—the deprecated proxy's direct OpenGL
-   `Draw()` behavior. → [component plan](world/component_module.md),
-   [mesh proxy TODO](world/mesh_proxy_TODO.md)
+- **Gameplay editor inspection (deferred)** — Gameplay is game-thread-owned,
+  while the current editor runs on the render thread. Add a read-only snapshot
+  before exposing Actor/component state to editor tools; do not give Editor
+  mutable GameplayWorld ownership. → [gameplay design](gameplay/gameplay_module.md)
+- **Gameplay boundary contract (GP0, 2026-08-28)** — the `Gameplay` Runtime
+  target now owns `ActorHandle`/`ActorState`; Render owns the header-level
+  `IRenderableSourceSink`, generational source token, and static-mesh source
+  descriptor variant. Gameplay links only Core and Render, while Graphics stays
+  Render-private. Runtime smoke and editor follow-up remain GP5. →
+  [gameplay TODO](gameplay/TODO.md)
+- **Gameplay World/Actor/component ownership (GP1, 2026-08-28)** —
+  `GameplayWorld` owns generational Actor records with deferred storage
+  reclamation; Actor uniquely owns its components and drives their one-time
+  initialize, ordered activation/tick, and reverse-order deactivation. Actor
+  destruction invalidates the handle immediately. `GameplayUnitTest` covers
+  lifecycle order, duplicate/late-add policy, stale handles, and teardown.
+  → [gameplay design](gameplay/gameplay_module.md),
+  [gameplay TODO](gameplay/TODO.md)
+- **Gameplay scene transforms and primitive state (GP2, 2026-08-28)** —
+  same-Actor SceneComponent attachments reject self/cycles and keep cached
+  transforms correct through `parent_world * local_transform`. Primitive state
+  consists only of visible/casts-shadow flags and local/world AABBs; it remains
+  headless and has no RenderWorld ownership. `GameplayUnitTest` covers parent
+  changes, detach, invalid attachment, transform composition, and bounds. →
+  [gameplay TODO](gameplay/TODO.md)
+- **Gameplay MeshComponent source production (GP3, 2026-08-28)** —
+  GameplayWorld injects a non-owning Render source sink; MeshComponent emits
+  value-only static-mesh create/update/destroy requests and retains only the
+  generational source token. It coalesces dirty state to one update per tick;
+  no Gameplay type can reach RenderWorld, MeshProxy, or Graphics. The eight
+  `GameplayUnitTest` cases include this command lifecycle. →
+  [gameplay design](gameplay/gameplay_module.md),
+  [gameplay TODO](gameplay/TODO.md)
+- **Gameplay/render bridge integration (GP4, 2026-08-28)** — RenderSystem owns
+  the mutex-protected source sink and render-thread source records. BeginFrame
+  resolves ready logical mesh/material values into queued MeshProxy changes
+  before RenderWorld applies them; pending/failed records have no proxy.
+  RuntimeContext owns and ticks GameplayWorld before the game-to-render
+  handoff, then destroys it before RenderSystem shutdown. Focused source and
+  gameplay tests pass; runtime graphics smoke remains GP5. →
+  [gameplay design](gameplay/gameplay_module.md),
+  [gameplay TODO](gameplay/TODO.md)
+- **Gameplay validation (GP5, 2026-08-28)** — `GameplayUnitTest` and the
+  render-source registry contract test cover source lifecycle. `GraphicsSmoke`
+  passed the gameplay mesh create/move/visibility/destroy/resize/teardown path
+  on Vulkan and OpenGL (three frames each). Editor inspection is deliberately
+  deferred pending a read-only gameplay snapshot. →
+  [gameplay TODO](gameplay/TODO.md)
+- **Bootstrap Gameplay Actor migration (2026-08-28)** — Render startup now
+  prepares a logical static-mesh source after loading bootstrap assets and
+  creating the render-owned material identity. The startup handshake transfers
+  that value to the game thread, where `CreateStaticMeshActor` creates the
+  normal World-owned Actor; `RenderSystem` no longer owns a special bootstrap
+  `MeshProxy`. → [gameplay design](gameplay/gameplay_module.md)
+- **Material Asset V1 — asset loading slice (2026-08-28)** — Asset now loads
+  strict version-1 `*.material` JSON into CPU-only `MaterialResource` values:
+  material-relative shader/texture paths, surface policy, and scalar/vector/
+  texture parameter sources. The format is documented beside the asset module;
+  Render-side resolution is recorded in the following M6 completion entry.
+  → [asset file structure](../engine/runtime/asset/README.md),
+  [material TODO](render/material_system_TODO.md)
+- **Material Asset V1 — render resolution (2026-08-28)** — Gameplay now
+  publishes material AssetIDs, while RenderSystem resolves each loaded material
+  into one cached private template/default-instance pair and supplies only that
+  instance to MeshProxy. Bootstrap now references `bootstrap.material`; the
+  initial unlit texture convention is `base_color_texture` at binding 2.
+  → [material TODO](render/material_system_TODO.md)
+- **Material Asset V1 — M6.1 validation (2026-08-28)** — the Render-owned
+  material-asset cache is independently testable. Focused tests cover
+  deduplication, invalid/unloaded/broken references, schema-version rejection,
+  and failed-source proxy retirement; Vulkan/OpenGL graphics smoke passed.
+  → [material TODO](render/material_system_TODO.md)
 1. **Render module reconstruction** — the 7-step plan in [render_module.md](render/render_module.md): wire the resource pipeline in, move `PipelineDesc` construction out of the backend, add the warmup pass, retire the legacy GL path.
 2. **RHI leak fixes** — `ShaderManager` retired + `PipelineDesc` shaders backed by `ShaderData` (**landed 2026-08-15**, Phase 0 of [vulkanbackend.md](graphics/vulkanbackend.md)). **`VulkanDevice` extracted (landed 2026-08-15**, Phase 1 — reconstruction; original archived at `backend/vulkan/deprecated/`). **`VulkanSwapchain` extracted (landed 2026-08-15**, Phase 2). **`VulkanFrameContext` extracted (landed 2026-08-15**, Phase 3 — command pools, scene/UI buffers, sync objects, in-flight index, one-shot primitives, sync2-only barriers; shared one-shot buffers + dead transfer helpers deleted). **Scene recording extracted (landed 2026-08-15**, Phase 4 — the backend exposes "the current frame's command buffer + attachments"; the demo moved out to `render::RenderScene`, the render module's first real scene; TODO 5.1 `Render` links `Graphics` landed). **Facade cleanup (landed 2026-08-16**, Phase 5 — `window_`/`camera_data` public seams dropped, `Initialize` takes the native window handle; sakura split decided: keep the frame loop). **Build-time `glslc` step removed (landed 2026-08-16**, TODO 2.3 — the demo bakes shaders at runtime via `ProcessShader`). **`ShaderModule` seam retired (landed 2026-08-16**, TODO 1.2 — raw `ShaderData` → API object stays inline in the pipeline bakes).
 3. **Resource pipeline gaps** — add `CompileFailed` status (carry error text); make `ProcessShader` take the whole `ShaderProgramResource` as one compile unit.

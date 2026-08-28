@@ -11,7 +11,7 @@ The asset module is the engine's "get me this file as a typed resource" layer. I
 ```cpp
 enum class AssetType : uint16_t {
     Undefined, KPAT_Model, KPAT_Texture, KPAT_Audio,
-    KPAT_Shader, KPAT_ShaderProgram, KPAT_Mesh,
+    KPAT_Shader, KPAT_ShaderProgram, KPAT_Mesh, KPAT_Material,
 };
 ```
 
@@ -98,6 +98,8 @@ Consequence: loads are **serialized**, not parallelized — async loading wins o
 - `KPAT_Texture` → `Stb_ImageLoader`
 - `KPAT_Audio` → `MiniAudio_AudioLoader`
 - `KPAT_ShaderProgram` → `ShaderProgramLoader` (emits `KPAT_Shader` sub-resources)
+- `KPAT_Material` → `MaterialLoader` (parses versioned CPU-side `*.material`
+  authoring data without resolving render handles or child AssetIDs)
 
 Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h`, `shader_program_loader.h`); the concrete implementations are swappable. The manager owns them as `unique_ptr` and currently hard-codes the concrete types in its constructor.
 

@@ -1,6 +1,8 @@
 add_subdirectory(audio)
+add_subdirectory(asset)
 add_subdirectory(bootstrap)
 add_subdirectory(script)
 add_subdirectory(profile)
 add_subdirectory(graphics)
 add_subdirectory(render)
+add_subdirectory(gameplay)

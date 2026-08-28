@@ -2,11 +2,17 @@
 #define KPENGINE_RUNTIME_GLOBAL_CONTEXT_H
 
 #include <memory>
+#include <optional>
 #include <thread>
 #include "base/base.h"
 #include "async/async_queue.h"
 #include "asset/asset_load_request.h"
 #include "render/render_system.h"
+
+namespace kpengine::gameplay
+{
+    class GameplayWorld;
+}
 
 namespace kpengine::input
 {
@@ -40,12 +46,16 @@ namespace kpengine
             ~RuntimeContext();
             void Initialize();
             void PostInitialize();
+            // Called by Engine after the render startup handshake, on the game thread.
+            // This is the Runtime-owned boundary for initial World composition.
+            void FinalizeGameStartup();
             void Clear();
             void SetBootstrapScene(render::BootstrapSceneInfo scene);
 
         public:
             std::unique_ptr<WindowSystem> window_system_;
             std::unique_ptr<render::RenderSystem> render_system_;
+            std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
             std::unique_ptr<LogSystem> log_system_;
             std::unique_ptr<input::InputSystem> input_system_;
 
@@ -62,6 +72,7 @@ namespace kpengine
 
             GraphicsAPIType graphics_api_type_;
             render::BootstrapSceneInfo bootstrap_scene_;
+            std::optional<render::StaticMeshRenderableSourceDesc> bootstrap_renderable_source_;
 
             // Incoming leg of the async resource queue (docs/async/async_resource_queue.md).
             // Producers (the engine's bootstrap preload today, the render module later)

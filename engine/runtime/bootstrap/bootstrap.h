@@ -10,13 +10,12 @@ namespace kpengine::bootstrap
 {
     struct BootstrapScene
     {
-        std::string shader_program;
         std::string model;
-        std::string texture;
+        std::string material;
 
         bool IsComplete() const
         {
-            return !shader_program.empty() && !model.empty() && !texture.empty();
+            return !model.empty() && !material.empty();
         }
     };
 

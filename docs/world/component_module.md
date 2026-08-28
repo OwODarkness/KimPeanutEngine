@@ -1,14 +1,14 @@
 # World Components and Renderable Proxies
 
-**Status: render-side MP1 foundation landed (2026-08-26); no active `world` or
-component runtime module exists yet.** The archived implementation under
+**Status: render-side MP1 foundation landed (2026-08-26); the active gameplay
+module is planned in [gameplay_module.md](../gameplay/gameplay_module.md).** The archived implementation under
 [`deprecated/component/`](../../deprecated/component/) and
 [`deprecated/render/`](../../deprecated/render/) is design history, not code to
 restore unchanged.
 
 ## Purpose
 
-The world/component side builds scene state. The render side consumes a
+The gameplay World/Actor/component side builds scene state. The render side consumes a
 render-thread-safe representation of the subset that can be drawn. A component
 must never become a GPU object or record API commands itself.
 
@@ -25,6 +25,9 @@ world / Actor
 This is the useful part of Unreal's primitive-proxy pattern: game objects and
 their transforms stay on the world side; rendering reads a copied, stable
 proxy. It is not a request to copy Unreal's class hierarchy or its renderer.
+The tiny-engine plan starts with static meshes only; point clouds, skinned
+meshes, terrain, and other primitives add their own source-data variant only
+when an actual render consumer exists.
 
 ## Ownership and boundary
 
@@ -118,6 +121,14 @@ MeshProxy registry → culling / DrawCallList
 
 This ordering prevents a graph from being designed around a one-off bootstrap
 scene rather than real renderable inputs.
+
+## Gameplay implementation plan
+
+Gameplay lifecycle, Actor/component ownership, transform attachment, the
+render-source bridge, and validation are specified in
+[gameplay_module.md](../gameplay/gameplay_module.md) with an executable ledger
+in [gameplay/TODO.md](../gameplay/TODO.md). This document remains the durable
+render-side ownership contract.
 
 ## Future work
 

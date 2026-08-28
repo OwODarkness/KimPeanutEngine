@@ -27,7 +27,7 @@ World MeshComponent
 
 | Concern | Owner |
 |---|---|
-| Material asset/reference selected by a World component | `world/` (future) |
+| Material asset/reference selected by a Gameplay component | `asset/` identity, observed by Gameplay |
 | Template/instance registry, parameter validation, pipeline request policy | `render/MaterialSystem` |
 | Pipeline/static mesh/texture/sampler GPU handles | render-private `RenderResourceResolver`, owned by `RenderSystem` |
 | Per-frame uniform ranges and descriptor/resource binding sets | `FrameContext` |
@@ -149,6 +149,18 @@ V1 explicitly does **not** provide:
 - native Vulkan/OpenGL material classes;
 - World/component ownership of graphics handles.
 
+## Material Asset V1
+
+The former `MaterialInstanceHandle` input has been replaced. Material Asset V1
+introduces a versioned `*.material` asset containing only stable authoring
+values: shader asset reference, surface policy, and typed defaults including
+texture asset references. Gameplay selects that asset by `asset::AssetID`;
+Render creates and owns one cached derived template/default-instance pair and
+all readiness state.
+The asset format never stores a pipeline, descriptor set, GPU handle, or
+backend-specific value. The detailed migration ledger is M6 in
+[material_system_TODO.md](material_system_TODO.md).
+
 ## Build order
 
 ```text
@@ -156,8 +168,9 @@ M1. Material handles + immutable template / instance records (done)
 M2. Validate data-driven instance values and logical texture/sampler references (done)
 M3. Resolve pipelines/static texture+sampler resources and classify draw intent (done)
 M4. Build frame-local binding descriptions through FrameContext (done)
-M5. Build RenderWorld proxy registry and draw lists
-M6. Add shadow, G-buffer, lighting, then expand toward a render graph
+M5. Build RenderWorld proxy registry and draw lists (done)
+M6. Material Asset V1: serialized material identity → private template/default instance (done)
+M7. Add shadow, G-buffer, lighting, then expand toward a render graph
 ```
 
 ## Completion condition

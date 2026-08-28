@@ -1,6 +1,7 @@
 #include "render_system.h"
 
 #include <algorithm>
+#include <utility>
 
 #include "asset/asset_manager.h"
 #include "asset/mesh.h"
@@ -12,6 +13,7 @@
 #include "graphics/backend/common/command_recorder.h"
 #include "log/logger.h"
 #include "render/material/material_system.h"
+#include "render/material/material_asset_resolver.h"
 #include "render/render_world/scene_draw_list.h"
 #include "render/render_world/scene_visibility.h"
 #include "render_resource_resolver.h"
@@ -58,6 +60,7 @@ namespace kpengine::render
         load_queue_ = info.load_queue;
         bootstrap_scene_info_ = info.bootstrap_scene;
         material_system_ = std::make_unique<MaterialSystem>();
+        material_asset_resolver_ = std::make_unique<MaterialAssetResolver>(*material_system_);
 
         resource_pipeline_ = std::make_unique<resource::ResourcePipeline>();
         resource::ResourcePipelineContext context;
@@ -101,7 +104,7 @@ namespace kpengine::render
     {
         // Bootstrap: load + process everything already queued, before the main loop.
         ConsumeRequests(0);
-        CreateBootstrapScene();
+        PrepareBootstrapRenderableSource();
         KP_LOG("RenderLog", LOG_LEVEL_INFO,
                "Bootstrap drained: %d distinct shader(s) loaded", GetLoadedShaderCount());
     }
@@ -116,6 +119,7 @@ namespace kpengine::render
     {
         ConsumeRequests(kMaxRuntimeLoadsPerFrame);
         material_system_->RefreshResources();
+        DrainRenderableSources();
         render_world_.ApplyPendingCommands();
         if (!backend_)
         {
@@ -320,6 +324,7 @@ namespace kpengine::render
         case asset::AssetType::KPAT_Texture:
         case asset::AssetType::KPAT_Mesh:
         case asset::AssetType::KPAT_Model:
+        case asset::AssetType::KPAT_Material:
             break;
         default:
             KP_LOG("RenderLog", LOG_LEVEL_WARNING,
@@ -352,8 +357,9 @@ namespace kpengine::render
             // Startup shader compile is a slow, one-time pass; report it so the
             // log (and later a loading screen) can show progress. Observer fires
             // per stage before it is processed; done = already finished.
+            const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
             resource_pipeline_->ProcessShader(
-                program->GatherShaders(),
+                shaders,
                 [](resource::ShaderProcessPhase phase, int done, int total,
                    const asset::ShaderResource *shader)
                 {
@@ -434,9 +440,77 @@ namespace kpengine::render
             entry.resource = mesh_handle;
             return true;
         }
+        case asset::AssetType::KPAT_Material:
+            entry.payload = asset_manager.GetResource<asset::MaterialResource>(id);
+            return std::get<asset::MaterialPtr>(entry.payload) != nullptr;
         default:
             return false;
         }
+    }
+
+    RenderableSourceResolution RenderSystem::ResolveRenderableSource(
+        const PrimitiveRenderableSourceDesc &source)
+    {
+        const auto *const static_mesh = std::get_if<StaticMeshRenderableSourceDesc>(&source);
+        if (static_mesh == nullptr)
+        {
+            return {RenderableSourceState::Failed, "unsupported renderable source variant", std::nullopt};
+        }
+        if (!static_mesh->mesh_asset.IsValid() ||
+            static_mesh->mesh_asset.type != asset::AssetType::KPAT_Mesh)
+        {
+            return {RenderableSourceState::Failed, "static mesh source has an invalid mesh asset", std::nullopt};
+        }
+        MaterialInstanceHandle material_instance;
+        const MaterialResolution material_resolution =
+            ResolveMaterialAsset(static_mesh->material_asset, material_instance);
+        if (material_resolution.state == MaterialResourceState::Failed)
+        {
+            return {RenderableSourceState::Failed, material_resolution.diagnostic, std::nullopt};
+        }
+        if (material_resolution.state != MaterialResourceState::Ready)
+        {
+            return {RenderableSourceState::Pending, material_resolution.diagnostic, std::nullopt};
+        }
+
+        const auto mesh = asset::AssetManager::GetInstance().GetResource<asset::MeshResource>(
+            static_mesh->mesh_asset);
+        if (!mesh || !mesh->data)
+        {
+            return {RenderableSourceState::Pending, "mesh asset is not loaded", std::nullopt};
+        }
+        const graphics::MeshHandle mesh_handle =
+            resource_resolver_->GetOrCreateMesh(static_mesh->mesh_asset, *mesh->data);
+        if (!mesh_handle.IsValid())
+        {
+            return {RenderableSourceState::Failed, "mesh resource creation failed", std::nullopt};
+        }
+
+        MeshProxyDesc proxy_desc{};
+        proxy_desc.mesh = mesh_handle;
+        proxy_desc.material = material_instance;
+        proxy_desc.world_transform = static_mesh->world_transform;
+        proxy_desc.world_bounds = static_mesh->world_bounds;
+        proxy_desc.flags = static_mesh->flags;
+        proxy_desc.lod_bias = static_mesh->lod_bias;
+        return {RenderableSourceState::Ready, {}, proxy_desc};
+    }
+
+    MaterialResolution RenderSystem::ResolveMaterialAsset(asset::AssetID material_asset,
+                                                           MaterialInstanceHandle &out_instance)
+    {
+        if (!material_asset_resolver_)
+        {
+            return {MaterialResourceState::Pending, "material system is not initialized"};
+        }
+        return material_asset_resolver_->Resolve(material_asset, out_instance);
+    }
+
+    void RenderSystem::DrainRenderableSources()
+    {
+        source_registry_.Drain(
+            render_world_, [this](const PrimitiveRenderableSourceDesc &source)
+            { return ResolveRenderableSource(source); });
     }
 
     const RenderCacheEntry *RenderSystem::FindCached(asset::AssetID asset_id) const
@@ -452,60 +526,48 @@ namespace kpengine::render
         return nullptr;
     }
 
-    MaterialInstanceHandle RenderSystem::CreateDefaultTexturedMaterial(
-        asset::AssetID shader_program, asset::AssetID texture_asset)
+    std::optional<StaticMeshRenderableSourceDesc> RenderSystem::TakeBootstrapRenderableSource()
     {
-        if (!material_system_ || !shader_program.IsValid() || !texture_asset.IsValid())
-        {
-            return {};
-        }
-
-        MaterialTemplateDesc desc{};
-        desc.shader_program = shader_program;
-        desc.bindless_texture_table_compatible = true;
-        desc.shading_model = MaterialShadingModel::Unlit;
-        desc.parameters = {
-            {"base_color", Vector4f{1.0f, 1.0f, 1.0f, 1.0f}},
-            {"base_color_texture", MaterialTextureSamplerValue{texture_asset, {}}, 2},
-        };
-        bootstrap_material_template_ = material_system_->CreateTemplate(desc);
-        if (!bootstrap_material_template_.IsValid())
-        {
-            return {};
-        }
-        return material_system_->CreateInstance({bootstrap_material_template_, {}});
+        return std::exchange(bootstrap_renderable_source_, std::nullopt);
     }
 
-    void RenderSystem::CreateBootstrapScene()
+    void RenderSystem::PrepareBootstrapRenderableSource()
     {
-        if (!bootstrap_scene_info_.IsComplete() || bootstrap_renderable_.IsValid())
+        if (!bootstrap_scene_info_.IsComplete() || bootstrap_renderable_source_.has_value())
         {
             return;
         }
 
         auto &asset_manager = asset::AssetManager::GetInstance();
-        const asset::AssetID pipeline_asset =
-            asset_manager.LoadSync(bootstrap_scene_info_.shader_program_path);
         const asset::AssetID model_asset = asset_manager.LoadSync(bootstrap_scene_info_.model_path);
-        const asset::AssetID texture_asset = asset_manager.LoadSync(bootstrap_scene_info_.texture_path);
-        const RenderCacheEntry *model_entry = FindCached(model_asset);
-        const auto *mesh = model_entry
-                               ? std::get_if<graphics::MeshHandle>(&model_entry->resource)
-                               : nullptr;
-        bootstrap_material_instance_ = CreateDefaultTexturedMaterial(pipeline_asset, texture_asset);
-        if (!mesh || !bootstrap_material_instance_.IsValid())
+        const asset::AssetID material_asset =
+            asset_manager.LoadSync(bootstrap_scene_info_.material_path);
+        const auto model = asset_manager.GetResource<asset::ModelResource>(model_asset);
+        const asset::AssetID mesh_asset = model
+                                              ? model->GetData(asset::ModelGeometryType::KPMG_Mesh)
+                                              : asset::AssetID{};
+        if (!mesh_asset.IsValid() || !material_asset.IsValid())
         {
             KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                   "Bootstrap scene could not create a mesh or material instance");
+                   "Bootstrap scene could not prepare a mesh or material asset");
             return;
         }
 
-        MeshProxyDesc proxy_desc{};
-        proxy_desc.mesh = *mesh;
-        proxy_desc.material = bootstrap_material_instance_;
-        proxy_desc.world_transform.scale_ = {0.5f, 0.5f, 0.5f};
-        bootstrap_renderable_ = render_world_.EnqueueCreate(proxy_desc);
-        KP_LOG("RenderLog", LOG_LEVEL_INFO, "Bootstrap mesh proxy registered");
+        StaticMeshRenderableSourceDesc source{};
+        source.mesh_asset = mesh_asset;
+        source.material_asset = material_asset;
+        source.world_transform.scale_ = {0.5f, 0.5f, 0.5f};
+        bootstrap_renderable_source_ = source;
+        KP_LOG("RenderLog", LOG_LEVEL_INFO, "Bootstrap gameplay render source prepared");
+    }
+
+    void RenderSystem::DestroyMaterialAssetRecords()
+    {
+        if (material_asset_resolver_)
+        {
+            material_asset_resolver_->Clear();
+            material_asset_resolver_.reset();
+        }
     }
 
     void RenderSystem::ApplyPendingSceneRenderTargetExtent()
@@ -552,6 +614,10 @@ namespace kpengine::render
     {
         if (!backend_)
         {
+            source_registry_.Clear(render_world_);
+            render_world_.Clear();
+            bootstrap_renderable_source_.reset();
+            DestroyMaterialAssetRecords();
             material_system_.reset();
             resource_resolver_.reset();
             return;
@@ -560,18 +626,11 @@ namespace kpengine::render
         // Releasing material instances first retires their bindless table slots.
         // WaitIdle must follow that release so Graphics can collect the retired
         // table references before the resolver destroys cached textures/samplers.
+        source_registry_.Clear(render_world_);
+        render_world_.ApplyPendingCommands();
         render_world_.Clear();
-        bootstrap_renderable_ = {};
-        if (bootstrap_material_instance_.IsValid())
-        {
-            material_system_->DestroyInstance(bootstrap_material_instance_);
-            bootstrap_material_instance_ = {};
-        }
-        if (bootstrap_material_template_.IsValid())
-        {
-            material_system_->DestroyTemplate(bootstrap_material_template_);
-            bootstrap_material_template_ = {};
-        }
+        bootstrap_renderable_source_.reset();
+        DestroyMaterialAssetRecords();
         material_system_.reset();
         backend_->WaitIdle();
         for (FrameContext &context : frame_contexts_)

@@ -6,6 +6,7 @@
 #include "stb_image_loader.h"
 #include "shader_program_loader.h"
 #include "miniaudio_audio_loader.h"
+#include "material_loader.h"
 #include "utility.h"
 #include "model.h"
 #include "log/logger.h"
@@ -18,7 +19,8 @@ namespace kpengine::asset
     AssetManager::AssetManager() : model_loader_(std::make_unique<Assimp_ModelLoader>()),
                                    image_loader_(std::make_unique<Stb_ImageLoader>()),
                                    shader_program_loader_(std::make_unique<ShaderProgramLoader>()),
-                                   audio_loader_(std::make_unique<MiniAudio_AudioLoader>())
+                                   audio_loader_(std::make_unique<MiniAudio_AudioLoader>()),
+                                   material_loader_(std::make_unique<MaterialLoader>())
     {
     }
 
@@ -320,6 +322,11 @@ namespace kpengine::asset
         {
             assert(audio_loader_);
             return audio_loader_->LoadFromFile(path, info);
+        }
+        else if (type == AssetType::KPAT_Material)
+        {
+            assert(material_loader_);
+            return material_loader_->Load(path, info);
         }
 
         std::string name = std::string(magic_enum::enum_name(type));

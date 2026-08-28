@@ -202,6 +202,7 @@ ctest --test-dir build -C Debug
 - [架构总览](docs/architecture_overview.md)
 - [Graphics/RHI 模块](docs/graphics/graphics_module.md)
 - [Render 模块](docs/render/render_module.md)
+- [Gameplay 模块](docs/gameplay/gameplay_module.md)
 - [Asset 模块](docs/asset/asset_module.md)
 - [TTS 模块](docs/tts/tts_module.md)
 - [验证矩阵](docs/validation_matrix.md)

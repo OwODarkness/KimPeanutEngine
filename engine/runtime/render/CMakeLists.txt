@@ -1,7 +1,9 @@
 add_library(Render
 render_system.cpp
+render_source_registry.cpp
 render_resource_resolver.cpp
 material/material_system.cpp
+material/material_asset_resolver.cpp
 render_world/render_world.cpp
 render_world/frustum.cpp
 render_world/scene_visibility.cpp

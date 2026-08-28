@@ -136,6 +136,7 @@ namespace kpengine::asset
                 std::shared_ptr<ShaderResource> shader = std::make_shared<ShaderResource>();
                 shader->status = ShaderStatus::Uncompiled;
                 shader->format = shader_format;
+                shader->variant = variant;
                 shader->desc.stage = shader_stage;
                 shader->desc.file = abs_path;
                 shader->desc.entry = s_entry;

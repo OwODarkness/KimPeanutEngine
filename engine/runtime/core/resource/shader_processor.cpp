@@ -11,6 +11,11 @@ namespace kpengine::resource
 {
     namespace
     {
+        const char *GetVariantName(asset::ShaderProgramVariant variant)
+        {
+            return variant == asset::ShaderProgramVariant::Bindless ? "bindless" : "bound";
+        }
+
         // The shared shader ABI is intentionally expressed as preprocessor
         // values so a compatible shader can declare the table without pulling
         // a Graphics backend header into Resource.
@@ -81,6 +86,16 @@ namespace kpengine::resource
 
         for (const auto &shader : assets)
         {
+            // A shader resource is one API-specific artifact. Reprocessing an
+            // already-ready artifact only rereads its cache and produces a
+            // misleading duplicate log; a different API must still rebuild it.
+            if (shader && shader->status == asset::ShaderStatus::Ready && shader->data &&
+                shader->data->api == api_)
+            {
+                ++done;
+                continue;
+            }
+
             // The pipeline's data carrier: identity in, artifact out. Built once
             // per shader and threaded through every stage (preprocess -> compile
             // -> ...), each stage reading what it needs and writing what it
@@ -104,7 +119,11 @@ namespace kpengine::resource
 
             if (!keep_source_ && cache->Has(hash))
             {
-                KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s has been cached", context.file_name.c_str());
+                KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG,
+                       "Shader cache hit [api=%s variant=%s stage=%s entry=%s hash=%016llx]: %s",
+                       magic_enum::enum_name(api_).data(), GetVariantName(shader->variant),
+                       stage_str.c_str(), shader->desc.entry.c_str(),
+                       static_cast<unsigned long long>(hash), context.file_name.c_str());
                 context.byte_code = cache->Load(hash);
             }
             else
@@ -132,7 +151,11 @@ namespace kpengine::resource
                 if (!keep_source_)
                 {
                     cache->Save(hash, context.byte_code);
-                    KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG, "%s ready to cache", context.file_name.c_str());
+                    KP_LOG("ShaderProcessorLog", LOG_LEVEL_DEBUG,
+                           "Shader cache store [api=%s variant=%s stage=%s entry=%s hash=%016llx]: %s",
+                           magic_enum::enum_name(api_).data(), GetVariantName(shader->variant),
+                           stage_str.c_str(), shader->desc.entry.c_str(),
+                           static_cast<unsigned long long>(hash), context.file_name.c_str());
                 }
             }
 

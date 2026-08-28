@@ -2,6 +2,8 @@
 #include "window/window_system.h"
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
+#include "gameplay/factory/static_mesh_actor_factory.h"
+#include "gameplay/world/gameplay_world.h"
 #include "log/log_system.h"
 #include "log/logger.h"
 #include "input/input_system.h"
@@ -17,6 +19,8 @@ namespace kpengine
         RuntimeContext::RuntimeContext() :
         window_system_(WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW)),
         render_system_(std::make_unique<render::RenderSystem>()),
+        gameplay_world_(std::make_unique<gameplay::GameplayWorld>(
+            render_system_->GetRenderableSourceSink())),
         log_system_(std::make_unique<LogSystem>()),
         input_system_(std::make_unique<input::InputSystem>()),
         lua_vm_(std::make_unique<script::lua::LuaVM>()),
@@ -66,6 +70,33 @@ namespace kpengine
             // Bootstrap pass: drain the queued requests (load + process) before the
             // main loop, so first-frame pipeline requests are cache hits.
             render_system_->PostInitialize();
+            bootstrap_renderable_source_ = render_system_->TakeBootstrapRenderableSource();
+        }
+
+        void RuntimeContext::FinalizeGameStartup()
+        {
+            if (!gameplay_world_ || !bootstrap_renderable_source_.has_value())
+            {
+                return;
+            }
+
+            const render::StaticMeshRenderableSourceDesc source =
+                std::move(*bootstrap_renderable_source_);
+            bootstrap_renderable_source_.reset();
+
+            gameplay::StaticMeshActorDesc actor_desc{};
+            actor_desc.mesh_asset = source.mesh_asset;
+            actor_desc.material_asset = source.material_asset;
+            actor_desc.transform = source.world_transform;
+            actor_desc.local_bounds = source.world_bounds;
+            actor_desc.visible = source.flags.visible;
+            actor_desc.casts_shadow = source.flags.casts_shadow;
+            actor_desc.lod_bias = source.lod_bias;
+            if (!gameplay::CreateStaticMeshActor(*gameplay_world_, actor_desc).IsValid())
+            {
+                KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                       "Bootstrap gameplay actor could not be created");
+            }
         }
 
         void RuntimeContext::Clear()
@@ -73,6 +104,10 @@ namespace kpengine
             // This is called by the render thread after ImGui shuts down, while
             // the graphics context is still current. Release GPU objects before
             // the GLFW window/context they depend on.
+            // Components enqueue source destruction through RenderSystem. The
+            // gameplay World must therefore die before the sink and GPU teardown.
+            gameplay_world_.reset();
+            bootstrap_renderable_source_.reset();
             if (render_system_)
             {
                 render_system_->Shutdown();

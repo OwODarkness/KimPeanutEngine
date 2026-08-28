@@ -10,6 +10,7 @@ target_link_libraries(GraphicsExample
 PRIVATE
 Graphics
 Render
+Gameplay
 Window
 Input
 )

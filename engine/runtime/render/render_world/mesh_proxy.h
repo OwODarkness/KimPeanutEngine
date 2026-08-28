@@ -5,19 +5,13 @@
 #include "graphics/backend/common/api.h"
 #include "math/math_header.h"
 #include "render/material/material_system.h"
+#include "render/render_source.h"
 #include "spatial/aabb.h"
 
 namespace kpengine::render
 {
     struct RenderableTag {};
     using RenderableHandle = Handle<RenderableTag>;
-
-    struct RenderableFlags
-    {
-        bool visible = true;
-        bool opaque = true;
-        bool casts_shadow = true;
-    };
 
     // Render-owned snapshot of one static mesh renderable. It intentionally has
     // no draw operation, component pointer, or native API object. RenderWorld

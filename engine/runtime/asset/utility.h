@@ -42,6 +42,11 @@ namespace kpengine::asset
         return ext == "shader";
     }
 
+    inline bool IsMaterialExtension(const std::string &ext)
+    {
+        return ext == "material";
+    }
+
     inline bool IsShaderExtension(const std::string& ext)
     {
         static const std::vector<std::string> shader_exts = {"vert", "vs", "frag", "fs", "geom", "gs", "comp", "cs", "spv"};
@@ -69,6 +74,10 @@ namespace kpengine::asset
         else if(IsShaderProgramExtension(ext))
         {
             return AssetType::KPAT_ShaderProgram;
+        }
+        else if (IsMaterialExtension(ext))
+        {
+            return AssetType::KPAT_Material;
         }
         else
         {

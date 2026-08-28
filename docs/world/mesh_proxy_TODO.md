@@ -66,22 +66,23 @@ not a hard-wired `RenderScene` demo instance. CPU frustum culling landed
 2026-08-26; opaque classification and sorting landed the same day. Shadow
 classification and transparent depth sorting remain MP2 work.
 
-## Phase MP3 — world component reconstruction
+## Phase MP3 — gameplay component integration
 
-**Goal:** let a future world/component system produce renderable commands without
+**Goal:** let the planned Gameplay module produce renderable commands without
 coupling it to graphics implementation details.
 
-- [ ] Reintroduce the minimum scene/primitive component lifecycle required for
-  registration: activate/create, dirty update, deactivate/destroy.
-- [ ] Implement `MeshComponent` as a logical mesh/material/transform owner and
-  queue producer; it does not own a proxy, GPU handle, or draw method.
-- [ ] Define asset/material readiness behavior: an incomplete asset reference
-  produces no proxy draw until RenderSystem resolves the required render cache
-  entries.
-- [ ] Define teardown ordering for component destruction, world unload, render
-  command drain, and render-registry retirement.
+- [x] Implement [GP0–GP3](../gameplay/TODO.md): the Gameplay lifecycle and
+  gameplay-side render-source command bridge. `MeshComponent` remains a
+  logical mesh/material/transform owner and never owns a proxy, GPU handle, or
+  draw method (2026-08-28).
+- [x] RenderSystem resolves source readiness into `MeshProxyDesc`; an
+  incomplete mesh/material produces no proxy draw and retains a render-owned
+  pending/failed diagnostic (2026-08-28).
+- [x] Implement [GP4](../gameplay/TODO.md): component/world teardown drains
+  source destruction before render-registry and resource retirement
+  (2026-08-28).
 
-**Done when:** the world can add a mesh to a scene by adding/configuring a
+**Done when:** GameplayWorld can add a mesh to an Actor by adding/configuring a
 `MeshComponent`, while rendering sees only the resulting render-world snapshot.
 
 ## After MP3
