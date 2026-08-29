@@ -4,6 +4,83 @@
 
 ## Done
 
+- **Deferred PBR D3 — Material Asset V2 + opaque PBR G-buffer (2026-08-29)** —
+  material assets version to 2 (`kMaterialVersion = 2`, V1 unlit still loads,
+  `standard_pbr` rejected in V1, version 3 rejected); the render resolver
+  builds a canonical 10-param `StandardPbr` template (base_color vec4@0,
+  metallic f@16, roughness f@20, occlusion f@24, emissive vec4@32; samplers at
+  bindings 2/5/6/7/8, binding 4 reserved for D5) with per-texture color-space
+  intent (`Srgb`/`Linear`, typed texture cache key `{AssetID, color_space}`),
+  texture-wins-over-scalar normalization, and two new 1×1 default PNGs
+  (`default_white`, `default_flat_normal`). StandardPbr asset loading now
+  rejects unknown semantics, type mismatches, non-finite values, and invalid
+  numeric ranges. Tangent audit landed: the canonical
+  5-attribute layout (pos/normal/uv/tangent/bitangent, 56-byte `data::Vertex`,
+  Assimp `CalcTangentSpace`), world TBN `transpose(inverse(mat3(model)))` with
+  `mat3(T,B,N)` and `rgb*2-1` decode, with pre-normalization zero guards and
+  fragment-stage TBN orthonormalization. The
+  G-buffer target is 3-color + D32 — albedo RGBA8_UNORM (linear, {0,0,0,0}),
+  normal RGBA16F (raw world-space, {0,0,1,0}), material RGBA8_UNORM (metallic
+  R/roughness G/occlusion B, {0,1,1,0}), D32 clear 1.0. `MaterialPass::{Scene,
+  ShadowDepth, GBuffer}` threads through pipelines/bindings/proxies/draw lists;
+  `RenderSystem` schedules `GBufferPass` (opaque draw lists) →
+  `GBufferDebugViewPass` (fullscreen three-panel albedo/normal/material inspection into SceneColor) →
+  `EditorCompositePass`, replacing the unlit `ScenePass` (unlit stays green in
+  smoke). `GraphicsSmoke` proves the full V2 path on both APIs — real
+  `rock_pbr.material` → GBuffer pipeline → write → composite →
+  `save/screenshots/validation/graphics-smoke-d3-{vulkan,opengl}.png` with the
+  rock framed (camera near=1/far=2000) and non-uniform verified pixels. 148/148
+  tests. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+
+- **Bootstrap brick surface scene fixture (2026-08-29)** — the bootstrap scene
+  now accepts additional mesh/material objects with position, rotation, and
+  scale, while preserving the existing primary scene entry. The live scene
+  adds the supplied brick-textured `floor.obj` beneath the rock through a
+  StandardPbr material; the runtime still only publishes ordinary Gameplay
+  static-mesh actors and does not implement shadow rendering. Bootstrap and
+  cross-backend smoke validation pass.
+
+- **Deferred PBR D2 — attachment-capable common graphics contract
+  (2026-08-29)** — the common RHI now describes multiple named color
+  attachments, optional/opt-in-sampled depth, depth-only targets, and
+  deterministic target↔pipeline format compatibility. D2 is explicitly
+  single-sample until a real multisample/resolve contract exists.
+  `RenderTargetDesc` = `std::vector<RenderTargetColorAttachment>` + optional
+  `RenderTargetDepthAttachment` (load/store/clear, `shader_readable`);
+  `PipelineDesc` semantics relax to empty-color = depth-only and UNKNOW-depth =
+  no depth, with the Vulkan auto-fill removed. Both backends translate N
+  attachments (Vulkan dynamic rendering `colorAttachmentCount=N`; OpenGL
+  `glNamedFramebufferTexture(GL_COLOR_ATTACHMENT0+i)` + `glDrawBuffers` /
+  `glDrawBuffer(GL_NONE)`) and now derive depth test/write from the pipeline's
+  depth format (no-depth pipelines no longer discard fragments). `RenderBackend`
+  exposes per-attachment color/depth accessors without leaking native handles;
+  sampled depth requires an explicit opt-in accessor and sample-usage validation.
+  Render's `RendererFrameTargets` rebuilds the named `SceneColor` target for one
+  extent/format policy (`RebuildForExtent` waits idle, `Cleanup` releases) and
+  `RenderSystem` runs init/capture/extent/pass/shutdown through it. `GraphicsSmoke`
+  proves multi-attachment (RGBA8+RGBA16F+D32) → sampled readback → depth-only
+  lifecycle on Vulkan and OpenGL; the fullscreen content proof requires
+  `cull_mode = NONE` (the shared triangle is back-facing in Vulkan's y-down
+  NDC). 144/144 tests, engine boots with the migrated viewport. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+
+- **Deferred PBR D1.4 — frame lighting ABI (2026-08-29)** — Render packs its
+  immutable `LightWorld` snapshot into a bounded version-1 `LightGpuData` UBO
+  for every active frame. The 64-record ABI carries directional, point, and
+  spot payloads plus enabled/layer data; unscheduled shadows deliberately
+  encode as `Unshadowed`. It reserves common set 0/binding 4 for the future
+  deferred-lighting pipeline without changing the current unlit descriptor
+  layout. Runtime also composes the first default directional `LightActor`
+  beside its bootstrap mesh actor. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+
+- **Backend-owned command recording (2026-08-29)** — `RenderBackend` remains
+  the backend/frame scheduler and resource-service façade, while both backends
+  now own a short-lived per-active-frame `CommandRecorder`: the existing
+  `VulkanCommandRecorder` and new `OpenglCommandRecorder`. The OpenGL encoder
+  borrows only target, pipeline, mesh, descriptor, uniform-upload, and
+  bindless services; it does not receive an `OpenglBackend` back pointer.
+  Recorder-local target/binding state is invalidated before presentation and
+  teardown. → [ownership plan](graphics/command_recording_ownership_plan.md)
+
 - **Command system C0 (2026-08-29)** — added the standalone `RuntimeCommand`
   target with API-neutral structured command types, metadata/schema, origin and
   execution-lane vocabulary, deterministic listing, structured execution, and
@@ -103,14 +180,15 @@
   transitions. It exposes no native image, staging memory, or request handle.
   Vulkan/OpenGL integration is deferred to C3.
 
-- **SceneColor readback on both APIs (C3, 2026-08-28)** — the common
-  `IRenderTargetReadback` contract is implemented by both backends. `VulkanBackend`
-  delegates image layouts, staging buffers, and mapped-memory ownership to
-  `VulkanRenderTargetReadback` (copy recorded pre-submit, collected after the
-  matching frame fence, cancelled before resize/shutdown destruction);
-  `OpenglBackend` delegates to `OpenglRenderTargetReadback`, which performs a
-  synchronous `glGetTextureSubImage` read at the next frame boundary with the
-  same ownership and result semantics. `GraphicsSmoke` now requests a
+- **SceneColor readback on both APIs (C3, 2026-08-28; ownership split
+  2026-08-29)** — each backend owns a private service that implements the
+  common `IRenderTargetReadback` contract and exposes only its borrowed
+  interface. `VulkanRenderTargetReadback` owns image layouts, staging buffers,
+  mapped-memory lifetime, pending requests, and callbacks (copy recorded
+  pre-submit, collected after the matching frame fence, cancelled before
+  resize/shutdown destruction); `OpenglRenderTargetReadback` owns the
+  equivalent request/callback state and performs a synchronous
+  `glGetTextureSubImage` read at the next frame boundary. `GraphicsSmoke` now requests a
   post-resize SceneColor capture on each API, drains frames until the
   completion callback, and validates the owned RGBA8 image metadata and
   non-uniform pixels; it passes on Vulkan and OpenGL. Visual PNG smoke
@@ -209,6 +287,41 @@
 - **Editor profile bar (2026-08-13)** — a bottom status bar showing FPS, frame ms, and memory. Two decoupling seams: `EditorMetric` (the extension point — implement `Name()`/`Sample()`, or wrap sampler lambdas in `EditorFuncMetric`) and `EditorProfileBarComponent` (samples injected metrics and draws them in one row; it only ever talks to `EditorMetric`). Built-ins: FPS (engine via an injected sampler), frame time (derived from fps, not a self-measured clock — that would see the render loop's pacing sleep), memory (process + system free via an injected stats sampler). **Measurement lives in the platform layer, not the editor and not the engine** — FPS stays in the engine (`Engine::GetFPS`, it's game-loop timing), but memory is an OS query and lives behind a platform seam: `MemoryStatsSampler` interface + `WindowsMemoryStatsSampler` under `runtime/platform/win/` (PSAPI/GlobalMemory, `psapi` linked into the `Platform` lib), owned by `RuntimeContext`, reached by the editor through `EditorContext`. The engine is platform-agnostic again. Plot-capable metrics draw a small sparkline via the base's history buffer. `EditorUI::Initialize` now takes an `EditorUIInitInfo` bundle (window, backend, log system, engine, memory sampler — defaulted, mirrors `EditorContextInitInfo`) so the signature doesn't grow with each injected dependency. Unit-tested under `ProfileTest` (5 cases, direct-compile; no Win32 in the test). → [editor_module.md](editor/editor_module.md)
 
 ## In progress / built but not wired
+
+- **Deferred PBR D1.3 — typed light/shadow descriptions (2026-08-29)** —
+  `LightWorld` now stores validated `LightDesc` records: common
+  color/intensity/enabled/layer/shadow identity plus type-matched directional,
+  point, or spot data. Render-private `ShadowHandle`, `ShadowKind`, and
+  `ShadowJobDesc` establish source-light, resolution, and binding-slot
+  identity without allocating a target or exposing it to Gameplay/Asset.
+  Contract tests reject type/payload mismatches, invalid spot cones, invalid
+  jobs, forged/stale handles, and incompatible light/shadow kinds.
+  `RenderPassScheduleTest` and Vulkan/OpenGL `GraphicsSmoke` pass. D1.4 owns
+  the frame GPU layout; D4 owns job scheduling and depth targets. →
+  [deferred PBR TODO](render/deferred_pbr_TODO.md#d13--extensible-light-and-shadow-description)
+
+- **Deferred PBR D1.2 — Render light snapshots (2026-08-29)** — Render now
+  owns `LightSourceRegistry` and `LightWorld`. The registry accepts copied
+  Gameplay source commands under its inbox lock, maps only source registrations
+  to private generational `LightHandle`s while draining in
+  `RenderSystem::BeginFrame`, and applies them to `LightWorld`. Passes receive
+  copied, deterministically ordered snapshots; they cannot read a Gameplay
+  component. Contract coverage proves create/update/destroy order, stale
+  source-token rejection, resolved-handle retirement, and shutdown clear.
+  `RenderPassScheduleTest` and dual-backend `GraphicsSmoke` pass. Point/spot
+  ABI and shadow state remain D1.3. →
+  [deferred PBR TODO](render/deferred_pbr_TODO.md#d12--render-light-snapshot-resolution)
+
+- **Deferred PBR D1.1 — Gameplay directional-light source (2026-08-29)** —
+  Gameplay now owns `DirectionalLightComponent` and the
+  `CreateDirectionalLightActor` composition. It publishes copied direction,
+  color, intensity, and enabled values through Render's narrow
+  `ILightSourceSink`, retaining only an opaque source-registration token for
+  update/destruction. The component has no `LightHandle`, shadow target,
+  descriptor, Graphics type, or direct RenderWorld access. `GameplayUnitTest`
+  covers create/coalesced-update/destroy and factory lifecycle. Render's
+  mailbox, resolved LightWorld handles, and immutable snapshots remain D1.2.
+  → [deferred PBR TODO](render/deferred_pbr_TODO.md#d11--gameplay-light-source-publication)
 
 - **Mesh proxy foundation (MP1 + basic MP2 + CPU frustum visibility, 2026-08-26)** — `RenderWorld`,
   owned by `RenderSystem`, accepts value-only create/update/destroy commands,

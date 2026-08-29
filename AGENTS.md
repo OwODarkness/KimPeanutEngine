@@ -39,6 +39,8 @@ Read `README.md`, `docs/status.md`, and the module document relevant to the chan
 
 Use `docs/engine-reference/README.md` when a design question needs comparison with another engine. The `.claude/skills/engine-reference/SKILL.md` file contains only the Claude workflow for conducting a study. Study patterns and map them to KimPeanutEngine; do not copy source.
 
+For complex design work, reference-repository discovery is a required planning gate. After inspecting the local architecture and defining the concrete design problem, search the existing reference studies and use the available GitHub MCP read/search tools to identify and inspect a small number of relevant open-source repositories before finalizing the implementation plan. Examine actual source, documentation, or history; do not rely on memory. Compare ownership, lifetime, data flow, synchronization, performance assumptions, and tradeoffs against KimPeanutEngine. Record why a reference applies or does not apply. If GitHub access fails or no relevant repository exists, record that limitation and proceed using the strongest available local or authoritative evidence.
+
 - Sakura — RHI, render graph, and backend-independent renderer shape
 - Piccolo — asset/resource/runtime layering
 - bgfx — cross-API contract design
@@ -57,16 +59,30 @@ ctest --test-dir build -C Debug
 
 Follow the [validation matrix](docs/validation_matrix.md). It maps changed paths to the minimum build, unit, runtime-smoke, or full-integration evidence required. Do not start concurrent CMake/MSBuild builds. If the environment prevents compilation, report the first environment error and distinguish it from source failures.
 
+## Render-debug capture for agents
+
+Use the Runtime command registry to capture rendered output; do not access
+backend objects or scrape the Editor console. Launch the live Engine with
+`--agent-port 37373`, then send JSON-lines to `127.0.0.1:37373`, for example
+`{"op":"execute","command":"capture.screenshot","arguments":{"path":"save/screenshots/validation/agent-debug.png","view":"scene_color"}}`.
+Poll the returned `request_id` with `{"op":"poll","request_id":<id>}` until
+terminal. On success, inspect `data.output_path` to debug the PNG. Paths must
+stay under `save/screenshots/validation/` and end in `.png`; preserve captures
+created by other tasks. `KimPeanutCommand` tests the headless protocol but does
+not bootstrap Render, so real capture requires the Runtime host and its
+explicitly enabled local transport.
+
 ## Change workflow
 
 For a non-trivial change:
 
 1. Inspect `git status`, `docs/status.md`, and the affected module docs.
-2. State the design boundary and acceptance criteria before editing.
-3. Make the smallest coherent change; preserve unrelated user work.
-4. Run impact-appropriate build/tests and inspect the first failure.
-5. Update status/design documentation when behavior or ownership changes.
-6. Review the diff for accidental dependency, ownership, or API changes.
+2. State the design boundary, concrete design question, and acceptance criteria before editing.
+3. If the change is architectural or otherwise complex, complete the reference-repository discovery gate above before finalizing the plan.
+4. Make the smallest coherent change; preserve unrelated user work.
+5. Run impact-appropriate build/tests and inspect the first failure.
+6. Update status/design documentation when behavior or ownership changes.
+7. Review the diff for accidental dependency, ownership, or API changes.
 
 Do not begin a broad refactor from a feature checklist alone. Define the current problem, invariant, migration stages, and validation evidence first.
 

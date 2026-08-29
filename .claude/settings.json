@@ -5,7 +5,12 @@
       "Bash(ctest:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
-      "Bash(git log:*)"
+      "Bash(git log:*)",
+      "Bash(ctest --test-dir build -C Debug -R \"GraphicsContractTest|RenderPassScheduleTest\")",
+      "Bash(ctest --test-dir build -C Debug -N)",
+      "Bash(ctest --test-dir build -C Debug -R \"GraphicsCapabilities|RenderTargetReadbackContract|BindlessTextureContract|PipelineValidation|RenderTargetValidation|PipelineCacheKey|RenderPassScheduleTest|SceneDrawListTest\")",
+      "Bash(cmake --build build --config Debug)",
+      "Bash(ctest --test-dir build -C Debug)"
     ],
     "deny": []
   }

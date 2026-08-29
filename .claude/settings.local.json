@@ -2,7 +2,9 @@
   "permissions": {
     "allow": [
       "Bash(git add *)",
-      "Bash(git commit -q -m 'runtime: retire legacy component/game_framework/object and render files *)"
+      "Bash(git commit -q -m 'runtime: retire legacy component/game_framework/object and render files *)",
+      "Bash(cmake --build build --config Debug --target GraphicsSmoke)",
+      "Bash(./build/engine/example/graphics/Debug/GraphicsSmoke.exe)"
     ]
   }
 }

@@ -8,8 +8,12 @@ queue. `RenderSystem::Initialize()` creates Render-owned policy/services and
 initializes the backend through common Graphics contracts.
 
 `PostInitialize()` drains the bootstrap resource work and prepares the logical
-renderable source handed to the game-thread Gameplay world. Material/pipeline
-resolution stays private to Render.
+renderable sources handed to the game-thread Gameplay world. The scene may keep
+the legacy primary `scene` object and add more objects under `scene.objects`;
+material/pipeline resolution stays private to Render. Imported mesh resources
+own local geometry bounds; bootstrap sources carry those bounds separately from
+their transformed world bounds so Gameplay and Render each receive the correct
+space.
 
 ## Per frame
 

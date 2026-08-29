@@ -87,6 +87,8 @@ coupling it to graphics implementation details.
 
 ## After MP3
 
-Add shadow, G-buffer/deferred, lighting, and post-process passes over the draw
-lists. Once multiple real passes consume proxy-derived resources, evolve the
-current render pass schedule into a render graph.
+The proposed [deferred PBR renderer plan](../render/deferred_pbr_plan.md)
+defines the staged next work: directional shadow depth, opaque G-buffer,
+deferred lighting, and tone mapping over proxy-derived draw lists. It preserves
+the current ordered schedule initially; a render graph becomes a decision gate
+only after concrete pass dependencies demonstrate a need.
