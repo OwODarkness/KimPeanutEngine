@@ -9,6 +9,7 @@ namespace
     using kpengine::runtime::command::CommandCall;
     using kpengine::runtime::command::CommandCapability;
     using kpengine::runtime::command::CommandCategory;
+    using kpengine::runtime::command::CommandCompletionSink;
     using kpengine::runtime::command::CommandContext;
     using kpengine::runtime::command::CommandDesc;
     using kpengine::runtime::command::CommandFlags;
@@ -165,4 +166,81 @@ TEST(CommandExecutionContextTest, ShutdownCancelsQueuedRequestsOnce)
     ASSERT_TRUE(completion.has_value());
     EXPECT_EQ(completion->status, CommandStatus::Shutdown);
     EXPECT_FALSE(registry.TakeCompletion(pending.request_id).has_value());
+}
+
+TEST(CommandExecutionContextTest, RejectsQueuedRequestAfterItsRegistrationIsReplaced)
+{
+    CommandRegistry registry;
+    int original_count = 0;
+    CommandDesc original = MakeCommand("test.replaced", &original_count);
+    original.execution_thread = CommandThread::Game;
+    auto original_registration = registry.Register(std::move(original));
+    ASSERT_TRUE(original_registration.IsSuccess());
+
+    const CommandResult pending = registry.Execute(
+        {"test.replaced", {}}, {CommandOrigin::Test, CommandThread::Immediate});
+    ASSERT_EQ(pending.status, CommandStatus::Pending);
+
+    original_registration.registration = {};
+    int replacement_count = 0;
+    CommandDesc replacement = MakeCommand("test.replaced", &replacement_count);
+    replacement.execution_thread = CommandThread::Game;
+    const auto replacement_registration = registry.Register(std::move(replacement));
+    ASSERT_TRUE(replacement_registration.IsSuccess());
+
+    EXPECT_EQ(registry.PumpGameThread(), 1U);
+    EXPECT_EQ(original_count, 0);
+    EXPECT_EQ(replacement_count, 0);
+    const auto completion = registry.TakeCompletion(pending.request_id);
+    ASSERT_TRUE(completion.has_value());
+    EXPECT_EQ(completion->status, CommandStatus::NotFound);
+}
+
+TEST(CommandExecutionContextTest, RejectsUntrackedPendingResult)
+{
+    CommandRegistry registry;
+    const auto registration = registry.Register({
+        "test.untracked_pending", "ContextTest", "", CommandCategory::Test, {}, {},
+        [](const CommandCall &, const CommandContext &)
+        { return CommandResult{CommandStatus::Pending, "not tracked", 0, {}}; },
+    });
+    ASSERT_TRUE(registration.IsSuccess());
+
+    const CommandResult result = registry.Execute(
+        {"test.untracked_pending", {}}, {CommandOrigin::Test, CommandThread::Immediate});
+    EXPECT_EQ(result.status, CommandStatus::Failed);
+    EXPECT_NE(result.message.find("registry completion request"), std::string::npos);
+}
+
+TEST(CommandExecutionContextTest, ShutdownCompletesRunningDeferredRequestOnce)
+{
+    CommandRegistry registry;
+    CommandCompletionSink pending_completion;
+    const auto registration = registry.Register({
+        "test.running_shutdown", "ContextTest", "", CommandCategory::Test, {}, {},
+        [&pending_completion](const CommandCall &, const CommandContext &context)
+        {
+            pending_completion = context.complete;
+            return CommandResult{CommandStatus::Pending, "running", context.request_id, {}};
+        },
+        CommandThread::Game,
+    });
+    ASSERT_TRUE(registration.IsSuccess());
+
+    int callback_count = 0;
+    const CommandResult pending = registry.Execute(
+        {"test.running_shutdown", {}}, {CommandOrigin::Test, CommandThread::Immediate},
+        [&callback_count](const CommandResult &) { ++callback_count; });
+    ASSERT_EQ(pending.status, CommandStatus::Pending);
+    ASSERT_EQ(registry.PumpGameThread(), 1U);
+    ASSERT_TRUE(pending_completion);
+
+    registry.Shutdown();
+    EXPECT_EQ(callback_count, 1);
+    const auto completion = registry.TakeCompletion(pending.request_id);
+    ASSERT_TRUE(completion.has_value());
+    EXPECT_EQ(completion->status, CommandStatus::Shutdown);
+
+    pending_completion({CommandStatus::Success, "late", 0, {}});
+    EXPECT_EQ(callback_count, 1);
 }

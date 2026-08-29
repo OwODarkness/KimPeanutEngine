@@ -1,4 +1,9 @@
-# Render Module Design
+# Render Module Design (Historical Narrative)
+
+> Start with the structured [Render overview](overview.md). This historical
+> narrative is retained for migration/reference; new documentation belongs in
+> `design.md`, `lifecycle.md`, `dependencies.md`, `risks.md`, `usage.md`, or a
+> named sub-design directory.
 
 Location: `engine/runtime/render/`
 

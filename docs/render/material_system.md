@@ -1,4 +1,7 @@
-# Material System V1
+# Material System V1 (Detailed Design)
+
+> Start with [material_system/overview.md](material_system/overview.md). This
+> page retains the V1 detailed design and task rationale.
 
 **Status: M4 frame-local binding implemented (2026-08-26).** Material System V1 is the
 next render reconstruction phase after the initial `MeshProxy` type. M1 has

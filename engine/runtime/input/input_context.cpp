@@ -27,6 +27,20 @@ namespace kpengine::input
             return;
         }
         input_bindings_.erase(it->second);
+        handle_to_key.erase(it);
+        const auto action = input_actions.find(input_handle);
+        if (action != input_actions.end())
+        {
+            if (action->second)
+            {
+                const auto name = name_to_handle_.find(action->second->name_);
+                if (name != name_to_handle_.end() && name->second == input_handle)
+                {
+                    name_to_handle_.erase(name);
+                }
+            }
+            input_actions.erase(action);
+        }
     }
 
     std::string InputContext::GetNameByHandle(InputHandle input_handle) const

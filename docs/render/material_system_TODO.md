@@ -1,6 +1,7 @@
 # Material System V1 TODO
 
 **Status: M1–M6 complete.** Design context:
+[material system](material_system/overview.md). Detailed V1 design remains in
 [material_system.md](material_system.md). This ledger is intentionally scoped to
 data-driven Material V1; it does not implement a material graph or deferred
 shading yet. Progress checkpoint:

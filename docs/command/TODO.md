@@ -30,10 +30,12 @@ command without creating a window, Lua VM, renderer, or editor. **Landed
 **Done when:** registry lifecycle tests cover duplicate registration, token move,
 token destruction, provider shutdown, and exactly-once completion.
 
-**C1 implementation note:** the registry clears registrations and rejects new
-work during shutdown. Asynchronous operations returned as `Pending` remain
-owned by their subsystem handler; that owner must cancel them and deliver any
-domain-specific completion before its own shutdown. **Landed 2026-08-29.**
+**C1 implementation note:** queued requests retain their original registration
+identity and cannot execute a replacement provider after unregistration. A
+`Pending` result is valid only for a registry-owned request with a completion
+sink. During shutdown the registry terminally completes every outstanding
+request as `Shutdown`; subsystem owners still cancel their own underlying work,
+and late completion attempts are ignored. **Landed 2026-08-29.**
 
 ## C2 — argument schema and text parser
 
@@ -81,55 +83,78 @@ direct access to Render/Graphics internals. **Landed 2026-08-29.**
 
 ## C5 — user `~` frontend
 
-- [ ] Add a console overlay owned by Editor/UI.
-- [ ] Bind the `~` key through the existing input/UI boundary.
-- [ ] Submit text to the Runtime text-execution adapter.
-- [ ] Display structured success/failure/pending results.
-- [ ] Add bounded command history and duplicate suppression.
-- [ ] Add prefix completion first; defer fuzzy search until the registry API is
+- [x] Add a console overlay owned by Editor/UI.
+- [x] Bind the `~` key through the existing input/UI boundary.
+- [x] Submit text to the Runtime text-execution adapter.
+- [x] Display structured success/failure/pending results.
+- [x] Add bounded command history and duplicate suppression.
+- [x] Add prefix completion first; defer fuzzy search until the registry API is
   stable.
-- [ ] Ensure the console frontend can detach before Runtime shutdown.
-- [ ] Keep all command handlers out of Editor/UI.
+- [x] Ensure the console frontend can detach before Runtime shutdown.
+- [x] Keep all command handlers out of Editor/UI.
 
 **Done when:** the editor can execute `help` and `capture.screenshot` through
 the same registry used by tests and agents, while the user frontend remains
-optional to Runtime.
+optional to Runtime. **Landed 2026-08-29.**
 
 ## C6 — agent structured/headless access
 
-- [ ] Define the agent endpoint separately from the user text-console endpoint.
-- [ ] Expose structured `Execute(CommandCall)` to the local agent/tool seam.
-- [ ] Expose command listing and schema metadata for agent discovery.
-- [ ] Define timeout, cancellation, and pending-result polling/subscription
+- [x] Define the agent endpoint separately from the user text-console endpoint.
+- [x] Expose structured `Execute(CommandCall)` to the local agent/tool seam.
+- [x] Expose command listing and schema metadata for agent discovery.
+- [x] Define timeout, cancellation, and pending-result polling/subscription
   behavior for automation.
-- [ ] Add a headless command runner or startup-command path without Editor or
+- [x] Add a headless command runner or startup-command path without Editor or
   ImGui.
-- [ ] Add machine-readable JSON/JSON-lines result transport for external agents.
-- [ ] Make the one-shot structured call the primary agent path; keep text only
+- [x] Add machine-readable JSON/JSON-lines result transport for external agents.
+- [x] Make the one-shot structured call the primary agent path; keep text only
   as an optional compatibility/convenience path.
-- [ ] Make unknown commands and invalid arguments non-zero/error results.
+- [x] Make unknown commands and invalid arguments non-zero/error results.
 - [ ] Add deterministic capture commands for graphics smoke and future visual
   regression tests.
 
-**Done when:** an automation client can discover a command, construct a typed
-call without opening the editor or pressing `~`, await completion, and consume
-structured output.
+**Done when:** an in-process or harness caller can discover a command,
+construct a typed call without Editor/ImGui, and consume structured output.
+Live-Engine external access is C6.1.
+
+## C6.1 — live Engine agent transport
+
+**Goal:** let a local developer agent issue structured commands to the registry
+inside the already running Engine, where the live RenderSystem and scene exist.
+See [agent transport design](agent_transport.md).
+
+- [x] Add a development-only, loopback-only transport owned by Engine.
+- [x] Keep transport I/O on its own thread and transfer parsed requests through
+  bounded inbound/outbound queues.
+- [x] Drain inbound agent requests from `Engine::GameTick()`; never invoke
+  command handlers on the transport thread.
+- [x] Return JSON-lines results, including pending request IDs and terminal
+  completions, to the originating client.
+- [x] Define startup configuration, local-user access, request-size limits,
+  queue limits, disconnect handling, and teardown order.
+- [x] Validate live `capture.screenshot` against the active RenderSystem and
+  inspect the returned PNG as runtime-smoke evidence.
+
+**Done when:** a local agent can discover and execute `capture.screenshot`
+against the current Engine frame without accessing Editor UI, Lua, or graphics
+backend objects. **Landed 2026-08-29.**
 
 ## C7 — Lua bridge, native commands first
 
-- [ ] Add `engine/runtime/script/command/` bridge code above `LuaVM`.
-- [ ] Bind `engine.command.list`, `help`, `execute`, and completion metadata.
-- [ ] Document Lua as a workflow-scripting entry point, not the required
+- [x] Add `engine/runtime/script/command/` bridge code above `LuaVM`.
+- [x] Bind `engine.command.list`, `help`, `execute`, and completion metadata.
+- [x] Document Lua as a workflow-scripting entry point, not the required
   one-shot agent transport.
-- [ ] Convert Lua tables to validated `CommandValue` arguments.
-- [ ] Convert `CommandResult` data back to safe Lua values.
-- [ ] Marshal all Lua callbacks to the Lua/game thread.
-- [ ] Release Lua callback references before VM shutdown.
-- [ ] Enforce command flags and existing Lua sandbox/instruction limits.
-- [ ] Test pending screenshot completion and VM shutdown cancellation.
+- [x] Convert Lua tables to validated `CommandValue` arguments.
+- [x] Convert `CommandResult` data back to safe Lua values.
+- [x] Marshal all Lua callbacks to the Lua/game thread.
+- [x] Release Lua callback references before VM shutdown.
+- [x] Enforce command flags and existing Lua sandbox/instruction limits.
+- [x] Test pending screenshot completion and VM shutdown cancellation.
 
 **Done when:** Lua can invoke `capture.screenshot` and receive a structured
-completion without the core command target linking to Lua/sol2.
+completion without the core command target linking to Lua/sol2. **Landed
+2026-08-29.**
 
 ## C8 — Lua-defined commands, optional
 

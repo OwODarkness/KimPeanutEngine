@@ -1,6 +1,7 @@
 # Scene Render-Target Capture TODO
 
-Working ledger for the design in [render_capture.md](render_capture.md).
+Working ledger for [render capture](render_capture/overview.md); detailed design
+history remains in [render_capture.md](render_capture.md).
 
 ## C1 — render-capture service and pixel callback policy
 

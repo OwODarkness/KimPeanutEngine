@@ -10,8 +10,8 @@ add_subdirectory(image_io)
 add_subdirectory(asset)
 add_subdirectory(audio)
 add_subdirectory(bootstrap)
-add_subdirectory(script)
 add_subdirectory(command)
+add_subdirectory(script)
 add_subdirectory(screenshot)
 
 add_library(RuntimeLib STATIC

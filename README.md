@@ -63,6 +63,19 @@ KimPeanut Engine（KP Engine）是一个以渲染器和底层引擎基础设施�
 - Render、Graphics、Asset、Audio、Script 和 Profile 单元测试。
 - 设计文档、状态台账和开源引擎参考研究。
 
+### 命令系统与 Agent 调试
+
+- Runtime 拥有唯一的 `CommandRegistry`；编辑器 `~` 控制台、Lua、测试和
+  Agent 都调用同一组已验证命令，命令实现不依赖 ImGui、Lua 或图形后端类型。
+- 命令描述其参数、能力和执行线程；Game-thread 命令通过 Runtime 队列执行，
+  异步结果以 `request_id` 轮询，避免前端直接访问 Render 或 RHI 对象。
+- 运行中的引擎可用 `--agent-port 37373` 开启仅回环的 JSON-lines 端点。Agent
+  可执行 `capture.screenshot` 并轮询结果，取得 `SceneColor` PNG 用于渲染调试。
+  `KimPeanutCommand` 只是协议 harness，不启动 Render，不能捕获真实帧。
+
+命令 API、内置命令表和 Agent 请求示例见
+[命令系统文档](docs/command/command_system.md)。
+
 ## 可选功能模块
 
 ### TTS（文本转语音）
@@ -201,7 +214,8 @@ ctest --test-dir build -C Debug
 - [项目状态](docs/status.md)
 - [架构总览](docs/architecture_overview.md)
 - [Graphics/RHI 模块](docs/graphics/graphics_module.md)
-- [Render 模块](docs/render/render_module.md)
+- [Render 模块](docs/render/overview.md)
+- [命令系统](docs/command/command_system.md)
 - [Gameplay 模块](docs/gameplay/gameplay_module.md)
 - [Asset 模块](docs/asset/asset_module.md)
 - [TTS 模块](docs/tts/tts_module.md)

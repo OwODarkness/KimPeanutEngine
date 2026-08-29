@@ -32,4 +32,4 @@
 
 | Code | Why it's going | Replaced by |
 |---|---|---|
-| The legacy [`engine/runtime/render/`](../../engine/runtime/render/) tree (`ShaderPool`, `RenderShader`, `RenderMaterial`, raw `GLuint` render passes; `RenderScene` is taken by the new [`render_scene.cpp`](../../engine/runtime/render/render_scene.cpp)) | OpenGL-hardcoded, predates the RHI. `RenderSystem` now owns the common backend/pipeline lifecycle, but material state and common recording are not reconstructed. | Reconstructed render module per [render_module.md](render/render_module.md). |
+| The legacy [`engine/runtime/render/`](../../engine/runtime/render/) tree (`ShaderPool`, `RenderShader`, `RenderMaterial`, raw `GLuint` render passes; `RenderScene` is taken by the new [`render_scene.cpp`](../../engine/runtime/render/render_scene.cpp)) | OpenGL-hardcoded, predates the RHI. `RenderSystem` now owns the common backend/pipeline lifecycle, but material state and common recording are not reconstructed. | Reconstructed render module per [render overview](render/overview.md). |

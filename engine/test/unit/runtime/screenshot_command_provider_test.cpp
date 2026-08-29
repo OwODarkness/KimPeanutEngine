@@ -1,4 +1,5 @@
 #include <filesystem>
+#include <memory>
 #include <optional>
 #include <utility>
 
@@ -49,7 +50,7 @@ namespace kpengine::runtime
     TEST(ScreenshotCommandProviderTest, CompletesQueuedCaptureWithStructuredExportResult)
     {
         FakeCaptureService capture_service;
-        RuntimeScreenshotService screenshot_service{capture_service};
+        auto screenshot_service = std::make_shared<RuntimeScreenshotService>(capture_service);
         command::CommandRegistry registry;
         command::CommandRegistrationResult registration =
             RegisterScreenshotCommands(registry, screenshot_service);
@@ -60,12 +61,13 @@ namespace kpengine::runtime
         RemoveFile(output_path);
         std::optional<command::CommandResult> callback_result;
         const command::CommandResult pending = registry.Execute(
-            {"capture.screenshot", {{"path", output_path}, {"view", "scene_color"}}},
+            {"capture.screenshot", {{"path", std::string{output_path}},
+                                    {"view", std::string{"scene_color"}}}},
             {command::CommandOrigin::Agent, command::CommandThread::Immediate},
             [&callback_result](const command::CommandResult &result)
             { callback_result = result; });
 
-        ASSERT_EQ(pending.status, command::CommandStatus::Pending);
+        ASSERT_EQ(pending.status, command::CommandStatus::Pending) << pending.message;
         ASSERT_NE(pending.request_id, 0U);
         EXPECT_EQ(registry.PumpGameThread(), 1U);
         EXPECT_FALSE(callback_result.has_value());
@@ -92,7 +94,7 @@ namespace kpengine::runtime
     TEST(ScreenshotCommandProviderTest, PreservesServiceOwnedInvalidPathDiagnostic)
     {
         FakeCaptureService capture_service;
-        RuntimeScreenshotService screenshot_service{capture_service};
+        auto screenshot_service = std::make_shared<RuntimeScreenshotService>(capture_service);
         command::CommandRegistry registry;
         command::CommandRegistrationResult registration =
             RegisterScreenshotCommands(registry, screenshot_service);
@@ -100,11 +102,12 @@ namespace kpengine::runtime
 
         std::optional<command::CommandResult> callback_result;
         const command::CommandResult pending = registry.Execute(
-            {"capture.screenshot", {{"path", "save/screenshots/not-validation.png"}}},
+            {"capture.screenshot",
+             {{"path", std::string{"save/screenshots/not-validation.png"}}}},
             {command::CommandOrigin::Test, command::CommandThread::Immediate},
             [&callback_result](const command::CommandResult &result)
             { callback_result = result; });
-        ASSERT_EQ(pending.status, command::CommandStatus::Pending);
+        ASSERT_EQ(pending.status, command::CommandStatus::Pending) << pending.message;
 
         EXPECT_EQ(registry.PumpGameThread(), 1U);
         ASSERT_TRUE(callback_result.has_value());

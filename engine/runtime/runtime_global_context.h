@@ -25,6 +25,11 @@ namespace kpengine::script::lua
     class LuaVM;
 }
 
+namespace kpengine::runtime::script
+{
+    class LuaCommandBridge;
+}
+
 namespace kpengine
 {
     constexpr float k_unit_scale = 0.01f;
@@ -64,7 +69,7 @@ namespace kpengine
             std::unique_ptr<WindowSystem> window_system_;
             std::unique_ptr<render::RenderSystem> render_system_;
             std::unique_ptr<command::CommandRegistry> command_registry_;
-            std::unique_ptr<RuntimeScreenshotService> screenshot_service_;
+            std::shared_ptr<RuntimeScreenshotService> screenshot_service_;
             command::CommandRegistration screenshot_command_registration_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
             std::unique_ptr<LogSystem> log_system_;
@@ -76,7 +81,8 @@ namespace kpengine
 
             // Script hosting. LuaVM is engine-agnostic (script/lua/lua_vm.h); the
             // future ScriptSystem binding layer will sit above it (docs/status.md item 7).
-            std::unique_ptr<script::lua::LuaVM> lua_vm_;
+            std::unique_ptr<::kpengine::script::lua::LuaVM> lua_vm_;
+            std::unique_ptr<::kpengine::runtime::script::LuaCommandBridge> lua_command_bridge_;
 
             std::thread::id game_thread_id_;
             std::thread::id render_thread_id_;

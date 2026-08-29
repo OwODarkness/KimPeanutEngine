@@ -114,7 +114,7 @@ List durable documentation updated by the task, or state that no documentation c
 ```text
 Documentation:
 - Updated docs/status.md.
-- Updated docs/render/render_module.md.
+- Updated docs/render/overview.md.
 ```
 
 ## Copyable template

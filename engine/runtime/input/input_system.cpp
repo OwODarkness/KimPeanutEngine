@@ -8,7 +8,23 @@ namespace kpengine::input
 
     void InputSystem::Initialize()
     {
+        active_context_.clear();
+        last_cursor_xpos_ = 0.0;
+        last_cursor_ypos_ = 0.0;
+        is_first_cursor_ = true;
+        initialized_ = true;
+    }
 
+    void InputSystem::Shutdown()
+    {
+        contexts_.clear();
+        active_context_.clear();
+        key_listeners_.clear();
+        next_listener_handle_ = 1;
+        initialized_ = false;
+        is_first_cursor_ = true;
+        last_cursor_xpos_ = 0.0;
+        last_cursor_ypos_ = 0.0;
     }
 
     void InputSystem::AddContext(const std::string &name, std::shared_ptr<InputContext> context)
@@ -32,6 +48,26 @@ namespace kpengine::input
             return nullptr;
         }
         return it->second;
+    }
+
+    InputSystem::KeyListenerHandle InputSystem::AddKeyListener(
+        std::function<void(const KeyEvent &)> listener)
+    {
+        if (!listener)
+        {
+            return 0;
+        }
+        const KeyListenerHandle handle = next_listener_handle_++;
+        key_listeners_.emplace(handle, std::move(listener));
+        return handle;
+    }
+
+    void InputSystem::RemoveKeyListener(const KeyListenerHandle handle)
+    {
+        if (handle != 0)
+        {
+            key_listeners_.erase(handle);
+        }
     }
 
         void InputSystem::BindMouseButtonEvent(EventDispatcher<MouseButtonEvent>& dispatcher)
@@ -70,7 +106,9 @@ namespace kpengine::input
             break;
         case GLFW_RELEASE:
             triggle_type = InputTriggleType::Released;
+            break;
         default:
+            triggle_type = InputTriggleType::Pressed;
             break;
         }
         it->second->ProcessKeyInput({InputDevice::Mouse, event.code}, triggle_type, event.mods);
@@ -78,26 +116,38 @@ namespace kpengine::input
     void InputSystem::KeyExec(const KeyEvent& event)
     {
         auto it = contexts_.find(active_context_);
-        if (it == contexts_.end())
+        if (it != contexts_.end())
         {
-            return;
+            InputTriggleType triggle_type;
+            switch (event.action)
+            {
+            case GLFW_PRESS:
+                triggle_type = InputTriggleType::Pressed;
+                break;
+            case GLFW_RELEASE:
+                triggle_type = InputTriggleType::Released;
+                break;
+            case GLFW_REPEAT:
+                triggle_type = InputTriggleType::Held;
+                break;
+            default:
+                triggle_type = InputTriggleType::Pressed;
+                break;
+            }
+            it->second->ProcessKeyInput({InputDevice::Keyboard, event.key}, triggle_type,
+                                         event.mods);
         }
-        // KEY
-        InputTriggleType triggle_type;
-        switch (event.action)
+
+        std::vector<std::function<void(const KeyEvent &)>> listeners;
+        listeners.reserve(key_listeners_.size());
+        for (const auto &listener : key_listeners_)
         {
-        case GLFW_PRESS:
-            triggle_type = InputTriggleType::Pressed;
-            break;
-        case GLFW_RELEASE:
-            triggle_type = InputTriggleType::Released;
-        case GLFW_REPEAT:
-            triggle_type = InputTriggleType::Held;
-            break;
-        default:
-            triggle_type = InputTriggleType::Pressed;
+            listeners.push_back(listener.second);
         }
-        it->second->ProcessKeyInput({InputDevice::Keyboard, event.key}, triggle_type, event.mods);
+        for (const auto &listener : listeners)
+        {
+            listener(event);
+        }
     }
     void InputSystem::CursorPosExec(const CursorEvent& event)
     {

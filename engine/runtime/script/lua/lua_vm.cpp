@@ -73,6 +73,44 @@ namespace kpengine::script::lua
         last_error_.clear();
     }
 
+    bool LuaVM::RemoveTableFunction(const std::string& table_name,
+                                    const std::string& function_name)
+    {
+        if (!lua_)
+        {
+            return false;
+        }
+        sol::object existing = (*lua_)[table_name];
+        if (!existing.valid() || existing.get_type() != sol::type::table)
+        {
+            return false;
+        }
+        existing.as<sol::table>()[function_name] = sol::nil;
+        return true;
+    }
+
+    bool LuaVM::RemoveNestedTableFunction(const std::string& table_name,
+                                          const std::string& nested_table_name,
+                                          const std::string& function_name)
+    {
+        if (!lua_)
+        {
+            return false;
+        }
+        sol::object root_existing = (*lua_)[table_name];
+        if (!root_existing.valid() || root_existing.get_type() != sol::type::table)
+        {
+            return false;
+        }
+        sol::object nested_existing = root_existing.as<sol::table>()[nested_table_name];
+        if (!nested_existing.valid() || nested_existing.get_type() != sol::type::table)
+        {
+            return false;
+        }
+        nested_existing.as<sol::table>()[function_name] = sol::nil;
+        return true;
+    }
+
     void LuaVM::SetInstructionLimit(std::uint64_t instructions)
     {
         instruction_steps_budget_ = (instructions == 0) ? 0 : (instructions / kHookStep + 1);

@@ -1,4 +1,7 @@
-# Scene Render-Target Capture
+# Scene Render-Target Capture (Detailed Design)
+
+> Start with [render_capture/overview.md](render_capture/overview.md). This
+> page retains the detailed capture contract and reference findings.
 
 **Status:** planned.  This document defines the first visual-evidence slice
 before shadow, G-buffer, and deferred PBR work.

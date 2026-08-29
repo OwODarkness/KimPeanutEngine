@@ -6,6 +6,7 @@
 #include "editor/platform/editor_imgui_opengl_renderer.h"
 #include "editor/platform/editor_imgui_vulkan_renderer.h"
 #include "editor/ui/component/editor_window_component.h"
+#include "editor/ui/component/editor_console_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
 #include "editor/ui/component/editor_viewport_component.h"
 #include "editor/log/editor_log_component.h"
@@ -53,6 +54,7 @@ namespace kpengine::editor
         BuildViewportWindow(init_info.render_system);
         BuildLogWindow(init_info.log_system, settings.log_colors);
         BuildProfileBar(init_info.engine, init_info.memory_sampler, init_info.render_system);
+        BuildConsole(init_info.command_registry, init_info.input_system);
     }
 
     void EditorUI::CreateImguiBackends(WindowHandle window, GraphicsContext graphics_context)
@@ -183,14 +185,25 @@ namespace kpengine::editor
             std::make_unique<EditorProfileBarComponent>(std::move(profile_metrics)));
     }
 
+    void EditorUI::BuildConsole(runtime::command::CommandRegistry *command_registry,
+                                input::InputSystem *input_system)
+    {
+        components_.push_back(std::make_unique<EditorConsoleComponent>(
+            command_registry, input_system));
+    }
+
     void EditorUI::Close()
     {
+        // Destroy the console before RuntimeContext tears down InputSystem or
+        // the command registry. Its listener and deferred result sink are then
+        // detached while both services are still alive.
+        components_.clear();
+        screenshot_service_.reset();
         renderer_->Shutdown();
         wsi_->Shutdown();
         ImGui::DestroyContext();
         renderer_.reset();
         wsi_.reset();
-        components_.clear();
     }
 
     void EditorUI::BeginDraw()

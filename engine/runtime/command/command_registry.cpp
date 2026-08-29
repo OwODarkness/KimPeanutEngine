@@ -30,13 +30,14 @@ namespace kpengine::runtime::command
         {
             CommandCall call;
             CommandContext context;
+            std::shared_ptr<Entry> entry;
             CommandCompletionHandler completion;
             RequestState state = RequestState::Queued;
             std::optional<CommandResult> result;
         };
 
         mutable std::mutex mutex;
-        std::unordered_map<std::string, Entry> entries;
+        std::unordered_map<std::string, std::shared_ptr<Entry>> entries;
         std::deque<uint64_t> game_queue;
         std::map<uint64_t, Request> requests;
         uint64_t next_registration_id = 1;
@@ -47,7 +48,8 @@ namespace kpengine::runtime::command
         {
             std::scoped_lock lock(mutex);
             const auto iterator = entries.find(name);
-            if (iterator != entries.end() && iterator->second.registration_id == registration_id)
+            if (iterator != entries.end() &&
+                iterator->second->registration_id == registration_id)
             {
                 entries.erase(iterator);
             }
@@ -150,7 +152,7 @@ namespace kpengine::runtime::command
             {
                 return {CommandStatus::NotFound, "Command is not registered", 0, {}};
             }
-            descriptor = entry->second.descriptor;
+            descriptor = entry->second->descriptor;
         }
 
         return {CommandStatus::Success, CommandParser::FormatHelp(descriptor), 0,
@@ -163,10 +165,10 @@ namespace kpengine::runtime::command
         std::scoped_lock lock(state->mutex);
         state->entries.emplace(
             "commands.list",
-            State::Entry{
+            std::make_shared<State::Entry>(State::Entry{
                 {"commands.list", kRuntimeCommandProvider,
                  "List registered command names", CommandCategory::Engine,
-                 CommandFlags::None, {},
+                 CommandFlags::AgentAllowed | CommandFlags::LuaAllowed, {},
                  [weak_state](const CommandCall &, const CommandContext &)
                  {
                      const std::shared_ptr<State> locked_state = weak_state.lock();
@@ -175,13 +177,13 @@ namespace kpengine::runtime::command
                                 : CommandResult{CommandStatus::Shutdown,
                                                  "Command registry has shut down", 0, {}};
                  }},
-                0});
+                0}));
         state->entries.emplace(
             "help",
-            State::Entry{
+            std::make_shared<State::Entry>(State::Entry{
                 {"help", kRuntimeCommandProvider,
                  "Show command help; omit 'name' to list commands", CommandCategory::Engine,
-                 CommandFlags::None,
+                 CommandFlags::AgentAllowed | CommandFlags::LuaAllowed,
                  {{CommandArgumentDesc{"name", CommandValueType::String, false, {}, {}}}},
                  [weak_state](const CommandCall &call, const CommandContext &)
                  {
@@ -191,7 +193,7 @@ namespace kpengine::runtime::command
                                 : CommandResult{CommandStatus::Shutdown,
                                                  "Command registry has shut down", 0, {}};
                  }},
-                0});
+                0}));
     }
 
     CommandRegistration::~CommandRegistration()
@@ -258,7 +260,7 @@ namespace kpengine::runtime::command
             }
             if (state->entries.find(descriptor.name) != state->entries.end())
             {
-                const CommandDesc &existing = state->entries.at(descriptor.name).descriptor;
+                const CommandDesc &existing = state->entries.at(descriptor.name)->descriptor;
                 return {{}, CommandRegistrationStatus::DuplicateName,
                         "Command '" + descriptor.name + "' is already registered by provider '" +
                             GetProviderName(existing) + "'"};
@@ -266,8 +268,9 @@ namespace kpengine::runtime::command
 
             descriptor.provider = provider;
             registration_id = state->next_registration_id++;
-            state->entries.emplace(name,
-                                    State::Entry{std::move(descriptor), registration_id});
+            state->entries.emplace(
+                name, std::make_shared<State::Entry>(
+                          State::Entry{std::move(descriptor), registration_id}));
         }
 
         const std::weak_ptr<State> weak_state = state;
@@ -287,7 +290,7 @@ namespace kpengine::runtime::command
         const auto iterator = state->entries.find(name);
         return iterator == state->entries.end()
                    ? std::nullopt
-                   : std::optional<CommandDesc>{iterator->second.descriptor};
+                   : std::optional<CommandDesc>{iterator->second->descriptor};
     }
 
     std::vector<CommandDesc> CommandRegistry::List() const
@@ -299,7 +302,7 @@ namespace kpengine::runtime::command
             descriptors.reserve(state->entries.size());
             for (const auto &item : state->entries)
             {
-                descriptors.push_back(item.second.descriptor);
+                descriptors.push_back(item.second->descriptor);
             }
         }
         std::sort(descriptors.begin(), descriptors.end(),
@@ -310,6 +313,7 @@ namespace kpengine::runtime::command
 
     CommandResult CommandRegistry::ExecuteResolved(const std::shared_ptr<State> &state,
                                                    CommandDesc descriptor,
+                                                   const uint64_t registration_id,
                                                    const CommandCall &call,
                                                    const CommandContext &context,
                                                    CommandCompletionHandler completion)
@@ -329,7 +333,8 @@ namespace kpengine::runtime::command
         if (descriptor.execution_thread == CommandThread::Game &&
             context.thread != CommandThread::Game)
         {
-            return EnqueueGameRequest(state, *validated.call, context, std::move(completion));
+            return EnqueueGameRequest(state, *validated.call, context, std::move(descriptor),
+                                      registration_id, std::move(completion));
         }
         if (descriptor.execution_thread != CommandThread::Immediate &&
             descriptor.execution_thread != context.thread)
@@ -340,12 +345,20 @@ namespace kpengine::runtime::command
 
         // Invoke user code after releasing the registry lock. Handlers may
         // inspect or mutate registrations without deadlocking the registry.
-        return descriptor.handler(*validated.call, context);
+        CommandResult result = descriptor.handler(*validated.call, context);
+        if (result.status == CommandStatus::Pending && !context.complete)
+        {
+            return {CommandStatus::Failed,
+                    "Pending command results require a registry completion request", 0, {}};
+        }
+        return result;
     }
 
     CommandResult CommandRegistry::EnqueueGameRequest(const std::shared_ptr<State> &state,
                                                       CommandCall call,
                                                       CommandContext context,
+                                                      CommandDesc descriptor,
+                                                      const uint64_t registration_id,
                                                       CommandCompletionHandler completion)
     {
         std::scoped_lock lock(state->mutex);
@@ -354,10 +367,17 @@ namespace kpengine::runtime::command
             return {CommandStatus::Shutdown, "Command registry has shut down", 0, {}};
         }
 
+        const auto entry_iterator = state->entries.find(descriptor.name);
+        if (entry_iterator == state->entries.end() ||
+            entry_iterator->second->registration_id != registration_id)
+        {
+            return {CommandStatus::NotFound, "Command registration is no longer active", 0, {}};
+        }
+
         const uint64_t request_id = state->next_request_id++;
         state->requests.emplace(request_id,
-                                 State::Request{std::move(call), context, std::move(completion),
-                                                State::RequestState::Queued, {}});
+                                 State::Request{std::move(call), context, entry_iterator->second,
+                                                std::move(completion), State::RequestState::Queued, {}});
         state->game_queue.push_back(request_id);
         return {CommandStatus::Pending, "Command queued for the game thread", request_id, {}};
     }
@@ -392,6 +412,7 @@ namespace kpengine::runtime::command
                                            CommandCompletionHandler completion) const
     {
         CommandDesc descriptor;
+        uint64_t registration_id = 0;
         const std::shared_ptr<State> state = state_;
         {
             std::scoped_lock lock(state->mutex);
@@ -404,10 +425,12 @@ namespace kpengine::runtime::command
             {
                 return {CommandStatus::NotFound, "Command is not registered", 0, {}};
             }
-            descriptor = iterator->second.descriptor;
+            descriptor = iterator->second->descriptor;
+            registration_id = iterator->second->registration_id;
         }
 
-        return ExecuteResolved(state, std::move(descriptor), call, context, std::move(completion));
+        return ExecuteResolved(state, std::move(descriptor), registration_id, call, context,
+                               std::move(completion));
     }
 
     CommandResult CommandRegistry::ExecuteText(std::string_view text,
@@ -444,6 +467,8 @@ namespace kpengine::runtime::command
             uint64_t request_id = 0;
             CommandCall call;
             CommandContext context;
+            std::shared_ptr<State::Entry> entry;
+            bool registration_active = false;
             {
                 std::scoped_lock lock(state->mutex);
                 if (state->game_queue.empty())
@@ -461,6 +486,10 @@ namespace kpengine::runtime::command
                 iterator->second.state = State::RequestState::Running;
                 call = iterator->second.call;
                 context = iterator->second.context;
+                entry = iterator->second.entry;
+                const auto registered = state->entries.find(entry->descriptor.name);
+                registration_active = registered != state->entries.end() &&
+                                      registered->second == entry;
                 context.thread = CommandThread::Game;
                 context.request_id = request_id;
                 const std::weak_ptr<State> weak_state = state;
@@ -474,7 +503,16 @@ namespace kpengine::runtime::command
                 };
             }
 
-            const CommandResult result = Execute(call, context);
+            if (!registration_active)
+            {
+                CompleteRequest(state, request_id,
+                                {CommandStatus::NotFound,
+                                 "Command registration is no longer active", request_id, {}});
+                ++executed;
+                continue;
+            }
+
+            const CommandResult result = entry->descriptor.handler(call, context);
             // Pending means the handler transferred completion ownership to an
             // asynchronous subsystem through CommandContext::complete.
             if (result.status != CommandStatus::Pending)
@@ -498,6 +536,30 @@ namespace kpengine::runtime::command
         CommandResult result = std::move(*iterator->second.result);
         state->requests.erase(iterator);
         return result;
+    }
+
+    bool CommandRegistry::CancelRequest(const uint64_t request_id)
+    {
+        CommandCompletionHandler completion;
+        CommandResult result{CommandStatus::Cancelled, "Command request cancelled", request_id, {}};
+        {
+            const std::shared_ptr<State> state = state_;
+            std::scoped_lock lock(state->mutex);
+            const auto iterator = state->requests.find(request_id);
+            if (iterator == state->requests.end() ||
+                iterator->second.state == State::RequestState::Complete)
+            {
+                return false;
+            }
+            iterator->second.result = result;
+            iterator->second.state = State::RequestState::Complete;
+            completion = std::move(iterator->second.completion);
+        }
+        if (completion)
+        {
+            completion(result);
+        }
+        return true;
     }
 
     std::size_t CommandRegistry::PendingRequestCount() const
@@ -526,7 +588,7 @@ namespace kpengine::runtime::command
             state->game_queue.clear();
             for (auto &request : state->requests)
             {
-                if (request.second.state == State::RequestState::Queued)
+                if (request.second.state != State::RequestState::Complete)
                 {
                     CommandResult result{CommandStatus::Shutdown,
                                          "Command registry has shut down", request.first, {}};

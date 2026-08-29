@@ -8,6 +8,8 @@
 #include <memory>
 #include <atomic>
 
+#include "command/command_local_transport.h"
+
 namespace kpengine
 {
     namespace editor
@@ -26,6 +28,7 @@ namespace kpengine
             void Initialize();
             void Clear();
             void Run();
+            void SetCommandTransportConfig(command::LocalCommandTransportConfig config);
 
             inline int GetFPS() const { return measured_fps; }
             const int *GetFPSRef() const { return &measured_fps; }
@@ -73,6 +76,9 @@ namespace kpengine
             // One-shot guard for PreloadBootstrap(). Set only after a successful
             // enqueue, so a failed read (missing bootstrap.json) can be retried.
             bool bootstrap_loaded_ = false;
+
+            command::LocalCommandTransportConfig command_transport_config_{};
+            std::unique_ptr<command::CommandLocalTransport> command_transport_;
 
             // Engine-owned editor. Its UI (ImGui) is initialized and ticked on the
             // render thread where the GL/Vulkan context lives (see InitEditorUI).

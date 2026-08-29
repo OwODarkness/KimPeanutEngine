@@ -1,23 +1,43 @@
 # Script Module
 
-**Snapshot: 2026-08-12.** Hosts the Lua scripting layer. Two layers: a generic, engine-agnostic VM wrapper and a future engine-binding seam.
+**Snapshot: 2026-08-29.** Hosts the Lua scripting layer. Two layers: a generic, engine-agnostic VM wrapper and an engine-facing command bridge.
 
 ## Layering
 
 ```
 engine/runtime/script/
-  CMakeLists.txt      Script   (STATIC)  — engine-facing layer, currently a seam
-  script_core.cpp     empty; engine bindings (kpengine classes -> Lua) land here
+  CMakeLists.txt      Script   (STATIC)  — engine-facing binding layer
+  script_core.cpp     future broader engine bindings
+  command/
+    lua_command_bridge.h/.cpp — engine.command registry adapter
   lua/
     CMakeLists.txt    ScriptLua (STATIC) — generic VM hosting
     lua_vm.h/.cpp     LuaVM
 ```
 
 - **`ScriptLua` / `LuaVM`** — owns one sol2 state (`sol::state` behind a `unique_ptr`). Knows nothing about the engine: no asset paths, no `kpengine` classes. Depends only on `lua`/`sol2`/`Log`.
-- **`Script`** — the seam the engine binding layer will occupy. Currently links `ScriptLua` and carries the (empty) `script_core.cpp`. Everything engine-specific (exposing actors/components to Lua, wiring `package.path` to the project script dir, hot-reload, script lifecycle) belongs here, not in `LuaVM`.
+- **`Script`** — owns engine-facing bindings. It links `ScriptLua` and
+  `RuntimeCommand`; the latter does not link back to Script or sol2. Everything
+  engine-specific (exposing actors/components to Lua, wiring `package.path` to
+  the project script dir, hot-reload, script lifecycle) belongs here, not in
+  `LuaVM`.
 - **Engine-owned instance** — `RuntimeContext::lua_vm_` (created in the ctor) is `Initialize`d at boot in `RuntimeContext::Initialize` and released in `Clear()`. The VM is a game-thread object; its creation happens on the render thread during boot, but execution must stay on the game thread (see Threading).
 
 This mirrors the industry pattern (Unity/Unreal/Godot/CryEngine host the scripting runtime inside the engine runtime, never the editor, and keep the language VM separate from the engine bindings). `RuntimeLib` links `Script` PUBLIC; nothing in the script layer depends on the editor.
+
+## Command bridge
+
+`LuaCommandBridge` is created in `RuntimeContext::FinalizeGameStartup()` on the
+Game thread. It exposes `engine.command.list`, `help`, `execute`, `poll`, and
+`cancel`. Lua tables convert to the same typed `CommandCall` used by other
+frontends, and results convert to tables with `status`, `message`, `request_id`,
+and `data`.
+
+The bridge only invokes `LuaAllowed` commands and applies normal capability
+checks. Game-lane commands return `pending`; scripts poll the returned request
+ID. Before the VM or registry is released, the bridge removes its sol2 callback
+closures. Lua calls from a thread other than the bridge’s Game/Lua thread are
+rejected.
 
 ## API
 

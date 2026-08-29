@@ -90,6 +90,10 @@ namespace kpengine::runtime::command
         // this result becomes available here.
         std::optional<CommandResult> TakeCompletion(uint64_t request_id);
 
+        // Terminally cancels a registry-owned request. This does not forcibly
+        // interrupt subsystem work already handed off by a Pending handler.
+        bool CancelRequest(uint64_t request_id);
+
         std::size_t PendingRequestCount() const;
 
         // Clears all registrations and rejects later registration/execution.
@@ -108,12 +112,15 @@ namespace kpengine::runtime::command
 
         static CommandResult ExecuteResolved(const std::shared_ptr<State> &state,
                                               CommandDesc descriptor,
+                                              uint64_t registration_id,
                                               const CommandCall &call,
                                               const CommandContext &context,
                                               CommandCompletionHandler completion);
         static CommandResult EnqueueGameRequest(const std::shared_ptr<State> &state,
                                                  CommandCall call,
                                                  CommandContext context,
+                                                 CommandDesc descriptor,
+                                                 uint64_t registration_id,
                                                  CommandCompletionHandler completion);
         static void CompleteRequest(const std::shared_ptr<State> &state,
                                      uint64_t request_id,

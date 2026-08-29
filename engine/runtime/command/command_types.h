@@ -46,6 +46,7 @@ namespace kpengine::runtime::command
         Busy,
         Pending,
         Failed,
+        Cancelled,
         Shutdown,
         WrongThread,
     };

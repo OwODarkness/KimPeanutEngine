@@ -2,6 +2,8 @@
 
 #include <cstdio>
 #include <exception>
+#include <cstdlib>
+#include <string_view>
 
 // [old design] The entry point used to run one-off example tests, switched by
 // uncommenting calls in main(). The engine boot now owns main(); the test
@@ -35,6 +37,29 @@ using namespace kpengine::runtime;
 int main(int argc, char **argv)
 {
     Engine engine;
+
+    for (int argument_index = 1; argument_index < argc; ++argument_index)
+    {
+        const std::string_view argument{argv[argument_index]};
+        if (argument == "--agent-port" && argument_index + 1 < argc)
+        {
+            const int port = std::atoi(argv[++argument_index]);
+            if (port <= 0 || port > 65535)
+            {
+                std::fprintf(stderr, "--agent-port requires a port from 1 to 65535\n");
+                return 1;
+            }
+            kpengine::runtime::command::LocalCommandTransportConfig config{};
+            config.enabled = true;
+            config.port = static_cast<uint16_t>(port);
+            engine.SetCommandTransportConfig(config);
+        }
+        else if (argument == "--agent-port")
+        {
+            std::fprintf(stderr, "--agent-port requires a port from 1 to 65535\n");
+            return 1;
+        }
+    }
 
     // Boot failure (e.g. missing config/bootstrap.json) surfaces here before the
     // logger is guaranteed to flush, so report it to stderr directly and exit

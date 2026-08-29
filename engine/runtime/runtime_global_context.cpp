@@ -10,6 +10,7 @@
 #include "log/logger.h"
 #include "input/input_system.h"
 #include "script/lua/lua_vm.h"
+#include "script/command/lua_command_bridge.h"
 
 #include <utility>
 
@@ -28,7 +29,7 @@ namespace kpengine
             render_system_->GetRenderableSourceSink())),
         log_system_(std::make_unique<LogSystem>()),
         input_system_(std::make_unique<input::InputSystem>()),
-        lua_vm_(std::make_unique<script::lua::LuaVM>()),
+        lua_vm_(std::make_unique<::kpengine::script::lua::LuaVM>()),
         memory_sampler_(MemoryStatsSampler::CreateMemoryStatsSampler(PlatformType::PLATFORM_WINDOWS)),
         graphics_api_type_(GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
@@ -45,6 +46,14 @@ namespace kpengine
             window_create_info.graphics_api_type = graphics_api_type_;
             window_system_->Initialize(window_create_info);
 
+            // Window callbacks are translated into the Runtime input boundary
+            // before the Editor/ImGui layer is initialized. Editor tools may
+            // then register listeners without touching GLFW callbacks directly.
+            input_system_->Initialize();
+            input_system_->BindMouseButtonEvent(window_system_->mouse_button_event_dispatcher_);
+            input_system_->BindKeyEvent(window_system_->key_event_dispatcher_);
+            input_system_->BindCursorEvent(window_system_->cursor_event_dispatcher_);
+            input_system_->BindScrollEvent(window_system_->scroll_event_dispatcher_);
 
             lua_vm_->Initialize();
 
@@ -59,9 +68,9 @@ namespace kpengine
             render_system_->Initialize(render_init_info);
             if (render::IRenderCaptureService *capture_service = render_system_->GetRenderCaptureService())
             {
-                screenshot_service_ = std::make_unique<RuntimeScreenshotService>(*capture_service);
+                screenshot_service_ = std::make_shared<RuntimeScreenshotService>(*capture_service);
                 command::CommandRegistrationResult registration =
-                    RegisterScreenshotCommands(*command_registry_, *screenshot_service_);
+                    RegisterScreenshotCommands(*command_registry_, screenshot_service_);
                 if (!registration.IsSuccess())
                 {
                     KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
@@ -97,6 +106,21 @@ namespace kpengine
 
         void RuntimeContext::FinalizeGameStartup()
         {
+            // The VM is initialized while the render thread owns startup, but
+            // Engine calls this method on the game thread. Bind Lua commands here
+            // so every Lua -> native command invocation shares the game lane.
+            if (!lua_command_bridge_ && lua_vm_ && command_registry_)
+            {
+                lua_command_bridge_ = std::make_unique<::kpengine::runtime::script::LuaCommandBridge>(
+                    *command_registry_, *lua_vm_);
+                if (!lua_command_bridge_->Initialize())
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not initialize Lua command bridge");
+                    lua_command_bridge_.reset();
+                }
+            }
+
             if (!gameplay_world_ || !bootstrap_renderable_source_.has_value())
             {
                 return;
@@ -130,6 +154,9 @@ namespace kpengine
             // gameplay World must therefore die before the sink and GPU teardown.
             gameplay_world_.reset();
             bootstrap_renderable_source_.reset();
+            // Drop sol2 callback closures before their Lua state and the command
+            // registry they reference are torn down.
+            lua_command_bridge_.reset();
             if (command_registry_)
             {
                 command_registry_->Shutdown();
@@ -140,6 +167,10 @@ namespace kpengine
             {
                 render_system_->Shutdown();
                 render_system_.reset();
+            }
+            if (input_system_)
+            {
+                input_system_->Shutdown();
             }
             if (window_system_)
             {

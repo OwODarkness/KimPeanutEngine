@@ -14,6 +14,14 @@ namespace kpengine
     {
         class Engine;
         class RuntimeScreenshotService;
+        namespace command
+        {
+            class CommandRegistry;
+        }
+    }
+    namespace input
+    {
+        class InputSystem;
     }
     namespace render
     {
@@ -39,6 +47,8 @@ namespace kpengine::editor
         runtime::Engine *engine = nullptr;
         MemoryStatsSampler *memory_sampler = nullptr;
         render::RenderSystem *render_system = nullptr;
+        runtime::command::CommandRegistry *command_registry = nullptr;
+        input::InputSystem *input_system = nullptr;
     };
 
     class EditorUI
@@ -63,6 +73,8 @@ namespace kpengine::editor
         void BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors);
         void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                              render::RenderSystem *render_system);
+        void BuildConsole(runtime::command::CommandRegistry *command_registry,
+                          input::InputSystem *input_system);
         // Binds the Tool > Capture Screenshot command to the runtime export path.
         void TriggerScreenshot();
 

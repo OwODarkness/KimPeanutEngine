@@ -25,4 +25,4 @@ target_include_directories(EditorUILib PUBLIC
 )
 
 target_link_libraries(EditorLib PRIVATE RuntimeLib EditorUILib)
-target_link_libraries(EditorUILib PRIVATE RuntimeLib imgui glad VulkanSDK nlohmann)
+target_link_libraries(EditorUILib PRIVATE RuntimeLib RuntimeCommand Input imgui glad VulkanSDK nlohmann)

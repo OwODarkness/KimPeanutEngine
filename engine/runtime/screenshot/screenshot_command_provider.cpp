@@ -60,8 +60,15 @@ namespace kpengine::runtime
     }
 
     command::CommandRegistrationResult RegisterScreenshotCommands(
-        command::CommandRegistry &registry, RuntimeScreenshotService &screenshot_service)
+        command::CommandRegistry &registry,
+        std::shared_ptr<RuntimeScreenshotService> screenshot_service)
     {
+        if (!screenshot_service)
+        {
+            return {{}, command::CommandRegistrationStatus::InvalidDescriptor,
+                    "Screenshot command provider requires a screenshot service"};
+        }
+
         command::CommandDesc descriptor{
             "capture.screenshot",
             "RuntimeScreenshot",
@@ -72,8 +79,8 @@ namespace kpengine::runtime
                                            {}, {}},
               command::CommandArgumentDesc{"view", command::CommandValueType::Enum, false,
                                            std::string{"scene_color"}, {"scene_color"}}}},
-            [&screenshot_service](const command::CommandCall &call,
-                                  const command::CommandContext &context)
+            [screenshot_service = std::move(screenshot_service)](
+                const command::CommandCall &call, const command::CommandContext &context)
             {
                 if (!context.complete)
                 {
@@ -93,7 +100,7 @@ namespace kpengine::runtime
 
                 const command::CommandCompletionSink complete = context.complete;
                 const uint64_t request_id = context.request_id;
-                const bool accepted = screenshot_service.RequestScreenshot(
+                const bool accepted = screenshot_service->RequestScreenshot(
                     std::move(request),
                     [complete, request_id](ScreenshotResult result) mutable
                     {

@@ -14,7 +14,7 @@
 
 // [reconstruction] The legacy render/world systems are still being reconstructed;
 // the editor is back (minimal — a single ImGui window). The render module remains
-// the primary reconstruction target — docs/render/render_module.md.
+// the primary reconstruction target — docs/render/overview.md.
 // #include "render/render_system.h"
 // #include "game_framework/world_system.h"
 
@@ -32,6 +32,11 @@ namespace kpengine
         Engine::~Engine()
         {
             editor_.reset();
+        }
+
+        void Engine::SetCommandTransportConfig(command::LocalCommandTransportConfig config)
+        {
+            command_transport_config_ = std::move(config);
         }
 
         void Engine::Initialize()
@@ -67,6 +72,34 @@ namespace kpengine
             // thread/lifecycle boundary after render startup is complete.
             global_runtime_context.FinalizeGameStartup();
 
+            if (command_transport_config_.enabled)
+            {
+                command::CommandRegistry *registry = global_runtime_context.GetCommandRegistry();
+                if (registry == nullptr)
+                {
+                    KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                           "Local command transport was requested, but Runtime has no command registry");
+                }
+                else
+                {
+                    command_transport_ = std::make_unique<command::CommandLocalTransport>(
+                        *registry, command_transport_config_);
+                    std::string diagnostic;
+                    if (!command_transport_->Start(diagnostic))
+                    {
+                        KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                               "Local command transport did not start: %s", diagnostic.c_str());
+                        command_transport_.reset();
+                    }
+                    else
+                    {
+                        KP_LOG("EngineLog", LOG_LEVEL_INFO,
+                               "Local command transport listening on 127.0.0.1:%u",
+                               command_transport_->BoundPort());
+                    }
+                }
+            }
+
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initialize successfully");
         }
 
@@ -101,6 +134,11 @@ namespace kpengine
 
         void Engine::Clear()
         {
+            if (command_transport_)
+            {
+                command_transport_->Stop();
+                command_transport_.reset();
+            }
             // Runs after the render thread joined, so the editor's ImGui state was
             // already shut down on that thread (CloseUI); this only clears the
             // editor-side context.
@@ -119,6 +157,12 @@ namespace kpengine
                 GameTick();
             }
 
+            if (command_transport_)
+            {
+                command_transport_->Stop();
+                command_transport_.reset();
+            }
+
             // Wake the render thread out of its frame wait so it can observe
             // ShouldClose() and exit; otherwise join() below would hang on the CV wait.
             {
@@ -135,6 +179,11 @@ namespace kpengine
             using clock = std::chrono::steady_clock;
             const double target_frame_time = 1.0 / target_fps;
             auto frame_start = clock::now();
+
+            if (command_transport_)
+            {
+                command_transport_->PumpGameThread();
+            }
 
             if (global_runtime_context.command_registry_)
             {

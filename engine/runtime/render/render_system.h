@@ -77,7 +77,7 @@ namespace kpengine::render
 
     // The render-module facade. Reconstruction re-owns the RHI backend, the
     // resource-queue drain + render cache, and the scene graph here
-    // (docs/render/render_module.md). Today it consumes the async load queue in
+    // (docs/render/overview.md). Today it consumes the async load queue in
     // two modes: a full bootstrap drain at init, and a budgeted drain per frame.
     class RenderSystem
     {

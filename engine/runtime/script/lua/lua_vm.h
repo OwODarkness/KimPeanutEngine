@@ -47,6 +47,20 @@ namespace kpengine::script::lua
         // warns if the VM isn't initialized.
         template <typename Func>
         bool RegisterFunction(const std::string& name, Func&& func);
+        // Bind a function below a named global table without exposing the
+        // underlying sol::state to engine-specific binding layers.
+        template <typename Func>
+        bool RegisterTableFunction(const std::string& table_name,
+                                   const std::string& function_name, Func&& func);
+        bool RemoveTableFunction(const std::string& table_name,
+                                 const std::string& function_name);
+        template <typename Func>
+        bool RegisterNestedTableFunction(const std::string& table_name,
+                                         const std::string& nested_table_name,
+                                         const std::string& function_name, Func&& func);
+        bool RemoveNestedTableFunction(const std::string& table_name,
+                                       const std::string& nested_table_name,
+                                       const std::string& function_name);
         template <typename T>
         bool SetGlobal(const std::string& name, T&& value);
 
@@ -87,6 +101,58 @@ namespace kpengine::script::lua
         if (!lua_)
             return WarnNotInitialized("RegisterFunction");
         lua_->set_function(name, std::forward<Func>(func));
+        return true;
+    }
+
+    template <typename Func>
+    bool LuaVM::RegisterTableFunction(const std::string& table_name,
+                                      const std::string& function_name, Func&& func)
+    {
+        if (!lua_)
+            return WarnNotInitialized("RegisterTableFunction");
+        sol::object existing = (*lua_)[table_name];
+        if (existing.valid() && existing.get_type() != sol::type::nil &&
+            existing.get_type() != sol::type::table)
+        {
+            RecordError(("LuaVM::RegisterTableFunction: global is not a table: " + table_name).c_str());
+            return false;
+        }
+        sol::table table = existing.valid() && existing.get_type() == sol::type::table
+                               ? existing.as<sol::table>()
+                               : lua_->create_named_table(table_name);
+        table.set_function(function_name, std::forward<Func>(func));
+        return true;
+    }
+
+    template <typename Func>
+    bool LuaVM::RegisterNestedTableFunction(const std::string& table_name,
+                                            const std::string& nested_table_name,
+                                            const std::string& function_name, Func&& func)
+    {
+        if (!lua_)
+            return WarnNotInitialized("RegisterNestedTableFunction");
+        sol::object root_existing = (*lua_)[table_name];
+        if (root_existing.valid() && root_existing.get_type() != sol::type::nil &&
+            root_existing.get_type() != sol::type::table)
+        {
+            RecordError(("LuaVM::RegisterNestedTableFunction: global is not a table: " + table_name).c_str());
+            return false;
+        }
+        sol::table root = root_existing.valid() && root_existing.get_type() == sol::type::table
+                              ? root_existing.as<sol::table>()
+                              : lua_->create_named_table(table_name);
+        sol::object nested_existing = root[nested_table_name];
+        if (nested_existing.valid() && nested_existing.get_type() != sol::type::nil &&
+            nested_existing.get_type() != sol::type::table)
+        {
+            RecordError(("LuaVM::RegisterNestedTableFunction: field is not a table: " + nested_table_name).c_str());
+            return false;
+        }
+        sol::table nested = nested_existing.valid() && nested_existing.get_type() == sol::type::table
+                                ? nested_existing.as<sol::table>()
+                                : lua_->create_table();
+        nested.set_function(function_name, std::forward<Func>(func));
+        root[nested_table_name] = std::move(nested);
         return true;
     }
 

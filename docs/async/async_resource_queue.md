@@ -4,7 +4,7 @@ Location: generic transport in `engine/runtime/core/async/` (header-only lib `As
 
 The async resource queue is the engine's **off-frame loading + GPU-upload seam**. It moves the expensive CPU work (shader compile, texture decode, mesh processing) and the GPU bakes (pipeline creation) **off the render frame**, so a synchronous `LoadShaders`-style call never blocks a frame. It is a **request-based** queue: the two ends exchange small `AssetLoadRequest` objects, not payloads.
 
-This is the planned caller shape for the resource pipeline (the render module's "async compile off the main thread" step in [render_module.md](../render/render_module.md)) and the runtime half of the warmup story.
+This is the planned caller shape for the resource pipeline (the render module's "async compile off the main thread" step in [render design](../render/design.md)) and the runtime half of the warmup story.
 
 ## The problem it solves
 
@@ -148,5 +148,5 @@ The sync warmup pass (render-module reconstruction step 4) is still worth doing 
 ## Relation to the module docs
 
 - [resource_module.md](../resource/resource_module.md) — the queue is where `ProcessShader` gets its runtime caller, and the home of the "async compile off the main thread" step. `resource` still only responds; it never initiates.
-- [render_module.md](../render/render_module.md) — the render module is the initiator and the drainer; the queue is the async half of its warmup plan.
+- [render design](../render/design.md) — the render module is the initiator and the drainer; the queue is the async half of its warmup plan.
 - [graphics_module.md](../graphics/graphics_module.md) — the RHI is the last hop in the drain, unchanged: it takes `PipelineDesc` + `data::*` and bakes. The queue never hands the RHI an asset id or a path.

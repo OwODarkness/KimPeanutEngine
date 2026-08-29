@@ -201,7 +201,7 @@ Key validation targets:
 - [Project status](docs/status.md)
 - [Architecture overview](docs/architecture_overview.md)
 - [Graphics/RHI module](docs/graphics/graphics_module.md)
-- [Render module](docs/render/render_module.md)
+- [Render module](docs/render/overview.md)
 - [Asset module](docs/asset/asset_module.md)
 - [TTS module](docs/tts/tts_module.md)
 - [Validation matrix](docs/validation_matrix.md)
