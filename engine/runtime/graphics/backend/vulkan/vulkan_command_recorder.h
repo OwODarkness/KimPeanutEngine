@@ -25,7 +25,7 @@ namespace kpengine::graphics
                    VulkanRenderTargetManager &render_target_manager,
                    VulkanBindlessTextureTable *bindless_table, uint32_t frame_index);
 
-        void BeginRenderTarget(RenderTargetHandle target) override;
+        bool BeginRenderTarget(RenderTargetHandle target) override;
         void EndRenderTarget() override;
         void BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
@@ -47,6 +47,11 @@ namespace kpengine::graphics
         VulkanBindlessTextureTable *bindless_table_ = nullptr;
         uint32_t frame_index_ = 0;
         uint32_t recorded_index_count_ = 0;
+        RenderTargetHandle active_target_;
+        // Suppresses draws when the bound pipeline's attachment formats do not
+        // match the active render target; recording stays pass-scoped instead of
+        // submitting a pipeline-state mismatch to the driver.
+        bool draws_suppressed_ = false;
     };
 }
 

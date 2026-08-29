@@ -89,10 +89,10 @@ C3 still attaches the contract to Vulkan and OpenGL.**
 
 ## C3 — Vulkan and OpenGL implementations
 
-- [x] Vulkan: have `VulkanBackend` implement the common
-  `IRenderTargetReadback` interface and expose it through the common backend
-  facade. It delegates native target lookup, image transitions, staging-buffer
-  ownership, and mapping to a Vulkan-private readback/target manager.
+- [x] Vulkan: `VulkanBackend` owns a `VulkanRenderTargetReadback` service and
+  exposes its borrowed common `IRenderTargetReadback` interface through the
+  backend facade. The service owns native target lookup, image transitions,
+  staging-buffer ownership, mapping, pending requests, and callbacks.
 - [x] Vulkan: transition/copy SceneColor into backend-private host-visible
   readback storage, associate it with the submitted frame serial, and normalize
   to RGBA8 only after completion. `VulkanBackend` collects only after the
@@ -100,8 +100,8 @@ C3 still attaches the contract to Vulkan and OpenGL.**
   shutdown destroys a referenced target.
 - [x] OpenGL: issue the equivalent framebuffer/texture readback into a
   backend-private pixel pack buffer or synchronous fallback, with the same
-  ownership and result semantics. `OpenglBackend` implements the common
-  interface and delegates to `OpenglRenderTargetReadback`, which performs a
+  ownership and result semantics. `OpenglBackend` owns and exposes the
+  borrowed interface of `OpenglRenderTargetReadback`, which performs a
   synchronous `glGetTextureSubImage` read at the next frame boundary.
 - [x] Keep queue/fence, image-layout, framebuffer, and native pixel-format
   details private to each backend.

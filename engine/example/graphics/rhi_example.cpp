@@ -19,6 +19,7 @@
 #include "runtime/render/frame_context.h"
 #include "runtime/render/render_resource_resolver.h"
 #include "runtime/render/material/material_system.h"
+#include "runtime/render/material/material_asset_resolver.h"
 #include "runtime/render/render_world/render_world.h"
 #include "runtime/render/render_source_registry.h"
 #include "runtime/gameplay/actor/actor.h"
@@ -188,9 +189,13 @@ namespace kpengine::example
                 throw std::runtime_error("failed to create mapped dedicated smoke buffer");
             }
             *dedicated_smoke_data = 0xC0DEC0DEu;
+            // The scene target mirrors the old single-color+depth defaults
+            // explicitly now that RenderTargetDesc defaults to "no attachments".
             graphics::RenderTargetDesc render_target_desc{};
             render_target_desc.width = static_cast<uint32_t>(window_create_info.width);
             render_target_desc.height = static_cast<uint32_t>(window_create_info.height);
+            render_target_desc.color_attachments = {{graphics::RenderTargetColorAttachment{}}};
+            render_target_desc.depth = graphics::RenderTargetDepthAttachment{};
             const graphics::RenderTargetHandle scene_target =
                 rhi->CreateRenderTarget(render_target_desc);
             if (!scene_target.IsValid() || !rhi->GetRenderTargetColor(scene_target).IsValid())
@@ -401,7 +406,8 @@ namespace kpengine::example
                                 };
                                 const render::FrameMaterialBinding material_binding =
                                     frame_context.CreateMaterialBinding(
-                                        materials, resource_resolver, proxy.material, draw_bindings);
+                                        materials, resource_resolver, proxy.material, draw_bindings,
+                                        render::MaterialPass::Scene);
                                 if (!frame_context.IsMaterialBindingCurrent(material_binding))
                                 {
                                     continue;
@@ -564,6 +570,650 @@ namespace kpengine::example
                 {
                     throw std::runtime_error("smoke screenshot PNG is a uniform image");
                 }
+            }
+            // D2 cross-backend contract proof: multiple named color attachments,
+            // an attachment sampled by a later pass, and a depth-only target
+            // lifecycle. Runs on the smoke path so both APIs are exercised.
+            if (max_frames != 0)
+            {
+                const std::string api_name =
+                    api == GraphicsAPIType::GRAPHICS_API_VULKAN ? "vulkan" : "opengl";
+                const asset::AssetID multi_program_id =
+                    LoadShaderProgram(resource_pipeline, "multi_output.shader");
+                const asset::AssetID sample_program_id =
+                    LoadShaderProgram(resource_pipeline, "sample_color.shader");
+                const asset::AssetID depth_program_id =
+                    LoadShaderProgram(resource_pipeline, "depth_only.shader");
+                auto multi_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(multi_program_id);
+                auto sample_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(sample_program_id);
+                auto depth_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(depth_program_id);
+                const auto multi_vertex = multi_program ? multi_program->GetShader(
+                    ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                const auto multi_fragment = multi_program ? multi_program->GetShader(
+                    ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                const auto sample_vertex = sample_program ? sample_program->GetShader(
+                    ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                const auto sample_fragment = sample_program ? sample_program->GetShader(
+                    ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                const auto depth_vertex = depth_program ? depth_program->GetShader(
+                    ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                const auto depth_fragment = depth_program ? depth_program->GetShader(
+                    ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                if (!multi_vertex || !multi_fragment || !sample_vertex || !sample_fragment ||
+                    !depth_vertex || !depth_fragment || !multi_vertex->data || !multi_fragment->data ||
+                    !sample_vertex->data || !sample_fragment->data ||
+                    !depth_vertex->data || !depth_fragment->data)
+                {
+                    throw std::runtime_error("D2 smoke shaders failed to compile");
+                }
+
+                const uint32_t target_width = static_cast<uint32_t>(window_create_info.width);
+                const uint32_t target_height = static_cast<uint32_t>(window_create_info.height);
+
+                // Multi-attachment target: RGBA8 + RGBA16F color, D32 depth.
+                graphics::RenderTargetDesc multi_desc{};
+                multi_desc.width = target_width;
+                multi_desc.height = target_height;
+                multi_desc.color_attachments = {
+                    {graphics::RenderTargetColorAttachment{TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM}},
+                    {graphics::RenderTargetColorAttachment{TextureFormat::TEXTURE_FORMAT_RGBA16F}},
+                };
+                multi_desc.depth = graphics::RenderTargetDepthAttachment{};
+                multi_desc.depth->shader_readable = true;
+                const graphics::RenderTargetHandle multi_target = rhi->CreateRenderTarget(multi_desc);
+                // Readback-capturable RGBA8_SRGB output the sample pass fills.
+                graphics::RenderTargetDesc output_desc{};
+                output_desc.width = target_width;
+                output_desc.height = target_height;
+                output_desc.color_attachments = {{graphics::RenderTargetColorAttachment{}}};
+                const graphics::RenderTargetHandle output_target = rhi->CreateRenderTarget(output_desc);
+                // Depth-only target: no color attachments at all.
+                graphics::RenderTargetDesc depth_only_desc{};
+                depth_only_desc.width = 512;
+                depth_only_desc.height = 512;
+                depth_only_desc.depth = graphics::RenderTargetDepthAttachment{};
+                const graphics::RenderTargetHandle depth_only_target = rhi->CreateRenderTarget(depth_only_desc);
+                if (!multi_target.IsValid() || !output_target.IsValid() || !depth_only_target.IsValid() ||
+                    !rhi->GetRenderTargetColorAttachment(multi_target, 0).IsValid() ||
+                    !rhi->GetRenderTargetColorAttachment(multi_target, 1).IsValid() ||
+                    !rhi->GetRenderTargetDepthAttachment(multi_target).IsValid() ||
+                    !rhi->GetRenderTargetDepthAttachment(depth_only_target).IsValid() ||
+                    rhi->GetRenderTargetDepthAttachment(output_target).IsValid() ||
+                    !rhi->GetRenderTargetSampledDepthAttachment(multi_target).IsValid() ||
+                    rhi->GetRenderTargetSampledDepthAttachment(depth_only_target).IsValid())
+                {
+                    throw std::runtime_error("failed to create D2 multi-attachment / depth-only targets");
+                }
+
+                // The fullscreen triangle is a fullscreen quad: its winding is
+                // front-facing in OpenGL's y-up NDC but back-facing in Vulkan's
+                // y-down NDC, so these passes must not cull.
+                graphics::RasterState fullscreen_raster_state = raster_state;
+                fullscreen_raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
+                graphics::PipelineDesc multi_pipeline_desc{};
+                multi_pipeline_desc.vert_shader = sample_vertex->data.get();
+                multi_pipeline_desc.frag_shader = multi_fragment->data.get();
+                multi_pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+                multi_pipeline_desc.attri_descs = {
+                    {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, position)},
+                    {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, tex_coord)},
+                };
+                multi_pipeline_desc.raster_state = fullscreen_raster_state;
+                multi_pipeline_desc.color_attachment_formats = {
+                    TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
+                    TextureFormat::TEXTURE_FORMAT_RGBA16F};
+                multi_pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
+
+                graphics::PipelineDesc sample_pipeline_desc{};
+                sample_pipeline_desc.vert_shader = sample_vertex->data.get();
+                sample_pipeline_desc.frag_shader = sample_fragment->data.get();
+                sample_pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+                sample_pipeline_desc.attri_descs = {
+                    {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, position)},
+                    {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, tex_coord)},
+                };
+                sample_pipeline_desc.descriptor_binding_descs = {
+                    {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+                };
+                sample_pipeline_desc.raster_state = fullscreen_raster_state;
+                sample_pipeline_desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+                sample_pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+
+                const graphics::PipelineHandle multi_pipeline =
+                    rhi->CreatePipelineResource(multi_pipeline_desc);
+                const graphics::PipelineHandle sample_pipeline =
+                    rhi->CreatePipelineResource(sample_pipeline_desc);
+                // Depth-only pipeline: no color attachments; drives the camera +
+                // model uniforms like the scene passes and writes depth only.
+                graphics::PipelineDesc depth_pipeline_desc{};
+                depth_pipeline_desc.vert_shader = depth_vertex->data.get();
+                depth_pipeline_desc.frag_shader = depth_fragment->data.get();
+                depth_pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+                depth_pipeline_desc.attri_descs = {
+                    {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS, offsetof(data::Vertex, position)},
+                    {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, tex_coord)},
+                };
+                depth_pipeline_desc.descriptor_binding_descs = {
+                    {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
+                     {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX}},
+                };
+                depth_pipeline_desc.raster_state = raster_state;
+                depth_pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
+                const graphics::PipelineHandle depth_only_pipeline =
+                    rhi->CreatePipelineResource(depth_pipeline_desc);
+                const graphics::SamplerHandle sample_sampler = rhi->CreateSampler(graphics::SamplerSettings{});
+                if (!multi_pipeline.IsValid() || !sample_pipeline.IsValid() ||
+                    !depth_only_pipeline.IsValid() || !sample_sampler.IsValid())
+                {
+                    throw std::runtime_error("failed to create D2 smoke pipelines / sampler");
+                }
+
+                // Fullscreen triangle mesh (position + uv) for the sample pass.
+                data::MeshData fullscreen_mesh_data{};
+                data::Vertex quad_v0{}, quad_v1{}, quad_v2{};
+                quad_v0.position = {-1.0f, -1.0f, 0.0f};
+                quad_v0.tex_coord = {0.0f, 0.0f};
+                quad_v1.position = {3.0f, -1.0f, 0.0f};
+                quad_v1.tex_coord = {2.0f, 0.0f};
+                quad_v2.position = {-1.0f, 3.0f, 0.0f};
+                quad_v2.tex_coord = {0.0f, 2.0f};
+                fullscreen_mesh_data.vertices = {quad_v0, quad_v1, quad_v2};
+                fullscreen_mesh_data.indices = {0, 1, 2};
+                fullscreen_mesh_data.sections = {{0, 3, 0}};
+                const graphics::MeshHandle fullscreen_mesh = rhi->CreateMesh(fullscreen_mesh_data);
+                if (!fullscreen_mesh.IsValid())
+                {
+                    throw std::runtime_error("failed to create D2 fullscreen mesh");
+                }
+                const graphics::DescriptorSetHandle sample_bindings = rhi->CreateResourceBindingSet(
+                    sample_pipeline,
+                    {0, {graphics::SampledTextureBinding{
+                             0, 2, rhi->GetRenderTargetColorAttachment(multi_target, 0),
+                             sample_sampler}}});
+                if (!sample_bindings.IsValid())
+                {
+                    throw std::runtime_error("failed to create D2 sample descriptor set");
+                }
+
+                // Per-frame D2 recording: multi-attachment pass, then sample the
+                // multi attachment 0 into the output, then the depth-only pass.
+                // Mirrors render_one_frame so pending readbacks have work to wait on.
+                const auto render_d2_frame = [&]()
+                {
+                    rhi->BeginFrame();
+                    if (rhi->GetCommandRecorder())
+                    {
+                        const uint32_t frame_index = rhi->GetCurrentFrameIndex();
+                        if (frame_index < frame_contexts.size())
+                        {
+                            render::FrameContext &frame_context = frame_contexts[frame_index];
+                            frame_context.Begin(frame_index,
+                                               {frame_number, elapsed_seconds, kDemoDeltaSeconds},
+                                               rhi->GetRenderExtent());
+                            graphics::CommandRecorder *recorder = rhi->GetCommandRecorder();
+
+                            camera.SetAspect(static_cast<float>(target_width) /
+                                             static_cast<float>(target_height));
+                            const render::CameraData camera_data = camera.GetCameraData();
+                            graphics::PerPassData per_pass_data{};
+                            per_pass_data.camera_data.view = camera_data.view;
+                            per_pass_data.camera_data.proj = camera_data.proj;
+                            const render::UniformAllocation d2_pass =
+                                frame_context.AllocateUniform(per_pass_data);
+                            graphics::PerObjectData per_object_data{};
+                            per_object_data.model = Matrix4f::MakeTransformMatrix(Transform3f{}).Transpose();
+                            const render::UniformAllocation d2_object =
+                                frame_context.AllocateUniform(per_object_data);
+                            if (!d2_pass.IsValid() || !d2_object.IsValid())
+                            {
+                                throw std::runtime_error("D2 uniform allocation failed");
+                            }
+
+                            recorder->BeginRenderTarget(multi_target);
+                            recorder->BindPipeline(multi_pipeline);
+                            recorder->BindMesh(fullscreen_mesh);
+                            recorder->DrawIndexed();
+                            recorder->EndRenderTarget();
+
+                            recorder->BeginRenderTarget(output_target);
+                            recorder->BindPipeline(sample_pipeline);
+                            recorder->BindMesh(fullscreen_mesh);
+                            recorder->BindResourceBindings(sample_pipeline, sample_bindings);
+                            recorder->DrawIndexed();
+                            recorder->EndRenderTarget();
+
+                            recorder->BeginRenderTarget(depth_only_target);
+                            const graphics::DescriptorSetHandle depth_bindings =
+                                frame_context.AllocateResourceBindingSet(
+                                    depth_only_pipeline,
+                                    {0,
+                                     {graphics::UniformBufferBinding{0, 0, d2_pass.buffer, d2_pass.offset, d2_pass.range},
+                                      graphics::UniformBufferBinding{0, 1, d2_object.buffer, d2_object.offset, d2_object.range}}});
+                            if (!depth_bindings.IsValid())
+                            {
+                                throw std::runtime_error("D2 depth-only pass binding failed");
+                            }
+                            recorder->BindPipeline(depth_only_pipeline);
+                            recorder->BindMesh(demo_resources.mesh);
+                            recorder->BindResourceBindings(depth_only_pipeline, depth_bindings);
+                            recorder->DrawIndexed();
+                            recorder->EndRenderTarget();
+
+                            frame_context.End();
+                            ++frame_number;
+                        }
+                    }
+                    rhi->EndFrame();
+                    if (api == GraphicsAPIType::GRAPHICS_API_OPENGL)
+                    {
+                        window->SwapBuffers();
+                    }
+                };
+
+                // Depth-only lifecycle proof: a resize lands while the depth-only
+                // target is live and a frame records into all three targets.
+                window->SetWindowSize(800, 600);
+                window->resize_event_dispatcher_.Dispatch({800, 600});
+                render_d2_frame();
+
+                // Capture the output target the sample pass filled.
+                const std::string d2_path =
+                    "save/screenshots/validation/graphics-smoke-d2-" + api_name + ".png";
+                std::error_code d2_remove_error;
+                std::filesystem::remove(d2_path, d2_remove_error);
+                render::RenderCaptureService d2_capture_service(
+                    rhi->GetRenderTargetReadback(),
+                    [output_target] { return output_target; },
+                    [&frame_number] { return frame_number; });
+                runtime::RuntimeScreenshotService d2_screenshot_service(d2_capture_service);
+                runtime::ScreenshotResult d2_screenshot_result;
+                bool d2_screenshot_finished = false;
+                if (!d2_screenshot_service.RequestScreenshot(
+                        {{render::CaptureView::SceneColor}, d2_path},
+                        [&d2_screenshot_result, &d2_screenshot_finished](
+                            runtime::ScreenshotResult result)
+                        {
+                            d2_screenshot_result = std::move(result);
+                            d2_screenshot_finished = true;
+                        }))
+                {
+                    throw std::runtime_error("D2 smoke screenshot request was rejected");
+                }
+                constexpr uint32_t kMaxCaptureDrainFrames = 16;
+                uint32_t d2_drain_frames = 0;
+                while (!d2_screenshot_finished && d2_drain_frames < kMaxCaptureDrainFrames)
+                {
+                    render_d2_frame();
+                    ++d2_drain_frames;
+                }
+                if (!d2_screenshot_finished || !d2_screenshot_result.IsSuccess())
+                {
+                    throw std::runtime_error("D2 smoke screenshot did not complete: " +
+                                             d2_screenshot_result.diagnostic);
+                }
+                std::vector<uint8_t> d2_file_bytes;
+                {
+                    std::ifstream file(d2_screenshot_result.output_path, std::ios::binary);
+                    if (!file)
+                    {
+                        throw std::runtime_error("D2 smoke screenshot PNG could not be opened");
+                    }
+                    file.seekg(0, std::ios::end);
+                    const std::streamoff d2_file_size = file.tellg();
+                    file.seekg(0, std::ios::beg);
+                    d2_file_bytes.resize(static_cast<size_t>(d2_file_size));
+                    file.read(reinterpret_cast<char *>(d2_file_bytes.data()),
+                              static_cast<std::streamsize>(d2_file_size));
+                }
+                if (!HasPngSignature(d2_file_bytes))
+                {
+                    throw std::runtime_error("D2 smoke screenshot PNG has an invalid signature");
+                }
+                const image_io::ImageDecodeResult d2_decoded =
+                    image_io::DecodeImageFile(d2_screenshot_result.output_path);
+                if (!d2_decoded.result.success || !d2_decoded.image.IsValid() ||
+                    d2_decoded.image.format != image_io::ImagePixelFormat::Rgba8)
+                {
+                    throw std::runtime_error("D2 smoke screenshot PNG failed to decode: " +
+                                             d2_decoded.result.diagnostic);
+                }
+                const std::vector<uint8_t> &d2_pixels = d2_decoded.image.pixels;
+                const uint8_t d2_first_byte = d2_pixels.front();
+                const bool d2_has_varied_pixels = std::any_of(
+                    d2_pixels.begin() + 1, d2_pixels.end(),
+                    [d2_first_byte](uint8_t byte) { return byte != d2_first_byte; });
+                if (!d2_has_varied_pixels)
+                {
+                    throw std::runtime_error("D2 smoke screenshot PNG is a uniform image");
+                }
+                // The sampled attachment is a UV ramp; the output must show both
+                // red and green intensity so the transfer is real, not cleared.
+                bool saw_red = false;
+                bool saw_green = false;
+                for (size_t i = 0; i + 3 < d2_pixels.size(); i += 4)
+                {
+                    if (d2_pixels[i] > 64) { saw_red = true; }
+                    if (d2_pixels[i + 1] > 64) { saw_green = true; }
+                }
+                if (!saw_red || !saw_green)
+                {
+                    throw std::runtime_error("D2 sampled output lost the multi-attachment content");
+                }
+
+                rhi->WaitIdle();
+                rhi->DestroyResourceBindingSet(sample_bindings);
+                rhi->DestroySampler(sample_sampler);
+                rhi->DestroyPipelineResource(sample_pipeline);
+                rhi->DestroyPipelineResource(multi_pipeline);
+                rhi->DestroyPipelineResource(depth_only_pipeline);
+                rhi->DestroyMesh(fullscreen_mesh);
+                rhi->DestroyRenderTarget(depth_only_target);
+                rhi->DestroyRenderTarget(output_target);
+                rhi->DestroyRenderTarget(multi_target);
+            }
+            // D3 deferred-PBR proof: a versioned standard_pbr material resolves
+            // through the full asset -> template -> instance path, its GBuffer
+            // pipeline writes a 3-color+depth target, and the debug composite
+            // samples those attachments back into an RGBA8 output for capture.
+            if (max_frames != 0)
+            {
+                const uint32_t target_width = static_cast<uint32_t>(window_create_info.width);
+                const uint32_t target_height = static_cast<uint32_t>(window_create_info.height);
+                const std::string api_name =
+                    api == GraphicsAPIType::GRAPHICS_API_VULKAN ? "vulkan" : "opengl";
+                render::MaterialAssetResolver d3_material_resolver(materials);
+                const asset::AssetID rock_material_id = asset::AssetManager::GetInstance().LoadSync(
+                    GetAssetDirectory() + "material/rock_pbr.material");
+                render::MaterialInstanceHandle rock_instance;
+                const render::MaterialResolution rock_resolution =
+                    d3_material_resolver.Resolve(rock_material_id, rock_instance);
+                if (rock_resolution.state != render::MaterialResourceState::Ready ||
+                    !rock_instance.IsValid())
+                {
+                    throw std::runtime_error("D3 rock material failed to resolve: " +
+                                             rock_resolution.diagnostic);
+                }
+                const render::MaterialTemplateHandle rock_template =
+                    materials.GetInstanceTemplate(rock_instance);
+                const graphics::PipelineHandle gbuffer_pipeline =
+                    resource_resolver.FindMaterialPipeline(rock_template,
+                                                           render::MaterialPass::GBuffer);
+                if (!gbuffer_pipeline.IsValid())
+                {
+                    throw std::runtime_error("D3 GBuffer pipeline was not created for the rock material");
+                }
+
+                // Rock mesh: 56-byte data::Vertex (pos/normal/uv/tangent/bitangent).
+                const asset::AssetID rock_model_id = asset::AssetManager::GetInstance().LoadSync(
+                    GetModelDirectory() + "rock1-bl/rock2.obj");
+                auto rock_model = asset::AssetManager::GetInstance().GetResource<asset::ModelResource>(rock_model_id);
+                auto rock_mesh = rock_model ? rock_model->GetMesh() : nullptr;
+                if (!rock_mesh || !rock_mesh->data)
+                {
+                    throw std::runtime_error("D3 rock mesh failed to load");
+                }
+                const asset::AssetID rock_mesh_id = rock_model->GetData(asset::ModelGeometryType::KPMG_Mesh);
+                const graphics::MeshHandle rock_mesh_handle =
+                    resource_resolver.GetOrCreateMesh(rock_mesh_id, *rock_mesh->data);
+                if (!rock_mesh_handle.IsValid())
+                {
+                    throw std::runtime_error("D3 rock mesh resource creation failed");
+                }
+
+                // GBuffer target: 3 color (albedo/normal/material) + D32, matching
+                // the engine's RendererFrameTargets::BuildDesc encodings.
+                graphics::RenderTargetDesc gbuffer_desc{};
+                gbuffer_desc.width = target_width;
+                gbuffer_desc.height = target_height;
+                gbuffer_desc.color_attachments = {
+                    {graphics::RenderTargetColorAttachment{
+                         TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
+                         graphics::RenderTargetLoadOp::Clear,
+                         graphics::RenderTargetStoreOp::Store,
+                         {0.f, 0.f, 0.f, 0.f}}},
+                    {graphics::RenderTargetColorAttachment{
+                         TextureFormat::TEXTURE_FORMAT_RGBA16F,
+                         graphics::RenderTargetLoadOp::Clear,
+                         graphics::RenderTargetStoreOp::Store,
+                         {0.f, 0.f, 1.f, 0.f}}},
+                    {graphics::RenderTargetColorAttachment{
+                         TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
+                         graphics::RenderTargetLoadOp::Clear,
+                         graphics::RenderTargetStoreOp::Store,
+                         {0.f, 1.f, 1.f, 0.f}}},
+                };
+                gbuffer_desc.depth = graphics::RenderTargetDepthAttachment{};
+                const graphics::RenderTargetHandle gbuffer_target = rhi->CreateRenderTarget(gbuffer_desc);
+                graphics::RenderTargetDesc d3_output_desc{};
+                d3_output_desc.width = target_width;
+                d3_output_desc.height = target_height;
+                d3_output_desc.color_attachments = {{graphics::RenderTargetColorAttachment{}}};
+                const graphics::RenderTargetHandle d3_output_target = rhi->CreateRenderTarget(d3_output_desc);
+                if (!gbuffer_target.IsValid() || !d3_output_target.IsValid() ||
+                    !rhi->GetRenderTargetColorAttachment(gbuffer_target, 0).IsValid() ||
+                    !rhi->GetRenderTargetColorAttachment(gbuffer_target, 1).IsValid() ||
+                    !rhi->GetRenderTargetColorAttachment(gbuffer_target, 2).IsValid())
+                {
+                    throw std::runtime_error("failed to create D3 GBuffer / output targets");
+                }
+
+                // Debug fullscreen composite pipeline + mesh (cull NONE).
+                const asset::AssetID debug_program_id =
+                    LoadShaderProgram(resource_pipeline, "gbuffer_debug_view.shader");
+                auto debug_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(debug_program_id);
+                const auto debug_vertex = debug_program ? debug_program->GetShader(
+                    ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                const auto debug_fragment = debug_program ? debug_program->GetShader(
+                    ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                if (!debug_vertex || !debug_fragment || !debug_vertex->data || !debug_fragment->data)
+                {
+                    throw std::runtime_error("D3 debug view shaders failed to compile");
+                }
+                graphics::PipelineDesc debug_pipeline_desc{};
+                debug_pipeline_desc.vert_shader = debug_vertex->data.get();
+                debug_pipeline_desc.frag_shader = debug_fragment->data.get();
+                debug_pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+                debug_pipeline_desc.attri_descs = {
+                    {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, position)},
+                    {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, tex_coord)},
+                };
+                debug_pipeline_desc.descriptor_binding_descs = {
+                    {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                     {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                     {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+                };
+                debug_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
+                debug_pipeline_desc.raster_state.front_face =
+                    graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+                debug_pipeline_desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+                debug_pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+                const graphics::PipelineHandle debug_pipeline = rhi->CreatePipelineResource(debug_pipeline_desc);
+                data::MeshData debug_mesh_data{};
+                data::Vertex debug_v0{}, debug_v1{}, debug_v2{};
+                debug_v0.position = {-1.0f, -1.0f, 0.0f};
+                debug_v0.tex_coord = {0.0f, 0.0f};
+                debug_v1.position = {3.0f, -1.0f, 0.0f};
+                debug_v1.tex_coord = {2.0f, 0.0f};
+                debug_v2.position = {-1.0f, 3.0f, 0.0f};
+                debug_v2.tex_coord = {0.0f, 2.0f};
+                debug_mesh_data.vertices = {debug_v0, debug_v1, debug_v2};
+                debug_mesh_data.indices = {0, 1, 2};
+                debug_mesh_data.sections = {{0, 3, 0}};
+                const graphics::MeshHandle debug_mesh = rhi->CreateMesh(debug_mesh_data);
+                const graphics::SamplerHandle debug_sampler = rhi->CreateSampler(graphics::SamplerSettings{});
+                if (!debug_pipeline.IsValid() || !debug_mesh.IsValid() || !debug_sampler.IsValid())
+                {
+                    throw std::runtime_error("failed to create D3 debug composite resources");
+                }
+
+                // Frame the ~165-unit rock: pull the camera back + extend the far
+                // plane (the smoke camera default far=10 culls it entirely).
+                camera.SetPosition({0.f, 0.f, 300.f});
+                camera.SetNearPlane(1.f);
+                camera.SetFarPlane(2000.f);
+
+                const auto render_d3_frame = [&]()
+                {
+                    rhi->BeginFrame();
+                    if (rhi->GetCommandRecorder())
+                    {
+                        const uint32_t frame_index = rhi->GetCurrentFrameIndex();
+                        if (frame_index < frame_contexts.size())
+                        {
+                            render::FrameContext &frame_context = frame_contexts[frame_index];
+                            frame_context.Begin(frame_index,
+                                               {frame_number, elapsed_seconds, kDemoDeltaSeconds},
+                                               rhi->GetRenderExtent());
+                            graphics::CommandRecorder *recorder = rhi->GetCommandRecorder();
+
+                            camera.SetAspect(static_cast<float>(target_width) /
+                                             static_cast<float>(target_height));
+                            const render::CameraData camera_data = camera.GetCameraData();
+                            graphics::PerPassData per_pass_data{};
+                            per_pass_data.camera_data.view = camera_data.view;
+                            per_pass_data.camera_data.proj = camera_data.proj;
+                            const render::UniformAllocation d3_pass =
+                                frame_context.AllocateUniform(per_pass_data);
+                            graphics::PerObjectData per_object_data{};
+                            per_object_data.model = Matrix4f::MakeTransformMatrix(Transform3f{}).Transpose();
+                            const render::UniformAllocation d3_object =
+                                frame_context.AllocateUniform(per_object_data);
+                            if (!d3_pass.IsValid() || !d3_object.IsValid())
+                            {
+                                throw std::runtime_error("D3 uniform allocation failed");
+                            }
+
+                            recorder->BeginRenderTarget(gbuffer_target);
+                            const std::vector<graphics::ResourceBinding> gbuffer_draw_bindings{
+                                graphics::UniformBufferBinding{0, 0, d3_pass.buffer, d3_pass.offset, d3_pass.range},
+                                graphics::UniformBufferBinding{0, 1, d3_object.buffer, d3_object.offset, d3_object.range},
+                            };
+                            const render::FrameMaterialBinding gbuffer_binding =
+                                frame_context.CreateMaterialBinding(
+                                    materials, resource_resolver, rock_instance, gbuffer_draw_bindings,
+                                    render::MaterialPass::GBuffer);
+                            if (!frame_context.IsMaterialBindingCurrent(gbuffer_binding))
+                            {
+                                throw std::runtime_error("D3 GBuffer material binding failed");
+                            }
+                            recorder->BindPipeline(gbuffer_binding.pipeline);
+                            recorder->BindMesh(rock_mesh_handle);
+                            recorder->BindResourceBindings(gbuffer_binding.pipeline,
+                                                           gbuffer_binding.descriptor_set);
+                            recorder->DrawIndexed();
+                            recorder->EndRenderTarget();
+
+                            recorder->BeginRenderTarget(d3_output_target);
+                            const graphics::DescriptorSetHandle debug_bindings =
+                                frame_context.AllocateResourceBindingSet(
+                                    debug_pipeline,
+                                    {0,
+                                     {graphics::SampledTextureBinding{
+                                          0, 2, rhi->GetRenderTargetColorAttachment(gbuffer_target, 0),
+                                          debug_sampler},
+                                      graphics::SampledTextureBinding{
+                                          0, 3, rhi->GetRenderTargetColorAttachment(gbuffer_target, 1),
+                                          debug_sampler},
+                                      graphics::SampledTextureBinding{
+                                          0, 4, rhi->GetRenderTargetColorAttachment(gbuffer_target, 2),
+                                          debug_sampler}}});
+                            if (!debug_bindings.IsValid())
+                            {
+                                throw std::runtime_error("D3 debug composite binding failed");
+                            }
+                            recorder->BindPipeline(debug_pipeline);
+                            recorder->BindMesh(debug_mesh);
+                            recorder->BindResourceBindings(debug_pipeline, debug_bindings);
+                            recorder->DrawIndexed();
+                            recorder->EndRenderTarget();
+
+                            frame_context.End();
+                            ++frame_number;
+                        }
+                    }
+                    rhi->EndFrame();
+                    if (api == GraphicsAPIType::GRAPHICS_API_OPENGL)
+                    {
+                        window->SwapBuffers();
+                    }
+                };
+
+                render_d3_frame();
+
+                const std::string d3_path =
+                    "save/screenshots/validation/graphics-smoke-d3-" + api_name + ".png";
+                std::error_code d3_remove_error;
+                std::filesystem::remove(d3_path, d3_remove_error);
+                render::RenderCaptureService d3_capture_service(
+                    rhi->GetRenderTargetReadback(),
+                    [d3_output_target] { return d3_output_target; },
+                    [&frame_number] { return frame_number; });
+                runtime::RuntimeScreenshotService d3_screenshot_service(d3_capture_service);
+                runtime::ScreenshotResult d3_screenshot_result;
+                bool d3_screenshot_finished = false;
+                if (!d3_screenshot_service.RequestScreenshot(
+                        {{render::CaptureView::SceneColor}, d3_path},
+                        [&d3_screenshot_result, &d3_screenshot_finished](
+                            runtime::ScreenshotResult result)
+                        {
+                            d3_screenshot_result = std::move(result);
+                            d3_screenshot_finished = true;
+                        }))
+                {
+                    throw std::runtime_error("D3 smoke screenshot request was rejected");
+                }
+                constexpr uint32_t kMaxCaptureDrainFrames = 16;
+                uint32_t d3_drain_frames = 0;
+                while (!d3_screenshot_finished && d3_drain_frames < kMaxCaptureDrainFrames)
+                {
+                    render_d3_frame();
+                    ++d3_drain_frames;
+                }
+                if (!d3_screenshot_finished || !d3_screenshot_result.IsSuccess())
+                {
+                    throw std::runtime_error("D3 smoke screenshot did not complete: " +
+                                             d3_screenshot_result.diagnostic);
+                }
+                const image_io::ImageDecodeResult d3_decoded =
+                    image_io::DecodeImageFile(d3_screenshot_result.output_path);
+                if (!d3_decoded.result.success || !d3_decoded.image.IsValid() ||
+                    d3_decoded.image.format != image_io::ImagePixelFormat::Rgba8)
+                {
+                    throw std::runtime_error("D3 smoke screenshot PNG failed to decode: " +
+                                             d3_decoded.result.diagnostic);
+                }
+                const std::vector<uint8_t> &d3_pixels = d3_decoded.image.pixels;
+                const uint8_t d3_first_byte = d3_pixels.front();
+                const bool d3_has_varied_pixels = std::any_of(
+                    d3_pixels.begin() + 1, d3_pixels.end(),
+                    [d3_first_byte](uint8_t byte) { return byte != d3_first_byte; });
+                if (!d3_has_varied_pixels)
+                {
+                    throw std::runtime_error("D3 smoke screenshot PNG is a uniform image");
+                }
+                // The debug composite must draw the rock (albedo lit by a normal
+                // term), not just the clear color — require some bright pixels.
+                bool d3_saw_rock = false;
+                for (size_t i = 0; i + 2 < d3_pixels.size(); i += 4)
+                {
+                    if (d3_pixels[i] > 32 || d3_pixels[i + 1] > 32 || d3_pixels[i + 2] > 32)
+                    {
+                        d3_saw_rock = true;
+                        break;
+                    }
+                }
+                if (!d3_saw_rock)
+                {
+                    throw std::runtime_error("D3 debug composite did not draw the rock");
+                }
+
+                rhi->WaitIdle();
+                d3_material_resolver.Clear();
+                rhi->DestroySampler(debug_sampler);
+                rhi->DestroyMesh(debug_mesh);
+                rhi->DestroyPipelineResource(debug_pipeline);
+                rhi->DestroyRenderTarget(d3_output_target);
+                rhi->DestroyRenderTarget(gbuffer_target);
             }
             if (!gameplay_world.DestroyActor(gameplay_actor_handle))
             {

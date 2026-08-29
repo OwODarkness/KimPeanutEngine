@@ -10,6 +10,7 @@
 #include "opengl_pipeline_manager.h"
 #include "common/pipeline_types.h"
 #include "common/pipeline_validation.h"
+#include "common/render_target_validation.h"
 #include "opengl_mesh.h"
 #include "common/mesh.h"
 #include "opengl_enum.h"
@@ -21,6 +22,9 @@
 
 namespace kpengine::graphics
 {
+    static_assert(!std::is_base_of_v<IRenderTargetReadback, OpenglBackend>);
+    static_assert(!std::is_base_of_v<CommandRecorder, OpenglBackend>);
+
     OpenglBackend::OpenglBackend() : mesh_manager_(std::make_unique<MeshManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
                                      sampler_manager_(std::make_unique<SamplerManager>()),
@@ -33,6 +37,11 @@ namespace kpengine::graphics
     }
 
     OpenglBackend::~OpenglBackend() = default;
+
+    IRenderTargetReadback *OpenglBackend::GetRenderTargetReadback()
+    {
+        return render_target_readback_.get();
+    }
 
     void OpenglBackend::Initialize(WindowHandle native_window)
     {
@@ -69,19 +78,28 @@ namespace kpengine::graphics
     {
         // OpenGL executes synchronously, so the previous frame's draws have
         // already produced the scene target; collect reads it before recording.
-        CollectCompletedReadbacks();
+        if (render_target_readback_)
+        {
+            render_target_readback_->CollectCompletedReadbacks();
+        }
         if (bindless_texture_table_)
         {
             bindless_texture_table_->BeginFrame(*texture_manager_, *sampler_manager_);
         }
+        command_recorder_ = std::make_unique<OpenglCommandRecorder>(
+            OpenglCommandRecorder::Services{pipeline_manager_.get(), mesh_manager_.get(),
+                                            bindless_texture_table_.get(), &render_targets_,
+                                            &render_target_framebuffers_, &render_target_handles_,
+                                            &resource_binding_sets_, &resource_binding_set_handles_,
+                                            &mapped_uniform_buffers_});
         frame_active_ = true;
-        active_render_target_ = {};
     }
     void OpenglBackend::EndFrame()
     {
-        if (active_render_target_.IsValid())
+        if (command_recorder_)
         {
-            EndRenderTarget();
+            command_recorder_->EndRenderTarget();
+            command_recorder_.reset();
         }
         // The editor's ImGui pass follows scene rendering on this context. It
         // supplies display-space colors, so scene sRGB write conversion must
@@ -97,7 +115,10 @@ namespace kpengine::graphics
     void OpenglBackend::WaitIdle()
     {
         glFinish();
-        CollectCompletedReadbacks();
+        if (render_target_readback_)
+        {
+            render_target_readback_->CollectCompletedReadbacks();
+        }
         if (bindless_texture_table_)
         {
             bindless_texture_table_->WaitIdle();
@@ -106,128 +127,12 @@ namespace kpengine::graphics
 
     CommandRecorder *OpenglBackend::GetCommandRecorder()
     {
-        return frame_active_ ? static_cast<CommandRecorder *>(this) : nullptr;
+        return frame_active_ ? command_recorder_.get() : nullptr;
     }
 
     GraphicsContext OpenglBackend::GetGraphicsContext()
     {
         return CreateGraphicsContext();
-    }
-
-    void OpenglBackend::BeginRenderTarget(RenderTargetHandle target)
-    {
-        if (!frame_active_ || active_render_target_.IsValid())
-        {
-            return;
-        }
-        const uint32_t index = render_target_handles_.Get(target);
-        if (index >= render_targets_.size() || index >= render_target_framebuffers_.size())
-        {
-            return;
-        }
-        const GLuint framebuffer = render_target_framebuffers_[index];
-        if (framebuffer == 0)
-        {
-            return;
-        }
-        const RenderTargetResource &resource = render_targets_[index];
-        glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
-        glViewport(0, 0, static_cast<GLsizei>(resource.desc.width),
-                   static_cast<GLsizei>(resource.desc.height));
-        glClearColor(0.f, 0.f, 0.f, 1.f);
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-        active_render_target_ = target;
-    }
-
-    void OpenglBackend::EndRenderTarget()
-    {
-        if (!active_render_target_.IsValid())
-        {
-            return;
-        }
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        // OpenglPipeline enables this for the sRGB scene color attachment. The
-        // default framebuffer belongs to the subsequent UI renderer instead.
-        glDisable(GL_FRAMEBUFFER_SRGB);
-        active_render_target_ = {};
-    }
-
-    void OpenglBackend::BindPipeline(PipelineHandle pipeline)
-    {
-        OpenglPipeline *resource = pipeline_manager_->GetPipelineResource(pipeline);
-        if (resource)
-        {
-            resource->Bind();
-            if (bindless_texture_table_)
-            {
-                bindless_texture_table_->Bind();
-            }
-            glBindVertexArray(resource->vao);
-            recorded_pipeline_ = pipeline;
-        }
-    }
-
-    void OpenglBackend::BindMesh(MeshHandle mesh)
-    {
-        Mesh *mesh_object = mesh_manager_->GetMesh(mesh);
-        if (!mesh_object)
-        {
-            return;
-        }
-        const auto *mesh_resource = static_cast<const OpenglMeshResource *>(
-            mesh_object->GetMeshHandle().native);
-        if (!mesh_resource)
-        {
-            return;
-        }
-        OpenglPipeline *pipeline = pipeline_manager_->GetPipelineResource(recorded_pipeline_);
-        if (!pipeline)
-        {
-            return;
-        }
-        glVertexArrayVertexBuffer(pipeline->vao, 0, mesh_resource->vbo, 0, sizeof(Vertex));
-        glVertexArrayElementBuffer(pipeline->vao, mesh_resource->ebo);
-        glBindVertexArray(pipeline->vao);
-        recorded_mesh_ = mesh;
-        recorded_index_count_ = mesh_resource->sections.empty()
-            ? 0u : static_cast<uint32_t>(mesh_resource->sections[0].index_count);
-    }
-
-    void OpenglBackend::BindResourceBindings(PipelineHandle pipeline,
-                                             DescriptorSetHandle bindings)
-    {
-        BindResourceBindingSet(pipeline, bindings);
-    }
-
-    void OpenglBackend::SetViewport(const Viewport &viewport)
-    {
-        glViewport(static_cast<GLint>(viewport.x), static_cast<GLint>(viewport.y),
-                   static_cast<GLsizei>(viewport.width), static_cast<GLsizei>(viewport.height));
-    }
-
-    void OpenglBackend::SetScissor(const Scissor &scissor)
-    {
-        glScissor(scissor.x, scissor.y, static_cast<GLsizei>(scissor.width),
-                  static_cast<GLsizei>(scissor.height));
-    }
-
-    void OpenglBackend::DrawIndexed(uint32_t index_count, uint32_t instance_count,
-                                    uint32_t first_index, int32_t vertex_offset,
-                                    uint32_t first_instance)
-    {
-        (void)vertex_offset;
-        (void)first_instance;
-        if (index_count == 0)
-        {
-            index_count = recorded_index_count_;
-        }
-        if (index_count != 0)
-        {
-            glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(index_count),
-                                    GL_UNSIGNED_INT,
-                                    reinterpret_cast<const void *>(first_index * sizeof(uint32_t)),
-                                    static_cast<GLsizei>(instance_count));
-        }
     }
 
     BufferHandle OpenglBackend::CreateUniformBuffer(uint32_t size)
@@ -266,21 +171,36 @@ namespace kpengine::graphics
 
     void OpenglBackend::Cleanup()
     {
+        if (command_recorder_)
+        {
+            command_recorder_->EndRenderTarget();
+            command_recorder_.reset();
+        }
         // Cancel pending readbacks before any referenced attachment is destroyed.
-        DrainPendingReadbacks("OpenGL backend shutdown");
+        if (render_target_readback_)
+        {
+            render_target_readback_->DrainPendingReadbacks("OpenGL backend shutdown");
+        }
         for (size_t index = 0; index < render_targets_.size(); ++index)
         {
             RenderTargetResource &target = render_targets_[index];
+            if (target.color_attachments.empty() && !target.depth.IsValid())
+            {
+                continue;
+            }
             if (index < render_target_framebuffers_.size() && render_target_framebuffers_[index] != 0)
             {
                 glDeleteFramebuffers(1, &render_target_framebuffers_[index]);
             }
-            if (target.color.IsValid())
+            for (const TextureHandle &color : target.color_attachments)
             {
-                DestroyTexture(target.color);
-                DestroyTexture(target.depth);
-                target = {};
+                DestroyTexture(color);
             }
+            if (target.depth.IsValid())
+            {
+                DestroyTexture(target.depth);
+            }
+            target = {};
         }
         render_targets_.clear();
         render_target_framebuffers_.clear();
@@ -381,7 +301,7 @@ namespace kpengine::graphics
 
     RenderTargetHandle OpenglBackend::CreateRenderTarget(const RenderTargetDesc &desc)
     {
-        if (desc.width == 0 || desc.height == 0)
+        if (!ValidateRenderTargetDesc(desc))
         {
             return {};
         }
@@ -395,49 +315,108 @@ namespace kpengine::graphics
         TextureData target_data{};
         target_data.width = desc.width;
         target_data.height = desc.height;
-        TextureSettings color_settings{};
-        color_settings.format = desc.color_format;
-        color_settings.usage = TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT | TextureUsage::TEXTURE_USAGE_SAMPLE;
-        color_settings.aspect = ImageAspect::IMAGE_ASPECT_COLOR;
-        TextureSettings depth_settings{};
-        depth_settings.format = desc.depth_format;
-        depth_settings.usage = TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT;
-        depth_settings.aspect = ImageAspect::IMAGE_ASPECT_DEPTH;
-
         RenderTargetResource target{};
         target.desc = desc;
-        target.color = CreateTexture(target_data, color_settings);
-        target.depth = CreateTexture(target_data, depth_settings);
-        if (!target.color.IsValid() || !target.depth.IsValid())
+        for (const RenderTargetColorAttachment &attachment : desc.color_attachments)
         {
-            if (target.color.IsValid()) DestroyTexture(target.color);
+            TextureSettings color_settings{};
+            color_settings.sample_count = desc.sample_count;
+            color_settings.format = attachment.format;
+            color_settings.usage = TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT |
+                                   TextureUsage::TEXTURE_USAGE_SAMPLE;
+            color_settings.aspect = ImageAspect::IMAGE_ASPECT_COLOR;
+            target.color_attachments.push_back(CreateTexture(target_data, color_settings));
+            if (!target.color_attachments.back().IsValid())
+            {
+                break;
+            }
+        }
+        bool success = target.color_attachments.size() == desc.color_attachments.size();
+        if (success && desc.depth.has_value())
+        {
+            TextureSettings depth_settings{};
+            depth_settings.sample_count = desc.sample_count;
+            depth_settings.format = desc.depth->format;
+            depth_settings.usage = TextureUsage::TEXTURE_USAGE_DEPTHSTENCIL_ATTACHMENT;
+            if (desc.depth->shader_readable)
+            {
+                depth_settings.usage = depth_settings.usage | TextureUsage::TEXTURE_USAGE_SAMPLE;
+            }
+            depth_settings.aspect = ImageAspect::IMAGE_ASPECT_DEPTH;
+            target.depth = CreateTexture(target_data, depth_settings);
+            success = target.depth.IsValid();
+        }
+        if (!success)
+        {
+            for (const TextureHandle &color : target.color_attachments)
+            {
+                if (color.IsValid()) DestroyTexture(color);
+            }
             if (target.depth.IsValid()) DestroyTexture(target.depth);
             render_target_handles_.Destroy(handle);
             return {};
         }
-        Texture *color_texture = texture_manager_->GetTexture(target.color);
-        Texture *depth_texture = texture_manager_->GetTexture(target.depth);
-        if (!color_texture || !depth_texture)
-        {
-            DestroyTexture(target.color);
-            DestroyTexture(target.depth);
-            render_target_handles_.Destroy(handle);
-            return {};
-        }
-        const OpenglTextureResource color_resource =
-            ConvertToOpenglTextureResource(color_texture->GetTextueHandle());
-        const OpenglTextureResource depth_resource =
-            ConvertToOpenglTextureResource(depth_texture->GetTextueHandle());
+
         GLuint framebuffer = 0;
         glCreateFramebuffers(1, &framebuffer);
-        glNamedFramebufferTexture(framebuffer, GL_COLOR_ATTACHMENT0, color_resource.image, 0);
-        glNamedFramebufferTexture(framebuffer, GL_DEPTH_ATTACHMENT, depth_resource.image, 0);
-        glNamedFramebufferDrawBuffer(framebuffer, GL_COLOR_ATTACHMENT0);
+        for (uint32_t i = 0; i < target.color_attachments.size(); ++i)
+        {
+            Texture *color_texture = texture_manager_->GetTexture(target.color_attachments[i]);
+            if (!color_texture)
+            {
+                glDeleteFramebuffers(1, &framebuffer);
+                for (const TextureHandle &color : target.color_attachments)
+                {
+                    DestroyTexture(color);
+                }
+                if (target.depth.IsValid()) DestroyTexture(target.depth);
+                render_target_handles_.Destroy(handle);
+                return {};
+            }
+            const OpenglTextureResource color_resource =
+                ConvertToOpenglTextureResource(color_texture->GetTextueHandle());
+            glNamedFramebufferTexture(framebuffer, GL_COLOR_ATTACHMENT0 + i,
+                                      color_resource.image, 0);
+        }
+        if (target.depth.IsValid())
+        {
+            Texture *depth_texture = texture_manager_->GetTexture(target.depth);
+            if (depth_texture)
+            {
+                const OpenglTextureResource depth_resource =
+                    ConvertToOpenglTextureResource(depth_texture->GetTextueHandle());
+                glNamedFramebufferTexture(framebuffer, GL_DEPTH_ATTACHMENT,
+                                          depth_resource.image, 0);
+            }
+        }
+        // Configure draw/read buffers before completeness validation. A
+        // depth-only FBO is incomplete while its default read/draw buffer still
+        // names the unattached COLOR_ATTACHMENT0.
+        if (target.color_attachments.empty())
+        {
+            glNamedFramebufferDrawBuffer(framebuffer, GL_NONE);
+            glNamedFramebufferReadBuffer(framebuffer, GL_NONE);
+        }
+        else
+        {
+            std::vector<GLenum> draw_buffers(target.color_attachments.size());
+            for (uint32_t i = 0; i < draw_buffers.size(); ++i)
+            {
+                draw_buffers[i] = GL_COLOR_ATTACHMENT0 + i;
+            }
+            glNamedFramebufferDrawBuffers(framebuffer,
+                                          static_cast<GLsizei>(draw_buffers.size()),
+                                          draw_buffers.data());
+            glNamedFramebufferReadBuffer(framebuffer, GL_COLOR_ATTACHMENT0);
+        }
         if (glCheckNamedFramebufferStatus(framebuffer, GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
         {
             glDeleteFramebuffers(1, &framebuffer);
-            DestroyTexture(target.color);
-            DestroyTexture(target.depth);
+            for (const TextureHandle &color : target.color_attachments)
+            {
+                DestroyTexture(color);
+            }
+            if (target.depth.IsValid()) DestroyTexture(target.depth);
             render_target_handles_.Destroy(handle);
             return {};
         }
@@ -456,33 +435,67 @@ namespace kpengine::graphics
         const uint32_t index = render_target_handles_.Get(handle);
         if (index >= render_targets_.size()) return false;
         RenderTargetResource &target = render_targets_[index];
-        if (!target.color.IsValid() || !target.depth.IsValid()) return false;
+        if (target.color_attachments.empty() && !target.depth.IsValid()) return false;
         if (index < render_target_framebuffers_.size() && render_target_framebuffers_[index] != 0)
         {
             glDeleteFramebuffers(1, &render_target_framebuffers_[index]);
             render_target_framebuffers_[index] = 0;
         }
-        DestroyTexture(target.color);
-        DestroyTexture(target.depth);
+        for (const TextureHandle &color : target.color_attachments)
+        {
+            DestroyTexture(color);
+        }
+        if (target.depth.IsValid())
+        {
+            DestroyTexture(target.depth);
+        }
         target = {};
         return render_target_handles_.Destroy(handle);
     }
 
     TextureHandle OpenglBackend::GetRenderTargetColor(RenderTargetHandle handle)
     {
-        const uint32_t index = render_target_handles_.Get(handle);
-        return index < render_targets_.size() ? render_targets_[index].color : TextureHandle{};
+        return GetRenderTargetColorAttachment(handle, 0);
+    }
+
+    TextureHandle OpenglBackend::GetRenderTargetColorAttachment(RenderTargetHandle handle,
+                                                                uint32_t index)
+    {
+        const uint32_t slot = render_target_handles_.Get(handle);
+        if (slot >= render_targets_.size() || index >= render_targets_[slot].color_attachments.size())
+        {
+            return {};
+        }
+        return render_targets_[slot].color_attachments[index];
+    }
+
+    TextureHandle OpenglBackend::GetRenderTargetDepthAttachment(RenderTargetHandle handle)
+    {
+        const uint32_t slot = render_target_handles_.Get(handle);
+        return slot < render_targets_.size() ? render_targets_[slot].depth : TextureHandle{};
+    }
+
+    TextureHandle OpenglBackend::GetRenderTargetSampledDepthAttachment(
+        RenderTargetHandle handle)
+    {
+        const uint32_t slot = render_target_handles_.Get(handle);
+        if (slot >= render_targets_.size() || !render_targets_[slot].desc.depth.has_value() ||
+            !render_targets_[slot].desc.depth->shader_readable)
+        {
+            return {};
+        }
+        return render_targets_[slot].depth;
     }
 
     RenderTargetView OpenglBackend::GetRenderTargetView(RenderTargetHandle handle)
     {
         const uint32_t index = render_target_handles_.Get(handle);
-        if (index >= render_targets_.size())
+        if (index >= render_targets_.size() || render_targets_[index].color_attachments.empty())
         {
             return {};
         }
         const RenderTargetResource &target = render_targets_[index];
-        Texture *color_texture = texture_manager_->GetTexture(target.color);
+        Texture *color_texture = texture_manager_->GetTexture(target.color_attachments[0]);
         if (!color_texture)
         {
             return {};
@@ -525,7 +538,10 @@ namespace kpengine::graphics
                 {
                     Texture *texture = texture_manager_->GetTexture(value.texture);
                     Sampler *sampler = sampler_manager_->GetSampler(value.sampler);
-                    if (!texture || !sampler)
+                    const bool sampleable =
+                        texture && (static_cast<uint32_t>(texture->settings_.usage) &
+                                    static_cast<uint32_t>(TextureUsage::TEXTURE_USAGE_SAMPLE)) != 0;
+                    if (!sampleable || !sampler)
                     {
                         valid = false;
                         return;
@@ -602,29 +618,6 @@ namespace kpengine::graphics
         return context;
     }
 
-    bool OpenglBackend::EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
-                                                     RenderTargetReadbackCallback on_completed)
-    {
-        return render_target_readback_ &&
-               render_target_readback_->Enqueue(request, std::move(on_completed));
-    }
-
-    void OpenglBackend::CollectCompletedReadbacks()
-    {
-        if (render_target_readback_)
-        {
-            render_target_readback_->CollectCompleted();
-        }
-    }
-
-    void OpenglBackend::DrainPendingReadbacks(std::string diagnostic)
-    {
-        if (render_target_readback_)
-        {
-            render_target_readback_->Drain(std::move(diagnostic));
-        }
-    }
-
     OpenglRenderTargetReadbackSource OpenglBackend::GetRenderTargetReadbackSource(
         RenderTargetHandle handle) const
     {
@@ -635,11 +628,11 @@ namespace kpengine::graphics
             return source;
         }
         const RenderTargetResource &target = render_targets_[index];
-        if (!target.color.IsValid())
+        if (target.color_attachments.empty())
         {
             return source;
         }
-        Texture *const color_texture = texture_manager_->GetTexture(target.color);
+        Texture *const color_texture = texture_manager_->GetTexture(target.color_attachments[0]);
         if (!color_texture)
         {
             return source;

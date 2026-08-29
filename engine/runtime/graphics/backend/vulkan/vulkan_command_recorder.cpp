@@ -2,6 +2,10 @@
 
 #include "common/mesh.h"
 #include "common/mesh_manager.h"
+#include "common/render_target_validation.h"
+#include "log/logger.h"
+
+#define KP_VULKAN_COMMAND_RECORDER_LOG_NAME "VulkanCommandRecorderLog"
 #include "vulkan_buffer_manager.h"
 #include "vulkan_bindless_texture_table.h"
 #include "vulkan_descriptor_set_manager.h"
@@ -27,14 +31,27 @@ namespace kpengine::graphics
         bindless_table_ = bindless_table;
         frame_index_ = frame_index;
         recorded_index_count_ = 0;
+        active_target_ = {};
+        draws_suppressed_ = false;
     }
 
-    void VulkanCommandRecorder::BeginRenderTarget(RenderTargetHandle target)
+    bool VulkanCommandRecorder::BeginRenderTarget(RenderTargetHandle target)
     {
-        if (command_buffer_ != VK_NULL_HANDLE)
+        if (command_buffer_ == VK_NULL_HANDLE || !render_target_manager_ ||
+            active_target_.IsValid())
         {
-            render_target_manager_->BeginRendering(command_buffer_, target);
+            draws_suppressed_ = true;
+            return false;
         }
+
+        draws_suppressed_ = false;
+        if (!render_target_manager_->BeginRendering(command_buffer_, target))
+        {
+            draws_suppressed_ = true;
+            return false;
+        }
+        active_target_ = target;
+        return true;
     }
 
     void VulkanCommandRecorder::EndRenderTarget()
@@ -43,6 +60,7 @@ namespace kpengine::graphics
         {
             render_target_manager_->EndRendering(command_buffer_);
         }
+        active_target_ = {};
     }
 
     void VulkanCommandRecorder::BindPipeline(PipelineHandle pipeline)
@@ -52,7 +70,29 @@ namespace kpengine::graphics
             return;
         }
         const VulkanPipelineResource *resource = pipeline_manager_->GetPipelineResource(pipeline);
-        if (resource)
+        if (!resource)
+        {
+            draws_suppressed_ = true;
+            return;
+        }
+        const RenderTargetDesc *target_desc =
+            render_target_manager_ ? render_target_manager_->GetDesc(active_target_) : nullptr;
+        if (target_desc)
+        {
+            PipelineDesc pipeline_desc{};
+            pipeline_desc.color_attachment_formats = resource->color_attachment_formats;
+            pipeline_desc.depth_attachment_format = resource->depth_attachment_format;
+            pipeline_desc.multisample_state.rasterization_samples =
+                resource->rasterization_samples;
+            std::string error;
+            if (!ValidateRenderTargetPipelineCompatibility(*target_desc, pipeline_desc, &error))
+            {
+                KP_LOG(KP_VULKAN_COMMAND_RECORDER_LOG_NAME, LOG_LEVEL_ERROR,
+                       "Rejected pipeline for incompatible render target: %s", error.c_str());
+                draws_suppressed_ = true;
+                return;
+            }
+        }
         {
             vkCmdBindPipeline(command_buffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, resource->pipeline);
             if (bindless_table_ && bindless_table_->IsReady())
@@ -130,7 +170,7 @@ namespace kpengine::graphics
                                              uint32_t first_index, int32_t vertex_offset,
                                              uint32_t first_instance)
     {
-        if (command_buffer_ == VK_NULL_HANDLE) return;
+        if (command_buffer_ == VK_NULL_HANDLE || draws_suppressed_) return;
         const uint32_t count = index_count == 0 ? recorded_index_count_ : index_count;
         if (count != 0)
         {

@@ -15,6 +15,7 @@ namespace kpengine::graphics
 namespace kpengine::render
 {
     class RenderSystem;
+    class RendererFrameTargets;
 
     // Render-module output target. Its RHI attachments remain private so editor,
     // gameplay, and other high-level modules never need Graphics handles.
@@ -31,11 +32,16 @@ namespace kpengine::render
         uint32_t GetHeight() const;
         graphics::RenderTargetHandle GetHandle() const;
         graphics::RenderTargetView GetView() const;
+        uint32_t GetColorAttachmentCount() const;
+        graphics::TextureHandle GetColorAttachmentTexture(uint32_t index) const;
+        graphics::TextureHandle GetDepthTexture() const;
+        graphics::TextureHandle GetSampledDepthTexture() const;
 
     private:
         friend class RenderSystem;
+        friend class RendererFrameTargets;
 
-        void Initialize(graphics::RenderBackend &backend, uint32_t width, uint32_t height);
+        void Initialize(graphics::RenderBackend &backend, const graphics::RenderTargetDesc &desc);
         void Cleanup();
         bool BeginRecording(graphics::CommandRecorder &recorder) const;
         void EndRecording(graphics::CommandRecorder &recorder) const;

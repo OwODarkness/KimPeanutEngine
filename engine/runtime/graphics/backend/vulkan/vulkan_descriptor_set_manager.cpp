@@ -109,7 +109,10 @@ namespace kpengine::graphics
                 {
                     Texture *texture = textures.GetTexture(value.texture);
                     Sampler *sampler = samplers.GetSampler(value.sampler);
-                    if (!texture || !sampler)
+                    const bool sampleable =
+                        texture && (static_cast<uint32_t>(texture->settings_.usage) &
+                                    static_cast<uint32_t>(TextureUsage::TEXTURE_USAGE_SAMPLE)) != 0;
+                    if (!sampleable || !sampler)
                     {
                         throw std::runtime_error("invalid sampled-texture binding");
                     }

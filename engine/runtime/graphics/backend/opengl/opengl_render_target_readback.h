@@ -26,17 +26,17 @@ namespace kpengine::graphics
     // OpenGL-private readback owner. OpenGL executes commands synchronously, so
     // there is no pending/staging lifecycle: enqueue validates the request and
     // collect performs one direct texture read. Ownership mirrors the Vulkan path.
-    class OpenglRenderTargetReadback final
+    class OpenglRenderTargetReadback final : public IRenderTargetReadback
     {
     public:
         explicit OpenglRenderTargetReadback(
             std::function<OpenglRenderTargetReadbackSource(RenderTargetHandle)> resolve_source);
 
-        bool Enqueue(RenderTargetReadbackRequest request,
-                     RenderTargetReadbackCallback on_completed);
-        void CollectCompleted();
+        bool EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
+                                         RenderTargetReadbackCallback on_completed) override;
+        void CollectCompletedReadbacks() override;
         void CancelTarget(RenderTargetHandle target, std::string diagnostic);
-        void Drain(std::string diagnostic);
+        void DrainPendingReadbacks(std::string diagnostic) override;
 
     private:
         struct PendingReadback

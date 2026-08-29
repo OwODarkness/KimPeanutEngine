@@ -6,6 +6,7 @@ option(USE_VULKAN "Build the Vulkan backend" ON)
 set(GRAPHICS_COMMON_SOURCES
     backend/common/bindless_texture.cpp
     backend/common/render_backend.cpp
+    backend/common/render_target_validation.cpp
     backend/common/pipeline_validation.cpp
     backend/common/texture_manager.cpp
     backend/common/sampler_manager.cpp
@@ -16,6 +17,7 @@ set(GRAPHICS_BACKEND_SOURCES)
 if(USE_OPENGL)
     list(APPEND GRAPHICS_BACKEND_SOURCES
     backend/opengl/opengl_backend.cpp
+    backend/opengl/opengl_command_recorder.cpp
     backend/opengl/opengl_render_target_readback.cpp
     backend/opengl/opengl_bindless_texture_table.cpp
     backend/opengl/opengl_texture.cpp
@@ -77,4 +79,3 @@ target_compile_definitions(Graphics PRIVATE
     KPENGINE_GRAPHICS_ENABLE_OPENGL=$<BOOL:${USE_OPENGL}>
     KPENGINE_GRAPHICS_ENABLE_VULKAN=$<BOOL:${USE_VULKAN}>
 )
-

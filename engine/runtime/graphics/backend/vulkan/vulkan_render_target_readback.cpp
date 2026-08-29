@@ -36,8 +36,8 @@ namespace kpengine::graphics
     {
     }
 
-    bool VulkanRenderTargetReadback::Enqueue(RenderTargetReadbackRequest request,
-                                              RenderTargetReadbackCallback on_completed)
+    bool VulkanRenderTargetReadback::EnqueueRenderTargetReadback(
+        RenderTargetReadbackRequest request, RenderTargetReadbackCallback on_completed)
     {
         if (!on_completed)
         {
@@ -187,6 +187,14 @@ namespace kpengine::graphics
         }
     }
 
+    void VulkanRenderTargetReadback::CollectCompletedReadbacks()
+    {
+        if (frame_context_)
+        {
+            CollectCompleted(frame_context_->GetCompletedSubmissionSerial());
+        }
+    }
+
     void VulkanRenderTargetReadback::CancelTarget(RenderTargetHandle target, std::string diagnostic)
     {
         std::vector<PendingReadback> cancelled;
@@ -214,7 +222,7 @@ namespace kpengine::graphics
         CompleteCancelled(std::move(cancelled), diagnostic);
     }
 
-    void VulkanRenderTargetReadback::Drain(std::string diagnostic)
+    void VulkanRenderTargetReadback::DrainPendingReadbacks(std::string diagnostic)
     {
         std::vector<PendingReadback> cancelled;
         {

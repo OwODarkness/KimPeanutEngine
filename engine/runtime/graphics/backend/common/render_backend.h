@@ -61,6 +61,15 @@ namespace kpengine::graphics
         virtual RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) = 0;
         virtual bool DestroyRenderTarget(RenderTargetHandle handle) = 0;
         virtual TextureHandle GetRenderTargetColor(RenderTargetHandle handle) = 0;
+        // Returns an invalid handle when the target has no depth attachment or
+        // the color index is out of range.
+        virtual TextureHandle GetRenderTargetColorAttachment(RenderTargetHandle handle,
+                                                             uint32_t index) = 0;
+        virtual TextureHandle GetRenderTargetDepthAttachment(RenderTargetHandle handle) = 0;
+        // Returns depth only when the target was created with shader-readable
+        // depth. Callers intending to sample a target must use this accessor.
+        virtual TextureHandle GetRenderTargetSampledDepthAttachment(
+            RenderTargetHandle handle) = 0;
         virtual RenderTargetView GetRenderTargetView(RenderTargetHandle handle) = 0;
         virtual IRenderTargetReadback *GetRenderTargetReadback() { return nullptr; }
         virtual DescriptorSetHandle CreateResourceBindingSet(

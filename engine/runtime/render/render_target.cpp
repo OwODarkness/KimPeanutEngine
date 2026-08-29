@@ -9,6 +9,7 @@ namespace kpengine::render
     {
         graphics::RenderBackend *backend = nullptr;
         graphics::RenderTargetHandle handle;
+        graphics::RenderTargetDesc desc{};
         uint32_t width = 0;
         uint32_t height = 0;
     };
@@ -37,27 +38,59 @@ namespace kpengine::render
         return impl_->backend->GetRenderTargetView(impl_->handle);
     }
 
-    void RenderTarget::Initialize(graphics::RenderBackend &backend, uint32_t width, uint32_t height)
+    void RenderTarget::Initialize(graphics::RenderBackend &backend,
+                                  const graphics::RenderTargetDesc &desc)
     {
         Cleanup();
-        if (width == 0 || height == 0)
+        if (desc.width == 0 || desc.height == 0)
         {
             return;
         }
-        graphics::RenderTargetDesc desc{};
-        desc.width = width;
-        desc.height = height;
         impl_->backend = &backend;
+        impl_->desc = desc;
         impl_->handle = backend.CreateRenderTarget(desc);
         if (impl_->handle.IsValid())
         {
-            impl_->width = width;
-            impl_->height = height;
+            impl_->width = desc.width;
+            impl_->height = desc.height;
         }
         else
         {
             impl_->backend = nullptr;
+            impl_->desc = {};
         }
+    }
+
+    uint32_t RenderTarget::GetColorAttachmentCount() const
+    {
+        return impl_ ? static_cast<uint32_t>(impl_->desc.color_attachments.size()) : 0;
+    }
+
+    graphics::TextureHandle RenderTarget::GetColorAttachmentTexture(uint32_t index) const
+    {
+        if (!IsValid() || !impl_->backend)
+        {
+            return {};
+        }
+        return impl_->backend->GetRenderTargetColorAttachment(impl_->handle, index);
+    }
+
+    graphics::TextureHandle RenderTarget::GetDepthTexture() const
+    {
+        if (!IsValid() || !impl_->backend)
+        {
+            return {};
+        }
+        return impl_->backend->GetRenderTargetDepthAttachment(impl_->handle);
+    }
+
+    graphics::TextureHandle RenderTarget::GetSampledDepthTexture() const
+    {
+        if (!IsValid() || !impl_->backend)
+        {
+            return {};
+        }
+        return impl_->backend->GetRenderTargetSampledDepthAttachment(impl_->handle);
     }
 
     void RenderTarget::Cleanup()
@@ -70,6 +103,7 @@ namespace kpengine::render
         {
             impl_->backend = nullptr;
             impl_->handle = {};
+            impl_->desc = {};
             impl_->width = 0;
             impl_->height = 0;
         }
@@ -81,8 +115,7 @@ namespace kpengine::render
         {
             return false;
         }
-        recorder.BeginRenderTarget(impl_->handle);
-        return true;
+        return recorder.BeginRenderTarget(impl_->handle);
     }
 
     void RenderTarget::EndRecording(graphics::CommandRecorder &recorder) const

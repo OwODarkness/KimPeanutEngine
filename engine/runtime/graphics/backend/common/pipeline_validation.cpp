@@ -63,13 +63,12 @@ namespace kpengine::graphics
         {
             return false;
         }
-        if (desc.color_attachment_formats.empty())
+        // A pipeline may be depth-only (no color attachments) or color-only
+        // (UNKNOW depth); only a pipeline with neither is invalid.
+        if (desc.color_attachment_formats.empty() &&
+            desc.depth_attachment_format == TextureFormat::TEXTURE_FORMAT_UNKNOW)
         {
-            return Fail(error, "pipeline requires at least one color attachment format");
-        }
-        if (desc.depth_attachment_format == TextureFormat::TEXTURE_FORMAT_UNKNOW)
-        {
-            return Fail(error, "pipeline depth attachment format is unknown");
+            return Fail(error, "pipeline requires a color or depth attachment format");
         }
 
         std::unordered_set<uint32_t> vertex_bindings;

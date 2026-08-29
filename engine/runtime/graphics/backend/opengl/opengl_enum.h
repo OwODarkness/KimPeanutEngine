@@ -23,6 +23,8 @@ namespace kpengine::graphics
             return GL_RGBA8;
         case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
             return GL_SRGB8_ALPHA8;
+        case TextureFormat::TEXTURE_FORMAT_RGBA16F:
+            return GL_RGBA16F;
         case TextureFormat::TEXTURE_FORMAT_D24S8:
             return GL_DEPTH24_STENCIL8;
         case TextureFormat::TEXTURE_FORMAT_D32:
@@ -86,6 +88,7 @@ namespace kpengine::graphics
             return GL_RGB;
         case TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM:
         case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
+        case TextureFormat::TEXTURE_FORMAT_RGBA16F:
             return GL_RGBA;
         case TextureFormat::TEXTURE_FORMAT_D24S8:
             return GL_DEPTH_STENCIL;
@@ -107,6 +110,9 @@ namespace kpengine::graphics
         case TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM:
         case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
             return GL_UNSIGNED_BYTE;
+
+        case TextureFormat::TEXTURE_FORMAT_RGBA16F:
+            return GL_HALF_FLOAT;
 
         case TextureFormat::TEXTURE_FORMAT_D24S8:
             return GL_UNSIGNED_INT_24_8;

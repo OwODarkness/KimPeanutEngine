@@ -2,6 +2,9 @@ add_library(Render
 render_system.cpp
 render_capture_service.cpp
 render_source_registry.cpp
+light/light_source_registry.cpp
+light/light_world.cpp
+light/light_gpu_data.cpp
 render_resource_resolver.cpp
 material/material_system.cpp
 material/material_asset_resolver.cpp
@@ -13,6 +16,7 @@ render_world/scene_draw_list_builder.cpp
 frame_context.cpp
 render_pass.cpp
 render_target.cpp
+renderer_frame_targets.cpp
 render_camera.cpp
 render_scene.cpp
 )

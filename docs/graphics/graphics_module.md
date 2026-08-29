@@ -81,6 +81,43 @@ stages, and be non-empty; vertex binding/location and per-set descriptor
 binding indices must be unique; descriptor counts and attachment formats must
 be valid. Invalid descriptions return an invalid `PipelineHandle`.
 
+**Attachment semantics (D2 landed 2026-08-29):** empty `color_attachment_formats`
+is a legal **depth-only** pipeline and `depth_attachment_format ==
+`TEXTURE_FORMAT_UNKNOW`` means **no depth**; a description is rejected only when
+both are absent. Each backend derives its depth test/write from this: a
+no-depth pipeline disables them (a stale depth test against a missing
+attachment discards fragments). Vulkan and OpenGL both store the caller's
+formats on the pipeline resource so the recorder can reject a target mismatch
+at bind time (see below).
+
+### Render targets — the target contract (D2 landed 2026-08-29)
+
+Offscreen targets are also caller-described, via [`common/render_target.h`](../../engine/runtime/graphics/backend/common/render_target.h):
+
+```cpp
+struct RenderTargetColorAttachment {         // per-attachment load/store/clear
+    TextureFormat format = TEXTURE_FORMAT_RGBA8_SRGB;
+    RenderTargetLoadOp load_op = Clear;
+    RenderTargetStoreOp store_op = Store;
+    std::array<float,4> clear_color{0,0,0,1};
+};
+struct RenderTargetDepthAttachment {
+    TextureFormat format = TEXTURE_FORMAT_D32;
+    RenderTargetLoadOp load_op = Clear;
+    RenderTargetStoreOp store_op = Store;
+    float clear_depth = 1.0f; uint32_t clear_stencil = 0;
+    bool shader_readable = false;            // opt-in sampled depth (D4)
+};
+struct RenderTargetDesc {
+    uint32_t width = 0, height = 0; uint32_t sample_count = 1;
+    std::vector<RenderTargetColorAttachment> color_attachments;
+    std::optional<RenderTargetDepthAttachment> depth;
+};
+```
+
+`ValidateRenderTargetDesc` and
+`ValidateRenderTargetPipelineCompatibility` ([`common/render_target_validation.{h,cpp}`](../../engine/runtime/graphics/backend/common/render_target_validation.h)) are the shared gate: a target needs a non-zero extent and ≥1 attachment overall; D2 accepts `sample_count == 1` only because multisample attachment/resolve and sampled-MSAA bindings are not implemented yet. A pipeline matches a target only when color count and per-color format, depth presence/format (UNKNOW = compatible with any), and sample count all agree. Both backends translate N color attachments (Vulkan `vkCmdBeginRendering` with N `VkRenderingAttachmentInfo`; OpenGL `glNamedFramebufferTexture(GL_COLOR_ATTACHMENT0+i)` + `glDrawBuffers`, or `glDrawBuffer(GL_NONE)` for depth-only), read back color[0] for RGBA8_SRGB targets, and expose per-attachment `GetRenderTargetColorAttachment(index)` / `GetRenderTargetDepthAttachment` plus an opt-in sampled-depth accessor on the facade — no native image/view leaks above Graphics.
+
 ### Shader input — `data::ShaderData` in `PipelineDesc` (Phase 0 landed 2026-08-15)
 
 `PipelineDesc`'s shader members are `data::ShaderData*` directly — the resource pipeline's baked artifact *is* the RHI's input, no wrapper. Each backend reads the field its own API needs: Vulkan `byte_code` (SPIR-V), OpenGL `source` (preprocessed GLSL). The old `graphics::Shader` abstraction (`GetCode()`/`GetCodeSize()`, path-backed `OpenglShader`/`VulkanShader`, then the `ResourceShader` wrapper) is **retired** — its `api`-based dispatch was redundant because each backend *is* its own API.
@@ -270,7 +307,7 @@ translates it to descriptor-set binding; OpenGL stores equivalent binding state
 and uses `glBindBufferRange` for uniform ranges plus texture/sampler binding
 points. These are backend-only differences.
 
-`VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_`, synchronous `VulkanUploadContext`, and `VulkanEditorBridge` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. The upload context owns staging-buffer creation and one-shot transfer submission, but delegates allocation and release to the buffer/memory managers. The editor bridge borrows the active frame/swapchain resources and brackets one external ImGui pass; it never owns or exposes general backend resources. `VulkanBackend` publishes none of these managers or native Vulkan objects: Vulkan mesh/texture adapters receive only the private buffer-upload and image-memory services they require through `VulkanContext`. Since 2026-08-20 the common facade initializes independently of pipelines, then `CreatePipelineResource(PipelineDesc)` bakes any caller-owned description into a `PipelineHandle`. Vulkan completes omitted attachment formats from the swapchain format, an RHI-owned invariant.
+`VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_`, synchronous `VulkanUploadContext`, and `VulkanEditorBridge` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. The upload context owns staging-buffer creation and one-shot transfer submission, but delegates allocation and release to the buffer/memory managers. The editor bridge borrows the active frame/swapchain resources and brackets one external ImGui pass; it never owns or exposes general backend resources. `VulkanBackend` publishes none of these managers or native Vulkan objects: Vulkan mesh/texture adapters receive only the private buffer-upload and image-memory services they require through `VulkanContext`. Since 2026-08-20 the common facade initializes independently of pipelines, then `CreatePipelineResource(PipelineDesc)` bakes any caller-owned description into a `PipelineHandle`. Attachment formats come from the caller's `PipelineDesc` exactly as written (D2 removed the swapchain auto-fill); the pipeline resource stores them for target-compatibility checks.
 
 #### The frame-recording API (Phase 4 landed 2026-08-15)
 

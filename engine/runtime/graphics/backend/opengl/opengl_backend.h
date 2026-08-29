@@ -7,24 +7,21 @@
 #include <glad/glad.h>
 
 #include "common/render_backend.h"
+#include "opengl_command_recorder.h"
 #include "opengl_context.h"
 
 namespace kpengine::graphics
 {
     struct OpenglRenderTargetReadbackSource;
 
-    class OpenglBackend : public RenderBackend, public CommandRecorder, public IRenderTargetReadback
+    class OpenglBackend : public RenderBackend
     {
     public:
         OpenglBackend();
         ~OpenglBackend();
     public:
         virtual void Initialize(WindowHandle native_window) override;
-        IRenderTargetReadback *GetRenderTargetReadback() override { return this; }
-        bool EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
-                                         RenderTargetReadbackCallback on_completed) override;
-        void CollectCompletedReadbacks() override;
-        void DrainPendingReadbacks(std::string diagnostic) override;
+        IRenderTargetReadback *GetRenderTargetReadback() override;
         PipelineHandle CreatePipelineResource(const PipelineDesc &pipeline_desc) override;
         bool DestroyPipelineResource(PipelineHandle handle) override;
         MeshHandle CreateMesh(const data::MeshData &data) override;
@@ -37,6 +34,10 @@ namespace kpengine::graphics
         RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) override;
         bool DestroyRenderTarget(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
+        TextureHandle GetRenderTargetColorAttachment(RenderTargetHandle handle,
+                                                     uint32_t index) override;
+        TextureHandle GetRenderTargetDepthAttachment(RenderTargetHandle handle) override;
+        TextureHandle GetRenderTargetSampledDepthAttachment(RenderTargetHandle handle) override;
         RenderTargetView GetRenderTargetView(RenderTargetHandle handle) override;
         DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
@@ -48,17 +49,6 @@ namespace kpengine::graphics
                                     DescriptorSetHandle handle) override;
         virtual void BeginFrame() override;
         CommandRecorder *GetCommandRecorder() override;
-        void BeginRenderTarget(RenderTargetHandle target) override;
-        void EndRenderTarget() override;
-        void BindPipeline(PipelineHandle pipeline) override;
-        void BindMesh(MeshHandle mesh) override;
-        void BindResourceBindings(PipelineHandle pipeline,
-                                   DescriptorSetHandle bindings) override;
-        void SetViewport(const Viewport &viewport) override;
-        void SetScissor(const Scissor &scissor) override;
-        void DrawIndexed(uint32_t index_count, uint32_t instance_count,
-                         uint32_t first_index, int32_t vertex_offset,
-                         uint32_t first_instance) override;
         virtual void EndFrame() override;
         GraphicsContext GetGraphicsContext() override;
         BufferHandle CreateUniformBuffer(uint32_t size) override;
@@ -95,16 +85,8 @@ namespace kpengine::graphics
         OpenglContext context_;
         std::vector<std::unique_ptr<class OpenglDescriptorSet>> resource_binding_sets_;
         HandleSystem<DescriptorSetHandle> resource_binding_set_handles_;
-        struct MappedUniformBuffer
-        {
-            GLuint native = 0;
-            std::vector<uint8_t> data;
-        };
-        std::unordered_map<uint32_t, MappedUniformBuffer> mapped_uniform_buffers_;
-        MeshHandle recorded_mesh_;
-        uint32_t recorded_index_count_ = 0;
-        PipelineHandle recorded_pipeline_;
-        RenderTargetHandle active_render_target_;
+        std::unordered_map<uint32_t, OpenglMappedUniformBuffer> mapped_uniform_buffers_;
+        std::unique_ptr<OpenglCommandRecorder> command_recorder_;
         bool frame_active_ = false;
 
     };

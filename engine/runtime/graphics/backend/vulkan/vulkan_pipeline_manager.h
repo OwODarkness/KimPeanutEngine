@@ -16,9 +16,14 @@ namespace kpengine::graphics{
     };
 
     struct VulkanPipelineResource{
-        std::vector<VulkanDescriptorSetLayout> descriptor_set_layouts; 
+        std::vector<VulkanDescriptorSetLayout> descriptor_set_layouts;
         VkPipelineLayout layout = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
+        // Baked attachment formats so a recorder can validate target
+        // compatibility before recording draws.
+        std::vector<TextureFormat> color_attachment_formats;
+        TextureFormat depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+        uint32_t rasterization_samples = 1;
     };
 
     class VulkanPipelineManager{

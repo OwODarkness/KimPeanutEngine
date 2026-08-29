@@ -120,6 +120,19 @@ namespace kpengine
                 scene_info.model_path = GetAssetDirectory() + config.scene.model;
                 scene_info.material_path = GetAssetDirectory() + config.scene.material;
             }
+            for (const bootstrap::BootstrapSceneObject &object : config.scene.objects)
+            {
+                render::BootstrapSceneObjectInfo render_object{};
+                render_object.model_path = GetAssetDirectory() + object.model;
+                render_object.material_path = GetAssetDirectory() + object.material;
+                render_object.world_transform.position_ =
+                    {object.position[0], object.position[1], object.position[2]};
+                render_object.world_transform.rotator_ =
+                    {object.rotation[0], object.rotation[1], object.rotation[2]};
+                render_object.world_transform.scale_ =
+                    {object.scale[0], object.scale[1], object.scale[2]};
+                scene_info.objects.push_back(std::move(render_object));
+            }
             global_runtime_context.SetBootstrapScene(std::move(scene_info));
             std::vector<asset::AssetLoadRequest> requests = bootstrap::BuildLoadRequests(config);
             for (auto &request : requests)

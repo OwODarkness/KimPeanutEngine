@@ -105,6 +105,10 @@ namespace kpengine::graphics
 
         descriptor_binding_descs_ = desc.descriptor_binding_descs;
 
+        color_attachment_formats_ = desc.color_attachment_formats;
+        depth_attachment_format_ = desc.depth_attachment_format;
+        rasterization_samples_ = desc.multisample_state.rasterization_samples;
+
         glCreateVertexArrays(1, &vao);
         for (size_t i = 0; i < attri_descs_.size(); i++)
         {
@@ -126,6 +130,19 @@ namespace kpengine::graphics
     {
         glEnable(GL_FRAMEBUFFER_SRGB);
         glUseProgram(shader_program_);
+
+        // Depth pipelines own the depth test and writes; color-only pipelines
+        // must not touch a depth buffer. Matches Vulkan's enabled depth state.
+        if (depth_attachment_format_ != TextureFormat::TEXTURE_FORMAT_UNKNOW)
+        {
+            glEnable(GL_DEPTH_TEST);
+            glDepthMask(GL_TRUE);
+        }
+        else
+        {
+            glDisable(GL_DEPTH_TEST);
+            glDepthMask(GL_FALSE);
+        }
 
         if (depth_clamp_enabled_)
         {

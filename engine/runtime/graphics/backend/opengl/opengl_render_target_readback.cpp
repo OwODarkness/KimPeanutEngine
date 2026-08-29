@@ -30,8 +30,8 @@ namespace kpengine::graphics
     {
     }
 
-    bool OpenglRenderTargetReadback::Enqueue(RenderTargetReadbackRequest request,
-                                              RenderTargetReadbackCallback on_completed)
+    bool OpenglRenderTargetReadback::EnqueueRenderTargetReadback(
+        RenderTargetReadbackRequest request, RenderTargetReadbackCallback on_completed)
     {
         if (!on_completed)
         {
@@ -48,7 +48,7 @@ namespace kpengine::graphics
         return true;
     }
 
-    void OpenglRenderTargetReadback::CollectCompleted()
+    void OpenglRenderTargetReadback::CollectCompletedReadbacks()
     {
         std::vector<PendingReadback> pending;
         {
@@ -110,7 +110,7 @@ namespace kpengine::graphics
         CompleteCancelled(std::move(cancelled), diagnostic);
     }
 
-    void OpenglRenderTargetReadback::Drain(std::string diagnostic)
+    void OpenglRenderTargetReadback::DrainPendingReadbacks(std::string diagnostic)
     {
         std::vector<PendingReadback> cancelled;
         {

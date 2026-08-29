@@ -33,9 +33,13 @@ namespace kpengine::graphics
         RenderTargetHandle Create(const RenderTargetDesc &desc);
         bool Destroy(RenderTargetHandle handle);
         TextureHandle GetColor(RenderTargetHandle handle) const;
+        TextureHandle GetColorAttachment(RenderTargetHandle handle, uint32_t index) const;
+        TextureHandle GetDepthAttachment(RenderTargetHandle handle) const;
+        TextureHandle GetSampledDepthAttachment(RenderTargetHandle handle) const;
         RenderTargetView GetView(RenderTargetHandle handle) const;
         bool CanReadback(RenderTargetHandle handle) const;
         bool GetReadbackSource(RenderTargetHandle handle, ReadbackSource &out_source) const;
+        const RenderTargetDesc *GetDesc(RenderTargetHandle handle) const;
 
         bool BeginRendering(VkCommandBuffer command_buffer, RenderTargetHandle handle);
         void EndRendering(VkCommandBuffer command_buffer);
@@ -48,7 +52,8 @@ namespace kpengine::graphics
     private:
         struct TargetState
         {
-            VkImageLayout color_layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            // One layout per color attachment, kept in sync with the attachment.
+            std::vector<VkImageLayout> color_layouts;
             VkImageLayout depth_layout = VK_IMAGE_LAYOUT_UNDEFINED;
             // A compatible UNORM view avoids applying a second sRGB decode when
             // the editor samples an sRGB scene target for an UNORM presentation path.

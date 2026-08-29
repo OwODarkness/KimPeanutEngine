@@ -1,6 +1,7 @@
 #include "vulkan_backend.h"
 #include <algorithm>
 #include <array>
+#include <type_traits>
 #include <GLFW/glfw3.h>
 #include "log/logger.h"
 #include "vulkan_buffer_manager.h"
@@ -25,6 +26,8 @@
 
 namespace kpengine::graphics
 {
+    static_assert(!std::is_base_of_v<IRenderTargetReadback, VulkanBackend>);
+
 
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
 
@@ -34,6 +37,11 @@ namespace kpengine::graphics
                                      sampler_manager_(std::make_unique<SamplerManager>()),
                                      mesh_manager_(std::make_unique<MeshManager>())
     {
+    }
+
+    IRenderTargetReadback *VulkanBackend::GetRenderTargetReadback()
+    {
+        return render_target_readback_.get();
     }
 
     void VulkanBackend::Initialize(WindowHandle native_window)
@@ -91,7 +99,10 @@ namespace kpengine::graphics
         // 3. caller selects render targets and records draws, then EndFrame submits
 
         frame_context_->WaitForInFlightFence();
-        CollectCompletedReadbacks();
+        if (render_target_readback_)
+        {
+            render_target_readback_->CollectCompletedReadbacks();
+        }
         if (bindless_texture_table_)
         {
             bindless_texture_table_->PrepareFrame(
@@ -184,7 +195,10 @@ namespace kpengine::graphics
         vkDeviceWaitIdle(device_->GetLogicalDevice());
         command_recorder_.reset();
 
-        DrainPendingReadbacks("Vulkan backend shutdown");
+        if (render_target_readback_)
+        {
+            render_target_readback_->DrainPendingReadbacks("Vulkan backend shutdown");
+        }
 
         render_target_manager_->DestroyAll();
 
@@ -261,33 +275,25 @@ namespace kpengine::graphics
     {
         // Pipelines render to offscreen targets by default. Presentation is a
         // separate ImGui pass, so a swapchain format must never leak into this
-        // pipeline description. Non-default render targets must state their
-        // attachment formats explicitly at the call site.
-        PipelineDesc desc = pipeline_desc;
-        if (desc.color_attachment_formats.empty())
-        {
-            desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
-        }
-        if (desc.depth_attachment_format == TextureFormat::TEXTURE_FORMAT_UNKNOW)
-        {
-            desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
-        }
-        if (!ValidatePipelineDesc(desc, GraphicsAPIType::GRAPHICS_API_VULKAN))
+        // pipeline description. Attachment formats are stated explicitly at the
+        // call site; missing color means a depth-only pipeline and UNKNOW depth
+        // means no depth.
+        if (!ValidatePipelineDesc(pipeline_desc, GraphicsAPIType::GRAPHICS_API_VULKAN))
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR,
                    "Rejected invalid Vulkan pipeline descriptor");
             return {};
         }
-        if (bindless_texture_table_ && desc.descriptor_binding_descs.size() >
-                                           BindlessTextureTableLayout::descriptor_set &&
-            !desc.descriptor_binding_descs[BindlessTextureTableLayout::descriptor_set].empty())
+        if (bindless_texture_table_ &&
+            pipeline_desc.descriptor_binding_descs.size() > BindlessTextureTableLayout::descriptor_set &&
+            !pipeline_desc.descriptor_binding_descs[BindlessTextureTableLayout::descriptor_set].empty())
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR,
                    "Vulkan bindless ABI reserves descriptor set 1 for the sampled-texture table");
             return {};
         }
         return pipeline_manager_->CreatePipelineResource(
-            device_->GetLogicalDevice(), desc,
+            device_->GetLogicalDevice(), pipeline_desc,
             bindless_texture_table_ ? bindless_texture_table_->GetLayout() : VK_NULL_HANDLE);
     }
 
@@ -369,34 +375,27 @@ namespace kpengine::graphics
         return render_target_manager_->GetColor(handle);
     }
 
+    TextureHandle VulkanBackend::GetRenderTargetColorAttachment(RenderTargetHandle handle,
+                                                                uint32_t index)
+    {
+        return render_target_manager_->GetColorAttachment(handle, index);
+    }
+
+    TextureHandle VulkanBackend::GetRenderTargetDepthAttachment(RenderTargetHandle handle)
+    {
+        return render_target_manager_->GetDepthAttachment(handle);
+    }
+
+    TextureHandle VulkanBackend::GetRenderTargetSampledDepthAttachment(
+        RenderTargetHandle handle)
+    {
+        return render_target_manager_->GetSampledDepthAttachment(handle);
+    }
+
     RenderTargetView VulkanBackend::GetRenderTargetView(RenderTargetHandle handle)
     {
         return render_target_manager_->GetView(handle);
     }
-
-    bool VulkanBackend::EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
-                                                     RenderTargetReadbackCallback on_completed)
-    {
-        return render_target_readback_ &&
-               render_target_readback_->Enqueue(request, std::move(on_completed));
-    }
-
-    void VulkanBackend::CollectCompletedReadbacks()
-    {
-        if (render_target_readback_ && frame_context_)
-        {
-            render_target_readback_->CollectCompleted(frame_context_->GetCompletedSubmissionSerial());
-        }
-    }
-
-    void VulkanBackend::DrainPendingReadbacks(std::string diagnostic)
-    {
-        if (render_target_readback_)
-        {
-            render_target_readback_->Drain(std::move(diagnostic));
-        }
-    }
-
 
     DescriptorSetHandle VulkanBackend::CreateResourceBindingSet(
         PipelineHandle pipeline, const ResourceBindingSetDesc &desc)

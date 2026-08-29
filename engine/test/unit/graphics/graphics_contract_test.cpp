@@ -4,6 +4,7 @@
 #include "common/bindless_texture.h"
 #include "common/graphics_capabilities.h"
 #include "common/pipeline_validation.h"
+#include "common/render_target_validation.h"
 #include "common/render_target_readback.h"
 #include "data/shader.h"
 #include "render/pipeline_cache_key.h"
@@ -171,6 +172,126 @@ TEST(PipelineValidation, AcceptsCompleteOpenGlDescription)
     kpengine::data::ShaderData fragment = MakeOpenGlShader(ShaderStage::SHADER_STAGE_FRAGMENT);
     const PipelineDesc desc = MakeValidOpenGlPipeline(vertex, fragment);
     EXPECT_TRUE(ValidatePipelineDesc(desc, kpengine::GraphicsAPIType::GRAPHICS_API_OPENGL));
+}
+
+TEST(RenderTargetValidation, ValidatesTargetDescriptions)
+{
+    using kpengine::graphics::RenderTargetColorAttachment;
+    using kpengine::graphics::RenderTargetDepthAttachment;
+    using kpengine::graphics::RenderTargetDesc;
+    using kpengine::graphics::ValidateRenderTargetDesc;
+
+    RenderTargetDesc full{};
+    full.width = 1024;
+    full.height = 768;
+    full.color_attachments = {
+        {RenderTargetColorAttachment{}},
+        {RenderTargetColorAttachment{TextureFormat::TEXTURE_FORMAT_RGBA16F}}};
+    full.depth = RenderTargetDepthAttachment{};
+    EXPECT_TRUE(ValidateRenderTargetDesc(full));
+
+    RenderTargetDesc depth_only{};
+    depth_only.width = 512;
+    depth_only.height = 512;
+    depth_only.depth = RenderTargetDepthAttachment{};
+    EXPECT_TRUE(ValidateRenderTargetDesc(depth_only));
+
+    RenderTargetDesc color_only{};
+    color_only.width = 64;
+    color_only.height = 64;
+    color_only.color_attachments = {{RenderTargetColorAttachment{}}};
+    EXPECT_TRUE(ValidateRenderTargetDesc(color_only));
+
+    RenderTargetDesc empty{};
+    EXPECT_FALSE(ValidateRenderTargetDesc(empty));
+
+    RenderTargetDesc zero_extent{};
+    zero_extent.width = 0;
+    zero_extent.height = 64;
+    zero_extent.color_attachments = {{RenderTargetColorAttachment{}}};
+    EXPECT_FALSE(ValidateRenderTargetDesc(zero_extent));
+
+    RenderTargetDesc unknown_format{};
+    unknown_format.width = 64;
+    unknown_format.height = 64;
+    unknown_format.color_attachments = {
+        {RenderTargetColorAttachment{TextureFormat::TEXTURE_FORMAT_UNKNOW}}};
+    EXPECT_FALSE(ValidateRenderTargetDesc(unknown_format));
+
+    RenderTargetDesc bad_samples{};
+    bad_samples.width = 64;
+    bad_samples.height = 64;
+    bad_samples.sample_count = 3;
+    bad_samples.color_attachments = {{RenderTargetColorAttachment{}}};
+    EXPECT_FALSE(ValidateRenderTargetDesc(bad_samples));
+
+    bad_samples.sample_count = 4;
+    EXPECT_FALSE(ValidateRenderTargetDesc(bad_samples));
+}
+
+TEST(RenderTargetValidation, ValidatesPipelineTargetCompatibility)
+{
+    using kpengine::graphics::RenderTargetColorAttachment;
+    using kpengine::graphics::RenderTargetDepthAttachment;
+    using kpengine::graphics::RenderTargetDesc;
+    using kpengine::graphics::ValidateRenderTargetPipelineCompatibility;
+
+    kpengine::data::ShaderData vertex = MakeOpenGlShader(ShaderStage::SHADER_STAGE_VERTEX);
+    kpengine::data::ShaderData fragment = MakeOpenGlShader(ShaderStage::SHADER_STAGE_FRAGMENT);
+    const PipelineDesc pipeline = MakeValidOpenGlPipeline(vertex, fragment);
+
+    RenderTargetDesc target{};
+    target.width = 1024;
+    target.height = 768;
+    target.color_attachments = {{RenderTargetColorAttachment{}}};
+    target.depth = RenderTargetDepthAttachment{};
+    EXPECT_TRUE(ValidateRenderTargetPipelineCompatibility(target, pipeline));
+
+    RenderTargetDesc two_color = target;
+    two_color.color_attachments.push_back(
+        RenderTargetColorAttachment{TextureFormat::TEXTURE_FORMAT_RGBA16F});
+    EXPECT_FALSE(ValidateRenderTargetPipelineCompatibility(two_color, pipeline));
+
+    RenderTargetDesc wrong_color = target;
+    wrong_color.color_attachments[0].format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
+    EXPECT_FALSE(ValidateRenderTargetPipelineCompatibility(wrong_color, pipeline));
+
+    RenderTargetDesc no_depth = target;
+    no_depth.depth.reset();
+    EXPECT_FALSE(ValidateRenderTargetPipelineCompatibility(no_depth, pipeline));
+
+    RenderTargetDesc wrong_depth = target;
+    wrong_depth.depth->format = TextureFormat::TEXTURE_FORMAT_D24S8;
+    EXPECT_FALSE(ValidateRenderTargetPipelineCompatibility(wrong_depth, pipeline));
+
+    RenderTargetDesc depth_only{};
+    depth_only.width = 512;
+    depth_only.height = 512;
+    depth_only.depth = RenderTargetDepthAttachment{};
+    PipelineDesc depth_only_pipeline = MakeValidOpenGlPipeline(vertex, fragment);
+    depth_only_pipeline.color_attachment_formats.clear();
+    EXPECT_TRUE(ValidateRenderTargetPipelineCompatibility(depth_only, depth_only_pipeline));
+
+    RenderTargetDesc msaa = target;
+    msaa.sample_count = 4;
+    EXPECT_FALSE(ValidateRenderTargetPipelineCompatibility(msaa, pipeline));
+}
+
+TEST(PipelineValidation, AcceptsDepthOnlyAndColorOnlyAttachmentLayouts)
+{
+    kpengine::data::ShaderData vertex = MakeOpenGlShader(ShaderStage::SHADER_STAGE_VERTEX);
+    kpengine::data::ShaderData fragment = MakeOpenGlShader(ShaderStage::SHADER_STAGE_FRAGMENT);
+    PipelineDesc desc = MakeValidOpenGlPipeline(vertex, fragment);
+
+    desc.color_attachment_formats.clear();
+    EXPECT_TRUE(ValidatePipelineDesc(desc, kpengine::GraphicsAPIType::GRAPHICS_API_OPENGL));
+
+    desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+    desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+    EXPECT_TRUE(ValidatePipelineDesc(desc, kpengine::GraphicsAPIType::GRAPHICS_API_OPENGL));
+
+    desc.color_attachment_formats.clear();
+    EXPECT_FALSE(ValidatePipelineDesc(desc, kpengine::GraphicsAPIType::GRAPHICS_API_OPENGL));
 }
 
 TEST(PipelineValidation, RejectsMissingArtifactAndInvalidBindings)

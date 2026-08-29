@@ -36,6 +36,12 @@ namespace kpengine::graphics
         std::vector<std::vector<DescriptorBindingDesc>> descriptor_binding_descs_;
         GLenum primitive_topology_type_;
         GLuint vao;
+
+        // Baked attachment formats so a recorder can validate target
+        // compatibility before recording draws.
+        std::vector<TextureFormat> color_attachment_formats_;
+        TextureFormat depth_attachment_format_ = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+        uint32_t rasterization_samples_ = 1;
     };
 }
 

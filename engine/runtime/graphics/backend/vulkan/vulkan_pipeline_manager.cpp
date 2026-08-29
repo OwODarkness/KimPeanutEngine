@@ -20,6 +20,10 @@ namespace kpengine::graphics
         }
 
         VulkanPipelineResource &pipeline_resource = resources_[handle.id];
+        pipeline_resource.color_attachment_formats = pipeline_desc.color_attachment_formats;
+        pipeline_resource.depth_attachment_format = pipeline_desc.depth_attachment_format;
+        pipeline_resource.rasterization_samples =
+            pipeline_desc.multisample_state.rasterization_samples;
 
         // shader_stage
         std::vector<VkPipelineShaderStageCreateInfo> stages{};
@@ -133,21 +137,29 @@ namespace kpengine::graphics
             multisample_state_create_info.alphaToOneEnable = pipeline_desc.multisample_state.alpha_to_one_enable;
 
             //set color blend attachment
-            VkPipelineColorBlendAttachmentState colorblend_attachment{};
-            colorblend_attachment.colorWriteMask = pipeline_desc.blend_attachment_state.color_write_mask;
-            colorblend_attachment.blendEnable = pipeline_desc.blend_attachment_state.blend_enabled;
-            colorblend_attachment.srcColorBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.src_color_blend_factor);
-            colorblend_attachment.dstColorBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.dst_color_blend_factor);
-            colorblend_attachment.colorBlendOp = ConvertToVulkanBlendOp(pipeline_desc.blend_attachment_state.color_blend_op);
-            colorblend_attachment.srcAlphaBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.src_alpha_blend_factor);
-            colorblend_attachment.dstAlphaBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.dst_alpha_blend_factor);
-            colorblend_attachment.alphaBlendOp = ConvertToVulkanBlendOp(pipeline_desc.blend_attachment_state.alpha_blend_op);
+            // One blend state per color attachment so a multi-attachment target
+            // (D2) matches the pipeline's colorAttachmentCount.
+            const uint32_t color_attachment_count =
+                static_cast<uint32_t>(pipeline_desc.color_attachment_formats.size());
+            std::vector<VkPipelineColorBlendAttachmentState> colorblend_attachments(
+                color_attachment_count > 0 ? color_attachment_count : 1);
+            for (VkPipelineColorBlendAttachmentState &state : colorblend_attachments)
+            {
+                state.colorWriteMask = pipeline_desc.blend_attachment_state.color_write_mask;
+                state.blendEnable = pipeline_desc.blend_attachment_state.blend_enabled;
+                state.srcColorBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.src_color_blend_factor);
+                state.dstColorBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.dst_color_blend_factor);
+                state.colorBlendOp = ConvertToVulkanBlendOp(pipeline_desc.blend_attachment_state.color_blend_op);
+                state.srcAlphaBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.src_alpha_blend_factor);
+                state.dstAlphaBlendFactor = ConvertToVulkanBlendFactor(pipeline_desc.blend_attachment_state.dst_alpha_blend_factor);
+                state.alphaBlendOp = ConvertToVulkanBlendOp(pipeline_desc.blend_attachment_state.alpha_blend_op);
+            }
 
             //set color blend state
             VkPipelineColorBlendStateCreateInfo colorblend_state_create_info{};
             colorblend_state_create_info.sType = VK_STRUCTURE_TYPE_PIPELINE_COLOR_BLEND_STATE_CREATE_INFO;
-            colorblend_state_create_info.attachmentCount = 1;
-            colorblend_state_create_info.pAttachments = &colorblend_attachment;
+            colorblend_state_create_info.attachmentCount = color_attachment_count;
+            colorblend_state_create_info.pAttachments = colorblend_attachments.data();
             colorblend_state_create_info.logicOpEnable = VK_FALSE;
             colorblend_state_create_info.logicOp = VK_LOGIC_OP_COPY;
             colorblend_state_create_info.blendConstants[0] = 0.f;
@@ -156,10 +168,15 @@ namespace kpengine::graphics
             colorblend_state_create_info.blendConstants[3] = 0.f;
 
             //set depth and stencil state
+            // A pipeline declaring no depth format (depth == UNKNOW) owns no
+            // depth buffer: depth test/write must be off or fragments may be
+            // discarded against a missing attachment (D2 sample pass).
+            const bool has_depth =
+                pipeline_desc.depth_attachment_format != TextureFormat::TEXTURE_FORMAT_UNKNOW;
             VkPipelineDepthStencilStateCreateInfo depth_stencil{};
             depth_stencil.sType = VK_STRUCTURE_TYPE_PIPELINE_DEPTH_STENCIL_STATE_CREATE_INFO;
-            depth_stencil.depthTestEnable = VK_TRUE;
-            depth_stencil.depthWriteEnable = VK_TRUE;
+            depth_stencil.depthTestEnable = has_depth ? VK_TRUE : VK_FALSE;
+            depth_stencil.depthWriteEnable = has_depth ? VK_TRUE : VK_FALSE;
             depth_stencil.depthCompareOp = VK_COMPARE_OP_LESS;
             depth_stencil.depthBoundsTestEnable = VK_FALSE;
             depth_stencil.minDepthBounds = 0.f;
@@ -226,7 +243,6 @@ namespace kpengine::graphics
             }
 
             //set color attachment
-            uint32_t color_attachment_count = static_cast<uint32_t>(pipeline_desc.color_attachment_formats.size());
             std::vector<VkFormat> color_attachment_formats(color_attachment_count);
             for(uint32_t i = 0;i<color_attachment_count;i++)
             {

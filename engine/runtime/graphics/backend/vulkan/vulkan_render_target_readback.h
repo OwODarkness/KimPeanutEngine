@@ -14,21 +14,22 @@ namespace kpengine::graphics
     class VulkanFrameContext;
     class VulkanRenderTargetManager;
 
-    // Vulkan-private staging owner. VulkanBackend supplies the common façade;
-    // this class owns only native copy recording and readback-buffer lifetime.
-    class VulkanRenderTargetReadback final
+    // Vulkan-private readback service. It owns native copy recording,
+    // readback-buffer lifetime, pending requests, and common callbacks.
+    class VulkanRenderTargetReadback final : public IRenderTargetReadback
     {
     public:
         VulkanRenderTargetReadback(VkDevice logical_device, VulkanFrameContext &frame_context,
                                    VulkanBufferManager &buffer_manager,
                                    VulkanRenderTargetManager &render_target_manager);
 
-        bool Enqueue(RenderTargetReadbackRequest request,
-                     RenderTargetReadbackCallback on_completed);
+        bool EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
+                                         RenderTargetReadbackCallback on_completed) override;
         void RecordPendingCopies(VkCommandBuffer command_buffer, uint64_t submission_serial);
         void CollectCompleted(uint64_t completed_submission_serial);
+        void CollectCompletedReadbacks() override;
         void CancelTarget(RenderTargetHandle target, std::string diagnostic);
-        void Drain(std::string diagnostic);
+        void DrainPendingReadbacks(std::string diagnostic) override;
 
     private:
         struct PendingReadback

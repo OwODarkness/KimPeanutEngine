@@ -16,7 +16,7 @@ namespace kpengine::graphics
 {
     struct VulkanPipelineResource;
 
-    class VulkanBackend : public RenderBackend, public IRenderTargetReadback
+    class VulkanBackend : public RenderBackend
     {
     public:
         VulkanBackend();
@@ -34,12 +34,12 @@ namespace kpengine::graphics
         RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) override;
         bool DestroyRenderTarget(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
+        TextureHandle GetRenderTargetColorAttachment(RenderTargetHandle handle,
+                                                     uint32_t index) override;
+        TextureHandle GetRenderTargetDepthAttachment(RenderTargetHandle handle) override;
+        TextureHandle GetRenderTargetSampledDepthAttachment(RenderTargetHandle handle) override;
         RenderTargetView GetRenderTargetView(RenderTargetHandle handle) override;
-        IRenderTargetReadback *GetRenderTargetReadback() override { return this; }
-        bool EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
-                                         RenderTargetReadbackCallback on_completed) override;
-        void CollectCompletedReadbacks() override;
-        void DrainPendingReadbacks(std::string diagnostic) override;
+        IRenderTargetReadback *GetRenderTargetReadback() override;
         DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
         bool DestroyResourceBindingSet(DescriptorSetHandle handle) override;
