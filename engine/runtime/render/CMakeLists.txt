@@ -1,5 +1,6 @@
 add_library(Render
 render_system.cpp
+render_capture_service.cpp
 render_source_registry.cpp
 render_resource_resolver.cpp
 material/material_system.cpp

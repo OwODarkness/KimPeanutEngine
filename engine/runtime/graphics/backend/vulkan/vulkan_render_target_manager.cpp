@@ -34,7 +34,8 @@ namespace kpengine::graphics
         TextureSettings color_settings{};
         color_settings.format = desc.color_format;
         color_settings.usage = TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT |
-                               TextureUsage::TEXTURE_USAGE_SAMPLE;
+                               TextureUsage::TEXTURE_USAGE_SAMPLE |
+                               TextureUsage::TEXTURE_USAGE_TRANSFER_SRC;
         color_settings.aspect = ImageAspect::IMAGE_ASPECT_COLOR;
         color_settings.mutable_format = desc.color_format == TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         TextureSettings depth_settings{};
@@ -122,6 +123,39 @@ namespace kpengine::graphics
             ? states_[index].editor_preview_view : resource.view;
         return {target.desc.width, target.desc.height,
                 reinterpret_cast<uintptr_t>(resource.image), reinterpret_cast<uintptr_t>(view)};
+    }
+
+    bool VulkanRenderTargetManager::CanReadback(RenderTargetHandle handle) const
+    {
+        const uint32_t index = handles_.Get(handle);
+        return index < targets_.size() && targets_[index].color.IsValid() &&
+               targets_[index].desc.color_format == TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+    }
+
+    bool VulkanRenderTargetManager::GetReadbackSource(RenderTargetHandle handle,
+                                                       ReadbackSource &out_source) const
+    {
+        out_source = {};
+        const uint32_t index = handles_.Get(handle);
+        if (index >= targets_.size() ||
+            targets_[index].desc.color_format != TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB)
+        {
+            return false;
+        }
+        const Texture *const color_texture = texture_manager_->GetTexture(targets_[index].color);
+        if (color_texture == nullptr)
+        {
+            return false;
+        }
+        const VulkanTextureResource color =
+            ConvertToVulkanTextureResource(color_texture->GetTextueHandle());
+        if (color.image == VK_NULL_HANDLE || states_[index].color_layout == VK_IMAGE_LAYOUT_UNDEFINED)
+        {
+            return false;
+        }
+        out_source = {color.image, states_[index].color_layout,
+                      targets_[index].desc.width, targets_[index].desc.height};
+        return true;
     }
 
     bool VulkanRenderTargetManager::BeginRendering(VkCommandBuffer command_buffer,

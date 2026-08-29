@@ -4,6 +4,64 @@
 
 ## Done
 
+- **Render capture service contract (C1, 2026-08-28)** — Render now exposes a
+  callback-only `IRenderCaptureService` returning owned CPU image values, while
+  private `RenderCaptureService` accepts one pending SceneColor request,
+  reports reserved debug views as `Unavailable`, and cancels pending work on
+  render shutdown. `RenderSystem` owns only the service lifetime; RuntimeContext
+  forwards the borrowed service interface. Actual GPU readback remains C2/C3.
+  → [capture plan](render/render_capture.md)
+
+- **ImageIO codec boundary (C1.4, 2026-08-28)** — the ImageIO Runtime target
+  owns normalized RGBA8 CPU image decode and lossless PNG encoding behind one
+  stb implementation boundary. Asset calls ImageIO directly, then retains
+  texture identity and sRGB format policy; future screenshot export consumes
+  the PNG writer without depending on Asset or Render. `ImageIOUnitTest`
+  covers buffer validation and a lossless round trip. → [ImageIO module](image_io/image_io_module.md)
+
+- **Runtime screenshot export (C1.5, 2026-08-28)** — `RuntimeScreenshotService`
+  composes Render's owned-pixel callback with ImageIO PNG export. It owns UTC
+  default names under `save/screenshots/`, restricts explicit outputs to the
+  validation directory, and reports file-export completion separately from
+  Render. GPU SceneColor capture is still C3 work.
+
+- **Common render-target readback contract (C2, 2026-08-28)** — Graphics owns
+  the validated CPU RGBA8 `CapturedImage`, opaque render-target readback
+  request/result callbacks, and legal queued/submitted/terminal state
+  transitions. It exposes no native image, staging memory, or request handle.
+  Vulkan/OpenGL integration is deferred to C3.
+
+- **SceneColor readback on both APIs (C3, 2026-08-28)** — the common
+  `IRenderTargetReadback` contract is implemented by both backends. `VulkanBackend`
+  delegates image layouts, staging buffers, and mapped-memory ownership to
+  `VulkanRenderTargetReadback` (copy recorded pre-submit, collected after the
+  matching frame fence, cancelled before resize/shutdown destruction);
+  `OpenglBackend` delegates to `OpenglRenderTargetReadback`, which performs a
+  synchronous `glGetTextureSubImage` read at the next frame boundary with the
+  same ownership and result semantics. `GraphicsSmoke` now requests a
+  post-resize SceneColor capture on each API, drains frames until the
+  completion callback, and validates the owned RGBA8 image metadata and
+  non-uniform pixels; it passes on Vulkan and OpenGL. Visual PNG smoke
+  evidence is C4 (below).
+
+- **Runtime PNG export + visual smoke evidence (C4, 2026-08-28)** —
+  `GraphicsSmoke` requests the post-resize SceneColor screenshot through
+  `RuntimeScreenshotService::RequestScreenshot` with an explicit
+  `save/screenshots/validation/graphics-smoke-<api>.png` path, pumps frames
+  until the export callback, and validates the written PNG on disk: signature,
+  IHDR extent, a decode round trip, and non-uniform pixels. The generated
+  `save/` tree is git-ignored. Both backends produce a visually inspectable
+  1600x1024 SceneColor PNG and the smoke target fails if capture cannot
+  complete.
+
+- **Editor render-capture command (2026-08-28)** — `EditorUI` adds a
+  `Tool > Capture Screenshot` menu item bound to `RuntimeScreenshotService`
+  (built from `RenderSystem::GetRenderCaptureService`, which targets the scene
+  render target). Clicking saves a UTC-named PNG under `save/screenshots/`
+  through the runtime export path; success/failure is reported to the editor
+  log. `MenuItem` gained an `on_click` command binding (items previously had
+  no event binding).
+
 - **Asset module** — two-tier ownership (unique_ptr wrappers, ref-counted payloads), thread-safe (load → state mutex order), content-addressed `path_index`. Refactor complete. → [asset_module.md](asset/asset_module.md)
 - **Shader identity + artifact pipeline** — `ShaderProgramLoader` (`.shader` meta → per-stage `ShaderResource`), `ShaderProcessor` + `SPIRVCompiler` (GLSL → SPIR-V, content-addressed cache), `PreprocessOperation` (GLSL → preprocessed source, no cache). Per-API artifact via `ShaderProcessor::keep_source_` → `ShaderData` `byte_code` (Vulkan) or `source` (OpenGL). Wired end-to-end by the asset example; the render module is not — see below.
 - **RHI** — Vulkan + OpenGL backends behind `RenderBackend::CreateGraphicsBackEnd`; cross-API handles, `PipelineDesc`, `TextureManager`/`MeshManager`/`SamplerManager`. → [graphics_module.md](graphics/graphics_module.md)

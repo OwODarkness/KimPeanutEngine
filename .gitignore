@@ -71,4 +71,7 @@ imgui.ini
 # Logs
 logs/
 
+# Generated render captures and visual-validation artifacts
+save/
+
 .VSCodeCounter/

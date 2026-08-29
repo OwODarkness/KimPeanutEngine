@@ -18,6 +18,7 @@
 #include "graphics/backend/common/api.h"
 #include "frame_context.h"
 #include "render/material/material_system.h"
+#include "render/render_capture_service.h"
 #include "render_camera.h"
 #include "render_pass.h"
 #include "render_target.h"
@@ -44,6 +45,7 @@ namespace kpengine::render
 {
     class RenderResourceResolver;
     class MaterialAssetResolver;
+    class RenderCaptureService;
 
     struct BootstrapSceneInfo
     {
@@ -109,6 +111,9 @@ namespace kpengine::render
         // hash (the ShaderCache key) so a stage shared across programs counts once.
         int GetLoadedShaderCount() const;
         IRenderableSourceSink *GetRenderableSourceSink() { return &source_registry_; }
+        // Borrowed Runtime/tooling boundary. RenderSystem owns the implementation
+        // and cancels any pending request before this object is destroyed.
+        IRenderCaptureService *GetRenderCaptureService();
         // Transfers the one startup renderable as logical source data. Runtime
         // consumes it on the game thread to create the regular Gameplay Actor.
         std::optional<StaticMeshRenderableSourceDesc> TakeBootstrapRenderableSource();
@@ -157,6 +162,7 @@ namespace kpengine::render
         RenderCamera scene_camera_;
         std::optional<StaticMeshRenderableSourceDesc> bootstrap_renderable_source_;
         std::unique_ptr<MaterialAssetResolver> material_asset_resolver_;
+        std::unique_ptr<RenderCaptureService> render_capture_service_;
         BootstrapSceneInfo bootstrap_scene_info_;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;

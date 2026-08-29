@@ -17,6 +17,7 @@
 #include "opengl_sampler.h"
 #include "opengl_descriptorset.h"
 #include "opengl_bindless_texture_table.h"
+#include "opengl_render_target_readback.h"
 
 namespace kpengine::graphics
 {
@@ -26,6 +27,9 @@ namespace kpengine::graphics
                                      pipeline_manager_(std::make_unique<OpenglPipelineManager>())
     {
         context_.backend = this;
+        render_target_readback_ = std::make_unique<OpenglRenderTargetReadback>(
+            [this](RenderTargetHandle handle)
+            { return GetRenderTargetReadbackSource(handle); });
     }
 
     OpenglBackend::~OpenglBackend() = default;
@@ -63,6 +67,9 @@ namespace kpengine::graphics
 
     void OpenglBackend::BeginFrame()
     {
+        // OpenGL executes synchronously, so the previous frame's draws have
+        // already produced the scene target; collect reads it before recording.
+        CollectCompletedReadbacks();
         if (bindless_texture_table_)
         {
             bindless_texture_table_->BeginFrame(*texture_manager_, *sampler_manager_);
@@ -90,6 +97,7 @@ namespace kpengine::graphics
     void OpenglBackend::WaitIdle()
     {
         glFinish();
+        CollectCompletedReadbacks();
         if (bindless_texture_table_)
         {
             bindless_texture_table_->WaitIdle();
@@ -258,6 +266,8 @@ namespace kpengine::graphics
 
     void OpenglBackend::Cleanup()
     {
+        // Cancel pending readbacks before any referenced attachment is destroyed.
+        DrainPendingReadbacks("OpenGL backend shutdown");
         for (size_t index = 0; index < render_targets_.size(); ++index)
         {
             RenderTargetResource &target = render_targets_[index];
@@ -438,6 +448,11 @@ namespace kpengine::graphics
 
     bool OpenglBackend::DestroyRenderTarget(RenderTargetHandle handle)
     {
+        if (render_target_readback_)
+        {
+            render_target_readback_->CancelTarget(
+                handle, "Render target was destroyed before readback completed");
+        }
         const uint32_t index = render_target_handles_.Get(handle);
         if (index >= render_targets_.size()) return false;
         RenderTargetResource &target = render_targets_[index];
@@ -585,6 +600,56 @@ namespace kpengine::graphics
         context.native = &context_;
         context.type = GraphicsAPIType::GRAPHICS_API_OPENGL;
         return context;
+    }
+
+    bool OpenglBackend::EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
+                                                     RenderTargetReadbackCallback on_completed)
+    {
+        return render_target_readback_ &&
+               render_target_readback_->Enqueue(request, std::move(on_completed));
+    }
+
+    void OpenglBackend::CollectCompletedReadbacks()
+    {
+        if (render_target_readback_)
+        {
+            render_target_readback_->CollectCompleted();
+        }
+    }
+
+    void OpenglBackend::DrainPendingReadbacks(std::string diagnostic)
+    {
+        if (render_target_readback_)
+        {
+            render_target_readback_->Drain(std::move(diagnostic));
+        }
+    }
+
+    OpenglRenderTargetReadbackSource OpenglBackend::GetRenderTargetReadbackSource(
+        RenderTargetHandle handle) const
+    {
+        OpenglRenderTargetReadbackSource source{};
+        const uint32_t index = render_target_handles_.Get(handle);
+        if (index >= render_targets_.size())
+        {
+            return source;
+        }
+        const RenderTargetResource &target = render_targets_[index];
+        if (!target.color.IsValid())
+        {
+            return source;
+        }
+        Texture *const color_texture = texture_manager_->GetTexture(target.color);
+        if (!color_texture)
+        {
+            return source;
+        }
+        const OpenglTextureResource resource =
+            ConvertToOpenglTextureResource(color_texture->GetTextueHandle());
+        source.image = resource.image;
+        source.width = target.desc.width;
+        source.height = target.desc.height;
+        return source;
     }
 
 }

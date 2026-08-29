@@ -16,6 +16,7 @@ set(GRAPHICS_BACKEND_SOURCES)
 if(USE_OPENGL)
     list(APPEND GRAPHICS_BACKEND_SOURCES
     backend/opengl/opengl_backend.cpp
+    backend/opengl/opengl_render_target_readback.cpp
     backend/opengl/opengl_bindless_texture_table.cpp
     backend/opengl/opengl_texture.cpp
     backend/opengl/opengl_sampler.cpp
@@ -35,6 +36,7 @@ if(USE_VULKAN)
     backend/vulkan/vulkan_frame_context.cpp
     backend/vulkan/vulkan_command_recorder.cpp
     backend/vulkan/vulkan_render_target_manager.cpp
+    backend/vulkan/vulkan_render_target_readback.cpp
     backend/vulkan/vulkan_editor_bridge.cpp
     backend/vulkan/vulkan_upload_context.cpp
     backend/vulkan/vulkan_texture.cpp

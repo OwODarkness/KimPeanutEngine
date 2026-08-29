@@ -29,6 +29,7 @@ namespace kpengine::render
         bool IsValid() const;
         uint32_t GetWidth() const;
         uint32_t GetHeight() const;
+        graphics::RenderTargetHandle GetHandle() const;
         graphics::RenderTargetView GetView() const;
 
     private:

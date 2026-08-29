@@ -126,7 +126,7 @@ Editor-wide preferences live in `config/settings.json` (beside `bootstrap.json`)
 - `EditorSliderComponent<T>` / `EditorDragComponent<T>` — templated with explicit `float`/`int` specializations mapping to `ImGui::SliderFloat/Int` and `ImGui::DragFloat/Int`; each binds a `T* data_` (writes straight into engine state, null-guarded).
 - `EditorPlotComponent` — samples a `std::function<float(float)>` over `[begin, end]` at a step and plots it.
 - `EditorTooltipComponent` — wraps text or an inner component.
-- `EditorMenuBarComponent` / `EditorMainMenuBarComponent` — `Menu`/`MenuItem` (title, shortcut, enabled, selected) model.
+- `EditorMenuBarComponent` / `EditorMainMenuBarComponent` — `Menu`/`MenuItem` (title, shortcut, enabled, selected, `on_click` command binding) model.
 
 ### Editor-specific panels
 - **`EditorSceneComponent`** — a window presenting a `FrameBuffer` (the scene view) that tracks mouse state (`is_left_mouse_down/drag/release/click`, position) and exposes `FOnMouseClickCallback` + `is_scene_window_focus`. It is the input seam for scene picking.

@@ -3,12 +3,13 @@
 #include <cctype>
 #include <magic_enum/magic_enum.hpp>
 #include "assimp_model_loader.h"
-#include "stb_image_loader.h"
+#include "image_io/image_io.h"
 #include "shader_program_loader.h"
 #include "miniaudio_audio_loader.h"
 #include "material_loader.h"
 #include "utility.h"
 #include "model.h"
+#include "texture.h"
 #include "log/logger.h"
 
 namespace kpengine::asset
@@ -17,7 +18,6 @@ namespace kpengine::asset
     AssetManager AssetManager::instance_;
     AssetManager::~AssetManager() = default;
     AssetManager::AssetManager() : model_loader_(std::make_unique<Assimp_ModelLoader>()),
-                                   image_loader_(std::make_unique<Stb_ImageLoader>()),
                                    shader_program_loader_(std::make_unique<ShaderProgramLoader>()),
                                    audio_loader_(std::make_unique<MiniAudio_AudioLoader>()),
                                    material_loader_(std::make_unique<MaterialLoader>())
@@ -310,8 +310,26 @@ namespace kpengine::asset
         }
         else if (type == AssetType::KPAT_Texture)
         {
-            assert(image_loader_);
-            return image_loader_->Load(path, info);
+            image_io::ImageDecodeResult decoded = image_io::DecodeImageFile(path);
+            if (!decoded.result.success)
+            {
+                KP_LOG("AssetManagerLog", LOG_LEVEL_ERROR, "Failed to load image from %s: %s",
+                       path.c_str(), decoded.result.diagnostic.c_str());
+                return false;
+            }
+
+            std::shared_ptr<TextureResource> texture = std::make_shared<TextureResource>();
+            texture->data->width = decoded.image.width;
+            texture->data->height = decoded.image.height;
+            texture->data->format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+            texture->channel_count = 4;
+            texture->data->pixels = std::move(decoded.image.pixels);
+
+            info.type = AssetType::KPAT_Texture;
+            info.path = path;
+            info.name = std::string(magic_enum::enum_name(info.type)) + ExtractNameFromPath(path);
+            info.resource = std::move(texture);
+            return true;
         }
         else if (type == AssetType::KPAT_ShaderProgram)
         {

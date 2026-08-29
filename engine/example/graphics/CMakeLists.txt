@@ -6,13 +6,14 @@ target_include_directories(GraphicsExample PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_link_libraries(GraphicsExample 
+target_link_libraries(GraphicsExample
 PRIVATE
 Graphics
 Render
 Gameplay
 Window
 Input
+RuntimeLib
 )
 
 add_executable(GraphicsSmoke graphics_smoke_main.cpp)

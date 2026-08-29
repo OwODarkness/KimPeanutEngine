@@ -24,9 +24,13 @@ namespace kpengine::editor{
             {
                 if(ImGui::BeginMenu(menu.title.c_str(), menu.enabled))
                 {
-                    for(MenuItem& menu_item : menu.items)
+                    for (MenuItem &menu_item : menu.items)
                     {
-                        ImGui::MenuItem(menu_item.title.c_str(), menu_item.short_cut.c_str(), &menu_item.selected, menu_item.enabled);
+                        if (ImGui::MenuItem(menu_item.title.c_str(), menu_item.short_cut.c_str(),
+                                            false, menu_item.enabled) && menu_item.on_click)
+                        {
+                            menu_item.on_click();
+                        }
                     }
                     ImGui::EndMenu();
                 }

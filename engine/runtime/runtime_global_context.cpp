@@ -1,4 +1,5 @@
 #include "runtime_global_context.h"
+#include "screenshot/runtime_screenshot_service.h"
 #include "window/window_system.h"
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
@@ -52,6 +53,10 @@ namespace kpengine
             render_init_info.load_queue = &async_load_queue_;
             render_init_info.bootstrap_scene = bootstrap_scene_;
             render_system_->Initialize(render_init_info);
+            if (render::IRenderCaptureService *capture_service = render_system_->GetRenderCaptureService())
+            {
+                screenshot_service_ = std::make_unique<RuntimeScreenshotService>(*capture_service);
+            }
 
             // [reconstruction] Old design — input/render/world were wired and initialized
             // here; reconstructed later. The bootstrap preload flow (docs/status.md item 6)
@@ -108,6 +113,7 @@ namespace kpengine
             // gameplay World must therefore die before the sink and GPU teardown.
             gameplay_world_.reset();
             bootstrap_renderable_source_.reset();
+            screenshot_service_.reset();
             if (render_system_)
             {
                 render_system_->Shutdown();

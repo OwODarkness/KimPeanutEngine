@@ -9,12 +9,14 @@ add_executable(
     material_system_test.cpp
     material_asset_resolver_test.cpp
     render_source_registry_test.cpp
+    render_capture_service_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_system.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_asset_resolver.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_camera.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/render_world.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_source_registry.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_capture_service.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/frustum.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/scene_visibility.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/scene_draw_list.cpp

@@ -1,14 +1,21 @@
 
+#include <algorithm>
+#include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <system_error>
 #include <vector>
 
 #include "runtime/window/glfw_window_system.h"
 #include "runtime/input/input_system.h"
 #include "runtime/input/input_context.h"
 #include "runtime/render/render_camera.h"
+#include "runtime/render/render_capture_service_internal.h"
+#include "runtime/image_io/image_io.h"
+#include "runtime/screenshot/runtime_screenshot_service.h"
 #include "runtime/render/frame_context.h"
 #include "runtime/render/render_resource_resolver.h"
 #include "runtime/render/material/material_system.h"
@@ -83,6 +90,22 @@ namespace kpengine::example
         asset::AssetManager::GetInstance().UnRegisterAsset(mesh_id);
 
         return handles;
+    }
+
+    static constexpr uint8_t kPngSignature[8] = {0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+
+    static bool HasPngSignature(const std::vector<uint8_t> &bytes)
+    {
+        return bytes.size() >= sizeof(kPngSignature) &&
+               std::equal(kPngSignature, kPngSignature + sizeof(kPngSignature), bytes.begin());
+    }
+
+    static uint32_t ReadBigEndian32(const std::vector<uint8_t> &bytes, size_t offset)
+    {
+        return (static_cast<uint32_t>(bytes[offset]) << 24) |
+               (static_cast<uint32_t>(bytes[offset + 1]) << 16) |
+               (static_cast<uint32_t>(bytes[offset + 2]) << 8) |
+               static_cast<uint32_t>(bytes[offset + 3]);
     }
 
     static bool RunRHI(GraphicsAPIType api, uint32_t max_frames, bool trigger_resize)
@@ -326,29 +349,10 @@ namespace kpengine::example
             float elapsed_seconds = 0.0f;
             constexpr float kDemoDeltaSeconds = 1.0f / 60.0f;
             uint32_t rendered_frames = 0;
-            while (!window->ShouldClose() && (max_frames == 0 || rendered_frames < max_frames))
+            // Shared frame body: the main loop and the post-loop capture drain
+            // both record the same scene so a pending readback has work to wait on.
+            const auto render_one_frame = [&]()
             {
-                window->PollEvents();
-                if (rendered_frames == 0)
-                {
-                    gameplay_mesh->SetLocalLocation({0.0f, -0.5f, 0.0f});
-                }
-                else if (rendered_frames == 1)
-                {
-                    gameplay_mesh->SetVisible(false);
-                }
-                else if (rendered_frames == 2)
-                {
-                    gameplay_mesh->SetVisible(true);
-                }
-                gameplay_world.Tick(kDemoDeltaSeconds);
-                source_registry.Drain(render_world, resolve_gameplay_source);
-                render_world.ApplyPendingCommands();
-                if (trigger_resize && rendered_frames == 1)
-                {
-                    window->SetWindowSize(1024, 768);
-                    window->resize_event_dispatcher_.Dispatch({1024, 768});
-                }
                 rhi->BeginFrame();
                 if (rhi->GetCommandRecorder())
                 {
@@ -427,7 +431,139 @@ namespace kpengine::example
                 {
                     window->SwapBuffers();
                 }
+            };
+            while (!window->ShouldClose() && (max_frames == 0 || rendered_frames < max_frames))
+            {
+                window->PollEvents();
+                if (rendered_frames == 0)
+                {
+                    gameplay_mesh->SetLocalLocation({0.0f, -0.5f, 0.0f});
+                }
+                else if (rendered_frames == 1)
+                {
+                    gameplay_mesh->SetVisible(false);
+                }
+                else if (rendered_frames == 2)
+                {
+                    gameplay_mesh->SetVisible(true);
+                }
+                gameplay_world.Tick(kDemoDeltaSeconds);
+                source_registry.Drain(render_world, resolve_gameplay_source);
+                render_world.ApplyPendingCommands();
+                if (trigger_resize && rendered_frames == 1)
+                {
+                    window->SetWindowSize(1024, 768);
+                    window->resize_event_dispatcher_.Dispatch({1024, 768});
+                }
+                render_one_frame();
                 ++rendered_frames;
+            }
+            // C4 smoke verification: the agent-facing screenshot export must
+            // complete with a deterministic validation PNG on both backends,
+            // and that PNG must hold a real capture of the post-resize frame.
+            if (max_frames != 0)
+            {
+                const std::string api_name =
+                    api == GraphicsAPIType::GRAPHICS_API_VULKAN ? "vulkan" : "opengl";
+                const std::string requested_path =
+                    "save/screenshots/validation/graphics-smoke-" + api_name + ".png";
+                // The export service never overwrites; drop a stale artifact so
+                // every run reproduces the canonical validation filename.
+                std::error_code remove_error;
+                std::filesystem::remove(requested_path, remove_error);
+
+                render::RenderCaptureService capture_service(
+                    rhi->GetRenderTargetReadback(),
+                    [scene_target] { return scene_target; },
+                    [&frame_number] { return frame_number; });
+                runtime::RuntimeScreenshotService screenshot_service(capture_service);
+                runtime::ScreenshotResult screenshot_result;
+                bool screenshot_finished = false;
+                if (!screenshot_service.RequestScreenshot(
+                        {{render::CaptureView::SceneColor}, requested_path},
+                        [&screenshot_result, &screenshot_finished](
+                            runtime::ScreenshotResult result)
+                        {
+                            screenshot_result = std::move(result);
+                            screenshot_finished = true;
+                        }))
+                {
+                    throw std::runtime_error("smoke screenshot request was rejected");
+                }
+                constexpr uint32_t kMaxCaptureDrainFrames = 16;
+                uint32_t drain_frames = 0;
+                while (!screenshot_finished && drain_frames < kMaxCaptureDrainFrames)
+                {
+                    render_one_frame();
+                    ++drain_frames;
+                }
+                if (!screenshot_finished || !screenshot_result.IsSuccess())
+                {
+                    throw std::runtime_error("smoke screenshot did not complete: " +
+                                             screenshot_result.diagnostic);
+                }
+                if (std::filesystem::path{screenshot_result.output_path}.filename() !=
+                    ("graphics-smoke-" + api_name + ".png"))
+                {
+                    throw std::runtime_error("smoke screenshot exported to an unexpected path: " +
+                                             screenshot_result.output_path);
+                }
+
+                // Validate the written PNG: signature and IHDR extent first,
+                // then a decode round trip for tightly packed non-empty pixels.
+                std::vector<uint8_t> file_bytes;
+                {
+                    std::ifstream file(screenshot_result.output_path, std::ios::binary);
+                    if (!file)
+                    {
+                        throw std::runtime_error("smoke screenshot PNG could not be opened");
+                    }
+                    file.seekg(0, std::ios::end);
+                    const std::streamoff file_size = file.tellg();
+                    file.seekg(0, std::ios::beg);
+                    file_bytes.resize(static_cast<size_t>(file_size));
+                    file.read(reinterpret_cast<char *>(file_bytes.data()),
+                              static_cast<std::streamsize>(file_size));
+                }
+                if (!HasPngSignature(file_bytes))
+                {
+                    throw std::runtime_error("smoke screenshot PNG has an invalid signature");
+                }
+                if (file_bytes.size() < 24 || ReadBigEndian32(file_bytes, 8) != 13 ||
+                    file_bytes[12] != 'I' || file_bytes[13] != 'H' ||
+                    file_bytes[14] != 'D' || file_bytes[15] != 'R')
+                {
+                    throw std::runtime_error("smoke screenshot PNG has no valid IHDR chunk");
+                }
+                if (ReadBigEndian32(file_bytes, 16) !=
+                        static_cast<uint32_t>(window_create_info.width) ||
+                    ReadBigEndian32(file_bytes, 20) !=
+                        static_cast<uint32_t>(window_create_info.height))
+                {
+                    throw std::runtime_error("smoke screenshot PNG extent did not match the target");
+                }
+
+                const image_io::ImageDecodeResult decoded =
+                    image_io::DecodeImageFile(screenshot_result.output_path);
+                if (!decoded.result.success || !decoded.image.IsValid() ||
+                    decoded.image.format != image_io::ImagePixelFormat::Rgba8)
+                {
+                    throw std::runtime_error("smoke screenshot PNG failed to decode: " +
+                                             decoded.result.diagnostic);
+                }
+                if (decoded.image.pixels.size() != decoded.image.ExpectedByteCount())
+                {
+                    throw std::runtime_error("smoke screenshot PNG returned unpadded pixels");
+                }
+                const std::vector<uint8_t> &pixels = decoded.image.pixels;
+                const uint8_t first_byte = pixels.front();
+                const bool has_varied_pixels = std::any_of(
+                    pixels.begin() + 1, pixels.end(),
+                    [first_byte](uint8_t byte) { return byte != first_byte; });
+                if (!has_varied_pixels)
+                {
+                    throw std::runtime_error("smoke screenshot PNG is a uniform image");
+                }
             }
             if (!gameplay_world.DestroyActor(gameplay_actor_handle))
             {

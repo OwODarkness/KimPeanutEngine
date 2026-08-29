@@ -13,6 +13,7 @@
 #include "pipeline_types.h"
 #include "resource_binding.h"
 #include "render_target.h"
+#include "render_target_readback.h"
 #include "sampler.h"
 #include "texture.h"
 
@@ -61,6 +62,7 @@ namespace kpengine::graphics
         virtual bool DestroyRenderTarget(RenderTargetHandle handle) = 0;
         virtual TextureHandle GetRenderTargetColor(RenderTargetHandle handle) = 0;
         virtual RenderTargetView GetRenderTargetView(RenderTargetHandle handle) = 0;
+        virtual IRenderTargetReadback *GetRenderTargetReadback() { return nullptr; }
         virtual DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) = 0;
         virtual bool DestroyResourceBindingSet(DescriptorSetHandle handle) = 0;

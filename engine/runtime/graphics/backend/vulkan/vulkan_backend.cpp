@@ -10,6 +10,7 @@
 #include "vulkan_frame_context.h"
 #include "vulkan_command_recorder.h"
 #include "vulkan_render_target_manager.h"
+#include "vulkan_render_target_readback.h"
 #include "vulkan_editor_bridge.h"
 #include "vulkan_upload_context.h"
 #include "vulkan_pipeline_manager.h"
@@ -76,6 +77,8 @@ namespace kpengine::graphics
         InitVulkanContext();
         render_target_manager_ = std::make_unique<VulkanRenderTargetManager>(
             device_->GetLogicalDevice(), CreateGraphicsContext(), *frame_context_, *texture_manager_);
+        render_target_readback_ = std::make_unique<VulkanRenderTargetReadback>(
+            device_->GetLogicalDevice(), *frame_context_, *buffer_manager_, *render_target_manager_);
         const VkExtent2D extent = swapchain_->GetExtent();
         render_target_manager_->CreateSwapchainAttachments(extent.width, extent.height,
                                                            msaa_sampe_count_);
@@ -88,6 +91,7 @@ namespace kpengine::graphics
         // 3. caller selects render targets and records draws, then EndFrame submits
 
         frame_context_->WaitForInFlightFence();
+        CollectCompletedReadbacks();
         if (bindless_texture_table_)
         {
             bindless_texture_table_->PrepareFrame(
@@ -142,6 +146,8 @@ namespace kpengine::graphics
         command_recorder_->EndRenderTarget();
         command_recorder_.reset();
         VkCommandBuffer scene_command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
+        render_target_readback_->RecordPendingCopies(
+            scene_command_buffer, frame_context_->GetCurrentPendingSubmissionSerial());
         FinishFrame(scene_command_buffer, current_image_index_);
         editor_bridge_->EndFrame();
 
@@ -177,6 +183,8 @@ namespace kpengine::graphics
     {
         vkDeviceWaitIdle(device_->GetLogicalDevice());
         command_recorder_.reset();
+
+        DrainPendingReadbacks("Vulkan backend shutdown");
 
         render_target_manager_->DestroyAll();
 
@@ -352,6 +360,7 @@ namespace kpengine::graphics
 
     bool VulkanBackend::DestroyRenderTarget(RenderTargetHandle handle)
     {
+        render_target_readback_->CancelTarget(handle, "Render target was destroyed before readback completed");
         return render_target_manager_->Destroy(handle);
     }
 
@@ -364,6 +373,30 @@ namespace kpengine::graphics
     {
         return render_target_manager_->GetView(handle);
     }
+
+    bool VulkanBackend::EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
+                                                     RenderTargetReadbackCallback on_completed)
+    {
+        return render_target_readback_ &&
+               render_target_readback_->Enqueue(request, std::move(on_completed));
+    }
+
+    void VulkanBackend::CollectCompletedReadbacks()
+    {
+        if (render_target_readback_ && frame_context_)
+        {
+            render_target_readback_->CollectCompleted(frame_context_->GetCompletedSubmissionSerial());
+        }
+    }
+
+    void VulkanBackend::DrainPendingReadbacks(std::string diagnostic)
+    {
+        if (render_target_readback_)
+        {
+            render_target_readback_->Drain(std::move(diagnostic));
+        }
+    }
+
 
     DescriptorSetHandle VulkanBackend::CreateResourceBindingSet(
         PipelineHandle pipeline, const ResourceBindingSetDesc &desc)
@@ -473,6 +506,10 @@ namespace kpengine::graphics
             {
                 bindless_texture_table_->CollectCompletedSubmissions(
                     frame_context_->GetLastSubmittedSerial());
+            }
+            if (render_target_readback_ && frame_context_)
+            {
+                render_target_readback_->CollectCompleted(frame_context_->GetLastSubmittedSerial());
             }
         }
     }

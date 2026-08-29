@@ -84,7 +84,7 @@ The only eviction path. Must validate the id's generation, refuse while `CanDele
 The manager is thread-safe via two mutexes:
 
 - **`state_mutex_`** (`std::recursive_mutex`) — guards `caches_` and `path_index`. Every public method (`LoadSync`, `RegisterAsset`, `GetAsset`, `UnRegisterAsset`, `AddReferences`, `RemoveReferences`) takes it. It is **recursive** because the public methods compose internally (`RegisterAsset` → `AddReferences`, `UnRegisterAsset` → `RemoveReferences` → `GetAsset`, `LoadSync` → `GetAsset`/`RegisterAsset`); a plain mutex would self-deadlock.
-- **`load_mutex_`** (`std::mutex`) — serializes `LoadByExtension`, because the loaders are single shared instances (one assimp, one stb, one miniaudio) and are not thread-safe.
+- **`load_mutex_`** (`std::mutex`) — serializes `LoadByExtension`, because the Assimp and miniaudio loaders are single shared instances and are not thread-safe. Texture decoding calls the stateless ImageIO contract directly, but remains inside this serialized pipeline for consistent load/dedup behavior.
 
 Lock ordering is strictly **load → state** (never state → load), so there is no deadlock. The split exists so a `GetAsset` on the game thread only contends during the short dedup/register critical sections, not during another thread's disk I/O.
 
@@ -95,7 +95,8 @@ Consequence: loads are **serialized**, not parallelized — async loading wins o
 `LoadByExtension` dispatches by `AssetType`:
 
 - `KPAT_Model` → `Assimp_ModelLoader` (also emits `KPAT_Mesh` sub-resources)
-- `KPAT_Texture` → `Stb_ImageLoader`
+- `KPAT_Texture` → `AssetManager` calls ImageIO directly, then creates
+  Asset-owned texture data with the texture-format policy
 - `KPAT_Audio` → `MiniAudio_AudioLoader`
 - `KPAT_ShaderProgram` → `ShaderProgramLoader` (emits `KPAT_Shader` sub-resources)
 - `KPAT_Material` → `MaterialLoader` (parses versioned CPU-side `*.material`

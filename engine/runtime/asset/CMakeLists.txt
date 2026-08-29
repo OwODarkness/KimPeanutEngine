@@ -2,7 +2,6 @@ add_library(Asset STATIC
 asset_manager.cpp
 assimp_model_loader.cpp
 model.cpp
-stb_image_loader.cpp
 shader_program.cpp
 shader_program_loader.cpp
 material_loader.cpp
@@ -13,4 +12,4 @@ ${CMAKE_CURRENT_SOURCE_DIR}/..
 ${CMAKE_CURRENT_SOURCE_DIR}/../..
 
 )
-target_link_libraries(Asset PUBLIC Data Base PRIVATE Log magic_enum stb_image nlohmann assimp miniaudio)
+target_link_libraries(Asset PUBLIC Data Base PRIVATE ImageIO Log magic_enum nlohmann assimp miniaudio)

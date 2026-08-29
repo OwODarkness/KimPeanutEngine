@@ -4,6 +4,7 @@
 #include "common/bindless_texture.h"
 #include "common/graphics_capabilities.h"
 #include "common/pipeline_validation.h"
+#include "common/render_target_readback.h"
 #include "data/shader.h"
 #include "render/pipeline_cache_key.h"
 #include "vulkan/vulkan_memory_free_range_list.h"
@@ -65,6 +66,35 @@ TEST(GraphicsCapabilities, DefaultsToThePortableBoundResourcePath)
     EXPECT_FALSE(capabilities.bindless_textures);
     EXPECT_EQ(capabilities.bindless_texture_table_capacity, 0u);
     EXPECT_FALSE(capabilities.SupportsBindlessTextures());
+}
+
+TEST(RenderTargetReadbackContract, ValidatesOwnedRgba8Output)
+{
+    kpengine::graphics::CapturedImage image{};
+    image.width = 2;
+    image.height = 1;
+    image.rgba8_pixels = {1, 2, 3, 4, 5, 6, 7, 8};
+    EXPECT_EQ(image.ExpectedByteCount(), 8u);
+    EXPECT_TRUE(image.IsValid());
+
+    image.rgba8_pixels.pop_back();
+    EXPECT_FALSE(image.IsValid());
+}
+
+TEST(RenderTargetReadbackContract, RejectsInvalidTargetsAndTerminalTransitions)
+{
+    const kpengine::graphics::RenderTargetReadbackRequest invalid_request{};
+    EXPECT_FALSE(invalid_request.IsValid());
+
+    using State = kpengine::graphics::RenderTargetReadbackState;
+    EXPECT_TRUE(kpengine::graphics::IsRenderTargetReadbackTransitionValid(
+        State::Queued, State::Submitted));
+    EXPECT_TRUE(kpengine::graphics::IsRenderTargetReadbackTransitionValid(
+        State::Submitted, State::Completed));
+    EXPECT_FALSE(kpengine::graphics::IsRenderTargetReadbackTransitionValid(
+        State::Queued, State::Completed));
+    EXPECT_FALSE(kpengine::graphics::IsRenderTargetReadbackTransitionValid(
+        State::Completed, State::Cancelled));
 }
 
 TEST(BindlessTextureContract, DefinesAStableSampledTextureTableAbi)

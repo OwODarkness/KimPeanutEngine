@@ -15,6 +15,7 @@
 #include "platform/memory_stats_sampler.h"
 #include "runtime/engine.h"
 #include "runtime/render/render_system.h"
+#include "runtime/screenshot/runtime_screenshot_service.h"
 #include "log/logger.h"
 
 namespace kpengine::editor
@@ -48,7 +49,7 @@ namespace kpengine::editor
 
         // Tool tree. Each panel is built by its own helper so Initialize stays an
         // orchestration list — add a panel as one more call, not more inline code.
-        BuildMenuBar();
+        BuildMenuBar(init_info.render_system);
         BuildViewportWindow(init_info.render_system);
         BuildLogWindow(init_info.log_system, settings.log_colors);
         BuildProfileBar(init_info.engine, init_info.memory_sampler, init_info.render_system);
@@ -72,16 +73,58 @@ namespace kpengine::editor
         wsi_->Initialize(window, graphics_context.type);
     }
 
-    void EditorUI::BuildMenuBar()
+    void EditorUI::BuildMenuBar(render::RenderSystem *render_system)
     {
-        // Top-level menu bar first so it draws above the tool windows. Menus have no
-        // items yet — bare File/Edit/Tool/Help, no event bindings.
+        // Render-capture is the first bound action: RenderSystem owns the capture
+        // service wired to the scene target, so the editor reuses the runtime
+        // screenshot export path without touching Render or Graphics internals.
+        if (render_system && render_system->GetRenderCaptureService())
+        {
+            screenshot_service_ = std::make_unique<runtime::RuntimeScreenshotService>(
+                *render_system->GetRenderCaptureService());
+        }
+
+        // Top-level menu bar first so it draws above the tool windows.
         std::vector<Menu> menus;
         menus.push_back(Menu{"File"});
         menus.push_back(Menu{"Edit"});
-        menus.push_back(Menu{"Tool"});
+        Menu tool_menu{"Tool"};
+        tool_menu.items.push_back(MenuItem{
+            "Capture Screenshot",
+            {},
+            false,
+            screenshot_service_ != nullptr,
+            [this] { TriggerScreenshot(); },
+        });
+        menus.push_back(std::move(tool_menu));
         menus.push_back(Menu{"Help"});
         components_.push_back(std::make_unique<EditorMainMenuBarComponent>(menus));
+    }
+
+    void EditorUI::TriggerScreenshot()
+    {
+        if (!screenshot_service_)
+        {
+            return;
+        }
+        // Empty output path selects a UTC name below save/screenshots/; the
+        // export service owns naming, directory creation, and file I/O. The
+        // completion callback lands on the render thread when the readback
+        // resolves, so it only logs — it never touches ImGui state.
+        screenshot_service_->RequestScreenshot(
+            {}, [](runtime::ScreenshotResult result)
+            {
+                if (result.IsSuccess())
+                {
+                    KP_LOG("LogEditorUI", LOG_LEVEL_INFO, "Screenshot saved: %s",
+                           result.output_path.c_str());
+                }
+                else
+                {
+                    KP_LOG("LogEditorUI", LOG_LEVEL_WARNING, "Screenshot failed: %s",
+                           result.diagnostic.c_str());
+                }
+            });
     }
 
     void EditorUI::BuildViewportWindow(render::RenderSystem *render_system)

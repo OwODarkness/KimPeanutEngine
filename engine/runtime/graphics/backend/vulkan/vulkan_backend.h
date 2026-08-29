@@ -16,7 +16,7 @@ namespace kpengine::graphics
 {
     struct VulkanPipelineResource;
 
-    class VulkanBackend : public RenderBackend
+    class VulkanBackend : public RenderBackend, public IRenderTargetReadback
     {
     public:
         VulkanBackend();
@@ -35,6 +35,11 @@ namespace kpengine::graphics
         bool DestroyRenderTarget(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
         RenderTargetView GetRenderTargetView(RenderTargetHandle handle) override;
+        IRenderTargetReadback *GetRenderTargetReadback() override { return this; }
+        bool EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
+                                         RenderTargetReadbackCallback on_completed) override;
+        void CollectCompletedReadbacks() override;
+        void DrainPendingReadbacks(std::string diagnostic) override;
         DescriptorSetHandle CreateResourceBindingSet(
             PipelineHandle pipeline, const ResourceBindingSetDesc &desc) override;
         bool DestroyResourceBindingSet(DescriptorSetHandle handle) override;
@@ -80,6 +85,7 @@ namespace kpengine::graphics
         std::unique_ptr<class VulkanFrameContext> frame_context_;
         std::unique_ptr<class VulkanCommandRecorder> command_recorder_;
         std::unique_ptr<class VulkanRenderTargetManager> render_target_manager_;
+        std::unique_ptr<class VulkanRenderTargetReadback> render_target_readback_;
         std::unique_ptr<class VulkanEditorBridge> editor_bridge_;
         VulkanContext context_;
 

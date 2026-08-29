@@ -3,6 +3,7 @@
 
 #include "editor/ui/component/editor_ui_component.h"
 
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,9 @@ namespace kpengine::editor
         std::string short_cut;
         bool selected = false;
         bool enabled = true;
+        // Command binding: invoked once when the item is activated. `selected`
+        // stays a display flag (command items do not toggle a checkmark).
+        std::function<void()> on_click;
     };
 
     struct Menu

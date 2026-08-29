@@ -13,7 +13,6 @@ namespace kpengine::asset{
     // Loaders are owned by the manager but only referenced here as unique_ptr;
     // their full definitions stay out of this header (see asset_manager.cpp).
     class IModelLoader;
-    class ImageLoader;
     class ShaderProgramLoader;
     class IAudioLoader;
     class MaterialLoader;
@@ -79,7 +78,6 @@ namespace kpengine::asset{
     private:
         static AssetManager instance_;
         std::unique_ptr<IModelLoader> model_loader_;
-        std::unique_ptr<ImageLoader> image_loader_;
         std::unique_ptr<ShaderProgramLoader> shader_program_loader_;
         std::unique_ptr<IAudioLoader> audio_loader_;
         std::unique_ptr<MaterialLoader> material_loader_;

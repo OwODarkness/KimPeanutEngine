@@ -37,6 +37,7 @@ namespace kpengine
 
     namespace runtime
     {
+        class RuntimeScreenshotService;
 
         class RuntimeContext
         {
@@ -51,10 +52,16 @@ namespace kpengine
             void FinalizeGameStartup();
             void Clear();
             void SetBootstrapScene(render::BootstrapSceneInfo scene);
+            render::IRenderCaptureService *GetRenderCaptureService()
+            {
+                return render_system_ ? render_system_->GetRenderCaptureService() : nullptr;
+            }
+            RuntimeScreenshotService *GetScreenshotService() { return screenshot_service_.get(); }
 
         public:
             std::unique_ptr<WindowSystem> window_system_;
             std::unique_ptr<render::RenderSystem> render_system_;
+            std::unique_ptr<RuntimeScreenshotService> screenshot_service_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
             std::unique_ptr<LogSystem> log_system_;
             std::unique_ptr<input::InputSystem> input_system_;

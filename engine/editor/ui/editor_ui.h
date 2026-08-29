@@ -13,6 +13,7 @@ namespace kpengine
     namespace runtime
     {
         class Engine;
+        class RuntimeScreenshotService;
     }
     namespace render
     {
@@ -57,16 +58,22 @@ namespace kpengine::editor
         // that assemble the tool tree. Each panel is one helper — Initialize stays an
         // orchestration list instead of one long build routine.
         void CreateImguiBackends(WindowHandle window, GraphicsContext graphics_context);
-        void BuildMenuBar();
+        void BuildMenuBar(render::RenderSystem *render_system);
         void BuildViewportWindow(render::RenderSystem *render_system);
         void BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors);
         void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                              render::RenderSystem *render_system);
+        // Binds the Tool > Capture Screenshot command to the runtime export path.
+        void TriggerScreenshot();
 
         // The UI is decoupled from any graphics API: the WSI feeds ImGui window
         // events, the renderer draws ImGui with the active backend (GL/Vulkan).
         std::unique_ptr<IEditorImguiRenderer> renderer_;
         std::unique_ptr<IEditorImguiWSI> wsi_;
+
+        // Runtime export path for the render-capture command. Borrowed service,
+        // built from the render system's capture service when the UI initializes.
+        std::unique_ptr<runtime::RuntimeScreenshotService> screenshot_service_;
 
         std::vector<std::unique_ptr<EditorUIComponent>> components_;
     };

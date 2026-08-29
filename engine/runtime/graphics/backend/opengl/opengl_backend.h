@@ -11,13 +11,20 @@
 
 namespace kpengine::graphics
 {
-    class OpenglBackend : public RenderBackend, public CommandRecorder
+    struct OpenglRenderTargetReadbackSource;
+
+    class OpenglBackend : public RenderBackend, public CommandRecorder, public IRenderTargetReadback
     {
     public:
         OpenglBackend();
         ~OpenglBackend();
     public:
         virtual void Initialize(WindowHandle native_window) override;
+        IRenderTargetReadback *GetRenderTargetReadback() override { return this; }
+        bool EnqueueRenderTargetReadback(RenderTargetReadbackRequest request,
+                                         RenderTargetReadbackCallback on_completed) override;
+        void CollectCompletedReadbacks() override;
+        void DrainPendingReadbacks(std::string diagnostic) override;
         PipelineHandle CreatePipelineResource(const PipelineDesc &pipeline_desc) override;
         bool DestroyPipelineResource(PipelineHandle handle) override;
         MeshHandle CreateMesh(const data::MeshData &data) override;
@@ -70,12 +77,15 @@ namespace kpengine::graphics
     private:
         void InitializeCapabilities();
         GraphicsContext CreateGraphicsContext();
+        OpenglRenderTargetReadbackSource GetRenderTargetReadbackSource(
+            RenderTargetHandle handle) const;
     private:
         std::unique_ptr<class MeshManager> mesh_manager_;
         std::unique_ptr<class TextureManager> texture_manager_;
         std::unique_ptr<class SamplerManager> sampler_manager_;
         std::unique_ptr<class OpenglPipelineManager> pipeline_manager_;
         std::unique_ptr<class OpenglBindlessTextureTable> bindless_texture_table_;
+        std::unique_ptr<class OpenglRenderTargetReadback> render_target_readback_;
 
         std::vector<RenderTargetResource> render_targets_;
         std::vector<GLuint> render_target_framebuffers_;

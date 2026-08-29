@@ -14,6 +14,7 @@
 #include "log/logger.h"
 #include "render/material/material_system.h"
 #include "render/material/material_asset_resolver.h"
+#include "render/render_capture_service_internal.h"
 #include "render/render_world/scene_draw_list.h"
 #include "render/render_world/scene_visibility.h"
 #include "render_resource_resolver.h"
@@ -97,6 +98,10 @@ namespace kpengine::render
         {
             KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Failed to create scene render target");
         }
+        render_capture_service_ = std::make_unique<RenderCaptureService>(
+            backend_->GetRenderTargetReadback(),
+            [this] { return scene_render_target_.GetHandle(); },
+            [this] { return frame_number_; });
         ConfigurePassSchedule();
     }
 
@@ -206,6 +211,11 @@ namespace kpengine::render
         return resource_pipeline_
                    ? static_cast<int>(resource_pipeline_->GetProcessedShaderCount())
                    : 0;
+    }
+
+    IRenderCaptureService *RenderSystem::GetRenderCaptureService()
+    {
+        return render_capture_service_.get();
     }
 
     void RenderSystem::ConfigurePassSchedule()
@@ -614,6 +624,7 @@ namespace kpengine::render
     {
         if (!backend_)
         {
+            render_capture_service_.reset();
             source_registry_.Clear(render_world_);
             render_world_.Clear();
             bootstrap_renderable_source_.reset();
@@ -633,6 +644,11 @@ namespace kpengine::render
         DestroyMaterialAssetRecords();
         material_system_.reset();
         backend_->WaitIdle();
+        if (graphics::IRenderTargetReadback *const readback = backend_->GetRenderTargetReadback())
+        {
+            readback->DrainPendingReadbacks("Render system shutdown");
+        }
+        render_capture_service_.reset();
         for (FrameContext &context : frame_contexts_)
         {
             context.Cleanup();

@@ -23,6 +23,10 @@ namespace kpengine::render
 
     uint32_t RenderTarget::GetWidth() const { return impl_ ? impl_->width : 0; }
     uint32_t RenderTarget::GetHeight() const { return impl_ ? impl_->height : 0; }
+    graphics::RenderTargetHandle RenderTarget::GetHandle() const
+    {
+        return impl_ ? impl_->handle : graphics::RenderTargetHandle{};
+    }
 
     graphics::RenderTargetView RenderTarget::GetView() const
     {

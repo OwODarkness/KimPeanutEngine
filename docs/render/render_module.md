@@ -201,6 +201,31 @@ G-buffer, and graph passes real scene inputs instead of a bootstrap-only
 [world/component_module.md](../world/component_module.md) and
 [world/mesh_proxy_TODO.md](../world/mesh_proxy_TODO.md).
 
+### Render Phase 4 — SceneColor capture (planned)
+
+Before adding shadow and deferred passes, make the existing render-owned scene
+target observable outside the editor: capture completed SceneColor as a
+lossless PNG. C1 landed a dedicated `RenderCaptureService` with a callback-only
+pixel boundary, one-pending-request policy, reserved debug-view vocabulary, and
+shutdown cancellation; C2 and the Vulkan portion of C3 now supply actual
+SceneColor GPU readback. OpenGL remains outstanding.
+The service owns render-view resolution and GPU-readback completion; it returns
+owned CPU pixels only. A separate
+RuntimeScreenshotService owns safe output paths and filesystem I/O, delegating
+PNG encoding to the focused ImageIO module. `RenderSystem` only owns the
+capture service's lifetime and calls it at the correct pass boundary. Graphics
+owns API-private readback/synchronization and returns only owned CPU pixels. The
+first capture is intentionally UI-free and target-specific, rather than a
+generic texture downloader or swapchain screenshot. The request API reserves
+semantic debug views (linear depth, world normal, base color, material
+parameters, and shadow visibility); each future view resolves through a render
+conversion pass to a visual RGBA target, without widening the common readback
+contract. Normal captures default to
+`save/screenshots/<UTC timestamp>-f<frame>.png`; deterministic smoke output is
+allowed only below `save/screenshots/validation/`. The plan and working ledger
+are [render_capture.md](render_capture.md) and
+[render_capture_TODO.md](render_capture_TODO.md).
+
 ### Later render phases
 
 After Render Phase 3 supplies multiple real pass consumers, evolve the same

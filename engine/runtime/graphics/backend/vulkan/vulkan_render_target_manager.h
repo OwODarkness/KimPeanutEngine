@@ -18,6 +18,14 @@ namespace kpengine::graphics
     class VulkanRenderTargetManager final
     {
     public:
+        struct ReadbackSource
+        {
+            VkImage image = VK_NULL_HANDLE;
+            VkImageLayout layout = VK_IMAGE_LAYOUT_UNDEFINED;
+            uint32_t width = 0;
+            uint32_t height = 0;
+        };
+
         VulkanRenderTargetManager(VkDevice logical_device, GraphicsContext context,
                                   VulkanFrameContext &frame_context,
                                   TextureManager &texture_manager);
@@ -26,6 +34,8 @@ namespace kpengine::graphics
         bool Destroy(RenderTargetHandle handle);
         TextureHandle GetColor(RenderTargetHandle handle) const;
         RenderTargetView GetView(RenderTargetHandle handle) const;
+        bool CanReadback(RenderTargetHandle handle) const;
+        bool GetReadbackSource(RenderTargetHandle handle, ReadbackSource &out_source) const;
 
         bool BeginRendering(VkCommandBuffer command_buffer, RenderTargetHandle handle);
         void EndRendering(VkCommandBuffer command_buffer);
