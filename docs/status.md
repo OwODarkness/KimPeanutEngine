@@ -4,6 +4,41 @@
 
 ## Done
 
+- **Command system C0 (2026-08-29)** — added the standalone `RuntimeCommand`
+  target with API-neutral structured command types, metadata/schema, origin and
+  execution-lane vocabulary, deterministic listing, structured execution, and
+  move-only registration tokens. It has no Editor, ImGui, Lua, Render, or
+  Graphics dependency; user `~`, agent/headless, and Lua entry points remain
+  later frontend work. → [command system plan](command/command_system.md)
+
+- **Command system C1 (2026-08-29)** — the registry now reports duplicate
+  providers, exposes built-in `help` and `commands.list`, supports deterministic
+  descriptor enumeration, and has explicit shutdown semantics that clear
+  registrations and reject future work. Pending domain operations remain owned
+  by their handlers. → [command system plan](command/command_system.md)
+
+- **Command system C2 (2026-08-29)** — added the standalone typed parser and
+  schema validator for boolean, signed/unsigned integer, float, string, and
+  enum values. Text and structured calls now share defaults, required/enum
+  validation, stable diagnostics, formatted help, and deterministic completion;
+  invalid calls are rejected before handlers run. → [command system plan](command/command_system.md)
+
+- **Command system C3 (2026-08-29)** — command descriptors now declare an
+  execution lane, wrong-lane render/async calls are rejected, and Game-lane
+  calls from other callers enter a Runtime-owned FIFO. Deferred calls receive
+  request IDs with exactly-once callbacks and pollable terminal results;
+  development/editor/origin/mutating/destructive policies are enforced, and
+  shutdown completes queued requests as `Shutdown`. → [command system plan](command/command_system.md)
+
+- **Command system C4 (2026-08-29)** — Runtime registers
+  `capture.screenshot` through a separate screenshot command provider. The
+  provider runs through the Runtime game-thread queue, keeps path validation and
+  PNG export in `RuntimeScreenshotService`, and translates final capture/export
+  state into structured command data. Agent/test callers can use the registry
+  without Editor, ImGui, or direct Render/Graphics access; shader reload,
+  debug-view, and stats commands remain deferred until their services are real.
+  → [command system plan](command/command_system.md)
+
 - **Render capture service contract (C1, 2026-08-28)** — Render now exposes a
   callback-only `IRenderCaptureService` returning owned CPU image values, while
   private `RenderCaptureService` accepts one pending SceneColor request,

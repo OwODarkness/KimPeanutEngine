@@ -1,5 +1,6 @@
 #include "runtime_global_context.h"
 #include "screenshot/runtime_screenshot_service.h"
+#include "screenshot/screenshot_command_provider.h"
 #include "window/window_system.h"
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
@@ -9,6 +10,8 @@
 #include "log/logger.h"
 #include "input/input_system.h"
 #include "script/lua/lua_vm.h"
+
+#include <utility>
 
 namespace kpengine
 {
@@ -20,6 +23,7 @@ namespace kpengine
         RuntimeContext::RuntimeContext() :
         window_system_(WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW)),
         render_system_(std::make_unique<render::RenderSystem>()),
+        command_registry_(std::make_unique<command::CommandRegistry>()),
         gameplay_world_(std::make_unique<gameplay::GameplayWorld>(
             render_system_->GetRenderableSourceSink())),
         log_system_(std::make_unique<LogSystem>()),
@@ -56,6 +60,19 @@ namespace kpengine
             if (render::IRenderCaptureService *capture_service = render_system_->GetRenderCaptureService())
             {
                 screenshot_service_ = std::make_unique<RuntimeScreenshotService>(*capture_service);
+                command::CommandRegistrationResult registration =
+                    RegisterScreenshotCommands(*command_registry_, *screenshot_service_);
+                if (!registration.IsSuccess())
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not register capture.screenshot: %s",
+                           registration.diagnostic.c_str());
+                }
+                else
+                {
+                    screenshot_command_registration_ =
+                        std::move(registration.registration);
+                }
             }
 
             // [reconstruction] Old design — input/render/world were wired and initialized
@@ -113,6 +130,11 @@ namespace kpengine
             // gameplay World must therefore die before the sink and GPU teardown.
             gameplay_world_.reset();
             bootstrap_renderable_source_.reset();
+            if (command_registry_)
+            {
+                command_registry_->Shutdown();
+            }
+            screenshot_command_registration_ = {};
             screenshot_service_.reset();
             if (render_system_)
             {

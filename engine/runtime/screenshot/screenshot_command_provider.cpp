@@ -1,0 +1,121 @@
+#include "screenshot/screenshot_command_provider.h"
+
+#include <string>
+#include <utility>
+
+#include "screenshot/runtime_screenshot_service.h"
+
+namespace kpengine::runtime
+{
+    namespace
+    {
+        const char *ToString(const ScreenshotResultStatus status)
+        {
+            switch (status)
+            {
+            case ScreenshotResultStatus::Exported:
+                return "exported";
+            case ScreenshotResultStatus::InvalidOutputPath:
+                return "invalid_output_path";
+            case ScreenshotResultStatus::CaptureRejected:
+                return "capture_rejected";
+            case ScreenshotResultStatus::CaptureUnavailable:
+                return "capture_unavailable";
+            case ScreenshotResultStatus::CaptureCancelled:
+                return "capture_cancelled";
+            case ScreenshotResultStatus::CaptureFailed:
+                return "capture_failed";
+            case ScreenshotResultStatus::WriteFailed:
+                return "write_failed";
+            }
+            return "unknown";
+        }
+
+        command::CommandStatus ToCommandStatus(const ScreenshotResultStatus status)
+        {
+            if (status == ScreenshotResultStatus::Exported)
+            {
+                return command::CommandStatus::Success;
+            }
+            if (status == ScreenshotResultStatus::InvalidOutputPath)
+            {
+                return command::CommandStatus::InvalidArguments;
+            }
+            return command::CommandStatus::Failed;
+        }
+
+        command::CommandResult MakeResult(ScreenshotResult result, const uint64_t request_id)
+        {
+            const std::string status = ToString(result.status);
+            command::CommandResult command_result{
+                ToCommandStatus(result.status),
+                result.IsSuccess() ? "Screenshot exported" : result.diagnostic,
+                request_id,
+                {{"status", status},
+                 {"success", result.IsSuccess()},
+                 {"output_path", result.output_path},
+                 {"diagnostic", result.diagnostic}}};
+            return command_result;
+        }
+    }
+
+    command::CommandRegistrationResult RegisterScreenshotCommands(
+        command::CommandRegistry &registry, RuntimeScreenshotService &screenshot_service)
+    {
+        command::CommandDesc descriptor{
+            "capture.screenshot",
+            "RuntimeScreenshot",
+            "Capture the rendered SceneColor and export it as a PNG",
+            command::CommandCategory::Render,
+            command::CommandFlags::AgentAllowed | command::CommandFlags::LuaAllowed,
+            {{command::CommandArgumentDesc{"path", command::CommandValueType::String, false,
+                                           {}, {}},
+              command::CommandArgumentDesc{"view", command::CommandValueType::Enum, false,
+                                           std::string{"scene_color"}, {"scene_color"}}}},
+            [&screenshot_service](const command::CommandCall &call,
+                                  const command::CommandContext &context)
+            {
+                if (!context.complete)
+                {
+                    return command::CommandResult{
+                        command::CommandStatus::Failed,
+                        "Screenshot command requires a deferred Runtime command request",
+                        context.request_id,
+                        {}};
+                }
+
+                ScreenshotRequest request{};
+                const auto path = call.arguments.find("path");
+                if (path != call.arguments.end())
+                {
+                    request.output_path = std::get<std::string>(path->second);
+                }
+
+                const command::CommandCompletionSink complete = context.complete;
+                const uint64_t request_id = context.request_id;
+                const bool accepted = screenshot_service.RequestScreenshot(
+                    std::move(request),
+                    [complete, request_id](ScreenshotResult result) mutable
+                    {
+                        complete(MakeResult(std::move(result), request_id));
+                    });
+                if (!accepted)
+                {
+                    return command::CommandResult{
+                        command::CommandStatus::Failed,
+                        "Screenshot service rejected the request callback",
+                        request_id,
+                        {}};
+                }
+
+                return command::CommandResult{
+                    command::CommandStatus::Pending,
+                    "Screenshot capture submitted",
+                    request_id,
+                    {{"status", std::string{"pending"}}, {"success", false}}};
+            },
+            command::CommandThread::Game};
+
+        return registry.Register(std::move(descriptor));
+    }
+}

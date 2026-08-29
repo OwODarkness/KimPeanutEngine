@@ -11,6 +11,7 @@ add_subdirectory(asset)
 add_subdirectory(audio)
 add_subdirectory(bootstrap)
 add_subdirectory(script)
+add_subdirectory(command)
 add_subdirectory(screenshot)
 
 add_library(RuntimeLib STATIC
@@ -22,4 +23,4 @@ target_include_directories(RuntimeLib PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(RuntimeLib PUBLIC Core Graphics Script PRIVATE ThirdPartyLib EditorLib Window Input Render Gameplay Bootstrap Platform ImageIO RuntimeScreenshot)
+target_link_libraries(RuntimeLib PUBLIC Core Graphics Script PRIVATE ThirdPartyLib EditorLib Window Input Render Gameplay Bootstrap Platform ImageIO RuntimeScreenshot RuntimeCommand RuntimeScreenshotCommand)

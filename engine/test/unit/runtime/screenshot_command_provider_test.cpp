@@ -1,0 +1,118 @@
+#include <filesystem>
+#include <optional>
+#include <utility>
+
+#include <gtest/gtest.h>
+
+#include "command/command_registry.h"
+#include "screenshot/runtime_screenshot_service.h"
+#include "screenshot/screenshot_command_provider.h"
+
+namespace kpengine::runtime
+{
+    namespace
+    {
+        class FakeCaptureService final : public render::IRenderCaptureService
+        {
+        public:
+            render::CapturedImageCallback pending_callback;
+
+            bool RequestCapture(render::CaptureRequest,
+                                render::CapturedImageCallback on_completed) override
+            {
+                pending_callback = std::move(on_completed);
+                return true;
+            }
+
+            void Complete()
+            {
+                ASSERT_TRUE(pending_callback);
+                pending_callback({render::CaptureResultStatus::Captured,
+                                  {2, 1, 91, 4, {10, 20, 30, 255, 40, 50, 60, 255}}, {}});
+                pending_callback = {};
+            }
+        };
+
+        const std::string *GetString(const command::CommandData &data, const char *name)
+        {
+            const auto iterator = data.find(name);
+            return iterator == data.end() ? nullptr : std::get_if<std::string>(&iterator->second);
+        }
+
+        void RemoveFile(const std::string &path)
+        {
+            std::error_code error;
+            std::filesystem::remove(path, error);
+        }
+    }
+
+    TEST(ScreenshotCommandProviderTest, CompletesQueuedCaptureWithStructuredExportResult)
+    {
+        FakeCaptureService capture_service;
+        RuntimeScreenshotService screenshot_service{capture_service};
+        command::CommandRegistry registry;
+        command::CommandRegistrationResult registration =
+            RegisterScreenshotCommands(registry, screenshot_service);
+        ASSERT_TRUE(registration.IsSuccess());
+
+        const std::string output_path =
+            "save/screenshots/validation/command-provider-test.png";
+        RemoveFile(output_path);
+        std::optional<command::CommandResult> callback_result;
+        const command::CommandResult pending = registry.Execute(
+            {"capture.screenshot", {{"path", output_path}, {"view", "scene_color"}}},
+            {command::CommandOrigin::Agent, command::CommandThread::Immediate},
+            [&callback_result](const command::CommandResult &result)
+            { callback_result = result; });
+
+        ASSERT_EQ(pending.status, command::CommandStatus::Pending);
+        ASSERT_NE(pending.request_id, 0U);
+        EXPECT_EQ(registry.PumpGameThread(), 1U);
+        EXPECT_FALSE(callback_result.has_value());
+
+        capture_service.Complete();
+
+        ASSERT_TRUE(callback_result.has_value());
+        EXPECT_EQ(callback_result->status, command::CommandStatus::Success);
+        EXPECT_EQ(callback_result->request_id, pending.request_id);
+        ASSERT_NE(GetString(callback_result->data, "status"), nullptr);
+        EXPECT_EQ(*GetString(callback_result->data, "status"), "exported");
+        ASSERT_NE(GetString(callback_result->data, "output_path"), nullptr);
+        EXPECT_EQ(std::filesystem::path{*GetString(callback_result->data, "output_path")}
+                      .generic_string(),
+                  std::filesystem::path{output_path}.generic_string());
+        EXPECT_TRUE(std::filesystem::exists(output_path));
+
+        const auto completion = registry.TakeCompletion(pending.request_id);
+        ASSERT_TRUE(completion.has_value());
+        EXPECT_EQ(completion->status, command::CommandStatus::Success);
+        RemoveFile(output_path);
+    }
+
+    TEST(ScreenshotCommandProviderTest, PreservesServiceOwnedInvalidPathDiagnostic)
+    {
+        FakeCaptureService capture_service;
+        RuntimeScreenshotService screenshot_service{capture_service};
+        command::CommandRegistry registry;
+        command::CommandRegistrationResult registration =
+            RegisterScreenshotCommands(registry, screenshot_service);
+        ASSERT_TRUE(registration.IsSuccess());
+
+        std::optional<command::CommandResult> callback_result;
+        const command::CommandResult pending = registry.Execute(
+            {"capture.screenshot", {{"path", "save/screenshots/not-validation.png"}}},
+            {command::CommandOrigin::Test, command::CommandThread::Immediate},
+            [&callback_result](const command::CommandResult &result)
+            { callback_result = result; });
+        ASSERT_EQ(pending.status, command::CommandStatus::Pending);
+
+        EXPECT_EQ(registry.PumpGameThread(), 1U);
+        ASSERT_TRUE(callback_result.has_value());
+        EXPECT_EQ(callback_result->status, command::CommandStatus::InvalidArguments);
+        ASSERT_NE(GetString(callback_result->data, "status"), nullptr);
+        EXPECT_EQ(*GetString(callback_result->data, "status"), "invalid_output_path");
+        ASSERT_NE(GetString(callback_result->data, "diagnostic"), nullptr);
+        EXPECT_FALSE(GetString(callback_result->data, "diagnostic")->empty());
+        EXPECT_FALSE(capture_service.pending_callback);
+    }
+}

@@ -136,6 +136,11 @@ namespace kpengine
             const double target_frame_time = 1.0 / target_fps;
             auto frame_start = clock::now();
 
+            if (global_runtime_context.command_registry_)
+            {
+                global_runtime_context.command_registry_->PumpGameThread();
+            }
+
             if (global_runtime_context.gameplay_world_)
             {
                 global_runtime_context.gameplay_world_->Tick(1.0f / target_fps);

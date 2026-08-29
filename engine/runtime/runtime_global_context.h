@@ -7,6 +7,7 @@
 #include "base/base.h"
 #include "async/async_queue.h"
 #include "asset/asset_load_request.h"
+#include "command/command_registry.h"
 #include "render/render_system.h"
 
 namespace kpengine::gameplay
@@ -57,11 +58,14 @@ namespace kpengine
                 return render_system_ ? render_system_->GetRenderCaptureService() : nullptr;
             }
             RuntimeScreenshotService *GetScreenshotService() { return screenshot_service_.get(); }
+            command::CommandRegistry *GetCommandRegistry() { return command_registry_.get(); }
 
         public:
             std::unique_ptr<WindowSystem> window_system_;
             std::unique_ptr<render::RenderSystem> render_system_;
+            std::unique_ptr<command::CommandRegistry> command_registry_;
             std::unique_ptr<RuntimeScreenshotService> screenshot_service_;
+            command::CommandRegistration screenshot_command_registration_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
             std::unique_ptr<LogSystem> log_system_;
             std::unique_ptr<input::InputSystem> input_system_;
