@@ -17,6 +17,11 @@ namespace kpengine::render
     namespace
     {
         constexpr uint64_t kDefaultPipelineStateLayoutSignature = 1;
+
+        bool IsSupportedMaterialPass(MaterialPass pass)
+        {
+            return pass == MaterialPass::Scene || pass == MaterialPass::GBuffer;
+        }
     }
 
     RenderResourceResolver::RenderResourceResolver(graphics::RenderBackend &backend,
@@ -27,7 +32,8 @@ namespace kpengine::render
 
     graphics::PipelineHandle RenderResourceResolver::GetOrCreateDefaultPipeline(
         asset::AssetID program_id, asset::ShaderProgramResource &program,
-        const MaterialPipelineState *material_state, bool bindless_texture_table_compatible)
+        const MaterialPipelineState *material_state, bool bindless_texture_table_compatible,
+        MaterialPass pass)
     {
         const uint64_t state_signature = material_state
                                              ? kDefaultPipelineStateLayoutSignature |
@@ -36,8 +42,9 @@ namespace kpengine::render
                                                    (static_cast<uint64_t>(material_state->double_sided) << 24)
                                              : kDefaultPipelineStateLayoutSignature;
         const uint64_t binding_model_signature = bindless_texture_table_compatible ? (1ull << 32) : 0;
+        const uint64_t pass_signature = static_cast<uint64_t>(pass) << 40;
         const PipelineCacheKey key{program_id.Pack(), backend_->GetGraphicsContext().type,
-                                   state_signature | binding_model_signature};
+                                   state_signature | binding_model_signature | pass_signature};
         const auto existing = pipeline_cache_.find(key);
         if (existing != pipeline_cache_.end())
         {
@@ -46,7 +53,7 @@ namespace kpengine::render
 
         graphics::PipelineDesc desc{};
         if (!BuildDefaultPipelineDesc(program, desc, material_state,
-                                      bindless_texture_table_compatible))
+                                      bindless_texture_table_compatible, pass))
         {
             return {};
         }
@@ -79,9 +86,12 @@ namespace kpengine::render
 
     TextureBinding RenderResourceResolver::GetOrCreateTextureBinding(
         asset::AssetID asset_id, const data::TextureData &data,
-        const MaterialSamplerDesc *sampler_desc)
+        MaterialTextureColorSpace color_space, const MaterialSamplerDesc *sampler_desc)
     {
-        const uint64_t key = asset_id.Pack();
+        // The same asset can be sampled as sRGB (base color) and as linear
+        // (normal/metallic/roughness/occlusion); each space needs its own GPU
+        // texture because the format carries the color interpretation.
+        const TextureCacheKey key{asset_id, color_space};
         const auto existing = texture_cache_.find(key);
         graphics::TextureHandle texture;
         if (existing != texture_cache_.end())
@@ -91,7 +101,9 @@ namespace kpengine::render
         else
         {
             graphics::TextureSettings settings = DefaultTextureSettings();
-            settings.format = data.format;
+            settings.format = color_space == MaterialTextureColorSpace::Linear
+                                  ? TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM
+                                  : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
             texture = backend_->CreateTexture(data, settings);
             if (texture.IsValid())
             {
@@ -129,13 +141,29 @@ namespace kpengine::render
                 return {MaterialResourceState::Failed, "shader program compilation failed"};
             }
         }
-        const graphics::PipelineHandle pipeline = GetOrCreateDefaultPipeline(
-            desc.shader_program, *program, &desc.pipeline_state, use_bindless_pipeline);
-        if (!pipeline.IsValid())
+        // A pipeline per compatible pass with a registered builder. Passes that
+        // have no builder yet (ShadowDepth until D4) are skipped, not failed —
+        // the template stays resolvable for the passes it can actually run in.
+        std::unordered_map<MaterialPass, graphics::PipelineHandle> pipelines;
+        for (MaterialPass pass : desc.compatible_passes)
         {
-            return {MaterialResourceState::Failed, "pipeline creation failed"};
+            if (!IsSupportedMaterialPass(pass))
+            {
+                continue;
+            }
+            const graphics::PipelineHandle pipeline = GetOrCreateDefaultPipeline(
+                desc.shader_program, *program, &desc.pipeline_state, use_bindless_pipeline, pass);
+            if (!pipeline.IsValid())
+            {
+                return {MaterialResourceState::Failed, "pipeline creation failed"};
+            }
+            pipelines.emplace(pass, pipeline);
         }
-        material_pipelines_[handle] = pipeline;
+        if (pipelines.empty())
+        {
+            return {MaterialResourceState::Failed, "no compatible pass pipeline could be created"};
+        }
+        material_pipelines_[handle] = std::move(pipelines);
         return {MaterialResourceState::Ready, {}};
     }
 
@@ -162,7 +190,7 @@ namespace kpengine::render
             }
             const TextureBinding binding =
                 GetOrCreateTextureBinding(texture_value->texture_asset, *texture->data,
-                                          &texture_value->sampler);
+                                          texture_value->color_space, &texture_value->sampler);
             if (!binding.texture.IsValid() || !binding.sampler.IsValid())
             {
                 return {MaterialResourceState::Failed, "material texture binding creation failed"};
@@ -226,10 +254,15 @@ namespace kpengine::render
     }
 
     graphics::PipelineHandle RenderResourceResolver::FindMaterialPipeline(
-        MaterialTemplateHandle handle) const
+        MaterialTemplateHandle handle, MaterialPass pass) const
     {
         const auto it = material_pipelines_.find(handle);
-        return it != material_pipelines_.end() ? it->second : graphics::PipelineHandle{};
+        if (it == material_pipelines_.end())
+        {
+            return {};
+        }
+        const auto pass_it = it->second.find(pass);
+        return pass_it != it->second.end() ? pass_it->second : graphics::PipelineHandle{};
     }
 
     const RenderResourceResolver::ResolvedMaterialTextureBindings *
@@ -301,7 +334,8 @@ namespace kpengine::render
     bool RenderResourceResolver::BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
                                                            graphics::PipelineDesc &out_desc,
                                                            const MaterialPipelineState *material_state,
-                                                           bool bindless_texture_table_compatible)
+                                                           bool bindless_texture_table_compatible,
+                                                           MaterialPass pass)
     {
         const asset::ShaderProgramVariant variant = bindless_texture_table_compatible
                                                         ? asset::ShaderProgramVariant::Bindless
@@ -320,29 +354,76 @@ namespace kpengine::render
         graphics::PipelineDesc desc{};
         desc.vert_shader = vert_shader->data.get();
         desc.frag_shader = frag_shader->data.get();
-        desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
-        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
-        desc.binding_descs = {{0, sizeof(data::Vertex), false}};
-        desc.attri_descs = {
-            {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
-             offsetof(data::Vertex, position)},
-            {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
-             offsetof(data::Vertex, tex_coord)},
-        };
-        desc.descriptor_binding_descs = {
-            {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-              ShaderStage::SHADER_STAGE_VERTEX},
-             {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-              ShaderStage::SHADER_STAGE_VERTEX},
-             {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-              ShaderStage::SHADER_STAGE_FRAGMENT}},
-        };
-        if (!bindless_texture_table_compatible)
+        if (pass == MaterialPass::GBuffer)
         {
-            desc.descriptor_binding_descs[0].insert(
-                desc.descriptor_binding_descs[0].begin() + 2,
-                {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
-                 ShaderStage::SHADER_STAGE_FRAGMENT});
+            // Deferred G-buffer: canonical 5-attribute layout (matches the
+            // data::Vertex field order and the audited tangent convention) into
+            // a 3-color MRT + depth. Binding 4 is left open for the D5 frame
+            // lighting block; sampler slots 2/5/6/7/8 mirror the StandardPbr
+            // material parameter ABI in material_asset_resolver.cpp.
+            desc.color_attachment_formats = {
+                TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
+                TextureFormat::TEXTURE_FORMAT_RGBA16F,
+                TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM};
+            desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
+            desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+            desc.attri_descs = {
+                {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
+                 offsetof(data::Vertex, position)},
+                {1, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
+                 offsetof(data::Vertex, normal)},
+                {2, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
+                 offsetof(data::Vertex, tex_coord)},
+                {3, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
+                 offsetof(data::Vertex, tangent)},
+                {4, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
+                 offsetof(data::Vertex, bitangent)},
+            };
+            desc.descriptor_binding_descs = {
+                {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                  ShaderStage::SHADER_STAGE_VERTEX},
+                 {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                  ShaderStage::SHADER_STAGE_VERTEX},
+                 {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                  ShaderStage::SHADER_STAGE_FRAGMENT},
+                 {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                  ShaderStage::SHADER_STAGE_FRAGMENT},
+                 {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                  ShaderStage::SHADER_STAGE_FRAGMENT},
+                 {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                  ShaderStage::SHADER_STAGE_FRAGMENT},
+                 {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                  ShaderStage::SHADER_STAGE_FRAGMENT},
+                 {8, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                  ShaderStage::SHADER_STAGE_FRAGMENT}},
+            };
+        }
+        else
+        {
+            desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+            desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
+            desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+            desc.attri_descs = {
+                {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
+                 offsetof(data::Vertex, position)},
+                {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
+                 offsetof(data::Vertex, tex_coord)},
+            };
+            desc.descriptor_binding_descs = {
+                {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                  ShaderStage::SHADER_STAGE_VERTEX},
+                 {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                  ShaderStage::SHADER_STAGE_VERTEX},
+                 {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                  ShaderStage::SHADER_STAGE_FRAGMENT}},
+            };
+            if (!bindless_texture_table_compatible)
+            {
+                desc.descriptor_binding_descs[0].insert(
+                    desc.descriptor_binding_descs[0].begin() + 2,
+                    {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                     ShaderStage::SHADER_STAGE_FRAGMENT});
+            }
         }
         desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
         if (material_state)

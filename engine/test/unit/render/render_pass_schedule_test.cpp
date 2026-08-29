@@ -24,6 +24,38 @@ TEST(RenderPassScheduleTest, AcceptsSceneThenTerminalEditorComposite)
     EXPECT_TRUE(error.empty());
 }
 
+TEST(RenderPassScheduleTest, AcceptsGBufferPassChainToTerminalEditorComposite)
+{
+    RenderPassSchedule schedule;
+    EXPECT_TRUE(schedule.AddPass(
+        {"GBufferPass", {{RenderPassResource::GBuffer, RenderPassAccess::Write}}, false}));
+    EXPECT_TRUE(schedule.AddPass(
+        {"GBufferDebugViewPass",
+         {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+          {RenderPassResource::SceneColor, RenderPassAccess::Write}},
+         false}));
+    EXPECT_TRUE(schedule.AddPass(
+        {"EditorCompositePass", {{RenderPassResource::SceneColor, RenderPassAccess::Read}}, true}));
+
+    std::string error;
+    EXPECT_TRUE(schedule.Validate(error));
+    EXPECT_TRUE(error.empty());
+}
+
+TEST(RenderPassScheduleTest, RejectsReadOfGBufferBeforeWriter)
+{
+    RenderPassSchedule schedule;
+    EXPECT_TRUE(schedule.AddPass(
+        {"GBufferDebugViewPass",
+         {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+          {RenderPassResource::SceneColor, RenderPassAccess::Write}},
+         true}));
+
+    std::string error;
+    EXPECT_FALSE(schedule.Validate(error));
+    EXPECT_FALSE(error.empty());
+}
+
 TEST(RenderPassScheduleTest, RejectsEmptySchedule)
 {
     RenderPassSchedule schedule;

@@ -62,6 +62,31 @@ TEST(BootstrapTest, ParsesSceneWithMaterialAsset)
     RemoveTestFile();
 }
 
+TEST(BootstrapTest, ParsesAdditionalSceneObjectTransform)
+{
+    WriteTestFile(R"({
+        "version": 1,
+        "assets": [],
+        "scene": {
+            "model": "model/rock.obj",
+            "material": "material/rock.material",
+            "objects": [{
+                "model": "model/floor.obj",
+                "material": "material/brickwall.material",
+                "position": [0, -70, 0],
+                "rotation": [0, 0, 0],
+                "scale": [30, 30, 30]
+            }]
+        }
+    })");
+    const auto config = kpengine::bootstrap::ReadBootstrap(BootstrapTestPath().string());
+    ASSERT_EQ(config.scene.objects.size(), 1u);
+    EXPECT_EQ(config.scene.objects[0].model, "model/floor.obj");
+    EXPECT_FLOAT_EQ(config.scene.objects[0].position[1], -70.f);
+    EXPECT_FLOAT_EQ(config.scene.objects[0].scale[0], 30.f);
+    RemoveTestFile();
+}
+
 TEST(BootstrapTest, DefaultsVersionWhenMissing)
 {
     WriteTestFile(R"({

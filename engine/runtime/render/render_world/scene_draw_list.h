@@ -33,7 +33,8 @@ namespace kpengine::render
     public:
         static SceneDrawLists Build(const std::vector<MeshProxy> &visible_proxies,
                                     const MaterialSystem &materials,
-                                    const RenderResourceResolver &resource_resolver);
+                                    const RenderResourceResolver &resource_resolver,
+                                    MaterialPass pass);
         static void SortOpaque(std::vector<SceneDrawItem> &items);
     };
 }

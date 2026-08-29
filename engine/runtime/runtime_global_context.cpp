@@ -4,6 +4,7 @@
 #include "window/window_system.h"
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
+#include "gameplay/factory/directional_light_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
 #include "gameplay/world/gameplay_world.h"
 #include "log/log_system.h"
@@ -26,7 +27,7 @@ namespace kpengine
         render_system_(std::make_unique<render::RenderSystem>()),
         command_registry_(std::make_unique<command::CommandRegistry>()),
         gameplay_world_(std::make_unique<gameplay::GameplayWorld>(
-            render_system_->GetRenderableSourceSink())),
+            render_system_->GetRenderableSourceSink(), render_system_->GetLightSourceSink())),
         log_system_(std::make_unique<LogSystem>()),
         input_system_(std::make_unique<input::InputSystem>()),
         lua_vm_(std::make_unique<::kpengine::script::lua::LuaVM>()),
@@ -101,7 +102,7 @@ namespace kpengine
             // Bootstrap pass: drain the queued requests (load + process) before the
             // main loop, so first-frame pipeline requests are cache hits.
             render_system_->PostInitialize();
-            bootstrap_renderable_source_ = render_system_->TakeBootstrapRenderableSource();
+            bootstrap_renderable_sources_ = render_system_->TakeBootstrapRenderableSources();
         }
 
         void RuntimeContext::FinalizeGameStartup()
@@ -121,27 +122,36 @@ namespace kpengine
                 }
             }
 
-            if (!gameplay_world_ || !bootstrap_renderable_source_.has_value())
+            if (!gameplay_world_ || bootstrap_renderable_sources_.empty())
             {
                 return;
             }
 
-            const render::StaticMeshRenderableSourceDesc source =
-                std::move(*bootstrap_renderable_source_);
-            bootstrap_renderable_source_.reset();
+            for (const render::StaticMeshRenderableSourceDesc &source : bootstrap_renderable_sources_)
+            {
+                gameplay::StaticMeshActorDesc actor_desc{};
+                actor_desc.mesh_asset = source.mesh_asset;
+                actor_desc.material_asset = source.material_asset;
+                actor_desc.transform = source.world_transform;
+                actor_desc.local_bounds = source.local_bounds;
+                actor_desc.visible = source.flags.visible;
+                actor_desc.casts_shadow = source.flags.casts_shadow;
+                actor_desc.lod_bias = source.lod_bias;
+                if (!gameplay::CreateStaticMeshActor(*gameplay_world_, actor_desc).IsValid())
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Bootstrap gameplay actor could not be created");
+                }
+            }
+            bootstrap_renderable_sources_.clear();
 
-            gameplay::StaticMeshActorDesc actor_desc{};
-            actor_desc.mesh_asset = source.mesh_asset;
-            actor_desc.material_asset = source.material_asset;
-            actor_desc.transform = source.world_transform;
-            actor_desc.local_bounds = source.world_bounds;
-            actor_desc.visible = source.flags.visible;
-            actor_desc.casts_shadow = source.flags.casts_shadow;
-            actor_desc.lod_bias = source.lod_bias;
-            if (!gameplay::CreateStaticMeshActor(*gameplay_world_, actor_desc).IsValid())
+            // The first renderer milestone deliberately has one authored
+            // directional source. Gameplay owns this Actor; Render observes its
+            // value snapshot through the existing light-source sink.
+            if (!gameplay::CreateDirectionalLightActor(*gameplay_world_, {}).IsValid())
             {
                 KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
-                       "Bootstrap gameplay actor could not be created");
+                       "Bootstrap directional light actor could not be created");
             }
         }
 
@@ -153,7 +163,7 @@ namespace kpengine
             // Components enqueue source destruction through RenderSystem. The
             // gameplay World must therefore die before the sink and GPU teardown.
             gameplay_world_.reset();
-            bootstrap_renderable_source_.reset();
+            bootstrap_renderable_sources_.clear();
             // Drop sol2 callback closures before their Lua state and the command
             // registry they reference are torn down.
             lua_command_bridge_.reset();

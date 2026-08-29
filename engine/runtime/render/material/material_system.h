@@ -73,10 +73,21 @@ namespace kpengine::render
         MaterialSamplerAddressMode address_w = MaterialSamplerAddressMode::Repeat;
     };
 
+    // Whether a texture is sampled as sRGB (hardware-linearized on fetch) or as
+    // raw linear data. Render expresses intent; the resolver maps it to the GPU
+    // texture format. Base-color maps are sRGB; PBR scalar/normal maps are
+    // linear and must never be sRGB-decoded.
+    enum class MaterialTextureColorSpace : uint8_t
+    {
+        Srgb,
+        Linear,
+    };
+
     struct MaterialTextureSamplerValue
     {
         asset::AssetID texture_asset;
         MaterialSamplerDesc sampler;
+        MaterialTextureColorSpace color_space = MaterialTextureColorSpace::Srgb;
     };
 
     // The variant is the source of truth for value type. This removes the M1
@@ -112,6 +123,8 @@ namespace kpengine::render
     enum class MaterialPass : uint8_t
     {
         Scene,
+        ShadowDepth, // reserved for the D4 directional shadow pass family
+        GBuffer,
     };
 
     struct MaterialPipelineState

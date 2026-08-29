@@ -17,6 +17,7 @@
 #include "delegate/event_dispatcher.h"
 #include "graphics/backend/common/api.h"
 #include "frame_context.h"
+#include "render/light/light_source_registry.h"
 #include "render/material/material_system.h"
 #include "render/render_capture_service.h"
 #include "render_camera.h"
@@ -25,6 +26,7 @@
 #include "render_resource.h"
 #include "render_source_registry.h"
 #include "render_world/render_world.h"
+#include "renderer_frame_targets.h"
 
 namespace kpengine::graphics
 {
@@ -47,10 +49,23 @@ namespace kpengine::render
     class MaterialAssetResolver;
     class RenderCaptureService;
 
+    struct BootstrapSceneObjectInfo
+    {
+        std::string model_path;
+        std::string material_path;
+        Transform3f world_transform;
+
+        bool IsComplete() const
+        {
+            return !model_path.empty() && !material_path.empty();
+        }
+    };
+
     struct BootstrapSceneInfo
     {
         std::string model_path;
         std::string material_path;
+        std::vector<BootstrapSceneObjectInfo> objects;
 
         bool IsComplete() const
         {
@@ -103,7 +118,7 @@ namespace kpengine::render
         const RenderCacheEntry *GetCached(asset::RequestID request_id) const;
         graphics::PipelineHandle GetPipeline(asset::RequestID request_id) const;
         GraphicsContext GetGraphicsContext();
-        const RenderTarget &GetSceneRenderTarget() const { return scene_render_target_; }
+        const RenderTarget &GetSceneRenderTarget() const { return *frame_targets_.GetTarget(RenderTargetName::SceneColor); }
         // The editor provides its available viewport extent. Reallocation happens
         // at the next safe frame boundary, never while UI is reading the view.
         void RequestSceneRenderTargetExtent(uint32_t width, uint32_t height);
@@ -111,12 +126,14 @@ namespace kpengine::render
         // hash (the ShaderCache key) so a stage shared across programs counts once.
         int GetLoadedShaderCount() const;
         IRenderableSourceSink *GetRenderableSourceSink() { return &source_registry_; }
+        ILightSourceSink *GetLightSourceSink() { return &light_source_registry_; }
         // Borrowed Runtime/tooling boundary. RenderSystem owns the implementation
         // and cancels any pending request before this object is destroyed.
         IRenderCaptureService *GetRenderCaptureService();
-        // Transfers the one startup renderable as logical source data. Runtime
-        // consumes it on the game thread to create the regular Gameplay Actor.
+        // Transfers startup renderables as logical source data. Runtime consumes
+        // them on the game thread to create regular Gameplay Actors.
         std::optional<StaticMeshRenderableSourceDesc> TakeBootstrapRenderableSource();
+        std::vector<StaticMeshRenderableSourceDesc> TakeBootstrapRenderableSources();
 
     private:
         // Lifecycle belongs to RuntimeContext: it owns this object and is the only
@@ -136,14 +153,17 @@ namespace kpengine::render
         MaterialResolution ResolveMaterialAsset(asset::AssetID material_asset,
                                                 MaterialInstanceHandle &out_instance);
         void DrainRenderableSources();
+        void DrainLightSources();
 
         const RenderCacheEntry *FindCached(asset::AssetID asset_id) const;
-        void PrepareBootstrapRenderableSource();
+        void PrepareBootstrapRenderableSources();
         void DestroyMaterialAssetRecords();
         void ConfigurePassSchedule();
-        void RecordScenePass();
+        void RecordGBufferPass();
+        void RecordGBufferDebugViewPass();
+        bool PrepareGBufferDebugPassResources();
         void RecordMeshProxy(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
-                             graphics::CommandRecorder &recorder);
+                             graphics::CommandRecorder &recorder, MaterialPass pass);
         void ApplyPendingSceneRenderTargetExtent();
         FrameContext *GetCurrentFrameContext();
         void Shutdown();
@@ -153,14 +173,17 @@ namespace kpengine::render
         std::unique_ptr<graphics::RenderBackend> backend_;
         std::unique_ptr<MaterialSystem> material_system_;
         std::unique_ptr<RenderResourceResolver> resource_resolver_;
-        RenderTarget scene_render_target_;
+        RendererFrameTargets frame_targets_;
         RenderPassSchedule pass_schedule_;
         graphics::Extent2D pending_scene_render_target_extent_;
         std::vector<FrameContext> frame_contexts_;
         RenderWorld render_world_;
         RenderableSourceRegistry source_registry_;
+        LightWorld light_world_;
+        LightSourceRegistry light_source_registry_;
+        FrameLightingBinding frame_lighting_binding_;
         RenderCamera scene_camera_;
-        std::optional<StaticMeshRenderableSourceDesc> bootstrap_renderable_source_;
+        std::vector<StaticMeshRenderableSourceDesc> bootstrap_renderable_sources_;
         std::unique_ptr<MaterialAssetResolver> material_asset_resolver_;
         std::unique_ptr<RenderCaptureService> render_capture_service_;
         BootstrapSceneInfo bootstrap_scene_info_;
@@ -171,6 +194,11 @@ namespace kpengine::render
         std::unordered_map<asset::RequestID, RenderCacheEntry> render_cache_;
         FrameContext *active_frame_context_ = nullptr;
         bool editor_composite_recorded_ = false;
+        // Lazily built GBuffer debug-view resources (fullscreen composite into
+        // SceneColor). Owned here so the frame pass only records draws.
+        graphics::PipelineHandle gbuffer_debug_pipeline_;
+        graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;
+        graphics::SamplerHandle gbuffer_debug_sampler_;
     };
 }
 

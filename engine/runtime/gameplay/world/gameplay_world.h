@@ -10,6 +10,7 @@
 
 namespace kpengine::render
 {
+    class ILightSourceSink;
     class IRenderableSourceSink;
 }
 
@@ -18,8 +19,9 @@ namespace kpengine::gameplay
     class GameplayWorld
     {
     public:
-        explicit GameplayWorld(render::IRenderableSourceSink *source_sink = nullptr)
-            : source_sink_(source_sink)
+        explicit GameplayWorld(render::IRenderableSourceSink *source_sink = nullptr,
+                               render::ILightSourceSink *light_source_sink = nullptr)
+            : source_sink_(source_sink), light_source_sink_(light_source_sink)
         {
         }
         ~GameplayWorld();
@@ -47,6 +49,7 @@ namespace kpengine::gameplay
         HandleSystem<ActorHandle> actor_handles_;
         std::unordered_map<uint32_t, std::unique_ptr<Actor>> actors_;
         render::IRenderableSourceSink *source_sink_ = nullptr;
+        render::ILightSourceSink *light_source_sink_ = nullptr;
     };
 }
 

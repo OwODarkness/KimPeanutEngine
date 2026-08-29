@@ -8,7 +8,9 @@ add_executable(
     scene_draw_list_test.cpp
     material_system_test.cpp
     material_asset_resolver_test.cpp
+    render_resource_resolver_test.cpp
     render_source_registry_test.cpp
+    light_source_registry_test.cpp
     render_capture_service_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_system.cpp
@@ -16,6 +18,9 @@ add_executable(
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_camera.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/render_world.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_source_registry.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/light/light_source_registry.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/light/light_world.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/light/light_gpu_data.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_capture_service.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/frustum.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/scene_visibility.cpp
@@ -28,7 +33,9 @@ target_include_directories(RenderPassScheduleTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend
 )
 
-target_link_libraries(RenderPassScheduleTest PRIVATE Asset googletest Math)
+# Config propagates the generated global.h (project-root define) that
+# config/path.h requires; material_asset_resolver.cpp compiles here too.
+target_link_libraries(RenderPassScheduleTest PRIVATE Asset googletest Math Config)
 
 add_custom_command(TARGET RenderPassScheduleTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

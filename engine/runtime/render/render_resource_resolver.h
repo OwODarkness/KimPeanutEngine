@@ -1,7 +1,9 @@
 #ifndef KPENGINE_RUNTIME_RENDER_RENDER_RESOURCE_RESOLVER_H
 #define KPENGINE_RUNTIME_RENDER_RENDER_RESOURCE_RESOLVER_H
 
+#include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <unordered_map>
 
 #include "asset/common.h"
@@ -36,6 +38,31 @@ namespace kpengine::resource
 
 namespace kpengine::render
 {
+    // Texture identity includes both the source asset generation and the GPU
+    // color interpretation. Keeping the fields separate prevents a color-space
+    // bit from colliding with AssetID generation bits.
+    struct TextureCacheKey
+    {
+        asset::AssetID asset_id{};
+        MaterialTextureColorSpace color_space = MaterialTextureColorSpace::Srgb;
+
+        bool operator==(const TextureCacheKey &other) const noexcept
+        {
+            return asset_id == other.asset_id && color_space == other.color_space;
+        }
+    };
+
+    struct TextureCacheKeyHash
+    {
+        std::size_t operator()(const TextureCacheKey &key) const noexcept
+        {
+            const std::size_t asset_hash = std::hash<uint64_t>{}(key.asset_id.Pack());
+            const std::size_t color_space_hash = std::hash<uint8_t>{}(
+                static_cast<uint8_t>(key.color_space));
+            return asset_hash ^ (color_space_hash << 1);
+        }
+    };
+
     // Render-private owner for resolved static RHI resources. It accepts only
     // render policy and asset-backed CPU data; it never exposes backend-native
     // objects or lets callers access the backend directly.
@@ -54,12 +81,14 @@ namespace kpengine::render
         graphics::PipelineHandle GetOrCreateDefaultPipeline(
             asset::AssetID program_id, asset::ShaderProgramResource &program,
             const MaterialPipelineState *material_state = nullptr,
-            bool bindless_texture_table_compatible = false);
+            bool bindless_texture_table_compatible = false,
+            MaterialPass pass = MaterialPass::Scene);
         graphics::MeshHandle GetOrCreateMesh(asset::AssetID asset_id,
                                              const data::MeshData &data);
-        TextureBinding GetOrCreateTextureBinding(asset::AssetID asset_id,
-                                                 const data::TextureData &data,
-                                                 const MaterialSamplerDesc *sampler_desc = nullptr);
+        TextureBinding GetOrCreateTextureBinding(
+            asset::AssetID asset_id, const data::TextureData &data,
+            MaterialTextureColorSpace color_space = MaterialTextureColorSpace::Srgb,
+            const MaterialSamplerDesc *sampler_desc = nullptr);
         MaterialResolution ResolveTemplate(MaterialTemplateHandle handle,
                                            const MaterialTemplateDesc &desc) override;
         MaterialResolution ResolveInstance(MaterialInstanceHandle handle,
@@ -67,7 +96,8 @@ namespace kpengine::render
             const std::vector<MaterialParameterValue> &effective_values) override;
         void ReleaseTemplate(MaterialTemplateHandle handle) override;
         void ReleaseInstance(MaterialInstanceHandle handle) override;
-        graphics::PipelineHandle FindMaterialPipeline(MaterialTemplateHandle handle) const;
+        graphics::PipelineHandle FindMaterialPipeline(MaterialTemplateHandle handle,
+                                                      MaterialPass pass) const;
         const ResolvedMaterialTextureBindings *FindTextureBindings(
             MaterialInstanceHandle handle) const;
         bool UsesBindlessTextures(MaterialInstanceHandle handle) const;
@@ -77,7 +107,8 @@ namespace kpengine::render
         static bool BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
                                              graphics::PipelineDesc &out_desc,
                                              const MaterialPipelineState *material_state,
-                                             bool bindless_texture_table_compatible);
+                                             bool bindless_texture_table_compatible,
+                                             MaterialPass pass);
         static graphics::TextureSettings DefaultTextureSettings();
         graphics::SamplerHandle GetOrCreateDefaultSampler();
         graphics::SamplerHandle GetOrCreateSampler(const MaterialSamplerDesc &desc);
@@ -87,9 +118,12 @@ namespace kpengine::render
         std::unordered_map<PipelineCacheKey, graphics::PipelineHandle, PipelineCacheKeyHash>
             pipeline_cache_;
         std::unordered_map<uint64_t, graphics::MeshHandle> mesh_cache_;
-        std::unordered_map<uint64_t, graphics::TextureHandle> texture_cache_;
+        std::unordered_map<TextureCacheKey, graphics::TextureHandle, TextureCacheKeyHash>
+            texture_cache_;
         std::unordered_map<uint64_t, graphics::SamplerHandle> material_sampler_cache_;
-        std::unordered_map<MaterialTemplateHandle, graphics::PipelineHandle> material_pipelines_;
+        std::unordered_map<MaterialTemplateHandle,
+                           std::unordered_map<MaterialPass, graphics::PipelineHandle>>
+            material_pipelines_;
         std::unordered_map<MaterialInstanceHandle, ResolvedMaterialTextureBindings>
             material_texture_bindings_;
         graphics::SamplerHandle default_sampler_handle_;

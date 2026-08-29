@@ -5,9 +5,11 @@
 
 #include "gameplay/actor/actor.h"
 #include "gameplay/component/actor_component.h"
+#include "gameplay/component/directional_light_component.h"
 #include "gameplay/component/mesh_component.h"
 #include "gameplay/component/primitive_component.h"
 #include "gameplay/component/scene_component.h"
+#include "gameplay/factory/directional_light_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
 #include "gameplay/world/gameplay_world.h"
 
@@ -68,6 +70,41 @@ namespace
         std::vector<kpengine::render::PrimitiveRenderableSourceDesc> creates;
         std::vector<Update> updates;
         std::vector<kpengine::render::RenderableSourceHandle> destroys;
+    };
+
+    class RecordingLightSourceSink final : public kpengine::render::ILightSourceSink
+    {
+    public:
+        kpengine::render::LightSourceHandle EnqueueCreate(
+            const kpengine::render::LightSourceDesc &source) override
+        {
+            creates.push_back(source);
+            return {next_id++, 0};
+        }
+
+        bool EnqueueUpdate(kpengine::render::LightSourceHandle handle,
+                           const kpengine::render::LightSourceDesc &source) override
+        {
+            updates.push_back({handle, source});
+            return true;
+        }
+
+        bool EnqueueDestroy(kpengine::render::LightSourceHandle handle) override
+        {
+            destroys.push_back(handle);
+            return true;
+        }
+
+        struct Update
+        {
+            kpengine::render::LightSourceHandle handle;
+            kpengine::render::LightSourceDesc source;
+        };
+
+        uint32_t next_id = 0;
+        std::vector<kpengine::render::LightSourceDesc> creates;
+        std::vector<Update> updates;
+        std::vector<kpengine::render::LightSourceHandle> destroys;
     };
 }
 
@@ -245,6 +282,8 @@ TEST(GameplayWorldTest, MeshComponentPublishesCoalescedSourceLifecycle)
               (kpengine::asset::AssetID{7, 2, kpengine::asset::AssetType::KPAT_Material}));
     EXPECT_TRUE(created.flags.visible);
     EXPECT_TRUE(created.flags.casts_shadow);
+    EXPECT_EQ(created.local_bounds,
+              (kpengine::spatial::AABB{{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}}));
 
     mesh->SetLocalLocation({2.0f, 0.0f, 0.0f});
     mesh->SetLocalLocation({4.0f, 0.0f, 0.0f});
@@ -260,6 +299,8 @@ TEST(GameplayWorldTest, MeshComponentPublishesCoalescedSourceLifecycle)
     EXPECT_EQ(updated.world_transform.position_, (kpengine::Vector3f{4.0f, 0.0f, 0.0f}));
     EXPECT_EQ(updated.world_bounds,
               (kpengine::spatial::AABB{{3.0f, -1.0f, -1.0f}, {5.0f, 1.0f, 1.0f}}));
+    EXPECT_EQ(updated.local_bounds,
+              (kpengine::spatial::AABB{{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}}));
     EXPECT_FALSE(updated.flags.visible);
     EXPECT_FALSE(updated.flags.casts_shadow);
     EXPECT_EQ(updated.lod_bias, 2);
@@ -288,6 +329,78 @@ TEST(GameplayWorldTest, WorldTeardownDeactivatesActiveMeshComponents)
 
     ASSERT_EQ(source_sink.destroys.size(), 1U);
     EXPECT_EQ(source_sink.destroys.front(), (kpengine::render::RenderableSourceHandle{0, 0}));
+}
+
+TEST(GameplayWorldTest, DirectionalLightComponentPublishesCoalescedSourceLifecycle)
+{
+    RecordingLightSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{nullptr, &source_sink};
+    const kpengine::gameplay::ActorHandle handle = world.CreateActor();
+    kpengine::gameplay::Actor *const actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+
+    auto *const light = actor->AddComponent<kpengine::gameplay::DirectionalLightComponent>();
+    ASSERT_NE(light, nullptr);
+    ASSERT_TRUE(actor->SetRootComponent(light));
+    light->SetDirection({0.0f, -1.0f, 0.0f});
+    light->SetColor({1.0f, 0.5f, 0.25f});
+    light->SetIntensity(3.0f);
+
+    ASSERT_TRUE(world.InitializeActor(handle));
+    ASSERT_TRUE(world.ActivateActor(handle));
+    ASSERT_EQ(source_sink.creates.size(), 1U);
+    EXPECT_TRUE(light->GetSourceHandle().IsValid());
+
+    const auto &created =
+        std::get<kpengine::render::DirectionalLightSourceDesc>(source_sink.creates.front());
+    EXPECT_EQ(created.direction, (kpengine::Vector3f{0.0f, -1.0f, 0.0f}));
+    EXPECT_EQ(created.color, (kpengine::Vector3f{1.0f, 0.5f, 0.25f}));
+    EXPECT_EQ(created.intensity, 3.0f);
+    EXPECT_TRUE(created.enabled);
+
+    light->SetDirection({1.0f, -1.0f, 0.0f});
+    light->SetDirection({0.0f, 0.0f, -1.0f});
+    light->SetIntensity(5.0f);
+    light->SetLightEnabled(false);
+    world.Tick(0.0f);
+
+    ASSERT_EQ(source_sink.updates.size(), 1U);
+    EXPECT_EQ(source_sink.updates.front().handle, light->GetSourceHandle());
+    const auto &updated = std::get<kpengine::render::DirectionalLightSourceDesc>(
+        source_sink.updates.front().source);
+    EXPECT_EQ(updated.direction, (kpengine::Vector3f{0.0f, 0.0f, -1.0f}));
+    EXPECT_EQ(updated.intensity, 5.0f);
+    EXPECT_FALSE(updated.enabled);
+
+    ASSERT_TRUE(world.DestroyActor(handle));
+    ASSERT_EQ(source_sink.destroys.size(), 1U);
+    EXPECT_EQ(source_sink.destroys.front(), source_sink.updates.front().handle);
+    EXPECT_FALSE(light->GetSourceHandle().IsValid());
+}
+
+TEST(GameplayWorldTest, DirectionalLightActorFactoryBuildsAnActiveLightComposition)
+{
+    RecordingLightSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{nullptr, &source_sink};
+    const kpengine::gameplay::DirectionalLightActorDesc desc{
+        {0.0f, -0.5f, -0.5f}, {0.75f, 0.5f, 0.25f}, 4.0f, false};
+
+    const kpengine::gameplay::ActorHandle handle =
+        kpengine::gameplay::CreateDirectionalLightActor(world, desc);
+    kpengine::gameplay::Actor *const actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+    EXPECT_EQ(actor->GetState(), kpengine::gameplay::ActorState::Active);
+    auto *const light = actor->FindComponent<kpengine::gameplay::DirectionalLightComponent>();
+    ASSERT_NE(light, nullptr);
+    EXPECT_EQ(actor->GetRootComponent(), light);
+    ASSERT_EQ(source_sink.creates.size(), 1U);
+
+    const auto &source =
+        std::get<kpengine::render::DirectionalLightSourceDesc>(source_sink.creates.front());
+    EXPECT_EQ(source.direction, desc.direction);
+    EXPECT_EQ(source.color, desc.color);
+    EXPECT_EQ(source.intensity, desc.intensity);
+    EXPECT_EQ(source.enabled, desc.enabled);
 }
 
 TEST(GameplayWorldTest, StaticMeshActorFactoryBuildsAnActiveMeshComposition)

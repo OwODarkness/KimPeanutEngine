@@ -58,7 +58,7 @@ namespace kpengine::render
             graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset, per_object.range},
         };
         const FrameMaterialBinding material_binding = frame.CreateMaterialBinding(
-            materials, resource_resolver, material_instance_, draw_bindings);
+            materials, resource_resolver, material_instance_, draw_bindings, MaterialPass::Scene);
         if (!frame.IsMaterialBindingCurrent(material_binding))
         {
             return;

@@ -1,12 +1,23 @@
 #include "render/render_world/scene_draw_list.h"
 
+#include <algorithm>
+
 #include "render/render_resource_resolver.h"
 
 namespace kpengine::render
 {
+    namespace
+    {
+        bool SupportsPass(const MaterialTemplateDesc &desc, MaterialPass pass)
+        {
+            return std::find(desc.compatible_passes.begin(), desc.compatible_passes.end(), pass) !=
+                   desc.compatible_passes.end();
+        }
+    }
+
     SceneDrawLists SceneDrawListBuilder::Build(
         const std::vector<MeshProxy> &visible_proxies, const MaterialSystem &materials,
-        const RenderResourceResolver &resource_resolver)
+        const RenderResourceResolver &resource_resolver, MaterialPass pass)
     {
         SceneDrawLists draw_lists;
         draw_lists.opaque.reserve(visible_proxies.size());
@@ -21,11 +32,13 @@ namespace kpengine::render
 
             const MaterialTemplateHandle template_handle =
                 materials.GetInstanceTemplate(proxy.material);
+            const MaterialTemplateDesc *const template_desc = materials.FindTemplate(template_handle);
             const graphics::PipelineHandle pipeline =
-                resource_resolver.FindMaterialPipeline(template_handle);
+                resource_resolver.FindMaterialPipeline(template_handle, pass);
             const std::optional<MaterialDrawClass> draw_class =
                 materials.GetDrawClass(proxy.material);
-            if (!pipeline.IsValid() || !draw_class)
+            if (!template_desc || !SupportsPass(*template_desc, pass) ||
+                !pipeline.IsValid() || !draw_class)
             {
                 continue;
             }

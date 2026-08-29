@@ -4,6 +4,7 @@
 #include <memory>
 #include <optional>
 #include <thread>
+#include <vector>
 #include "base/base.h"
 #include "async/async_queue.h"
 #include "asset/asset_load_request.h"
@@ -89,7 +90,7 @@ namespace kpengine
 
             GraphicsAPIType graphics_api_type_;
             render::BootstrapSceneInfo bootstrap_scene_;
-            std::optional<render::StaticMeshRenderableSourceDesc> bootstrap_renderable_source_;
+            std::vector<render::StaticMeshRenderableSourceDesc> bootstrap_renderable_sources_;
 
             // Incoming leg of the async resource queue (docs/async/async_resource_queue.md).
             // Producers (the engine's bootstrap preload today, the render module later)

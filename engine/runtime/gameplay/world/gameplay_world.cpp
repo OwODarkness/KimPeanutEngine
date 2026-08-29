@@ -12,7 +12,8 @@ namespace kpengine::gameplay
     ActorHandle GameplayWorld::CreateActor()
     {
         const ActorHandle handle = actor_handles_.Create();
-        actors_.emplace(handle.id, std::make_unique<Actor>(handle, source_sink_));
+        actors_.emplace(handle.id,
+                        std::make_unique<Actor>(handle, source_sink_, light_source_sink_));
         return handle;
     }
 

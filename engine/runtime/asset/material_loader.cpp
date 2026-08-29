@@ -1,5 +1,7 @@
 #include "material_loader.h"
 
+#include <array>
+#include <cmath>
 #include <fstream>
 #include <initializer_list>
 #include <memory>
@@ -16,7 +18,11 @@ namespace kpengine::asset
     {
         using json = nlohmann::json;
 
-        constexpr int kMaterialVersion = 1;
+        // V1 = unlit-only. V2 adds the standard_pbr shading model and explicit
+        // PBR semantic names (base_color/normal/metallic/roughness/occlusion/
+        // emissive); parameter parsing is name-agnostic in both.
+        constexpr int kMaterialVersionLatest = 2;
+        constexpr int kMaterialVersionMin = 1;
 
         bool HasOnlyFields(const json &object, std::initializer_list<const char *> allowed)
         {
@@ -40,7 +46,7 @@ namespace kpengine::asset
             return true;
         }
 
-        bool ParseSurface(const json &source, MaterialSurfaceSource &surface)
+        bool ParseSurface(int version, const json &source, MaterialSurfaceSource &surface)
         {
             if (!source.is_object() ||
                 !HasOnlyFields(source, {"shading_model", "blend_mode", "cull_mode", "double_sided"}))
@@ -51,12 +57,23 @@ namespace kpengine::asset
             const std::string shading_model = source.value("shading_model", std::string{});
             const std::string blend_mode = source.value("blend_mode", std::string{});
             const std::string cull_mode = source.value("cull_mode", std::string{});
-            if (!source.contains("double_sided") || !source["double_sided"].is_boolean() ||
-                shading_model != "unlit")
+            if (!source.contains("double_sided") || !source["double_sided"].is_boolean())
             {
                 return false;
             }
-            surface.shading_model = MaterialShadingModel::Unlit;
+            // V1 is unlit-only; V2 also accepts standard_pbr.
+            if (shading_model == "unlit")
+            {
+                surface.shading_model = MaterialShadingModel::Unlit;
+            }
+            else if (version >= 2 && shading_model == "standard_pbr")
+            {
+                surface.shading_model = MaterialShadingModel::StandardPbr;
+            }
+            else
+            {
+                return false;
+            }
 
             if (blend_mode == "opaque")
             {
@@ -145,6 +162,73 @@ namespace kpengine::asset
             }
             return true;
         }
+
+        bool IsFiniteInRange(float value, float minimum, float maximum)
+        {
+            return std::isfinite(value) && value >= minimum && value <= maximum;
+        }
+
+        bool ValidateStandardPbrParameters(const std::vector<MaterialParameterSource> &parameters)
+        {
+            for (const MaterialParameterSource &parameter : parameters)
+            {
+                if (parameter.name == "base_color")
+                {
+                    if (parameter.type != MaterialParameterSourceType::Vector4)
+                    {
+                        return false;
+                    }
+                    const auto &value = std::get<std::array<float, 4>>(parameter.value);
+                    for (const float component : value)
+                    {
+                        if (!IsFiniteInRange(component, 0.0f, 1.0f))
+                        {
+                            return false;
+                        }
+                    }
+                }
+                else if (parameter.name == "emissive")
+                {
+                    if (parameter.type != MaterialParameterSourceType::Vector4)
+                    {
+                        return false;
+                    }
+                    const auto &value = std::get<std::array<float, 4>>(parameter.value);
+                    for (const float component : value)
+                    {
+                        if (!std::isfinite(component) || component < 0.0f)
+                        {
+                            return false;
+                        }
+                    }
+                }
+                else if (parameter.name == "metallic" || parameter.name == "roughness" ||
+                         parameter.name == "occlusion")
+                {
+                    if (parameter.type != MaterialParameterSourceType::Scalar ||
+                        !IsFiniteInRange(std::get<float>(parameter.value), 0.0f, 1.0f))
+                    {
+                        return false;
+                    }
+                }
+                else if (parameter.name == "base_color_texture" ||
+                         parameter.name == "normal_texture" ||
+                         parameter.name == "metallic_texture" ||
+                         parameter.name == "roughness_texture" ||
+                         parameter.name == "occlusion_texture")
+                {
+                    if (parameter.type != MaterialParameterSourceType::Texture)
+                    {
+                        return false;
+                    }
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
     }
 
     bool MaterialLoader::Load(const std::string &path, AssetRegisterInfo &info)
@@ -163,7 +247,7 @@ namespace kpengine::asset
             if (!source.is_object() ||
                 !HasOnlyFields(source, {"version", "shader", "surface", "parameters"}) ||
                 !source.contains("version") || !source["version"].is_number_integer() ||
-                source["version"].get<int>() != kMaterialVersion || !source.contains("shader") ||
+                !source.contains("shader") ||
                 !source["shader"].is_string() || source["shader"].get<std::string>().empty() ||
                 !source.contains("surface") || !source.contains("parameters"))
             {
@@ -171,10 +255,21 @@ namespace kpengine::asset
                 return false;
             }
 
+            const int version = source["version"].get<int>();
+            if (version < kMaterialVersionMin || version > kMaterialVersionLatest)
+            {
+                KP_LOG("MaterialLoaderLog", LOG_LEVEL_ERROR,
+                       "Unsupported material version %d in %s", version, path.c_str());
+                return false;
+            }
+
             auto material = std::make_shared<MaterialResource>();
+            material->version = version;
             material->shader_path = source["shader"].get<std::string>();
-            if (!ParseSurface(source["surface"], material->surface) ||
-                !ParseParameters(source["parameters"], material->parameters))
+            if (!ParseSurface(version, source["surface"], material->surface) ||
+                !ParseParameters(source["parameters"], material->parameters) ||
+                (material->surface.shading_model == MaterialShadingModel::StandardPbr &&
+                 !ValidateStandardPbrParameters(material->parameters)))
             {
                 KP_LOG("MaterialLoaderLog", LOG_LEVEL_ERROR, "Invalid material values in %s", path.c_str());
                 return false;

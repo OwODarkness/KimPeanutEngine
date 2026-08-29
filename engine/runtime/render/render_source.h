@@ -34,6 +34,10 @@ namespace kpengine::render
         // the private template/default-instance pair.
         asset::AssetID material_asset;
         Transform3f world_transform;
+        // Local bounds are the mesh-space bounds used when bootstrap creates a
+        // Gameplay component. World bounds are the already-transformed bounds
+        // consumed by Render visibility for this source snapshot.
+        spatial::AABB local_bounds{};
         spatial::AABB world_bounds{};
         RenderableFlags flags;
         int lod_bias = 0;

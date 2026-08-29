@@ -20,6 +20,8 @@ namespace kpengine::render
         void SetRotation(const Rotatorf &rotation) { rotation_ = rotation; Update(); }
         void SetAspect(float aspect) { aspect_ = aspect; }
         void SetFOV(float fov) { fov_ = fov; }
+        void SetNearPlane(float near_plane) { near_ = near_plane; }
+        void SetFarPlane(float far_plane) { far_ = far_plane; }
 
         const Vector3f &GetPosition() const { return position_; }
         const Rotatorf &GetRotation() const { return rotation_; }

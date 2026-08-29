@@ -11,6 +11,7 @@
 
 namespace kpengine::render
 {
+    class ILightSourceSink;
     class IRenderableSourceSink;
 }
 
@@ -21,7 +22,8 @@ namespace kpengine::gameplay
     class Actor
     {
     public:
-        explicit Actor(ActorHandle handle, render::IRenderableSourceSink *source_sink = nullptr);
+        explicit Actor(ActorHandle handle, render::IRenderableSourceSink *source_sink = nullptr,
+                       render::ILightSourceSink *light_source_sink = nullptr);
         virtual ~Actor();
 
         Actor(const Actor &) = delete;
@@ -33,6 +35,7 @@ namespace kpengine::gameplay
         ActorState GetState() const { return state_; }
         SceneComponent *GetRootComponent() const { return root_component_; }
         render::IRenderableSourceSink *GetRenderableSourceSink() const { return source_sink_; }
+        render::ILightSourceSink *GetLightSourceSink() const { return light_source_sink_; }
 
         bool SetRootComponent(SceneComponent *component);
 
@@ -82,6 +85,7 @@ namespace kpengine::gameplay
         std::vector<std::unique_ptr<ActorComponent>> components_;
         SceneComponent *root_component_ = nullptr;
         render::IRenderableSourceSink *source_sink_ = nullptr;
+        render::ILightSourceSink *light_source_sink_ = nullptr;
     };
 }
 

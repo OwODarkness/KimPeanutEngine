@@ -7,6 +7,7 @@
 #include <vector>
 
 #include "graphics/backend/common/render_backend.h"
+#include "render/light/light_gpu_data.h"
 #include "render/material/material_system.h"
 
 namespace kpengine::render
@@ -49,6 +50,23 @@ namespace kpengine::render
         }
     };
 
+    // A frame-slot-local lighting UBO. It stays valid only until this
+    // FrameContext is recycled; D5 will append its ResourceBinding to the
+    // deferred-lighting pipeline's descriptor set.
+    struct FrameLightingBinding
+    {
+        UniformAllocation data;
+        uint32_t frame_index = 0;
+        uint64_t frame_number = 0;
+
+        bool IsValid() const { return data.IsValid(); }
+        graphics::UniformBufferBinding GetResourceBinding() const
+        {
+            return {kFrameLightingDescriptorSet, kFrameLightingDescriptorBinding,
+                    data.buffer, data.offset, data.range};
+        }
+    };
+
     // RenderSystem owns one logical context per backend frame slot. The backend
     // remains responsible for fences and deciding when that slot is safe to
     // recycle; this type will own only the render-layer transient allocations.
@@ -66,10 +84,12 @@ namespace kpengine::render
         graphics::DescriptorSetHandle AllocateResourceBindingSet(
             graphics::PipelineHandle pipeline,
             const graphics::ResourceBindingSetDesc &desc);
+        FrameLightingBinding CreateLightingBinding(const LightGpuFrameData &lighting_data);
         FrameMaterialBinding CreateMaterialBinding(
             const MaterialSystem &materials, const RenderResourceResolver &resolver,
             MaterialInstanceHandle material_instance,
-            const std::vector<graphics::ResourceBinding> &draw_bindings);
+            const std::vector<graphics::ResourceBinding> &draw_bindings,
+            MaterialPass pass);
         bool IsMaterialBindingCurrent(const FrameMaterialBinding &binding) const;
 
         template <typename T>

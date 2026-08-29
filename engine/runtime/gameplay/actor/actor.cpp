@@ -5,8 +5,9 @@
 
 namespace kpengine::gameplay
 {
-    Actor::Actor(ActorHandle handle, render::IRenderableSourceSink *source_sink)
-        : handle_(handle), source_sink_(source_sink)
+    Actor::Actor(ActorHandle handle, render::IRenderableSourceSink *source_sink,
+                 render::ILightSourceSink *light_source_sink)
+        : handle_(handle), source_sink_(source_sink), light_source_sink_(light_source_sink)
     {
     }
 

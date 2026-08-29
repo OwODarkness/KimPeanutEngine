@@ -112,10 +112,24 @@ namespace kpengine::render
         return handle;
     }
 
+    FrameLightingBinding FrameContext::CreateLightingBinding(const LightGpuFrameData &lighting_data)
+    {
+        if (!active_ || !IsLightGpuFrameHeaderCompatible(lighting_data.header))
+        {
+            return {};
+        }
+        const UniformAllocation allocation = AllocateUniform(lighting_data);
+        if (!allocation.IsValid())
+        {
+            return {};
+        }
+        return {allocation, frame_index_, globals_.frame_number};
+    }
+
     FrameMaterialBinding FrameContext::CreateMaterialBinding(
         const MaterialSystem &materials, const RenderResourceResolver &resolver,
         MaterialInstanceHandle material_instance,
-        const std::vector<graphics::ResourceBinding> &draw_bindings)
+        const std::vector<graphics::ResourceBinding> &draw_bindings, MaterialPass pass)
     {
         if (!active_ ||
             materials.GetInstanceResolution(material_instance).state != MaterialResourceState::Ready)
@@ -125,7 +139,7 @@ namespace kpengine::render
 
         const MaterialTemplateHandle template_handle = materials.GetInstanceTemplate(material_instance);
         const MaterialTemplateDesc *const material_template = materials.FindTemplate(template_handle);
-        const graphics::PipelineHandle pipeline = resolver.FindMaterialPipeline(template_handle);
+        const graphics::PipelineHandle pipeline = resolver.FindMaterialPipeline(template_handle, pass);
         const auto *const textures = resolver.FindTextureBindings(material_instance);
         if (!material_template || !pipeline.IsValid() || !textures)
         {

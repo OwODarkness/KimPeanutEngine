@@ -12,6 +12,7 @@ namespace kpengine::asset
     enum class MaterialShadingModel : uint8_t
     {
         Unlit,
+        StandardPbr,
     };
 
     enum class MaterialBlendMode : uint8_t
