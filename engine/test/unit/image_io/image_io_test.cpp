@@ -55,7 +55,12 @@ TEST(ImageIOTest, WritesAndDecodesLosslessPng)
     ASSERT_TRUE(decoded.result.success) << decoded.result.diagnostic;
     EXPECT_EQ(decoded.image.width, image.width);
     EXPECT_EQ(decoded.image.height, image.height);
-    EXPECT_EQ(decoded.image.pixels, image.pixels);
+    // Decode uses the bottom-origin convention consumed by asset UVs, so the
+    // two source rows are returned in reverse order.
+    EXPECT_EQ(decoded.image.pixels, std::vector<uint8_t>({
+        0, 0, 255, 255,       255, 255, 255, 255,
+        255, 0, 0, 255,       0, 255, 0, 255,
+    }));
 }
 
 TEST(ImageIOTest, RejectsInvalidOutputImage)

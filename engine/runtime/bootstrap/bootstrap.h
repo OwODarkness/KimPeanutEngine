@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_BOOTSTRAP_H
 #define KPENGINE_RUNTIME_BOOTSTRAP_H
 
+#include <array>
 #include <string>
 #include <vector>
 
@@ -8,10 +9,25 @@
 
 namespace kpengine::bootstrap
 {
+    struct BootstrapSceneObject
+    {
+        std::string model;
+        std::string material;
+        std::array<float, 3> position{0.f, 0.f, 0.f};
+        std::array<float, 3> rotation{0.f, 0.f, 0.f};
+        std::array<float, 3> scale{1.f, 1.f, 1.f};
+
+        bool IsComplete() const
+        {
+            return !model.empty() && !material.empty();
+        }
+    };
+
     struct BootstrapScene
     {
         std::string model;
         std::string material;
+        std::vector<BootstrapSceneObject> objects;
 
         bool IsComplete() const
         {

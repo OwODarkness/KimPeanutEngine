@@ -1,13 +1,31 @@
 {
     "version": 1,
     "assets": [
-        "material/bootstrap.material",
-        "shader/simple_triangle.shader",
-        "texture/wallpaper.jpg",
-        "model/sphere/sphere.obj"
+        "material/rock_pbr.material",
+        "material/brickwall.material",
+        "model/rock1-bl/rock2.obj",
+        "model/brickwall/floor.obj",
+        "model/rock1-bl/rock1-albedo.png",
+        "model/rock1-bl/rock1-normal_ogl.png",
+        "model/rock1-bl/rock1-metallic.png",
+        "model/rock1-bl/rock1-roughness.png",
+        "model/rock1-bl/rock1-ao.png",
+        "model/brickwall/brickwall_dif.jpg",
+        "model/brickwall/brickwall_normal.jpg",
+        "texture/default/default_white.png",
+        "texture/default/default_flat_normal.png"
     ],
     "scene": {
-        "model": "model/sphere/sphere.obj",
-        "material": "material/bootstrap.material"
+        "model": "model/rock1-bl/rock2.obj",
+        "material": "material/rock_pbr.material",
+        "objects": [
+            {
+                "model": "model/brickwall/floor.obj",
+                "material": "material/brickwall.material",
+                "position": [0.0, -70.0, 0.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [30.0, 30.0, 30.0]
+            }
+        ]
     }
 }

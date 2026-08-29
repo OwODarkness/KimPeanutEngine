@@ -2,6 +2,7 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
+#include <algorithm>
 #include <memory>
 #include <magic_enum/magic_enum.hpp>
 #include "log/logger.h"
@@ -71,6 +72,21 @@ namespace kpengine::asset
         std::shared_ptr<MeshResource> mesh_asset = std::make_shared<MeshResource>();
 
         ProcessNode(scene->mRootNode, scene, mesh_asset, unique_vertices);
+        if (!mesh_asset->data->vertices.empty())
+        {
+            spatial::AABB bounds{mesh_asset->data->vertices.front().position,
+                                 mesh_asset->data->vertices.front().position};
+            for (const Vertex &vertex : mesh_asset->data->vertices)
+            {
+                bounds.min_.x_ = std::min(bounds.min_.x_, vertex.position.x_);
+                bounds.min_.y_ = std::min(bounds.min_.y_, vertex.position.y_);
+                bounds.min_.z_ = std::min(bounds.min_.z_, vertex.position.z_);
+                bounds.max_.x_ = std::max(bounds.max_.x_, vertex.position.x_);
+                bounds.max_.y_ = std::max(bounds.max_.y_, vertex.position.y_);
+                bounds.max_.z_ = std::max(bounds.max_.z_, vertex.position.z_);
+            }
+            mesh_asset->local_bounds = bounds;
+        }
         uint32_t face_count = 0;
         for(auto section : mesh_asset->data->sections)
         {
@@ -111,36 +127,54 @@ namespace kpengine::asset
     {
         std::shared_ptr<MeshData> resource = mesh_asset->data;
         uint32_t index_start = static_cast<uint32_t>(resource->indices.size());
-        const uint32_t vertex_count = static_cast<uint32_t>(resource->vertices.size());
         const bool has_normal = mesh->HasNormals();
         const bool has_texcoord = mesh->mTextureCoords[0];
         const bool has_tangent_and_bitangent = mesh->HasTangentsAndBitangents();
-        for (uint32_t i = 0; i < mesh->mNumVertices; i++)
+
+        // Assimp's vertex array is not a draw-order index buffer. The faces
+        // define which vertex records form each primitive; iterating
+        // mNumVertices directly scrambles meshes whose face order differs
+        // from vertex order (including the supplied rock asset).
+        for (uint32_t face_index = 0; face_index < mesh->mNumFaces; ++face_index)
         {
-            Vertex vertex{};
-            vertex.position = {mesh->mVertices[i].x, mesh->mVertices[i].y, mesh->mVertices[i].z};
+            const aiFace &face = mesh->mFaces[face_index];
+            for (uint32_t corner = 0; corner < face.mNumIndices; ++corner)
+            {
+                const uint32_t vertex_index = face.mIndices[corner];
+                Vertex vertex{};
+                vertex.position = {mesh->mVertices[vertex_index].x,
+                                   mesh->mVertices[vertex_index].y,
+                                   mesh->mVertices[vertex_index].z};
 
-            if (has_normal)
-            {
-                vertex.normal = {mesh->mNormals[i].x, mesh->mNormals[i].y, mesh->mNormals[i].z};
-            }
-            if (has_texcoord)
-            {
-                vertex.tex_coord = {mesh->mTextureCoords[0][i].x, mesh->mTextureCoords[0][i].y};
-            }
-            if (has_tangent_and_bitangent)
-            {
-                vertex.tangent = {mesh->mTangents[i].x, mesh->mTangents[i].y, mesh->mTangents[i].z};
-                vertex.bitangent = {mesh->mBitangents[i].x, mesh->mBitangents[i].y, mesh->mBitangents[i].z};
-            }
+                if (has_normal)
+                {
+                    vertex.normal = {mesh->mNormals[vertex_index].x,
+                                     mesh->mNormals[vertex_index].y,
+                                     mesh->mNormals[vertex_index].z};
+                }
+                if (has_texcoord)
+                {
+                    vertex.tex_coord = {mesh->mTextureCoords[0][vertex_index].x,
+                                        mesh->mTextureCoords[0][vertex_index].y};
+                }
+                if (has_tangent_and_bitangent)
+                {
+                    vertex.tangent = {mesh->mTangents[vertex_index].x,
+                                      mesh->mTangents[vertex_index].y,
+                                      mesh->mTangents[vertex_index].z};
+                    vertex.bitangent = {mesh->mBitangents[vertex_index].x,
+                                        mesh->mBitangents[vertex_index].y,
+                                        mesh->mBitangents[vertex_index].z};
+                }
 
-            if (unique_vertices.find(vertex) == unique_vertices.end())
-            {
-                uint32_t index = static_cast<uint32_t>(resource->vertices.size());
-                unique_vertices[vertex] = index;
-                resource->vertices.push_back(vertex);
+                const auto [it, inserted] = unique_vertices.emplace(
+                    vertex, static_cast<uint32_t>(resource->vertices.size()));
+                if (inserted)
+                {
+                    resource->vertices.push_back(vertex);
+                }
+                resource->indices.push_back(it->second);
             }
-            resource->indices.push_back(unique_vertices[vertex]);
         }
 
         uint32_t index_count = static_cast<uint32_t>(resource->indices.size()) - index_start;

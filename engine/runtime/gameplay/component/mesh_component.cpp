@@ -81,6 +81,7 @@ namespace kpengine::gameplay
         source.mesh_asset = mesh_asset_;
         source.material_asset = material_asset_;
         source.world_transform = GetWorldTransform();
+        source.local_bounds = GetLocalBounds();
         source.world_bounds = GetWorldBounds();
         source.flags.visible = IsVisible();
         source.flags.casts_shadow = CastsShadow();

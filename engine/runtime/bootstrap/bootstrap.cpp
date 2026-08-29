@@ -54,27 +54,24 @@ namespace kpengine::bootstrap
                    path.c_str(), config.version, kBootstrapVersion);
         }
 
-        if (!json.contains("assets"))
-        {
-            return config;
-        }
-        if (!json["assets"].is_array())
+        if (json.contains("assets") && !json["assets"].is_array())
         {
             KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
                    "%s: \"assets\" is not an array, ignoring", path.c_str());
-            return config;
         }
-
-        for (const auto &item : json["assets"])
+        else if (json.contains("assets"))
         {
-            if (item.is_string())
+            for (const auto &item : json["assets"])
             {
-                config.assets.push_back(item.get<std::string>());
-            }
-            else
-            {
-                KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                       "%s: ignoring non-string bootstrap asset entry", path.c_str());
+                if (item.is_string())
+                {
+                    config.assets.push_back(item.get<std::string>());
+                }
+                else
+                {
+                    KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
+                           "%s: ignoring non-string bootstrap asset entry", path.c_str());
+                }
             }
         }
 
@@ -88,6 +85,56 @@ namespace kpengine::bootstrap
                 KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
                        "%s: ignoring incomplete bootstrap scene", path.c_str());
                 config.scene = {};
+            }
+            else if (scene.contains("objects") && scene["objects"].is_array())
+            {
+                const auto read_vector = [](const nlohmann::json &object,
+                                            const char *name,
+                                            std::array<float, 3> &destination)
+                {
+                    if (!object.contains(name))
+                    {
+                        return true;
+                    }
+                    const auto &value = object[name];
+                    if (!value.is_array() || value.size() != destination.size())
+                    {
+                        return false;
+                    }
+                    for (std::size_t index = 0; index < destination.size(); ++index)
+                    {
+                        if (!value[index].is_number())
+                        {
+                            return false;
+                        }
+                        destination[index] = value[index].get<float>();
+                    }
+                    return true;
+                };
+
+                for (const auto &item : scene["objects"])
+                {
+                    BootstrapSceneObject object{};
+                    if (item.is_object())
+                    {
+                        object.model = item.value("model", std::string{});
+                        object.material = item.value("material", std::string{});
+                    }
+                    const bool valid = item.is_object() && object.IsComplete() &&
+                                       read_vector(item, "position", object.position) &&
+                                       read_vector(item, "rotation", object.rotation) &&
+                                       read_vector(item, "scale", object.scale);
+                    if (valid)
+                    {
+                        config.scene.objects.push_back(std::move(object));
+                    }
+                    else
+                    {
+                        KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
+                               "%s: ignoring incomplete or malformed bootstrap scene object",
+                               path.c_str());
+                    }
+                }
             }
         }
 

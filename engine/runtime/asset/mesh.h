@@ -3,6 +3,7 @@
 
 #include <memory>
 #include "data/mesh.h"
+#include "spatial/aabb.h"
 
 namespace kpengine::asset
 {
@@ -13,6 +14,7 @@ namespace kpengine::asset
     struct MeshResource
     {
         std::shared_ptr<MeshData> data;
+        spatial::AABB local_bounds{};
         uint32_t face_count;
         uint32_t vertex_count;
 

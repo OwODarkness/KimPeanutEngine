@@ -26,6 +26,10 @@ namespace kpengine::image_io
             {
                 int width = 0;
                 int height = 0;
+                // Asset UVs use the engine's bottom-origin convention. Keep
+                // this state thread-local so concurrent image loads do not
+                // race through stb_image's process-wide decoder setting.
+                stbi_set_flip_vertically_on_load_thread(1);
                 stbi_uc *decoded = stbi_load(path.c_str(), &width, &height, nullptr,
                                              STBI_rgb_alpha);
                 if (decoded == nullptr)

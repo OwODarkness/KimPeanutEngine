@@ -39,8 +39,9 @@ namespace kpengine::image_io
         ImageBuffer image;
     };
 
-    // Decodes a supported source image into tightly packed RGBA8 pixels. The
-    // caller owns file identity, caching, and any GPU/texture format policy.
+    // Decodes a supported source image into tightly packed RGBA8 pixels in the
+    // engine's bottom-origin texture convention. The caller owns file
+    // identity, caching, and any GPU/texture format policy.
     ImageDecodeResult DecodeImageFile(const std::string &path);
 
     // Writes a tightly packed RGBA8 image as a lossless PNG. Path selection and

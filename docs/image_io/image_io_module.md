@@ -4,7 +4,8 @@ Location: `engine/runtime/image_io/`
 
 ImageIO is the focused CPU image-codec boundary. It owns `ImageBuffer`,
 supported-file decoding, and image encoding. The initial contract normalizes
-input to tightly packed RGBA8 pixels and writes lossless PNG files.
+input to tightly packed RGBA8 pixels in the engine's bottom-origin texture
+convention and writes lossless PNG files.
 
 ImageIO does not own asset identity, source-path caching, texture format policy,
 render-target handles, frame scheduling, screenshot filenames, or GPU objects.
