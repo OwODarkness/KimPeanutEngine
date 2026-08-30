@@ -282,3 +282,64 @@
   Vulkan viewport reference documents negative height as the alternative Y
   normalization. bgfx was inspected as cross-API winding precedent, but its
   broader state model was not imported.
+
+## 2026-08-30 — D5.2.2 projection/viewport ownership correction
+
+- Corrected D5.2.1 after live inspection showed OpenGL rendering the closed
+  rock from its interior. The shared perspective matrix still negated Y, so
+  OpenGL received Vulkan-oriented clip coordinates and culled the exterior.
+- Projection math now remains y-up, matching the orthographic matrix. Vulkan
+  owns its framebuffer-origin conversion with `y = height` and negative
+  viewport height in both default render-target recording and explicit
+  `SetViewport`; its front-face enum translation is direct after that change.
+- OpenGL readback now reverses its native bottom-up rows before publishing the
+  common top-left `CapturedImage`. Final Vulkan/OpenGL captures show the same
+  exterior silhouette, orientation, material detail, and lighting.
+- Regression evidence: a render-camera unit assertion locks positive-Y
+  perspective/orthographic projection, fullscreen back-face culling remains
+  enabled in `GraphicsSmoke`, and the smoke now rejects divergent Vulkan/OpenGL
+  final-image silhouettes. Both API smoke paths pass. The targeted
+  projection/schedule tests passed 12/12; the full Debug build and complete
+  CTest suite passed 165/165; `git diff --check` reported no whitespace errors.
+- Reference gate: Vulkan specifies polygon facing from framebuffer-coordinate
+  area and documents negative viewport height as the mechanism for negating
+  clip-space Y. The fix adopts only that backend normalization boundary.
+
+## 2026-08-30 — D5.3 directional shadow consumption
+
+- Added a frame-local resolved-shadow value. `BuildLightGpuFrameData` promotes
+  only a matching source light, authored shadow generation, and compatible
+  shadow kind; stale/mismatched inputs stay unshadowed. The existing light ABI
+  size and point/spot records are unchanged.
+- `DeferredLightingPass` now declares `DirectionalShadow` as a read, binds its
+  sampled D32 texture through a Render-owned clamp sampler, uploads the light
+  view-projection and bias/texel constants, and applies manual 3x3 PCF to direct
+  directional light. Ambient remains unshadowed. Receiver-side bias is the
+  explicit interim policy because common `PipelineDesc` has no depth bias.
+- Cross-API visual diagnosis found that exact shadow lookup requires both
+  producer and reconstruction depth conventions to agree. Vulkan G-buffer and
+  shadow vertex stages translate shared `[-W,+W]` clip depth to `[0,+W]`;
+  deferred reconstruction maps depth back and handles Vulkan's negative
+  viewport Y for screen and offscreen coordinates.
+- Extended `GraphicsSmoke` with the supplied brick floor as a receiver and the
+  rock as the sole caster. Direct smoke execution passed Vulkan and OpenGL;
+  inspected 1600x1024 captures show matching cast shadows and the automated
+  silhouette comparison passes. `kp.ps1 smoke` still stops before launch due
+  to its pre-existing empty-array `Invoke-External` binding defect.
+- Corrected the live fit after checking the Runtime camera path: the fixed
+  orthographic volume now follows a point 300 units along camera forward with
+  a 150-unit half extent and 600-unit depth range, covering the bootstrap scene
+  rather than centering empty space at the eye.
+- Added narrow `.gitignore` exceptions for the live G-buffer, diagnostic, and
+  directional-shadow shader programs. Those D3/D4 sources were present and
+  executed locally but still matched `/asset/shader/*`; without the exceptions,
+  a normal change set would silently omit D5.3's Vulkan producer fixes.
+- Targeted validation: `RenderPassScheduleTest` built and passed 8/8 before the
+  visual run. Reference gate: Filament's shadow path informed the frame-local
+  light transform and explicit bias policy; Vulkan's official depth guidance
+  supports the clip-depth translation. Cascaded fitting and backend-specific
+  raster bias were intentionally not imported.
+- Final validation after the live-fit correction: the full Debug build passed,
+  complete CTest passed 168/168, focused light/schedule tests passed 11/11,
+  direct Vulkan/OpenGL `GraphicsSmoke` passed, both captures were inspected,
+  and `git diff --check` reported no whitespace errors.

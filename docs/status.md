@@ -4,15 +4,73 @@
 
 ## Done
 
+- **Gameplay GP6.1 — camera data and source contract (2026-08-30)** —
+  `CameraComponent` is a transform/lens component with validated perspective
+  and orthographic values plus cached world-space basis vectors. It publishes
+  copied camera values through a generational `CameraSourceRegistry`; Render
+  selects one enabled source by priority and applies it to its private
+  `RenderCamera` before culling, shadow fitting, and deferred lighting. The
+  GameplayWorld injects the non-owning sink, shutdown clears it safely, and no
+  Gameplay type owns matrices, GPU handles, or backend objects. Gameplay and
+  Render contract tests pass. Local controller/input traversal is recorded in
+  the GP6.2 entry below.
+
+- **Gameplay GP6.2 — local camera traversal (2026-08-30)** — `GameplayWorld`
+  now owns one local `PlayerController`; runtime startup creates and possesses
+  an active root free camera under the `Gameplay` input context. Keyboard and
+  mouse callbacks enqueue copied logical camera actions into a mutex-protected
+  frame snapshot, which the game-thread controller consumes for basis-relative
+  movement, raw mouse look, pitch/yaw limits, and FOV zoom. Input and Gameplay
+  unit tests pass; GP6.3 extends this path with gamepad samples and render smoke
+  proof.
+
+- **Gameplay GP6.3 — controller/gamepad expansion and proof (2026-08-30)** —
+  Window/GLFW now emits copied platform-neutral gamepad samples once per poll;
+  InputSystem selects one active pad, translates sticks/triggers/buttons, and
+  applies radial dead-zone, inversion, and sensitivity processing. The local
+  PlayerController consumes those logical values on the game thread, including
+  disconnect release/zero transitions; InputContext binding lookup/unbind is
+  protected across callback and teardown access. Gameplay remains free of GLFW,
+  native controller, matrix, GPU, and backend types. `GameplayUnitTest` and
+  `InputSystemTest` cover the handoff, dead-zone policy, disconnect behavior,
+  stale possession, pitch limits, and unbind. `GraphicsSmoke` drives
+  deterministic keyboard/mouse traversal through the camera-source boundary
+  and passes on Vulkan and OpenGL.
+
+- **Gameplay GP6.4 — editor viewport camera capture (2026-08-30)** — the scene
+  viewport toggles a platform-neutral mouse-capture mode: the first left click
+  over the scene hides the cursor and enables camera control, and the next left
+  click releases capture and stops camera input. The editor sends only an
+  `ISceneCameraControlSink` notification; `RuntimeContext` applies the atomic
+  request on the game thread before `GameplayWorld::Tick`. Cursor tracking is
+  reset at mode changes, and controller-gating coverage verifies no movement,
+  look, or zoom occurs while released. Active input-context processing is also
+  gated immediately, preventing stale cursor/key/gamepad actions during a fast
+  capture transition.
+
+- **Deferred PBR D5.3 — directional shadow consumption (2026-08-30)** — the
+  scheduled `Directional2D` job now promotes only its matching light/shadow
+  identities into the GPU frame record. Deferred lighting binds the sampled
+  D32 target, frame-local light matrix, clamp sampler, and bias/texel constants,
+  then applies 3x3 PCF to direct Cook-Torrance light. Its fixed first fit
+  follows the active camera's forward scene focus. Vulkan G-buffer/shadow
+  producers now translate shared engine clip depth to Vulkan's range; deferred
+  reconstruction handles the backend viewport orientation. The smoke scene
+  includes a floor receiver, and Vulkan/OpenGL pass with visually matching cast
+  shadows. Portable raster depth bias and explicit shadow capture routing stay
+  deferred. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+
 - **Deferred PBR D5.2 — directional Cook-Torrance lighting (2026-08-30)** —
   `DeferredLightingPass` now samples the three G-buffer attachments plus D32,
   reconstructs world position with backend-correct NDC depth, consumes the
   versioned frame-light UBO, and evaluates directional GGX/Smith/Schlick into
   RGBA16F `SceneHdr` before tone mapping. Exact std140 size/offset assertions
-  lock the CPU/shader ABI; point/spot and shadow contribution remain later
-  slices. Schedule tests and Vulkan/OpenGL smoke pass. D5.2.1 corrected the
-  Vulkan positive-viewport winding translation and restored cross-backend
-  normal/final-lighting parity, providing a valid D5.3 baseline. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  lock the CPU/shader ABI; point/spot contribution remains a later slice and
+  D5.3 now consumes the directional shadow fields. D5.2.2 moved Y-origin
+  normalization from the shared perspective matrix to Vulkan's negative-height
+  viewport and normalized OpenGL capture rows. Both APIs now cull the interior
+  and render matching exterior/final-lighting captures, providing a valid D5.3
+  baseline. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
 
 - **Deferred PBR D4 — directional shadow depth family (2026-08-30)** —
   `casts_shadow` remains authored Gameplay state while `LightSourceRegistry`
@@ -84,7 +142,7 @@
   `RenderSystem` runs init/capture/extent/pass/shutdown through it. `GraphicsSmoke`
   proves multi-attachment (RGBA8+RGBA16F+D32) → sampled readback → depth-only
   lifecycle on Vulkan and OpenGL. Its temporary fullscreen `cull_mode = NONE`
-  workaround was retired by D5.2.1 after Vulkan winding translation was fixed.
+  workaround was retired by D5.2.2 after projection/viewport winding was fixed.
   144/144 tests, engine boots with the migrated viewport. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
 
 - **Deferred PBR D1.4 — frame lighting ABI (2026-08-29)** — Render packs its

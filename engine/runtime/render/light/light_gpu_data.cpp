@@ -12,6 +12,20 @@ namespace kpengine::render
             destination[1] = source.y_;
             destination[2] = source.z_;
         }
+
+        LightGpuShadowKind ToGpuShadowKind(ShadowKind kind)
+        {
+            switch (kind)
+            {
+            case ShadowKind::Directional2D:
+                return LightGpuShadowKind::Directional2D;
+            case ShadowKind::Spot2D:
+                return LightGpuShadowKind::Spot2D;
+            case ShadowKind::PointCube:
+                return LightGpuShadowKind::PointCube;
+            }
+            return LightGpuShadowKind::Unshadowed;
+        }
     }
 
     bool IsLightGpuFrameHeaderCompatible(const LightGpuFrameHeader &header)
@@ -66,7 +80,9 @@ namespace kpengine::render
         return result;
     }
 
-    LightGpuFrameData BuildLightGpuFrameData(const std::vector<Light> &lights)
+    LightGpuFrameData BuildLightGpuFrameData(
+        const std::vector<Light> &lights,
+        const std::optional<ResolvedLightShadowBinding> &resolved_shadow)
     {
         LightGpuFrameData result{};
         const size_t count = std::min(lights.size(), static_cast<size_t>(kMaxFrameLights));
@@ -75,7 +91,18 @@ namespace kpengine::render
             const std::optional<LightGpuData> encoded = EncodeLightGpuData(lights[index].desc);
             if (encoded.has_value())
             {
-                result.lights[index] = *encoded;
+                LightGpuData &gpu_light = result.lights[index];
+                gpu_light = *encoded;
+                if (resolved_shadow.has_value() &&
+                    lights[index].handle == resolved_shadow->source_light &&
+                    lights[index].desc.shadow.has_value() &&
+                    *lights[index].desc.shadow == resolved_shadow->shadow &&
+                    IsShadowKindCompatible(lights[index].desc.type, resolved_shadow->kind))
+                {
+                    gpu_light.shadow_kind =
+                        static_cast<uint32_t>(ToGpuShadowKind(resolved_shadow->kind));
+                    gpu_light.shadow_binding_slot = resolved_shadow->binding_slot;
+                }
                 ++result.header.light_count;
             }
         }

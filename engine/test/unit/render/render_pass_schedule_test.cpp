@@ -28,10 +28,13 @@ TEST(RenderPassScheduleTest, AcceptsGBufferPassChainToTerminalEditorComposite)
 {
     RenderPassSchedule schedule;
     EXPECT_TRUE(schedule.AddPass(
+        {"ShadowDepthPass", {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write}}, false}));
+    EXPECT_TRUE(schedule.AddPass(
         {"GBufferPass", {{RenderPassResource::GBuffer, RenderPassAccess::Write}}, false}));
     EXPECT_TRUE(schedule.AddPass(
         {"DeferredLightingPass",
          {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+          {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
           {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
          false}));
     EXPECT_TRUE(schedule.AddPass(
@@ -57,6 +60,7 @@ TEST(RenderPassScheduleTest, AcceptsDirectionalShadowBeforeGBuffer)
     EXPECT_TRUE(schedule.AddPass(
         {"DeferredLightingPass",
          {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+          {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
           {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
          false}));
     EXPECT_TRUE(schedule.AddPass(

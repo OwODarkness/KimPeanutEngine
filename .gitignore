@@ -52,6 +52,14 @@ deprecated/
 !/asset/shader/tone_map.frag
 !/asset/shader/deferred_lighting.shader
 !/asset/shader/deferred_lighting.frag
+!/asset/shader/pbr_gbuffer.vert
+!/asset/shader/pbr_gbuffer.frag
+!/asset/shader/pbr_gbuffer.shader
+!/asset/shader/gbuffer_debug_view.vert
+!/asset/shader/gbuffer_debug_view.frag
+!/asset/shader/gbuffer_debug_view.shader
+!/asset/shader/directionalshadow_mapping_depth.vert
+!/asset/shader/directionalshadow_mapping_depth.frag
 
 # Build output
 build/

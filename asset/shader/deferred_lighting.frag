@@ -3,12 +3,15 @@
 const float PI = 3.14159265359;
 const uint LIGHT_ABI_VERSION = 1u;
 const uint LIGHT_TYPE_DIRECTIONAL = 0u;
+const uint SHADOW_KIND_DIRECTIONAL_2D = 1u;
+const uint DIRECTIONAL_SHADOW_BINDING_SLOT = 0u;
 const uint MAX_FRAME_LIGHTS = 64u;
 
 layout(binding = 0) uniform sampler2D gbuffer_albedo;
 layout(binding = 1) uniform sampler2D gbuffer_normal;
 layout(binding = 2) uniform sampler2D gbuffer_material;
 layout(binding = 3) uniform sampler2D gbuffer_depth;
+layout(binding = 6) uniform sampler2D directional_shadow_depth;
 
 struct LightGpuData
 {
@@ -36,6 +39,8 @@ layout(std140, binding = 5) uniform DeferredLightingConstants
 {
     mat4 inverse_view_projection;
     vec4 camera_world_position;
+    mat4 directional_shadow_view_projection;
+    vec4 directional_shadow_params;
 } lighting_constants;
 
 layout(location = 0) in vec2 frag_texcoord;
@@ -43,13 +48,13 @@ layout(location = 0) out vec4 out_color;
 
 vec3 reconstruct_world_position(float depth)
 {
-#if KP_GRAPHICS_API_VULKAN
-    float ndc_z = depth;
-#else
     float ndc_z = depth * 2.0 - 1.0;
+    vec2 ndc_xy = frag_texcoord * 2.0 - 1.0;
+#if KP_GRAPHICS_API_VULKAN
+    ndc_xy.y = -ndc_xy.y;
 #endif
     vec4 world = lighting_constants.inverse_view_projection *
-                 vec4(frag_texcoord * 2.0 - 1.0, ndc_z, 1.0);
+                 vec4(ndc_xy, ndc_z, 1.0);
     return world.xyz / max(abs(world.w), 1e-7) * sign(world.w);
 }
 
@@ -80,6 +85,46 @@ vec3 fresnel_schlick(float cosine, vec3 reflectance_at_normal)
 {
     return reflectance_at_normal + (1.0 - reflectance_at_normal) *
            pow(clamp(1.0 - cosine, 0.0, 1.0), 5.0);
+}
+
+float directional_shadow_visibility(vec3 world_position, vec3 normal,
+                                    vec3 light_direction)
+{
+    vec4 light_clip = lighting_constants.directional_shadow_view_projection *
+                      vec4(world_position, 1.0);
+    if (abs(light_clip.w) <= 1e-7)
+    {
+        return 1.0;
+    }
+    vec3 light_ndc = light_clip.xyz / light_clip.w;
+    vec2 shadow_uv = light_ndc.xy * 0.5 + 0.5;
+#if KP_GRAPHICS_API_VULKAN
+    shadow_uv.y = 1.0 - shadow_uv.y;
+#endif
+    float receiver_depth = light_ndc.z * 0.5 + 0.5;
+    if (any(lessThan(shadow_uv, vec2(0.0))) ||
+        any(greaterThan(shadow_uv, vec2(1.0))) ||
+        receiver_depth < 0.0 || receiver_depth > 1.0)
+    {
+        return 1.0;
+    }
+
+    float bias = max(lighting_constants.directional_shadow_params.x,
+                     lighting_constants.directional_shadow_params.y *
+                         (1.0 - max(dot(normal, light_direction), 0.0)));
+    float texel_size = lighting_constants.directional_shadow_params.z;
+    float occluded_samples = 0.0;
+    for (int y = -1; y <= 1; ++y)
+    {
+        for (int x = -1; x <= 1; ++x)
+        {
+            float stored_depth = texture(
+                directional_shadow_depth,
+                shadow_uv + vec2(float(x), float(y)) * texel_size).r;
+            occluded_samples += receiver_depth - bias > stored_depth ? 1.0 : 0.0;
+        }
+    }
+    return 1.0 - occluded_samples / 9.0;
 }
 
 void main()
@@ -120,7 +165,7 @@ void main()
         }
 
         // Authored direction is the direction the light travels; surface-to-light
-        // is its negation. Shadow state is deliberately ignored until D5.3.
+        // is its negation.
         vec3 light_direction = normalize(-light.direction_inner_cone.xyz);
         vec3 halfway = normalize(view_direction + light_direction);
         float n_dot_l = max(dot(normal, light_direction), 0.0);
@@ -136,7 +181,15 @@ void main()
                         max(4.0 * max(dot(normal, view_direction), 0.0) * n_dot_l, 1e-5);
         vec3 diffuse_weight = (vec3(1.0) - fresnel) * (1.0 - metallic);
         vec3 radiance = light.color_intensity.rgb * light.color_intensity.a;
-        direct += (diffuse_weight * albedo / PI + specular) * radiance * n_dot_l;
+        float shadow_visibility = 1.0;
+        if (light.shadow_kind == SHADOW_KIND_DIRECTIONAL_2D &&
+            light.shadow_binding_slot == DIRECTIONAL_SHADOW_BINDING_SLOT)
+        {
+            shadow_visibility = directional_shadow_visibility(
+                world_position, normal, light_direction);
+        }
+        direct += (diffuse_weight * albedo / PI + specular) * radiance * n_dot_l *
+                  shadow_visibility;
     }
 
     // A small non-IBL visibility floor keeps occluded material readable while

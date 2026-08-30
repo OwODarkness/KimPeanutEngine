@@ -35,3 +35,14 @@ TEST(FrustumTest, UsesTheCameraMathConventionRatherThanGpuTransposedMatrices)
     EXPECT_FALSE(frustum.Intersects(AABB{{-0.5f, -0.5f, 3.0f}, {0.5f, 0.5f, 4.0f}}));
     EXPECT_FALSE(frustum.Intersects(AABB{{-0.5f, -0.5f, -20.0f}, {0.5f, 0.5f, -19.0f}}));
 }
+
+TEST(FrustumTest, ProjectionMatricesPreserveEngineYForBackendViewportNormalization)
+{
+    const Matrix4f perspective = Matrix4f::MakePerProjMatrix(
+        kpengine::math::DegreeToRadian(45.0f), 16.0f / 9.0f, 0.1f, 100.0f);
+    const Matrix4f orthographic = Matrix4f::MakeOrthProjMatrix(
+        -8.0f, 8.0f, -4.5f, 4.5f, 0.1f, 100.0f);
+
+    EXPECT_GT(perspective[1][1], 0.0f);
+    EXPECT_GT(orthographic[1][1], 0.0f);
+}

@@ -226,16 +226,14 @@ inline TextureFormat ConvertFromVulkanTextureFormat(VkFormat format)
 
     inline VkFrontFace ConvertToVulkanFrontFace(FrontFace front_face)
     {
-        // The common contract follows the engine/OpenGL y-up winding convention.
-        // Vulkan's positive-height viewport maps clip-space +Y toward the
-        // framebuffer's lower rows, reversing that winding in framebuffer
-        // coordinates. Translate the semantic front face, not the enum spelling.
+        // The Vulkan viewport translation uses a negative height to preserve
+        // the common y-up clip-space orientation, so enum spellings map directly.
         switch (front_face)
         {
         case FrontFace::FRONT_FACE_CLOCKWISE:
-            return VK_FRONT_FACE_COUNTER_CLOCKWISE;
-        case FrontFace::FRONT_FACE_COUNTER_CLOCKWISE:
             return VK_FRONT_FACE_CLOCKWISE;
+        case FrontFace::FRONT_FACE_COUNTER_CLOCKWISE:
+            return VK_FRONT_FACE_COUNTER_CLOCKWISE;
         default:
             return VK_FRONT_FACE_MAX_ENUM;
         }

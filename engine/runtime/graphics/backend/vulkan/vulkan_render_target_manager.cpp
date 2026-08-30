@@ -337,8 +337,9 @@ namespace kpengine::graphics
                                                                 : color_attachments.data();
         rendering.pDepthAttachment = depth_attachment ? &*depth_attachment : VK_NULL_HANDLE;
         vkCmdBeginRendering(command_buffer, &rendering);
-        const VkViewport viewport{0.f, 0.f, static_cast<float>(target.desc.width),
-                                  static_cast<float>(target.desc.height), 0.f, 1.f};
+        const VkViewport viewport{0.f, static_cast<float>(target.desc.height),
+                                  static_cast<float>(target.desc.width),
+                                  -static_cast<float>(target.desc.height), 0.f, 1.f};
         vkCmdSetViewport(command_buffer, 0, 1, &viewport);
         const VkRect2D scissor{{0, 0}, {target.desc.width, target.desc.height}};
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);

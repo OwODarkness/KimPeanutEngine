@@ -1,5 +1,6 @@
 #include "opengl_render_target_readback.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <limits>
 #include <utility>
@@ -83,6 +84,16 @@ namespace kpengine::graphics
                 entry.on_completed({RenderTargetReadbackStatus::Failed, {},
                                     "OpenGL texture readback failed"});
                 continue;
+            }
+            // OpenGL returns texture rows from its lower-left origin. CapturedImage
+            // uses the same top-left row order as Vulkan and the image codecs.
+            const size_t row_byte_count = static_cast<size_t>(source.width) * kBytesPerPixel;
+            for (size_t row = 0; row < source.height / 2; ++row)
+            {
+                auto top = image.rgba8_pixels.begin() + row * row_byte_count;
+                auto bottom = image.rgba8_pixels.begin() +
+                              (static_cast<size_t>(source.height) - 1 - row) * row_byte_count;
+                std::swap_ranges(top, top + row_byte_count, bottom);
             }
             entry.on_completed({RenderTargetReadbackStatus::Captured, std::move(image), {}});
         }

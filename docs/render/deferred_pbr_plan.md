@@ -138,13 +138,26 @@ Emissive is a **constant only** (not a G-buffer channel) until D5 decides how to
 
 **Landed tangent convention (2026-08-29):** canonical 5-attribute layout — position@0, normal@1, texcoord@2, tangent@3, bitangent@4 (56-byte `data::Vertex`, Assimp `CalcTangentSpace`). World TBN = `transpose(inverse(mat3(model)))`, `mat3(T,B,N)` column-major, normal decode `rgb*2-1`; fragments with degenerate tangents (zero-filled for no-UV meshes) fall back to the geometric normal.
 
-**Landed winding parity (2026-08-30):** common `FrontFace` is engine y-up
-clip-space winding. OpenGL translates it directly; Vulkan's positive-height,
-upper-left-origin framebuffer reverses it during pipeline translation. This
-keeps mesh and fullscreen back-face culling equivalent without per-shader
-normal/UV fixes or changing render-target orientation.
+**Landed winding parity (2026-08-30, corrected by D5.2.2):** common
+`FrontFace` and projection matrices use engine y-up clip space. OpenGL maps the
+viewport/front-face enum directly. Vulkan owns the origin conversion through a
+negative-height viewport and also maps the enum directly. OpenGL readback flips
+its native bottom-up rows to the common top-left capture order. This keeps mesh
+and fullscreen back-face culling and captured orientation equivalent without
+per-shader normal/UV fixes.
 
 The old `defer_pbr.frag` is a formula reference, not an ABI: it relies on loose uniforms, GL binding state, hard-coded counts, and an uninitialized `direct_color`. New shaders use one versioned UBO/descriptor layout shared by Vulkan and OpenGL. The `StandardPbr` constant-block ABI (canonical 10-param order) is `base_color` vec4@0, `metallic` float@16, `roughness` float@20, `occlusion` float@24, `emissive` vec4@32, with samplers at bindings 2/5/6/7/8 and binding 4 reserved for the D5 frame-lighting block.
+
+**Landed directional shadow consumer (2026-08-30):** one scheduled
+`Directional2D` job resolves its matching light/shadow identities into the
+frame GPU record and binding slot 0. Deferred lighting samples the Render-owned
+D32 target at descriptor binding 6 and applies 3x3 PCF with receiver-side
+minimum/slope bias. The light view-projection and texel/bias parameters are
+frame-local constants; target and sampler lifetime remain Render-owned. Vulkan
+shadow/G-buffer producers translate engine clip depth to `[0,+W]`, and the
+consumer restores engine NDC plus viewport orientation before reconstruction.
+This is the narrow D5.3 solution; portable pipeline depth bias, cascades,
+atlases, and other shadow families remain later contracts.
 
 **Landed HDR presentation contract (2026-08-30):** `SceneHdr` is a sampled
 RGBA16F Render-owned target at the scene extent. `ToneMapPass` is its normal

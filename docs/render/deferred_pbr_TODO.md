@@ -133,9 +133,9 @@ in `BuildDesc`, `RebuildForExtent` with `WaitIdle`, `Cleanup`); `RenderSystem`
 runs through it for init/capture/extent/pass/shutdown. The `GraphicsSmoke`
 D2 block proves multi-attachment (RGBA8 + RGBA16F + D32) → sampled readback →
 depth-only lifecycle on both APIs. The original D2 fullscreen proof used
-`cull_mode = NONE` because Vulkan translated the common winding enum literally.
-D5.2.1 corrected Vulkan's positive-viewport winding translation; the shared
-triangle now uses ordinary back-face culling on both APIs.
+`cull_mode = NONE` while clip-space/viewport orientation was inconsistent.
+D5.2.2 moved Vulkan's Y normalization to its negative-height viewport; the
+shared CCW triangle now uses ordinary back-face culling on both APIs.
 
 ## D3 — Material Asset V2 and PBR G-buffer
 
@@ -234,7 +234,7 @@ stable final SceneColor.
 
 - [x] Implement fullscreen `DeferredLightingPass` with metallic-roughness PBR
   evaluation and the versioned light type switch.
-- [ ] Populate one directional record and directional shadow factor in the
+- [x] Populate one directional record and directional shadow factor in the
   first visual milestone; point/spot records remain valid unshadowed inputs.
 - [x] Write HDR `SceneHdr`, then implement a documented `ToneMapPass` to final
   LDR `SceneColor` before the existing Editor composite bridge.
@@ -278,11 +278,44 @@ until D6, and shadow state remains deliberately unconsumed until D5.3.
 
 `GraphicsSmoke` now drives that real light UBO + depth-reconstruction path into
 RGBA16F, tone maps it, and captures the supplied rock on Vulkan and OpenGL.
-Both backends pass the automated non-uniform/direct-light threshold. D5.2.1
-then corrected Vulkan's winding translation: normal-debug captures became
-pixel-identical except for one 1/255 channel value, and final lighting has the
-same bound and mean on both APIs. This is now a valid baseline for D5.3.
+Both backends pass the automated non-uniform/direct-light threshold. D5.2.2
+then completed the winding fix by removing the global perspective Y inversion,
+using a negative-height Vulkan viewport, and normalizing OpenGL capture rows.
+Both APIs now render the exterior surface with matching final captures. This
+is now a valid baseline for D5.3; `GraphicsSmoke` compares their silhouettes so
+an interior-face or vertical-orientation regression fails automatically.
 Runtime command-path debug capture remains separate work.
+
+### D5.3 — directional shadow consumption (landed 2026-08-30)
+
+The scheduled `Directional2D` job now resolves only its matching
+`LightHandle` + authored `ShadowHandle` into the version-1 GPU light record;
+stale, mismatched, and incompatible resolutions remain explicitly
+`Unshadowed`. `DeferredLightingPass` declares the directional shadow read,
+binds the Render-owned sampled D32 target at binding 6 with a clamp-to-edge
+sampler, and uploads the frame-local light view-projection plus bias/texel
+parameters. A manual 3x3 PCF comparison multiplies direct Cook-Torrance light
+while leaving the small ambient visibility floor intact.
+
+The first fixed orthographic fit follows a point 300 units along the active
+camera's forward axis with a 150-unit half extent and 600-unit depth range.
+This covers the supplied bootstrap scene instead of centering an empty volume
+at the camera eye; stable frustum fitting and cascades remain later policy.
+
+The shadow and G-buffer vertex producers translate the engine's shared
+`[-W,+W]` clip depth to Vulkan's `[0,+W]` range. Deferred reconstruction maps
+sampled depth back to engine NDC and accounts for Vulkan's negative viewport
+orientation; shadow sampling applies the corresponding offscreen Y lookup.
+This preserves common projection math and keeps native backend objects below
+the RHI boundary. Receiver-side minimum/slope bias is used because the common
+pipeline contract still has no portable raster depth-bias state.
+
+`GraphicsSmoke` adds the brick floor as a receiver and records the rock alone
+as the caster. Vulkan and OpenGL pass the final-image silhouette comparison,
+and inspected captures show the same cast shadow at
+`save/screenshots/validation/graphics-smoke-d5-{vulkan,opengl}.png`. Explicit
+shadow debug capture routing and runtime command-path capture remain later D5
+work.
 
 ## D6 — light and shadow expansion
 

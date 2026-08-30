@@ -1017,6 +1017,17 @@ namespace kpengine::example
                 {
                     throw std::runtime_error("D3 GBuffer pipeline was not created for the rock material");
                 }
+                const asset::AssetID floor_material_id = asset::AssetManager::GetInstance().LoadSync(
+                    GetAssetDirectory() + "material/brickwall.material");
+                render::MaterialInstanceHandle floor_instance;
+                const render::MaterialResolution floor_resolution =
+                    d3_material_resolver.Resolve(floor_material_id, floor_instance);
+                if (floor_resolution.state != render::MaterialResourceState::Ready ||
+                    !floor_instance.IsValid())
+                {
+                    throw std::runtime_error("D5.3 floor material failed to resolve: " +
+                                             floor_resolution.diagnostic);
+                }
 
                 // Rock mesh: 56-byte data::Vertex (pos/normal/uv/tangent/bitangent).
                 const asset::AssetID rock_model_id = asset::AssetManager::GetInstance().LoadSync(
@@ -1033,6 +1044,22 @@ namespace kpengine::example
                 if (!rock_mesh_handle.IsValid())
                 {
                     throw std::runtime_error("D3 rock mesh resource creation failed");
+                }
+                const asset::AssetID floor_model_id = asset::AssetManager::GetInstance().LoadSync(
+                    GetModelDirectory() + "brickwall/floor.obj");
+                auto floor_model = asset::AssetManager::GetInstance().GetResource<asset::ModelResource>(floor_model_id);
+                auto floor_mesh = floor_model ? floor_model->GetMesh() : nullptr;
+                if (!floor_mesh || !floor_mesh->data)
+                {
+                    throw std::runtime_error("D5.3 floor mesh failed to load");
+                }
+                const graphics::MeshHandle floor_mesh_handle =
+                    resource_resolver.GetOrCreateMesh(
+                        floor_model->GetData(asset::ModelGeometryType::KPMG_Mesh),
+                        *floor_mesh->data);
+                if (!floor_mesh_handle.IsValid())
+                {
+                    throw std::runtime_error("D5.3 floor mesh resource creation failed");
                 }
 
                 // GBuffer target: 3 color (albedo/normal/material) + D32, matching
@@ -1138,7 +1165,8 @@ namespace kpengine::example
                      {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
                      {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
                      {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
-                     {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT}},
+                     {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
+                     {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
                 };
                 deferred_lighting_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
                 deferred_lighting_pipeline_desc.raster_state.front_face =
@@ -1195,16 +1223,28 @@ namespace kpengine::example
                 debug_mesh_data.sections = {{0, 3, 0}};
                 const graphics::MeshHandle debug_mesh = rhi->CreateMesh(debug_mesh_data);
                 const graphics::SamplerHandle debug_sampler = rhi->CreateSampler(graphics::SamplerSettings{});
+                graphics::SamplerSettings shadow_sampler_settings{};
+                shadow_sampler_settings.address_mode_u =
+                    graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                shadow_sampler_settings.address_mode_v =
+                    graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                shadow_sampler_settings.address_mode_w =
+                    graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+                shadow_sampler_settings.enable_anisotropy = false;
+                const graphics::SamplerHandle shadow_sampler =
+                    rhi->CreateSampler(shadow_sampler_settings);
                 if (!deferred_lighting_pipeline.IsValid() || !directional_shadow_pipeline.IsValid() ||
                     !tone_map_pipeline.IsValid() ||
-                    !debug_mesh.IsValid() || !debug_sampler.IsValid())
+                    !debug_mesh.IsValid() || !debug_sampler.IsValid() ||
+                    !shadow_sampler.IsValid())
                 {
                     throw std::runtime_error("failed to create D5.2 deferred-lighting resources");
                 }
 
                 // Frame the ~165-unit rock: pull the camera back + extend the far
                 // plane (the smoke camera default far=10 culls it entirely).
-                camera.SetPosition({0.f, 0.f, 300.f});
+                camera.SetPosition({0.f, 40.f, 300.f});
+                camera.SetRotation({-10.f, -90.f, 0.f});
                 camera.SetNearPlane(1.f);
                 camera.SetFarPlane(2000.f);
 
@@ -1212,9 +1252,25 @@ namespace kpengine::example
                 d5_lighting_data.header.light_count = 1;
                 render::LightGpuData &d5_directional_light = d5_lighting_data.lights[0];
                 d5_directional_light.color_intensity = {1.0f, 0.95f, 0.9f, 4.0f};
-                d5_directional_light.direction_inner_cone = {0.0f, -0.5f, -1.0f, 0.0f};
+                const Vector3f d5_light_direction =
+                    Vector3f{-0.35f, -1.0f, -0.55f}.GetSafetyNormalize();
+                d5_directional_light.direction_inner_cone = {
+                    d5_light_direction.x_, d5_light_direction.y_, d5_light_direction.z_, 0.0f};
                 d5_directional_light.type = static_cast<uint32_t>(render::LightGpuType::Directional);
+                d5_directional_light.shadow_kind =
+                    static_cast<uint32_t>(render::LightGpuShadowKind::Directional2D);
+                d5_directional_light.shadow_binding_slot = 0U;
                 d5_directional_light.enabled = 1;
+
+                const Vector3f d5_shadow_center{0.0f, -20.0f, 0.0f};
+                const Matrix4f d5_shadow_view = Matrix4f::MakeCameraMatrix(
+                    d5_shadow_center - d5_light_direction * 300.0f,
+                    d5_light_direction, Vector3f{0.0f, 1.0f, 0.0f});
+                const Matrix4f d5_shadow_projection = Matrix4f::MakeOrthProjMatrix(
+                    -140.0f, 140.0f, -140.0f, 140.0f, 1.0f, 600.0f);
+                Transform3f d5_floor_transform{};
+                d5_floor_transform.position_ = {0.0f, -70.0f, 0.0f};
+                d5_floor_transform.scale_ = {30.0f, 30.0f, 30.0f};
 
                 const auto render_d3_frame = [&]()
                 {
@@ -1242,15 +1298,30 @@ namespace kpengine::example
                             per_object_data.model = Matrix4f::MakeTransformMatrix(Transform3f{}).Transpose();
                             const render::UniformAllocation d3_object =
                                 frame_context.AllocateUniform(per_object_data);
+                            graphics::PerObjectData floor_object_data{};
+                            floor_object_data.model =
+                                Matrix4f::MakeTransformMatrix(d5_floor_transform).Transpose();
+                            const render::UniformAllocation floor_object =
+                                frame_context.AllocateUniform(floor_object_data);
+                            graphics::PerPassData shadow_pass_data{};
+                            shadow_pass_data.camera_data.view = d5_shadow_view.Transpose();
+                            shadow_pass_data.camera_data.proj = d5_shadow_projection.Transpose();
+                            const render::UniformAllocation shadow_pass =
+                                frame_context.AllocateUniform(shadow_pass_data);
                             const render::FrameLightingBinding d5_lighting_binding =
                                 frame_context.CreateLightingBinding(d5_lighting_data);
                             render::DeferredLightingGpuData d5_lighting_constants{};
                             d5_lighting_constants.inverse_view_projection =
                                 camera.GetViewProjectionMatrix().Inverse().Transpose();
-                            d5_lighting_constants.camera_world_position = {0.0f, 0.0f, 300.0f, 1.0f};
+                            d5_lighting_constants.camera_world_position = {0.0f, 40.0f, 300.0f, 1.0f};
+                            d5_lighting_constants.directional_shadow_view_projection =
+                                (d5_shadow_projection * d5_shadow_view).Transpose();
+                            d5_lighting_constants.directional_shadow_params = {
+                                0.0005f, 0.002f, 1.0f / 1024.0f, 0.0f};
                             const render::UniformAllocation d5_constants =
                                 frame_context.AllocateUniform(d5_lighting_constants);
                             if (!d3_pass.IsValid() || !d3_object.IsValid() ||
+                                !floor_object.IsValid() || !shadow_pass.IsValid() ||
                                 !d5_lighting_binding.IsValid() || !d5_constants.IsValid())
                             {
                                 throw std::runtime_error("D5.2 frame uniform allocation failed");
@@ -1263,7 +1334,7 @@ namespace kpengine::example
                                 frame_context.AllocateResourceBindingSet(
                                     directional_shadow_pipeline,
                                     {0,
-                                     {graphics::UniformBufferBinding{0, 0, d3_pass.buffer, d3_pass.offset, d3_pass.range},
+                                     {graphics::UniformBufferBinding{0, 0, shadow_pass.buffer, shadow_pass.offset, shadow_pass.range},
                                       graphics::UniformBufferBinding{0, 1, d3_object.buffer, d3_object.offset, d3_object.range}}});
                             if (!directional_shadow_bindings.IsValid())
                             {
@@ -1294,6 +1365,23 @@ namespace kpengine::example
                             recorder->BindResourceBindings(gbuffer_binding.pipeline,
                                                            gbuffer_binding.descriptor_set);
                             recorder->DrawIndexed();
+                            const std::vector<graphics::ResourceBinding> floor_draw_bindings{
+                                graphics::UniformBufferBinding{0, 0, d3_pass.buffer, d3_pass.offset, d3_pass.range},
+                                graphics::UniformBufferBinding{0, 1, floor_object.buffer, floor_object.offset, floor_object.range},
+                            };
+                            const render::FrameMaterialBinding floor_binding =
+                                frame_context.CreateMaterialBinding(
+                                    materials, resource_resolver, floor_instance,
+                                    floor_draw_bindings, render::MaterialPass::GBuffer);
+                            if (!frame_context.IsMaterialBindingCurrent(floor_binding))
+                            {
+                                throw std::runtime_error("D5.3 floor GBuffer binding failed");
+                            }
+                            recorder->BindPipeline(floor_binding.pipeline);
+                            recorder->BindMesh(floor_mesh_handle);
+                            recorder->BindResourceBindings(floor_binding.pipeline,
+                                                           floor_binding.descriptor_set);
+                            recorder->DrawIndexed();
                             recorder->EndRenderTarget();
 
                             recorder->BeginRenderTarget(d5_hdr_target);
@@ -1316,7 +1404,11 @@ namespace kpengine::example
                                       d5_lighting_binding.GetResourceBinding(),
                                       graphics::UniformBufferBinding{
                                           0, 5, d5_constants.buffer, d5_constants.offset,
-                                          d5_constants.range}}});
+                                          d5_constants.range},
+                                      graphics::SampledTextureBinding{
+                                          0, 6,
+                                          rhi->GetRenderTargetSampledDepthAttachment(d4_shadow_target),
+                                          shadow_sampler}}});
                             if (!deferred_lighting_bindings.IsValid())
                             {
                                 throw std::runtime_error("D5.2 deferred-lighting binding failed");
@@ -1429,6 +1521,7 @@ namespace kpengine::example
 
                 rhi->WaitIdle();
                 d3_material_resolver.Clear();
+                rhi->DestroySampler(shadow_sampler);
                 rhi->DestroySampler(debug_sampler);
                 rhi->DestroyMesh(debug_mesh);
                 rhi->DestroyPipelineResource(tone_map_pipeline);
@@ -1484,6 +1577,43 @@ namespace kpengine::example
         }
     }
 
+    static bool D5CapturesHaveMatchingSilhouettes()
+    {
+        const image_io::ImageDecodeResult vulkan = image_io::DecodeImageFile(
+            "save/screenshots/validation/graphics-smoke-d5-vulkan.png");
+        const image_io::ImageDecodeResult opengl = image_io::DecodeImageFile(
+            "save/screenshots/validation/graphics-smoke-d5-opengl.png");
+        if (!vulkan.result.success || !opengl.result.success ||
+            !vulkan.image.IsValid() || !opengl.image.IsValid() ||
+            vulkan.image.width != opengl.image.width ||
+            vulkan.image.height != opengl.image.height ||
+            vulkan.image.pixels.size() != opengl.image.pixels.size())
+        {
+            std::cout << "D5 cross-backend captures could not be compared" << std::endl;
+            return false;
+        }
+
+        constexpr uint8_t kSilhouetteThreshold = 4;
+        constexpr size_t kAllowedEdgePixelDifferences = 16;
+        size_t different_pixels = 0;
+        for (size_t i = 0; i + 3 < vulkan.image.pixels.size(); i += 4)
+        {
+            const bool vulkan_model = vulkan.image.pixels[i] > kSilhouetteThreshold ||
+                                      vulkan.image.pixels[i + 1] > kSilhouetteThreshold ||
+                                      vulkan.image.pixels[i + 2] > kSilhouetteThreshold;
+            const bool opengl_model = opengl.image.pixels[i] > kSilhouetteThreshold ||
+                                      opengl.image.pixels[i + 1] > kSilhouetteThreshold ||
+                                      opengl.image.pixels[i + 2] > kSilhouetteThreshold;
+            if (vulkan_model != opengl_model &&
+                ++different_pixels > kAllowedEdgePixelDifferences)
+            {
+                std::cout << "D5 Vulkan/OpenGL silhouettes diverged" << std::endl;
+                return false;
+            }
+        }
+        return true;
+    }
+
     void RHIExample()
     {
         (void)RunRHI(GraphicsAPIType::GRAPHICS_API_VULKAN, 0, false);
@@ -1492,6 +1622,7 @@ namespace kpengine::example
     bool RunGraphicsSmokeSuite(uint32_t frames_per_api)
     {
         return RunRHI(GraphicsAPIType::GRAPHICS_API_VULKAN, frames_per_api, true) &&
-               RunRHI(GraphicsAPIType::GRAPHICS_API_OPENGL, frames_per_api, true);
+               RunRHI(GraphicsAPIType::GRAPHICS_API_OPENGL, frames_per_api, true) &&
+               D5CapturesHaveMatchingSilhouettes();
     }
 }

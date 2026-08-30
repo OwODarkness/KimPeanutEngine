@@ -226,3 +226,34 @@ TEST(LightGpuDataTest, UsesAVersionedBoundedFramePayload)
     incompatible_count.light_count++;
     EXPECT_FALSE(kpengine::render::IsLightGpuFrameHeaderCompatible(incompatible_count));
 }
+
+TEST(LightGpuDataTest, ResolvesOnlyTheMatchingScheduledShadowIntoTheGpuRecord)
+{
+    const kpengine::render::LightHandle light_handle{7U, 2U};
+    const kpengine::render::ShadowHandle shadow_handle{3U, 4U};
+    auto directional = MakeDirectionalLight();
+    directional.shadow = shadow_handle;
+    const std::vector<kpengine::render::Light> lights{{light_handle, directional}};
+    const kpengine::render::ResolvedLightShadowBinding resolved{
+        light_handle, shadow_handle, kpengine::render::ShadowKind::Directional2D, 0U};
+
+    const kpengine::render::LightGpuFrameData frame_data =
+        kpengine::render::BuildLightGpuFrameData(lights, resolved);
+    EXPECT_EQ(frame_data.lights[0].shadow_kind,
+              static_cast<uint32_t>(kpengine::render::LightGpuShadowKind::Directional2D));
+    EXPECT_EQ(frame_data.lights[0].shadow_binding_slot, 0U);
+
+    auto stale = resolved;
+    stale.shadow = kpengine::render::ShadowHandle{3U, 5U};
+    const kpengine::render::LightGpuFrameData stale_data =
+        kpengine::render::BuildLightGpuFrameData(lights, stale);
+    EXPECT_EQ(stale_data.lights[0].shadow_kind,
+              static_cast<uint32_t>(kpengine::render::LightGpuShadowKind::Unshadowed));
+
+    auto incompatible = resolved;
+    incompatible.kind = kpengine::render::ShadowKind::PointCube;
+    const kpengine::render::LightGpuFrameData incompatible_data =
+        kpengine::render::BuildLightGpuFrameData(lights, incompatible);
+    EXPECT_EQ(incompatible_data.lights[0].shadow_kind,
+              static_cast<uint32_t>(kpengine::render::LightGpuShadowKind::Unshadowed));
+}

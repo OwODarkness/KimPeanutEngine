@@ -536,7 +536,10 @@ template <typename T, typename U>
         T left = -right;
         res[0][0] = 2 * near / (right - left);
         res[0][2] = (left + right) / (left - right);
-        res[1][1] = -2 * near / (top - bottom);
+        // Keep projection math in the engine's y-up clip-space convention.
+        // Backends own any framebuffer-origin normalization in their viewport
+        // translation; baking Vulkan's Y flip here also flips OpenGL culling.
+        res[1][1] = 2 * near / (top - bottom);
         res[1][2] = (bottom + top) / (bottom - top);
         res[2][2] = (far + near) / (near - far);
         res[2][3] = 2 * far * near / (near - far);

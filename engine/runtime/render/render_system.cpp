@@ -190,8 +190,16 @@ namespace kpengine::render
                 {frame_number_, elapsed_seconds_, delta_time},
                 {frame_targets_.GetTarget(RenderTargetName::SceneColor)->GetWidth(),
                  frame_targets_.GetTarget(RenderTargetName::SceneColor)->GetHeight()});
+            std::optional<ResolvedLightShadowBinding> resolved_shadow;
+            if (active_directional_shadow_.has_value())
+            {
+                const DirectionalShadowFrame &shadow = *active_directional_shadow_;
+                resolved_shadow = ResolvedLightShadowBinding{
+                    shadow.job.source_light, shadow.shadow, shadow.job.kind,
+                    shadow.job.binding_slot};
+            }
             frame_lighting_binding_ = active_frame_context_->CreateLightingBinding(
-                BuildLightGpuFrameData(light_snapshot));
+                BuildLightGpuFrameData(light_snapshot, resolved_shadow));
             editor_composite_recorded_ = false;
             RecordDirectionalShadowPass();
             RecordGBufferPass();
@@ -286,6 +294,7 @@ namespace kpengine::render
         const bool added_deferred_lighting = pass_schedule_.AddPass(
             {"DeferredLightingPass",
              {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+              {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
               {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
              false});
         const bool added_tone_map = pass_schedule_.AddPass(
@@ -326,9 +335,13 @@ namespace kpengine::render
             }
 
             const Vector3f direction = directional->direction.GetSafetyNormalize();
-            const Vector3f center = scene_camera_.GetPosition();
-            constexpr float kHalfExtent = 50.0f;
-            constexpr float kDepthRange = 200.0f;
+            // The first fixed fit follows the camera's scene focus rather than
+            // centering a mostly empty volume at the eye position.
+            constexpr float kFocusDistance = 300.0f;
+            constexpr float kHalfExtent = 150.0f;
+            constexpr float kDepthRange = 600.0f;
+            const Vector3f center = scene_camera_.GetPosition() +
+                                    scene_camera_.GetForward() * kFocusDistance;
             const Vector3f eye = center - direction * (kDepthRange * 0.5f);
             const Vector3f up = std::abs(direction.y_) > 0.98f
                                     ? Vector3f{0.0f, 0.0f, 1.0f}
@@ -478,7 +491,9 @@ namespace kpengine::render
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         RenderTarget *const hdr_target = frame_targets_.GetTarget(RenderTargetName::SceneHdr);
         RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
-        if (!recorder || !hdr_target || !gbuffer_target ||
+        RenderTarget *const shadow_target =
+            frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
+        if (!recorder || !hdr_target || !gbuffer_target || !shadow_target ||
             !PrepareDeferredLightingPassResources() ||
             !hdr_target->BeginRecording(*recorder))
         {
@@ -491,6 +506,14 @@ namespace kpengine::render
         const Vector3f &camera_position = scene_camera_.GetPosition();
         lighting_data.camera_world_position = {
             camera_position.x_, camera_position.y_, camera_position.z_, 1.0f};
+        if (active_directional_shadow_.has_value())
+        {
+            const DirectionalShadowFrame &shadow = *active_directional_shadow_;
+            lighting_data.directional_shadow_view_projection =
+                (shadow.projection * shadow.view).Transpose();
+            lighting_data.directional_shadow_params = {
+                0.0005f, 0.002f, 1.0f / static_cast<float>(shadow.job.resolution), 0.0f};
+        }
         const UniformAllocation lighting_constants =
             active_frame_context_->AllocateUniform(lighting_data);
         if (lighting_constants.IsValid())
@@ -514,7 +537,10 @@ namespace kpengine::render
                       frame_lighting_binding_.GetResourceBinding(),
                       graphics::UniformBufferBinding{
                           0, 5, lighting_constants.buffer, lighting_constants.offset,
-                          lighting_constants.range}}});
+                          lighting_constants.range},
+                      graphics::SampledTextureBinding{
+                          0, 6, shadow_target->GetSampledDepthTexture(),
+                          directional_shadow_sampler_}}});
             if (bindings.IsValid())
             {
                 recorder->BindPipeline(deferred_lighting_pipeline_);
@@ -551,11 +577,28 @@ namespace kpengine::render
 
     bool RenderSystem::PrepareDeferredLightingPassResources()
     {
-        if (deferred_lighting_pipeline_.IsValid())
+        if (deferred_lighting_pipeline_.IsValid() && directional_shadow_sampler_.IsValid())
         {
             return true;
         }
         if (!PrepareFullscreenPassResources())
+        {
+            return false;
+        }
+
+        if (!directional_shadow_sampler_.IsValid())
+        {
+            graphics::SamplerSettings shadow_sampler_settings{};
+            shadow_sampler_settings.address_mode_u =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_v =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_w =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.enable_anisotropy = false;
+            directional_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
+        }
+        if (!directional_shadow_sampler_.IsValid())
         {
             return false;
         }
@@ -607,6 +650,8 @@ namespace kpengine::render
              {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
               ShaderStage::SHADER_STAGE_FRAGMENT},
              {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
               ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
         deferred_lighting_pipeline_ = backend_->CreatePipelineResource(desc);
@@ -1335,6 +1380,10 @@ namespace kpengine::render
         {
             backend_->DestroySampler(gbuffer_debug_sampler_);
         }
+        if (directional_shadow_sampler_.IsValid())
+        {
+            backend_->DestroySampler(directional_shadow_sampler_);
+        }
         if (tone_map_pipeline_.IsValid())
         {
             backend_->DestroyPipelineResource(tone_map_pipeline_);
@@ -1343,6 +1392,7 @@ namespace kpengine::render
         deferred_lighting_pipeline_ = {};
         gbuffer_debug_fullscreen_mesh_ = {};
         gbuffer_debug_sampler_ = {};
+        directional_shadow_sampler_ = {};
         tone_map_pipeline_ = {};
         if (directional_shadow_pipeline_.IsValid())
         {

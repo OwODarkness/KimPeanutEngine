@@ -225,6 +225,7 @@ namespace kpengine::render
         graphics::PipelineHandle gbuffer_debug_pipeline_;
         graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;
         graphics::SamplerHandle gbuffer_debug_sampler_;
+        graphics::SamplerHandle directional_shadow_sampler_;
         graphics::PipelineHandle tone_map_pipeline_;
         graphics::PipelineHandle directional_shadow_pipeline_;
     };

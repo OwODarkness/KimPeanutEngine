@@ -26,8 +26,8 @@ namespace kpengine::render
         Spot,
     };
 
-    // A ShadowHandle is not a sampled GPU resource. Until D4 resolves a
-    // scheduled job to a current frame binding, every record is unshadowed.
+    // A ShadowHandle is not a sampled GPU resource. Only a matching scheduled
+    // frame binding may promote an authored shadow to a shader-visible kind.
     enum class LightGpuShadowKind : uint32_t
     {
         Unshadowed,
@@ -64,12 +64,25 @@ namespace kpengine::render
         std::array<LightGpuData, kMaxFrameLights> lights{};
     };
 
+    // Frame-local resolution of an authored shadow identity to a scheduled GPU
+    // binding. The sampled texture remains owned by RendererFrameTargets.
+    struct ResolvedLightShadowBinding
+    {
+        LightHandle source_light;
+        ShadowHandle shadow;
+        ShadowKind kind = ShadowKind::Directional2D;
+        uint32_t binding_slot = 0;
+    };
+
     // Fullscreen lighting constants. The matrix is transposed before upload so
     // GLSL observes the CPU-side inverse view-projection matrix.
     struct alignas(16) DeferredLightingGpuData
     {
         Matrix4f inverse_view_projection;
         std::array<float, 4> camera_world_position{};
+        Matrix4f directional_shadow_view_projection;
+        // Minimum bias, slope-scaled bias, texel size, reserved.
+        std::array<float, 4> directional_shadow_params{};
     };
 
     static_assert(sizeof(LightGpuData) == 96,
@@ -79,12 +92,14 @@ namespace kpengine::render
     static_assert(offsetof(LightGpuData, reserved) == 72);
     static_assert(sizeof(LightGpuFrameHeader) == 16,
                   "The frame lighting header is one uniform-buffer row");
-    static_assert(sizeof(DeferredLightingGpuData) == 80,
-                  "Deferred lighting constants must remain five uniform rows");
+    static_assert(sizeof(DeferredLightingGpuData) == 160,
+                  "Deferred lighting constants must match ten std140 rows");
 
     bool IsLightGpuFrameHeaderCompatible(const LightGpuFrameHeader &header);
     std::optional<LightGpuData> EncodeLightGpuData(const LightDesc &light);
-    LightGpuFrameData BuildLightGpuFrameData(const std::vector<Light> &lights);
+    LightGpuFrameData BuildLightGpuFrameData(
+        const std::vector<Light> &lights,
+        const std::optional<ResolvedLightShadowBinding> &resolved_shadow = std::nullopt);
 }
 
 #endif

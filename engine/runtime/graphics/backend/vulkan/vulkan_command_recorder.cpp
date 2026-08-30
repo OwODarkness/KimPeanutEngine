@@ -154,7 +154,8 @@ namespace kpengine::graphics
     void VulkanCommandRecorder::SetViewport(const Viewport &viewport)
     {
         if (command_buffer_ == VK_NULL_HANDLE) return;
-        const VkViewport native{viewport.x, viewport.y, viewport.width, viewport.height,
+        const VkViewport native{viewport.x, viewport.y + viewport.height,
+                                viewport.width, -viewport.height,
                                 viewport.min_depth, viewport.max_depth};
         vkCmdSetViewport(command_buffer_, 0, 1, &native);
     }
