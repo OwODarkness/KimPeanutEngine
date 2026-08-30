@@ -97,6 +97,28 @@ TEST(LightSourceRegistryTest, RejectsStaleSourceHandlesAndClearRetiresResolvedLi
     EXPECT_FALSE(registry.EnqueueUpdate(replacement, MakeDirectionalSource(5.0f)));
 }
 
+TEST(LightSourceRegistryTest, KeepsShadowIdentityRenderPrivateAndRetiresItWhenDisabled)
+{
+    kpengine::render::LightSourceRegistry registry{};
+    kpengine::render::LightWorld world{};
+    auto source = MakeDirectionalSource();
+    source.casts_shadow = true;
+    const kpengine::render::LightSourceHandle handle = registry.EnqueueCreate(source);
+    registry.Drain(world);
+    auto snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot.front().desc.shadow.has_value());
+    const kpengine::render::ShadowHandle shadow = *snapshot.front().desc.shadow;
+
+    source.casts_shadow = false;
+    ASSERT_TRUE(registry.EnqueueUpdate(handle, source));
+    registry.Drain(world);
+    snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_FALSE(snapshot.front().desc.shadow.has_value());
+    EXPECT_TRUE(shadow.IsValid()); // The source API never exposes this identity.
+}
+
 TEST(LightWorldTest, RejectsForgedAndStaleResolvedHandles)
 {
     kpengine::render::LightWorld world{};

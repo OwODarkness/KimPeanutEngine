@@ -12,7 +12,10 @@ namespace kpengine::render
     enum class RenderPassResource : uint8_t
     {
         SceneColor,
+        SceneHdr,
         GBuffer,
+        DirectionalShadow,
+        Count,
     };
 
     enum class RenderPassAccess : uint8_t

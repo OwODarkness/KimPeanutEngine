@@ -40,6 +40,15 @@ namespace kpengine::gameplay
         }
     }
 
+    void DirectionalLightComponent::SetCastsShadow(bool casts_shadow)
+    {
+        if (casts_shadow_ != casts_shadow)
+        {
+            casts_shadow_ = casts_shadow;
+            MarkSourceDirty();
+        }
+    }
+
     void DirectionalLightComponent::OnActivate()
     {
         SceneComponent::OnActivate();
@@ -81,6 +90,7 @@ namespace kpengine::gameplay
         source.color = color_;
         source.intensity = intensity_;
         source.enabled = enabled_;
+        source.casts_shadow = casts_shadow_;
         return source;
     }
 

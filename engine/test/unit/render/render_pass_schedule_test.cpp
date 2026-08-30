@@ -30,8 +30,13 @@ TEST(RenderPassScheduleTest, AcceptsGBufferPassChainToTerminalEditorComposite)
     EXPECT_TRUE(schedule.AddPass(
         {"GBufferPass", {{RenderPassResource::GBuffer, RenderPassAccess::Write}}, false}));
     EXPECT_TRUE(schedule.AddPass(
-        {"GBufferDebugViewPass",
+        {"DeferredLightingPass",
          {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+          {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
+         false}));
+    EXPECT_TRUE(schedule.AddPass(
+        {"ToneMapPass",
+         {{RenderPassResource::SceneHdr, RenderPassAccess::Read},
           {RenderPassResource::SceneColor, RenderPassAccess::Write}},
          false}));
     EXPECT_TRUE(schedule.AddPass(
@@ -42,12 +47,49 @@ TEST(RenderPassScheduleTest, AcceptsGBufferPassChainToTerminalEditorComposite)
     EXPECT_TRUE(error.empty());
 }
 
+TEST(RenderPassScheduleTest, AcceptsDirectionalShadowBeforeGBuffer)
+{
+    RenderPassSchedule schedule;
+    EXPECT_TRUE(schedule.AddPass(
+        {"ShadowDepthPass", {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write}}, false}));
+    EXPECT_TRUE(schedule.AddPass(
+        {"GBufferPass", {{RenderPassResource::GBuffer, RenderPassAccess::Write}}, false}));
+    EXPECT_TRUE(schedule.AddPass(
+        {"DeferredLightingPass",
+         {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+          {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
+         false}));
+    EXPECT_TRUE(schedule.AddPass(
+        {"ToneMapPass",
+         {{RenderPassResource::SceneHdr, RenderPassAccess::Read},
+          {RenderPassResource::SceneColor, RenderPassAccess::Write}},
+         false}));
+    EXPECT_TRUE(schedule.AddPass(
+        {"EditorCompositePass", {{RenderPassResource::SceneColor, RenderPassAccess::Read}}, true}));
+    std::string error;
+    EXPECT_TRUE(schedule.Validate(error));
+}
+
 TEST(RenderPassScheduleTest, RejectsReadOfGBufferBeforeWriter)
 {
     RenderPassSchedule schedule;
     EXPECT_TRUE(schedule.AddPass(
-        {"GBufferDebugViewPass",
+        {"DeferredLightingPass",
          {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+          {RenderPassResource::SceneColor, RenderPassAccess::Write}},
+         true}));
+
+    std::string error;
+    EXPECT_FALSE(schedule.Validate(error));
+    EXPECT_FALSE(error.empty());
+}
+
+TEST(RenderPassScheduleTest, RejectsToneMapBeforeSceneHdrWriter)
+{
+    RenderPassSchedule schedule;
+    EXPECT_TRUE(schedule.AddPass(
+        {"ToneMapPass",
+         {{RenderPassResource::SceneHdr, RenderPassAccess::Read},
           {RenderPassResource::SceneColor, RenderPassAccess::Write}},
          true}));
 

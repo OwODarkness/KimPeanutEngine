@@ -7,7 +7,8 @@ namespace kpengine::render
 {
     namespace
     {
-        constexpr std::size_t kRenderPassResourceCount = 2;
+        constexpr std::size_t kRenderPassResourceCount =
+            static_cast<std::size_t>(RenderPassResource::Count);
 
         constexpr std::size_t ToIndex(RenderPassResource resource) noexcept
         {

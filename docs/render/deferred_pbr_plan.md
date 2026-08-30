@@ -138,7 +138,22 @@ Emissive is a **constant only** (not a G-buffer channel) until D5 decides how to
 
 **Landed tangent convention (2026-08-29):** canonical 5-attribute layout — position@0, normal@1, texcoord@2, tangent@3, bitangent@4 (56-byte `data::Vertex`, Assimp `CalcTangentSpace`). World TBN = `transpose(inverse(mat3(model)))`, `mat3(T,B,N)` column-major, normal decode `rgb*2-1`; fragments with degenerate tangents (zero-filled for no-UV meshes) fall back to the geometric normal.
 
+**Landed winding parity (2026-08-30):** common `FrontFace` is engine y-up
+clip-space winding. OpenGL translates it directly; Vulkan's positive-height,
+upper-left-origin framebuffer reverses it during pipeline translation. This
+keeps mesh and fullscreen back-face culling equivalent without per-shader
+normal/UV fixes or changing render-target orientation.
+
 The old `defer_pbr.frag` is a formula reference, not an ABI: it relies on loose uniforms, GL binding state, hard-coded counts, and an uninitialized `direct_color`. New shaders use one versioned UBO/descriptor layout shared by Vulkan and OpenGL. The `StandardPbr` constant-block ABI (canonical 10-param order) is `base_color` vec4@0, `metallic` float@16, `roughness` float@20, `occlusion` float@24, `emissive` vec4@32, with samplers at bindings 2/5/6/7/8 and binding 4 reserved for the D5 frame-lighting block.
+
+**Landed HDR presentation contract (2026-08-30):** `SceneHdr` is a sampled
+RGBA16F Render-owned target at the scene extent. `ToneMapPass` is its normal
+presentation consumer and the sole scheduled writer of RGBA8 sRGB
+`SceneColor`. It applies global Reinhard (`c / (1 + c)`) in linear space; the
+sRGB attachment performs the display transfer. The temporary
+`GBufferDebugViewPass` writes `SceneHdr` until the Cook-Torrance
+`DeferredLightingPass` replaces that producer. HDR and LDR targets remain
+distinct across resize and shutdown.
 
 ## Delivery stages
 
@@ -167,6 +182,7 @@ The old `defer_pbr.frag` is a formula reference, not an ABI: it relies on loose 
 | [gkNextEngine FrameSubmission](https://github.com/gameknife/gkNextEngine/blob/main/src/Engine/Rendering/FrameSubmission.cpp) | It waits frame-slot fences before reuse and advances completed submission serials. | Target replacement uses existing frame-slot/fence-safe retirement, never a Render-side immediate delete. |
 | [Godot deferred pipeline](https://github.com/godotengine/godot/blob/master/servers/rendering/renderer_rd/pipeline_deferred_rd.h) | Deferred pipeline configuration is separate from scene policy. | Keep G-buffer pipeline/pass configuration in Render, not Gameplay or Graphics backends. Its broader renderer is not imported. |
 | [Godot RenderSceneBuffers](https://github.com/godotengine/godot/blob/master/servers/rendering/storage/render_scene_buffers.h) | Renderer-owned scene-buffer configuration is separate from scene-facing code and is configured behind the rendering system. | The supporting D1.2 precedent: keep resolved per-scene light state in Render. Reject Godot's ref-counted server hierarchy; KimPeanut needs only a mutex-protected source inbox and value snapshots. |
+| [Godot post-process and tone map](https://github.com/godotengine/godot/blob/master/servers/rendering/renderer_rd/renderer_scene_render_rd.cpp) | The renderer keeps scene color in an internal buffer and invokes a distinct tone-map operation into the display destination, with buffer allocation tied to renderer configuration. | D5.1 keeps `SceneHdr` and `SceneColor` separate under `RendererFrameTargets` and records one explicit fullscreen tone-map pass. Reject its dynamic effect/cache hierarchy until KimPeanut demonstrates comparable pressure. |
 | [Filament LightDefinition](https://github.com/google/filament/blob/main/libs/viewer/include/viewer/Settings.h) | One typed value carries shared color/intensity with position, direction, falloff, cone, and shadow intent for the engine's light-manager types. | Adopt the typed value shape: `LightDesc` has shared state plus a type-matched directional/point/spot payload. Reject its engine manager/entity and shadow-options model; KimPeanut keeps handles/jobs Render-private and defers target policy to D4. |
 | [Filament scene light preparation](https://github.com/google/filament/blob/main/filament/src/details/Scene.cpp) | The scene gathers immutable light data, bounds the prepared list, then serializes positional records into a GPU buffer with an explicit per-record structure; shadow data is supplied only when its renderer state is available. | D1.4 adopts one bounded, versioned POD payload at the Render frame boundary. Unlike Filament’s SoA and driver buffer path, KimPeanut uses the current common UBO allocator and does not serialize a `ShadowHandle` as a GPU resource: unresolved shadows are explicitly `Unshadowed` until D4. |
 | [bgfx IBL example](https://github.com/bkaradzic/bgfx/blob/master/examples/18-ibl/ibl.cpp) | Environment resources and PBR/lighting values flow through API-neutral handles. | Use only as cross-API PBR boundary evidence; defer IBL until KimPeanut owns environment-derived assets. |
@@ -179,7 +195,7 @@ The local [Sakura study](../graphics/sakura_reference.md) remains evidence for a
 - [ ] Vulkan and OpenGL render supplied metallic-roughness content through the same RenderWorld/proxy path without native types leaking upward.
 - [ ] A captured SceneColor visibly contains one directional shadow and target retirement is safe across resize/shutdown; the same lighting ABI accepts unshadowed point/spot records without changing material or common RHI contracts.
 - [ ] Render-owned debug capture can expose shadow, every G-buffer attachment, HDR lighting, and final SceneColor.
-- [ ] Texture sRGB/linear policy and supplied OpenGL normal convention are validated; tangent availability is audited before normal maps are enabled.
+- [x] Texture sRGB/linear policy and supplied OpenGL normal convention are validated; tangent availability is audited before normal maps are enabled.
 - [ ] Unlit bootstrap and current cross-backend smoke stay green until an intentional PBR-scene replacement.
 - [ ] The graph decision is recorded from evidence rather than a feature checklist.
 

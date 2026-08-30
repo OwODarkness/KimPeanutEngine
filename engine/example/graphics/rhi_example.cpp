@@ -18,6 +18,7 @@
 #include "runtime/screenshot/runtime_screenshot_service.h"
 #include "runtime/render/frame_context.h"
 #include "runtime/render/render_resource_resolver.h"
+#include "runtime/render/renderer_frame_targets.h"
 #include "runtime/render/material/material_system.h"
 #include "runtime/render/material/material_asset_resolver.h"
 #include "runtime/render/render_world/render_world.h"
@@ -645,11 +646,11 @@ namespace kpengine::example
                     throw std::runtime_error("failed to create D2 multi-attachment / depth-only targets");
                 }
 
-                // The fullscreen triangle is a fullscreen quad: its winding is
-                // front-facing in OpenGL's y-up NDC but back-facing in Vulkan's
-                // y-down NDC, so these passes must not cull.
+                // The common CCW winding must remain front-facing after each
+                // backend translates it; keep back-face culling enabled as a
+                // cross-API regression check.
                 graphics::RasterState fullscreen_raster_state = raster_state;
-                fullscreen_raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
+                fullscreen_raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
                 graphics::PipelineDesc multi_pipeline_desc{};
                 multi_pipeline_desc.vert_shader = sample_vertex->data.get();
                 multi_pipeline_desc.frag_shader = multi_fragment->data.get();
@@ -911,16 +912,36 @@ namespace kpengine::example
                 rhi->DestroyRenderTarget(output_target);
                 rhi->DestroyRenderTarget(multi_target);
             }
-            // D3 deferred-PBR proof: a versioned standard_pbr material resolves
-            // through the full asset -> template -> instance path, its GBuffer
-            // pipeline writes a 3-color+depth target, and the debug composite
-            // samples those attachments back into an RGBA8 output for capture.
+            // D3-D5.1 deferred-PBR proof: the material writes the G-buffer, the
+            // diagnostic conversion writes linear RGBA16F SceneHdr, and a
+            // distinct tone-map pass produces the captured RGBA8 SceneColor.
             if (max_frames != 0)
             {
                 const uint32_t target_width = static_cast<uint32_t>(window_create_info.width);
                 const uint32_t target_height = static_cast<uint32_t>(window_create_info.height);
                 const std::string api_name =
                     api == GraphicsAPIType::GRAPHICS_API_VULKAN ? "vulkan" : "opengl";
+                render::RendererFrameTargets named_targets;
+                named_targets.Initialize(*rhi, target_width, target_height);
+                const render::RenderTarget *const named_scene_color =
+                    named_targets.GetTarget(render::RenderTargetName::SceneColor);
+                const render::RenderTarget *const named_gbuffer =
+                    named_targets.GetTarget(render::RenderTargetName::GBuffer);
+                const render::RenderTarget *const named_shadow =
+                    named_targets.GetTarget(render::RenderTargetName::DirectionalShadow);
+                const render::RenderTarget *const named_scene_hdr =
+                    named_targets.GetTarget(render::RenderTargetName::SceneHdr);
+                if (!named_scene_color || !named_scene_color->IsValid() ||
+                    !named_gbuffer || !named_gbuffer->IsValid() ||
+                    !named_shadow || !named_shadow->IsValid() ||
+                    !named_shadow->GetSampledDepthTexture().IsValid() ||
+                    !named_scene_hdr || !named_scene_hdr->IsValid() ||
+                    named_scene_hdr->GetColorAttachmentCount() != 1 ||
+                    !named_scene_hdr->GetColorAttachmentTexture(0).IsValid())
+                {
+                    throw std::runtime_error("D5.1 named frame target set is incomplete");
+                }
+                named_targets.Cleanup();
                 render::MaterialAssetResolver d3_material_resolver(materials);
                 const asset::AssetID rock_material_id = asset::AssetManager::GetInstance().LoadSync(
                     GetAssetDirectory() + "material/rock_pbr.material");
@@ -982,52 +1003,131 @@ namespace kpengine::example
                          graphics::RenderTargetStoreOp::Store,
                          {0.f, 1.f, 1.f, 0.f}}},
                 };
-                gbuffer_desc.depth = graphics::RenderTargetDepthAttachment{};
+                gbuffer_desc.depth = graphics::RenderTargetDepthAttachment{
+                    TextureFormat::TEXTURE_FORMAT_D32, graphics::RenderTargetLoadOp::Clear,
+                    graphics::RenderTargetStoreOp::Store, 1.0f, 0, true};
                 const graphics::RenderTargetHandle gbuffer_target = rhi->CreateRenderTarget(gbuffer_desc);
                 graphics::RenderTargetDesc d3_output_desc{};
                 d3_output_desc.width = target_width;
                 d3_output_desc.height = target_height;
                 d3_output_desc.color_attachments = {{graphics::RenderTargetColorAttachment{}}};
                 const graphics::RenderTargetHandle d3_output_target = rhi->CreateRenderTarget(d3_output_desc);
+                graphics::RenderTargetDesc d5_hdr_desc{};
+                d5_hdr_desc.width = target_width;
+                d5_hdr_desc.height = target_height;
+                d5_hdr_desc.color_attachments = {{graphics::RenderTargetColorAttachment{
+                    TextureFormat::TEXTURE_FORMAT_RGBA16F,
+                    graphics::RenderTargetLoadOp::Clear,
+                    graphics::RenderTargetStoreOp::Store,
+                    {0.f, 0.f, 0.f, 1.f}}}};
+                const graphics::RenderTargetHandle d5_hdr_target = rhi->CreateRenderTarget(d5_hdr_desc);
+                graphics::RenderTargetDesc d4_shadow_desc{};
+                d4_shadow_desc.width = 1024;
+                d4_shadow_desc.height = 1024;
+                d4_shadow_desc.depth = graphics::RenderTargetDepthAttachment{
+                    TextureFormat::TEXTURE_FORMAT_D32, graphics::RenderTargetLoadOp::Clear,
+                    graphics::RenderTargetStoreOp::Store, 1.0f, 0, true};
+                const graphics::RenderTargetHandle d4_shadow_target = rhi->CreateRenderTarget(d4_shadow_desc);
                 if (!gbuffer_target.IsValid() || !d3_output_target.IsValid() ||
+                    !d4_shadow_target.IsValid() || !d5_hdr_target.IsValid() ||
                     !rhi->GetRenderTargetColorAttachment(gbuffer_target, 0).IsValid() ||
                     !rhi->GetRenderTargetColorAttachment(gbuffer_target, 1).IsValid() ||
-                    !rhi->GetRenderTargetColorAttachment(gbuffer_target, 2).IsValid())
+                    !rhi->GetRenderTargetColorAttachment(gbuffer_target, 2).IsValid() ||
+                    !rhi->GetRenderTargetSampledDepthAttachment(gbuffer_target).IsValid() ||
+                    !rhi->GetRenderTargetSampledDepthAttachment(d4_shadow_target).IsValid())
                 {
                     throw std::runtime_error("failed to create D3 GBuffer / output targets");
                 }
 
-                // Debug fullscreen composite pipeline + mesh (cull NONE).
-                const asset::AssetID debug_program_id =
-                    LoadShaderProgram(resource_pipeline, "gbuffer_debug_view.shader");
-                auto debug_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(debug_program_id);
-                const auto debug_vertex = debug_program ? debug_program->GetShader(
+                // Deferred directional-lighting pipeline + shared fullscreen mesh.
+                const asset::AssetID deferred_lighting_program_id =
+                    LoadShaderProgram(resource_pipeline, "deferred_lighting.shader");
+                const asset::AssetID directional_shadow_program_id =
+                    LoadShaderProgram(resource_pipeline, "directional_shadow_depth.shader");
+                const asset::AssetID tone_map_program_id =
+                    LoadShaderProgram(resource_pipeline, "tone_map.shader");
+                auto deferred_lighting_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(deferred_lighting_program_id);
+                auto directional_shadow_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(directional_shadow_program_id);
+                auto tone_map_program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(tone_map_program_id);
+                const auto deferred_lighting_vertex = deferred_lighting_program ? deferred_lighting_program->GetShader(
                     ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
-                const auto debug_fragment = debug_program ? debug_program->GetShader(
+                const auto deferred_lighting_fragment = deferred_lighting_program ? deferred_lighting_program->GetShader(
                     ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
-                if (!debug_vertex || !debug_fragment || !debug_vertex->data || !debug_fragment->data)
+                const auto directional_shadow_vertex = directional_shadow_program ? directional_shadow_program->GetShader(
+                    ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                const auto directional_shadow_fragment = directional_shadow_program ? directional_shadow_program->GetShader(
+                    ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                const auto tone_map_vertex = tone_map_program ? tone_map_program->GetShader(
+                    ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                const auto tone_map_fragment = tone_map_program ? tone_map_program->GetShader(
+                    ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL) : nullptr;
+                if (!deferred_lighting_vertex || !deferred_lighting_fragment ||
+                    !deferred_lighting_vertex->data || !deferred_lighting_fragment->data ||
+                    !directional_shadow_vertex || !directional_shadow_fragment ||
+                    !directional_shadow_vertex->data || !directional_shadow_fragment->data ||
+                    !tone_map_vertex || !tone_map_fragment || !tone_map_vertex->data ||
+                    !tone_map_fragment->data)
                 {
-                    throw std::runtime_error("D3 debug view shaders failed to compile");
+                    throw std::runtime_error("D5.2 deferred-lighting shaders failed to compile");
                 }
-                graphics::PipelineDesc debug_pipeline_desc{};
-                debug_pipeline_desc.vert_shader = debug_vertex->data.get();
-                debug_pipeline_desc.frag_shader = debug_fragment->data.get();
-                debug_pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
-                debug_pipeline_desc.attri_descs = {
+                graphics::PipelineDesc deferred_lighting_pipeline_desc{};
+                deferred_lighting_pipeline_desc.vert_shader = deferred_lighting_vertex->data.get();
+                deferred_lighting_pipeline_desc.frag_shader = deferred_lighting_fragment->data.get();
+                deferred_lighting_pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+                deferred_lighting_pipeline_desc.attri_descs = {
                     {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, position)},
                     {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, tex_coord)},
                 };
-                debug_pipeline_desc.descriptor_binding_descs = {
-                    {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                deferred_lighting_pipeline_desc.descriptor_binding_descs = {
+                    {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                     {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                     {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
                      {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
-                     {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+                     {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
+                     {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT}},
                 };
-                debug_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
-                debug_pipeline_desc.raster_state.front_face =
+                deferred_lighting_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
+                deferred_lighting_pipeline_desc.raster_state.front_face =
                     graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
-                debug_pipeline_desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
-                debug_pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
-                const graphics::PipelineHandle debug_pipeline = rhi->CreatePipelineResource(debug_pipeline_desc);
+                deferred_lighting_pipeline_desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA16F};
+                deferred_lighting_pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+                const graphics::PipelineHandle deferred_lighting_pipeline =
+                    rhi->CreatePipelineResource(deferred_lighting_pipeline_desc);
+                graphics::PipelineDesc directional_shadow_pipeline_desc{};
+                directional_shadow_pipeline_desc.vert_shader = directional_shadow_vertex->data.get();
+                directional_shadow_pipeline_desc.frag_shader = directional_shadow_fragment->data.get();
+                directional_shadow_pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+                directional_shadow_pipeline_desc.attri_descs = {
+                    {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS, offsetof(data::Vertex, position)},
+                };
+                directional_shadow_pipeline_desc.descriptor_binding_descs = {
+                    {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX},
+                     {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_VERTEX}},
+                };
+                directional_shadow_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
+                directional_shadow_pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
+                const graphics::PipelineHandle directional_shadow_pipeline =
+                    rhi->CreatePipelineResource(directional_shadow_pipeline_desc);
+                graphics::PipelineDesc tone_map_pipeline_desc{};
+                tone_map_pipeline_desc.vert_shader = tone_map_vertex->data.get();
+                tone_map_pipeline_desc.frag_shader = tone_map_fragment->data.get();
+                tone_map_pipeline_desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+                tone_map_pipeline_desc.attri_descs = {
+                    {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, position)},
+                    {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, offsetof(data::Vertex, tex_coord)},
+                };
+                tone_map_pipeline_desc.descriptor_binding_descs = {
+                    {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                      ShaderStage::SHADER_STAGE_FRAGMENT}},
+                };
+                tone_map_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
+                tone_map_pipeline_desc.raster_state.front_face =
+                    graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+                tone_map_pipeline_desc.color_attachment_formats = {
+                    TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+                tone_map_pipeline_desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+                const graphics::PipelineHandle tone_map_pipeline =
+                    rhi->CreatePipelineResource(tone_map_pipeline_desc);
                 data::MeshData debug_mesh_data{};
                 data::Vertex debug_v0{}, debug_v1{}, debug_v2{};
                 debug_v0.position = {-1.0f, -1.0f, 0.0f};
@@ -1041,9 +1141,11 @@ namespace kpengine::example
                 debug_mesh_data.sections = {{0, 3, 0}};
                 const graphics::MeshHandle debug_mesh = rhi->CreateMesh(debug_mesh_data);
                 const graphics::SamplerHandle debug_sampler = rhi->CreateSampler(graphics::SamplerSettings{});
-                if (!debug_pipeline.IsValid() || !debug_mesh.IsValid() || !debug_sampler.IsValid())
+                if (!deferred_lighting_pipeline.IsValid() || !directional_shadow_pipeline.IsValid() ||
+                    !tone_map_pipeline.IsValid() ||
+                    !debug_mesh.IsValid() || !debug_sampler.IsValid())
                 {
-                    throw std::runtime_error("failed to create D3 debug composite resources");
+                    throw std::runtime_error("failed to create D5.2 deferred-lighting resources");
                 }
 
                 // Frame the ~165-unit rock: pull the camera back + extend the far
@@ -1051,6 +1153,14 @@ namespace kpengine::example
                 camera.SetPosition({0.f, 0.f, 300.f});
                 camera.SetNearPlane(1.f);
                 camera.SetFarPlane(2000.f);
+
+                render::LightGpuFrameData d5_lighting_data{};
+                d5_lighting_data.header.light_count = 1;
+                render::LightGpuData &d5_directional_light = d5_lighting_data.lights[0];
+                d5_directional_light.color_intensity = {1.0f, 0.95f, 0.9f, 4.0f};
+                d5_directional_light.direction_inner_cone = {0.0f, -0.5f, -1.0f, 0.0f};
+                d5_directional_light.type = static_cast<uint32_t>(render::LightGpuType::Directional);
+                d5_directional_light.enabled = 1;
 
                 const auto render_d3_frame = [&]()
                 {
@@ -1078,10 +1188,39 @@ namespace kpengine::example
                             per_object_data.model = Matrix4f::MakeTransformMatrix(Transform3f{}).Transpose();
                             const render::UniformAllocation d3_object =
                                 frame_context.AllocateUniform(per_object_data);
-                            if (!d3_pass.IsValid() || !d3_object.IsValid())
+                            const render::FrameLightingBinding d5_lighting_binding =
+                                frame_context.CreateLightingBinding(d5_lighting_data);
+                            render::DeferredLightingGpuData d5_lighting_constants{};
+                            d5_lighting_constants.inverse_view_projection =
+                                camera.GetViewProjectionMatrix().Inverse().Transpose();
+                            d5_lighting_constants.camera_world_position = {0.0f, 0.0f, 300.0f, 1.0f};
+                            const render::UniformAllocation d5_constants =
+                                frame_context.AllocateUniform(d5_lighting_constants);
+                            if (!d3_pass.IsValid() || !d3_object.IsValid() ||
+                                !d5_lighting_binding.IsValid() || !d5_constants.IsValid())
                             {
-                                throw std::runtime_error("D3 uniform allocation failed");
+                                throw std::runtime_error("D5.2 frame uniform allocation failed");
                             }
+
+                            // D4 contract smoke: depth-only, sampled target uses the
+                            // same opaque mesh and per-frame matrix bindings.
+                            recorder->BeginRenderTarget(d4_shadow_target);
+                            const graphics::DescriptorSetHandle directional_shadow_bindings =
+                                frame_context.AllocateResourceBindingSet(
+                                    directional_shadow_pipeline,
+                                    {0,
+                                     {graphics::UniformBufferBinding{0, 0, d3_pass.buffer, d3_pass.offset, d3_pass.range},
+                                      graphics::UniformBufferBinding{0, 1, d3_object.buffer, d3_object.offset, d3_object.range}}});
+                            if (!directional_shadow_bindings.IsValid())
+                            {
+                                throw std::runtime_error("D4 directional shadow binding failed");
+                            }
+                            recorder->BindPipeline(directional_shadow_pipeline);
+                            recorder->BindMesh(rock_mesh_handle);
+                            recorder->BindResourceBindings(directional_shadow_pipeline,
+                                                           directional_shadow_bindings);
+                            recorder->DrawIndexed();
+                            recorder->EndRenderTarget();
 
                             recorder->BeginRenderTarget(gbuffer_target);
                             const std::vector<graphics::ResourceBinding> gbuffer_draw_bindings{
@@ -1103,27 +1242,54 @@ namespace kpengine::example
                             recorder->DrawIndexed();
                             recorder->EndRenderTarget();
 
-                            recorder->BeginRenderTarget(d3_output_target);
-                            const graphics::DescriptorSetHandle debug_bindings =
+                            recorder->BeginRenderTarget(d5_hdr_target);
+                            const graphics::DescriptorSetHandle deferred_lighting_bindings =
                                 frame_context.AllocateResourceBindingSet(
-                                    debug_pipeline,
+                                    deferred_lighting_pipeline,
                                     {0,
                                      {graphics::SampledTextureBinding{
-                                          0, 2, rhi->GetRenderTargetColorAttachment(gbuffer_target, 0),
+                                          0, 0, rhi->GetRenderTargetColorAttachment(gbuffer_target, 0),
                                           debug_sampler},
                                       graphics::SampledTextureBinding{
-                                          0, 3, rhi->GetRenderTargetColorAttachment(gbuffer_target, 1),
+                                          0, 1, rhi->GetRenderTargetColorAttachment(gbuffer_target, 1),
                                           debug_sampler},
                                       graphics::SampledTextureBinding{
-                                          0, 4, rhi->GetRenderTargetColorAttachment(gbuffer_target, 2),
-                                          debug_sampler}}});
-                            if (!debug_bindings.IsValid())
+                                          0, 2, rhi->GetRenderTargetColorAttachment(gbuffer_target, 2),
+                                          debug_sampler},
+                                      graphics::SampledTextureBinding{
+                                          0, 3, rhi->GetRenderTargetSampledDepthAttachment(gbuffer_target),
+                                          debug_sampler},
+                                      d5_lighting_binding.GetResourceBinding(),
+                                      graphics::UniformBufferBinding{
+                                          0, 5, d5_constants.buffer, d5_constants.offset,
+                                          d5_constants.range}}});
+                            if (!deferred_lighting_bindings.IsValid())
                             {
-                                throw std::runtime_error("D3 debug composite binding failed");
+                                throw std::runtime_error("D5.2 deferred-lighting binding failed");
                             }
-                            recorder->BindPipeline(debug_pipeline);
+                            recorder->BindPipeline(deferred_lighting_pipeline);
                             recorder->BindMesh(debug_mesh);
-                            recorder->BindResourceBindings(debug_pipeline, debug_bindings);
+                            recorder->BindResourceBindings(deferred_lighting_pipeline,
+                                                           deferred_lighting_bindings);
+                            recorder->DrawIndexed();
+                            recorder->EndRenderTarget();
+
+                            recorder->BeginRenderTarget(d3_output_target);
+                            const graphics::DescriptorSetHandle tone_map_bindings =
+                                frame_context.AllocateResourceBindingSet(
+                                    tone_map_pipeline,
+                                    {0,
+                                     {graphics::SampledTextureBinding{
+                                         0, 2,
+                                         rhi->GetRenderTargetColorAttachment(d5_hdr_target, 0),
+                                         debug_sampler}}});
+                            if (!tone_map_bindings.IsValid())
+                            {
+                                throw std::runtime_error("D5.1 tone-map binding failed");
+                            }
+                            recorder->BindPipeline(tone_map_pipeline);
+                            recorder->BindMesh(debug_mesh);
+                            recorder->BindResourceBindings(tone_map_pipeline, tone_map_bindings);
                             recorder->DrawIndexed();
                             recorder->EndRenderTarget();
 
@@ -1141,7 +1307,7 @@ namespace kpengine::example
                 render_d3_frame();
 
                 const std::string d3_path =
-                    "save/screenshots/validation/graphics-smoke-d3-" + api_name + ".png";
+                    "save/screenshots/validation/graphics-smoke-d5-" + api_name + ".png";
                 std::error_code d3_remove_error;
                 std::filesystem::remove(d3_path, d3_remove_error);
                 render::RenderCaptureService d3_capture_service(
@@ -1191,8 +1357,8 @@ namespace kpengine::example
                 {
                     throw std::runtime_error("D3 smoke screenshot PNG is a uniform image");
                 }
-                // The debug composite must draw the rock (albedo lit by a normal
-                // term), not just the clear color — require some bright pixels.
+                // The ambient floor stays below this threshold, so bright pixels
+                // demonstrate that the directional light reached the BRDF path.
                 bool d3_saw_rock = false;
                 for (size_t i = 0; i + 2 < d3_pixels.size(); i += 4)
                 {
@@ -1204,14 +1370,18 @@ namespace kpengine::example
                 }
                 if (!d3_saw_rock)
                 {
-                    throw std::runtime_error("D3 debug composite did not draw the rock");
+                    throw std::runtime_error("D5.2 deferred lighting did not illuminate the rock");
                 }
 
                 rhi->WaitIdle();
                 d3_material_resolver.Clear();
                 rhi->DestroySampler(debug_sampler);
                 rhi->DestroyMesh(debug_mesh);
-                rhi->DestroyPipelineResource(debug_pipeline);
+                rhi->DestroyPipelineResource(tone_map_pipeline);
+                rhi->DestroyPipelineResource(deferred_lighting_pipeline);
+                rhi->DestroyPipelineResource(directional_shadow_pipeline);
+                rhi->DestroyRenderTarget(d4_shadow_target);
+                rhi->DestroyRenderTarget(d5_hdr_target);
                 rhi->DestroyRenderTarget(d3_output_target);
                 rhi->DestroyRenderTarget(gbuffer_target);
             }

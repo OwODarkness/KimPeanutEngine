@@ -19,8 +19,12 @@ namespace kpengine::render
     {
         SceneColor,
         GBuffer,
+        DirectionalShadow,
+        SceneHdr,
+        Count,
     };
-    inline constexpr uint32_t kRenderTargetNameCount = 2;
+    inline constexpr uint32_t kRenderTargetNameCount =
+        static_cast<uint32_t>(RenderTargetName::Count);
 
     class RendererFrameTargets
     {

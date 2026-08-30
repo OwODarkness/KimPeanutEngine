@@ -132,8 +132,10 @@ and derives `GL_DEPTH_TEST` the same way. `RenderBackend` exposes
 in `BuildDesc`, `RebuildForExtent` with `WaitIdle`, `Cleanup`); `RenderSystem`
 runs through it for init/capture/extent/pass/shutdown. The `GraphicsSmoke`
 D2 block proves multi-attachment (RGBA8 + RGBA16F + D32) → sampled readback →
-depth-only lifecycle on both APIs; the fullscreen proof requires
-`cull_mode = NONE` (the shared triangle is back-facing in Vulkan's y-down NDC).
+depth-only lifecycle on both APIs. The original D2 fullscreen proof used
+`cull_mode = NONE` because Vulkan translated the common winding enum literally.
+D5.2.1 corrected Vulkan's positive-viewport winding translation; the shared
+triangle now uses ordinary back-face culling on both APIs.
 
 ## D3 — Material Asset V2 and PBR G-buffer
 
@@ -196,30 +198,45 @@ compatibility (`ShadowDepth`) is reserved for D4.
 **Goal:** prove the first producer/consumer shadow path without making
 directional light a public special case.
 
-- [ ] Schedule typed shadow jobs from immutable light/shadow snapshots;
+- [x] Schedule typed shadow jobs from immutable light/shadow snapshots;
   `ShadowDepthPass` remains a pass family.
-- [ ] Implement one `Directional2D` depth target, light-space constants, and
+- [x] Implement one `Directional2D` depth target, light-space constants, and
   opaque `visible && casts_shadow && ready` caster filtering.
-- [ ] Bind the scheduled depth result through its render-private shadow slot
+- [x] Bind the scheduled depth result through its render-private shadow slot
   for deferred lighting.
-- [ ] Define explicit missing/invalid-shadow behavior and safe target rebuild
+- [x] Define explicit missing/invalid-shadow behavior and safe target rebuild
   on resize/shutdown.
-- [ ] Add depth/shadow-visibility debug conversion views through Render’s
+- [x] Add depth/shadow-visibility debug conversion views through Render’s
   capture resolver, never raw depth readback.
 
 **Done when:** one directional light produces and consumes a depth shadow map
-in the fixed schedule on Vulkan and OpenGL.
+in the fixed schedule on Vulkan and OpenGL. **Landed 2026-08-30:** Gameplay
+publishes only `casts_shadow`; `LightSourceRegistry` creates/retires the
+private `ShadowHandle` while resolving the source. `RenderSystem` selects at
+most one enabled `Directional2D` job from the immutable snapshot, uses a
+camera-centred 100×100 orthographic fit (200-unit depth range), and records a
+depth-only D32 2048² target before `GBufferPass`. It filters
+`visible && casts_shadow && opaque && ready` proxies, with a generic depth
+override pipeline and frame-local set-0 bindings 0/1. The depth target is
+shader-readable only to Render and is sampled by the fourth panel of the
+existing SceneColor debug conversion; an absent/invalid job skips recording
+and displays the target's clear depth. The current frame's private job carries
+binding slot 0 for D5. `GraphicsSmoke` now records, samples, captures, resizes,
+and tears down a real D32 sampled depth target on both Vulkan and OpenGL.
+Depth bias is deliberately not claimed: the common pipeline state has no
+portable bias contract yet, so it remains a D5 prerequisite rather than an
+API-specific escape hatch.
 
 ## D5 — deferred lighting and presentation
 
 **Goal:** consume G-buffer and typed light data into HDR, then present a
 stable final SceneColor.
 
-- [ ] Implement fullscreen `DeferredLightingPass` with metallic-roughness PBR
+- [x] Implement fullscreen `DeferredLightingPass` with metallic-roughness PBR
   evaluation and the versioned light type switch.
 - [ ] Populate one directional record and directional shadow factor in the
   first visual milestone; point/spot records remain valid unshadowed inputs.
-- [ ] Write HDR `SceneHdr`, then implement a documented `ToneMapPass` to final
+- [x] Write HDR `SceneHdr`, then implement a documented `ToneMapPass` to final
   LDR `SceneColor` before the existing Editor composite bridge.
 - [ ] Enable G-buffer, shadow, and final-color capture views by explicit
   Render conversion passes.
@@ -229,6 +246,43 @@ stable final SceneColor.
 **Done when:** the shared scene produces comparable PBR final-color captures on
 both backends, with debug views sufficient to diagnose G-buffer and shadow
 errors.
+
+### D5.1 — HDR presentation spine (landed 2026-08-30)
+
+`RendererFrameTargets` now owns a sampled RGBA16F `SceneHdr` beside the stable
+RGBA8 sRGB `SceneColor`. The fixed schedule validates
+`GBufferDebugViewPass -> SceneHdr -> ToneMapPass -> SceneColor ->
+EditorCompositePass`; the diagnostic conversion temporarily occupies the HDR
+producer slot until `DeferredLightingPass` replaces it. `ToneMapPass` applies
+global Reinhard in linear space and relies on the SceneColor attachment for
+the final sRGB transfer. Target/resource counts derive from enum sentinels,
+which also fixes D4's stale manual target count that made
+`DirectionalShadow` inaccessible through `RendererFrameTargets`.
+
+`GraphicsSmoke` proves G-buffer + sampled shadow -> RGBA16F -> tone map ->
+captured PNG on Vulkan and OpenGL at
+`save/screenshots/validation/graphics-smoke-d5-{vulkan,opengl}.png`. This slice
+does **not** claim deferred PBR lighting, shadow-factor evaluation, HDR capture,
+or runtime command-path capture; those remain the next D5 subtasks.
+
+### D5.2 — directional Cook-Torrance lighting (landed 2026-08-30)
+
+The fixed schedule now runs `DeferredLightingPass` as the sole `SceneHdr`
+writer. Its fullscreen shader samples linear albedo, raw world normal,
+metallic/roughness/occlusion, and shader-readable G-buffer D32; reconstructs
+world position with the inverse view-projection matrix and the backend's depth
+range; and evaluates GGX/Smith/Schlick Cook-Torrance lighting for enabled
+directional records. The version-1 `LightGpuData` std140 layout is locked with
+exact CPU size/offset assertions. Point and spot records are valid but ignored
+until D6, and shadow state remains deliberately unconsumed until D5.3.
+
+`GraphicsSmoke` now drives that real light UBO + depth-reconstruction path into
+RGBA16F, tone maps it, and captures the supplied rock on Vulkan and OpenGL.
+Both backends pass the automated non-uniform/direct-light threshold. D5.2.1
+then corrected Vulkan's winding translation: normal-debug captures became
+pixel-identical except for one 1/255 channel value, and final lighting has the
+same bound and mean on both APIs. This is now a valid baseline for D5.3.
+Runtime command-path debug capture remains separate work.
 
 ## D6 — light and shadow expansion
 

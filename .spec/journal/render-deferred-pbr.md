@@ -1,6 +1,6 @@
 # Render Deferred PBR
 
-- Status: partial (D0–D3 complete; D4–D7 pending)
+- Status: partial (D0–D4 complete; D5–D7 pending)
 - Date: 2026-08-29
 - Spec: [Render Deferred PBR](../specs/render-deferred-pbr.md)
 - Parent TODO: [Deferred PBR TODO](../../docs/render/deferred_pbr_TODO.md)
@@ -153,9 +153,6 @@
 
 ## Remaining work
 
-- D4 — directional shadow pass family (`Directional2D` depth job, light-space
-  constants, caster filtering, shadow slot binding, debug views; the
-  `ShadowDepth` material pass is already reserved).
 - D5 — `DeferredLightingPass` + `ToneMapPass` to LDR SceneColor, capture views,
   PBR screenshot evidence on both APIs.
 - D6 — unshadowed point/spot, `Spot2D`/`PointCube` jobs, shadow budget policy.
@@ -174,3 +171,114 @@
   and now carries the G-buffer encodings table, color-space rule, tangent
   convention, and material-V2 constant-block ABI.
 - Append dated checkpoints/corrections here as D4–D7 land.
+
+## 2026-08-30 — D4 directional shadow depth family
+
+- Gameplay exposes only `casts_shadow`; Render resolves it into a private,
+  generational `ShadowHandle` and retires it when the source disables or dies.
+  `RenderSystem` selects one enabled directional job from the immutable
+  snapshot, with a camera-centred 100×100 orthographic fit and 200-unit depth
+  range. It records the job before `GBufferPass` into a fixed 2048² D32 target
+  with opt-in sampled depth, filtering `visible && casts_shadow && opaque &&
+  ready` proxies. Its binding slot is render-private and reserved for D5.
+- The generic depth override uses only `PerPassData` and `PerObjectData` at
+  set 0/bindings 0 and 1. No Graphics contract changed and no native type or
+  texture escapes to Gameplay/Asset. No portable common depth-bias state
+  exists, so the pass deliberately does not claim an API-specific bias policy.
+- `GBufferDebugViewPass` converts the sampled D32 map into a fourth SceneColor
+  panel, preserving the existing capture path. An unscheduled job leaves clear
+  depth and records no shadow pass.
+- Validation: `RenderPassScheduleTest` 7/7 passed. `GraphicsSmoke` passed on
+  Vulkan and OpenGL after it was extended to write, sample, capture, resize,
+  and tear down a real depth-only sampled target. The wrapper's `smoke` command
+  builds successfully but cannot invoke a zero-argument executable because of
+  its existing empty-array parameter bug; the built executable was run directly.
+- Reference gate: inspected gkNextEngine's `ShadowMapPass.cpp` (depth-only
+  D32 producer followed by shader-readable consumption) and Godot's
+  `render_scene_buffers.h` (renderer-owned buffer configuration). KimPeanut
+  adopts only producer/consumer intent and Render ownership, rejecting native
+  Vulkan framebuffers, global descriptors, and cascades.
+
+## 2026-08-30 — D5.1 HDR presentation spine
+
+- Added Render-owned sampled RGBA16F `SceneHdr`; `SceneColor` remains the
+  stable RGBA8 sRGB capture/editor output. Replaced fragile manual target and
+  pass-resource counts with enum sentinels. This also corrected the stale D4
+  target count that excluded `DirectionalShadow` from allocation/access.
+- The fixed schedule now validates `ShadowDepthPass -> GBufferPass ->
+  GBufferDebugViewPass(SceneHdr writer) -> ToneMapPass(SceneColor writer) ->
+  EditorCompositePass`. The debug producer is intentionally temporary;
+  Cook-Torrance lighting and shadow-factor evaluation remain separate D5 work.
+- `ToneMapPass` samples SceneHdr and applies global Reinhard in linear space;
+  the SceneColor attachment performs final sRGB encoding. Fullscreen mesh and
+  sampler lifetime stay owned by `RenderSystem`; targets stay owned by
+  `RendererFrameTargets`; no common Graphics contract or native type changed.
+- Validation: `RenderPassScheduleTest` passed 8/8. `GraphicsSmoke` passed on
+  Vulkan and OpenGL after its PBR block was extended through RGBA16F SceneHdr
+  and tone mapping. Both inspected 1600x1024 captures are non-uniform and show
+  the same four diagnostic regions and rock silhouette at
+  `save/screenshots/validation/graphics-smoke-d5-{vulkan,opengl}.png`.
+- Reference gate: Godot's current `renderer_scene_render_rd.cpp` keeps internal
+  scene color separate and invokes a distinct tone-map operation into the
+  display destination. KimPeanut adopts that HDR/LDR separation but keeps its
+  existing fixed schedule and simple extent-owned target set, rejecting the
+  dynamic post-effect/cache hierarchy.
+
+## 2026-08-30 — D5.2 directional Cook-Torrance lighting
+
+- Replaced the scheduled G-buffer diagnostic producer with
+  `DeferredLightingPass`: sampled albedo/normal/material/D32 plus frame light
+  data and inverse view-projection constants now produce `SceneHdr`, followed
+  by the existing tone-map and editor composite passes. The debug pipeline is
+  retained but unscheduled for future explicit capture routing.
+- G-buffer D32 is shader-readable. Depth reconstruction uses OpenGL's [-1,1]
+  and Vulkan's [0,1] NDC depth conventions without adding an RHI API branch.
+  The shader evaluates GGX distribution, Smith geometry, and Schlick Fresnel
+  for enabled directional records. Point/spot and shadow contribution remain
+  explicit later slices.
+- Locked the version-1 light std140 ABI with exact `LightGpuData` size/offset
+  assertions and added an 80-byte deferred-camera constant block. No native API
+  type or common Graphics contract changed.
+- Validation: `RenderPassScheduleTest` built and passed 8/8. `GraphicsSmoke`
+  built and passed Vulkan/OpenGL when invoked directly; `kp.ps1 smoke` still
+  has its pre-existing zero-argument binding failure. Both final captures are
+  non-uniform and exceed the direct-light threshold. The full Debug build and
+  complete CTest suite also passed (155/155) because the shader-facing render
+  ABI header is shared by multiple consumers.
+- Visual inspection found a cross-backend normal-map appearance mismatch:
+  Vulkan is broadly front-lit and OpenGL mostly grazing-lit. Diagnostic renders
+  confirmed identical light UBO values but different sampled world normals.
+  Treat this as a D3 normal-convention follow-up before D5.3 shadow comparison.
+- Reference gate: bgfx's reflective-shadow-map example reconstructs world
+  position from sampled depth with an inverse view/projection transform;
+  Filament likewise documents inverse-projection world-position reconstruction
+  and explicit clip-space convention handling. KimPeanut adopts that narrow
+  pattern while keeping its existing frame target and fixed schedule ownership.
+
+## 2026-08-30 — D5.2.1 cross-backend winding correction
+
+- Root cause: `RasterState::front_face` was translated to the identically named
+  Vulkan enum while Vulkan used a positive-height viewport. Vulkan's upper-left
+  framebuffer coordinates reverse engine/OpenGL y-up winding, so back-face
+  culling selected the opposite closed-mesh surface. The normal map and TBN
+  were not API-dependent.
+- Fixed the owning boundary in `ConvertToVulkanFrontFace`: common clockwise and
+  counter-clockwise semantics are swapped only during Vulkan translation.
+  Negative viewport height was rejected because it would also change the
+  established render-target/readback orientation; shader normal/UV flips were
+  rejected because they would hide a raster-state error.
+- Removed the fullscreen `cull_mode = NONE` workaround from D2/D5 smoke and
+  RenderSystem fullscreen passes. Their shared CCW triangle now renders with
+  back-face culling on both APIs, making the smoke an execution-level winding
+  regression check.
+- Diagnostic normal captures had identical bounds/means and differed at only
+  one pixel by 1/255 in one channel. Production final-lighting captures likewise
+  have identical bounds/means and differ at one pixel by 1/255 in two channels.
+- Validation: `GraphicsSmoke` passed for Vulkan and OpenGL with back-face
+  culling restored; the full Debug build passed and the complete CTest suite
+  passed (155/155). `git diff --check` found no whitespace errors.
+- Reference gate: the Vulkan specification defines facing from signed area in
+  framebuffer coordinates and defines framebuffer origin as upper-left; the
+  Vulkan viewport reference documents negative height as the alternative Y
+  normalization. bgfx was inspected as cross-API winding precedent, but its
+  broader state model was not imported.

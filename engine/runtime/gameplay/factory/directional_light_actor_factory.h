@@ -14,6 +14,7 @@ namespace kpengine::gameplay
         Vector3f color{1.0f, 1.0f, 1.0f};
         float intensity = 1.0f;
         bool enabled = true;
+        bool casts_shadow = true;
     };
 
     // Constructs and activates the first Gameplay light Actor. Its component

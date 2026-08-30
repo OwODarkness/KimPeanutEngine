@@ -25,6 +25,8 @@ namespace kpengine::render
         Vector3f color{1.0f, 1.0f, 1.0f};
         float intensity = 1.0f;
         bool enabled = true;
+        // Authored intent only; Render resolves it to a private ShadowHandle.
+        bool casts_shadow = true;
     };
 
     using LightSourceDesc = std::variant<DirectionalLightSourceDesc>;

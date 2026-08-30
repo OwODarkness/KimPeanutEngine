@@ -1,8 +1,32 @@
 # Project Status
 
-**Snapshot: 2026-08-29.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-08-30.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
 
 ## Done
+
+- **Deferred PBR D5.2 — directional Cook-Torrance lighting (2026-08-30)** —
+  `DeferredLightingPass` now samples the three G-buffer attachments plus D32,
+  reconstructs world position with backend-correct NDC depth, consumes the
+  versioned frame-light UBO, and evaluates directional GGX/Smith/Schlick into
+  RGBA16F `SceneHdr` before tone mapping. Exact std140 size/offset assertions
+  lock the CPU/shader ABI; point/spot and shadow contribution remain later
+  slices. Schedule tests and Vulkan/OpenGL smoke pass. D5.2.1 corrected the
+  Vulkan positive-viewport winding translation and restored cross-backend
+  normal/final-lighting parity, providing a valid D5.3 baseline. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+
+- **Deferred PBR D4 — directional shadow depth family (2026-08-30)** —
+  `casts_shadow` remains authored Gameplay state while `LightSourceRegistry`
+  resolves it to a render-private `ShadowHandle`. `RenderSystem` schedules one
+  enabled `Directional2D` job from the immutable light snapshot and records it
+  first into a fixed 2048² sampled D32 target using camera-centred orthographic
+  light constants and `visible && casts_shadow && opaque && ready` casters.
+  The generic depth pipeline consumes only frame-local view/projection and
+  model bindings; neither Asset nor Gameplay sees a target, descriptor, or
+  native API value. Missing jobs leave the clear-depth map; the existing
+  SceneColor debug conversion samples it as a fourth panel. `GraphicsSmoke`
+  now validates real depth write → sampled read → capture/resize/teardown on
+  Vulkan and OpenGL. Portable depth bias and final shadow-factor evaluation
+  remain D5. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
 
 - **Deferred PBR D3 — Material Asset V2 + opaque PBR G-buffer (2026-08-29)** —
   material assets version to 2 (`kMaterialVersion = 2`, V1 unlit still loads,
@@ -59,9 +83,9 @@
   extent/format policy (`RebuildForExtent` waits idle, `Cleanup` releases) and
   `RenderSystem` runs init/capture/extent/pass/shutdown through it. `GraphicsSmoke`
   proves multi-attachment (RGBA8+RGBA16F+D32) → sampled readback → depth-only
-  lifecycle on Vulkan and OpenGL; the fullscreen content proof requires
-  `cull_mode = NONE` (the shared triangle is back-facing in Vulkan's y-down
-  NDC). 144/144 tests, engine boots with the migrated viewport. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  lifecycle on Vulkan and OpenGL. Its temporary fullscreen `cull_mode = NONE`
+  workaround was retired by D5.2.1 after Vulkan winding translation was fixed.
+  144/144 tests, engine boots with the migrated viewport. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
 
 - **Deferred PBR D1.4 — frame lighting ABI (2026-08-29)** — Render packs its
   immutable `LightWorld` snapshot into a bounded version-1 `LightGpuData` UBO
@@ -287,6 +311,17 @@
 - **Editor profile bar (2026-08-13)** — a bottom status bar showing FPS, frame ms, and memory. Two decoupling seams: `EditorMetric` (the extension point — implement `Name()`/`Sample()`, or wrap sampler lambdas in `EditorFuncMetric`) and `EditorProfileBarComponent` (samples injected metrics and draws them in one row; it only ever talks to `EditorMetric`). Built-ins: FPS (engine via an injected sampler), frame time (derived from fps, not a self-measured clock — that would see the render loop's pacing sleep), memory (process + system free via an injected stats sampler). **Measurement lives in the platform layer, not the editor and not the engine** — FPS stays in the engine (`Engine::GetFPS`, it's game-loop timing), but memory is an OS query and lives behind a platform seam: `MemoryStatsSampler` interface + `WindowsMemoryStatsSampler` under `runtime/platform/win/` (PSAPI/GlobalMemory, `psapi` linked into the `Platform` lib), owned by `RuntimeContext`, reached by the editor through `EditorContext`. The engine is platform-agnostic again. Plot-capable metrics draw a small sparkline via the base's history buffer. `EditorUI::Initialize` now takes an `EditorUIInitInfo` bundle (window, backend, log system, engine, memory sampler — defaulted, mirrors `EditorContextInitInfo`) so the signature doesn't grow with each injected dependency. Unit-tested under `ProfileTest` (5 cases, direct-compile; no Win32 in the test). → [editor_module.md](editor/editor_module.md)
 
 ## In progress / built but not wired
+
+- **Deferred PBR D5.1 — HDR presentation spine (2026-08-30)** — Render now
+  owns a sampled RGBA16F `SceneHdr` separately from the stable RGBA8 sRGB
+  `SceneColor`. The validated fixed schedule runs the current G-buffer/shadow
+  diagnostic conversion into HDR, then a fullscreen global-Reinhard
+  `ToneMapPass` into SceneColor before the editor composite. Cross-backend
+  smoke proves the target/pipeline/descriptor chain and captures
+  `graphics-smoke-d5-{vulkan,opengl}.png`. Deferred Cook-Torrance lighting,
+  directional shadow-factor evaluation, explicit capture-view routing, and
+  runtime command-path screenshots remain D5 work. →
+  [deferred PBR TODO](render/deferred_pbr_TODO.md#d51--hdr-presentation-spine-landed-2026-08-30)
 
 - **Deferred PBR D1.3 — typed light/shadow descriptions (2026-08-29)** —
   `LightWorld` now stores validated `LightDesc` records: common

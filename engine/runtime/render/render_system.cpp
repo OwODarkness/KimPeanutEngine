@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <limits>
 #include <utility>
 
@@ -172,6 +173,8 @@ namespace kpengine::render
         DrainRenderableSources();
         render_world_.ApplyPendingCommands();
         DrainLightSources();
+        const std::vector<Light> light_snapshot = light_world_.Snapshot();
+        active_directional_shadow_ = ScheduleDirectionalShadow(light_snapshot);
         if (!backend_)
         {
             return;
@@ -189,10 +192,12 @@ namespace kpengine::render
                 {frame_targets_.GetTarget(RenderTargetName::SceneColor)->GetWidth(),
                  frame_targets_.GetTarget(RenderTargetName::SceneColor)->GetHeight()});
             frame_lighting_binding_ = active_frame_context_->CreateLightingBinding(
-                BuildLightGpuFrameData(light_world_.Snapshot()));
+                BuildLightGpuFrameData(light_snapshot));
             editor_composite_recorded_ = false;
+            RecordDirectionalShadowPass();
             RecordGBufferPass();
-            RecordGBufferDebugViewPass();
+            RecordDeferredLightingPass();
+            RecordToneMapPass();
         }
     }
 
@@ -271,25 +276,109 @@ namespace kpengine::render
 
     void RenderSystem::ConfigurePassSchedule()
     {
-        // D3 deferred schedule: an opaque-only GBuffer write, a debug composite
-        // that reads the G-buffer and writes SceneColor, then the editor's
-        // terminal SceneColor read. The unlit ScenePass is retired from the
-        // engine schedule; the smoke keeps exercising it.
+        // D5.2 fixed schedule: deferred lighting is the sole SceneHdr writer;
+        // ToneMapPass remains the sole SceneColor writer before the editor's
+        // terminal read. The debug conversion is retained outside the normal
+        // schedule for later explicit capture-view routing.
+        const bool added_shadow = pass_schedule_.AddPass(
+            {"ShadowDepthPass", {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write}}, false});
         const bool added_gbuffer = pass_schedule_.AddPass(
             {"GBufferPass", {{RenderPassResource::GBuffer, RenderPassAccess::Write}}, false});
-        const bool added_debug_view = pass_schedule_.AddPass(
-            {"GBufferDebugViewPass",
+        const bool added_deferred_lighting = pass_schedule_.AddPass(
+            {"DeferredLightingPass",
              {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+              {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
+             false});
+        const bool added_tone_map = pass_schedule_.AddPass(
+            {"ToneMapPass",
+             {{RenderPassResource::SceneHdr, RenderPassAccess::Read},
               {RenderPassResource::SceneColor, RenderPassAccess::Write}},
              false});
         const bool added_editor = pass_schedule_.AddPass(
             {"EditorCompositePass", {{RenderPassResource::SceneColor, RenderPassAccess::Read}}, true});
         std::string error;
-        if (!added_gbuffer || !added_debug_view || !added_editor ||
+        if (!added_shadow || !added_gbuffer || !added_deferred_lighting ||
+            !added_tone_map || !added_editor ||
             !pass_schedule_.Validate(error))
         {
             KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Invalid render pass schedule: %s", error.c_str());
         }
+    }
+
+    std::optional<RenderSystem::DirectionalShadowFrame> RenderSystem::ScheduleDirectionalShadow(
+        const std::vector<Light> &lights) const
+    {
+        // The first implementation schedules at most one requested directional
+        // map. The source's private ShadowHandle is the opt-in; absent, disabled,
+        // or malformed records intentionally remain unshadowed.
+        constexpr uint32_t kDirectionalShadowResolution = 2048;
+        for (const Light &light : lights)
+        {
+            if (!light.desc.enabled || light.desc.type != LightType::Directional ||
+                !light.desc.shadow.has_value() ||
+                !IsShadowKindCompatible(light.desc.type, ShadowKind::Directional2D))
+            {
+                continue;
+            }
+            const auto *const directional = std::get_if<DirectionalLightData>(&light.desc.type_data);
+            if (!directional || directional->direction.SquareLength() <= 0.0f)
+            {
+                continue;
+            }
+
+            const Vector3f direction = directional->direction.GetSafetyNormalize();
+            const Vector3f center = scene_camera_.GetPosition();
+            constexpr float kHalfExtent = 50.0f;
+            constexpr float kDepthRange = 200.0f;
+            const Vector3f eye = center - direction * (kDepthRange * 0.5f);
+            const Vector3f up = std::abs(direction.y_) > 0.98f
+                                    ? Vector3f{0.0f, 0.0f, 1.0f}
+                                    : Vector3f{0.0f, 1.0f, 0.0f};
+            DirectionalShadowFrame frame{};
+            frame.job = {light.handle, ShadowKind::Directional2D,
+                         kDirectionalShadowResolution, 0};
+            frame.shadow = *light.desc.shadow;
+            frame.view = Matrix4f::MakeCameraMatrix(eye, direction, up);
+            frame.projection = Matrix4f::MakeOrthProjMatrix(
+                -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent, 0.1f, kDepthRange);
+            return frame;
+        }
+        return std::nullopt;
+    }
+
+    void RenderSystem::RecordDirectionalShadowPass()
+    {
+        if (!active_frame_context_ || !active_directional_shadow_.has_value() ||
+            !pass_schedule_.IsValid())
+        {
+            return;
+        }
+        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        RenderTarget *const shadow_target = frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
+        if (!recorder || !shadow_target || !PrepareDirectionalShadowPassResources() ||
+            !shadow_target->BeginRecording(*recorder))
+        {
+            return;
+        }
+
+        const DirectionalShadowFrame &shadow = *active_directional_shadow_;
+        graphics::PerPassData per_pass_data{};
+        per_pass_data.camera_data.view = shadow.view.Transpose();
+        per_pass_data.camera_data.proj = shadow.projection.Transpose();
+        const std::vector<MeshProxy> visible_proxies = SceneVisibility::BuildVisibleProxies(
+            shadow.projection * shadow.view, render_world_.Snapshot());
+        for (const MeshProxy &proxy : visible_proxies)
+        {
+            const std::optional<MaterialDrawClass> draw_class =
+                material_system_->GetDrawClass(proxy.material);
+            if (proxy.flags.casts_shadow && draw_class.has_value() &&
+                *draw_class == MaterialDrawClass::Opaque &&
+                material_system_->GetInstanceResolution(proxy.material).state == MaterialResourceState::Ready)
+            {
+                RecordShadowCaster(proxy, per_pass_data, *recorder);
+            }
+        }
+        shadow_target->EndRecording(*recorder);
     }
 
     void RenderSystem::RecordGBufferPass()
@@ -335,24 +424,24 @@ namespace kpengine::render
         }
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        RenderTarget *const scene_target = frame_targets_.GetTarget(RenderTargetName::SceneColor);
+        RenderTarget *const hdr_target = frame_targets_.GetTarget(RenderTargetName::SceneHdr);
         RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
-        if (!recorder || !scene_target || !gbuffer_target ||
+        RenderTarget *const shadow_target = frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
+        if (!recorder || !hdr_target || !gbuffer_target || !shadow_target ||
             !PrepareGBufferDebugPassResources())
         {
             return;
         }
         const graphics::Extent2D extent = active_frame_context_->GetRenderExtent();
         if (extent.width == 0 || extent.height == 0 ||
-            !scene_target->BeginRecording(*recorder))
+            !hdr_target->BeginRecording(*recorder))
         {
             return;
         }
         (void)extent;
 
-        // Composite the three G-buffer color attachments into SceneColor so the
-        // existing capture/editor path stays green. D5's lighting replaces this
-        // debug view; the attachments are sampled linear (non-sRGB formats).
+        // The fourth panel converts D4's sampled depth producer into linear
+        // SceneHdr; raw D32 attachment bytes never escape.
         const graphics::DescriptorSetHandle debug_bindings =
             active_frame_context_->AllocateResourceBindingSet(
                 gbuffer_debug_pipeline_,
@@ -365,6 +454,9 @@ namespace kpengine::render
                       gbuffer_debug_sampler_},
                   graphics::SampledTextureBinding{
                       0, 4, gbuffer_target->GetColorAttachmentTexture(2),
+                      gbuffer_debug_sampler_},
+                  graphics::SampledTextureBinding{
+                      0, 5, shadow_target->GetSampledDepthTexture(),
                       gbuffer_debug_sampler_}}});
         if (debug_bindings.IsValid())
         {
@@ -373,7 +465,153 @@ namespace kpengine::render
             recorder->BindResourceBindings(gbuffer_debug_pipeline_, debug_bindings);
             recorder->DrawIndexed();
         }
-        scene_target->EndRecording(*recorder);
+        hdr_target->EndRecording(*recorder);
+    }
+
+    void RenderSystem::RecordDeferredLightingPass()
+    {
+        if (!active_frame_context_ || !frame_lighting_binding_.IsValid() ||
+            !pass_schedule_.IsValid())
+        {
+            return;
+        }
+
+        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        RenderTarget *const hdr_target = frame_targets_.GetTarget(RenderTargetName::SceneHdr);
+        RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
+        if (!recorder || !hdr_target || !gbuffer_target ||
+            !PrepareDeferredLightingPassResources() ||
+            !hdr_target->BeginRecording(*recorder))
+        {
+            return;
+        }
+
+        DeferredLightingGpuData lighting_data{};
+        lighting_data.inverse_view_projection =
+            scene_camera_.GetViewProjectionMatrix().Inverse().Transpose();
+        const Vector3f &camera_position = scene_camera_.GetPosition();
+        lighting_data.camera_world_position = {
+            camera_position.x_, camera_position.y_, camera_position.z_, 1.0f};
+        const UniformAllocation lighting_constants =
+            active_frame_context_->AllocateUniform(lighting_data);
+        if (lighting_constants.IsValid())
+        {
+            const graphics::DescriptorSetHandle bindings =
+                active_frame_context_->AllocateResourceBindingSet(
+                    deferred_lighting_pipeline_,
+                    {0,
+                     {graphics::SampledTextureBinding{
+                          0, 0, gbuffer_target->GetColorAttachmentTexture(0),
+                          gbuffer_debug_sampler_},
+                      graphics::SampledTextureBinding{
+                          0, 1, gbuffer_target->GetColorAttachmentTexture(1),
+                          gbuffer_debug_sampler_},
+                      graphics::SampledTextureBinding{
+                          0, 2, gbuffer_target->GetColorAttachmentTexture(2),
+                          gbuffer_debug_sampler_},
+                      graphics::SampledTextureBinding{
+                          0, 3, gbuffer_target->GetSampledDepthTexture(),
+                          gbuffer_debug_sampler_},
+                      frame_lighting_binding_.GetResourceBinding(),
+                      graphics::UniformBufferBinding{
+                          0, 5, lighting_constants.buffer, lighting_constants.offset,
+                          lighting_constants.range}}});
+            if (bindings.IsValid())
+            {
+                recorder->BindPipeline(deferred_lighting_pipeline_);
+                recorder->BindMesh(gbuffer_debug_fullscreen_mesh_);
+                recorder->BindResourceBindings(deferred_lighting_pipeline_, bindings);
+                recorder->DrawIndexed();
+            }
+        }
+        hdr_target->EndRecording(*recorder);
+    }
+
+    bool RenderSystem::PrepareFullscreenPassResources()
+    {
+        if (gbuffer_debug_fullscreen_mesh_.IsValid() && gbuffer_debug_sampler_.IsValid())
+        {
+            return true;
+        }
+
+        data::MeshData fullscreen_mesh{};
+        data::Vertex v0{}, v1{}, v2{};
+        v0.position = {-1.0f, -1.0f, 0.0f};
+        v0.tex_coord = {0.0f, 0.0f};
+        v1.position = {3.0f, -1.0f, 0.0f};
+        v1.tex_coord = {2.0f, 0.0f};
+        v2.position = {-1.0f, 3.0f, 0.0f};
+        v2.tex_coord = {0.0f, 2.0f};
+        fullscreen_mesh.vertices = {v0, v1, v2};
+        fullscreen_mesh.indices = {0, 1, 2};
+        fullscreen_mesh.sections = {{0, 3, 0}};
+        gbuffer_debug_fullscreen_mesh_ = backend_->CreateMesh(fullscreen_mesh);
+        gbuffer_debug_sampler_ = backend_->CreateSampler(graphics::SamplerSettings{});
+        return gbuffer_debug_fullscreen_mesh_.IsValid() && gbuffer_debug_sampler_.IsValid();
+    }
+
+    bool RenderSystem::PrepareDeferredLightingPassResources()
+    {
+        if (deferred_lighting_pipeline_.IsValid())
+        {
+            return true;
+        }
+        if (!PrepareFullscreenPassResources())
+        {
+            return false;
+        }
+
+        auto &asset_manager = asset::AssetManager::GetInstance();
+        const asset::AssetID program_id = asset_manager.LoadSync(
+            GetShaderDirectory() + "deferred_lighting.shader");
+        auto program = asset_manager.GetResource<asset::ShaderProgramResource>(program_id);
+        if (!program)
+        {
+            return false;
+        }
+        const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
+        resource_pipeline_->ProcessShader(shaders);
+        const auto vert_shader = program->GetShader(
+            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto frag_shader = program->GetShader(
+            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL);
+        if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
+            vert_shader->status == asset::ShaderStatus::CompileFailed ||
+            frag_shader->status == asset::ShaderStatus::CompileFailed)
+        {
+            return false;
+        }
+
+        graphics::PipelineDesc desc{};
+        desc.vert_shader = vert_shader->data.get();
+        desc.frag_shader = frag_shader->data.get();
+        desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA16F};
+        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+        desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+        desc.attri_descs = {
+            {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
+             offsetof(data::Vertex, position)},
+            {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
+             offsetof(data::Vertex, tex_coord)},
+        };
+        desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+        desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
+        desc.descriptor_binding_descs = {
+            {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_FRAGMENT}},
+        };
+        deferred_lighting_pipeline_ = backend_->CreatePipelineResource(desc);
+        return deferred_lighting_pipeline_.IsValid();
     }
 
     bool RenderSystem::PrepareGBufferDebugPassResources()
@@ -382,6 +620,10 @@ namespace kpengine::render
             gbuffer_debug_sampler_.IsValid())
         {
             return true;
+        }
+        if (!PrepareFullscreenPassResources())
+        {
+            return false;
         }
 
         auto &asset_manager = asset::AssetManager::GetInstance();
@@ -413,6 +655,107 @@ namespace kpengine::render
         graphics::PipelineDesc desc{};
         desc.vert_shader = vert_shader->data.get();
         desc.frag_shader = frag_shader->data.get();
+        desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA16F};
+        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+        desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+        desc.attri_descs = {
+            {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
+             offsetof(data::Vertex, position)},
+            {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
+             offsetof(data::Vertex, tex_coord)},
+        };
+        // The common winding contract is translated by each backend, so this
+        // shared CCW triangle remains front-facing on both APIs.
+        desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+        desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
+        desc.descriptor_binding_descs = {
+            {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT}},
+        };
+        gbuffer_debug_pipeline_ = backend_->CreatePipelineResource(desc);
+
+        if (!gbuffer_debug_pipeline_.IsValid() || !gbuffer_debug_fullscreen_mesh_.IsValid() ||
+            !gbuffer_debug_sampler_.IsValid())
+        {
+            return false;
+        }
+        return true;
+    }
+
+    void RenderSystem::RecordToneMapPass()
+    {
+        if (!active_frame_context_ || !pass_schedule_.IsValid())
+        {
+            return;
+        }
+
+        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        RenderTarget *const hdr_target = frame_targets_.GetTarget(RenderTargetName::SceneHdr);
+        RenderTarget *const scene_target = frame_targets_.GetTarget(RenderTargetName::SceneColor);
+        if (!recorder || !hdr_target || !scene_target || !PrepareToneMapPassResources() ||
+            !scene_target->BeginRecording(*recorder))
+        {
+            return;
+        }
+
+        const graphics::DescriptorSetHandle tone_map_bindings =
+            active_frame_context_->AllocateResourceBindingSet(
+                tone_map_pipeline_,
+                {0,
+                 {graphics::SampledTextureBinding{
+                     0, 2, hdr_target->GetColorAttachmentTexture(0),
+                     gbuffer_debug_sampler_}}});
+        if (tone_map_bindings.IsValid())
+        {
+            recorder->BindPipeline(tone_map_pipeline_);
+            recorder->BindMesh(gbuffer_debug_fullscreen_mesh_);
+            recorder->BindResourceBindings(tone_map_pipeline_, tone_map_bindings);
+            recorder->DrawIndexed();
+        }
+        scene_target->EndRecording(*recorder);
+    }
+
+    bool RenderSystem::PrepareToneMapPassResources()
+    {
+        if (tone_map_pipeline_.IsValid())
+        {
+            return true;
+        }
+        if (!PrepareFullscreenPassResources())
+        {
+            return false;
+        }
+
+        auto &asset_manager = asset::AssetManager::GetInstance();
+        const asset::AssetID program_id = asset_manager.LoadSync(
+            GetShaderDirectory() + "tone_map.shader");
+        auto program = asset_manager.GetResource<asset::ShaderProgramResource>(program_id);
+        if (!program)
+        {
+            return false;
+        }
+        const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
+        resource_pipeline_->ProcessShader(shaders);
+        const auto vert_shader = program->GetShader(
+            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto frag_shader = program->GetShader(
+            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL);
+        if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
+            vert_shader->status == asset::ShaderStatus::CompileFailed ||
+            frag_shader->status == asset::ShaderStatus::CompileFailed)
+        {
+            return false;
+        }
+
+        graphics::PipelineDesc desc{};
+        desc.vert_shader = vert_shader->data.get();
+        desc.frag_shader = frag_shader->data.get();
         desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
         desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
         desc.binding_descs = {{0, sizeof(data::Vertex), false}};
@@ -422,40 +765,95 @@ namespace kpengine::render
             {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
              offsetof(data::Vertex, tex_coord)},
         };
-        // Fullscreen triangle: front-facing in OpenGL y-up NDC, back-facing in
-        // Vulkan y-down NDC, so the pass must not cull.
         desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
-        desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
+        desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
         desc.descriptor_binding_descs = {
             {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
-              ShaderStage::SHADER_STAGE_FRAGMENT},
-             {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
-              ShaderStage::SHADER_STAGE_FRAGMENT},
-             {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
               ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
-        gbuffer_debug_pipeline_ = backend_->CreatePipelineResource(desc);
+        tone_map_pipeline_ = backend_->CreatePipelineResource(desc);
+        return tone_map_pipeline_.IsValid();
+    }
 
-        data::MeshData fullscreen_mesh{};
-        data::Vertex v0{}, v1{}, v2{};
-        v0.position = {-1.0f, -1.0f, 0.0f};
-        v0.tex_coord = {0.0f, 0.0f};
-        v1.position = {3.0f, -1.0f, 0.0f};
-        v1.tex_coord = {2.0f, 0.0f};
-        v2.position = {-1.0f, 3.0f, 0.0f};
-        v2.tex_coord = {0.0f, 2.0f};
-        fullscreen_mesh.vertices = {v0, v1, v2};
-        fullscreen_mesh.indices = {0, 1, 2};
-        fullscreen_mesh.sections = {{0, 3, 0}};
-        gbuffer_debug_fullscreen_mesh_ = backend_->CreateMesh(fullscreen_mesh);
-        gbuffer_debug_sampler_ = backend_->CreateSampler(graphics::SamplerSettings{});
+    bool RenderSystem::PrepareDirectionalShadowPassResources()
+    {
+        if (directional_shadow_pipeline_.IsValid())
+        {
+            return true;
+        }
 
-        if (!gbuffer_debug_pipeline_.IsValid() || !gbuffer_debug_fullscreen_mesh_.IsValid() ||
-            !gbuffer_debug_sampler_.IsValid())
+        auto &asset_manager = asset::AssetManager::GetInstance();
+        const asset::AssetID program_id = asset_manager.LoadSync(
+            GetShaderDirectory() + "directional_shadow_depth.shader");
+        auto program = asset_manager.GetResource<asset::ShaderProgramResource>(program_id);
+        if (!program)
         {
             return false;
         }
-        return true;
+        const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
+        resource_pipeline_->ProcessShader(shaders);
+        const auto vert_shader = program->GetShader(
+            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto frag_shader = program->GetShader(
+            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL);
+        if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
+            vert_shader->status == asset::ShaderStatus::CompileFailed ||
+            frag_shader->status == asset::ShaderStatus::CompileFailed)
+        {
+            return false;
+        }
+
+        graphics::PipelineDesc desc{};
+        desc.vert_shader = vert_shader->data.get();
+        desc.frag_shader = frag_shader->data.get();
+        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
+        desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+        desc.attri_descs = {{0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS,
+                             offsetof(data::Vertex, position)}};
+        desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+        // Conservative caster coverage; a portable depth-bias state is a
+        // separate common-RHI extension, so this slice does not fake one.
+        desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
+        desc.descriptor_binding_descs = {
+            {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_VERTEX},
+             {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_VERTEX}},
+        };
+        directional_shadow_pipeline_ = backend_->CreatePipelineResource(desc);
+        return directional_shadow_pipeline_.IsValid();
+    }
+
+    void RenderSystem::RecordShadowCaster(const MeshProxy &proxy,
+                                          const graphics::PerPassData &per_pass_data,
+                                          graphics::CommandRecorder &recorder)
+    {
+        if (!proxy.flags.visible || !proxy.flags.casts_shadow || !proxy.mesh.IsValid() ||
+            !directional_shadow_pipeline_.IsValid())
+        {
+            return;
+        }
+        graphics::PerObjectData per_object_data{};
+        per_object_data.model = Matrix4f::MakeTransformMatrix(proxy.world_transform).Transpose();
+        const UniformAllocation per_pass = active_frame_context_->AllocateUniform(per_pass_data);
+        const UniformAllocation per_object = active_frame_context_->AllocateUniform(per_object_data);
+        if (!per_pass.IsValid() || !per_object.IsValid())
+        {
+            return;
+        }
+        const graphics::DescriptorSetHandle bindings = active_frame_context_->AllocateResourceBindingSet(
+            directional_shadow_pipeline_,
+            {0,
+             {graphics::UniformBufferBinding{0, 0, per_pass.buffer, per_pass.offset, per_pass.range},
+              graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset, per_object.range}}});
+        if (!bindings.IsValid())
+        {
+            return;
+        }
+        recorder.BindPipeline(directional_shadow_pipeline_);
+        recorder.BindMesh(proxy.mesh);
+        recorder.BindResourceBindings(directional_shadow_pipeline_, bindings);
+        recorder.DrawIndexed();
     }
 
     void RenderSystem::RecordMeshProxy(const MeshProxy &proxy,
@@ -850,6 +1248,7 @@ namespace kpengine::render
         if (!backend_)
         {
             frame_lighting_binding_ = {};
+            active_directional_shadow_.reset();
             render_capture_service_.reset();
             source_registry_.Clear(render_world_);
             render_world_.Clear();
@@ -871,6 +1270,7 @@ namespace kpengine::render
         light_source_registry_.Clear(light_world_);
         light_world_.Clear();
         frame_lighting_binding_ = {};
+        active_directional_shadow_.reset();
         bootstrap_renderable_sources_.clear();
         DestroyMaterialAssetRecords();
         material_system_.reset();
@@ -890,6 +1290,10 @@ namespace kpengine::render
         {
             backend_->DestroyPipelineResource(gbuffer_debug_pipeline_);
         }
+        if (deferred_lighting_pipeline_.IsValid())
+        {
+            backend_->DestroyPipelineResource(deferred_lighting_pipeline_);
+        }
         if (gbuffer_debug_fullscreen_mesh_.IsValid())
         {
             backend_->DestroyMesh(gbuffer_debug_fullscreen_mesh_);
@@ -898,9 +1302,20 @@ namespace kpengine::render
         {
             backend_->DestroySampler(gbuffer_debug_sampler_);
         }
+        if (tone_map_pipeline_.IsValid())
+        {
+            backend_->DestroyPipelineResource(tone_map_pipeline_);
+        }
         gbuffer_debug_pipeline_ = {};
+        deferred_lighting_pipeline_ = {};
         gbuffer_debug_fullscreen_mesh_ = {};
         gbuffer_debug_sampler_ = {};
+        tone_map_pipeline_ = {};
+        if (directional_shadow_pipeline_.IsValid())
+        {
+            backend_->DestroyPipelineResource(directional_shadow_pipeline_);
+        }
+        directional_shadow_pipeline_ = {};
         resource_resolver_->Cleanup();
         resource_resolver_.reset();
         backend_->Cleanup();

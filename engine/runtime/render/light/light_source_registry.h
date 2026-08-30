@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_LIGHT_SOURCE_REGISTRY_H
 
 #include <mutex>
+#include <optional>
 #include <unordered_map>
 #include <variant>
 #include <vector>
@@ -44,12 +45,14 @@ namespace kpengine::render
         {
             LightSourceHandle source_handle;
             LightHandle light_handle;
+            std::optional<ShadowHandle> shadow_handle;
         };
 
         void ApplyCommands(LightWorld &light_world, std::vector<Command> commands);
 
         std::mutex command_mutex_;
         HandleSystem<LightSourceHandle> handles_;
+        HandleSystem<ShadowHandle> shadow_handles_;
         std::vector<Command> pending_commands_;
         std::unordered_map<uint32_t, SourceRecord> records_;
     };

@@ -7,6 +7,10 @@
 
 namespace kpengine::render
 {
+    namespace
+    {
+        constexpr uint32_t kDirectionalShadowResolution = 2048;
+    }
     struct RendererFrameTargets::Impl
     {
         graphics::RenderBackend *backend = nullptr;
@@ -62,7 +66,39 @@ namespace kpengine::render
                      graphics::RenderTargetStoreOp::Store,
                      {0.f, 1.f, 1.f, 0.f}}},
             };
-            desc.depth = graphics::RenderTargetDepthAttachment{};
+            desc.depth = graphics::RenderTargetDepthAttachment{
+                TextureFormat::TEXTURE_FORMAT_D32,
+                graphics::RenderTargetLoadOp::Clear,
+                graphics::RenderTargetStoreOp::Store,
+                1.0f,
+                0,
+                true};
+            break;
+        case RenderTargetName::DirectionalShadow:
+            // Fixed-resolution depth producer. It is sampled only by
+            // Render-owned consumers, never by Gameplay or Asset.
+            desc.width = kDirectionalShadowResolution;
+            desc.height = kDirectionalShadowResolution;
+            desc.depth = graphics::RenderTargetDepthAttachment{
+                TextureFormat::TEXTURE_FORMAT_D32,
+                graphics::RenderTargetLoadOp::Clear,
+                graphics::RenderTargetStoreOp::Store,
+                1.0f,
+                0,
+                true};
+            break;
+        case RenderTargetName::SceneHdr:
+            // Linear HDR lighting/debug output. ToneMapPass is the only normal
+            // presentation consumer; SceneColor remains the stable LDR target.
+            desc.color_attachments = {
+                {graphics::RenderTargetColorAttachment{
+                    TextureFormat::TEXTURE_FORMAT_RGBA16F,
+                    graphics::RenderTargetLoadOp::Clear,
+                    graphics::RenderTargetStoreOp::Store,
+                    {0.f, 0.f, 0.f, 1.f}}},
+            };
+            break;
+        case RenderTargetName::Count:
             break;
         }
         return desc;

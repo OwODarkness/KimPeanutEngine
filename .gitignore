@@ -41,6 +41,18 @@ deprecated/
 *.hdr
 /asset/
 
+# The depth-only directional-shadow program is engine source, not imported
+# content. Keep the rest of the generated/imported asset tree ignored.
+!/asset/
+/asset/*
+!/asset/shader/
+/asset/shader/*
+!/asset/shader/directional_shadow_depth.shader
+!/asset/shader/tone_map.shader
+!/asset/shader/tone_map.frag
+!/asset/shader/deferred_lighting.shader
+!/asset/shader/deferred_lighting.frag
+
 # Build output
 build/
 build-*/

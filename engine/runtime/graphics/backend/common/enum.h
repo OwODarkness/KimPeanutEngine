@@ -79,6 +79,10 @@ namespace kpengine::graphics
         CULL_MODE_FRONT_AND_BACK
     };
 
+    // Winding in the engine's y-up clip-space convention. Backends normalize
+    // framebuffer-origin differences when translating this semantic value.
+    // Winding in the engine's y-up clip-space convention. Backends normalize
+    // framebuffer-origin differences when translating this semantic value.
     enum class FrontFace
     {
         FRONT_FACE_COUNTER_CLOCKWISE,

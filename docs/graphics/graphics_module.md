@@ -118,6 +118,13 @@ struct RenderTargetDesc {
 `ValidateRenderTargetDesc` and
 `ValidateRenderTargetPipelineCompatibility` ([`common/render_target_validation.{h,cpp}`](../../engine/runtime/graphics/backend/common/render_target_validation.h)) are the shared gate: a target needs a non-zero extent and ≥1 attachment overall; D2 accepts `sample_count == 1` only because multisample attachment/resolve and sampled-MSAA bindings are not implemented yet. A pipeline matches a target only when color count and per-color format, depth presence/format (UNKNOW = compatible with any), and sample count all agree. Both backends translate N color attachments (Vulkan `vkCmdBeginRendering` with N `VkRenderingAttachmentInfo`; OpenGL `glNamedFramebufferTexture(GL_COLOR_ATTACHMENT0+i)` + `glDrawBuffers`, or `glDrawBuffer(GL_NONE)` for depth-only), read back color[0] for RGBA8_SRGB targets, and expose per-attachment `GetRenderTargetColorAttachment(index)` / `GetRenderTargetDepthAttachment` plus an opt-in sampled-depth accessor on the facade — no native image/view leaks above Graphics.
 
+`RasterState::front_face` is expressed in the engine's y-up clip-space
+convention. OpenGL translates it directly. Vulkan retains a positive-height
+viewport, whose upper-left framebuffer coordinates reverse winding, so its
+pipeline translation swaps clockwise/counter-clockwise. This keeps common
+back-face culling semantic across APIs without shader branches or a viewport
+orientation change.
+
 ### Shader input — `data::ShaderData` in `PipelineDesc` (Phase 0 landed 2026-08-15)
 
 `PipelineDesc`'s shader members are `data::ShaderData*` directly — the resource pipeline's baked artifact *is* the RHI's input, no wrapper. Each backend reads the field its own API needs: Vulkan `byte_code` (SPIR-V), OpenGL `source` (preprocessed GLSL). The old `graphics::Shader` abstraction (`GetCode()`/`GetCodeSize()`, path-backed `OpenglShader`/`VulkanShader`, then the `ResourceShader` wrapper) is **retired** — its `api`-based dispatch was redundant because each backend *is* its own API.

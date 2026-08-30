@@ -64,10 +64,23 @@ namespace kpengine::render
         std::array<LightGpuData, kMaxFrameLights> lights{};
     };
 
-    static_assert(sizeof(LightGpuData) % 16 == 0,
-                  "LightGpuData rows must remain uniform-buffer aligned");
+    // Fullscreen lighting constants. The matrix is transposed before upload so
+    // GLSL observes the CPU-side inverse view-projection matrix.
+    struct alignas(16) DeferredLightingGpuData
+    {
+        Matrix4f inverse_view_projection;
+        std::array<float, 4> camera_world_position{};
+    };
+
+    static_assert(sizeof(LightGpuData) == 96,
+                  "LightGpuData must match the version-1 GLSL std140 stride");
+    static_assert(offsetof(LightGpuData, outer_cone_radians) == 48);
+    static_assert(offsetof(LightGpuData, layer_mask) == 64);
+    static_assert(offsetof(LightGpuData, reserved) == 72);
     static_assert(sizeof(LightGpuFrameHeader) == 16,
                   "The frame lighting header is one uniform-buffer row");
+    static_assert(sizeof(DeferredLightingGpuData) == 80,
+                  "Deferred lighting constants must remain five uniform rows");
 
     bool IsLightGpuFrameHeaderCompatible(const LightGpuFrameHeader &header);
     std::optional<LightGpuData> EncodeLightGpuData(const LightDesc &light);

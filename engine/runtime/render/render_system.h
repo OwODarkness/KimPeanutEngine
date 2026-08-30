@@ -159,9 +159,27 @@ namespace kpengine::render
         void PrepareBootstrapRenderableSources();
         void DestroyMaterialAssetRecords();
         void ConfigurePassSchedule();
+        void RecordDirectionalShadowPass();
         void RecordGBufferPass();
+        void RecordDeferredLightingPass();
         void RecordGBufferDebugViewPass();
+        void RecordToneMapPass();
+        bool PrepareDirectionalShadowPassResources();
+        bool PrepareFullscreenPassResources();
+        bool PrepareDeferredLightingPassResources();
         bool PrepareGBufferDebugPassResources();
+        bool PrepareToneMapPassResources();
+        struct DirectionalShadowFrame
+        {
+            ShadowJobDesc job;
+            ShadowHandle shadow;
+            Matrix4f view;
+            Matrix4f projection;
+        };
+        std::optional<DirectionalShadowFrame> ScheduleDirectionalShadow(
+            const std::vector<Light> &lights) const;
+        void RecordShadowCaster(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
+                                graphics::CommandRecorder &recorder);
         void RecordMeshProxy(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
                              graphics::CommandRecorder &recorder, MaterialPass pass);
         void ApplyPendingSceneRenderTargetExtent();
@@ -182,6 +200,7 @@ namespace kpengine::render
         LightWorld light_world_;
         LightSourceRegistry light_source_registry_;
         FrameLightingBinding frame_lighting_binding_;
+        std::optional<DirectionalShadowFrame> active_directional_shadow_;
         RenderCamera scene_camera_;
         std::vector<StaticMeshRenderableSourceDesc> bootstrap_renderable_sources_;
         std::unique_ptr<MaterialAssetResolver> material_asset_resolver_;
@@ -194,11 +213,14 @@ namespace kpengine::render
         std::unordered_map<asset::RequestID, RenderCacheEntry> render_cache_;
         FrameContext *active_frame_context_ = nullptr;
         bool editor_composite_recorded_ = false;
-        // Lazily built GBuffer debug-view resources (fullscreen composite into
-        // SceneColor). Owned here so the frame pass only records draws.
+        // Lazily built fullscreen resources. Pipelines remain pass-specific;
+        // the immutable triangle mesh and sampler are shared by Render passes.
+        graphics::PipelineHandle deferred_lighting_pipeline_;
         graphics::PipelineHandle gbuffer_debug_pipeline_;
         graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;
         graphics::SamplerHandle gbuffer_debug_sampler_;
+        graphics::PipelineHandle tone_map_pipeline_;
+        graphics::PipelineHandle directional_shadow_pipeline_;
     };
 }
 

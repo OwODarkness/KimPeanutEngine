@@ -5,13 +5,15 @@
 namespace
 {
     kpengine::render::LightDesc MakeLightDesc(
-        const kpengine::render::DirectionalLightSourceDesc &source)
+        const kpengine::render::DirectionalLightSourceDesc &source,
+        std::optional<kpengine::render::ShadowHandle> shadow)
     {
         kpengine::render::LightDesc desc{};
         desc.type = kpengine::render::LightType::Directional;
         desc.color = source.color;
         desc.intensity = source.intensity;
         desc.enabled = source.enabled;
+        desc.shadow = shadow;
         desc.type_data = kpengine::render::DirectionalLightData{source.direction};
         return desc;
     }
@@ -77,6 +79,7 @@ namespace kpengine::render
         light_world.ApplyPendingCommands();
         std::scoped_lock lock(command_mutex_);
         handles_ = {};
+        shadow_handles_ = {};
     }
 
     void LightSourceRegistry::ApplyCommands(LightWorld &light_world, std::vector<Command> commands)
@@ -93,11 +96,19 @@ namespace kpengine::render
                             std::get_if<DirectionalLightSourceDesc>(&value.source);
                         if (directional != nullptr)
                         {
+                            const std::optional<ShadowHandle> shadow =
+                                directional->casts_shadow
+                                    ? std::optional<ShadowHandle>{shadow_handles_.Create()}
+                                    : std::nullopt;
                             const LightHandle light_handle =
-                                light_world.EnqueueCreate(MakeLightDesc(*directional));
+                                light_world.EnqueueCreate(MakeLightDesc(*directional, shadow));
                             if (light_handle.IsValid())
                             {
-                                records_[value.handle.id] = {value.handle, light_handle};
+                                records_[value.handle.id] = {value.handle, light_handle, shadow};
+                            }
+                            else if (shadow.has_value())
+                            {
+                                (void)shadow_handles_.Destroy(*shadow);
                             }
                         }
                     }
@@ -109,8 +120,18 @@ namespace kpengine::render
                         if (record != records_.end() && record->second.source_handle == value.handle &&
                             directional != nullptr)
                         {
+                            if (directional->casts_shadow && !record->second.shadow_handle.has_value())
+                            {
+                                record->second.shadow_handle = shadow_handles_.Create();
+                            }
+                            else if (!directional->casts_shadow && record->second.shadow_handle.has_value())
+                            {
+                                (void)shadow_handles_.Destroy(*record->second.shadow_handle);
+                                record->second.shadow_handle.reset();
+                            }
                             (void)light_world.EnqueueUpdate(record->second.light_handle,
-                                                            MakeLightDesc(*directional));
+                                                            MakeLightDesc(*directional,
+                                                                          record->second.shadow_handle));
                         }
                     }
                     else
@@ -119,6 +140,10 @@ namespace kpengine::render
                         if (record != records_.end() && record->second.source_handle == value.handle)
                         {
                             (void)light_world.EnqueueDestroy(record->second.light_handle);
+                            if (record->second.shadow_handle.has_value())
+                            {
+                                (void)shadow_handles_.Destroy(*record->second.shadow_handle);
+                            }
                             records_.erase(record);
                         }
                     }
