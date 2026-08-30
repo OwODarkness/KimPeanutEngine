@@ -1,6 +1,6 @@
 # Gameplay Module Design
 
-Location: `engine/runtime/gameplay/` (planned)
+Location: `engine/runtime/gameplay/`
 
 ## Status
 
@@ -44,6 +44,22 @@ visibility, destruction, resize, and teardown path. Editor inspection is not
 implemented: direct render-thread observation of the mutable game-thread World
 would violate the boundary; a future read-only snapshot is required.
 
+**GP6.1 landed 2026-08-30.** `CameraComponent` now owns transform/lens state
+and publishes a copied, generational camera source. `CameraSourceRegistry`
+selects one enabled source by priority on the render thread, and `RenderSystem`
+applies it to its private `RenderCamera` while retaining viewport aspect and
+matrix ownership. Invalid source values fall back to the bootstrap camera.
+**GP6.2 landed 2026-08-30.** `GameplayWorld` owns one local
+`PlayerController`; runtime startup creates an active root free camera,
+installs the `Gameplay` input context, and possesses it. Keyboard/mouse
+callbacks enqueue logical `camera.move`, `camera.look`, and `camera.zoom`
+values into a mutex-protected frame snapshot. The controller consumes that
+snapshot on the game thread and applies basis-relative movement, raw mouse
+look, pitch/yaw limits, and FOV zoom. **GP6.3 landed 2026-08-30:** Window and
+Input translate copied gamepad samples into logical stick/trigger/button input;
+the controller consumes it on the game thread, and deterministic camera smoke
+passes on Vulkan and OpenGL.
+
 The executable implementation ledger is [TODO.md](TODO.md). The render-side
 half of the boundary remains documented in
 [world/component_module.md](../world/component_module.md) and
@@ -68,7 +84,30 @@ GameplayWorld (game thread)
                     ▼
 RenderSystem (render thread)
   └─ source resolution → RenderWorld → MeshProxy snapshot → render passes
+
+For the camera slice, the parallel control path is:
+
+Window/GLFW events (render thread)
+  → InputSystem logical action queue
+  → PlayerController input snapshot (game thread)
+  → CameraComponent transform/lens state
+  → copied camera-source command
+  → RenderSystem scene camera/culling
 ```
+
+In the editor, camera control is an explicit viewport mode rather than a
+permanent global input state. A left click over the rendered scene image enters
+mouse capture: `WindowSystem` hides the cursor and enables relative/raw motion.
+The next left click exits capture and restores the cursor. The editor only
+notifies the injected `ISceneCameraControlSink`; `RuntimeContext` stores that
+request atomically and applies it before the game-thread `GameplayWorld::Tick`.
+`PlayerController` consumes the copied input snapshot only while enabled, so
+the editor never dereferences the possessed Actor or mutates Gameplay from the
+render thread. Runtime also gates active-context processing immediately, so
+cursor/key/gamepad events from the released editor mode cannot become stale
+camera actions; changing that gate also clears pending logical events at the
+same mutex-protected boundary. Cursor tracking is reset at each mode transition
+to avoid a first-frame delta spike.
 
 This module follows Unreal-style names because they express the intended game
 authoring model. It does not adopt Unreal's reflection, UObject, garbage
@@ -293,6 +332,175 @@ stop game ticking
 The source queue and generational tokens make a component's game-thread
 destruction safe even when the matching render proxy retires a frame later.
 
+## Camera and local scene traversal (GP6.1–GP6.3 landed)
+
+### Problem and boundary
+
+The deprecated implementation combined two responsibilities: its
+`CameraComponent` derived view/projection data from a scene transform, while a
+`Camera` Actor also bound WASD/QE, mouse delta, and scroll input. That code is a
+useful behavior reference, but restoring it would reintroduce the old shared
+scene hierarchy and direct input/render coupling. The current `SceneComponent`
+already supplies same-Actor transforms and dirty propagation; the current
+`RenderSystem` owns `scene_camera_`, performs viewport-aspect updates, and uses
+the camera for culling and deferred-light reconstruction.
+
+GP6 therefore separates the responsibilities:
+
+```text
+GameplayWorld (game thread)
+  ├─ local PlayerController   — input, possession, control rotation
+  └─ camera Actor
+       └─ CameraComponent      — SceneComponent + lens/view definition
+
+RenderSystem (render thread)
+  └─ CameraSourceRegistry → selected source → existing RenderCamera
+```
+
+`PlayerController` is intentionally a small KimPeanut gameplay object, not a
+UE-sized replicated `APlayerController`. It owns a non-owning input-system
+seam, one possessed `ActorHandle`, and local control state. The camera Actor
+remains owned by `GameplayWorld`; the controller only selects and drives it.
+Pawn/Character, server authority, replication, and network prediction are
+separate later designs.
+
+### `CameraComponent` responsibilities
+
+`CameraComponent` derives from `SceneComponent` and owns only camera-authored
+state:
+
+- perspective projection parameters: FOV, near plane, and far plane;
+- perspective or orthographic projection mode;
+- camera basis queries derived from the world transform, with a stable world-up
+  convention and no roll in the first free-fly mode;
+- enabled/priority or an equivalent local selection flag used by the active
+  camera policy.
+
+It must not bind input, know about `InputSystem`, build GPU-facing `CameraData`,
+hold a `RenderCamera*`, or expose a native graphics object. Transform changes
+invalidate its cached basis through `SceneComponent::OnTransformChanged()`.
+The render side derives view/projection matrices from the copied transform and
+lens values, preserving the existing matrix and depth conventions in
+`RenderCamera`.
+
+The first factory creates a root camera Actor so local transform equals world
+transform. Attached cameras remain supported by the existing same-Actor
+attachment rules, but controller-driven world-space movement should not gain a
+second transform ownership path until a tested world-transform setter exists.
+
+### Camera source handoff and active selection
+
+The Render-owned `ICameraSourceSink`/`CameraSourceRegistry` contract is now
+parallel to the existing renderable and light source bridges. Its value-only
+descriptor contains world transform, projection/lens values, enabled state,
+and explicit priority; the registry supplies the generational source identity.
+Create/update values are validated before entering the queue. It contains no
+`CameraData`, `RenderCamera`, RenderWorld pointer, or GPU handle.
+
+`GameplayWorld` injects the non-owning sink at construction. A camera component
+registers on activation, emits a copied create/update value, and unregisters
+exactly once on deactivation/destruction. `CameraSourceRegistry` consumes the
+source queue at the frame boundary and selects the highest-priority enabled
+source, with source ID as the deterministic tie-break. `RenderSystem` applies
+that value before visibility, shadow fitting, and deferred lighting. RenderSystem
+owns aspect from the active frame extent, so resize remains a render concern.
+If no source is selected, RenderSystem restores the bootstrap/default camera
+without reading Gameplay objects on the render thread.
+
+The first implementation supports one local active camera. Multiple cameras,
+camera cuts, viewports, render-to-texture, and editor camera ownership require
+an explicit selection/viewport contract and are not hidden inside registration
+order.
+
+### Input and controller flow
+
+The current InputSystem already translates GLFW key, cursor, mouse-button, and
+scroll events into `InputContext` actions, but those callbacks execute during
+`RenderThreadFunc`'s `PollEvents()`. `GameplayWorld::Tick()` runs on the game
+thread before the render thread consumes the frame. A camera action callback
+must therefore append to a mutex-protected frame input queue or double-buffered
+snapshot; it must never call `CameraComponent` setters directly. `GameTick()`
+consumes the completed snapshot before ticking the controller/world.
+
+The logical first mapping is:
+
+| Action | Value | Keyboard/mouse | Gamepad |
+|---|---|---|---|
+| `camera.move` | `Vector3f` | W/S forward, A/D strafe, E/Q vertical | left stick XY, left/right triggers for vertical |
+| `camera.look` | `Vector2f` | cursor delta | right stick XY |
+| `camera.zoom` | `float` | mouse wheel, optional | omitted in the first gamepad slice |
+
+Gameplay binds action identity, not GLFW constants. `PlayerController` retains
+binding handles and removes them before deactivation; a dedicated gameplay
+context must not steal editor-console/UI input. The controller accumulates
+actions and applies them in its game-thread tick: movement is basis-relative and
+scaled by `delta_time`, raw mouse delta is not multiplied by `delta_time`, and
+gamepad stick input is dead-zoned and treated as a per-second rate. Yaw wraps,
+pitch clamps to a safe range such as `[-89°, 89°]`, and the first mode keeps
+world-up vertical movement to avoid roll drift.
+
+“Controller” has two meanings that must stay separate in the design. The local
+`PlayerController` is the UE-like gameplay ownership seam; a gamepad is merely
+an `InputDevice`. Gamepad polling/events belong in Input/Window platform code,
+then arrive as logical action values. The GLFW backend emits a copied sample
+rather than exposing `GLFWwindow` or a native controller type to Gameplay.
+`InputSystem` uses one active connected pad, converts the six raw axes and
+button states into stable `InputKey` values, and emits zero/release transitions
+on disconnect. Stick processing is radial: values inside the configured dead
+zone become zero, the remaining range is remapped to `[0, 1]`, then sensitivity
+and optional Y inversion are applied. Raw input triggers are local and are not
+replicated; a future networked controller would replicate validated movement or
+view state according to a separate networking design.
+
+### Lifecycle, failure handling, and validation
+
+- Camera source registration occurs only after component initialization and is
+  retired before the Actor/World releases the component.
+- Controller bindings are installed on activation/possession and removed on
+  unpossess/deactivation, including shutdown and input-context changes.
+- A missing camera, invalid lens range, stale source handle, or absent input
+  snapshot is a safe no-op/fallback, never a render-thread dereference of a
+  Gameplay object.
+- GP6.1 headless tests cover camera basis/lens validation, copied source
+  lifecycle, priority selection, stale handles, and registry clearing.
+- GP6.2/GP6.3 headless tests cover copied input snapshots, active free-camera
+  factory composition, controller possession and stale handles, deterministic
+  movement, mouse look, FOV zoom, pitch clamping, gamepad sampling,
+  disconnect-zeroing, dead-zone policy, and binding teardown.
+- GP6.4 headless coverage verifies the controller gate; the live editor path
+  verifies viewport click-to-capture, hidden cursor/raw motion, click-to-release,
+  and camera inactivity after release.
+- `GraphicsSmoke` feeds a deterministic W/release/mouse sequence through the
+  same input and camera-source path used by runtime startup, then renders the
+  scene on Vulkan and OpenGL. The smoke does not require a physical gamepad.
+
+### Reference findings
+
+The repository reference index had no camera/input study, so the discovery gate
+searched and read current source from Godot, O3DE, and Bevy at the revisions
+linked below:
+
+- [O3DE `CameraComponentController.h`](https://github.com/o3de/o3de/blob/d2faa51802b1c0dccb2e02b4b67e3fe3306e9cf3/Gems/Camera/Code/Source/CameraComponentController.h)
+  keeps lens/view requests and transform notifications in a camera controller,
+  with activation/deactivation as explicit lifecycle boundaries. KimPeanut
+  adopts the separation and lifecycle intent, not O3DE buses, reflection, or
+  render-pipeline ownership.
+- [O3DE `FlyCameraInputComponent`](https://github.com/o3de/o3de/blob/d2faa51802b1c0dccb2e02b4b67e3fe3306e9cf3/Gems/AtomLyIntegration/AtomBridge/Code/Source/FlyCameraInputComponent.cpp)
+  is a separate input component: it accumulates mouse, keyboard, and gamepad
+  values, then applies movement/rotation during tick. That supports the
+  controller/input split and accumulation rule here; its event buses and
+  platform-specific device code do not transfer.
+- [Godot `Camera3D`](https://github.com/godotengine/godot/blob/5ec4857b340b6284a18b49b2eda462bd250f219a/scene/3d/camera_3d.h)
+  is a transform-bearing camera with explicit projection parameters and an
+  active-camera/viewport selection policy. KimPeanut adopts the explicit
+  active-view concept while retaining RenderSystem ownership of the backend
+  camera and frame extent.
+- [Bevy `Camera3d`](https://github.com/bevyengine/bevy/blob/227d3a6c661b3bdf3020d3e8290b5a6ffd0226f7/crates/bevy_camera/src/components.rs)
+  and its [first-person example](https://github.com/bevyengine/bevy/blob/227d3a6c661b3bdf3020d3e8290b5a6ffd0226f7/examples/camera/first_person_view_model.rs)
+  keep camera/projection data composable and distinguish raw mouse delta from
+  time-scaled analog input, with a safe pitch limit. KimPeanut adopts those
+  narrow math/input rules, not Bevy's ECS or schedule model.
+
 The bootstrap scene follows the same ownership rule. Render startup loads the
 configured mesh and creates its render-owned material identity, then transfers
 one `StaticMeshRenderableSourceDesc` through the existing startup handshake.
@@ -327,7 +535,9 @@ on the game thread with `CreateStaticMeshActor`; there is no bootstrap-only
 - A UE-sized gameplay framework, reflection/property system, prefab system, or
   generalized component-service architecture.
 - Reflection, serialization, prefabs, level-file loading, or editor inspectors.
-- Physics, input, scripting, networking, replication, and gameplay abilities.
+- Broad input/remapping infrastructure, scripting, networking, replication,
+  physics, and gameplay abilities. GP6's local camera action snapshot is a
+  deliberately narrow InputSystem consumer, not a general input framework.
 - Cross-Actor attachment, world partition, streaming, LOD, or occlusion.
 - A general render graph or proxy class hierarchy.
 

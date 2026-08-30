@@ -10,6 +10,7 @@ namespace kpengine::input
             return InputHandle{0};
         }
 
+        std::scoped_lock lock(mutex_);
         InputHandle input_handle{next_handle_id_++};
         input_actions[input_handle] = action;
         name_to_handle_[action->name_] = input_handle;
@@ -21,6 +22,7 @@ namespace kpengine::input
 
     void InputContext::UnBind(InputHandle input_handle)
     {
+        std::scoped_lock lock(mutex_);
         auto it = handle_to_key.find(input_handle);
         if (it == handle_to_key.end())
         {
@@ -45,6 +47,7 @@ namespace kpengine::input
 
     std::string InputContext::GetNameByHandle(InputHandle input_handle) const
     {
+        std::scoped_lock lock(mutex_);
         auto it = input_actions.find(input_handle);
         if (it == input_actions.end())
         {
@@ -63,6 +66,7 @@ namespace kpengine::input
 
     InputHandle InputContext::GetHandleByName(const std::string &name) const
     {
+        std::scoped_lock lock(mutex_);
         auto it = name_to_handle_.find(name);
         if (it == name_to_handle_.end())
         {
@@ -73,6 +77,7 @@ namespace kpengine::input
 
     InputHandle InputContext::GetHandleByInputKey(InputKey key) const
     {
+        std::scoped_lock lock(mutex_);
         auto it = input_bindings_.find(key);
         if (it == input_bindings_.end())
         {
@@ -83,6 +88,7 @@ namespace kpengine::input
 
     std::shared_ptr<InputAction> InputContext::GetInputActionByHandle(InputHandle input_handle) const
     {
+        std::scoped_lock lock(mutex_);
         auto it = input_actions.find(input_handle);
         if (it == input_actions.end())
         {
@@ -93,18 +99,20 @@ namespace kpengine::input
 
     std::shared_ptr<InputAction> InputContext::GetInputActionByInputKey(InputKey key) const
     {
-        InputHandle input_handle = GetHandleByInputKey(key);
-        if (!input_handle.IsValid())
+        std::scoped_lock lock(mutex_);
+        const auto binding = input_bindings_.find(key);
+        if (binding == input_bindings_.end())
         {
             return nullptr;
         }
-        return GetInputActionByHandle(input_handle);
+        const auto action = input_actions.find(binding->second);
+        return action != input_actions.end() ? action->second : nullptr;
     }
 
     void InputContext::ProcessKeyInput(InputKey key, InputTriggleType triggle_type, int mods)
     {
         std::shared_ptr<InputAction> input_action = GetInputActionByInputKey(key);
-        if (input_action == nullptr)
+        if (input_action == nullptr || !input_action->callback_)
             return;
         // TODO: Modifier?
         InputState state{triggle_type, input_action->default_value};
@@ -114,8 +122,8 @@ namespace kpengine::input
     void InputContext::ProcessAxis1DInput(InputKey key, float delta)
     {
         std::shared_ptr<InputAction> input_action = GetInputActionByInputKey(key);
-            if(input_action == nullptr)
-                return ;
+        if (input_action == nullptr || !input_action->callback_)
+            return;
         InputState state{InputTriggleType::Held, delta};
         input_action->callback_(state);
     }
@@ -123,7 +131,7 @@ namespace kpengine::input
     void InputContext::ProcessAxis2DInput(InputKey key, float deltax, float deltay)
     {
         std::shared_ptr<InputAction> input_action = GetInputActionByInputKey(key);
-        if (input_action == nullptr)
+        if (input_action == nullptr || !input_action->callback_)
             return;
         InputState state{ InputTriggleType::Held, Vector2f(deltax, deltay)};
         input_action->callback_(state);

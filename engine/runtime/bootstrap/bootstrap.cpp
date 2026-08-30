@@ -80,38 +80,45 @@ namespace kpengine::bootstrap
             const auto &scene = json["scene"];
             config.scene.model = scene.value("model", std::string{});
             config.scene.material = scene.value("material", std::string{});
+            const auto read_vector = [](const nlohmann::json &object,
+                                        const char *name,
+                                        std::array<float, 3> &destination)
+            {
+                if (!object.contains(name))
+                {
+                    return true;
+                }
+                const auto &value = object[name];
+                if (!value.is_array() || value.size() != destination.size())
+                {
+                    return false;
+                }
+                for (std::size_t index = 0; index < destination.size(); ++index)
+                {
+                    if (!value[index].is_number())
+                    {
+                        return false;
+                    }
+                    destination[index] = value[index].get<float>();
+                }
+                return true;
+            };
             if (!config.scene.IsComplete())
             {
                 KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
                        "%s: ignoring incomplete bootstrap scene", path.c_str());
                 config.scene = {};
             }
+            else if (!read_vector(scene, "position", config.scene.position) ||
+                     !read_vector(scene, "rotation", config.scene.rotation) ||
+                     !read_vector(scene, "scale", config.scene.scale))
+            {
+                KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
+                       "%s: ignoring malformed bootstrap scene transform", path.c_str());
+                config.scene = {};
+            }
             else if (scene.contains("objects") && scene["objects"].is_array())
             {
-                const auto read_vector = [](const nlohmann::json &object,
-                                            const char *name,
-                                            std::array<float, 3> &destination)
-                {
-                    if (!object.contains(name))
-                    {
-                        return true;
-                    }
-                    const auto &value = object[name];
-                    if (!value.is_array() || value.size() != destination.size())
-                    {
-                        return false;
-                    }
-                    for (std::size_t index = 0; index < destination.size(); ++index)
-                    {
-                        if (!value[index].is_number())
-                        {
-                            return false;
-                        }
-                        destination[index] = value[index].get<float>();
-                    }
-                    return true;
-                };
-
                 for (const auto &item : scene["objects"])
                 {
                     BootstrapSceneObject object{};

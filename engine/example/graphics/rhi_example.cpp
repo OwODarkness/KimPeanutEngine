@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
@@ -23,7 +24,10 @@
 #include "runtime/render/material/material_asset_resolver.h"
 #include "runtime/render/render_world/render_world.h"
 #include "runtime/render/render_source_registry.h"
+#include "runtime/render/camera_source_registry.h"
 #include "runtime/gameplay/actor/actor.h"
+#include "runtime/gameplay/controller/player_controller.h"
+#include "runtime/gameplay/factory/free_camera_actor_factory.h"
 #include "runtime/gameplay/component/mesh_component.h"
 #include "runtime/gameplay/world/gameplay_world.h"
 #include "runtime/graphics/backend/common/pipeline_types.h"
@@ -123,9 +127,11 @@ namespace kpengine::example
             window->Initialize(window_create_info);
 
             std::unique_ptr<input::InputSystem> input = std::make_unique<input::InputSystem>();
+            input->Initialize();
             input->BindKeyEvent(window->key_event_dispatcher_);
             input->BindCursorEvent(window->cursor_event_dispatcher_);
             input->BindScrollEvent(window->scroll_event_dispatcher_);
+            input->BindGamepadEvent(window->gamepad_event_dispatcher_);
             std::shared_ptr<input::InputContext> context = std::make_shared<input::InputContext>();
             input->AddContext("SceneInputContext", context);
             input->SetActiveContext("SceneInputContext");
@@ -299,7 +305,16 @@ namespace kpengine::example
             proxy_desc.world_transform.position_ = {0.75f, 0.0f, 0.0f};
             const render::RenderableHandle second_bound_renderable = render_world.EnqueueCreate(proxy_desc);
             render::RenderableSourceRegistry source_registry{};
-            gameplay::GameplayWorld gameplay_world{&source_registry};
+            render::CameraSourceRegistry camera_source_registry{};
+            gameplay::GameplayWorld gameplay_world{&source_registry, nullptr, &camera_source_registry};
+            const gameplay::ActorHandle camera_actor_handle = gameplay::CreateFreeCameraActor(gameplay_world, {});
+            gameplay::PlayerController *const player_controller =
+                gameplay_world.CreateLocalPlayerController(input.get(), "SceneInputContext");
+            if (!camera_actor_handle.IsValid() || !player_controller ||
+                !player_controller->Possess(camera_actor_handle))
+            {
+                throw std::runtime_error("failed to create and possess gameplay smoke camera");
+            }
             const gameplay::ActorHandle gameplay_actor_handle = gameplay_world.CreateActor();
             gameplay::Actor *const gameplay_actor = gameplay_world.FindActor(gameplay_actor_handle);
             if (!gameplay_actor)
@@ -336,6 +351,27 @@ namespace kpengine::example
                     render::RenderableSourceState::Ready, {}, resolved};
             };
             gameplay_world.Tick(0.0f);
+            // GP6.3 smoke verification: exercise the same logical input path
+            // used by the runtime before rendering the first frame.
+            context->ProcessKeyInput(
+                {input::InputDevice::Keyboard, static_cast<int>(input::KeyboardKeyCode::W)},
+                input::InputTriggleType::Pressed, 0);
+            gameplay_world.Tick(0.5f);
+            context->ProcessKeyInput(
+                {input::InputDevice::Keyboard, static_cast<int>(input::KeyboardKeyCode::W)},
+                input::InputTriggleType::Released, 0);
+            context->ProcessAxis2DInput(
+                {input::InputDevice::Mouse, input::kMouseCursorCode}, 10.0f, -5.0f);
+            gameplay_world.Tick(0.0f);
+            camera_source_registry.Drain();
+            const std::optional<render::CameraSourceDesc> deterministic_camera =
+                camera_source_registry.GetActiveSource();
+            if (!deterministic_camera.has_value() ||
+                deterministic_camera->world_transform.position_.z_ >= 300.0f ||
+                deterministic_camera->world_transform.rotator_.yaw_ <= 270.0f)
+            {
+                throw std::runtime_error("gameplay smoke camera did not consume deterministic input");
+            }
             source_registry.Drain(render_world, resolve_gameplay_source);
             render_world.ApplyPendingCommands();
             if (!render_world.IsRegistered(first_renderable) ||
@@ -350,6 +386,17 @@ namespace kpengine::example
                 throw std::runtime_error("gameplay smoke mesh did not reach RenderWorld");
             }
             render::RenderCamera camera{};
+            const auto apply_camera_source = [&camera](const render::CameraSourceDesc &source)
+            {
+                camera.SetPosition(source.world_transform.position_);
+                camera.SetRotation(source.world_transform.rotator_);
+                camera.SetFOV(source.field_of_view_degrees);
+                camera.SetNearPlane(source.near_plane);
+                camera.SetFarPlane(source.far_plane);
+                camera.SetProjectionMode(source.projection_mode);
+                camera.SetOrthographicHeight(source.orthographic_height);
+            };
+            apply_camera_source(*deterministic_camera);
 
             uint64_t frame_number = 0;
             float elapsed_seconds = 0.0f;
@@ -455,6 +502,13 @@ namespace kpengine::example
                     gameplay_mesh->SetVisible(true);
                 }
                 gameplay_world.Tick(kDemoDeltaSeconds);
+                camera_source_registry.Drain();
+                if (const std::optional<render::CameraSourceDesc> active_camera =
+                        camera_source_registry.GetActiveSource();
+                    active_camera.has_value())
+                {
+                    apply_camera_source(*active_camera);
+                }
                 source_registry.Drain(render_world, resolve_gameplay_source);
                 render_world.ApplyPendingCommands();
                 if (trigger_resize && rendered_frames == 1)
@@ -1400,6 +1454,8 @@ namespace kpengine::example
             // the same retirement boundary as RenderSystem before releasing them.
             render_world.Clear();
             source_registry.Clear(render_world);
+            gameplay_world.Clear();
+            camera_source_registry.Drain();
             materials.DestroyInstance(first_material_instance);
             materials.DestroyInstance(second_material_instance);
             materials.DestroyInstance(first_bound_material_instance);
@@ -1417,6 +1473,7 @@ namespace kpengine::example
             rhi->DestroyPipelineResource(secondary_pipeline);
             resource_resolver.Cleanup();
             rhi->Cleanup();
+            input->Shutdown();
             window->Cleanup();
             return true;
         }

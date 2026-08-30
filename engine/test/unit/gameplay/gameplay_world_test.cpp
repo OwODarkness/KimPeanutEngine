@@ -5,13 +5,19 @@
 
 #include "gameplay/actor/actor.h"
 #include "gameplay/component/actor_component.h"
+#include "gameplay/component/camera_component.h"
 #include "gameplay/component/directional_light_component.h"
 #include "gameplay/component/mesh_component.h"
 #include "gameplay/component/primitive_component.h"
 #include "gameplay/component/scene_component.h"
+#include "gameplay/controller/player_controller.h"
 #include "gameplay/factory/directional_light_actor_factory.h"
+#include "gameplay/factory/free_camera_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
 #include "gameplay/world/gameplay_world.h"
+#include "input/input_context.h"
+#include "input/input_key.h"
+#include "input/input_system.h"
 
 namespace
 {
@@ -105,6 +111,41 @@ namespace
         std::vector<kpengine::render::LightSourceDesc> creates;
         std::vector<Update> updates;
         std::vector<kpengine::render::LightSourceHandle> destroys;
+    };
+
+    class RecordingCameraSourceSink final : public kpengine::render::ICameraSourceSink
+    {
+    public:
+        kpengine::render::CameraSourceHandle EnqueueCreate(
+            const kpengine::render::CameraSourceDesc &source) override
+        {
+            creates.push_back(source);
+            return {next_id++, 0};
+        }
+
+        bool EnqueueUpdate(kpengine::render::CameraSourceHandle handle,
+                           const kpengine::render::CameraSourceDesc &source) override
+        {
+            updates.push_back({handle, source});
+            return true;
+        }
+
+        bool EnqueueDestroy(kpengine::render::CameraSourceHandle handle) override
+        {
+            destroys.push_back(handle);
+            return true;
+        }
+
+        struct Update
+        {
+            kpengine::render::CameraSourceHandle handle;
+            kpengine::render::CameraSourceDesc source;
+        };
+
+        uint32_t next_id = 0;
+        std::vector<kpengine::render::CameraSourceDesc> creates;
+        std::vector<Update> updates;
+        std::vector<kpengine::render::CameraSourceHandle> destroys;
     };
 }
 
@@ -378,6 +419,68 @@ TEST(GameplayWorldTest, DirectionalLightComponentPublishesCoalescedSourceLifecyc
     EXPECT_FALSE(light->GetSourceHandle().IsValid());
 }
 
+TEST(GameplayWorldTest, CameraComponentPublishesValidatedViewStateAndBasis)
+{
+    RecordingCameraSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{nullptr, nullptr, &source_sink};
+    const kpengine::gameplay::ActorHandle handle = world.CreateActor();
+    kpengine::gameplay::Actor *const actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+
+    auto *const camera = actor->AddComponent<kpengine::gameplay::CameraComponent>();
+    ASSERT_NE(camera, nullptr);
+    ASSERT_TRUE(actor->SetRootComponent(camera));
+    camera->SetLocalTransform({{2.0f, 3.0f, 4.0f}, {0.0f, -90.0f, 0.0f}, {1.0f, 1.0f, 1.0f}});
+    camera->SetFieldOfView(60.0f);
+    camera->SetNearPlane(1.0f);
+    camera->SetFarPlane(500.0f);
+    camera->SetProjectionMode(kpengine::render::CameraProjectionMode::Orthographic);
+    camera->SetOrthographicHeight(20.0f);
+    camera->SetPriority(3);
+
+    ASSERT_TRUE(world.InitializeActor(handle));
+    ASSERT_TRUE(world.ActivateActor(handle));
+    ASSERT_EQ(source_sink.creates.size(), 1U);
+    EXPECT_NEAR(camera->GetForward().x_, 0.0f, 0.0001f);
+    EXPECT_NEAR(camera->GetForward().y_, 0.0f, 0.0001f);
+    EXPECT_NEAR(camera->GetForward().z_, -1.0f, 0.0001f);
+    EXPECT_NEAR(camera->GetRight().x_, 1.0f, 0.0001f);
+    EXPECT_NEAR(camera->GetRight().y_, 0.0f, 0.0001f);
+    EXPECT_NEAR(camera->GetRight().z_, 0.0f, 0.0001f);
+    EXPECT_NEAR(camera->GetUp().x_, 0.0f, 0.0001f);
+    EXPECT_NEAR(camera->GetUp().y_, 1.0f, 0.0001f);
+    EXPECT_NEAR(camera->GetUp().z_, 0.0f, 0.0001f);
+
+    const auto &created = source_sink.creates.front();
+    EXPECT_EQ(created.world_transform.position_, (kpengine::Vector3f{2.0f, 3.0f, 4.0f}));
+    EXPECT_EQ(created.projection_mode, kpengine::render::CameraProjectionMode::Orthographic);
+    EXPECT_FLOAT_EQ(created.field_of_view_degrees, 60.0f);
+    EXPECT_FLOAT_EQ(created.near_plane, 1.0f);
+    EXPECT_FLOAT_EQ(created.far_plane, 500.0f);
+    EXPECT_FLOAT_EQ(created.orthographic_height, 20.0f);
+    EXPECT_EQ(created.priority, 3);
+
+    camera->SetFieldOfView(0.0f);
+    camera->SetNearPlane(500.0f);
+    camera->SetFarPlane(0.5f);
+    EXPECT_FLOAT_EQ(camera->GetFieldOfView(), 60.0f);
+    EXPECT_FLOAT_EQ(camera->GetNearPlane(), 1.0f);
+    EXPECT_FLOAT_EQ(camera->GetFarPlane(), 500.0f);
+
+    camera->SetLocalLocation({8.0f, 3.0f, 4.0f});
+    camera->SetCameraEnabled(false);
+    world.Tick(0.0f);
+    ASSERT_EQ(source_sink.updates.size(), 1U);
+    EXPECT_EQ(source_sink.updates.front().handle, camera->GetSourceHandle());
+    EXPECT_EQ(source_sink.updates.front().source.world_transform.position_,
+              (kpengine::Vector3f{8.0f, 3.0f, 4.0f}));
+    EXPECT_FALSE(source_sink.updates.front().source.enabled);
+
+    ASSERT_TRUE(world.DestroyActor(handle));
+    ASSERT_EQ(source_sink.destroys.size(), 1U);
+    EXPECT_FALSE(camera->GetSourceHandle().IsValid());
+}
+
 TEST(GameplayWorldTest, DirectionalLightActorFactoryBuildsAnActiveLightComposition)
 {
     RecordingLightSourceSink source_sink{};
@@ -440,4 +543,188 @@ TEST(GameplayWorldTest, StaticMeshActorFactoryRejectsIncompleteDescription)
 {
     kpengine::gameplay::GameplayWorld world{};
     EXPECT_FALSE(kpengine::gameplay::CreateStaticMeshActor(world, {}).IsValid());
+}
+
+TEST(GameplayWorldTest, LocalPlayerControllerPossessesAndMovesFreeCamera)
+{
+    RecordingCameraSourceSink source_sink{};
+    kpengine::input::InputSystem input_system;
+    input_system.Initialize();
+    auto context = std::make_shared<kpengine::input::InputContext>();
+    input_system.AddContext("Gameplay", context);
+    input_system.SetActiveContext("Gameplay");
+
+    {
+        kpengine::gameplay::GameplayWorld world{nullptr, nullptr, &source_sink};
+        const kpengine::gameplay::ActorHandle camera_handle =
+            kpengine::gameplay::CreateFreeCameraActor(world, {});
+        ASSERT_TRUE(camera_handle.IsValid());
+
+        kpengine::gameplay::PlayerController *const controller =
+            world.CreateLocalPlayerController(&input_system, "Gameplay");
+        ASSERT_NE(controller, nullptr);
+        ASSERT_TRUE(controller->Possess(camera_handle));
+
+        context->ProcessKeyInput(
+            {kpengine::input::InputDevice::Keyboard,
+             static_cast<int>(kpengine::input::KeyboardKeyCode::W)},
+            kpengine::input::InputTriggleType::Pressed, 0);
+        world.Tick(0.5f);
+
+        auto *const camera = world.FindActor(camera_handle)->FindComponent<
+            kpengine::gameplay::CameraComponent>();
+        ASSERT_NE(camera, nullptr);
+        EXPECT_NEAR(camera->GetLocalLocation().z_, 250.0f, 0.0001f);
+
+        context->ProcessKeyInput(
+            {kpengine::input::InputDevice::Keyboard,
+             static_cast<int>(kpengine::input::KeyboardKeyCode::W)},
+            kpengine::input::InputTriggleType::Released, 0);
+        context->ProcessAxis2DInput(
+            {kpengine::input::InputDevice::Mouse, kpengine::input::kMouseCursorCode}, 10.0f,
+            -5.0f);
+        context->ProcessAxis1DInput(
+            {kpengine::input::InputDevice::Mouse, kpengine::input::kMouseScrollCode}, 1.0f);
+        world.Tick(0.0f);
+
+        EXPECT_NEAR(camera->GetLocalTransform().rotator_.yaw_, 271.0f, 0.0001f);
+        EXPECT_NEAR(camera->GetLocalTransform().rotator_.pitch_, 0.5f, 0.0001f);
+        EXPECT_NEAR(camera->GetFieldOfView(), 43.0f, 0.0001f);
+
+        context->ProcessAxis2DInput(
+            {kpengine::input::InputDevice::Mouse, kpengine::input::kMouseCursorCode}, 0.0f,
+            2000.0f);
+        world.Tick(0.0f);
+        EXPECT_NEAR(camera->GetLocalTransform().rotator_.pitch_, -89.0f, 0.0001f);
+
+        const kpengine::gameplay::ActorHandle stale_camera_handle = camera_handle;
+        EXPECT_TRUE(world.DestroyActor(camera_handle));
+        EXPECT_FALSE(controller->Possess(stale_camera_handle));
+
+        controller->Unpossess();
+        EXPECT_FALSE(controller->GetPossessedActor().IsValid());
+    }
+
+    input_system.Shutdown();
+}
+
+TEST(GameplayWorldTest, LocalPlayerControllerStopsCameraInputWhenDisabled)
+{
+    kpengine::input::InputSystem input_system;
+    input_system.Initialize();
+    auto context = std::make_shared<kpengine::input::InputContext>();
+    input_system.AddContext("Gameplay", context);
+    input_system.SetActiveContext("Gameplay");
+
+    {
+        kpengine::gameplay::GameplayWorld world{};
+        const kpengine::gameplay::ActorHandle camera_handle =
+            kpengine::gameplay::CreateFreeCameraActor(world, {});
+        ASSERT_TRUE(camera_handle.IsValid());
+
+        kpengine::gameplay::PlayerController *const controller =
+            world.CreateLocalPlayerController(&input_system, "Gameplay");
+        ASSERT_NE(controller, nullptr);
+        ASSERT_TRUE(controller->Possess(camera_handle));
+
+        auto *const camera = world.FindActor(camera_handle)->FindComponent<
+            kpengine::gameplay::CameraComponent>();
+        ASSERT_NE(camera, nullptr);
+
+        controller->SetInputEnabled(false);
+        context->ProcessKeyInput(
+            {kpengine::input::InputDevice::Keyboard,
+             static_cast<int>(kpengine::input::KeyboardKeyCode::W)},
+            kpengine::input::InputTriggleType::Pressed, 0);
+        context->ProcessAxis2DInput(
+            {kpengine::input::InputDevice::Mouse, kpengine::input::kMouseCursorCode}, 10.0f,
+            -5.0f);
+        context->ProcessAxis1DInput(
+            {kpengine::input::InputDevice::Mouse, kpengine::input::kMouseScrollCode}, 1.0f);
+        world.Tick(0.5f);
+
+        EXPECT_NEAR(camera->GetLocalLocation().z_, 300.0f, 0.0001f);
+        EXPECT_NEAR(camera->GetLocalTransform().rotator_.yaw_, -90.0f, 0.0001f);
+        EXPECT_NEAR(camera->GetFieldOfView(), 45.0f, 0.0001f);
+
+        controller->SetInputEnabled(true);
+        context->ProcessKeyInput(
+            {kpengine::input::InputDevice::Keyboard,
+             static_cast<int>(kpengine::input::KeyboardKeyCode::W)},
+            kpengine::input::InputTriggleType::Pressed, 0);
+        world.Tick(0.5f);
+        EXPECT_NEAR(camera->GetLocalLocation().z_, 250.0f, 0.0001f);
+    }
+
+    input_system.Shutdown();
+}
+
+TEST(GameplayWorldTest, LocalPlayerControllerConsumesGamepadSticksOnGameThread)
+{
+    RecordingCameraSourceSink source_sink{};
+    kpengine::input::InputSystem input_system;
+    input_system.Initialize();
+    auto context = std::make_shared<kpengine::input::InputContext>();
+    input_system.AddContext("Gameplay", context);
+    input_system.SetActiveContext("Gameplay");
+    kpengine::EventDispatcher<kpengine::GamepadStateEvent> dispatcher;
+    input_system.BindGamepadEvent(dispatcher);
+
+    {
+        kpengine::gameplay::GameplayWorld world{nullptr, nullptr, &source_sink};
+        const kpengine::gameplay::ActorHandle camera_handle =
+            kpengine::gameplay::CreateFreeCameraActor(world, {});
+        ASSERT_TRUE(camera_handle.IsValid());
+        kpengine::gameplay::PlayerController *const controller =
+            world.CreateLocalPlayerController(&input_system, "Gameplay");
+        ASSERT_NE(controller, nullptr);
+        ASSERT_TRUE(controller->Possess(camera_handle));
+        controller->SetGamepadLookSensitivity(10.0f);
+
+        kpengine::GamepadStateEvent sample{};
+        sample.gamepad_index = 0;
+        sample.connected = true;
+        sample.axes[1] = -0.6f;
+        dispatcher.Dispatch(sample);
+        const kpengine::input::InputFrameSnapshot snapshot = input_system.ConsumeFrameSnapshot();
+        ASSERT_EQ(snapshot.events.size(), 4U);
+        for (const kpengine::input::InputActionEvent &event : snapshot.events)
+        {
+            input_system.EnqueueActionEvent(event.action_name, event.state, event.source,
+                                             event.component_mask);
+        }
+        world.Tick(0.5f);
+
+        auto *const camera = world.FindActor(camera_handle)->FindComponent<
+            kpengine::gameplay::CameraComponent>();
+        ASSERT_NE(camera, nullptr);
+        EXPECT_NEAR(camera->GetLocalLocation().z_, 275.0f, 0.0001f);
+
+        sample.axes[1] = 0.0f;
+        sample.axes[2] = 0.6f;
+        dispatcher.Dispatch(sample);
+        world.Tick(0.5f);
+        EXPECT_NEAR(camera->GetLocalTransform().rotator_.yaw_, 272.5f, 0.0001f);
+
+        sample.axes[2] = 0.0f;
+        sample.axes[5] = 0.5f;
+        dispatcher.Dispatch(sample);
+        world.Tick(0.5f);
+        EXPECT_NEAR(camera->GetLocalLocation().y_, 25.0f, 0.0001f);
+
+        sample.connected = false;
+        sample.axes.fill(0.0f);
+        dispatcher.Dispatch(sample);
+        world.Tick(0.5f);
+        EXPECT_NEAR(camera->GetLocalLocation().y_, 25.0f, 0.0001f);
+
+        controller->Unpossess();
+        EXPECT_FALSE(controller->GetPossessedActor().IsValid());
+        EXPECT_FALSE(context->GetHandleByInputKey(
+                         {kpengine::input::InputDevice::Gamepad,
+                          static_cast<int>(kpengine::input::GamepadAxisCode::LeftStick)})
+                         .IsValid());
+    }
+
+    input_system.Shutdown();
 }

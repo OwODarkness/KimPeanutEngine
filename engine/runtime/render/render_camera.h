@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_RENDER_RENDER_CAMERA_H
 #define KPENGINE_RUNTIME_RENDER_RENDER_CAMERA_H
 
+#include "render/camera_source.h"
 #include "math/math_header.h"
 
 namespace kpengine::render
@@ -22,9 +23,15 @@ namespace kpengine::render
         void SetFOV(float fov) { fov_ = fov; }
         void SetNearPlane(float near_plane) { near_ = near_plane; }
         void SetFarPlane(float far_plane) { far_ = far_plane; }
+        void SetProjectionMode(CameraProjectionMode projection_mode)
+        {
+            projection_mode_ = projection_mode;
+        }
+        void SetOrthographicHeight(float height) { orthographic_height_ = height; }
 
         const Vector3f &GetPosition() const { return position_; }
         const Rotatorf &GetRotation() const { return rotation_; }
+        const Vector3f &GetForward() const { return forward_; }
 
         CameraData GetCameraData() const;
         // CPU-side visibility uses the math-library matrix convention directly.
@@ -44,6 +51,8 @@ namespace kpengine::render
         float near_ = 0.1f;
         float far_ = 10.f;
         float aspect_ = 1920.f / 1080.f;
+        CameraProjectionMode projection_mode_ = CameraProjectionMode::Perspective;
+        float orthographic_height_ = 10.f;
 
         Vector3f forward_{0.f, 0.f, -1.f};
         Vector3f up_{0.f, 1.f, 0.f};

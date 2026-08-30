@@ -16,6 +16,7 @@
 #include "base/type.h"
 #include "delegate/event_dispatcher.h"
 #include "graphics/backend/common/api.h"
+#include "camera_source_registry.h"
 #include "frame_context.h"
 #include "render/light/light_source_registry.h"
 #include "render/material/material_system.h"
@@ -65,6 +66,7 @@ namespace kpengine::render
     {
         std::string model_path;
         std::string material_path;
+        Transform3f world_transform;
         std::vector<BootstrapSceneObjectInfo> objects;
 
         bool IsComplete() const
@@ -127,6 +129,7 @@ namespace kpengine::render
         int GetLoadedShaderCount() const;
         IRenderableSourceSink *GetRenderableSourceSink() { return &source_registry_; }
         ILightSourceSink *GetLightSourceSink() { return &light_source_registry_; }
+        ICameraSourceSink *GetCameraSourceSink() { return &camera_source_registry_; }
         // Borrowed Runtime/tooling boundary. RenderSystem owns the implementation
         // and cancels any pending request before this object is destroyed.
         IRenderCaptureService *GetRenderCaptureService();
@@ -154,6 +157,7 @@ namespace kpengine::render
                                                 MaterialInstanceHandle &out_instance);
         void DrainRenderableSources();
         void DrainLightSources();
+        void DrainCameraSources();
 
         const RenderCacheEntry *FindCached(asset::AssetID asset_id) const;
         void PrepareBootstrapRenderableSources();
@@ -183,6 +187,7 @@ namespace kpengine::render
         void RecordMeshProxy(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
                              graphics::CommandRecorder &recorder, MaterialPass pass);
         void ApplyPendingSceneRenderTargetExtent();
+        void ApplyDefaultCamera();
         FrameContext *GetCurrentFrameContext();
         void Shutdown();
 
@@ -199,6 +204,7 @@ namespace kpengine::render
         RenderableSourceRegistry source_registry_;
         LightWorld light_world_;
         LightSourceRegistry light_source_registry_;
+        CameraSourceRegistry camera_source_registry_;
         FrameLightingBinding frame_lighting_binding_;
         std::optional<DirectionalShadowFrame> active_directional_shadow_;
         RenderCamera scene_camera_;

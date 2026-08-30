@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_INPUT_CONTEXT_H
 
 #include <memory>
+#include <mutex>
 #include <string>
 #include <cstdint>
 #include <unordered_map>
@@ -50,6 +51,7 @@ private:
     std::unordered_map<InputKey, InputHandle, InputKeyHasher> input_bindings_;
     std::unordered_map<InputHandle, InputKey, InputHandleHash> handle_to_key;
     uint32_t next_handle_id_ = 1;
+    mutable std::mutex mutex_;
  };
 
 }

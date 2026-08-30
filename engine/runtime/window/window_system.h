@@ -26,6 +26,8 @@ namespace kpengine
         virtual void SwapBuffers() = 0;
         virtual WindowHandle GetNativeHandle() const = 0; 
         virtual bool ShouldClose() const = 0;
+        virtual void SetMouseCapture(bool captured) = 0;
+        virtual bool IsMouseCaptured() const = 0;
         virtual void Cleanup() = 0;
 
         void SetWindowSize(int width, int height);
@@ -36,6 +38,7 @@ namespace kpengine
         EventDispatcher<KeyEvent> key_event_dispatcher_;
         EventDispatcher<CursorEvent> cursor_event_dispatcher_;
         EventDispatcher<ScrollEvent> scroll_event_dispatcher_;
+        EventDispatcher<GamepadStateEvent> gamepad_event_dispatcher_;
         EventDispatcher<ResizeEvent> resize_event_dispatcher_;
 
     protected:

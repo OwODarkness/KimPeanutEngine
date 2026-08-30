@@ -146,9 +146,7 @@ namespace kpengine::render
         ConfigurePassSchedule();
         // Frame the ~165-unit rock bootstrap fixture: pull the camera back and
         // extend the far plane (the old default far=10 culled it entirely).
-        scene_camera_.SetPosition({0.f, 0.f, 300.f});
-        scene_camera_.SetNearPlane(1.f);
-        scene_camera_.SetFarPlane(2000.f);
+        ApplyDefaultCamera();
     }
 
     void RenderSystem::PostInitialize()
@@ -173,6 +171,7 @@ namespace kpengine::render
         DrainRenderableSources();
         render_world_.ApplyPendingCommands();
         DrainLightSources();
+        DrainCameraSources();
         const std::vector<Light> light_snapshot = light_world_.Snapshot();
         active_directional_shadow_ = ScheduleDirectionalShadow(light_snapshot);
         if (!backend_)
@@ -1118,6 +1117,27 @@ namespace kpengine::render
         light_source_registry_.Drain(light_world_);
     }
 
+    void RenderSystem::DrainCameraSources()
+    {
+        camera_source_registry_.Drain();
+        const std::optional<CameraSourceDesc> active_source =
+            camera_source_registry_.GetActiveSource();
+        if (!active_source.has_value())
+        {
+            ApplyDefaultCamera();
+            return;
+        }
+
+        const CameraSourceDesc &source = *active_source;
+        scene_camera_.SetPosition(source.world_transform.position_);
+        scene_camera_.SetRotation(source.world_transform.rotator_);
+        scene_camera_.SetProjectionMode(source.projection_mode);
+        scene_camera_.SetFOV(source.field_of_view_degrees);
+        scene_camera_.SetNearPlane(source.near_plane);
+        scene_camera_.SetFarPlane(source.far_plane);
+        scene_camera_.SetOrthographicHeight(source.orthographic_height);
+    }
+
     const RenderCacheEntry *RenderSystem::FindCached(asset::AssetID asset_id) const
     {
         for (const auto &[request_id, entry] : render_cache_)
@@ -1161,7 +1181,7 @@ namespace kpengine::render
         {
             objects.push_back({bootstrap_scene_info_.model_path,
                                bootstrap_scene_info_.material_path,
-                               Transform3f{}});
+                               bootstrap_scene_info_.world_transform});
         }
         objects.insert(objects.end(), bootstrap_scene_info_.objects.begin(),
                        bootstrap_scene_info_.objects.end());
@@ -1209,6 +1229,17 @@ namespace kpengine::render
         }
     }
 
+    void RenderSystem::ApplyDefaultCamera()
+    {
+        scene_camera_.SetPosition({0.f, 0.f, 300.f});
+        scene_camera_.SetRotation({0.f, -90.f, 0.f});
+        scene_camera_.SetProjectionMode(CameraProjectionMode::Perspective);
+        scene_camera_.SetFOV(45.f);
+        scene_camera_.SetNearPlane(1.f);
+        scene_camera_.SetFarPlane(2000.f);
+        scene_camera_.SetOrthographicHeight(10.f);
+    }
+
     void RenderSystem::ApplyPendingSceneRenderTargetExtent()
     {
         if (!backend_ || pending_scene_render_target_extent_.width == 0 ||
@@ -1250,6 +1281,7 @@ namespace kpengine::render
             frame_lighting_binding_ = {};
             active_directional_shadow_.reset();
             render_capture_service_.reset();
+            camera_source_registry_.Clear();
             source_registry_.Clear(render_world_);
             render_world_.Clear();
             light_source_registry_.Clear(light_world_);
@@ -1264,6 +1296,7 @@ namespace kpengine::render
         // Releasing material instances first retires their bindless table slots.
         // WaitIdle must follow that release so Graphics can collect the retired
         // table references before the resolver destroys cached textures/samplers.
+        camera_source_registry_.Clear();
         source_registry_.Clear(render_world_);
         render_world_.ApplyPendingCommands();
         render_world_.Clear();

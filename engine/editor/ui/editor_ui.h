@@ -8,6 +8,7 @@
 
 namespace kpengine
 {
+    class WindowSystem;
     class LogSystem;
     class MemoryStatsSampler;
     namespace runtime
@@ -26,6 +27,10 @@ namespace kpengine
     namespace render
     {
         class RenderSystem;
+    }
+    namespace runtime
+    {
+        class ISceneCameraControlSink;
     }
 }
 
@@ -49,6 +54,8 @@ namespace kpengine::editor
         render::RenderSystem *render_system = nullptr;
         runtime::command::CommandRegistry *command_registry = nullptr;
         input::InputSystem *input_system = nullptr;
+        WindowSystem *window_system = nullptr;
+        runtime::ISceneCameraControlSink *camera_control_sink = nullptr;
     };
 
     class EditorUI
@@ -69,7 +76,10 @@ namespace kpengine::editor
         // orchestration list instead of one long build routine.
         void CreateImguiBackends(WindowHandle window, GraphicsContext graphics_context);
         void BuildMenuBar(render::RenderSystem *render_system);
-        void BuildViewportWindow(render::RenderSystem *render_system);
+        void BuildViewportWindow(render::RenderSystem *render_system,
+                                 WindowSystem *window_system,
+                                 input::InputSystem *input_system,
+                                 runtime::ISceneCameraControlSink *camera_control_sink);
         void BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors);
         void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                              render::RenderSystem *render_system);

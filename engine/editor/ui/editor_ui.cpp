@@ -51,7 +51,8 @@ namespace kpengine::editor
         // Tool tree. Each panel is built by its own helper so Initialize stays an
         // orchestration list — add a panel as one more call, not more inline code.
         BuildMenuBar(init_info.render_system);
-        BuildViewportWindow(init_info.render_system);
+        BuildViewportWindow(init_info.render_system, init_info.window_system,
+                            init_info.input_system, init_info.camera_control_sink);
         BuildLogWindow(init_info.log_system, settings.log_colors);
         BuildProfileBar(init_info.engine, init_info.memory_sampler, init_info.render_system);
         BuildConsole(init_info.command_registry, init_info.input_system);
@@ -129,14 +130,17 @@ namespace kpengine::editor
             });
     }
 
-    void EditorUI::BuildViewportWindow(render::RenderSystem *render_system)
+    void EditorUI::BuildViewportWindow(
+        render::RenderSystem *render_system, WindowSystem *window_system,
+        input::InputSystem *input_system,
+        runtime::ISceneCameraControlSink *camera_control_sink)
     {
         EditorWindowConfig config;
         config.height_ratio = 0.7f;
         std::unique_ptr<EditorWindowComponent> window_component =
             std::make_unique<EditorWindowComponent>("Viewport", config);
         window_component->AddComponent(std::make_shared<EditorViewportComponent>(
-            render_system, renderer_.get()));
+            render_system, renderer_.get(), window_system, input_system, camera_control_sink));
 
         components_.push_back(std::move(window_component));
     }

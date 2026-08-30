@@ -11,6 +11,7 @@ add_executable(
     render_resource_resolver_test.cpp
     render_source_registry_test.cpp
     light_source_registry_test.cpp
+    camera_source_registry_test.cpp
     render_capture_service_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_system.cpp
@@ -19,6 +20,7 @@ add_executable(
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/render_world.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_source_registry.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/light/light_source_registry.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/camera_source_registry.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/light/light_world.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/light/light_gpu_data.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_capture_service.cpp

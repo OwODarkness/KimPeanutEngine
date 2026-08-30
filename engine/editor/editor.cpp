@@ -57,6 +57,8 @@ namespace kpengine::editor
         init_info.render_system = global_editor_context.render_system_;
         init_info.command_registry = runtime::global_runtime_context.GetCommandRegistry();
         init_info.input_system = global_editor_context.input_system_;
+        init_info.window_system = global_editor_context.window_system_;
+        init_info.camera_control_sink = &runtime::global_runtime_context;
         editor_ui_->Initialize(init_info);
     }
 

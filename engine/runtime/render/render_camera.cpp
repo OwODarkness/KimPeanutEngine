@@ -38,6 +38,13 @@ namespace kpengine::render
 
     Matrix4f RenderCamera::CalculateProjectionMatrix() const
     {
+        if (projection_mode_ == CameraProjectionMode::Orthographic)
+        {
+            const float half_height = orthographic_height_ * 0.5f;
+            const float half_width = half_height * aspect_;
+            return Matrix4f::MakeOrthProjMatrix(-half_width, half_width, -half_height,
+                                                 half_height, near_, far_);
+        }
         return Matrix4f::MakePerProjMatrix(math::DegreeToRadian(fov_), aspect_, near_, far_);
     }
 }

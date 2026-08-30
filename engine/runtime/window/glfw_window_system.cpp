@@ -1,5 +1,6 @@
 #include "glfw_window_system.h"
 
+#include <cstddef>
 #include <GLFW/glfw3.h>
 #include <stb_image/image_helper.h>
 #include "config/path.h"
@@ -86,20 +87,70 @@ namespace kpengine
     void GLFW_WindowSystem::PollEvents()
     {
         glfwPollEvents();
+
+        // Poll normalized controller state once per render frame. Only copied
+        // values cross the Window -> Input boundary; Gameplay never sees GLFW.
+        for (int gamepad_index = GLFW_JOYSTICK_1; gamepad_index <= GLFW_JOYSTICK_LAST;
+             ++gamepad_index)
+        {
+            GamepadStateEvent event{};
+            event.gamepad_index = gamepad_index;
+            GLFWgamepadstate state{};
+            if (glfwGetGamepadState(gamepad_index, &state) == GLFW_TRUE)
+            {
+                event.connected = true;
+                for (std::size_t axis = 0; axis < event.axes.size(); ++axis)
+                {
+                    event.axes[axis] = state.axes[axis];
+                }
+                for (std::size_t button = 0; button < event.buttons.size(); ++button)
+                {
+                    event.buttons[button] = state.buttons[button];
+                }
+            }
+            gamepad_event_dispatcher_.Dispatch(event);
+        }
     }
     void GLFW_WindowSystem::SwapBuffers()
     {
         glfwSwapBuffers(window_);
     }
 
+    void GLFW_WindowSystem::SetMouseCapture(bool captured)
+    {
+        if (window_ == nullptr || mouse_captured_ == captured)
+        {
+            return;
+        }
+
+        glfwSetInputMode(window_, GLFW_CURSOR,
+                         captured ? GLFW_CURSOR_DISABLED : GLFW_CURSOR_NORMAL);
+        if (glfwRawMouseMotionSupported())
+        {
+            glfwSetInputMode(window_, GLFW_RAW_MOUSE_MOTION, captured ? GLFW_TRUE : GLFW_FALSE);
+        }
+        mouse_captured_ = captured;
+    }
+
+    bool GLFW_WindowSystem::IsMouseCaptured() const
+    {
+        return mouse_captured_;
+    }
+
 
     void GLFW_WindowSystem::Cleanup()
     {
+        if (window_ != nullptr)
+        {
+            SetMouseCapture(false);
+        }
         if (should_make_context_)
         {
             glfwMakeContextCurrent(nullptr);
         }
         glfwDestroyWindow(window_);
+        window_ = nullptr;
+        should_make_context_ = false;
         glfwTerminate();
     }
 

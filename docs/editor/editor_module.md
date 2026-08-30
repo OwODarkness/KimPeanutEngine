@@ -98,6 +98,13 @@ Both seams live behind one virtual interface each and are selected once, by `Gra
 ### `IEditorImguiWSI` — window + events
 `Initialize(WindowHandle, GraphicsAPIType)` / `Shutdown()` / `NewFrame()`. The only implementation today is `EditorImguiGLFWWSI` ([editor_imgui_glfw_wsi.cpp](../../engine/editor/platform/editor_imgui_glfw_wsi.cpp)), which wraps `imgui_impl_glfw` and delegates to `ImGui_ImplGlfw_InitForOpenGL` or `InitForVulkan` by API type. A future SDL/Win32 backend is a new subclass — `WindowAPIType` already enumerates them, and nothing in the editor would change.
 
+The scene viewport uses a separate injected `WindowSystem` seam for mouse
+capture. Clicking the scene image enters capture and hides the OS cursor;
+clicking the left button again exits capture. `EditorViewportComponent` owns
+only this transient UI state and sends `ISceneCameraControlSink` notifications.
+It does not access the possessed camera or Gameplay objects. Runtime applies
+the notification on the game thread before ticking the world.
+
 ### `IEditorImguiRenderer` — drawing
 `Initialize(GraphicsContext)` / `Shutdown()` / `NewFrame()` / `Render()`. Two implementations:
 
@@ -148,7 +155,7 @@ ImGui is not thread-safe and its backends require a live GL/Vulkan context, so *
 
 ## Current state
 
-- **Minimal UI.** Today the tree is a **top menu bar** (`File`/`Edit`/`Tool`/`Help`), a detachable **`~` command console**, a **Viewport** window, the **log window** (`OutputLog`, fed by `LogSystem`), and the **profile bar** (bottom status bar: FPS, frame ms, memory, each with optional sparklines). `EditorViewportComponent` borrows `RenderSystem`'s `RenderTargetView` every frame and asks the selected ImGui renderer for its `ImTextureID`; it owns neither the render target nor the registration. The OpenGL renderer presents the color-texture token now; Vulkan presentation waits for its ImGui descriptor bridge. Log entry colors are configured in `config/settings.json` (per level, with in-code defaults as fallback). The console is a frontend over Runtime's command registry; it owns only text input, history, completion, and result presentation.
+- **Minimal UI.** Today the tree is a **top menu bar** (`File`/`Edit`/`Tool`/`Help`), a detachable **`~` command console**, a **Viewport** window, the **log window** (`OutputLog`, fed by `LogSystem`), and the **profile bar** (bottom status bar: FPS, frame ms, memory, each with optional sparklines). `EditorViewportComponent` borrows `RenderSystem`'s `RenderTargetView` every frame and asks the selected ImGui renderer for its `ImTextureID`; it owns neither the render target nor the registration. A left click over the scene image captures the mouse for camera traversal; a subsequent left click releases it. The OpenGL renderer presents the color-texture token now; Vulkan presentation waits for its ImGui descriptor bridge. Log entry colors are configured in `config/settings.json` (per level, with in-code defaults as fallback). The console is a frontend over Runtime's command registry; it owns only text input, history, completion, and result presentation.
 - **Deleted seeds (2026-08-13 restructure).** `EditorSceneManager`, `EditorActorControlPanel`, and the scene/camera component implementations were all-comment files and were **removed** during the directory restructure. They are the resurrection seeds for scene-picking + gizmos + the actor transform panel — recover them from git history, don't expect them in the tree.
 - **Vulkan editor presentation** — `EditorImguiVulkanRenderer` records through `VulkanEditorBridge`, which brackets the swapchain UI pass and returns the image to present layout. The bridge is valid only during the active backend frame; Vulkan device/swapchain ownership and submit/present remain in graphics.
 - **GL renderer owns the frame clear** — a stopgap until the render-module reconstruction restores the scene renderer.

@@ -119,6 +119,12 @@ namespace kpengine
             {
                 scene_info.model_path = GetAssetDirectory() + config.scene.model;
                 scene_info.material_path = GetAssetDirectory() + config.scene.material;
+                scene_info.world_transform.position_ =
+                    {config.scene.position[0], config.scene.position[1], config.scene.position[2]};
+                scene_info.world_transform.rotator_ =
+                    {config.scene.rotation[0], config.scene.rotation[1], config.scene.rotation[2]};
+                scene_info.world_transform.scale_ =
+                    {config.scene.scale[0], config.scene.scale[1], config.scene.scale[2]};
             }
             for (const bootstrap::BootstrapSceneObject &object : config.scene.objects)
             {
@@ -205,7 +211,7 @@ namespace kpengine
 
             if (global_runtime_context.gameplay_world_)
             {
-                global_runtime_context.gameplay_world_->Tick(1.0f / target_fps);
+                global_runtime_context.TickGameplay(1.0f / target_fps);
             }
 
             {

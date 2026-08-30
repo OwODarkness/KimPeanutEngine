@@ -5,10 +5,13 @@
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
 #include "gameplay/factory/directional_light_actor_factory.h"
+#include "gameplay/factory/free_camera_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
+#include "gameplay/controller/player_controller.h"
 #include "gameplay/world/gameplay_world.h"
 #include "log/log_system.h"
 #include "log/logger.h"
+#include "input/input_context.h"
 #include "input/input_system.h"
 #include "script/lua/lua_vm.h"
 #include "script/command/lua_command_bridge.h"
@@ -27,7 +30,8 @@ namespace kpengine
         render_system_(std::make_unique<render::RenderSystem>()),
         command_registry_(std::make_unique<command::CommandRegistry>()),
         gameplay_world_(std::make_unique<gameplay::GameplayWorld>(
-            render_system_->GetRenderableSourceSink(), render_system_->GetLightSourceSink())),
+            render_system_->GetRenderableSourceSink(), render_system_->GetLightSourceSink(),
+            render_system_->GetCameraSourceSink())),
         log_system_(std::make_unique<LogSystem>()),
         input_system_(std::make_unique<input::InputSystem>()),
         lua_vm_(std::make_unique<::kpengine::script::lua::LuaVM>()),
@@ -55,6 +59,7 @@ namespace kpengine
             input_system_->BindKeyEvent(window_system_->key_event_dispatcher_);
             input_system_->BindCursorEvent(window_system_->cursor_event_dispatcher_);
             input_system_->BindScrollEvent(window_system_->scroll_event_dispatcher_);
+            input_system_->BindGamepadEvent(window_system_->gamepad_event_dispatcher_);
 
             lua_vm_->Initialize();
 
@@ -122,7 +127,7 @@ namespace kpengine
                 }
             }
 
-            if (!gameplay_world_ || bootstrap_renderable_sources_.empty())
+            if (!gameplay_world_)
             {
                 return;
             }
@@ -145,6 +150,35 @@ namespace kpengine
             }
             bootstrap_renderable_sources_.clear();
 
+            const gameplay::ActorHandle camera_handle =
+                gameplay::CreateFreeCameraActor(*gameplay_world_);
+            if (!camera_handle.IsValid())
+            {
+                KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                       "Bootstrap free camera actor could not be created");
+            }
+
+            constexpr const char *kGameplayInputContext = "Gameplay";
+            if (input_system_ != nullptr)
+            {
+                auto input_context = input_system_->GetInputContext(kGameplayInputContext);
+                if (input_context == nullptr)
+                {
+                    input_context = std::make_shared<input::InputContext>();
+                    input_system_->AddContext(kGameplayInputContext, input_context);
+                }
+                input_system_->SetActiveContext(kGameplayInputContext);
+
+                gameplay::PlayerController *const controller =
+                    gameplay_world_->CreateLocalPlayerController(input_system_.get(),
+                                                                  kGameplayInputContext);
+                if (controller == nullptr || !controller->Possess(camera_handle))
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Bootstrap camera controller could not possess free camera actor");
+                }
+            }
+
             // The first renderer milestone deliberately has one authored
             // directional source. Gameplay owns this Actor; Render observes its
             // value snapshot through the existing light-source sink.
@@ -152,6 +186,35 @@ namespace kpengine
             {
                 KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
                        "Bootstrap directional light actor could not be created");
+            }
+
+            gameplay_world_->SetLocalPlayerControllerInputEnabled(
+                scene_camera_control_captured_.load(std::memory_order_acquire));
+            if (input_system_ != nullptr)
+            {
+                input_system_->SetActiveContextEnabled(
+                    scene_camera_control_captured_.load(std::memory_order_acquire));
+            }
+        }
+
+        void RuntimeContext::TickGameplay(float delta_time)
+        {
+            if (!gameplay_world_)
+            {
+                return;
+            }
+
+            gameplay_world_->SetLocalPlayerControllerInputEnabled(
+                scene_camera_control_captured_.load(std::memory_order_acquire));
+            gameplay_world_->Tick(delta_time);
+        }
+
+        void RuntimeContext::SetSceneCameraControlCaptured(bool captured)
+        {
+            scene_camera_control_captured_.store(captured, std::memory_order_release);
+            if (input_system_ != nullptr)
+            {
+                input_system_->SetActiveContextEnabled(captured);
             }
         }
 

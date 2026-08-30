@@ -15,6 +15,8 @@ namespace kpengine
         void SwapBuffers() override;
         WindowHandle GetNativeHandle() const override;
         bool ShouldClose() const override;
+        void SetMouseCapture(bool captured) override;
+        bool IsMouseCaptured() const override;
         void Cleanup() override;
         ~GLFW_WindowSystem();
 
@@ -30,6 +32,7 @@ namespace kpengine
     private:
         bool should_make_context_ = false;
         GLFWwindow* window_ = nullptr;
+        bool mouse_captured_ = false;
     };
 }
 

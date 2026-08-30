@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_GLOBAL_CONTEXT_H
 #define KPENGINE_RUNTIME_GLOBAL_CONTEXT_H
 
+#include <atomic>
 #include <memory>
 #include <optional>
 #include <thread>
@@ -10,6 +11,7 @@
 #include "asset/asset_load_request.h"
 #include "command/command_registry.h"
 #include "render/render_system.h"
+#include "runtime_camera_control.h"
 
 namespace kpengine::gameplay
 {
@@ -46,7 +48,7 @@ namespace kpengine
     {
         class RuntimeScreenshotService;
 
-        class RuntimeContext
+        class RuntimeContext final : public ISceneCameraControlSink
         {
 
         public:
@@ -58,7 +60,9 @@ namespace kpengine
             // This is the Runtime-owned boundary for initial World composition.
             void FinalizeGameStartup();
             void Clear();
+            void TickGameplay(float delta_time);
             void SetBootstrapScene(render::BootstrapSceneInfo scene);
+            void SetSceneCameraControlCaptured(bool captured) override;
             render::IRenderCaptureService *GetRenderCaptureService()
             {
                 return render_system_ ? render_system_->GetRenderCaptureService() : nullptr;
@@ -101,6 +105,9 @@ namespace kpengine
             // reach it without a dependency cycle. Generic transport stays in core/async;
             // only the request type is asset vocabulary.
             async::AsyncQueue<asset::AssetLoadRequest> async_load_queue_;
+
+        private:
+            std::atomic<bool> scene_camera_control_captured_{false};
 
         };
 

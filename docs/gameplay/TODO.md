@@ -1,7 +1,10 @@
 # Gameplay Module TODO
 
 **Status: GP0–GP5 validation and bootstrap-actor migration landed 2026-08-28;
-editor inspection deferred.** Design:
+editor inspection deferred; GP6.1 camera data/source contract, GP6.2 local
+camera traversal, GP6.3 controller/gamepad proof, and GP6.4 viewport camera
+capture landed 2026-08-30.**
+Design:
 [gameplay_module.md](gameplay_module.md).
 The render-side proxy contract is already implemented; its integration ledger is
 [world/mesh_proxy_TODO.md](../world/mesh_proxy_TODO.md).
@@ -188,7 +191,143 @@ and `RuntimeContext::FinalizeGameStartup` creates the ordinary World-owned
 Actor on the game thread. Activation publishes the normal source command;
 Render resolves it at its next frame boundary.
 
-## After GP5
+## GP6 — camera component and local scene traversal
+
+**Goal:** add one local free-fly camera so a player can traverse the scene while
+preserving Gameplay ownership, the game/render thread boundary, and Render's
+ownership of camera matrices and GPU-facing state.
+
+**Chosen shape:** `CameraComponent` is a `SceneComponent` containing transform
+and lens/view definition only. A small local `PlayerController` owns input
+bindings, possession of a camera Actor, and control rotation. A Render-owned
+camera source registry consumes copied values at the frame boundary. This is a
+UE-like ownership seam without adding reflection, Pawn/Character inheritance,
+network replication, or a second camera matrix implementation.
+
+### GP6.1 — camera data and source contract
+
+- [x] Add `CameraComponent` under `engine/runtime/gameplay/component/` as a
+  `SceneComponent`; store FOV, near/far, projection mode, enable/priority, and
+  cached world-space basis values with validation and safe defaults.
+- [x] Keep `CameraComponent` free of `InputSystem`, `RenderCamera`,
+  `CameraData`, `RenderWorld`, Graphics, GLFW, and native API types. Update its
+  basis from `SceneComponent::OnTransformChanged()` and preserve the existing
+  X-forward/Y-up/Z-back math convention.
+- [x] Add a narrow Render-owned camera-source descriptor/sink/registry with
+  generational identity. Register/update/unregister camera values using the
+  same copied-command and lifetime rules as renderable/light sources.
+- [x] Inject the camera sink through `GameplayWorld`; make `RenderSystem`
+  consume one explicit active source before culling, shadow fitting, and
+  deferred lighting. Keep viewport aspect and `RenderCamera` private to Render,
+  with a safe default-camera fallback.
+
+**Landed 2026-08-30:** `CameraComponent` publishes validated camera state
+through `CameraSourceRegistry`; Render selects one enabled source by priority,
+applies perspective or orthographic projection through its private
+`RenderCamera`, and restores the bootstrap camera when no source is active.
+Gameplay retains only the opaque source token. Gameplay and render contract
+tests pass.
+
+### GP6.2 — local PlayerController and free-fly composition
+
+- [x] Add a minimal local `PlayerController` owned by the Gameplay world. It
+  stores a possessed `ActorHandle`, binds/unbinds logical camera actions, and
+  never owns the possessed Actor or a render object.
+- [x] Add `CreateFreeCameraActor` (or an equivalently focused factory) that
+  creates an Actor with a root `CameraComponent`, initializes it, and activates
+  its camera source. Keep the first controller-driven camera at the Actor root;
+  do not add an untested world-transform mutation path for attached cameras.
+- [x] Define `camera.move` (`Vector3f`), `camera.look` (`Vector2f`), and optional
+  `camera.zoom` (`float`) actions through `InputContext`; bind keyboard/mouse
+  mappings without putting GLFW constants in Gameplay.
+- [x] Accumulate callbacks into a thread-safe or double-buffered InputSystem
+  frame snapshot because GLFW events are currently delivered on the render
+  thread while Gameplay ticks on the game thread. Consume the snapshot before
+  controller/world ticking; callbacks must not mutate `CameraComponent`.
+- [x] Apply movement/look on the game thread: basis-relative translation with
+  `delta_time`, raw mouse delta without `delta_time`, yaw wrapping, pitch clamp
+  near ±89°, and world-up vertical movement with no roll. Gamepad analog values
+  use a radial dead-zone and a per-second policy.
+- [x] Make context priority and lifecycle explicit so gameplay camera input
+  does not interfere with the editor console/UI. Bindings are removed on
+  unpossess and controller/world teardown; context switching remains an
+  explicit InputSystem integration point for editor ownership.
+
+**Landed 2026-08-30:** `GameplayWorld` owns one local `PlayerController` and
+ticks it before Actors. `CreateFreeCameraActor` creates an active root camera;
+runtime startup creates the `Gameplay` context, binds keyboard/mouse logical
+actions, and possesses that camera. Render-thread action callbacks enqueue
+copied values into a mutex-protected `InputSystem` snapshot; game-thread
+controller ticks apply movement, look, and zoom. GP6.3 adds the
+platform-neutral gamepad path and deterministic smoke proof.
+
+### GP6.3 — controller/gamepad expansion and proof
+
+- [x] Extend Input/Window with a platform-neutral gamepad sample/event path;
+  poll or translate controller state once per frame and map it to logical
+  action values. Add radial dead-zone, inversion, and sensitivity tests;
+  gameplay must not call GLFW gamepad APIs directly.
+- [x] Unit-test CameraComponent basis/projection/attachment behavior,
+  PlayerController possession and stale-handle rejection, input snapshot
+  handoff, release/unbind behavior, pitch/yaw limits, and deterministic
+  movement scaling.
+- [x] Add camera-source registry tests for copied updates, explicit active
+  selection, stale/invalid fallback, and teardown ordering.
+- [x] Extend `GraphicsSmoke` with a deterministic keyboard/mouse input sequence
+  that moves and looks through the bootstrap scene, changes visibility/culling,
+  and captures the result on Vulkan and OpenGL. A physical gamepad is not part
+  of the smoke prerequisite.
+- [x] Update gameplay status/module docs with ownership, thread, input-device,
+  and validation evidence after the implementation lands.
+
+**Landed 2026-08-30:** `WindowSystem` emits a copied six-axis/fifteen-button
+gamepad sample once per poll; `InputSystem` selects one active connected pad,
+translates sticks/triggers/buttons to platform-neutral keys, and applies radial
+dead-zone, inversion, and sensitivity policy. `PlayerController` consumes left
+stick/right stick/trigger values on the game thread, while disconnect releases
+buttons and zeros analog state. `InputContext` binding lookup/unbind is safe
+against concurrent callback and teardown access. `GameplayUnitTest` and
+`InputSystemTest` cover gamepad translation, dead-zone processing, disconnect,
+stale possession, pitch clamp, snapshot handoff, and unbind behavior.
+`GraphicsSmoke` drives deterministic keyboard/mouse movement and look through
+the copied camera-source path and passes on Vulkan and OpenGL.
+
+### GP6.4 — scene viewport camera capture
+
+- [x] Add a platform-neutral `WindowSystem` mouse-capture seam. The GLFW
+  implementation disables the OS cursor and enables raw mouse motion while
+  capture is active, then restores normal cursor behavior on release/teardown.
+- [x] Toggle capture only from the rendered scene image: the first left click
+  over the viewport captures and hides the mouse; the next left click releases
+  capture and stops camera control.
+- [x] Keep editor/runtime/gameplay decoupled with an
+  `ISceneCameraControlSink` notification. The editor records the request;
+  `RuntimeContext` applies it on the game thread before `GameplayWorld::Tick`,
+  where `PlayerController` consumes or discards the input snapshot.
+- [x] Reset relative cursor tracking whenever the cursor mode changes so the
+  first captured event cannot create a large look jump. Release capture when
+  the viewport is destroyed.
+- [x] Gate active input-context processing immediately on the capture
+  transition, while leaving editor key listeners alive. This prevents a
+  cursor/key/gamepad event from the released mode from changing the camera on
+  the next game tick.
+- [x] Test that disabling the local controller prevents movement, look, and
+  zoom, while re-enabling it restores normal camera input.
+
+**Landed 2026-08-30:** `EditorViewportComponent` owns only the transient UI
+capture state and injected seams. It never reaches the camera Actor or calls
+Gameplay directly. `RuntimeContext` owns the atomic request and applies it at
+the existing game-thread boundary; the same behavior works for keyboard,
+mouse, and gamepad actions.
+
+**Done when:** a local player can possess the bootstrap free camera and use
+keyboard/mouse actions to traverse the rendered scene on both backends; no
+camera or controller callback touches Gameplay from the render thread; the
+active camera source is copied into RenderSystem without a Gameplay pointer,
+matrix object, GPU handle, or backend type crossing the boundary. Gamepad input
+is an additional logical-action path, not a second camera-control API.
+
+## After GP6
 
 1. Add another focused `gameplay/factory/` helper only when it represents a
    distinct real Actor composition; keep factories outside GameplayWorld.

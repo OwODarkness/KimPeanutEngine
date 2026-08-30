@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.5.0)
 
 add_library(Input STATIC
     input_context.cpp 
+    gamepad_input.cpp
     input_system.cpp
 )
 

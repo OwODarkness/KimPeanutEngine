@@ -27,6 +27,9 @@ namespace kpengine::bootstrap
     {
         std::string model;
         std::string material;
+        std::array<float, 3> position{0.f, 0.f, 0.f};
+        std::array<float, 3> rotation{0.f, 0.f, 0.f};
+        std::array<float, 3> scale{1.f, 1.f, 1.f};
         std::vector<BootstrapSceneObject> objects;
 
         bool IsComplete() const

@@ -70,6 +70,7 @@ TEST(BootstrapTest, ParsesAdditionalSceneObjectTransform)
         "scene": {
             "model": "model/rock.obj",
             "material": "material/rock.material",
+            "scale": [0.35, 0.35, 0.35],
             "objects": [{
                 "model": "model/floor.obj",
                 "material": "material/brickwall.material",
@@ -81,6 +82,7 @@ TEST(BootstrapTest, ParsesAdditionalSceneObjectTransform)
     })");
     const auto config = kpengine::bootstrap::ReadBootstrap(BootstrapTestPath().string());
     ASSERT_EQ(config.scene.objects.size(), 1u);
+    EXPECT_FLOAT_EQ(config.scene.scale[0], 0.35f);
     EXPECT_EQ(config.scene.objects[0].model, "model/floor.obj");
     EXPECT_FLOAT_EQ(config.scene.objects[0].position[1], -70.f);
     EXPECT_FLOAT_EQ(config.scene.objects[0].scale[0], 30.f);

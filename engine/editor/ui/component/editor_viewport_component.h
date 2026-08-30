@@ -8,6 +8,19 @@ namespace kpengine::render
     class RenderSystem;
 }
 
+namespace kpengine
+{
+    class WindowSystem;
+    namespace input
+    {
+        class InputSystem;
+    }
+    namespace runtime
+    {
+        class ISceneCameraControlSink;
+    }
+}
+
 namespace kpengine::editor
 {
     class IEditorImguiRenderer;
@@ -18,13 +31,23 @@ namespace kpengine::editor
     {
     public:
         EditorViewportComponent(render::RenderSystem *render_system,
-                                IEditorImguiRenderer *imgui_renderer);
+                                IEditorImguiRenderer *imgui_renderer,
+                                WindowSystem *window_system,
+                                input::InputSystem *input_system,
+                                runtime::ISceneCameraControlSink *camera_control_sink);
+        ~EditorViewportComponent() override;
 
         void Render() override;
 
     private:
+        void SetCameraCapture(bool captured);
+
         render::RenderSystem *render_system_ = nullptr;
         IEditorImguiRenderer *imgui_renderer_ = nullptr;
+        WindowSystem *window_system_ = nullptr;
+        input::InputSystem *input_system_ = nullptr;
+        runtime::ISceneCameraControlSink *camera_control_sink_ = nullptr;
+        bool camera_capture_active_ = false;
     };
 }
 
