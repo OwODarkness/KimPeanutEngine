@@ -1167,8 +1167,9 @@ namespace kpengine::example
                      {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
                      {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
                      {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
-                     {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
-                     {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+                      {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
+                      {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                      {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
                 };
                 deferred_lighting_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
                 deferred_lighting_pipeline_desc.raster_state.front_face =
@@ -1235,10 +1236,21 @@ namespace kpengine::example
                 shadow_sampler_settings.enable_anisotropy = false;
                 const graphics::SamplerHandle shadow_sampler =
                     rhi->CreateSampler(shadow_sampler_settings);
+                data::TextureData environment_data{};
+                environment_data.width = 1;
+                environment_data.height = 1;
+                environment_data.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
+                environment_data.pixels.resize(4 * sizeof(uint16_t), 0);
+                graphics::TextureSettings environment_settings{};
+                environment_settings.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
+                environment_settings.usage = graphics::TextureUsage::TEXTURE_USAGE_TRANSFER_DST |
+                                             graphics::TextureUsage::TEXTURE_USAGE_SAMPLE;
+                const graphics::TextureHandle environment_texture =
+                    rhi->CreateTexture(environment_data, environment_settings);
                 if (!deferred_lighting_pipeline.IsValid() || !directional_shadow_pipeline.IsValid() ||
                     !tone_map_pipeline.IsValid() ||
                     !debug_mesh.IsValid() || !debug_sampler.IsValid() ||
-                    !shadow_sampler.IsValid())
+                    !shadow_sampler.IsValid() || !environment_texture.IsValid())
                 {
                     throw std::runtime_error("failed to create D5.2 deferred-lighting resources");
                 }
@@ -1407,10 +1419,12 @@ namespace kpengine::example
                                       graphics::UniformBufferBinding{
                                           0, 5, d5_constants.buffer, d5_constants.offset,
                                           d5_constants.range},
-                                      graphics::SampledTextureBinding{
-                                          0, 6,
-                                          rhi->GetRenderTargetSampledDepthAttachment(d4_shadow_target),
-                                          shadow_sampler}}});
+                                       graphics::SampledTextureBinding{
+                                           0, 6,
+                                           rhi->GetRenderTargetSampledDepthAttachment(d4_shadow_target),
+                                           shadow_sampler},
+                                       graphics::SampledTextureBinding{
+                                           0, 7, environment_texture, debug_sampler}}});
                             if (!deferred_lighting_bindings.IsValid())
                             {
                                 throw std::runtime_error("D5.2 deferred-lighting binding failed");
@@ -1524,6 +1538,7 @@ namespace kpengine::example
 
                 rhi->WaitIdle();
                 d3_material_resolver.Clear();
+                rhi->DestroyTexture(environment_texture);
                 rhi->DestroySampler(shadow_sampler);
                 rhi->DestroySampler(debug_sampler);
                 rhi->DestroyMesh(debug_mesh);

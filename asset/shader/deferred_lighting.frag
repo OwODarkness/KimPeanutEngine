@@ -12,6 +12,7 @@ layout(binding = 1) uniform sampler2D gbuffer_normal;
 layout(binding = 2) uniform sampler2D gbuffer_material;
 layout(binding = 3) uniform sampler2D gbuffer_depth;
 layout(binding = 6) uniform sampler2D directional_shadow_depth;
+layout(binding = 7) uniform sampler2D environment_radiance;
 
 struct LightGpuData
 {
@@ -56,6 +57,16 @@ vec3 reconstruct_world_position(float depth)
     vec4 world = lighting_constants.inverse_view_projection *
                  vec4(ndc_xy, ndc_z, 1.0);
     return world.xyz / max(abs(world.w), 1e-7) * sign(world.w);
+}
+
+vec3 sample_environment_background()
+{
+    vec3 world_far = reconstruct_world_position(1.0);
+    vec3 direction = normalize(world_far - lighting_constants.camera_world_position.xyz);
+    vec2 environment_uv = vec2(
+        atan(direction.z, direction.x) / (2.0 * PI) + 0.5,
+        asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5);
+    return max(texture(environment_radiance, environment_uv).rgb, vec3(0.0));
 }
 
 float distribution_ggx(vec3 normal, vec3 halfway, float roughness)
@@ -132,7 +143,7 @@ void main()
     float depth = texture(gbuffer_depth, frag_texcoord).r;
     if (depth >= 0.999999)
     {
-        out_color = vec4(0.0, 0.0, 0.0, 1.0);
+        out_color = vec4(sample_environment_background(), 1.0);
         return;
     }
 

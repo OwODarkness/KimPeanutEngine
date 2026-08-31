@@ -38,17 +38,17 @@ namespace kpengine::resource
 
 namespace kpengine::render
 {
-    // Texture identity includes both the source asset generation and the GPU
-    // color interpretation. Keeping the fields separate prevents a color-space
-    // bit from colliding with AssetID generation bits.
+    // Texture identity includes both the source asset generation and resolved
+    // GPU format. This separates sRGB, linear UNORM, and HDR interpretations
+    // without folding format bits into AssetID generation bits.
     struct TextureCacheKey
     {
         asset::AssetID asset_id{};
-        MaterialTextureColorSpace color_space = MaterialTextureColorSpace::Srgb;
+        TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
 
         bool operator==(const TextureCacheKey &other) const noexcept
         {
-            return asset_id == other.asset_id && color_space == other.color_space;
+            return asset_id == other.asset_id && format == other.format;
         }
     };
 
@@ -57,9 +57,9 @@ namespace kpengine::render
         std::size_t operator()(const TextureCacheKey &key) const noexcept
         {
             const std::size_t asset_hash = std::hash<uint64_t>{}(key.asset_id.Pack());
-            const std::size_t color_space_hash = std::hash<uint8_t>{}(
-                static_cast<uint8_t>(key.color_space));
-            return asset_hash ^ (color_space_hash << 1);
+            const std::size_t format_hash = std::hash<uint8_t>{}(
+                static_cast<uint8_t>(key.format));
+            return asset_hash ^ (format_hash << 1);
         }
     };
 

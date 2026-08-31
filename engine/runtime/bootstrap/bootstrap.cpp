@@ -80,6 +80,7 @@ namespace kpengine::bootstrap
             const auto &scene = json["scene"];
             config.scene.model = scene.value("model", std::string{});
             config.scene.material = scene.value("material", std::string{});
+            config.scene.environment = scene.value("environment", std::string{});
             const auto read_vector = [](const nlohmann::json &object,
                                         const char *name,
                                         std::array<float, 3> &destination)

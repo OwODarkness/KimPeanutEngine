@@ -88,10 +88,15 @@ namespace kpengine::render
         asset::AssetID asset_id, const data::TextureData &data,
         MaterialTextureColorSpace color_space, const MaterialSamplerDesc *sampler_desc)
     {
-        // The same asset can be sampled as sRGB (base color) and as linear
-        // (normal/metallic/roughness/occlusion); each space needs its own GPU
-        // texture because the format carries the color interpretation.
-        const TextureCacheKey key{asset_id, color_space};
+        // The same LDR asset can be sampled as sRGB (base color) and linear
+        // (normal/metallic/roughness/occlusion), while HDR assets retain their
+        // imported RGBA16F format. Each resolved format needs its own GPU image.
+        const TextureFormat format = data.format == TextureFormat::TEXTURE_FORMAT_RGBA16F
+                                         ? data.format
+                                         : color_space == MaterialTextureColorSpace::Linear
+                                               ? TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM
+                                               : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        const TextureCacheKey key{asset_id, format};
         const auto existing = texture_cache_.find(key);
         graphics::TextureHandle texture;
         if (existing != texture_cache_.end())
@@ -101,9 +106,7 @@ namespace kpengine::render
         else
         {
             graphics::TextureSettings settings = DefaultTextureSettings();
-            settings.format = color_space == MaterialTextureColorSpace::Linear
-                                  ? TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM
-                                  : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+            settings.format = format;
             texture = backend_->CreateTexture(data, settings);
             if (texture.IsValid())
             {

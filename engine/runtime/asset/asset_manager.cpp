@@ -1,6 +1,7 @@
 #include "asset_manager.h"
 #include <algorithm>
 #include <cctype>
+#include <cstring>
 #include <magic_enum/magic_enum.hpp>
 #include "assimp_model_loader.h"
 #include "image_io/image_io.h"
@@ -14,6 +15,86 @@
 
 namespace kpengine::asset
 {
+    namespace
+    {
+        constexpr uint32_t kMaxImportedHdrWidth = 4096;
+
+        uint16_t FloatToHalf(float value)
+        {
+            uint32_t bits = 0;
+            std::memcpy(&bits, &value, sizeof(bits));
+            const uint16_t sign = static_cast<uint16_t>((bits >> 16) & 0x8000u);
+            const uint32_t exponent = (bits >> 23) & 0xffu;
+            uint32_t mantissa = bits & 0x7fffffu;
+            if (exponent == 0xffu)
+            {
+                return static_cast<uint16_t>(sign | 0x7c00u | (mantissa != 0 ? 0x0200u : 0u));
+            }
+
+            int32_t half_exponent = static_cast<int32_t>(exponent) - 127 + 15;
+            if (half_exponent >= 31)
+            {
+                return static_cast<uint16_t>(sign | 0x7c00u);
+            }
+            if (half_exponent <= 0)
+            {
+                if (half_exponent < -10)
+                {
+                    return sign;
+                }
+                mantissa = (mantissa | 0x800000u) >> (1 - half_exponent);
+                return static_cast<uint16_t>(sign | ((mantissa + 0x1000u) >> 13));
+            }
+            mantissa += 0x1000u;
+            if ((mantissa & 0x800000u) != 0)
+            {
+                mantissa = 0;
+                ++half_exponent;
+                if (half_exponent >= 31)
+                {
+                    return static_cast<uint16_t>(sign | 0x7c00u);
+                }
+            }
+            return static_cast<uint16_t>(sign |
+                                         (static_cast<uint16_t>(half_exponent) << 10) |
+                                         (mantissa >> 13));
+        }
+
+        data::TextureData ConvertHdrTexture(const image_io::ImageBuffer &image)
+        {
+            data::TextureData output{};
+            const uint32_t divisor = std::max(1u,
+                (image.width + kMaxImportedHdrWidth - 1) / kMaxImportedHdrWidth);
+            output.width = std::max(1u, image.width / divisor);
+            output.height = std::max(1u, image.height / divisor);
+            output.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
+            output.pixels.resize(static_cast<size_t>(output.width) * output.height * 8);
+
+            for (uint32_t y = 0; y < output.height; ++y)
+            {
+                const uint32_t source_y = std::min(y * divisor, image.height - 1);
+                for (uint32_t x = 0; x < output.width; ++x)
+                {
+                    const uint32_t source_x = std::min(x * divisor, image.width - 1);
+                    const size_t source_offset =
+                        (static_cast<size_t>(source_y) * image.width + source_x) * 4 * sizeof(float);
+                    const size_t output_offset =
+                        (static_cast<size_t>(y) * output.width + x) * 4 * sizeof(uint16_t);
+                    for (size_t channel = 0; channel < 4; ++channel)
+                    {
+                        float value = 0.0f;
+                        std::memcpy(&value,
+                                    image.pixels.data() + source_offset + channel * sizeof(float),
+                                    sizeof(value));
+                        const uint16_t half = FloatToHalf(value);
+                        std::memcpy(output.pixels.data() + output_offset + channel * sizeof(uint16_t),
+                                    &half, sizeof(half));
+                    }
+                }
+            }
+            return output;
+        }
+    }
 
     AssetManager AssetManager::instance_;
     AssetManager::~AssetManager() = default;
@@ -319,11 +400,18 @@ namespace kpengine::asset
             }
 
             std::shared_ptr<TextureResource> texture = std::make_shared<TextureResource>();
-            texture->data->width = decoded.image.width;
-            texture->data->height = decoded.image.height;
-            texture->data->format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
             texture->channel_count = 4;
-            texture->data->pixels = std::move(decoded.image.pixels);
+            if (decoded.image.format == image_io::ImagePixelFormat::Rgba32Float)
+            {
+                *texture->data = ConvertHdrTexture(decoded.image);
+            }
+            else
+            {
+                texture->data->width = decoded.image.width;
+                texture->data->height = decoded.image.height;
+                texture->data->format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+                texture->data->pixels = std::move(decoded.image.pixels);
+            }
 
             info.type = AssetType::KPAT_Texture;
             info.path = path;

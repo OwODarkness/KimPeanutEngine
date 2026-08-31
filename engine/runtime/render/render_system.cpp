@@ -520,7 +520,7 @@ namespace kpengine::render
         RenderTarget *const shadow_target =
             frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
         if (!recorder || !hdr_target || !gbuffer_target || !shadow_target ||
-            !PrepareDeferredLightingPassResources() ||
+             !PrepareDeferredLightingPassResources() ||
             !hdr_target->BeginRecording(*recorder))
         {
             return;
@@ -530,15 +530,17 @@ namespace kpengine::render
         lighting_data.inverse_view_projection =
             scene_camera_.GetViewProjectionMatrix().Inverse().Transpose();
         const Vector3f &camera_position = scene_camera_.GetPosition();
-        lighting_data.camera_world_position = {
-            camera_position.x_, camera_position.y_, camera_position.z_, 1.0f};
+        lighting_data.camera_world_position = Vector4f{camera_position, 1.0f};
         if (active_directional_shadow_.has_value())
         {
             const DirectionalShadowFrame &shadow = *active_directional_shadow_;
             lighting_data.directional_shadow_view_projection =
                 (shadow.projection * shadow.view).Transpose();
-            lighting_data.directional_shadow_params = {
-                0.0005f, 0.002f, 1.0f / static_cast<float>(shadow.job.resolution), 0.0f};
+            lighting_data.directional_shadow_params =
+                Vector4f{0.0005f,
+                         0.002f,
+                         1.0f / static_cast<float>(shadow.job.resolution),
+                         0.0f};
         }
         const UniformAllocation lighting_constants =
             active_frame_context_->AllocateUniform(lighting_data);
@@ -564,9 +566,12 @@ namespace kpengine::render
                       graphics::UniformBufferBinding{
                           0, 5, lighting_constants.buffer, lighting_constants.offset,
                           lighting_constants.range},
-                      graphics::SampledTextureBinding{
-                          0, 6, shadow_target->GetSampledDepthTexture(),
-                          directional_shadow_sampler_}}});
+                       graphics::SampledTextureBinding{
+                           0, 6, shadow_target->GetSampledDepthTexture(),
+                           directional_shadow_sampler_},
+                       graphics::SampledTextureBinding{
+                           0, 7, environment_texture_binding_.texture,
+                           environment_texture_binding_.sampler}}});
             if (bindings.IsValid())
             {
                 recorder->BindPipeline(deferred_lighting_pipeline_);
@@ -603,7 +608,9 @@ namespace kpengine::render
 
     bool RenderSystem::PrepareDeferredLightingPassResources()
     {
-        if (deferred_lighting_pipeline_.IsValid() && directional_shadow_sampler_.IsValid())
+        if (deferred_lighting_pipeline_.IsValid() && directional_shadow_sampler_.IsValid() &&
+            environment_texture_binding_.texture.IsValid() &&
+            environment_texture_binding_.sampler.IsValid())
         {
             return true;
         }
@@ -624,7 +631,20 @@ namespace kpengine::render
             shadow_sampler_settings.enable_anisotropy = false;
             directional_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
         }
-        if (!directional_shadow_sampler_.IsValid())
+        if (!environment_texture_binding_.texture.IsValid() ||
+            !environment_texture_binding_.sampler.IsValid())
+        {
+            data::TextureData fallback{};
+            fallback.width = 1;
+            fallback.height = 1;
+            fallback.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
+            fallback.pixels.resize(4 * sizeof(uint16_t), 0);
+            environment_texture_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+                {}, fallback, MaterialTextureColorSpace::Linear);
+        }
+        if (!directional_shadow_sampler_.IsValid() ||
+            !environment_texture_binding_.texture.IsValid() ||
+            !environment_texture_binding_.sampler.IsValid())
         {
             return false;
         }
@@ -677,8 +697,10 @@ namespace kpengine::render
               ShaderStage::SHADER_STAGE_FRAGMENT},
              {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
               ShaderStage::SHADER_STAGE_FRAGMENT},
-             {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
-              ShaderStage::SHADER_STAGE_FRAGMENT}},
+              {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT},
+              {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
         deferred_lighting_pipeline_ = backend_->CreatePipelineResource(desc);
         return deferred_lighting_pipeline_.IsValid();
@@ -1255,6 +1277,11 @@ namespace kpengine::render
             }
             const TextureBinding texture_binding =
                 resource_resolver_->GetOrCreateTextureBinding(id, *texture->data);
+            if (!bootstrap_scene_info_.environment_path.empty() &&
+                request.path == bootstrap_scene_info_.environment_path)
+            {
+                environment_texture_binding_ = texture_binding;
+            }
             entry.payload = std::move(texture);
             if (!texture_binding.texture.IsValid() || !texture_binding.sampler.IsValid())
             {
@@ -1370,9 +1397,10 @@ namespace kpengine::render
 
     void RenderSystem::DrainRenderableSources()
     {
+        auto callback = [this](const PrimitiveRenderableSourceDesc &source)
+            { return ResolveRenderableSource(source); };
         source_registry_.Drain(
-            render_world_, [this](const PrimitiveRenderableSourceDesc &source)
-            { return ResolveRenderableSource(source); });
+            render_world_, callback);
     }
 
     void RenderSystem::DrainLightSources()
@@ -1616,6 +1644,7 @@ namespace kpengine::render
         gbuffer_debug_fullscreen_mesh_ = {};
         gbuffer_debug_sampler_ = {};
         directional_shadow_sampler_ = {};
+        environment_texture_binding_ = {};
         tone_map_pipeline_ = {};
         if (directional_shadow_pipeline_.IsValid())
         {

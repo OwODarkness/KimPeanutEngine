@@ -37,6 +37,20 @@ TEST(ImageIOTest, ValidatesRgba8ByteCount)
     EXPECT_FALSE(image.IsValid());
 }
 
+TEST(ImageIOTest, ValidatesRgba32FloatByteCount)
+{
+    kpengine::image_io::ImageBuffer image;
+    image.width = 2;
+    image.height = 1;
+    image.format = kpengine::image_io::ImagePixelFormat::Rgba32Float;
+    image.pixels.resize(2 * 4 * sizeof(float));
+    EXPECT_EQ(image.ExpectedByteCount(), 32u);
+    EXPECT_TRUE(image.IsValid());
+
+    const auto result = kpengine::image_io::WritePng(image, "unused.png");
+    EXPECT_FALSE(result.success);
+}
+
 TEST(ImageIOTest, WritesAndDecodesLosslessPng)
 {
     const std::filesystem::path output = MakeTemporaryPngPath();

@@ -52,13 +52,15 @@ TEST(BootstrapTest, ParsesSceneWithMaterialAsset)
         "assets": ["material/bootstrap.material"],
         "scene": {
             "model": "model/sphere/sphere.obj",
-            "material": "material/bootstrap.material"
+            "material": "material/bootstrap.material",
+            "environment": "texture/hdr/studio.hdr"
         }
     })");
 
     const auto config = kpengine::bootstrap::ReadBootstrap(BootstrapTestPath().string());
     EXPECT_TRUE(config.scene.IsComplete());
     EXPECT_EQ(config.scene.material, "material/bootstrap.material");
+    EXPECT_EQ(config.scene.environment, "texture/hdr/studio.hdr");
     RemoveTestFile();
 }
 

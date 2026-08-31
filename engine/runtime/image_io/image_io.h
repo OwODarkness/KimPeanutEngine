@@ -14,6 +14,7 @@ namespace kpengine::image_io
     enum class ImagePixelFormat : uint8_t
     {
         Rgba8,
+        Rgba32Float,
     };
 
     struct ImageBuffer
@@ -39,9 +40,9 @@ namespace kpengine::image_io
         ImageBuffer image;
     };
 
-    // Decodes a supported source image into tightly packed RGBA8 pixels in the
-    // engine's bottom-origin texture convention. The caller owns file
-    // identity, caching, and any GPU/texture format policy.
+    // Decodes LDR sources into tightly packed RGBA8 and Radiance HDR sources
+    // into tightly packed RGBA32F, both in the engine's bottom-origin texture
+    // convention. The caller owns file identity, caching, and GPU format policy.
     ImageDecodeResult DecodeImageFile(const std::string &path);
 
     // Writes a tightly packed RGBA8 image as a lossless PNG. Path selection and

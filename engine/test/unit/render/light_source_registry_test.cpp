@@ -180,7 +180,9 @@ TEST(LightGpuDataTest, EncodesEveryLightTypeAndMakesUnresolvedShadowsExplicitlyU
     EXPECT_EQ(directional_gpu->shadow_kind,
               static_cast<uint32_t>(kpengine::render::LightGpuShadowKind::Unshadowed));
     EXPECT_EQ(directional_gpu->shadow_binding_slot, 0U);
-    EXPECT_FLOAT_EQ(directional_gpu->direction_inner_cone[1], -1.0f);
+    EXPECT_EQ(directional_gpu->color_intensity,
+              (kpengine::Vector4f{1.0f, 0.5f, 0.25f, 2.0f}));
+    EXPECT_FLOAT_EQ(directional_gpu->direction_inner_cone.y_, -1.0f);
 
     auto invalid_directional = directional;
     invalid_directional.type_data = kpengine::render::DirectionalLightData{{0.0f, 0.0f, 0.0f}};
@@ -189,13 +191,13 @@ TEST(LightGpuDataTest, EncodesEveryLightTypeAndMakesUnresolvedShadowsExplicitlyU
     const auto point_gpu = kpengine::render::EncodeLightGpuData(MakePointLight());
     ASSERT_TRUE(point_gpu.has_value());
     EXPECT_EQ(point_gpu->type, static_cast<uint32_t>(kpengine::render::LightGpuType::Point));
-    EXPECT_FLOAT_EQ(point_gpu->position_range[0], 1.0f);
-    EXPECT_FLOAT_EQ(point_gpu->position_range[3], 10.0f);
+    EXPECT_FLOAT_EQ(point_gpu->position_range.x_, 1.0f);
+    EXPECT_FLOAT_EQ(point_gpu->position_range.w_, 10.0f);
 
     const auto spot_gpu = kpengine::render::EncodeLightGpuData(MakeSpotLight());
     ASSERT_TRUE(spot_gpu.has_value());
     EXPECT_EQ(spot_gpu->type, static_cast<uint32_t>(kpengine::render::LightGpuType::Spot));
-    EXPECT_FLOAT_EQ(spot_gpu->direction_inner_cone[3], 0.25f);
+    EXPECT_FLOAT_EQ(spot_gpu->direction_inner_cone.w_, 0.25f);
     EXPECT_FLOAT_EQ(spot_gpu->outer_cone_radians, 0.75f);
 }
 

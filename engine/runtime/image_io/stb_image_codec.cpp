@@ -30,6 +30,37 @@ namespace kpengine::image_io
                 // this state thread-local so concurrent image loads do not
                 // race through stb_image's process-wide decoder setting.
                 stbi_set_flip_vertically_on_load_thread(1);
+                if (stbi_is_hdr(path.c_str()) != 0)
+                {
+                    float *decoded = stbi_loadf(path.c_str(), &width, &height, nullptr,
+                                                STBI_rgb_alpha);
+                    if (decoded == nullptr)
+                    {
+                        const char *reason = stbi_failure_reason();
+                        return {Failure(reason ? reason : "HDR image decoder failed"), {}};
+                    }
+                    if (width <= 0 || height <= 0)
+                    {
+                        stbi_image_free(decoded);
+                        return {Failure("Decoded HDR image has an invalid extent"), {}};
+                    }
+
+                    ImageBuffer image;
+                    image.width = static_cast<uint32_t>(width);
+                    image.height = static_cast<uint32_t>(height);
+                    image.format = ImagePixelFormat::Rgba32Float;
+                    const size_t byte_count = image.ExpectedByteCount();
+                    if (byte_count == 0)
+                    {
+                        stbi_image_free(decoded);
+                        return {Failure("Decoded HDR image exceeds the supported byte range"), {}};
+                    }
+                    const auto *bytes = reinterpret_cast<const uint8_t *>(decoded);
+                    image.pixels.assign(bytes, bytes + byte_count);
+                    stbi_image_free(decoded);
+                    return {{true, {}}, std::move(image)};
+                }
+
                 stbi_uc *decoded = stbi_load(path.c_str(), &width, &height, nullptr,
                                              STBI_rgb_alpha);
                 if (decoded == nullptr)

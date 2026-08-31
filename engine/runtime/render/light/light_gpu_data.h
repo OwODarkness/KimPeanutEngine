@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <type_traits>
 #include <vector>
 
 #include "render/light/light_world.h"
@@ -38,9 +39,9 @@ namespace kpengine::render
 
     struct alignas(16) LightGpuData
     {
-        std::array<float, 4> color_intensity{};
-        std::array<float, 4> position_range{};
-        std::array<float, 4> direction_inner_cone{};
+        Vector4f color_intensity{};
+        Vector4f position_range{};
+        Vector4f direction_inner_cone{};
         float outer_cone_radians = 0.0f;
         uint32_t type = static_cast<uint32_t>(LightGpuType::Directional);
         uint32_t shadow_kind = static_cast<uint32_t>(LightGpuShadowKind::Unshadowed);
@@ -79,12 +80,16 @@ namespace kpengine::render
     struct alignas(16) DeferredLightingGpuData
     {
         Matrix4f inverse_view_projection;
-        std::array<float, 4> camera_world_position{};
+        Vector4f camera_world_position{};
         Matrix4f directional_shadow_view_projection;
         // Minimum bias, slope-scaled bias, texel size, reserved.
-        std::array<float, 4> directional_shadow_params{};
+        Vector4f directional_shadow_params{};
     };
 
+    static_assert(sizeof(Vector4f) == sizeof(float) * 4,
+                  "Vector4f must remain a four-float shader ABI row");
+    static_assert(std::is_trivially_copyable_v<Vector4f>,
+                  "Vector4f must be safe to copy into uniform buffers");
     static_assert(sizeof(LightGpuData) == 96,
                   "LightGpuData must match the version-1 GLSL std140 stride");
     static_assert(offsetof(LightGpuData, outer_cone_radians) == 48);

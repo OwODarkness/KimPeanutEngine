@@ -6,13 +6,6 @@ namespace kpengine::render
 {
     namespace
     {
-        void CopyVector3(std::array<float, 4> &destination, const Vector3f &source)
-        {
-            destination[0] = source.x_;
-            destination[1] = source.y_;
-            destination[2] = source.z_;
-        }
-
         LightGpuShadowKind ToGpuShadowKind(ShadowKind kind)
         {
             switch (kind)
@@ -43,8 +36,7 @@ namespace kpengine::render
         }
 
         LightGpuData result{};
-        CopyVector3(result.color_intensity, light.color);
-        result.color_intensity[3] = light.intensity;
+        result.color_intensity = Vector4f{light.color, light.intensity};
         result.layer_mask = light.layer_mask;
         result.enabled = light.enabled ? 1U : 0U;
 
@@ -53,25 +45,24 @@ namespace kpengine::render
         case LightType::Directional:
         {
             const auto &directional = std::get<DirectionalLightData>(light.type_data);
-            CopyVector3(result.direction_inner_cone, directional.direction.GetSafetyNormalize());
+            result.direction_inner_cone =
+                Vector4f{directional.direction.GetSafetyNormalize(), 0.0f};
             result.type = static_cast<uint32_t>(LightGpuType::Directional);
             break;
         }
         case LightType::Point:
         {
             const auto &point = std::get<PointLightData>(light.type_data);
-            CopyVector3(result.position_range, point.position);
-            result.position_range[3] = point.range;
+            result.position_range = Vector4f{point.position, point.range};
             result.type = static_cast<uint32_t>(LightGpuType::Point);
             break;
         }
         case LightType::Spot:
         {
             const auto &spot = std::get<SpotLightData>(light.type_data);
-            CopyVector3(result.position_range, spot.position);
-            result.position_range[3] = spot.range;
-            CopyVector3(result.direction_inner_cone, spot.direction.GetSafetyNormalize());
-            result.direction_inner_cone[3] = spot.inner_cone_radians;
+            result.position_range = Vector4f{spot.position, spot.range};
+            result.direction_inner_cone =
+                Vector4f{spot.direction.GetSafetyNormalize(), spot.inner_cone_radians};
             result.outer_cone_radians = spot.outer_cone_radians;
             result.type = static_cast<uint32_t>(LightGpuType::Spot);
             break;

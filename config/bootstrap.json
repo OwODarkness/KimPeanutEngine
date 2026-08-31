@@ -18,11 +18,13 @@
         "texture/pbr/light-gold-bl/lightgold_normal-ogl.png",
         "texture/pbr/light-gold-bl/lightgold_roughness.png",
         "texture/default/default_white.png",
-        "texture/default/default_flat_normal.png"
+        "texture/default/default_flat_normal.png",
+        "texture/hdr/HDR_041_Path.hdr"
     ],
     "scene": {
         "model": "model/rock1-bl/rock2.obj",
         "material": "material/rock_pbr.material",
+        "environment": "texture/hdr/HDR_041_Path.hdr",
         "scale": [0.35, 0.35, 0.35],
         "objects": [
             {

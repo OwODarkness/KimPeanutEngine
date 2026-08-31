@@ -9,11 +9,12 @@ namespace kpengine::image_io
     namespace
     {
         constexpr size_t kRgba8PixelBytes = 4;
+        constexpr size_t kRgba32FloatPixelBytes = sizeof(float) * 4;
     }
 
     size_t ImageBuffer::ExpectedByteCount() const
     {
-        if (width == 0 || height == 0 || format != ImagePixelFormat::Rgba8)
+        if (width == 0 || height == 0)
         {
             return 0;
         }
@@ -22,11 +23,25 @@ namespace kpengine::image_io
             return 0;
         }
         const size_t pixel_count = static_cast<size_t>(width) * height;
-        if (pixel_count > std::numeric_limits<size_t>::max() / kRgba8PixelBytes)
+        size_t bytes_per_pixel = 0;
+        switch (format)
+        {
+        case ImagePixelFormat::Rgba8:
+            bytes_per_pixel = kRgba8PixelBytes;
+            break;
+        case ImagePixelFormat::Rgba32Float:
+            bytes_per_pixel = kRgba32FloatPixelBytes;
+            break;
+        }
+        if (bytes_per_pixel == 0)
         {
             return 0;
         }
-        return pixel_count * kRgba8PixelBytes;
+        if (pixel_count > std::numeric_limits<size_t>::max() / bytes_per_pixel)
+        {
+            return 0;
+        }
+        return pixel_count * bytes_per_pixel;
     }
 
     bool ImageBuffer::IsValid() const
@@ -46,7 +61,7 @@ namespace kpengine::image_io
         {
             return {false, "PNG output path is empty"};
         }
-        if (!image.IsValid())
+        if (!image.IsValid() || image.format != ImagePixelFormat::Rgba8)
         {
             return {false, "PNG export requires a valid tightly packed RGBA8 image"};
         }

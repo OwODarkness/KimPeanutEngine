@@ -66,6 +66,7 @@ namespace kpengine::render
     {
         std::string model_path;
         std::string material_path;
+        std::string environment_path;
         Transform3f world_transform;
         std::vector<BootstrapSceneObjectInfo> objects;
 
@@ -231,6 +232,7 @@ namespace kpengine::render
         graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;
         graphics::SamplerHandle gbuffer_debug_sampler_;
         graphics::SamplerHandle directional_shadow_sampler_;
+        TextureBinding environment_texture_binding_;
         graphics::PipelineHandle tone_map_pipeline_;
         graphics::PipelineHandle directional_shadow_pipeline_;
     };

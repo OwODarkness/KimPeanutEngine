@@ -127,6 +127,11 @@ namespace kpengine
             {
                 scene_info.model_path = GetAssetDirectory() + config.scene.model;
                 scene_info.material_path = GetAssetDirectory() + config.scene.material;
+                if (!config.scene.environment.empty())
+                {
+                    scene_info.environment_path =
+                        GetAssetDirectory() + config.scene.environment;
+                }
                 scene_info.world_transform.position_ =
                     {config.scene.position[0], config.scene.position[1], config.scene.position[2]};
                 scene_info.world_transform.rotator_ =
