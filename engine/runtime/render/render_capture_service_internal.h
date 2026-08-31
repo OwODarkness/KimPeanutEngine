@@ -15,8 +15,11 @@ namespace kpengine::render
     class RenderCaptureService final : public IRenderCaptureService
     {
     public:
+        using CaptureTargetResolver =
+            std::function<graphics::RenderTargetHandle(CaptureView)>;
+
         RenderCaptureService(graphics::IRenderTargetReadback *readback = nullptr,
-                             std::function<graphics::RenderTargetHandle()> scene_color_target = {},
+                             CaptureTargetResolver capture_target = {},
                              std::function<uint64_t()> frame_number = {});
         ~RenderCaptureService() override;
 
@@ -24,14 +27,18 @@ namespace kpengine::render
                             CapturedImageCallback on_completed) override;
 
         bool HasPendingCapture() const;
+        std::optional<CaptureView> GetPendingView() const;
+        bool EnqueuePendingReadback();
         void CompletePendingCapture(CapturedImage image);
         void FailPendingCapture(std::string diagnostic);
+        void RejectPendingCapture(std::string diagnostic);
 
     private:
         struct PendingCapture
         {
             CaptureRequest request;
             CapturedImageCallback on_completed;
+            bool readback_enqueued = false;
         };
 
         void Complete(CaptureResult result);
@@ -39,7 +46,7 @@ namespace kpengine::render
         mutable std::mutex mutex_;
         std::optional<PendingCapture> pending_capture_;
         graphics::IRenderTargetReadback *readback_ = nullptr;
-        std::function<graphics::RenderTargetHandle()> scene_color_target_;
+        CaptureTargetResolver capture_target_;
         std::function<uint64_t()> frame_number_;
     };
 }

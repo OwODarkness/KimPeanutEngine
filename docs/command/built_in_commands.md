@@ -8,7 +8,7 @@ below are stable built-ins today.
 |---|---|---|
 | `commands.list` | List registered command names. | [`commands.list`](#commandslist) |
 | `help` | Show help for one command or list names. | [`help`](#help) |
-| `capture.screenshot` | Capture the live SceneColor and export a PNG. | [`capture.screenshot`](#capturescreenshot) |
+| `capture.screenshot` | Capture a live final or diagnostic render view and export a PNG. | [`capture.screenshot`](#capturescreenshot) |
 
 ## `commands.list`
 
@@ -46,7 +46,7 @@ help capture.screenshot
 
 ## `capture.screenshot`
 
-Requests capture of the current rendered SceneColor, then exports it as a PNG.
+Requests capture of the current final or diagnostic render view, then exports it as a PNG.
 It is a native Runtime screenshot command; Editor UI, Lua, and agents all call
 this same provider.
 
@@ -56,7 +56,7 @@ this same provider.
 | Execution lane | Game; the provider then waits for Render capture/export completion. |
 | Allowed callers | Editor console, Agent, Lua, tests, C++ callers |
 | `path` | Optional string. Explicit paths must end in `.png` and remain below `save/screenshots/validation/`. |
-| `view` | Optional enum; currently only `scene_color`. |
+| `view` | Optional enum: `scene_color`, `linear_depth`, `world_normal`, `base_color`, `material_params`, or `shadow_visibility`. Defaults to `scene_color`. |
 | Initial result | Normally `pending` with a request ID. |
 | Terminal result | `success` with `data.output_path`, `data.status`, `data.success`, and `data.diagnostic`; otherwise an error status and diagnostic. |
 
@@ -74,6 +74,12 @@ Example agent request:
 
 Poll the returned request ID until the terminal result. See [API reference](api.md)
 for all caller forms and [usage](usage.md) for complete Agent/Lua examples.
+
+Diagnostic views are converted by Render into displayable RGBA8 output before
+the existing Graphics readback path runs. They are visualizations, not raw
+attachment byte exports; linear depth is normalized by the active camera far
+plane, normals are remapped from `[-1,1]` to `[0,1]`, and shadow visibility is
+white for visible and black for occluded.
 
 ## Planned, not registered
 

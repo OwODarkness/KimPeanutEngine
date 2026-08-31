@@ -9,8 +9,8 @@
 
 namespace kpengine::render
 {
-    // Render-semantic diagnostic outputs. Only SceneColor has a producer in the
-    // initial capture slice; callers receive Unavailable for the reserved views.
+    // Render-semantic diagnostic outputs. Internal attachments are converted to
+    // a stable RGBA8 color target before the common readback seam is invoked.
     enum class CaptureView : uint8_t
     {
         SceneColor,

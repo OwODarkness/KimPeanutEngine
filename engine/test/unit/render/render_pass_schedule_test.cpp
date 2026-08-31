@@ -43,6 +43,13 @@ TEST(RenderPassScheduleTest, AcceptsGBufferPassChainToTerminalEditorComposite)
           {RenderPassResource::SceneColor, RenderPassAccess::Write}},
          false}));
     EXPECT_TRUE(schedule.AddPass(
+        {"CaptureViewPass",
+         {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+          {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
+          {RenderPassResource::SceneColor, RenderPassAccess::Read},
+          {RenderPassResource::CaptureOutput, RenderPassAccess::Write}},
+         false}));
+    EXPECT_TRUE(schedule.AddPass(
         {"EditorCompositePass", {{RenderPassResource::SceneColor, RenderPassAccess::Read}}, true}));
 
     std::string error;
@@ -67,6 +74,13 @@ TEST(RenderPassScheduleTest, AcceptsDirectionalShadowBeforeGBuffer)
         {"ToneMapPass",
          {{RenderPassResource::SceneHdr, RenderPassAccess::Read},
           {RenderPassResource::SceneColor, RenderPassAccess::Write}},
+         false}));
+    EXPECT_TRUE(schedule.AddPass(
+        {"CaptureViewPass",
+         {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+          {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
+          {RenderPassResource::SceneColor, RenderPassAccess::Read},
+          {RenderPassResource::CaptureOutput, RenderPassAccess::Write}},
          false}));
     EXPECT_TRUE(schedule.AddPass(
         {"EditorCompositePass", {{RenderPassResource::SceneColor, RenderPassAccess::Read}}, true}));

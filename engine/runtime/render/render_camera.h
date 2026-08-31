@@ -32,6 +32,7 @@ namespace kpengine::render
         const Vector3f &GetPosition() const { return position_; }
         const Rotatorf &GetRotation() const { return rotation_; }
         const Vector3f &GetForward() const { return forward_; }
+        float GetFarPlane() const { return far_; }
 
         CameraData GetCameraData() const;
         // CPU-side visibility uses the math-library matrix convention directly.

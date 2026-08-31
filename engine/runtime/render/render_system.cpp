@@ -47,6 +47,16 @@ namespace kpengine::render
         // requests never stalls a frame. 0 means "no budget" (the bootstrap pass).
         constexpr std::size_t kMaxRuntimeLoadsPerFrame = 2;
 
+        struct alignas(16) CaptureViewGpuData
+        {
+            Matrix4f inverse_view_projection;
+            Matrix4f view;
+            Matrix4f directional_shadow_view_projection;
+            Vector4f directional_shadow_params;
+            Vector4f light_direction_and_view;
+            Vector4f depth_params;
+        };
+
         spatial::AABB TransformBounds(const spatial::AABB &local_bounds,
                                       const Transform3f &transform)
         {
@@ -141,7 +151,14 @@ namespace kpengine::render
         }
         render_capture_service_ = std::make_unique<RenderCaptureService>(
             backend_->GetRenderTargetReadback(),
-            [this] { return frame_targets_.GetTarget(RenderTargetName::SceneColor)->GetHandle(); },
+            [this](CaptureView view)
+            {
+                const RenderTargetName target_name = view == CaptureView::SceneColor
+                                                         ? RenderTargetName::SceneColor
+                                                         : RenderTargetName::CaptureOutput;
+                const RenderTarget *const target = frame_targets_.GetTarget(target_name);
+                return target ? target->GetHandle() : graphics::RenderTargetHandle{};
+            },
             [this] { return frame_number_; });
         ConfigurePassSchedule();
         // Frame the ~165-unit rock bootstrap fixture: pull the camera back and
@@ -205,6 +222,7 @@ namespace kpengine::render
             RecordGBufferPass();
             RecordDeferredLightingPass();
             RecordToneMapPass();
+            RecordPendingCapturePass();
         }
     }
 
@@ -302,11 +320,18 @@ namespace kpengine::render
              {{RenderPassResource::SceneHdr, RenderPassAccess::Read},
               {RenderPassResource::SceneColor, RenderPassAccess::Write}},
              false});
+        const bool added_capture = pass_schedule_.AddPass(
+            {"CaptureViewPass",
+             {{RenderPassResource::GBuffer, RenderPassAccess::Read},
+              {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
+              {RenderPassResource::SceneColor, RenderPassAccess::Read},
+              {RenderPassResource::CaptureOutput, RenderPassAccess::Write}},
+             false});
         const bool added_editor = pass_schedule_.AddPass(
             {"EditorCompositePass", {{RenderPassResource::SceneColor, RenderPassAccess::Read}}, true});
         std::string error;
         if (!added_shadow || !added_gbuffer || !added_deferred_lighting ||
-            !added_tone_map || !added_editor ||
+            !added_tone_map || !added_capture || !added_editor ||
             !pass_schedule_.Validate(error))
         {
             KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Invalid render pass schedule: %s", error.c_str());
@@ -350,6 +375,7 @@ namespace kpengine::render
             frame.job = {light.handle, ShadowKind::Directional2D,
                          kDirectionalShadowResolution, 0};
             frame.shadow = *light.desc.shadow;
+            frame.light_direction = direction;
             frame.view = Matrix4f::MakeCameraMatrix(eye, direction, up);
             frame.projection = Matrix4f::MakeOrthProjMatrix(
                 -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent, 0.1f, kDepthRange);
@@ -765,6 +791,117 @@ namespace kpengine::render
         scene_target->EndRecording(*recorder);
     }
 
+    void RenderSystem::RecordPendingCapturePass()
+    {
+        if (!render_capture_service_)
+        {
+            return;
+        }
+        const std::optional<CaptureView> pending_view =
+            render_capture_service_->GetPendingView();
+        if (!pending_view.has_value())
+        {
+            return;
+        }
+
+        if (*pending_view != CaptureView::SceneColor &&
+            !RecordCaptureViewPass(*pending_view))
+        {
+            render_capture_service_->RejectPendingCapture(
+                "Render could not record the requested capture-view conversion pass");
+            return;
+        }
+        render_capture_service_->EnqueuePendingReadback();
+    }
+
+    bool RenderSystem::RecordCaptureViewPass(CaptureView view)
+    {
+        if (!active_frame_context_ || view == CaptureView::SceneColor ||
+            !pass_schedule_.IsValid())
+        {
+            return false;
+        }
+
+        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        RenderTarget *const output_target =
+            frame_targets_.GetTarget(RenderTargetName::CaptureOutput);
+        RenderTarget *const gbuffer_target =
+            frame_targets_.GetTarget(RenderTargetName::GBuffer);
+        RenderTarget *const shadow_target =
+            frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
+        if (!recorder || !output_target || !gbuffer_target || !shadow_target ||
+            !PrepareCaptureViewPassResources() ||
+            !output_target->BeginRecording(*recorder))
+        {
+            return false;
+        }
+
+        CaptureViewGpuData capture_data{};
+        capture_data.inverse_view_projection =
+            scene_camera_.GetViewProjectionMatrix().Inverse().Transpose();
+        capture_data.view = scene_camera_.GetCameraData().view;
+        const bool has_shadow = active_directional_shadow_.has_value();
+        Vector3f surface_to_light{0.0f, 1.0f, 0.0f};
+        if (has_shadow)
+        {
+            const DirectionalShadowFrame &shadow = *active_directional_shadow_;
+            capture_data.directional_shadow_view_projection =
+                (shadow.projection * shadow.view).Transpose();
+            capture_data.directional_shadow_params =
+                Vector4f{0.0005f,
+                         0.002f,
+                         1.0f / static_cast<float>(shadow.job.resolution),
+                         0.0f};
+            surface_to_light = -shadow.light_direction;
+        }
+        capture_data.light_direction_and_view =
+            Vector4f{surface_to_light, static_cast<float>(view)};
+        capture_data.depth_params =
+            Vector4f{scene_camera_.GetFarPlane(), has_shadow ? 1.0f : 0.0f, 0.0f, 0.0f};
+
+        const UniformAllocation constants =
+            active_frame_context_->AllocateUniform(capture_data);
+        if (!constants.IsValid())
+        {
+            output_target->EndRecording(*recorder);
+            return false;
+        }
+
+        const graphics::DescriptorSetHandle bindings =
+            active_frame_context_->AllocateResourceBindingSet(
+                capture_view_pipeline_,
+                {0,
+                 {graphics::SampledTextureBinding{
+                      0, 2, gbuffer_target->GetColorAttachmentTexture(0),
+                      gbuffer_debug_sampler_},
+                  graphics::SampledTextureBinding{
+                      0, 3, gbuffer_target->GetColorAttachmentTexture(1),
+                      gbuffer_debug_sampler_},
+                  graphics::SampledTextureBinding{
+                      0, 4, gbuffer_target->GetColorAttachmentTexture(2),
+                      gbuffer_debug_sampler_},
+                  graphics::SampledTextureBinding{
+                      0, 5, gbuffer_target->GetSampledDepthTexture(),
+                      gbuffer_debug_sampler_},
+                  graphics::SampledTextureBinding{
+                      0, 6, shadow_target->GetSampledDepthTexture(),
+                      directional_shadow_sampler_},
+                  graphics::UniformBufferBinding{
+                      0, 7, constants.buffer, constants.offset, constants.range}}});
+        if (!bindings.IsValid())
+        {
+            output_target->EndRecording(*recorder);
+            return false;
+        }
+
+        recorder->BindPipeline(capture_view_pipeline_);
+        recorder->BindMesh(gbuffer_debug_fullscreen_mesh_);
+        recorder->BindResourceBindings(capture_view_pipeline_, bindings);
+        recorder->DrawIndexed();
+        output_target->EndRecording(*recorder);
+        return true;
+    }
+
     bool RenderSystem::PrepareToneMapPassResources()
     {
         if (tone_map_pipeline_.IsValid())
@@ -817,6 +954,87 @@ namespace kpengine::render
         };
         tone_map_pipeline_ = backend_->CreatePipelineResource(desc);
         return tone_map_pipeline_.IsValid();
+    }
+
+    bool RenderSystem::PrepareCaptureViewPassResources()
+    {
+        if (capture_view_pipeline_.IsValid() && directional_shadow_sampler_.IsValid())
+        {
+            return true;
+        }
+        if (!PrepareGBufferDebugPassResources())
+        {
+            return false;
+        }
+
+        if (!directional_shadow_sampler_.IsValid())
+        {
+            graphics::SamplerSettings shadow_sampler_settings{};
+            shadow_sampler_settings.address_mode_u =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_v =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_w =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.enable_anisotropy = false;
+            directional_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
+        }
+        if (!directional_shadow_sampler_.IsValid())
+        {
+            return false;
+        }
+
+        auto &asset_manager = asset::AssetManager::GetInstance();
+        const asset::AssetID program_id = asset_manager.LoadSync(
+            GetShaderDirectory() + "capture_view.shader");
+        auto program = asset_manager.GetResource<asset::ShaderProgramResource>(program_id);
+        if (!program)
+        {
+            return false;
+        }
+        const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
+        resource_pipeline_->ProcessShader(shaders);
+        const auto vert_shader = program->GetShader(
+            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto frag_shader = program->GetShader(
+            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL);
+        if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
+            vert_shader->status == asset::ShaderStatus::CompileFailed ||
+            frag_shader->status == asset::ShaderStatus::CompileFailed)
+        {
+            return false;
+        }
+
+        graphics::PipelineDesc desc{};
+        desc.vert_shader = vert_shader->data.get();
+        desc.frag_shader = frag_shader->data.get();
+        desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+        desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
+        desc.binding_descs = {{0, sizeof(data::Vertex), false}};
+        desc.attri_descs = {
+            {0, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
+             offsetof(data::Vertex, position)},
+            {1, 0, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS,
+             offsetof(data::Vertex, tex_coord)},
+        };
+        desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
+        desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
+        desc.descriptor_binding_descs = {
+            {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_FRAGMENT}},
+        };
+        capture_view_pipeline_ = backend_->CreatePipelineResource(desc);
+        return capture_view_pipeline_.IsValid();
     }
 
     bool RenderSystem::PrepareDirectionalShadowPassResources()
@@ -1368,6 +1586,10 @@ namespace kpengine::render
         {
             backend_->DestroyPipelineResource(gbuffer_debug_pipeline_);
         }
+        if (capture_view_pipeline_.IsValid())
+        {
+            backend_->DestroyPipelineResource(capture_view_pipeline_);
+        }
         if (deferred_lighting_pipeline_.IsValid())
         {
             backend_->DestroyPipelineResource(deferred_lighting_pipeline_);
@@ -1389,6 +1611,7 @@ namespace kpengine::render
             backend_->DestroyPipelineResource(tone_map_pipeline_);
         }
         gbuffer_debug_pipeline_ = {};
+        capture_view_pipeline_ = {};
         deferred_lighting_pipeline_ = {};
         gbuffer_debug_fullscreen_mesh_ = {};
         gbuffer_debug_sampler_ = {};

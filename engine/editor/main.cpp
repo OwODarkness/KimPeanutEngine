@@ -59,6 +59,28 @@ int main(int argc, char **argv)
             std::fprintf(stderr, "--agent-port requires a port from 1 to 65535\n");
             return 1;
         }
+        else if (argument == "--graphics-api" && argument_index + 1 < argc)
+        {
+            const std::string_view api{argv[++argument_index]};
+            if (api == "vulkan")
+            {
+                engine.SetGraphicsAPI(kpengine::GraphicsAPIType::GRAPHICS_API_VULKAN);
+            }
+            else if (api == "opengl")
+            {
+                engine.SetGraphicsAPI(kpengine::GraphicsAPIType::GRAPHICS_API_OPENGL);
+            }
+            else
+            {
+                std::fprintf(stderr, "--graphics-api requires vulkan or opengl\n");
+                return 1;
+            }
+        }
+        else if (argument == "--graphics-api")
+        {
+            std::fprintf(stderr, "--graphics-api requires vulkan or opengl\n");
+            return 1;
+        }
     }
 
     // Boot failure (e.g. missing config/bootstrap.json) surfaces here before the

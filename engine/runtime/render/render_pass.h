@@ -15,6 +15,7 @@ namespace kpengine::render
         SceneHdr,
         GBuffer,
         DirectionalShadow,
+        CaptureOutput,
         Count,
     };
 

@@ -1,5 +1,8 @@
 #include <gtest/gtest.h>
 
+#include <optional>
+#include <utility>
+
 #include "render/render_capture_service_internal.h"
 
 namespace
@@ -10,16 +13,35 @@ namespace
     using kpengine::render::CaptureView;
     using kpengine::render::CapturedImage;
     using kpengine::render::RenderCaptureService;
+
+    class FakeReadback final : public kpengine::graphics::IRenderTargetReadback
+    {
+    public:
+        std::optional<kpengine::graphics::RenderTargetReadbackRequest> request;
+        kpengine::graphics::RenderTargetReadbackCallback callback;
+
+        bool EnqueueRenderTargetReadback(
+            kpengine::graphics::RenderTargetReadbackRequest queued,
+            kpengine::graphics::RenderTargetReadbackCallback on_completed) override
+        {
+            request = queued;
+            callback = std::move(on_completed);
+            return true;
+        }
+
+        void CollectCompletedReadbacks() override {}
+        void DrainPendingReadbacks(std::string) override {}
+    };
 }
 
-TEST(RenderCaptureServiceTest, ReservesUnavailableViewsWithoutCreatingPendingWork)
+TEST(RenderCaptureServiceTest, RejectsUnknownViewsWithoutCreatingPendingWork)
 {
     RenderCaptureService service;
     int callback_count = 0;
     CaptureResult result;
 
     EXPECT_TRUE(service.RequestCapture(
-        {CaptureView::WorldNormal},
+        {static_cast<CaptureView>(255)},
         [&](CaptureResult completed)
         {
             ++callback_count;
@@ -45,6 +67,34 @@ TEST(RenderCaptureServiceTest, AllowsOnlyOnePendingSceneColorRequest)
         {CaptureView::SceneColor},
         [](CaptureResult) {}));
     EXPECT_EQ(first_callback_count, 0);
+}
+
+TEST(RenderCaptureServiceTest, DefersResolvedViewReadbackUntilRenderRecordsItsPass)
+{
+    FakeReadback readback;
+    CaptureView resolved_view = CaptureView::SceneColor;
+    RenderCaptureService service{
+        &readback,
+        [&resolved_view](CaptureView view)
+        {
+            resolved_view = view;
+            return kpengine::graphics::RenderTargetHandle{7, 2};
+        },
+        [] { return 42U; }};
+
+    EXPECT_TRUE(service.RequestCapture(
+        {CaptureView::WorldNormal}, [](CaptureResult) {}));
+    EXPECT_EQ(service.GetPendingView(), CaptureView::WorldNormal);
+    EXPECT_FALSE(readback.request.has_value());
+
+    EXPECT_TRUE(service.EnqueuePendingReadback());
+    EXPECT_EQ(resolved_view, CaptureView::WorldNormal);
+    ASSERT_TRUE(readback.request.has_value());
+    EXPECT_EQ(readback.request->target,
+              (kpengine::graphics::RenderTargetHandle{7, 2}));
+    EXPECT_EQ(readback.request->frame_number, 42U);
+    EXPECT_FALSE(service.GetPendingView().has_value());
+    EXPECT_FALSE(service.EnqueuePendingReadback());
 }
 
 TEST(RenderCaptureServiceTest, CompletesPendingCaptureExactlyOnce)

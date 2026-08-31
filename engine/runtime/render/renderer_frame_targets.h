@@ -21,6 +21,7 @@ namespace kpengine::render
         GBuffer,
         DirectionalShadow,
         SceneHdr,
+        CaptureOutput,
         Count,
     };
     inline constexpr uint32_t kRenderTargetNameCount =

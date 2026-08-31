@@ -57,6 +57,16 @@ namespace kpengine::runtime
                  {"diagnostic", result.diagnostic}}};
             return command_result;
         }
+
+        render::CaptureView ToCaptureView(const std::string &view)
+        {
+            if (view == "linear_depth") return render::CaptureView::LinearDepth;
+            if (view == "world_normal") return render::CaptureView::WorldNormal;
+            if (view == "base_color") return render::CaptureView::BaseColor;
+            if (view == "material_params") return render::CaptureView::MaterialParams;
+            if (view == "shadow_visibility") return render::CaptureView::ShadowVisibility;
+            return render::CaptureView::SceneColor;
+        }
     }
 
     command::CommandRegistrationResult RegisterScreenshotCommands(
@@ -72,13 +82,16 @@ namespace kpengine::runtime
         command::CommandDesc descriptor{
             "capture.screenshot",
             "RuntimeScreenshot",
-            "Capture the rendered SceneColor and export it as a PNG",
+            "Capture a rendered final or diagnostic view and export it as a PNG",
             command::CommandCategory::Render,
             command::CommandFlags::AgentAllowed | command::CommandFlags::LuaAllowed,
             {{command::CommandArgumentDesc{"path", command::CommandValueType::String, false,
                                            {}, {}},
               command::CommandArgumentDesc{"view", command::CommandValueType::Enum, false,
-                                           std::string{"scene_color"}, {"scene_color"}}}},
+                                           std::string{"scene_color"},
+                                           {"scene_color", "linear_depth", "world_normal",
+                                            "base_color", "material_params",
+                                            "shadow_visibility"}}}},
             [screenshot_service = std::move(screenshot_service)](
                 const command::CommandCall &call, const command::CommandContext &context)
             {
@@ -96,6 +109,12 @@ namespace kpengine::runtime
                 if (path != call.arguments.end())
                 {
                     request.output_path = std::get<std::string>(path->second);
+                }
+                const auto view = call.arguments.find("view");
+                if (view != call.arguments.end())
+                {
+                    request.capture.view =
+                        ToCaptureView(std::get<std::string>(view->second));
                 }
 
                 const command::CommandCompletionSink complete = context.complete;

@@ -28,6 +28,9 @@ open a local TCP connection to `127.0.0.1:37373` and send the same JSON lines.
 The port is disabled unless explicitly supplied; `KimPeanutCommand` remains a
 separate harness and cannot capture the live Engine frame.
 
+Use `--graphics-api vulkan` or `--graphics-api opengl` to select the backend
+for a reproducible capture run. The default remains Vulkan.
+
 Lua uses the same registry and result protocol on the Game/Lua thread:
 
 ```lua

@@ -39,6 +39,14 @@ namespace kpengine
             command_transport_config_ = std::move(config);
         }
 
+        void Engine::SetGraphicsAPI(GraphicsAPIType api_type)
+        {
+            if (api_type != GraphicsAPIType::GRAPHICS_API_UNKNOW)
+            {
+                global_runtime_context.graphics_api_type_ = api_type;
+            }
+        }
+
         void Engine::Initialize()
         {
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initializing...");

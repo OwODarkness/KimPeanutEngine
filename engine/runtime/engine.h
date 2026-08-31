@@ -8,6 +8,7 @@
 #include <memory>
 #include <atomic>
 
+#include "base/type.h"
 #include "command/command_local_transport.h"
 
 namespace kpengine
@@ -29,6 +30,7 @@ namespace kpengine
             void Clear();
             void Run();
             void SetCommandTransportConfig(command::LocalCommandTransportConfig config);
+            void SetGraphicsAPI(GraphicsAPIType api_type);
 
             inline int GetFPS() const { return measured_fps; }
             const int *GetFPSRef() const { return &measured_fps; }

@@ -535,7 +535,7 @@ namespace kpengine::example
 
                 render::RenderCaptureService capture_service(
                     rhi->GetRenderTargetReadback(),
-                    [scene_target] { return scene_target; },
+                    [scene_target](render::CaptureView) { return scene_target; },
                     [&frame_number] { return frame_number; });
                 runtime::RuntimeScreenshotService screenshot_service(capture_service);
                 runtime::ScreenshotResult screenshot_result;
@@ -551,6 +551,7 @@ namespace kpengine::example
                 {
                     throw std::runtime_error("smoke screenshot request was rejected");
                 }
+                capture_service.EnqueuePendingReadback();
                 constexpr uint32_t kMaxCaptureDrainFrames = 16;
                 uint32_t drain_frames = 0;
                 while (!screenshot_finished && drain_frames < kMaxCaptureDrainFrames)
@@ -878,7 +879,7 @@ namespace kpengine::example
                 std::filesystem::remove(d2_path, d2_remove_error);
                 render::RenderCaptureService d2_capture_service(
                     rhi->GetRenderTargetReadback(),
-                    [output_target] { return output_target; },
+                    [output_target](render::CaptureView) { return output_target; },
                     [&frame_number] { return frame_number; });
                 runtime::RuntimeScreenshotService d2_screenshot_service(d2_capture_service);
                 runtime::ScreenshotResult d2_screenshot_result;
@@ -894,6 +895,7 @@ namespace kpengine::example
                 {
                     throw std::runtime_error("D2 smoke screenshot request was rejected");
                 }
+                d2_capture_service.EnqueuePendingReadback();
                 constexpr uint32_t kMaxCaptureDrainFrames = 16;
                 uint32_t d2_drain_frames = 0;
                 while (!d2_screenshot_finished && d2_drain_frames < kMaxCaptureDrainFrames)
@@ -1458,7 +1460,7 @@ namespace kpengine::example
                 std::filesystem::remove(d3_path, d3_remove_error);
                 render::RenderCaptureService d3_capture_service(
                     rhi->GetRenderTargetReadback(),
-                    [d3_output_target] { return d3_output_target; },
+                    [d3_output_target](render::CaptureView) { return d3_output_target; },
                     [&frame_number] { return frame_number; });
                 runtime::RuntimeScreenshotService d3_screenshot_service(d3_capture_service);
                 runtime::ScreenshotResult d3_screenshot_result;
@@ -1474,6 +1476,7 @@ namespace kpengine::example
                 {
                     throw std::runtime_error("D3 smoke screenshot request was rejected");
                 }
+                d3_capture_service.EnqueuePendingReadback();
                 constexpr uint32_t kMaxCaptureDrainFrames = 16;
                 uint32_t d3_drain_frames = 0;
                 while (!d3_screenshot_finished && d3_drain_frames < kMaxCaptureDrainFrames)

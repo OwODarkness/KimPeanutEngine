@@ -168,15 +168,19 @@ namespace kpengine::render
         void RecordDeferredLightingPass();
         void RecordGBufferDebugViewPass();
         void RecordToneMapPass();
+        void RecordPendingCapturePass();
+        bool RecordCaptureViewPass(CaptureView view);
         bool PrepareDirectionalShadowPassResources();
         bool PrepareFullscreenPassResources();
         bool PrepareDeferredLightingPassResources();
         bool PrepareGBufferDebugPassResources();
         bool PrepareToneMapPassResources();
+        bool PrepareCaptureViewPassResources();
         struct DirectionalShadowFrame
         {
             ShadowJobDesc job;
             ShadowHandle shadow;
+            Vector3f light_direction;
             Matrix4f view;
             Matrix4f projection;
         };
@@ -223,6 +227,7 @@ namespace kpengine::render
         // the immutable triangle mesh and sampler are shared by Render passes.
         graphics::PipelineHandle deferred_lighting_pipeline_;
         graphics::PipelineHandle gbuffer_debug_pipeline_;
+        graphics::PipelineHandle capture_view_pipeline_;
         graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;
         graphics::SamplerHandle gbuffer_debug_sampler_;
         graphics::SamplerHandle directional_shadow_sampler_;

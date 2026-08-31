@@ -16,11 +16,9 @@ history remains in [render_capture.md](render_capture.md).
 - [x] Define internal completion/failure delivery so the future GPU readback
   seam invokes an accepted request's callback exactly once with an owned image
   or diagnostic; do not publish a request handle or polling API.
-- [x] Add a semantic `CaptureView` selector. Reserve SceneColor, LinearDepth,
-  WorldNormal, BaseColor, MaterialParams, and ShadowVisibility; implement
-  SceneColor only.
-- [x] Return an explicit `Unavailable` result for reserved but unimplemented
-  debug views; never substitute SceneColor silently.
+- [x] Add a semantic `CaptureView` selector for SceneColor, LinearDepth,
+  WorldNormal, BaseColor, MaterialParams, and ShadowVisibility.
+- [x] Reject unknown views explicitly; never substitute SceneColor silently.
 
 **Done when:** callers can request pixels without knowing a backend, native
 image handle, renderer facade, output path, or job identity, and every accepted
@@ -123,17 +121,24 @@ metadata on both APIs.
 
 ## C1.6 — debug-view resolver (after C2/C3 and producer passes)
 
-- [ ] Add a render-owned resolver from `CaptureView` to a completed visual
+- [x] Add a render-owned resolver from `CaptureView` to a completed visual
   color target or a short debug visualization pass.
-- [ ] Convert depth, normals, packed material data, and shadow factors to
+- [x] Convert depth, normals, packed material data, and shadow factors to
   documented RGBA8 PNG views before readback; do not export raw attachment
   bytes through the screenshot API.
-- [ ] Keep debug-target lifetime and pass dependencies render-owned, with the
+- [x] Keep debug-target lifetime and pass dependencies render-owned, with the
   same resize and submission-safety rules as SceneColor.
-- [ ] Add one visually distinct test fixture for each newly enabled view.
+- [x] Add one visually distinct live fixture for each newly enabled view.
 
 **Done when:** adding a new diagnostic image changes render policy and shaders,
 not the common RHI readback API or agent-facing file format.
+
+**Landed 2026-08-31.** A pending semantic request is converted after the
+producer passes into `CaptureOutput` and only then enqueued through the existing
+backend readback seam. The runtime command exposes all six names. Vulkan and
+OpenGL live PNGs were inspected; the views diagnose a remaining runtime-only
+OpenGL shadow-visibility regression while the isolated cross-backend shadow
+smoke stays green.
 
 ## C4 — runtime PNG export and visual smoke evidence
 
@@ -161,9 +166,9 @@ the smoke target fails if capture cannot complete.
 
 ## Deferred follow-ups
 
-- [ ] Shadow-map depth and visibility visualization through explicit render
+- [x] Shadow-map depth and visibility visualization through explicit render
   conversion passes, not raw D32 export.
-- [ ] G-buffer normal, base-color, and material-parameter visualization.
+- [x] G-buffer normal, base-color, and material-parameter visualization.
 - [ ] HDR/EXR export, cropped captures, and editor-including screenshots.
 - [ ] Golden images, tolerance/diff metrics, reports, and CI baselines.
 - [ ] Video/GIF recording and asynchronous multi-frame capture queues.

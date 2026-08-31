@@ -17,10 +17,12 @@ namespace kpengine::runtime
         {
         public:
             render::CapturedImageCallback pending_callback;
+            render::CaptureRequest last_request;
 
-            bool RequestCapture(render::CaptureRequest,
+            bool RequestCapture(render::CaptureRequest request,
                                 render::CapturedImageCallback on_completed) override
             {
+                last_request = request;
                 pending_callback = std::move(on_completed);
                 return true;
             }
@@ -89,6 +91,25 @@ namespace kpengine::runtime
         ASSERT_TRUE(completion.has_value());
         EXPECT_EQ(completion->status, command::CommandStatus::Success);
         RemoveFile(output_path);
+    }
+
+    TEST(ScreenshotCommandProviderTest, MapsDiagnosticViewNamesToRenderSemantics)
+    {
+        FakeCaptureService capture_service;
+        auto screenshot_service = std::make_shared<RuntimeScreenshotService>(capture_service);
+        command::CommandRegistry registry;
+        const command::CommandRegistrationResult registration =
+            RegisterScreenshotCommands(registry, screenshot_service);
+        ASSERT_TRUE(registration.IsSuccess());
+
+        const command::CommandResult pending = registry.Execute(
+            {"capture.screenshot", {{"view", std::string{"shadow_visibility"}}}},
+            {command::CommandOrigin::Test, command::CommandThread::Immediate},
+            [](const command::CommandResult &) {});
+        ASSERT_EQ(pending.status, command::CommandStatus::Pending);
+        EXPECT_EQ(registry.PumpGameThread(), 1U);
+        EXPECT_EQ(capture_service.last_request.view,
+                  render::CaptureView::ShadowVisibility);
     }
 
     TEST(ScreenshotCommandProviderTest, PreservesServiceOwnedInvalidPathDiagnostic)
