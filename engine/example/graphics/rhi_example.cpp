@@ -1343,6 +1343,10 @@ namespace kpengine::example
 
                             // D4 contract smoke: depth-only, sampled target uses the
                             // same opaque mesh and per-frame matrix bindings.
+                            // Prime a color-only pipeline first: OpenGL must still
+                            // honor the following target's depth Clear load-op even
+                            // though that pipeline disabled depth writes.
+                            recorder->BindPipeline(tone_map_pipeline);
                             recorder->BeginRenderTarget(d4_shadow_target);
                             const graphics::DescriptorSetHandle directional_shadow_bindings =
                                 frame_context.AllocateResourceBindingSet(

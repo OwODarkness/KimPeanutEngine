@@ -118,6 +118,13 @@ struct RenderTargetDesc {
 `ValidateRenderTargetDesc` and
 `ValidateRenderTargetPipelineCompatibility` ([`common/render_target_validation.{h,cpp}`](../../engine/runtime/graphics/backend/common/render_target_validation.h)) are the shared gate: a target needs a non-zero extent and ≥1 attachment overall; D2 accepts `sample_count == 1` only because multisample attachment/resolve and sampled-MSAA bindings are not implemented yet. A pipeline matches a target only when color count and per-color format, depth presence/format (UNKNOW = compatible with any), and sample count all agree. Both backends translate N color attachments (Vulkan `vkCmdBeginRendering` with N `VkRenderingAttachmentInfo`; OpenGL `glNamedFramebufferTexture(GL_COLOR_ATTACHMENT0+i)` + `glDrawBuffers`, or `glDrawBuffer(GL_NONE)` for depth-only), read back color[0] for RGBA8_SRGB targets, and expose per-attachment `GetRenderTargetColorAttachment(index)` / `GetRenderTargetDepthAttachment` plus an opt-in sampled-depth accessor on the facade — no native image/view leaks above Graphics.
 
+Attachment load operations are independent of the previously bound draw
+pipeline. In particular, OpenGL enables depth writes before executing a depth
+Clear load-op because `glClearBufferfv(GL_DEPTH, ...)` obeys
+`GL_DEPTH_WRITEMASK`; the pipeline bound after `BeginRenderTarget` then
+establishes draw-time depth state. `GraphicsSmoke` covers a color-only pipeline
+followed by a sampled depth-only clear so this state cannot leak across passes.
+
 `RasterState::front_face` is expressed in the engine's y-up clip-space
 convention. Projection matrices preserve that convention. OpenGL translates
 the viewport and front-face enum directly; Vulkan uses a negative-height

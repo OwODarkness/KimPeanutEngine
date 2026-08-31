@@ -77,6 +77,11 @@ namespace kpengine::graphics
         if (resource.desc.depth.has_value() &&
             resource.desc.depth->load_op == RenderTargetLoadOp::Clear)
         {
+            // ClearBuffer obeys GL_DEPTH_WRITEMASK. A preceding color-only
+            // pipeline leaves depth writes disabled, so make the attachment
+            // load operation independent of stale draw-pipeline state. The
+            // pipeline bound for this target will establish its draw state.
+            glDepthMask(GL_TRUE);
             glClearBufferfv(GL_DEPTH, 0, &resource.desc.depth->clear_depth);
         }
         draws_suppressed_ = false;
