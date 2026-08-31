@@ -5,6 +5,7 @@ add_library(Resource STATIC
     shader_cache.cpp
     shader_processor.cpp
     resource_pipeline.cpp
+    environment_ibl_processor.cpp
     utility.cpp
 )
 target_include_directories(Resource PUBLIC

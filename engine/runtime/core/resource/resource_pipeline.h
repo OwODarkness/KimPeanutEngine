@@ -7,6 +7,7 @@
 #include "base/type.h"
 #include "asset/asset_manager.h"
 #include "shader_processor.h"
+#include "environment_ibl_processor.h"
 
 namespace kpengine::resource{
     class ShaderCache;
@@ -23,6 +24,9 @@ namespace kpengine::resource{
         // observer). nullptr keeps the call silent — the pipeline runs identically.
         void ProcessShader(const std::vector<asset::ShaderPtr>& shaders,
                            ShaderProcessObserver observer = nullptr);
+        std::optional<EnvironmentIblData> ProcessEnvironmentIbl(
+            const data::TextureData &source,
+            const EnvironmentIblSettings &settings = {}) const;
         // Distinct shader references successfully processed so far (see
         // ShaderProcessor::GetProcessedShaderCount).
         std::size_t GetProcessedShaderCount() const;

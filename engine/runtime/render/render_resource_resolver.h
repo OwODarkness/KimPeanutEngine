@@ -38,17 +38,28 @@ namespace kpengine::resource
 
 namespace kpengine::render
 {
-    // Texture identity includes both the source asset generation and resolved
-    // GPU format. This separates sRGB, linear UNORM, and HDR interpretations
-    // without folding format bits into AssetID generation bits.
+    enum class TextureCacheVariant : uint8_t
+    {
+        Source,
+        EnvironmentIrradiance,
+        EnvironmentPrefilter,
+        EnvironmentBrdfLut,
+    };
+
+    // Texture identity includes source asset generation, resolved GPU format,
+    // and a Render-private derived-artifact variant. This separates sRGB,
+    // linear UNORM, HDR, and environment-derived interpretations without
+    // folding policy bits into AssetID generation bits.
     struct TextureCacheKey
     {
         asset::AssetID asset_id{};
         TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        TextureCacheVariant variant = TextureCacheVariant::Source;
 
         bool operator==(const TextureCacheKey &other) const noexcept
         {
-            return asset_id == other.asset_id && format == other.format;
+            return asset_id == other.asset_id && format == other.format &&
+                   variant == other.variant;
         }
     };
 
@@ -59,7 +70,9 @@ namespace kpengine::render
             const std::size_t asset_hash = std::hash<uint64_t>{}(key.asset_id.Pack());
             const std::size_t format_hash = std::hash<uint8_t>{}(
                 static_cast<uint8_t>(key.format));
-            return asset_hash ^ (format_hash << 1);
+            const std::size_t variant_hash = std::hash<uint8_t>{}(
+                static_cast<uint8_t>(key.variant));
+            return asset_hash ^ (format_hash << 1) ^ (variant_hash << 3);
         }
     };
 
@@ -88,7 +101,8 @@ namespace kpengine::render
         TextureBinding GetOrCreateTextureBinding(
             asset::AssetID asset_id, const data::TextureData &data,
             MaterialTextureColorSpace color_space = MaterialTextureColorSpace::Srgb,
-            const MaterialSamplerDesc *sampler_desc = nullptr);
+            const MaterialSamplerDesc *sampler_desc = nullptr,
+            TextureCacheVariant variant = TextureCacheVariant::Source);
         MaterialResolution ResolveTemplate(MaterialTemplateHandle handle,
                                            const MaterialTemplateDesc &desc) override;
         MaterialResolution ResolveInstance(MaterialInstanceHandle handle,

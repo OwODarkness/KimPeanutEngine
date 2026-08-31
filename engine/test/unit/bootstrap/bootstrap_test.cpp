@@ -53,7 +53,8 @@ TEST(BootstrapTest, ParsesSceneWithMaterialAsset)
         "scene": {
             "model": "model/sphere/sphere.obj",
             "material": "material/bootstrap.material",
-            "environment": "texture/hdr/studio.hdr"
+            "environment": "texture/hdr/studio.hdr",
+            "environment_intensity": 0.4
         }
     })");
 
@@ -61,6 +62,7 @@ TEST(BootstrapTest, ParsesSceneWithMaterialAsset)
     EXPECT_TRUE(config.scene.IsComplete());
     EXPECT_EQ(config.scene.material, "material/bootstrap.material");
     EXPECT_EQ(config.scene.environment, "texture/hdr/studio.hdr");
+    EXPECT_FLOAT_EQ(config.scene.environment_intensity, 0.4f);
     RemoveTestFile();
 }
 

@@ -28,6 +28,8 @@ namespace kpengine::bootstrap
         std::string model;
         std::string material;
         std::string environment;
+        // Scales material IBL only; it does not change visible sky radiance.
+        float environment_intensity = 0.25f;
         std::array<float, 3> position{0.f, 0.f, 0.f};
         std::array<float, 3> rotation{0.f, 0.f, 0.f};
         std::array<float, 3> scale{1.f, 1.f, 1.f};

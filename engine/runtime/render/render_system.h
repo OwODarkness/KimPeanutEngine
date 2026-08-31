@@ -34,6 +34,11 @@ namespace kpengine::graphics
     class RenderBackend;
 }
 
+namespace kpengine::data
+{
+    struct TextureData;
+}
+
 namespace kpengine::resource
 {
     class ResourcePipeline;
@@ -67,6 +72,7 @@ namespace kpengine::render
         std::string model_path;
         std::string material_path;
         std::string environment_path;
+        float environment_ibl_intensity = 0.25f;
         Transform3f world_transform;
         std::vector<BootstrapSceneObjectInfo> objects;
 
@@ -174,6 +180,8 @@ namespace kpengine::render
         bool PrepareDirectionalShadowPassResources();
         bool PrepareFullscreenPassResources();
         bool PrepareDeferredLightingPassResources();
+        bool PrepareEnvironmentIbl(asset::AssetID source_asset,
+                                   const data::TextureData &source);
         bool PrepareGBufferDebugPassResources();
         bool PrepareToneMapPassResources();
         bool PrepareCaptureViewPassResources();
@@ -233,6 +241,12 @@ namespace kpengine::render
         graphics::SamplerHandle gbuffer_debug_sampler_;
         graphics::SamplerHandle directional_shadow_sampler_;
         TextureBinding environment_texture_binding_;
+        TextureBinding environment_irradiance_binding_;
+        TextureBinding environment_prefilter_binding_;
+        TextureBinding environment_brdf_lut_binding_;
+        uint32_t environment_prefilter_level_count_ = 0;
+        float environment_ibl_intensity_ = 0.25f;
+        bool environment_ibl_enabled_ = false;
         graphics::PipelineHandle tone_map_pipeline_;
         graphics::PipelineHandle directional_shadow_pipeline_;
     };

@@ -3,6 +3,8 @@
 const float PI = 3.14159265359;
 const uint LIGHT_ABI_VERSION = 1u;
 const uint LIGHT_TYPE_DIRECTIONAL = 0u;
+const uint LIGHT_TYPE_POINT = 1u;
+const uint LIGHT_TYPE_SPOT = 2u;
 const uint SHADOW_KIND_DIRECTIONAL_2D = 1u;
 const uint DIRECTIONAL_SHADOW_BINDING_SLOT = 0u;
 const uint MAX_FRAME_LIGHTS = 64u;
@@ -13,6 +15,9 @@ layout(binding = 2) uniform sampler2D gbuffer_material;
 layout(binding = 3) uniform sampler2D gbuffer_depth;
 layout(binding = 6) uniform sampler2D directional_shadow_depth;
 layout(binding = 7) uniform sampler2D environment_radiance;
+layout(binding = 8) uniform sampler2D environment_irradiance;
+layout(binding = 9) uniform sampler2D environment_prefilter;
+layout(binding = 10) uniform sampler2D environment_brdf_lut;
 
 struct LightGpuData
 {
@@ -42,6 +47,7 @@ layout(std140, binding = 5) uniform DeferredLightingConstants
     vec4 camera_world_position;
     mat4 directional_shadow_view_projection;
     vec4 directional_shadow_params;
+    vec4 environment_ibl_params;
 } lighting_constants;
 
 layout(location = 0) in vec2 frag_texcoord;
@@ -59,14 +65,44 @@ vec3 reconstruct_world_position(float depth)
     return world.xyz / max(abs(world.w), 1e-7) * sign(world.w);
 }
 
+vec2 environment_uv(vec3 direction)
+{
+    direction = normalize(direction);
+    return vec2(atan(direction.z, direction.x) / (2.0 * PI) + 0.5,
+                asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5);
+}
+
 vec3 sample_environment_background()
 {
     vec3 world_far = reconstruct_world_position(1.0);
     vec3 direction = normalize(world_far - lighting_constants.camera_world_position.xyz);
-    vec2 environment_uv = vec2(
-        atan(direction.z, direction.x) / (2.0 * PI) + 0.5,
-        asin(clamp(direction.y, -1.0, 1.0)) / PI + 0.5);
-    return max(texture(environment_radiance, environment_uv).rgb, vec3(0.0));
+    return max(texture(environment_radiance, environment_uv(direction)).rgb, vec3(0.0));
+}
+
+vec3 fresnel_schlick_roughness(float cosine, vec3 reflectance_at_normal,
+                               float roughness)
+{
+    return reflectance_at_normal +
+           (max(vec3(1.0 - roughness), reflectance_at_normal) - reflectance_at_normal) *
+               pow(clamp(1.0 - cosine, 0.0, 1.0), 5.0);
+}
+
+vec3 sample_prefiltered_environment(vec3 direction, float roughness)
+{
+    float level_count = max(lighting_constants.environment_ibl_params.y, 2.0);
+    float level = clamp(roughness, 0.0, 1.0) * (level_count - 1.0);
+    float lower_level = floor(level);
+    float upper_level = min(lower_level + 1.0, level_count - 1.0);
+    vec2 uv = environment_uv(direction);
+    float atlas_height = float(textureSize(environment_prefilter, 0).y);
+    float band_height = atlas_height / level_count;
+    float half_texel = 0.5 / max(band_height, 1.0);
+    float band_v = clamp(uv.y, half_texel, 1.0 - half_texel);
+    vec3 lower = texture(environment_prefilter,
+                         vec2(uv.x, (lower_level + band_v) / level_count)).rgb;
+    vec3 upper = texture(environment_prefilter,
+                         vec2(uv.x, (upper_level + band_v) / level_count)).rgb;
+    return max(mix(lower, upper, level - lower_level), vec3(0.0));
 }
 
 float distribution_ggx(vec3 normal, vec3 halfway, float roughness)
@@ -138,6 +174,24 @@ float directional_shadow_visibility(vec3 world_position, vec3 normal,
     return 1.0 - occluded_samples / 9.0;
 }
 
+float point_range_attenuation(float distance_to_light, float range)
+{
+    float range_ratio = distance_to_light / max(range, 1e-4);
+    float cutoff = max(1.0 - range_ratio * range_ratio * range_ratio * range_ratio, 0.0);
+    return cutoff / max(distance_to_light * distance_to_light, 1e-4);
+}
+
+float spot_cone_attenuation(vec3 spot_direction, vec3 surface_to_light,
+                            float inner_cone_radians, float outer_cone_radians)
+{
+    float cosine_inner = cos(inner_cone_radians);
+    float cosine_outer = cos(outer_cone_radians);
+    float scale = 1.0 / max(cosine_inner - cosine_outer, 1e-4);
+    float cosine_angle = dot(normalize(spot_direction), -surface_to_light);
+    float attenuation = clamp(cosine_angle * scale - cosine_outer * scale, 0.0, 1.0);
+    return attenuation * attenuation;
+}
+
 void main()
 {
     float depth = texture(gbuffer_depth, frag_texcoord).r;
@@ -170,14 +224,49 @@ void main()
     for (uint index = 0u; index < light_count; ++index)
     {
         LightGpuData light = frame_lighting.lights[index];
-        if (light.enabled == 0u || light.type != LIGHT_TYPE_DIRECTIONAL)
+        if (light.enabled == 0u)
         {
             continue;
         }
 
-        // Authored direction is the direction the light travels; surface-to-light
-        // is its negation.
-        vec3 light_direction = normalize(-light.direction_inner_cone.xyz);
+        vec3 light_direction;
+        float attenuation = 1.0;
+        bool directional = light.type == LIGHT_TYPE_DIRECTIONAL;
+        if (directional)
+        {
+            // Authored direction is the direction the light travels; surface-to-light
+            // is its negation.
+            light_direction = normalize(-light.direction_inner_cone.xyz);
+        }
+        else if (light.type == LIGHT_TYPE_POINT)
+        {
+            vec3 light_delta = light.position_range.xyz - world_position;
+            float distance_to_light = length(light_delta);
+            if (distance_to_light >= light.position_range.w)
+            {
+                continue;
+            }
+            light_direction = light_delta / max(distance_to_light, 1e-4);
+            attenuation = point_range_attenuation(distance_to_light, light.position_range.w);
+        }
+        else if (light.type == LIGHT_TYPE_SPOT)
+        {
+            vec3 light_delta = light.position_range.xyz - world_position;
+            float distance_to_light = length(light_delta);
+            if (distance_to_light >= light.position_range.w)
+            {
+                continue;
+            }
+            light_direction = light_delta / max(distance_to_light, 1e-4);
+            attenuation = point_range_attenuation(distance_to_light, light.position_range.w) *
+                          spot_cone_attenuation(light.direction_inner_cone.xyz, light_direction,
+                                                light.direction_inner_cone.w,
+                                                light.outer_cone_radians);
+        }
+        else
+        {
+            continue;
+        }
         vec3 halfway = normalize(view_direction + light_direction);
         float n_dot_l = max(dot(normal, light_direction), 0.0);
         if (n_dot_l <= 0.0)
@@ -191,9 +280,9 @@ void main()
         vec3 specular = ndf * geometry * fresnel /
                         max(4.0 * max(dot(normal, view_direction), 0.0) * n_dot_l, 1e-5);
         vec3 diffuse_weight = (vec3(1.0) - fresnel) * (1.0 - metallic);
-        vec3 radiance = light.color_intensity.rgb * light.color_intensity.a;
+        vec3 radiance = light.color_intensity.rgb * light.color_intensity.a * attenuation;
         float shadow_visibility = 1.0;
-        if (light.shadow_kind == SHADOW_KIND_DIRECTIONAL_2D &&
+        if (directional && light.shadow_kind == SHADOW_KIND_DIRECTIONAL_2D &&
             light.shadow_binding_slot == DIRECTIONAL_SHADOW_BINDING_SLOT)
         {
             shadow_visibility = directional_shadow_visibility(
@@ -203,8 +292,27 @@ void main()
                   shadow_visibility;
     }
 
-    // A small non-IBL visibility floor keeps occluded material readable while
-    // derived environment assets remain explicitly out of scope.
-    vec3 ambient = 0.02 * albedo * occlusion;
+    vec3 ambient;
+    if (lighting_constants.environment_ibl_params.x > 0.5)
+    {
+        float n_dot_v = max(dot(normal, view_direction), 0.0);
+        vec3 fresnel = fresnel_schlick_roughness(n_dot_v, f0, roughness);
+        vec3 diffuse_weight = (vec3(1.0) - fresnel) * (1.0 - metallic);
+        vec3 irradiance = max(texture(environment_irradiance,
+                                      environment_uv(normal)).rgb,
+                              vec3(0.0));
+        vec3 reflected = reflect(-view_direction, normal);
+        vec3 prefiltered = sample_prefiltered_environment(reflected, roughness);
+        vec2 brdf = texture(environment_brdf_lut,
+                            vec2(n_dot_v, roughness)).rg;
+        vec3 diffuse = irradiance * albedo / PI;
+        vec3 specular = prefiltered * (fresnel * brdf.x + brdf.y);
+        ambient = (diffuse_weight * diffuse + specular) * occlusion *
+                  lighting_constants.environment_ibl_params.z;
+    }
+    else
+    {
+        ambient = 0.02 * albedo * occlusion;
+    }
     out_color = vec4(ambient + direct, 1.0);
 }

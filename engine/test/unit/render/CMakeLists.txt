@@ -9,6 +9,7 @@ add_executable(
     material_system_test.cpp
     material_asset_resolver_test.cpp
     render_resource_resolver_test.cpp
+    environment_ibl_processor_test.cpp
     render_source_registry_test.cpp
     light_source_registry_test.cpp
     camera_source_registry_test.cpp
@@ -37,7 +38,7 @@ target_include_directories(RenderPassScheduleTest PRIVATE
 
 # Config propagates the generated global.h (project-root define) that
 # config/path.h requires; material_asset_resolver.cpp compiles here too.
-target_link_libraries(RenderPassScheduleTest PRIVATE Asset googletest Math Config)
+target_link_libraries(RenderPassScheduleTest PRIVATE Asset Resource googletest Math Config)
 
 add_custom_command(TARGET RenderPassScheduleTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

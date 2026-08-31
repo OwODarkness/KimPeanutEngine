@@ -1169,7 +1169,10 @@ namespace kpengine::example
                      {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
                       {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT},
                       {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
-                      {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+                      {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                      {8, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                      {9, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                      {10, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
                 };
                 deferred_lighting_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
                 deferred_lighting_pipeline_desc.raster_state.front_face =
@@ -1428,7 +1431,13 @@ namespace kpengine::example
                                            rhi->GetRenderTargetSampledDepthAttachment(d4_shadow_target),
                                            shadow_sampler},
                                        graphics::SampledTextureBinding{
-                                           0, 7, environment_texture, debug_sampler}}});
+                                           0, 7, environment_texture, debug_sampler},
+                                       graphics::SampledTextureBinding{
+                                           0, 8, environment_texture, debug_sampler},
+                                       graphics::SampledTextureBinding{
+                                           0, 9, environment_texture, debug_sampler},
+                                       graphics::SampledTextureBinding{
+                                           0, 10, environment_texture, debug_sampler}}});
                             if (!deferred_lighting_bindings.IsValid())
                             {
                                 throw std::runtime_error("D5.2 deferred-lighting binding failed");

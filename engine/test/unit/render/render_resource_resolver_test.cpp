@@ -31,3 +31,31 @@ TEST(RenderResourceResolverTest, TextureCacheKeySeparatesGpuFormatAndGeneration)
     EXPECT_EQ(cache.at(hdr), (TextureHandle{3, 1}));
     EXPECT_EQ(cache.at(next_generation), (TextureHandle{4, 1}));
 }
+
+TEST(RenderResourceResolverTest, TextureCacheKeySeparatesDerivedEnvironmentArtifacts)
+{
+    using kpengine::asset::AssetType;
+    using kpengine::render::TextureCacheKey;
+    using kpengine::render::TextureCacheKeyHash;
+    using kpengine::render::TextureCacheVariant;
+
+    const kpengine::asset::AssetID source_asset{7, 2, AssetType::KPAT_Texture};
+    const TextureCacheKey source{source_asset, TextureFormat::TEXTURE_FORMAT_RGBA16F,
+                                 TextureCacheVariant::Source};
+    const TextureCacheKey irradiance{
+        source_asset, TextureFormat::TEXTURE_FORMAT_RGBA16F,
+        TextureCacheVariant::EnvironmentIrradiance};
+    const TextureCacheKey prefilter{
+        source_asset, TextureFormat::TEXTURE_FORMAT_RGBA16F,
+        TextureCacheVariant::EnvironmentPrefilter};
+
+    std::unordered_map<TextureCacheKey, int, TextureCacheKeyHash> cache;
+    cache.emplace(source, 1);
+    cache.emplace(irradiance, 2);
+    cache.emplace(prefilter, 3);
+
+    EXPECT_EQ(cache.size(), 3u);
+    EXPECT_EQ(cache.at(source), 1);
+    EXPECT_EQ(cache.at(irradiance), 2);
+    EXPECT_EQ(cache.at(prefilter), 3);
+}

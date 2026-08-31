@@ -132,6 +132,7 @@ namespace kpengine
                     scene_info.environment_path =
                         GetAssetDirectory() + config.scene.environment;
                 }
+                scene_info.environment_ibl_intensity = config.scene.environment_intensity;
                 scene_info.world_transform.position_ =
                     {config.scene.position[0], config.scene.position[1], config.scene.position[2]};
                 scene_info.world_transform.rotator_ =

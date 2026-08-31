@@ -84,6 +84,8 @@ namespace kpengine::render
         Matrix4f directional_shadow_view_projection;
         // Minimum bias, slope-scaled bias, texel size, reserved.
         Vector4f directional_shadow_params{};
+        // IBL enabled, prefilter atlas level count, intensity, reserved.
+        Vector4f environment_ibl_params{};
     };
 
     static_assert(sizeof(Vector4f) == sizeof(float) * 4,
@@ -97,8 +99,8 @@ namespace kpengine::render
     static_assert(offsetof(LightGpuData, reserved) == 72);
     static_assert(sizeof(LightGpuFrameHeader) == 16,
                   "The frame lighting header is one uniform-buffer row");
-    static_assert(sizeof(DeferredLightingGpuData) == 160,
-                  "Deferred lighting constants must match ten std140 rows");
+    static_assert(sizeof(DeferredLightingGpuData) == 176,
+                  "Deferred lighting constants must match eleven std140 rows");
 
     bool IsLightGpuFrameHeaderCompatible(const LightGpuFrameHeader &header);
     std::optional<LightGpuData> EncodeLightGpuData(const LightDesc &light);

@@ -17,6 +17,32 @@ namespace
         desc.type_data = kpengine::render::DirectionalLightData{source.direction};
         return desc;
     }
+
+    kpengine::render::LightDesc MakeLightDesc(
+        const kpengine::render::PointLightSourceDesc &source)
+    {
+        kpengine::render::LightDesc desc{};
+        desc.type = kpengine::render::LightType::Point;
+        desc.color = source.color;
+        desc.intensity = source.intensity;
+        desc.enabled = source.enabled;
+        desc.type_data = kpengine::render::PointLightData{source.position, source.range};
+        return desc;
+    }
+
+    kpengine::render::LightDesc MakeLightDesc(
+        const kpengine::render::SpotLightSourceDesc &source)
+    {
+        kpengine::render::LightDesc desc{};
+        desc.type = kpengine::render::LightType::Spot;
+        desc.color = source.color;
+        desc.intensity = source.intensity;
+        desc.enabled = source.enabled;
+        desc.type_data = kpengine::render::SpotLightData{
+            source.position, source.direction, source.range, source.inner_cone_radians,
+            source.outer_cone_radians};
+        return desc;
+    }
 }
 
 namespace kpengine::render
@@ -111,6 +137,28 @@ namespace kpengine::render
                                 (void)shadow_handles_.Destroy(*shadow);
                             }
                         }
+                        else if (const auto *const point =
+                                     std::get_if<PointLightSourceDesc>(&value.source);
+                                 point != nullptr)
+                        {
+                            const LightHandle light_handle =
+                                light_world.EnqueueCreate(MakeLightDesc(*point));
+                            if (light_handle.IsValid())
+                            {
+                                records_[value.handle.id] = {value.handle, light_handle, std::nullopt};
+                            }
+                        }
+                        else if (const auto *const spot =
+                                     std::get_if<SpotLightSourceDesc>(&value.source);
+                                 spot != nullptr)
+                        {
+                            const LightHandle light_handle =
+                                light_world.EnqueueCreate(MakeLightDesc(*spot));
+                            if (light_handle.IsValid())
+                            {
+                                records_[value.handle.id] = {value.handle, light_handle, std::nullopt};
+                            }
+                        }
                     }
                     else if constexpr (std::is_same_v<CommandType, UpdateCommand>)
                     {
@@ -132,6 +180,23 @@ namespace kpengine::render
                             (void)light_world.EnqueueUpdate(record->second.light_handle,
                                                             MakeLightDesc(*directional,
                                                                           record->second.shadow_handle));
+                        }
+                        else if (record != records_.end() &&
+                                 record->second.source_handle == value.handle)
+                        {
+                            const auto *const point = std::get_if<PointLightSourceDesc>(&value.source);
+                            if (point != nullptr && !record->second.shadow_handle.has_value())
+                            {
+                                (void)light_world.EnqueueUpdate(record->second.light_handle,
+                                                                MakeLightDesc(*point));
+                            }
+                            else if (const auto *const spot =
+                                         std::get_if<SpotLightSourceDesc>(&value.source);
+                                     spot != nullptr && !record->second.shadow_handle.has_value())
+                            {
+                                (void)light_world.EnqueueUpdate(record->second.light_handle,
+                                                                MakeLightDesc(*spot));
+                            }
                         }
                     }
                     else

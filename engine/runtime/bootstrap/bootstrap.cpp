@@ -1,6 +1,7 @@
 #include "bootstrap/bootstrap.h"
 
 #include <cstdint>
+#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -81,6 +82,20 @@ namespace kpengine::bootstrap
             config.scene.model = scene.value("model", std::string{});
             config.scene.material = scene.value("material", std::string{});
             config.scene.environment = scene.value("environment", std::string{});
+            if (scene.contains("environment_intensity"))
+            {
+                const auto &intensity = scene["environment_intensity"];
+                if (!intensity.is_number() || !std::isfinite(intensity.get<float>()) ||
+                    intensity.get<float>() < 0.0f)
+                {
+                    KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
+                           "%s: ignoring invalid environment_intensity", path.c_str());
+                }
+                else
+                {
+                    config.scene.environment_intensity = intensity.get<float>();
+                }
+            }
             const auto read_vector = [](const nlohmann::json &object,
                                         const char *name,
                                         std::array<float, 3> &destination)

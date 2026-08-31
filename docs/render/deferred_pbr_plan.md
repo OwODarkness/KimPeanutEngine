@@ -15,7 +15,7 @@ DirectionalShadow -> GBuffer -> DeferredLighting -> ToneMap/EditorComposite
 
 It must use the current Asset -> Resource -> Render -> Graphics boundary on both Vulkan and OpenGL. The deprecated OpenGL renderer is evidence for shader and scene requirements only; none of its GL object ownership, global access, or proxy draw API may return.
 
-The first deliverable is deliberately small in execution: one directional light with one 2D depth map, opaque static mesh proxies, metallic-roughness PBR, and a fullscreen deferred-lighting pass. Its light/shadow ABI is deliberately extensible to directional, point, and spot lights from the beginning; only the directional producer is enabled in the first visual milestone.
+The first deliverable is deliberately small in execution: one directional light with one 2D depth map, opaque static mesh proxies, metallic-roughness PBR, and a fullscreen deferred-lighting pass. Its light/shadow ABI is deliberately extensible to directional, point, and spot lights from the beginning; D6.1 subsequently enables an unshadowed point producer without changing that ABI.
 
 ## Local starting point
 
@@ -34,7 +34,7 @@ The first deliverable is deliberately small in execution: one directional light 
 
 | Pass | Reads | Writes | Draw source | First scope |
 |---|---|---|---|---|
-| `ShadowDepthPass` | one scheduled shadow job's light/camera constants | a typed shadow target | visible opaque `casts_shadow` proxies | dispatches one directional 2D job first; point/spot jobs are reserved |
+| `ShadowDepthPass` | one scheduled shadow job's light/camera constants | a typed shadow target | all ready visible opaque `casts_shadow` proxies | dispatches one directional 2D job first; point/spot jobs are reserved |
 | `GBufferPass` | material, camera | albedo, normal, material, depth | visible opaque proxies | no blend/alpha mask |
 | `DeferredLightingPass` | G-buffer + typed shadow bindings | HDR `SceneHdr` | fullscreen triangle | generic light record; one directional light populated first |
 | `ToneMapPass` | `SceneHdr` | final `SceneColor` | fullscreen triangle | one documented tone map |
@@ -81,11 +81,12 @@ Gameplay LightActor/components + logical material/mesh IDs
    Each render record has common radiance/color, enabled, layer/mask, optional
    shadow identity, and type-specific data: direction for directional,
    position/range for point, and position/direction/range/cones for spot. The
-   first scene publishes one directional source only.
+   first scene publishes one directional source plus unshadowed point and spot
+   sources.
 2. Add `MaterialPass::{ShadowDepth,GBuffer,DeferredLighting,ToneMap}`. Surface templates declare compatible geometry passes; shadow uses a depth override pipeline, not a surface fragment shader.
 3. Add a render-owned `ShadowHandle`/job registry. A shadow job records its light identity, `ShadowKind::{Directional2D,Spot2D,PointCube}`, target resolution, and a render-private binding slot. A missing/invalid shadow handle means unshadowed lighting; it is not encoded as a texture handle in Gameplay or Asset.
-4. Upload a versioned `LightGpuData` array plus light count through the per-frame lighting binding. The initial shader switch handles all three type values and treats unavailable shadow kinds as unshadowed. This preserves ABI compatibility when point/spot lights are enabled without requiring a material-ABI rewrite.
-5. Add pass-specific lists. Shadow filters `visible && casts_shadow && opaque && ready`; G-buffer filters `visible && opaque && ready`.
+4. Upload a versioned `LightGpuData` array plus light count through the per-frame lighting binding. The shader evaluates directional plus unshadowed point and spot records, and treats unavailable shadow kinds as unshadowed. This preserves ABI compatibility without requiring a material-ABI rewrite.
+5. Add pass-specific lists. Shadow conservatively filters the full snapshot by `visible && casts_shadow && opaque && ready`, and its directional orthographic volume is fit from the full caster world bounds with the camera position as a conservative receiver anchor. G-buffer filters `visible && opaque && ready` through camera-frustum culling. This lets an off-camera caster shadow a camera-visible receiver; receiver-aware fitting/cascades remain later quality work.
 6. Add `RendererFrameTargets`, a Render-private owner that rebuilds named targets for one extent/format policy. It is not a graph allocator.
 
 ### Extensible light and shadow contract
@@ -185,15 +186,24 @@ consumer exists.
 3. **Attachment RHI:** implement multi-attachment/depth-only creation, sampled attachments, resize recreation, compatibility validation, and safe retirement on both backends.
 4. **Material V2 + G-buffer (landed 2026-08-29):** extend parsing/resolution, add shaders/pipelines, and render opaque supplied PBR content through `GBufferPass`. Material assets version to 2; `GBufferPass` + `GBufferDebugViewPass` replace the unlit `ScenePass` in the engine schedule; the smoke D3 block proves `rock_pbr.material` → GBuffer → composite on Vulkan and OpenGL.
 5. **Light ABI + directional shadow:** add the generic light/shadow snapshot and shader ABI, then enable one directional depth job with stable camera-derived fit, bias policy, and binding in lighting.
-6. **Lighting + tone map:** implement the type-switching linear HDR Cook-Torrance pass, initially with one directional light; sample the authored equirectangular environment for clear-depth background pixels; tone map once to final `SceneColor`. IBL stays disabled until it has owned derived-environment assets.
-7. **Light expansion:** enable non-shadowed point and spot records first, then add `Spot2D` and `PointCube` shadow jobs, target allocation/budget policy, and the related debug views. Cascades and atlasing need measured content pressure and remain separate work.
+6. **Lighting + tone map (landed 2026-08-31):** the type-switching linear HDR
+   Cook-Torrance pass consumes one directional light, samples the authored
+   equirectangular environment for clear-depth background pixels, and tone maps
+   once to final `SceneColor`. Its IBL extension derives CPU-side irradiance,
+   roughness-prefiltered radiance, and BRDF-LUT artifacts in Resource, while
+   Render owns the resolved GPU bindings. The temporary 2D prefilter atlas is
+   deliberate until the common RHI can upload cubemap faces and mip levels on
+   both backends.
+7. **Light expansion:** D6.1–D6.2 enable non-shadowed point and spot records. Add `Spot2D` and `PointCube` shadow jobs next, including target allocation/budget policy and the related debug views. Cascades and atlasing need measured content pressure and remain separate work.
 8. **Evidence/hardening:** debug views, per-pass timing, resize/shutdown stress, scenario screenshots, status/docs/journal updates.
 9. **Graph gate:** decide on a graph only from demonstrated target lifetime, aliasing, or scheduling needs.
 
 ## Non-goals
 
 - No generic graph, transient aliasing, async compute, or GPU-driven redesign.
-- No point/spot/cascaded shadow **implementation**, transparency/alpha masks, SSAO/SSR/bloom, clustered lighting, or IBL preprocessing in the first renderer. Point/spot light and shadow identities remain part of the first light/shadow ABI.
+- No point/spot/cascaded shadow **implementation**, transparency/alpha masks,
+  SSAO/SSR/bloom, or clustered lighting in the first renderer. Point/spot light
+  and shadow identities remain part of the first light/shadow ABI.
 - No reuse of deprecated `ShadowManager`/caster classes or direct OpenGL code.
 - No Asset-to-GPU shortcut or backend-specific material path.
 
@@ -208,7 +218,12 @@ consumer exists.
 | [Godot post-process and tone map](https://github.com/godotengine/godot/blob/master/servers/rendering/renderer_rd/renderer_scene_render_rd.cpp) | The renderer keeps scene color in an internal buffer and invokes a distinct tone-map operation into the display destination, with buffer allocation tied to renderer configuration. | D5.1 keeps `SceneHdr` and `SceneColor` separate under `RendererFrameTargets` and records one explicit fullscreen tone-map pass. Reject its dynamic effect/cache hierarchy until KimPeanut demonstrates comparable pressure. |
 | [Filament LightDefinition](https://github.com/google/filament/blob/main/libs/viewer/include/viewer/Settings.h) | One typed value carries shared color/intensity with position, direction, falloff, cone, and shadow intent for the engine's light-manager types. | Adopt the typed value shape: `LightDesc` has shared state plus a type-matched directional/point/spot payload. Reject its engine manager/entity and shadow-options model; KimPeanut keeps handles/jobs Render-private and defers target policy to D4. |
 | [Filament scene light preparation](https://github.com/google/filament/blob/main/filament/src/details/Scene.cpp) | The scene gathers immutable light data, bounds the prepared list, then serializes positional records into a GPU buffer with an explicit per-record structure; shadow data is supplied only when its renderer state is available. | D1.4 adopts one bounded, versioned POD payload at the Render frame boundary. Unlike Filament’s SoA and driver buffer path, KimPeanut uses the current common UBO allocator and does not serialize a `ShadowHandle` as a GPU resource: unresolved shadows are explicitly `Unshadowed` until D4. |
-| [bgfx IBL example](https://github.com/bkaradzic/bgfx/blob/master/examples/18-ibl/ibl.cpp) | Environment resources and PBR/lighting values flow through API-neutral handles. | Use only as cross-API PBR boundary evidence; defer IBL until KimPeanut owns environment-derived assets. |
+| [Filament ShadowMap fitting](https://github.com/google/filament/blob/main/filament/src/ShadowMap.cpp) | Directional shadow fitting transforms relevant world bounds into light space, then derives an orthographic projection from those extents. | KimPeanut adopts the small conservative core: Render fits the one directional map from immutable caster bounds, independent of camera visibility. It deliberately does not adopt Filament's receiver intersection, cascades, warping, or driver-level shadow system; those are later quality work. |
+| [bgfx IBL mesh shader](https://github.com/bkaradzic/bgfx/blob/master/examples/18-ibl/fs_ibl_mesh.sc) | It binds distinct radiance and irradiance cube inputs, selects filtered radiance from material gloss, and adds the environment terms independently from direct light. | D5.7 keeps distinct visible-sky, irradiance, and prefiltered-radiance bindings, but represents the prefilter as a 2D roughness atlas because KimPeanut's shared Vulkan upload cannot yet populate cube faces/mips. |
+| [Filament CubemapIBL](https://github.com/google/filament/blob/main/libs/ibl/src/CubemapIBL.cpp) | Its preprocessing uses cosine-hemisphere samples for irradiance, GGX importance samples for specular filtering, and a two-channel BRDF visibility/Fresnel integral. | D5.7 adopts these mathematical products as Resource CPU processing with bounded startup resolutions; reject Filament's cubemap/driver/cache machinery until the local common RHI supports that storage correctly. |
+| [KHR_lights_punctual attenuation](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md) | Point lights use inverse-square attenuation, and a finite range may smooth its edge with a quartic cutoff. | D6.1 uses the existing `position_range` GPU fields for that bounded attenuation. It does not adopt glTF asset loading or unit conversion; source data remains Gameplay-owned. |
+| [Godot omni-light shader](https://github.com/godotengine/godot/blob/master/drivers/gles3/shaders/scene.glsl) | Godot applies a quartic distance cutoff and inverse-distance falloff before its common light BRDF evaluation. | Confirms D6.1 can keep point-specific attenuation local to the deferred shader, then reuse the current Cook-Torrance contribution. Its renderer architecture and clustering are out of scope. |
+| [KHR_lights_punctual spot cone](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md) | It defines spot range attenuation as point-like and recommends squared interpolation between cosine inner/outer cone angles. | D6.2 consumes the existing `SpotLightData` cone fields in the deferred shader. Reject glTF node import and shadow semantics: KimPeanut remains Gameplay-authored and deliberately unshadowed. |
 | [Godot sky shader](https://github.com/godotengine/godot/blob/master/servers/rendering/renderer_rd/shaders/environment/sky.glsl) | Visible sky radiance is sampled as renderer-owned HDR input before display conversion. | D5.5 adopts only the visible linear-HDR background boundary. It keeps the supplied panorama as an Asset source and rejects Godot's cubemap/radiance-cache machinery for this slice. |
 | [bgfx IBL skybox shader](https://github.com/bkaradzic/bgfx/blob/master/examples/18-ibl/fs_ibl_skybox.sc) | The visible environment sample is distinct from irradiance and prefiltered-radiance material inputs. | Keep background display separate from IBL ownership: D5.5 samples the source panorama directly, while convolution and BRDF lookup assets remain deferred. |
 | [bgfx simple shadow map](https://github.com/bkaradzic/bgfx/blob/master/examples/15-shadowmaps-simple/shadowmaps_simple.cpp) | Producer and consumer share one light transform while the backend capability flags determine only the required texture-origin and homogeneous-depth crop. | Preserve KimPeanut's established backend clip/origin conversions. D5.6 diagnostics instead proved that OpenGL's depth attachment Clear load-op was masked by stale `GL_DEPTH_WRITEMASK`; fix load-state isolation rather than adding another shader-space special case. |

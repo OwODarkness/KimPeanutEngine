@@ -5,6 +5,8 @@
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
 #include "gameplay/factory/directional_light_actor_factory.h"
+#include "gameplay/factory/point_light_actor_factory.h"
+#include "gameplay/factory/spot_light_actor_factory.h"
 #include "gameplay/factory/free_camera_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
 #include "gameplay/controller/player_controller.h"
@@ -179,13 +181,27 @@ namespace kpengine
                 }
             }
 
-            // The first renderer milestone deliberately has one authored
-            // directional source. Gameplay owns this Actor; Render observes its
-            // value snapshot through the existing light-source sink.
+            // Gameplay owns authored light actors; Render observes copied source
+            // snapshots through the light-source sink.
             if (!gameplay::CreateDirectionalLightActor(*gameplay_world_, {}).IsValid())
             {
                 KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
                        "Bootstrap directional light actor could not be created");
+            }
+            const gameplay::PointLightActorDesc bootstrap_point_light{
+                {0.0f, -20.0f, 65.0f}, {1.0f, 0.22f, 0.08f}, 8000.0f, 180.0f, true};
+            if (!gameplay::CreatePointLightActor(*gameplay_world_, bootstrap_point_light).IsValid())
+            {
+                KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                       "Bootstrap point light actor could not be created");
+            }
+            const gameplay::SpotLightActorDesc bootstrap_spot_light{
+                {0.0f, 45.0f, 70.0f}, {0.0f, -0.55f, -0.85f}, {0.2f, 0.35f, 1.0f},
+                24000.0f, 180.0f, 0.35f, 0.65f, true};
+            if (!gameplay::CreateSpotLightActor(*gameplay_world_, bootstrap_spot_light).IsValid())
+            {
+                KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                       "Bootstrap spot light actor could not be created");
             }
 
             gameplay_world_->SetLocalPlayerControllerInputEnabled(

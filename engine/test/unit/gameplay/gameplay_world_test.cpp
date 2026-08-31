@@ -7,11 +7,15 @@
 #include "gameplay/component/actor_component.h"
 #include "gameplay/component/camera_component.h"
 #include "gameplay/component/directional_light_component.h"
+#include "gameplay/component/point_light_component.h"
+#include "gameplay/component/spot_light_component.h"
 #include "gameplay/component/mesh_component.h"
 #include "gameplay/component/primitive_component.h"
 #include "gameplay/component/scene_component.h"
 #include "gameplay/controller/player_controller.h"
 #include "gameplay/factory/directional_light_actor_factory.h"
+#include "gameplay/factory/point_light_actor_factory.h"
+#include "gameplay/factory/spot_light_actor_factory.h"
 #include "gameplay/factory/free_camera_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
 #include "gameplay/world/gameplay_world.h"
@@ -504,6 +508,76 @@ TEST(GameplayWorldTest, DirectionalLightActorFactoryBuildsAnActiveLightCompositi
     EXPECT_EQ(source.color, desc.color);
     EXPECT_EQ(source.intensity, desc.intensity);
     EXPECT_EQ(source.enabled, desc.enabled);
+}
+
+TEST(GameplayWorldTest, PointLightActorFactoryPublishesUnshadowedPointSource)
+{
+    RecordingLightSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{nullptr, &source_sink};
+    const kpengine::gameplay::PointLightActorDesc desc{
+        {3.0f, 4.0f, 5.0f}, {0.25f, 0.5f, 0.75f}, 12.0f, 30.0f, true};
+
+    const kpengine::gameplay::ActorHandle handle =
+        kpengine::gameplay::CreatePointLightActor(world, desc);
+    kpengine::gameplay::Actor *const actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+    EXPECT_EQ(actor->GetState(), kpengine::gameplay::ActorState::Active);
+    auto *const light = actor->FindComponent<kpengine::gameplay::PointLightComponent>();
+    ASSERT_NE(light, nullptr);
+    EXPECT_EQ(actor->GetRootComponent(), light);
+    ASSERT_EQ(source_sink.creates.size(), 1U);
+
+    const auto &source =
+        std::get<kpengine::render::PointLightSourceDesc>(source_sink.creates.front());
+    EXPECT_EQ(source.position, desc.position);
+    EXPECT_EQ(source.color, desc.color);
+    EXPECT_EQ(source.intensity, desc.intensity);
+    EXPECT_EQ(source.range, desc.range);
+    EXPECT_EQ(source.enabled, desc.enabled);
+
+    light->SetRange(48.0f);
+    world.Tick(1.0f / 60.0f);
+    ASSERT_EQ(source_sink.updates.size(), 1U);
+    const auto &updated =
+        std::get<kpengine::render::PointLightSourceDesc>(source_sink.updates.front().source);
+    EXPECT_EQ(updated.range, 48.0f);
+}
+
+TEST(GameplayWorldTest, SpotLightActorFactoryPublishesUnshadowedSpotSource)
+{
+    RecordingLightSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{nullptr, &source_sink};
+    const kpengine::gameplay::SpotLightActorDesc desc{
+        {3.0f, 4.0f, 5.0f}, {0.0f, -1.0f, 0.0f}, {0.25f, 0.5f, 0.75f},
+        12.0f, 30.0f, 0.2f, 0.7f, true};
+
+    const kpengine::gameplay::ActorHandle handle =
+        kpengine::gameplay::CreateSpotLightActor(world, desc);
+    kpengine::gameplay::Actor *const actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+    EXPECT_EQ(actor->GetState(), kpengine::gameplay::ActorState::Active);
+    auto *const light = actor->FindComponent<kpengine::gameplay::SpotLightComponent>();
+    ASSERT_NE(light, nullptr);
+    EXPECT_EQ(actor->GetRootComponent(), light);
+    ASSERT_EQ(source_sink.creates.size(), 1U);
+
+    const auto &source =
+        std::get<kpengine::render::SpotLightSourceDesc>(source_sink.creates.front());
+    EXPECT_EQ(source.position, desc.position);
+    EXPECT_EQ(source.direction, desc.direction);
+    EXPECT_EQ(source.color, desc.color);
+    EXPECT_EQ(source.intensity, desc.intensity);
+    EXPECT_EQ(source.range, desc.range);
+    EXPECT_EQ(source.inner_cone_radians, desc.inner_cone_radians);
+    EXPECT_EQ(source.outer_cone_radians, desc.outer_cone_radians);
+    EXPECT_EQ(source.enabled, desc.enabled);
+
+    light->SetOuterConeRadians(0.9f);
+    world.Tick(1.0f / 60.0f);
+    ASSERT_EQ(source_sink.updates.size(), 1U);
+    const auto &updated =
+        std::get<kpengine::render::SpotLightSourceDesc>(source_sink.updates.front().source);
+    EXPECT_EQ(updated.outer_cone_radians, 0.9f);
 }
 
 TEST(GameplayWorldTest, StaticMeshActorFactoryBuildsAnActiveMeshComposition)

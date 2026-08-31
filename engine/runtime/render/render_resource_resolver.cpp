@@ -86,7 +86,8 @@ namespace kpengine::render
 
     TextureBinding RenderResourceResolver::GetOrCreateTextureBinding(
         asset::AssetID asset_id, const data::TextureData &data,
-        MaterialTextureColorSpace color_space, const MaterialSamplerDesc *sampler_desc)
+        MaterialTextureColorSpace color_space, const MaterialSamplerDesc *sampler_desc,
+        TextureCacheVariant variant)
     {
         // The same LDR asset can be sampled as sRGB (base color) and linear
         // (normal/metallic/roughness/occlusion), while HDR assets retain their
@@ -96,7 +97,7 @@ namespace kpengine::render
                                          : color_space == MaterialTextureColorSpace::Linear
                                                ? TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM
                                                : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
-        const TextureCacheKey key{asset_id, format};
+        const TextureCacheKey key{asset_id, format, variant};
         const auto existing = texture_cache_.find(key);
         graphics::TextureHandle texture;
         if (existing != texture_cache_.end())

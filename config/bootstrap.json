@@ -2,18 +2,40 @@
     "version": 1,
     "assets": [
         "material/rock_pbr.material",
-        "material/brickwall.material",
+        "material/oakfloor_pbr.material",
+        "material/quartz_pbr.material",
+        "material/rusted_iron_pbr.material",
+        "material/cerberus_pbr.material",
         "material/gold_pbr.material",
         "model/rock1-bl/rock2.obj",
         "model/brickwall/floor.obj",
         "model/sphere/sphere.obj",
+        "model/bunny/stanford-bunny.obj",
+        "model/teapot/teapot.obj",
+        "model/cerberus/Cerberus_LP.FBX",
         "model/rock1-bl/rock1-albedo.png",
         "model/rock1-bl/rock1-normal_ogl.png",
         "model/rock1-bl/rock1-metallic.png",
         "model/rock1-bl/rock1-roughness.png",
         "model/rock1-bl/rock1-ao.png",
-        "model/brickwall/brickwall_dif.jpg",
-        "model/brickwall/brickwall_normal.jpg",
+        "texture/pbr/oakfloor_fb1-bl/oakfloor_basecolor.png",
+        "texture/pbr/oakfloor_fb1-bl/oakfloor_normal.png",
+        "texture/pbr/oakfloor_fb1-bl/oakfloor_roughness.png",
+        "texture/pbr/oakfloor_fb1-bl/oakfloor_AO.png",
+        "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_albedo.png",
+        "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_normal-ogl.png",
+        "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_metallic.png",
+        "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_roughness.png",
+        "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_ao.png",
+        "texture/pbr/rustediron1-alt2-bl/rustediron2_basecolor.png",
+        "texture/pbr/rustediron1-alt2-bl/rustediron2_normal.png",
+        "texture/pbr/rustediron1-alt2-bl/rustediron2_metallic.png",
+        "texture/pbr/rustediron1-alt2-bl/rustediron2_roughness.png",
+        "model/cerberus/Textures/Cerberus_A.tga",
+        "model/cerberus/Textures/Cerberus_N.tga",
+        "model/cerberus/Textures/Cerberus_M.tga",
+        "model/cerberus/Textures/Cerberus_R.tga",
+        "model/cerberus/Textures/Raw/Cerberus_AO.tga",
         "texture/pbr/light-gold-bl/lightgold_metallic.png",
         "texture/pbr/light-gold-bl/lightgold_normal-ogl.png",
         "texture/pbr/light-gold-bl/lightgold_roughness.png",
@@ -25,11 +47,12 @@
         "model": "model/rock1-bl/rock2.obj",
         "material": "material/rock_pbr.material",
         "environment": "texture/hdr/HDR_041_Path.hdr",
+        "environment_intensity": 0.25,
         "scale": [0.35, 0.35, 0.35],
         "objects": [
             {
                 "model": "model/brickwall/floor.obj",
-                "material": "material/brickwall.material",
+                "material": "material/oakfloor_pbr.material",
                 "position": [0.0, -70.0, 0.0],
                 "rotation": [0.0, 0.0, 0.0],
                 "scale": [30.0, 30.0, 30.0]
@@ -40,6 +63,27 @@
                 "position": [70.0, -52.0, 0.0],
                 "rotation": [0.0, 0.0, 0.0],
                 "scale": [18.0, 18.0, 18.0]
+            },
+            {
+                "model": "model/bunny/stanford-bunny.obj",
+                "material": "material/quartz_pbr.material",
+                "position": [-60.0, -73.3, 0.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [200.0, 200.0, 200.0]
+            },
+            {
+                "model": "model/teapot/teapot.obj",
+                "material": "material/rusted_iron_pbr.material",
+                "position": [25.0, -70.0, 0.0],
+                "rotation": [0.0, 0.0, 0.0],
+                "scale": [4.0, 4.0, 4.0]
+            },
+            {
+                "model": "model/cerberus/Cerberus_LP.FBX",
+                "material": "material/cerberus_pbr.material",
+                "position": [-25.0, -24.4, 25.0],
+                "rotation": [-90.0, 90.0, 0.0],
+                "scale": [0.35, 0.35, 0.35]
             }
         ]
     }

@@ -17,8 +17,8 @@ namespace kpengine::render
     // shadow target, or descriptor.
     using LightSourceHandle = Handle<LightSourceTag>;
 
-    // D1.1 publishes only the first directional authoring source. D1.3 extends
-    // the Render-owned resolved light/shadow descriptions for point and spot.
+    // Gameplay authors only source values. Render resolves these to private
+    // LightWorld records at the frame boundary.
     struct DirectionalLightSourceDesc
     {
         Vector3f direction{0.0f, -1.0f, 0.0f};
@@ -29,7 +29,33 @@ namespace kpengine::render
         bool casts_shadow = true;
     };
 
-    using LightSourceDesc = std::variant<DirectionalLightSourceDesc>;
+    // D6.1 intentionally has no shadow request: point-shadow target lifetime
+    // and scheduling remain a later Render-owned milestone.
+    struct PointLightSourceDesc
+    {
+        Vector3f position{};
+        Vector3f color{1.0f, 1.0f, 1.0f};
+        float intensity = 1.0f;
+        float range = 1.0f;
+        bool enabled = true;
+    };
+
+    // D6.2 retains punctual-shadow ownership in Render by exposing no shadow
+    // request on the source; this light is deliberately unshadowed.
+    struct SpotLightSourceDesc
+    {
+        Vector3f position{};
+        Vector3f direction{0.0f, -1.0f, 0.0f};
+        Vector3f color{1.0f, 1.0f, 1.0f};
+        float intensity = 1.0f;
+        float range = 1.0f;
+        float inner_cone_radians = 0.0f;
+        float outer_cone_radians = 0.785398163f;
+        bool enabled = true;
+    };
+
+    using LightSourceDesc =
+        std::variant<DirectionalLightSourceDesc, PointLightSourceDesc, SpotLightSourceDesc>;
 
     // Public Gameplay -> Render source boundary. The later Render LightWorld
     // consumes copied values at a frame boundary; no Gameplay type is exposed

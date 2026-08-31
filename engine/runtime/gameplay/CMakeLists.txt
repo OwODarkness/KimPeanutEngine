@@ -8,8 +8,12 @@ add_library(Gameplay STATIC
     component/primitive_component.cpp
     component/mesh_component.cpp
     component/directional_light_component.cpp
+    component/point_light_component.cpp
+    component/spot_light_component.cpp
     factory/static_mesh_actor_factory.cpp
     factory/directional_light_actor_factory.cpp
+    factory/point_light_actor_factory.cpp
+    factory/spot_light_actor_factory.cpp
     factory/free_camera_actor_factory.cpp
     world/gameplay_world.cpp
 )

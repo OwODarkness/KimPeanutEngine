@@ -14,6 +14,29 @@ namespace
         return source;
     }
 
+    kpengine::render::PointLightSourceDesc MakePointSource(float range = 10.0f)
+    {
+        kpengine::render::PointLightSourceDesc source{};
+        source.position = {1.0f, 2.0f, 3.0f};
+        source.color = {0.25f, 0.5f, 1.0f};
+        source.intensity = 12.0f;
+        source.range = range;
+        return source;
+    }
+
+    kpengine::render::SpotLightSourceDesc MakeSpotSource(float outer_cone_radians = 0.75f)
+    {
+        kpengine::render::SpotLightSourceDesc source{};
+        source.position = {1.0f, 2.0f, 3.0f};
+        source.direction = {0.0f, -1.0f, 0.0f};
+        source.color = {0.25f, 0.5f, 1.0f};
+        source.intensity = 12.0f;
+        source.range = 10.0f;
+        source.inner_cone_radians = 0.25f;
+        source.outer_cone_radians = outer_cone_radians;
+        return source;
+    }
+
     kpengine::render::LightDesc MakeDirectionalLight(float intensity = 1.0f)
     {
         kpengine::render::LightDesc desc{};
@@ -117,6 +140,63 @@ TEST(LightSourceRegistryTest, KeepsShadowIdentityRenderPrivateAndRetiresItWhenDi
     ASSERT_EQ(snapshot.size(), 1U);
     EXPECT_FALSE(snapshot.front().desc.shadow.has_value());
     EXPECT_TRUE(shadow.IsValid()); // The source API never exposes this identity.
+}
+
+TEST(LightSourceRegistryTest, ResolvesPointSourcesWithoutCreatingShadowIdentity)
+{
+    kpengine::render::LightSourceRegistry registry{};
+    kpengine::render::LightWorld world{};
+
+    const kpengine::render::LightSourceHandle source_handle =
+        registry.EnqueueCreate(MakePointSource());
+    registry.Drain(world);
+    auto snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot.front().desc.type, kpengine::render::LightType::Point);
+    EXPECT_FALSE(snapshot.front().desc.shadow.has_value());
+    const auto *point =
+        std::get_if<kpengine::render::PointLightData>(&snapshot.front().desc.type_data);
+    ASSERT_NE(point, nullptr);
+    EXPECT_EQ(point->position, (kpengine::Vector3f{1.0f, 2.0f, 3.0f}));
+    EXPECT_EQ(point->range, 10.0f);
+
+    ASSERT_TRUE(registry.EnqueueUpdate(source_handle, MakePointSource(24.0f)));
+    registry.Drain(world);
+    snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    point = std::get_if<kpengine::render::PointLightData>(&snapshot.front().desc.type_data);
+    ASSERT_NE(point, nullptr);
+    EXPECT_EQ(point->range, 24.0f);
+    EXPECT_FALSE(snapshot.front().desc.shadow.has_value());
+}
+
+TEST(LightSourceRegistryTest, ResolvesSpotSourcesWithoutCreatingShadowIdentity)
+{
+    kpengine::render::LightSourceRegistry registry{};
+    kpengine::render::LightWorld world{};
+
+    const kpengine::render::LightSourceHandle source_handle =
+        registry.EnqueueCreate(MakeSpotSource());
+    registry.Drain(world);
+    auto snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(snapshot.front().desc.type, kpengine::render::LightType::Spot);
+    EXPECT_FALSE(snapshot.front().desc.shadow.has_value());
+    const auto *spot =
+        std::get_if<kpengine::render::SpotLightData>(&snapshot.front().desc.type_data);
+    ASSERT_NE(spot, nullptr);
+    EXPECT_EQ(spot->direction, (kpengine::Vector3f{0.0f, -1.0f, 0.0f}));
+    EXPECT_EQ(spot->inner_cone_radians, 0.25f);
+    EXPECT_EQ(spot->outer_cone_radians, 0.75f);
+
+    ASSERT_TRUE(registry.EnqueueUpdate(source_handle, MakeSpotSource(1.0f)));
+    registry.Drain(world);
+    snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    spot = std::get_if<kpengine::render::SpotLightData>(&snapshot.front().desc.type_data);
+    ASSERT_NE(spot, nullptr);
+    EXPECT_EQ(spot->outer_cone_radians, 1.0f);
+    EXPECT_FALSE(snapshot.front().desc.shadow.has_value());
 }
 
 TEST(LightWorldTest, RejectsForgedAndStaleResolvedHandles)

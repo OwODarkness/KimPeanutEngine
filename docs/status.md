@@ -4,6 +4,28 @@
 
 ## Done
 
+- **Bootstrap textured PBR scene fixture (2026-08-31)** — the floor now uses
+  the oak PBR base-color, normal, roughness, and AO textures. The startup scene
+  also includes the Stanford bunny with a quartz material and the teapot with
+  a rusted-iron material, plus the Cerberus FBX with its supplied albedo,
+  normal, metalness, roughness, and AO maps. This gives the deferred path
+  distinct textured material inputs across six render sources. The live
+  Vulkan SceneColor capture shows the floor, bunny, teapot, Cerberus, gold
+  sphere, and rock rendering together.
+
+- **Deferred PBR D5.7 — environment IBL (2026-08-31)** — the Resource
+  pipeline now derives cosine-convolved irradiance, GGX roughness-prefiltered
+  radiance, and a BRDF LUT from the Asset-owned RGBA16F HDR panorama; Render
+  alone resolves and owns their GPU bindings. The deferred shader keeps visible
+  sky radiance separate and applies split-sum diffuse/specular IBL to PBR
+  surfaces. A 2D roughness atlas is intentional: current Vulkan common upload
+  does not correctly populate cubemap faces/mips. Focused processor/cache tests,
+  Debug builds, and dual-backend GraphicsSmoke pass; inspected live Vulkan and
+  OpenGL captures show the forest reflected by the gold sphere. Bootstrap's
+  optional `environment_intensity` scales material IBL independently of visible
+  sky radiance (default `0.25`) to retain directional-shadow contrast. →
+  [deferred PBR ledger](render/deferred_pbr_TODO.md#d57--environment-ibl-landed-2026-08-31)
+
 - **Deferred PBR D5.6 — OpenGL depth-clear state isolation (2026-08-31)** —
   the live OpenGL over-occlusion came from a color-only pipeline leaving
   `GL_DEPTH_WRITEMASK` disabled before the next frame's sampled shadow target
@@ -11,8 +33,8 @@
   while the subsequently bound pipeline still owns draw state. `GraphicsSmoke`
   primes the stale-state transition as a regression fixture. Full build,
   171/171 tests, direct dual-backend smoke, and inspected live final-color plus
-  shadow-visibility captures pass; Vulkan and OpenGL now match. IBL remains
-  deferred. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  shadow-visibility captures pass; Vulkan and OpenGL now match. →
+  [deferred PBR ledger](render/deferred_pbr_TODO.md)
 
 - **Deferred PBR D5.5 — HDR environment background (2026-08-31)** — the
   bootstrap scene now preloads `HDR_041_Path.hdr` through Asset. ImageIO emits
@@ -20,10 +42,9 @@
   RGBA16F; Render owns the cached GPU binding and samples the equirectangular
   panorama for clear-depth pixels into `SceneHdr` before the one tone-map pass.
   Vulkan and OpenGL live SceneColor captures both show the forest environment.
-  This is background radiance only: irradiance/specular prefiltering and BRDF
-  LUT/IBL remain deferred, and D5.4's runtime-only OpenGL shadow regression is
-  unchanged. Full build, 171/171 tests, and direct cross-backend GraphicsSmoke
-  pass. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  At landing this was background radiance only; D5.7 later added the derived
+  irradiance/specular/BRDF IBL path. Full build, 171/171 tests, and direct
+  cross-backend GraphicsSmoke pass. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
 
 - **Deferred PBR D5.4 — runtime diagnostic capture routing (2026-08-31)** —
   Render now resolves SceneColor directly and conditionally converts linear
@@ -402,6 +423,35 @@
 - **Editor profile bar (2026-08-13)** — a bottom status bar showing FPS, frame ms, and memory. Two decoupling seams: `EditorMetric` (the extension point — implement `Name()`/`Sample()`, or wrap sampler lambdas in `EditorFuncMetric`) and `EditorProfileBarComponent` (samples injected metrics and draws them in one row; it only ever talks to `EditorMetric`). Built-ins: FPS (engine via an injected sampler), frame time (derived from fps, not a self-measured clock — that would see the render loop's pacing sleep), memory (process + system free via an injected stats sampler). **Measurement lives in the platform layer, not the editor and not the engine** — FPS stays in the engine (`Engine::GetFPS`, it's game-loop timing), but memory is an OS query and lives behind a platform seam: `MemoryStatsSampler` interface + `WindowsMemoryStatsSampler` under `runtime/platform/win/` (PSAPI/GlobalMemory, `psapi` linked into the `Platform` lib), owned by `RuntimeContext`, reached by the editor through `EditorContext`. The engine is platform-agnostic again. Plot-capable metrics draw a small sparkline via the base's history buffer. `EditorUI::Initialize` now takes an `EditorUIInitInfo` bundle (window, backend, log system, engine, memory sampler — defaulted, mirrors `EditorContextInitInfo`) so the signature doesn't grow with each injected dependency. Unit-tested under `ProfileTest` (5 cases, direct-compile; no Win32 in the test). → [editor_module.md](editor/editor_module.md)
 
 ## In progress / built but not wired
+
+- **Directional-shadow caster correctness (2026-08-31)** — `ShadowDepthPass`
+  now iterates the complete immutable RenderWorld snapshot rather than culling
+  casters by its fixed, camera-derived light frustum. It still accepts only
+  visible, opaque, ready proxies marked `casts_shadow`. The directional light
+  now fits its orthographic volume to the complete caster world bounds and
+  includes the camera position as a conservative receiver anchor, so an
+  off-camera or distant caster is not GPU-clipped before it can shadow a
+  visible receiver. Camera-frustum culling remains exclusive to `GBufferPass`.
+  This is intentionally scene-wide and may reduce shadow-map density; tighter
+  receiver-aware fitting/cascades remain later work. → [deferred PBR TODO](render/deferred_pbr_TODO.md#d4--directional-shadow-depth-producer-and-consumer)
+
+- **Deferred PBR D6.1 — unshadowed point lighting (2026-08-31)** — Gameplay
+  now publishes `PointLightSourceDesc` through the same opaque light-source
+  token model as directional lights. Render resolves the source into its
+  existing `LightType::Point` record without allocating a `ShadowHandle`; the
+  deferred shader uses the already-versioned position/range fields for
+  inverse-square attenuation with a smooth quartic range cutoff. The bootstrap
+  scene creates one warm point-light actor. This leaves Asset, MeshProxy,
+  material bindings, common RHI contracts, and punctual-shadow scheduling
+  unchanged. → [deferred PBR TODO](render/deferred_pbr_TODO.md#d6--light-and-shadow-expansion)
+
+- **Deferred PBR D6.2 — unshadowed spot lighting (2026-08-31)** — Gameplay
+  now publishes a copied spot source with position, travel direction, range,
+  inner cone, outer cone, color, intensity, and enabled state. Render resolves
+  it to its pre-existing `LightType::Spot` GPU record without a shadow handle.
+  Deferred lighting combines D6.1 range attenuation with a squared cosine cone
+  factor, and the bootstrap scene creates a blue spotlight. `Spot2D` targets,
+  shadow filtering, and scheduling remain unimplemented. → [deferred PBR TODO](render/deferred_pbr_TODO.md#d6--light-and-shadow-expansion)
 
 - **Deferred PBR D5.1 — HDR presentation spine (2026-08-30)** — Render now
   owns a sampled RGBA16F `SceneHdr` separately from the stable RGBA8 sRGB

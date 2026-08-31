@@ -214,10 +214,15 @@ in the fixed schedule on Vulkan and OpenGL. **Landed 2026-08-30:** Gameplay
 publishes only `casts_shadow`; `LightSourceRegistry` creates/retires the
 private `ShadowHandle` while resolving the source. `RenderSystem` selects at
 most one enabled `Directional2D` job from the immutable snapshot, uses a
-camera-centred 100×100 orthographic fit (200-unit depth range), and records a
-depth-only D32 2048² target before `GBufferPass`. It filters
-`visible && casts_shadow && opaque && ready` proxies, with a generic depth
-override pipeline and frame-local set-0 bindings 0/1. The depth target is
+light-space orthographic fit derived from the complete `RenderWorld` caster
+bounds (with the current camera position included as a conservative receiver
+anchor), and records a depth-only D32 2048² target before `GBufferPass`.
+`GBufferPass` alone applies camera-frustum culling; `ShadowDepthPass` filters
+`visible && casts_shadow && opaque && ready` proxies from the complete snapshot
+and fits those casters independently of camera visibility. This deliberately
+favours correctness over shadow-map density until receiver-aware fitting or
+cascades are introduced. The pass uses a generic depth override pipeline and
+frame-local set-0 bindings 0/1. The depth target is
 shader-readable only to Render and is sampled by the fourth panel of the
 existing SceneColor debug conversion; an absent/invalid job skips recording
 and displays the target's clear depth. The current frame's private job carries
@@ -242,6 +247,9 @@ stable final SceneColor.
   Render conversion passes.
 - [x] Capture and inspect deterministic Vulkan/OpenGL PBR screenshots using
   the runtime capture command path.
+- [x] Derive irradiance, roughness-filtered radiance, and a BRDF LUT from the
+  configured HDR environment without bypassing the Asset -> Resource -> Render
+  boundary.
 
 **Done when:** the shared scene produces comparable PBR final-color captures on
 both backends, with debug views sufficient to diagnose G-buffer and shadow
@@ -273,8 +281,9 @@ metallic/roughness/occlusion, and shader-readable G-buffer D32; reconstructs
 world position with the inverse view-projection matrix and the backend's depth
 range; and evaluates GGX/Smith/Schlick Cook-Torrance lighting for enabled
 directional records. The version-1 `LightGpuData` std140 layout is locked with
-exact CPU size/offset assertions. Point and spot records are valid but ignored
-until D6, and shadow state remains deliberately unconsumed until D5.3.
+exact CPU size/offset assertions. D6.1 later enables point records; spot
+records remain ignored, and shadow state remains deliberately unconsumed until
+D5.3.
 
 `GraphicsSmoke` now drives that real light UBO + depth-reconstruction path into
 RGBA16F, tone maps it, and captures the supplied rock on Vulkan and OpenGL.
@@ -386,17 +395,68 @@ visibility at
 Visible environment radiance is still not IBL; owned irradiance, prefiltered
 specular, and BRDF-LUT artifacts remain future work.
 
+### D5.7 — environment IBL (landed 2026-08-31)
+
+`ResourcePipeline` now turns the Asset-owned RGBA16F equirectangular HDR source
+into three CPU-side derived artifacts: cosine-convolved irradiance, GGX
+roughness-prefiltered radiance, and a split-sum BRDF integration LUT. Render
+uploads and owns the three GPU bindings, keyed by source AssetID, resolved
+format, and explicit derived-artifact variant so none aliases the visible sky
+texture. The source panorama remains binding 7 for the background; irradiance,
+prefiltered radiance, and BRDF LUT occupy bindings 8--10. A black fallback
+keeps the original ambient floor only when no valid environment exists.
+
+The current common Vulkan upload path does not correctly populate cube faces
+or mip levels, so the prefilter is stored as equal-height roughness bands in a
+2D equirectangular atlas rather than pretending this is a cube-mip resource.
+The shader blends adjacent bands by roughness and uses the usual
+`kD * irradiance * albedo / PI + prefiltered * (F * A + B)` split-sum form.
+This keeps the implementation identical on Vulkan and OpenGL without exposing
+backend objects or making Render load/own files.
+
+Bootstrap scene policy exposes optional non-negative
+`environment_intensity` (default `0.25`). It scales material IBL only; the
+visible HDR sky remains unscaled, so a bright panorama cannot erase directional
+shadow contrast by merely filling the receiver with indirect light.
+
+`EnvironmentIblProcessorTest` covers constant-environment convolution,
+roughness-atlas dimensions, finite BRDF output, and invalid-source rejection;
+the texture cache test locks the derived-artifact key separation. Focused tests
+pass, the Debug engine and graphics smoke build, and direct `GraphicsSmoke`
+passes with Vulkan validation clean after its matching descriptor fixture was
+updated. Live bootstrap captures show forest reflections on the metallic gold
+sphere and environment diffuse lighting on both APIs at
+`save/screenshots/validation/d5-7-vulkan-ibl-scene-color-1.png` and
+`save/screenshots/validation/d5-7-opengl-ibl-scene-color.png`.
+
 ## D6 — light and shadow expansion
 
 **Goal:** use the ABI without a second material, proxy, or common-RHI redesign.
 
-- [ ] Enable unshadowed point and spot lighting using the existing
-  `LightGpuData` type switch.
+- [x] **D6.1 (2026-08-31):** Enable unshadowed point lighting using the existing
+  `LightGpuData` type switch. Gameplay publishes an opaque point source token;
+  Render resolves it to `LightType::Point` without a `ShadowHandle`; deferred
+  lighting evaluates it with inverse-square attenuation and a smooth range
+  cutoff. The bootstrap scene adds one warm point-light actor. Khronos'
+  [KHR_lights_punctual](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md)
+  recommends this finite-range attenuation form, while Godot's
+  [scene shader](https://github.com/godotengine/godot/blob/master/drivers/gles3/shaders/scene.glsl)
+  independently uses an inverse-square omni-light falloff with a quartic edge.
+  Spot sources and all punctual shadows remain deferred.
+- [x] **D6.2 (2026-08-31):** Enable unshadowed spot lighting using the existing
+  `LightGpuData` type switch. Gameplay publishes copied position, direction,
+  range, and cone values through an opaque source token; Render resolves it to
+  `LightType::Spot` without a `ShadowHandle`. Deferred lighting combines the
+  D6.1 finite-range inverse-square falloff with squared cosine interpolation
+  between the inner and outer cone angles. This follows the cone model in
+  Khronos' [KHR_lights_punctual](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md).
+  The bootstrap scene adds one blue spot-light actor. `Spot2D` target
+  allocation, shadow filtering, and scheduling remain deferred.
 - [ ] Add `Spot2D` shadow jobs, then `PointCube` jobs only after their
   target/binding lifetime and performance budgets are documented.
 - [ ] Add shadow target allocation/budget policy and tests for disabled,
   stale, unsupported, and over-budget jobs.
-- [ ] Evaluate cascades, atlases, IBL, clustered/forward+ selection, and a
+- [ ] Evaluate cascades, atlases, clustered/forward+ selection, and a
   render graph only from measured light/pass dependency pressure.
 
 **Done when:** new light types extend render policy and shaders while Asset,

@@ -29,6 +29,12 @@ namespace kpengine::resource{
         return shader_processor_ ? shader_processor_->GetProcessedShaderCount() : 0;
     }
 
+    std::optional<EnvironmentIblData> ResourcePipeline::ProcessEnvironmentIbl(
+        const data::TextureData &source, const EnvironmentIblSettings &settings) const
+    {
+        return BuildEnvironmentIbl(source, settings);
+    }
+
 
 
     ResourcePipeline::~ResourcePipeline() = default;

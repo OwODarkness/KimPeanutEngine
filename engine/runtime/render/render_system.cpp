@@ -93,6 +93,104 @@ namespace kpengine::render
             }
             return world_bounds;
         }
+
+        std::array<Vector3f, 8> GetBoundsCorners(const spatial::AABB &bounds)
+        {
+            return {{
+                {bounds.min_.x_, bounds.min_.y_, bounds.min_.z_},
+                {bounds.min_.x_, bounds.min_.y_, bounds.max_.z_},
+                {bounds.min_.x_, bounds.max_.y_, bounds.min_.z_},
+                {bounds.min_.x_, bounds.max_.y_, bounds.max_.z_},
+                {bounds.max_.x_, bounds.min_.y_, bounds.min_.z_},
+                {bounds.max_.x_, bounds.min_.y_, bounds.max_.z_},
+                {bounds.max_.x_, bounds.max_.y_, bounds.min_.z_},
+                {bounds.max_.x_, bounds.max_.y_, bounds.max_.z_},
+            }};
+        }
+
+        void ExpandBounds(spatial::AABB &bounds, const Vector3f &point)
+        {
+            bounds.min_.x_ = std::min(bounds.min_.x_, point.x_);
+            bounds.min_.y_ = std::min(bounds.min_.y_, point.y_);
+            bounds.min_.z_ = std::min(bounds.min_.z_, point.z_);
+            bounds.max_.x_ = std::max(bounds.max_.x_, point.x_);
+            bounds.max_.y_ = std::max(bounds.max_.y_, point.y_);
+            bounds.max_.z_ = std::max(bounds.max_.z_, point.z_);
+        }
+
+        std::optional<spatial::AABB> BuildDirectionalShadowBounds(
+            const std::vector<MeshProxy> &proxies, const Vector3f &camera_position)
+        {
+            const float maximum = std::numeric_limits<float>::max();
+            spatial::AABB bounds{{maximum, maximum, maximum},
+                                 {-maximum, -maximum, -maximum}};
+            bool has_caster = false;
+            for (const MeshProxy &proxy : proxies)
+            {
+                if (!proxy.flags.visible || !proxy.flags.casts_shadow ||
+                    !proxy.world_bounds.IsValid())
+                {
+                    continue;
+                }
+                ExpandBounds(bounds, proxy.world_bounds.min_);
+                ExpandBounds(bounds, proxy.world_bounds.max_);
+                has_caster = true;
+            }
+            if (!has_caster)
+            {
+                return std::nullopt;
+            }
+
+            // Keep the current view origin inside the fitted region. The complete
+            // receiver volume is a later cascade/receiver-fit concern, but this
+            // prevents an off-camera caster fit from immediately losing the view.
+            ExpandBounds(bounds, camera_position);
+            return bounds;
+        }
+
+        struct DirectionalShadowMatrices
+        {
+            Matrix4f view;
+            Matrix4f projection;
+        };
+
+        DirectionalShadowMatrices FitDirectionalShadowMatrices(
+            const spatial::AABB &caster_bounds, const Vector3f &direction)
+        {
+            constexpr float kMargin = 5.0f;
+            const Vector3f center = (caster_bounds.min_ + caster_bounds.max_) * 0.5f;
+            const Vector3f extent = caster_bounds.max_ - caster_bounds.min_;
+            const float radius = 0.5f * std::sqrt(extent.SquareLength());
+            const Vector3f up = std::abs(direction.y_) > 0.98f
+                                    ? Vector3f{0.0f, 0.0f, 1.0f}
+                                    : Vector3f{0.0f, 1.0f, 0.0f};
+            const Matrix4f view = Matrix4f::MakeCameraMatrix(
+                center - direction * (radius + kMargin), direction, up);
+
+            const float maximum = std::numeric_limits<float>::max();
+            float min_x = maximum;
+            float min_y = maximum;
+            float min_z = maximum;
+            float max_x = -maximum;
+            float max_y = -maximum;
+            float max_z = -maximum;
+            for (const Vector3f &corner : GetBoundsCorners(caster_bounds))
+            {
+                const Vector4f light_space = view * Vector4f{corner, 1.0f};
+                min_x = std::min(min_x, light_space.x_);
+                min_y = std::min(min_y, light_space.y_);
+                min_z = std::min(min_z, light_space.z_);
+                max_x = std::max(max_x, light_space.x_);
+                max_y = std::max(max_y, light_space.y_);
+                max_z = std::max(max_z, light_space.z_);
+            }
+
+            const float near_plane = std::max(0.1f, -max_z - kMargin);
+            const float far_plane = std::max(near_plane + 1.0f, -min_z + kMargin);
+            return {view, Matrix4f::MakeOrthProjMatrix(min_x - kMargin, max_x + kMargin,
+                                                        min_y - kMargin, max_y + kMargin,
+                                                        near_plane, far_plane)};
+        }
     }
 
     RenderSystem::RenderSystem() = default;
@@ -111,6 +209,7 @@ namespace kpengine::render
         }
         load_queue_ = info.load_queue;
         bootstrap_scene_info_ = info.bootstrap_scene;
+        environment_ibl_intensity_ = bootstrap_scene_info_.environment_ibl_intensity;
         material_system_ = std::make_unique<MaterialSystem>();
         material_asset_resolver_ = std::make_unique<MaterialAssetResolver>(*material_system_);
 
@@ -360,25 +459,38 @@ namespace kpengine::render
             }
 
             const Vector3f direction = directional->direction.GetSafetyNormalize();
-            // The first fixed fit follows the camera's scene focus rather than
-            // centering a mostly empty volume at the eye position.
-            constexpr float kFocusDistance = 300.0f;
-            constexpr float kHalfExtent = 150.0f;
-            constexpr float kDepthRange = 600.0f;
-            const Vector3f center = scene_camera_.GetPosition() +
-                                    scene_camera_.GetForward() * kFocusDistance;
-            const Vector3f eye = center - direction * (kDepthRange * 0.5f);
-            const Vector3f up = std::abs(direction.y_) > 0.98f
-                                    ? Vector3f{0.0f, 0.0f, 1.0f}
-                                    : Vector3f{0.0f, 1.0f, 0.0f};
+            // Camera frustum culling applies only to GBufferPass. Shadow casters
+            // come from the full render-world snapshot, so fit the directional
+            // volume to their world bounds instead of a camera-derived box.
+            const std::vector<MeshProxy> caster_candidates = render_world_.Snapshot();
             DirectionalShadowFrame frame{};
             frame.job = {light.handle, ShadowKind::Directional2D,
                          kDirectionalShadowResolution, 0};
             frame.shadow = *light.desc.shadow;
             frame.light_direction = direction;
-            frame.view = Matrix4f::MakeCameraMatrix(eye, direction, up);
-            frame.projection = Matrix4f::MakeOrthProjMatrix(
-                -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent, 0.1f, kDepthRange);
+            if (const std::optional<spatial::AABB> caster_bounds =
+                    BuildDirectionalShadowBounds(caster_candidates, scene_camera_.GetPosition()))
+            {
+                const DirectionalShadowMatrices matrices =
+                    FitDirectionalShadowMatrices(*caster_bounds, direction);
+                frame.view = matrices.view;
+                frame.projection = matrices.projection;
+            }
+            else
+            {
+                // No ready draw can produce a shadow, but keep a valid clear-depth
+                // frame binding until a caster is published.
+                constexpr float kHalfExtent = 150.0f;
+                constexpr float kDepthRange = 600.0f;
+                const Vector3f center = scene_camera_.GetPosition();
+                const Vector3f eye = center - direction * (kDepthRange * 0.5f);
+                const Vector3f up = std::abs(direction.y_) > 0.98f
+                                        ? Vector3f{0.0f, 0.0f, 1.0f}
+                                        : Vector3f{0.0f, 1.0f, 0.0f};
+                frame.view = Matrix4f::MakeCameraMatrix(eye, direction, up);
+                frame.projection = Matrix4f::MakeOrthProjMatrix(
+                    -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent, 0.1f, kDepthRange);
+            }
             return frame;
         }
         return std::nullopt;
@@ -403,9 +515,10 @@ namespace kpengine::render
         graphics::PerPassData per_pass_data{};
         per_pass_data.camera_data.view = shadow.view.Transpose();
         per_pass_data.camera_data.proj = shadow.projection.Transpose();
-        const std::vector<MeshProxy> visible_proxies = SceneVisibility::BuildVisibleProxies(
-            shadow.projection * shadow.view, render_world_.Snapshot());
-        for (const MeshProxy &proxy : visible_proxies)
+        // Camera visibility remains a G-buffer optimization. The fitted shadow
+        // volume and this pass both consume the complete caster snapshot.
+        const std::vector<MeshProxy> shadow_caster_candidates = render_world_.Snapshot();
+        for (const MeshProxy &proxy : shadow_caster_candidates)
         {
             const std::optional<MaterialDrawClass> draw_class =
                 material_system_->GetDrawClass(proxy.material);
@@ -531,6 +644,10 @@ namespace kpengine::render
             scene_camera_.GetViewProjectionMatrix().Inverse().Transpose();
         const Vector3f &camera_position = scene_camera_.GetPosition();
         lighting_data.camera_world_position = Vector4f{camera_position, 1.0f};
+        lighting_data.environment_ibl_params = Vector4f{
+            environment_ibl_enabled_ ? 1.0f : 0.0f,
+            static_cast<float>(environment_prefilter_level_count_),
+            environment_ibl_intensity_, 0.0f};
         if (active_directional_shadow_.has_value())
         {
             const DirectionalShadowFrame &shadow = *active_directional_shadow_;
@@ -571,7 +688,16 @@ namespace kpengine::render
                            directional_shadow_sampler_},
                        graphics::SampledTextureBinding{
                            0, 7, environment_texture_binding_.texture,
-                           environment_texture_binding_.sampler}}});
+                           environment_texture_binding_.sampler},
+                       graphics::SampledTextureBinding{
+                           0, 8, environment_irradiance_binding_.texture,
+                           environment_irradiance_binding_.sampler},
+                       graphics::SampledTextureBinding{
+                           0, 9, environment_prefilter_binding_.texture,
+                           environment_prefilter_binding_.sampler},
+                       graphics::SampledTextureBinding{
+                           0, 10, environment_brdf_lut_binding_.texture,
+                           environment_brdf_lut_binding_.sampler}}});
             if (bindings.IsValid())
             {
                 recorder->BindPipeline(deferred_lighting_pipeline_);
@@ -610,7 +736,10 @@ namespace kpengine::render
     {
         if (deferred_lighting_pipeline_.IsValid() && directional_shadow_sampler_.IsValid() &&
             environment_texture_binding_.texture.IsValid() &&
-            environment_texture_binding_.sampler.IsValid())
+            environment_texture_binding_.sampler.IsValid() &&
+            environment_irradiance_binding_.texture.IsValid() &&
+            environment_prefilter_binding_.texture.IsValid() &&
+            environment_brdf_lut_binding_.texture.IsValid())
         {
             return true;
         }
@@ -642,9 +771,29 @@ namespace kpengine::render
             environment_texture_binding_ = resource_resolver_->GetOrCreateTextureBinding(
                 {}, fallback, MaterialTextureColorSpace::Linear);
         }
+        if (!environment_irradiance_binding_.texture.IsValid())
+        {
+            data::TextureData fallback{};
+            fallback.width = 1;
+            fallback.height = 1;
+            fallback.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
+            fallback.pixels.resize(4 * sizeof(uint16_t), 0);
+            environment_irradiance_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+                {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
+                TextureCacheVariant::EnvironmentIrradiance);
+            environment_prefilter_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+                {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
+                TextureCacheVariant::EnvironmentPrefilter);
+            environment_brdf_lut_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+                {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
+                TextureCacheVariant::EnvironmentBrdfLut);
+        }
         if (!directional_shadow_sampler_.IsValid() ||
             !environment_texture_binding_.texture.IsValid() ||
-            !environment_texture_binding_.sampler.IsValid())
+            !environment_texture_binding_.sampler.IsValid() ||
+            !environment_irradiance_binding_.texture.IsValid() ||
+            !environment_prefilter_binding_.texture.IsValid() ||
+            !environment_brdf_lut_binding_.texture.IsValid())
         {
             return false;
         }
@@ -700,10 +849,58 @@ namespace kpengine::render
               {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                ShaderStage::SHADER_STAGE_FRAGMENT},
               {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT},
+              {8, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT},
+              {9, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT},
+              {10, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
         deferred_lighting_pipeline_ = backend_->CreatePipelineResource(desc);
         return deferred_lighting_pipeline_.IsValid();
+    }
+
+    bool RenderSystem::PrepareEnvironmentIbl(asset::AssetID source_asset,
+                                             const data::TextureData &source)
+    {
+        const std::optional<resource::EnvironmentIblData> processed =
+            resource_pipeline_->ProcessEnvironmentIbl(source);
+        if (!processed.has_value())
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Environment IBL preprocessing requires a valid RGBA16F panorama");
+            return false;
+        }
+
+        MaterialSamplerDesc panorama_sampler{};
+        panorama_sampler.address_u = MaterialSamplerAddressMode::Repeat;
+        panorama_sampler.address_v = MaterialSamplerAddressMode::ClampToEdge;
+        panorama_sampler.address_w = MaterialSamplerAddressMode::ClampToEdge;
+        environment_irradiance_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+            source_asset, processed->irradiance, MaterialTextureColorSpace::Linear,
+            &panorama_sampler, TextureCacheVariant::EnvironmentIrradiance);
+        environment_prefilter_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+            source_asset, processed->prefiltered_radiance,
+            MaterialTextureColorSpace::Linear, &panorama_sampler,
+            TextureCacheVariant::EnvironmentPrefilter);
+
+        MaterialSamplerDesc lut_sampler{};
+        lut_sampler.address_u = MaterialSamplerAddressMode::ClampToEdge;
+        lut_sampler.address_v = MaterialSamplerAddressMode::ClampToEdge;
+        lut_sampler.address_w = MaterialSamplerAddressMode::ClampToEdge;
+        environment_brdf_lut_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+            source_asset, processed->brdf_lut, MaterialTextureColorSpace::Linear,
+            &lut_sampler, TextureCacheVariant::EnvironmentBrdfLut);
+        environment_prefilter_level_count_ = processed->prefilter_level_count;
+        environment_ibl_enabled_ =
+            environment_irradiance_binding_.texture.IsValid() &&
+            environment_irradiance_binding_.sampler.IsValid() &&
+            environment_prefilter_binding_.texture.IsValid() &&
+            environment_prefilter_binding_.sampler.IsValid() &&
+            environment_brdf_lut_binding_.texture.IsValid() &&
+            environment_brdf_lut_binding_.sampler.IsValid();
+        return environment_ibl_enabled_;
     }
 
     bool RenderSystem::PrepareGBufferDebugPassResources()
@@ -1275,12 +1472,22 @@ namespace kpengine::render
             {
                 return false;
             }
+            const bool is_environment = !bootstrap_scene_info_.environment_path.empty() &&
+                                        request.path == bootstrap_scene_info_.environment_path;
+            MaterialSamplerDesc panorama_sampler{};
+            panorama_sampler.address_v = MaterialSamplerAddressMode::ClampToEdge;
+            panorama_sampler.address_w = MaterialSamplerAddressMode::ClampToEdge;
             const TextureBinding texture_binding =
-                resource_resolver_->GetOrCreateTextureBinding(id, *texture->data);
-            if (!bootstrap_scene_info_.environment_path.empty() &&
-                request.path == bootstrap_scene_info_.environment_path)
+                resource_resolver_->GetOrCreateTextureBinding(
+                    id, *texture->data, MaterialTextureColorSpace::Srgb,
+                    is_environment ? &panorama_sampler : nullptr);
+            if (is_environment)
             {
                 environment_texture_binding_ = texture_binding;
+                if (!PrepareEnvironmentIbl(id, *texture->data))
+                {
+                    return false;
+                }
             }
             entry.payload = std::move(texture);
             if (!texture_binding.texture.IsValid() || !texture_binding.sampler.IsValid())
@@ -1645,6 +1852,12 @@ namespace kpengine::render
         gbuffer_debug_sampler_ = {};
         directional_shadow_sampler_ = {};
         environment_texture_binding_ = {};
+        environment_irradiance_binding_ = {};
+        environment_prefilter_binding_ = {};
+        environment_brdf_lut_binding_ = {};
+        environment_prefilter_level_count_ = 0;
+        environment_ibl_intensity_ = 0.25f;
+        environment_ibl_enabled_ = false;
         tone_map_pipeline_ = {};
         if (directional_shadow_pipeline_.IsValid())
         {
