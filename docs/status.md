@@ -1,8 +1,41 @@
 # Project Status
 
-**Snapshot: 2026-08-30.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-08-31.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
 
 ## Done
+
+- **Deferred PBR D5.6 — OpenGL depth-clear state isolation (2026-08-31)** —
+  the live OpenGL over-occlusion came from a color-only pipeline leaving
+  `GL_DEPTH_WRITEMASK` disabled before the next frame's sampled shadow target
+  Clear load-op. `BeginRenderTarget` now enables depth writes for that clear,
+  while the subsequently bound pipeline still owns draw state. `GraphicsSmoke`
+  primes the stale-state transition as a regression fixture. Full build,
+  171/171 tests, direct dual-backend smoke, and inspected live final-color plus
+  shadow-visibility captures pass; Vulkan and OpenGL now match. IBL remains
+  deferred. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+
+- **Deferred PBR D5.5 — HDR environment background (2026-08-31)** — the
+  bootstrap scene now preloads `HDR_041_Path.hdr` through Asset. ImageIO emits
+  linear RGBA32F for Radiance sources; Asset converts/caps it to 4096-wide
+  RGBA16F; Render owns the cached GPU binding and samples the equirectangular
+  panorama for clear-depth pixels into `SceneHdr` before the one tone-map pass.
+  Vulkan and OpenGL live SceneColor captures both show the forest environment.
+  This is background radiance only: irradiance/specular prefiltering and BRDF
+  LUT/IBL remain deferred, and D5.4's runtime-only OpenGL shadow regression is
+  unchanged. Full build, 171/171 tests, and direct cross-backend GraphicsSmoke
+  pass. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+
+- **Deferred PBR D5.4 — runtime diagnostic capture routing (2026-08-31)** —
+  Render now resolves SceneColor directly and conditionally converts linear
+  depth, world normal, base color, material parameters, and shadow visibility
+  into an owned RGBA8 `CaptureOutput` before backend readback. Requests enqueue
+  only after the relevant frame work is recorded; Runtime exposes all six
+  semantic names and `--graphics-api vulkan|opengl`. Both APIs produced all six
+  live PNGs with upright G-buffer/depth views. The new evidence also isolates a
+  remaining runtime-only OpenGL shadow regression: its live shadow view is
+  fully occluded although the isolated cross-backend D5 smoke remains correct.
+  D5 therefore stays open for comparable live final-color proof; HDR/EXR
+  capture remains deferred. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
 
 - **Gameplay GP6.1 — camera data and source contract (2026-08-30)** —
   `CameraComponent` is a transform/lens component with validated perspective

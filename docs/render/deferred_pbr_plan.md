@@ -168,6 +168,16 @@ sRGB attachment performs the display transfer. The temporary
 `DeferredLightingPass` replaces that producer. HDR and LDR targets remain
 distinct across resize and shutdown.
 
+**Landed diagnostic capture contract (2026-08-31):** semantic capture remains
+a Render policy. Final `SceneColor` is read directly; depth, G-buffer, and
+shadow visibility are converted by a conditional `CaptureViewPass` into a
+scene-sized RGBA8 sRGB `CaptureOutput` before the existing Graphics readback
+service is enqueued. This follows Godot's explicit renderer-owned internal
+buffer copy/debug operations while retaining bgfx's backend-owned screenshot
+execution boundary. Raw D32/RGBA16F bytes and native handles do not cross the
+Render/Graphics boundary. HDR capture remains deferred until an HDR/EXR output
+consumer exists.
+
 ## Delivery stages
 
 1. **Recorder ownership prerequisite (complete, 2026-08-29):** [Vulkan and OpenGL now both vend a short-lived recorder](../graphics/command_recording_ownership_plan.md); neither backend scheduler implements `CommandRecorder`.
@@ -175,7 +185,7 @@ distinct across resize and shutdown.
 3. **Attachment RHI:** implement multi-attachment/depth-only creation, sampled attachments, resize recreation, compatibility validation, and safe retirement on both backends.
 4. **Material V2 + G-buffer (landed 2026-08-29):** extend parsing/resolution, add shaders/pipelines, and render opaque supplied PBR content through `GBufferPass`. Material assets version to 2; `GBufferPass` + `GBufferDebugViewPass` replace the unlit `ScenePass` in the engine schedule; the smoke D3 block proves `rock_pbr.material` → GBuffer → composite on Vulkan and OpenGL.
 5. **Light ABI + directional shadow:** add the generic light/shadow snapshot and shader ABI, then enable one directional depth job with stable camera-derived fit, bias policy, and binding in lighting.
-6. **Lighting + tone map:** implement the type-switching linear HDR Cook-Torrance pass, initially with one directional light; tone map once to final `SceneColor`. IBL stays disabled until it has owned derived-environment assets.
+6. **Lighting + tone map:** implement the type-switching linear HDR Cook-Torrance pass, initially with one directional light; sample the authored equirectangular environment for clear-depth background pixels; tone map once to final `SceneColor`. IBL stays disabled until it has owned derived-environment assets.
 7. **Light expansion:** enable non-shadowed point and spot records first, then add `Spot2D` and `PointCube` shadow jobs, target allocation/budget policy, and the related debug views. Cascades and atlasing need measured content pressure and remain separate work.
 8. **Evidence/hardening:** debug views, per-pass timing, resize/shutdown stress, scenario screenshots, status/docs/journal updates.
 9. **Graph gate:** decide on a graph only from demonstrated target lifetime, aliasing, or scheduling needs.
@@ -199,15 +209,18 @@ distinct across resize and shutdown.
 | [Filament LightDefinition](https://github.com/google/filament/blob/main/libs/viewer/include/viewer/Settings.h) | One typed value carries shared color/intensity with position, direction, falloff, cone, and shadow intent for the engine's light-manager types. | Adopt the typed value shape: `LightDesc` has shared state plus a type-matched directional/point/spot payload. Reject its engine manager/entity and shadow-options model; KimPeanut keeps handles/jobs Render-private and defers target policy to D4. |
 | [Filament scene light preparation](https://github.com/google/filament/blob/main/filament/src/details/Scene.cpp) | The scene gathers immutable light data, bounds the prepared list, then serializes positional records into a GPU buffer with an explicit per-record structure; shadow data is supplied only when its renderer state is available. | D1.4 adopts one bounded, versioned POD payload at the Render frame boundary. Unlike Filament’s SoA and driver buffer path, KimPeanut uses the current common UBO allocator and does not serialize a `ShadowHandle` as a GPU resource: unresolved shadows are explicitly `Unshadowed` until D4. |
 | [bgfx IBL example](https://github.com/bkaradzic/bgfx/blob/master/examples/18-ibl/ibl.cpp) | Environment resources and PBR/lighting values flow through API-neutral handles. | Use only as cross-API PBR boundary evidence; defer IBL until KimPeanut owns environment-derived assets. |
+| [Godot sky shader](https://github.com/godotengine/godot/blob/master/servers/rendering/renderer_rd/shaders/environment/sky.glsl) | Visible sky radiance is sampled as renderer-owned HDR input before display conversion. | D5.5 adopts only the visible linear-HDR background boundary. It keeps the supplied panorama as an Asset source and rejects Godot's cubemap/radiance-cache machinery for this slice. |
+| [bgfx IBL skybox shader](https://github.com/bkaradzic/bgfx/blob/master/examples/18-ibl/fs_ibl_skybox.sc) | The visible environment sample is distinct from irradiance and prefiltered-radiance material inputs. | Keep background display separate from IBL ownership: D5.5 samples the source panorama directly, while convolution and BRDF lookup assets remain deferred. |
+| [bgfx simple shadow map](https://github.com/bkaradzic/bgfx/blob/master/examples/15-shadowmaps-simple/shadowmaps_simple.cpp) | Producer and consumer share one light transform while the backend capability flags determine only the required texture-origin and homogeneous-depth crop. | Preserve KimPeanut's established backend clip/origin conversions. D5.6 diagnostics instead proved that OpenGL's depth attachment Clear load-op was masked by stale `GL_DEPTH_WRITEMASK`; fix load-state isolation rather than adding another shader-space special case. |
 
 The local [Sakura study](../graphics/sakura_reference.md) remains evidence for a later graph when concrete aliasing/lifetime pressure exists. Historical KimPeanut code at `c19776f^` directly owned GL FBOs, textures, and proxy draws; that boundary is explicitly rejected.
 
 ## Acceptance criteria
 
 - [ ] Both backends deterministically reject malformed targets and incompatible pipelines.
-- [ ] Vulkan and OpenGL render supplied metallic-roughness content through the same RenderWorld/proxy path without native types leaking upward.
-- [ ] A captured SceneColor visibly contains one directional shadow and target retirement is safe across resize/shutdown; the same lighting ABI accepts unshadowed point/spot records without changing material or common RHI contracts.
-- [ ] Render-owned debug capture can expose shadow, every G-buffer attachment, HDR lighting, and final SceneColor.
+- [x] Vulkan and OpenGL render supplied metallic-roughness content through the same RenderWorld/proxy path without native types leaking upward.
+- [x] A captured SceneColor visibly contains one directional shadow and target retirement is safe across resize/shutdown; the same lighting ABI accepts unshadowed point/spot records without changing material or common RHI contracts.
+- [ ] Render-owned debug capture can expose shadow, every G-buffer attachment, HDR lighting, and final SceneColor. RGBA8 G-buffer/shadow/final views are landed; HDR/EXR remains deferred.
 - [x] Texture sRGB/linear policy and supplied OpenGL normal convention are validated; tangent availability is audited before normal maps are enabled.
 - [ ] Unlit bootstrap and current cross-backend smoke stay green until an intentional PBR-scene replacement.
 - [ ] The graph decision is recorded from evidence rather than a feature checklist.

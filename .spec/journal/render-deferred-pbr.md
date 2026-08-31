@@ -1,7 +1,7 @@
 # Render Deferred PBR
 
-- Status: partial (D0–D4 complete; D5–D7 pending)
-- Date: 2026-08-29
+- Status: partial (D0–D5 complete; D6–D7 pending)
+- Date: 2026-08-31
 - Spec: [Render Deferred PBR](../specs/render-deferred-pbr.md)
 - Parent TODO: [Deferred PBR TODO](../../docs/render/deferred_pbr_TODO.md)
 
@@ -153,8 +153,6 @@
 
 ## Remaining work
 
-- D5 — `DeferredLightingPass` + `ToneMapPass` to LDR SceneColor, capture views,
-  PBR screenshot evidence on both APIs.
 - D6 — unshadowed point/spot, `Spot2D`/`PointCube` jobs, shadow budget policy.
 - D7 — evidence and handoff (contract coverage, validation matrix, screenshots,
   ledger/status updates).
@@ -343,3 +341,83 @@
   complete CTest passed 168/168, focused light/schedule tests passed 11/11,
   direct Vulkan/OpenGL `GraphicsSmoke` passed, both captures were inspected,
   and `git diff --check` reported no whitespace errors.
+
+## 2026-08-31 — D5.4 runtime diagnostic capture routing
+
+- Added the Render-owned `CaptureOutput` target and conditional
+  `CaptureViewPass`. SceneColor resolves directly; linear depth, world normal,
+  base color, material parameters, and directional-shadow visibility convert
+  to RGBA8 sRGB before generic Graphics readback.
+- Changed request scheduling so accepted semantic captures remain pending until
+  their producer/conversion work is recorded. Readback, synchronization, and
+  owned CPU pixels remain backend responsibilities; Runtime still owns path
+  validation and PNG encoding.
+- Extended `capture.screenshot view=` to all six semantic names and added the
+  startup selector `--graphics-api vulkan|opengl` for repeatable live command
+  validation. Unknown enum values fail explicitly.
+- Targeted tests passed: `RenderPassScheduleTest` 8/8 and the combined
+  `RenderCaptureServiceTest|ScreenshotCommandProviderTest` selection 9/9.
+  `GraphicsSmoke` built and passed on Vulkan/OpenGL. Live command requests
+  produced all six PNGs on each backend; base color, normal, material, and
+  depth are upright and visually distinct.
+- Vulkan live final color and shadow visibility contain the expected cast
+  shadows. OpenGL live final color is over-occluded and its shadow-visibility
+  conversion is black on every surface, while the isolated D5 `GraphicsSmoke`
+  still shows the correct OpenGL cast shadow. This is now a captured,
+  reproducible runtime-only producer/descriptor regression, so comparable live
+  final-color evidence and overall D5 completion remain open.
+- Reference gate: inspected Godot's renderer-owned copy/debug operations and
+  bgfx's backend-owned screenshot requests. KimPeanut adopts the explicit
+  Render conversion boundary and keeps native readback execution in Graphics;
+  it does not import either renderer's broader graph/cache architecture.
+
+## 2026-08-31 — D5.5 HDR environment background
+
+- Added `scene.environment` bootstrap policy and preloaded the existing
+  `HDR_041_Path.hdr` through the normal Asset request path. Render never opens
+  the source file directly.
+- Extended ImageIO with a linear RGBA32F Radiance decode contract. Asset
+  converts to RGBA16F and downsamples panoramas wider than 4096 pixels during
+  import, limiting the persistent CPU/GPU footprint while retaining the 2:1
+  background panorama.
+- Render's texture cache now keys the actual GPU format, so HDR and linear/sRGB
+  material interpretations cannot collide. Deferred lighting binds environment
+  radiance at set 0/binding 7, reconstructs a world ray for background pixels,
+  and writes the sample to `SceneHdr`; the existing tone-map stage remains the
+  sole LDR conversion. A black RGBA16F fallback preserves scenes without an
+  authored environment.
+- Full Debug build passed; CTest passed 171/171; direct Vulkan/OpenGL
+  `GraphicsSmoke` passed. The wrapper built the target but hit its known empty
+  `Arguments` binding defect before launch, so the executable was run directly.
+  Live runtime captures on both APIs visibly show the forest panorama at
+  `save/screenshots/validation/d5-5-{vulkan,opengl}.png`.
+- The existing runtime-only OpenGL shadow/lighting regression remains visible;
+  D5.5 changes only the background path. IBL preprocessing and material
+  environment lighting remain deferred.
+- Reference gate: Godot's renderer-owned sky/radiance separation and bgfx's
+  distinct visible-sky versus irradiance/prefilter inputs support keeping this
+  background source separate from future IBL artifacts. Their cubemap caches,
+  convolution pipelines, and broader renderer architectures were not adopted.
+
+## 2026-08-31 — D5.6 OpenGL depth-clear state isolation
+
+- Live diagnostic capture encoded receiver depth, sampled shadow depth, and
+  visibility independently. OpenGL reconstructed plausible receiver depth but
+  sampled zero from the shadow attachment. Binding the G-buffer depth at the
+  same texture unit produced valid samples, ruling out descriptor-unit failure.
+- Forced producer depths and a discard-only shadow fragment isolated the value
+  to the attachment load operation: the target remained zero before useful
+  draws. The previous color-only pipeline had disabled `GL_DEPTH_WRITEMASK`,
+  and OpenGL applies that write mask to depth clears.
+- `OpenglCommandRecorder::BeginRenderTarget` now enables depth writes before a
+  depth Clear load-op. Draw-time state remains owned by the next bound pipeline.
+  `GraphicsSmoke` deliberately binds a color-only pipeline before the shadow
+  target so the stale-state transition remains covered on both APIs.
+- Full Debug build passed; CTest passed 171/171; direct Vulkan/OpenGL
+  `GraphicsSmoke` passed. Inspected live `SceneColor` and `ShadowVisibility`
+  captures at `save/screenshots/validation/d5-6-{vulkan,opengl}-*.png` are
+  visually matching and contain both lit and occluded surfaces.
+- Reference gate: bgfx's simple-shadow implementation keeps the light transform
+  consistent and confines origin/depth differences to backend capability
+  crops. That evidence rejected another shader-space flip; the local depth
+  probe identified the actual OpenGL load-state leak instead.

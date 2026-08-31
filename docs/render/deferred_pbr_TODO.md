@@ -238,9 +238,9 @@ stable final SceneColor.
   first visual milestone; point/spot records remain valid unshadowed inputs.
 - [x] Write HDR `SceneHdr`, then implement a documented `ToneMapPass` to final
   LDR `SceneColor` before the existing Editor composite bridge.
-- [ ] Enable G-buffer, shadow, and final-color capture views by explicit
+- [x] Enable G-buffer, shadow, and final-color capture views by explicit
   Render conversion passes.
-- [ ] Capture and inspect deterministic Vulkan/OpenGL PBR screenshots using
+- [x] Capture and inspect deterministic Vulkan/OpenGL PBR screenshots using
   the runtime capture command path.
 
 **Done when:** the shared scene produces comparable PBR final-color captures on
@@ -316,6 +316,75 @@ and inspected captures show the same cast shadow at
 `save/screenshots/validation/graphics-smoke-d5-{vulkan,opengl}.png`. Explicit
 shadow debug capture routing and runtime command-path capture remain later D5
 work.
+
+### D5.4 — runtime diagnostic capture routing (landed 2026-08-31)
+
+`RenderCaptureService` now defers readback submission until Render has recorded
+the requested frame. `SceneColor` resolves directly; `LinearDepth`,
+`WorldNormal`, `BaseColor`, `MaterialParams`, and `ShadowVisibility` record a
+conditional fullscreen conversion into the Render-owned RGBA8 sRGB
+`CaptureOutput` target. The fixed schedule declares the G-buffer and shadow
+reads plus the capture output write, while Graphics retains generic color
+readback and synchronization ownership.
+
+The runtime command accepts all six semantic names, and the executable accepts
+`--graphics-api vulkan|opengl` so the same local command transport can exercise
+either backend. Unit coverage locks deferred enqueue, view-to-target routing,
+single completion, command mapping, and pass dependencies. Live captures on
+both APIs verified upright base-color, normal, material, and linear-depth
+views. Vulkan final color and shadow visibility show the expected cast shadows.
+OpenGL produced every requested PNG, but live inspection found its runtime
+shadow texture samples as fully occluded even though the existing isolated
+`GraphicsSmoke` shadow fixture remains correct. Therefore the second D5 item
+and the overall comparable-final-color criterion remain open until that
+runtime-only OpenGL producer/descriptor regression is fixed. HDR/EXR capture
+is still explicitly deferred.
+
+### D5.5 — HDR environment background (landed 2026-08-31)
+
+Bootstrap scene policy now names one environment texture and includes it in
+the Asset preload list. ImageIO decodes Radiance `.hdr` sources to linear
+RGBA32F CPU pixels; Asset converts them to RGBA16F and caps imported panorama
+width at 4096 before Render resolves the texture through its existing
+API-neutral texture cache. Render owns the resulting texture/sampler binding
+and supplies a black 1x1 RGBA16F fallback when no environment is configured.
+
+`DeferredLightingPass` reconstructs the view ray only for clear-depth pixels,
+samples the equirectangular radiance texture at binding 7, writes that linear
+value into `SceneHdr`, and leaves the existing `ToneMapPass` as the only LDR
+conversion. This is a visible HDR background, not IBL: irradiance convolution,
+prefiltered specular radiance, BRDF LUT generation, and environment contribution
+to material lighting remain deferred.
+
+The full Debug build and all 171 tests pass. Direct `GraphicsSmoke` passes on
+Vulkan and OpenGL. Live command captures using `HDR_041_Path.hdr` show the
+forest panorama in both final-color outputs at
+`save/screenshots/validation/d5-5-{vulkan,opengl}.png`. The previously recorded
+runtime-only OpenGL shadow/lighting regression remains visible and is not
+claimed as fixed by D5.5.
+
+### D5.6 — OpenGL depth-clear state isolation (landed 2026-08-31)
+
+The runtime-only OpenGL over-occlusion was stale draw state, not a shadow
+matrix, clip-space, or descriptor error. A color-only pipeline disables depth
+writes at the end of each frame. OpenGL depth clears obey
+`GL_DEPTH_WRITEMASK`, so the next frame's `DirectionalShadow` Clear load-op was
+silently masked before its depth pipeline could restore writes. The texture
+therefore retained near-zero data and every receiver compared as occluded.
+
+`OpenglCommandRecorder::BeginRenderTarget` now enables depth writes before a
+depth attachment Clear load-op. The pipeline subsequently bound for the target
+still owns draw-time depth state. `GraphicsSmoke` primes a color-only pipeline
+immediately before the sampled depth-only target, locking this transition into
+the cross-backend runtime fixture.
+
+Full Debug build and all 171 tests pass, and direct `GraphicsSmoke` passes on
+Vulkan and OpenGL. Live runtime captures now match across both APIs: final color
+at `save/screenshots/validation/d5-6-{vulkan,opengl}-scene-color.png` and shadow
+visibility at
+`save/screenshots/validation/d5-6-{vulkan,opengl}-shadow-visibility.png`.
+Visible environment radiance is still not IBL; owned irradiance, prefiltered
+specular, and BRDF-LUT artifacts remain future work.
 
 ## D6 — light and shadow expansion
 
