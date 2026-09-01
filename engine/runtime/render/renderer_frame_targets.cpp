@@ -186,6 +186,22 @@ namespace kpengine::render
         impl_->height = 0;
     }
 
+    bool RendererFrameTargets::IsValid() const
+    {
+        if (!impl_ || impl_->width == 0 || impl_->height == 0)
+        {
+            return false;
+        }
+        for (const auto &target : impl_->targets)
+        {
+            if (!target || !target->IsValid())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     RenderTarget *RendererFrameTargets::GetTarget(RenderTargetName name)
     {
         const uint32_t index = static_cast<uint32_t>(name);

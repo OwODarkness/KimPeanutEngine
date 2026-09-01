@@ -5,6 +5,7 @@
 #include <chrono>
 #include <cmath>
 #include <limits>
+#include <stdexcept>
 #include <utility>
 
 #include "asset/asset_manager.h"
@@ -267,88 +268,134 @@ namespace kpengine::render
         Shutdown();
     }
 
-    void RenderSystem::Initialize(const RenderSystemInitInfo &info)
+    RenderSystemInitResult RenderSystem::Initialize(const RenderSystemInitInfo &info)
     {
+        if (lifecycle_state_ != RenderSystemLifecycleState::Uninitialized)
+        {
+            last_diagnostic_ = "RenderSystem can only be initialized once.";
+            return {false, last_diagnostic_};
+        }
         if (!info.native_window || !info.resize_dispatcher || !info.load_queue)
         {
-            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "RenderSystem initialization requires window, resize dispatcher, and load queue");
-            return;
+            last_diagnostic_ =
+                "RenderSystem initialization requires window, resize dispatcher, and load queue.";
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", last_diagnostic_.c_str());
+            return {false, last_diagnostic_};
         }
-        load_queue_ = info.load_queue;
-        bootstrap_scene_info_ = info.bootstrap_scene;
-        environment_ibl_intensity_ = bootstrap_scene_info_.environment_ibl_intensity;
-        material_system_ = std::make_unique<MaterialSystem>();
-        material_asset_resolver_ = std::make_unique<MaterialAssetResolver>(*material_system_);
-
-        resource_pipeline_ = std::make_unique<resource::ResourcePipeline>();
-        resource::ResourcePipelineContext context;
-        context.graphics_type = info.api_type;
-        resource_pipeline_->Initialize(context);
-
-        backend_ = graphics::RenderBackend::CreateGraphicsBackEnd(info.api_type);
-        if (!backend_)
+        try
         {
-            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "No graphics backend for API %d",
-                   static_cast<int>(info.api_type));
-            return;
-        }
-        KP_LOG("RenderLog", LOG_LEVEL_INFO, "RenderSystem selected %s graphics backend",
-               GetGraphicsApiName(info.api_type));
-        backend_->BindWindowResize(*info.resize_dispatcher);
-        backend_->Initialize(info.native_window);
+            load_queue_ = info.load_queue;
+            bootstrap_scene_info_ = info.bootstrap_scene;
+            environment_ibl_intensity_ = bootstrap_scene_info_.environment_ibl_intensity;
+            material_system_ = std::make_unique<MaterialSystem>();
+            material_asset_resolver_ = std::make_unique<MaterialAssetResolver>(*material_system_);
 
+            resource_pipeline_ = std::make_unique<resource::ResourcePipeline>();
+            resource::ResourcePipelineContext context;
+            context.graphics_type = info.api_type;
+            resource_pipeline_->Initialize(context);
 
-        resource_resolver_ =
-            std::make_unique<RenderResourceResolver>(*backend_, *resource_pipeline_);
-        material_system_->SetResourceResolver(resource_resolver_.get());
-
-        constexpr size_t kFrameUniformCapacity = 64 * 1024;
-        frame_contexts_.resize(backend_->GetFramesInFlight());
-        for (FrameContext &context : frame_contexts_)
-        {
-            context.Initialize(*backend_, kFrameUniformCapacity);
-        }
-
-        const graphics::Extent2D extent = backend_->GetRenderExtent();
-        frame_targets_.Initialize(*backend_, extent.width, extent.height);
-        if (!frame_targets_.GetTarget(RenderTargetName::SceneColor)->IsValid())
-        {
-            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Failed to create scene render target");
-        }
-        render_capture_service_ = std::make_unique<RenderCaptureService>(
-            backend_->GetRenderTargetReadback(),
-            [this](CaptureView view)
+            RenderBackendFactory factory = info.backend_factory;
+            if (!factory)
             {
-                const RenderTargetName target_name = view == CaptureView::SceneColor
-                                                         ? RenderTargetName::SceneColor
-                                                         : RenderTargetName::CaptureOutput;
-                const RenderTarget *const target = frame_targets_.GetTarget(target_name);
-                return target ? target->GetHandle() : graphics::RenderTargetHandle{};
-            },
-            [this] { return frame_number_; });
-        ConfigurePassSchedule();
-        // Frame the ~165-unit rock bootstrap fixture: pull the camera back and
-        // extend the far plane (the old default far=10 culled it entirely).
-        ApplyDefaultCamera();
+                factory = [](GraphicsAPIType api_type)
+                { return graphics::RenderBackend::CreateGraphicsBackEnd(api_type); };
+            }
+            backend_ = factory(info.api_type);
+            if (!backend_)
+            {
+                throw std::runtime_error("No graphics backend is available for the requested API.");
+            }
+            KP_LOG("RenderLog", LOG_LEVEL_INFO, "RenderSystem selected %s graphics backend",
+                   GetGraphicsApiName(info.api_type));
+            backend_->BindWindowResize(*info.resize_dispatcher);
+            backend_->Initialize(info.native_window);
+            backend_initialized_ = true;
+
+            resource_resolver_ =
+                std::make_unique<RenderResourceResolver>(*backend_, *resource_pipeline_);
+            material_system_->SetResourceResolver(resource_resolver_.get());
+
+            constexpr size_t kFrameUniformCapacity = 64 * 1024;
+            frame_contexts_.resize(backend_->GetFramesInFlight());
+            for (FrameContext &context : frame_contexts_)
+            {
+                context.Initialize(*backend_, kFrameUniformCapacity);
+            }
+
+            const graphics::Extent2D extent = backend_->GetRenderExtent();
+            frame_targets_.Initialize(*backend_, extent.width, extent.height);
+            if (!frame_targets_.IsValid())
+            {
+                throw std::runtime_error("Failed to create the complete render target set.");
+            }
+            render_capture_service_ = std::make_unique<RenderCaptureService>(
+                backend_->GetRenderTargetReadback(),
+                [this](CaptureView view)
+                {
+                    const RenderTargetName target_name = view == CaptureView::SceneColor
+                                                             ? RenderTargetName::SceneColor
+                                                             : RenderTargetName::CaptureOutput;
+                    const RenderTarget *const target = frame_targets_.GetTarget(target_name);
+                    return target ? target->GetHandle() : graphics::RenderTargetHandle{};
+                },
+                [this] { return frame_number_; });
+            ConfigurePassSchedule();
+            if (!pass_schedule_.IsValid())
+            {
+                throw std::runtime_error("Render pass schedule validation failed.");
+            }
+            // Frame the ~165-unit rock bootstrap fixture: pull the camera back and
+            // extend the far plane (the old default far=10 culled it entirely).
+            ApplyDefaultCamera();
+            lifecycle_state_ = RenderSystemLifecycleState::Ready;
+            last_diagnostic_.clear();
+            return {true, {}};
+        }
+        catch (const std::exception &error)
+        {
+            last_diagnostic_ = error.what();
+        }
+        catch (...)
+        {
+            last_diagnostic_ = "Unknown exception during RenderSystem initialization.";
+        }
+        KP_LOG("RenderLog", LOG_LEVEL_ERROR, "RenderSystem initialization failed: %s",
+               last_diagnostic_.c_str());
+        CleanupOwnedState();
+        lifecycle_state_ = RenderSystemLifecycleState::Uninitialized;
+        return {false, last_diagnostic_};
     }
 
-    void RenderSystem::PostInitialize()
+    bool RenderSystem::PostInitialize()
     {
+        if (!IsState(RenderSystemLifecycleState::Ready))
+        {
+            return false;
+        }
         // Bootstrap: load + process everything already queued, before the main loop.
         ConsumeRequests(0);
         PrepareBootstrapRenderableSources();
         KP_LOG("RenderLog", LOG_LEVEL_INFO,
                "Bootstrap drained: %d distinct shader(s) loaded", GetLoadedShaderCount());
+        return true;
     }
 
-    void RenderSystem::Tick(float delta_time)
+    bool RenderSystem::Tick(float delta_time)
     {
-        BeginFrame(delta_time);
-        EndFrame();
+        if (!BeginFrame(delta_time))
+        {
+            return false;
+        }
+        return EndFrame();
     }
 
-    void RenderSystem::BeginFrame(float delta_time)
+    bool RenderSystem::BeginFrame(float delta_time)
     {
+        if (!IsState(RenderSystemLifecycleState::Ready))
+        {
+            return false;
+        }
         ConsumeRequests(kMaxRuntimeLoadsPerFrame);
         material_system_->RefreshResources();
         DrainRenderableSources();
@@ -359,14 +406,11 @@ namespace kpengine::render
         active_directional_shadow_ = ScheduleDirectionalShadow(light_snapshot);
         active_spot_shadow_ = ScheduleSpotShadow(light_snapshot);
         active_point_shadow_ = SchedulePointShadow(light_snapshot);
-        if (!backend_)
-        {
-            return;
-        }
 
         ApplyPendingSceneRenderTargetExtent();
         backend_->BeginFrame();
         active_frame_context_ = GetCurrentFrameContext();
+        lifecycle_state_ = RenderSystemLifecycleState::FrameActive;
         if (active_frame_context_)
         {
             elapsed_seconds_ += delta_time;
@@ -410,13 +454,14 @@ namespace kpengine::render
             RecordToneMapPass();
             RecordPendingCapturePass();
         }
+        return true;
     }
 
-    void RenderSystem::EndFrame()
+    bool RenderSystem::EndFrame()
     {
-        if (!backend_)
+        if (!IsState(RenderSystemLifecycleState::FrameActive))
         {
-            return;
+            return false;
         }
         if (active_frame_context_)
         {
@@ -426,11 +471,14 @@ namespace kpengine::render
             ++frame_number_;
         }
         backend_->EndFrame();
+        lifecycle_state_ = RenderSystemLifecycleState::Ready;
+        return true;
     }
 
     bool RenderSystem::ExecuteEditorCompositePass(const std::function<void()> &record_pass)
     {
-        if (!active_frame_context_ || editor_composite_recorded_ || !record_pass ||
+        if (!IsState(RenderSystemLifecycleState::FrameActive) || !active_frame_context_ ||
+            editor_composite_recorded_ || !record_pass ||
             !pass_schedule_.IsValid())
         {
             return false;
@@ -442,7 +490,8 @@ namespace kpengine::render
 
     void RenderSystem::RequestSceneRenderTargetExtent(uint32_t width, uint32_t height)
     {
-        if (width == 0 || height == 0)
+        if (lifecycle_state_ == RenderSystemLifecycleState::Uninitialized ||
+            lifecycle_state_ == RenderSystemLifecycleState::ShutDown || width == 0 || height == 0)
         {
             return;
         }
@@ -2287,32 +2336,25 @@ namespace kpengine::render
         return index < frame_contexts_.size() ? &frame_contexts_[index] : nullptr;
     }
 
-    void RenderSystem::Shutdown()
+    bool RenderSystem::IsState(RenderSystemLifecycleState expected) const
     {
-        if (!backend_)
+        return lifecycle_state_ == expected;
+    }
+
+    void RenderSystem::CleanupOwnedState()
+    {
+        // If teardown is requested between BeginFrame and EndFrame, close the
+        // frame bracket before waiting or destroying any frame-owned resource.
+        if (lifecycle_state_ == RenderSystemLifecycleState::FrameActive && backend_)
         {
-            frame_lighting_binding_ = {};
-            active_directional_shadow_.reset();
-            active_spot_shadow_.reset();
-            active_point_shadow_.reset();
-            spot_shadow_recorded_ = false;
-            point_shadow_recorded_ = false;
-            render_capture_service_.reset();
-            camera_source_registry_.Clear();
-            source_registry_.Clear(render_world_);
-            render_world_.Clear();
-            light_source_registry_.Clear(light_world_);
-            light_world_.Clear();
-            bootstrap_renderable_sources_.clear();
-            DestroyMaterialAssetRecords();
-            material_system_.reset();
-            resource_resolver_.reset();
-            return;
+            if (active_frame_context_)
+            {
+                active_frame_context_->End();
+                active_frame_context_ = nullptr;
+            }
+            backend_->EndFrame();
         }
 
-        // Releasing material instances first retires their bindless table slots.
-        // WaitIdle must follow that release so Graphics can collect the retired
-        // table references before the resolver destroys cached textures/samplers.
         camera_source_registry_.Clear();
         source_registry_.Clear(render_world_);
         render_world_.ApplyPendingCommands();
@@ -2326,55 +2368,73 @@ namespace kpengine::render
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
         bootstrap_renderable_sources_.clear();
+        render_cache_.clear();
         DestroyMaterialAssetRecords();
+        material_asset_resolver_.reset();
         material_system_.reset();
-        backend_->WaitIdle();
-        if (graphics::IRenderTargetReadback *const readback = backend_->GetRenderTargetReadback())
+
+        if (backend_ && backend_initialized_)
         {
-            readback->DrainPendingReadbacks("Render system shutdown");
+            // Releasing material instances first retires their bindless table
+            // slots. WaitIdle then makes all submitted GPU work safe to retire.
+            backend_->WaitIdle();
+            if (graphics::IRenderTargetReadback *const readback =
+                    backend_->GetRenderTargetReadback())
+            {
+                readback->DrainPendingReadbacks("Render system shutdown");
+            }
         }
         render_capture_service_.reset();
+
         for (FrameContext &context : frame_contexts_)
         {
             context.Cleanup();
         }
         frame_contexts_.clear();
         frame_targets_.Cleanup();
-        if (gbuffer_debug_pipeline_.IsValid())
+
+        if (backend_ && backend_initialized_)
         {
-            backend_->DestroyPipelineResource(gbuffer_debug_pipeline_);
-        }
-        if (capture_view_pipeline_.IsValid())
-        {
-            backend_->DestroyPipelineResource(capture_view_pipeline_);
-        }
-        if (deferred_lighting_pipeline_.IsValid())
-        {
-            backend_->DestroyPipelineResource(deferred_lighting_pipeline_);
-        }
-        if (gbuffer_debug_fullscreen_mesh_.IsValid())
-        {
-            backend_->DestroyMesh(gbuffer_debug_fullscreen_mesh_);
-        }
-        if (gbuffer_debug_sampler_.IsValid())
-        {
-            backend_->DestroySampler(gbuffer_debug_sampler_);
-        }
-        if (directional_shadow_sampler_.IsValid())
-        {
-            backend_->DestroySampler(directional_shadow_sampler_);
-        }
-        if (spot_shadow_sampler_.IsValid())
-        {
-            backend_->DestroySampler(spot_shadow_sampler_);
-        }
-        if (point_shadow_sampler_.IsValid())
-        {
-            backend_->DestroySampler(point_shadow_sampler_);
-        }
-        if (tone_map_pipeline_.IsValid())
-        {
-            backend_->DestroyPipelineResource(tone_map_pipeline_);
+            if (gbuffer_debug_pipeline_.IsValid())
+            {
+                backend_->DestroyPipelineResource(gbuffer_debug_pipeline_);
+            }
+            if (capture_view_pipeline_.IsValid())
+            {
+                backend_->DestroyPipelineResource(capture_view_pipeline_);
+            }
+            if (deferred_lighting_pipeline_.IsValid())
+            {
+                backend_->DestroyPipelineResource(deferred_lighting_pipeline_);
+            }
+            if (gbuffer_debug_fullscreen_mesh_.IsValid())
+            {
+                backend_->DestroyMesh(gbuffer_debug_fullscreen_mesh_);
+            }
+            if (gbuffer_debug_sampler_.IsValid())
+            {
+                backend_->DestroySampler(gbuffer_debug_sampler_);
+            }
+            if (directional_shadow_sampler_.IsValid())
+            {
+                backend_->DestroySampler(directional_shadow_sampler_);
+            }
+            if (spot_shadow_sampler_.IsValid())
+            {
+                backend_->DestroySampler(spot_shadow_sampler_);
+            }
+            if (point_shadow_sampler_.IsValid())
+            {
+                backend_->DestroySampler(point_shadow_sampler_);
+            }
+            if (tone_map_pipeline_.IsValid())
+            {
+                backend_->DestroyPipelineResource(tone_map_pipeline_);
+            }
+            if (directional_shadow_pipeline_.IsValid())
+            {
+                backend_->DestroyPipelineResource(directional_shadow_pipeline_);
+            }
         }
         gbuffer_debug_pipeline_ = {};
         capture_view_pipeline_ = {};
@@ -2392,14 +2452,37 @@ namespace kpengine::render
         environment_ibl_intensity_ = 0.25f;
         environment_ibl_enabled_ = false;
         tone_map_pipeline_ = {};
-        if (directional_shadow_pipeline_.IsValid())
-        {
-            backend_->DestroyPipelineResource(directional_shadow_pipeline_);
-        }
         directional_shadow_pipeline_ = {};
-        resource_resolver_->Cleanup();
-        resource_resolver_.reset();
-        backend_->Cleanup();
-        backend_.reset();
+
+        if (resource_resolver_)
+        {
+            resource_resolver_->Cleanup();
+            resource_resolver_.reset();
+        }
+        resource_pipeline_.reset();
+        if (backend_)
+        {
+            backend_->Cleanup();
+            backend_.reset();
+        }
+        backend_initialized_ = false;
+        load_queue_ = nullptr;
+        bootstrap_scene_info_ = {};
+        pending_scene_render_target_extent_ = {};
+        active_frame_context_ = nullptr;
+        editor_composite_recorded_ = false;
+        frame_number_ = 0;
+        elapsed_seconds_ = 0.0f;
+        pass_schedule_ = {};
+    }
+
+    void RenderSystem::Shutdown()
+    {
+        if (lifecycle_state_ == RenderSystemLifecycleState::ShutDown)
+        {
+            return;
+        }
+        CleanupOwnedState();
+        lifecycle_state_ = RenderSystemLifecycleState::ShutDown;
     }
 }

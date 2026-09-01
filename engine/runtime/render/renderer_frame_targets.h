@@ -43,6 +43,7 @@ namespace kpengine::render
         // render-system ownership boundary before recreating.
         void RebuildForExtent(graphics::RenderBackend &backend, uint32_t width, uint32_t height);
         void Cleanup();
+        bool IsValid() const;
 
         RenderTarget *GetTarget(RenderTargetName name);
         const RenderTarget *GetTarget(RenderTargetName name) const;

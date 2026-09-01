@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_RENDER_SYSTEM_H
 
 #include <cstddef>
+#include <cstdint>
 #include <array>
 #include <functional>
 #include <memory>
@@ -56,6 +57,25 @@ namespace kpengine::render
     class MaterialAssetResolver;
     class RenderCaptureService;
 
+    enum class RenderSystemLifecycleState : uint8_t
+    {
+        Uninitialized,
+        Ready,
+        FrameActive,
+        ShutDown,
+    };
+
+    struct RenderSystemInitResult
+    {
+        bool success = false;
+        std::string diagnostic;
+
+        explicit operator bool() const { return success; }
+    };
+
+    using RenderBackendFactory =
+        std::function<std::unique_ptr<graphics::RenderBackend>(GraphicsAPIType)>;
+
     struct BootstrapSceneObjectInfo
     {
         std::string model_path;
@@ -90,6 +110,7 @@ namespace kpengine::render
         EventDispatcher<ResizeEvent> *resize_dispatcher = nullptr;
         async::AsyncQueue<asset::AssetLoadRequest> *load_queue = nullptr;
         BootstrapSceneInfo bootstrap_scene;
+        RenderBackendFactory backend_factory;
     };
 
     // `payload` pins CPU data; `resource` is the one render-ready result for this request.
@@ -114,12 +135,21 @@ namespace kpengine::render
         RenderSystem(RenderSystem &&) = delete;
         RenderSystem &operator=(RenderSystem &&) = delete;
 
+        RenderSystemInitResult Initialize(const RenderSystemInitInfo &info);
+        // Bootstrap pass: drain every queued request now (blocking at init is fine).
+        bool PostInitialize();
+        // Safe to call repeatedly; the first call retires all owned state.
+        void Shutdown();
+
+        RenderSystemLifecycleState GetLifecycleState() const { return lifecycle_state_; }
+        const std::string &GetLastDiagnostic() const { return last_diagnostic_; }
+
         // Runtime pass: drain a bounded number of requests so no frame stalls.
-        void Tick(float delta_time);
+        bool Tick(float delta_time);
         // Split frame bracket for the editor: scene work is recorded first, then
         // the API-specific editor renderer composites before submission/present.
-        void BeginFrame(float delta_time);
-        void EndFrame();
+        bool BeginFrame(float delta_time);
+        bool EndFrame();
         // The editor owns ImGui frame construction, but RenderSystem owns when
         // that external work runs: after ScenePass and before presentation.
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
@@ -147,14 +177,13 @@ namespace kpengine::render
         std::vector<StaticMeshRenderableSourceDesc> TakeBootstrapRenderableSources();
 
     private:
-        // Lifecycle belongs to RuntimeContext: it owns this object and is the only
-        // caller allowed to bring it up, so no one else can re-initialize it.
+        // RuntimeContext is the normal composition root. The public lifecycle
+        // functions remain directly callable so orchestration can be tested with
+        // an injected existing RenderBackend factory.
         friend class runtime::RuntimeContext;
 
-        // Owns the resource pipeline and takes the load queue it drains.
-        void Initialize(const RenderSystemInitInfo &info);
-        // Bootstrap pass: drain every queued request now (blocking at init is fine).
-        void PostInitialize();
+        void CleanupOwnedState();
+        bool IsState(RenderSystemLifecycleState expected) const;
 
         // Drain up to max_items requests (0 = unlimited, the bootstrap pass).
         void ConsumeRequests(std::size_t max_items);
@@ -228,7 +257,6 @@ namespace kpengine::render
         void ApplyPendingSceneRenderTargetExtent();
         void ApplyDefaultCamera();
         FrameContext *GetCurrentFrameContext();
-        void Shutdown();
 
     private:
         std::unique_ptr<resource::ResourcePipeline> resource_pipeline_;
@@ -263,6 +291,10 @@ namespace kpengine::render
         std::unordered_map<asset::RequestID, RenderCacheEntry> render_cache_;
         FrameContext *active_frame_context_ = nullptr;
         bool editor_composite_recorded_ = false;
+        RenderSystemLifecycleState lifecycle_state_ =
+            RenderSystemLifecycleState::Uninitialized;
+        std::string last_diagnostic_;
+        bool backend_initialized_ = false;
         // Lazily built fullscreen resources. Pipelines remain pass-specific;
         // the immutable triangle mesh and sampler are shared by Render passes.
         graphics::PipelineHandle deferred_lighting_pipeline_;

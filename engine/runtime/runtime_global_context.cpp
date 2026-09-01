@@ -19,6 +19,7 @@
 #include "script/command/lua_command_bridge.h"
 
 #include <utility>
+#include <stdexcept>
 
 namespace kpengine
 {
@@ -73,7 +74,13 @@ namespace kpengine
             render_init_info.resize_dispatcher = &window_system_->resize_event_dispatcher_;
             render_init_info.load_queue = &async_load_queue_;
             render_init_info.bootstrap_scene = bootstrap_scene_;
-            render_system_->Initialize(render_init_info);
+            const render::RenderSystemInitResult render_init_result =
+                render_system_->Initialize(render_init_info);
+            if (!render_init_result)
+            {
+                throw std::runtime_error("RenderSystem initialization failed: " +
+                                         render_init_result.diagnostic);
+            }
             if (render::IRenderCaptureService *capture_service = render_system_->GetRenderCaptureService())
             {
                 screenshot_service_ = std::make_shared<RuntimeScreenshotService>(*capture_service);

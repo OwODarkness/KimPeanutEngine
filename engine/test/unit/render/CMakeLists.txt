@@ -48,3 +48,18 @@ add_custom_command(TARGET RenderPassScheduleTest POST_BUILD
 
 include(GoogleTest)
 gtest_discover_tests(RenderPassScheduleTest)
+
+add_executable(RenderSystemTest
+    render_system_test.cpp
+)
+
+target_include_directories(RenderSystemTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+    ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend
+)
+
+target_link_libraries(RenderSystemTest PRIVATE Render googletest)
+
+include(GoogleTest)
+gtest_discover_tests(RenderSystemTest)
