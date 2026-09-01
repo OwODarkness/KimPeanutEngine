@@ -16,15 +16,41 @@ encoding, synchronization, and GPU destruction safety.
 
 ## Frame policy
 
-`RenderSystem` owns a small explicit ordered pass schedule rather than a general
-render graph. Scene passes write the logical `SceneColor`; the terminal editor
-composite consumes it after input polling. Logical resource names and pass
-dependencies remain Render vocabulary and do not expose `Vk*`, OpenGL, queues,
-or command buffers.
+The current renderer uses an explicit ordered pass schedule rather than a
+general render graph. Scene passes write the logical `SceneColor`; the terminal
+editor composite consumes it after input polling. Logical resource names and
+pass dependencies remain Render vocabulary and do not expose `Vk*`, OpenGL,
+queues, or command buffers.
+
+Today `RenderPassSchedule` validates declarations, while
+`RenderSystem::BeginFrame()` independently invokes the pass-recording methods.
+That duplicated ordering is transitional and can drift. The
+[R1 responsibility split](.plan/R1.md) makes one fixed sequence own both each
+pass declaration and its invocation before any render-graph decision.
 
 `RenderWorld` resolves Gameplay-produced value-only source records into private
 `MeshProxy` state. Gameplay cannot hold `MeshProxy`, material, RHI, or backend
 types.
+
+## RenderSystem target shape
+
+`RenderSystem` is the Runtime-facing facade and composition root, not the
+permanent home of every renderer concern. It owns the frame bracket and wires
+focused collaborators. The deferred renderer owns pass policy and pass-private
+state; resource ingestion owns queue/cache transitions; Graphics owns GPU
+execution.
+
+```text
+RuntimeContext → RenderSystem facade
+                    ├─ source registries / RenderWorld snapshots
+                    ├─ render-resource ingestion
+                    ├─ DeferredRenderer → fixed pass sequence + pass state
+                    └─ RenderBackend / FrameContext frame bracket
+```
+
+Dependencies are explicit. Do not replace `RenderSystem` with a large context
+bag, service locator, broad virtual renderer interface, or speculative
+class-per-pass hierarchy.
 
 ## Pipeline seam
 
@@ -43,3 +69,5 @@ Asset shader identity → Resource processing → Render PipelineDesc → Graphi
 - Do not put backend-specific implementation types in common Render contracts.
 - Do not introduce a general render graph until a concrete pass/resource need
   exceeds the current explicit schedule.
+- Do not treat smaller files or a lower line count as completion; ownership,
+  lifecycle, single-source pass order, and testability are the criteria.

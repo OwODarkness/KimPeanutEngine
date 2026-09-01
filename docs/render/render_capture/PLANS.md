@@ -1,10 +1,11 @@
-# Scene Render-Target Capture (Detailed Design)
+# Render Capture Plans
 
-> Start with [render_capture/overview.md](render_capture/overview.md). This
-> page retains the detailed capture contract and reference findings.
+> Start with [overview](overview.md). This page defines the capture
+> architecture and contract; concrete C-stage designs live in `.plan/`.
 
-**Status:** planned.  This document defines the first visual-evidence slice
-before shadow, G-buffer, and deferred PBR work.
+**Status:** complete for the RGBA8 PNG path. This document defines the
+visual-evidence architecture used by the current Render and Runtime capture
+services.
 
 ## Problem and acceptance criteria
 
@@ -195,6 +196,13 @@ before CPU encoding and a stable test artifact.  Its Vulkan-only swapchain
 capture does **not** transfer directly, because KimPeanutEngine has a common
 RHI and already owns a cross-API SceneColor target.  Therefore the initial
 source is the render target, not the presented window.
+
+## Stage plans
+
+- [C1 — service and callback policy](.plan/C1.md)
+- [C2 — common-RHI readback](.plan/C2.md)
+- [C3 — backend implementations](.plan/C3.md)
+- [C4 — export and smoke evidence](.plan/C4.md)
 
 ## Validation
 

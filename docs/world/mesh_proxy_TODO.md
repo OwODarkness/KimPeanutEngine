@@ -4,7 +4,7 @@
 
 Design context: [component_module.md](component_module.md). This is a render
 input reconstruction phase, intentionally before a general render graph.
-Material System V1 M1–M2 ([material_system.md](../render/material_system.md))
+Material System V1 M1–M2 ([material plans](../render/material_system/PLANS.md))
 is complete: `MeshProxy` already carries its real render-owned material handle,
 and instances now validate sparse typed overrides. The next material
 prerequisite for drawing is M3–M4 resource/pipeline and frame-binding
@@ -87,7 +87,7 @@ coupling it to graphics implementation details.
 
 ## After MP3
 
-The proposed [deferred PBR renderer plan](../render/deferred_pbr_plan.md)
+The proposed [deferred PBR renderer plan](../render/deferred_pbr/PLANS.md)
 defines the staged next work: directional shadow depth, opaque G-buffer,
 deferred lighting, and tone mapping over proxy-derived draw lists. It preserves
 the current ordered schedule initially; a render graph becomes a decision gate

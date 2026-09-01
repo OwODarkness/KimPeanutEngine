@@ -1,7 +1,7 @@
 # Command Recording Ownership Split
 
 **Status:** complete (2026-08-29)  
-**Prerequisite for:** [Deferred PBR renderer](../render/deferred_pbr_plan.md)  
+**Prerequisite for:** [Deferred PBR renderer](../render/deferred_pbr/PLANS.md)
 **Parent roadmap:** [Graphics next roadmap](TODO.md)
 
 ## Problem

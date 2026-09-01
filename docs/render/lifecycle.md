@@ -5,7 +5,10 @@
 `RuntimeContext` supplies `RenderSystemInitInfo` with API selection, native
 window, resize dispatcher, bootstrap scene policy, and the async asset-load
 queue. `RenderSystem::Initialize()` creates Render-owned policy/services and
-initializes the backend through common Graphics contracts.
+initializes the backend through common Graphics contracts. Initialization is
+transactional and returns a diagnostic result; the lifecycle is explicitly
+`Uninitialized → Ready → FrameActive → Ready`, with `ShutDown` terminal.
+Partial failures leave no ready RenderSystem state.
 
 `PostInitialize()` drains the bootstrap resource work and prepares the logical
 renderable sources handed to the game-thread Gameplay world. The scene may keep
@@ -35,3 +38,5 @@ Destroy Gameplay before Render so source destruction can reach the sink.
 Release screenshot/capture command providers before their services. Render then
 releases its resolver-owned static handles before Graphics/backend teardown.
 GPU objects are released only after the backend’s submitted work is safe.
+Shutdown is idempotent and closes an active frame bracket before cleanup when
+called at an unexpected boundary.

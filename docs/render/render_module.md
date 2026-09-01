@@ -186,8 +186,8 @@ only readiness/diagnostic state. M4 makes `FrameContext` pack material constants
 and allocate the transient binding set; the bootstrap scene and graphics smoke
 now consume a real `MaterialInstanceHandle`, rather than a raw texture binding.
 `FrameContext` remains the owner of frame-local bindings. See
-[material_system.md](material_system.md) and
-[material_system_TODO.md](material_system_TODO.md).
+[material_system/PLANS.md](material_system/PLANS.md) and
+[material_system/TODO.md](material_system/TODO.md).
 
 ### Render Phase 3 — renderable proxy input (first slice landed 2026-08-26)
 
@@ -228,8 +228,8 @@ conversion pass to a visual RGBA target, without widening the common readback
 contract. Normal captures default to
 `save/screenshots/<UTC timestamp>-f<frame>.png`; deterministic smoke output is
 allowed only below `save/screenshots/validation/`. The plan and working ledger
-are [render_capture.md](render_capture.md) and
-[render_capture_TODO.md](render_capture_TODO.md).
+are [render_capture/PLANS.md](render_capture/PLANS.md) and
+[render_capture/TODO.md](render_capture/TODO.md).
 
 ### Later render phases
 

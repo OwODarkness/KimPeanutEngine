@@ -26,13 +26,20 @@ Gameplay source values → Render source sink → RenderWorld / MeshProxy
   backend/resource edges.
 - [Risks](risks.md) — known limits, validation gaps, and follow-up conditions.
 - [Usage](usage.md) — runtime capture/debug workflow and validation evidence.
+- [Module plans](PLANS.md) — Render architecture and submodule plan map.
+- [Module TODO](TODO.md) — Render-wide roadmap and submodule index.
+- [Agent guide](AGENTS.md) — documentation and implementation boundaries.
 - [Render scene](render_scene/overview.md) — current scene recording boundary.
 - [Material system](material_system/overview.md) — templates, instances, and
-  frame-local material bindings.
+  frame-local material bindings. Its plans and roadmap are [here](material_system/PLANS.md)
+  and [here](material_system/TODO.md).
 - [Render capture](render_capture/overview.md) — SceneColor capture and PNG
-  export path.
-- [Implementation history and roadmap](render_module.md#render-roadmap) —
-  preserved phase ledger while a dedicated current roadmap is established.
+  export path. Its plans and roadmap are [here](render_capture/PLANS.md) and
+  [here](render_capture/TODO.md).
+- [Deferred PBR](deferred_pbr/PLANS.md) — PBR architecture, stage plans, and
+  roadmap.
+- [Implementation history](render_module.md#render-roadmap) — preserved legacy
+  narrative; current plans and TODOs live in the module/submodule indexes.
 
 ## Compatibility detail
 

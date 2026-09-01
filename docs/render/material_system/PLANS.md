@@ -1,12 +1,12 @@
-# Material System V1 (Detailed Design)
+# Material System Plans
 
-> Start with [material_system/overview.md](material_system/overview.md). This
-> page retains the V1 detailed design and task rationale.
+> Start with [overview](overview.md). This page defines the Material System
+> architecture; concrete M-stage designs live in `.plan/`.
 
-**Status: M4 frame-local binding implemented (2026-08-26).** Material System V1 is the
-next render reconstruction phase after the initial `MeshProxy` type. M1 has
-replaced the temporary `MaterialInstanceHandle` alias in
-[`MeshProxy`](../../engine/runtime/render/render_world/mesh_proxy.h) with a
+**Status: M1–M6 complete; M7 deferred to the Deferred PBR submodule.** Material
+System V1 is Render-owned. The M1 migration replaced the temporary
+`MaterialInstanceHandle` alias in
+[`MeshProxy`](../../../engine/runtime/render/render_world/mesh_proxy.h) with a
 real render-owned handle system before `RenderWorld` registration and draw-list
 work begin.
 
@@ -159,22 +159,19 @@ introduces a versioned `*.material` asset containing only stable authoring
 values: shader asset reference, surface policy, and typed defaults including
 texture asset references. Gameplay selects that asset by `asset::AssetID`;
 Render creates and owns one cached derived template/default-instance pair and
-all readiness state.
+  all readiness state.
 The asset format never stores a pipeline, descriptor set, GPU handle, or
-backend-specific value. The detailed migration ledger is M6 in
-[material_system_TODO.md](material_system_TODO.md).
+backend-specific value.
 
-## Build order
+## Stage plans
 
-```text
-M1. Material handles + immutable template / instance records (done)
-M2. Validate data-driven instance values and logical texture/sampler references (done)
-M3. Resolve pipelines/static texture+sampler resources and classify draw intent (done)
-M4. Build frame-local binding descriptions through FrameContext (done)
-M5. Build RenderWorld proxy registry and draw lists (done)
-M6. Material Asset V1: serialized material identity → private template/default instance (done)
-M7. Add shadow, G-buffer, lighting, then expand toward a render graph
-```
+- [M1 — handles and templates](.plan/M1.md)
+- [M2 — instances and validation](.plan/M2.md)
+- [M3 — resource resolution](.plan/M3.md)
+- [M4 — frame-local bindings](.plan/M4.md)
+- [M5 — MeshProxy integration](.plan/M5.md)
+- [M6 — material asset](.plan/M6.md)
+- [M7 — future pass-specific materials](.plan/M7.md)
 
 ## Completion condition
 
@@ -183,7 +180,6 @@ render-owned `MaterialInstanceHandle`; Render can derive a common pipeline and
 frame-local resource bindings from it; and neither World nor Graphics needs to
 know the other's implementation objects.
 
-## Task ledger
-
-Implementation order and acceptance criteria are tracked in
-[material_system_TODO.md](material_system_TODO.md).
+Current implementation status and acceptance criteria are tracked in
+[TODO.md](TODO.md). Detailed execution evidence is in
+[render-material-system-v1](../../../.spec/journal/render-material-system-v1.md).
