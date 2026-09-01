@@ -4,6 +4,17 @@
 
 ## Done
 
+- **Render R1.1 — characterization and transactional lifecycle (2026-09-01)**
+  — `RenderSystem` now accepts an injectable factory for the existing
+  `RenderBackend` contract, reports initialization diagnostics, rolls back
+  partial initialization, and enforces explicit `Uninitialized`, `Ready`,
+  `FrameActive`, and terminal `ShutDown` states. Shutdown is idempotent and
+  releases frame/target/pass/resolver state before backend cleanup. The new
+  `RenderSystemTest` characterizes current target/pass order, conditional
+  SceneColor capture, resize waiting, editor terminal composition, rollback,
+  and teardown order. Focused lifecycle/render tests and `RuntimeLib` build
+  pass; R1.2 extraction and GP7 remain open.
+
 - **Deferred PBR D6.4 — bounded point-light shadow atlas (2026-09-01)** —
   point shadow intent/handle lifetime, deterministic slot-2 selection, a fixed
   six-face 1536×1024 D32 atlas, deferred point PCF consumption, and point depth
@@ -11,8 +22,11 @@
   was captured and inspected on Vulkan/OpenGL, then normal bootstrap lighting
   was restored. A one-shot Render profile records per-face/total draws and CPU
   recording time; the fixed D32 target is 6,291,456 bytes and GPU timestamps are
-  not available. Numeric warm-runtime samples remain a follow-up because the
-  lazy point-shadow pipeline did not reach its first-ready-pass log. Focused tests,
+  not available. The follow-up warm sessions recorded identical six-face work
+  on Vulkan/OpenGL (`[2,3,1,0,0,6]`, 12 total draws, 2 empty faces, 6
+  candidates; 307/177 µs CPU recording), and stable seam-free visibility
+  captures. The fixed atlas remains the baseline; true cube resources are
+  closed without implementation until a measured benefit appears. Focused tests,
   full Debug build, complete CTest (188/188),
   dual-backend GraphicsSmoke, and rebuilt-engine captures all pass.
 
