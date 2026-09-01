@@ -1,10 +1,12 @@
 # Render Deferred PBR
 
-- Status: proposed
+- Status: active
 - Owner: user + Codex
-- Parent TODO: [Mesh Proxy After MP3](../../docs/world/mesh_proxy_TODO.md#after-mp3)
-- Design: [Deferred PBR Renderer Plan](../../docs/render/deferred_pbr_plan.md)
-- Execution ledger: [Deferred PBR TODO](../../docs/render/deferred_pbr_TODO.md)
+- Parent roadmap: [Deferred PBR Renderer Roadmap](../../docs/render/deferred_pbr/TODO.md)
+- Design: [Deferred PBR Renderer Plans](../../docs/render/deferred_pbr/PLANS.md)
+- D6 stage design: [Light and shadow expansion](../../docs/render/deferred_pbr/.plan/D6.md)
+- D6.4 stage design: [Bounded point-light shadows](../../docs/render/deferred_pbr/.plan/D6.4.md)
+- Journal: [Render Deferred PBR](../journal/render-deferred-pbr.md)
 
 ## Objective
 
@@ -12,7 +14,15 @@ Implement a real cross-backend renderer in stages: extensible directional/point/
 
 ## Current state
 
-RenderSystem has proxy-derived opaque draws, material instances, frame-local bindings, an ordered scene pass, cross-API scene target, and screenshot capture. Graphics lacks the attachment/read contract for a G-buffer; Material Asset V1 is still unlit.
+The staged renderer now has the attachment-capable cross-backend target
+contract, Material Asset V2 G-buffer, directional shadow producer/consumer,
+deferred HDR lighting, runtime diagnostic capture, environment IBL, and
+unshadowed point/spot lighting, the bounded one-spot `Spot2D` producer and
+consumer, and a fixed six-face 2D-atlas `PointCube` producer/consumer.
+Point-shadow runtime capture inspection, the fixed-atlas baseline profile, and
+the D7 evidence handoff are complete. D6.4 provides typed point-depth/visibility
+capture views; the temporary point-only fixture was restored to the normal
+bootstrap lighting after capture.
 
 ## Scope and non-goals
 
@@ -31,20 +41,23 @@ The linked design is authoritative. This does not revive deprecated OpenGL or cr
 ## Stages
 
 1. [x] [Split backend scheduling from command recording](../../docs/graphics/command_recording_ownership_plan.md) (2026-08-29).
-2. Attachment/pipeline validation and preserved unlit baseline.
-3. Cross-backend attachment-capable targets with safe resize/retirement.
-4. Material Asset V2 and opaque PBR G-buffer using supplied assets.
-5. Extensible light/shadow ABI plus one directional depth shadow producer and consumer.
-6. Type-switching deferred lighting, tone mapping, debug views, and screenshot evidence.
-7. Enable point/spot lighting, then typed spot/point shadow jobs.
-8. Render-graph decision only from demonstrated dependency pressure.
+2. [x] Attachment/pipeline validation and preserved unlit baseline.
+3. [x] Cross-backend attachment-capable targets with safe resize/retirement.
+4. [x] Material Asset V2 and opaque PBR G-buffer using supplied assets.
+5. [x] Extensible light/shadow ABI plus one directional depth shadow producer and consumer.
+6. [x] Type-switching deferred lighting, tone mapping, debug views, screenshot evidence, and environment IBL.
+7. [x] Unshadowed point/spot lighting; [x] one fixed-budget typed `Spot2D`
+   producer/consumer; [x] one fixed-budget `PointCube` represented by a six-face
+   2D depth atlas; [x] profile baseline before multiple punctual jobs or true
+   cube targets.
+8. [ ] Render-graph decision only from demonstrated dependency pressure.
 
 ## Acceptance criteria
 
-- [ ] Shared RenderWorld data produces equivalent Vulkan/OpenGL PBR captures.
-- [ ] Shadow, G-buffer, HDR, and final targets have tested resize/teardown.
-- [ ] No native type leak or deprecated OpenGL ownership pattern returns.
-- [ ] Validation and visual evidence meet the linked design.
+- [x] Shared RenderWorld data produces equivalent Vulkan/OpenGL PBR captures.
+- [x] Shadow, G-buffer, HDR, and final targets have tested resize/teardown.
+- [x] No native type leak or deprecated OpenGL ownership pattern returns.
+- [x] Validation and visual evidence meet the linked design.
 
 ## Validation plan
 
@@ -52,4 +65,13 @@ At minimum: Level 2 `GraphicsContractTest` and `RenderPassScheduleTest`, then Le
 
 ## Risks and open questions
 
-Attachment formats, tangent availability, directional-shadow fitting, and HDR tone-map policy are implementation gates. Resolve them from current source and targeted evidence, not the deprecated renderer.
+The fixed six-face atlas is now the fixed-budget baseline for future
+shadow-resource decisions. Numeric warm-runtime profile samples and GPU timing
+remain follow-up work; true cube resources, multiple punctual jobs, and a
+render-graph decision remain intentionally deferred.
+The current cube texture path does not provide a correct cross-backend
+cube-face target contract, so the first `PointCube` uses one fixed six-face 2D
+depth atlas without changing the common recorder. Face orientation, atlas-tile
+mapping, descriptor layout, face-edge filtering, and the six-pass cost require
+explicit unit and runtime evidence. True cube resources, multiple punctual
+maps, and render-graph scheduling remain later measured decisions.

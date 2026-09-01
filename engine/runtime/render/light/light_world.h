@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_LIGHT_WORLD_H
 
 #include <cstdint>
+#include <array>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -61,6 +62,19 @@ namespace kpengine::render
         float inner_cone_radians = 0.0f;
         float outer_cone_radians = 0.785398163f;
     };
+
+    struct PointShadowFaceDesc
+    {
+        Vector3f direction;
+        Vector3f up;
+        uint32_t tile_x = 0;
+        uint32_t tile_y = 0;
+    };
+
+    // Canonical six-face order used by both the atlas producer and shader
+    // consumer: +X, -X, +Y, -Y, +Z, -Z.
+    const std::array<PointShadowFaceDesc, 6> &GetPointShadowFaceTable();
+    uint32_t SelectPointShadowFace(const Vector3f &light_to_receiver);
 
     using LightTypeData = std::variant<DirectionalLightData, PointLightData, SpotLightData>;
 

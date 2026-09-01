@@ -19,6 +19,7 @@ namespace kpengine::gameplay
         float GetInnerConeRadians() const { return inner_cone_radians_; }
         float GetOuterConeRadians() const { return outer_cone_radians_; }
         bool IsLightEnabled() const { return enabled_; }
+        bool CastsShadow() const { return casts_shadow_; }
         render::LightSourceHandle GetSourceHandle() const { return source_handle_; }
 
         void SetPosition(const Vector3f &position);
@@ -29,6 +30,7 @@ namespace kpengine::gameplay
         void SetInnerConeRadians(float radians);
         void SetOuterConeRadians(float radians);
         void SetLightEnabled(bool enabled);
+        void SetCastsShadow(bool casts_shadow);
 
     protected:
         void OnActivate() override;
@@ -48,6 +50,7 @@ namespace kpengine::gameplay
         float inner_cone_radians_ = 0.0f;
         float outer_cone_radians_ = 0.785398163f;
         bool enabled_ = true;
+        bool casts_shadow_ = true;
         bool source_dirty_ = true;
         render::LightSourceHandle source_handle_;
     };

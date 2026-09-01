@@ -24,6 +24,35 @@ namespace
 
 namespace kpengine::render
 {
+    const std::array<PointShadowFaceDesc, 6> &GetPointShadowFaceTable()
+    {
+        static const std::array<PointShadowFaceDesc, 6> faces{{
+            {{1.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 0, 0},
+            {{-1.0f, 0.0f, 0.0f}, {0.0f, -1.0f, 0.0f}, 1, 0},
+            {{0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, 2, 0},
+            {{0.0f, -1.0f, 0.0f}, {0.0f, 0.0f, -1.0f}, 0, 1},
+            {{0.0f, 0.0f, 1.0f}, {0.0f, -1.0f, 0.0f}, 1, 1},
+            {{0.0f, 0.0f, -1.0f}, {0.0f, -1.0f, 0.0f}, 2, 1},
+        }};
+        return faces;
+    }
+
+    uint32_t SelectPointShadowFace(const Vector3f &delta)
+    {
+        const float ax = std::abs(delta.x_);
+        const float ay = std::abs(delta.y_);
+        const float az = std::abs(delta.z_);
+        if (ax >= ay && ax >= az)
+        {
+            return delta.x_ >= 0.0f ? 0U : 1U;
+        }
+        if (ay >= az)
+        {
+            return delta.y_ >= 0.0f ? 2U : 3U;
+        }
+        return delta.z_ >= 0.0f ? 4U : 5U;
+    }
+
     bool IsLightDescValid(const LightDesc &desc)
     {
         if (!IsFinite(desc.color) || !IsNonNegative(desc.color) || !std::isfinite(desc.intensity) ||

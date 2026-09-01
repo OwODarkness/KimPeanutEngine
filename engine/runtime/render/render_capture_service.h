@@ -19,6 +19,10 @@ namespace kpengine::render
         BaseColor,
         MaterialParams,
         ShadowVisibility,
+        SpotShadowDepth,
+        SpotShadowVisibility,
+        PointShadowDepth,
+        PointShadowVisibility,
     };
 
     struct CaptureRequest

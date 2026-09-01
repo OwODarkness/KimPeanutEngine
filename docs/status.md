@@ -1,8 +1,34 @@
 # Project Status
 
-**Snapshot: 2026-08-31.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-01.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
 
 ## Done
+
+- **Deferred PBR D6.4 — bounded point-light shadow atlas (2026-09-01)** —
+  point shadow intent/handle lifetime, deterministic slot-2 selection, a fixed
+  six-face 1536×1024 D32 atlas, deferred point PCF consumption, and point depth
+  and visibility diagnostics are implemented. The temporary point-only fixture
+  was captured and inspected on Vulkan/OpenGL, then normal bootstrap lighting
+  was restored. A one-shot Render profile records per-face/total draws and CPU
+  recording time; the fixed D32 target is 6,291,456 bytes and GPU timestamps are
+  not available. Numeric warm-runtime samples remain a follow-up because the
+  lazy point-shadow pipeline did not reach its first-ready-pass log. Focused tests,
+  full Debug build, complete CTest (188/188),
+  dual-backend GraphicsSmoke, and rebuilt-engine captures all pass.
+
+- **Deferred PBR D6.3.1–D6.3.4 — bounded spotlight shadow path (2026-09-01)** —
+  spot authoring now carries copied `casts_shadow` intent with private
+  generational shadow-handle retirement. Render deterministically selects one
+  valid `Spot2D` at slot 1, owns a fixed 1024² sampled D32 target, fits a
+  perspective light frustum, and records depth casters through the shared
+  shadow pipeline. Directional slot 0 and spot slot 1 coexist in the unchanged
+  `LightGpuData` stride; deferred lighting applies independent receiver bias
+  and 3×3 PCF. Spot depth/visibility capture semantics and runtime command
+  names are wired. Spot depth/visibility captures were exported and inspected
+  on Vulkan and OpenGL; visibility shows deterministic occlusion while
+  perspective depth is near-white after RGBA8 conversion. Focused translation
+  and shader syntax checks pass. The normal MSBuild test rebuild remains blocked
+  by the environment's denied Windows SDK probe. → [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Bootstrap textured PBR scene fixture (2026-08-31)** — the floor now uses
   the oak PBR base-color, normal, roughness, and AO textures. The startup scene
@@ -24,7 +50,7 @@
   OpenGL captures show the forest reflected by the gold sphere. Bootstrap's
   optional `environment_intensity` scales material IBL independently of visible
   sky radiance (default `0.25`) to retain directional-shadow contrast. →
-  [deferred PBR ledger](render/deferred_pbr_TODO.md#d57--environment-ibl-landed-2026-08-31)
+  [deferred PBR roadmap](render/deferred_pbr/TODO.md#d57--environment-ibl-landed-2026-08-31)
 
 - **Deferred PBR D5.6 — OpenGL depth-clear state isolation (2026-08-31)** —
   the live OpenGL over-occlusion came from a color-only pipeline leaving
@@ -34,7 +60,7 @@
   primes the stale-state transition as a regression fixture. Full build,
   171/171 tests, direct dual-backend smoke, and inspected live final-color plus
   shadow-visibility captures pass; Vulkan and OpenGL now match. →
-  [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Deferred PBR D5.5 — HDR environment background (2026-08-31)** — the
   bootstrap scene now preloads `HDR_041_Path.hdr` through Asset. ImageIO emits
@@ -44,7 +70,7 @@
   Vulkan and OpenGL live SceneColor captures both show the forest environment.
   At landing this was background radiance only; D5.7 later added the derived
   irradiance/specular/BRDF IBL path. Full build, 171/171 tests, and direct
-  cross-backend GraphicsSmoke pass. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  cross-backend GraphicsSmoke pass. → [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Deferred PBR D5.4 — runtime diagnostic capture routing (2026-08-31)** —
   Render now resolves SceneColor directly and conditionally converts linear
@@ -56,7 +82,7 @@
   remaining runtime-only OpenGL shadow regression: its live shadow view is
   fully occluded although the isolated cross-backend D5 smoke remains correct.
   D5 therefore stays open for comparable live final-color proof; HDR/EXR
-  capture remains deferred. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  capture remains deferred. → [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Gameplay GP6.1 — camera data and source contract (2026-08-30)** —
   `CameraComponent` is a transform/lens component with validated perspective
@@ -112,7 +138,7 @@
   reconstruction handles the backend viewport orientation. The smoke scene
   includes a floor receiver, and Vulkan/OpenGL pass with visually matching cast
   shadows. Portable raster depth bias and explicit shadow capture routing stay
-  deferred. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  deferred. → [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Deferred PBR D5.2 — directional Cook-Torrance lighting (2026-08-30)** —
   `DeferredLightingPass` now samples the three G-buffer attachments plus D32,
@@ -124,7 +150,7 @@
   normalization from the shared perspective matrix to Vulkan's negative-height
   viewport and normalized OpenGL capture rows. Both APIs now cull the interior
   and render matching exterior/final-lighting captures, providing a valid D5.3
-  baseline. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  baseline. → [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Deferred PBR D4 — directional shadow depth family (2026-08-30)** —
   `casts_shadow` remains authored Gameplay state while `LightSourceRegistry`
@@ -138,7 +164,7 @@
   SceneColor debug conversion samples it as a fourth panel. `GraphicsSmoke`
   now validates real depth write → sampled read → capture/resize/teardown on
   Vulkan and OpenGL. Portable depth bias and final shadow-factor evaluation
-  remain D5. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  remain D5. → [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Deferred PBR D3 — Material Asset V2 + opaque PBR G-buffer (2026-08-29)** —
   material assets version to 2 (`kMaterialVersion = 2`, V1 unlit still loads,
@@ -166,7 +192,7 @@
   `rock_pbr.material` → GBuffer pipeline → write → composite →
   `save/screenshots/validation/graphics-smoke-d3-{vulkan,opengl}.png` with the
   rock framed (camera near=1/far=2000) and non-uniform verified pixels. 148/148
-  tests. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  tests. → [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Bootstrap brick surface scene fixture (2026-08-29)** — the bootstrap scene
   now accepts additional mesh/material objects with position, rotation, and
@@ -197,7 +223,7 @@
   proves multi-attachment (RGBA8+RGBA16F+D32) → sampled readback → depth-only
   lifecycle on Vulkan and OpenGL. Its temporary fullscreen `cull_mode = NONE`
   workaround was retired by D5.2.2 after projection/viewport winding was fixed.
-  144/144 tests, engine boots with the migrated viewport. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  144/144 tests, engine boots with the migrated viewport. → [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Deferred PBR D1.4 — frame lighting ABI (2026-08-29)** — Render packs its
   immutable `LightWorld` snapshot into a bounded version-1 `LightGpuData` UBO
@@ -206,7 +232,7 @@
   encode as `Unshadowed`. It reserves common set 0/binding 4 for the future
   deferred-lighting pipeline without changing the current unlit descriptor
   layout. Runtime also composes the first default directional `LightActor`
-  beside its bootstrap mesh actor. → [deferred PBR ledger](render/deferred_pbr_TODO.md)
+  beside its bootstrap mesh actor. → [deferred PBR roadmap](render/deferred_pbr/TODO.md)
 
 - **Backend-owned command recording (2026-08-29)** — `RenderBackend` remains
   the backend/frame scheduler and resource-service façade, while both backends
@@ -295,7 +321,7 @@
   reports reserved debug views as `Unavailable`, and cancels pending work on
   render shutdown. `RenderSystem` owns only the service lifetime; RuntimeContext
   forwards the borrowed service interface. Actual GPU readback remains C2/C3.
-  → [capture plan](render/render_capture.md)
+  → [capture plans](render/render_capture/PLANS.md)
 
 - **ImageIO codec boundary (C1.4, 2026-08-28)** — the ImageIO Runtime target
   owns normalized RGBA8 CPU image decode and lossless PNG encoding behind one
@@ -433,7 +459,7 @@
   off-camera or distant caster is not GPU-clipped before it can shadow a
   visible receiver. Camera-frustum culling remains exclusive to `GBufferPass`.
   This is intentionally scene-wide and may reduce shadow-map density; tighter
-  receiver-aware fitting/cascades remain later work. → [deferred PBR TODO](render/deferred_pbr_TODO.md#d4--directional-shadow-depth-producer-and-consumer)
+  receiver-aware fitting/cascades remain later work. → [deferred PBR roadmap](render/deferred_pbr/TODO.md#d4--directional-shadow-pass-family)
 
 - **Deferred PBR D6.1 — unshadowed point lighting (2026-08-31)** — Gameplay
   now publishes `PointLightSourceDesc` through the same opaque light-source
@@ -443,15 +469,16 @@
   inverse-square attenuation with a smooth quartic range cutoff. The bootstrap
   scene creates one warm point-light actor. This leaves Asset, MeshProxy,
   material bindings, common RHI contracts, and punctual-shadow scheduling
-  unchanged. → [deferred PBR TODO](render/deferred_pbr_TODO.md#d6--light-and-shadow-expansion)
+  unchanged. → [deferred PBR roadmap](render/deferred_pbr/TODO.md#d6--light-and-shadow-expansion)
 
 - **Deferred PBR D6.2 — unshadowed spot lighting (2026-08-31)** — Gameplay
   now publishes a copied spot source with position, travel direction, range,
   inner cone, outer cone, color, intensity, and enabled state. Render resolves
   it to its pre-existing `LightType::Spot` GPU record without a shadow handle.
   Deferred lighting combines D6.1 range attenuation with a squared cosine cone
-  factor, and the bootstrap scene creates a blue spotlight. `Spot2D` targets,
-  shadow filtering, and scheduling remain unimplemented. → [deferred PBR TODO](render/deferred_pbr_TODO.md#d6--light-and-shadow-expansion)
+  factor, and the bootstrap scene creates a blue spotlight. The subsequent
+  D6.3 slice adds the bounded `Spot2D` target, filtering, scheduling, and
+  diagnostics. → [deferred PBR roadmap](render/deferred_pbr/TODO.md#d6--light-and-shadow-expansion)
 
 - **Deferred PBR D5.1 — HDR presentation spine (2026-08-30)** — Render now
   owns a sampled RGBA16F `SceneHdr` separately from the stable RGBA8 sRGB
@@ -462,7 +489,7 @@
   `graphics-smoke-d5-{vulkan,opengl}.png`. Deferred Cook-Torrance lighting,
   directional shadow-factor evaluation, explicit capture-view routing, and
   runtime command-path screenshots remain D5 work. →
-  [deferred PBR TODO](render/deferred_pbr_TODO.md#d51--hdr-presentation-spine-landed-2026-08-30)
+  [deferred PBR roadmap](render/deferred_pbr/TODO.md#d51--hdr-presentation-spine-landed-2026-08-30)
 
 - **Deferred PBR D1.3 — typed light/shadow descriptions (2026-08-29)** —
   `LightWorld` now stores validated `LightDesc` records: common
@@ -474,7 +501,7 @@
   jobs, forged/stale handles, and incompatible light/shadow kinds.
   `RenderPassScheduleTest` and Vulkan/OpenGL `GraphicsSmoke` pass. D1.4 owns
   the frame GPU layout; D4 owns job scheduling and depth targets. →
-  [deferred PBR TODO](render/deferred_pbr_TODO.md#d13--extensible-light-and-shadow-description)
+  [deferred PBR roadmap](render/deferred_pbr/TODO.md#d13--extensible-light-and-shadow-description)
 
 - **Deferred PBR D1.2 — Render light snapshots (2026-08-29)** — Render now
   owns `LightSourceRegistry` and `LightWorld`. The registry accepts copied
@@ -486,7 +513,7 @@
   source-token rejection, resolved-handle retirement, and shutdown clear.
   `RenderPassScheduleTest` and dual-backend `GraphicsSmoke` pass. Point/spot
   ABI and shadow state remain D1.3. →
-  [deferred PBR TODO](render/deferred_pbr_TODO.md#d12--render-light-snapshot-resolution)
+  [deferred PBR roadmap](render/deferred_pbr/TODO.md#d12--render-light-snapshot-resolution)
 
 - **Deferred PBR D1.1 — Gameplay directional-light source (2026-08-29)** —
   Gameplay now owns `DirectionalLightComponent` and the
@@ -497,7 +524,7 @@
   descriptor, Graphics type, or direct RenderWorld access. `GameplayUnitTest`
   covers create/coalesced-update/destroy and factory lifecycle. Render's
   mailbox, resolved LightWorld handles, and immutable snapshots remain D1.2.
-  → [deferred PBR TODO](render/deferred_pbr_TODO.md#d11--gameplay-light-source-publication)
+  → [deferred PBR roadmap](render/deferred_pbr/TODO.md#d11--gameplay-light-source-publication)
 
 - **Mesh proxy foundation (MP1 + basic MP2 + CPU frustum visibility, 2026-08-26)** — `RenderWorld`,
   owned by `RenderSystem`, accepts value-only create/update/destroy commands,
@@ -522,8 +549,8 @@
   texture, and sampler handles. `FrameContext` now turns a ready instance into
   transient constant/texture bindings, and the bootstrap scene uses that real
   handle rather than a raw texture binding. `GraphicsSmoke` passes on Vulkan
-  and OpenGL, including resize and teardown. → [material design](render/material_system.md),
-  [material TODO](render/material_system_TODO.md)
+  and OpenGL, including resize and teardown. → [material plans](render/material_system/PLANS.md),
+  [material TODO](render/material_system/TODO.md)
 
 - **Render resource resolver extraction (2026-08-25)** — `RenderSystem` now
   coordinates resource requests but no longer implements static RHI resource
@@ -606,18 +633,18 @@
   texture parameter sources. The format is documented beside the asset module;
   Render-side resolution is recorded in the following M6 completion entry.
   → [asset file structure](../engine/runtime/asset/README.md),
-  [material TODO](render/material_system_TODO.md)
+  [material TODO](render/material_system/TODO.md)
 - **Material Asset V1 — render resolution (2026-08-28)** — Gameplay now
   publishes material AssetIDs, while RenderSystem resolves each loaded material
   into one cached private template/default-instance pair and supplies only that
   instance to MeshProxy. Bootstrap now references `bootstrap.material`; the
   initial unlit texture convention is `base_color_texture` at binding 2.
-  → [material TODO](render/material_system_TODO.md)
+  → [material TODO](render/material_system/TODO.md)
 - **Material Asset V1 — M6.1 validation (2026-08-28)** — the Render-owned
   material-asset cache is independently testable. Focused tests cover
   deduplication, invalid/unloaded/broken references, schema-version rejection,
   and failed-source proxy retirement; Vulkan/OpenGL graphics smoke passed.
-  → [material TODO](render/material_system_TODO.md)
+  → [material TODO](render/material_system/TODO.md)
 1. **Render module reconstruction** — follow the structured [render overview](render/overview.md) and its [preserved roadmap](render/render_module.md#render-roadmap): preserve the Render → Resource → Graphics boundary while evolving passes, scene policy, and validation.
 2. **RHI leak fixes** — `ShaderManager` retired + `PipelineDesc` shaders backed by `ShaderData` (**landed 2026-08-15**, Phase 0 of [vulkanbackend.md](graphics/vulkanbackend.md)). **`VulkanDevice` extracted (landed 2026-08-15**, Phase 1 — reconstruction; original archived at `backend/vulkan/deprecated/`). **`VulkanSwapchain` extracted (landed 2026-08-15**, Phase 2). **`VulkanFrameContext` extracted (landed 2026-08-15**, Phase 3 — command pools, scene/UI buffers, sync objects, in-flight index, one-shot primitives, sync2-only barriers; shared one-shot buffers + dead transfer helpers deleted). **Scene recording extracted (landed 2026-08-15**, Phase 4 — the backend exposes "the current frame's command buffer + attachments"; the demo moved out to `render::RenderScene`, the render module's first real scene; TODO 5.1 `Render` links `Graphics` landed). **Facade cleanup (landed 2026-08-16**, Phase 5 — `window_`/`camera_data` public seams dropped, `Initialize` takes the native window handle; sakura split decided: keep the frame loop). **Build-time `glslc` step removed (landed 2026-08-16**, TODO 2.3 — the demo bakes shaders at runtime via `ProcessShader`). **`ShaderModule` seam retired (landed 2026-08-16**, TODO 1.2 — raw `ShaderData` → API object stays inline in the pipeline bakes).
 3. **Resource pipeline gaps** — add `CompileFailed` status (carry error text); make `ProcessShader` take the whole `ShaderProgramResource` as one compile unit.

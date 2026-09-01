@@ -49,6 +49,15 @@ namespace kpengine::gameplay
         }
     }
 
+    void PointLightComponent::SetCastsShadow(bool casts_shadow)
+    {
+        if (casts_shadow_ != casts_shadow)
+        {
+            casts_shadow_ = casts_shadow;
+            MarkSourceDirty();
+        }
+    }
+
     void PointLightComponent::OnActivate()
     {
         SceneComponent::OnActivate();
@@ -90,6 +99,7 @@ namespace kpengine::gameplay
         source.intensity = intensity_;
         source.range = range_;
         source.enabled = enabled_;
+        source.casts_shadow = casts_shadow_;
         return source;
     }
 

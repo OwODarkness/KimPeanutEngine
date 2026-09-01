@@ -21,6 +21,10 @@ namespace kpengine::render
             case CaptureView::BaseColor:
             case CaptureView::MaterialParams:
             case CaptureView::ShadowVisibility:
+            case CaptureView::SpotShadowDepth:
+            case CaptureView::SpotShadowVisibility:
+            case CaptureView::PointShadowDepth:
+            case CaptureView::PointShadowVisibility:
                 return true;
             }
             return false;

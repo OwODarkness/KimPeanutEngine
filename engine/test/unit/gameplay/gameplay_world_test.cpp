@@ -508,6 +508,7 @@ TEST(GameplayWorldTest, DirectionalLightActorFactoryBuildsAnActiveLightCompositi
     EXPECT_EQ(source.color, desc.color);
     EXPECT_EQ(source.intensity, desc.intensity);
     EXPECT_EQ(source.enabled, desc.enabled);
+    EXPECT_EQ(source.casts_shadow, desc.casts_shadow);
 }
 
 TEST(GameplayWorldTest, PointLightActorFactoryPublishesUnshadowedPointSource)
@@ -534,6 +535,7 @@ TEST(GameplayWorldTest, PointLightActorFactoryPublishesUnshadowedPointSource)
     EXPECT_EQ(source.intensity, desc.intensity);
     EXPECT_EQ(source.range, desc.range);
     EXPECT_EQ(source.enabled, desc.enabled);
+    EXPECT_EQ(source.casts_shadow, desc.casts_shadow);
 
     light->SetRange(48.0f);
     world.Tick(1.0f / 60.0f);

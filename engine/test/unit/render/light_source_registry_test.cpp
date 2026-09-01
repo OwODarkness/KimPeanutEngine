@@ -21,6 +21,7 @@ namespace
         source.color = {0.25f, 0.5f, 1.0f};
         source.intensity = 12.0f;
         source.range = range;
+        source.casts_shadow = false;
         return source;
     }
 
@@ -34,6 +35,7 @@ namespace
         source.range = 10.0f;
         source.inner_cone_radians = 0.25f;
         source.outer_cone_radians = outer_cone_radians;
+        source.casts_shadow = false;
         return source;
     }
 
@@ -93,6 +95,33 @@ TEST(LightSourceRegistryTest, ResolvesSourceCommandsAtDrainIntoImmutableLightSna
     registry.Drain(world);
     EXPECT_TRUE(world.Snapshot().empty());
     EXPECT_FALSE(world.IsRegistered(resolved_handle));
+}
+
+TEST(LightSourceRegistryTest, SpotShadowIntentOwnsPrivateHandleAndRetiresOnDisable)
+{
+    kpengine::render::LightSourceRegistry registry{};
+    kpengine::render::LightWorld world{};
+    auto source = MakeSpotSource();
+    source.casts_shadow = true;
+    const auto source_handle = registry.EnqueueCreate(source);
+    registry.Drain(world);
+    auto snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot.front().desc.shadow.has_value());
+    const auto shadow = *snapshot.front().desc.shadow;
+    EXPECT_TRUE(registry.IsShadowHandleValid(shadow));
+
+    source.casts_shadow = false;
+    ASSERT_TRUE(registry.EnqueueUpdate(source_handle, source));
+    registry.Drain(world);
+    snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_FALSE(snapshot.front().desc.shadow.has_value());
+    EXPECT_FALSE(registry.IsShadowHandleValid(shadow));
+
+    ASSERT_TRUE(registry.EnqueueDestroy(source_handle));
+    registry.Drain(world);
+    EXPECT_TRUE(world.Snapshot().empty());
 }
 
 TEST(LightSourceRegistryTest, RejectsStaleSourceHandlesAndClearRetiresResolvedLights)
@@ -170,6 +199,29 @@ TEST(LightSourceRegistryTest, ResolvesPointSourcesWithoutCreatingShadowIdentity)
     EXPECT_FALSE(snapshot.front().desc.shadow.has_value());
 }
 
+TEST(LightSourceRegistryTest, PointShadowIntentOwnsPrivateHandleAndRetiresOnDisable)
+{
+    kpengine::render::LightSourceRegistry registry{};
+    kpengine::render::LightWorld world{};
+    auto source = MakePointSource();
+    source.casts_shadow = true;
+    const auto source_handle = registry.EnqueueCreate(source);
+    registry.Drain(world);
+    auto snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_TRUE(snapshot.front().desc.shadow.has_value());
+    const auto shadow = *snapshot.front().desc.shadow;
+    EXPECT_TRUE(registry.IsShadowHandleValid(shadow));
+
+    source.casts_shadow = false;
+    ASSERT_TRUE(registry.EnqueueUpdate(source_handle, source));
+    registry.Drain(world);
+    snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_FALSE(snapshot.front().desc.shadow.has_value());
+    EXPECT_FALSE(registry.IsShadowHandleValid(shadow));
+}
+
 TEST(LightSourceRegistryTest, ResolvesSpotSourcesWithoutCreatingShadowIdentity)
 {
     kpengine::render::LightSourceRegistry registry{};
@@ -243,6 +295,20 @@ TEST(LightWorldTest, ValidatesTypedLightPayloadsAndShadowJobDescriptions)
         kpengine::render::LightType::Point, directional_job.kind));
     EXPECT_FALSE(kpengine::render::IsShadowJobDescValid(
         {light_handle, kpengine::render::ShadowKind::Directional2D, 0, 0}));
+}
+
+TEST(LightWorldTest, UsesCanonicalPointShadowFaceOrderAndDominantAxisTieBreak)
+{
+    const auto &faces = kpengine::render::GetPointShadowFaceTable();
+    ASSERT_EQ(faces.size(), 6U);
+    EXPECT_EQ(faces[0].direction, (kpengine::Vector3f{1.0f, 0.0f, 0.0f}));
+    EXPECT_EQ(faces[1].tile_x, 1U);
+    EXPECT_EQ(faces[2].tile_x, 2U);
+    EXPECT_EQ(faces[3].tile_y, 1U);
+    EXPECT_EQ(faces[4].tile_x, 1U);
+    EXPECT_EQ(faces[5].tile_x, 2U);
+    EXPECT_EQ(kpengine::render::SelectPointShadowFace({1.0f, 1.0f, 0.0f}), 0U);
+    EXPECT_EQ(kpengine::render::SelectPointShadowFace({0.0f, -2.0f, 2.0f}), 3U);
 }
 
 TEST(LightGpuDataTest, EncodesEveryLightTypeAndMakesUnresolvedShadowsExplicitlyUnshadowed)
@@ -338,4 +404,44 @@ TEST(LightGpuDataTest, ResolvesOnlyTheMatchingScheduledShadowIntoTheGpuRecord)
         kpengine::render::BuildLightGpuFrameData(lights, incompatible);
     EXPECT_EQ(incompatible_data.lights[0].shadow_kind,
               static_cast<uint32_t>(kpengine::render::LightGpuShadowKind::Unshadowed));
+}
+
+TEST(LightGpuDataTest, CoexistsDirectionalAndSpotBindingsWithoutChangingStride)
+{
+    const kpengine::render::LightHandle directional_handle{7U, 2U};
+    const kpengine::render::LightHandle spot_handle{8U, 1U};
+    const kpengine::render::ShadowHandle directional_shadow{3U, 4U};
+    const kpengine::render::ShadowHandle spot_shadow{4U, 2U};
+    auto directional = MakeDirectionalLight();
+    directional.shadow = directional_shadow;
+    auto spot = MakeSpotLight();
+    spot.shadow = spot_shadow;
+    const std::vector<kpengine::render::Light> lights{
+        {directional_handle, directional}, {spot_handle, spot}};
+    const kpengine::render::ResolvedLightShadowBindings bindings{
+        {directional_handle, directional_shadow, kpengine::render::ShadowKind::Directional2D, 0U},
+        {spot_handle, spot_shadow, kpengine::render::ShadowKind::Spot2D, 1U}};
+    const auto frame = kpengine::render::BuildLightGpuFrameData(lights, bindings);
+    EXPECT_EQ(frame.header.light_stride, sizeof(kpengine::render::LightGpuData));
+    EXPECT_EQ(frame.lights[0].shadow_kind,
+              static_cast<uint32_t>(kpengine::render::LightGpuShadowKind::Directional2D));
+    EXPECT_EQ(frame.lights[1].shadow_kind,
+              static_cast<uint32_t>(kpengine::render::LightGpuShadowKind::Spot2D));
+    EXPECT_EQ(frame.lights[1].shadow_binding_slot, 1U);
+}
+
+TEST(LightGpuDataTest, ResolvesPointCubeBindingAtSlotTwoWithoutChangingStride)
+{
+    const kpengine::render::LightHandle light_handle{9U, 1U};
+    const kpengine::render::ShadowHandle shadow_handle{5U, 1U};
+    auto point = MakePointLight();
+    point.shadow = shadow_handle;
+    const std::vector<kpengine::render::Light> lights{{light_handle, point}};
+    const kpengine::render::ResolvedLightShadowBinding binding{
+        light_handle, shadow_handle, kpengine::render::ShadowKind::PointCube, 2U};
+    const auto frame = kpengine::render::BuildLightGpuFrameData(lights, binding);
+    EXPECT_EQ(frame.header.light_stride, sizeof(kpengine::render::LightGpuData));
+    EXPECT_EQ(frame.lights[0].shadow_kind,
+              static_cast<uint32_t>(kpengine::render::LightGpuShadowKind::PointCube));
+    EXPECT_EQ(frame.lights[0].shadow_binding_slot, 2U);
 }

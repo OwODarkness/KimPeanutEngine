@@ -10,6 +10,8 @@ namespace kpengine::render
     namespace
     {
         constexpr uint32_t kDirectionalShadowResolution = 2048;
+        constexpr uint32_t kSpotShadowResolution = 1024;
+        constexpr uint32_t kPointShadowFaceResolution = 512;
     }
     struct RendererFrameTargets::Impl
     {
@@ -79,6 +81,33 @@ namespace kpengine::render
             // Render-owned consumers, never by Gameplay or Asset.
             desc.width = kDirectionalShadowResolution;
             desc.height = kDirectionalShadowResolution;
+            desc.depth = graphics::RenderTargetDepthAttachment{
+                TextureFormat::TEXTURE_FORMAT_D32,
+                graphics::RenderTargetLoadOp::Clear,
+                graphics::RenderTargetStoreOp::Store,
+                1.0f,
+                0,
+                true};
+            break;
+        case RenderTargetName::SpotShadow:
+            // Fixed-budget punctual shadow producer. Render owns the policy;
+            // Graphics owns allocation and sampled-depth transitions.
+            desc.width = kSpotShadowResolution;
+            desc.height = kSpotShadowResolution;
+            desc.depth = graphics::RenderTargetDepthAttachment{
+                TextureFormat::TEXTURE_FORMAT_D32,
+                graphics::RenderTargetLoadOp::Clear,
+                graphics::RenderTargetStoreOp::Store,
+                1.0f,
+                0,
+                true};
+            break;
+        case RenderTargetName::PointShadow:
+            // Six canonical 512² faces packed as a fixed 3×2 sampled D32
+            // atlas. The target remains an ordinary 2D attachment so both
+            // backends use the existing render-target contract.
+            desc.width = kPointShadowFaceResolution * 3;
+            desc.height = kPointShadowFaceResolution * 2;
             desc.depth = graphics::RenderTargetDepthAttachment{
                 TextureFormat::TEXTURE_FORMAT_D32,
                 graphics::RenderTargetLoadOp::Clear,

@@ -97,6 +97,53 @@ TEST(RenderCaptureServiceTest, DefersResolvedViewReadbackUntilRenderRecordsItsPa
     EXPECT_FALSE(service.EnqueuePendingReadback());
 }
 
+TEST(RenderCaptureServiceTest, AcceptsSpotShadowDiagnosticViews)
+{
+    for (const CaptureView view : {CaptureView::SpotShadowDepth,
+                                   CaptureView::SpotShadowVisibility})
+    {
+        FakeReadback readback;
+        CaptureView resolved_view = CaptureView::SceneColor;
+        RenderCaptureService service{
+            &readback,
+            [&resolved_view](CaptureView requested)
+            {
+                resolved_view = requested;
+                return kpengine::graphics::RenderTargetHandle{9, 3};
+            },
+            [] { return 7U; }};
+
+        EXPECT_TRUE(service.RequestCapture({view}, [](CaptureResult) {}));
+        EXPECT_EQ(service.GetPendingView(), view);
+        EXPECT_TRUE(service.EnqueuePendingReadback());
+        EXPECT_EQ(resolved_view, view);
+        ASSERT_TRUE(readback.request.has_value());
+        EXPECT_EQ(readback.request->target,
+                  (kpengine::graphics::RenderTargetHandle{9, 3}));
+    }
+}
+
+TEST(RenderCaptureServiceTest, AcceptsPointShadowDiagnosticViews)
+{
+    for (const CaptureView view : {CaptureView::PointShadowDepth,
+                                   CaptureView::PointShadowVisibility})
+    {
+        FakeReadback readback;
+        CaptureView resolved_view = CaptureView::SceneColor;
+        RenderCaptureService service{
+            &readback,
+            [&resolved_view](CaptureView requested)
+            {
+                resolved_view = requested;
+                return kpengine::graphics::RenderTargetHandle{9, 3};
+            },
+            [] { return 7U; }};
+        EXPECT_TRUE(service.RequestCapture({view}, [](CaptureResult) {}));
+        EXPECT_TRUE(service.EnqueuePendingReadback());
+        EXPECT_EQ(resolved_view, view);
+    }
+}
+
 TEST(RenderCaptureServiceTest, CompletesPendingCaptureExactlyOnce)
 {
     RenderCaptureService service;

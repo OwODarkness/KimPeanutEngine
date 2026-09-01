@@ -65,6 +65,10 @@ namespace kpengine::runtime
             if (view == "base_color") return render::CaptureView::BaseColor;
             if (view == "material_params") return render::CaptureView::MaterialParams;
             if (view == "shadow_visibility") return render::CaptureView::ShadowVisibility;
+            if (view == "spot_shadow_depth") return render::CaptureView::SpotShadowDepth;
+            if (view == "spot_shadow_visibility") return render::CaptureView::SpotShadowVisibility;
+            if (view == "point_shadow_depth") return render::CaptureView::PointShadowDepth;
+            if (view == "point_shadow_visibility") return render::CaptureView::PointShadowVisibility;
             return render::CaptureView::SceneColor;
         }
     }
@@ -91,7 +95,9 @@ namespace kpengine::runtime
                                            std::string{"scene_color"},
                                            {"scene_color", "linear_depth", "world_normal",
                                             "base_color", "material_params",
-                                            "shadow_visibility"}}}},
+                                            "shadow_visibility", "spot_shadow_depth",
+                                            "spot_shadow_visibility", "point_shadow_depth",
+                                            "point_shadow_visibility"}}}},
             [screenshot_service = std::move(screenshot_service)](
                 const command::CommandCall &call, const command::CommandContext &context)
             {

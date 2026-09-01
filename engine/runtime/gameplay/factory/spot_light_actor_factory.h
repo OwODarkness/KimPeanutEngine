@@ -18,6 +18,7 @@ namespace kpengine::gameplay
         float inner_cone_radians = 0.0f;
         float outer_cone_radians = 0.785398163f;
         bool enabled = true;
+        bool casts_shadow = true;
     };
 
     ActorHandle CreateSpotLightActor(GameplayWorld &world, const SpotLightActorDesc &desc);

@@ -112,6 +112,57 @@ namespace kpengine::runtime
                   render::CaptureView::ShadowVisibility);
     }
 
+    TEST(ScreenshotCommandProviderTest, MapsSpotShadowDiagnosticViewNames)
+    {
+        FakeCaptureService capture_service;
+        auto screenshot_service = std::make_shared<RuntimeScreenshotService>(capture_service);
+        command::CommandRegistry registry;
+        const command::CommandRegistrationResult registration =
+            RegisterScreenshotCommands(registry, screenshot_service);
+        ASSERT_TRUE(registration.IsSuccess());
+        const auto pending = registry.Execute(
+            {"capture.screenshot", {{"view", std::string{"spot_shadow_visibility"}}}},
+            {command::CommandOrigin::Test, command::CommandThread::Immediate},
+            [](const command::CommandResult &) {});
+        ASSERT_EQ(pending.status, command::CommandStatus::Pending);
+        EXPECT_EQ(registry.PumpGameThread(), 1U);
+        EXPECT_EQ(capture_service.last_request.view, render::CaptureView::SpotShadowVisibility);
+    }
+
+    TEST(ScreenshotCommandProviderTest, MapsSpotShadowDepthDiagnosticViewName)
+    {
+        FakeCaptureService capture_service;
+        auto screenshot_service = std::make_shared<RuntimeScreenshotService>(capture_service);
+        command::CommandRegistry registry;
+        const command::CommandRegistrationResult registration =
+            RegisterScreenshotCommands(registry, screenshot_service);
+        ASSERT_TRUE(registration.IsSuccess());
+        const auto pending = registry.Execute(
+            {"capture.screenshot", {{"view", std::string{"spot_shadow_depth"}}}},
+            {command::CommandOrigin::Test, command::CommandThread::Immediate},
+            [](const command::CommandResult &) {});
+        ASSERT_EQ(registry.PumpGameThread(), 1U);
+        ASSERT_EQ(pending.status, command::CommandStatus::Pending);
+        EXPECT_EQ(capture_service.last_request.view, render::CaptureView::SpotShadowDepth);
+    }
+
+    TEST(ScreenshotCommandProviderTest, MapsPointShadowDiagnosticViewNames)
+    {
+        FakeCaptureService capture_service;
+        auto screenshot_service = std::make_shared<RuntimeScreenshotService>(capture_service);
+        command::CommandRegistry registry;
+        const command::CommandRegistrationResult registration =
+            RegisterScreenshotCommands(registry, screenshot_service);
+        ASSERT_TRUE(registration.IsSuccess());
+        const auto pending = registry.Execute(
+            {"capture.screenshot", {{"view", std::string{"point_shadow_visibility"}}}},
+            {command::CommandOrigin::Test, command::CommandThread::Immediate},
+            [](const command::CommandResult &) {});
+        ASSERT_EQ(registry.PumpGameThread(), 1U);
+        ASSERT_EQ(pending.status, command::CommandStatus::Pending);
+        EXPECT_EQ(capture_service.last_request.view, render::CaptureView::PointShadowVisibility);
+    }
+
     TEST(ScreenshotCommandProviderTest, PreservesServiceOwnedInvalidPathDiagnostic)
     {
         FakeCaptureService capture_service;

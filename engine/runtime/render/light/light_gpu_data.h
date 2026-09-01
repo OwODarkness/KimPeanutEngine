@@ -75,8 +75,10 @@ namespace kpengine::render
         uint32_t binding_slot = 0;
     };
 
-    // Fullscreen lighting constants. The matrix is transposed before upload so
-    // GLSL observes the CPU-side inverse view-projection matrix.
+    using ResolvedLightShadowBindings = std::vector<ResolvedLightShadowBinding>;
+
+    // Fullscreen lighting constants. Matrices are transposed before upload so
+    // GLSL observes the CPU-side transforms.
     struct alignas(16) DeferredLightingGpuData
     {
         Matrix4f inverse_view_projection;
@@ -84,8 +86,21 @@ namespace kpengine::render
         Matrix4f directional_shadow_view_projection;
         // Minimum bias, slope-scaled bias, texel size, reserved.
         Vector4f directional_shadow_params{};
+        Matrix4f spot_shadow_view_projection;
+        // Minimum bias, slope-scaled bias, texel size, enabled.
+        Vector4f spot_shadow_params{};
         // IBL enabled, prefilter atlas level count, intensity, reserved.
         Vector4f environment_ibl_params{};
+    };
+
+    // Render-private constants for the six-face point-shadow atlas. Kept out
+    // of DeferredLightingGpuData so the locked D6.3 block and LightGpuData ABI
+    // remain byte-for-byte stable.
+    struct alignas(16) PointShadowGpuData
+    {
+        std::array<Matrix4f, 6> face_view_projections{};
+        // x/y: atlas texel size, z: receiver bias, w: slope bias/enabled.
+        Vector4f atlas_params{};
     };
 
     static_assert(sizeof(Vector4f) == sizeof(float) * 4,
@@ -99,11 +114,17 @@ namespace kpengine::render
     static_assert(offsetof(LightGpuData, reserved) == 72);
     static_assert(sizeof(LightGpuFrameHeader) == 16,
                   "The frame lighting header is one uniform-buffer row");
-    static_assert(sizeof(DeferredLightingGpuData) == 176,
-                  "Deferred lighting constants must match eleven std140 rows");
+    static_assert(sizeof(DeferredLightingGpuData) == 256,
+                  "Deferred lighting constants must match sixteen std140 rows");
+    static_assert(sizeof(PointShadowGpuData) == 400,
+                  "Point shadow constants must match six mat4 rows plus one vec4");
 
     bool IsLightGpuFrameHeaderCompatible(const LightGpuFrameHeader &header);
     std::optional<LightGpuData> EncodeLightGpuData(const LightDesc &light);
+    LightGpuFrameData BuildLightGpuFrameData(
+        const std::vector<Light> &lights,
+        const ResolvedLightShadowBindings &resolved_shadows);
+
     LightGpuFrameData BuildLightGpuFrameData(
         const std::vector<Light> &lights,
         const std::optional<ResolvedLightShadowBinding> &resolved_shadow = std::nullopt);

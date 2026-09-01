@@ -26,6 +26,7 @@ namespace kpengine::gameplay
         light->SetInnerConeRadians(desc.inner_cone_radians);
         light->SetOuterConeRadians(desc.outer_cone_radians);
         light->SetLightEnabled(desc.enabled);
+        light->SetCastsShadow(desc.casts_shadow);
         if (!world.InitializeActor(handle) || !world.ActivateActor(handle))
         {
             (void)world.DestroyActor(handle);

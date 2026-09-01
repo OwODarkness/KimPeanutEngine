@@ -23,6 +23,7 @@ namespace kpengine::render
 
         void Drain(LightWorld &light_world);
         void Clear(LightWorld &light_world);
+        bool IsShadowHandleValid(ShadowHandle handle) const;
 
     private:
         struct CreateCommand
@@ -50,7 +51,7 @@ namespace kpengine::render
 
         void ApplyCommands(LightWorld &light_world, std::vector<Command> commands);
 
-        std::mutex command_mutex_;
+        mutable std::mutex command_mutex_;
         HandleSystem<LightSourceHandle> handles_;
         HandleSystem<ShadowHandle> shadow_handles_;
         std::vector<Command> pending_commands_;

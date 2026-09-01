@@ -20,6 +20,8 @@ namespace kpengine::render
         SceneColor,
         GBuffer,
         DirectionalShadow,
+        SpotShadow,
+        PointShadow,
         SceneHdr,
         CaptureOutput,
         Count,

@@ -1,11 +1,11 @@
 # Render Deferred PBR
 
-- Status: partial (D0–D5 complete; D6–D7 pending)
-- Date: 2026-08-31
+- Status: active (D0–D7 evidence complete; future shadow alternatives deferred)
+- Last updated: 2026-09-01
 - Spec: [Render Deferred PBR](../specs/render-deferred-pbr.md)
-- Parent TODO: [Deferred PBR TODO](../../docs/render/deferred_pbr_TODO.md)
+- Parent roadmap: [Deferred PBR Renderer Roadmap](../../docs/render/deferred_pbr/TODO.md)
 
-## What was done
+## 2026-08-29 — D0–D3 foundation
 
 - **D0 — prerequisites.** Split backend scheduling/ownership from
   `CommandRecorder` implementation (Vulkan/OpenGL own short-lived recorders).
@@ -64,15 +64,15 @@
   (unlit stays green in smoke). `RenderCamera` gained near/far setters; the
   engine scene camera frames the ~165-unit rock at far=2000, near=1.
 
-## What changed
+## Foundation checkpoint — scope and validation
 
 - Architecture or behavior: common target/pipeline descriptions are now
   caller-driven and validated; backends no longer fill formats implicitly.
   Depth test/write is a function of the pipeline's declared depth format on
-  both APIs (a no-depth pipeline must not discard fragments). Fullscreen
-  passes must use `cull_mode = NONE` — the shared fullscreen triangle is
-  front-facing in OpenGL's y-up NDC but back-facing in Vulkan's y-down NDC,
-  so a back-culling pipeline culls it on Vulkan.
+  both APIs (a no-depth pipeline must not discard fragments). Later D5.2.1 and
+  D5.2.2 corrections moved framebuffer-origin normalization to backend
+  viewport/readback boundaries, so fullscreen passes use ordinary back-face
+  culling again.
 - Important files/modules:
   - Common: `graphics/backend/common/render_target.{h}`,
     `render_target_validation.{h,cpp}`, `pipeline_validation.cpp`,
@@ -137,15 +137,15 @@
   triangle (NDC y-flip above). Fixed with `cull_mode = NONE`. D3 reused that
   proven `cull_mode = NONE` fullscreen pattern for the debug composite.
 
-## Remaining risks and unverified areas
+## Foundation risks recorded at the D3 checkpoint
 
-- The pre-existing scene sphere is likely also culled on Vulkan by the same
-  NDC y-flip; the C4 screenshot check only requires varied pixels (the plane
-  renders), so it was masked. Must be confirmed when D5 lighting is inspected.
+- The pre-existing scene sphere was likely also culled on Vulkan by the same
+  NDC y-flip at this checkpoint; D5.2.1/D5.2.2 later corrected the shared
+  projection and backend viewport ownership.
 - GL depth test is now derived from the pipeline depth format, but the
   depth-only smoke is lifecycle-only; real shadow *content* is D4.
-- Vulkan readback gates on RGBA8_SRGB — D5 HDR capture needs a readback format
-  extension.
+- Vulkan readback gated on RGBA8_SRGB; D5 retained RGBA8 capture output while
+  HDR capture remains outside the current evidence path.
 - Vulkan D24S8 uses `IMAGE_ASPECT_DEPTH` only — fine for D32 targets; fix
   before any stencil target.
 - Retirement stays `WaitIdle` + rebuild (conservative for a shared target set);
@@ -153,22 +153,20 @@
 
 ## Remaining work
 
-- D6 — unshadowed point/spot, `Spot2D`/`PointCube` jobs, shadow budget policy.
-- D7 — evidence and handoff (contract coverage, validation matrix, screenshots,
-  ledger/status updates).
+- Future shadow alternatives — true cube resources, multiple punctual jobs,
+  variable resolution, caching, and general atlas policy require a new design.
 
 ## Documentation and follow-up
 
-- Ledger: [deferred_pbr_TODO.md](../../docs/render/deferred_pbr_TODO.md) — D0,
-  D1, D2, D3 marked done with landing notes (D3 includes the tangent-audit
-  result).
+- Roadmap: [deferred_pbr_TODO.md](../../docs/render/deferred_pbr_TODO.md) —
+  concise stage checklists and acceptance criteria.
 - Status: [status.md](../../docs/status.md) — D2 and D3 Done entries.
 - Module docs: [graphics_module.md](../../docs/graphics/graphics_module.md) —
   stale swapchain auto-fill claim removed; render-target contract subsection
   added. `docs/render/deferred_pbr_plan.md` remains the authoritative design
   and now carries the G-buffer encodings table, color-space rule, tangent
   convention, and material-V2 constant-block ABI.
-- Append dated checkpoints/corrections here as D4–D7 land.
+- Append dated checkpoints/corrections here as D6.3–D7 land.
 
 ## 2026-08-30 — D4 directional shadow depth family
 
@@ -421,3 +419,185 @@
   consistent and confines origin/depth differences to backend capability
   crops. That evidence rejected another shader-space flip; the local depth
   probe identified the actual OpenGL load-state leak instead.
+
+## 2026-08-31 — D5.7 environment IBL
+
+- `ResourcePipeline` now turns the Asset-owned RGBA16F equirectangular HDR
+  source into three CPU-side derived artifacts: cosine-convolved irradiance,
+  GGX roughness-prefiltered radiance, and a split-sum BRDF integration LUT.
+  Render uploads and owns the three GPU bindings, keyed by source AssetID,
+  resolved format, and explicit derived-artifact variant, so none aliases the
+  visible sky texture. The source panorama remains the background binding;
+  irradiance, prefiltered radiance, and BRDF LUT use separate bindings.
+- The common Vulkan upload path does not correctly populate cube faces or mip
+  levels. The prefilter is therefore stored as equal-height roughness bands in
+  a 2D equirectangular atlas rather than pretending to be a cube-mip resource.
+  The shader blends adjacent bands by roughness and applies the split-sum
+  diffuse/specular terms.
+- Bootstrap exposes optional non-negative `environment_intensity` (default
+  `0.25`). It scales material IBL only; visible HDR sky radiance remains
+  unscaled so indirect light does not erase directional-shadow contrast.
+- `EnvironmentIblProcessorTest` covers constant-environment convolution,
+  roughness-atlas dimensions, finite BRDF output, and invalid-source rejection;
+  the texture-cache test locks derived-artifact key separation. Focused tests,
+  the Debug engine build, and direct Vulkan/OpenGL `GraphicsSmoke` passed with
+  Vulkan validation clean after its matching descriptor fixture was updated.
+  Live captures show forest reflections on the metallic gold sphere and
+  environment diffuse lighting on both APIs at
+  `save/screenshots/validation/d5-7-vulkan-ibl-scene-color-1.png` and
+  `save/screenshots/validation/d5-7-opengl-ibl-scene-color.png`.
+
+## 2026-08-31 — D6.1 unshadowed point lighting
+
+- Gameplay publishes an opaque point-light source token. Render resolves it to
+  `LightType::Point` without a `ShadowHandle`; deferred lighting evaluates
+  inverse-square attenuation with a smooth finite-range cutoff using the
+  existing `LightGpuData` type switch.
+- The bootstrap scene adds one warm point-light actor. The implementation keeps
+  source authoring in Gameplay, light selection and policy in Render, and GPU
+  bindings in the existing frame-local lighting path.
+- Khronos' [KHR_lights_punctual](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md)
+  recommends this finite-range attenuation form, while Godot's
+  [scene shader](https://github.com/godotengine/godot/blob/master/drivers/gles3/shaders/scene.glsl)
+  independently uses an inverse-square omni-light falloff with a quartic edge.
+  Those references informed the attenuation shape only; no glTF import or
+  renderer architecture was adopted.
+
+## 2026-08-31 — D6.2 unshadowed spot lighting
+
+- Gameplay publishes copied position, direction, range, and cone values through
+  an opaque source token. Render resolves the source to `LightType::Spot`
+  without a `ShadowHandle` and reuses the D6.1 finite-range attenuation.
+- Deferred lighting applies squared cosine interpolation between the inner and
+  outer cone angles. The bootstrap scene adds one blue spot-light actor.
+- The cone model follows Khronos' [KHR_lights_punctual](https://github.com/KhronosGroup/glTF/blob/main/extensions/2.0/Khronos/KHR_lights_punctual/README.md);
+  glTF node import and shadow semantics remain out of scope. `Spot2D` and
+  `PointCube` target allocation, shadow filtering, scheduling, and budget policy
+  remain open D6.3 work.
+
+## 2026-09-01 — D6.3.1–D6.3.3 bounded spotlight shadows
+
+- Spot source descriptions and the Gameplay component/factory now publish
+  copied `casts_shadow` intent. `LightSourceRegistry` creates and retires the
+  private generational `ShadowHandle` on spot create/update/disable/destroy;
+  Gameplay still receives no resolved identity or target.
+- Render selects the first enabled, valid `Spot` record with a `Spot2D` shadow
+  identity into binding slot 1. It owns a fixed 1024² sampled D32 `SpotShadow`
+  target, builds a stable-up perspective light frustum (2× outer cone, range
+  far plane), culls ordinary caster bounds conservatively, and shares the
+  existing depth-only pipeline/recorder with the directional job. Inactive
+  frames clear the target so a retired source cannot leave stale depth
+  shader-visible.
+- Deferred constants now include a spot matrix/PCF row set; the unchanged
+  96-byte `LightGpuData` stride promotes directional slot 0 and spot slot 1
+  only for matching source/shadow/kind/slot tuples. The deferred shader binds a
+  separate spot depth sampler and applies independent 3×3 receiver PCF.
+  `spot_shadow_depth` and `spot_shadow_visibility` are routed through the
+  existing Render conversion target and Runtime command vocabulary.
+- Focused C++ syntax checks (`cl /Zs`) pass for changed Render, Gameplay,
+  source-registry, target, capture, and command-provider translation units;
+  `glslc` passes for deferred-lighting and capture shaders on both API defines;
+  `git diff --check` passes. The normal RenderPassScheduleTest build is blocked
+  before compilation by MSBuild's Windows SDK probe trying to read the denied
+  `C:\Users\17519\AppData\Local\Microsoft SDKs` path. Live Vulkan/OpenGL
+  `GraphicsSmoke` and screenshot inspection remain unverified for this slice.
+- Reference gate: inspected Filament `ShadowMap::updateSpot` (perspective
+  projection from light position/direction, twice the outer cone, range far
+  bound) and bgfx `examples/15-shadowmaps-simple/shadowmaps_simple.cpp`
+  (explicit depth producer/consumer and backend clip/origin normalization).
+  Those patterns support the local fixed typed target and shader normalization;
+  their atlas, graph, and broader shadow-cache policies were not adopted.
+
+## 2026-09-01 — D6.3.4 spot-shadow diagnostics and runtime proof
+
+- Added semantic `SpotShadowDepth` and `SpotShadowVisibility` coverage to the
+  Render capture service and Runtime `capture.screenshot` vocabulary. Command
+  and API documentation now list all eight supported semantic views; the depth
+  view is explicitly a converted visualization of the sampled D32 spotlight
+  map, not a native attachment export.
+- Added focused tests for both spot semantic views: Render resolves each view
+  to the conversion target before readback, and Runtime maps both command names
+  to the typed `CaptureView` values. `cl /Zs` syntax checks passed for
+  `render_capture_service_test.cpp` and `screenshot_command_provider_test.cpp`.
+- `glslc` syntax checks passed for `capture_view.frag` and
+  `deferred_lighting.frag` with both Vulkan and OpenGL API defines.
+- Live Runtime command transport exported and inspection-confirmed these
+  captures on both APIs: `d6-3-4-vulkan-spot-depth-1.png`,
+  `d6-3-4-vulkan-spot-visibility.png`, `d6-3-4-opengl-spot-depth.png`, and
+  `d6-3-4-opengl-spot-visibility.png`; Vulkan SceneColor was also exported as
+  `d6-3-4-vulkan-scene-color.png`. Spot visibility is deterministic and shows
+  object-shaped occlusion on both backends. Perspective D32 values are
+  concentrated close to one for this fixture, so the 8-bit spot-depth
+  diagnostic is visually near-white while still exercising the typed
+  producer → conversion target → readback path.
+- The normal MSBuild test rebuild remains blocked before compilation by the
+  host Windows SDK probe (`Microsoft.Cpp.WindowsSDK.props` / denied
+  `C:\Users\17519\AppData\Local\Microsoft SDKs`). Existing binaries were not
+  used as source-test evidence; D7 retains the full validation-matrix rebuild
+  and smoke handoff.
+
+## 2026-09-01 — D6.4 bounded point-shadow atlas
+
+- Point source authoring now carries `casts_shadow`; the source registry owns
+  the private generational shadow identity through create/update/disable/destroy.
+  Render deterministically selects one valid `PointCube` at binding slot 2.
+- Render owns a fixed 1536×1024 sampled D32 atlas containing six 512² 90-degree
+  views in the canonical 3×2 layout. The target is cleared once per frame and
+  each face records through the existing depth-only pipeline with range-sphere
+  and per-face caster culling.
+- Deferred lighting and capture conversion bind a separate point-shadow
+  constant block and atlas sampler. Dominant-axis face selection, Vulkan/OpenGL
+  UV normalization, receiver bias, and tile-clamped 3×3 PCF preserve the
+  existing `LightGpuData` stride. Runtime now exposes point depth/visibility
+  capture names.
+- The bootstrap fixture is point-only for visual isolation: directional and
+  spot actors are disabled, while the authored point light is enabled and
+  shadowed. This ensures observed shadowing comes only from the point path.
+- Corrected point-source resolution to copy the registry-owned shadow handle
+  into `LightDesc.shadow`; without that assignment the point light rendered
+  unshadowed even though authoring requested shadows.
+- For shadow readability, the fixture now sets `environment_intensity` to `0.0`
+  and places the point source above/behind the receivers (`y=40`, `z=-80`),
+  so occluded footprints project onto the camera-facing floor instead of away
+  from the view.
+- Focused g++ syntax checks and `glslangValidator` Vulkan/OpenGL checks pass.
+
+### D6.4 verification and handoff
+
+- The reference gate compared the local six-face atlas boundary against
+  Filament's six conventional punctual-light views, bgfx's explicit depth
+  producer/consumer normalization, and Godot's later cube/atlas alternatives.
+  The existing 2D atlas remains the smallest valid cross-backend contract for
+  this stage; true cube resources remain deferred.
+- Runtime command captures succeeded on the rebuilt engine for both Vulkan and
+  OpenGL: `d6-4-rebuilt-vulkan-scene_color.png`,
+  `d6-4-rebuilt-vulkan-point_shadow_depth.png`,
+  `d6-4-rebuilt-vulkan-point_shadow_visibility.png`, and the corresponding
+  `d6-4-rebuilt-opengl-*` files. The earlier deterministic point-only fixture
+  captures (`d6-4-vulkan-*` and `d6-4-opengl-*`) were visually inspected for
+  multi-face orientation, tile boundaries, caster/receiver placement, and
+  cross-backend visibility. Visibility was non-uniform and equivalent between
+  APIs; perspective D32 depth is near-white after RGBA8 conversion, so it is a
+  routing diagnostic rather than a high-contrast depth visualization.
+- Added one-shot Render-owned profiling in `RecordPointShadowPass`: it records
+  six per-face draw counts, total draws, empty faces, candidate count, and CPU
+  command-recording time on the first successful point pass. The fixed target
+  budget is 1536×1024×4 = 6,291,456 bytes (6 MiB). GPU shadow-pass timing is
+  unavailable because the current RHI has no timestamp-query path. The short
+  rebuilt-runtime capture sessions completed before the lazy point-shadow
+  pipeline reached that first-ready-pass log, so numeric per-face/CPU samples
+  remain a follow-up measurement; the instrumentation itself is compiled and
+  covered by the full build.
+- Corrected the standalone deferred graphics smoke fixture to declare and bind
+  point-shadow descriptor bindings 12 and 13. Corrected newly-added test
+  fixtures to retain command registration tokens and to default spot sources to
+  unshadowed where the test name requires it.
+- The temporary point-only bootstrap diagnostic setup was removed: normal
+  directional, point, and spot bootstrap lighting is restored in
+  `runtime_global_context.cpp`, with normal `environment_intensity` restored in
+  `config/bootstrap.json`.
+- Validation passed sequentially: focused D6.4 CTest selection (37/37), full
+  Debug build, complete CTest (188/188), and Vulkan/OpenGL `GraphicsSmoke`.
+  The initial non-elevated MSBuild attempts failed before compilation at the
+  denied Windows SDK probe; the approved rerun succeeded, so that was an
+  environment limitation rather than a source failure.

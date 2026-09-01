@@ -29,8 +29,6 @@ namespace kpengine::render
         bool casts_shadow = true;
     };
 
-    // D6.1 intentionally has no shadow request: point-shadow target lifetime
-    // and scheduling remain a later Render-owned milestone.
     struct PointLightSourceDesc
     {
         Vector3f position{};
@@ -38,10 +36,10 @@ namespace kpengine::render
         float intensity = 1.0f;
         float range = 1.0f;
         bool enabled = true;
+        // Authored intent only; Render resolves this to a private ShadowHandle.
+        bool casts_shadow = true;
     };
 
-    // D6.2 retains punctual-shadow ownership in Render by exposing no shadow
-    // request on the source; this light is deliberately unshadowed.
     struct SpotLightSourceDesc
     {
         Vector3f position{};
@@ -52,6 +50,8 @@ namespace kpengine::render
         float inner_cone_radians = 0.0f;
         float outer_cone_radians = 0.785398163f;
         bool enabled = true;
+        // Authored intent only; Render resolves this to a private ShadowHandle.
+        bool casts_shadow = true;
     };
 
     using LightSourceDesc =

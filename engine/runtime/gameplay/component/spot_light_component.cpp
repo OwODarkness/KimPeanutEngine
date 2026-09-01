@@ -76,6 +76,15 @@ namespace kpengine::gameplay
         }
     }
 
+    void SpotLightComponent::SetCastsShadow(bool casts_shadow)
+    {
+        if (casts_shadow_ != casts_shadow)
+        {
+            casts_shadow_ = casts_shadow;
+            MarkSourceDirty();
+        }
+    }
+
     void SpotLightComponent::OnActivate()
     {
         SceneComponent::OnActivate();
@@ -120,6 +129,7 @@ namespace kpengine::gameplay
         source.inner_cone_radians = inner_cone_radians_;
         source.outer_cone_radians = outer_cone_radians_;
         source.enabled = enabled_;
+        source.casts_shadow = casts_shadow_;
         return source;
     }
 

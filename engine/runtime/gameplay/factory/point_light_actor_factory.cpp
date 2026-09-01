@@ -23,6 +23,7 @@ namespace kpengine::gameplay
         light->SetIntensity(desc.intensity);
         light->SetRange(desc.range);
         light->SetLightEnabled(desc.enabled);
+        light->SetCastsShadow(desc.casts_shadow);
         if (!world.InitializeActor(handle) || !world.ActivateActor(handle))
         {
             (void)world.DestroyActor(handle);

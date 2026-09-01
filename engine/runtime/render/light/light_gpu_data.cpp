@@ -73,7 +73,7 @@ namespace kpengine::render
 
     LightGpuFrameData BuildLightGpuFrameData(
         const std::vector<Light> &lights,
-        const std::optional<ResolvedLightShadowBinding> &resolved_shadow)
+        const ResolvedLightShadowBindings &resolved_shadows)
     {
         LightGpuFrameData result{};
         const size_t count = std::min(lights.size(), static_cast<size_t>(kMaxFrameLights));
@@ -84,11 +84,21 @@ namespace kpengine::render
             {
                 LightGpuData &gpu_light = result.lights[index];
                 gpu_light = *encoded;
-                if (resolved_shadow.has_value() &&
-                    lights[index].handle == resolved_shadow->source_light &&
-                    lights[index].desc.shadow.has_value() &&
-                    *lights[index].desc.shadow == resolved_shadow->shadow &&
-                    IsShadowKindCompatible(lights[index].desc.type, resolved_shadow->kind))
+                const auto resolved_shadow = std::find_if(
+                    resolved_shadows.begin(), resolved_shadows.end(),
+                    [&lights, index](const ResolvedLightShadowBinding &binding)
+                    {
+                        const bool valid_slot =
+                            (binding.kind == ShadowKind::Directional2D && binding.binding_slot == 0) ||
+                            (binding.kind == ShadowKind::Spot2D && binding.binding_slot == 1) ||
+                            (binding.kind == ShadowKind::PointCube && binding.binding_slot == 2);
+                        return lights[index].handle == binding.source_light &&
+                               lights[index].desc.shadow.has_value() &&
+                               *lights[index].desc.shadow == binding.shadow &&
+                               IsShadowKindCompatible(lights[index].desc.type, binding.kind) &&
+                               valid_slot;
+                    });
+                if (resolved_shadow != resolved_shadows.end())
                 {
                     gpu_light.shadow_kind =
                         static_cast<uint32_t>(ToGpuShadowKind(resolved_shadow->kind));
@@ -98,5 +108,17 @@ namespace kpengine::render
             }
         }
         return result;
+    }
+
+    LightGpuFrameData BuildLightGpuFrameData(
+        const std::vector<Light> &lights,
+        const std::optional<ResolvedLightShadowBinding> &resolved_shadow)
+    {
+        ResolvedLightShadowBindings bindings;
+        if (resolved_shadow.has_value())
+        {
+            bindings.push_back(*resolved_shadow);
+        }
+        return BuildLightGpuFrameData(lights, bindings);
     }
 }

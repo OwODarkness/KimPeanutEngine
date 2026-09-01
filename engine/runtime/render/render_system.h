@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_RENDER_SYSTEM_H
 
 #include <cstddef>
+#include <array>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -171,6 +172,8 @@ namespace kpengine::render
         void DestroyMaterialAssetRecords();
         void ConfigurePassSchedule();
         void RecordDirectionalShadowPass();
+        void RecordSpotShadowPass();
+        void RecordPointShadowPass();
         void RecordGBufferPass();
         void RecordDeferredLightingPass();
         void RecordGBufferDebugViewPass();
@@ -185,6 +188,15 @@ namespace kpengine::render
         bool PrepareGBufferDebugPassResources();
         bool PrepareToneMapPassResources();
         bool PrepareCaptureViewPassResources();
+        struct PointShadowFrame
+        {
+            ShadowJobDesc job;
+            ShadowHandle shadow;
+            Vector3f position;
+            float near_plane = 0.01f;
+            float far_plane = 1.0f;
+            std::array<Matrix4f, 6> face_view_projections{};
+        };
         struct DirectionalShadowFrame
         {
             ShadowJobDesc job;
@@ -193,8 +205,22 @@ namespace kpengine::render
             Matrix4f view;
             Matrix4f projection;
         };
+        struct SpotShadowFrame
+        {
+            ShadowJobDesc job;
+            ShadowHandle shadow;
+            Vector3f position;
+            Vector3f light_direction;
+            float outer_cone_radians = 0.0f;
+            float near_plane = 0.01f;
+            float far_plane = 1.0f;
+            Matrix4f view;
+            Matrix4f projection;
+        };
         std::optional<DirectionalShadowFrame> ScheduleDirectionalShadow(
             const std::vector<Light> &lights) const;
+        std::optional<SpotShadowFrame> ScheduleSpotShadow(const std::vector<Light> &lights) const;
+        std::optional<PointShadowFrame> SchedulePointShadow(const std::vector<Light> &lights) const;
         void RecordShadowCaster(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
                                 graphics::CommandRecorder &recorder);
         void RecordMeshProxy(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
@@ -220,6 +246,11 @@ namespace kpengine::render
         CameraSourceRegistry camera_source_registry_;
         FrameLightingBinding frame_lighting_binding_;
         std::optional<DirectionalShadowFrame> active_directional_shadow_;
+        std::optional<SpotShadowFrame> active_spot_shadow_;
+        std::optional<PointShadowFrame> active_point_shadow_;
+        bool spot_shadow_recorded_ = false;
+        bool point_shadow_recorded_ = false;
+        bool point_shadow_profile_logged_ = false;
         RenderCamera scene_camera_;
         std::vector<StaticMeshRenderableSourceDesc> bootstrap_renderable_sources_;
         std::unique_ptr<MaterialAssetResolver> material_asset_resolver_;
@@ -240,6 +271,8 @@ namespace kpengine::render
         graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;
         graphics::SamplerHandle gbuffer_debug_sampler_;
         graphics::SamplerHandle directional_shadow_sampler_;
+        graphics::SamplerHandle spot_shadow_sampler_;
+        graphics::SamplerHandle point_shadow_sampler_;
         TextureBinding environment_texture_binding_;
         TextureBinding environment_irradiance_binding_;
         TextureBinding environment_prefilter_binding_;

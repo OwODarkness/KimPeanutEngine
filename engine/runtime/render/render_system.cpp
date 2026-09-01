@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <limits>
 #include <utility>
@@ -46,6 +47,11 @@ namespace kpengine::render
         // Runtime frame budget: cap the per-frame load+compile work so a burst of
         // requests never stalls a frame. 0 means "no budget" (the bootstrap pass).
         constexpr std::size_t kMaxRuntimeLoadsPerFrame = 2;
+        constexpr uint32_t kPointShadowFaceResolution = 512;
+        constexpr uint32_t kPointShadowAtlasWidth = kPointShadowFaceResolution * 3;
+        constexpr uint32_t kPointShadowAtlasHeight = kPointShadowFaceResolution * 2;
+        constexpr uint64_t kPointShadowTargetBytes =
+            static_cast<uint64_t>(kPointShadowAtlasWidth) * kPointShadowAtlasHeight * 4;
 
         struct alignas(16) CaptureViewGpuData
         {
@@ -53,6 +59,8 @@ namespace kpengine::render
             Matrix4f view;
             Matrix4f directional_shadow_view_projection;
             Vector4f directional_shadow_params;
+            Matrix4f spot_shadow_view_projection;
+            Vector4f spot_shadow_params;
             Vector4f light_direction_and_view;
             Vector4f depth_params;
         };
@@ -191,6 +199,65 @@ namespace kpengine::render
                                                         min_y - kMargin, max_y + kMargin,
                                                         near_plane, far_plane)};
         }
+
+        bool IsSpotBoundsInsideFrustum(const spatial::AABB &bounds,
+                                       const Matrix4f &view,
+                                       float outer_cone_radians,
+                                       float near_plane,
+                                       float far_plane)
+        {
+            if (!bounds.IsValid())
+            {
+                return true;
+            }
+            const float tangent = std::tan(outer_cone_radians);
+            for (const Vector3f &corner : GetBoundsCorners(bounds))
+            {
+                const Vector4f light_space = view * Vector4f{corner, 1.0f};
+                const float depth = -light_space.z_;
+                if (depth >= near_plane && depth <= far_plane &&
+                    std::abs(light_space.x_) <= depth * tangent &&
+                    std::abs(light_space.y_) <= depth * tangent)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool IsPointBoundsInsideFace(const spatial::AABB &bounds,
+                                     const Matrix4f &view, float near_plane, float far_plane)
+        {
+            if (!bounds.IsValid())
+            {
+                return true;
+            }
+            for (const Vector3f &corner : GetBoundsCorners(bounds))
+            {
+                const Vector4f light_space = view * Vector4f{corner, 1.0f};
+                const float depth = -light_space.z_;
+                if (depth >= near_plane && depth <= far_plane &&
+                    std::abs(light_space.x_) <= depth && std::abs(light_space.y_) <= depth)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        bool IsBoundsInsideSphere(const spatial::AABB &bounds, const Vector3f &center,
+                                  float radius)
+        {
+            if (!bounds.IsValid())
+            {
+                return true;
+            }
+            const Vector3f closest{std::max(bounds.min_.x_, std::min(center.x_, bounds.max_.x_)),
+                                   std::max(bounds.min_.y_, std::min(center.y_, bounds.max_.y_)),
+                                   std::max(bounds.min_.z_, std::min(center.z_, bounds.max_.z_))};
+            const Vector3f delta = closest - center;
+            return delta.SquareLength() <= radius * radius;
+        }
     }
 
     RenderSystem::RenderSystem() = default;
@@ -290,6 +357,8 @@ namespace kpengine::render
         DrainCameraSources();
         const std::vector<Light> light_snapshot = light_world_.Snapshot();
         active_directional_shadow_ = ScheduleDirectionalShadow(light_snapshot);
+        active_spot_shadow_ = ScheduleSpotShadow(light_snapshot);
+        active_point_shadow_ = SchedulePointShadow(light_snapshot);
         if (!backend_)
         {
             return;
@@ -306,18 +375,36 @@ namespace kpengine::render
                 {frame_number_, elapsed_seconds_, delta_time},
                 {frame_targets_.GetTarget(RenderTargetName::SceneColor)->GetWidth(),
                  frame_targets_.GetTarget(RenderTargetName::SceneColor)->GetHeight()});
-            std::optional<ResolvedLightShadowBinding> resolved_shadow;
+            editor_composite_recorded_ = false;
+            spot_shadow_recorded_ = false;
+            point_shadow_recorded_ = false;
+            RecordDirectionalShadowPass();
+            RecordSpotShadowPass();
+            RecordPointShadowPass();
+            ResolvedLightShadowBindings resolved_shadows;
             if (active_directional_shadow_.has_value())
             {
                 const DirectionalShadowFrame &shadow = *active_directional_shadow_;
-                resolved_shadow = ResolvedLightShadowBinding{
+                resolved_shadows.push_back(ResolvedLightShadowBinding{
                     shadow.job.source_light, shadow.shadow, shadow.job.kind,
-                    shadow.job.binding_slot};
+                    shadow.job.binding_slot});
+            }
+            if (active_spot_shadow_.has_value() && spot_shadow_recorded_)
+            {
+                const SpotShadowFrame &shadow = *active_spot_shadow_;
+                resolved_shadows.push_back(ResolvedLightShadowBinding{
+                    shadow.job.source_light, shadow.shadow, shadow.job.kind,
+                    shadow.job.binding_slot});
+            }
+            if (active_point_shadow_.has_value() && point_shadow_recorded_)
+            {
+                const PointShadowFrame &shadow = *active_point_shadow_;
+                resolved_shadows.push_back(ResolvedLightShadowBinding{
+                    shadow.job.source_light, shadow.shadow, shadow.job.kind,
+                    shadow.job.binding_slot});
             }
             frame_lighting_binding_ = active_frame_context_->CreateLightingBinding(
-                BuildLightGpuFrameData(light_snapshot, resolved_shadow));
-            editor_composite_recorded_ = false;
-            RecordDirectionalShadowPass();
+                BuildLightGpuFrameData(light_snapshot, resolved_shadows));
             RecordGBufferPass();
             RecordDeferredLightingPass();
             RecordToneMapPass();
@@ -405,13 +492,17 @@ namespace kpengine::render
         // terminal read. The debug conversion is retained outside the normal
         // schedule for later explicit capture-view routing.
         const bool added_shadow = pass_schedule_.AddPass(
-            {"ShadowDepthPass", {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write}}, false});
+            {"ShadowDepthPass", {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write},
+                                  {RenderPassResource::SpotShadow, RenderPassAccess::Write},
+                                  {RenderPassResource::PointShadow, RenderPassAccess::Write}}, false});
         const bool added_gbuffer = pass_schedule_.AddPass(
             {"GBufferPass", {{RenderPassResource::GBuffer, RenderPassAccess::Write}}, false});
         const bool added_deferred_lighting = pass_schedule_.AddPass(
             {"DeferredLightingPass",
              {{RenderPassResource::GBuffer, RenderPassAccess::Read},
-              {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
+               {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
+               {RenderPassResource::SpotShadow, RenderPassAccess::Read},
+               {RenderPassResource::PointShadow, RenderPassAccess::Read},
               {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
              false});
         const bool added_tone_map = pass_schedule_.AddPass(
@@ -422,7 +513,9 @@ namespace kpengine::render
         const bool added_capture = pass_schedule_.AddPass(
             {"CaptureViewPass",
              {{RenderPassResource::GBuffer, RenderPassAccess::Read},
-              {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
+               {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
+               {RenderPassResource::SpotShadow, RenderPassAccess::Read},
+               {RenderPassResource::PointShadow, RenderPassAccess::Read},
               {RenderPassResource::SceneColor, RenderPassAccess::Read},
               {RenderPassResource::CaptureOutput, RenderPassAccess::Write}},
              false});
@@ -448,6 +541,7 @@ namespace kpengine::render
         {
             if (!light.desc.enabled || light.desc.type != LightType::Directional ||
                 !light.desc.shadow.has_value() ||
+                !light_source_registry_.IsShadowHandleValid(*light.desc.shadow) ||
                 !IsShadowKindCompatible(light.desc.type, ShadowKind::Directional2D))
             {
                 continue;
@@ -496,18 +590,161 @@ namespace kpengine::render
         return std::nullopt;
     }
 
+    std::optional<RenderSystem::SpotShadowFrame> RenderSystem::ScheduleSpotShadow(
+        const std::vector<Light> &lights) const
+    {
+        constexpr uint32_t kSpotShadowResolution = 1024;
+        for (const Light &light : lights)
+        {
+            if (!light.desc.enabled || light.desc.type != LightType::Spot ||
+                !light.desc.shadow.has_value() ||
+                !light_source_registry_.IsShadowHandleValid(*light.desc.shadow) ||
+                !IsShadowKindCompatible(light.desc.type, ShadowKind::Spot2D) ||
+                !IsLightDescValid(light.desc))
+            {
+                continue;
+            }
+            const auto *const spot = std::get_if<SpotLightData>(&light.desc.type_data);
+            if (spot == nullptr)
+            {
+                continue;
+            }
+            const Vector3f direction = spot->direction.GetSafetyNormalize();
+            const float near_plane = std::min(std::max(0.01f, spot->range * 0.001f),
+                                              spot->range * 0.5f);
+            if (!(near_plane > 0.0f) || !(near_plane < spot->range))
+            {
+                continue;
+            }
+            const Vector3f up = std::abs(direction.y_) > 0.98f
+                                    ? Vector3f{0.0f, 0.0f, 1.0f}
+                                    : Vector3f{0.0f, 1.0f, 0.0f};
+            SpotShadowFrame frame{};
+            frame.job = {light.handle, ShadowKind::Spot2D, kSpotShadowResolution, 1};
+            frame.shadow = *light.desc.shadow;
+            frame.position = spot->position;
+            frame.light_direction = direction;
+            frame.outer_cone_radians = spot->outer_cone_radians;
+            frame.near_plane = near_plane;
+            frame.far_plane = spot->range;
+            frame.view = Matrix4f::MakeCameraMatrix(spot->position, direction, up);
+            frame.projection = Matrix4f::MakePerProjMatrix(
+                spot->outer_cone_radians * 2.0f, 1.0f, near_plane, spot->range);
+            bool has_caster = false;
+            for (const MeshProxy &proxy : render_world_.Snapshot())
+            {
+                const std::optional<MaterialDrawClass> draw_class =
+                    material_system_->GetDrawClass(proxy.material);
+                if (proxy.flags.visible && proxy.flags.casts_shadow &&
+                    IsSpotBoundsInsideFrustum(proxy.world_bounds, frame.view,
+                                              frame.outer_cone_radians,
+                                              frame.near_plane, frame.far_plane) &&
+                    draw_class.has_value() && *draw_class == MaterialDrawClass::Opaque &&
+                    material_system_->GetInstanceResolution(proxy.material).state ==
+                        MaterialResourceState::Ready)
+                {
+                    has_caster = true;
+                    break;
+                }
+            }
+            if (!has_caster)
+            {
+                continue;
+            }
+            return frame;
+        }
+        return std::nullopt;
+    }
+
+    std::optional<RenderSystem::PointShadowFrame> RenderSystem::SchedulePointShadow(
+        const std::vector<Light> &lights) const
+    {
+        const std::vector<MeshProxy> proxies = render_world_.Snapshot();
+        for (const Light &light : lights)
+        {
+            if (!light.desc.enabled || light.desc.type != LightType::Point ||
+                !light.desc.shadow.has_value() ||
+                !light_source_registry_.IsShadowHandleValid(*light.desc.shadow) ||
+                !IsShadowKindCompatible(light.desc.type, ShadowKind::PointCube) ||
+                !IsLightDescValid(light.desc))
+            {
+                continue;
+            }
+            const auto *const point = std::get_if<PointLightData>(&light.desc.type_data);
+            if (point == nullptr)
+            {
+                continue;
+            }
+            const float near_plane = std::min(std::max(0.01f, point->range * 0.001f),
+                                              point->range * 0.5f);
+            if (!(near_plane > 0.0f) || !(near_plane < point->range))
+            {
+                continue;
+            }
+            PointShadowFrame frame{};
+            frame.job = {light.handle, ShadowKind::PointCube,
+                         kPointShadowFaceResolution, 2};
+            frame.shadow = *light.desc.shadow;
+            frame.position = point->position;
+            frame.near_plane = near_plane;
+            frame.far_plane = point->range;
+            bool has_caster = false;
+            for (const MeshProxy &proxy : proxies)
+            {
+                const std::optional<MaterialDrawClass> draw_class =
+                    material_system_->GetDrawClass(proxy.material);
+                const auto resolution = material_system_->GetInstanceResolution(proxy.material);
+                if (proxy.flags.visible && proxy.flags.casts_shadow &&
+                    IsBoundsInsideSphere(proxy.world_bounds, point->position, point->range) &&
+                    draw_class.has_value() && *draw_class == MaterialDrawClass::Opaque &&
+                    resolution.state == MaterialResourceState::Ready)
+                {
+                    has_caster = true;
+                    break;
+                }
+            }
+            if (!has_caster)
+            {
+                continue;
+            }
+            const auto &faces = GetPointShadowFaceTable();
+            for (size_t face_index = 0; face_index < faces.size(); ++face_index)
+            {
+                const PointShadowFaceDesc &face = faces[face_index];
+                const Matrix4f view = Matrix4f::MakeCameraMatrix(
+                    point->position, face.direction, face.up);
+                const Matrix4f projection = Matrix4f::MakePerProjMatrix(
+                    1.570796327f, 1.0f, near_plane, point->range);
+                frame.face_view_projections[face_index] = (projection * view).Transpose();
+            }
+            return frame;
+        }
+        return std::nullopt;
+    }
+
     void RenderSystem::RecordDirectionalShadowPass()
     {
-        if (!active_frame_context_ || !active_directional_shadow_.has_value() ||
-            !pass_schedule_.IsValid())
+        if (!active_frame_context_ || !pass_schedule_.IsValid())
         {
             return;
         }
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         RenderTarget *const shadow_target = frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
-        if (!recorder || !shadow_target || !PrepareDirectionalShadowPassResources() ||
-            !shadow_target->BeginRecording(*recorder))
+        if (!recorder || !shadow_target || !shadow_target->BeginRecording(*recorder))
         {
+            return;
+        }
+
+        if (!active_directional_shadow_.has_value())
+        {
+            // Keep the always-bound fallback depth image in a valid sampled
+            // layout when the directional fixture is intentionally disabled.
+            shadow_target->EndRecording(*recorder);
+            return;
+        }
+        if (!PrepareDirectionalShadowPassResources())
+        {
+            shadow_target->EndRecording(*recorder);
             return;
         }
 
@@ -530,6 +767,144 @@ namespace kpengine::render
             }
         }
         shadow_target->EndRecording(*recorder);
+    }
+
+    void RenderSystem::RecordSpotShadowPass()
+    {
+        if (!active_frame_context_ || !pass_schedule_.IsValid())
+        {
+            return;
+        }
+        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        RenderTarget *const shadow_target = frame_targets_.GetTarget(RenderTargetName::SpotShadow);
+        if (!recorder || !shadow_target || !shadow_target->BeginRecording(*recorder))
+        {
+            return;
+        }
+        if (!active_spot_shadow_.has_value())
+        {
+            // Clear the fixed target even when the previous frame's selected
+            // source was disabled, destroyed, stale, or over budget.
+            shadow_target->EndRecording(*recorder);
+            return;
+        }
+        if (!PrepareDirectionalShadowPassResources())
+        {
+            shadow_target->EndRecording(*recorder);
+            return;
+        }
+        const SpotShadowFrame &shadow = *active_spot_shadow_;
+        graphics::PerPassData per_pass_data{};
+        per_pass_data.camera_data.view = shadow.view.Transpose();
+        per_pass_data.camera_data.proj = shadow.projection.Transpose();
+        for (const MeshProxy &proxy : render_world_.Snapshot())
+        {
+            const std::optional<MaterialDrawClass> draw_class =
+                material_system_->GetDrawClass(proxy.material);
+            if (!proxy.flags.visible || !proxy.flags.casts_shadow ||
+                !IsSpotBoundsInsideFrustum(proxy.world_bounds, shadow.view,
+                                           shadow.outer_cone_radians,
+                                           shadow.near_plane, shadow.far_plane) ||
+                !draw_class.has_value() || *draw_class != MaterialDrawClass::Opaque ||
+                material_system_->GetInstanceResolution(proxy.material).state !=
+                    MaterialResourceState::Ready)
+            {
+                continue;
+            }
+            RecordShadowCaster(proxy, per_pass_data, *recorder);
+        }
+        shadow_target->EndRecording(*recorder);
+        spot_shadow_recorded_ = true;
+    }
+
+    void RenderSystem::RecordPointShadowPass()
+    {
+        if (!active_frame_context_ || !pass_schedule_.IsValid())
+        {
+            return;
+        }
+        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        RenderTarget *const shadow_target = frame_targets_.GetTarget(RenderTargetName::PointShadow);
+        if (!recorder || !shadow_target || !shadow_target->BeginRecording(*recorder))
+        {
+            return;
+        }
+        if (!active_point_shadow_.has_value() || !PrepareDirectionalShadowPassResources())
+        {
+            shadow_target->EndRecording(*recorder);
+            return;
+        }
+
+        const PointShadowFrame &shadow = *active_point_shadow_;
+        const auto profile_start = std::chrono::steady_clock::now();
+        const std::vector<MeshProxy> proxies = render_world_.Snapshot();
+        std::vector<MeshProxy> caster_candidates;
+        caster_candidates.reserve(proxies.size());
+        for (const MeshProxy &proxy : proxies)
+        {
+            const std::optional<MaterialDrawClass> draw_class =
+                material_system_->GetDrawClass(proxy.material);
+            if (proxy.flags.visible && proxy.flags.casts_shadow &&
+                IsBoundsInsideSphere(proxy.world_bounds, shadow.position, shadow.far_plane) &&
+                draw_class.has_value() && *draw_class == MaterialDrawClass::Opaque &&
+                material_system_->GetInstanceResolution(proxy.material).state ==
+                    MaterialResourceState::Ready)
+            {
+                caster_candidates.push_back(proxy);
+            }
+        }
+        const auto &faces = GetPointShadowFaceTable();
+        std::array<uint32_t, 6> face_draw_counts{};
+        for (size_t face_index = 0; face_index < faces.size(); ++face_index)
+        {
+            const PointShadowFaceDesc &face = faces[face_index];
+            const Matrix4f view = Matrix4f::MakeCameraMatrix(shadow.position, face.direction, face.up);
+            const Matrix4f projection = Matrix4f::MakePerProjMatrix(
+                1.570796327f, 1.0f, shadow.near_plane, shadow.far_plane);
+            recorder->SetViewport(graphics::Viewport{
+                static_cast<float>(face.tile_x * kPointShadowFaceResolution),
+                static_cast<float>(face.tile_y * kPointShadowFaceResolution),
+                static_cast<float>(kPointShadowFaceResolution),
+                static_cast<float>(kPointShadowFaceResolution), 0.0f, 1.0f});
+            graphics::PerPassData per_pass_data{};
+            per_pass_data.camera_data.view = view.Transpose();
+            per_pass_data.camera_data.proj = projection.Transpose();
+            for (const MeshProxy &proxy : caster_candidates)
+            {
+                if (!IsPointBoundsInsideFace(proxy.world_bounds, view,
+                                             shadow.near_plane, shadow.far_plane))
+                {
+                    continue;
+                }
+                RecordShadowCaster(proxy, per_pass_data, *recorder);
+                ++face_draw_counts[face_index];
+            }
+        }
+        shadow_target->EndRecording(*recorder);
+        point_shadow_recorded_ = true;
+        if (!point_shadow_profile_logged_)
+        {
+            uint32_t total_draw_count = 0;
+            uint32_t empty_face_count = 0;
+            for (const uint32_t draw_count : face_draw_counts)
+            {
+                total_draw_count += draw_count;
+                empty_face_count += draw_count == 0 ? 1U : 0U;
+            }
+            const auto profile_duration = std::chrono::duration_cast<std::chrono::microseconds>(
+                std::chrono::steady_clock::now() - profile_start);
+            KP_LOG("RenderLog", LOG_LEVEL_INFO,
+                   "Point shadow profile: face_draws=[%u,%u,%u,%u,%u,%u] total_draws=%u "
+                   "empty_faces=%u candidates=%zu cpu_record_us=%llu target=%ux%u D32 "
+                   "target_bytes=%llu gpu_time=unavailable",
+                   face_draw_counts[0], face_draw_counts[1], face_draw_counts[2],
+                   face_draw_counts[3], face_draw_counts[4], face_draw_counts[5],
+                   total_draw_count, empty_face_count, caster_candidates.size(),
+                   static_cast<unsigned long long>(profile_duration.count()),
+                   kPointShadowAtlasWidth, kPointShadowAtlasHeight,
+                   static_cast<unsigned long long>(kPointShadowTargetBytes));
+            point_shadow_profile_logged_ = true;
+        }
     }
 
     void RenderSystem::RecordGBufferPass()
@@ -632,7 +1007,12 @@ namespace kpengine::render
         RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
         RenderTarget *const shadow_target =
             frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
+        RenderTarget *const spot_shadow_target =
+            frame_targets_.GetTarget(RenderTargetName::SpotShadow);
+        RenderTarget *const point_shadow_target =
+            frame_targets_.GetTarget(RenderTargetName::PointShadow);
         if (!recorder || !hdr_target || !gbuffer_target || !shadow_target ||
+            !spot_shadow_target || !point_shadow_target ||
              !PrepareDeferredLightingPassResources() ||
             !hdr_target->BeginRecording(*recorder))
         {
@@ -659,9 +1039,28 @@ namespace kpengine::render
                          1.0f / static_cast<float>(shadow.job.resolution),
                          0.0f};
         }
+        if (active_spot_shadow_.has_value())
+        {
+            const SpotShadowFrame &shadow = *active_spot_shadow_;
+            lighting_data.spot_shadow_view_projection =
+                (shadow.projection * shadow.view).Transpose();
+            lighting_data.spot_shadow_params =
+                Vector4f{0.00075f, 0.003f,
+                         1.0f / static_cast<float>(shadow.job.resolution), 1.0f};
+        }
+        PointShadowGpuData point_shadow_data{};
+        if (active_point_shadow_.has_value() && point_shadow_recorded_)
+        {
+            point_shadow_data.face_view_projections =
+                active_point_shadow_->face_view_projections;
+            point_shadow_data.atlas_params = Vector4f{1.0f / 1536.0f, 1.0f / 1024.0f,
+                                                      0.00075f, 0.003f};
+        }
         const UniformAllocation lighting_constants =
             active_frame_context_->AllocateUniform(lighting_data);
-        if (lighting_constants.IsValid())
+        const UniformAllocation point_shadow_constants =
+            active_frame_context_->AllocateUniform(point_shadow_data);
+        if (lighting_constants.IsValid() && point_shadow_constants.IsValid())
         {
             const graphics::DescriptorSetHandle bindings =
                 active_frame_context_->AllocateResourceBindingSet(
@@ -680,12 +1079,21 @@ namespace kpengine::render
                           0, 3, gbuffer_target->GetSampledDepthTexture(),
                           gbuffer_debug_sampler_},
                       frame_lighting_binding_.GetResourceBinding(),
-                      graphics::UniformBufferBinding{
+                       graphics::UniformBufferBinding{
                           0, 5, lighting_constants.buffer, lighting_constants.offset,
                           lighting_constants.range},
+                       graphics::UniformBufferBinding{
+                           0, 13, point_shadow_constants.buffer, point_shadow_constants.offset,
+                           point_shadow_constants.range},
                        graphics::SampledTextureBinding{
                            0, 6, shadow_target->GetSampledDepthTexture(),
                            directional_shadow_sampler_},
+                       graphics::SampledTextureBinding{
+                           0, 11, spot_shadow_target->GetSampledDepthTexture(),
+                           spot_shadow_sampler_},
+                       graphics::SampledTextureBinding{
+                           0, 12, point_shadow_target->GetSampledDepthTexture(),
+                           point_shadow_sampler_},
                        graphics::SampledTextureBinding{
                            0, 7, environment_texture_binding_.texture,
                            environment_texture_binding_.sampler},
@@ -735,6 +1143,7 @@ namespace kpengine::render
     bool RenderSystem::PrepareDeferredLightingPassResources()
     {
         if (deferred_lighting_pipeline_.IsValid() && directional_shadow_sampler_.IsValid() &&
+            spot_shadow_sampler_.IsValid() && point_shadow_sampler_.IsValid() &&
             environment_texture_binding_.texture.IsValid() &&
             environment_texture_binding_.sampler.IsValid() &&
             environment_irradiance_binding_.texture.IsValid() &&
@@ -759,6 +1168,30 @@ namespace kpengine::render
                 graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
             shadow_sampler_settings.enable_anisotropy = false;
             directional_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
+        }
+        if (!spot_shadow_sampler_.IsValid())
+        {
+            graphics::SamplerSettings shadow_sampler_settings{};
+            shadow_sampler_settings.address_mode_u =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_v =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_w =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.enable_anisotropy = false;
+            spot_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
+        }
+        if (!point_shadow_sampler_.IsValid())
+        {
+            graphics::SamplerSettings shadow_sampler_settings{};
+            shadow_sampler_settings.address_mode_u =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_v =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_w =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.enable_anisotropy = false;
+            point_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
         }
         if (!environment_texture_binding_.texture.IsValid() ||
             !environment_texture_binding_.sampler.IsValid())
@@ -788,7 +1221,8 @@ namespace kpengine::render
                 {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
                 TextureCacheVariant::EnvironmentBrdfLut);
         }
-        if (!directional_shadow_sampler_.IsValid() ||
+        if (!directional_shadow_sampler_.IsValid() || !spot_shadow_sampler_.IsValid() ||
+            !point_shadow_sampler_.IsValid() ||
             !environment_texture_binding_.texture.IsValid() ||
             !environment_texture_binding_.sampler.IsValid() ||
             !environment_irradiance_binding_.texture.IsValid() ||
@@ -847,6 +1281,12 @@ namespace kpengine::render
              {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
               ShaderStage::SHADER_STAGE_FRAGMENT},
               {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT},
+              {11, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT},
+              {12, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT},
+              {13, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
                ShaderStage::SHADER_STAGE_FRAGMENT},
               {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                ShaderStage::SHADER_STAGE_FRAGMENT},
@@ -1048,7 +1488,12 @@ namespace kpengine::render
             frame_targets_.GetTarget(RenderTargetName::GBuffer);
         RenderTarget *const shadow_target =
             frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
+        RenderTarget *const spot_shadow_target =
+            frame_targets_.GetTarget(RenderTargetName::SpotShadow);
+        RenderTarget *const point_shadow_target =
+            frame_targets_.GetTarget(RenderTargetName::PointShadow);
         if (!recorder || !output_target || !gbuffer_target || !shadow_target ||
+            !spot_shadow_target || !point_shadow_target ||
             !PrepareCaptureViewPassResources() ||
             !output_target->BeginRecording(*recorder))
         {
@@ -1073,14 +1518,43 @@ namespace kpengine::render
                          0.0f};
             surface_to_light = -shadow.light_direction;
         }
+        const bool has_spot_shadow = active_spot_shadow_.has_value() && spot_shadow_recorded_;
+        if (has_spot_shadow)
+        {
+            const SpotShadowFrame &shadow = *active_spot_shadow_;
+            capture_data.spot_shadow_view_projection =
+                (shadow.projection * shadow.view).Transpose();
+            capture_data.spot_shadow_params =
+                Vector4f{0.00075f, 0.003f,
+                         1.0f / static_cast<float>(shadow.job.resolution), 1.0f};
+            if (!has_shadow)
+            {
+                surface_to_light = -shadow.light_direction;
+            }
+        }
+        const bool has_point_shadow = active_point_shadow_.has_value() && point_shadow_recorded_;
+        PointShadowGpuData point_shadow_data{};
+        if (has_point_shadow)
+        {
+            point_shadow_data.face_view_projections = active_point_shadow_->face_view_projections;
+            point_shadow_data.atlas_params = Vector4f{1.0f / 1536.0f, 1.0f / 1024.0f,
+                                                      0.00075f, 0.003f};
+            if (view == CaptureView::PointShadowVisibility)
+            {
+                surface_to_light = active_point_shadow_->position;
+            }
+        }
         capture_data.light_direction_and_view =
             Vector4f{surface_to_light, static_cast<float>(view)};
         capture_data.depth_params =
-            Vector4f{scene_camera_.GetFarPlane(), has_shadow ? 1.0f : 0.0f, 0.0f, 0.0f};
+            Vector4f{scene_camera_.GetFarPlane(), has_shadow ? 1.0f : 0.0f,
+                     has_spot_shadow ? 1.0f : 0.0f, has_point_shadow ? 1.0f : 0.0f};
 
         const UniformAllocation constants =
             active_frame_context_->AllocateUniform(capture_data);
-        if (!constants.IsValid())
+        const UniformAllocation point_shadow_constants =
+            active_frame_context_->AllocateUniform(point_shadow_data);
+        if (!constants.IsValid() || !point_shadow_constants.IsValid())
         {
             output_target->EndRecording(*recorder);
             return false;
@@ -1102,11 +1576,20 @@ namespace kpengine::render
                   graphics::SampledTextureBinding{
                       0, 5, gbuffer_target->GetSampledDepthTexture(),
                       gbuffer_debug_sampler_},
-                  graphics::SampledTextureBinding{
-                      0, 6, shadow_target->GetSampledDepthTexture(),
-                      directional_shadow_sampler_},
-                  graphics::UniformBufferBinding{
-                      0, 7, constants.buffer, constants.offset, constants.range}}});
+                   graphics::SampledTextureBinding{
+                       0, 6, shadow_target->GetSampledDepthTexture(),
+                       directional_shadow_sampler_},
+                   graphics::SampledTextureBinding{
+                       0, 8, spot_shadow_target->GetSampledDepthTexture(),
+                       spot_shadow_sampler_},
+                   graphics::SampledTextureBinding{
+                       0, 9, point_shadow_target->GetSampledDepthTexture(),
+                       point_shadow_sampler_},
+                   graphics::UniformBufferBinding{
+                       0, 7, constants.buffer, constants.offset, constants.range},
+                   graphics::UniformBufferBinding{
+                       0, 10, point_shadow_constants.buffer, point_shadow_constants.offset,
+                       point_shadow_constants.range}}});
         if (!bindings.IsValid())
         {
             output_target->EndRecording(*recorder);
@@ -1177,7 +1660,8 @@ namespace kpengine::render
 
     bool RenderSystem::PrepareCaptureViewPassResources()
     {
-        if (capture_view_pipeline_.IsValid() && directional_shadow_sampler_.IsValid())
+        if (capture_view_pipeline_.IsValid() && directional_shadow_sampler_.IsValid() &&
+            spot_shadow_sampler_.IsValid() && point_shadow_sampler_.IsValid())
         {
             return true;
         }
@@ -1198,7 +1682,32 @@ namespace kpengine::render
             shadow_sampler_settings.enable_anisotropy = false;
             directional_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
         }
-        if (!directional_shadow_sampler_.IsValid())
+        if (!spot_shadow_sampler_.IsValid())
+        {
+            graphics::SamplerSettings shadow_sampler_settings{};
+            shadow_sampler_settings.address_mode_u =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_v =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_w =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.enable_anisotropy = false;
+            spot_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
+        }
+        if (!point_shadow_sampler_.IsValid())
+        {
+            graphics::SamplerSettings shadow_sampler_settings{};
+            shadow_sampler_settings.address_mode_u =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_v =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.address_mode_w =
+                graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+            shadow_sampler_settings.enable_anisotropy = false;
+            point_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
+        }
+        if (!directional_shadow_sampler_.IsValid() || !spot_shadow_sampler_.IsValid() ||
+            !point_shadow_sampler_.IsValid())
         {
             return false;
         }
@@ -1247,9 +1756,15 @@ namespace kpengine::render
               ShaderStage::SHADER_STAGE_FRAGMENT},
              {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
               ShaderStage::SHADER_STAGE_FRAGMENT},
-             {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT},
+              {8, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+               ShaderStage::SHADER_STAGE_FRAGMENT},
+             {9, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
               ShaderStage::SHADER_STAGE_FRAGMENT},
              {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {10, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
               ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
         capture_view_pipeline_ = backend_->CreatePipelineResource(desc);
@@ -1778,6 +2293,10 @@ namespace kpengine::render
         {
             frame_lighting_binding_ = {};
             active_directional_shadow_.reset();
+            active_spot_shadow_.reset();
+            active_point_shadow_.reset();
+            spot_shadow_recorded_ = false;
+            point_shadow_recorded_ = false;
             render_capture_service_.reset();
             camera_source_registry_.Clear();
             source_registry_.Clear(render_world_);
@@ -1802,6 +2321,10 @@ namespace kpengine::render
         light_world_.Clear();
         frame_lighting_binding_ = {};
         active_directional_shadow_.reset();
+        active_spot_shadow_.reset();
+        active_point_shadow_.reset();
+        spot_shadow_recorded_ = false;
+        point_shadow_recorded_ = false;
         bootstrap_renderable_sources_.clear();
         DestroyMaterialAssetRecords();
         material_system_.reset();
@@ -1841,6 +2364,14 @@ namespace kpengine::render
         {
             backend_->DestroySampler(directional_shadow_sampler_);
         }
+        if (spot_shadow_sampler_.IsValid())
+        {
+            backend_->DestroySampler(spot_shadow_sampler_);
+        }
+        if (point_shadow_sampler_.IsValid())
+        {
+            backend_->DestroySampler(point_shadow_sampler_);
+        }
         if (tone_map_pipeline_.IsValid())
         {
             backend_->DestroyPipelineResource(tone_map_pipeline_);
@@ -1851,6 +2382,8 @@ namespace kpengine::render
         gbuffer_debug_fullscreen_mesh_ = {};
         gbuffer_debug_sampler_ = {};
         directional_shadow_sampler_ = {};
+        spot_shadow_sampler_ = {};
+        point_shadow_sampler_ = {};
         environment_texture_binding_ = {};
         environment_irradiance_binding_ = {};
         environment_prefilter_binding_ = {};

@@ -1172,7 +1172,10 @@ namespace kpengine::example
                       {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
                       {8, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
                       {9, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
-                      {10, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT}},
+                      {10, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                      {11, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                      {12, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER, ShaderStage::SHADER_STAGE_FRAGMENT},
+                      {13, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM, ShaderStage::SHADER_STAGE_FRAGMENT}},
                 };
                 deferred_lighting_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
                 deferred_lighting_pipeline_desc.raster_state.front_face =
@@ -1337,9 +1340,13 @@ namespace kpengine::example
                                 0.0005f, 0.002f, 1.0f / 1024.0f, 0.0f};
                             const render::UniformAllocation d5_constants =
                                 frame_context.AllocateUniform(d5_lighting_constants);
+                            render::PointShadowGpuData d5_point_shadow_data{};
+                            const render::UniformAllocation d5_point_shadow_constants =
+                                frame_context.AllocateUniform(d5_point_shadow_data);
                             if (!d3_pass.IsValid() || !d3_object.IsValid() ||
                                 !floor_object.IsValid() || !shadow_pass.IsValid() ||
-                                !d5_lighting_binding.IsValid() || !d5_constants.IsValid())
+                                !d5_lighting_binding.IsValid() || !d5_constants.IsValid() ||
+                                !d5_point_shadow_constants.IsValid())
                             {
                                 throw std::runtime_error("D5.2 frame uniform allocation failed");
                             }
@@ -1437,7 +1444,19 @@ namespace kpengine::example
                                        graphics::SampledTextureBinding{
                                            0, 9, environment_texture, debug_sampler},
                                        graphics::SampledTextureBinding{
-                                           0, 10, environment_texture, debug_sampler}}});
+                                           0, 10, environment_texture, debug_sampler},
+                                       graphics::SampledTextureBinding{
+                                           0, 11,
+                                           rhi->GetRenderTargetSampledDepthAttachment(d4_shadow_target),
+                                           shadow_sampler},
+                                       graphics::SampledTextureBinding{
+                                           0, 12,
+                                           rhi->GetRenderTargetSampledDepthAttachment(d4_shadow_target),
+                                           shadow_sampler},
+                                       graphics::UniformBufferBinding{
+                                           0, 13, d5_point_shadow_constants.buffer,
+                                           d5_point_shadow_constants.offset,
+                                           d5_point_shadow_constants.range}}});
                             if (!deferred_lighting_bindings.IsValid())
                             {
                                 throw std::runtime_error("D5.2 deferred-lighting binding failed");

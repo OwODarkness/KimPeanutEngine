@@ -19,25 +19,29 @@ namespace
     }
 
     kpengine::render::LightDesc MakeLightDesc(
-        const kpengine::render::PointLightSourceDesc &source)
+        const kpengine::render::PointLightSourceDesc &source,
+        std::optional<kpengine::render::ShadowHandle> shadow)
     {
         kpengine::render::LightDesc desc{};
         desc.type = kpengine::render::LightType::Point;
         desc.color = source.color;
         desc.intensity = source.intensity;
         desc.enabled = source.enabled;
+        desc.shadow = shadow;
         desc.type_data = kpengine::render::PointLightData{source.position, source.range};
         return desc;
     }
 
     kpengine::render::LightDesc MakeLightDesc(
-        const kpengine::render::SpotLightSourceDesc &source)
+        const kpengine::render::SpotLightSourceDesc &source,
+        std::optional<kpengine::render::ShadowHandle> shadow)
     {
         kpengine::render::LightDesc desc{};
         desc.type = kpengine::render::LightType::Spot;
         desc.color = source.color;
         desc.intensity = source.intensity;
         desc.enabled = source.enabled;
+        desc.shadow = shadow;
         desc.type_data = kpengine::render::SpotLightData{
             source.position, source.direction, source.range, source.inner_cone_radians,
             source.outer_cone_radians};
@@ -108,6 +112,12 @@ namespace kpengine::render
         shadow_handles_ = {};
     }
 
+    bool LightSourceRegistry::IsShadowHandleValid(ShadowHandle handle) const
+    {
+        std::scoped_lock lock(command_mutex_);
+        return shadow_handles_.IsHandleValid(handle);
+    }
+
     void LightSourceRegistry::ApplyCommands(LightWorld &light_world, std::vector<Command> commands)
     {
         for (const Command &command : commands)
@@ -141,22 +151,38 @@ namespace kpengine::render
                                      std::get_if<PointLightSourceDesc>(&value.source);
                                  point != nullptr)
                         {
+                            const std::optional<ShadowHandle> shadow =
+                                point->casts_shadow
+                                    ? std::optional<ShadowHandle>{shadow_handles_.Create()}
+                                    : std::nullopt;
                             const LightHandle light_handle =
-                                light_world.EnqueueCreate(MakeLightDesc(*point));
+                                light_world.EnqueueCreate(MakeLightDesc(*point, shadow));
                             if (light_handle.IsValid())
                             {
-                                records_[value.handle.id] = {value.handle, light_handle, std::nullopt};
+                                records_[value.handle.id] = {value.handle, light_handle, shadow};
+                            }
+                            else if (shadow.has_value())
+                            {
+                                (void)shadow_handles_.Destroy(*shadow);
                             }
                         }
                         else if (const auto *const spot =
                                      std::get_if<SpotLightSourceDesc>(&value.source);
                                  spot != nullptr)
                         {
+                            const std::optional<ShadowHandle> shadow =
+                                spot->casts_shadow
+                                    ? std::optional<ShadowHandle>{shadow_handles_.Create()}
+                                    : std::nullopt;
                             const LightHandle light_handle =
-                                light_world.EnqueueCreate(MakeLightDesc(*spot));
+                                light_world.EnqueueCreate(MakeLightDesc(*spot, shadow));
                             if (light_handle.IsValid())
                             {
-                                records_[value.handle.id] = {value.handle, light_handle, std::nullopt};
+                                records_[value.handle.id] = {value.handle, light_handle, shadow};
+                            }
+                            else if (shadow.has_value())
+                            {
+                                (void)shadow_handles_.Destroy(*shadow);
                             }
                         }
                     }
@@ -185,17 +211,37 @@ namespace kpengine::render
                                  record->second.source_handle == value.handle)
                         {
                             const auto *const point = std::get_if<PointLightSourceDesc>(&value.source);
-                            if (point != nullptr && !record->second.shadow_handle.has_value())
+                            if (point != nullptr)
                             {
+                                if (point->casts_shadow && !record->second.shadow_handle.has_value())
+                                {
+                                    record->second.shadow_handle = shadow_handles_.Create();
+                                }
+                                else if (!point->casts_shadow && record->second.shadow_handle.has_value())
+                                {
+                                    (void)shadow_handles_.Destroy(*record->second.shadow_handle);
+                                    record->second.shadow_handle.reset();
+                                }
                                 (void)light_world.EnqueueUpdate(record->second.light_handle,
-                                                                MakeLightDesc(*point));
+                                                                MakeLightDesc(*point,
+                                                                              record->second.shadow_handle));
                             }
                             else if (const auto *const spot =
                                          std::get_if<SpotLightSourceDesc>(&value.source);
-                                     spot != nullptr && !record->second.shadow_handle.has_value())
+                                     spot != nullptr)
                             {
+                                if (spot->casts_shadow && !record->second.shadow_handle.has_value())
+                                {
+                                    record->second.shadow_handle = shadow_handles_.Create();
+                                }
+                                else if (!spot->casts_shadow && record->second.shadow_handle.has_value())
+                                {
+                                    (void)shadow_handles_.Destroy(*record->second.shadow_handle);
+                                    record->second.shadow_handle.reset();
+                                }
                                 (void)light_world.EnqueueUpdate(record->second.light_handle,
-                                                                MakeLightDesc(*spot));
+                                                                MakeLightDesc(*spot,
+                                                                              record->second.shadow_handle));
                             }
                         }
                     }

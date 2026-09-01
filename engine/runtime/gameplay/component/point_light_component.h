@@ -6,8 +6,8 @@
 
 namespace kpengine::gameplay
 {
-    // Gameplay-owned punctual-light authoring state. D6.1 emits no shadow
-    // request; Render retains all future point-shadow scheduling ownership.
+    // Gameplay-owned punctual-light authoring state. Render retains point-shadow
+    // target and scheduling ownership.
     class PointLightComponent final : public SceneComponent
     {
     public:
@@ -16,6 +16,7 @@ namespace kpengine::gameplay
         float GetIntensity() const { return intensity_; }
         float GetRange() const { return range_; }
         bool IsLightEnabled() const { return enabled_; }
+        bool CastsShadow() const { return casts_shadow_; }
         render::LightSourceHandle GetSourceHandle() const { return source_handle_; }
 
         void SetPosition(const Vector3f &position);
@@ -23,6 +24,7 @@ namespace kpengine::gameplay
         void SetIntensity(float intensity);
         void SetRange(float range);
         void SetLightEnabled(bool enabled);
+        void SetCastsShadow(bool casts_shadow);
 
     protected:
         void OnActivate() override;
@@ -39,6 +41,7 @@ namespace kpengine::gameplay
         float intensity_ = 1.0f;
         float range_ = 1.0f;
         bool enabled_ = true;
+        bool casts_shadow_ = true;
         bool source_dirty_ = true;
         render::LightSourceHandle source_handle_;
     };

@@ -15,6 +15,7 @@ namespace kpengine::gameplay
         float intensity = 1.0f;
         float range = 1.0f;
         bool enabled = true;
+        bool casts_shadow = true;
     };
 
     ActorHandle CreatePointLightActor(GameplayWorld &world, const PointLightActorDesc &desc);

@@ -56,7 +56,7 @@ this same provider.
 | Execution lane | Game; the provider then waits for Render capture/export completion. |
 | Allowed callers | Editor console, Agent, Lua, tests, C++ callers |
 | `path` | Optional string. Explicit paths must end in `.png` and remain below `save/screenshots/validation/`. |
-| `view` | Optional enum: `scene_color`, `linear_depth`, `world_normal`, `base_color`, `material_params`, or `shadow_visibility`. Defaults to `scene_color`. |
+| `view` | Optional enum: `scene_color`, `linear_depth`, `world_normal`, `base_color`, `material_params`, `shadow_visibility`, `spot_shadow_depth`, `spot_shadow_visibility`, `point_shadow_depth`, or `point_shadow_visibility`. Defaults to `scene_color`. |
 | Initial result | Normally `pending` with a request ID. |
 | Terminal result | `success` with `data.output_path`, `data.status`, `data.success`, and `data.diagnostic`; otherwise an error status and diagnostic. |
 
@@ -78,8 +78,10 @@ for all caller forms and [usage](usage.md) for complete Agent/Lua examples.
 Diagnostic views are converted by Render into displayable RGBA8 output before
 the existing Graphics readback path runs. They are visualizations, not raw
 attachment byte exports; linear depth is normalized by the active camera far
-plane, normals are remapped from `[-1,1]` to `[0,1]`, and shadow visibility is
-white for visible and black for occluded.
+plane, normals are remapped from `[-1,1]` to `[0,1]`, shadow visibility is
+white for visible and black for occluded, and `spot_shadow_depth` visualizes
+the sampled D32 spotlight map; `point_shadow_depth` visualizes the fixed
+3×2 point-shadow depth atlas.
 
 ## Planned, not registered
 
