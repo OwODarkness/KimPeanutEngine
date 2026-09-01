@@ -327,17 +327,46 @@ active camera source is copied into RenderSystem without a Gameplay pointer,
 matrix object, GPU handle, or backend type crossing the boundary. Gamepad input
 is an additional logical-action path, not a second camera-control API.
 
+## GP7 — level asset and startup-scene migration
+
+**Status: proposed.** Begin after the deferred-renderer D6/D7 verification
+handoff is closed or explicitly paused with its evidence recorded. The
+authoritative scope, ownership, stages, reference findings, and validation plan
+are in the [GP7 level-asset spec](../../.spec/specs/gameplay-level-asset.md).
+
+- [ ] GP7.1: add a versioned, Asset-owned `LevelResource` and derive its model,
+  material, and environment dependency edges during load.
+- [ ] GP7.2: add a Runtime-owned level instance that transactionally creates
+  static-mesh Actors in `GameplayWorld`, retains stable authored-ID mappings,
+  and deterministically unloads them.
+- [ ] GP7.3: instantiate existing light and camera compositions and add a
+  value-only environment source seam without serializing Render/GPU objects.
+- [ ] GP7.4: reduce bootstrap scene policy to `startup_level`; migrate the PBR
+  showcase and create separate point- and spot-shadow validation levels.
+- [ ] GP7.5: prove failure rollback, source retirement, dependency lifetime,
+  Vulkan/OpenGL smoke, and visual captures; record execution evidence in a
+  journal before marking GP7 complete.
+
+**Done when:** bootstrap selects one authored level rather than containing the
+scene; Asset owns level identity/dependencies, Runtime owns the level instance,
+GameplayWorld owns instantiated Actors, and Render receives copied source
+values only. A separate `WorldResource` remains deferred until multiple-level
+composition or streaming has a concrete consumer.
+
 ## After GP6
 
-1. Add another focused `gameplay/factory/` helper only when it represents a
+1. Complete the proposed [GP7 level-asset migration](#gp7--level-asset-and-startup-scene-migration)
+   after deferred-renderer verification so future render fixtures do not
+   accumulate in bootstrap.
+2. Add another focused `gameplay/factory/` helper only when it represents a
    distinct real Actor composition; keep factories outside GameplayWorld.
-2. Implement Material Asset V1 from the
-   [material-system M6 ledger](../render/material_system_TODO.md), then replace
+3. Implement Material Asset V1 from the
+   [material-system M6 plan](../render/material_system/.plan/M6.md), then replace
    the transitional material reference with its asset identity.
-3. Add shadow classification and transparent depth sorting to the proxy-derived
+4. Add shadow classification and transparent depth sorting to the proxy-derived
    draw lists.
-4. Add shadow and G-buffer/lighting consumers.
-5. Evolve the existing render pass schedule into a render graph only after those
+5. Add shadow and G-buffer/lighting consumers.
+6. Evolve the existing render pass schedule into a render graph only after those
    consumers produce real resource dependencies.
-6. Evaluate physics, scripting, serialization, editor inspection, and
+7. Evaluate physics, scripting, serialization, editor inspection, and
    cross-Actor attachment as separate designs.

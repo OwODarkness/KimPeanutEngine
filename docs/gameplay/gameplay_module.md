@@ -60,6 +60,13 @@ Input translate copied gamepad samples into logical stick/trigger/button input;
 the controller consumes it on the game thread, and deterministic camera smoke
 passes on Vulkan and OpenGL.
 
+**GP7 is proposed, not implemented.** Its
+[level-asset spec](../../.spec/specs/gameplay-level-asset.md) moves authored
+scene content out of bootstrap into an Asset-owned `LevelResource`, with a
+Runtime-owned instance creating Actors in `GameplayWorld`. Bootstrap will
+select one startup level; a separate multi-level `WorldResource` waits for a
+real composition or streaming consumer.
+
 The executable implementation ledger is [TODO.md](TODO.md). The render-side
 half of the boundary remains documented in
 [world/component_module.md](../world/component_module.md) and
@@ -501,12 +508,14 @@ linked below:
   time-scaled analog input, with a safe pitch limit. KimPeanut adopts those
   narrow math/input rules, not Bevy's ECS or schedule model.
 
-The bootstrap scene follows the same ownership rule. Render startup loads the
+The transitional bootstrap scene follows the same ownership rule. Render startup loads the
 configured mesh and creates its render-owned material identity, then transfers
 one `StaticMeshRenderableSourceDesc` through the existing startup handshake.
 After that handshake, `RuntimeContext::FinalizeGameStartup` creates the actor
 on the game thread with `CreateStaticMeshActor`; there is no bootstrap-only
-`MeshProxy` owned by `RenderSystem`.
+`MeshProxy` owned by `RenderSystem`. GP7 will replace this authored bootstrap
+scene with the [level-asset contract](../../.spec/specs/gameplay-level-asset.md)
+without changing the ownership boundary.
 
 ## Reference findings
 
@@ -534,7 +543,9 @@ on the game thread with `CreateStaticMeshActor`; there is no bootstrap-only
 - ECS replacement or conversion.
 - A UE-sized gameplay framework, reflection/property system, prefab system, or
   generalized component-service architecture.
-- Reflection, serialization, prefabs, level-file loading, or editor inspectors.
+- Reflection, general serialization, prefabs, or editor inspectors. Versioned,
+  closed-schema level-file loading is deferred to GP7 and does not imply a
+  reflection/property system.
 - Broad input/remapping infrastructure, scripting, networking, replication,
   physics, and gameplay abilities. GP6's local camera action snapshot is a
   deliberately narrow InputSystem consumer, not a general input framework.

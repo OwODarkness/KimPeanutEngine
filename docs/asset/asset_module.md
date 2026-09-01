@@ -104,6 +104,117 @@ Consequence: loads are **serialized**, not parallelized — async loading wins o
 
 Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h`, `shader_program_loader.h`); the concrete implementations are swappable. The manager owns them as `unique_ptr` and currently hard-codes the concrete types in its constructor.
 
+## Bootstrap preload, HDR cost, and streaming policy
+
+Bootstrap is a Runtime startup policy, not an Asset ownership mechanism. The
+Runtime parses `config/bootstrap.json`, turns its need-list into
+`AssetLoadRequest` values, and the Render side currently drains the complete
+batch in `RenderSystem::PostInitialize` before the main loop begins. Each
+request then enters `AssetManager::LoadSync`. The queue therefore provides a
+request boundary, but the current bootstrap path is intentionally blocking.
+
+The manifest should contain only the hard dependencies of the initial scene:
+its models, materials, material textures, and environment data. It should not
+become a catalogue of every asset that might be used later. Optional editor
+content, alternate models, unused material sets, and future levels should be
+requested after startup through the runtime loading/streaming path. The Asset
+module still owns identity, deduplication, decoding, CPU payload lifetime, and
+dependency tracking in both cases; Render/Graphics remain responsible for
+resource processing, GPU upload, and GPU-safe retirement.
+
+### Why an HDR environment can make bootstrap slow
+
+The current bootstrap environment is `HDR_041_Path.hdr`, an 8192×4096
+Radiance HDR file of approximately 111 MiB. The texture loader first decodes
+RGBA32F pixels, which is approximately 512 MiB before allocator overhead. The
+Asset-side HDR conversion clamps the imported width to 4096 and produces a
+4096×2048 RGBA16F payload of approximately 64 MiB. This means the decode,
+float-to-half conversion, temporary memory pressure, and later GPU upload are
+all materially more expensive than an ordinary 8-bit PNG.
+
+The environment request also causes Render/Resource to derive the low-resolution
+irradiance map, prefiltered radiance levels, and BRDF LUT. Those derived images
+are small compared with the panorama; the dominant HDR cost is normally file
+I/O, full-resolution float decode, conversion, and upload. Large TGA textures
+and Assimp OBJ/FBX parsing in the same manifest can still be significant, so
+the HDR should not be assumed to account for all startup time without per-asset
+measurements.
+
+The current loader path is visible in
+[`AssetManager::LoadSync`](../../engine/runtime/asset/asset_manager.cpp) and
+the HDR conversion policy is kept beside it. The current bootstrap manifest is
+[`config/bootstrap.json`](../../config/bootstrap.json). In a recent runtime
+session, the 41-entry manifest took roughly eight seconds from Engine start to
+successful initialization; this is an environment-specific observation, not a
+stable performance budget.
+
+### Bootstrap memory accounting
+
+Compressed source size is not runtime residency. The current 41-entry
+manifest contains approximately 406 MiB of unique source files, but the image
+loaders expand them to tightly packed RGBA payloads and the render cache keeps
+those payloads alive while their GPU bindings are in use. Based on the current
+asset extents and one-mip-level texture policy:
+
+| Category | Approximate raw payload | Lifetime / location |
+|---|---:|---|
+| Bootstrap LDR images: five 4096² TGA files plus twenty-one 2048² PNG files | 656 MiB | Asset-owned CPU payloads and approximately the same GPU texture storage |
+| Imported HDR panorama after the 4096-width clamp: 4096×2048 RGBA16F | 64 MiB | Asset-owned CPU payload and approximately the same GPU texture storage |
+| Irradiance, five prefiltered levels, and BRDF LUT | 116 KiB | Resource-derived CPU data during processing and small GPU textures |
+| Point-shadow atlas | 6 MiB | Render-owned GPU depth target; not an Asset payload |
+
+The steady-state decoded image payload is therefore roughly 720 MiB before
+mesh vertex/index data, model metadata, allocator overhead, descriptor state,
+render targets, and driver bookkeeping. This is a residency estimate, not a
+process-RSS measurement.
+
+HDR has a particularly high transient peak. `stbi_loadf` first allocates about
+512 MiB for the 8192×4096 RGBA32F image; ImageIO then copies that data into its
+own `std::vector` before releasing the decoder allocation. During that copy,
+the HDR alone briefly has roughly 1 GiB of raw CPU image storage. Conversion
+then allocates the 64 MiB RGBA16F output. Because the current manifest loads
+the HDR after the other images and retains their payloads, a rough HDR-stage
+CPU high-water estimate is about 1.6 GiB, before general overhead. Vulkan also
+uses a temporary staging allocation approximately the size of each texture
+during upload; this is released after the upload wait. OpenGL may add
+driver-internal temporary storage that this module cannot report.
+
+Async loading by itself does not reduce this steady-state memory: it only moves
+work away from the caller. Memory falls when the bootstrap set is smaller,
+large source payloads are released after a safe GPU upload, or optional assets
+are streamed and evicted according to ownership and lifetime rules. Any such
+release must preserve Asset dependency tracking and the Graphics/RHI rule that
+GPU resources are destroyed only after submitted work is safe.
+
+### Staged remedies
+
+Apply these in order, measuring each change:
+
+1. **Measure first.** Add per-request timing and decoded/uploaded byte counts
+   around `LoadSync`, and report queue wait, disk/decode, CPU conversion, and
+   GPU-bake time separately. Startup totals alone cannot identify whether HDR,
+   model parsing, or large LDR textures dominate.
+2. **Reduce the bootstrap set.** Keep only initial-scene hard dependencies in
+   `bootstrap.json`; move optional content to demand-driven requests after the
+   startup gate.
+3. **Preprocess expensive environments.** Prefer a project import/cache step
+   that stores a bounded panorama resolution and a render-ready half-float
+   representation. Cache the derived environment artifacts when their source
+   content and processing settings match, while retaining the HDR source as
+   the authoritative Asset identity.
+4. **Stream after startup.** Use the existing request queue for background
+   work, with priorities and a frame-time budget at the Runtime/Render boundary.
+   Do not treat `LoadAsync` as parallel throughput: its shared loader instances
+   still serialize under `load_mutex_`. Real parallel decoding requires
+   per-thread loader instances or a loader pool, followed by render-thread GPU
+   submission and explicit lifetime handoff.
+
+The acceptance condition is a measured shorter startup without changing Asset
+identity/dependency semantics, blocking the render frame with CPU decode, or
+allowing a resource to become visible before its CPU payload and GPU artifact
+are ready. See the [async resource queue design](../async/async_resource_queue.md)
+for the request transport and its current loading-thread boundary.
+
 ## Shader pipeline — identity vs. artifact
 
 **The idea.** Shader *source* does not ship with a game — what ships is the baked artifact (SPIR-V for Vulkan, source for OpenGL). A caller (the graphics backend, once the API is chosen) tells the asset system to load a shader and compile it. `LoadSync`/`LoadAsync` must **not** auto-compile: the target API isn't known until the backend is created. The pipeline is two stages with a strict boundary.
@@ -140,6 +251,12 @@ Complete. The migration from "shared_ptr everywhere + `weak_ptr` path map" to th
 
 ## Known smells / next steps
 
+- The proposed [Gameplay Level Asset GP7](../../.spec/specs/gameplay-level-asset.md)
+  will add a versioned CPU-only level payload and loader-declared dependency
+  edges. Asset will own the level identity and authored data, while Runtime
+  owns its live instance and `GameplayWorld` owns instantiated Actors. Do not
+  add a separate world asset until multiple-level composition or streaming has
+  a concrete consumer.
 - `#define DEBUG` in `asset_manager.h` leaks a macro into every TU that includes it.
 - `ref_assets`/`dependencies` are `vector<AssetID>` with linear `find`/erase — O(n²) on large scenes; a `set` on the packed `uint64` would scale.
 - Loads are serialized on `load_mutex_` because the loaders are shared instances; per-thread loader instances or a loader pool would unlock parallel loading. `GetAsset` locks on every call — uncontended that's cheap, but an unlocked variant is the escape hatch if it ever becomes a hot path (do **not** revert to returning `shared_ptr`).
