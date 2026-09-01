@@ -220,6 +220,22 @@ TEST(GameplayWorldTest, DestroyInvalidatesHandleAndDeactivatesBeforeReclaim)
     EXPECT_NE(after_clear.generation, replacement.generation);
 }
 
+TEST(GameplayWorldTest, ReclaimsDestroyedActorsBeforeReusingHandleSlots)
+{
+    kpengine::gameplay::GameplayWorld world{};
+    const kpengine::gameplay::ActorHandle destroyed = world.CreateActor();
+    ASSERT_TRUE(world.DestroyActor(destroyed));
+    EXPECT_EQ(world.FindActor(destroyed), nullptr);
+
+    const kpengine::gameplay::ActorHandle before_reclaim = world.CreateActor();
+    EXPECT_NE(before_reclaim.id, destroyed.id);
+
+    world.ReclaimDestroyedActors();
+    const kpengine::gameplay::ActorHandle after_reclaim = world.CreateActor();
+    EXPECT_EQ(after_reclaim.id, destroyed.id);
+    EXPECT_NE(after_reclaim.generation, destroyed.generation);
+}
+
 TEST(GameplayWorldTest, PropagatesAttachedSceneTransformsAndSupportsDetach)
 {
     kpengine::gameplay::GameplayWorld world{};

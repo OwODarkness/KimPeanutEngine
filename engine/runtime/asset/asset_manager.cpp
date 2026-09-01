@@ -8,6 +8,7 @@
 #include "shader_program_loader.h"
 #include "miniaudio_audio_loader.h"
 #include "material_loader.h"
+#include "level_loader.h"
 #include "utility.h"
 #include "model.h"
 #include "texture.h"
@@ -101,18 +102,14 @@ namespace kpengine::asset
     AssetManager::AssetManager() : model_loader_(std::make_unique<Assimp_ModelLoader>()),
                                    shader_program_loader_(std::make_unique<ShaderProgramLoader>()),
                                    audio_loader_(std::make_unique<MiniAudio_AudioLoader>()),
-                                   material_loader_(std::make_unique<MaterialLoader>())
+                                   material_loader_(std::make_unique<MaterialLoader>()),
+                                   level_loader_(std::make_unique<LevelLoader>())
     {
     }
 
     std::string AssetManager::Key(const std::string &path)
     {
-        std::string key = path;
-        std::replace(key.begin(), key.end(), '\\', '/');
-        std::transform(key.begin(), key.end(), key.begin(),
-                       [](unsigned char c)
-                       { return std::tolower(c); });
-        return key;
+        return CanonicalAssetPathKey(path);
     }
 
     AssetID AssetManager::LoadSync(const std::string &path)
@@ -166,11 +163,54 @@ namespace kpengine::asset
             }
         }
 
+        // Loaders only declare dependencies. Resolve them after releasing the
+        // shared loader lock; recursive LoadSync while it is held would
+        // self-deadlock.
+        const size_t declared_dependency_offset = register_info.dependencies.size();
+        if (!register_info.dependency_requests.empty())
+        {
+            std::vector<AssetID> resolved_dependencies = std::move(register_info.dependencies);
+            resolved_dependencies.reserve(resolved_dependencies.size() +
+                                           register_info.dependency_requests.size());
+            for (const AssetRegisterInfo::DependencyRequest &request : register_info.dependency_requests)
+            {
+                const AssetID dependency = LoadSync(request.path);
+                if (!dependency.IsValid() || dependency.type != request.expected_type)
+                {
+                    KP_LOG("AssetManagerLog", LOG_LEVEL_ERROR,
+                           "Failed to resolve dependency %s for %s",
+                           request.path.c_str(), path.c_str());
+                    return AssetID();
+                }
+                resolved_dependencies.push_back(dependency);
+            }
+            register_info.dependencies = std::move(resolved_dependencies);
+            register_info.dependency_requests.clear();
+        }
+
         {
             std::lock_guard<std::recursive_mutex> lock(state_mutex_);
             if (AssetID cached = find_cached(type, path); cached.IsValid())
             {
                 return cached; // another thread loaded it while we were reading
+            }
+
+            // A resolved dependency can be unregistered while this load is
+            // resolving children. Revalidate while holding the same state lock
+            // used by UnRegisterAsset, immediately before the parent edges are
+            // installed, so no stale dependency ID can be registered.
+            for (size_t index = 0; index < register_info.dependency_requests.size(); ++index)
+            {
+                const size_t dependency_index = declared_dependency_offset + index;
+                if (dependency_index >= register_info.dependencies.size() ||
+                    register_info.dependencies[dependency_index].type !=
+                        register_info.dependency_requests[index].expected_type ||
+                    !GetAsset(register_info.dependencies[dependency_index]))
+                {
+                    KP_LOG("AssetManagerLog", LOG_LEVEL_ERROR,
+                           "Dependency disappeared before registering %s", path.c_str());
+                    return AssetID();
+                }
             }
             AssetID id = RegisterAsset(register_info);
             if (id.IsValid())
@@ -275,6 +315,37 @@ namespace kpengine::asset
             return nullptr;
         }
         return cache->assets[id.id].get();
+    }
+
+    AssetID AssetManager::ResolveDependency(const AssetID &owner, size_t dependency_index,
+                                             AssetType expected_type)
+    {
+        if (!owner.IsValid() || expected_type == AssetType::Undefined)
+        {
+            return AssetID();
+        }
+
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+        const AssetCache *cache = FindCache(owner.type);
+        if (!cache || owner.id >= cache->assets.size() ||
+            !cache->handles.IsHandleValid(AssetHandle(owner.id, owner.generation)) ||
+            !cache->assets[owner.id])
+        {
+            return AssetID();
+        }
+
+        const std::vector<AssetID> &dependencies = cache->assets[owner.id]->dependencies;
+        if (dependency_index >= dependencies.size())
+        {
+            return AssetID();
+        }
+
+        const AssetID dependency = dependencies[dependency_index];
+        if (dependency.type != expected_type || !GetAsset(dependency))
+        {
+            return AssetID();
+        }
+        return dependency;
     }
 
     void AssetManager::UnRegisterAsset(const AssetID &id)
@@ -433,6 +504,11 @@ namespace kpengine::asset
         {
             assert(material_loader_);
             return material_loader_->Load(path, info);
+        }
+        else if (type == AssetType::KPAT_Level)
+        {
+            assert(level_loader_);
+            return level_loader_->Load(path, info);
         }
 
         std::string name = std::string(magic_enum::enum_name(type));

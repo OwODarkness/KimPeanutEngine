@@ -16,6 +16,7 @@ namespace kpengine::asset{
     class ShaderProgramLoader;
     class IAudioLoader;
     class MaterialLoader;
+    class LevelLoader;
 
     using AssetHandle = Handle<Asset>;
 
@@ -40,6 +41,11 @@ namespace kpengine::asset{
         void UnRegisterAsset(const AssetID& id);
 
         Asset* GetAsset(const AssetID& id);
+
+        // Resolve an ordered, still-live dependency without exposing the
+        // owning Asset's storage to later runtime stages.
+        AssetID ResolveDependency(const AssetID& owner, size_t dependency_index,
+                                  AssetType expected_type);
 
         //Get Resource From Asset(AssetData)
         template<typename T>
@@ -81,6 +87,7 @@ namespace kpengine::asset{
         std::unique_ptr<ShaderProgramLoader> shader_program_loader_;
         std::unique_ptr<IAudioLoader> audio_loader_;
         std::unique_ptr<MaterialLoader> material_loader_;
+        std::unique_ptr<LevelLoader> level_loader_;
         std::unordered_map<AssetType, AssetCache> caches_;
 
         std::recursive_mutex state_mutex_;  // guards caches_ and path_index

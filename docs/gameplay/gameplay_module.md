@@ -60,14 +60,17 @@ Input translate copied gamepad samples into logical stick/trigger/button input;
 the controller consumes it on the game thread, and deterministic camera smoke
 passes on Vulkan and OpenGL.
 
-**GP7 is proposed, not implemented.** Its
+**GP7.1 and GP7.2 are landed; GP7.3–GP7.5 remain proposed.** The
 [level-asset spec](../../.spec/specs/gameplay-level-asset.md) moves authored
 scene content out of bootstrap into an Asset-owned `LevelResource`, with a
-Runtime-owned instance creating Actors in `GameplayWorld`. Bootstrap will
-select one startup level; a separate multi-level `WorldResource` waits for a
-real composition or streaming consumer.
+Runtime-owned `LevelInstance` preflighting and transactionally creating static
+mesh Actors in `GameplayWorld`. Bootstrap will select one startup level; a
+separate multi-level `WorldResource` waits for a real composition or streaming
+consumer.
 
-The executable implementation ledger is [TODO.md](TODO.md). The render-side
+The module architecture map is [PLANS.md](PLANS.md), and the executable
+implementation ledger is [TODO.md](TODO.md). The concrete first level-asset
+stage is [GP7.1](.plan/GP7.1.md). The render-side
 half of the boundary remains documented in
 [world/component_module.md](../world/component_module.md) and
 [world/mesh_proxy_TODO.md](../world/mesh_proxy_TODO.md).
@@ -249,9 +252,11 @@ reflection, or a task scheduler.
 GP1 policy is explicit: components may be added only while an Actor is
 Constructed; duplicate component types are allowed; initialization and
 activation run in insertion order; deactivation runs in reverse insertion
-order. `DestroyActor` immediately invalidates its handle and deactivates an
-active Actor, while `GameplayWorld::Tick` reclaims its owned storage at the
-world boundary.
+order. `DestroyActor` immediately invalidates lookup and deactivates an active
+Actor, while `GameplayWorld::Tick` or the explicit game-thread
+`ReclaimDestroyedActors()` boundary releases owned storage and the handle slot.
+Level rollback/unload uses that explicit boundary so handle slots cannot be
+reused while destroyed Actor storage still occupies the map.
 
 ## Transform attachment rules
 

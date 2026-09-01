@@ -61,9 +61,13 @@ namespace kpengine::gameplay
         void Tick(float delta_time);
         void Clear();
 
-    private:
+        // Game-thread lifecycle boundary for transactional rollback/unload.
+        // DestroyActor invalidates lookup immediately, while this operation
+        // releases the owned Actor storage and handle slot. Do not call it
+        // from inside world iteration.
         void ReclaimDestroyedActors();
 
+    private:
         HandleSystem<ActorHandle> actor_handles_;
         std::unordered_map<uint32_t, std::unique_ptr<Actor>> actors_;
         std::unique_ptr<PlayerController> local_player_controller_;

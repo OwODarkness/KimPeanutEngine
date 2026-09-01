@@ -1,4 +1,6 @@
 #include "runtime_global_context.h"
+#include "asset/asset_manager.h"
+#include "level/level_instance.h"
 #include "screenshot/runtime_screenshot_service.h"
 #include "screenshot/screenshot_command_provider.h"
 #include "window/window_system.h"
@@ -35,6 +37,8 @@ namespace kpengine
         gameplay_world_(std::make_unique<gameplay::GameplayWorld>(
             render_system_->GetRenderableSourceSink(), render_system_->GetLightSourceSink(),
             render_system_->GetCameraSourceSink())),
+        level_instance_(std::make_unique<LevelInstance>(asset::AssetManager::GetInstance(),
+                                                        *gameplay_world_)),
         log_system_(std::make_unique<LogSystem>()),
         input_system_(std::make_unique<input::InputSystem>()),
         lua_vm_(std::make_unique<::kpengine::script::lua::LuaVM>()),
@@ -248,6 +252,7 @@ namespace kpengine
             // the GLFW window/context they depend on.
             // Components enqueue source destruction through RenderSystem. The
             // gameplay World must therefore die before the sink and GPU teardown.
+            level_instance_.reset();
             gameplay_world_.reset();
             bootstrap_renderable_sources_.clear();
             // Drop sol2 callback closures before their Lua state and the command

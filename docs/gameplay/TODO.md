@@ -4,7 +4,7 @@
 editor inspection deferred; GP6.1 camera data/source contract, GP6.2 local
 camera traversal, GP6.3 controller/gamepad proof, and GP6.4 viewport camera
 capture landed 2026-08-30.**
-Design:
+Architecture map: [PLANS.md](PLANS.md). Detailed design:
 [gameplay_module.md](gameplay_module.md).
 The render-side proxy contract is already implemented; its integration ledger is
 [world/mesh_proxy_TODO.md](../world/mesh_proxy_TODO.md).
@@ -329,16 +329,21 @@ is an additional logical-action path, not a second camera-control API.
 
 ## GP7 — level asset and startup-scene migration
 
-**Status: proposed.** Begin after the deferred-renderer D6/D7 verification
-handoff is closed or explicitly paused with its evidence recorded. The
+**Status: GP7.1 and GP7.2 landed 2026-09-01; GP7.3–GP7.5 remain proposed.** The
 authoritative scope, ownership, stages, reference findings, and validation plan
 are in the [GP7 level-asset spec](../../.spec/specs/gameplay-level-asset.md).
 
-- [ ] GP7.1: add a versioned, Asset-owned `LevelResource` and derive its model,
-  material, and environment dependency edges during load.
-- [ ] GP7.2: add a Runtime-owned level instance that transactionally creates
-  static-mesh Actors in `GameplayWorld`, retains stable authored-ID mappings,
-  and deterministically unloads them.
+- [x] GP7.1: complete the level schema and dependency-graph plan; review risks
+  are resolved in [GP7.1](.plan/GP7.1.md#review-risks-resolved-2026-09-01):
+  add a versioned, Asset-owned `LevelResource` and derive its model, material,
+  and environment dependency edges during load. See the [GP7 journal](../../.spec/journal/2026-09-01-gameplay-level-asset.md)
+  for implementation and validation evidence.
+- [x] GP7.2: follow the [static-mesh instantiation and rollback plan](.plan/GP7.2.md)
+  to add a Runtime-owned level instance that preflights dependencies,
+  transactionally creates static-mesh Actors in `GameplayWorld`, retains
+  stable authored-ID mappings, and deterministically rolls back/unloads them.
+  See the [GP7 journal](../../.spec/journal/2026-09-01-gameplay-level-asset.md)
+  for implementation and validation evidence.
 - [ ] GP7.3: instantiate existing light and camera compositions and add a
   value-only environment source seam without serializing Render/GPU objects.
 - [ ] GP7.4: reduce bootstrap scene policy to `startup_level`; migrate the PBR

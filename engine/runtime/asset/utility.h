@@ -4,9 +4,20 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <cctype>
 #include "common.h"
 namespace kpengine::asset
 {
+    inline std::string CanonicalAssetPathKey(const std::string &path)
+    {
+        std::string key = path;
+        std::replace(key.begin(), key.end(), '\\', '/');
+        std::transform(key.begin(), key.end(), key.begin(),
+                       [](unsigned char c)
+                       { return static_cast<char>(std::tolower(c)); });
+        return key;
+    }
+
     inline std::string GetFileExtension(const std::string &path)
     {
         auto pos = path.find_last_of('.');
@@ -47,6 +58,11 @@ namespace kpengine::asset
         return ext == "material";
     }
 
+    inline bool IsLevelExtension(const std::string &ext)
+    {
+        return ext == "level";
+    }
+
     inline bool IsShaderExtension(const std::string& ext)
     {
         static const std::vector<std::string> shader_exts = {"vert", "vs", "frag", "fs", "geom", "gs", "comp", "cs", "spv"};
@@ -78,6 +94,10 @@ namespace kpengine::asset
         else if (IsMaterialExtension(ext))
         {
             return AssetType::KPAT_Material;
+        }
+        else if (IsLevelExtension(ext))
+        {
+            return AssetType::KPAT_Level;
         }
         else
         {

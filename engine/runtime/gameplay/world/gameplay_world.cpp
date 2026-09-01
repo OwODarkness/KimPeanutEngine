@@ -35,7 +35,10 @@ namespace kpengine::gameplay
         }
 
         const auto it = actors_.find(handle.id);
-        return it != actors_.end() && it->second->GetHandle() == handle ? it->second.get() : nullptr;
+        return it != actors_.end() && it->second->GetHandle() == handle &&
+                       it->second->GetState() != ActorState::Destroyed
+                   ? it->second.get()
+                   : nullptr;
     }
 
     const Actor *GameplayWorld::FindActor(ActorHandle handle) const
@@ -46,7 +49,10 @@ namespace kpengine::gameplay
         }
 
         const auto it = actors_.find(handle.id);
-        return it != actors_.end() && it->second->GetHandle() == handle ? it->second.get() : nullptr;
+        return it != actors_.end() && it->second->GetHandle() == handle &&
+                       it->second->GetState() != ActorState::Destroyed
+                   ? it->second.get()
+                   : nullptr;
     }
 
     bool GameplayWorld::InitializeActor(ActorHandle handle)
@@ -76,7 +82,7 @@ namespace kpengine::gameplay
         }
 
         actor->Destroy();
-        return actor_handles_.Destroy(handle);
+        return true;
     }
 
     PlayerController *GameplayWorld::CreateLocalPlayerController(
@@ -126,9 +132,8 @@ namespace kpengine::gameplay
         {
             (void)id;
             actor->Destroy();
-            (void)actor_handles_.Destroy(actor->GetHandle());
         }
-        actors_.clear();
+        ReclaimDestroyedActors();
     }
 
     void GameplayWorld::ReclaimDestroyedActors()
@@ -137,6 +142,7 @@ namespace kpengine::gameplay
         {
             if (it->second->GetState() == ActorState::Destroyed)
             {
+                (void)actor_handles_.Destroy(it->second->GetHandle());
                 it = actors_.erase(it);
             }
             else

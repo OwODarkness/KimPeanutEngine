@@ -164,12 +164,14 @@ Create at least these authored fixtures during migration:
 
 ## Stages
 
-1. **GP7.1 — Asset schema and dependency graph.** Define the versioned
+1. **GP7.1 — Asset schema and dependency graph.** Follow the concrete
+   [GP7.1 stage plan](../../docs/gameplay/.plan/GP7.1.md). Define the versioned
    `LevelResource`, extension/type dispatch, parser validation, relative path
    rules, and dependency registration. Add loader tests for valid content,
    invalid versions/types/values, duplicate IDs, missing dependencies, dedup,
    and unload blocking while a level references a dependency.
-2. **GP7.2 — Static-mesh instantiation and rollback.** Add the Runtime-owned
+2. **GP7.2 — Static-mesh instantiation and rollback.** Follow the concrete
+   [GP7.2 stage plan](../../docs/gameplay/.plan/GP7.2.md). Add the Runtime-owned
    level instance, create static-mesh Actors through existing factories, retain
    the authored-ID map, and prove transactional failure plus deterministic
    unload/stale-handle behavior in headless tests.
@@ -241,13 +243,15 @@ lifetime and rendered output.
 These references support the ownership shape; neither is a source template to
 copy.
 
-## Risks and open questions
+## Risks and resolved questions
 
-- Decide the exact on-disk path convention and whether all references must be
-  project-root-relative before GP7.1 code is written.
-- Decide whether missing optional environment/camera records use explicit
-  engine defaults or are schema errors; required mesh/material dependencies
-  must fail deterministically.
+- **Resolved for GP7.1:** level references are asset-root-relative, normalized,
+  typed paths. They are not relative to the level file and may not escape the
+  asset root.
+- **Resolved for GP7.1:** environment and camera records are optional. Their
+  absence publishes no source; staged Runtime fallback policy remains outside
+  the Asset schema. Present model/material/environment dependencies fail
+  deterministically when invalid or missing.
 - AssetManager currently serializes loads. A level dependency fan-out may make
   load latency visible, but parallel loading is a separate measured task.
 - The current bootstrap camera/environment fallback must remain valid during

@@ -47,6 +47,7 @@ namespace kpengine
     namespace runtime
     {
         class RuntimeScreenshotService;
+        class LevelInstance;
 
         class RuntimeContext final : public ISceneCameraControlSink
         {
@@ -77,6 +78,9 @@ namespace kpengine
             std::shared_ptr<RuntimeScreenshotService> screenshot_service_;
             command::CommandRegistration screenshot_command_registration_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
+            // Dormant until GP7.4 supplies startup_level. Its destructor must
+            // unload level-created Actors before GameplayWorld and RenderSystem.
+            std::unique_ptr<LevelInstance> level_instance_;
             std::unique_ptr<LogSystem> log_system_;
             std::unique_ptr<input::InputSystem> input_system_;
 

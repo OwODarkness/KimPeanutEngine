@@ -4,6 +4,25 @@
 
 ## Done
 
+- **Gameplay GP7.1 — level asset review risks resolved (2026-09-01)** — the
+  Asset-owned V1 `*.level` schema, strict loader, typed dependency requests,
+  transactional unregister revalidation, integer `lod_bias`, path-qualified
+  diagnostics, and repeated-reference deduplication coverage are complete.
+  The rebuilt focused suite passes 14/14 and the full Debug build plus CTest
+  pass 197/197. GP7.3–GP7.5 remain open. → [GP7.1 plan](gameplay/.plan/GP7.1.md),
+  [GP7 journal](../.spec/journal/2026-09-01-gameplay-level-asset.md)
+
+- **Gameplay GP7.2 — static-mesh level instantiation and rollback (2026-09-01)**
+  — Runtime now owns a dormant non-copyable `LevelInstance` that preflights
+  Asset dependency indices, maps model geometry to validated mesh/material
+  payloads, creates static-mesh Actors in authored order, and retains only
+  generational authored-ID mappings. Creation rollback and unload destroy in
+  reverse order, reclaim immediately, retire copied Render sources, and leave
+  Asset residency untouched. Focused RuntimeLevel (6/6) and GameplayWorld
+  (19/19) tests, full Debug build, and complete CTest (204/204) pass. Bootstrap
+  startup remains unchanged until GP7.4. → [GP7.2 plan](gameplay/.plan/GP7.2.md),
+  [GP7 journal](../.spec/journal/2026-09-01-gameplay-level-asset.md)
+
 - **Render R1.1 — characterization and transactional lifecycle (2026-09-01)**
   — `RenderSystem` now accepts an injectable factory for the existing
   `RenderBackend` contract, reports initialization diagnostics, rolls back

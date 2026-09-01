@@ -16,6 +16,7 @@ namespace kpengine::asset
         KPAT_ShaderProgram,
         KPAT_Mesh,
         KPAT_Material,
+        KPAT_Level,
     };
 
     enum class ModelGeometryType : uint8_t
