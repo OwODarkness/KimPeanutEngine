@@ -249,13 +249,40 @@ Gameplay, MeshProxy, and the common recorder contract remain stable.
 - [ ] Revisit the fixed schedule only if evidence shows real dependency,
   aliasing, or scheduling pressure.
 
+## Deferred point-shadow resource follow-up
+
+**Status: deferred and evidence-gated.** The six-face 2D atlas remains the
+working baseline. This is not authorization to begin a cubemap refactor.
+
+- [x] Run a longer warm-runtime point-shadow session and record the existing
+  profiler's numeric per-face draw counts, total shadow draws, empty-face count,
+  candidate count, and CPU command-recording time. Record that GPU pass timing
+  remains unavailable until the RHI has timestamp-query support. See the
+  [2026-09-01 follow-up journal entry](../../../.spec/journal/render-deferred-pbr.md#2026-09-01--deferred-point-shadow-resource-follow-up).
+- [x] Compare the measured cost and observed face-seam quality against the
+  fixed atlas budget. The two backends produced the same draw distribution and
+  stable, seam-free visibility captures; no different physical representation
+  has a demonstrated correctness, quality, memory, or performance benefit.
+- [ ] If the evidence justifies replacement, complete a reference gate and
+  create a separate stage design for the common RHI cubemap/subresource
+  contract: cube-compatible allocation, array-layer/cube-face views,
+  attachment subresource selection, transitions, uploads, readback, and safe
+  lifetime on Vulkan and OpenGL.
+- [x] The evidence does not justify replacement: retain the six-face atlas
+  baseline and close the cubemap decision without implementation.
+
+Do not combine this decision with multiple punctual jobs, shadow caching,
+variable resolution, a general atlas allocator, clustered/forward+ lighting,
+or render-graph work; each requires its own measured consumer and design.
+
 ## Explicitly deferred
 
 - Alpha-mask/blended deferred geometry, decals, terrain, hair, and material
   graph generation.
 - Cascaded directional shadows, shadow atlases, cube-map shadow optimization,
   clustered/forward+ lighting, and graph-driven aliasing.
-- Multiple punctual shadow jobs, true cube/cube-array shadow resources, and
-  general shadow-atlas allocation until D6.4 supplies a measured baseline.
+- Multiple punctual shadow jobs and general shadow-atlas allocation until a
+  measured consumer exists. True cube/cube-array shadow resources remain
+  behind the evidence gate above.
 - Any revival of deprecated OpenGL renderer ownership or native API types in
   common Render/Graphics contracts.

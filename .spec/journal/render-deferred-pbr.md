@@ -601,3 +601,29 @@
   The initial non-elevated MSBuild attempts failed before compilation at the
   denied Windows SDK probe; the approved rerun succeeded, so that was an
   environment limitation rather than a source failure.
+
+## 2026-09-01 — Deferred point-shadow resource follow-up
+
+- Ran the rebuilt Engine through the loopback agent transport on both APIs.
+  Each session was held for an extended warm period before a second capture:
+  Vulkan used `--graphics-api vulkan --agent-port 37373` and OpenGL used
+  `--graphics-api opengl --agent-port 37373`; each exported
+  `point_shadow_visibility` through `capture.screenshot`.
+- The existing one-shot Render profiler reached its first successful point
+  pass in both sessions. Vulkan recorded
+  `face_draws=[2,3,1,0,0,6]`, `total_draws=12`, `empty_faces=2`,
+  `candidates=6`, and `cpu_record_us=307`. OpenGL recorded the same draw
+  distribution and counts with `cpu_record_us=177`. The fixed target remained
+  `1536x1024 D32`, `6,291,456` bytes (6 MiB). `gpu_time=unavailable` remains
+  expected because the RHI has no timestamp-query path.
+- Warm Vulkan and warm OpenGL visibility captures were each byte-identical to
+  their corresponding earlier capture (`Get-FileHash -Algorithm SHA256`),
+  showing stable object-shaped occlusion. Visual inspection found no visible
+  3×2 tile seam or face-orientation discontinuity. The backends differed only
+  in their expected encoded PNG bytes, not in the observed shadow pattern.
+- Decision: retain the six-face 2D atlas as the fixed-budget baseline and close
+  the cubemap decision without implementation. The measured six-pass workload
+  and observed quality provide no demonstrated correctness, quality, memory,
+  or performance benefit that would justify a new cross-backend cube/subresource
+  contract. Multiple punctual jobs, caching, variable resolution, and render
+  graph work remain outside this decision.

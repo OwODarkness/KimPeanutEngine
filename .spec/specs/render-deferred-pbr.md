@@ -66,9 +66,11 @@ At minimum: Level 2 `GraphicsContractTest` and `RenderPassScheduleTest`, then Le
 ## Risks and open questions
 
 The fixed six-face atlas is now the fixed-budget baseline for future
-shadow-resource decisions. Numeric warm-runtime profile samples and GPU timing
-remain follow-up work; true cube resources, multiple punctual jobs, and a
-render-graph decision remain intentionally deferred.
+shadow-resource decisions. Numeric warm-runtime profile samples are recorded;
+GPU timing remains unavailable until timestamp-query support exists. The
+follow-up evidence closed the true-cube decision without implementation;
+multiple punctual jobs and a render-graph decision remain intentionally
+deferred.
 The current cube texture path does not provide a correct cross-backend
 cube-face target contract, so the first `PointCube` uses one fixed six-face 2D
 depth atlas without changing the common recorder. Face orientation, atlas-tile
