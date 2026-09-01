@@ -86,7 +86,50 @@ For a non-trivial change:
 
 Do not begin a broad refactor from a feature checklist alone. Define the current problem, invariant, migration stages, and validation evidence first.
 
-For large, multi-session, paused, or risky work, follow the [spec and journal workflow](.spec/README.md). Keep the roadmap in `docs/graphics/TODO.md`; use a spec for the intended plan and a journal for factual progress, validation, and remaining risk.
+For large, multi-session, paused, or risky work, follow the [spec and journal workflow](.spec/README.md). Keep the roadmap in the relevant `docs/**/TODO.md`; use a spec for the intended plan and a journal for factual progress, validation, and remaining risk.
+
+### Documentation ownership
+
+#### Mandatory modular documentation workflow
+
+- For any task that creates, moves, splits, or substantially reorganizes
+  module or submodule documentation, agents **must use the
+  `modular-documentation` skill** before editing. This includes Render and its
+  submodules, even when the immediate request mentions only a TODO, plan, or
+  journal.
+- Follow that skill's canonical structure and ownership rules. Do not invent a
+  parallel layout or combine architecture, actionable work, agent rules, and
+  execution history into one document.
+- The skill is not required for a small correction to an existing standalone
+  note, generated documentation, or a one-off prose typo. If the skill is
+  unavailable for a task that needs it, stop before restructuring and report the
+  missing workflow dependency.
+
+- A `TODO.md` is a roadmap and acceptance ledger: goals, ordered work items,
+  checkboxes, concise landed markers, and links to design/spec/journal
+  documents. It must not become a chronological implementation log.
+- A design or plan document records durable architecture and policy decisions;
+  it is not a substitute for execution evidence.
+- `.spec/specs/*.md` records the objective, scope, invariants, stages,
+  acceptance criteria, and validation plan for a substantial task.
+- `.spec/journal/*.md` is the factual execution record: dated changes,
+  investigations, validation commands/results, reference gates, corrections,
+  skipped checks, and remaining risks. Put detailed landed notes here.
+- When a TODO starts accumulating dated implementation narratives, move those
+  narratives into the matching `.spec/journal/` file, then leave only the
+  checklist/status and a journal link in the TODO. Do not duplicate the same
+  landing report in both files.
+- A modular subsystem should keep `AGENTS.md`, `PLANS.md`, and `TODO.md` at its
+  module root. `PLANS.md` describes module architecture and links its
+  submodules; `TODO.md` indexes current work; `AGENTS.md` defines local agent
+  usage and boundaries. A substantial submodule follows the same pattern.
+- Concrete stage designs belong in the module's hidden `.plan/` directory,
+  using names such as `D1.md`, `D2.md`, or the submodule's stage prefix. Link
+  those files from `PLANS.md`; do not turn the architecture plan into a
+  stage-by-stage implementation dump.
+- `docs/status.md` should summarize the current project state and link to the
+  roadmap or journal when more detail is needed; it must not become a second
+  execution journal.
 
 ## Completion report
 
