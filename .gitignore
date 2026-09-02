@@ -58,6 +58,8 @@ deprecated/
 !/asset/shader/gbuffer_debug_view.vert
 !/asset/shader/gbuffer_debug_view.frag
 !/asset/shader/gbuffer_debug_view.shader
+!/asset/level/
+!/asset/level/*.level
 !/asset/shader/capture_view.frag
 !/asset/shader/capture_view.shader
 !/asset/shader/directionalshadow_mapping_depth.vert

@@ -34,3 +34,16 @@ path below `save/screenshots/validation/`, poll its request ID, then inspect
 the returned `data.output_path` PNG. Lua remains a future in-process developer
 workflow, not the external transport. See [lifecycle](lifecycle.md) and
 [risks](risks.md) for ownership and security limits.
+
+To capture a particular checked-in level, select it before startup:
+
+```powershell
+build/Debug/KimPeanutEngine.exe `
+  --graphics-api vulkan `
+  --startup-level level/point_shadow_validation.level `
+  --agent-port 37373
+```
+
+`--startup-level` has precedence over Bootstrap's `startup_level` for this
+process only. It is validated before Engine initialization and never writes the
+Bootstrap file. Omit it to use the durable default.

@@ -137,9 +137,8 @@ namespace kpengine::render
             (void)id;
             if (!record.source.enabled ||
                 (selected != nullptr &&
-                 (record.source.priority < selected->source.priority ||
-                  (record.source.priority == selected->source.priority &&
-                   record.handle.id > selected->handle.id))))
+                 !IsCameraPreferred(record.source.priority, record.handle.id,
+                                    selected->source.priority, selected->handle.id)))
             {
                 continue;
             }

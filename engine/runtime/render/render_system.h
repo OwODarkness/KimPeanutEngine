@@ -19,6 +19,7 @@
 #include "delegate/event_dispatcher.h"
 #include "graphics/backend/common/api.h"
 #include "camera_source_registry.h"
+#include "environment_source_registry.h"
 #include "frame_context.h"
 #include "render/light/light_source_registry.h"
 #include "render/material/material_system.h"
@@ -76,40 +77,12 @@ namespace kpengine::render
     using RenderBackendFactory =
         std::function<std::unique_ptr<graphics::RenderBackend>(GraphicsAPIType)>;
 
-    struct BootstrapSceneObjectInfo
-    {
-        std::string model_path;
-        std::string material_path;
-        Transform3f world_transform;
-
-        bool IsComplete() const
-        {
-            return !model_path.empty() && !material_path.empty();
-        }
-    };
-
-    struct BootstrapSceneInfo
-    {
-        std::string model_path;
-        std::string material_path;
-        std::string environment_path;
-        float environment_ibl_intensity = 0.25f;
-        Transform3f world_transform;
-        std::vector<BootstrapSceneObjectInfo> objects;
-
-        bool IsComplete() const
-        {
-            return !model_path.empty() && !material_path.empty();
-        }
-    };
-
     struct RenderSystemInitInfo
     {
         GraphicsAPIType api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         WindowHandle native_window = nullptr;
         EventDispatcher<ResizeEvent> *resize_dispatcher = nullptr;
         async::AsyncQueue<asset::AssetLoadRequest> *load_queue = nullptr;
-        BootstrapSceneInfo bootstrap_scene;
         RenderBackendFactory backend_factory;
     };
 
@@ -168,15 +141,35 @@ namespace kpengine::render
         IRenderableSourceSink *GetRenderableSourceSink() { return &source_registry_; }
         ILightSourceSink *GetLightSourceSink() { return &light_source_registry_; }
         ICameraSourceSink *GetCameraSourceSink() { return &camera_source_registry_; }
+        IEnvironmentSourceSink *GetEnvironmentSourceSink()
+        {
+            return &environment_source_registry_;
+        }
         // Borrowed Runtime/tooling boundary. RenderSystem owns the implementation
         // and cancels any pending request before this object is destroyed.
         IRenderCaptureService *GetRenderCaptureService();
-        // Transfers startup renderables as logical source data. Runtime consumes
-        // them on the game thread to create regular Gameplay Actors.
-        std::optional<StaticMeshRenderableSourceDesc> TakeBootstrapRenderableSource();
-        std::vector<StaticMeshRenderableSourceDesc> TakeBootstrapRenderableSources();
-
     private:
+        struct EnvironmentBindingBundle
+        {
+            asset::AssetID source_asset;
+            TextureBinding panorama;
+            TextureBinding irradiance;
+            TextureBinding prefiltered_radiance;
+            TextureBinding brdf_lut;
+            uint32_t prefilter_level_count = 0;
+            float ibl_intensity = 0.25f;
+            bool ibl_enabled = false;
+
+            bool HasCompleteBindings() const
+            {
+                return panorama.texture.IsValid() && panorama.sampler.IsValid() &&
+                       irradiance.texture.IsValid() && irradiance.sampler.IsValid() &&
+                       prefiltered_radiance.texture.IsValid() &&
+                       prefiltered_radiance.sampler.IsValid() && brdf_lut.texture.IsValid() &&
+                       brdf_lut.sampler.IsValid();
+            }
+        };
+
         // RuntimeContext is the normal composition root. The public lifecycle
         // functions remain directly callable so orchestration can be tested with
         // an injected existing RenderBackend factory.
@@ -195,9 +188,9 @@ namespace kpengine::render
         void DrainRenderableSources();
         void DrainLightSources();
         void DrainCameraSources();
+        void DrainEnvironmentSources();
 
         const RenderCacheEntry *FindCached(asset::AssetID asset_id) const;
-        void PrepareBootstrapRenderableSources();
         void DestroyMaterialAssetRecords();
         void ConfigurePassSchedule();
         void RecordDirectionalShadowPass();
@@ -213,7 +206,11 @@ namespace kpengine::render
         bool PrepareFullscreenPassResources();
         bool PrepareDeferredLightingPassResources();
         bool PrepareEnvironmentIbl(asset::AssetID source_asset,
-                                   const data::TextureData &source);
+                                   const data::TextureData &source,
+                                   EnvironmentBindingBundle &bundle);
+        bool EnsureEnvironmentFallbackBindings();
+        bool ResolveLevelEnvironment(const EnvironmentSourceDesc &source,
+                                     EnvironmentBindingBundle &bundle);
         bool PrepareGBufferDebugPassResources();
         bool PrepareToneMapPassResources();
         bool PrepareCaptureViewPassResources();
@@ -272,6 +269,7 @@ namespace kpengine::render
         LightWorld light_world_;
         LightSourceRegistry light_source_registry_;
         CameraSourceRegistry camera_source_registry_;
+        EnvironmentSourceRegistry environment_source_registry_;
         FrameLightingBinding frame_lighting_binding_;
         std::optional<DirectionalShadowFrame> active_directional_shadow_;
         std::optional<SpotShadowFrame> active_spot_shadow_;
@@ -280,10 +278,8 @@ namespace kpengine::render
         bool point_shadow_recorded_ = false;
         bool point_shadow_profile_logged_ = false;
         RenderCamera scene_camera_;
-        std::vector<StaticMeshRenderableSourceDesc> bootstrap_renderable_sources_;
         std::unique_ptr<MaterialAssetResolver> material_asset_resolver_;
         std::unique_ptr<RenderCaptureService> render_capture_service_;
-        BootstrapSceneInfo bootstrap_scene_info_;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;
         async::AsyncQueue<asset::AssetLoadRequest> *load_queue_ = nullptr;
@@ -305,13 +301,9 @@ namespace kpengine::render
         graphics::SamplerHandle directional_shadow_sampler_;
         graphics::SamplerHandle spot_shadow_sampler_;
         graphics::SamplerHandle point_shadow_sampler_;
-        TextureBinding environment_texture_binding_;
-        TextureBinding environment_irradiance_binding_;
-        TextureBinding environment_prefilter_binding_;
-        TextureBinding environment_brdf_lut_binding_;
-        uint32_t environment_prefilter_level_count_ = 0;
-        float environment_ibl_intensity_ = 0.25f;
-        bool environment_ibl_enabled_ = false;
+        EnvironmentBindingBundle level_environment_;
+        EnvironmentBindingBundle active_environment_;
+        std::optional<EnvironmentSourceHandle> failed_environment_source_;
         graphics::PipelineHandle tone_map_pipeline_;
         graphics::PipelineHandle directional_shadow_pipeline_;
     };

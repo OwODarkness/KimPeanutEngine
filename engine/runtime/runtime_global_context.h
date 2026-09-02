@@ -2,9 +2,12 @@
 #define KPENGINE_RUNTIME_GLOBAL_CONTEXT_H
 
 #include <atomic>
+#include <functional>
 #include <memory>
 #include <optional>
+#include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 #include "base/base.h"
 #include "async/async_queue.h"
@@ -12,6 +15,7 @@
 #include "command/command_registry.h"
 #include "render/render_system.h"
 #include "runtime_camera_control.h"
+#include "gameplay/actor/actor_types.h"
 
 namespace kpengine::gameplay
 {
@@ -59,10 +63,26 @@ namespace kpengine
             void PostInitialize();
             // Called by Engine after the render startup handshake, on the game thread.
             // This is the Runtime-owned boundary for initial World composition.
-            void FinalizeGameStartup();
+            struct StartupResult
+            {
+                bool success = false;
+                std::string diagnostic;
+                explicit operator bool() const { return success; }
+            };
+            StartupResult FinalizeGameStartup();
+            // Narrow test seam for the game-start controller/possession step.
+            // Production leaves this unset and uses GameplayWorld's real
+            // controller implementation.
+            using StartupControllerSetupOverride =
+                std::function<bool(gameplay::GameplayWorld &, input::InputSystem *,
+                                   gameplay::ActorHandle)>;
+            void SetStartupControllerSetupOverride(StartupControllerSetupOverride override)
+            {
+                startup_controller_setup_override_ = std::move(override);
+            }
             void Clear();
             void TickGameplay(float delta_time);
-            void SetBootstrapScene(render::BootstrapSceneInfo scene);
+            void SetStartupLevel(asset::AssetID level_asset) { startup_level_asset_ = level_asset; }
             void SetSceneCameraControlCaptured(bool captured) override;
             render::IRenderCaptureService *GetRenderCaptureService()
             {
@@ -78,8 +98,8 @@ namespace kpengine
             std::shared_ptr<RuntimeScreenshotService> screenshot_service_;
             command::CommandRegistration screenshot_command_registration_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
-            // Dormant until GP7.4 supplies startup_level. Its destructor must
-            // unload level-created Actors before GameplayWorld and RenderSystem.
+            // Owns the committed startup level. Its destructor must unload
+            // level-created Actors before GameplayWorld and RenderSystem.
             std::unique_ptr<LevelInstance> level_instance_;
             std::unique_ptr<LogSystem> log_system_;
             std::unique_ptr<input::InputSystem> input_system_;
@@ -97,21 +117,16 @@ namespace kpengine
             std::thread::id render_thread_id_;
 
             GraphicsAPIType graphics_api_type_;
-            render::BootstrapSceneInfo bootstrap_scene_;
-            std::vector<render::StaticMeshRenderableSourceDesc> bootstrap_renderable_sources_;
+            asset::AssetID startup_level_asset_;
 
-            // Incoming leg of the async resource queue (docs/async/async_resource_queue.md).
-            // Producers (the engine's bootstrap preload today, the render module later)
-            // push Queued AssetLoadRequests here; the loading thread pops them, runs
-            // asset.LoadSync + resource.ProcessShader, and pushes the Ready request onto
-            // the ready queue (added alongside the loading thread). RuntimeContext owns
-            // it so both ends — the worker and RenderSystem's per-frame drain — can
-            // reach it without a dependency cycle. Generic transport stays in core/async;
-            // only the request type is asset vocabulary.
+            // Incoming leg of the async resource queue. It is retained for
+            // future runtime streaming; GP7.4 startup loads the selected level
+            // synchronously before the render thread is created.
             async::AsyncQueue<asset::AssetLoadRequest> async_load_queue_;
 
         private:
             std::atomic<bool> scene_camera_control_captured_{false};
+            StartupControllerSetupOverride startup_controller_setup_override_;
 
         };
 

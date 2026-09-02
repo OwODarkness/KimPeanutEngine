@@ -6,16 +6,23 @@
 #include <optional>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
+#include <variant>
 #include <vector>
 
 #include "asset/asset.h"
+#include "asset/level.h"
 #include "gameplay/actor/actor_types.h"
+#include "gameplay/factory/camera_actor_factory.h"
+#include "gameplay/factory/directional_light_actor_factory.h"
+#include "gameplay/factory/point_light_actor_factory.h"
+#include "gameplay/factory/spot_light_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
+#include "render/environment_source.h"
 
 namespace kpengine::asset
 {
     class AssetManager;
-    struct LevelStaticMeshRecord;
 }
 
 namespace kpengine::gameplay
@@ -37,6 +44,8 @@ namespace kpengine::runtime
         InvalidMeshData,
         InvalidMaterialResource,
         ActorCreationFailed,
+        InvalidEnvironmentResource,
+        EnvironmentSourceCreationFailed,
     };
 
     struct LevelInstanceResult
@@ -51,11 +60,32 @@ namespace kpengine::runtime
     using StaticMeshActorFactory = std::function<gameplay::ActorHandle(
         gameplay::GameplayWorld &, const gameplay::StaticMeshActorDesc &)>;
 
+    using DirectionalLightActorFactory = std::function<gameplay::ActorHandle(
+        gameplay::GameplayWorld &, const gameplay::DirectionalLightActorDesc &)>;
+    using PointLightActorFactory = std::function<gameplay::ActorHandle(
+        gameplay::GameplayWorld &, const gameplay::PointLightActorDesc &)>;
+    using SpotLightActorFactory = std::function<gameplay::ActorHandle(
+        gameplay::GameplayWorld &, const gameplay::SpotLightActorDesc &)>;
+    using CameraActorFactory = std::function<gameplay::ActorHandle(
+        gameplay::GameplayWorld &, const gameplay::CameraActorDesc &)>;
+
+    struct LevelActorFactorySet
+    {
+        StaticMeshActorFactory static_mesh;
+        DirectionalLightActorFactory directional_light;
+        PointLightActorFactory point_light;
+        SpotLightActorFactory spot_light;
+        CameraActorFactory camera;
+    };
+
     class LevelInstance final
     {
     public:
         LevelInstance(asset::AssetManager &asset_manager, gameplay::GameplayWorld &gameplay_world,
-                      StaticMeshActorFactory actor_factory = {});
+                      LevelActorFactorySet factories = {},
+                      render::IEnvironmentSourceSink *environment_source_sink = nullptr);
+        LevelInstance(asset::AssetManager &asset_manager, gameplay::GameplayWorld &gameplay_world,
+                      StaticMeshActorFactory static_mesh_factory);
         ~LevelInstance();
 
         LevelInstance(const LevelInstance &) = delete;
@@ -70,28 +100,43 @@ namespace kpengine::runtime
         asset::AssetID GetLevelAsset() const { return active_level_asset_; }
         std::size_t GetActorCount() const { return actor_by_authored_id_.size(); }
         std::optional<gameplay::ActorHandle> FindActor(const std::string &authored_id) const;
+        std::optional<gameplay::ActorHandle> GetPreferredCameraActor() const;
 
     private:
         struct PendingActor
         {
             std::string authored_id;
-            gameplay::StaticMeshActorDesc description;
+            const char *kind = "actor";
+            std::variant<gameplay::StaticMeshActorDesc,
+                         gameplay::DirectionalLightActorDesc,
+                         gameplay::PointLightActorDesc,
+                         gameplay::SpotLightActorDesc,
+                         gameplay::CameraActorDesc>
+                description;
         };
 
-        LevelInstanceResult BuildStaticMeshDescription(
-            const asset::AssetID &level_asset,
-            const asset::LevelStaticMeshRecord &record,
-            gameplay::StaticMeshActorDesc &description) const;
+        LevelInstanceResult BuildPendingActor(const asset::AssetID &level_asset,
+                                              const asset::LevelObject &object,
+                                              PendingActor &pending,
+                                              std::unordered_set<std::string> &authored_ids) const;
+        LevelInstanceResult BuildStaticMeshDescription(const asset::AssetID &level_asset,
+                                                       const asset::LevelStaticMeshRecord &record,
+                                                       gameplay::StaticMeshActorDesc &description) const;
+        LevelInstanceResult BuildEnvironmentDescription(const asset::AssetID &level_asset,
+                                                        const asset::LevelEnvironmentRecord &record,
+                                                        render::EnvironmentSourceDesc &description) const;
         void Rollback(const std::vector<gameplay::ActorHandle> &created_handles);
 
         asset::AssetManager &asset_manager_;
         gameplay::GameplayWorld &gameplay_world_;
-        StaticMeshActorFactory actor_factory_;
+        LevelActorFactorySet factories_;
+        render::IEnvironmentSourceSink *environment_source_sink_ = nullptr;
 
         bool active_ = false;
         asset::AssetID active_level_asset_;
         std::unordered_map<std::string, gameplay::ActorHandle> actor_by_authored_id_;
         std::vector<gameplay::ActorHandle> creation_order_;
+        render::EnvironmentSourceHandle environment_source_handle_;
     };
 }
 

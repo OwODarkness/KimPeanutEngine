@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
@@ -10,8 +11,12 @@
 #include <vector>
 
 #include "async/async_queue.h"
+#include "asset/asset_manager.h"
+#include "asset/texture.h"
+#include "data/texture.h"
 #include "graphics/backend/common/command_recorder.h"
 #include "graphics/backend/common/render_backend.h"
+#include "log/log_system.h"
 #include "render/render_system.h"
 
 namespace
@@ -30,11 +35,14 @@ namespace
         bool fail_initialize = false;
         bool fail_uniform_mapping = false;
         bool fail_render_target = false;
+        bool fail_texture_creation = false;
         std::vector<std::string> events;
         std::vector<TargetRecord> targets;
         int wait_idle_count = 0;
         int cleanup_count = 0;
         int readback_count = 0;
+        int texture_create_count = 0;
+        std::vector<std::array<uint32_t, 4>> environment_binding_snapshots;
     };
 
     class FakeReadback final : public graphics::IRenderTargetReadback
@@ -133,6 +141,11 @@ namespace
         graphics::TextureHandle CreateTexture(const data::TextureData &,
                                               const graphics::TextureSettings &) override
         {
+            ++probe_->texture_create_count;
+            if (probe_->fail_texture_creation)
+            {
+                return {};
+            }
             return MakeHandle<graphics::TextureHandle>();
         }
 
@@ -201,8 +214,25 @@ namespace
         }
 
         graphics::DescriptorSetHandle CreateResourceBindingSet(
-            graphics::PipelineHandle, const graphics::ResourceBindingSetDesc &) override
+            graphics::PipelineHandle, const graphics::ResourceBindingSetDesc &desc) override
         {
+            std::array<uint32_t, 4> environment_texture_ids{
+                KPENGINE_NULL_HANDLE, KPENGINE_NULL_HANDLE,
+                KPENGINE_NULL_HANDLE, KPENGINE_NULL_HANDLE};
+            for (const graphics::ResourceBinding &binding : desc.bindings)
+            {
+                const auto *const sampled = std::get_if<graphics::SampledTextureBinding>(&binding);
+                if (sampled == nullptr || sampled->binding < 7 || sampled->binding > 10)
+                {
+                    continue;
+                }
+                environment_texture_ids[sampled->binding - 7] = sampled->texture.id;
+            }
+            if (std::all_of(environment_texture_ids.begin(), environment_texture_ids.end(),
+                            [](uint32_t id) { return id != KPENGINE_NULL_HANDLE; }))
+            {
+                probe_->environment_binding_snapshots.push_back(environment_texture_ids);
+            }
             return MakeHandle<graphics::DescriptorSetHandle>();
         }
 
@@ -320,6 +350,24 @@ namespace
             return info;
         }
     };
+
+    asset::AssetID RegisterEnvironmentTexture(const char *path, TextureFormat format,
+                                              bool malformed = false)
+    {
+        auto texture_resource = std::make_shared<asset::TextureResource>();
+        texture_resource->data->width = 4;
+        texture_resource->data->height = 2;
+        texture_resource->data->format = format;
+        texture_resource->data->pixels.resize(
+            malformed ? 1u : 4u * 2u * 4u * sizeof(uint16_t), 0);
+
+        asset::AssetRegisterInfo texture_info{};
+        texture_info.resource = texture_resource;
+        texture_info.path = path;
+        texture_info.name = path;
+        texture_info.type = asset::AssetType::KPAT_Texture;
+        return asset::AssetManager::GetInstance().RegisterAsset(texture_info);
+    }
 }
 
 TEST(RenderSystemLifecycleTest, RejectsInvalidStateAndMakesShutdownIdempotent)
@@ -419,4 +467,229 @@ TEST(RenderSystemLifecycleTest, CharacterizesFrameCaptureResizeEditorAndTeardown
     ASSERT_NE(wait_it, probe->events.end());
     ASSERT_NE(cleanup_it, probe->events.end());
     EXPECT_LT(wait_it, cleanup_it);
+}
+
+TEST(RenderSystemEnvironmentTest, ResolvesReadyAssetIDsAndReusesDerivedBindings)
+{
+    auto texture_resource = std::make_shared<asset::TextureResource>();
+    texture_resource->data->width = 4;
+    texture_resource->data->height = 2;
+    texture_resource->data->format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
+    texture_resource->data->pixels.resize(4 * 2 * 4 * sizeof(uint16_t), 0);
+
+    asset::AssetRegisterInfo texture_info{};
+    texture_info.resource = texture_resource;
+    texture_info.path = "render_system_environment_test.texture";
+    texture_info.name = "RenderSystemEnvironmentTest";
+    texture_info.type = asset::AssetType::KPAT_Texture;
+    asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
+    const asset::AssetID texture_id = asset_manager.RegisterAsset(texture_info);
+    ASSERT_TRUE(texture_id.IsValid());
+
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+
+    const render::EnvironmentSourceDesc first_source{texture_id, 1.0f};
+    const auto first = system.GetEnvironmentSourceSink()->EnqueueCreate(first_source);
+    ASSERT_TRUE(first.IsValid());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    const int first_frame_texture_creates = probe->texture_create_count;
+    EXPECT_GT(first_frame_texture_creates, 0);
+
+    ASSERT_TRUE(system.GetEnvironmentSourceSink()->EnqueueDestroy(first));
+    const render::EnvironmentSourceDesc second_source{texture_id, 2.0f};
+    const auto second = system.GetEnvironmentSourceSink()->EnqueueCreate(second_source);
+    ASSERT_TRUE(second.IsValid());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    EXPECT_EQ(probe->texture_create_count, first_frame_texture_creates);
+
+    ASSERT_TRUE(system.GetEnvironmentSourceSink()->EnqueueDestroy(second));
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    system.Shutdown();
+    asset_manager.UnRegisterAsset(texture_id);
+}
+
+TEST(RenderSystemEnvironmentTest, RetainsBaselineAcrossTypedResolutionFailures)
+{
+    asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
+    const asset::AssetID wrong_format_id = RegisterEnvironmentTexture(
+        "render_system_environment_wrong_format.texture",
+        TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB);
+    const asset::AssetID malformed_id = RegisterEnvironmentTexture(
+        "render_system_environment_malformed.texture",
+        TextureFormat::TEXTURE_FORMAT_RGBA16F, true);
+    const asset::AssetID valid_id = RegisterEnvironmentTexture(
+        "render_system_environment_backend_failure.texture",
+        TextureFormat::TEXTURE_FORMAT_RGBA16F);
+    ASSERT_TRUE(wrong_format_id.IsValid());
+    ASSERT_TRUE(malformed_id.IsValid());
+    ASSERT_TRUE(valid_id.IsValid());
+
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    ASSERT_FALSE(probe->environment_binding_snapshots.empty());
+    const auto baseline = probe->environment_binding_snapshots.back();
+
+    const auto wrong_format = system.GetEnvironmentSourceSink()->EnqueueCreate(
+        {wrong_format_id, 1.0f});
+    ASSERT_TRUE(wrong_format.IsValid());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    EXPECT_EQ(probe->environment_binding_snapshots.back(), baseline);
+
+    const std::vector<kpengine::program::LogEntry> logs_before_repeat =
+        kpengine::LogSystem{}.GetLogSnapshot();
+    const std::size_t unresolved_diagnostics = std::count_if(
+        logs_before_repeat.begin(), logs_before_repeat.end(),
+        [](const kpengine::program::LogEntry &entry)
+        {
+            return entry.name == "RenderLog" &&
+                   entry.message ==
+                       "Level environment source could not be resolved; retaining baseline";
+        });
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    const std::vector<kpengine::program::LogEntry> logs_after_repeat =
+        kpengine::LogSystem{}.GetLogSnapshot();
+    const std::size_t repeated_unresolved_diagnostics = std::count_if(
+        logs_after_repeat.begin(), logs_after_repeat.end(),
+        [](const kpengine::program::LogEntry &entry)
+        {
+            return entry.name == "RenderLog" &&
+                   entry.message ==
+                       "Level environment source could not be resolved; retaining baseline";
+        });
+    EXPECT_EQ(repeated_unresolved_diagnostics, unresolved_diagnostics);
+
+    ASSERT_TRUE(system.GetEnvironmentSourceSink()->EnqueueDestroy(wrong_format));
+    const auto malformed = system.GetEnvironmentSourceSink()->EnqueueCreate(
+        {malformed_id, 1.0f});
+    ASSERT_TRUE(malformed.IsValid());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    EXPECT_EQ(probe->environment_binding_snapshots.back(), baseline);
+
+    ASSERT_TRUE(system.GetEnvironmentSourceSink()->EnqueueDestroy(malformed));
+    probe->fail_texture_creation = true;
+    const auto backend_failure = system.GetEnvironmentSourceSink()->EnqueueCreate(
+        {valid_id, 1.0f});
+    ASSERT_TRUE(backend_failure.IsValid());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    EXPECT_EQ(probe->environment_binding_snapshots.back(), baseline);
+    EXPECT_GT(probe->texture_create_count, 0);
+
+    system.Shutdown();
+    asset_manager.UnRegisterAsset(wrong_format_id);
+    asset_manager.UnRegisterAsset(malformed_id);
+    asset_manager.UnRegisterAsset(valid_id);
+}
+
+TEST(RenderSystemEnvironmentTest, KeepsBaselineWhenLevelSourceFails)
+{
+    asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
+    const asset::AssetID invalid_id = RegisterEnvironmentTexture(
+        "render_system_environment_bootstrap_invalid.texture",
+        TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB);
+    ASSERT_TRUE(invalid_id.IsValid());
+
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType) { return std::make_unique<FakeBackend>(probe); })));
+
+    ASSERT_TRUE(system.PostInitialize());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    ASSERT_FALSE(probe->environment_binding_snapshots.empty());
+    const auto baseline = probe->environment_binding_snapshots.back();
+
+    const auto invalid = system.GetEnvironmentSourceSink()->EnqueueCreate({invalid_id, 1.0f});
+    ASSERT_TRUE(invalid.IsValid());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    EXPECT_EQ(probe->environment_binding_snapshots.back(), baseline);
+
+    system.Shutdown();
+    asset_manager.UnRegisterAsset(invalid_id);
+}
+
+TEST(RenderSystemEnvironmentTest, PublishesEnvironmentBindingsAtomicallyAndRestoresBaseline)
+{
+    asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
+    const asset::AssetID texture_id = RegisterEnvironmentTexture(
+        "render_system_environment_atomic.texture", TextureFormat::TEXTURE_FORMAT_RGBA16F);
+    ASSERT_TRUE(texture_id.IsValid());
+
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    ASSERT_FALSE(probe->environment_binding_snapshots.empty());
+    const auto baseline = probe->environment_binding_snapshots.back();
+
+    const auto source = system.GetEnvironmentSourceSink()->EnqueueCreate({texture_id, 2.0f});
+    ASSERT_TRUE(source.IsValid());
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    ASSERT_FALSE(probe->environment_binding_snapshots.empty());
+    const auto resolved = probe->environment_binding_snapshots.back();
+    EXPECT_NE(resolved, baseline);
+    EXPECT_TRUE(std::all_of(resolved.begin(), resolved.end(),
+                            [](uint32_t id) { return id != KPENGINE_NULL_HANDLE; }));
+
+    ASSERT_TRUE(system.GetEnvironmentSourceSink()->EnqueueDestroy(source));
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    EXPECT_EQ(probe->environment_binding_snapshots.back(), baseline);
+
+    system.Shutdown();
+    asset_manager.UnRegisterAsset(texture_id);
+}
+
+TEST(RenderSystemEnvironmentTest, ClearsEnvironmentSourceHandlesDuringShutdown)
+{
+    const asset::AssetID texture_id = RegisterEnvironmentTexture(
+        "render_system_environment_shutdown.texture", TextureFormat::TEXTURE_FORMAT_RGBA16F);
+    ASSERT_TRUE(texture_id.IsValid());
+
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+
+    const auto handle =
+        system.GetEnvironmentSourceSink()->EnqueueCreate({texture_id, 1.0f});
+    ASSERT_TRUE(handle.IsValid());
+    system.Shutdown();
+
+    EXPECT_FALSE(system.GetEnvironmentSourceSink()->EnqueueDestroy(handle));
+    const auto replacement =
+        system.GetEnvironmentSourceSink()->EnqueueCreate({texture_id, 1.0f});
+    ASSERT_TRUE(replacement.IsValid());
+    EXPECT_FALSE(replacement == handle);
+    EXPECT_TRUE(system.GetEnvironmentSourceSink()->EnqueueDestroy(replacement));
+    asset::AssetManager::GetInstance().UnRegisterAsset(texture_id);
 }

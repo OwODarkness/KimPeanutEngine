@@ -64,6 +64,7 @@ namespace kpengine::render
             Vector4f spot_shadow_params;
             Vector4f light_direction_and_view;
             Vector4f depth_params;
+            Vector4f punctual_depth_params;
         };
 
         spatial::AABB TransformBounds(const spatial::AABB &local_bounds,
@@ -285,8 +286,6 @@ namespace kpengine::render
         try
         {
             load_queue_ = info.load_queue;
-            bootstrap_scene_info_ = info.bootstrap_scene;
-            environment_ibl_intensity_ = bootstrap_scene_info_.environment_ibl_intensity;
             material_system_ = std::make_unique<MaterialSystem>();
             material_asset_resolver_ = std::make_unique<MaterialAssetResolver>(*material_system_);
 
@@ -373,11 +372,18 @@ namespace kpengine::render
         {
             return false;
         }
-        // Bootstrap: load + process everything already queued, before the main loop.
+        // Drain any generic requests already queued before the first frame and
+        // warm Render-owned built-ins before authored materials are resolved.
         ConsumeRequests(0);
-        PrepareBootstrapRenderableSources();
+        if (material_asset_resolver_ == nullptr ||
+            !material_asset_resolver_->WarmBuiltInTextures())
+        {
+            last_diagnostic_ = "Render built-in material textures could not be warmed";
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", last_diagnostic_.c_str());
+            return false;
+        }
         KP_LOG("RenderLog", LOG_LEVEL_INFO,
-               "Bootstrap drained: %d distinct shader(s) loaded", GetLoadedShaderCount());
+               "Startup asset drain: %d distinct shader(s) loaded", GetLoadedShaderCount());
         return true;
     }
 
@@ -402,6 +408,7 @@ namespace kpengine::render
         render_world_.ApplyPendingCommands();
         DrainLightSources();
         DrainCameraSources();
+        DrainEnvironmentSources();
         const std::vector<Light> light_snapshot = light_world_.Snapshot();
         active_directional_shadow_ = ScheduleDirectionalShadow(light_snapshot);
         active_spot_shadow_ = ScheduleSpotShadow(light_snapshot);
@@ -1074,9 +1081,9 @@ namespace kpengine::render
         const Vector3f &camera_position = scene_camera_.GetPosition();
         lighting_data.camera_world_position = Vector4f{camera_position, 1.0f};
         lighting_data.environment_ibl_params = Vector4f{
-            environment_ibl_enabled_ ? 1.0f : 0.0f,
-            static_cast<float>(environment_prefilter_level_count_),
-            environment_ibl_intensity_, 0.0f};
+            active_environment_.ibl_enabled ? 1.0f : 0.0f,
+            static_cast<float>(active_environment_.prefilter_level_count),
+            active_environment_.ibl_intensity, 0.0f};
         if (active_directional_shadow_.has_value())
         {
             const DirectionalShadowFrame &shadow = *active_directional_shadow_;
@@ -1144,17 +1151,17 @@ namespace kpengine::render
                            0, 12, point_shadow_target->GetSampledDepthTexture(),
                            point_shadow_sampler_},
                        graphics::SampledTextureBinding{
-                           0, 7, environment_texture_binding_.texture,
-                           environment_texture_binding_.sampler},
+                       0, 7, active_environment_.panorama.texture,
+                           active_environment_.panorama.sampler},
                        graphics::SampledTextureBinding{
-                           0, 8, environment_irradiance_binding_.texture,
-                           environment_irradiance_binding_.sampler},
+                           0, 8, active_environment_.irradiance.texture,
+                           active_environment_.irradiance.sampler},
                        graphics::SampledTextureBinding{
-                           0, 9, environment_prefilter_binding_.texture,
-                           environment_prefilter_binding_.sampler},
+                           0, 9, active_environment_.prefiltered_radiance.texture,
+                           active_environment_.prefiltered_radiance.sampler},
                        graphics::SampledTextureBinding{
-                           0, 10, environment_brdf_lut_binding_.texture,
-                           environment_brdf_lut_binding_.sampler}}});
+                           0, 10, active_environment_.brdf_lut.texture,
+                           active_environment_.brdf_lut.sampler}}});
             if (bindings.IsValid())
             {
                 recorder->BindPipeline(deferred_lighting_pipeline_);
@@ -1193,11 +1200,7 @@ namespace kpengine::render
     {
         if (deferred_lighting_pipeline_.IsValid() && directional_shadow_sampler_.IsValid() &&
             spot_shadow_sampler_.IsValid() && point_shadow_sampler_.IsValid() &&
-            environment_texture_binding_.texture.IsValid() &&
-            environment_texture_binding_.sampler.IsValid() &&
-            environment_irradiance_binding_.texture.IsValid() &&
-            environment_prefilter_binding_.texture.IsValid() &&
-            environment_brdf_lut_binding_.texture.IsValid())
+            active_environment_.HasCompleteBindings())
         {
             return true;
         }
@@ -1242,41 +1245,13 @@ namespace kpengine::render
             shadow_sampler_settings.enable_anisotropy = false;
             point_shadow_sampler_ = backend_->CreateSampler(shadow_sampler_settings);
         }
-        if (!environment_texture_binding_.texture.IsValid() ||
-            !environment_texture_binding_.sampler.IsValid())
+        if (!EnsureEnvironmentFallbackBindings())
         {
-            data::TextureData fallback{};
-            fallback.width = 1;
-            fallback.height = 1;
-            fallback.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
-            fallback.pixels.resize(4 * sizeof(uint16_t), 0);
-            environment_texture_binding_ = resource_resolver_->GetOrCreateTextureBinding(
-                {}, fallback, MaterialTextureColorSpace::Linear);
-        }
-        if (!environment_irradiance_binding_.texture.IsValid())
-        {
-            data::TextureData fallback{};
-            fallback.width = 1;
-            fallback.height = 1;
-            fallback.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
-            fallback.pixels.resize(4 * sizeof(uint16_t), 0);
-            environment_irradiance_binding_ = resource_resolver_->GetOrCreateTextureBinding(
-                {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
-                TextureCacheVariant::EnvironmentIrradiance);
-            environment_prefilter_binding_ = resource_resolver_->GetOrCreateTextureBinding(
-                {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
-                TextureCacheVariant::EnvironmentPrefilter);
-            environment_brdf_lut_binding_ = resource_resolver_->GetOrCreateTextureBinding(
-                {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
-                TextureCacheVariant::EnvironmentBrdfLut);
+            return false;
         }
         if (!directional_shadow_sampler_.IsValid() || !spot_shadow_sampler_.IsValid() ||
             !point_shadow_sampler_.IsValid() ||
-            !environment_texture_binding_.texture.IsValid() ||
-            !environment_texture_binding_.sampler.IsValid() ||
-            !environment_irradiance_binding_.texture.IsValid() ||
-            !environment_prefilter_binding_.texture.IsValid() ||
-            !environment_brdf_lut_binding_.texture.IsValid())
+            !active_environment_.HasCompleteBindings())
         {
             return false;
         }
@@ -1351,7 +1326,8 @@ namespace kpengine::render
     }
 
     bool RenderSystem::PrepareEnvironmentIbl(asset::AssetID source_asset,
-                                             const data::TextureData &source)
+                                             const data::TextureData &source,
+                                             EnvironmentBindingBundle &bundle)
     {
         const std::optional<resource::EnvironmentIblData> processed =
             resource_pipeline_->ProcessEnvironmentIbl(source);
@@ -1366,10 +1342,10 @@ namespace kpengine::render
         panorama_sampler.address_u = MaterialSamplerAddressMode::Repeat;
         panorama_sampler.address_v = MaterialSamplerAddressMode::ClampToEdge;
         panorama_sampler.address_w = MaterialSamplerAddressMode::ClampToEdge;
-        environment_irradiance_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+        bundle.irradiance = resource_resolver_->GetOrCreateTextureBinding(
             source_asset, processed->irradiance, MaterialTextureColorSpace::Linear,
             &panorama_sampler, TextureCacheVariant::EnvironmentIrradiance);
-        environment_prefilter_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+        bundle.prefiltered_radiance = resource_resolver_->GetOrCreateTextureBinding(
             source_asset, processed->prefiltered_radiance,
             MaterialTextureColorSpace::Linear, &panorama_sampler,
             TextureCacheVariant::EnvironmentPrefilter);
@@ -1378,18 +1354,12 @@ namespace kpengine::render
         lut_sampler.address_u = MaterialSamplerAddressMode::ClampToEdge;
         lut_sampler.address_v = MaterialSamplerAddressMode::ClampToEdge;
         lut_sampler.address_w = MaterialSamplerAddressMode::ClampToEdge;
-        environment_brdf_lut_binding_ = resource_resolver_->GetOrCreateTextureBinding(
+        bundle.brdf_lut = resource_resolver_->GetOrCreateTextureBinding(
             source_asset, processed->brdf_lut, MaterialTextureColorSpace::Linear,
             &lut_sampler, TextureCacheVariant::EnvironmentBrdfLut);
-        environment_prefilter_level_count_ = processed->prefilter_level_count;
-        environment_ibl_enabled_ =
-            environment_irradiance_binding_.texture.IsValid() &&
-            environment_irradiance_binding_.sampler.IsValid() &&
-            environment_prefilter_binding_.texture.IsValid() &&
-            environment_prefilter_binding_.sampler.IsValid() &&
-            environment_brdf_lut_binding_.texture.IsValid() &&
-            environment_brdf_lut_binding_.sampler.IsValid();
-        return environment_ibl_enabled_;
+        bundle.prefilter_level_count = processed->prefilter_level_count;
+        bundle.ibl_enabled = bundle.HasCompleteBindings();
+        return bundle.ibl_enabled;
     }
 
     bool RenderSystem::PrepareGBufferDebugPassResources()
@@ -1598,6 +1568,11 @@ namespace kpengine::render
         capture_data.depth_params =
             Vector4f{scene_camera_.GetFarPlane(), has_shadow ? 1.0f : 0.0f,
                      has_spot_shadow ? 1.0f : 0.0f, has_point_shadow ? 1.0f : 0.0f};
+        capture_data.punctual_depth_params = Vector4f{
+            has_spot_shadow ? active_spot_shadow_->near_plane : 0.01f,
+            has_spot_shadow ? active_spot_shadow_->far_plane : 1.0f,
+            has_point_shadow ? active_point_shadow_->near_plane : 0.01f,
+            has_point_shadow ? active_point_shadow_->far_plane : 1.0f};
 
         const UniformAllocation constants =
             active_frame_context_->AllocateUniform(capture_data);
@@ -2036,23 +2011,13 @@ namespace kpengine::render
             {
                 return false;
             }
-            const bool is_environment = !bootstrap_scene_info_.environment_path.empty() &&
-                                        request.path == bootstrap_scene_info_.environment_path;
             MaterialSamplerDesc panorama_sampler{};
             panorama_sampler.address_v = MaterialSamplerAddressMode::ClampToEdge;
             panorama_sampler.address_w = MaterialSamplerAddressMode::ClampToEdge;
             const TextureBinding texture_binding =
                 resource_resolver_->GetOrCreateTextureBinding(
                     id, *texture->data, MaterialTextureColorSpace::Srgb,
-                    is_environment ? &panorama_sampler : nullptr);
-            if (is_environment)
-            {
-                environment_texture_binding_ = texture_binding;
-                if (!PrepareEnvironmentIbl(id, *texture->data))
-                {
-                    return false;
-                }
-            }
+                    &panorama_sampler);
             entry.payload = std::move(texture);
             if (!texture_binding.texture.IsValid() || !texture_binding.sampler.IsValid())
             {
@@ -2200,6 +2165,119 @@ namespace kpengine::render
         scene_camera_.SetOrthographicHeight(source.orthographic_height);
     }
 
+    bool RenderSystem::ResolveLevelEnvironment(const EnvironmentSourceDesc &source,
+                                               EnvironmentBindingBundle &bundle)
+    {
+        if (!IsEnvironmentSourceDescValid(source))
+        {
+            return false;
+        }
+
+        asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
+        asset::Asset *const texture_wrapper = asset_manager.GetAsset(source.texture_asset);
+        const std::shared_ptr<asset::TextureResource> texture_resource =
+            texture_wrapper != nullptr
+                ? texture_wrapper->GetResource<asset::TextureResource>()
+                : nullptr;
+        if (texture_wrapper == nullptr || texture_wrapper->GetType() != asset::AssetType::KPAT_Texture ||
+            texture_resource == nullptr || texture_resource->data == nullptr)
+        {
+            return false;
+        }
+
+        MaterialSamplerDesc panorama_sampler{};
+        panorama_sampler.address_v = MaterialSamplerAddressMode::ClampToEdge;
+        panorama_sampler.address_w = MaterialSamplerAddressMode::ClampToEdge;
+        bundle = {};
+        bundle.source_asset = source.texture_asset;
+        bundle.ibl_intensity = source.ibl_intensity;
+        bundle.panorama = resource_resolver_->GetOrCreateTextureBinding(
+            source.texture_asset, *texture_resource->data, MaterialTextureColorSpace::Srgb,
+            &panorama_sampler);
+        if (!bundle.panorama.texture.IsValid() || !bundle.panorama.sampler.IsValid())
+        {
+            return false;
+        }
+        return PrepareEnvironmentIbl(source.texture_asset, *texture_resource->data, bundle);
+    }
+
+    void RenderSystem::DrainEnvironmentSources()
+    {
+        environment_source_registry_.Drain();
+        const std::optional<EnvironmentSourceDesc> source =
+            environment_source_registry_.GetActiveSource();
+        const std::optional<EnvironmentSourceHandle> source_handle =
+            environment_source_registry_.GetActiveHandle();
+        if (!source.has_value() || !source_handle.has_value())
+        {
+            failed_environment_source_.reset();
+            active_environment_ = {};
+            return;
+        }
+
+        if (level_environment_.source_asset == source->texture_asset &&
+            level_environment_.HasCompleteBindings())
+        {
+            level_environment_.ibl_intensity = source->ibl_intensity;
+            active_environment_ = level_environment_;
+            failed_environment_source_.reset();
+            return;
+        }
+
+        EnvironmentBindingBundle candidate{};
+        if (ResolveLevelEnvironment(*source, candidate))
+        {
+            level_environment_ = candidate;
+            active_environment_ = std::move(candidate);
+            failed_environment_source_.reset();
+            return;
+        }
+
+        if (!failed_environment_source_.has_value() ||
+            !(*failed_environment_source_ == *source_handle))
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Level environment source could not be resolved; retaining baseline");
+            failed_environment_source_ = source_handle;
+        }
+        active_environment_ = {};
+    }
+
+    bool RenderSystem::EnsureEnvironmentFallbackBindings()
+    {
+        if (active_environment_.HasCompleteBindings())
+        {
+            return true;
+        }
+
+        data::TextureData fallback{};
+        fallback.width = 1;
+        fallback.height = 1;
+        fallback.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
+        fallback.pixels.resize(4 * sizeof(uint16_t), 0);
+
+        EnvironmentBindingBundle black_fallback{};
+        black_fallback.ibl_intensity = 0.25f;
+        black_fallback.panorama = resource_resolver_->GetOrCreateTextureBinding(
+            {}, fallback, MaterialTextureColorSpace::Linear);
+        black_fallback.irradiance = resource_resolver_->GetOrCreateTextureBinding(
+            {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
+            TextureCacheVariant::EnvironmentIrradiance);
+        black_fallback.prefiltered_radiance = resource_resolver_->GetOrCreateTextureBinding(
+            {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
+            TextureCacheVariant::EnvironmentPrefilter);
+        black_fallback.brdf_lut = resource_resolver_->GetOrCreateTextureBinding(
+            {}, fallback, MaterialTextureColorSpace::Linear, nullptr,
+            TextureCacheVariant::EnvironmentBrdfLut);
+        black_fallback.ibl_enabled = false;
+        if (!black_fallback.HasCompleteBindings())
+        {
+            return false;
+        }
+        active_environment_ = std::move(black_fallback);
+        return true;
+    }
+
     const RenderCacheEntry *RenderSystem::FindCached(asset::AssetID asset_id) const
     {
         for (const auto &[request_id, entry] : render_cache_)
@@ -2211,75 +2289,6 @@ namespace kpengine::render
             }
         }
         return nullptr;
-    }
-
-    std::optional<StaticMeshRenderableSourceDesc> RenderSystem::TakeBootstrapRenderableSource()
-    {
-        if (bootstrap_renderable_sources_.empty())
-        {
-            return std::nullopt;
-        }
-        StaticMeshRenderableSourceDesc source = std::move(bootstrap_renderable_sources_.front());
-        bootstrap_renderable_sources_.erase(bootstrap_renderable_sources_.begin());
-        return source;
-    }
-
-    std::vector<StaticMeshRenderableSourceDesc> RenderSystem::TakeBootstrapRenderableSources()
-    {
-        return std::exchange(bootstrap_renderable_sources_, {});
-    }
-
-    void RenderSystem::PrepareBootstrapRenderableSources()
-    {
-        if ((!bootstrap_scene_info_.IsComplete() && bootstrap_scene_info_.objects.empty()) ||
-            !bootstrap_renderable_sources_.empty())
-        {
-            return;
-        }
-
-        auto &asset_manager = asset::AssetManager::GetInstance();
-        std::vector<BootstrapSceneObjectInfo> objects;
-        if (bootstrap_scene_info_.IsComplete())
-        {
-            objects.push_back({bootstrap_scene_info_.model_path,
-                               bootstrap_scene_info_.material_path,
-                               bootstrap_scene_info_.world_transform});
-        }
-        objects.insert(objects.end(), bootstrap_scene_info_.objects.begin(),
-                       bootstrap_scene_info_.objects.end());
-
-        for (const BootstrapSceneObjectInfo &object : objects)
-        {
-            const asset::AssetID model_asset = asset_manager.LoadSync(object.model_path);
-            const asset::AssetID material_asset = asset_manager.LoadSync(object.material_path);
-            const auto model = asset_manager.GetResource<asset::ModelResource>(model_asset);
-            const asset::AssetID mesh_asset = model
-                                                  ? model->GetData(asset::ModelGeometryType::KPMG_Mesh)
-                                                  : asset::AssetID{};
-            if (!mesh_asset.IsValid() || !material_asset.IsValid())
-            {
-                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "Bootstrap scene object could not prepare a mesh or material asset");
-                continue;
-            }
-
-            StaticMeshRenderableSourceDesc source{};
-            source.mesh_asset = mesh_asset;
-            source.material_asset = material_asset;
-            source.world_transform = object.world_transform;
-            const auto mesh = asset_manager.GetResource<asset::MeshResource>(mesh_asset);
-            if (!mesh || !mesh->data || mesh->data->vertices.empty())
-            {
-                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "Bootstrap scene object mesh has no geometry bounds");
-                continue;
-            }
-            source.local_bounds = mesh->local_bounds;
-            source.world_bounds = TransformBounds(source.local_bounds, source.world_transform);
-            bootstrap_renderable_sources_.push_back(std::move(source));
-        }
-        KP_LOG("RenderLog", LOG_LEVEL_INFO, "Bootstrap gameplay render source(s) prepared: %zu",
-               bootstrap_renderable_sources_.size());
     }
 
     void RenderSystem::DestroyMaterialAssetRecords()
@@ -2356,6 +2365,7 @@ namespace kpengine::render
         }
 
         camera_source_registry_.Clear();
+        environment_source_registry_.Clear();
         source_registry_.Clear(render_world_);
         render_world_.ApplyPendingCommands();
         render_world_.Clear();
@@ -2367,7 +2377,6 @@ namespace kpengine::render
         active_point_shadow_.reset();
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
-        bootstrap_renderable_sources_.clear();
         render_cache_.clear();
         DestroyMaterialAssetRecords();
         material_asset_resolver_.reset();
@@ -2444,13 +2453,9 @@ namespace kpengine::render
         directional_shadow_sampler_ = {};
         spot_shadow_sampler_ = {};
         point_shadow_sampler_ = {};
-        environment_texture_binding_ = {};
-        environment_irradiance_binding_ = {};
-        environment_prefilter_binding_ = {};
-        environment_brdf_lut_binding_ = {};
-        environment_prefilter_level_count_ = 0;
-        environment_ibl_intensity_ = 0.25f;
-        environment_ibl_enabled_ = false;
+        level_environment_ = {};
+        active_environment_ = {};
+        failed_environment_source_.reset();
         tone_map_pipeline_ = {};
         directional_shadow_pipeline_ = {};
 
@@ -2467,7 +2472,6 @@ namespace kpengine::render
         }
         backend_initialized_ = false;
         load_queue_ = nullptr;
-        bootstrap_scene_info_ = {};
         pending_scene_render_target_extent_ = {};
         active_frame_context_ = nullptr;
         editor_composite_recorded_ = false;

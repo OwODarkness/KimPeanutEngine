@@ -27,7 +27,7 @@
 #include "runtime/render/camera_source_registry.h"
 #include "runtime/gameplay/actor/actor.h"
 #include "runtime/gameplay/controller/player_controller.h"
-#include "runtime/gameplay/factory/free_camera_actor_factory.h"
+#include "runtime/gameplay/factory/camera_actor_factory.h"
 #include "runtime/gameplay/component/mesh_component.h"
 #include "runtime/gameplay/world/gameplay_world.h"
 #include "runtime/graphics/backend/common/pipeline_types.h"
@@ -307,7 +307,7 @@ namespace kpengine::example
             render::RenderableSourceRegistry source_registry{};
             render::CameraSourceRegistry camera_source_registry{};
             gameplay::GameplayWorld gameplay_world{&source_registry, nullptr, &camera_source_registry};
-            const gameplay::ActorHandle camera_actor_handle = gameplay::CreateFreeCameraActor(gameplay_world, {});
+            const gameplay::ActorHandle camera_actor_handle = gameplay::CreateCameraActor(gameplay_world, {});
             gameplay::PlayerController *const player_controller =
                 gameplay_world.CreateLocalPlayerController(input.get(), "SceneInputContext");
             if (!camera_actor_handle.IsValid() || !player_controller ||
@@ -999,6 +999,10 @@ namespace kpengine::example
                 }
                 named_targets.Cleanup();
                 render::MaterialAssetResolver d3_material_resolver(materials);
+                if (!d3_material_resolver.WarmBuiltInTextures())
+                {
+                    throw std::runtime_error("D3 built-in material textures failed to warm");
+                }
                 const asset::AssetID rock_material_id = asset::AssetManager::GetInstance().LoadSync(
                     GetAssetDirectory() + "material/rock_pbr.material");
                 render::MaterialInstanceHandle rock_instance;

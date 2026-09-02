@@ -6,6 +6,7 @@
 
 #include "asset/asset_manager.h"
 #include "asset/material.h"
+#include "config/path.h"
 #include "render/material/material_asset_resolver.h"
 
 namespace
@@ -40,7 +41,8 @@ namespace
     std::filesystem::path MakeResolverTestDirectory()
     {
         const std::filesystem::path directory =
-            std::filesystem::temp_directory_path() / "kpengine_material_asset_resolver_test";
+            std::filesystem::path(kpengine::GetAssetDirectory()) / ".test_material" /
+            "resolver";
         std::filesystem::create_directories(directory);
         return directory;
     }
@@ -136,9 +138,10 @@ TEST(MaterialAssetResolverTest, ReportsInvalidPendingAndBrokenReferences)
     })");
     const kpengine::asset::AssetID material_id =
         kpengine::asset::AssetManager::GetInstance().LoadSync(material_path.string());
+    EXPECT_FALSE(material_id.IsValid());
     const auto resolution = resolver.Resolve(material_id, instance);
     EXPECT_EQ(resolution.state, kpengine::render::MaterialResourceState::Failed);
-    EXPECT_EQ(resolution.diagnostic, "material shader program could not be loaded");
+    EXPECT_EQ(resolution.diagnostic, "static mesh source has an invalid material asset");
 
     std::error_code error;
     std::filesystem::remove_all(directory, error);

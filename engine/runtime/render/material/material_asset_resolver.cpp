@@ -1,7 +1,6 @@
 #include "material_asset_resolver.h"
 
 #include <array>
-#include <filesystem>
 #include <optional>
 #include <string>
 #include <utility>
@@ -72,20 +71,13 @@ namespace kpengine::render
             return {MaterialResourceState::Pending, "material asset is not loaded"};
         }
 
-        const std::filesystem::path material_directory =
-            std::filesystem::path(material_wrapper->GetPath()).parent_path();
-        const auto load_reference = [&asset_manager, &material_directory](const std::string &reference)
-        {
-            const std::filesystem::path path = std::filesystem::path(reference).is_absolute()
-                                                   ? std::filesystem::path(reference)
-                                                   : material_directory / reference;
-            return asset_manager.LoadSync(path.lexically_normal().string());
-        };
-
-        const asset::AssetID shader_program = load_reference(material->shader_path);
+        const asset::AssetID shader_program = asset_manager.ResolveDependency(
+            material_asset, material->shader_dependency_index,
+            asset::AssetType::KPAT_ShaderProgram);
         if (!shader_program.IsValid() || shader_program.type != asset::AssetType::KPAT_ShaderProgram)
         {
-            return {MaterialResourceState::Failed, "material shader program could not be loaded"};
+            return {MaterialResourceState::Pending,
+                    "material shader program dependency is not ready"};
         }
 
         MaterialTemplateDesc template_desc{};
@@ -103,7 +95,7 @@ namespace kpengine::render
 
         if (material->surface.shading_model == asset::MaterialShadingModel::StandardPbr)
         {
-            if (!BuildStandardPbrTemplate(*material, load_reference, asset_manager, template_desc))
+            if (!BuildStandardPbrTemplate(material_asset, *material, asset_manager, template_desc))
             {
                 return {MaterialResourceState::Failed,
                         "standard_pbr material semantics or references are invalid"};
@@ -135,11 +127,12 @@ namespace kpengine::render
                         return {MaterialResourceState::Failed,
                                 "Material Asset V1 supports only base_color_texture"};
                     }
-                    const asset::AssetID texture_asset =
-                        load_reference(std::get<std::string>(parameter.value));
+                    const asset::AssetID texture_asset = asset_manager.ResolveDependency(
+                        material_asset, parameter.dependency_index, asset::AssetType::KPAT_Texture);
                     if (!texture_asset.IsValid() || texture_asset.type != asset::AssetType::KPAT_Texture)
                     {
-                        return {MaterialResourceState::Failed, "material texture could not be loaded"};
+                        return {MaterialResourceState::Pending,
+                                "material texture dependency is not ready"};
                     }
                     desc.default_value = MaterialTextureSamplerValue{texture_asset, {}};
                     desc.resource_binding = 2;
@@ -169,8 +162,7 @@ namespace kpengine::render
     }
 
     bool MaterialAssetResolver::BuildStandardPbrTemplate(
-        const asset::MaterialResource &material,
-        const std::function<asset::AssetID(const std::string &)> &load_reference,
+        asset::AssetID material_asset, const asset::MaterialResource &material,
         asset::AssetManager &asset_manager, MaterialTemplateDesc &template_desc)
     {
         // Collect authored semantics. Unknown names or type mismatches fail.
@@ -211,8 +203,8 @@ namespace kpengine::render
                      name == "occlusion_texture")
             {
                 if (parameter.type != asset::MaterialParameterSourceType::Texture) return false;
-                const asset::AssetID texture_asset =
-                    load_reference(std::get<std::string>(parameter.value));
+                const asset::AssetID texture_asset = asset_manager.ResolveDependency(
+                    material_asset, parameter.dependency_index, asset::AssetType::KPAT_Texture);
                 if (!texture_asset.IsValid() || texture_asset.type != asset::AssetType::KPAT_Texture)
                 {
                     return false;
@@ -229,10 +221,8 @@ namespace kpengine::render
             }
         }
 
-        const asset::AssetID white =
-            LoadDefaultTexture(asset_manager, kDefaultWhiteTexturePath, default_white_);
-        const asset::AssetID flat_normal =
-            LoadDefaultTexture(asset_manager, kDefaultFlatNormalTexturePath, default_flat_normal_);
+        const asset::AssetID white = default_white_;
+        const asset::AssetID flat_normal = default_flat_normal_;
         if (!white.IsValid() || !flat_normal.IsValid())
         {
             return false;
@@ -290,6 +280,16 @@ namespace kpengine::render
         template_desc.bindless_texture_table_compatible = false;
         template_desc.compatible_passes = {MaterialPass::GBuffer};
         return true;
+    }
+
+    bool MaterialAssetResolver::WarmBuiltInTextures()
+    {
+        asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
+        const asset::AssetID white =
+            LoadDefaultTexture(asset_manager, kDefaultWhiteTexturePath, default_white_);
+        const asset::AssetID flat_normal =
+            LoadDefaultTexture(asset_manager, kDefaultFlatNormalTexturePath, default_flat_normal_);
+        return white.IsValid() && flat_normal.IsValid();
     }
 
     asset::AssetID MaterialAssetResolver::LoadDefaultTexture(asset::AssetManager &asset_manager,

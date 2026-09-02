@@ -1,5 +1,5 @@
-#ifndef KPENGINE_RUNTIME_GAMEPLAY_FACTORY_FREE_CAMERA_ACTOR_FACTORY_H
-#define KPENGINE_RUNTIME_GAMEPLAY_FACTORY_FREE_CAMERA_ACTOR_FACTORY_H
+#ifndef KPENGINE_RUNTIME_GAMEPLAY_FACTORY_CAMERA_ACTOR_FACTORY_H
+#define KPENGINE_RUNTIME_GAMEPLAY_FACTORY_CAMERA_ACTOR_FACTORY_H
 
 #include "gameplay/actor/actor_types.h"
 #include "math/math_header.h"
@@ -9,7 +9,7 @@ namespace kpengine::gameplay
 {
     class GameplayWorld;
 
-    struct FreeCameraActorDesc
+    struct CameraActorDesc
     {
         Transform3f transform{{0.0f, 0.0f, 300.0f}, {0.0f, -90.0f, 0.0f}, {1.0f, 1.0f, 1.0f}};
         float field_of_view_degrees = 45.0f;
@@ -21,10 +21,9 @@ namespace kpengine::gameplay
         int priority = 0;
     };
 
-    // Creates the first root-camera composition. GameplayWorld remains the
-    // owner; the caller receives only its generational ActorHandle.
-    ActorHandle CreateFreeCameraActor(GameplayWorld &world,
-                                      const FreeCameraActorDesc &desc = {});
+    // Creates a neutral root-camera composition. Player control is layered on
+    // later by PlayerController::Possess rather than being part of the factory.
+    ActorHandle CreateCameraActor(GameplayWorld &world, const CameraActorDesc &desc = {});
 }
 
 #endif

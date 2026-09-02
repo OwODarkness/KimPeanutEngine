@@ -1,6 +1,6 @@
 # Project Status
 
-**Snapshot: 2026-09-01.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-02.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
 
 ## Done
 
@@ -9,7 +9,7 @@
   transactional unregister revalidation, integer `lod_bias`, path-qualified
   diagnostics, and repeated-reference deduplication coverage are complete.
   The rebuilt focused suite passes 14/14 and the full Debug build plus CTest
-  pass 197/197. GP7.3–GP7.5 remain open. → [GP7.1 plan](gameplay/.plan/GP7.1.md),
+  pass 197/197. GP7.3–GP7.5 are now complete and GP7 is closed. → [GP7.1 plan](gameplay/.plan/GP7.1.md),
   [GP7 journal](../.spec/journal/2026-09-01-gameplay-level-asset.md)
 
 - **Gameplay GP7.2 — static-mesh level instantiation and rollback (2026-09-01)**
@@ -21,6 +21,38 @@
   Asset residency untouched. Focused RuntimeLevel (6/6) and GameplayWorld
   (19/19) tests, full Debug build, and complete CTest (204/204) pass. Bootstrap
   startup remains unchanged until GP7.4. → [GP7.2 plan](gameplay/.plan/GP7.2.md),
+  [GP7 journal](../.spec/journal/2026-09-01-gameplay-level-asset.md)
+
+- **Gameplay GP7.3 — heterogeneous level actors and environment source (2026-09-01)**
+  — `LevelInstance` now transactionally creates static meshes, directional/point/spot
+  lights, and cameras through a closed typed factory set. A Render-owned,
+  single-source environment registry accepts only a texture `AssetID` and IBL
+  intensity; Render resolves ready texture data at the frame boundary with
+  complete fallback preservation and derived-binding reuse. Environment
+  registration is last and unload retires it first. Focused GP7.3 tests pass
+  40/40; full Debug build and complete CTest pass 220/220; GraphicsSmoke passes
+  on Vulkan and OpenGL; and rebuilt-runtime SceneColor captures were exported
+  for both backends under `save/screenshots/validation/`. → [GP7.3 plan](gameplay/.plan/GP7.3.md),
+  [GP7 journal](../.spec/journal/2026-09-01-gameplay-level-asset.md)
+
+- **Gameplay GP7.4 — startup-level migration and validation fixtures (2026-09-02)**
+  — Bootstrap V2 now selects only `level/pbr_showcase.level`; Asset loads the
+  complete level/model/material/shader/texture/environment closure, and Render
+  resolves authored materials by dependency identity with Render-owned default
+  texture warmup. Runtime commits the level instance and possesses its authored
+  preferred camera through a ready/commit-or-abort startup handshake. Legacy
+  bootstrap scene plumbing and hard-coded startup Actors are removed. The PBR,
+  point-shadow, and spot-shadow fixtures launch and capture on Vulkan/OpenGL.
+  Full Debug build and CTest pass 222/222; GraphicsSmoke passes on both APIs.
+  → [GP7.4 plan](gameplay/.plan/GP7.4.md),
+  [GP7 journal](../.spec/journal/2026-09-01-gameplay-level-asset.md)
+
+- **Gameplay GP7.5 — runtime evidence and handoff (2026-09-02)** — the final
+  audit added the missing full load→instantiate→unload→unregister dependency
+  contract, rebuilt and passed the complete 229-test suite, passed Vulkan and
+  OpenGL GraphicsSmoke, and visually inspected fresh PBR, point-shadow, and
+  spot-shadow captures on both backends. Bootstrap was restored to the PBR
+  level and GP7 is closed. → [GP7.5 plan](gameplay/.plan/GP7.5.md),
   [GP7 journal](../.spec/journal/2026-09-01-gameplay-level-asset.md)
 
 - **Render R1.1 — characterization and transactional lifecycle (2026-09-01)**
@@ -340,6 +372,14 @@
   local-user limits, and teardown are documented, with an automated live-socket
   GameTick-handoff test. A live `capture.screenshot` smoke run returned and
   visually verified the active-frame PNG. → [command transport](command/agent_transport.md)
+
+- **Runtime startup-level selector (2026-09-02)** — the executable now has a
+  tested `--startup-level level/<fixture>.level` override with strict Asset-path
+  validation, duplicate/unknown/missing-option rejection, CLI-over-Bootstrap
+  precedence, and no Bootstrap-file mutation. The selector composes with
+  `--graphics-api` and `--agent-port`, so agents can launch a chosen fixture and
+  use the existing `capture.screenshot` transport workflow. → [startup-level
+  override plan](gameplay/.plan/STARTUP_LEVEL_OVERRIDE.md), [agent transport](command/agent_transport.md)
 
 - **Command system C7 (2026-08-29)** — `Script` now owns
   `LuaCommandBridge`, which exposes `engine.command.list/help/execute/poll/cancel`

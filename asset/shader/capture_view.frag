@@ -28,6 +28,7 @@ layout(std140, binding = 7) uniform CaptureViewConstants
     vec4 spot_shadow_params;
     vec4 light_direction_and_view;
     vec4 depth_params;
+    vec4 punctual_depth_params;
 } capture_constants;
 
 layout(std140, binding = 10) uniform PointShadowConstants
@@ -171,18 +172,34 @@ float point_shadow_visibility(vec3 world_position, vec3 normal, vec3 light_posit
     return 1.0 - occluded / 9.0;
 }
 
+float linearize_punctual_depth(float depth, float near_plane, float far_plane)
+{
+    // Shadow maps use the same perspective depth convention as the scene
+    // projection. Mapping to linear [0, 1] makes the diagnostic useful even
+    // when the receiver occupies only a small fraction of a large range.
+    float ndc_z = depth * 2.0 - 1.0;
+    float denominator = far_plane + near_plane - ndc_z * (far_plane - near_plane);
+    return clamp((2.0 * near_plane) / max(denominator, 1e-6), 0.0, 1.0);
+}
+
 void main()
 {
     uint view = uint(capture_constants.light_direction_and_view.w + 0.5);
     if (view == CAPTURE_SPOT_SHADOW_DEPTH)
     {
-        float depth = texture(spot_shadow_depth, frag_texcoord).r;
+        float depth = linearize_punctual_depth(
+            texture(spot_shadow_depth, frag_texcoord).r,
+            capture_constants.punctual_depth_params.x,
+            capture_constants.punctual_depth_params.y);
         out_color = vec4(vec3(depth), 1.0);
         return;
     }
     if (view == CAPTURE_POINT_SHADOW_DEPTH)
     {
-        float depth = texture(point_shadow_depth, frag_texcoord).r;
+        float depth = linearize_punctual_depth(
+            texture(point_shadow_depth, frag_texcoord).r,
+            capture_constants.punctual_depth_params.z,
+            capture_constants.punctual_depth_params.w);
         out_color = vec4(vec3(depth), 1.0);
         return;
     }

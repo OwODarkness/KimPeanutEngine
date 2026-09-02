@@ -1,4 +1,4 @@
-#include "gameplay/factory/free_camera_actor_factory.h"
+#include "gameplay/factory/camera_actor_factory.h"
 
 #include "gameplay/actor/actor.h"
 #include "gameplay/component/camera_component.h"
@@ -6,7 +6,7 @@
 
 namespace kpengine::gameplay
 {
-    ActorHandle CreateFreeCameraActor(GameplayWorld &world, const FreeCameraActorDesc &desc)
+    ActorHandle CreateCameraActor(GameplayWorld &world, const CameraActorDesc &desc)
     {
         const ActorHandle handle = world.CreateActor();
         Actor *const actor = world.FindActor(handle);

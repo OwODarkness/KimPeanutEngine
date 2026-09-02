@@ -58,6 +58,7 @@ namespace
         void WriteDependencies() const
         {
             Write("mesh.obj", "v 0 0 0\nv 1 0 0\nv 0 1 0\nf 1 2 3\n");
+            Write("not_loaded.shader", R"({"version":1,"shaders":[]})");
             Write("surface.material", R"({
                 "version": 1,
                 "shader": "not_loaded.shader",
@@ -256,4 +257,29 @@ TEST(LevelLoaderTest, ConcurrentLoadsShareOneLevelIdentity)
         EXPECT_EQ(requests[index].get(), expected);
     }
     AssetManager::GetInstance().UnRegisterAsset(expected);
+}
+
+TEST(LevelLoaderTest, LoadsCheckedInGameplayLevelFixtures)
+{
+    AssetManager &assets = AssetManager::GetInstance();
+    const std::vector<std::filesystem::path> fixture_paths{
+        std::filesystem::path(kpengine::GetAssetDirectory()) / "level" / "pbr_showcase.level",
+        std::filesystem::path(kpengine::GetAssetDirectory()) / "level" / "point_shadow_validation.level",
+        std::filesystem::path(kpengine::GetAssetDirectory()) / "level" / "spot_shadow_validation.level",
+    };
+
+    std::vector<AssetID> loaded_levels;
+    for (const auto &path : fixture_paths)
+    {
+        const AssetID level_id = assets.LoadSync(path.string());
+        ASSERT_TRUE(level_id.IsValid()) << path.string();
+        ASSERT_EQ(level_id.type, AssetType::KPAT_Level);
+        ASSERT_NE(assets.GetAsset(level_id), nullptr);
+        loaded_levels.push_back(level_id);
+    }
+
+    for (const AssetID level_id : loaded_levels)
+    {
+        assets.UnRegisterAsset(level_id);
+    }
 }

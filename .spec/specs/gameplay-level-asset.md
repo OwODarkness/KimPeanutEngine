@@ -1,6 +1,6 @@
 # Gameplay Level Asset (GP7)
 
-- Status: proposed
+- Status: GP7 complete (2026-09-02)
 - Owner: user + Codex
 - Parent TODO: [Gameplay Module TODO](../../docs/gameplay/TODO.md#gp7--level-asset-and-startup-scene-migration)
 - Related design: [Gameplay Module Design](../../docs/gameplay/gameplay_module.md)
@@ -25,19 +25,28 @@ erase the only known-good visual test setup.
 
 ## Current state
 
-- `config/bootstrap.json` contains both startup policy and an authored `scene`
-  block, including explicit preload paths, models, materials, transforms,
-  environment settings, and punctual lights.
-- Bootstrap parsing produces `BootstrapScene` values. Runtime then creates
-  Gameplay Actors through focused factories, while some environment and
-  startup-renderable information is still handed directly to Render.
+The following was the GP7 entry baseline and is retained here to explain the
+migration scope; it is no longer the live implementation:
+
+- The original `config/bootstrap.json` contained both startup policy and an
+  authored `scene` block, including explicit preload paths, models, materials,
+  transforms, environment settings, and punctual lights.
+- The original bootstrap parser produced `BootstrapScene` values. Runtime then
+  created Gameplay Actors through focused factories, while some environment and
+  startup-renderable information was handed directly to Render.
+
+The landed GP7.1–GP7.5 path now loads a versioned `LevelResource` through
+Asset, instantiates it through Runtime's transactional `LevelInstance`, and
+publishes copied Gameplay sources to Render. Bootstrap selects only the
+Asset-root-relative startup level. The final GP7.5 lifecycle and dual-backend
+evidence pass is recorded in the GP7 journal.
 - `AssetManager` already owns CPU asset identity and maintains forward and
   reverse dependency edges declared by loaders.
 - `GameplayWorld` owns live Actors. Actor components publish copied,
   generational mesh, light, and camera source values to Render-owned
   registries; Gameplay never owns a render proxy or GPU object.
-- There is no level/world asset, level-instance lifetime object, general
-  reflection serializer, prefab system, or streaming consumer today.
+- There is no general reflection serializer, prefab system, or streaming
+  consumer today; those remain outside GP7.4 scope.
 
 ## Design boundary and concrete question
 
@@ -117,8 +126,8 @@ Reduce bootstrap scene policy to a startup-level reference, for example:
 
 ```json
 {
-  "version": 1,
-  "startup_level": "asset/level/pbr_showcase.level"
+  "version": 2,
+  "startup_level": "level/pbr_showcase.level"
 }
 ```
 
@@ -175,36 +184,39 @@ Create at least these authored fixtures during migration:
    level instance, create static-mesh Actors through existing factories, retain
    the authored-ID map, and prove transactional failure plus deterministic
    unload/stale-handle behavior in headless tests.
-3. **GP7.3 — Light, camera, and environment sources.** Instantiate existing
+3. **GP7.3 — Light, camera, and environment sources.** Follow the concrete
+   [GP7.3 stage plan](../../docs/gameplay/.plan/GP7.3.md). Instantiate existing
    Gameplay light/camera compositions, add only the narrow environment source
    seam that has a current Render consumer, and verify source replacement and
    retirement at frame boundaries.
-4. **GP7.4 — Bootstrap migration and fixtures.** Replace the bootstrap `scene`
-   and duplicated preload list with `startup_level`; author the PBR, point
-   shadow, and spot shadow levels; remove transitional bootstrap scene plumbing
-   once no consumer remains.
-5. **GP7.5 — Runtime evidence and handoff.** Run lifecycle tests and dual-backend
-   smoke/capture validation. Record exact commands, captures, visual findings,
-   skipped checks, and remaining risk in a matching journal before marking GP7
-   complete.
+4. **GP7.4 — Bootstrap migration and fixtures.** Follow the concrete
+   [GP7.4 stage plan](../../docs/gameplay/.plan/GP7.4.md). Close transitive
+   material dependencies, replace the bootstrap `scene` and duplicated preload
+   list with `startup_level`, author the PBR/point/spot levels, and remove
+   transitional bootstrap scene plumbing once no consumer remains.
+5. **GP7.5 — Runtime evidence and handoff.** Follow the concrete
+   [GP7.5 stage plan](../../docs/gameplay/.plan/GP7.5.md). Run the final
+   lifecycle/dependency audit and dual-backend smoke/capture validation. Record
+   exact commands, captures, visual findings, skipped checks, and remaining
+   risk in the GP7 journal before marking GP7 complete.
 
 ## Acceptance criteria
 
-- [ ] Bootstrap selects a startup level and no longer authors scene objects,
+- [x] Bootstrap selects a startup level and no longer authors scene objects,
   lights, camera, materials, transforms, or environment settings.
-- [ ] Loading a level declares all referenced Asset dependencies without a
+- [x] Loading a level declares all referenced Asset dependencies without a
   duplicated manual preload list.
-- [ ] The current PBR scene is reproduced from `pbr_showcase.level` through
+- [x] The current PBR scene is reproduced from `pbr_showcase.level` through
   Gameplay-owned Actors and copied render-source boundaries.
-- [ ] Point-shadow verification can select `point_shadow_validation.level`
+- [x] Point-shadow verification can select `point_shadow_validation.level`
   without editing the level contents or restoring bootstrap scene fields.
-- [ ] A spotlight-shadow fixture exists before that renderer stage begins.
-- [ ] Failed instantiation leaves no partial Actors or live source tokens.
-- [ ] Unload retires all level-created sources and Actors, rejects stale
+- [x] A spotlight-shadow fixture exists before that renderer stage begins.
+- [x] Failed instantiation leaves no partial Actors or live source tokens.
+- [x] Unload retires all level-created sources and Actors, rejects stale
   handles/tokens, and releases dependencies only when the Asset graph permits.
-- [ ] No serialized file or common header exposes a render proxy, GPU handle,
+- [x] No serialized file or common header exposes a render proxy, GPU handle,
   descriptor, or backend-native type.
-- [ ] Vulkan and OpenGL render equivalent authored content, with visual capture
+- [x] Vulkan and OpenGL render equivalent authored content, with visual capture
   evidence for the PBR showcase and point-shadow validation level.
 
 ## Validation plan

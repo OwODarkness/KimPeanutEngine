@@ -5,6 +5,7 @@
 #include <fstream>
 #include <initializer_list>
 #include <memory>
+#include <string>
 #include <utility>
 #include <nlohmann/json.hpp>
 
@@ -273,6 +274,42 @@ namespace kpengine::asset
             {
                 KP_LOG("MaterialLoaderLog", LOG_LEVEL_ERROR, "Invalid material values in %s", path.c_str());
                 return false;
+            }
+
+            std::string resolved_shader_path;
+            if (!ResolveOwnedAssetPath(path, material->shader_path,
+                                       AssetType::KPAT_ShaderProgram, resolved_shader_path))
+            {
+                KP_LOG("MaterialLoaderLog", LOG_LEVEL_ERROR,
+                       "Invalid shader reference in %s", path.c_str());
+                return false;
+            }
+            material->shader_dependency_index =
+                static_cast<uint32_t>(info.dependency_requests.size());
+            info.dependency_requests.push_back(
+                {std::move(resolved_shader_path), AssetType::KPAT_ShaderProgram});
+
+            for (MaterialParameterSource &parameter : material->parameters)
+            {
+                if (parameter.type != MaterialParameterSourceType::Texture)
+                {
+                    continue;
+                }
+                const std::string &authored_texture =
+                    std::get<std::string>(parameter.value);
+                std::string resolved_texture_path;
+                if (!ResolveOwnedAssetPath(path, authored_texture, AssetType::KPAT_Texture,
+                                           resolved_texture_path))
+                {
+                    KP_LOG("MaterialLoaderLog", LOG_LEVEL_ERROR,
+                           "Invalid texture reference for %s in %s",
+                           parameter.name.c_str(), path.c_str());
+                    return false;
+                }
+                parameter.dependency_index =
+                    static_cast<uint32_t>(info.dependency_requests.size());
+                info.dependency_requests.push_back(
+                    {std::move(resolved_texture_path), AssetType::KPAT_Texture});
             }
 
             info.type = AssetType::KPAT_Material;

@@ -433,10 +433,16 @@ namespace kpengine::asset
                 }
                 const std::string authored_path = object[name].get<std::string>();
                 std::string normalized;
-                if (!NormalizeReference(authored_path, expected_type, normalized,
-                                        location + "." + name))
+                if (!NormalizeAssetRootRelativePath(authored_path, expected_type, normalized))
                 {
-                    return false;
+                    return Fail(location + "." + name,
+                                "asset path must be a normalized asset-root-relative reference of the expected type");
+                }
+                if (expected_type == AssetType::KPAT_Texture &&
+                    GetFileExtension(normalized) != "hdr")
+                {
+                    return Fail(location + "." + name,
+                                "level environment texture must use the HDR format");
                 }
 
                 reference.path = normalized;
@@ -459,72 +465,6 @@ namespace kpengine::asset
                     (std::filesystem::path(GetAssetDirectory()) / std::filesystem::path(normalized)).generic_string();
                 info_.dependency_requests.push_back({resolved_path, expected_type});
                 reference.dependency_index = index;
-                return true;
-            }
-
-            bool NormalizeReference(const std::string &authored_path, AssetType expected_type,
-                                    std::string &normalized, const std::string &location) const
-            {
-                if (authored_path.empty() || authored_path.find('\0') != std::string::npos)
-                {
-                    return Fail(location, "asset path is empty or contains a NUL");
-                }
-
-                std::string portable = authored_path;
-                std::replace(portable.begin(), portable.end(), '\\', '/');
-                if (portable.empty() || portable.front() == '/' ||
-                    (portable.size() >= 2 && std::isalpha(static_cast<unsigned char>(portable[0])) &&
-                     portable[1] == ':'))
-                {
-                    return Fail(location, "asset path must be asset-root-relative");
-                }
-
-                std::vector<std::string> segments;
-                std::size_t begin = 0;
-                while (begin <= portable.size())
-                {
-                    const std::size_t end = portable.find('/', begin);
-                    const std::string segment = portable.substr(
-                        begin, end == std::string::npos ? std::string::npos : end - begin);
-                    if (segment == "..")
-                    {
-                        if (segments.empty())
-                        {
-                            return Fail(location, "asset path escapes the asset root");
-                        }
-                        segments.pop_back();
-                    }
-                    else if (!segment.empty() && segment != ".")
-                    {
-                        if (segment.find(':') != std::string::npos)
-                        {
-                            return Fail(location, "asset path contains a drive-qualified segment");
-                        }
-                        segments.push_back(segment);
-                    }
-                    if (end == std::string::npos)
-                    {
-                        break;
-                    }
-                    begin = end + 1;
-                }
-
-                if (segments.empty())
-                {
-                    return Fail(location, "asset path is empty after normalization");
-                }
-                normalized = segments.front();
-                for (std::size_t index = 1; index < segments.size(); ++index)
-                {
-                    normalized += "/" + segments[index];
-                }
-
-                const std::string extension = GetFileExtension(normalized);
-                if (ExtractAssetType(extension) != expected_type ||
-                    (expected_type == AssetType::KPAT_Texture && extension != "hdr"))
-                {
-                    return Fail(location, "asset extension does not match the required type");
-                }
                 return true;
             }
 

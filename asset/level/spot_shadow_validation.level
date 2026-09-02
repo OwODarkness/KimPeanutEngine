@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "environment": {
+    "texture": "texture/hdr/HDR_041_Path.hdr",
+    "ibl_intensity": 0.0
+  },
+  "objects": [
+    {
+      "id": "floor",
+      "kind": "static_mesh",
+      "transform": { "position": [0, -70, 0], "rotation_degrees": [0, 0, 0], "scale": [30, 30, 30] },
+      "model": "model/brickwall/floor.obj",
+      "material": "material/oakfloor_pbr.material"
+    },
+    {
+      "id": "rock",
+      "kind": "static_mesh",
+      "transform": { "position": [0, 0, 0], "rotation_degrees": [0, 0, 0], "scale": [0.35, 0.35, 0.35] },
+      "model": "model/rock1-bl/rock2.obj",
+      "material": "material/rock_pbr.material"
+    },
+    {
+      "id": "main_camera",
+      "kind": "camera",
+      "transform": { "position": [0, 0, 300], "rotation_degrees": [0, -90, 0], "scale": [1, 1, 1] },
+      "projection": "perspective",
+      "near_plane": 1.0,
+      "far_plane": 2000.0,
+      "field_of_view_degrees": 45.0,
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "id": "spot_shadow",
+      "kind": "spot_light",
+      "position": [0, 40, -80],
+      "direction": [0, -0.25, 0.97],
+      "color": [0.2, 0.35, 1.0],
+      "intensity": 24000,
+      "range": 180,
+      "inner_cone_radians": 0.35,
+      "outer_cone_radians": 0.65,
+      "enabled": true,
+      "casts_shadow": true
+    }
+  ]
+}

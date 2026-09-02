@@ -233,7 +233,7 @@ tests pass.
 - [x] Add a minimal local `PlayerController` owned by the Gameplay world. It
   stores a possessed `ActorHandle`, binds/unbinds logical camera actions, and
   never owns the possessed Actor or a render object.
-- [x] Add `CreateFreeCameraActor` (or an equivalently focused factory) that
+- [x] Add `CreateCameraActor` (or an equivalently focused factory) that
   creates an Actor with a root `CameraComponent`, initializes it, and activates
   its camera source. Keep the first controller-driven camera at the Actor root;
   do not add an untested world-transform mutation path for attached cameras.
@@ -254,7 +254,7 @@ tests pass.
   explicit InputSystem integration point for editor ownership.
 
 **Landed 2026-08-30:** `GameplayWorld` owns one local `PlayerController` and
-ticks it before Actors. `CreateFreeCameraActor` creates an active root camera;
+ticks it before Actors. `CreateCameraActor` creates an active root camera;
 runtime startup creates the `Gameplay` context, binds keyboard/mouse logical
 actions, and possesses that camera. Render-thread action callbacks enqueue
 copied values into a mutex-protected `InputSystem` snapshot; game-thread
@@ -329,7 +329,7 @@ is an additional logical-action path, not a second camera-control API.
 
 ## GP7 — level asset and startup-scene migration
 
-**Status: GP7.1 and GP7.2 landed 2026-09-01; GP7.3–GP7.5 remain proposed.** The
+**Status: GP7 complete 2026-09-02.** The
 authoritative scope, ownership, stages, reference findings, and validation plan
 are in the [GP7 level-asset spec](../../.spec/specs/gameplay-level-asset.md).
 
@@ -344,19 +344,40 @@ are in the [GP7 level-asset spec](../../.spec/specs/gameplay-level-asset.md).
   stable authored-ID mappings, and deterministically rolls back/unloads them.
   See the [GP7 journal](../../.spec/journal/2026-09-01-gameplay-level-asset.md)
   for implementation and validation evidence.
-- [ ] GP7.3: instantiate existing light and camera compositions and add a
-  value-only environment source seam without serializing Render/GPU objects.
-- [ ] GP7.4: reduce bootstrap scene policy to `startup_level`; migrate the PBR
-  showcase and create separate point- and spot-shadow validation levels.
-- [ ] GP7.5: prove failure rollback, source retirement, dependency lifetime,
-  Vulkan/OpenGL smoke, and visual captures; record execution evidence in a
-  journal before marking GP7 complete.
+- [x] GP7.3: follow the [lights, cameras, and environment-source plan](.plan/GP7.3.md)
+  to extend the landed level transaction across every V1 Actor kind and add a
+  singular value-only environment source with transactional Render resolution.
+  See the [GP7 journal](../../.spec/journal/2026-09-01-gameplay-level-asset.md)
+  for implementation and validation evidence.
+- [x] GP7.4: follow the [startup-level migration and fixture plan](.plan/GP7.4.md)
+  to close transitive material dependencies, reduce bootstrap scene policy to
+  `startup_level`, migrate the PBR showcase, and create separate point- and
+  spot-shadow validation levels.
+- [x] GP7.5: follow the [runtime evidence and handoff plan](.plan/GP7.5.md) to
+  prove failure rollback, source retirement, dependency lifetime,
+  Vulkan/OpenGL smoke, and visual captures; record execution evidence in the
+  GP7 journal.
 
 **Done when:** bootstrap selects one authored level rather than containing the
 scene; Asset owns level identity/dependencies, Runtime owns the level instance,
 GameplayWorld owns instantiated Actors, and Render receives copied source
 values only. A separate `WorldResource` remains deferred until multiple-level
 composition or streaming has a concrete consumer.
+
+## Post-GP7 — selectable startup-level override
+
+- [x] Follow the [startup-level override plan](.plan/STARTUP_LEVEL_OVERRIDE.md)
+  to add `--startup-level level/<fixture>.level`, with strict Asset path
+  validation and CLI-over-Bootstrap precedence.
+- [x] Extract the current ad-hoc launch parsing into a small tested options
+  parser that rejects unknown, duplicate, missing, and malformed arguments.
+- [x] Prove PBR, point, and spot fixture launch/capture on Vulkan and OpenGL
+  without modifying `config/bootstrap.json`.
+
+**Done when:** an agent or developer can select a startup fixture for one
+process launch while Bootstrap remains the validated persistent default and
+Runtime still receives only a ready Level AssetID. Live level switching remains
+a separate transition/streaming design. **Landed 2026-09-02.**
 
 ## After GP6
 

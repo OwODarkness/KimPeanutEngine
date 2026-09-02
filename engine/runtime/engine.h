@@ -7,6 +7,9 @@
 #include <mutex>
 #include <memory>
 #include <atomic>
+#include <cstdint>
+#include <optional>
+#include <string>
 
 #include "base/type.h"
 #include "command/command_local_transport.h"
@@ -31,6 +34,7 @@ namespace kpengine
             void Run();
             void SetCommandTransportConfig(command::LocalCommandTransportConfig config);
             void SetGraphicsAPI(GraphicsAPIType api_type);
+            void SetStartupLevelOverride(std::string authored_or_normalized_path);
 
             inline int GetFPS() const { return measured_fps; }
             const int *GetFPSRef() const { return &measured_fps; }
@@ -42,17 +46,18 @@ namespace kpengine
             // RenderThreadFunc, then presents every frame. The game thread produces a
             // frame (flips is_game_thread_loaded_ + notifies), the render thread waits
             // on it, consumes it, and resets the flag.
+            enum class StartupDecision : uint8_t;
             void GameTick();
             void RenderThreadFunc();
             void RenderTick();
+            void PublishStartupDecision(StartupDecision decision) noexcept;
+            void AbortStartupTransaction() noexcept;
             float CalculateDeltaTime();
             void CalculateFPS(float delta_time);
 
-            // The bootstrap preload is a startup one-shot (docs/status.md item 6):
-            // read the need-list once and enqueue it on the async queue's incoming
-            // leg, before the main loop. Guarded by bootstrap_loaded_ so a second
-            // Initialize() can never enqueue the batch twice.
-            void PreloadBootstrap();
+            // Load and validate the one startup level before creating the render
+            // thread. Its Asset dependency closure is ready before Runtime commits.
+            void LoadStartupLevel();
 
         private:
             std::chrono::steady_clock::time_point last_time{std::chrono::steady_clock::now()};
@@ -71,13 +76,32 @@ namespace kpengine
             std::condition_variable render_start_cv_;
             std::mutex render_start_mutex_;
             bool is_render_thread_loaded_ = false;
+            bool render_start_succeeded_ = false;
+            std::string render_start_diagnostic_;
+
+            enum class StartupDecision : uint8_t
+            {
+                Pending,
+                Commit,
+                Abort,
+            };
+            std::condition_variable startup_decision_cv_;
+            std::mutex startup_decision_mutex_;
+            StartupDecision startup_decision_ = StartupDecision::Pending;
 
             std::thread render_thread_;
             std::atomic_bool shutdown_requested_{false};
 
-            // One-shot guard for PreloadBootstrap(). Set only after a successful
-            // enqueue, so a failed read (missing bootstrap.json) can be retried.
-            bool bootstrap_loaded_ = false;
+            // RuntimeContext::Clear() tears down the process-wide composition
+            // root. Engine instances are therefore terminal after Clear(); a
+            // new initialize cycle uses a new Engine instance.
+            bool startup_level_loaded_ = false;
+            bool initialization_started_ = false;
+            bool cleared_ = false;
+
+            // Immutable for one Engine lifetime. The entry point supplies the
+            // parser-normalized Asset-root-relative path before Initialize().
+            std::optional<std::string> startup_level_override_;
 
             command::LocalCommandTransportConfig command_transport_config_{};
             std::unique_ptr<command::CommandLocalTransport> command_transport_;

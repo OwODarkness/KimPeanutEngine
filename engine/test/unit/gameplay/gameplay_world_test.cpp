@@ -16,7 +16,7 @@
 #include "gameplay/factory/directional_light_actor_factory.h"
 #include "gameplay/factory/point_light_actor_factory.h"
 #include "gameplay/factory/spot_light_actor_factory.h"
-#include "gameplay/factory/free_camera_actor_factory.h"
+#include "gameplay/factory/camera_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
 #include "gameplay/world/gameplay_world.h"
 #include "input/input_context.h"
@@ -649,7 +649,7 @@ TEST(GameplayWorldTest, LocalPlayerControllerPossessesAndMovesFreeCamera)
     {
         kpengine::gameplay::GameplayWorld world{nullptr, nullptr, &source_sink};
         const kpengine::gameplay::ActorHandle camera_handle =
-            kpengine::gameplay::CreateFreeCameraActor(world, {});
+            kpengine::gameplay::CreateCameraActor(world, {});
         ASSERT_TRUE(camera_handle.IsValid());
 
         kpengine::gameplay::PlayerController *const controller =
@@ -711,7 +711,7 @@ TEST(GameplayWorldTest, LocalPlayerControllerStopsCameraInputWhenDisabled)
     {
         kpengine::gameplay::GameplayWorld world{};
         const kpengine::gameplay::ActorHandle camera_handle =
-            kpengine::gameplay::CreateFreeCameraActor(world, {});
+            kpengine::gameplay::CreateCameraActor(world, {});
         ASSERT_TRUE(camera_handle.IsValid());
 
         kpengine::gameplay::PlayerController *const controller =
@@ -765,7 +765,7 @@ TEST(GameplayWorldTest, LocalPlayerControllerConsumesGamepadSticksOnGameThread)
     {
         kpengine::gameplay::GameplayWorld world{nullptr, nullptr, &source_sink};
         const kpengine::gameplay::ActorHandle camera_handle =
-            kpengine::gameplay::CreateFreeCameraActor(world, {});
+            kpengine::gameplay::CreateCameraActor(world, {});
         ASSERT_TRUE(camera_handle.IsValid());
         kpengine::gameplay::PlayerController *const controller =
             world.CreateLocalPlayerController(&input_system, "Gameplay");

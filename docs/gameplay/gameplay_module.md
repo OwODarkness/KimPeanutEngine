@@ -48,7 +48,7 @@ would violate the boundary; a future read-only snapshot is required.
 and publishes a copied, generational camera source. `CameraSourceRegistry`
 selects one enabled source by priority on the render thread, and `RenderSystem`
 applies it to its private `RenderCamera` while retaining viewport aspect and
-matrix ownership. Invalid source values fall back to the bootstrap camera.
+matrix ownership. Invalid source values fall back to the default camera.
 **GP6.2 landed 2026-08-30.** `GameplayWorld` owns one local
 `PlayerController`; runtime startup creates an active root free camera,
 installs the `Gameplay` input context, and possesses it. Keyboard/mouse
@@ -60,17 +60,22 @@ Input translate copied gamepad samples into logical stick/trigger/button input;
 the controller consumes it on the game thread, and deterministic camera smoke
 passes on Vulkan and OpenGL.
 
-**GP7.1 and GP7.2 are landed; GP7.3–GP7.5 remain proposed.** The
+**GP7 is complete (2026-09-02).** The
 [level-asset spec](../../.spec/specs/gameplay-level-asset.md) moves authored
 scene content out of bootstrap into an Asset-owned `LevelResource`, with a
-Runtime-owned `LevelInstance` preflighting and transactionally creating static
-mesh Actors in `GameplayWorld`. Bootstrap will select one startup level; a
-separate multi-level `WorldResource` waits for a real composition or streaming
-consumer.
+Runtime-owned `LevelInstance` preflighting and transactionally creating every
+V1 Actor kind in `GameplayWorld`. Lights publish copied light values, cameras
+publish copied camera values, and one optional level environment publishes only
+a texture `AssetID` plus IBL intensity. Render resolves that environment at a
+frame boundary into an all-or-nothing private binding bundle; it retains the
+complete black environment fallback. Bootstrap selects one startup
+level; a separate multi-level `WorldResource` waits for a real composition or
+streaming consumer.
 
 The module architecture map is [PLANS.md](PLANS.md), and the executable
-implementation ledger is [TODO.md](TODO.md). The concrete first level-asset
-stage is [GP7.1](.plan/GP7.1.md). The render-side
+implementation ledger is [TODO.md](TODO.md). The concrete level-asset stages
+are [GP7.1](.plan/GP7.1.md), [GP7.2](.plan/GP7.2.md), [GP7.3](.plan/GP7.3.md),
+[GP7.4](.plan/GP7.4.md), and [GP7.5](.plan/GP7.5.md). The render-side
 half of the boundary remains documented in
 [world/component_module.md](../world/component_module.md) and
 [world/mesh_proxy_TODO.md](../world/mesh_proxy_TODO.md).
@@ -416,7 +421,7 @@ source queue at the frame boundary and selects the highest-priority enabled
 source, with source ID as the deterministic tie-break. `RenderSystem` applies
 that value before visibility, shadow fitting, and deferred lighting. RenderSystem
 owns aspect from the active frame extent, so resize remains a render concern.
-If no source is selected, RenderSystem restores the bootstrap/default camera
+If no source is selected, RenderSystem restores the default camera
 without reading Gameplay objects on the render thread.
 
 The first implementation supports one local active camera. Multiple cameras,
@@ -475,7 +480,7 @@ view state according to a separate networking design.
   Gameplay object.
 - GP6.1 headless tests cover camera basis/lens validation, copied source
   lifecycle, priority selection, stale handles, and registry clearing.
-- GP6.2/GP6.3 headless tests cover copied input snapshots, active free-camera
+- GP6.2/GP6.3 headless tests cover copied input snapshots, active camera
   factory composition, controller possession and stale handles, deterministic
   movement, mouse look, FOV zoom, pitch clamping, gamepad sampling,
   disconnect-zeroing, dead-zone policy, and binding teardown.
@@ -513,14 +518,14 @@ linked below:
   time-scaled analog input, with a safe pitch limit. KimPeanut adopts those
   narrow math/input rules, not Bevy's ECS or schedule model.
 
-The transitional bootstrap scene follows the same ownership rule. Render startup loads the
+Before GP7.4, the transitional bootstrap scene followed the same ownership rule. Render startup loaded the
 configured mesh and creates its render-owned material identity, then transfers
 one `StaticMeshRenderableSourceDesc` through the existing startup handshake.
 After that handshake, `RuntimeContext::FinalizeGameStartup` creates the actor
 on the game thread with `CreateStaticMeshActor`; there is no bootstrap-only
 `MeshProxy` owned by `RenderSystem`. GP7 will replace this authored bootstrap
 scene with the [level-asset contract](../../.spec/specs/gameplay-level-asset.md)
-without changing the ownership boundary.
+without changing the ownership boundary. GP7.4 completed that migration.
 
 ## Reference findings
 

@@ -68,8 +68,8 @@ namespace kpengine{
         {
             if(IsHandleValid(handle))
             {
-                ++generations_[handle.id];
                 free_slots_.push_back(handle.id);
+                ++generations_[handle.id];
                 return true;
             }
             return false;

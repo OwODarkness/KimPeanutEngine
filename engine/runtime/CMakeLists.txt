@@ -17,6 +17,7 @@ add_subdirectory(level)
 
 add_library(RuntimeLib STATIC
     engine.cpp
+    launch_options.cpp
     runtime_global_context.cpp
     )
 

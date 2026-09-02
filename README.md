@@ -70,7 +70,9 @@ KimPeanut Engine（KP Engine）是一个以渲染器和底层引擎基础设施�
 - 命令描述其参数、能力和执行线程；Game-thread 命令通过 Runtime 队列执行，
   异步结果以 `request_id` 轮询，避免前端直接访问 Render 或 RHI 对象。
 - 运行中的引擎可用 `--agent-port 37373` 开启仅回环的 JSON-lines 端点。Agent
-  可执行 `capture.screenshot` 并轮询结果，取得 `SceneColor` PNG 用于渲染调试。
+  可用 `--startup-level level/point_shadow_validation.level` 在本次启动选择
+  一个已校验的关卡，再执行 `capture.screenshot` 并轮询结果，取得 `SceneColor`
+  PNG 用于渲染调试；该选项不会修改 `config/bootstrap.json`。
   `KimPeanutCommand` 只是协议 harness，不启动 Render，不能捕获真实帧。
 
 命令 API、内置命令表和 Agent 请求示例见

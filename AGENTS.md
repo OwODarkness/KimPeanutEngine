@@ -62,8 +62,15 @@ Follow the [validation matrix](docs/validation_matrix.md). It maps changed paths
 ## Render-debug capture for agents
 
 Use the Runtime command registry to capture rendered output; do not access
-backend objects or scrape the Editor console. Launch the live Engine with
-`--agent-port 37373`, then send JSON-lines to `127.0.0.1:37373`, for example
+backend objects or scrape the Editor console. Select a checked-in startup
+fixture at launch with `--startup-level` and enable the loopback transport with
+`--agent-port 37373`, for example:
+
+`build/Debug/KimPeanutEngine.exe --graphics-api vulkan --startup-level level/point_shadow_validation.level --agent-port 37373`
+
+The selector is launch-scoped and does not modify `config/bootstrap.json`; omit
+it to use the validated Bootstrap default. Then send JSON-lines to
+`127.0.0.1:37373`, for example
 `{"op":"execute","command":"capture.screenshot","arguments":{"path":"save/screenshots/validation/agent-debug.png","view":"scene_color"}}`.
 Poll the returned `request_id` with `{"op":"poll","request_id":<id>}` until
 terminal. On success, inspect `data.output_path` to debug the PNG. Paths must

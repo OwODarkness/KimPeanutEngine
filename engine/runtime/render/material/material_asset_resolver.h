@@ -27,6 +27,7 @@ namespace kpengine::render
 
         MaterialResolution Resolve(asset::AssetID material_asset,
                                    MaterialInstanceHandle &out_instance);
+        bool WarmBuiltInTextures();
         void Clear();
         std::size_t GetRecordCount() const noexcept { return records_.size(); }
 
@@ -37,8 +38,8 @@ namespace kpengine::render
             MaterialInstanceHandle default_instance;
         };
 
-        bool BuildStandardPbrTemplate(const asset::MaterialResource &material,
-                                      const std::function<asset::AssetID(const std::string &)> &load_reference,
+        bool BuildStandardPbrTemplate(asset::AssetID material_asset,
+                                      const asset::MaterialResource &material,
                                       asset::AssetManager &asset_manager,
                                       MaterialTemplateDesc &template_desc);
         asset::AssetID LoadDefaultTexture(asset::AssetManager &asset_manager,

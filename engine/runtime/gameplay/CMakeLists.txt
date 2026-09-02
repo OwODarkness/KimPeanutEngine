@@ -14,7 +14,7 @@ add_library(Gameplay STATIC
     factory/directional_light_actor_factory.cpp
     factory/point_light_actor_factory.cpp
     factory/spot_light_actor_factory.cpp
-    factory/free_camera_actor_factory.cpp
+    factory/camera_actor_factory.cpp
     world/gameplay_world.cpp
 )
 

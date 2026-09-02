@@ -3,6 +3,7 @@ render_system.cpp
 render_capture_service.cpp
     render_source_registry.cpp
     camera_source_registry.cpp
+    environment_source_registry.cpp
 light/light_source_registry.cpp
 light/light_world.cpp
 light/light_gpu_data.cpp

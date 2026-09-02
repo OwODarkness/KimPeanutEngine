@@ -1,30 +1,17 @@
 #include "bootstrap/bootstrap.h"
 
-#include <cstdint>
-#include <cmath>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
-#include <unordered_set>
-#include <utility>
 #include <nlohmann/json.hpp>
 #include "asset/utility.h"
 #include "log/logger.h"
-#include "config/path.h"
 
 namespace kpengine::bootstrap
 {
     namespace
     {
-        constexpr int kBootstrapVersion = 1;
-
-        // Session-wide request id counter. The bootstrap flow itself runs exactly
-        // once (guarded by Engine::PreloadBootstrap), but the ready cache is keyed
-        // by request_id and will later also be fed by the render module's runtime
-        // requests, so ids must stay unique across the whole run — not just within
-        // one bootstrap batch. BuildLoadRequests is called from the engine at boot
-        // and from unit tests (different processes), so a plain counter is enough.
-        std::uint64_t g_next_request_id = 1;
+        constexpr int kBootstrapVersion = 2;
 
         // Minimal whole-file read. Throws std::runtime_error if the file is missing
         // so ReadBootstrap can fail fast at boot (surfaced by main's try/catch).
@@ -43,165 +30,45 @@ namespace kpengine::bootstrap
 
     BootstrapConfig ReadBootstrap(const std::string &path)
     {
-        // ReadText throws std::runtime_error if the file is missing.
-        nlohmann::json json = nlohmann::json::parse(ReadText(path));
+        const nlohmann::json source = nlohmann::json::parse(ReadText(path));
+        const auto fail = [&path](const char *reason) -> void
+        {
+            KP_LOG("BootstrapLog", LOG_LEVEL_ERROR, "%s: %s", path.c_str(), reason);
+            throw std::runtime_error("bootstrap: " + path + ": " + reason);
+        };
 
-        BootstrapConfig config;
-        config.version = json.value("version", kBootstrapVersion);
-        if (config.version != kBootstrapVersion)
+        if (!source.is_object())
         {
-            KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                   "%s uses bootstrap version %d, engine supports %d",
-                   path.c_str(), config.version, kBootstrapVersion);
+            fail("root must be an object");
         }
-
-        if (json.contains("assets") && !json["assets"].is_array())
+        for (const auto &[name, value] : source.items())
         {
-            KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                   "%s: \"assets\" is not an array, ignoring", path.c_str());
-        }
-        else if (json.contains("assets"))
-        {
-            for (const auto &item : json["assets"])
+            (void)value;
+            if (name != "version" && name != "startup_level")
             {
-                if (item.is_string())
-                {
-                    config.assets.push_back(item.get<std::string>());
-                }
-                else
-                {
-                    KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                           "%s: ignoring non-string bootstrap asset entry", path.c_str());
-                }
+                fail("unknown field in Bootstrap V2");
             }
         }
-
-        if (json.contains("scene") && json["scene"].is_object())
+        if (!source.contains("version") || !source["version"].is_number_integer() ||
+            source["version"].get<int>() != kBootstrapVersion)
         {
-            const auto &scene = json["scene"];
-            config.scene.model = scene.value("model", std::string{});
-            config.scene.material = scene.value("material", std::string{});
-            config.scene.environment = scene.value("environment", std::string{});
-            if (scene.contains("environment_intensity"))
-            {
-                const auto &intensity = scene["environment_intensity"];
-                if (!intensity.is_number() || !std::isfinite(intensity.get<float>()) ||
-                    intensity.get<float>() < 0.0f)
-                {
-                    KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                           "%s: ignoring invalid environment_intensity", path.c_str());
-                }
-                else
-                {
-                    config.scene.environment_intensity = intensity.get<float>();
-                }
-            }
-            const auto read_vector = [](const nlohmann::json &object,
-                                        const char *name,
-                                        std::array<float, 3> &destination)
-            {
-                if (!object.contains(name))
-                {
-                    return true;
-                }
-                const auto &value = object[name];
-                if (!value.is_array() || value.size() != destination.size())
-                {
-                    return false;
-                }
-                for (std::size_t index = 0; index < destination.size(); ++index)
-                {
-                    if (!value[index].is_number())
-                    {
-                        return false;
-                    }
-                    destination[index] = value[index].get<float>();
-                }
-                return true;
-            };
-            if (!config.scene.IsComplete())
-            {
-                KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                       "%s: ignoring incomplete bootstrap scene", path.c_str());
-                config.scene = {};
-            }
-            else if (!read_vector(scene, "position", config.scene.position) ||
-                     !read_vector(scene, "rotation", config.scene.rotation) ||
-                     !read_vector(scene, "scale", config.scene.scale))
-            {
-                KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                       "%s: ignoring malformed bootstrap scene transform", path.c_str());
-                config.scene = {};
-            }
-            else if (scene.contains("objects") && scene["objects"].is_array())
-            {
-                for (const auto &item : scene["objects"])
-                {
-                    BootstrapSceneObject object{};
-                    if (item.is_object())
-                    {
-                        object.model = item.value("model", std::string{});
-                        object.material = item.value("material", std::string{});
-                    }
-                    const bool valid = item.is_object() && object.IsComplete() &&
-                                       read_vector(item, "position", object.position) &&
-                                       read_vector(item, "rotation", object.rotation) &&
-                                       read_vector(item, "scale", object.scale);
-                    if (valid)
-                    {
-                        config.scene.objects.push_back(std::move(object));
-                    }
-                    else
-                    {
-                        KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                               "%s: ignoring incomplete or malformed bootstrap scene object",
-                               path.c_str());
-                    }
-                }
-            }
+            fail("unsupported or missing version");
+        }
+        if (!source.contains("startup_level") || !source["startup_level"].is_string())
+        {
+            fail("startup_level must be a non-empty .level path");
         }
 
+        BootstrapConfig config{};
+        config.version = kBootstrapVersion;
+        if (!asset::NormalizeAssetRootRelativePath(
+                source["startup_level"].get<std::string>(), asset::AssetType::KPAT_Level,
+                config.startup_level) ||
+            (config.startup_level != "level" &&
+             config.startup_level.rfind("level/", 0) != 0))
+        {
+            fail("startup_level must be an Asset-root-relative level/*.level path");
+        }
         return config;
-    }
-
-    std::vector<asset::AssetLoadRequest> BuildLoadRequests(const BootstrapConfig &config)
-    {
-        std::vector<asset::AssetLoadRequest> requests;
-        requests.reserve(config.assets.size());
-
-        // Dedup within the batch: a need-list entry listed twice must not enqueue
-        // two requests for the same asset (the loading thread would load it twice,
-        // even though AssetManager's path_index would dedup the actual disk work).
-        std::unordered_set<std::string> seen;
-        seen.reserve(config.assets.size());
-
-        for (const auto &path : config.assets)
-        {
-            const asset::AssetType type = asset::ExtractAssetType(asset::GetFileExtension(path));
-            if (type == asset::AssetType::Undefined)
-            {
-                KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                       "bootstrap: skipping \"%s\" (unknown asset extension)", path.c_str());
-                continue;
-            }
-            if (!seen.insert(path).second)
-            {
-
-                KP_LOG("BootstrapLog", LOG_LEVEL_WARNING,
-                       "bootstrap: skipping \"%s\" (duplicate need-list entry)", path.c_str());
-                continue;
-            }
-
-            std::string abs_path = GetAssetDirectory() + path;
-
-            asset::AssetLoadRequest request;
-            request.request_id = g_next_request_id++;
-            request.type = type;
-            request.path = abs_path;
-            request.state = asset::RequestState::Queued;
-            requests.push_back(std::move(request));
-        }
-
-        return requests;
     }
 }

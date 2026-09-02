@@ -5,20 +5,62 @@
 
 #include "asset/asset_manager.h"
 #include "asset/material.h"
+#include "asset/material_loader.h"
+#include "config/path.h"
 
 namespace
 {
     std::filesystem::path MakeMaterialPath(const char *name)
     {
-        return std::filesystem::temp_directory_path() / name;
+        return std::filesystem::path(kpengine::GetAssetDirectory()) / ".test_material" / name;
     }
 
     void WriteMaterialFile(const std::filesystem::path &path, const std::string &contents)
     {
+        std::filesystem::create_directories(path.parent_path());
         std::ofstream file(path);
         ASSERT_TRUE(file.is_open()) << "failed to open " << path.string();
         file << contents;
     }
+}
+
+TEST(MaterialLoaderTest, RejectsAbsoluteAndAssetRootEscapingDependencies)
+{
+    const std::filesystem::path absolute_shader =
+        MakeMaterialPath("kpengine_material_absolute_shader.material");
+    WriteMaterialFile(absolute_shader, std::string(R"({
+        "version": 1,
+        "shader": ")") + kpengine::GetShaderDirectory() + R"(simple_triangle.shader",
+        "surface": {"shading_model": "unlit", "blend_mode": "opaque", "cull_mode": "back", "double_sided": false},
+        "parameters": {}
+    })");
+
+    const std::filesystem::path absolute_texture =
+        MakeMaterialPath("kpengine_material_absolute_texture.material");
+    WriteMaterialFile(absolute_texture, std::string(R"({
+        "version": 1,
+        "shader": "../shader/simple_triangle.shader",
+        "surface": {"shading_model": "unlit", "blend_mode": "opaque", "cull_mode": "back", "double_sided": false},
+        "parameters": {"base_color_texture": ")") + kpengine::GetTextureDirectory() + R"(wallpaper.jpg"}
+    })");
+
+    const std::filesystem::path escaping_texture =
+        MakeMaterialPath("kpengine_material_escaping_texture.material");
+    WriteMaterialFile(escaping_texture, R"({
+        "version": 1,
+        "shader": "../shader/simple_triangle.shader",
+        "surface": {"shading_model": "unlit", "blend_mode": "opaque", "cull_mode": "back", "double_sided": false},
+        "parameters": {"base_color_texture": "../../../../outside.png"}
+    })");
+
+    EXPECT_FALSE(kpengine::asset::AssetManager::GetInstance().LoadSync(absolute_shader.string()).IsValid());
+    EXPECT_FALSE(kpengine::asset::AssetManager::GetInstance().LoadSync(absolute_texture.string()).IsValid());
+    EXPECT_FALSE(kpengine::asset::AssetManager::GetInstance().LoadSync(escaping_texture.string()).IsValid());
+
+    std::error_code error;
+    std::filesystem::remove(absolute_shader, error);
+    std::filesystem::remove(absolute_texture, error);
+    std::filesystem::remove(escaping_texture, error);
 }
 
 TEST(MaterialLoaderTest, LoadsVersionedUnlitMaterialSource)
@@ -40,12 +82,14 @@ TEST(MaterialLoaderTest, LoadsVersionedUnlitMaterialSource)
         }
     })");
 
-    const kpengine::asset::AssetID id = kpengine::asset::AssetManager::GetInstance().LoadSync(path.string());
-    const auto material = kpengine::asset::AssetManager::GetInstance().GetResource<kpengine::asset::MaterialResource>(id);
+    kpengine::asset::AssetRegisterInfo info{};
+    ASSERT_TRUE(kpengine::asset::MaterialLoader{}.Load(path.string(), info));
+    const auto material = std::get<kpengine::asset::MaterialPtr>(info.resource);
 
-    ASSERT_TRUE(id.IsValid());
     ASSERT_NE(material, nullptr);
-    EXPECT_EQ(id.type, kpengine::asset::AssetType::KPAT_Material);
+    EXPECT_EQ(info.type, kpengine::asset::AssetType::KPAT_Material);
+    ASSERT_EQ(info.dependency_requests.size(), 2u);
+    EXPECT_EQ(material->shader_dependency_index, 0u);
     EXPECT_EQ(material->shader_path, "../shader/simple_triangle.shader");
     EXPECT_EQ(material->surface.blend_mode, kpengine::asset::MaterialBlendMode::Opaque);
     ASSERT_EQ(material->parameters.size(), 3u);
@@ -102,12 +146,14 @@ TEST(MaterialLoaderTest, LoadsStandardPbrMaterialSource)
         }
     })");
 
-    const kpengine::asset::AssetID id = kpengine::asset::AssetManager::GetInstance().LoadSync(path.string());
-    const auto material = kpengine::asset::AssetManager::GetInstance().GetResource<kpengine::asset::MaterialResource>(id);
+    kpengine::asset::AssetRegisterInfo info{};
+    ASSERT_TRUE(kpengine::asset::MaterialLoader{}.Load(path.string(), info));
+    const auto material = std::get<kpengine::asset::MaterialPtr>(info.resource);
 
-    ASSERT_TRUE(id.IsValid());
     ASSERT_NE(material, nullptr);
-    EXPECT_EQ(id.type, kpengine::asset::AssetType::KPAT_Material);
+    EXPECT_EQ(info.type, kpengine::asset::AssetType::KPAT_Material);
+    ASSERT_EQ(info.dependency_requests.size(), 3u);
+    EXPECT_EQ(material->shader_dependency_index, 0u);
     EXPECT_EQ(material->version, 2);
     EXPECT_EQ(material->shader_path, "../shader/pbr_gbuffer.shader");
     EXPECT_EQ(material->surface.shading_model, kpengine::asset::MaterialShadingModel::StandardPbr);
@@ -119,6 +165,7 @@ TEST(MaterialLoaderTest, LoadsStandardPbrMaterialSource)
     EXPECT_EQ(material->parameters[0].type, kpengine::asset::MaterialParameterSourceType::Vector4);
     EXPECT_EQ(material->parameters[1].name, "base_color_texture");
     EXPECT_EQ(material->parameters[1].type, kpengine::asset::MaterialParameterSourceType::Texture);
+    EXPECT_EQ(material->parameters[1].dependency_index, 1u);
     EXPECT_EQ(material->parameters[2].name, "metallic");
     EXPECT_EQ(material->parameters[2].type, kpengine::asset::MaterialParameterSourceType::Scalar);
     EXPECT_EQ(std::get<float>(material->parameters[2].value), 0.1f);

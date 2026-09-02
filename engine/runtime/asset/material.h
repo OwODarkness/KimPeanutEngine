@@ -3,6 +3,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <string>
 #include <variant>
 #include <vector>
@@ -52,6 +53,7 @@ namespace kpengine::asset
         std::string name;
         MaterialParameterSourceType type = MaterialParameterSourceType::Scalar;
         MaterialParameterSourceValue value = 0.0f;
+        uint32_t dependency_index = std::numeric_limits<uint32_t>::max();
     };
 
     // Parsed, API-neutral authoring data from one .material file. It contains
@@ -60,6 +62,7 @@ namespace kpengine::asset
     {
         int version = 1;
         std::string shader_path;
+        uint32_t shader_dependency_index = std::numeric_limits<uint32_t>::max();
         MaterialSurfaceSource surface;
         std::vector<MaterialParameterSource> parameters;
     };

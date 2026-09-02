@@ -36,6 +36,16 @@ namespace kpengine::render
         int priority = 0;
     };
 
+    // Shared deterministic camera preference rule. Render passes the source
+    // handle id as the tie breaker; Runtime passes authored creation order.
+    inline bool IsCameraPreferred(int candidate_priority, uint32_t candidate_tie_breaker,
+                                  int selected_priority, uint32_t selected_tie_breaker)
+    {
+        return candidate_priority > selected_priority ||
+               (candidate_priority == selected_priority &&
+                candidate_tie_breaker < selected_tie_breaker);
+    }
+
     // Public Gameplay -> Render camera boundary. Producers submit copied
     // values and retain only the opaque registration token.
     class ICameraSourceSink

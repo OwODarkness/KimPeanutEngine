@@ -1,5 +1,7 @@
 #include "engine.h"
 #include <cassert>
+#include <exception>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 #include "runtime_global_context.h"
@@ -8,6 +10,8 @@
 #include "log/logger.h"
 #include "config/path.h"
 #include "bootstrap/bootstrap.h"
+#include "asset/asset_manager.h"
+#include "asset/utility.h"
 #include "render/render_system.h"
 #include "gameplay/world/gameplay_world.h"
 #include "editor/editor.h"
@@ -23,6 +27,26 @@ namespace kpengine
     namespace runtime
     {
 
+        template <typename Callback>
+        class ScopeGuard final
+        {
+        public:
+            explicit ScopeGuard(Callback callback) : callback_(std::move(callback)) {}
+            ~ScopeGuard() noexcept
+            {
+                if (active_)
+                {
+                    callback_();
+                }
+            }
+
+            void Dismiss() noexcept { active_ = false; }
+
+        private:
+            Callback callback_;
+            bool active_ = true;
+        };
+
         constexpr float fps_alpha = 0.1f;
 
         Engine::Engine() : editor_(std::make_unique<editor::Editor>())
@@ -31,6 +55,15 @@ namespace kpengine
 
         Engine::~Engine()
         {
+            if (render_thread_.joinable())
+            {
+                AbortStartupTransaction();
+            }
+            if (command_transport_)
+            {
+                command_transport_->Stop();
+                command_transport_.reset();
+            }
             editor_.reset();
         }
 
@@ -47,15 +80,44 @@ namespace kpengine
             }
         }
 
+        void Engine::SetStartupLevelOverride(std::string authored_or_normalized_path)
+        {
+            if (initialization_started_ || startup_level_loaded_ || render_thread_.joinable() ||
+                cleared_)
+            {
+                throw std::runtime_error(
+                    "startup level override must be set before Engine::Initialize");
+            }
+
+            std::string normalized_path;
+            if (!asset::NormalizeAssetRootRelativePath(
+                    authored_or_normalized_path, asset::AssetType::KPAT_Level, normalized_path) ||
+                normalized_path == "level" || normalized_path.rfind("level/", 0) != 0)
+            {
+                throw std::runtime_error(
+                    "startup level override must be an Asset-root-relative level/*.level path");
+            }
+            startup_level_override_ = std::move(normalized_path);
+        }
+
         void Engine::Initialize()
         {
+            if (cleared_)
+            {
+                throw std::runtime_error(
+                    "Engine cannot be initialized after Clear(); create a new Engine");
+            }
+            if (render_thread_.joinable())
+            {
+                throw std::runtime_error("Engine is already initialized");
+            }
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initializing...");
+            initialization_started_ = true;
             shutdown_requested_.store(false);
 
-            // Startup one-shot: read the need-list and enqueue it once (guarded
-            // inside). Missing bootstrap.json is a hard boot error — fail fast so
-            // a misconfigured project is obvious.
-            PreloadBootstrap();
+            // Startup one-shot: load and validate the selected level and its
+            // complete Asset dependency closure before render startup.
+            LoadStartupLevel();
 
             // Editor setup (pointers into the runtime context, no GPU state) is safe
             // on the main thread; its ImGui UI is built on the render thread by
@@ -66,7 +128,18 @@ namespace kpengine
             // below; it creates the window/context itself (RenderThreadFunc) so the GPU
             // context lives on the render thread.
             global_runtime_context.game_thread_id_ = std::this_thread::get_id();
+            {
+                std::lock_guard<std::mutex> lock(render_start_mutex_);
+                is_render_thread_loaded_ = false;
+                render_start_succeeded_ = false;
+                render_start_diagnostic_.clear();
+            }
+            {
+                std::lock_guard<std::mutex> lock(startup_decision_mutex_);
+                startup_decision_ = StartupDecision::Pending;
+            }
             render_thread_ = std::thread(&Engine::RenderThreadFunc, this);
+            auto startup_guard = ScopeGuard{[this]() noexcept { AbortStartupTransaction(); }};
 
             // Wait for the render thread to finish window/context setup before
             // returning, so the game thread can start producing frames safely.
@@ -76,10 +149,37 @@ namespace kpengine
                                       { return is_render_thread_loaded_; });
             }
 
-            // Runtime owns game-start composition; Engine only establishes the
-            // thread/lifecycle boundary after render startup is complete.
-            global_runtime_context.FinalizeGameStartup();
+            bool render_start_succeeded = false;
+            std::string render_start_diagnostic;
+            {
+                std::lock_guard<std::mutex> lock(render_start_mutex_);
+                render_start_succeeded = render_start_succeeded_;
+                render_start_diagnostic = render_start_diagnostic_;
+            }
+            if (!render_start_succeeded)
+            {
+                if (render_thread_.joinable())
+                {
+                    render_thread_.join();
+                }
+                throw std::runtime_error(
+                    "RenderSystem startup failed: " + render_start_diagnostic);
+            }
 
+            // Runtime owns game-start composition. Render remains parked until
+            // the game thread commits or aborts this transaction.
+            const RuntimeContext::StartupResult startup_result =
+                global_runtime_context.FinalizeGameStartup();
+            if (!startup_result)
+            {
+                PublishStartupDecision(StartupDecision::Abort);
+                throw std::runtime_error("Runtime startup failed: " + startup_result.diagnostic);
+            }
+
+            // Complete all game-thread work that may throw before publishing
+            // Commit. Once Commit is visible, the render thread may begin
+            // teardown independently, so no further RuntimeContext access is
+            // allowed on this thread during Initialize().
             if (command_transport_config_.enabled)
             {
                 command::CommandRegistry *registry = global_runtime_context.GetCommandRegistry();
@@ -108,65 +208,79 @@ namespace kpengine
                 }
             }
 
+            PublishStartupDecision(StartupDecision::Commit);
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initialize successfully");
+            startup_guard.Dismiss();
         }
 
-        void Engine::PreloadBootstrap()
+        void Engine::PublishStartupDecision(const StartupDecision decision) noexcept
         {
-            // "load once": a second Initialize() (or a re-run of this method) is a
-            // no-op once the batch is on the queue. bootstrap_loaded_ flips only
-            // after a successful enqueue, so a failed read stays retryable.
-            if (bootstrap_loaded_)
+            {
+                std::lock_guard<std::mutex> lock(startup_decision_mutex_);
+                if (startup_decision_ == StartupDecision::Pending)
+                {
+                    startup_decision_ = decision;
+                }
+            }
+            startup_decision_cv_.notify_all();
+        }
+
+        void Engine::AbortStartupTransaction() noexcept
+        {
+            shutdown_requested_.store(true, std::memory_order_release);
+            {
+                std::lock_guard<std::mutex> lock(game_ready_mutex_);
+                is_game_thread_loaded_ = true;
+            }
+            game_ready_cv_.notify_all();
+            PublishStartupDecision(StartupDecision::Abort);
+            if (render_thread_.joinable())
+            {
+                render_thread_.join();
+            }
+        }
+
+        void Engine::LoadStartupLevel()
+        {
+            if (startup_level_loaded_)
             {
                 return;
             }
 
             const bootstrap::BootstrapConfig config = bootstrap::ReadBootstrap(GetBootstrapPath());
-            render::BootstrapSceneInfo scene_info{};
-            if (config.scene.IsComplete())
+            const bool has_override = startup_level_override_.has_value();
+            const std::string &selected_level =
+                has_override ? *startup_level_override_ : config.startup_level;
+            const char *selection_source = has_override ? "CLI --startup-level" : "Bootstrap";
+            asset::AssetID level_asset{};
+            try
             {
-                scene_info.model_path = GetAssetDirectory() + config.scene.model;
-                scene_info.material_path = GetAssetDirectory() + config.scene.material;
-                if (!config.scene.environment.empty())
-                {
-                    scene_info.environment_path =
-                        GetAssetDirectory() + config.scene.environment;
-                }
-                scene_info.environment_ibl_intensity = config.scene.environment_intensity;
-                scene_info.world_transform.position_ =
-                    {config.scene.position[0], config.scene.position[1], config.scene.position[2]};
-                scene_info.world_transform.rotator_ =
-                    {config.scene.rotation[0], config.scene.rotation[1], config.scene.rotation[2]};
-                scene_info.world_transform.scale_ =
-                    {config.scene.scale[0], config.scene.scale[1], config.scene.scale[2]};
+                level_asset = asset::AssetManager::GetInstance().LoadSync(
+                    GetAssetDirectory() + selected_level);
             }
-            for (const bootstrap::BootstrapSceneObject &object : config.scene.objects)
+            catch (const std::exception &error)
             {
-                render::BootstrapSceneObjectInfo render_object{};
-                render_object.model_path = GetAssetDirectory() + object.model;
-                render_object.material_path = GetAssetDirectory() + object.material;
-                render_object.world_transform.position_ =
-                    {object.position[0], object.position[1], object.position[2]};
-                render_object.world_transform.rotator_ =
-                    {object.rotation[0], object.rotation[1], object.rotation[2]};
-                render_object.world_transform.scale_ =
-                    {object.scale[0], object.scale[1], object.scale[2]};
-                scene_info.objects.push_back(std::move(render_object));
+                throw std::runtime_error(std::string{selection_source} +
+                                         " startup level failed to load '" + selected_level +
+                                         "': " + error.what());
             }
-            global_runtime_context.SetBootstrapScene(std::move(scene_info));
-            std::vector<asset::AssetLoadRequest> requests = bootstrap::BuildLoadRequests(config);
-            for (auto &request : requests)
+            if (!level_asset.IsValid() || level_asset.type != asset::AssetType::KPAT_Level)
             {
-                global_runtime_context.async_load_queue_.Push(std::move(request));
+                throw std::runtime_error(std::string{selection_source} +
+                                         " startup level could not be loaded: " + selected_level);
             }
-
-            KP_LOG("EngineLog", LOG_LEVEL_INFO, "Bootstrap preload: enqueued %zu asset request(s) for async loading",
-                   requests.size());
-            bootstrap_loaded_ = true;
+            global_runtime_context.SetStartupLevel(level_asset);
+            KP_LOG("EngineLog", LOG_LEVEL_INFO,
+                   "Startup level loaded from %s: %s", selection_source, selected_level.c_str());
+            startup_level_loaded_ = true;
         }
 
         void Engine::Clear()
         {
+            if (render_thread_.joinable())
+            {
+                AbortStartupTransaction();
+            }
             if (command_transport_)
             {
                 command_transport_->Stop();
@@ -177,9 +291,10 @@ namespace kpengine
             // editor-side context.
             editor_->Clear();
 
-            // A fresh engine cycle re-preloads: Initialize() after Clear() must not
-            // be treated as a no-op bootstrap.
-            bootstrap_loaded_ = false;
+            // RuntimeContext::Clear() is terminal: it releases the global
+            // composition root rather than leaving a reconstructible shell.
+            startup_level_loaded_ = false;
+            cleared_ = true;
         }
 
         void Engine::Run()
@@ -204,7 +319,10 @@ namespace kpengine
             }
             game_ready_cv_.notify_all();
 
-            render_thread_.join();
+            if (render_thread_.joinable())
+            {
+                render_thread_.join();
+            }
         }
 
         void Engine::GameTick()
@@ -249,35 +367,145 @@ namespace kpengine
             // [thread model] The render thread owns the window + GPU context: it creates
             // them here (context.Initialize builds the window on this thread), then
             // presents every frame.
-            global_runtime_context.Initialize();
-            global_runtime_context.PostInitialize();
-            global_runtime_context.render_thread_id_ = std::this_thread::get_id();
-
+            bool render_start_signaled = false;
+            bool editor_ui_initialized = false;
+            bool context_cleared = false;
+            const auto clear_context = [this, &context_cleared]() noexcept
             {
-                std::lock_guard<std::mutex> lock(render_start_mutex_);
-                is_render_thread_loaded_ = true;
-            }
-            render_start_cv_.notify_one();
-
-            // ImGui must be built and used on the thread that owns the GL/Vulkan
-            // context — that is this thread, so the editor UI lives here.
-            editor_->InitEditorUI();
-
-            while (!shutdown_requested_.load())
-            {
-                RenderTick();
-                // GLFW event handling and its close flag are render-thread-owned.
-                // Publish close to the game thread instead of reading GLFW there.
-                if (global_runtime_context.window_system_->ShouldClose())
+                if (context_cleared)
                 {
-                    shutdown_requested_.store(true);
+                    return;
                 }
+                context_cleared = true;
+                try
+                {
+                    global_runtime_context.Clear();
+                }
+                catch (...)
+                {
+                    // A thread entry point must never let cleanup escape into
+                    // std::thread; the owning Engine still joins this thread.
+                }
+            };
+            const auto signal_render_start =
+                [this, &render_start_signaled](bool succeeded, const char *diagnostic) noexcept
+            {
+                if (render_start_signaled)
+                {
+                    return;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(render_start_mutex_);
+                    if (is_render_thread_loaded_)
+                    {
+                        render_start_signaled = true;
+                        return;
+                    }
+                    render_start_diagnostic_ = diagnostic != nullptr ? diagnostic : "";
+                    render_start_succeeded_ = succeeded;
+                    is_render_thread_loaded_ = true;
+                    render_start_signaled = true;
+                }
+                render_start_cv_.notify_all();
+            };
+
+            try
+            {
+                global_runtime_context.Initialize();
+                global_runtime_context.PostInitialize();
+                global_runtime_context.render_thread_id_ = std::this_thread::get_id();
+            }
+            catch (const std::exception &error)
+            {
+                signal_render_start(false, error.what());
+                PublishStartupDecision(StartupDecision::Abort);
+                shutdown_requested_.store(true, std::memory_order_release);
+                clear_context();
+                return;
+            }
+            catch (...)
+            {
+                signal_render_start(false, "unknown RenderSystem startup exception");
+                PublishStartupDecision(StartupDecision::Abort);
+                shutdown_requested_.store(true, std::memory_order_release);
+                clear_context();
+                return;
             }
 
-            // Shut ImGui down on the same thread that built it, before the window
-            // teardown at exit.
-            editor_->CloseUI();
-            global_runtime_context.Clear();
+            signal_render_start(true, "");
+
+            try
+            {
+                {
+                    std::unique_lock<std::mutex> lock(startup_decision_mutex_);
+                    startup_decision_cv_.wait(lock, [this]
+                                              { return startup_decision_ != StartupDecision::Pending; });
+                    if (startup_decision_ == StartupDecision::Abort)
+                    {
+                        lock.unlock();
+                        clear_context();
+                        return;
+                    }
+                }
+
+                // ImGui must be built and used on the thread that owns the GL/Vulkan
+                // context — that is this thread, so the editor UI lives here.
+                editor_->InitEditorUI();
+                editor_ui_initialized = true;
+
+                while (!shutdown_requested_.load(std::memory_order_acquire))
+                {
+                    RenderTick();
+                    // GLFW event handling and its close flag are render-thread-owned.
+                    // Publish close to the game thread instead of reading GLFW there.
+                    if (global_runtime_context.window_system_->ShouldClose())
+                    {
+                        shutdown_requested_.store(true, std::memory_order_release);
+                    }
+                }
+
+                // Shut ImGui down on the same thread that built it, before the window
+                // teardown at exit.
+                editor_->CloseUI();
+                editor_ui_initialized = false;
+                clear_context();
+            }
+            catch (const std::exception &error)
+            {
+                shutdown_requested_.store(true, std::memory_order_release);
+                PublishStartupDecision(StartupDecision::Abort);
+                if (editor_ui_initialized)
+                {
+                    try
+                    {
+                        editor_->CloseUI();
+                    }
+                    catch (...)
+                    {
+                    }
+                }
+                clear_context();
+                KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                       "Render thread failed after startup: %s", error.what());
+            }
+            catch (...)
+            {
+                shutdown_requested_.store(true, std::memory_order_release);
+                PublishStartupDecision(StartupDecision::Abort);
+                if (editor_ui_initialized)
+                {
+                    try
+                    {
+                        editor_->CloseUI();
+                    }
+                    catch (...)
+                    {
+                    }
+                }
+                clear_context();
+                KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                       "Render thread failed after startup: unknown exception");
+            }
         }
 
         void Engine::RenderTick()

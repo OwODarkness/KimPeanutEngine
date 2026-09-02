@@ -1,9 +1,8 @@
 #include "runtime/engine.h"
+#include "runtime/launch_options.h"
 
 #include <cstdio>
 #include <exception>
-#include <cstdlib>
-#include <string_view>
 
 // [old design] The entry point used to run one-off example tests, switched by
 // uncommenting calls in main(). The engine boot now owns main(); the test
@@ -36,51 +35,20 @@ using namespace kpengine::runtime;
 
 int main(int argc, char **argv)
 {
-    Engine engine;
-
-    for (int argument_index = 1; argument_index < argc; ++argument_index)
+    const auto launch_options = ParseRuntimeLaunchOptions(argc, argv);
+    if (!launch_options)
     {
-        const std::string_view argument{argv[argument_index]};
-        if (argument == "--agent-port" && argument_index + 1 < argc)
-        {
-            const int port = std::atoi(argv[++argument_index]);
-            if (port <= 0 || port > 65535)
-            {
-                std::fprintf(stderr, "--agent-port requires a port from 1 to 65535\n");
-                return 1;
-            }
-            kpengine::runtime::command::LocalCommandTransportConfig config{};
-            config.enabled = true;
-            config.port = static_cast<uint16_t>(port);
-            engine.SetCommandTransportConfig(config);
-        }
-        else if (argument == "--agent-port")
-        {
-            std::fprintf(stderr, "--agent-port requires a port from 1 to 65535\n");
-            return 1;
-        }
-        else if (argument == "--graphics-api" && argument_index + 1 < argc)
-        {
-            const std::string_view api{argv[++argument_index]};
-            if (api == "vulkan")
-            {
-                engine.SetGraphicsAPI(kpengine::GraphicsAPIType::GRAPHICS_API_VULKAN);
-            }
-            else if (api == "opengl")
-            {
-                engine.SetGraphicsAPI(kpengine::GraphicsAPIType::GRAPHICS_API_OPENGL);
-            }
-            else
-            {
-                std::fprintf(stderr, "--graphics-api requires vulkan or opengl\n");
-                return 1;
-            }
-        }
-        else if (argument == "--graphics-api")
-        {
-            std::fprintf(stderr, "--graphics-api requires vulkan or opengl\n");
-            return 1;
-        }
+        std::fprintf(stderr, "KimPeanut Engine command line error: %s\n",
+                     launch_options.diagnostic.c_str());
+        return 1;
+    }
+
+    Engine engine;
+    engine.SetCommandTransportConfig(launch_options.options.command_transport_config);
+    engine.SetGraphicsAPI(launch_options.options.graphics_api_type);
+    if (launch_options.options.startup_level_override.has_value())
+    {
+        engine.SetStartupLevelOverride(*launch_options.options.startup_level_override);
     }
 
     // Boot failure (e.g. missing config/bootstrap.json) surfaces here before the
