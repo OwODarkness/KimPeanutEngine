@@ -17,6 +17,9 @@
 #include "graphics/backend/common/command_recorder.h"
 #include "graphics/backend/common/render_backend.h"
 #include "log/log_system.h"
+#include "resource/resource_pipeline.h"
+#include "render/deferred_renderer.h"
+#include "render/render_resource_resolver.h"
 #include "render/render_system.h"
 
 namespace
@@ -35,13 +38,23 @@ namespace
         bool fail_initialize = false;
         bool fail_uniform_mapping = false;
         bool fail_render_target = false;
+        int fail_render_target_after = -1;
         bool fail_texture_creation = false;
+        bool fail_mesh_creation = false;
+        bool fail_sampler_creation = false;
         std::vector<std::string> events;
         std::vector<TargetRecord> targets;
         int wait_idle_count = 0;
         int cleanup_count = 0;
         int readback_count = 0;
         int texture_create_count = 0;
+        int pipeline_create_count = 0;
+        int pipeline_destroy_count = 0;
+        int mesh_create_count = 0;
+        int mesh_destroy_count = 0;
+        int sampler_create_count = 0;
+        int sampler_destroy_count = 0;
+        int render_target_destroy_count = 0;
         std::vector<std::array<uint32_t, 4>> environment_binding_snapshots;
     };
 
@@ -126,17 +139,33 @@ namespace
 
         graphics::PipelineHandle CreatePipelineResource(const graphics::PipelineDesc &) override
         {
+            ++probe_->pipeline_create_count;
             return MakeHandle<graphics::PipelineHandle>();
         }
 
-        bool DestroyPipelineResource(graphics::PipelineHandle) override { return true; }
+        bool DestroyPipelineResource(graphics::PipelineHandle) override
+        {
+            ++probe_->pipeline_destroy_count;
+            probe_->events.push_back("destroy_pipeline");
+            return true;
+        }
 
         graphics::MeshHandle CreateMesh(const data::MeshData &) override
         {
+            ++probe_->mesh_create_count;
+            if (probe_->fail_mesh_creation)
+            {
+                return {};
+            }
             return MakeHandle<graphics::MeshHandle>();
         }
 
-        bool DestroyMesh(graphics::MeshHandle) override { return true; }
+        bool DestroyMesh(graphics::MeshHandle) override
+        {
+            ++probe_->mesh_destroy_count;
+            probe_->events.push_back("destroy_mesh");
+            return true;
+        }
 
         graphics::TextureHandle CreateTexture(const data::TextureData &,
                                               const graphics::TextureSettings &) override
@@ -153,15 +182,27 @@ namespace
 
         graphics::SamplerHandle CreateSampler(const graphics::SamplerSettings &) override
         {
+            ++probe_->sampler_create_count;
+            if (probe_->fail_sampler_creation)
+            {
+                return {};
+            }
             return MakeHandle<graphics::SamplerHandle>();
         }
 
-        bool DestroySampler(graphics::SamplerHandle) override { return true; }
+        bool DestroySampler(graphics::SamplerHandle) override
+        {
+            ++probe_->sampler_destroy_count;
+            probe_->events.push_back("destroy_sampler");
+            return true;
+        }
 
         graphics::RenderTargetHandle CreateRenderTarget(
             const graphics::RenderTargetDesc &desc) override
         {
-            if (probe_->fail_render_target)
+            if (probe_->fail_render_target ||
+                (probe_->fail_render_target_after >= 0 &&
+                 static_cast<int>(probe_->targets.size()) >= probe_->fail_render_target_after))
             {
                 return {};
             }
@@ -177,7 +218,12 @@ namespace
             return handle;
         }
 
-        bool DestroyRenderTarget(graphics::RenderTargetHandle) override { return true; }
+        bool DestroyRenderTarget(graphics::RenderTargetHandle) override
+        {
+            ++probe_->render_target_destroy_count;
+            probe_->events.push_back("destroy_target");
+            return true;
+        }
 
         graphics::TextureHandle GetRenderTargetColor(graphics::RenderTargetHandle target) override
         {
@@ -402,6 +448,90 @@ TEST(RenderSystemLifecycleTest, RollsBackWhenARequiredCollaboratorFails)
               probe->events.end());
 }
 
+TEST(RenderSystemLifecycleTest, RendererTargetInitializationRollsBackPartialOwnership)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    probe->fail_render_target_after = 3;
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    const render::RenderSystemInitResult result = system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); }));
+
+    EXPECT_FALSE(result);
+    EXPECT_EQ(probe->render_target_destroy_count, 3);
+    EXPECT_EQ(probe->cleanup_count, 1);
+    const auto destroy_it =
+        std::find(probe->events.begin(), probe->events.end(), "destroy_target");
+    const auto cleanup_it =
+        std::find(probe->events.begin(), probe->events.end(), "backend_cleanup");
+    ASSERT_NE(destroy_it, probe->events.end());
+    ASSERT_NE(cleanup_it, probe->events.end());
+    EXPECT_LT(destroy_it, cleanup_it);
+}
+
+TEST(RenderSystemLifecycleTest, FullscreenMeshSurvivesSamplerRetryFailure)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    probe->fail_sampler_creation = true;
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                       { return std::make_unique<FakeBackend>(probe); })));
+
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    system.Shutdown();
+
+    // The normal frame asks for the fullscreen pair from both deferred
+    // lighting and tone mapping. A failed sampler must not recreate the mesh.
+    EXPECT_EQ(probe->mesh_create_count, 1);
+    EXPECT_EQ(probe->mesh_destroy_count, 1);
+    EXPECT_EQ(probe->sampler_destroy_count, 0);
+}
+
+TEST(RenderSystemLifecycleTest, FullscreenSamplerSurvivesMeshRetryFailure)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    probe->fail_mesh_creation = true;
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                       { return std::make_unique<FakeBackend>(probe); })));
+
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    system.Shutdown();
+
+    // The mesh failure is retried by both consumers, but the successful
+    // sampler remains the renderer-owned resource for cleanup.
+    EXPECT_EQ(probe->sampler_create_count, 1);
+    EXPECT_EQ(probe->sampler_destroy_count, 1);
+}
+
+TEST(DeferredRendererTest, OwnsTargetLifetimeAndCleanupIsIdempotent)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    FakeBackend backend(probe);
+    resource::ResourcePipeline resource_pipeline;
+    resource_pipeline.Initialize({GraphicsAPIType::GRAPHICS_API_OPENGL});
+    render::MaterialSystem materials;
+    render::RenderResourceResolver resolver(backend, resource_pipeline);
+    render::DeferredRenderer renderer;
+
+    ASSERT_TRUE(renderer.Initialize({backend, resource_pipeline, resolver, materials}, 320, 200));
+    EXPECT_TRUE(renderer.IsPassSequenceValid());
+    renderer.Cleanup();
+    renderer.Cleanup();
+
+    EXPECT_EQ(probe->render_target_destroy_count,
+              static_cast<int>(probe->targets.size()));
+    EXPECT_EQ(probe->cleanup_count, 0);
+    resolver.Cleanup();
+}
+
 TEST(RenderSystemLifecycleTest, CharacterizesFrameCaptureResizeEditorAndTeardownOrder)
 {
     const auto probe = std::make_shared<BackendProbe>();
@@ -467,6 +597,23 @@ TEST(RenderSystemLifecycleTest, CharacterizesFrameCaptureResizeEditorAndTeardown
     ASSERT_NE(wait_it, probe->events.end());
     ASSERT_NE(cleanup_it, probe->events.end());
     EXPECT_LT(wait_it, cleanup_it);
+    EXPECT_EQ(probe->render_target_destroy_count,
+              static_cast<int>(probe->targets.size()));
+    const auto last_destroy_it =
+        std::find(probe->events.rbegin(), probe->events.rend(), "destroy_target");
+    ASSERT_NE(last_destroy_it, probe->events.rend());
+    EXPECT_LT(last_destroy_it.base() - 1, cleanup_it);
+
+    EXPECT_EQ(probe->pipeline_create_count, probe->pipeline_destroy_count);
+    EXPECT_EQ(probe->mesh_create_count, probe->mesh_destroy_count);
+    EXPECT_EQ(probe->sampler_create_count, probe->sampler_destroy_count);
+    for (const char *event_name : {"destroy_pipeline", "destroy_mesh", "destroy_sampler"})
+    {
+        const auto last_destroy =
+            std::find(probe->events.rbegin(), probe->events.rend(), event_name);
+        ASSERT_NE(last_destroy, probe->events.rend()) << event_name;
+        EXPECT_LT(last_destroy.base() - 1, cleanup_it) << event_name;
+    }
 }
 
 TEST(RenderSystemEnvironmentTest, ResolvesReadyAssetIDsAndReusesDerivedBindings)

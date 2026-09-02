@@ -16,17 +16,22 @@ encoding, synchronization, and GPU destruction safety.
 
 ## Frame policy
 
-The current renderer uses an explicit ordered pass schedule rather than a
-general render graph. Scene passes write the logical `SceneColor`; the terminal
-editor composite consumes it after input polling. Logical resource names and
-pass dependencies remain Render vocabulary and do not expose `Vk*`, OpenGL,
-queues, or command buffers.
+The current renderer uses one immutable, explicitly ordered
+`FixedRenderPassSequence` rather than a general render graph. Each closed typed
+pass ID carries its logical resources, execution owner, condition, and terminal
+policy; static validation binds the ID to its canonical ordinal. A short-lived
+`FixedRenderPassFrame` visits that same sequence and records execution, skip,
+and failure outcomes. Scene passes write the logical `SceneColor`; the
+terminal editor composite consumes it after input polling. Logical resource
+names and pass dependencies remain Render vocabulary and do not expose `Vk*`,
+OpenGL, queues, or command buffers.
 
-Today `RenderPassSchedule` validates declarations, while
-`RenderSystem::BeginFrame()` independently invokes the pass-recording methods.
-That duplicated ordering is transitional and can drift. The
-[R1 responsibility split](.plan/R1.md) makes one fixed sequence own both each
-pass declaration and its invocation before any render-graph decision.
+`DeferredRenderer::ExecutePass()` maps each renderer-owned ID to one recording
+operation, while the frame cursor gates conditional capture and the optional
+external editor terminal. Renderer failure remains fail-soft for the frame,
+but is observable in the per-pass outcomes. This keeps declaration and
+execution on one closed contract without introducing render-graph compilation,
+resource aliasing, or synchronization inference.
 
 `RenderWorld` resolves Gameplay-produced value-only source records into private
 `MeshProxy` state. Gameplay cannot hold `MeshProxy`, material, RHI, or backend

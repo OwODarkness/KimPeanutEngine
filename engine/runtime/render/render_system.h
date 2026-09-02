@@ -3,10 +3,8 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <array>
 #include <functional>
 #include <memory>
-#include <optional>
 #include <string>
 #include <unordered_map>
 #include <vector>
@@ -19,27 +17,20 @@
 #include "delegate/event_dispatcher.h"
 #include "graphics/backend/common/api.h"
 #include "camera_source_registry.h"
+#include "deferred_renderer.h"
 #include "environment_source_registry.h"
 #include "frame_context.h"
 #include "render/light/light_source_registry.h"
 #include "render/material/material_system.h"
 #include "render/render_capture_service.h"
 #include "render_camera.h"
-#include "render_pass.h"
-#include "render_target.h"
 #include "render_resource.h"
 #include "render_source_registry.h"
 #include "render_world/render_world.h"
-#include "renderer_frame_targets.h"
 
 namespace kpengine::graphics
 {
     class RenderBackend;
-}
-
-namespace kpengine::data
-{
-    struct TextureData;
 }
 
 namespace kpengine::resource
@@ -131,7 +122,7 @@ namespace kpengine::render
         const RenderCacheEntry *GetCached(asset::RequestID request_id) const;
         graphics::PipelineHandle GetPipeline(asset::RequestID request_id) const;
         GraphicsContext GetGraphicsContext();
-        const RenderTarget &GetSceneRenderTarget() const { return *frame_targets_.GetTarget(RenderTargetName::SceneColor); }
+        const RenderTarget &GetSceneRenderTarget() const;
         // The editor provides its available viewport extent. Reallocation happens
         // at the next safe frame boundary, never while UI is reading the view.
         void RequestSceneRenderTargetExtent(uint32_t width, uint32_t height);
@@ -149,27 +140,6 @@ namespace kpengine::render
         // and cancels any pending request before this object is destroyed.
         IRenderCaptureService *GetRenderCaptureService();
     private:
-        struct EnvironmentBindingBundle
-        {
-            asset::AssetID source_asset;
-            TextureBinding panorama;
-            TextureBinding irradiance;
-            TextureBinding prefiltered_radiance;
-            TextureBinding brdf_lut;
-            uint32_t prefilter_level_count = 0;
-            float ibl_intensity = 0.25f;
-            bool ibl_enabled = false;
-
-            bool HasCompleteBindings() const
-            {
-                return panorama.texture.IsValid() && panorama.sampler.IsValid() &&
-                       irradiance.texture.IsValid() && irradiance.sampler.IsValid() &&
-                       prefiltered_radiance.texture.IsValid() &&
-                       prefiltered_radiance.sampler.IsValid() && brdf_lut.texture.IsValid() &&
-                       brdf_lut.sampler.IsValid();
-            }
-        };
-
         // RuntimeContext is the normal composition root. The public lifecycle
         // functions remain directly callable so orchestration can be tested with
         // an injected existing RenderBackend factory.
@@ -192,66 +162,6 @@ namespace kpengine::render
 
         const RenderCacheEntry *FindCached(asset::AssetID asset_id) const;
         void DestroyMaterialAssetRecords();
-        void ConfigurePassSchedule();
-        void RecordDirectionalShadowPass();
-        void RecordSpotShadowPass();
-        void RecordPointShadowPass();
-        void RecordGBufferPass();
-        void RecordDeferredLightingPass();
-        void RecordGBufferDebugViewPass();
-        void RecordToneMapPass();
-        void RecordPendingCapturePass();
-        bool RecordCaptureViewPass(CaptureView view);
-        bool PrepareDirectionalShadowPassResources();
-        bool PrepareFullscreenPassResources();
-        bool PrepareDeferredLightingPassResources();
-        bool PrepareEnvironmentIbl(asset::AssetID source_asset,
-                                   const data::TextureData &source,
-                                   EnvironmentBindingBundle &bundle);
-        bool EnsureEnvironmentFallbackBindings();
-        bool ResolveLevelEnvironment(const EnvironmentSourceDesc &source,
-                                     EnvironmentBindingBundle &bundle);
-        bool PrepareGBufferDebugPassResources();
-        bool PrepareToneMapPassResources();
-        bool PrepareCaptureViewPassResources();
-        struct PointShadowFrame
-        {
-            ShadowJobDesc job;
-            ShadowHandle shadow;
-            Vector3f position;
-            float near_plane = 0.01f;
-            float far_plane = 1.0f;
-            std::array<Matrix4f, 6> face_view_projections{};
-        };
-        struct DirectionalShadowFrame
-        {
-            ShadowJobDesc job;
-            ShadowHandle shadow;
-            Vector3f light_direction;
-            Matrix4f view;
-            Matrix4f projection;
-        };
-        struct SpotShadowFrame
-        {
-            ShadowJobDesc job;
-            ShadowHandle shadow;
-            Vector3f position;
-            Vector3f light_direction;
-            float outer_cone_radians = 0.0f;
-            float near_plane = 0.01f;
-            float far_plane = 1.0f;
-            Matrix4f view;
-            Matrix4f projection;
-        };
-        std::optional<DirectionalShadowFrame> ScheduleDirectionalShadow(
-            const std::vector<Light> &lights) const;
-        std::optional<SpotShadowFrame> ScheduleSpotShadow(const std::vector<Light> &lights) const;
-        std::optional<PointShadowFrame> SchedulePointShadow(const std::vector<Light> &lights) const;
-        void RecordShadowCaster(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
-                                graphics::CommandRecorder &recorder);
-        void RecordMeshProxy(const MeshProxy &proxy, const graphics::PerPassData &per_pass_data,
-                             graphics::CommandRecorder &recorder, MaterialPass pass);
-        void ApplyPendingSceneRenderTargetExtent();
         void ApplyDefaultCamera();
         FrameContext *GetCurrentFrameContext();
 
@@ -260,9 +170,7 @@ namespace kpengine::render
         std::unique_ptr<graphics::RenderBackend> backend_;
         std::unique_ptr<MaterialSystem> material_system_;
         std::unique_ptr<RenderResourceResolver> resource_resolver_;
-        RendererFrameTargets frame_targets_;
-        RenderPassSchedule pass_schedule_;
-        graphics::Extent2D pending_scene_render_target_extent_;
+        std::unique_ptr<DeferredRenderer> deferred_renderer_;
         std::vector<FrameContext> frame_contexts_;
         RenderWorld render_world_;
         RenderableSourceRegistry source_registry_;
@@ -270,13 +178,6 @@ namespace kpengine::render
         LightSourceRegistry light_source_registry_;
         CameraSourceRegistry camera_source_registry_;
         EnvironmentSourceRegistry environment_source_registry_;
-        FrameLightingBinding frame_lighting_binding_;
-        std::optional<DirectionalShadowFrame> active_directional_shadow_;
-        std::optional<SpotShadowFrame> active_spot_shadow_;
-        std::optional<PointShadowFrame> active_point_shadow_;
-        bool spot_shadow_recorded_ = false;
-        bool point_shadow_recorded_ = false;
-        bool point_shadow_profile_logged_ = false;
         RenderCamera scene_camera_;
         std::unique_ptr<MaterialAssetResolver> material_asset_resolver_;
         std::unique_ptr<RenderCaptureService> render_capture_service_;
@@ -286,26 +187,10 @@ namespace kpengine::render
 
         std::unordered_map<asset::RequestID, RenderCacheEntry> render_cache_;
         FrameContext *active_frame_context_ = nullptr;
-        bool editor_composite_recorded_ = false;
         RenderSystemLifecycleState lifecycle_state_ =
             RenderSystemLifecycleState::Uninitialized;
         std::string last_diagnostic_;
         bool backend_initialized_ = false;
-        // Lazily built fullscreen resources. Pipelines remain pass-specific;
-        // the immutable triangle mesh and sampler are shared by Render passes.
-        graphics::PipelineHandle deferred_lighting_pipeline_;
-        graphics::PipelineHandle gbuffer_debug_pipeline_;
-        graphics::PipelineHandle capture_view_pipeline_;
-        graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;
-        graphics::SamplerHandle gbuffer_debug_sampler_;
-        graphics::SamplerHandle directional_shadow_sampler_;
-        graphics::SamplerHandle spot_shadow_sampler_;
-        graphics::SamplerHandle point_shadow_sampler_;
-        EnvironmentBindingBundle level_environment_;
-        EnvironmentBindingBundle active_environment_;
-        std::optional<EnvironmentSourceHandle> failed_environment_source_;
-        graphics::PipelineHandle tone_map_pipeline_;
-        graphics::PipelineHandle directional_shadow_pipeline_;
     };
 }
 

@@ -47,6 +47,14 @@ schedule while separating those existing ownership domains.
 - [R1 — RenderSystem responsibility split](.plan/R1.md) — characterize and
   reduce the current facade/renderer/resource/lifecycle coupling without
   introducing a render graph.
+- [R1.2 — deferred renderer and pass-owned state](.plan/R1.2.md) — move the
+  current deferred renderer's targets, pass state, environment/shadow policy,
+  recording, and cleanup behind one concrete collaborator while preserving the
+  R1.1 facade and frame behavior.
+- [R1.3 — fixed pass declaration/execution unification](.plan/R1.3.md) — use
+  one immutable typed sequence for logical validation, renderer invocation,
+  conditional capture conversion, and optional external terminal composition;
+  do not introduce graph algorithms.
 
 ## Focused submodules
 

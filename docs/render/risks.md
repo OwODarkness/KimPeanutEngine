@@ -4,24 +4,33 @@ This is the Render-wide risk register. Submodule-specific feature risks remain
 in their plans and TODOs. The cleanup design for the risks below is
 [R1 — RenderSystem Responsibility Split](.plan/R1.md).
 
-R1.1 characterization landed 2026-09-01. Direct orchestration tests now cover
+R1.1 characterization landed 2026-09-01. The focused
+[R1.2 extraction plan](.plan/R1.2.md) started implementation 2026-09-02. Direct
+orchestration tests now cover
 partial initialization rollback, the observed fixed target/pass order,
 conditional SceneColor readback, resize safe-point waiting, editor terminal
-composition, and teardown ordering. RS-3 and RS-6 remain relevant to the later
-renderer extraction, but their pre-extraction lifecycle/test gaps are closed.
+composition, and teardown ordering. The extraction, ownership probes, full
+build, dual-backend smoke, and fresh visual evidence are landed; remaining
+risks are tracked by the later R1.3/R1.4 stages.
+
+R1.3 implementation landed 2026-09-02 under the predecessor evidence waiver.
+The immutable typed sequence and frame cursor now have canonical-ID and
+moved-from-cursor regression coverage; focused/full build, CTest, and
+dual-backend smoke pass. Fresh Runtime startup-level captures were also
+exported and inspected.
 
 ## Active architecture risks
 
 | ID | Severity | Risk | Current evidence | Required control |
 | --- | --- | --- | --- | --- |
-| RS-1 | High | Pass declarations and pass execution can diverge. | `RenderPassSchedule` validates a declaration list, but `RenderSystem::BeginFrame()` separately calls the shadow, G-buffer, lighting, tone-map, and capture recorders. It does not execute the validated list. | One fixed sequence must pair resource declarations with the operation actually invoked, including conditional capture and the terminal editor pass. |
-| RS-2 | High | `RenderSystem` is a change-amplification and ownership hotspot. | Roughly 2,400 implementation lines and 290 header lines cover bootstrap, loading, resource baking/cache, registries, camera, all deferred passes, capture, resize, editor composition, and teardown. | Keep it as a thin composition/frame facade; move present pass policy/state into a cohesive `DeferredRenderer` and request/cache transition into a focused ingestor. |
-| RS-3 | High | Partial initialization and manual teardown can produce invalid lifetime combinations. | `Initialize()` returns `void`, exits after some collaborators are created, and uses `backend_` as a partial state sentinel. Shutdown manually retires many interdependent handles in one function. | Transactional initialization, explicit lifecycle state, reverse-order collaborator cleanup, idempotent shutdown, and failure-injection tests. |
-| RS-4 | High | Render currently crosses the Asset-loading boundary and can stall a frame. | `ConsumeOne()` and bootstrap preparation call `AssetManager::LoadSync()` from Render; texture behavior is selected by comparing request paths with bootstrap environment configuration. | Asset owns disk loading/path validation. Render consumes ready AssetIDs and performs only render-resource resolution under a measured budget. GP7 removes bootstrap path interpretation. |
-| RS-5 | Medium-high | Pass-private GPU state is stored on the global facade. | Fullscreen/shadow pipelines, samplers, environment bindings, active shadow frames, and record-success flags are `RenderSystem` members. Every new pass widens initialization, frame, and shutdown coupling. | The renderer implementation owns all pass-private state and retires it before backend teardown. Do not create generic wrappers until destruction dependencies are known. |
-| RS-6 | Medium-high | The integration point lacks direct characterization tests. | Focused registries, worlds, material, capture, resource resolver, and schedule validators have tests, but no unit test constructs `RenderSystem` or proves its real pass order, partial-init rollback, resize boundary, or teardown sequence. | Inject the existing backend factory for tests and cover orchestration states before extraction. Keep dual-backend smoke/captures as runtime evidence. |
-| RS-7 | Medium | The public facade mixes unrelated consumers and includes an opaque native editor escape hatch. | Gameplay takes source sinks, Runtime takes capture/bootstrap values, Editor takes a target view plus `GraphicsContext { type, void* }`. | Keep capability-oriented seams narrow. Audit `GraphicsContext` separately; do not widen it or let it leak into renderer policy during R1. |
-| RS-8 | Medium | Bootstrap scene authoring keeps transitional scene/environment policy in Render. | `BootstrapSceneInfo`, bootstrap source transfer, default-camera policy, and environment-path matching are RenderSystem responsibilities. | Complete the linked [GP7 level-asset migration](../../.spec/specs/gameplay-level-asset.md); remove the special case rather than extracting it into a permanent service. |
+| RS-1 | High | Pass declarations and pass execution can diverge. | R1.3 uses one immutable eight-entry typed sequence and a per-frame cursor for validation and invocation; canonical ordinal validation rejects swapped IDs, and focused tests, full CTest, dual-backend smoke, and fresh startup-level captures pass. | Preserve the closed sequence and cursor assertions through R1.4; do not add dynamic pass registration or a second recorder order. |
+| RS-2 | High | `RenderSystem` is a change-amplification and ownership hotspot. | R1.2 moved the deferred pass implementation and pass-private state into `DeferredRenderer`; request/cache transition remains in the facade until R1.4. | Keep the facade as composition/frame owner; keep resource ingestion separate in R1.4. |
+| RS-3 | High | Partial initialization and manual teardown can produce invalid lifetime combinations. | `DeferredRenderer::Initialize()` rolls back its partial target set; cleanup retires renderer-owned state before resolver/backend cleanup. Focused ownership probes and dual-backend smoke pass. | Preserve the transactional initialization and ordered cleanup assertions in later Render stages. |
+| RS-4 | High | Render currently crosses the Asset-loading boundary and can stall a frame. | `ConsumeOne()` and lazy pass preparation call `AssetManager::LoadSync()` from Render. GP7 has removed bootstrap scene/path interpretation, but the remaining synchronous work is still live. | Asset owns disk loading/path validation. R1.4 makes Render consume ready AssetIDs/artifacts and perform only render-resource resolution under a measured budget. |
+| RS-5 | Medium-high | Pass-private GPU state is stored on the global facade. | R1.2 moved fullscreen/shadow pipelines, samplers, environment bindings, active shadow frames, target state, and recording methods into `DeferredRenderer`. | Keep pass-specific state inside the renderer and retire it before resolver/backend teardown. |
+| RS-6 | Medium-high | Renderer extraction can regress behavior that unit-level pass tests do not observe. | R1.2 preserves the orchestration test source, adds renderer-owned pipeline/mesh/sampler cleanup assertions, injects both fullscreen partial-creation failures, and passed focused execution, full CTest, dual-backend smoke, and fresh startup-level captures. | Keep deterministic captures and lifecycle/ownership assertions as regression coverage for later Render stages. |
+| RS-7 | Medium | The public facade mixes unrelated consumers and includes an opaque native editor escape hatch. | Gameplay takes source sinks, Runtime takes capture/resource values, and Editor takes a target view plus `GraphicsContext { type, void* }`. | Keep capability-oriented seams narrow. Audit `GraphicsContext` separately; do not widen it or let it leak into renderer policy during R1. |
+| RS-8 | Resolved by GP7 | Bootstrap scene authoring kept transitional scene/environment policy in Render. | GP7 removed `BootstrapSceneInfo`, bootstrap source transfer, environment-path matching, and hard-coded startup Actors. Level assets now publish typed sources. | Do not recreate the deleted bootstrap special case during R1.2 or R1.4. |
 
 ## Feature and validation limits
 
@@ -45,8 +54,8 @@ renderer extraction, but their pre-extraction lifecycle/test gaps are closed.
 2. Make initialization/teardown state explicit.
 3. Extract the deferred renderer and its pass-owned state.
 4. Unify fixed-pass declaration and execution.
-5. Remove synchronous Asset/bootstrap path work from Render in coordination
-   with GP7.
+5. Remove the remaining synchronous Asset/resource work from Render; keep the
+   completed GP7 bootstrap special cases deleted.
 6. Reassess the native editor context seam separately.
 
 Do not begin with a render graph, speculative renderer plugins, or a universal

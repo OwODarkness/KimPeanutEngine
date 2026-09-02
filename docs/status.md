@@ -64,7 +64,23 @@
   `RenderSystemTest` characterizes current target/pass order, conditional
   SceneColor capture, resize waiting, editor terminal composition, rollback,
   and teardown order. Focused lifecycle/render tests and `RuntimeLib` build
-  pass; R1.2 extraction and GP7 remain open.
+  pass. R1.2 extraction is complete; GP7 has since closed.
+
+- **Render R1.2 — deferred renderer and pass-owned state (2026-09-02)** —
+  extracted the concrete `DeferredRenderer`, pass-owned targets/state/handles,
+  recording and capture conversion from `RenderSystem`, with transactional
+  initialization and ordered cleanup. Review findings for partial resource
+  retries, ownership probes, stale facade helpers, and the misleading frame
+  result were fixed. Focused tests, full Debug build, 239-test CTest, direct
+  Vulkan/OpenGL smoke, and fresh startup-level captures passed. → [R1.2 review](render/.review/R1.2.md), [R1.2 journal](../.spec/journal/2026-09-02-render-system-r1-2.md)
+
+- **Render R1.3 — fixed pass declaration/execution unification (2026-09-02)**
+  — one immutable eight-entry typed sequence now drives validation and
+  deferred-renderer dispatch through a consuming per-frame cursor. Canonical
+  ordinal validation and moved-from cursor tests close the review findings;
+  full Debug build, 244-test CTest, dual-backend smoke, and fresh PBR,
+  point-shadow, and spot-shadow captures passed. → [R1.3 review](render/.review/R1.3.md),
+  [R1.3 journal](../.spec/journal/2026-09-02-render-system-r1-3.md)
 
 - **Deferred PBR D6.4 — bounded point-light shadow atlas (2026-09-01)** —
   point shadow intent/handle lifetime, deterministic slot-2 selection, a fixed
@@ -645,7 +661,6 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-
 - **Gameplay editor inspection (deferred)** — Gameplay is game-thread-owned,
   while the current editor runs on the render thread. Add a read-only snapshot
   before exposing Actor/component state to editor tools; do not give Editor

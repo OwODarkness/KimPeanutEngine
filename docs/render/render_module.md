@@ -142,10 +142,10 @@ graph.
 
 - [x] Introduce a render-private pass interface or equivalent pass descriptor.
   A pass declares its name, the render resources it reads and writes, and a
-  recording operation. `RenderPassSchedule` currently validates the ordered
-  declarations; its logical resources are render-owned names rather than RHI
-  handles. It names no `Vk*` objects, layouts, queues, or command buffers
-  (2026-08-24).
+  recording operation. The original `RenderPassSchedule` declarations from
+  2026-08-24 were superseded by R1.3's immutable `FixedRenderPassSequence`;
+  its logical resources remain render-owned names rather than RHI handles, and
+  it names no `Vk*` objects, layouts, queues, or command buffers.
 - [x] Move the current implicit sequence into two registered passes:
   `ScenePass` writes the scene `RenderTarget`; `EditorCompositePass` consumes
   its borrowed presentation view and performs the terminal editor/UI

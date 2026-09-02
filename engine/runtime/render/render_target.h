@@ -15,6 +15,7 @@ namespace kpengine::graphics
 namespace kpengine::render
 {
     class RenderSystem;
+    class DeferredRenderer;
     class RendererFrameTargets;
 
     // Render-module output target. Its RHI attachments remain private so editor,
@@ -39,6 +40,7 @@ namespace kpengine::render
 
     private:
         friend class RenderSystem;
+        friend class DeferredRenderer;
         friend class RendererFrameTargets;
 
         void Initialize(graphics::RenderBackend &backend, const graphics::RenderTargetDesc &desc);

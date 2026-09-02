@@ -20,13 +20,29 @@ details and stage checklists belong in the linked submodule documents.
   [stage design](.plan/R1.md) and [risk register](risks.md). Characterize real
   frame/lifecycle behavior first; then make lifecycle transactional, extract
   deferred renderer/pass-owned state, unify fixed-pass declaration with actual
-  execution, and remove synchronous Asset/bootstrap path work from Render.
+  execution, and remove synchronous Asset/resource loading work from Render.
 - [x] **R1.1 — characterization and transactional lifecycle** landed
   2026-09-01: injected the existing `RenderBackend` factory, added explicit
   `Uninitialized`/`Ready`/`FrameActive`/`ShutDown` states, transactional
   initialization with diagnostics, reverse cleanup, and idempotent shutdown.
   `RenderSystemTest` records the current pass/frame, capture, resize, editor,
   rollback, and teardown behavior.
+- [x] **R1.2 — deferred renderer and pass-owned state:** implementation is
+  landed in the [stage design](.plan/R1.2.md) shape; all four findings in the
+  [formal review](.review/R1.2.md) are addressed, and focused/full build,
+  smoke, and fresh Vulkan/OpenGL capture evidence passed. The direct renderer
+  owns named targets, pass-private handles, environment/shadow state, pass
+  recording, and cleanup; R1.3 sequence unification and R1.4 ingestion cleanup
+  remain separate stages. → [R1.2 spec](../../.spec/specs/render-system-r1-2.md), [R1.2 journal](../../.spec/journal/2026-09-02-render-system-r1-2.md)
+- [x] **R1.3 — fixed pass declaration/execution unification:** implementation
+  landed 2026-09-02; the [formal review](.review/R1.3.md) fixes canonical
+  typed-ID role binding, moved-from cursor reuse, and stale module records.
+  Focused/full build, CTest, dual-backend GraphicsSmoke, and fresh Runtime
+  startup-level captures pass. The landed
+  [stage design](.plan/R1.3.md) and [execution spec](../../.spec/specs/render-system-r1-3.md)
+  now correspond to one immutable typed sequence, conditional diagnostic
+  capture, and optional terminal editor composition. Render-graph and R1.4
+  work remain out of scope. → [R1.3 journal](../../.spec/journal/2026-09-02-render-system-r1-3.md)
 - [x] Add direct RenderSystem orchestration tests for partial-init rollback,
   fixed pass order, conditional capture, resize, terminal editor composition,
   and reverse-order teardown before moving the corresponding code (R1.1).

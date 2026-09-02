@@ -1,5 +1,6 @@
 add_library(Render
 render_system.cpp
+deferred_renderer.cpp
 render_capture_service.cpp
     render_source_registry.cpp
     camera_source_registry.cpp
