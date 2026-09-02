@@ -10,10 +10,9 @@
 #include <utility>
 #include <vector>
 #include "base/base.h"
-#include "async/async_queue.h"
-#include "asset/asset_load_request.h"
 #include "command/command_registry.h"
 #include "render/render_system.h"
+#include "render_asset_preparer.h"
 #include "runtime_camera_control.h"
 #include "gameplay/actor/actor_types.h"
 
@@ -70,6 +69,9 @@ namespace kpengine
                 explicit operator bool() const { return success; }
             };
             StartupResult FinalizeGameStartup();
+            // Runtime-only startup transaction: freeze the CPU render catalog
+            // before the render thread creates any GPU state.
+            StartupResult PrepareRenderAssets();
             // Narrow test seam for the game-start controller/possession step.
             // Production leaves this unset and uses GameplayWorld's real
             // controller implementation.
@@ -119,10 +121,7 @@ namespace kpengine
             GraphicsAPIType graphics_api_type_;
             asset::AssetID startup_level_asset_;
 
-            // Incoming leg of the async resource queue. It is retained for
-            // future runtime streaming; GP7.4 startup loads the selected level
-            // synchronously before the render thread is created.
-            async::AsyncQueue<asset::AssetLoadRequest> async_load_queue_;
+            std::shared_ptr<const render::PreparedRenderAssetCatalog> prepared_render_assets_;
 
         private:
             std::atomic<bool> scene_camera_control_captured_{false};

@@ -19,14 +19,22 @@ moved-from-cursor regression coverage; focused/full build, CTest, and
 dual-backend smoke pass. Fresh Runtime startup-level captures were also
 exported and inspected.
 
+R1.4 landed in the [ready-asset ingestion plan](.plan/R1.4.md). Runtime now
+publishes a typed startup catalog before Render initialization; the catalog and
+preparation review findings are addressed, focused/full Debug validation passes,
+and six fresh fixture captures were exported and inspected. Direct
+dual-backend smoke still launches both APIs but its strict silhouette
+comparator rejects a small cross-backend edge difference; that follow-up is
+separate from the resolved ingestion-boundary risk.
+
 ## Active architecture risks
 
 | ID | Severity | Risk | Current evidence | Required control |
 | --- | --- | --- | --- | --- |
 | RS-1 | High | Pass declarations and pass execution can diverge. | R1.3 uses one immutable eight-entry typed sequence and a per-frame cursor for validation and invocation; canonical ordinal validation rejects swapped IDs, and focused tests, full CTest, dual-backend smoke, and fresh startup-level captures pass. | Preserve the closed sequence and cursor assertions through R1.4; do not add dynamic pass registration or a second recorder order. |
-| RS-2 | High | `RenderSystem` is a change-amplification and ownership hotspot. | R1.2 moved the deferred pass implementation and pass-private state into `DeferredRenderer`; request/cache transition remains in the facade until R1.4. | Keep the facade as composition/frame owner; keep resource ingestion separate in R1.4. |
+| RS-2 | High | `RenderSystem` is a change-amplification and ownership hotspot. | R1.2 moved deferred passes into `DeferredRenderer`, R1.3 moved ordering into the fixed sequence, and R1.4 removed the request/cache surface. | Keep the facade as composition/frame owner and avoid reintroducing ingestion policy. |
 | RS-3 | High | Partial initialization and manual teardown can produce invalid lifetime combinations. | `DeferredRenderer::Initialize()` rolls back its partial target set; cleanup retires renderer-owned state before resolver/backend cleanup. Focused ownership probes and dual-backend smoke pass. | Preserve the transactional initialization and ordered cleanup assertions in later Render stages. |
-| RS-4 | High | Render currently crosses the Asset-loading boundary and can stall a frame. | `ConsumeOne()` and lazy pass preparation call `AssetManager::LoadSync()` from Render. GP7 has removed bootstrap scene/path interpretation, but the remaining synchronous work is still live. | Asset owns disk loading/path validation. R1.4 makes Render consume ready AssetIDs/artifacts and perform only render-resource resolution under a measured budget. |
+| RS-4 | Resolved by R1.4 | Render crossed the Asset/Resource preparation boundary and could stall a frame. | Runtime prepares and freezes the selected-API-validated catalog before Render initialization; Render has no path loading, AssetManager lookup, or Resource processing calls, and transaction tests cover failure publication. | Preserve the catalog boundary; future streaming must introduce a real ready-payload producer before changing Render. |
 | RS-5 | Medium-high | Pass-private GPU state is stored on the global facade. | R1.2 moved fullscreen/shadow pipelines, samplers, environment bindings, active shadow frames, target state, and recording methods into `DeferredRenderer`. | Keep pass-specific state inside the renderer and retire it before resolver/backend teardown. |
 | RS-6 | Medium-high | Renderer extraction can regress behavior that unit-level pass tests do not observe. | R1.2 preserves the orchestration test source, adds renderer-owned pipeline/mesh/sampler cleanup assertions, injects both fullscreen partial-creation failures, and passed focused execution, full CTest, dual-backend smoke, and fresh startup-level captures. | Keep deterministic captures and lifecycle/ownership assertions as regression coverage for later Render stages. |
 | RS-7 | Medium | The public facade mixes unrelated consumers and includes an opaque native editor escape hatch. | Gameplay takes source sinks, Runtime takes capture/resource values, and Editor takes a target view plus `GraphicsContext { type, void* }`. | Keep capability-oriented seams narrow. Audit `GraphicsContext` separately; do not widen it or let it leak into renderer policy during R1. |

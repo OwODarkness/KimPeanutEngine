@@ -55,6 +55,10 @@ schedule while separating those existing ownership domains.
   one immutable typed sequence for logical validation, renderer invocation,
   conditional capture conversion, and optional external terminal composition;
   do not introduce graph algorithms.
+- [R1.4 — ready asset ingestion and Render bootstrap removal](.plan/R1.4.md) —
+  prepare one immutable CPU asset/artifact catalog before Render initialization,
+  remove Render-side loading/processing and the unused path queue, and preserve
+  current GPU cache ownership.
 
 ## Focused submodules
 

@@ -1,6 +1,15 @@
 # Async Resource Queue Design (the request-based producer/consumer seam)
 
-Location: generic transport in `engine/runtime/core/async/` (header-only lib `Async`); the asset-flavored request in `engine/runtime/asset/asset_load_request.h`
+> **Status: superseded proposal.** The described two-leg worker pipeline was
+> never wired: production owns one empty path queue and Render performs the
+> synchronous load/process work itself. Render R1.4 plans to remove that legacy
+> surface and replace startup ingestion with an immutable prepared catalog.
+> Future streaming must be designed from an actual producer/consumer need. See
+> the [R1.4 stage plan](../render/.plan/R1.4.md).
+
+Location: generic transport in `engine/runtime/core/async/` (header-only lib
+`Async`). The former asset-flavored request contract was removed by R1.4
+because it had no production producer; `asset_load_request.h` no longer exists.
 
 The async resource queue is the engine's **off-frame loading + GPU-upload seam**. It moves the expensive CPU work (shader compile, texture decode, mesh processing) and the GPU bakes (pipeline creation) **off the render frame**, so a synchronous `LoadShaders`-style call never blocks a frame. It is a **request-based** queue: the two ends exchange small `AssetLoadRequest` objects, not payloads.
 

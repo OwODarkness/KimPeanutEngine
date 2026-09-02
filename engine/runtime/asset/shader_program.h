@@ -27,7 +27,7 @@ namespace kpengine::asset{
         void BindData(ShaderStage stage, ShaderFormat format, AssetID id,
                       ShaderProgramVariant variant = ShaderProgramVariant::Bound);
         AssetID GetData(ShaderStage stage, ShaderFormat format,
-                        ShaderProgramVariant variant = ShaderProgramVariant::Bound);
+                        ShaderProgramVariant variant = ShaderProgramVariant::Bound) const;
         std::shared_ptr<struct ShaderResource> GetShader(
             ShaderStage stage, ShaderFormat format,
             ShaderProgramVariant variant = ShaderProgramVariant::Bound);

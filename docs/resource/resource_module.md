@@ -58,15 +58,24 @@ Key = hash of (source + stage + entry + defines), file = `<hex hash>.spv` under 
 
 ## Current state — built, callers on both ends
 
-- `ResourcePipeline::ProcessShader` has **two callers**: the `CompileShader()` asset example ([asset_example.cpp](../../engine/example/asset/asset_example.cpp)) loads `simple_triangle.shader` and bakes both stages to SPIR-V through the pipeline (verified: fresh compile + cache hit), and the `rhi_example` demo (2026-08-16, TODO 2.3 of the [Vulkan decoupling](graphics/vulkanbackend.md)) bakes its shaders the same way at startup — replacing the build-time `glslc` step and giving the pipeline its first graphics-end caller. The **render module still has no caller** — the warmup pass and the RHI request path (the reconstruction's first wiring step) are still planned.
+- `ResourcePipeline::ProcessShader` is driven by Runtime's R1.4 startup
+  preparer for the selected level and renderer built-ins. Render consumes only
+  immutable ready artifacts; the standalone examples remain direct Resource
+  callers for their own smoke coverage. The [Render R1.4 plan](../render/.plan/R1.4.md)
+  records this ownership boundary.
 - Build: `Resource` is its **own static library** inside `core/` ([`resource/CMakeLists.txt`](../../engine/runtime/core/resource/CMakeLists.txt)); `Core` is just an interface aggregator that links it ([`core/CMakeLists.txt`](../../engine/runtime/core/CMakeLists.txt)). It links `Asset` PRIVATE.
 - Known gaps: `ProcessShader` takes a flat stage vector when the natural compile unit is the whole program; it returns void so callers can't distinguish success from failure (per-shader `CompileFailed` status exists, but the caller must scan each shader's status to find it).
 
 ## Design notes
 
 - **Stays in `core/`** (decision 2026-08-09). It is the one core-nested library that depends on a top-level module (`Asset`) — a mild layering smell — but because `Resource` is already its own static lib, hoisting it to `engine/runtime/resource/` later is a three-line move. Defer unless it outgrows shaders.
-- **Warmup is the caller's job.** The render module, at init, reads a manifest of `.shader` paths and calls `asset.LoadSync` + `ProcessShader` for each, feeding the disk cache so later RHI requests are hits. The resource module only ever responds to `ProcessShader`; it never initiates.
-- **Async callers ride a request queue.** The runtime half of the story — the render module's "async compile off the main thread" step — is the async resource queue ([async_resource_queue.md](../async/async_resource_queue.md)): a loading thread runs `ProcessShader` off-frame, the render thread drains finished artifacts under a frame budget. The queue exchanges requests, not payloads, so it stays type-agnostic as texture/mesh processing join. The module still only responds to `ProcessShader`; it never initiates.
+- **Warmup is the Runtime caller's job.** R1.4 loads the selected closure and
+  closed Render built-ins before Render initialization, then calls
+  `ProcessShader` for every declared variant. The resource module only
+  responds to `ProcessShader`; it never initiates.
+- **Streaming is deferred.** The former asset request queue had no production
+  producer and was removed by R1.4. A future streaming design must transport
+  ready typed payloads rather than restore path consumption inside Render.
 - **Natural compile unit is the whole program**, not a stage — plan for `ProcessShaderProgram(const ShaderProgramResource&)`.
 - **Artifacts are derived data** — they belong in the resource pipeline's cache, not in the asset graph.
 
@@ -88,4 +97,8 @@ Key = hash of (source + stage + entry + defines), file = `<hex hash>.spv` under 
 
 ## Refactor status
 
-**Started — exercised by the asset example and the `rhi_example` demo (2026-08-16), no render-module caller yet.** `CompileShader()` in the asset example and the demo's startup bake both drive `ProcessShader` end-to-end (fresh compile + cache hit), but there are still no tests and the render module's warmup caller is still the reconstruction's job. The `ShaderOperation` seam and `CompileFailed` status are in; still planned while wiring: whole-program `ProcessShader`, a success signal, and the compiler error text.
+**Landed for Render in R1.4 — exercised by the asset example, `rhi_example`,
+and Runtime startup preparation.** Render now consumes ready artifacts from the
+immutable catalog. The `ShaderOperation` seam and `CompileFailed` status are
+in; whole-program processing, a success signal, and compiler error text remain
+follow-up work.

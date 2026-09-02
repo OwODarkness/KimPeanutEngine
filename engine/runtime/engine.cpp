@@ -118,6 +118,13 @@ namespace kpengine
             // Startup one-shot: load and validate the selected level and its
             // complete Asset dependency closure before render startup.
             LoadStartupLevel();
+            const RuntimeContext::StartupResult render_asset_result =
+                global_runtime_context.PrepareRenderAssets();
+            if (!render_asset_result)
+            {
+                throw std::runtime_error("Render asset preparation failed: " +
+                                         render_asset_result.diagnostic);
+            }
 
             // Editor setup (pointers into the runtime context, no GPU state) is safe
             // on the main thread; its ImGui UI is built on the render thread by

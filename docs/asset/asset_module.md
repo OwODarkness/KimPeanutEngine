@@ -107,11 +107,11 @@ Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h
 ## Bootstrap preload, HDR cost, and streaming policy
 
 Bootstrap is a Runtime startup policy, not an Asset ownership mechanism. The
-Runtime parses `config/bootstrap.json`, turns its need-list into
-`AssetLoadRequest` values, and the Render side currently drains the complete
-batch in `RenderSystem::PostInitialize` before the main loop begins. Each
-request then enters `AssetManager::LoadSync`. The queue therefore provides a
-request boundary, but the current bootstrap path is intentionally blocking.
+Runtime parses `config/bootstrap.json`, synchronously loads the selected level,
+and prepares a typed Render asset catalog before `RenderSystem` initializes.
+AssetManager still owns identity, decoding, CPU payload lifetime, and
+dependency tracking; Render receives only the finalized catalog and performs
+GPU-facing resolution.
 
 The manifest should contain only the hard dependencies of the initial scene:
 its models, materials, material textures, and environment data. It should not
@@ -202,8 +202,9 @@ Apply these in order, measuring each change:
    representation. Cache the derived environment artifacts when their source
    content and processing settings match, while retaining the HDR source as
    the authoritative Asset identity.
-4. **Stream after startup.** Use the existing request queue for background
-   work, with priorities and a frame-time budget at the Runtime/Render boundary.
+4. **Stream after startup.** Design a new Runtime-owned producer and ready,
+   typed-payload transport only when a concrete streaming consumer exists;
+   do not revive the removed path request queue at the Render boundary.
    Do not treat `LoadAsync` as parallel throughput: its shared loader instances
    still serialize under `load_mutex_`. Real parallel decoding requires
    per-thread loader instances or a loader pool, followed by render-thread GPU
@@ -212,8 +213,9 @@ Apply these in order, measuring each change:
 The acceptance condition is a measured shorter startup without changing Asset
 identity/dependency semantics, blocking the render frame with CPU decode, or
 allowing a resource to become visible before its CPU payload and GPU artifact
-are ready. See the [async resource queue design](../async/async_resource_queue.md)
-for the request transport and its current loading-thread boundary.
+are ready. The current startup path is the Runtime-owned immutable prepared
+catalog described by [Render R1.4](../render/.plan/R1.4.md); the old async queue
+document is retained only as a superseded historical proposal.
 
 ## Shader pipeline — identity vs. artifact
 

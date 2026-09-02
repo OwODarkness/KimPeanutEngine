@@ -21,7 +21,7 @@ namespace kpengine::asset
         list.emplace_back(ShaderProgramEntry{format, variant, id});
     }
     AssetID ShaderProgramResource::GetData(ShaderStage stage, ShaderFormat format,
-                                           ShaderProgramVariant variant)
+                                           ShaderProgramVariant variant) const
     {
         auto it = datas.find(stage);
         if (it == datas.end())

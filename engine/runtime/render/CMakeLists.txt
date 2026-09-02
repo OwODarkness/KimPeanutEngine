@@ -1,5 +1,6 @@
 add_library(Render
 render_system.cpp
+prepared_render_asset_catalog.cpp
 deferred_renderer.cpp
 render_capture_service.cpp
     render_source_registry.cpp

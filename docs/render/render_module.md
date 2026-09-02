@@ -7,7 +7,7 @@
 
 Location: `engine/runtime/render/`
 
-The render module is the engine's "what to draw and how" layer — the module that owns scenes, materials, cameras, render passes, and the requests for GPU pipelines. This is where the *call* originates: the render module asks the asset system for shader identity, asks the resource pipeline to bake it into artifacts, fills a `PipelineDesc`, and hands it to the RHI.
+The render module is the engine's "what to draw and how" layer — the module that owns scenes, materials, cameras, render passes, and the requests for GPU pipelines. Since R1.4, Runtime prepares the selected level's ready Asset → Resource closure and publishes an immutable catalog before Render starts. Render consumes that catalog, fills a `PipelineDesc`, and hands it to the RHI; it does not load or CPU-process assets.
 
 As of 2026-08-24, a pipeline request is rejected before backend allocation when
 its baked shader artifacts, stage slots, vertex layout, descriptor bindings, or
@@ -20,24 +20,17 @@ The legacy OpenGL renderer (RenderShader, ShaderPool, RenderMaterial, RenderScen
 
 ### `RenderSystem` — the facade — [`render_system.h`](../../engine/runtime/render/render_system.h)
 
-The render-module facade. It owns the `ResourcePipeline`, `RenderBackend`,
-`RenderResourceResolver`, and `MaterialSystem` (all initialized for the chosen
-`GraphicsAPIType`) and **drains the async load queue**
-(`RuntimeContext::async_load_queue_`, passed in by pointer) in two modes:
-`PostInitialize` full-drains the bootstrap batch, and `Tick` budget-drains a
-bounded number of requests per frame. Shader-program requests load via
-`asset.LoadSync`, process through `resource.ProcessShader`, then ask the
-resolver to build/cache the current default pipeline. `RenderCacheEntry` is a
-request-result record: it pins the asset payload and holds exactly one typed
-`RenderResource` result (`PipelineHandle`, `MeshHandle`, or
-`TextureBinding { TextureHandle, SamplerHandle }`), keyed by `request_id` and
-polled via `IsReady` / `GetCached`. The resolver owns the deduplicated static
-RHI handles and destroys them before backend teardown. `Tick` owns the RHI
-frame bracket; scenes own their camera/view state.
+Runtime prepares and owns an immutable `PreparedRenderAssetCatalog` before
+Render initializes. The facade owns the `RenderBackend`,
+`RenderResourceResolver`, `MaterialSystem`, and frame bracket; it resolves
+typed CPU payloads into GPU resources without loading files or driving Resource
+processing. The resolver owns deduplicated static RHI handles and destroys them
+before backend teardown. `Tick` owns the RHI frame bracket; scenes own their
+camera/view state.
 
 Initialization is bundle-based so dependencies can grow without an unstable
 positional signature: `RenderSystemInitInfo` carries the API, native window,
-resize dispatcher, and load queue. `RenderSceneInitInfo` groups its backend and
+resize dispatcher, and prepared catalog. `RenderSceneInitInfo` groups its backend and
 `RenderSceneResources` (pipeline, mesh, texture/sampler material binding). The
 scene bundle now names the common `RenderBackend`; its dynamic UBO path uses
 common buffer/extent/frame APIs, and its draw path uses `CommandRecorder`.
@@ -70,15 +63,18 @@ The triangle demo, moved out of the Vulkan backend (Phase 4 of the [Vulkan decou
 
 **Cross-API recording and transient data** — `Record(FrameContext&, CommandRecorder&)` describes the draw with common handles. The backend owns native command-buffer access; `FrameContext` owns the per-slot UBO arena and binding sets; the scene owns no transient GPU handle.
 
-## Target architecture
+## Target architecture (R1.4 current boundary)
 
-The reconstruction makes the render module the **caller** in a one-way, high→low dependency chain:
+The startup path is a one-way, high→low dependency chain:
 
 ```
-render module
+Runtime preparation
    ├──→ asset.AssetManager.LoadSync(.shader)     identity
    ├──→ resource.ResourcePipeline.ProcessShader  bake → ShaderData
-   └──→ graphics.RenderBackend.CreatePipelineResource(PipelineDesc)   consume
+   └──→ immutable PreparedRenderAssetCatalog
+                                      │
+                                      ▼
+Render module → graphics.RenderBackend.CreatePipelineResource(PipelineDesc)
                 │
                 └──→ nothing. RHI only reads byte_code + state.
 ```
@@ -89,24 +85,26 @@ render module
 |---|---|
 | Shader identity (`.shader` meta, stage descs) | `asset/` |
 | Compile source → artifact (`ShaderData`, disk cache) | `resource/` → [resource_module.md](../resource/resource_module.md) |
-| "I want this pipeline" — load, compile, fill desc, request | **render module** |
+| "I want this pipeline" — interpret ready data, fill desc, request | **render module** |
 | Bake desc → GPU objects | `graphics/` RHI |
 
 ### The `PipelineDesc` seam
 
-`graphics::PipelineDesc` ([`pipeline_types.h`](../graphics/graphics_module.md)) is the contract. The render module:
+`graphics::PipelineDesc` ([`pipeline_types.h`](../graphics/graphics_module.md)) is the contract. Runtime prepares the catalog first; the render module then:
 
-1. `asset.LoadSync(path)` → `ShaderProgramResource` (all stages, `Uncompiled`).
-2. `resource.ProcessShader(stages)` → each stage's `ShaderData` is `Ready` (`byte_code`, `api`, `entry`).
-3. Hand each stage's `ShaderData` straight to the `PipelineDesc` — `PipelineDesc` takes `data::ShaderData*` directly (landed 2026-08-15; no `graphics::Shader` wrapper).
+1. Resolve a `ShaderProgramResource` and its ready stages from `PreparedRenderAssetCatalog`.
+2. Hand each stage's `ShaderData` straight to the `PipelineDesc` — `PipelineDesc` takes `data::ShaderData*` directly (landed 2026-08-15; no `graphics::Shader` wrapper).
 4. Fill the rest of `PipelineDesc` (vertex layout, blend/raster/multisample state, descriptor bindings, attachment formats) from render-module-owned material/pipeline definitions.
 5. `backend.CreatePipelineResource(desc)`.
 
 ### Warmup at init
 
-A real game compiles its shaders at startup so first-frame pipeline requests are cache hits. The render module owns this: at init it reads a manifest of `.shader` paths, calls `asset.LoadSync` + `resource.ProcessShader` for each, populating `resource::ShaderCache` (disk) + `shader->data` (memory). Later backend requests hit the cache. Same `ProcessShader` API — just called eagerly at boot. (Later: material traversal instead of a manifest.) The async half of this is the **async resource queue** — [async_resource_queue.md](../async/async_resource_queue.md): a loading thread runs `LoadSync` + `ProcessShader` off-frame, and the render thread drains finished artifacts under a frame budget, so runtime loads never block a frame.
+Runtime compiles reachable shaders at startup so first-frame pipeline requests consume validated artifacts. It publishes the catalog only after Asset loading, Resource processing, built-in validation, and optional environment preparation succeed. The former request-queue proposal is superseded; future streaming must define a real producer and transport ready, typed packets rather than reintroducing path loading into Render.
 
-## Reconstruction plan (ordered)
+## Historical reconstruction plan (superseded by R1.4)
+
+The following notes describe the pre-R1.4 migration sequence and are retained
+for history only. They are not the current ownership contract.
 
 1. **Wire the resource pipeline in.** Give the render module (or `RuntimeContext`) an owned `ResourcePipeline`, initialized with the chosen `GraphicsAPIType`. It currently has no owner and no callers.
 2. **Make the RHI a pure receiver.** ✅ Landed 2026-08-15/16: `ShaderManager`/`Shader`/`ResourceShader`/`ShaderLoader` retired; `PipelineDesc` carries `data::ShaderData*`; the commented-out asset-loading block in `VulkanPipelineManager` was deleted. The build-time `glslc` step is gone too (2026-08-16, TODO 2.3) — the `rhi_example` demo bakes shaders at runtime via `ProcessShader`, the first graphics-end caller of step 1's pipeline.
@@ -116,16 +114,20 @@ A real game compiles its shaders at startup so first-frame pipeline requests are
 6. **Give the skeleton its content.** The legacy GL code is already retired, so there is no coexisting path to replace pass-by-pass. `RenderSystem` grows: it owns the RHI backend (via `RenderBackend`), the async queue drain + ready cache, and the scene graph; `RenderCamera` data feeds the frame's `PerPassData`.
 7. **Finish:** `Render` links `Graphics` — ✅ landed 2026-08-15 (Phase 4 of the Vulkan decoupling, TODO 5.1; PRIVATE link, the demo `RenderScene` records through the RHI). The second half remains: `RenderSystem` becomes the render-module facade that owns the backend, the warmup, and the scene graph (only `RenderScene` does that today).
 
-## Invariants
+## Current invariants
 
-- **One-way dependency, high → low:** render → asset, render → resource, render → graphics. `graphics` never reaches up (no `.shader` paths, no compilers, no asset IDs).
-- **The render module is the only caller** of "load + compile + request pipeline." Neither the RHI nor the asset loader initiates a pipeline build.
+- **One-way dependency, high → low:** Runtime preparation → Asset/Resource →
+  Render → Graphics. `graphics` never reaches up (no `.shader` paths,
+  compilers, or asset IDs).
+- **Runtime preparation is the caller** of "load + compile"; Render is the
+  caller of "interpret ready data + request pipeline." Neither the RHI nor the
+  asset loader initiates a pipeline build.
 - **Pipeline requests always carry baked bytes.** `PipelineDesc` shaders are backed by `ShaderData::byte_code`; the RHI never compiles or reads source.
 - **Derived data lives in the resource pipeline.** The render module caches *pipeline* objects (keyed by `(program AssetID, api)`), never shader sources.
 
 ## Refactor status
 
-**In progress — legacy deprecated, queue consumer and pipeline/static-resource ownership in place, first scene in.** `RenderSystem` owns the `ResourcePipeline`, `RenderBackend`, RHI frame bracket, and a render-private `RenderResourceResolver`. The resolver owns fixed-default pipeline/mesh/texture/sampler creation, deduplication, and destruction; `RenderSystem` only drains requests and coordinates the result. It drains the async load queue in two modes (bootstrap full-drain + per-frame budgeted drain), building one `PipelineHandle` per loaded shader program/default state and render-ready handles for queued mesh/texture/model assets. `Render` links `Asset` and `Graphics` (PRIVATE). **The demo scene landed as `RenderScene` (2026-08-15)** — it receives non-owning RHI handles, owns logical camera state, and describes UBO/texture bindings through `ResourceBindingSetDesc`; Vulkan descriptor pools, sets, and writes are hidden behind `DescriptorSetHandle`. **Phase 3.3 gives the scene an API-neutral `CommandRecorder`; Phase 3.4 introduces `FrameContext` so transient UBO and binding-set allocation belongs to the current frame rather than the scene.** The target design (render → asset → resource → graphics, `PipelineDesc` seam, async warmup) is unchanged. The dedicated loading thread is deferred — the render thread loads in-place, budgeted. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
+**Current — startup catalog and pipeline/static-resource ownership in place.** `RuntimeContext` owns the prepared catalog transaction. `RenderSystem` owns the `RenderBackend`, RHI frame bracket, and a render-private `RenderResourceResolver`; the resolver owns fixed-default pipeline/mesh/texture/sampler creation, deduplication, and destruction. Render receives ready CPU payloads only and never drains a path queue or drives `ResourcePipeline`. `Render` links `Graphics` (PRIVATE). **The demo scene landed as `RenderScene` (2026-08-15)** — it receives non-owning RHI handles, owns logical camera state, and describes UBO/texture bindings through `ResourceBindingSetDesc`; Vulkan descriptor pools, sets, and writes are hidden behind `DescriptorSetHandle`. **Phase 3.3 gives the scene an API-neutral `CommandRecorder`; Phase 3.4 introduces `FrameContext` so transient UBO and binding-set allocation belongs to the current frame rather than the scene.** Future streaming remains deferred until a concrete producer, ready-payload transport, and eviction/lifetime policy exist. See [the graphics module doc](../graphics/graphics_module.md) for the RHI side of the same change.
 
 ## Render roadmap
 

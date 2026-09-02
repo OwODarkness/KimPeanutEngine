@@ -45,6 +45,25 @@ add_custom_command(TARGET RuntimeStartupTest POST_BUILD
 include(GoogleTest)
 gtest_discover_tests(RuntimeStartupTest)
 
+add_executable(RenderAssetPreparerTest
+    render_asset_preparer_test.cpp
+)
+
+target_include_directories(RenderAssetPreparerTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+)
+
+target_link_libraries(RenderAssetPreparerTest PRIVATE RuntimeLib googletest)
+
+add_custom_command(TARGET RenderAssetPreparerTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll
+        $<TARGET_FILE_DIR:RenderAssetPreparerTest>
+)
+
+include(GoogleTest)
+gtest_discover_tests(RenderAssetPreparerTest)
+
 add_executable(RuntimeLaunchOptionsTest
     launch_options_test.cpp
 )

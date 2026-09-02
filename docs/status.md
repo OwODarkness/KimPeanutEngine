@@ -82,6 +82,18 @@
   point-shadow, and spot-shadow captures passed. → [R1.3 review](render/.review/R1.3.md),
   [R1.3 journal](../.spec/journal/2026-09-02-render-system-r1-3.md)
 
+- **Render R1.4 — ready asset ingestion and Render bootstrap removal (2026-09-02)**
+  — Runtime now validates and publishes a selected-API immutable prepared asset
+  catalog before Render initialization. The catalog rejects unready or
+  mismatched shader artifacts, invalid program/dependency bindings, and
+  ordinally drifted built-in roles; const consumers cannot recover mutable
+  payloads. An injectable preparation seam covers both backends and
+  transactional missing-dependency, built-in, shader, and environment failures.
+  Full Debug build and CTest pass 253/253; six PBR/point/spot startup captures
+  pass and were inspected. GraphicsSmoke still reports the strict D5
+  cross-backend silhouette comparator difference. → [R1.4 review](render/.review/R1.4.md),
+  [R1.4 journal](../.spec/journal/2026-09-02-render-system-r1-4.md)
+
 - **Deferred PBR D6.4 — bounded point-light shadow atlas (2026-09-01)** —
   point shadow intent/handle lifetime, deterministic slot-2 selection, a fixed
   six-face 1536×1024 D32 atlas, deferred point PCF consumption, and point depth
@@ -737,14 +749,19 @@
 2. **RHI leak fixes** — `ShaderManager` retired + `PipelineDesc` shaders backed by `ShaderData` (**landed 2026-08-15**, Phase 0 of [vulkanbackend.md](graphics/vulkanbackend.md)). **`VulkanDevice` extracted (landed 2026-08-15**, Phase 1 — reconstruction; original archived at `backend/vulkan/deprecated/`). **`VulkanSwapchain` extracted (landed 2026-08-15**, Phase 2). **`VulkanFrameContext` extracted (landed 2026-08-15**, Phase 3 — command pools, scene/UI buffers, sync objects, in-flight index, one-shot primitives, sync2-only barriers; shared one-shot buffers + dead transfer helpers deleted). **Scene recording extracted (landed 2026-08-15**, Phase 4 — the backend exposes "the current frame's command buffer + attachments"; the demo moved out to `render::RenderScene`, the render module's first real scene; TODO 5.1 `Render` links `Graphics` landed). **Facade cleanup (landed 2026-08-16**, Phase 5 — `window_`/`camera_data` public seams dropped, `Initialize` takes the native window handle; sakura split decided: keep the frame loop). **Build-time `glslc` step removed (landed 2026-08-16**, TODO 2.3 — the demo bakes shaders at runtime via `ProcessShader`). **`ShaderModule` seam retired (landed 2026-08-16**, TODO 1.2 — raw `ShaderData` → API object stays inline in the pipeline bakes).
 3. **Resource pipeline gaps** — add `CompileFailed` status (carry error text); make `ProcessShader` take the whole `ShaderProgramResource` as one compile unit.
 4. **Headless unit tests** — asset manager, `GenerateShaderHash`, `ShaderCache`, `HandleSystem` are all testable without a GPU.
-5. **Async resource queue** — the request-based producer/consumer seam (loading thread → render thread) that keeps shader compile / texture decode / GPU bakes off the render frame. Design written; `AssetLoadRequest` + `RequestState` defined in `asset/asset_load_request.h`, generic `AsyncQueue<T>` in `core/async` (header-only lib, wired into Core). **Landed (2026-08-13): the render-side consumer** — `RenderSystem` drains the queue in two modes (bootstrap full-drain + per-frame budgeted drain), loads via `asset.LoadSync`, processes shaders via `ResourcePipeline`, and caches results in a render cache. The dedicated **loading thread is deferred**: the render thread loads in-place, budgeted (`kMaxRuntimeLoadsPerFrame`). Its first consumer is the bootstrap preload flow — item 6. → [async_resource_queue.md](async/async_resource_queue.md)
-6. **Bootstrap preload pipeline** — the end-to-end flow the async queue exists for. Engine boot reads the need-list and runs each entry through the whole chain:
-   - **read** — `GetBootstrapPath()` + `bootstrap::ReadBootstrap` parse `config/bootstrap.json` into asset paths
-   - **load** — each entry becomes an `AssetLoadRequest`; the loading thread runs `asset.LoadAsync` + `resource.ProcessShader`, then flips it `Ready`
-   - **queue** — `Ready` requests land in the ready pipe
-   - **render** — per-frame `DrainFrameBudget`: fill `PipelineDesc`, `graphics.CreatePipelineResource`, insert into the ready-cache
-   - **gate** — the bootstrap waits for the batch before entering the main loop
-   Landed so far: `config/bootstrap.json` + `GetBootstrapPath()` + `bootstrap::ReadBootstrap` (nlohmann parser, unit-tested under `BootstrapTest`) + `bootstrap::BuildLoadRequests` (need-list → Queued `AssetLoadRequest`s; type sniffed from extension, unknown + duplicate entries skipped, unit-tested). The preload lives in an **engine-scoped module** `engine/runtime/bootstrap/` (lib `Bootstrap`, only `RuntimeLib` links it) — deliberately not core/resource public API, so render/editor/graphics can't invoke it. `Engine::Initialize` reads the config once (guarded by `PreloadBootstrap`) and pushes the requests onto the async queue's **incoming leg** (`RuntimeContext::async_load_queue_`); a missing bootstrap.json is a hard boot error surfaced by `main`'s try/catch. **Landed (2026-08-13): the render side consumes it** — `RenderSystem::PostInitialize` full-drains the bootstrap batch (load + `ProcessShader` → render cache), then `Tick` budget-drains later runtime requests. The loading thread is deferred; the render thread loads in-place under a per-frame budget.
+5. **Async resource queue** — superseded by R1.4. The former request-based
+   path consumer had no production producer and was removed. Generic
+   `AsyncQueue<T>` remains available for future, independently justified
+   transport; future streaming must move ready typed payloads, not paths.
+   → [async_resource_queue.md](async/async_resource_queue.md)
+6. **Bootstrap preload pipeline** — Engine boot selects and synchronously loads
+   the startup level, then Runtime prepares the immutable Render catalog before
+   the Render thread initializes. The old async request flow is retired; the
+   selected level remains the authored root and built-in pass assets stay
+   renderer-owned requirements.
+   The bootstrap remains an engine-scoped selector and validates the startup
+   level path; the Runtime preparation transaction now performs the Asset and
+   Resource work and publishes the catalog before the render thread starts.
 7. **Script binding layer follow-up** — C7 landed the native command bridge;
    remaining engine-facing work is broader `kpengine` class bindings, rooting
    `package.path` at `GetScriptDirectory()` → `asset/script/`, asset-pipeline

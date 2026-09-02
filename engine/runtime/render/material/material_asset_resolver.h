@@ -4,14 +4,15 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 
 #include "asset/common.h"
 #include "render/material/material_system.h"
+#include "render/prepared_render_asset_catalog.h"
 
 namespace kpengine::asset
 {
-    class AssetManager;
     struct MaterialResource;
 }
 
@@ -23,11 +24,11 @@ namespace kpengine::render
     class MaterialAssetResolver final
     {
     public:
-        explicit MaterialAssetResolver(MaterialSystem &material_system);
+        MaterialAssetResolver(MaterialSystem &material_system,
+                              std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
 
         MaterialResolution Resolve(asset::AssetID material_asset,
                                    MaterialInstanceHandle &out_instance);
-        bool WarmBuiltInTextures();
         void Clear();
         std::size_t GetRecordCount() const noexcept { return records_.size(); }
 
@@ -40,13 +41,10 @@ namespace kpengine::render
 
         bool BuildStandardPbrTemplate(asset::AssetID material_asset,
                                       const asset::MaterialResource &material,
-                                      asset::AssetManager &asset_manager,
                                       MaterialTemplateDesc &template_desc);
-        asset::AssetID LoadDefaultTexture(asset::AssetManager &asset_manager,
-                                          const std::string &relative_path,
-                                          asset::AssetID &cache);
 
         MaterialSystem *material_system_ = nullptr;
+        std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets_;
         std::unordered_map<uint64_t, Record> records_;
         asset::AssetID default_white_;
         asset::AssetID default_flat_normal_;

@@ -19,17 +19,13 @@
 #include "render_camera.h"
 #include "render_pass.h"
 #include "render_resource.h"
+#include "prepared_render_asset_catalog.h"
 #include "render_world/render_world.h"
 #include "renderer_frame_targets.h"
 
 namespace kpengine::data
 {
     struct TextureData;
-}
-
-namespace kpengine::resource
-{
-    class ResourcePipeline;
 }
 
 namespace kpengine::render
@@ -39,9 +35,9 @@ namespace kpengine::render
     struct DeferredRendererInitInfo
     {
         graphics::RenderBackend &backend;
-        resource::ResourcePipeline &resource_pipeline;
         RenderResourceResolver &resource_resolver;
         MaterialSystem &materials;
+        const PreparedRenderAssetCatalog &prepared_assets;
     };
 
     struct DeferredRendererInitResult
@@ -166,6 +162,9 @@ namespace kpengine::render
         bool RecordCaptureViewPass(CaptureView view);
         bool ExecutePass(FixedRenderPassId id, const std::vector<Light> &lights);
         bool PrepareDirectionalShadowPassResources();
+        bool GetPreparedProgram(
+            BuiltInRenderAsset role,
+            std::shared_ptr<const asset::ShaderProgramResource> &out_program) const;
         bool PrepareFullscreenPassResources();
         bool PrepareDeferredLightingPassResources();
         bool PrepareEnvironmentIbl(asset::AssetID source_asset,
@@ -187,9 +186,9 @@ namespace kpengine::render
         void ApplyPendingSceneRenderTargetExtent();
 
         graphics::RenderBackend *backend_ = nullptr;
-        resource::ResourcePipeline *resource_pipeline_ = nullptr;
         RenderResourceResolver *resource_resolver_ = nullptr;
         MaterialSystem *material_system_ = nullptr;
+        const PreparedRenderAssetCatalog *prepared_assets_ = nullptr;
         RendererFrameTargets frame_targets_;
         std::optional<FixedRenderPassSequence> pass_sequence_;
         std::optional<FixedRenderPassFrame> active_pass_frame_;

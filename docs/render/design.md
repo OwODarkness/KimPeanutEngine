@@ -42,16 +42,21 @@ types.
 `RenderSystem` is the Runtime-facing facade and composition root, not the
 permanent home of every renderer concern. It owns the frame bracket and wires
 focused collaborators. The deferred renderer owns pass policy and pass-private
-state; resource ingestion owns queue/cache transitions; Graphics owns GPU
-execution.
+state; Runtime owns startup asset preparation; Graphics owns GPU execution.
 
 ```text
 RuntimeContext → RenderSystem facade
                     ├─ source registries / RenderWorld snapshots
-                    ├─ render-resource ingestion
+                    ├─ immutable prepared asset/artifact catalog
                     ├─ DeferredRenderer → fixed pass sequence + pass state
                     └─ RenderBackend / FrameContext frame bracket
 ```
+
+R1.4's landed ingestion boundary is detailed in the
+[ready-asset stage plan](.plan/R1.4.md). Runtime prepares the selected level's
+renderable dependency closure and closed renderer built-ins through Asset and
+Resource before Render initialization. Render receives no paths and performs
+only catalog lookup, render-policy interpretation, and GPU-resource resolution.
 
 Dependencies are explicit. Do not replace `RenderSystem` with a large context
 bag, service locator, broad virtual renderer interface, or speculative

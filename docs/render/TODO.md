@@ -43,6 +43,13 @@ details and stage checklists belong in the linked submodule documents.
   now correspond to one immutable typed sequence, conditional diagnostic
   capture, and optional terminal editor composition. Render-graph and R1.4
   work remain out of scope. → [R1.3 journal](../../.spec/journal/2026-09-02-render-system-r1-3.md)
+- [ ] **R1.4 — ready asset ingestion and Render bootstrap removal:**
+  source review findings are addressed: the catalog readiness/const contracts,
+  ordinal role invariant, injectable preparation tests, and durable records are
+  fixed. Full build and CTest pass, and all six required fixture captures were
+  exported and inspected. The stage remains open only because the strict
+  dual-backend GraphicsSmoke D5 silhouette comparator exits nonzero. →
+  [R1.4 review](.review/R1.4.md), [R1.4 journal](../../.spec/journal/2026-09-02-render-system-r1-4.md)
 - [x] Add direct RenderSystem orchestration tests for partial-init rollback,
   fixed pass order, conditional capture, resize, terminal editor composition,
   and reverse-order teardown before moving the corresponding code (R1.1).

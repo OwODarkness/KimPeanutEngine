@@ -2,12 +2,14 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <unordered_set>
 #include <vector>
 
 #include "runtime/window/glfw_window_system.h"
@@ -46,6 +48,7 @@
 #include "runtime/asset/shader_program.h"
 #include "runtime/asset/texture.h"
 #include "runtime/core/resource/resource_pipeline.h"
+#include "runtime/render/prepared_render_asset_catalog.h"
 
 namespace kpengine::example
 {
@@ -71,6 +74,89 @@ namespace kpengine::example
         // Material checks below resolve their own bound and bindless variants.
         pipeline.ProcessShader(program->GatherShaders(asset::ShaderProgramVariant::Bound));
         return id;
+    }
+
+    static std::shared_ptr<const render::PreparedRenderAssetCatalog> BuildPreparedCatalog(
+        resource::ResourcePipeline &pipeline, GraphicsAPIType api,
+        const std::vector<asset::AssetID> &roots,
+        asset::AssetID white_texture,
+        asset::AssetID flat_normal_texture, asset::AssetID program_id)
+    {
+        render::PreparedRenderAssetCatalogBuild build;
+        build.graphics_api = api;
+        std::unordered_set<uint64_t> visited;
+        std::function<void(asset::AssetID)> visit = [&](asset::AssetID id)
+        {
+            if (!id.IsValid() || !visited.insert(id.Pack()).second)
+            {
+                return;
+            }
+            asset::Asset *const wrapper = asset::AssetManager::GetInstance().GetAsset(id);
+            if (wrapper == nullptr)
+            {
+                return;
+            }
+            if (id.type != asset::AssetType::KPAT_Model)
+            {
+                render::PreparedRenderAssetRecord record;
+                record.id = id;
+                record.dependencies = wrapper->GetDependencies();
+                switch (id.type)
+                {
+                case asset::AssetType::KPAT_Mesh:
+                    record.payload = wrapper->GetResource<asset::MeshResource>();
+                    break;
+                case asset::AssetType::KPAT_Texture:
+                    record.payload = wrapper->GetResource<asset::TextureResource>();
+                    break;
+                case asset::AssetType::KPAT_Shader:
+                    record.payload = wrapper->GetResource<asset::ShaderResource>();
+                    break;
+                case asset::AssetType::KPAT_ShaderProgram:
+                    record.payload = wrapper->GetResource<asset::ShaderProgramResource>();
+                    break;
+                case asset::AssetType::KPAT_Material:
+                    record.payload = wrapper->GetResource<asset::MaterialResource>();
+                    break;
+                default:
+                    return;
+                }
+                build.records.push_back(std::move(record));
+            }
+            for (const asset::AssetID dependency : wrapper->GetDependencies())
+            {
+                visit(dependency);
+            }
+        };
+        for (const asset::AssetID root : roots)
+        {
+            visit(root);
+        }
+        for (const auto &requirement : render::GetBuiltInRenderAssetRequirements())
+        {
+            build.built_ins[static_cast<size_t>(requirement.role)] =
+                requirement.expected_type == asset::AssetType::KPAT_Texture
+                    ? (requirement.role == render::BuiltInRenderAsset::DefaultWhiteTexture
+                           ? white_texture
+                           : flat_normal_texture)
+                    : program_id;
+        }
+        std::vector<asset::ShaderPtr> shaders;
+        for (const render::PreparedRenderAssetRecord &record : build.records)
+        {
+            if (record.id.type == asset::AssetType::KPAT_Shader)
+            {
+                shaders.push_back(std::get<asset::ShaderPtr>(record.payload));
+            }
+        }
+        pipeline.ProcessShader(shaders);
+        std::string diagnostic;
+        const auto catalog = render::PreparedRenderAssetCatalog::Create(std::move(build), diagnostic);
+        if (!catalog)
+        {
+            throw std::runtime_error("failed to build example render catalog: " + diagnostic);
+        }
+        return std::make_shared<const render::PreparedRenderAssetCatalog>(std::move(*catalog));
     }
 
     struct DemoResourceHandles
@@ -215,7 +301,24 @@ namespace kpengine::example
                 throw std::runtime_error("failed to create secondary graphics pipeline");
             }
 
-            render::RenderResourceResolver resource_resolver(*rhi, resource_pipeline);
+            const asset::AssetID texture_id = asset::AssetManager::GetInstance().LoadSync(
+                GetTextureDirectory() + "wallpaper.jpg");
+            const asset::AssetID alternate_texture_id = asset::AssetManager::GetInstance().LoadSync(
+                GetTextureDirectory() + "default.png");
+            if (!texture_id.IsValid() || !alternate_texture_id.IsValid())
+            {
+                throw std::runtime_error("failed to load multi-material smoke textures");
+            }
+            const asset::AssetID rock_material_id = asset::AssetManager::GetInstance().LoadSync(
+                GetAssetDirectory() + "material/rock_pbr.material");
+            const asset::AssetID floor_material_id = asset::AssetManager::GetInstance().LoadSync(
+                GetAssetDirectory() + "material/brickwall.material");
+            const auto prepared_assets = BuildPreparedCatalog(
+                resource_pipeline, api,
+                {shader_program_id, texture_id, alternate_texture_id, rock_material_id,
+                 floor_material_id},
+                texture_id, alternate_texture_id, shader_program_id);
+            render::RenderResourceResolver resource_resolver(*rhi, *prepared_assets);
             render::MaterialSystem materials;
             materials.SetResourceResolver(&resource_resolver);
 
@@ -226,14 +329,6 @@ namespace kpengine::example
             }
 
             DemoResourceHandles demo_resources = CreateDemoResources(*rhi);
-            const asset::AssetID texture_id = asset::AssetManager::GetInstance().LoadSync(
-                GetTextureDirectory() + "wallpaper.jpg");
-            const asset::AssetID alternate_texture_id = asset::AssetManager::GetInstance().LoadSync(
-                GetTextureDirectory() + "default.png");
-            if (!texture_id.IsValid() || !alternate_texture_id.IsValid())
-            {
-                throw std::runtime_error("failed to load multi-material smoke textures");
-            }
             render::MaterialTemplateDesc material_template_desc{};
             material_template_desc.shader_program = shader_program_id;
             material_template_desc.bindless_texture_table_compatible = true;
@@ -998,13 +1093,7 @@ namespace kpengine::example
                     throw std::runtime_error("D5.1 named frame target set is incomplete");
                 }
                 named_targets.Cleanup();
-                render::MaterialAssetResolver d3_material_resolver(materials);
-                if (!d3_material_resolver.WarmBuiltInTextures())
-                {
-                    throw std::runtime_error("D3 built-in material textures failed to warm");
-                }
-                const asset::AssetID rock_material_id = asset::AssetManager::GetInstance().LoadSync(
-                    GetAssetDirectory() + "material/rock_pbr.material");
+                render::MaterialAssetResolver d3_material_resolver(materials, prepared_assets);
                 render::MaterialInstanceHandle rock_instance;
                 const render::MaterialResolution rock_resolution =
                     d3_material_resolver.Resolve(rock_material_id, rock_instance);
@@ -1023,8 +1112,6 @@ namespace kpengine::example
                 {
                     throw std::runtime_error("D3 GBuffer pipeline was not created for the rock material");
                 }
-                const asset::AssetID floor_material_id = asset::AssetManager::GetInstance().LoadSync(
-                    GetAssetDirectory() + "material/brickwall.material");
                 render::MaterialInstanceHandle floor_instance;
                 const render::MaterialResolution floor_resolution =
                     d3_material_resolver.Resolve(floor_material_id, floor_instance);

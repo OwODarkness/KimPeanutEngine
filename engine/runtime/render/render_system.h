@@ -6,12 +6,8 @@
 #include <functional>
 #include <memory>
 #include <string>
-#include <unordered_map>
 #include <vector>
 
-#include "asset/asset.h"
-#include "asset/asset_load_request.h"
-#include "async/async_queue.h"
 #include "base/event.h"
 #include "base/type.h"
 #include "delegate/event_dispatcher.h"
@@ -27,15 +23,11 @@
 #include "render_resource.h"
 #include "render_source_registry.h"
 #include "render_world/render_world.h"
+#include "prepared_render_asset_catalog.h"
 
 namespace kpengine::graphics
 {
     class RenderBackend;
-}
-
-namespace kpengine::resource
-{
-    class ResourcePipeline;
 }
 
 namespace kpengine::runtime
@@ -73,16 +65,8 @@ namespace kpengine::render
         GraphicsAPIType api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         WindowHandle native_window = nullptr;
         EventDispatcher<ResizeEvent> *resize_dispatcher = nullptr;
-        async::AsyncQueue<asset::AssetLoadRequest> *load_queue = nullptr;
+        std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets;
         RenderBackendFactory backend_factory;
-    };
-
-    // `payload` pins CPU data; `resource` is the one render-ready result for this request.
-    struct RenderCacheEntry
-    {
-        asset::AssetID asset_id;
-        asset::AssetPayload payload;
-        RenderResource resource;
     };
 
     // The render-module facade. Reconstruction re-owns the RHI backend, the
@@ -108,7 +92,6 @@ namespace kpengine::render
         RenderSystemLifecycleState GetLifecycleState() const { return lifecycle_state_; }
         const std::string &GetLastDiagnostic() const { return last_diagnostic_; }
 
-        // Runtime pass: drain a bounded number of requests so no frame stalls.
         bool Tick(float delta_time);
         // Split frame bracket for the editor: scene work is recorded first, then
         // the API-specific editor renderer composites before submission/present.
@@ -118,9 +101,6 @@ namespace kpengine::render
         // that external work runs: after ScenePass and before presentation.
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
 
-        bool IsReady(asset::RequestID request_id) const;
-        const RenderCacheEntry *GetCached(asset::RequestID request_id) const;
-        graphics::PipelineHandle GetPipeline(asset::RequestID request_id) const;
         GraphicsContext GetGraphicsContext();
         const RenderTarget &GetSceneRenderTarget() const;
         // The editor provides its available viewport extent. Reallocation happens
@@ -148,9 +128,6 @@ namespace kpengine::render
         void CleanupOwnedState();
         bool IsState(RenderSystemLifecycleState expected) const;
 
-        // Drain up to max_items requests (0 = unlimited, the bootstrap pass).
-        void ConsumeRequests(std::size_t max_items);
-        bool ConsumeOne(const asset::AssetLoadRequest &request, RenderCacheEntry &entry);
         RenderableSourceResolution ResolveRenderableSource(
             const PrimitiveRenderableSourceDesc &source);
         MaterialResolution ResolveMaterialAsset(asset::AssetID material_asset,
@@ -160,13 +137,11 @@ namespace kpengine::render
         void DrainCameraSources();
         void DrainEnvironmentSources();
 
-        const RenderCacheEntry *FindCached(asset::AssetID asset_id) const;
         void DestroyMaterialAssetRecords();
         void ApplyDefaultCamera();
         FrameContext *GetCurrentFrameContext();
 
     private:
-        std::unique_ptr<resource::ResourcePipeline> resource_pipeline_;
         std::unique_ptr<graphics::RenderBackend> backend_;
         std::unique_ptr<MaterialSystem> material_system_;
         std::unique_ptr<RenderResourceResolver> resource_resolver_;
@@ -180,12 +155,10 @@ namespace kpengine::render
         EnvironmentSourceRegistry environment_source_registry_;
         RenderCamera scene_camera_;
         std::unique_ptr<MaterialAssetResolver> material_asset_resolver_;
+        std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets_;
         std::unique_ptr<RenderCaptureService> render_capture_service_;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;
-        async::AsyncQueue<asset::AssetLoadRequest> *load_queue_ = nullptr;
-
-        std::unordered_map<asset::RequestID, RenderCacheEntry> render_cache_;
         FrameContext *active_frame_context_ = nullptr;
         RenderSystemLifecycleState lifecycle_state_ =
             RenderSystemLifecycleState::Uninitialized;

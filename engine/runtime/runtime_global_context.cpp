@@ -6,6 +6,7 @@
 #include "window/window_system.h"
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
+#include "render_asset_preparer.h"
 #include "gameplay/factory/directional_light_actor_factory.h"
 #include "gameplay/factory/point_light_actor_factory.h"
 #include "gameplay/factory/spot_light_actor_factory.h"
@@ -72,13 +73,16 @@ namespace kpengine
 
             lua_vm_->Initialize();
 
-            // Render owns the resource pipeline. Startup assets were loaded by
-            // Engine before this render thread was created.
+            if (!prepared_render_assets_)
+            {
+                throw std::runtime_error(
+                    "Render asset catalog must be prepared before RenderSystem initialization");
+            }
             render::RenderSystemInitInfo render_init_info{};
             render_init_info.api_type = graphics_api_type_;
             render_init_info.native_window = window_system_->GetNativeHandle();
             render_init_info.resize_dispatcher = &window_system_->resize_event_dispatcher_;
-            render_init_info.load_queue = &async_load_queue_;
+            render_init_info.prepared_assets = prepared_render_assets_;
             const render::RenderSystemInitResult render_init_result =
                 render_system_->Initialize(render_init_info);
             if (!render_init_result)
@@ -114,6 +118,23 @@ namespace kpengine
             // input_system_->Initialize();
             // render_system_->Initialize();
             // world_system_->Initialize();
+        }
+
+        RuntimeContext::StartupResult RuntimeContext::PrepareRenderAssets()
+        {
+            if (!startup_level_asset_.IsValid() ||
+                startup_level_asset_.type != asset::AssetType::KPAT_Level)
+            {
+                return {false, "startup level AssetID is invalid for render preparation"};
+            }
+            const RenderAssetPreparationResult result =
+                RenderAssetPreparer{}.Prepare(startup_level_asset_, graphics_api_type_);
+            if (!result)
+            {
+                return {false, result.diagnostic};
+            }
+            prepared_render_assets_ = result.catalog;
+            return {true, {}};
         }
 
         void RuntimeContext::PostInitialize()
@@ -259,6 +280,7 @@ namespace kpengine
                 render_system_->Shutdown();
                 render_system_.reset();
             }
+            prepared_render_assets_.reset();
             if (input_system_)
             {
                 input_system_->Shutdown();

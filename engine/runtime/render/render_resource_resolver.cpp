@@ -5,12 +5,10 @@
 #include "asset/shader.h"
 #include "asset/shader_program.h"
 #include "asset/texture.h"
-#include "asset/asset_manager.h"
 #include "data/mesh.h"
 #include "graphics/backend/common/render_backend.h"
 #include "graphics/backend/common/sampler.h"
 #include "graphics/backend/common/texture.h"
-#include "resource/resource_pipeline.h"
 
 namespace kpengine::render
 {
@@ -25,13 +23,13 @@ namespace kpengine::render
     }
 
     RenderResourceResolver::RenderResourceResolver(graphics::RenderBackend &backend,
-                                                     resource::ResourcePipeline &resource_pipeline)
-        : backend_(&backend), resource_pipeline_(&resource_pipeline)
+                                                     const PreparedRenderAssetCatalog &prepared_assets)
+        : backend_(&backend), prepared_assets_(&prepared_assets)
     {
     }
 
     graphics::PipelineHandle RenderResourceResolver::GetOrCreateDefaultPipeline(
-        asset::AssetID program_id, asset::ShaderProgramResource &program,
+        asset::AssetID program_id, const asset::ShaderProgramResource &program,
         const MaterialPipelineState *material_state, bool bindless_texture_table_compatible,
         MaterialPass pass)
     {
@@ -124,8 +122,7 @@ namespace kpengine::render
     MaterialResolution RenderResourceResolver::ResolveTemplate(MaterialTemplateHandle handle,
                                                                 const MaterialTemplateDesc &desc)
     {
-        auto program = asset::AssetManager::GetInstance().GetResource<asset::ShaderProgramResource>(
-            desc.shader_program);
+        auto program = prepared_assets_->Get<asset::ShaderProgramResource>(desc.shader_program);
         if (!program)
         {
             return {MaterialResourceState::Pending, "shader program asset is not loaded"};
@@ -136,14 +133,19 @@ namespace kpengine::render
         const asset::ShaderProgramVariant variant = use_bindless_pipeline
                                                         ? asset::ShaderProgramVariant::Bindless
                                                         : asset::ShaderProgramVariant::Bound;
-        const auto shaders = program->GatherShaders(variant);
-        resource_pipeline_->ProcessShader(shaders);
-        for (const asset::ShaderPtr &shader : shaders)
+        const auto shader_for_stage = [this, &program, variant](ShaderStage stage)
         {
-            if (!shader || shader->status == asset::ShaderStatus::CompileFailed)
-            {
-                return {MaterialResourceState::Failed, "shader program compilation failed"};
-            }
+            const asset::AssetID shader_id = program->GetData(
+                stage, ShaderFormat::SHADER_FORMAT_GLSL, variant);
+            return prepared_assets_->Get<asset::ShaderResource>(shader_id);
+        };
+        const auto vert_shader = shader_for_stage(ShaderStage::SHADER_STAGE_VERTEX);
+        const auto frag_shader = shader_for_stage(ShaderStage::SHADER_STAGE_FRAGMENT);
+        if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
+            vert_shader->status != asset::ShaderStatus::Ready ||
+            frag_shader->status != asset::ShaderStatus::Ready)
+        {
+            return {MaterialResourceState::Failed, "shader program is not prepared"};
         }
         // A pipeline per compatible pass with a registered builder. Passes that
         // have no builder yet (ShadowDepth until D4) are skipped, not failed —
@@ -177,7 +179,6 @@ namespace kpengine::render
     {
         ReleaseInstance(handle);
         material_texture_bindings_.erase(handle);
-        auto &asset_manager = asset::AssetManager::GetInstance();
         ResolvedMaterialTextureBindings bindings;
         for (uint32_t parameter_id = 0; parameter_id < effective_values.size(); ++parameter_id)
         {
@@ -187,7 +188,8 @@ namespace kpengine::render
             {
                 continue;
             }
-            auto texture = asset_manager.GetResource<asset::TextureResource>(texture_value->texture_asset);
+            auto texture = prepared_assets_->Get<asset::TextureResource>(
+                texture_value->texture_asset);
             if (!texture || !texture->data)
             {
                 return {MaterialResourceState::Pending, "material texture asset is not loaded"};
@@ -330,12 +332,12 @@ namespace kpengine::render
         }
         material_sampler_cache_.clear();
         backend_ = nullptr;
-        resource_pipeline_ = nullptr;
+        prepared_assets_ = nullptr;
         material_pipelines_.clear();
         material_texture_bindings_.clear();
     }
 
-    bool RenderResourceResolver::BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
+    bool RenderResourceResolver::BuildDefaultPipelineDesc(const asset::ShaderProgramResource &program,
                                                            graphics::PipelineDesc &out_desc,
                                                            const MaterialPipelineState *material_state,
                                                            bool bindless_texture_table_compatible,
@@ -344,10 +346,12 @@ namespace kpengine::render
         const asset::ShaderProgramVariant variant = bindless_texture_table_compatible
                                                         ? asset::ShaderProgramVariant::Bindless
                                                         : asset::ShaderProgramVariant::Bound;
-        const auto vert_shader = program.GetShader(ShaderStage::SHADER_STAGE_VERTEX,
-                                                   ShaderFormat::SHADER_FORMAT_GLSL, variant);
-        const auto frag_shader = program.GetShader(ShaderStage::SHADER_STAGE_FRAGMENT,
-                                                   ShaderFormat::SHADER_FORMAT_GLSL, variant);
+        const auto vert_shader = prepared_assets_->Get<asset::ShaderResource>(
+            program.GetData(ShaderStage::SHADER_STAGE_VERTEX,
+                            ShaderFormat::SHADER_FORMAT_GLSL, variant));
+        const auto frag_shader = prepared_assets_->Get<asset::ShaderResource>(
+            program.GetData(ShaderStage::SHADER_STAGE_FRAGMENT,
+                            ShaderFormat::SHADER_FORMAT_GLSL, variant));
         if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
             vert_shader->status != asset::ShaderStatus::Ready ||
             frag_shader->status != asset::ShaderStatus::Ready)

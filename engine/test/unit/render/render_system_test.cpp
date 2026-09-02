@@ -10,8 +10,9 @@
 #include <utility>
 #include <vector>
 
-#include "async/async_queue.h"
 #include "asset/asset_manager.h"
+#include "asset/shader.h"
+#include "asset/shader_program.h"
 #include "asset/texture.h"
 #include "data/texture.h"
 #include "graphics/backend/common/command_recorder.h"
@@ -21,6 +22,7 @@
 #include "render/deferred_renderer.h"
 #include "render/render_resource_resolver.h"
 #include "render/render_system.h"
+#include "render/prepared_render_asset_catalog.h"
 
 namespace
 {
@@ -379,11 +381,92 @@ namespace
 
     void FakeCommandRecorder::EndRenderTarget() { backend_.RecordEndTarget(); }
 
+    std::shared_ptr<const render::PreparedRenderAssetCatalog> BuildPreparedCatalog(
+        const std::vector<asset::AssetID> &extra_textures = {})
+    {
+        render::PreparedRenderAssetCatalogBuild build;
+        build.graphics_api = GraphicsAPIType::GRAPHICS_API_OPENGL;
+        const asset::AssetID vertex_id{1, 1, asset::AssetType::KPAT_Shader};
+        const asset::AssetID fragment_id{2, 1, asset::AssetType::KPAT_Shader};
+        const asset::AssetID program_id{3, 1, asset::AssetType::KPAT_ShaderProgram};
+
+        auto make_shader = [](ShaderStage stage)
+        {
+            auto shader = std::make_shared<asset::ShaderResource>();
+            shader->status = asset::ShaderStatus::Ready;
+            shader->data = std::make_shared<data::ShaderData>();
+            shader->data->stage = stage;
+            shader->data->api = GraphicsAPIType::GRAPHICS_API_OPENGL;
+            shader->data->source = "void main() {}";
+            shader->desc.stage = stage;
+            shader->format = ShaderFormat::SHADER_FORMAT_GLSL;
+            return shader;
+        };
+        build.records.push_back({vertex_id, make_shader(ShaderStage::SHADER_STAGE_VERTEX), {}});
+        build.records.push_back({fragment_id, make_shader(ShaderStage::SHADER_STAGE_FRAGMENT), {}});
+        auto program = std::make_shared<asset::ShaderProgramResource>();
+        program->BindData(ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL,
+                          vertex_id);
+        program->BindData(ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL,
+                          fragment_id);
+        build.records.push_back({program_id, program, {vertex_id, fragment_id}});
+
+        auto make_texture = [](uint32_t value)
+        {
+            auto texture = std::make_shared<asset::TextureResource>();
+            texture->data->width = 1;
+            texture->data->height = 1;
+            texture->data->pixels.resize(4, static_cast<uint8_t>(value));
+            return texture;
+        };
+        const asset::AssetID white_id{4, 1, asset::AssetType::KPAT_Texture};
+        const asset::AssetID normal_id{5, 1, asset::AssetType::KPAT_Texture};
+        build.records.push_back({white_id, make_texture(255), {}});
+        build.records.push_back({normal_id, make_texture(128), {}});
+        for (const asset::AssetID extra : extra_textures)
+        {
+            const auto texture = asset::AssetManager::GetInstance().GetResource<asset::TextureResource>(extra);
+            if (texture)
+            {
+                build.records.push_back({extra, texture, {}});
+                if (texture->data && texture->data->format == TextureFormat::TEXTURE_FORMAT_RGBA16F &&
+                    texture->data->pixels.size() >= 64)
+                {
+                    resource::EnvironmentIblData ibl{};
+                    ibl.irradiance.width = 1;
+                    ibl.irradiance.height = 1;
+                    ibl.irradiance.pixels.resize(8, 0);
+                    ibl.prefiltered_radiance.width = 1;
+                    ibl.prefiltered_radiance.height = 1;
+                    ibl.prefiltered_radiance.pixels.resize(8, 0);
+                    ibl.brdf_lut.width = 1;
+                    ibl.brdf_lut.height = 1;
+                    ibl.brdf_lut.pixels.resize(8, 0);
+                    ibl.prefilter_level_count = 1;
+                    build.environment_ibl.push_back({extra, std::move(ibl)});
+                }
+            }
+        }
+        for (const auto &requirement : render::GetBuiltInRenderAssetRequirements())
+        {
+            build.built_ins[static_cast<size_t>(requirement.role)] =
+                requirement.expected_type == asset::AssetType::KPAT_Texture
+                    ? (requirement.role == render::BuiltInRenderAsset::DefaultWhiteTexture
+                           ? white_id
+                           : normal_id)
+                    : program_id;
+        }
+        std::string diagnostic;
+        auto catalog = render::PreparedRenderAssetCatalog::Create(std::move(build), diagnostic);
+        return catalog ? std::make_shared<const render::PreparedRenderAssetCatalog>(std::move(*catalog))
+                       : nullptr;
+    }
+
     struct InitFixtures
     {
         EventDispatcher<ResizeEvent> resize_dispatcher;
-        async::AsyncQueue<asset::AssetLoadRequest> load_queue;
         int native_window_token = 0;
+        std::vector<asset::AssetID> extra_textures;
 
         render::RenderSystemInitInfo Info(const render::RenderBackendFactory &factory)
         {
@@ -391,7 +474,7 @@ namespace
             info.api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
             info.native_window = &native_window_token;
             info.resize_dispatcher = &resize_dispatcher;
-            info.load_queue = &load_queue;
+            info.prepared_assets = BuildPreparedCatalog(extra_textures);
             info.backend_factory = factory;
             return info;
         }
@@ -515,13 +598,13 @@ TEST(DeferredRendererTest, OwnsTargetLifetimeAndCleanupIsIdempotent)
 {
     const auto probe = std::make_shared<BackendProbe>();
     FakeBackend backend(probe);
-    resource::ResourcePipeline resource_pipeline;
-    resource_pipeline.Initialize({GraphicsAPIType::GRAPHICS_API_OPENGL});
     render::MaterialSystem materials;
-    render::RenderResourceResolver resolver(backend, resource_pipeline);
+    const auto prepared_assets = BuildPreparedCatalog();
+    ASSERT_NE(prepared_assets, nullptr);
+    render::RenderResourceResolver resolver(backend, *prepared_assets);
     render::DeferredRenderer renderer;
 
-    ASSERT_TRUE(renderer.Initialize({backend, resource_pipeline, resolver, materials}, 320, 200));
+    ASSERT_TRUE(renderer.Initialize({backend, resolver, materials, *prepared_assets}, 320, 200));
     EXPECT_TRUE(renderer.IsPassSequenceValid());
     renderer.Cleanup();
     renderer.Cleanup();
@@ -635,6 +718,7 @@ TEST(RenderSystemEnvironmentTest, ResolvesReadyAssetIDsAndReusesDerivedBindings)
 
     const auto probe = std::make_shared<BackendProbe>();
     InitFixtures fixtures;
+    fixtures.extra_textures.push_back(texture_id);
     render::RenderSystem system;
     ASSERT_TRUE(system.Initialize(
         fixtures.Info([probe](GraphicsAPIType)
@@ -681,6 +765,7 @@ TEST(RenderSystemEnvironmentTest, RetainsBaselineAcrossTypedResolutionFailures)
 
     const auto probe = std::make_shared<BackendProbe>();
     InitFixtures fixtures;
+    fixtures.extra_textures = {wrong_format_id, malformed_id, valid_id};
     render::RenderSystem system;
     ASSERT_TRUE(system.Initialize(
         fixtures.Info([probe](GraphicsAPIType)
@@ -785,6 +870,7 @@ TEST(RenderSystemEnvironmentTest, PublishesEnvironmentBindingsAtomicallyAndResto
 
     const auto probe = std::make_shared<BackendProbe>();
     InitFixtures fixtures;
+    fixtures.extra_textures.push_back(texture_id);
     render::RenderSystem system;
     ASSERT_TRUE(system.Initialize(
         fixtures.Info([probe](GraphicsAPIType)

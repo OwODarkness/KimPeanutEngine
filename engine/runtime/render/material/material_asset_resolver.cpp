@@ -5,18 +5,13 @@
 #include <string>
 #include <utility>
 
-#include "asset/asset_manager.h"
 #include "asset/material.h"
 #include "asset/shader_program.h"
-#include "config/path.h"
 
 namespace kpengine::render
 {
     namespace
     {
-        constexpr const char *kDefaultWhiteTexturePath = "texture/default/default_white.png";
-        constexpr const char *kDefaultFlatNormalTexturePath = "texture/default/default_flat_normal.png";
-
         // StandardPbr texture descriptor bindings. Base color keeps the V1 slot
         // (2); 4 is reserved for the D5 frame lighting block; the PBR maps take
         // the free high slots. Mirrors the GBuffer pipeline's descriptor layout
@@ -42,9 +37,18 @@ namespace kpengine::render
         }
     }
 
-    MaterialAssetResolver::MaterialAssetResolver(MaterialSystem &material_system)
-        : material_system_(&material_system)
+    MaterialAssetResolver::MaterialAssetResolver(
+        MaterialSystem &material_system,
+        std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets)
+        : material_system_(&material_system), prepared_assets_(std::move(prepared_assets))
     {
+        if (prepared_assets_)
+        {
+            default_white_ = prepared_assets_->GetBuiltIn(
+                BuiltInRenderAsset::DefaultWhiteTexture);
+            default_flat_normal_ = prepared_assets_->GetBuiltIn(
+                BuiltInRenderAsset::DefaultFlatNormalTexture);
+        }
     }
 
     MaterialResolution MaterialAssetResolver::Resolve(asset::AssetID material_asset,
@@ -53,6 +57,10 @@ namespace kpengine::render
         if (!material_asset.IsValid() || material_asset.type != asset::AssetType::KPAT_Material)
         {
             return {MaterialResourceState::Failed, "static mesh source has an invalid material asset"};
+        }
+        if (!prepared_assets_)
+        {
+            return {MaterialResourceState::Pending, "render asset catalog is not published"};
         }
 
         const uint64_t key = material_asset.Pack();
@@ -63,15 +71,15 @@ namespace kpengine::render
             return material_system_->GetInstanceResolution(out_instance);
         }
 
-        auto &asset_manager = asset::AssetManager::GetInstance();
-        const auto material = asset_manager.GetResource<asset::MaterialResource>(material_asset);
-        asset::Asset *const material_wrapper = asset_manager.GetAsset(material_asset);
-        if (!material || !material_wrapper)
+        const auto material = prepared_assets_ != nullptr
+                                  ? prepared_assets_->Get<asset::MaterialResource>(material_asset)
+                                  : nullptr;
+        if (!material)
         {
             return {MaterialResourceState::Pending, "material asset is not loaded"};
         }
 
-        const asset::AssetID shader_program = asset_manager.ResolveDependency(
+        const asset::AssetID shader_program = prepared_assets_->ResolveDependency(
             material_asset, material->shader_dependency_index,
             asset::AssetType::KPAT_ShaderProgram);
         if (!shader_program.IsValid() || shader_program.type != asset::AssetType::KPAT_ShaderProgram)
@@ -95,7 +103,7 @@ namespace kpengine::render
 
         if (material->surface.shading_model == asset::MaterialShadingModel::StandardPbr)
         {
-            if (!BuildStandardPbrTemplate(material_asset, *material, asset_manager, template_desc))
+            if (!BuildStandardPbrTemplate(material_asset, *material, template_desc))
             {
                 return {MaterialResourceState::Failed,
                         "standard_pbr material semantics or references are invalid"};
@@ -127,7 +135,7 @@ namespace kpengine::render
                         return {MaterialResourceState::Failed,
                                 "Material Asset V1 supports only base_color_texture"};
                     }
-                    const asset::AssetID texture_asset = asset_manager.ResolveDependency(
+                    const asset::AssetID texture_asset = prepared_assets_->ResolveDependency(
                         material_asset, parameter.dependency_index, asset::AssetType::KPAT_Texture);
                     if (!texture_asset.IsValid() || texture_asset.type != asset::AssetType::KPAT_Texture)
                     {
@@ -163,7 +171,7 @@ namespace kpengine::render
 
     bool MaterialAssetResolver::BuildStandardPbrTemplate(
         asset::AssetID material_asset, const asset::MaterialResource &material,
-        asset::AssetManager &asset_manager, MaterialTemplateDesc &template_desc)
+        MaterialTemplateDesc &template_desc)
     {
         // Collect authored semantics. Unknown names or type mismatches fail.
         std::optional<Vector4f> base_color;
@@ -203,7 +211,7 @@ namespace kpengine::render
                      name == "occlusion_texture")
             {
                 if (parameter.type != asset::MaterialParameterSourceType::Texture) return false;
-                const asset::AssetID texture_asset = asset_manager.ResolveDependency(
+                const asset::AssetID texture_asset = prepared_assets_->ResolveDependency(
                     material_asset, parameter.dependency_index, asset::AssetType::KPAT_Texture);
                 if (!texture_asset.IsValid() || texture_asset.type != asset::AssetType::KPAT_Texture)
                 {
@@ -280,32 +288,6 @@ namespace kpengine::render
         template_desc.bindless_texture_table_compatible = false;
         template_desc.compatible_passes = {MaterialPass::GBuffer};
         return true;
-    }
-
-    bool MaterialAssetResolver::WarmBuiltInTextures()
-    {
-        asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
-        const asset::AssetID white =
-            LoadDefaultTexture(asset_manager, kDefaultWhiteTexturePath, default_white_);
-        const asset::AssetID flat_normal =
-            LoadDefaultTexture(asset_manager, kDefaultFlatNormalTexturePath, default_flat_normal_);
-        return white.IsValid() && flat_normal.IsValid();
-    }
-
-    asset::AssetID MaterialAssetResolver::LoadDefaultTexture(asset::AssetManager &asset_manager,
-                                                             const std::string &relative_path,
-                                                             asset::AssetID &cache)
-    {
-        if (cache.IsValid())
-        {
-            return cache;
-        }
-        const asset::AssetID id = asset_manager.LoadSync(GetAssetDirectory() + relative_path);
-        if (id.IsValid() && id.type == asset::AssetType::KPAT_Texture)
-        {
-            cache = id;
-        }
-        return cache;
     }
 
     void MaterialAssetResolver::Clear()

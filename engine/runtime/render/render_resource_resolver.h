@@ -13,6 +13,7 @@
 #include "graphics/backend/common/texture.h"
 #include "pipeline_cache_key.h"
 #include "render/material/material_system.h"
+#include "prepared_render_asset_catalog.h"
 #include "render_resource.h"
 
 namespace kpengine::asset
@@ -29,11 +30,6 @@ namespace kpengine::data
 namespace kpengine::graphics
 {
     class RenderBackend;
-}
-
-namespace kpengine::resource
-{
-    class ResourcePipeline;
 }
 
 namespace kpengine::render
@@ -89,10 +85,10 @@ namespace kpengine::render
             bool uses_bindless_textures = false;
         };
         RenderResourceResolver(graphics::RenderBackend &backend,
-                               resource::ResourcePipeline &resource_pipeline);
+                               const PreparedRenderAssetCatalog &prepared_assets);
 
         graphics::PipelineHandle GetOrCreateDefaultPipeline(
-            asset::AssetID program_id, asset::ShaderProgramResource &program,
+            asset::AssetID program_id, const asset::ShaderProgramResource &program,
             const MaterialPipelineState *material_state = nullptr,
             bool bindless_texture_table_compatible = false,
             MaterialPass pass = MaterialPass::Scene);
@@ -118,7 +114,7 @@ namespace kpengine::render
         void Cleanup();
 
     private:
-        static bool BuildDefaultPipelineDesc(asset::ShaderProgramResource &program,
+        bool BuildDefaultPipelineDesc(const asset::ShaderProgramResource &program,
                                              graphics::PipelineDesc &out_desc,
                                              const MaterialPipelineState *material_state,
                                              bool bindless_texture_table_compatible,
@@ -128,7 +124,7 @@ namespace kpengine::render
         graphics::SamplerHandle GetOrCreateSampler(const MaterialSamplerDesc &desc);
 
         graphics::RenderBackend *backend_ = nullptr;
-        resource::ResourcePipeline *resource_pipeline_ = nullptr;
+        const PreparedRenderAssetCatalog *prepared_assets_ = nullptr;
         std::unordered_map<PipelineCacheKey, graphics::PipelineHandle, PipelineCacheKeyHash>
             pipeline_cache_;
         std::unordered_map<uint64_t, graphics::MeshHandle> mesh_cache_;

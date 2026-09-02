@@ -8,13 +8,11 @@
 #include <stdexcept>
 #include <utility>
 
-#include "asset/asset_manager.h"
 #include "asset/mesh.h"
 #include "asset/model.h"
 #include "asset/shader.h"
 #include "asset/shader_program.h"
 #include "asset/texture.h"
-#include "config/path.h"
 #include "graphics/backend/common/render_backend.h"
 #include "graphics/backend/common/command_recorder.h"
 #include "log/logger.h"
@@ -24,8 +22,6 @@
 #include "render/render_world/scene_draw_list.h"
 #include "render/render_world/scene_visibility.h"
 #include "render_resource_resolver.h"
-#include "resource/resource_pipeline.h"
-#include "resource/shader_operation.h"
 
 namespace kpengine::render
 {
@@ -45,9 +41,6 @@ namespace kpengine::render
             }
         }
 
-        // Runtime frame budget: cap the per-frame load+compile work so a burst of
-        // requests never stalls a frame. 0 means "no budget" (the bootstrap pass).
-        constexpr std::size_t kMaxRuntimeLoadsPerFrame = 2;
         constexpr uint32_t kPointShadowFaceResolution = 512;
         constexpr uint32_t kPointShadowAtlasWidth = kPointShadowFaceResolution * 3;
         constexpr uint32_t kPointShadowAtlasHeight = kPointShadowFaceResolution * 2;
@@ -280,9 +273,9 @@ namespace kpengine::render
         }
 
         backend_ = &info.backend;
-        resource_pipeline_ = &info.resource_pipeline;
         resource_resolver_ = &info.resource_resolver;
         material_system_ = &info.materials;
+        prepared_assets_ = &info.prepared_assets;
         try
         {
             frame_targets_.Initialize(*backend_, width, height);
@@ -363,9 +356,36 @@ namespace kpengine::render
         pass_sequence_.reset();
         frame_targets_.Cleanup();
         backend_ = nullptr;
-        resource_pipeline_ = nullptr;
         resource_resolver_ = nullptr;
         material_system_ = nullptr;
+        prepared_assets_ = nullptr;
+    }
+
+    bool DeferredRenderer::GetPreparedProgram(BuiltInRenderAsset role,
+                                              std::shared_ptr<const asset::ShaderProgramResource> &out_program) const
+    {
+        out_program = prepared_assets_ != nullptr
+                          ? prepared_assets_->Get<asset::ShaderProgramResource>(
+                                prepared_assets_->GetBuiltIn(role))
+                          : nullptr;
+        if (!out_program)
+        {
+            return false;
+        }
+        for (const ShaderStage stage : {ShaderStage::SHADER_STAGE_VERTEX,
+                                       ShaderStage::SHADER_STAGE_FRAGMENT})
+        {
+            const asset::AssetID shader_id = out_program->GetData(
+                stage, ShaderFormat::SHADER_FORMAT_GLSL,
+                asset::ShaderProgramVariant::Bound);
+            const auto shader = prepared_assets_->Get<asset::ShaderResource>(shader_id);
+            if (!shader || !shader->data || shader->status != asset::ShaderStatus::Ready)
+            {
+                out_program.reset();
+                return false;
+            }
+        }
+        return true;
     }
 
     void DeferredRenderer::RequestExtent(uint32_t width, uint32_t height)
@@ -1244,20 +1264,15 @@ namespace kpengine::render
             return true;
         }
 
-        auto &asset_manager = asset::AssetManager::GetInstance();
-        const asset::AssetID program_id = asset_manager.LoadSync(
-            GetShaderDirectory() + "deferred_lighting.shader");
-        auto program = asset_manager.GetResource<asset::ShaderProgramResource>(program_id);
-        if (!program)
+        std::shared_ptr<const asset::ShaderProgramResource> program;
+        if (!GetPreparedProgram(BuiltInRenderAsset::DeferredLightingProgram, program))
         {
             return false;
         }
-        const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
-        resource_pipeline_->ProcessShader(shaders);
-        const auto vert_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
-        const auto frag_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto vert_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL));
+        const auto frag_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL));
         if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
             vert_shader->status == asset::ShaderStatus::CompileFailed ||
             frag_shader->status == asset::ShaderStatus::CompileFailed)
@@ -1317,9 +1332,10 @@ namespace kpengine::render
                                              const data::TextureData &source,
                                              EnvironmentBindingBundle &bundle)
     {
-        const std::optional<resource::EnvironmentIblData> processed =
-            resource_pipeline_->ProcessEnvironmentIbl(source);
-        if (!processed.has_value())
+        const PreparedEnvironmentIbl *const prepared =
+            prepared_assets_ != nullptr ? prepared_assets_->FindEnvironmentIbl(source_asset)
+                                         : nullptr;
+        if (prepared == nullptr)
         {
             KP_LOG("RenderLog", LOG_LEVEL_ERROR,
                    "Environment IBL preprocessing requires a valid RGBA16F panorama");
@@ -1331,10 +1347,10 @@ namespace kpengine::render
         panorama_sampler.address_v = MaterialSamplerAddressMode::ClampToEdge;
         panorama_sampler.address_w = MaterialSamplerAddressMode::ClampToEdge;
         bundle.irradiance = resource_resolver_->GetOrCreateTextureBinding(
-            source_asset, processed->irradiance, MaterialTextureColorSpace::Linear,
+            source_asset, prepared->data.irradiance, MaterialTextureColorSpace::Linear,
             &panorama_sampler, TextureCacheVariant::EnvironmentIrradiance);
         bundle.prefiltered_radiance = resource_resolver_->GetOrCreateTextureBinding(
-            source_asset, processed->prefiltered_radiance,
+            source_asset, prepared->data.prefiltered_radiance,
             MaterialTextureColorSpace::Linear, &panorama_sampler,
             TextureCacheVariant::EnvironmentPrefilter);
 
@@ -1343,9 +1359,9 @@ namespace kpengine::render
         lut_sampler.address_v = MaterialSamplerAddressMode::ClampToEdge;
         lut_sampler.address_w = MaterialSamplerAddressMode::ClampToEdge;
         bundle.brdf_lut = resource_resolver_->GetOrCreateTextureBinding(
-            source_asset, processed->brdf_lut, MaterialTextureColorSpace::Linear,
+            source_asset, prepared->data.brdf_lut, MaterialTextureColorSpace::Linear,
             &lut_sampler, TextureCacheVariant::EnvironmentBrdfLut);
-        bundle.prefilter_level_count = processed->prefilter_level_count;
+        bundle.prefilter_level_count = prepared->data.prefilter_level_count;
         bundle.ibl_enabled = bundle.HasCompleteBindings();
         return bundle.ibl_enabled;
     }
@@ -1362,27 +1378,15 @@ namespace kpengine::render
             return false;
         }
 
-        auto &asset_manager = asset::AssetManager::GetInstance();
-        const asset::AssetID program_id = asset_manager.LoadSync(
-            GetShaderDirectory() + "gbuffer_debug_view.shader");
-        auto program = asset_manager.GetResource<asset::ShaderProgramResource>(program_id);
-        if (!program)
+        std::shared_ptr<const asset::ShaderProgramResource> program;
+        if (!GetPreparedProgram(BuiltInRenderAsset::GBufferDebugProgram, program))
         {
             return false;
         }
-        const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
-        resource_pipeline_->ProcessShader(shaders);
-        for (const asset::ShaderPtr &shader : shaders)
-        {
-            if (!shader || shader->status == asset::ShaderStatus::CompileFailed)
-            {
-                return false;
-            }
-        }
-        const auto vert_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
-        const auto frag_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto vert_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL));
+        const auto frag_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL));
         if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data)
         {
             return false;
@@ -1604,20 +1608,15 @@ namespace kpengine::render
             return false;
         }
 
-        auto &asset_manager = asset::AssetManager::GetInstance();
-        const asset::AssetID program_id = asset_manager.LoadSync(
-            GetShaderDirectory() + "tone_map.shader");
-        auto program = asset_manager.GetResource<asset::ShaderProgramResource>(program_id);
-        if (!program)
+        std::shared_ptr<const asset::ShaderProgramResource> program;
+        if (!GetPreparedProgram(BuiltInRenderAsset::ToneMapProgram, program))
         {
             return false;
         }
-        const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
-        resource_pipeline_->ProcessShader(shaders);
-        const auto vert_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
-        const auto frag_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto vert_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL));
+        const auto frag_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL));
         if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
             vert_shader->status == asset::ShaderStatus::CompileFailed ||
             frag_shader->status == asset::ShaderStatus::CompileFailed)
@@ -1701,20 +1700,15 @@ namespace kpengine::render
             return false;
         }
 
-        auto &asset_manager = asset::AssetManager::GetInstance();
-        const asset::AssetID program_id = asset_manager.LoadSync(
-            GetShaderDirectory() + "capture_view.shader");
-        auto program = asset_manager.GetResource<asset::ShaderProgramResource>(program_id);
-        if (!program)
+        std::shared_ptr<const asset::ShaderProgramResource> program;
+        if (!GetPreparedProgram(BuiltInRenderAsset::CaptureViewProgram, program))
         {
             return false;
         }
-        const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
-        resource_pipeline_->ProcessShader(shaders);
-        const auto vert_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
-        const auto frag_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto vert_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL));
+        const auto frag_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL));
         if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
             vert_shader->status == asset::ShaderStatus::CompileFailed ||
             frag_shader->status == asset::ShaderStatus::CompileFailed)
@@ -1767,20 +1761,15 @@ namespace kpengine::render
             return true;
         }
 
-        auto &asset_manager = asset::AssetManager::GetInstance();
-        const asset::AssetID program_id = asset_manager.LoadSync(
-            GetShaderDirectory() + "directional_shadow_depth.shader");
-        auto program = asset_manager.GetResource<asset::ShaderProgramResource>(program_id);
-        if (!program)
+        std::shared_ptr<const asset::ShaderProgramResource> program;
+        if (!GetPreparedProgram(BuiltInRenderAsset::DirectionalShadowProgram, program))
         {
             return false;
         }
-        const auto shaders = program->GatherShaders(asset::ShaderProgramVariant::Bound);
-        resource_pipeline_->ProcessShader(shaders);
-        const auto vert_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL);
-        const auto frag_shader = program->GetShader(
-            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL);
+        const auto vert_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_VERTEX, ShaderFormat::SHADER_FORMAT_GLSL));
+        const auto frag_shader = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_FRAGMENT, ShaderFormat::SHADER_FORMAT_GLSL));
         if (!vert_shader || !frag_shader || !vert_shader->data || !frag_shader->data ||
             vert_shader->status == asset::ShaderStatus::CompileFailed ||
             frag_shader->status == asset::ShaderStatus::CompileFailed)
@@ -1885,14 +1874,10 @@ namespace kpengine::render
             return false;
         }
 
-        asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
-        asset::Asset *const texture_wrapper = asset_manager.GetAsset(source.texture_asset);
-        const std::shared_ptr<asset::TextureResource> texture_resource =
-            texture_wrapper != nullptr
-                ? texture_wrapper->GetResource<asset::TextureResource>()
-                : nullptr;
-        if (texture_wrapper == nullptr || texture_wrapper->GetType() != asset::AssetType::KPAT_Texture ||
-            texture_resource == nullptr || texture_resource->data == nullptr)
+        const std::shared_ptr<const asset::TextureResource> texture_resource = prepared_assets_ != nullptr
+            ? prepared_assets_->Get<asset::TextureResource>(source.texture_asset)
+            : nullptr;
+        if (texture_resource == nullptr || texture_resource->data == nullptr)
         {
             return false;
         }
