@@ -1,6 +1,7 @@
 add_executable(
     AssetUnitTest
     assimp_model_loader_test.cpp
+    asset_load_observation_test.cpp
     material_loader_test.cpp
     level_loader_test.cpp
     shader_program_variant_test.cpp

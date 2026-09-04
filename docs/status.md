@@ -685,6 +685,14 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
+- **Asset loading progress screen (LO1 landed 2026-09-04; LO2/LO3 planned)** —
+  Asset now exposes opt-in, session-scoped load observations with recursive
+  operation correlation, bounded immutable snapshots, timing/size facts,
+  cache/dedup dispositions, failure diagnostics, and async sealing safety.
+  Runtime still owns whole-startup readiness and Editor still owns
+  presentation. → [architecture map](asset/PLANS.md),
+  [roadmap](asset/TODO.md), [cross-stage spec](../.spec/specs/asset-loading-progress.md),
+  [LO1 journal](../.spec/journal/asset-loading-progress.md)
 - **Gameplay editor inspection (deferred)** — Gameplay is game-thread-owned,
   while the current editor runs on the render thread. Add a read-only snapshot
   before exposing Actor/component state to editor tools; do not give Editor

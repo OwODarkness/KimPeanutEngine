@@ -2,6 +2,8 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <filesystem>
+#include <limits>
 #include <magic_enum/magic_enum.hpp>
 #include "assimp_model_loader.h"
 #include "image_io/image_io.h"
@@ -11,7 +13,10 @@
 #include "level_loader.h"
 #include "utility.h"
 #include "model.h"
+#include "mesh.h"
 #include "texture.h"
+#include "audio.h"
+#include "asset_load_observation_internal.h"
 #include "log/logger.h"
 
 namespace kpengine::asset
@@ -19,6 +24,338 @@ namespace kpengine::asset
     namespace
     {
         constexpr uint32_t kMaxImportedHdrWidth = 4096;
+
+        uint64_t ElapsedMicroseconds(
+            std::chrono::steady_clock::time_point begin,
+            std::chrono::steady_clock::time_point end) noexcept
+        {
+            if (end <= begin)
+            {
+                return 0;
+            }
+            const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(end - begin);
+            return elapsed.count() < 0 ? 0 : static_cast<uint64_t>(elapsed.count());
+        }
+
+        const char *PhaseName(AssetLoadPhase phase) noexcept
+        {
+            switch (phase)
+            {
+            case AssetLoadPhase::CacheLookup:
+                return "cache lookup";
+            case AssetLoadPhase::WaitingForLoader:
+                return "loader wait";
+            case AssetLoadPhase::LoadSource:
+                return "source load";
+            case AssetLoadPhase::ResolveDependencies:
+                return "dependency resolution";
+            case AssetLoadPhase::Register:
+                return "registration";
+            }
+            return "unknown phase";
+        }
+
+        std::string DisplayPath(const std::string &path)
+        {
+            try
+            {
+                std::string normalized =
+                    std::filesystem::path(path).lexically_normal().generic_string();
+                while (normalized.size() > 1 && normalized.back() == '/')
+                {
+                    normalized.pop_back();
+                }
+                const std::string asset_root =
+                    std::filesystem::path(GetAssetDirectory()).lexically_normal().generic_string();
+                const std::string normalized_key = CanonicalAssetPathKey(normalized);
+                std::string root_key = CanonicalAssetPathKey(asset_root);
+                while (root_key.size() > 1 && root_key.back() == '/')
+                {
+                    root_key.pop_back();
+                }
+                if (normalized_key == root_key ||
+                    (normalized_key.size() > root_key.size() &&
+                     normalized_key.compare(0, root_key.size(), root_key) == 0 &&
+                     normalized_key[root_key.size()] == '/'))
+                {
+                    if (normalized_key == root_key)
+                    {
+                        return "<asset directory>";
+                    }
+                    return normalized.substr(root_key.size() + 1);
+                }
+
+                const std::string filename = std::filesystem::path(normalized).filename().generic_string();
+                return filename.empty() ? "<asset directory>" : filename;
+            }
+            catch (...)
+            {
+                return "<asset path unavailable>";
+            }
+        }
+
+        std::optional<uint64_t> ProbeSourceFileSize(const std::string &path) noexcept
+        {
+            try
+            {
+                std::error_code error;
+                const uintmax_t size = std::filesystem::file_size(path, error);
+                if (error || size > std::numeric_limits<uint64_t>::max())
+                {
+                    return std::nullopt;
+                }
+                return static_cast<uint64_t>(size);
+            }
+            catch (...)
+            {
+                return std::nullopt;
+            }
+        }
+
+        bool CheckedAdd(uint64_t &total, uint64_t value) noexcept
+        {
+            if (std::numeric_limits<uint64_t>::max() - total < value)
+            {
+                return false;
+            }
+            total += value;
+            return true;
+        }
+
+        bool CheckedMultiply(uint64_t left, uint64_t right, uint64_t &result) noexcept
+        {
+            if (left != 0 && right > std::numeric_limits<uint64_t>::max() / left)
+            {
+                return false;
+            }
+            result = left * right;
+            return true;
+        }
+
+        std::optional<uint64_t> MeshPayloadSize(const MeshPtr &mesh) noexcept
+        {
+            if (!mesh || !mesh->data)
+            {
+                return std::nullopt;
+            }
+
+            uint64_t total = 0;
+            uint64_t bytes = 0;
+            if (!CheckedMultiply(static_cast<uint64_t>(mesh->data->vertices.size()),
+                                 static_cast<uint64_t>(sizeof(Vertex)), bytes) ||
+                !CheckedAdd(total, bytes) ||
+                !CheckedMultiply(static_cast<uint64_t>(mesh->data->indices.size()),
+                                 static_cast<uint64_t>(sizeof(uint32_t)), bytes) ||
+                !CheckedAdd(total, bytes) ||
+                !CheckedMultiply(static_cast<uint64_t>(mesh->data->sections.size()),
+                                 static_cast<uint64_t>(sizeof(MeshSection)), bytes) ||
+                !CheckedAdd(total, bytes))
+            {
+                return std::nullopt;
+            }
+            return total;
+        }
+
+        std::optional<uint64_t> MeasureDecodedPayload(
+            AssetManager &manager,
+            const AssetRegisterInfo &info) noexcept
+        {
+            if (const TexturePtr *texture = std::get_if<TexturePtr>(&info.resource))
+            {
+                if (!*texture || !(*texture)->data ||
+                    (*texture)->data->pixels.size() > std::numeric_limits<uint64_t>::max())
+                {
+                    return std::nullopt;
+                }
+                return static_cast<uint64_t>((*texture)->data->pixels.size());
+            }
+            if (const AudioPtr *audio = std::get_if<AudioPtr>(&info.resource))
+            {
+                if (!*audio || !(*audio)->data)
+                {
+                    return std::nullopt;
+                }
+                uint64_t bytes = 0;
+                return CheckedMultiply(static_cast<uint64_t>((*audio)->data->pcm.size()),
+                                       static_cast<uint64_t>(sizeof(float)), bytes)
+                           ? std::optional<uint64_t>(bytes)
+                           : std::nullopt;
+            }
+            if (const MeshPtr *mesh = std::get_if<MeshPtr>(&info.resource))
+            {
+                return MeshPayloadSize(*mesh);
+            }
+            if (const ModelPtr *model = std::get_if<ModelPtr>(&info.resource))
+            {
+                if (!*model)
+                {
+                    return std::nullopt;
+                }
+                uint64_t total = 0;
+                for (const AssetID &dependency : info.dependencies)
+                {
+                    if (dependency.type != AssetType::KPAT_Mesh)
+                    {
+                        continue;
+                    }
+                    const MeshPtr mesh = manager.GetResource<MeshResource>(dependency);
+                    const std::optional<uint64_t> mesh_bytes = MeshPayloadSize(mesh);
+                    if (!mesh_bytes || !CheckedAdd(total, *mesh_bytes))
+                    {
+                        return std::nullopt;
+                    }
+                }
+                return total;
+            }
+            return std::nullopt;
+        }
+
+        class ObservedOperation
+        {
+        public:
+            ObservedOperation(
+                std::shared_ptr<detail::AssetLoadSessionState> state,
+                AssetLoadOperationID operation)
+                : state_(std::move(state)), operation_(operation)
+            {
+            }
+
+            ~ObservedOperation() noexcept
+            {
+                if (IsActive())
+                {
+                    Finish(AssetLoadState::Failed, std::nullopt, std::nullopt,
+                           "observation ended before the load reached a terminal state");
+                }
+            }
+
+            bool IsActive() const noexcept
+            {
+                return state_ != nullptr && operation_ != 0 && !finished_;
+            }
+
+            void SetPhase(AssetLoadPhase phase) noexcept
+            {
+                if (IsActive())
+                {
+                    state_->UpdatePhase(operation_, phase);
+                }
+            }
+
+            void SetTiming(const AssetLoadTiming &timing) noexcept
+            {
+                if (timing.cache_lookup_us != 0)
+                {
+                    timing_.cache_lookup_us = timing.cache_lookup_us;
+                }
+                if (timing.loader_queue_wait_us != 0)
+                {
+                    timing_.loader_queue_wait_us = timing.loader_queue_wait_us;
+                }
+                if (timing.source_load_us != 0)
+                {
+                    timing_.source_load_us = timing.source_load_us;
+                }
+                if (timing.dependency_wait_us != 0)
+                {
+                    timing_.dependency_wait_us = timing.dependency_wait_us;
+                }
+                if (timing.registration_us != 0)
+                {
+                    timing_.registration_us = timing.registration_us;
+                }
+                if (timing.inclusive_elapsed_us != 0)
+                {
+                    timing_.inclusive_elapsed_us = timing.inclusive_elapsed_us;
+                }
+                if (IsActive())
+                {
+                    state_->UpdateTiming(operation_, timing_);
+                }
+            }
+
+            void SetSizeCost(const AssetLoadSizeCost &size_cost) noexcept
+            {
+                if (size_cost.source_file_bytes)
+                {
+                    size_cost_.source_file_bytes = size_cost.source_file_bytes;
+                }
+                if (size_cost.decoded_payload_bytes)
+                {
+                    size_cost_.decoded_payload_bytes = size_cost.decoded_payload_bytes;
+                }
+                if (IsActive())
+                {
+                    state_->UpdateSizeCost(operation_, size_cost_);
+                }
+            }
+
+            void SetKnownChildren(uint32_t known_children) noexcept
+            {
+                if (IsActive())
+                {
+                    state_->SetKnownChildren(operation_, known_children);
+                }
+            }
+
+            void ChildCompleted() noexcept
+            {
+                if (IsActive())
+                {
+                    state_->ChildCompleted(operation_);
+                }
+            }
+
+            void Succeed(AssetLoadDisposition disposition, const AssetID &result) noexcept
+            {
+                Finish(AssetLoadState::Succeeded, disposition, result, {});
+            }
+
+            void Fail(const std::string &diagnostic) noexcept
+            {
+                Finish(AssetLoadState::Failed, std::nullopt, std::nullopt, diagnostic);
+            }
+
+            AssetLoadOperationID ID() const noexcept { return operation_; }
+
+        private:
+            void Finish(
+                AssetLoadState state,
+                std::optional<AssetLoadDisposition> disposition,
+                std::optional<AssetID> result,
+                const std::string &diagnostic) noexcept
+            {
+                if (!IsActive())
+                {
+                    return;
+                }
+                state_->Complete(operation_, state, disposition, result, timing_, size_cost_, diagnostic);
+                finished_ = true;
+            }
+
+            std::shared_ptr<detail::AssetLoadSessionState> state_;
+            AssetLoadOperationID operation_ = 0;
+            AssetLoadTiming timing_{};
+            AssetLoadSizeCost size_cost_{};
+            bool finished_ = false;
+        };
+
+        std::string MakeDiagnostic(
+            AssetLoadOperationID operation,
+            const std::string &display_path,
+            AssetLoadPhase phase,
+            const std::string &reason)
+        {
+            try
+            {
+                return "operation " + std::to_string(operation) + " [" + display_path + "] " +
+                       PhaseName(phase) + ": " + reason;
+            }
+            catch (...)
+            {
+                return "asset load observation failure";
+            }
+        }
 
         uint16_t FloatToHalf(float value)
         {
@@ -114,17 +451,66 @@ namespace kpengine::asset
 
     AssetID AssetManager::LoadSync(const std::string &path)
     {
+        return LoadSyncInternal(path, nullptr, std::nullopt, std::nullopt);
+    }
+
+    AssetLoadSession AssetManager::BeginLoadObservation()
+    {
+        return AssetLoadSession(std::make_shared<detail::AssetLoadSessionState>(
+            detail::AllocateAssetLoadSessionID()));
+    }
+
+    AssetID AssetManager::LoadSync(
+        const std::string &path,
+        const AssetLoadSession &session)
+    {
+        return LoadSyncInternal(path, session.state_, std::nullopt, std::nullopt);
+    }
+
+    AssetID AssetManager::LoadSyncInternal(
+        const std::string &path,
+        const std::shared_ptr<detail::AssetLoadSessionState> &session_state,
+        std::optional<AssetLoadOperationID> parent_operation,
+        std::optional<AssetLoadOperationID> reserved_operation)
+    {
         std::string extension = GetFileExtension(path);
+        const AssetType type = ExtractAssetType(extension);
+        const bool can_record = session_state &&
+                                (reserved_operation.has_value() ||
+                                 parent_operation.has_value() ||
+                                 !session_state->IsSealed());
+        const std::shared_ptr<detail::AssetLoadSessionState> observation_state =
+            can_record ? session_state : nullptr;
+        const std::string display_path = observation_state ? DisplayPath(path) : std::string{};
+        const AssetLoadOperationID operation_id = reserved_operation
+                                                       ? *reserved_operation
+                                                       : (observation_state
+                                                              ? observation_state->BeginOperation(
+                                                                    display_path, type,
+                                                                    parent_operation)
+                                                              : 0);
+        ObservedOperation observation(observation_state, operation_id);
 
         if (extension.empty())
         {
+            if (observation.IsActive())
+            {
+                observation.Fail(MakeDiagnostic(observation.ID(), display_path,
+                                                AssetLoadPhase::CacheLookup,
+                                                "path has no recognized extension"));
+            }
             return AssetID();
         }
 
-        AssetType type = ExtractAssetType(extension);
         if (type == AssetType::Undefined)
         {
             KP_LOG("AssetManagerLog", LOG_LEVEL_WARNING, "Unrecognize asset extension: %s ", extension.c_str());
+            if (observation.IsActive())
+            {
+                observation.Fail(MakeDiagnostic(observation.ID(), display_path,
+                                                AssetLoadPhase::CacheLookup,
+                                                "unsupported asset extension"));
+            }
             return AssetID();
         }
 
@@ -145,28 +531,148 @@ namespace kpengine::asset
             return GetAsset(it->second) ? it->second : AssetID();
         };
 
+        const auto cache_lookup_started = observation.IsActive()
+                                              ? observation_state->Now()
+                                              : std::chrono::steady_clock::time_point{};
+        AssetID cached_id;
         {
             std::lock_guard<std::recursive_mutex> lock(state_mutex_);
-            if (AssetID cached = find_cached(type, path); cached.IsValid())
+            cached_id = find_cached(type, path);
+        }
+        if (cached_id.IsValid())
+        {
+            if (observation.IsActive())
             {
-                return cached;
+                AssetLoadTiming timing{};
+                timing.cache_lookup_us = ElapsedMicroseconds(
+                    cache_lookup_started, observation_state->Now());
+                observation.SetTiming(timing);
+                observation.Succeed(AssetLoadDisposition::CacheHit, cached_id);
             }
+            return cached_id;
+        }
+
+        if (observation.IsActive())
+        {
+            AssetLoadTiming timing{};
+            timing.cache_lookup_us = ElapsedMicroseconds(
+                cache_lookup_started, observation_state->Now());
+            observation.SetTiming(timing);
+            AssetLoadSizeCost size_cost{};
+            size_cost.source_file_bytes = ProbeSourceFileSize(path);
+            observation.SetSizeCost(size_cost);
         }
 
         // Disk I/O + parse under the loader lock: the loaders are shared instances.
         AssetRegisterInfo register_info{};
+        if (observation.IsActive())
         {
-            std::lock_guard<std::mutex> lock(load_mutex_);
-            if (!LoadByExtension(path, type, register_info))
+            observation.SetPhase(AssetLoadPhase::WaitingForLoader);
+        }
+        const auto queue_wait_started = observation.IsActive()
+                                            ? std::chrono::steady_clock::now()
+                                            : std::chrono::steady_clock::time_point{};
+        std::chrono::steady_clock::time_point loader_acquired{};
+        std::chrono::steady_clock::time_point source_load_started{};
+        std::chrono::steady_clock::time_point source_load_finished{};
+        bool loaded = false;
+
+        // Publish the source phase before taking the loader lock. The loader
+        // call must stay serialized, while observation publication must not
+        // occur under that lock.
+        if (observation.IsActive())
+        {
+            observation.SetPhase(AssetLoadPhase::LoadSource);
+        }
+        try
+        {
             {
-                return AssetID();
+                std::lock_guard<std::mutex> lock(load_mutex_);
+                loader_acquired = observation.IsActive()
+                                      ? std::chrono::steady_clock::now()
+                                      : std::chrono::steady_clock::time_point{};
+                source_load_started = observation.IsActive()
+                                          ? std::chrono::steady_clock::now()
+                                          : std::chrono::steady_clock::time_point{};
+                loaded = LoadByExtension(path, type, register_info);
             }
+            source_load_finished = observation.IsActive()
+                                       ? std::chrono::steady_clock::now()
+                                       : std::chrono::steady_clock::time_point{};
+        }
+        catch (...)
+        {
+            if (observation.IsActive())
+            {
+                source_load_finished = std::chrono::steady_clock::now();
+                AssetLoadTiming timing{};
+                timing.loader_queue_wait_us = ElapsedMicroseconds(
+                    queue_wait_started, loader_acquired);
+                timing.source_load_us = ElapsedMicroseconds(
+                    source_load_started, source_load_finished);
+                observation.SetTiming(timing);
+                observation.Fail(MakeDiagnostic(observation.ID(), display_path,
+                                                AssetLoadPhase::LoadSource,
+                                                "loader threw an exception"));
+            }
+            throw;
+        }
+
+        if (observation.IsActive())
+        {
+            AssetLoadTiming timing{};
+            timing.loader_queue_wait_us = ElapsedMicroseconds(
+                queue_wait_started, loader_acquired);
+            timing.source_load_us = ElapsedMicroseconds(
+                source_load_started, source_load_finished);
+            observation.SetTiming(timing);
+        }
+
+        if (!loaded)
+        {
+            if (observation.IsActive())
+            {
+                observation.Fail(MakeDiagnostic(observation.ID(), display_path,
+                                                AssetLoadPhase::LoadSource,
+                                                "loader rejected the source"));
+            }
+            return AssetID();
+        }
+
+        if (!IsValidResource(register_info.resource))
+        {
+            if (observation.IsActive())
+            {
+                observation.SetPhase(AssetLoadPhase::LoadSource);
+                observation.Fail(MakeDiagnostic(observation.ID(), display_path,
+                                                AssetLoadPhase::LoadSource,
+                                                "loader returned no resource"));
+            }
+            return AssetID();
+        }
+
+        if (observation.IsActive())
+        {
+            AssetLoadSizeCost size_cost{};
+            size_cost.decoded_payload_bytes =
+                MeasureDecodedPayload(*this, register_info);
+            observation.SetSizeCost(size_cost);
+        }
+
+        if (observation.IsActive())
+        {
+            observation.SetPhase(AssetLoadPhase::ResolveDependencies);
+            observation.SetKnownChildren(
+                static_cast<uint32_t>(register_info.dependency_requests.size()));
         }
 
         // Loaders only declare dependencies. Resolve them after releasing the
         // shared loader lock; recursive LoadSync while it is held would
         // self-deadlock.
         const size_t declared_dependency_offset = register_info.dependencies.size();
+        const auto dependency_wait_started = observation.IsActive()
+                                                 ? observation_state->Now()
+                                                 : std::chrono::steady_clock::time_point{};
         if (!register_info.dependency_requests.empty())
         {
             std::vector<AssetID> resolved_dependencies = std::move(register_info.dependencies);
@@ -174,51 +680,147 @@ namespace kpengine::asset
                                            register_info.dependency_requests.size());
             for (const AssetRegisterInfo::DependencyRequest &request : register_info.dependency_requests)
             {
-                const AssetID dependency = LoadSync(request.path);
+                AssetID dependency;
+                try
+                {
+                    dependency = LoadSyncInternal(
+                        request.path, observation_state,
+                        observation.IsActive()
+                            ? std::optional<AssetLoadOperationID>(observation.ID())
+                            : std::nullopt,
+                        std::nullopt);
+                }
+                catch (...)
+                {
+                    observation.ChildCompleted();
+                    if (observation.IsActive())
+                    {
+                        AssetLoadTiming timing{};
+                        timing.dependency_wait_us = ElapsedMicroseconds(
+                            dependency_wait_started, observation_state->Now());
+                        observation.SetTiming(timing);
+                        observation.Fail(MakeDiagnostic(
+                            observation.ID(), display_path,
+                            AssetLoadPhase::ResolveDependencies,
+                            "dependency load threw an exception"));
+                    }
+                    throw;
+                }
+                observation.ChildCompleted();
                 if (!dependency.IsValid() || dependency.type != request.expected_type)
                 {
                     KP_LOG("AssetManagerLog", LOG_LEVEL_ERROR,
                            "Failed to resolve dependency %s for %s",
                            request.path.c_str(), path.c_str());
+                    if (observation.IsActive())
+                    {
+                        AssetLoadTiming timing{};
+                        timing.dependency_wait_us = ElapsedMicroseconds(
+                            dependency_wait_started, observation_state->Now());
+                        observation.SetTiming(timing);
+                        observation.Fail(MakeDiagnostic(
+                            observation.ID(), display_path,
+                            AssetLoadPhase::ResolveDependencies,
+                            "dependency failed"));
+                    }
                     return AssetID();
                 }
                 resolved_dependencies.push_back(dependency);
             }
             register_info.dependencies = std::move(resolved_dependencies);
-            register_info.dependency_requests.clear();
         }
 
+        if (observation.IsActive())
+        {
+            AssetLoadTiming timing{};
+            timing.dependency_wait_us = ElapsedMicroseconds(
+                dependency_wait_started, observation_state->Now());
+            observation.SetTiming(timing);
+        }
+
+        AssetID result;
+        AssetLoadDisposition disposition = AssetLoadDisposition::LoadedAndRegistered;
+        std::string registration_failure;
+        const auto registration_started = observation.IsActive()
+                                              ? observation_state->Now()
+                                              : std::chrono::steady_clock::time_point{};
+        if (observation.IsActive())
+        {
+            observation.SetPhase(AssetLoadPhase::Register);
+        }
+        try
         {
             std::lock_guard<std::recursive_mutex> lock(state_mutex_);
             if (AssetID cached = find_cached(type, path); cached.IsValid())
             {
-                return cached; // another thread loaded it while we were reading
+                result = cached;
+                disposition = AssetLoadDisposition::LoadedThenDeduplicated;
             }
-
-            // A resolved dependency can be unregistered while this load is
-            // resolving children. Revalidate while holding the same state lock
-            // used by UnRegisterAsset, immediately before the parent edges are
-            // installed, so no stale dependency ID can be registered.
-            for (size_t index = 0; index < register_info.dependency_requests.size(); ++index)
+            else
             {
-                const size_t dependency_index = declared_dependency_offset + index;
-                if (dependency_index >= register_info.dependencies.size() ||
-                    register_info.dependencies[dependency_index].type !=
-                        register_info.dependency_requests[index].expected_type ||
-                    !GetAsset(register_info.dependencies[dependency_index]))
+                // A resolved dependency can be unregistered while this load is
+                // resolving children. Revalidate immediately before installing
+                // the parent edges.
+                for (size_t index = 0; index < register_info.dependency_requests.size(); ++index)
                 {
-                    KP_LOG("AssetManagerLog", LOG_LEVEL_ERROR,
-                           "Dependency disappeared before registering %s", path.c_str());
-                    return AssetID();
+                    const size_t dependency_index = declared_dependency_offset + index;
+                    if (dependency_index >= register_info.dependencies.size() ||
+                        register_info.dependencies[dependency_index].type !=
+                            register_info.dependency_requests[index].expected_type ||
+                        !GetAsset(register_info.dependencies[dependency_index]))
+                    {
+                        registration_failure = "dependency disappeared before registration";
+                        break;
+                    }
+                }
+                if (registration_failure.empty())
+                {
+                    result = RegisterAsset(register_info);
+                    if (result.IsValid())
+                    {
+                        Cache(type).path_index[Key(GetAsset(result)->GetPath())] = result;
+                    }
+                    else
+                    {
+                        registration_failure = "asset registration failed";
+                    }
                 }
             }
-            AssetID id = RegisterAsset(register_info);
-            if (id.IsValid())
-            {
-                Cache(type).path_index[Key(GetAsset(id)->GetPath())] = id;
-            }
-            return id;
+            register_info.dependency_requests.clear();
         }
+        catch (...)
+        {
+            if (observation.IsActive())
+            {
+                AssetLoadTiming timing{};
+                timing.registration_us = ElapsedMicroseconds(
+                    registration_started, observation_state->Now());
+                observation.SetTiming(timing);
+                observation.Fail(MakeDiagnostic(observation.ID(), display_path,
+                                                AssetLoadPhase::Register,
+                                                "registration threw an exception"));
+            }
+            throw;
+        }
+
+        if (observation.IsActive())
+        {
+            AssetLoadTiming timing{};
+            timing.registration_us = ElapsedMicroseconds(
+                registration_started, observation_state->Now());
+            observation.SetTiming(timing);
+            if (!registration_failure.empty())
+            {
+                observation.Fail(MakeDiagnostic(observation.ID(), display_path,
+                                                AssetLoadPhase::Register,
+                                                registration_failure));
+            }
+            else
+            {
+                observation.Succeed(disposition, result);
+            }
+        }
+        return result;
     }
 
     std::future<AssetID> AssetManager::LoadAsync(const std::string &path)
@@ -229,6 +831,44 @@ namespace kpengine::asset
         // finishes (std::async semantics).
         return std::async(std::launch::async, [this, path]()
                           { return LoadSync(path); });
+    }
+
+    std::future<AssetID> AssetManager::LoadAsync(
+        const std::string &path,
+        AssetLoadSession session)
+    {
+        const std::shared_ptr<detail::AssetLoadSessionState> state = session.state_;
+        const AssetType type = ExtractAssetType(GetFileExtension(path));
+        const std::string display_path = state ? DisplayPath(path) : std::string{};
+        const AssetLoadOperationID reserved = state
+                                                  ? state->BeginOperation(
+                                                        display_path, type,
+                                                        std::nullopt)
+                                                  : 0;
+        try
+        {
+            return std::async(
+                std::launch::async,
+                [this, path, state, reserved]()
+                {
+                    return LoadSyncInternal(
+                        path, state, std::nullopt,
+                        reserved == 0
+                            ? std::nullopt
+                            : std::optional<AssetLoadOperationID>(reserved));
+                });
+        }
+        catch (...)
+        {
+            if (reserved != 0)
+            {
+                ObservedOperation observation(state, reserved);
+                observation.Fail(MakeDiagnostic(
+                    reserved, display_path, AssetLoadPhase::WaitingForLoader,
+                    "async dispatch failed"));
+            }
+            throw;
+        }
     }
 
     const AssetCache *AssetManager::FindCache(AssetType type) const

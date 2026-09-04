@@ -2,6 +2,12 @@
 
 Location: `engine/runtime/asset/`
 
+Documentation map: [architecture and stage plans](PLANS.md),
+[current roadmap](TODO.md), and [local agent rules](AGENTS.md). The proposed
+load-progress work is specified in
+[Asset Loading Progress](../../.spec/specs/asset-loading-progress.md); this page
+continues to describe the landed Asset implementation until those stages ship.
+
 The asset module is the engine's "get me this file as a typed resource" layer. It dedups loads by path, assigns stable IDs, tracks which assets depend on which, and hands out resource payloads to the rest of the engine (renderers, audio, editor).
 
 ## Key types
@@ -64,6 +70,23 @@ One cache per `AssetType`, three fields with three distinct jobs:
 5. Index the loaded asset: `path_index[Key(asset->GetPath())] = id`.
 
 Because the loaders are shared instances, concurrent loads serialize on `load_mutex_`; the dedup check runs again under the state lock after loading, so two concurrent requests for the same file can't double-register. Note: destroying a `LoadAsync` future without `get()`/`wait()` blocks until the load finishes (`std::async` semantics).
+
+### Load observation (LO1)
+
+`BeginLoadObservation()` creates an opt-in, copyable session handle. The
+overloads `LoadSync(path, session)` and `LoadAsync(path, session)` publish
+copied `AssetLoadSnapshot` values without changing the existing unobserved
+load path. Each session-local operation has its own identity, parent
+correlation, state, phase, timing, optional source/decoded byte costs, and
+terminal diagnostic; it is distinct from `AssetID`.
+
+The session owns exact aggregate counters and only bounded detail: up to 16
+active operations and 16 recent terminal operations. Async roots reserve their
+operation before dispatch, so sealing immediately after scheduling remains
+safe; recursive children may finish under the shared session state. Observation
+updates use a separate mutex and are published only after Asset/load locks are
+released. Asset identity, payload ownership, dependency semantics, and the
+`load_mutex_` → `state_mutex_` order remain unchanged.
 
 ### `RegisterAsset(info)`
 

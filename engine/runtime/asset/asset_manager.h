@@ -4,8 +4,10 @@
 #include <memory>
 #include <mutex>
 #include <future>
+#include <optional>
 #include <unordered_map>
 #include "asset.h"
+#include "asset_load_observation.h"
 #include "base/handle.h"
 
 namespace kpengine::asset{
@@ -35,7 +37,12 @@ namespace kpengine::asset{
         ~AssetManager();
     public:
         AssetID LoadSync(const std::string& path);
+        AssetLoadSession BeginLoadObservation();
+        AssetID LoadSync(const std::string& path,
+                         const AssetLoadSession &session);
         std::future<AssetID> LoadAsync(const std::string& path);
+        std::future<AssetID> LoadAsync(const std::string& path,
+                                       AssetLoadSession session);
 
         AssetID RegisterAsset(AssetRegisterInfo& info);
         void UnRegisterAsset(const AssetID& id);
@@ -80,6 +87,11 @@ namespace kpengine::asset{
         static std::string Key(const std::string& path);
 
         bool LoadByExtension(const std::string& path, AssetType type, AssetRegisterInfo& info);
+        AssetID LoadSyncInternal(
+            const std::string &path,
+            const std::shared_ptr<detail::AssetLoadSessionState> &session_state,
+            std::optional<AssetLoadOperationID> parent_operation,
+            std::optional<AssetLoadOperationID> reserved_operation);
 
     private:
         static AssetManager instance_;

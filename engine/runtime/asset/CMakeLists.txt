@@ -1,5 +1,6 @@
 add_library(Asset STATIC 
 asset_manager.cpp
+asset_load_observation.cpp
 assimp_model_loader.cpp
 model.cpp
 shader_program.cpp
