@@ -1,4 +1,6 @@
+#include <atomic>
 #include <memory>
+#include <thread>
 #include <string>
 #include <utility>
 #include <vector>
@@ -188,4 +190,130 @@ TEST(RuntimeFramePolicyTest, SkipsRecoverableBeginFailuresAndEscalatesInvalidSta
               RenderFrameBeginDisposition::Fatal);
     EXPECT_EQ(ClassifyRenderFrameBegin(true, RenderSystemLifecycleState::FrameActive),
               RenderFrameBeginDisposition::Record);
+}
+
+TEST(RuntimeStartupCoordinatorTest, PublishesOrderedPhasesAndCopiedSnapshots)
+{
+    kpengine::runtime::StartupCoordinator coordinator;
+    const uint64_t transaction = coordinator.Begin();
+
+    EXPECT_EQ(coordinator.GetSnapshot().transaction_id, transaction);
+    EXPECT_TRUE(coordinator.SetPhase(kpengine::runtime::StartupPhase::PresentationStarting));
+    EXPECT_TRUE(coordinator.SetPhase(kpengine::runtime::StartupPhase::PresentationReady));
+    EXPECT_TRUE(coordinator.SetPhase(kpengine::runtime::StartupPhase::LoadingAssets));
+    EXPECT_TRUE(coordinator.SetPhase(kpengine::runtime::StartupPhase::PreparingCpuArtifacts));
+    EXPECT_TRUE(coordinator.SetPhase(kpengine::runtime::StartupPhase::PromotingSceneRenderer));
+    EXPECT_TRUE(coordinator.SetPhase(kpengine::runtime::StartupPhase::InstantiatingLevel));
+    EXPECT_TRUE(coordinator.SetPhase(kpengine::runtime::StartupPhase::ActivatingEditorWorkspace));
+    coordinator.SetReady();
+
+    const auto snapshot = coordinator.GetSnapshot();
+    EXPECT_EQ(snapshot.phase, kpengine::runtime::StartupPhase::Ready);
+    EXPECT_FLOAT_EQ(snapshot.progress.fraction, 1.0f);
+    EXPECT_FALSE(coordinator.SetPhase(kpengine::runtime::StartupPhase::LoadingAssets));
+}
+
+TEST(RuntimeStartupCoordinatorTest, WakesWaitersAndPreservesFirstFailure)
+{
+    kpengine::runtime::StartupCoordinator coordinator;
+    coordinator.Begin();
+    const auto initial = coordinator.GetSnapshot();
+    kpengine::runtime::StartupSnapshot observed;
+    std::thread waiter([&]
+                        { observed = coordinator.WaitForRevision(initial.revision); });
+
+    coordinator.SetProgress({2, 4, true, 0.5f});
+    waiter.join();
+    EXPECT_EQ(observed.progress.completed_units, 2U);
+    EXPECT_FLOAT_EQ(observed.progress.fraction, 0.5f);
+
+    coordinator.Fail("first failure");
+    coordinator.Fail("later failure");
+    EXPECT_EQ(coordinator.GetSnapshot().diagnostic, "first failure");
+    coordinator.Rollback();
+    EXPECT_EQ(coordinator.GetSnapshot().phase, kpengine::runtime::StartupPhase::RolledBack);
+}
+
+TEST(RuntimeStartupCoordinatorTest, TerminalStateIsImmutableToOrdinaryMutators)
+{
+    const auto session = AssetManager::GetInstance().BeginLoadObservation();
+    kpengine::runtime::StartupCoordinator coordinator;
+    coordinator.Begin();
+    coordinator.SetAssetSession(session);
+    coordinator.SetPhase(kpengine::runtime::StartupPhase::PresentationStarting);
+    coordinator.Fail("startup failed");
+    const auto failed = coordinator.GetSnapshot();
+
+    coordinator.SetProgress({9, 10, true, 0.9f});
+    coordinator.SetAssetSession({});
+    coordinator.Fail("replacement failure");
+    coordinator.Cancel("late cancellation");
+    const auto unchanged = coordinator.GetSnapshot();
+
+    EXPECT_EQ(unchanged.phase, kpengine::runtime::StartupPhase::Failed);
+    EXPECT_EQ(unchanged.diagnostic, "startup failed");
+    EXPECT_EQ(unchanged.revision, failed.revision);
+    ASSERT_TRUE(unchanged.asset.has_value());
+    EXPECT_TRUE(unchanged.asset->sealed);
+    EXPECT_TRUE(unchanged.asset->terminal);
+    coordinator.Rollback();
+    const auto rolled_back = coordinator.GetSnapshot();
+    coordinator.SetProgress({10, 10, true, 1.0f});
+    EXPECT_EQ(coordinator.GetSnapshot().revision, rolled_back.revision);
+}
+
+TEST(RuntimeStartupCoordinatorTest, WaiterObservesNestedAssetRevisionChanges)
+{
+    auto &assets = AssetManager::GetInstance();
+    auto resource = std::make_shared<kpengine::asset::MaterialResource>();
+    AssetRegisterInfo info{};
+    info.resource = resource;
+    info.path = "runtime_startup_observation_waiter.material";
+    info.name = info.path;
+    info.type = AssetType::KPAT_Material;
+    const AssetID material = assets.RegisterAsset(info);
+    ASSERT_TRUE(material.IsValid());
+
+    const auto session = assets.BeginLoadObservation();
+    kpengine::runtime::StartupCoordinator coordinator;
+    coordinator.Begin();
+    coordinator.SetAssetSession(session);
+    const auto initial = coordinator.GetSnapshot();
+    ASSERT_TRUE(initial.asset.has_value());
+
+    kpengine::runtime::StartupSnapshot observed;
+    std::thread waiter([&]
+                        {
+                            observed = coordinator.WaitForRevision(
+                                initial.revision, initial.asset->revision);
+                        });
+    assets.LoadSync(info.path, session);
+    waiter.join();
+
+    ASSERT_TRUE(observed.asset.has_value());
+    EXPECT_GT(observed.asset->revision, initial.asset->revision);
+    assets.UnRegisterAsset(material);
+}
+
+TEST(RuntimeStartupCoordinatorTest, StartupAccessBarrierWaitsForMainLaneToQuiesce)
+{
+    kpengine::runtime::StartupAccessBarrier barrier;
+    barrier.Begin();
+    std::atomic_bool waiting{false};
+    std::atomic_bool released{false};
+    std::thread waiter([&]
+                        {
+                            waiting.store(true, std::memory_order_release);
+                            barrier.WaitForEnd();
+                            released.store(true, std::memory_order_release);
+                        });
+
+    while (!waiting.load(std::memory_order_acquire))
+    {
+        std::this_thread::yield();
+    }
+    EXPECT_FALSE(released.load(std::memory_order_acquire));
+    barrier.End();
+    waiter.join();
+    EXPECT_TRUE(released.load(std::memory_order_acquire));
 }

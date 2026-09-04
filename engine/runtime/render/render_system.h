@@ -38,6 +38,7 @@ namespace kpengine::render
     enum class RenderSystemLifecycleState : uint8_t
     {
         Uninitialized,
+        PresentationReady,
         Ready,
         FrameActive,
         ShutDown,
@@ -76,6 +77,9 @@ namespace kpengine::render
         RenderSystem &operator=(RenderSystem &&) = delete;
 
         RenderSystemInitResult Initialize(const RenderSystemInitInfo &info);
+        RenderSystemInitResult InitializePresentation(const RenderSystemInitInfo &info);
+        RenderSystemInitResult PromoteToScene(
+            std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
         // Safe to call repeatedly; the first call retires all owned state.
         void Shutdown();
 
@@ -118,6 +122,7 @@ namespace kpengine::render
         friend class runtime::RuntimeContext;
 
         void CleanupOwnedState();
+        void CleanupSceneState();
         bool IsState(RenderSystemLifecycleState expected) const;
 
         FrameContext *GetCurrentFrameContext();
@@ -138,6 +143,8 @@ namespace kpengine::render
             RenderSystemLifecycleState::Uninitialized;
         std::string last_diagnostic_;
         bool backend_initialized_ = false;
+        RenderSystemLifecycleState frame_return_state_ =
+            RenderSystemLifecycleState::Uninitialized;
     };
 }
 

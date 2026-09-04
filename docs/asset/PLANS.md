@@ -31,10 +31,11 @@ remains documented in [Asset Module Design](asset_module.md).
   identity, states, phases, immutable snapshots, dependency correlation,
   retention, and headless contract tests. It does not add UI or change Asset
   payload ownership.
-- [LO2 — staged Runtime startup loop](.plan/LO2.md) makes presentation
-  available before the expensive startup transaction, aggregates all readiness
-  stages, keeps event/render pumping alive, and preserves transactional
-  commit/abort.
+- [LO2 — staged Runtime startup and Editor promotion](.plan/LO2.md) makes
+  presentation available before the expensive startup transaction, aggregates
+  all readiness stages, keeps event/render pumping alive, separates
+  render-thread Editor presentation from future game-thread workspace behavior,
+  and preserves transactional commit/abort.
 - [LO3 — Editor loading presentation](.plan/LO3.md) adds a loading-only Editor
   mode that polls Runtime snapshots, renders honest determinate/indeterminate
   progress, displays failures, and enters the normal tool tree only after the
@@ -74,6 +75,10 @@ still miss Resource/GPU/level-instantiation work.
 - **Presentation startup is not a second renderer.** The existing window,
   backend, and Editor presentation bridge are brought up in a minimal state and
   promoted transactionally to scene-ready operation.
+- **Editor presentation is not editor-world behavior.** One render-thread
+  presentation tick draws loading or workspace UI. Future selection, gizmo,
+  play/edit, and viewport-world behavior is activated and ticked on the game
+  thread through narrow command/adaptor seams.
 
 ## Reference findings
 

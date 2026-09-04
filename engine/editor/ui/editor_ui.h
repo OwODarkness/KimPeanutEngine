@@ -70,6 +70,9 @@ namespace kpengine::editor
         ~EditorUI();
 
         void Initialize(const EditorUIInitInfo &init_info);
+        void InitializePresentation(const EditorUIInitInfo &init_info);
+        void PromoteToWorkspace();
+        bool RenderLoading();
         bool Render();
         void Close();
         void BeginDraw();
@@ -102,6 +105,9 @@ namespace kpengine::editor
         bool renderer_initialized_ = false;
         bool wsi_init_attempted_ = false;
         bool wsi_initialized_ = false;
+        bool workspace_promoted_ = false;
+        EditorUIInitInfo init_info_{};
+        LogLevelColorTable log_colors_;
 
         // Runtime export path for the render-capture command. Borrowed service,
         // built from the render system's capture service when the UI initializes.

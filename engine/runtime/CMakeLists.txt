@@ -19,6 +19,7 @@ add_library(RuntimeLib STATIC
     engine.cpp
     launch_options.cpp
     runtime_global_context.cpp
+    runtime_startup.cpp
     render_asset_preparer.cpp
     )
 

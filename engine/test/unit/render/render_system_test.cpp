@@ -526,6 +526,28 @@ TEST(RenderSystemLifecycleTest, RejectsInvalidStateAndMakesShutdownIdempotent)
     EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::ShutDown);
 }
 
+TEST(RenderSystemLifecycleTest, SeparatesPresentationInitializationFromScenePromotion)
+{
+    auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    const render::RenderSystemInitInfo info = fixtures.Info(
+        [probe](GraphicsAPIType) { return std::make_unique<FakeBackend>(probe); });
+
+    ASSERT_TRUE(system.InitializePresentation(info));
+    EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::PresentationReady);
+    EXPECT_FALSE(system.GetSceneRenderTargetView().IsValid());
+    EXPECT_EQ(system.GetMetrics().prepared_shader_count, 0U);
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    ASSERT_TRUE(system.EndFrame());
+    EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::PresentationReady);
+
+    ASSERT_TRUE(system.PromoteToScene(info.prepared_assets));
+    EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::Ready);
+    EXPECT_TRUE(system.GetSceneRenderTargetView().IsValid());
+    system.Shutdown();
+}
+
 TEST(RenderSystemLifecycleTest, RollsBackWhenARequiredCollaboratorFails)
 {
     const auto probe = std::make_shared<BackendProbe>();

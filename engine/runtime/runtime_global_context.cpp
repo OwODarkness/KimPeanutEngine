@@ -53,6 +53,16 @@ namespace kpengine
 
         void RuntimeContext::Initialize()
         {
+            InitializePresentation();
+            const StartupResult promotion = PromoteRenderAssets();
+            if (!promotion)
+            {
+                throw std::runtime_error(promotion.diagnostic);
+            }
+        }
+
+        void RuntimeContext::InitializePresentation()
+        {
             WindowCreateInfo window_create_info{};
             window_create_info.width = 1920;
             window_create_info.height = 1080;
@@ -73,22 +83,31 @@ namespace kpengine
 
             lua_vm_->Initialize();
 
-            if (!prepared_render_assets_)
-            {
-                throw std::runtime_error(
-                    "Render asset catalog must be prepared before RenderSystem initialization");
-            }
             render::RenderSystemInitInfo render_init_info{};
             render_init_info.api_type = graphics_api_type_;
             render_init_info.native_window = window_system_->GetNativeHandle();
             render_init_info.resize_dispatcher = &window_system_->resize_event_dispatcher_;
-            render_init_info.prepared_assets = prepared_render_assets_;
             const render::RenderSystemInitResult render_init_result =
-                render_system_->Initialize(render_init_info);
+                render_system_->InitializePresentation(render_init_info);
             if (!render_init_result)
             {
                 throw std::runtime_error("RenderSystem initialization failed: " +
                                          render_init_result.diagnostic);
+            }
+        }
+
+        RuntimeContext::StartupResult RuntimeContext::PromoteRenderAssets()
+        {
+            if (!prepared_render_assets_)
+            {
+                return {false, "Render asset catalog must be prepared before scene promotion"};
+            }
+            const render::RenderSystemInitResult render_init_result =
+                render_system_->PromoteToScene(prepared_render_assets_);
+            if (!render_init_result)
+            {
+                return {false, "RenderSystem scene promotion failed: " +
+                                   render_init_result.diagnostic};
             }
             if (render::IRenderCaptureService *capture_service = render_system_->GetRenderCaptureService())
             {
@@ -107,7 +126,7 @@ namespace kpengine
                         std::move(registration.registration);
                 }
             }
-
+            return {true, {}};
         }
 
         RuntimeContext::StartupResult RuntimeContext::PrepareRenderAssets()

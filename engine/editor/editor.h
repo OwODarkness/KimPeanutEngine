@@ -19,7 +19,10 @@ namespace kpengine::editor{
         Editor();
         virtual ~Editor();
         void Initialize(kpengine::runtime::Engine* engine);
-        void InitEditorUI();   // render thread — builds the ImGui UI on the GL/Vulkan context
+        void InitEditorUI();   // render thread — initializes loading-safe ImGui presentation
+        void PromoteEditorWorkspace(); // render thread — builds scene-dependent tools
+        void ActivateWorkspace(); // game thread — startup composition boundary
+        void TickPresentation(); // render thread — loading frame
         void Tick();           // render thread
         void Clear();          // main thread, after the render thread joined
         void CloseUI();        // render thread — shuts ImGui down before window teardown

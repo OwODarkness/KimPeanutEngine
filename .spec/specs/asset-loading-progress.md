@@ -57,6 +57,10 @@ Out of scope:
   GPU allocation as Asset byte cost.
 - Editor consumes copied value-only snapshots and never receives worker-thread
   callbacks or mutable subsystem storage.
+- Editor uses one render-thread presentation lifecycle across loading and ready
+  modes. Scene/gameplay editing behavior is activated only after commit and is
+  ticked on the game thread; presentation code communicates through typed
+  requests rather than mutating the world directly.
 - ImGui and backend presentation remain render-thread-owned; Asset/CPU
   preparation does not move to that thread merely for progress reporting.
 - The existing Asset lock order is preserved. Observation publication cannot
@@ -93,9 +97,9 @@ Out of scope:
 1. [LO1 — Asset load observation](../../docs/asset/.plan/LO1.md): operation
    records, state/phase facts, time/size cost, correlation, immutable snapshots,
    and tests.
-2. [LO2 — staged Runtime startup loop](../../docs/asset/.plan/LO2.md): minimal
-   presentation, aggregate transaction, scene promotion, commit/abort, and
-   responsiveness.
+2. [LO2 — staged Runtime startup and Editor promotion](../../docs/asset/.plan/LO2.md):
+   minimal presentation, aggregate transaction, scene promotion, thread-aware
+   Editor workspace activation, commit/abort, and responsiveness.
 3. [LO3 — Editor loading presentation](../../docs/asset/.plan/LO3.md): loading
    view model/component, loading-to-ready transition, and visual evidence.
 
@@ -114,11 +118,17 @@ Out of scope:
 - [ ] The window appears and continues polling events and presenting frames
   while a deterministic startup gate holds Asset or CPU-preparation work.
 - [ ] The Runtime snapshot distinguishes Asset loading, CPU preparation, scene
-  GPU promotion, level instantiation, Ready, and failure.
+  GPU promotion, level instantiation, Editor workspace activation, Ready, and
+  failure.
 - [ ] Editor displays exact counts and an honest determinate/indeterminate state
   without reading AssetManager, Asset payloads, or scene-only Render APIs.
 - [ ] The loading-to-ready transition occurs exactly once and the first normal
   frame uses the committed level and prepared catalog.
+- [ ] The executable presents at least one loading progress frame before the
+  main Editor UI, with no blank or mixed transition frame.
+- [ ] ImGui/presentation is initialized once; future editor-world behavior is
+  unavailable during loading and runs only from the game-thread workspace tick
+  after commit.
 - [ ] Closing or failing during every startup stage wakes waiters and releases
   acquired state in reverse order without leaking or accessing destroyed state.
 - [ ] Focused tests, full Debug build/CTest, Vulkan/OpenGL smoke, and inspected

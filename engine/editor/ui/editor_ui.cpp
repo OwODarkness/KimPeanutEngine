@@ -26,12 +26,27 @@ namespace kpengine::editor
 
     void EditorUI::Initialize(const EditorUIInitInfo &init_info)
     {
+        InitializePresentation(init_info);
+        try
+        {
+            PromoteToWorkspace();
+        }
+        catch (...)
+        {
+            Close();
+            throw;
+        }
+    }
+
+    void EditorUI::InitializePresentation(const EditorUIInitInfo &init_info)
+    {
         if (imgui_context_created_ || renderer_ || wsi_ || !components_.empty())
         {
             Close();
         }
         try
         {
+            init_info_ = init_info;
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
             imgui_context_created_ = true;
@@ -50,20 +65,13 @@ namespace kpengine::editor
                 KP_LOG("LogEditorUI", LOG_LEVEL_WARNING,
                        "editor settings unavailable (%s), using defaults", e.what());
             }
+            log_colors_ = settings.log_colors;
             renderer_->SetBackgroundColor(settings.background_color);
 
             ImGuiIO &io = ImGui::GetIO();
             io.ConfigWindowsMoveFromTitleBarOnly = true;
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-            // Tool tree. Each panel is built by its own helper so Initialize stays an
-            // orchestration list — add a panel as one more call, not more inline code.
-            BuildMenuBar(init_info.render_system);
-            BuildViewportWindow(init_info.render_system, init_info.window_system,
-                                init_info.input_system, init_info.camera_control_sink);
-            BuildLogWindow(init_info.log_system, settings.log_colors);
-            BuildProfileBar(init_info.engine, init_info.memory_sampler, init_info.render_system);
-            BuildConsole(init_info.command_registry, init_info.input_system);
         }
         catch (const std::exception &e)
         {
@@ -241,6 +249,49 @@ namespace kpengine::editor
             std::make_unique<EditorProfileBarComponent>(std::move(profile_metrics)));
     }
 
+    void EditorUI::PromoteToWorkspace()
+    {
+        if (workspace_promoted_)
+        {
+            return;
+        }
+        try
+        {
+            // Scene-dependent tools are deliberately created only after Runtime
+            // promotes the prepared catalog to the render thread.
+            BuildMenuBar(init_info_.render_system);
+            BuildViewportWindow(init_info_.render_system, init_info_.window_system,
+                                init_info_.input_system, init_info_.camera_control_sink);
+            BuildLogWindow(init_info_.log_system, log_colors_);
+            BuildProfileBar(init_info_.engine, init_info_.memory_sampler,
+                            init_info_.render_system);
+            BuildConsole(init_info_.command_registry, init_info_.input_system);
+            workspace_promoted_ = true;
+        }
+        catch (...)
+        {
+            components_.clear();
+            screenshot_service_.reset();
+            throw;
+        }
+    }
+
+    bool EditorUI::RenderLoading()
+    {
+        if (!imgui_context_created_ || !renderer_ || !wsi_)
+        {
+            return false;
+        }
+        BeginDraw();
+        ImGui::SetNextWindowPos(ImVec2(24.0f, 24.0f), ImGuiCond_Once);
+        ImGui::Begin("Loading");
+        ImGui::TextUnformatted("Loading startup assets...");
+        ImGui::End();
+        ImGui::Render();
+        renderer_->Render();
+        return true;
+    }
+
     void EditorUI::BuildConsole(runtime::command::CommandRegistry *command_registry,
                                 input::InputSystem *input_system)
     {
@@ -254,6 +305,9 @@ namespace kpengine::editor
         // the command registry. Its listener and deferred result sink are then
         // detached while both services are still alive.
         components_.clear();
+        workspace_promoted_ = false;
+        init_info_ = {};
+        log_colors_ = {};
         screenshot_service_.reset();
         if (wsi_ && wsi_init_attempted_)
         {

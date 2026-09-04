@@ -60,7 +60,29 @@ namespace kpengine::editor
         init_info.input_system = global_editor_context.input_system_;
         init_info.window_system = global_editor_context.window_system_;
         init_info.camera_control_sink = &runtime::global_runtime_context;
-        editor_ui_->Initialize(init_info);
+        editor_ui_->InitializePresentation(init_info);
+    }
+
+    void Editor::PromoteEditorWorkspace()
+    {
+        if (initialized_)
+        {
+            editor_ui_->PromoteToWorkspace();
+        }
+    }
+
+    void Editor::ActivateWorkspace()
+    {
+        // Kept as an explicit game-thread seam so workspace activation is ordered
+        // after level instantiation and before the render-thread UI promotion.
+    }
+
+    void Editor::TickPresentation()
+    {
+        if (initialized_)
+        {
+            editor_ui_->RenderLoading();
+        }
     }
 
     void Editor::Tick()

@@ -2,6 +2,21 @@
 
 **Snapshot: 2026-08-26.** The editor is the engine's *core center*: a thin application shell that hosts the runtime engine and owns the tool UI on top of it. Its job is not to render or simulate — those belong to the runtime — but to be the hub that wires the runtime systems to the tooling UI, and to build/draw that UI.
 
+The proposed startup loading presentation is designed in
+[Asset LO3](../asset/.plan/LO3.md) and coordinated by the
+[Asset Loading Progress spec](../../.spec/specs/asset-loading-progress.md).
+Those documents do not describe landed Editor behavior yet.
+
+The planned lifecycle keeps one `Editor` and one ImGui presentation stack, but
+splits capabilities explicitly: loading-safe attachment on the game thread,
+presentation initialization/ticking on the render thread, then workspace
+activation and domain ticking on the game thread after scene commit. This is
+important as the Editor grows beyond UI: viewport editing, selection, gizmos,
+and play/edit behavior must not become render-thread Gameplay mutation merely
+because their controls are drawn with ImGui. The concrete contract is owned by
+[LO2](../asset/.plan/LO2.md#thread-and-tick-contract); current code still has
+the coarser `Initialize` / `InitEditorUI` / render-thread `Tick` lifecycle.
+
 ## Core principles
 
 1. **The editor is the core center.** One `Editor` object owns the whole tool surface, reaches every runtime system through a single hub (`EditorContext`), and is driven by the engine's boot/loop/teardown.

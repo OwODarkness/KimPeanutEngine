@@ -58,7 +58,6 @@ namespace kpengine
         public:
             RuntimeContext();
             ~RuntimeContext();
-            void Initialize();
             // Called by Engine after the render startup handshake, on the game thread.
             // This is the Runtime-owned boundary for initial World composition.
             struct StartupResult
@@ -67,6 +66,9 @@ namespace kpengine
                 std::string diagnostic;
                 explicit operator bool() const { return success; }
             };
+            void Initialize();
+            void InitializePresentation();
+            StartupResult PromoteRenderAssets();
             StartupResult FinalizeGameStartup();
             // Runtime-only startup transaction: freeze the CPU render catalog
             // before the render thread creates any GPU state.

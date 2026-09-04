@@ -39,23 +39,37 @@ namespace kpengine::render
 
     RenderSystemInitResult RenderSystem::Initialize(const RenderSystemInitInfo &info)
     {
+        const RenderSystemInitResult presentation_result = InitializePresentation(info);
+        if (!presentation_result)
+        {
+            return presentation_result;
+        }
+        const RenderSystemInitResult scene_result = PromoteToScene(info.prepared_assets);
+        if (!scene_result)
+        {
+            CleanupOwnedState();
+            lifecycle_state_ = RenderSystemLifecycleState::Uninitialized;
+        }
+        return scene_result;
+    }
+
+    RenderSystemInitResult RenderSystem::InitializePresentation(
+        const RenderSystemInitInfo &info)
+    {
         if (lifecycle_state_ != RenderSystemLifecycleState::Uninitialized)
         {
             last_diagnostic_ = "RenderSystem can only be initialized once.";
             return {false, last_diagnostic_};
         }
-        if (!info.native_window || !info.resize_dispatcher || !info.prepared_assets)
+        if (!info.native_window || !info.resize_dispatcher)
         {
             last_diagnostic_ =
-                "RenderSystem initialization requires window, resize dispatcher, and prepared assets.";
+                "RenderSystem presentation initialization requires window and resize dispatcher.";
             KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", last_diagnostic_.c_str());
             return {false, last_diagnostic_};
         }
         try
         {
-            prepared_assets_ = info.prepared_assets;
-            material_system_ = std::make_unique<MaterialSystem>();
-
             RenderBackendFactory factory = info.backend_factory;
             if (!factory)
             {
@@ -73,14 +87,6 @@ namespace kpengine::render
             backend_->Initialize(info.native_window);
             backend_initialized_ = true;
 
-            resource_resolver_ = std::make_unique<RenderResourceResolver>(
-                *backend_, *info.prepared_assets);
-            material_system_->SetResourceResolver(resource_resolver_.get());
-            scene_coordinator_.Bind(*material_system_, *resource_resolver_, prepared_assets_);
-            KP_LOG("RenderLog", LOG_LEVEL_INFO,
-                   "Prepared render catalog contains %u shader(s)",
-                   static_cast<unsigned>(prepared_assets_->GetPreparedShaderCount()));
-
             constexpr size_t kFrameUniformCapacity = 64 * 1024;
             frame_contexts_.resize(backend_->GetFramesInFlight());
             for (FrameContext &context : frame_contexts_)
@@ -88,10 +94,54 @@ namespace kpengine::render
                 context.Initialize(*backend_, kFrameUniformCapacity);
             }
 
+            lifecycle_state_ = RenderSystemLifecycleState::PresentationReady;
+            last_diagnostic_.clear();
+            return {true, {}};
+        }
+        catch (const std::exception &error)
+        {
+            last_diagnostic_ = error.what();
+        }
+        catch (...)
+        {
+            last_diagnostic_ = "Unknown exception during RenderSystem presentation initialization.";
+        }
+        KP_LOG("RenderLog", LOG_LEVEL_ERROR, "RenderSystem presentation initialization failed: %s",
+               last_diagnostic_.c_str());
+        CleanupOwnedState();
+        lifecycle_state_ = RenderSystemLifecycleState::Uninitialized;
+        return {false, last_diagnostic_};
+    }
+
+    RenderSystemInitResult RenderSystem::PromoteToScene(
+        std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets)
+    {
+        if (lifecycle_state_ != RenderSystemLifecycleState::PresentationReady)
+        {
+            last_diagnostic_ = "RenderSystem scene promotion requires presentation-ready state.";
+            return {false, last_diagnostic_};
+        }
+        if (!prepared_assets)
+        {
+            last_diagnostic_ = "RenderSystem scene promotion requires prepared assets.";
+            return {false, last_diagnostic_};
+        }
+        try
+        {
+            prepared_assets_ = std::move(prepared_assets);
+            material_system_ = std::make_unique<MaterialSystem>();
+            resource_resolver_ = std::make_unique<RenderResourceResolver>(
+                *backend_, *prepared_assets_);
+            material_system_->SetResourceResolver(resource_resolver_.get());
+            scene_coordinator_.Bind(*material_system_, *resource_resolver_, prepared_assets_);
+            KP_LOG("RenderLog", LOG_LEVEL_INFO,
+                   "Prepared render catalog contains %u shader(s)",
+                   static_cast<unsigned>(prepared_assets_->GetPreparedShaderCount()));
+
             const graphics::Extent2D extent = backend_->GetRenderExtent();
             deferred_renderer_ = std::make_unique<DeferredRenderer>();
             const DeferredRendererInitResult renderer_result = deferred_renderer_->Initialize(
-                {*backend_, *resource_resolver_, *material_system_, *info.prepared_assets},
+                {*backend_, *resource_resolver_, *material_system_, *prepared_assets_},
                 extent.width, extent.height);
             if (!renderer_result)
             {
@@ -117,27 +167,29 @@ namespace kpengine::render
         {
             last_diagnostic_ = "Unknown exception during RenderSystem initialization.";
         }
-        KP_LOG("RenderLog", LOG_LEVEL_ERROR, "RenderSystem initialization failed: %s",
+        KP_LOG("RenderLog", LOG_LEVEL_ERROR, "RenderSystem scene promotion failed: %s",
                last_diagnostic_.c_str());
-        CleanupOwnedState();
-        lifecycle_state_ = RenderSystemLifecycleState::Uninitialized;
+        CleanupSceneState();
+        lifecycle_state_ = RenderSystemLifecycleState::PresentationReady;
         return {false, last_diagnostic_};
     }
 
     bool RenderSystem::BeginFrame(float delta_time)
     {
-        if (!IsState(RenderSystemLifecycleState::Ready))
+        if (lifecycle_state_ != RenderSystemLifecycleState::Ready &&
+            lifecycle_state_ != RenderSystemLifecycleState::PresentationReady)
         {
             return false;
         }
-        if (!deferred_renderer_)
+        const bool scene_ready = deferred_renderer_ != nullptr;
+        std::optional<RenderSceneFrameInput> scene_input;
+        if (scene_ready)
         {
-            return false;
+            scene_input.emplace(scene_coordinator_.PrepareFrame(
+                render_capture_service_ ? render_capture_service_->GetPendingView()
+                                        : std::nullopt));
+            deferred_renderer_->ApplyPendingExtent();
         }
-        RenderSceneFrameInput input = scene_coordinator_.PrepareFrame(
-            render_capture_service_ ? render_capture_service_->GetPendingView()
-                                    : std::nullopt);
-        deferred_renderer_->ApplyPendingExtent();
         backend_->BeginFrame();
         active_frame_context_ = GetCurrentFrameContext();
         if (!active_frame_context_)
@@ -147,16 +199,25 @@ namespace kpengine::render
             last_diagnostic_ = "Graphics backend opened a frame without a valid frame context.";
             return false;
         }
+        frame_return_state_ = lifecycle_state_;
         lifecycle_state_ = RenderSystemLifecycleState::FrameActive;
         elapsed_seconds_ += delta_time;
+        const graphics::Extent2D extent = scene_ready
+                                              ? graphics::Extent2D{
+                                                    deferred_renderer_->GetSceneRenderTarget().GetWidth(),
+                                                    deferred_renderer_->GetSceneRenderTarget().GetHeight()}
+                                              : backend_->GetRenderExtent();
         active_frame_context_->Begin(
             backend_->GetCurrentFrameIndex(),
             {frame_number_, elapsed_seconds_, delta_time},
-            {deferred_renderer_->GetSceneRenderTarget().GetWidth(),
-             deferred_renderer_->GetSceneRenderTarget().GetHeight()});
+            {extent.width, extent.height});
+        if (!scene_ready)
+        {
+            return true;
+        }
         const DeferredRendererFrameResult result =
-            deferred_renderer_->RecordFrame(*active_frame_context_, input);
-        if (input.pending_capture.has_value())
+            deferred_renderer_->RecordFrame(*active_frame_context_, *scene_input);
+        if (scene_input->pending_capture.has_value())
         {
             if (!result.capture_target_ready)
             {
@@ -188,7 +249,7 @@ namespace kpengine::render
             ++frame_number_;
         }
         backend_->EndFrame();
-        lifecycle_state_ = RenderSystemLifecycleState::Ready;
+        lifecycle_state_ = frame_return_state_;
         return true;
     }
 
@@ -271,21 +332,7 @@ namespace kpengine::render
             backend_->EndFrame();
         }
 
-        scene_coordinator_.Clear();
-        material_system_.reset();
-
-        if (backend_ && backend_initialized_)
-        {
-            // Releasing material instances first retires their bindless table
-            // slots. WaitIdle then makes all submitted GPU work safe to retire.
-            backend_->WaitIdle();
-            if (graphics::IRenderTargetReadback *const readback =
-                    backend_->GetRenderTargetReadback())
-            {
-                readback->DrainPendingReadbacks("Render system shutdown");
-            }
-        }
-        render_capture_service_.reset();
+        CleanupSceneState();
 
         for (FrameContext &context : frame_contexts_)
         {
@@ -313,6 +360,36 @@ namespace kpengine::render
         active_frame_context_ = nullptr;
         frame_number_ = 0;
         elapsed_seconds_ = 0.0f;
+        frame_return_state_ = RenderSystemLifecycleState::Uninitialized;
+    }
+
+    void RenderSystem::CleanupSceneState()
+    {
+        scene_coordinator_.Clear();
+        material_system_.reset();
+        if (backend_ && backend_initialized_)
+        {
+            // Releasing material instances first retires their bindless table
+            // slots. WaitIdle then makes all submitted GPU work safe to retire.
+            backend_->WaitIdle();
+            if (graphics::IRenderTargetReadback *const readback =
+                    backend_->GetRenderTargetReadback())
+            {
+                readback->DrainPendingReadbacks("Render system scene teardown");
+            }
+        }
+        render_capture_service_.reset();
+        if (deferred_renderer_)
+        {
+            deferred_renderer_->Cleanup();
+            deferred_renderer_.reset();
+        }
+        if (resource_resolver_)
+        {
+            resource_resolver_->Cleanup();
+            resource_resolver_.reset();
+        }
+        prepared_assets_.reset();
     }
 
     void RenderSystem::Shutdown()
