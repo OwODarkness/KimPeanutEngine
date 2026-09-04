@@ -185,9 +185,9 @@ namespace kpengine::graphics
         return frame_active_ ? command_recorder_.get() : nullptr;
     }
 
-    GraphicsContext VulkanBackend::GetGraphicsContext()
+    IEditorPresentationBridge *VulkanBackend::GetEditorPresentationBridge()
     {
-        return CreateGraphicsContext();
+        return editor_bridge_.get();
     }
 
     void VulkanBackend::Cleanup()

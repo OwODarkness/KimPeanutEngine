@@ -16,11 +16,14 @@ add_executable(
     camera_source_registry_test.cpp
     environment_source_registry_test.cpp
     render_capture_service_test.cpp
+    aabb_test.cpp
+    camera_utils_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_system.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_asset_resolver.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/prepared_render_asset_catalog.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_camera.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/camera_utils.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/render_world.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_source_registry.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/light/light_source_registry.cpp

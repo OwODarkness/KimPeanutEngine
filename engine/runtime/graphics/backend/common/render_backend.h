@@ -4,6 +4,7 @@
 #include <memory>
 #include "base/base.h"
 #include "delegate/event_dispatcher.h"
+#include "editor_presentation_bridge.h"
 #include "math/math_header.h"
 #include "api.h"
 #include "bindless_texture.h"
@@ -95,7 +96,10 @@ namespace kpengine::graphics
         virtual void BeginFrame() = 0;
         virtual CommandRecorder *GetCommandRecorder() = 0;
         virtual void EndFrame() = 0;
-        virtual GraphicsContext GetGraphicsContext() = 0;
+        virtual GraphicsAPIType GetGraphicsAPI() const = 0;
+        // Borrowed bridge. The backend owns it and invalidates it during
+        // backend teardown; Editor UI must shut down first.
+        virtual IEditorPresentationBridge *GetEditorPresentationBridge() = 0;
         const GraphicsCapabilities &GetCapabilities() const { return capabilities_; }
         virtual BufferHandle CreateUniformBuffer(uint32_t size) = 0;
         virtual void *MapUniformBuffer(BufferHandle handle, size_t size) = 0;

@@ -76,7 +76,7 @@ A single dedicated worker (the engine already has a game/render split; add a loa
 
 ### The drain — the consumer, once per frame
 
-In `RenderSystem::Tick` (or a dedicated render-side drainer), before draw:
+At the render frame boundary (or in a dedicated render-side drainer), before draw:
 
 ```cpp
 void DrainFrameBudget(AsyncAssetQueue& ready, size_t max_items, TimePoint max_time) {
@@ -112,7 +112,7 @@ needs shader X
                                                      resource.ProcessShader(stages)
                                                        └─ payload = stage handles, state = Ready
                                                        └─ push ──▶ ready queue
-RenderSystem::Tick
+RenderSystem::BeginFrame
   └─ DrainFrameBudget(K, max_ms)
        ├─ Bake → PipelineDesc → RHI.CreatePipelineResource
        └─ ready_cache_[request_id] = handle

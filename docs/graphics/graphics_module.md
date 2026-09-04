@@ -175,7 +175,11 @@ Static-resource creation is also façade-owned (2026-08-20): render code passes
 CPU `data::MeshData` / `data::TextureData` plus common settings to
 `RenderBackend`; the backend creates its private `GraphicsContext`, delegates
 handle storage to its mesh/texture/sampler managers, and performs API-specific
-uploads internally. Callers never access a manager or Vulkan/OpenGL context.
+uploads internally. Ordinary Render callers never access a manager or
+Vulkan/OpenGL context. Editor startup receives only the borrowed
+`IEditorPresentationBridge`; the full backend `GraphicsContext` remains an
+API-private helper for legacy resource managers. [Render R1.5](../render/.plan/R1.5.md)
+closes the former general-context escape hatch.
 
 `RenderBackend::GetCapabilities()` returns an immutable
 `GraphicsCapabilities` value populated once during backend initialization. It
@@ -321,7 +325,7 @@ translates it to descriptor-set binding; OpenGL stores equivalent binding state
 and uses `glBindBufferRange` for uniform ranges plus texture/sampler binding
 points. These are backend-only differences.
 
-`VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_`, synchronous `VulkanUploadContext`, and `VulkanEditorBridge` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. The upload context owns staging-buffer creation and one-shot transfer submission, but delegates allocation and release to the buffer/memory managers. The editor bridge borrows the active frame/swapchain resources and brackets one external ImGui pass; it never owns or exposes general backend resources. `VulkanBackend` publishes none of these managers or native Vulkan objects: Vulkan mesh/texture adapters receive only the private buffer-upload and image-memory services they require through `VulkanContext`. Since 2026-08-20 the common facade initializes independently of pipelines, then `CreatePipelineResource(PipelineDesc)` bakes any caller-owned description into a `PipelineHandle`. Attachment formats come from the caller's `PipelineDesc` exactly as written (D2 removed the swapchain auto-fill); the pipeline resource stores them for target-compatibility checks.
+`VulkanBackend` additionally owns its own `pipeline_manager_`, `texture_manager_`, `sampler_manager_`, `mesh_manager_`, `buffer_manager_`, `image_memory_manager_`, synchronous `VulkanUploadContext`, and `VulkanEditorBridge` ([`vulkan_backend.h`](../../engine/runtime/graphics/backend/vulkan/vulkan_backend.h)). Ownership of these is fine — they are per-backend GPU state. The upload context owns staging-buffer creation and one-shot transfer submission, but delegates allocation and release to the buffer/memory managers. The editor bridge borrows the active frame/swapchain resources and brackets one external ImGui pass; it never owns general backend resources. The Editor path receives this typed borrowed bridge directly; it no longer unpacks the backend's general `GraphicsContext`, and the public general-context getter is removed. Vulkan mesh/texture adapters may continue receiving private buffer-upload and image-memory services through backend-internal `VulkanContext`. Since 2026-08-20 the common facade initializes independently of pipelines, then `CreatePipelineResource(PipelineDesc)` bakes any caller-owned description into a `PipelineHandle`. Attachment formats come from the caller's `PipelineDesc` exactly as written (D2 removed the swapchain auto-fill); the pipeline resource stores them for target-compatibility checks.
 
 #### The frame-recording API (Phase 4 landed 2026-08-15)
 

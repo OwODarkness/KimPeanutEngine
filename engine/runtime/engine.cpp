@@ -27,6 +27,20 @@ namespace kpengine
     namespace runtime
     {
 
+        RenderFrameBeginDisposition ClassifyRenderFrameBegin(
+            bool began, render::RenderSystemLifecycleState state)
+        {
+            if (began && state == render::RenderSystemLifecycleState::FrameActive)
+            {
+                return RenderFrameBeginDisposition::Record;
+            }
+            if (!began && state == render::RenderSystemLifecycleState::Ready)
+            {
+                return RenderFrameBeginDisposition::SkipRecoverable;
+            }
+            return RenderFrameBeginDisposition::Fatal;
+        }
+
         template <typename Callback>
         class ScopeGuard final
         {
@@ -419,7 +433,6 @@ namespace kpengine
             try
             {
                 global_runtime_context.Initialize();
-                global_runtime_context.PostInitialize();
                 global_runtime_context.render_thread_id_ = std::this_thread::get_id();
             }
             catch (const std::exception &error)
@@ -534,7 +547,23 @@ namespace kpengine
 
             float delta = 1.f / target_fps;
             global_runtime_context.log_system_->Tick(delta);
-            global_runtime_context.render_system_->BeginFrame(delta);
+            const bool frame_began = global_runtime_context.render_system_->BeginFrame(delta);
+            switch (ClassifyRenderFrameBegin(
+                frame_began, global_runtime_context.render_system_->GetLifecycleState()))
+            {
+            case RenderFrameBeginDisposition::Record:
+                break;
+            case RenderFrameBeginDisposition::SkipRecoverable:
+                // A backend may legitimately skip a frame while rebuilding its
+                // swapchain. Do not construct ImGui, record a terminal pass, or
+                // present an unrelated buffer without an active Render bracket.
+                global_runtime_context.window_system_->PollEvents();
+                return;
+            case RenderFrameBeginDisposition::Fatal:
+                throw std::runtime_error(
+                    "Render frame begin failed: " +
+                    global_runtime_context.render_system_->GetLastDiagnostic());
+            }
 
             // Polling must precede ImGui frame construction. RenderSystem owns the
             // terminal pass position; this callback supplies the editor's external

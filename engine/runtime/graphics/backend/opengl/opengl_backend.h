@@ -9,6 +9,7 @@
 #include "common/render_backend.h"
 #include "opengl_command_recorder.h"
 #include "opengl_context.h"
+#include "opengl_editor_bridge.h"
 
 namespace kpengine::graphics
 {
@@ -50,7 +51,14 @@ namespace kpengine::graphics
         virtual void BeginFrame() override;
         CommandRecorder *GetCommandRecorder() override;
         virtual void EndFrame() override;
-        GraphicsContext GetGraphicsContext() override;
+        GraphicsAPIType GetGraphicsAPI() const override
+        {
+            return GraphicsAPIType::GRAPHICS_API_OPENGL;
+        }
+        IEditorPresentationBridge *GetEditorPresentationBridge() override
+        {
+            return &editor_presentation_bridge_;
+        }
         BufferHandle CreateUniformBuffer(uint32_t size) override;
         void *MapUniformBuffer(BufferHandle handle, size_t size) override;
         uint32_t GetCurrentFrameIndex() const override { return 0; }
@@ -83,6 +91,7 @@ namespace kpengine::graphics
 
 
         OpenglContext context_;
+        OpenglEditorBridge editor_presentation_bridge_;
         std::vector<std::unique_ptr<class OpenglDescriptorSet>> resource_binding_sets_;
         HandleSystem<DescriptorSetHandle> resource_binding_set_handles_;
         std::unordered_map<uint32_t, OpenglMappedUniformBuffer> mapped_uniform_buffers_;

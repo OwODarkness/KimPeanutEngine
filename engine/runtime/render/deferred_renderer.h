@@ -48,16 +48,7 @@ namespace kpengine::render
         explicit operator bool() const { return success; }
     };
 
-    struct DeferredRendererFrameInput
-    {
-        const RenderWorld &render_world;
-        const std::vector<Light> &lights;
-        const RenderCamera &camera;
-        std::optional<EnvironmentSourceDesc> environment;
-        std::optional<EnvironmentSourceHandle> environment_handle;
-        std::function<bool(ShadowHandle)> is_shadow_handle_valid;
-        std::optional<CaptureView> pending_capture;
-    };
+    struct RenderSceneFrameInput;
 
     struct DeferredRendererFrameResult
     {
@@ -89,7 +80,7 @@ namespace kpengine::render
         bool FinalizeFrame();
 
         DeferredRendererFrameResult RecordFrame(
-            FrameContext &frame_context, const DeferredRendererFrameInput &input);
+            FrameContext &frame_context, const RenderSceneFrameInput &input);
 
     private:
         struct EnvironmentBindingBundle
@@ -182,7 +173,7 @@ namespace kpengine::render
         void RecordMeshProxy(const MeshProxy &proxy,
                              const graphics::PerPassData &per_pass_data,
                              graphics::CommandRecorder &recorder, MaterialPass pass);
-        void UpdateEnvironment(const DeferredRendererFrameInput &input);
+        void UpdateEnvironment(const RenderSceneFrameInput &input);
         void ApplyPendingSceneRenderTargetExtent();
 
         graphics::RenderBackend *backend_ = nullptr;

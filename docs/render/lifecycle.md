@@ -2,30 +2,38 @@
 
 ## Startup
 
-`RuntimeContext` supplies `RenderSystemInitInfo` with API selection, native
-window, resize dispatcher, bootstrap scene policy, and the async asset-load
-queue. `RenderSystem::Initialize()` creates Render-owned policy/services and
-initializes the backend through common Graphics contracts. Initialization is
-transactional and returns a diagnostic result; the lifecycle is explicitly
+Runtime loads the selected level and transactionally prepares its immutable,
+selected-API Render asset catalog through Asset and Resource before
+`RenderSystem::Initialize()`. `RuntimeContext` then supplies API selection,
+native window, resize dispatcher, and that catalog. Render initializes its
+policy/services and backend through common Graphics contracts. Initialization
+returns a diagnostic result and the lifecycle is explicitly
 `Uninitialized → Ready → FrameActive → Ready`, with `ShutDown` terminal.
-Partial failures leave no ready RenderSystem state.
+Partial failures publish no ready RenderSystem state.
 
-`PostInitialize()` drains the bootstrap resource work and prepares the logical
-renderable sources handed to the game-thread Gameplay world. The scene may keep
-the legacy primary `scene` object and add more objects under `scene.objects`;
-material/pipeline resolution stays private to Render. Imported mesh resources
-own local geometry bounds; bootstrap sources carry those bounds separately from
-their transformed world bounds so Gameplay and Render each receive the correct
-space.
+The now-empty Render `PostInitialize()` hop is removed. The address-stable
+scene coordinator exists before initialization because Runtime
+and Gameplay retain its source-sink interfaces. Initialization binds its
+material/resource dependencies without replacing those sink objects; rollback
+clears state while preserving their addresses.
 
 ## Per frame
 
 1. Gameplay publishes value-only source create/update/destroy changes.
-2. Render drains and resolves ready source data into `MeshProxy` state.
-3. `BeginFrame()` starts RHI frame-local work and applies the scheduled scene
-   passes.
-4. Scene work writes SceneColor; editor composition is the terminal pass.
-5. `EndFrame()` completes the Render frame; the backend owns submission details.
+2. The Render scene coordinator refreshes materials, drains sources in the
+   established order, resolves ready `MeshProxy` state, and produces one
+   frame-scoped scene input.
+3. `BeginFrame()` starts the backend and matching `FrameContext`, then invokes
+   the deferred renderer's fixed sequence.
+4. Scene work writes SceneColor; editor composition through the typed borrowed
+   presentation bridge remains the optional terminal pass.
+5. `EndFrame()` completes the Render frame; the backend owns submission and
+   presentation details.
+
+A successful begin establishes the only active bracket and requires an end. If
+the backend begins but no valid frame context/recorder can be acquired, R1.5
+unwinds the backend bracket immediately and returns to `Ready`; it must not
+leave stale active state.
 
 The runtime screenshot command enters through the Game-lane command registry.
 Render capture completes after the active SceneColor becomes available; PNG
@@ -34,9 +42,11 @@ request.
 
 ## Shutdown
 
-Destroy Gameplay before Render so source destruction can reach the sink.
+Destroy Gameplay before Render so source destruction can reach the stable sink.
 Release screenshot/capture command providers before their services. Render then
-releases its resolver-owned static handles before Graphics/backend teardown.
-GPU objects are released only after the backend’s submitted work is safe.
-Shutdown is idempotent and closes an active frame bracket before cleanup when
-called at an unexpected boundary.
+clears scene/material records, waits for submitted work, and releases frame,
+renderer, resolver, and backend state in ownership order. Editor UI and its
+borrowed presentation bridge usage end before Render/backend teardown. GPU
+objects are released only after submitted work is safe. Shutdown is idempotent
+and closes an active frame bracket before cleanup when called at an unexpected
+boundary.

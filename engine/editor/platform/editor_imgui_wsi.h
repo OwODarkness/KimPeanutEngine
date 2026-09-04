@@ -7,7 +7,7 @@ namespace kpengine::editor{
     class IEditorImguiWSI{
     public:
         virtual ~IEditorImguiWSI() = default;
-        virtual void Initialize(WindowHandle handle, GraphicsAPIType graphics_type) = 0;
+        virtual bool Initialize(WindowHandle handle, GraphicsAPIType graphics_type) = 0;
         virtual void Shutdown() = 0;
         virtual void NewFrame() = 0;
     };

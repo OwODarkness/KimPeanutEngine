@@ -44,6 +44,7 @@ namespace
         bool fail_texture_creation = false;
         bool fail_mesh_creation = false;
         bool fail_sampler_creation = false;
+        bool missing_command_recorder = false;
         std::vector<std::string> events;
         std::vector<TargetRecord> targets;
         int wait_idle_count = 0;
@@ -217,6 +218,7 @@ namespace
             probe_->targets.push_back({names[name_index], desc.width, desc.height});
             const graphics::RenderTargetHandle handle = MakeHandle<graphics::RenderTargetHandle>();
             target_names_[handle.id] = names[name_index];
+            target_extents_[handle.id] = {desc.width, desc.height};
             return handle;
         }
 
@@ -253,7 +255,9 @@ namespace
         graphics::RenderTargetView GetRenderTargetView(
             graphics::RenderTargetHandle target) override
         {
-            return {320, 200, static_cast<uintptr_t>(target.id), 1};
+            const auto extent = target_extents_.at(target.id);
+            return {extent.first, extent.second, static_cast<uintptr_t>(target.id),
+                    static_cast<uintptr_t>(target.id)};
         }
 
         graphics::IRenderTargetReadback *GetRenderTargetReadback() override
@@ -293,13 +297,21 @@ namespace
 
         void BeginFrame() override { probe_->events.push_back("begin_frame"); }
 
-        graphics::CommandRecorder *GetCommandRecorder() override { return &recorder_; }
+        graphics::CommandRecorder *GetCommandRecorder() override
+        {
+            return probe_->missing_command_recorder ? nullptr : &recorder_;
+        }
 
         void EndFrame() override { probe_->events.push_back("end_frame"); }
 
-        GraphicsContext GetGraphicsContext() override
+        GraphicsAPIType GetGraphicsAPI() const override
         {
-            return {GraphicsAPIType::GRAPHICS_API_OPENGL, nullptr};
+            return GraphicsAPIType::GRAPHICS_API_OPENGL;
+        }
+
+        graphics::IEditorPresentationBridge *GetEditorPresentationBridge() override
+        {
+            return nullptr;
         }
 
         graphics::BufferHandle CreateUniformBuffer(uint32_t) override
@@ -370,6 +382,7 @@ namespace
         FakeCommandRecorder recorder_;
         uint32_t next_handle_ = 1;
         std::unordered_map<uint32_t, std::string> target_names_;
+        std::unordered_map<uint32_t, std::pair<uint32_t, uint32_t>> target_extents_;
         std::unordered_map<uint32_t, std::vector<uint8_t>> uniform_buffers_;
     };
 
@@ -531,6 +544,54 @@ TEST(RenderSystemLifecycleTest, RollsBackWhenARequiredCollaboratorFails)
               probe->events.end());
 }
 
+TEST(RenderSystemLifecycleTest, KeepsSourceSinkAddressesStableAcrossRetry)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    probe->fail_uniform_mapping = true;
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    auto *const renderable_sink = system.GetRenderableSourceSink();
+    auto *const light_sink = system.GetLightSourceSink();
+    auto *const camera_sink = system.GetCameraSourceSink();
+    auto *const environment_sink = system.GetEnvironmentSourceSink();
+
+    EXPECT_FALSE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+    EXPECT_EQ(system.GetRenderableSourceSink(), renderable_sink);
+    EXPECT_EQ(system.GetLightSourceSink(), light_sink);
+    EXPECT_EQ(system.GetCameraSourceSink(), camera_sink);
+    EXPECT_EQ(system.GetEnvironmentSourceSink(), environment_sink);
+
+    probe->fail_uniform_mapping = false;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+    EXPECT_EQ(system.GetRenderableSourceSink(), renderable_sink);
+    EXPECT_EQ(system.GetLightSourceSink(), light_sink);
+    EXPECT_EQ(system.GetCameraSourceSink(), camera_sink);
+    EXPECT_EQ(system.GetEnvironmentSourceSink(), environment_sink);
+    system.Shutdown();
+}
+
+TEST(RenderSystemLifecycleTest, UnwindsBackendFrameWhenNoRecorderIsAvailable)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    probe->missing_command_recorder = true;
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+
+    EXPECT_FALSE(system.BeginFrame(1.0f / 60.0f));
+    EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::Ready);
+    EXPECT_FALSE(system.EndFrame());
+    EXPECT_EQ(std::count(probe->events.begin(), probe->events.end(), "begin_frame"), 1);
+    EXPECT_EQ(std::count(probe->events.begin(), probe->events.end(), "end_frame"), 1);
+    system.Shutdown();
+}
+
 TEST(RenderSystemLifecycleTest, RendererTargetInitializationRollsBackPartialOwnership)
 {
     const auto probe = std::make_shared<BackendProbe>();
@@ -661,6 +722,8 @@ TEST(RenderSystemLifecycleTest, CharacterizesFrameCaptureResizeEditorAndTeardown
     }
     EXPECT_EQ(actual_targets, expected_targets);
 
+    const graphics::RenderTargetView view_before_resize = system.GetSceneRenderTargetView();
+    ASSERT_TRUE(view_before_resize.IsValid());
     system.RequestSceneRenderTargetExtent(640, 360);
     const int waits_before_resize = probe->wait_idle_count;
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
@@ -670,6 +733,13 @@ TEST(RenderSystemLifecycleTest, CharacterizesFrameCaptureResizeEditorAndTeardown
     EXPECT_EQ(probe->targets[7].name, "SceneColor");
     EXPECT_EQ(probe->targets[7].width, 640u);
     EXPECT_EQ(probe->targets[7].height, 360u);
+    const graphics::RenderTargetView view_after_resize = system.GetSceneRenderTargetView();
+    ASSERT_TRUE(view_after_resize.IsValid());
+    EXPECT_EQ(view_after_resize.width, 640u);
+    EXPECT_EQ(view_after_resize.height, 360u);
+    EXPECT_NE(view_before_resize.native_image_view, view_after_resize.native_image_view);
+    // The old value is borrowed and must not be reused after the extent change;
+    // the Editor reacquires the replacement view on its next draw.
 
     system.Shutdown();
     EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::ShutDown);
@@ -845,7 +915,6 @@ TEST(RenderSystemEnvironmentTest, KeepsBaselineWhenLevelSourceFails)
     ASSERT_TRUE(system.Initialize(
         fixtures.Info([probe](GraphicsAPIType) { return std::make_unique<FakeBackend>(probe); })));
 
-    ASSERT_TRUE(system.PostInitialize());
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
     ASSERT_TRUE(system.EndFrame());
     ASSERT_FALSE(probe->environment_binding_snapshots.empty());

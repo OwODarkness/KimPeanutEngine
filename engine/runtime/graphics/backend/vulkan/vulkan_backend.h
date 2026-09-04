@@ -51,7 +51,11 @@ namespace kpengine::graphics
         virtual void BeginFrame() override;
         CommandRecorder *GetCommandRecorder() override;
         virtual void EndFrame() override;
-        GraphicsContext GetGraphicsContext() override;
+        GraphicsAPIType GetGraphicsAPI() const override
+        {
+            return GraphicsAPIType::GRAPHICS_API_VULKAN;
+        }
+        IEditorPresentationBridge *GetEditorPresentationBridge() override;
         BufferHandle CreateUniformBuffer(uint32_t size) override;
         void *MapUniformBuffer(BufferHandle handle, size_t size) override;
         uint32_t GetCurrentFrameIndex() const override;

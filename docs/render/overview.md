@@ -5,10 +5,13 @@ world state, materials, pass scheduling, render-target policy, and requests for
 RHI resources. Graphics/RHI owns backend translation, GPU objects, submission,
 and synchronization.
 
-**Current status:** Render has an API-neutral facade, pass schedule, material
-system, render-source bridge, SceneColor target, and runtime capture service.
-The immediate limitations are deterministic visual-regression inputs, additional
-debug views, and the remaining render-graph/generalized scene work.
+**Current status:** Render has an API-neutral facade, one typed fixed pass
+sequence, material system, prepared-asset catalog, render-source bridge,
+SceneColor target, runtime capture service, and an address-stable scene
+coordinator. Editor presentation uses a typed Graphics bridge and borrowed
+target view; later limits include stronger deterministic visual regression,
+additional debug views, and any independently justified render-graph/
+generalized-scene work.
 
 ```text
 Gameplay source values → Render source sink → RenderWorld / MeshProxy

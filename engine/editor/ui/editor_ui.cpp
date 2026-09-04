@@ -1,6 +1,7 @@
 #include "editor/ui/editor_ui.h"
 
 #include <imgui.h>
+#include <stdexcept>
 #include "config/path.h"
 #include "editor/platform/editor_imgui_glfw_wsi.h"
 #include "editor/platform/editor_imgui_opengl_renderer.h"
@@ -25,55 +26,106 @@ namespace kpengine::editor
 
     void EditorUI::Initialize(const EditorUIInitInfo &init_info)
     {
-        IMGUI_CHECKVERSION();
-        ImGui::CreateContext();
-        ImGui::StyleColorsDark();
-
-        CreateImguiBackends(init_info.window, init_info.graphics_context);
-
-        EditorSettings settings{};
-        settings.log_colors = DefaultLogColors();
+        if (imgui_context_created_ || renderer_ || wsi_ || !components_.empty())
+        {
+            Close();
+        }
         try
         {
-            settings = ReadEditorSettings(GetSettingsPath());
+            IMGUI_CHECKVERSION();
+            ImGui::CreateContext();
+            imgui_context_created_ = true;
+            ImGui::StyleColorsDark();
+
+            CreateImguiBackends(init_info);
+
+            EditorSettings settings{};
+            settings.log_colors = DefaultLogColors();
+            try
+            {
+                settings = ReadEditorSettings(GetSettingsPath());
+            }
+            catch (const std::exception &e)
+            {
+                KP_LOG("LogEditorUI", LOG_LEVEL_WARNING,
+                       "editor settings unavailable (%s), using defaults", e.what());
+            }
+            renderer_->SetBackgroundColor(settings.background_color);
+
+            ImGuiIO &io = ImGui::GetIO();
+            io.ConfigWindowsMoveFromTitleBarOnly = true;
+            io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+            // Tool tree. Each panel is built by its own helper so Initialize stays an
+            // orchestration list — add a panel as one more call, not more inline code.
+            BuildMenuBar(init_info.render_system);
+            BuildViewportWindow(init_info.render_system, init_info.window_system,
+                                init_info.input_system, init_info.camera_control_sink);
+            BuildLogWindow(init_info.log_system, settings.log_colors);
+            BuildProfileBar(init_info.engine, init_info.memory_sampler, init_info.render_system);
+            BuildConsole(init_info.command_registry, init_info.input_system);
         }
         catch (const std::exception &e)
         {
+            Close();
             KP_LOG("LogEditorUI", LOG_LEVEL_WARNING,
-                   "editor settings unavailable (%s), using defaults", e.what());
+                   "editor UI initialization rolled back (%s)", e.what());
+            throw;
         }
-        renderer_->SetBackgroundColor(settings.background_color);
-
-        ImGuiIO &io = ImGui::GetIO();
-        io.ConfigWindowsMoveFromTitleBarOnly = true;
-        io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-
-        // Tool tree. Each panel is built by its own helper so Initialize stays an
-        // orchestration list — add a panel as one more call, not more inline code.
-        BuildMenuBar(init_info.render_system);
-        BuildViewportWindow(init_info.render_system, init_info.window_system,
-                            init_info.input_system, init_info.camera_control_sink);
-        BuildLogWindow(init_info.log_system, settings.log_colors);
-        BuildProfileBar(init_info.engine, init_info.memory_sampler, init_info.render_system);
-        BuildConsole(init_info.command_registry, init_info.input_system);
+        catch (...)
+        {
+            Close();
+            throw;
+        }
     }
 
-    void EditorUI::CreateImguiBackends(WindowHandle window, GraphicsContext graphics_context)
+    void EditorUI::CreateImguiBackends(const EditorUIInitInfo &init_info)
     {
         // This module owns WSI + renderer selection. EditorLib only orchestrates
         // tools through EditorUI and therefore stays decoupled from GL/Vulkan.
-        wsi_ = std::make_unique<EditorImguiGLFWWSI>();
-        if (graphics_context.type == GraphicsAPIType::GRAPHICS_API_OPENGL)
+        if (init_info.editor_presentation_bridge == nullptr)
+        {
+            throw std::runtime_error("Editor presentation bridge is unavailable");
+        }
+        wsi_ = init_info.wsi_factory ? init_info.wsi_factory()
+                                     : std::make_unique<EditorImguiGLFWWSI>();
+        if (!wsi_)
+        {
+            throw std::runtime_error("Editor ImGui window backend is unavailable");
+        }
+        if (init_info.renderer_factory)
+        {
+            renderer_ = init_info.renderer_factory(
+                init_info.editor_presentation_bridge->GetGraphicsAPI());
+        }
+        else if (init_info.editor_presentation_bridge->GetGraphicsAPI() ==
+                 GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
             renderer_ = std::make_unique<EditorImguiOpenglRenderer>();
         }
-        else if (graphics_context.type == GraphicsAPIType::GRAPHICS_API_VULKAN)
+        else if (init_info.editor_presentation_bridge->GetGraphicsAPI() ==
+                 GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
             renderer_ = std::make_unique<EditorImguiVulkanRenderer>();
         }
 
-        renderer_->Initialize(graphics_context);
-        wsi_->Initialize(window, graphics_context.type);
+        if (!renderer_)
+        {
+            throw std::runtime_error("Unsupported graphics API for Editor UI");
+        }
+        renderer_init_attempted_ = true;
+        if (!renderer_->Initialize(init_info.editor_presentation_bridge))
+        {
+            throw std::runtime_error("Editor ImGui renderer initialization failed");
+        }
+        renderer_initialized_ = true;
+        wsi_init_attempted_ = true;
+        if (!wsi_->Initialize(init_info.window,
+                              init_info.editor_presentation_bridge->GetGraphicsAPI()))
+        {
+            throw std::runtime_error("Editor ImGui window backend initialization failed");
+        }
+        wsi_initialized_ = true;
     }
 
     void EditorUI::BuildMenuBar(render::RenderSystem *render_system)
@@ -184,7 +236,7 @@ namespace kpengine::editor
         profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
             "Shaders",
             [render_system]
-            { return std::to_string(render_system->GetLoadedShaderCount()); }));
+            { return std::to_string(render_system->GetMetrics().prepared_shader_count); }));
         components_.push_back(
             std::make_unique<EditorProfileBarComponent>(std::move(profile_metrics)));
     }
@@ -203,9 +255,23 @@ namespace kpengine::editor
         // detached while both services are still alive.
         components_.clear();
         screenshot_service_.reset();
-        renderer_->Shutdown();
-        wsi_->Shutdown();
-        ImGui::DestroyContext();
+        if (wsi_ && wsi_init_attempted_)
+        {
+            wsi_->Shutdown();
+        }
+        wsi_initialized_ = false;
+        if (renderer_ && renderer_init_attempted_)
+        {
+            renderer_->Shutdown();
+        }
+        renderer_initialized_ = false;
+        renderer_init_attempted_ = false;
+        wsi_init_attempted_ = false;
+        if (imgui_context_created_)
+        {
+            ImGui::DestroyContext();
+            imgui_context_created_ = false;
+        }
         renderer_.reset();
         wsi_.reset();
     }

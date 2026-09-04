@@ -16,6 +16,11 @@
 
 namespace kpengine
 {
+    namespace render
+    {
+        enum class RenderSystemLifecycleState : uint8_t;
+    }
+
     namespace editor
     {
         class Editor;
@@ -23,6 +28,18 @@ namespace kpengine
 
     namespace runtime
     {
+        enum class RenderFrameBeginDisposition : uint8_t
+        {
+            Record,
+            SkipRecoverable,
+            Fatal,
+        };
+
+        // Runtime's frame-loop policy is kept separate from RenderSystem so the
+        // recoverable no-context path is testable without constructing a window.
+        RenderFrameBeginDisposition ClassifyRenderFrameBegin(
+            bool began, render::RenderSystemLifecycleState state);
+
         class Engine
         {
         public:

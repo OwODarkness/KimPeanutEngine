@@ -12,18 +12,13 @@
 #include "base/type.h"
 #include "delegate/event_dispatcher.h"
 #include "graphics/backend/common/api.h"
-#include "camera_source_registry.h"
 #include "deferred_renderer.h"
-#include "environment_source_registry.h"
 #include "frame_context.h"
-#include "render/light/light_source_registry.h"
 #include "render/material/material_system.h"
 #include "render/render_capture_service.h"
-#include "render_camera.h"
 #include "render_resource.h"
-#include "render_source_registry.h"
-#include "render_world/render_world.h"
 #include "prepared_render_asset_catalog.h"
+#include "render_scene_coordinator.h"
 
 namespace kpengine::graphics
 {
@@ -38,7 +33,6 @@ namespace kpengine::runtime
 namespace kpengine::render
 {
     class RenderResourceResolver;
-    class MaterialAssetResolver;
     class RenderCaptureService;
 
     enum class RenderSystemLifecycleState : uint8_t
@@ -69,10 +63,8 @@ namespace kpengine::render
         RenderBackendFactory backend_factory;
     };
 
-    // The render-module facade. Reconstruction re-owns the RHI backend, the
-    // resource-queue drain + render cache, and the scene graph here
-    // (docs/render/overview.md). Today it consumes the async load queue in
-    // two modes: a full bootstrap drain at init, and a budgeted drain per frame.
+    // The render-module facade. It owns frame/lifecycle orchestration while
+    // RenderSceneCoordinator owns Gameplay source inboxes and scene policy.
     class RenderSystem
     {
     public:
@@ -84,15 +76,12 @@ namespace kpengine::render
         RenderSystem &operator=(RenderSystem &&) = delete;
 
         RenderSystemInitResult Initialize(const RenderSystemInitInfo &info);
-        // Bootstrap pass: drain every queued request now (blocking at init is fine).
-        bool PostInitialize();
         // Safe to call repeatedly; the first call retires all owned state.
         void Shutdown();
 
         RenderSystemLifecycleState GetLifecycleState() const { return lifecycle_state_; }
         const std::string &GetLastDiagnostic() const { return last_diagnostic_; }
 
-        bool Tick(float delta_time);
         // Split frame bracket for the editor: scene work is recorded first, then
         // the API-specific editor renderer composites before submission/present.
         bool BeginFrame(float delta_time);
@@ -101,21 +90,24 @@ namespace kpengine::render
         // that external work runs: after ScenePass and before presentation.
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
 
-        GraphicsContext GetGraphicsContext();
-        const RenderTarget &GetSceneRenderTarget() const;
+        graphics::RenderTargetView GetSceneRenderTargetView() const;
         // The editor provides its available viewport extent. Reallocation happens
         // at the next safe frame boundary, never while UI is reading the view.
         void RequestSceneRenderTargetExtent(uint32_t width, uint32_t height);
-        // Distinct shader references loaded so far, reference-based on the content
-        // hash (the ShaderCache key) so a stage shared across programs counts once.
-        int GetLoadedShaderCount() const;
-        IRenderableSourceSink *GetRenderableSourceSink() { return &source_registry_; }
-        ILightSourceSink *GetLightSourceSink() { return &light_source_registry_; }
-        ICameraSourceSink *GetCameraSourceSink() { return &camera_source_registry_; }
-        IEnvironmentSourceSink *GetEnvironmentSourceSink()
+        struct RenderSystemMetrics
         {
-            return &environment_source_registry_;
-        }
+            uint32_t prepared_shader_count = 0;
+        };
+        RenderSystemMetrics GetMetrics() const;
+        IRenderableSourceSink *GetRenderableSourceSink()
+        { return scene_coordinator_.GetRenderableSourceSink(); }
+        ILightSourceSink *GetLightSourceSink()
+        { return scene_coordinator_.GetLightSourceSink(); }
+        ICameraSourceSink *GetCameraSourceSink()
+        { return scene_coordinator_.GetCameraSourceSink(); }
+        IEnvironmentSourceSink *GetEnvironmentSourceSink()
+        { return scene_coordinator_.GetEnvironmentSourceSink(); }
+        graphics::IEditorPresentationBridge *GetEditorPresentationBridge();
         // Borrowed Runtime/tooling boundary. RenderSystem owns the implementation
         // and cancels any pending request before this object is destroyed.
         IRenderCaptureService *GetRenderCaptureService();
@@ -128,17 +120,6 @@ namespace kpengine::render
         void CleanupOwnedState();
         bool IsState(RenderSystemLifecycleState expected) const;
 
-        RenderableSourceResolution ResolveRenderableSource(
-            const PrimitiveRenderableSourceDesc &source);
-        MaterialResolution ResolveMaterialAsset(asset::AssetID material_asset,
-                                                MaterialInstanceHandle &out_instance);
-        void DrainRenderableSources();
-        void DrainLightSources();
-        void DrainCameraSources();
-        void DrainEnvironmentSources();
-
-        void DestroyMaterialAssetRecords();
-        void ApplyDefaultCamera();
         FrameContext *GetCurrentFrameContext();
 
     private:
@@ -147,14 +128,7 @@ namespace kpengine::render
         std::unique_ptr<RenderResourceResolver> resource_resolver_;
         std::unique_ptr<DeferredRenderer> deferred_renderer_;
         std::vector<FrameContext> frame_contexts_;
-        RenderWorld render_world_;
-        RenderableSourceRegistry source_registry_;
-        LightWorld light_world_;
-        LightSourceRegistry light_source_registry_;
-        CameraSourceRegistry camera_source_registry_;
-        EnvironmentSourceRegistry environment_source_registry_;
-        RenderCamera scene_camera_;
-        std::unique_ptr<MaterialAssetResolver> material_asset_resolver_;
+        RenderSceneCoordinator scene_coordinator_;
         std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets_;
         std::unique_ptr<RenderCaptureService> render_capture_service_;
         uint64_t frame_number_ = 0;

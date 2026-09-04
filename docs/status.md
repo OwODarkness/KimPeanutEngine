@@ -1,6 +1,6 @@
 # Project Status
 
-**Snapshot: 2026-09-02.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-04.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md)); this page is the one-line-per-item index.
 
 ## Done
 
@@ -93,6 +93,17 @@
   pass and were inspected. GraphicsSmoke still reports the strict D5
   cross-backend silhouette comparator difference. → [R1.4 review](render/.review/R1.4.md),
   [R1.4 journal](../.spec/journal/2026-09-02-render-system-r1-4.md)
+
+- **Render R1.5 — facade hardening and R1 closure (2026-09-04)** — the stable
+  `RenderSceneCoordinator`, typed Graphics-owned Editor bridge, borrowed target
+  view, Runtime failed-begin policy, and transactional Editor initialization
+  are landed. The comparator now bounds edge/structural differences and rejects
+  translated silhouettes and removed thin features with synthetic probes.
+  Focused lifecycle tests, full Debug validation, dual-backend GraphicsSmoke,
+  and six inspected captures pass. Native orderly Editor close remains an
+  environment-limited evidence follow-up. →
+  [R1.5 review](render/.review/R1.5.md),
+  [R1.5 journal](../.spec/journal/2026-09-04-render-system-r1-5.md)
 
 - **Deferred PBR D6.4 — bounded point-light shadow atlas (2026-09-01)** —
   point shadow intent/handle lifetime, deterministic slot-2 selection, a fixed
@@ -550,6 +561,7 @@
 - **Editor profile bar (2026-08-13)** — a bottom status bar showing FPS, frame ms, and memory. Two decoupling seams: `EditorMetric` (the extension point — implement `Name()`/`Sample()`, or wrap sampler lambdas in `EditorFuncMetric`) and `EditorProfileBarComponent` (samples injected metrics and draws them in one row; it only ever talks to `EditorMetric`). Built-ins: FPS (engine via an injected sampler), frame time (derived from fps, not a self-measured clock — that would see the render loop's pacing sleep), memory (process + system free via an injected stats sampler). **Measurement lives in the platform layer, not the editor and not the engine** — FPS stays in the engine (`Engine::GetFPS`, it's game-loop timing), but memory is an OS query and lives behind a platform seam: `MemoryStatsSampler` interface + `WindowsMemoryStatsSampler` under `runtime/platform/win/` (PSAPI/GlobalMemory, `psapi` linked into the `Platform` lib), owned by `RuntimeContext`, reached by the editor through `EditorContext`. The engine is platform-agnostic again. Plot-capable metrics draw a small sparkline via the base's history buffer. `EditorUI::Initialize` now takes an `EditorUIInitInfo` bundle (window, backend, log system, engine, memory sampler — defaulted, mirrors `EditorContextInitInfo`) so the signature doesn't grow with each injected dependency. Unit-tested under `ProfileTest` (5 cases, direct-compile; no Win32 in the test). → [editor_module.md](editor/editor_module.md)
 
 ## In progress / built but not wired
+
 
 - **Directional-shadow caster correctness (2026-08-31)** — `ShadowDepthPass`
   now iterates the complete immutable RenderWorld snapshot rather than culling

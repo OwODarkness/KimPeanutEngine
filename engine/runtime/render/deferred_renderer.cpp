@@ -16,12 +16,14 @@
 #include "graphics/backend/common/render_backend.h"
 #include "graphics/backend/common/command_recorder.h"
 #include "log/logger.h"
+#include "render/camera_utils.h"
 #include "render/material/material_system.h"
 #include "render/material/material_asset_resolver.h"
 #include "render/render_capture_service_internal.h"
 #include "render/render_world/scene_draw_list.h"
 #include "render/render_world/scene_visibility.h"
 #include "render_resource_resolver.h"
+#include "render_scene_coordinator.h"
 
 namespace kpengine::render
 {
@@ -60,67 +62,6 @@ namespace kpengine::render
             Vector4f punctual_depth_params;
         };
 
-        spatial::AABB TransformBounds(const spatial::AABB &local_bounds,
-                                      const Transform3f &transform)
-        {
-            if (!local_bounds.IsValid())
-            {
-                return local_bounds;
-            }
-
-            const std::array<Vector3f, 8> corners{{
-                {local_bounds.min_.x_, local_bounds.min_.y_, local_bounds.min_.z_},
-                {local_bounds.min_.x_, local_bounds.min_.y_, local_bounds.max_.z_},
-                {local_bounds.min_.x_, local_bounds.max_.y_, local_bounds.min_.z_},
-                {local_bounds.min_.x_, local_bounds.max_.y_, local_bounds.max_.z_},
-                {local_bounds.max_.x_, local_bounds.min_.y_, local_bounds.min_.z_},
-                {local_bounds.max_.x_, local_bounds.min_.y_, local_bounds.max_.z_},
-                {local_bounds.max_.x_, local_bounds.max_.y_, local_bounds.min_.z_},
-                {local_bounds.max_.x_, local_bounds.max_.y_, local_bounds.max_.z_},
-            }};
-
-            const float maximum = std::numeric_limits<float>::max();
-            spatial::AABB world_bounds{{maximum, maximum, maximum},
-                                       {-maximum, -maximum, -maximum}};
-            for (const Vector3f &corner : corners)
-            {
-                const Vector3f transformed =
-                    transform.rotator_.RotateVector(transform.scale_ * corner) +
-                    transform.position_;
-                world_bounds.min_.x_ = std::min(world_bounds.min_.x_, transformed.x_);
-                world_bounds.min_.y_ = std::min(world_bounds.min_.y_, transformed.y_);
-                world_bounds.min_.z_ = std::min(world_bounds.min_.z_, transformed.z_);
-                world_bounds.max_.x_ = std::max(world_bounds.max_.x_, transformed.x_);
-                world_bounds.max_.y_ = std::max(world_bounds.max_.y_, transformed.y_);
-                world_bounds.max_.z_ = std::max(world_bounds.max_.z_, transformed.z_);
-            }
-            return world_bounds;
-        }
-
-        std::array<Vector3f, 8> GetBoundsCorners(const spatial::AABB &bounds)
-        {
-            return {{
-                {bounds.min_.x_, bounds.min_.y_, bounds.min_.z_},
-                {bounds.min_.x_, bounds.min_.y_, bounds.max_.z_},
-                {bounds.min_.x_, bounds.max_.y_, bounds.min_.z_},
-                {bounds.min_.x_, bounds.max_.y_, bounds.max_.z_},
-                {bounds.max_.x_, bounds.min_.y_, bounds.min_.z_},
-                {bounds.max_.x_, bounds.min_.y_, bounds.max_.z_},
-                {bounds.max_.x_, bounds.max_.y_, bounds.min_.z_},
-                {bounds.max_.x_, bounds.max_.y_, bounds.max_.z_},
-            }};
-        }
-
-        void ExpandBounds(spatial::AABB &bounds, const Vector3f &point)
-        {
-            bounds.min_.x_ = std::min(bounds.min_.x_, point.x_);
-            bounds.min_.y_ = std::min(bounds.min_.y_, point.y_);
-            bounds.min_.z_ = std::min(bounds.min_.z_, point.z_);
-            bounds.max_.x_ = std::max(bounds.max_.x_, point.x_);
-            bounds.max_.y_ = std::max(bounds.max_.y_, point.y_);
-            bounds.max_.z_ = std::max(bounds.max_.z_, point.z_);
-        }
-
         std::optional<spatial::AABB> BuildDirectionalShadowBounds(
             const std::vector<MeshProxy> &proxies, const Vector3f &camera_position)
         {
@@ -135,8 +76,8 @@ namespace kpengine::render
                 {
                     continue;
                 }
-                ExpandBounds(bounds, proxy.world_bounds.min_);
-                ExpandBounds(bounds, proxy.world_bounds.max_);
+                bounds.ExpandToInclude(proxy.world_bounds.min_);
+                bounds.ExpandToInclude(proxy.world_bounds.max_);
                 has_caster = true;
             }
             if (!has_caster)
@@ -147,7 +88,7 @@ namespace kpengine::render
             // Keep the current view origin inside the fitted region. The complete
             // receiver volume is a later cascade/receiver-fit concern, but this
             // prevents an off-camera caster fit from immediately losing the view.
-            ExpandBounds(bounds, camera_position);
+            bounds.ExpandToInclude(camera_position);
             return bounds;
         }
 
@@ -177,7 +118,7 @@ namespace kpengine::render
             float max_x = -maximum;
             float max_y = -maximum;
             float max_z = -maximum;
-            for (const Vector3f &corner : GetBoundsCorners(caster_bounds))
+            for (const Vector3f &corner : caster_bounds.GetCorners())
             {
                 const Vector4f light_space = view * Vector4f{corner, 1.0f};
                 min_x = std::min(min_x, light_space.x_);
@@ -206,33 +147,13 @@ namespace kpengine::render
                 return true;
             }
             const float tangent = std::tan(outer_cone_radians);
-            for (const Vector3f &corner : GetBoundsCorners(bounds))
+            for (const Vector3f &corner : bounds.GetCorners())
             {
                 const Vector4f light_space = view * Vector4f{corner, 1.0f};
                 const float depth = -light_space.z_;
                 if (depth >= near_plane && depth <= far_plane &&
                     std::abs(light_space.x_) <= depth * tangent &&
                     std::abs(light_space.y_) <= depth * tangent)
-                {
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        bool IsPointBoundsInsideFace(const spatial::AABB &bounds,
-                                     const Matrix4f &view, float near_plane, float far_plane)
-        {
-            if (!bounds.IsValid())
-            {
-                return true;
-            }
-            for (const Vector3f &corner : GetBoundsCorners(bounds))
-            {
-                const Vector4f light_space = view * Vector4f{corner, 1.0f};
-                const float depth = -light_space.z_;
-                if (depth >= near_plane && depth <= far_plane &&
-                    std::abs(light_space.x_) <= depth && std::abs(light_space.y_) <= depth)
                 {
                     return true;
                 }
@@ -419,7 +340,7 @@ namespace kpengine::render
     }
 
     DeferredRendererFrameResult DeferredRenderer::RecordFrame(
-        FrameContext &frame_context, const DeferredRendererFrameInput &input)
+        FrameContext &frame_context, const RenderSceneFrameInput &input)
     {
         DeferredRendererFrameResult result{};
         if (!pass_sequence_.has_value() || active_pass_frame_.has_value())
@@ -535,7 +456,7 @@ namespace kpengine::render
         return finalized;
     }
 
-    void DeferredRenderer::UpdateEnvironment(const DeferredRendererFrameInput &input)
+    void DeferredRenderer::UpdateEnvironment(const RenderSceneFrameInput &input)
     {
         const std::optional<EnvironmentSourceDesc> &source = input.environment;
         const std::optional<EnvironmentSourceHandle> &source_handle = input.environment_handle;
@@ -970,8 +891,8 @@ namespace kpengine::render
             per_pass_data.camera_data.proj = projection.Transpose();
             for (const MeshProxy &proxy : caster_candidates)
             {
-                if (!IsPointBoundsInsideFace(proxy.world_bounds, view,
-                                             shadow.near_plane, shadow.far_plane))
+                if (!camera::IsAABBInsidePerspectiveFace(
+                        proxy.world_bounds, view, shadow.near_plane, shadow.far_plane))
                 {
                     continue;
                 }

@@ -41,7 +41,7 @@ namespace kpengine::render
                                              : kDefaultPipelineStateLayoutSignature;
         const uint64_t binding_model_signature = bindless_texture_table_compatible ? (1ull << 32) : 0;
         const uint64_t pass_signature = static_cast<uint64_t>(pass) << 40;
-        const PipelineCacheKey key{program_id.Pack(), backend_->GetGraphicsContext().type,
+        const PipelineCacheKey key{program_id.Pack(), backend_->GetGraphicsAPI(),
                                    state_signature | binding_model_signature | pass_signature};
         const auto existing = pipeline_cache_.find(key);
         if (existing != pipeline_cache_.end())

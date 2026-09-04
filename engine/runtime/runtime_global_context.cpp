@@ -108,16 +108,6 @@ namespace kpengine
                 }
             }
 
-            // [reconstruction] Old design — input/render/world were wired and initialized
-            // here; reconstructed later. The bootstrap preload flow (docs/status.md item 6)
-            // is the replacement entry point for the render side.
-            // input_system_->BindCursorEvent(window_system_->cursor_event_dispatcher_);
-            // input_system_->BindKeyEvent(window_system_->key_event_dispatcher_);
-            // input_system_->BindCursorEvent(window_system_->cursor_event_dispatcher_);
-            // input_system_->BindScrollEvent(window_system_->scroll_event_dispatcher_);
-            // input_system_->Initialize();
-            // render_system_->Initialize();
-            // world_system_->Initialize();
         }
 
         RuntimeContext::StartupResult RuntimeContext::PrepareRenderAssets()
@@ -135,16 +125,6 @@ namespace kpengine
             }
             prepared_render_assets_ = result.catalog;
             return {true, {}};
-        }
-
-        void RuntimeContext::PostInitialize()
-        {
-            if (!render_system_->PostInitialize())
-            {
-                throw std::runtime_error(render_system_->GetLastDiagnostic().empty()
-                                             ? "RenderSystem startup asset preparation failed"
-                                             : render_system_->GetLastDiagnostic());
-            }
         }
 
         RuntimeContext::StartupResult RuntimeContext::FinalizeGameStartup()

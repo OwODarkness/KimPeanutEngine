@@ -130,11 +130,6 @@ namespace kpengine::graphics
         return frame_active_ ? command_recorder_.get() : nullptr;
     }
 
-    GraphicsContext OpenglBackend::GetGraphicsContext()
-    {
-        return CreateGraphicsContext();
-    }
-
     BufferHandle OpenglBackend::CreateUniformBuffer(uint32_t size)
     {
         GLuint buffer = 0;

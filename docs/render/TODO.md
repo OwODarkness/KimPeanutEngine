@@ -16,11 +16,14 @@ details and stage checklists belong in the linked submodule documents.
 
 ## Cross-cutting Render work
 
-- [ ] **R1 — RenderSystem responsibility split:** follow the
-  [stage design](.plan/R1.md) and [risk register](risks.md). Characterize real
-  frame/lifecycle behavior first; then make lifecycle transactional, extract
-  deferred renderer/pass-owned state, unify fixed-pass declaration with actual
-  execution, and remove synchronous Asset/resource loading work from Render.
+- [ ] **R1 — RenderSystem responsibility split:** R1.1–R1.5 code fixes are
+  landed and the independent source findings are addressed. The comparator now
+  bounds edge and structural differences, Runtime skips recoverable failed
+  begins without presenting, and Editor UI initialization rolls back
+  transactionally. Orderly application-close evidence is still required. →
+  [R1 plan](.plan/R1.md),
+  [R1.5 review](.review/R1.5.md),
+  [R1.5 journal](../../.spec/journal/2026-09-04-render-system-r1-5.md)
 - [x] **R1.1 — characterization and transactional lifecycle** landed
   2026-09-01: injected the existing `RenderBackend` factory, added explicit
   `Uninitialized`/`Ready`/`FrameActive`/`ShutDown` states, transactional
@@ -43,13 +46,20 @@ details and stage checklists belong in the linked submodule documents.
   now correspond to one immutable typed sequence, conditional diagnostic
   capture, and optional terminal editor composition. Render-graph and R1.4
   work remain out of scope. → [R1.3 journal](../../.spec/journal/2026-09-02-render-system-r1-3.md)
-- [ ] **R1.4 — ready asset ingestion and Render bootstrap removal:**
+- [x] **R1.4 — ready asset ingestion and Render bootstrap removal:**
   source review findings are addressed: the catalog readiness/const contracts,
   ordinal role invariant, injectable preparation tests, and durable records are
   fixed. Full build and CTest pass, and all six required fixture captures were
-  exported and inspected. The stage remains open only because the strict
-  dual-backend GraphicsSmoke D5 silhouette comparator exits nonzero. →
-  [R1.4 review](.review/R1.4.md), [R1.4 journal](../../.spec/journal/2026-09-02-render-system-r1-4.md)
+  exported and inspected. R1.5 closed the comparator risk with bounded
+  contour/area/edge metrics and synthetic rejection probes. → [R1.4 review](.review/R1.4.md),
+  [R1.4 journal](../../.spec/journal/2026-09-02-render-system-r1-4.md)
+- [ ] **R1.5 — facade hardening and R1 evidence:** implementation and review
+  fixes landed 2026-09-04. Focused lifecycle/rollback tests, full Debug
+  validation, dual-backend smoke, six inspected captures, and the durable
+  Render/Graphics record updates are complete; orderly application-close
+  evidence remains open. →
+  [R1.5 plan](.plan/R1.5.md), [R1.5 review](.review/R1.5.md),
+  [R1.5 journal](../../.spec/journal/2026-09-04-render-system-r1-5.md)
 - [x] Add direct RenderSystem orchestration tests for partial-init rollback,
   fixed pass order, conditional capture, resize, terminal editor composition,
   and reverse-order teardown before moving the corresponding code (R1.1).

@@ -1,47 +1,60 @@
 #include "editor/platform/editor_imgui_vulkan_renderer.h"
 #include <array>
-#include <cassert>
+#include <stdexcept>
 #include "imgui_impl_vulkan.h"
 #include "log/logger.h"
-#include "graphics/backend/vulkan/vulkan_context.h"
 #include "graphics/backend/vulkan/vulkan_editor_bridge.h"
 namespace kpengine::editor
 {
     constexpr const char* LogName = "EditorImguiVulkanRendererLog";
-    void EditorImguiVulkanRenderer::Initialize(GraphicsContext context)
+    bool EditorImguiVulkanRenderer::Initialize(
+        graphics::IEditorPresentationBridge *presentation_bridge)
     {
-        if(context.type != GraphicsAPIType::GRAPHICS_API_VULKAN)
+        auto *const vulkan_bridge = dynamic_cast<graphics::VulkanEditorBridge *>(
+            presentation_bridge);
+        if (vulkan_bridge == nullptr)
         {
-            KP_LOG(LogName, LOG_LEVEL_ERROR, "Graphics api mismatch, current type is not OpenGL");
-            throw std::runtime_error("Graphics api mismatch, current type is not OpenGL");
+            KP_LOG(LogName, LOG_LEVEL_ERROR, "Vulkan editor presentation bridge is unavailable");
+            throw std::runtime_error("Vulkan editor presentation bridge is unavailable");
         }
-        const auto *vulkan_context = static_cast<graphics::VulkanContext *>(context.native);
-        assert(vulkan_context && vulkan_context->editor_bridge);
-        editor_bridge_ = vulkan_context->editor_bridge;
-        const graphics::VulkanEditorBridgeInfo bridge_info = editor_bridge_->GetInfo();
-        logical_device_ = bridge_info.logical_device;
-        CreateDescriptorPool();
-        CreateSceneSampler();
+        try
+        {
+            editor_bridge_ = vulkan_bridge;
+            const graphics::VulkanEditorBridgeInfo bridge_info = editor_bridge_->GetInfo();
+            logical_device_ = bridge_info.logical_device;
+            CreateDescriptorPool();
+            CreateSceneSampler();
 
-        ImGui_ImplVulkan_InitInfo init_info{};
-        init_info.Instance = bridge_info.instance;
-        init_info.PhysicalDevice = bridge_info.physical_device;
-        init_info.Device = bridge_info.logical_device;
-        init_info.QueueFamily = bridge_info.graphics_queue_family;
-        init_info.Queue = bridge_info.graphics_queue;
-        init_info.DescriptorPool = descriptor_pool_;
-        init_info.MinImageCount = 2;
-        init_info.ImageCount = bridge_info.image_count;
-        init_info.UseDynamicRendering = true;
+            ImGui_ImplVulkan_InitInfo init_info{};
+            init_info.Instance = bridge_info.instance;
+            init_info.PhysicalDevice = bridge_info.physical_device;
+            init_info.Device = bridge_info.logical_device;
+            init_info.QueueFamily = bridge_info.graphics_queue_family;
+            init_info.Queue = bridge_info.graphics_queue;
+            init_info.DescriptorPool = descriptor_pool_;
+            init_info.MinImageCount = 2;
+            init_info.ImageCount = bridge_info.image_count;
+            init_info.UseDynamicRendering = true;
 #ifdef IMGUI_IMPL_VULKAN_HAS_DYNAMIC_RENDERING
-        const VkFormat color_format = bridge_info.color_format;
-        init_info.PipelineRenderingCreateInfo.sType =
-            VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
-        init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
-        init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &color_format;
+            const VkFormat color_format = bridge_info.color_format;
+            init_info.PipelineRenderingCreateInfo.sType =
+                VK_STRUCTURE_TYPE_PIPELINE_RENDERING_CREATE_INFO;
+            init_info.PipelineRenderingCreateInfo.colorAttachmentCount = 1;
+            init_info.PipelineRenderingCreateInfo.pColorAttachmentFormats = &color_format;
 #endif
 
-        ImGui_ImplVulkan_Init(&init_info);
+            if (!ImGui_ImplVulkan_Init(&init_info))
+            {
+                throw std::runtime_error("Failed to initialize ImGui Vulkan renderer");
+            }
+            imgui_backend_initialized_ = true;
+            return true;
+        }
+        catch (...)
+        {
+            Shutdown();
+            throw;
+        }
     }
 
     void EditorImguiVulkanRenderer::Shutdown()
@@ -55,7 +68,11 @@ namespace kpengine::editor
             editor_bridge_->WaitIdle();
         }
         ReleaseSceneTexture();
-        ImGui_ImplVulkan_Shutdown();
+        if (imgui_backend_initialized_)
+        {
+            ImGui_ImplVulkan_Shutdown();
+            imgui_backend_initialized_ = false;
+        }
         if (descriptor_pool_ != VK_NULL_HANDLE && logical_device_ != VK_NULL_HANDLE)
         {
             vkDestroyDescriptorPool(logical_device_, descriptor_pool_, nullptr);

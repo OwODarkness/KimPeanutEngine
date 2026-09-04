@@ -1,7 +1,9 @@
 #include "editor/platform/editor_imgui_opengl_renderer.h"
+#include <stdexcept>
 #include <imgui_impl_opengl3.h>
 #include <glad/glad.h>
 #include "log/logger.h"
+#include "graphics/backend/opengl/opengl_editor_bridge.h"
 namespace kpengine::editor
 {
     constexpr const char* LogName = "EditorImguiOpenglRendererLog";
@@ -17,24 +19,39 @@ namespace kpengine::editor
             glDisable(GL_FRAMEBUFFER_SRGB);
         }
     }
-    void EditorImguiOpenglRenderer::Initialize(GraphicsContext context)
+    bool EditorImguiOpenglRenderer::Initialize(
+        graphics::IEditorPresentationBridge *presentation_bridge)
     {
-        if(context.type != GraphicsAPIType::GRAPHICS_API_OPENGL)
+        const auto *const opengl_bridge = dynamic_cast<graphics::OpenglEditorBridge *>(
+            presentation_bridge);
+        if (opengl_bridge == nullptr)
         {
-            KP_LOG(LogName, LOG_LEVEL_ERROR, "Graphics api mismatch, current type is not OpenGL");
-            throw std::runtime_error("Graphics api mismatch, current type is not OpenGL");
+            KP_LOG(LogName, LOG_LEVEL_ERROR, "OpenGL editor presentation bridge is unavailable");
+            throw std::runtime_error("OpenGL editor presentation bridge is unavailable");
         }
 
         // glad's proc table is loaded by the legacy GL backend, which isn't in the
         // build yet — load it here so the editor's own GL calls (glClear) work.
-        gladLoadGL();
+        if (gladLoadGL() == 0)
+        {
+            throw std::runtime_error("Failed to load OpenGL functions for Editor UI");
+        }
 
-        ImGui_ImplOpenGL3_Init("#version 450");
+        if (!ImGui_ImplOpenGL3_Init("#version 450"))
+        {
+            throw std::runtime_error("Failed to initialize ImGui OpenGL renderer");
+        }
+        imgui_backend_initialized_ = true;
+        return true;
     }
 
     void EditorImguiOpenglRenderer::Shutdown()
     {
-        ImGui_ImplOpenGL3_Shutdown();
+        if (imgui_backend_initialized_)
+        {
+            ImGui_ImplOpenGL3_Shutdown();
+            imgui_backend_initialized_ = false;
+        }
     }
 
     void EditorImguiOpenglRenderer::NewFrame()

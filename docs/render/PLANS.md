@@ -36,11 +36,11 @@ The default frame policy is an explicit ordered schedule. A render graph is a
 later decision that requires measured dependency, aliasing, or scheduling
 pressure.
 
-`RenderSystem` is currently broader than this target: it combines composition,
-resource ingestion, scene handoff, deferred-pass implementation, pass-private
-GPU state, and teardown. The proposed
-[R1 responsibility split](.plan/R1.md) keeps the public facade and fixed
-schedule while separating those existing ownership domains.
+R1.2–R1.5 removed deferred-pass implementation, duplicated pass order,
+Asset/Resource preparation, and source/scene ownership from `RenderSystem`.
+The facade now combines only composition/frame lifetime, focused collaborators,
+and the typed Editor presentation capability. The fixed schedule remains the
+public policy while the coordinator owns scene preparation.
 
 ## Render-wide stage plans
 
@@ -59,6 +59,10 @@ schedule while separating those existing ownership domains.
   prepare one immutable CPU asset/artifact catalog before Render initialization,
   remove Render-side loading/processing and the unused path queue, and preserve
   current GPU cache ownership.
+- [R1.5 — facade hardening and R1 evidence](.plan/R1.5.md) — move source/scene
+  preparation behind one stable coordinator, replace the raw Editor graphics
+  context with a typed presentation bridge, narrow target/metrics access, and
+  close R1 with cross-backend evidence.
 
 ## Focused submodules
 

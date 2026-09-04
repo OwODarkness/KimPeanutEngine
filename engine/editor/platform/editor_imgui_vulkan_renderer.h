@@ -16,7 +16,7 @@ namespace kpengine::editor
     public:
         ~EditorImguiVulkanRenderer() = default;
 
-        void Initialize(GraphicsContext context) override;
+        bool Initialize(graphics::IEditorPresentationBridge *presentation_bridge) override;
         void Shutdown() override;
 
         void NewFrame() override;
@@ -35,6 +35,7 @@ namespace kpengine::editor
         VkSampler scene_sampler_ = VK_NULL_HANDLE;
         VkImageView scene_view_ = VK_NULL_HANDLE;
         VkDescriptorSet scene_texture_ = VK_NULL_HANDLE;
+        bool imgui_backend_initialized_ = false;
         LogColor background_color_{0.1f, 0.1f, 0.1f, 1.f};
     };
 

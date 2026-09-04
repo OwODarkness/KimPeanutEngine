@@ -46,7 +46,7 @@ state; Runtime owns startup asset preparation; Graphics owns GPU execution.
 
 ```text
 RuntimeContext → RenderSystem facade
-                    ├─ source registries / RenderWorld snapshots
+                    ├─ RenderSceneCoordinator → stable source inboxes / snapshots
                     ├─ immutable prepared asset/artifact catalog
                     ├─ DeferredRenderer → fixed pass sequence + pass state
                     └─ RenderBackend / FrameContext frame bracket
@@ -57,6 +57,21 @@ R1.4's landed ingestion boundary is detailed in the
 renderable dependency closure and closed renderer built-ins through Asset and
 Resource before Render initialization. Render receives no paths and performs
 only catalog lookup, render-policy interpretation, and GPU-resource resolution.
+
+R1.5's landed [facade-hardening stage](.plan/R1.5.md) gives the source
+registries, worlds, camera selection, and material-asset records one
+address-stable `RenderSceneCoordinator`. The coordinator publishes one
+frame-scoped scene input; it does not own the backend, renderer passes, capture,
+or frame lifecycle. `RenderSystem` continues to expose the existing source
+sinks because Runtime obtains them before initialization, but delegates them
+without replacing their storage during rollback or shutdown.
+
+The same stage replaces the public `{ GraphicsAPIType, void* }` editor context
+with a typed Graphics-owned presentation bridge. API-specific ImGui adapters
+may use their matching private bridge, while common Render/Graphics headers
+remain free of Vulkan/OpenGL types. Editor receives the scene output only as a
+borrowed value `RenderTargetView`, reacquired after resize; the Render-owned
+target and attachments are not public facade capabilities.
 
 Dependencies are explicit. Do not replace `RenderSystem` with a large context
 bag, service locator, broad virtual renderer interface, or speculative
@@ -79,5 +94,7 @@ Asset shader identity → Resource processing → Render PipelineDesc → Graphi
 - Do not put backend-specific implementation types in common Render contracts.
 - Do not introduce a general render graph until a concrete pass/resource need
   exceeds the current explicit schedule.
+- Do not expose a general backend context for Editor integration; add only the
+  presentation capability the matching API adapter consumes.
 - Do not treat smaller files or a lower line count as completion; ownership,
   lifecycle, single-source pass order, and testability are the criteria.

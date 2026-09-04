@@ -7,7 +7,6 @@
 #include "graphics/backend/common/render_backend.h"
 #include "log/logger.h"
 #include "render/material/material_system.h"
-#include "render/material/material_asset_resolver.h"
 #include "render/render_capture_service_internal.h"
 #include "render_resource_resolver.h"
 
@@ -56,8 +55,6 @@ namespace kpengine::render
         {
             prepared_assets_ = info.prepared_assets;
             material_system_ = std::make_unique<MaterialSystem>();
-            material_asset_resolver_ = std::make_unique<MaterialAssetResolver>(
-                *material_system_, info.prepared_assets);
 
             RenderBackendFactory factory = info.backend_factory;
             if (!factory)
@@ -79,6 +76,10 @@ namespace kpengine::render
             resource_resolver_ = std::make_unique<RenderResourceResolver>(
                 *backend_, *info.prepared_assets);
             material_system_->SetResourceResolver(resource_resolver_.get());
+            scene_coordinator_.Bind(*material_system_, *resource_resolver_, prepared_assets_);
+            KP_LOG("RenderLog", LOG_LEVEL_INFO,
+                   "Prepared render catalog contains %u shader(s)",
+                   static_cast<unsigned>(prepared_assets_->GetPreparedShaderCount()));
 
             constexpr size_t kFrameUniformCapacity = 64 * 1024;
             frame_contexts_.resize(backend_->GetFramesInFlight());
@@ -104,9 +105,6 @@ namespace kpengine::render
                                                : graphics::RenderTargetHandle{};
                 },
                 [this] { return frame_number_; });
-            // Frame the ~165-unit rock bootstrap fixture: pull the camera back and
-            // extend the far plane (the old default far=10 culled it entirely).
-            ApplyDefaultCamera();
             lifecycle_state_ = RenderSystemLifecycleState::Ready;
             last_diagnostic_.clear();
             return {true, {}};
@@ -126,77 +124,48 @@ namespace kpengine::render
         return {false, last_diagnostic_};
     }
 
-    bool RenderSystem::PostInitialize()
-    {
-        if (!IsState(RenderSystemLifecycleState::Ready))
-        {
-            return false;
-        }
-        KP_LOG("RenderLog", LOG_LEVEL_INFO,
-               "Prepared render catalog contains %d shader(s)", GetLoadedShaderCount());
-        return true;
-    }
-
-    bool RenderSystem::Tick(float delta_time)
-    {
-        if (!BeginFrame(delta_time))
-        {
-            return false;
-        }
-        return EndFrame();
-    }
-
     bool RenderSystem::BeginFrame(float delta_time)
     {
         if (!IsState(RenderSystemLifecycleState::Ready))
         {
             return false;
         }
-        material_system_->RefreshResources();
-        DrainRenderableSources();
-        render_world_.ApplyPendingCommands();
-        DrainLightSources();
-        DrainCameraSources();
-        DrainEnvironmentSources();
-        const std::vector<Light> light_snapshot = light_world_.Snapshot();
         if (!deferred_renderer_)
         {
             return false;
         }
+        RenderSceneFrameInput input = scene_coordinator_.PrepareFrame(
+            render_capture_service_ ? render_capture_service_->GetPendingView()
+                                    : std::nullopt);
         deferred_renderer_->ApplyPendingExtent();
         backend_->BeginFrame();
         active_frame_context_ = GetCurrentFrameContext();
-        lifecycle_state_ = RenderSystemLifecycleState::FrameActive;
-        if (active_frame_context_)
+        if (!active_frame_context_)
         {
-            elapsed_seconds_ += delta_time;
-            active_frame_context_->Begin(
-                backend_->GetCurrentFrameIndex(),
-                {frame_number_, elapsed_seconds_, delta_time},
-                {deferred_renderer_->GetSceneRenderTarget().GetWidth(),
-                 deferred_renderer_->GetSceneRenderTarget().GetHeight()});
-            DeferredRendererFrameInput input{
-                render_world_, light_snapshot, scene_camera_,
-                environment_source_registry_.GetActiveSource(),
-                environment_source_registry_.GetActiveHandle(),
-                [this](ShadowHandle handle) {
-                    return light_source_registry_.IsShadowHandleValid(handle);
-                },
-                render_capture_service_ ? render_capture_service_->GetPendingView()
-                                        : std::nullopt};
-            const DeferredRendererFrameResult result =
-                deferred_renderer_->RecordFrame(*active_frame_context_, input);
-            if (input.pending_capture.has_value())
+            backend_->EndFrame();
+            active_frame_context_ = nullptr;
+            last_diagnostic_ = "Graphics backend opened a frame without a valid frame context.";
+            return false;
+        }
+        lifecycle_state_ = RenderSystemLifecycleState::FrameActive;
+        elapsed_seconds_ += delta_time;
+        active_frame_context_->Begin(
+            backend_->GetCurrentFrameIndex(),
+            {frame_number_, elapsed_seconds_, delta_time},
+            {deferred_renderer_->GetSceneRenderTarget().GetWidth(),
+             deferred_renderer_->GetSceneRenderTarget().GetHeight()});
+        const DeferredRendererFrameResult result =
+            deferred_renderer_->RecordFrame(*active_frame_context_, input);
+        if (input.pending_capture.has_value())
+        {
+            if (!result.capture_target_ready)
             {
-                if (!result.capture_target_ready)
-                {
-                    render_capture_service_->RejectPendingCapture(
-                        "Render could not record the requested capture-view conversion pass");
-                }
-                else
-                {
-                    render_capture_service_->EnqueuePendingReadback();
-                }
+                render_capture_service_->RejectPendingCapture(
+                    "Render could not record the requested capture-view conversion pass");
+            }
+            else
+            {
+                render_capture_service_->EnqueuePendingReadback();
             }
         }
         return true;
@@ -246,147 +215,27 @@ namespace kpengine::render
         }
     }
 
-    const RenderTarget &RenderSystem::GetSceneRenderTarget() const
+    graphics::RenderTargetView RenderSystem::GetSceneRenderTargetView() const
     {
-        static const RenderTarget empty_target;
-        return deferred_renderer_ ? deferred_renderer_->GetSceneRenderTarget() : empty_target;
+        return deferred_renderer_ ? deferred_renderer_->GetSceneRenderTarget().GetView()
+                                   : graphics::RenderTargetView{};
     }
 
-    GraphicsContext RenderSystem::GetGraphicsContext()
+    RenderSystem::RenderSystemMetrics RenderSystem::GetMetrics() const
     {
-        return backend_ ? backend_->GetGraphicsContext()
-                        : GraphicsContext{GraphicsAPIType::GRAPHICS_API_UNKNOW, nullptr};
+        return {prepared_assets_ != nullptr
+                    ? static_cast<uint32_t>(prepared_assets_->GetPreparedShaderCount())
+                    : 0};
     }
 
-    int RenderSystem::GetLoadedShaderCount() const
+    graphics::IEditorPresentationBridge *RenderSystem::GetEditorPresentationBridge()
     {
-        return prepared_assets_ != nullptr
-                   ? static_cast<int>(prepared_assets_->GetPreparedShaderCount())
-                   : 0;
+        return backend_ ? backend_->GetEditorPresentationBridge() : nullptr;
     }
 
     IRenderCaptureService *RenderSystem::GetRenderCaptureService()
     {
         return render_capture_service_.get();
-    }
-
-    RenderableSourceResolution RenderSystem::ResolveRenderableSource(
-        const PrimitiveRenderableSourceDesc &source)
-    {
-        const auto *const static_mesh = std::get_if<StaticMeshRenderableSourceDesc>(&source);
-        if (static_mesh == nullptr)
-        {
-            return {RenderableSourceState::Failed, "unsupported renderable source variant", std::nullopt};
-        }
-        if (!static_mesh->mesh_asset.IsValid() ||
-            static_mesh->mesh_asset.type != asset::AssetType::KPAT_Mesh)
-        {
-            return {RenderableSourceState::Failed, "static mesh source has an invalid mesh asset", std::nullopt};
-        }
-        MaterialInstanceHandle material_instance;
-        const MaterialResolution material_resolution =
-            ResolveMaterialAsset(static_mesh->material_asset, material_instance);
-        if (material_resolution.state == MaterialResourceState::Failed)
-        {
-            return {RenderableSourceState::Failed, material_resolution.diagnostic, std::nullopt};
-        }
-        if (material_resolution.state != MaterialResourceState::Ready)
-        {
-            return {RenderableSourceState::Pending, material_resolution.diagnostic, std::nullopt};
-        }
-
-        const auto mesh = prepared_assets_ != nullptr
-                              ? prepared_assets_->Get<asset::MeshResource>(
-                                    static_mesh->mesh_asset)
-                              : nullptr;
-        if (!mesh || !mesh->data)
-        {
-            return {RenderableSourceState::Pending, "mesh asset is not loaded", std::nullopt};
-        }
-        const graphics::MeshHandle mesh_handle =
-            resource_resolver_->GetOrCreateMesh(static_mesh->mesh_asset, *mesh->data);
-        if (!mesh_handle.IsValid())
-        {
-            return {RenderableSourceState::Failed, "mesh resource creation failed", std::nullopt};
-        }
-
-        MeshProxyDesc proxy_desc{};
-        proxy_desc.mesh = mesh_handle;
-        proxy_desc.material = material_instance;
-        proxy_desc.world_transform = static_mesh->world_transform;
-        proxy_desc.world_bounds = static_mesh->world_bounds;
-        proxy_desc.flags = static_mesh->flags;
-        proxy_desc.lod_bias = static_mesh->lod_bias;
-        return {RenderableSourceState::Ready, {}, proxy_desc};
-    }
-
-    MaterialResolution RenderSystem::ResolveMaterialAsset(asset::AssetID material_asset,
-                                                           MaterialInstanceHandle &out_instance)
-    {
-        if (!material_asset_resolver_)
-        {
-            return {MaterialResourceState::Pending, "material system is not initialized"};
-        }
-        return material_asset_resolver_->Resolve(material_asset, out_instance);
-    }
-
-    void RenderSystem::DrainRenderableSources()
-    {
-        auto callback = [this](const PrimitiveRenderableSourceDesc &source)
-            { return ResolveRenderableSource(source); };
-        source_registry_.Drain(
-            render_world_, callback);
-    }
-
-    void RenderSystem::DrainLightSources()
-    {
-        light_source_registry_.Drain(light_world_);
-    }
-
-    void RenderSystem::DrainCameraSources()
-    {
-        camera_source_registry_.Drain();
-        const std::optional<CameraSourceDesc> active_source =
-            camera_source_registry_.GetActiveSource();
-        if (!active_source.has_value())
-        {
-            ApplyDefaultCamera();
-            return;
-        }
-
-        const CameraSourceDesc &source = *active_source;
-        scene_camera_.SetPosition(source.world_transform.position_);
-        scene_camera_.SetRotation(source.world_transform.rotator_);
-        scene_camera_.SetProjectionMode(source.projection_mode);
-        scene_camera_.SetFOV(source.field_of_view_degrees);
-        scene_camera_.SetNearPlane(source.near_plane);
-        scene_camera_.SetFarPlane(source.far_plane);
-        scene_camera_.SetOrthographicHeight(source.orthographic_height);
-    }
-
-    void RenderSystem::DrainEnvironmentSources()
-    {
-        environment_source_registry_.Drain();
-    }
-
-    void RenderSystem::DestroyMaterialAssetRecords()
-    {
-        if (material_asset_resolver_)
-        {
-            material_asset_resolver_->Clear();
-            material_asset_resolver_.reset();
-        }
-    }
-
-    void RenderSystem::ApplyDefaultCamera()
-    {
-        scene_camera_.SetPosition({0.f, 0.f, 300.f});
-        scene_camera_.SetRotation({0.f, -90.f, 0.f});
-        scene_camera_.SetProjectionMode(CameraProjectionMode::Perspective);
-        scene_camera_.SetFOV(45.f);
-        scene_camera_.SetNearPlane(1.f);
-        scene_camera_.SetFarPlane(2000.f);
-        scene_camera_.SetOrthographicHeight(10.f);
     }
 
     FrameContext *RenderSystem::GetCurrentFrameContext()
@@ -422,15 +271,7 @@ namespace kpengine::render
             backend_->EndFrame();
         }
 
-        camera_source_registry_.Clear();
-        environment_source_registry_.Clear();
-        source_registry_.Clear(render_world_);
-        render_world_.ApplyPendingCommands();
-        render_world_.Clear();
-        light_source_registry_.Clear(light_world_);
-        light_world_.Clear();
-        DestroyMaterialAssetRecords();
-        material_asset_resolver_.reset();
+        scene_coordinator_.Clear();
         material_system_.reset();
 
         if (backend_ && backend_initialized_)

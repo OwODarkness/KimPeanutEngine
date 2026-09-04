@@ -1,5 +1,6 @@
 add_library(Render
 render_system.cpp
+render_scene_coordinator.cpp
 prepared_render_asset_catalog.cpp
 deferred_renderer.cpp
 render_capture_service.cpp
@@ -22,6 +23,7 @@ render_pass.cpp
 render_target.cpp
 renderer_frame_targets.cpp
 render_camera.cpp
+camera_utils.cpp
 render_scene.cpp
 )
 

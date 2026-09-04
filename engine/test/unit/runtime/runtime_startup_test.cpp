@@ -11,6 +11,7 @@
 #include "engine.h"
 #include "level/level_instance.h"
 #include "runtime_global_context.h"
+#include "render/render_system.h"
 #include "script/lua/lua_vm.h"
 
 namespace
@@ -173,4 +174,18 @@ TEST(RuntimeStartupTest, ClearMakesEngineLifecycleTerminal)
     engine.Clear();
 
     EXPECT_THROW(engine.Initialize(), std::runtime_error);
+}
+
+TEST(RuntimeFramePolicyTest, SkipsRecoverableBeginFailuresAndEscalatesInvalidStates)
+{
+    using kpengine::render::RenderSystemLifecycleState;
+    using kpengine::runtime::RenderFrameBeginDisposition;
+    using kpengine::runtime::ClassifyRenderFrameBegin;
+
+    EXPECT_EQ(ClassifyRenderFrameBegin(false, RenderSystemLifecycleState::Ready),
+              RenderFrameBeginDisposition::SkipRecoverable);
+    EXPECT_EQ(ClassifyRenderFrameBegin(false, RenderSystemLifecycleState::FrameActive),
+              RenderFrameBeginDisposition::Fatal);
+    EXPECT_EQ(ClassifyRenderFrameBegin(true, RenderSystemLifecycleState::FrameActive),
+              RenderFrameBeginDisposition::Record);
 }

@@ -8,7 +8,7 @@ namespace kpengine::editor{
     class EditorImguiGLFWWSI: public IEditorImguiWSI{
     public:
          ~EditorImguiGLFWWSI() = default;
-        virtual void Initialize(WindowHandle handle, GraphicsAPIType type) override;
+        virtual bool Initialize(WindowHandle handle, GraphicsAPIType type) override;
         virtual void Shutdown() override;
         virtual void NewFrame() override;
     };

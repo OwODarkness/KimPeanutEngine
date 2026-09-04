@@ -41,8 +41,7 @@ namespace kpengine::editor
         render_system_->RequestSceneRenderTargetExtent(
             static_cast<uint32_t>(available_size.x), static_cast<uint32_t>(available_size.y));
 
-        const graphics::RenderTargetView view =
-            render_system_->GetSceneRenderTarget().GetView();
+        const graphics::RenderTargetView view = render_system_->GetSceneRenderTargetView();
         const ImTextureID texture_id = imgui_renderer_->GetTextureID(view);
         if (!view.IsValid() || !texture_id)
         {

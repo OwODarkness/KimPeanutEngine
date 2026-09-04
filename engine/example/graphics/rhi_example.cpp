@@ -4,6 +4,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <stdexcept>
@@ -1718,39 +1719,259 @@ namespace kpengine::example
         }
     }
 
+    struct SilhouetteComparisonResult
+    {
+        bool accepted = false;
+        size_t raw_difference_count = 0;
+        size_t edge_displacement_count = 0;
+        size_t structural_difference_count = 0;
+        size_t model_pixel_count_difference = 0;
+        bool bounding_boxes_match = false;
+    };
+
+    static SilhouetteComparisonResult CompareSilhouettes(
+        const image_io::ImageBuffer &vulkan, const image_io::ImageBuffer &opengl)
+    {
+        SilhouetteComparisonResult result{};
+        if (!vulkan.IsValid() || !opengl.IsValid() || vulkan.width != opengl.width ||
+            vulkan.height != opengl.height || vulkan.pixels.size() != opengl.pixels.size())
+        {
+            return result;
+        }
+
+        constexpr uint8_t kSilhouetteThreshold = 4;
+        constexpr size_t kAllowedEdgePixelDifferences = 24;
+        constexpr size_t kAllowedStructuralPixelDifferences = 3;
+        constexpr int kRasterizationEdgeRadius = 1;
+        struct BoundingBox
+        {
+            int min_x = std::numeric_limits<int>::max();
+            int min_y = std::numeric_limits<int>::max();
+            int max_x = std::numeric_limits<int>::min();
+            int max_y = std::numeric_limits<int>::min();
+            bool has_pixels = false;
+        };
+        const auto is_model_pixel = [&](const image_io::ImageBuffer &image, int x, int y)
+        {
+            if (x < 0 || y < 0 || x >= static_cast<int>(image.width) ||
+                y >= static_cast<int>(image.height))
+            {
+                return false;
+            }
+            const size_t offset =
+                (static_cast<size_t>(y) * image.width + static_cast<size_t>(x)) * 4;
+            return image.pixels[offset] > kSilhouetteThreshold ||
+                   image.pixels[offset + 1] > kSilhouetteThreshold ||
+                   image.pixels[offset + 2] > kSilhouetteThreshold;
+        };
+        const auto is_boundary_pixel = [&](const image_io::ImageBuffer &image, int x, int y)
+        {
+            if (!is_model_pixel(image, x, y))
+            {
+                return false;
+            }
+            for (int offset_y = -1; offset_y <= 1; ++offset_y)
+            {
+                for (int offset_x = -1; offset_x <= 1; ++offset_x)
+                {
+                    if ((offset_x != 0 || offset_y != 0) &&
+                        !is_model_pixel(image, x + offset_x, y + offset_y))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+        const auto has_nearby_model_pixel = [&](const image_io::ImageBuffer &image, int x, int y)
+        {
+            for (int offset_y = -kRasterizationEdgeRadius;
+                 offset_y <= kRasterizationEdgeRadius; ++offset_y)
+            {
+                for (int offset_x = -kRasterizationEdgeRadius;
+                     offset_x <= kRasterizationEdgeRadius; ++offset_x)
+                {
+                    if (is_model_pixel(image, x + offset_x, y + offset_y))
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        };
+        BoundingBox vulkan_bounds;
+        BoundingBox opengl_bounds;
+        size_t vulkan_model_pixels = 0;
+        size_t opengl_model_pixels = 0;
+        for (size_t i = 0; i + 3 < vulkan.pixels.size(); i += 4)
+        {
+            const int pixel_index = static_cast<int>(i / 4);
+            const int x = pixel_index % static_cast<int>(vulkan.width);
+            const int y = pixel_index / static_cast<int>(vulkan.width);
+            const bool vulkan_model = is_model_pixel(vulkan, x, y);
+            const bool opengl_model = is_model_pixel(opengl, x, y);
+            if (vulkan_model)
+            {
+                ++vulkan_model_pixels;
+                vulkan_bounds.min_x = std::min(vulkan_bounds.min_x, x);
+                vulkan_bounds.min_y = std::min(vulkan_bounds.min_y, y);
+                vulkan_bounds.max_x = std::max(vulkan_bounds.max_x, x);
+                vulkan_bounds.max_y = std::max(vulkan_bounds.max_y, y);
+                vulkan_bounds.has_pixels = true;
+            }
+            if (opengl_model)
+            {
+                ++opengl_model_pixels;
+                opengl_bounds.min_x = std::min(opengl_bounds.min_x, x);
+                opengl_bounds.min_y = std::min(opengl_bounds.min_y, y);
+                opengl_bounds.max_x = std::max(opengl_bounds.max_x, x);
+                opengl_bounds.max_y = std::max(opengl_bounds.max_y, y);
+                opengl_bounds.has_pixels = true;
+            }
+            if (vulkan_model == opengl_model)
+            {
+                continue;
+            }
+
+            ++result.raw_difference_count;
+            const bool edge_displacement =
+                (vulkan_model && is_boundary_pixel(vulkan, x, y) &&
+                 has_nearby_model_pixel(opengl, x, y)) ||
+                (opengl_model && is_boundary_pixel(opengl, x, y) &&
+                 has_nearby_model_pixel(vulkan, x, y));
+            if (edge_displacement)
+            {
+                ++result.edge_displacement_count;
+            }
+            else
+            {
+                ++result.structural_difference_count;
+            }
+        }
+        result.model_pixel_count_difference = vulkan_model_pixels > opengl_model_pixels
+                                                  ? vulkan_model_pixels - opengl_model_pixels
+                                                  : opengl_model_pixels - vulkan_model_pixels;
+        result.bounding_boxes_match = vulkan_bounds.has_pixels == opengl_bounds.has_pixels &&
+                                      (!vulkan_bounds.has_pixels ||
+                                       (vulkan_bounds.min_x == opengl_bounds.min_x &&
+                                        vulkan_bounds.min_y == opengl_bounds.min_y &&
+                                        vulkan_bounds.max_x == opengl_bounds.max_x &&
+                                        vulkan_bounds.max_y == opengl_bounds.max_y));
+        // Edge displacement is bounded independently. Only the three-pixel
+        // baseline structural allowance is accepted; a missing thin feature or
+        // interior hole exceeds it. Equal bounds prevent a whole silhouette
+        // translation from appearing as harmless edge noise.
+        result.accepted = result.edge_displacement_count <= kAllowedEdgePixelDifferences &&
+                          result.structural_difference_count <= kAllowedStructuralPixelDifferences &&
+                          result.model_pixel_count_difference <= 1 &&
+                          result.bounding_boxes_match;
+        return result;
+    }
+
     static bool D5CapturesHaveMatchingSilhouettes()
     {
         const image_io::ImageDecodeResult vulkan = image_io::DecodeImageFile(
             "save/screenshots/validation/graphics-smoke-d5-vulkan.png");
         const image_io::ImageDecodeResult opengl = image_io::DecodeImageFile(
             "save/screenshots/validation/graphics-smoke-d5-opengl.png");
-        if (!vulkan.result.success || !opengl.result.success ||
-            !vulkan.image.IsValid() || !opengl.image.IsValid() ||
-            vulkan.image.width != opengl.image.width ||
-            vulkan.image.height != opengl.image.height ||
-            vulkan.image.pixels.size() != opengl.image.pixels.size())
+        const SilhouetteComparisonResult result =
+            vulkan.result.success && opengl.result.success
+                ? CompareSilhouettes(vulkan.image, opengl.image)
+                : SilhouetteComparisonResult{};
+        if (!result.accepted)
         {
-            std::cout << "D5 cross-backend captures could not be compared" << std::endl;
+            std::cout << "D5 Vulkan/OpenGL silhouettes diverged (raw="
+                      << result.raw_difference_count << ", edge="
+                      << result.edge_displacement_count << ", structural="
+                      << result.structural_difference_count << ", area_delta="
+                      << result.model_pixel_count_difference << ", bounds="
+                      << (result.bounding_boxes_match ? "match" : "differ") << ")"
+                      << std::endl;
+        }
+        return result.accepted;
+    }
+
+    static image_io::ImageBuffer MakeSyntheticSilhouette(uint32_t width, uint32_t height)
+    {
+        image_io::ImageBuffer image{};
+        image.width = width;
+        image.height = height;
+        image.pixels.resize(static_cast<size_t>(width) * height * 4, 0);
+        return image;
+    }
+
+    static void SetSyntheticModelPixel(image_io::ImageBuffer &image, int x, int y)
+    {
+        const size_t offset = (static_cast<size_t>(y) * image.width + static_cast<size_t>(x)) * 4;
+        image.pixels[offset] = 255;
+        image.pixels[offset + 1] = 255;
+        image.pixels[offset + 2] = 255;
+        image.pixels[offset + 3] = 255;
+    }
+
+    static bool VerifySilhouetteComparatorPolicy()
+    {
+        image_io::ImageBuffer baseline = MakeSyntheticSilhouette(40, 32);
+        for (int y = 8; y < 24; ++y)
+        {
+            for (int x = 8; x < 28; ++x)
+            {
+                SetSyntheticModelPixel(baseline, x, y);
+            }
+        }
+        SetSyntheticModelPixel(baseline, 8, 7);
+
+        image_io::ImageBuffer translated = MakeSyntheticSilhouette(40, 32);
+        for (int y = 8; y < 24; ++y)
+        {
+            for (int x = 9; x < 29; ++x)
+            {
+                SetSyntheticModelPixel(translated, x, y);
+            }
+        }
+        if (CompareSilhouettes(baseline, translated).accepted)
+        {
+            std::cout << "D5 comparator accepted whole-model translation" << std::endl;
             return false;
         }
 
-        constexpr uint8_t kSilhouetteThreshold = 4;
-        constexpr size_t kAllowedEdgePixelDifferences = 16;
-        size_t different_pixels = 0;
-        for (size_t i = 0; i + 3 < vulkan.image.pixels.size(); i += 4)
+        image_io::ImageBuffer missing_feature = baseline;
+        for (int y = 12; y < 24; ++y)
         {
-            const bool vulkan_model = vulkan.image.pixels[i] > kSilhouetteThreshold ||
-                                      vulkan.image.pixels[i + 1] > kSilhouetteThreshold ||
-                                      vulkan.image.pixels[i + 2] > kSilhouetteThreshold;
-            const bool opengl_model = opengl.image.pixels[i] > kSilhouetteThreshold ||
-                                      opengl.image.pixels[i + 1] > kSilhouetteThreshold ||
-                                      opengl.image.pixels[i + 2] > kSilhouetteThreshold;
-            if (vulkan_model != opengl_model &&
-                ++different_pixels > kAllowedEdgePixelDifferences)
+            for (int x = 30; x < 32; ++x)
             {
-                std::cout << "D5 Vulkan/OpenGL silhouettes diverged" << std::endl;
-                return false;
+                SetSyntheticModelPixel(missing_feature, x, y);
             }
+        }
+        image_io::ImageBuffer feature_removed = missing_feature;
+        for (int y = 12; y < 24; ++y)
+        {
+            for (int x = 30; x < 32; ++x)
+            {
+                const size_t offset =
+                    (static_cast<size_t>(y) * feature_removed.width + static_cast<size_t>(x)) * 4;
+                std::fill_n(feature_removed.pixels.begin() + static_cast<std::ptrdiff_t>(offset),
+                            4, 0);
+            }
+        }
+        if (CompareSilhouettes(missing_feature, feature_removed).accepted)
+        {
+            std::cout << "D5 comparator accepted removed thin feature" << std::endl;
+            return false;
+        }
+
+        image_io::ImageBuffer edge_variation = baseline;
+        for (int x = 10; x < 20; ++x)
+        {
+            const size_t offset = (static_cast<size_t>(8) * edge_variation.width +
+                                   static_cast<size_t>(x)) * 4;
+            std::fill_n(edge_variation.pixels.begin() + static_cast<std::ptrdiff_t>(offset), 4, 0);
+            SetSyntheticModelPixel(edge_variation, x, 7);
+        }
+        if (!CompareSilhouettes(baseline, edge_variation).accepted)
+        {
+            std::cout << "D5 comparator rejected bounded edge variation" << std::endl;
+            return false;
         }
         return true;
     }
@@ -1762,7 +1983,8 @@ namespace kpengine::example
 
     bool RunGraphicsSmokeSuite(uint32_t frames_per_api)
     {
-        return RunRHI(GraphicsAPIType::GRAPHICS_API_VULKAN, frames_per_api, true) &&
+        return VerifySilhouetteComparatorPolicy() &&
+               RunRHI(GraphicsAPIType::GRAPHICS_API_VULKAN, frames_per_api, true) &&
                RunRHI(GraphicsAPIType::GRAPHICS_API_OPENGL, frames_per_api, true) &&
                D5CapturesHaveMatchingSilhouettes();
     }

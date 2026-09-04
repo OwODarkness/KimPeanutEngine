@@ -3,15 +3,15 @@
 
 #include <imgui.h>
 
-#include "base/type.h"
 #include "editor/settings/editor_settings.h"
+#include "graphics/backend/common/editor_presentation_bridge.h"
 #include "graphics/backend/common/render_target.h"
 
 namespace kpengine::editor{
     class IEditorImguiRenderer{
     public:
         virtual ~IEditorImguiRenderer() = default;
-        virtual void Initialize(GraphicsContext context) = 0;
+        virtual bool Initialize(graphics::IEditorPresentationBridge *presentation_bridge) = 0;
         virtual void Shutdown() = 0;
 
         virtual void NewFrame() = 0;

@@ -3,8 +3,10 @@
 
 #include <vector>
 #include <memory>
+#include <functional>
 #include "base/type.h"
 #include "editor/settings/editor_settings.h"
+#include "graphics/backend/common/editor_presentation_bridge.h"
 
 namespace kpengine
 {
@@ -47,7 +49,7 @@ namespace kpengine::editor
     struct EditorUIInitInfo
     {
         WindowHandle window = nullptr;
-        GraphicsContext graphics_context{GraphicsAPIType::GRAPHICS_API_UNKNOW, nullptr};
+        graphics::IEditorPresentationBridge *editor_presentation_bridge = nullptr;
         LogSystem *log_system = nullptr;
         runtime::Engine *engine = nullptr;
         MemoryStatsSampler *memory_sampler = nullptr;
@@ -56,6 +58,9 @@ namespace kpengine::editor
         input::InputSystem *input_system = nullptr;
         WindowSystem *window_system = nullptr;
         runtime::ISceneCameraControlSink *camera_control_sink = nullptr;
+        std::function<std::unique_ptr<IEditorImguiRenderer>(GraphicsAPIType)>
+            renderer_factory;
+        std::function<std::unique_ptr<IEditorImguiWSI>()> wsi_factory;
     };
 
     class EditorUI
@@ -74,7 +79,7 @@ namespace kpengine::editor
         // Backend factory (chosen by the active graphics API) and the panel builders
         // that assemble the tool tree. Each panel is one helper — Initialize stays an
         // orchestration list instead of one long build routine.
-        void CreateImguiBackends(WindowHandle window, GraphicsContext graphics_context);
+        void CreateImguiBackends(const EditorUIInitInfo &init_info);
         void BuildMenuBar(render::RenderSystem *render_system);
         void BuildViewportWindow(render::RenderSystem *render_system,
                                  WindowSystem *window_system,
@@ -92,6 +97,11 @@ namespace kpengine::editor
         // events, the renderer draws ImGui with the active backend (GL/Vulkan).
         std::unique_ptr<IEditorImguiRenderer> renderer_;
         std::unique_ptr<IEditorImguiWSI> wsi_;
+        bool imgui_context_created_ = false;
+        bool renderer_init_attempted_ = false;
+        bool renderer_initialized_ = false;
+        bool wsi_init_attempted_ = false;
+        bool wsi_initialized_ = false;
 
         // Runtime export path for the render-capture command. Borrowed service,
         // built from the render system's capture service when the UI initializes.

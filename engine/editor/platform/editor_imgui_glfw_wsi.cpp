@@ -4,18 +4,19 @@
 #include <glfw/glfw3.h>
 
 namespace kpengine::editor{
-    void EditorImguiGLFWWSI::Initialize(WindowHandle handle, GraphicsAPIType type)
+    bool EditorImguiGLFWWSI::Initialize(WindowHandle handle, GraphicsAPIType type)
     {
         GLFWwindow* window = static_cast<GLFWwindow*>(handle);
 
         if(type == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
-            ImGui_ImplGlfw_InitForOpenGL(window, true);
+            return ImGui_ImplGlfw_InitForOpenGL(window, true);
         }
         else if(type == GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
-            ImGui_ImplGlfw_InitForVulkan(window, true);
+            return ImGui_ImplGlfw_InitForVulkan(window, true);
         }
+        return false;
     }
 
     void EditorImguiGLFWWSI::Shutdown()

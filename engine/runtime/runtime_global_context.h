@@ -59,7 +59,6 @@ namespace kpengine
             RuntimeContext();
             ~RuntimeContext();
             void Initialize();
-            void PostInitialize();
             // Called by Engine after the render startup handshake, on the game thread.
             // This is the Runtime-owned boundary for initial World composition.
             struct StartupResult

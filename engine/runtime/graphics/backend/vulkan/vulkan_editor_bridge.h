@@ -7,6 +7,8 @@
 
 #include <vulkan/vulkan.h>
 
+#include "graphics/backend/common/editor_presentation_bridge.h"
+
 namespace kpengine::graphics
 {
     class VulkanDevice;
@@ -26,12 +28,16 @@ namespace kpengine::graphics
 
     // A frame-scoped external-pass capability for the editor. It borrows all
     // Vulkan resources from the backend and never exposes ownership to the editor.
-    class VulkanEditorBridge final
+    class VulkanEditorBridge final : public IEditorPresentationBridge
     {
     public:
         VulkanEditorBridge(VulkanDevice &device, VulkanSwapchain &swapchain,
                            VulkanFrameContext &frame_context);
 
+        GraphicsAPIType GetGraphicsAPI() const override
+        {
+            return GraphicsAPIType::GRAPHICS_API_VULKAN;
+        }
         VulkanEditorBridgeInfo GetInfo() const;
         void BeginFrame(uint32_t image_index);
         void EndFrame();

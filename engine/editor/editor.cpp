@@ -50,7 +50,8 @@ namespace kpengine::editor
         // Runs on the render thread — ImGui + GL/Vulkan context affinity requires it.
         EditorUIInitInfo init_info{};
         init_info.window = global_editor_context.window_system_->GetNativeHandle();
-        init_info.graphics_context = global_editor_context.render_system_->GetGraphicsContext();
+        init_info.editor_presentation_bridge =
+            global_editor_context.render_system_->GetEditorPresentationBridge();
         init_info.log_system = global_editor_context.log_system_;
         init_info.engine = engine_;
         init_info.memory_sampler = global_editor_context.memory_sampler_;

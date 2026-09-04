@@ -11,7 +11,7 @@ namespace kpengine::editor
     public:
         ~EditorImguiOpenglRenderer() = default;
 
-        void Initialize(GraphicsContext context) override;
+        bool Initialize(graphics::IEditorPresentationBridge *presentation_bridge) override;
         void Shutdown() override;
 
         void NewFrame() override;
@@ -22,6 +22,7 @@ namespace kpengine::editor
 
     private:
         LogColor background_color_{0.1f, 0.1f, 0.1f, 1.f};
+        bool imgui_backend_initialized_ = false;
     };
 
 }
