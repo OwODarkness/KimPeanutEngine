@@ -5,4 +5,4 @@ target_include_directories(Window PUBLIC
  ${CMAKE_CURRENT_SOURCE_DIR}/../..
  
  )
-target_link_libraries(Window PUBLIC Core PRIVATE glfw stb_image)
+target_link_libraries(Window PUBLIC Core PRIVATE glfw stb_image glad user32 gdi32)

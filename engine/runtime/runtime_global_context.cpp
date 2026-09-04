@@ -87,6 +87,30 @@ namespace kpengine
             render_init_info.api_type = graphics_api_type_;
             render_init_info.native_window = window_system_->GetNativeHandle();
             render_init_info.resize_dispatcher = &window_system_->resize_event_dispatcher_;
+            render_init_info.window_capture = [this]()
+            {
+                render::CaptureResult result{};
+                if (!window_system_)
+                {
+                    result.status = render::CaptureResultStatus::Unavailable;
+                    result.diagnostic = "Runtime window system is unavailable";
+                    return result;
+                }
+
+                WindowCaptureResult capture = window_system_->CaptureWindow();
+                if (!capture.IsSuccess())
+                {
+                    result.status = render::CaptureResultStatus::Unavailable;
+                    result.diagnostic = std::move(capture.diagnostic);
+                    return result;
+                }
+
+                result.status = render::CaptureResultStatus::Captured;
+                result.image.width = capture.width;
+                result.image.height = capture.height;
+                result.image.rgba8_pixels = std::move(capture.rgba8_pixels);
+                return result;
+            };
             const render::RenderSystemInitResult render_init_result =
                 render_system_->InitializePresentation(render_init_info);
             if (!render_init_result)

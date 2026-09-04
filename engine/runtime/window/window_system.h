@@ -1,8 +1,12 @@
 #ifndef KPENGINE_RUNTIME_WINDOW_SYSTEM_H
 #define KPENGINE_RUNTIME_WINDOW_SYSTEM_H
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <string>
+#include <vector>
 #include "base/base.h"
 #include "delegate/event_dispatcher.h"
 namespace kpengine
@@ -17,6 +21,25 @@ namespace kpengine
         GraphicsAPIType graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
     };
 
+    struct WindowCaptureResult
+    {
+        uint32_t width = 0;
+        uint32_t height = 0;
+        std::vector<uint8_t> rgba8_pixels;
+        std::string diagnostic;
+
+        bool IsSuccess() const
+        {
+            if (width == 0 || height == 0)
+            {
+                return false;
+            }
+            const size_t pixel_count = static_cast<size_t>(width) * height;
+            return pixel_count <= (std::numeric_limits<size_t>::max)() / 4 &&
+                   rgba8_pixels.size() == pixel_count * 4;
+        }
+    };
+
     class WindowSystem
     {
     public:
@@ -24,6 +47,10 @@ namespace kpengine
         virtual bool Initialize(const WindowCreateInfo &create_info) = 0;
         virtual void PollEvents() = 0;
         virtual void SwapBuffers() = 0;
+        // Captures the final client area. Must run on the window/render thread
+        // at the presentation boundary so API-specific UI composition is
+        // included without exposing native window types to Runtime consumers.
+        virtual WindowCaptureResult CaptureWindow() = 0;
         virtual WindowHandle GetNativeHandle() const = 0; 
         virtual bool ShouldClose() const = 0;
         virtual void SetMouseCapture(bool captured) = 0;

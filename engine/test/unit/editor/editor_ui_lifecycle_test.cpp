@@ -5,6 +5,7 @@
 
 #include "editor/platform/editor_imgui_renderer.h"
 #include "editor/platform/editor_imgui_wsi.h"
+#include "editor/ui/component/editor_loading_view_model.h"
 #include "editor/ui/editor_ui.h"
 
 namespace
@@ -62,6 +63,64 @@ namespace
     private:
         LifecycleProbe &probe_;
     };
+}
+
+TEST(EditorLoadingViewModelTest, ReportsStageAssetAndDeterminateProgress)
+{
+    kpengine::runtime::StartupSnapshot snapshot{};
+    snapshot.revision = 7;
+    snapshot.phase = kpengine::runtime::StartupPhase::LoadingAssets;
+    snapshot.display_label = "Loading startup assets";
+    snapshot.progress = {4, 10, true, 0.4f};
+
+    kpengine::asset::AssetLoadSnapshot asset_snapshot{};
+    asset_snapshot.summary.operations_started = 3;
+    asset_snapshot.summary.operations_succeeded = 2;
+    asset_snapshot.summary.operations_active = 1;
+    kpengine::asset::AssetLoadObservation operation{};
+    operation.operation = 9;
+    operation.phase = kpengine::asset::AssetLoadPhase::LoadSource;
+    operation.display_path = "level/demo.level";
+    asset_snapshot.active_operations.push_back(operation);
+    snapshot.asset = asset_snapshot;
+
+    const auto model = kpengine::editor::BuildEditorLoadingViewModel(snapshot);
+
+    EXPECT_EQ(model.revision, 7U);
+    EXPECT_EQ(model.stage_label, "Loading startup assets");
+    EXPECT_EQ(model.current_item, "Loading source: level/demo.level");
+    EXPECT_EQ(model.counts_label, "Assets processed: 2 / 3 (1 active)");
+    EXPECT_TRUE(model.determinate);
+    EXPECT_FLOAT_EQ(model.fraction, 0.4f);
+    EXPECT_FALSE(model.ready);
+    EXPECT_FALSE(model.failed);
+}
+
+TEST(EditorLoadingViewModelTest, KeepsUnknownProgressIndeterminateAndShowsFailure)
+{
+    kpengine::runtime::StartupSnapshot snapshot{};
+    snapshot.phase = kpengine::runtime::StartupPhase::Failed;
+    snapshot.diagnostic = "level/demo.level: missing camera";
+
+    const auto model = kpengine::editor::BuildEditorLoadingViewModel(snapshot);
+
+    EXPECT_FALSE(model.determinate);
+    EXPECT_LT(model.fraction, 0.0f);
+    EXPECT_TRUE(model.failed);
+    EXPECT_EQ(model.stage_label, "Startup failed");
+    EXPECT_EQ(model.diagnostic, "level/demo.level: missing camera");
+}
+
+TEST(EditorLoadingViewModelTest, NeverShowsCompletionBeforeReady)
+{
+    kpengine::runtime::StartupSnapshot snapshot{};
+    snapshot.phase = kpengine::runtime::StartupPhase::PreparingCpuArtifacts;
+    snapshot.progress = {1, 1, true, 1.0f};
+
+    const auto model = kpengine::editor::BuildEditorLoadingViewModel(snapshot);
+
+    EXPECT_TRUE(model.determinate);
+    EXPECT_LT(model.fraction, 1.0f);
 }
 
 TEST(EditorUILifecycleTest, NullBridgeRollsBackContextAndCloseIsIdempotent)

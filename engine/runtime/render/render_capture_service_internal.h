@@ -27,9 +27,11 @@ namespace kpengine::render
                             CapturedImageCallback on_completed) override;
 
         bool HasPendingCapture() const;
+        bool HasPendingWindowCapture() const;
         std::optional<CaptureView> GetPendingView() const;
         bool EnqueuePendingReadback();
         void CompletePendingCapture(CapturedImage image);
+        void CompletePendingWindowCapture(CaptureResult result);
         void FailPendingCapture(std::string diagnostic);
         void RejectPendingCapture(std::string diagnostic);
 

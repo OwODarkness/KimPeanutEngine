@@ -23,6 +23,7 @@ namespace kpengine::render
         SpotShadowVisibility,
         PointShadowDepth,
         PointShadowVisibility,
+        EngineWindow,
     };
 
     struct CaptureRequest

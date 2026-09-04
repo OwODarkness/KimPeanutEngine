@@ -26,16 +26,17 @@ evidence belongs in the corresponding `.spec/journal/` entry.
   See [LO2 plan](.plan/LO2.md).
 - [ ] **LO3 — Editor loading presentation** — present copied Runtime startup
   state, keep one presentation tick across modes, and transition exactly once
-  to scene-aware Editor operation after commit. See
+  to scene-aware Editor operation after commit. Core UI is landed; deterministic
+  runtime visual evidence remains. See
   [LO3 plan](.plan/LO3.md).
 
   Subtasks:
 
-  - [ ] Convert Runtime snapshots into a testable loading view model.
-  - [ ] Initialize ImGui once with only the loading tree.
-  - [ ] Draw determinate or indeterminate progress on every loading frame.
-  - [ ] Use one mode-aware Editor presentation tick for loading and main UI.
-  - [ ] Transactionally replace the loading tree with the existing main UI.
+  - [x] Convert Runtime snapshots into a testable loading view model.
+  - [x] Initialize ImGui once with only the loading tree.
+  - [x] Draw determinate or indeterminate progress on every loading frame.
+  - [x] Use one mode-aware Editor presentation tick for loading and main UI.
+  - [x] Transactionally replace the loading tree with the existing main UI.
   - [ ] Validate loading-first ordering, failure display, and both backends.
 
 ## Acceptance ledger

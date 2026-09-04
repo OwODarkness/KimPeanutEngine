@@ -1,6 +1,6 @@
 # LO3 — Editor Loading Presentation
 
-- Status: implementation-ready proposal
+- Status: loading/workspace UI implemented; runtime visual evidence remains
 - Parent roadmap: [Asset Loading Progress TODO](../TODO.md)
 - Depends on: [LO2 — Staged Runtime Startup and Editor Promotion](LO2.md)
 - Cross-stage spec: [Asset Loading Progress](../../../.spec/specs/asset-loading-progress.md)
@@ -186,6 +186,12 @@ cleanup role; no boolean pair may represent an impossible mixed state.
 LO3 is complete only when the real executable visibly presents the loading
 screen before the current main UI. A standalone component test is necessary but
 not sufficient.
+
+Current implementation lands the snapshot view model, loading component,
+loading-first tree, exactly-once workspace promotion, and a runtime
+`capture.screenshot` `engine_window` view for final client-area captures. The
+real executable loading-first visual gate still needs a deterministic startup
+hold and inspected Vulkan/OpenGL loading captures.
 
 ## Validation
 

@@ -13,6 +13,7 @@ namespace kpengine
         bool Initialize(const WindowCreateInfo &create_info) override;
         void PollEvents() override;
         void SwapBuffers() override;
+        WindowCaptureResult CaptureWindow() override;
         WindowHandle GetNativeHandle() const override;
         bool ShouldClose() const override;
         void SetMouseCapture(bool captured) override;

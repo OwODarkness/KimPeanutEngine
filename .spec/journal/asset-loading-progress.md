@@ -55,8 +55,9 @@
 
 ## Remaining work
 
-- Complete LO2 hardening and implement [LO3](../../docs/asset/.plan/LO3.md)
-  under the active cross-stage spec.
+- Complete the LO2/LO3 runtime visual gate and implement the remaining
+  [LO3](../../docs/asset/.plan/LO3.md) evidence under the active cross-stage
+  spec.
 
 ## Documentation and follow-up
 
@@ -108,3 +109,44 @@ Validation after these corrections:
 - `ctest --test-dir build -C Debug --output-on-failure` — PASS, 281/281 tests.
 - `git diff --check` — PASS, with only existing Git global-ignore and line
   ending warnings.
+
+## LO3 loading/workspace presentation — 2026-09-04
+
+- Added a pure `StartupSnapshot` to loading view-model conversion. It reports
+  the Runtime stage, safe Asset display path, exact observed operation counts,
+  determinate progress when Runtime supplies it, indeterminate activity when
+  totals are unknown, and copied failure diagnostics.
+- Added the loading component and loading-only component tree. It uses the
+  existing ImGui context, WSI, and API renderer, and draws a centered loading
+  panel with an animated progress bar before scene promotion.
+- Made `EditorUI` render the active loading or workspace tree through one frame
+  path. Workspace construction remains transactional; the loading tree is
+  retired only after successful promotion.
+- Added the startup-ready render handshake so the first workspace frame is
+  drawn only after Runtime publishes `Ready`; no mixed loading/workspace frame
+  is produced.
+
+Validation:
+
+- `cmake --build build --config Debug --parallel 1` — PASS.
+- Focused Runtime/Render/Editor suites — PASS, 25/25 tests.
+- `ctest --test-dir build -C Debug --output-on-failure` — PASS, 284/284 tests.
+
+The deterministic hold and Vulkan/OpenGL loading/UI screenshot evidence remain
+open. The Runtime command channel did successfully launch OpenGL and export a
+scene-color capture, but that capture intentionally excludes the ImGui
+composite; the available Computer Use surface did not expose a targetable
+native engine window for UI capture in this session.
+
+## Final engine-window capture — 2026-09-04
+
+- Added `view=engine_window` to `capture.screenshot`. The request bypasses
+  scene RenderTarget readback and is completed at the final presentation
+  boundary on the render thread, so it includes the Editor/ImGui composite.
+- Added a Window-owned Win32 GLFW capture path for the client area. Visible
+  content uses `BitBlt`; `PrintWindow` remains a fallback for covered
+  windows.
+- The OpenGL runtime command exported the requested PNG successfully. In the
+  current non-interactive validation desktop the native capture was visually
+  blank even though the scene-color capture was valid; this environment result
+  is recorded as a limitation rather than proof of UI pixels.

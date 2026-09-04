@@ -69,7 +69,7 @@ namespace kpengine
             void GameTick();
             void RenderThreadFunc();
             void RenderTick();
-            void RenderLoadingTick();
+            bool RenderLoadingTick();
             void PublishStartupDecision(StartupDecision decision) noexcept;
             void AbortStartupTransaction() noexcept;
             void EndStartupAccess() noexcept;
@@ -124,6 +124,10 @@ namespace kpengine
             bool editor_promotion_finished_ = false;
             bool editor_promotion_succeeded_ = false;
             std::string editor_promotion_diagnostic_;
+
+            std::mutex startup_ready_mutex_;
+            std::condition_variable startup_ready_cv_;
+            bool startup_ready_for_render_ = false;
 
             // The render thread may request cancellation while the game thread
             // is inside synchronous RuntimeContext work. Teardown waits for

@@ -427,6 +427,13 @@
   leaves `RuntimeCommand` Lua-free. Lua unit tests cover pending screenshot
   completion and shutdown cancellation. → [command usage](command/usage.md)
 
+- **Final engine-window capture (2026-09-04)** — `capture.screenshot` now
+  accepts `view=engine_window` and completes at the final presentation
+  boundary (before OpenGL swap, after Vulkan present) on the
+  render thread. Window owns the Win32 client-area capture, including the
+  Editor/ImGui composite, while diagnostic views retain the existing GPU
+  readback path. → [render usage](render/usage.md)
+
 - **Render capture service contract (C1, 2026-08-28)** — Render now exposes a
   callback-only `IRenderCaptureService` returning owned CPU image values, while
   private `RenderCaptureService` accepts one pending SceneColor request,
@@ -685,12 +692,14 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-- **Asset loading progress screen (LO1 and LO2 core landed 2026-09-04; LO3 planned)** —
+- **Asset loading progress screen (LO1, LO2 core, and LO3 UI landed 2026-09-04)** —
   Asset now exposes opt-in, session-scoped load observations with recursive
   operation correlation, bounded immutable snapshots, timing/size facts,
   cache/dedup dispositions, failure diagnostics, and async sealing safety.
   Runtime now publishes staged presentation/scene startup state and keeps the
-  Editor presentation alive while startup work proceeds. → [architecture map](asset/PLANS.md),
+  Editor presentation alive while startup work proceeds. The loading view now
+  consumes copied snapshots and transitions once to the main scene UI; runtime
+  visual evidence remains. → [architecture map](asset/PLANS.md),
   [roadmap](asset/TODO.md), [cross-stage spec](../.spec/specs/asset-loading-progress.md),
   [LO1 journal](../.spec/journal/asset-loading-progress.md)
 - **Gameplay editor inspection (deferred)** — Gameplay is game-thread-owned,

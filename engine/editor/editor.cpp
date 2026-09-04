@@ -4,6 +4,7 @@
 
 #include "editor/ui/editor_ui.h"
 #include "editor/context/editor_context.h"
+#include "runtime/engine.h"
 #include "runtime/runtime_global_context.h"
 #include "runtime/window/window_system.h"
 #include "log/logger.h"
@@ -60,6 +61,11 @@ namespace kpengine::editor
         init_info.input_system = global_editor_context.input_system_;
         init_info.window_system = global_editor_context.window_system_;
         init_info.camera_control_sink = &runtime::global_runtime_context;
+        init_info.startup_snapshot_source = [engine = engine_]
+        {
+            return engine != nullptr ? engine->GetStartupSnapshot()
+                                     : runtime::StartupSnapshot{};
+        };
         editor_ui_->InitializePresentation(init_info);
     }
 
@@ -81,20 +87,13 @@ namespace kpengine::editor
     {
         if (initialized_)
         {
-            editor_ui_->RenderLoading();
+            editor_ui_->Render();
         }
     }
 
     void Editor::Tick()
     {
-        if (!initialized_)
-        {
-            return;
-        }
-        // Render thread.
-        editor_ui_->BeginDraw();
-        editor_ui_->Render();
-        editor_ui_->EndDraw();
+        TickPresentation();
     }
 
     void Editor::Clear()

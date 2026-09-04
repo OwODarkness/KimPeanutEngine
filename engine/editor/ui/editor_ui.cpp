@@ -7,6 +7,7 @@
 #include "editor/platform/editor_imgui_opengl_renderer.h"
 #include "editor/platform/editor_imgui_vulkan_renderer.h"
 #include "editor/ui/component/editor_window_component.h"
+#include "editor/ui/component/editor_loading_component.h"
 #include "editor/ui/component/editor_console_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
 #include "editor/ui/component/editor_viewport_component.h"
@@ -71,6 +72,8 @@ namespace kpengine::editor
             ImGuiIO &io = ImGui::GetIO();
             io.ConfigWindowsMoveFromTitleBarOnly = true;
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+            BuildLoadingTree();
 
         }
         catch (const std::exception &e)
@@ -267,6 +270,7 @@ namespace kpengine::editor
                             init_info_.render_system);
             BuildConsole(init_info_.command_registry, init_info_.input_system);
             workspace_promoted_ = true;
+            loading_components_.clear();
         }
         catch (...)
         {
@@ -278,18 +282,7 @@ namespace kpengine::editor
 
     bool EditorUI::RenderLoading()
     {
-        if (!imgui_context_created_ || !renderer_ || !wsi_)
-        {
-            return false;
-        }
-        BeginDraw();
-        ImGui::SetNextWindowPos(ImVec2(24.0f, 24.0f), ImGuiCond_Once);
-        ImGui::Begin("Loading");
-        ImGui::TextUnformatted("Loading startup assets...");
-        ImGui::End();
-        ImGui::Render();
-        renderer_->Render();
-        return true;
+        return RenderActiveTree();
     }
 
     void EditorUI::BuildConsole(runtime::command::CommandRegistry *command_registry,
@@ -305,6 +298,7 @@ namespace kpengine::editor
         // the command registry. Its listener and deferred result sink are then
         // detached while both services are still alive.
         components_.clear();
+        loading_components_.clear();
         workspace_promoted_ = false;
         init_info_ = {};
         log_colors_ = {};
@@ -343,13 +337,31 @@ namespace kpengine::editor
 
     bool EditorUI::Render()
     {
-        for (const auto &component : components_)
+        return RenderActiveTree();
+    }
+
+    void EditorUI::BuildLoadingTree()
+    {
+        loading_components_.clear();
+        loading_components_.push_back(std::make_unique<EditorLoadingComponent>(
+            init_info_.startup_snapshot_source));
+    }
+
+    bool EditorUI::RenderActiveTree()
+    {
+        if (!imgui_context_created_ || !renderer_ || !wsi_)
+        {
+            return false;
+        }
+        BeginDraw();
+        const auto &active_components = workspace_promoted_ ? components_ : loading_components_;
+        for (const auto &component : active_components)
         {
             component->Render();
         }
         ImGui::Render();
         renderer_->Render();
-
+        EndDraw();
         return true;
     }
 

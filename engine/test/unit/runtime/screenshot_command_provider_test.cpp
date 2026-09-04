@@ -163,6 +163,24 @@ namespace kpengine::runtime
         EXPECT_EQ(capture_service.last_request.view, render::CaptureView::PointShadowVisibility);
     }
 
+    TEST(ScreenshotCommandProviderTest, MapsEngineWindowViewName)
+    {
+        FakeCaptureService capture_service;
+        auto screenshot_service = std::make_shared<RuntimeScreenshotService>(capture_service);
+        command::CommandRegistry registry;
+        const command::CommandRegistrationResult registration =
+            RegisterScreenshotCommands(registry, screenshot_service);
+        ASSERT_TRUE(registration.IsSuccess());
+
+        const auto pending = registry.Execute(
+            {"capture.screenshot", {{"view", std::string{"engine_window"}}}},
+            {command::CommandOrigin::Test, command::CommandThread::Immediate},
+            [](const command::CommandResult &) {});
+        ASSERT_EQ(pending.status, command::CommandStatus::Pending) << pending.message;
+        ASSERT_EQ(registry.PumpGameThread(), 1U);
+        EXPECT_EQ(capture_service.last_request.view, render::CaptureView::EngineWindow);
+    }
+
     TEST(ScreenshotCommandProviderTest, PreservesServiceOwnedInvalidPathDiagnostic)
     {
         FakeCaptureService capture_service;

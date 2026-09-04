@@ -86,6 +86,7 @@ namespace kpengine::render
             backend_->BindWindowResize(*info.resize_dispatcher);
             backend_->Initialize(info.native_window);
             backend_initialized_ = true;
+            window_capture_ = info.window_capture;
 
             constexpr size_t kFrameUniformCapacity = 64 * 1024;
             frame_contexts_.resize(backend_->GetFramesInFlight());
@@ -253,6 +254,40 @@ namespace kpengine::render
         return true;
     }
 
+    bool RenderSystem::CompletePendingWindowCapture()
+    {
+        if (!render_capture_service_ || !render_capture_service_->HasPendingWindowCapture())
+        {
+            return false;
+        }
+
+        if (!window_capture_)
+        {
+            render_capture_service_->CompletePendingWindowCapture(
+                {CaptureResultStatus::Unavailable, {},
+                 "The active window system does not implement window capture"});
+            return true;
+        }
+
+        try
+        {
+            render_capture_service_->CompletePendingWindowCapture(window_capture_());
+        }
+        catch (const std::exception &error)
+        {
+            render_capture_service_->CompletePendingWindowCapture(
+                {CaptureResultStatus::Failed, {},
+                 std::string{"Engine window capture threw an exception: "} + error.what()});
+        }
+        catch (...)
+        {
+            render_capture_service_->CompletePendingWindowCapture(
+                {CaptureResultStatus::Failed, {},
+                 "Engine window capture threw an unknown exception"});
+        }
+        return true;
+    }
+
     bool RenderSystem::ExecuteEditorCompositePass(const std::function<void()> &record_pass)
     {
         if (!IsState(RenderSystemLifecycleState::FrameActive) || !active_frame_context_ ||
@@ -361,6 +396,7 @@ namespace kpengine::render
         frame_number_ = 0;
         elapsed_seconds_ = 0.0f;
         frame_return_state_ = RenderSystemLifecycleState::Uninitialized;
+        window_capture_ = {};
     }
 
     void RenderSystem::CleanupSceneState()

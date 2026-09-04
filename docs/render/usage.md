@@ -9,6 +9,9 @@ through the loopback JSON-lines endpoint:
 {"op":"execute","command":"capture.screenshot","arguments":{"path":"save/screenshots/validation/render-debug.png","view":"scene_color"}}
 ```
 
+To capture the complete presented engine window, including Editor UI, use
+`"view":"engine_window"`.
+
 The first result is normally `pending` with `request_id`. Poll it until terminal:
 
 ```json

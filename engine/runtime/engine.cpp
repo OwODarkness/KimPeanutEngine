@@ -186,6 +186,10 @@ namespace kpengine
                 editor_promotion_diagnostic_.clear();
             }
             {
+                std::lock_guard<std::mutex> lock(startup_ready_mutex_);
+                startup_ready_for_render_ = false;
+            }
+            {
                 startup_access_barrier_.Begin();
             }
             render_thread_ = std::thread(&Engine::RenderThreadFunc, this);
@@ -357,6 +361,11 @@ namespace kpengine
             }
             startup_coordinator_.SetReady();
             EndStartupAccess();
+            {
+                std::lock_guard<std::mutex> lock(startup_ready_mutex_);
+                startup_ready_for_render_ = true;
+            }
+            startup_ready_cv_.notify_all();
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initialize successfully");
             startup_guard.Dismiss();
         }
@@ -395,6 +404,11 @@ namespace kpengine
             {
             }
             startup_coordinator_.Rollback();
+            {
+                std::lock_guard<std::mutex> lock(startup_ready_mutex_);
+                startup_ready_for_render_ = false;
+            }
+            startup_ready_cv_.notify_all();
             if (render_thread_.joinable())
             {
                 render_thread_.join();
@@ -562,6 +576,7 @@ namespace kpengine
             bool presentation_ready_signaled = false;
             bool editor_ui_initialized = false;
             bool startup_committed = false;
+            bool loading_frame_presented = false;
             bool context_cleared = false;
             const auto clear_context = [this, &context_cleared]() noexcept
             {
@@ -653,6 +668,18 @@ namespace kpengine
                         break;
                     }
 
+                    // Even a cache-hit startup must show the loading contract at
+                    // least once. This prevents a fast transaction from jumping
+                    // directly from presentation setup to the workspace tree.
+                    if (!loading_frame_presented)
+                    {
+                        loading_frame_presented = RenderLoadingTick();
+                        if (!loading_frame_presented)
+                        {
+                            continue;
+                        }
+                    }
+
                     if (decision == StartupDecision::Promote)
                     {
                         bool already_finished = false;
@@ -698,6 +725,21 @@ namespace kpengine
                             }
                             editor_promotion_cv_.notify_all();
                             startup_committed = true;
+
+                            // Do not draw a workspace frame until the game thread
+                            // publishes Ready. This keeps the transition free of a
+                            // premature or mixed frame.
+                            std::unique_lock<std::mutex> lock(startup_ready_mutex_);
+                            startup_ready_cv_.wait(lock,
+                                                   [this]
+                                                   {
+                                                       return startup_ready_for_render_ ||
+                                                              shutdown_requested_.load(std::memory_order_acquire);
+                                                   });
+                            if (!startup_ready_for_render_)
+                            {
+                                break;
+                            }
                         }
                         RenderTick();
                     }
@@ -869,14 +911,22 @@ namespace kpengine
             // ImGui recording without creating a Render -> Editor dependency.
             global_runtime_context.window_system_->PollEvents();
             if (!global_runtime_context.render_system_->ExecuteEditorCompositePass(
-                    [this] { editor_->Tick(); }))
+                    [this] { editor_->TickPresentation(); }))
             {
-                editor_->Tick();
+                editor_->TickPresentation();
             }
-            global_runtime_context.render_system_->EndFrame();
+            const bool frame_ended = global_runtime_context.render_system_->EndFrame();
             if(global_runtime_context.graphics_api_type_ == GraphicsAPIType::GRAPHICS_API_OPENGL)
             {
+                if (frame_ended)
+                {
+                    global_runtime_context.render_system_->CompletePendingWindowCapture();
+                }
                 global_runtime_context.window_system_->SwapBuffers();
+            }
+            else if (frame_ended)
+            {
+                global_runtime_context.render_system_->CompletePendingWindowCapture();
             }
 
             auto frame_end = clock::now();
@@ -889,14 +939,14 @@ namespace kpengine
             }
         }
 
-        void Engine::RenderLoadingTick()
+        bool Engine::RenderLoadingTick()
         {
             const float delta = 1.0f / static_cast<float>(target_fps);
             const bool frame_began = global_runtime_context.render_system_->BeginFrame(delta);
             if (!frame_began)
             {
                 global_runtime_context.window_system_->PollEvents();
-                return;
+                return false;
             }
             global_runtime_context.window_system_->PollEvents();
             if (!global_runtime_context.render_system_->ExecuteEditorCompositePass(
@@ -910,8 +960,14 @@ namespace kpengine
             }
             if (global_runtime_context.graphics_api_type_ == GraphicsAPIType::GRAPHICS_API_OPENGL)
             {
+                global_runtime_context.render_system_->CompletePendingWindowCapture();
                 global_runtime_context.window_system_->SwapBuffers();
             }
+            else
+            {
+                global_runtime_context.render_system_->CompletePendingWindowCapture();
+            }
+            return true;
         }
 
         void Engine::CalculateFPS(float delta_time)

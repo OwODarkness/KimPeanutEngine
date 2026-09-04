@@ -62,6 +62,9 @@ namespace kpengine::render
         EventDispatcher<ResizeEvent> *resize_dispatcher = nullptr;
         std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets;
         RenderBackendFactory backend_factory;
+        // Runtime supplies the window-layer capture operation. RenderSystem
+        // invokes it at the backend's final presentation boundary.
+        std::function<CaptureResult()> window_capture;
     };
 
     // The render-module facade. It owns frame/lifecycle orchestration while
@@ -90,6 +93,10 @@ namespace kpengine::render
         // the API-specific editor renderer composites before submission/present.
         bool BeginFrame(float delta_time);
         bool EndFrame();
+        // Completes a pending EngineWindow capture at the presentation
+        // boundary. Must be called by the render thread that owns the window
+        // and graphics API.
+        bool CompletePendingWindowCapture();
         // The editor owns ImGui frame construction, but RenderSystem owns when
         // that external work runs: after ScenePass and before presentation.
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
@@ -136,6 +143,7 @@ namespace kpengine::render
         RenderSceneCoordinator scene_coordinator_;
         std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets_;
         std::unique_ptr<RenderCaptureService> render_capture_service_;
+        std::function<CaptureResult()> window_capture_;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;
         FrameContext *active_frame_context_ = nullptr;

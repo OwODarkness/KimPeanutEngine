@@ -69,6 +69,7 @@ namespace kpengine::runtime
             if (view == "spot_shadow_visibility") return render::CaptureView::SpotShadowVisibility;
             if (view == "point_shadow_depth") return render::CaptureView::PointShadowDepth;
             if (view == "point_shadow_visibility") return render::CaptureView::PointShadowVisibility;
+            if (view == "engine_window") return render::CaptureView::EngineWindow;
             return render::CaptureView::SceneColor;
         }
     }
@@ -86,7 +87,7 @@ namespace kpengine::runtime
         command::CommandDesc descriptor{
             "capture.screenshot",
             "RuntimeScreenshot",
-            "Capture a rendered final or diagnostic view and export it as a PNG",
+            "Capture a rendered final, engine window, or diagnostic view and export it as a PNG",
             command::CommandCategory::Render,
             command::CommandFlags::AgentAllowed | command::CommandFlags::LuaAllowed,
             {{command::CommandArgumentDesc{"path", command::CommandValueType::String, false,
@@ -97,7 +98,7 @@ namespace kpengine::runtime
                                             "base_color", "material_params",
                                             "shadow_visibility", "spot_shadow_depth",
                                             "spot_shadow_visibility", "point_shadow_depth",
-                                            "point_shadow_visibility"}}}},
+                                            "point_shadow_visibility", "engine_window"}}}},
             [screenshot_service = std::move(screenshot_service)](
                 const command::CommandCall &call, const command::CommandContext &context)
             {

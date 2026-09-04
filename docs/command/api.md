@@ -133,4 +133,4 @@ current meanings and examples.
 |---|---|---|
 | `commands.list` | none | Returns registered command names. |
 | `help` | optional `name: string` | Returns formatted help, or the command list. |
-| `capture.screenshot` | optional `path: string`, `view: enum` | `view` supports `scene_color`, `linear_depth`, `world_normal`, `base_color`, `material_params`, `shadow_visibility`, `spot_shadow_depth`, `spot_shadow_visibility`, `point_shadow_depth`, and `point_shadow_visibility`; explicit paths must be PNGs below `save/screenshots/validation/`. |
+| `capture.screenshot` | optional `path: string`, `view: enum` | `view` supports `engine_window`, `scene_color`, `linear_depth`, `world_normal`, `base_color`, `material_params`, `shadow_visibility`, `spot_shadow_depth`, `spot_shadow_visibility`, `point_shadow_depth`, and `point_shadow_visibility`; `engine_window` captures the final presented client area including Editor UI. Explicit paths must be PNGs below `save/screenshots/validation/`. |

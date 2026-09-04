@@ -26,6 +26,8 @@ namespace kpengine::render
             case CaptureView::PointShadowDepth:
             case CaptureView::PointShadowVisibility:
                 return true;
+            case CaptureView::EngineWindow:
+                return true;
             }
             return false;
         }
@@ -83,7 +85,18 @@ namespace kpengine::render
         {
             return std::nullopt;
         }
+        if (pending_capture_->request.view == CaptureView::EngineWindow)
+        {
+            return std::nullopt;
+        }
         return pending_capture_->request.view;
+    }
+
+    bool RenderCaptureService::HasPendingWindowCapture() const
+    {
+        std::scoped_lock lock(mutex_);
+        return pending_capture_.has_value() &&
+               pending_capture_->request.view == CaptureView::EngineWindow;
     }
 
     bool RenderCaptureService::EnqueuePendingReadback()
@@ -92,6 +105,10 @@ namespace kpengine::render
         {
             std::scoped_lock lock(mutex_);
             if (!pending_capture_.has_value() || pending_capture_->readback_enqueued)
+            {
+                return false;
+            }
+            if (pending_capture_->request.view == CaptureView::EngineWindow)
             {
                 return false;
             }
@@ -150,6 +167,17 @@ namespace kpengine::render
             return;
         }
         Complete({CaptureResultStatus::Captured, std::move(image), {}});
+    }
+
+    void RenderCaptureService::CompletePendingWindowCapture(CaptureResult result)
+    {
+        if (result.status == CaptureResultStatus::Captured && !result.image.IsValid())
+        {
+            result.status = CaptureResultStatus::Failed;
+            result.diagnostic = "Window capture completion did not contain RGBA8 pixels";
+            result.image = {};
+        }
+        Complete(std::move(result));
     }
 
     void RenderCaptureService::FailPendingCapture(std::string diagnostic)

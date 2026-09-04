@@ -69,6 +69,30 @@ TEST(RenderCaptureServiceTest, AllowsOnlyOnePendingSceneColorRequest)
     EXPECT_EQ(first_callback_count, 0);
 }
 
+TEST(RenderCaptureServiceTest, DefersEngineWindowCaptureUntilAfterPresentation)
+{
+    RenderCaptureService service;
+    CaptureResult result;
+    EXPECT_TRUE(service.RequestCapture(
+        {CaptureView::EngineWindow},
+        [&result](CaptureResult completed) { result = std::move(completed); }));
+
+    EXPECT_TRUE(service.HasPendingCapture());
+    EXPECT_TRUE(service.HasPendingWindowCapture());
+    EXPECT_FALSE(service.GetPendingView().has_value());
+    EXPECT_FALSE(service.EnqueuePendingReadback());
+
+    CapturedImage image{};
+    image.width = 1;
+    image.height = 1;
+    image.rgba8_pixels = {1, 2, 3, 255};
+    service.CompletePendingWindowCapture(
+        {CaptureResultStatus::Captured, std::move(image), {}});
+
+    EXPECT_TRUE(result.IsSuccess());
+    EXPECT_FALSE(service.HasPendingCapture());
+}
+
 TEST(RenderCaptureServiceTest, DefersResolvedViewReadbackUntilRenderRecordsItsPass)
 {
     FakeReadback readback;
