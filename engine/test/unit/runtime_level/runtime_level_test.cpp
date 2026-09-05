@@ -816,7 +816,10 @@ TEST(RuntimeLevelTest, InstantiatesEveryV1ActorKindAndEnvironmentInAuthoredOrder
     ASSERT_EQ(light_sink.creates.size(), 3U);
     const auto &directional_source =
         std::get<kpengine::render::DirectionalLightSourceDesc>(light_sink.creates[0]);
-    EXPECT_EQ(directional_source.direction, directional.direction);
+    const kpengine::Vector3f expected_direction = directional.direction.GetSafetyNormalize();
+    EXPECT_NEAR(directional_source.direction.x_, expected_direction.x_, 0.0001f);
+    EXPECT_NEAR(directional_source.direction.y_, expected_direction.y_, 0.0001f);
+    EXPECT_NEAR(directional_source.direction.z_, expected_direction.z_, 0.0001f);
     EXPECT_EQ(directional_source.color, directional.color);
     EXPECT_FLOAT_EQ(directional_source.intensity, directional.intensity);
     EXPECT_FALSE(directional_source.enabled);
@@ -828,7 +831,10 @@ TEST(RuntimeLevelTest, InstantiatesEveryV1ActorKindAndEnvironmentInAuthoredOrder
     const auto &spot_source =
         std::get<kpengine::render::SpotLightSourceDesc>(light_sink.creates[2]);
     EXPECT_EQ(spot_source.position, spot.position);
-    EXPECT_EQ(spot_source.direction, spot.direction);
+    const kpengine::Vector3f expected_spot_direction = spot.direction.GetSafetyNormalize();
+    EXPECT_NEAR(spot_source.direction.x_, expected_spot_direction.x_, 0.0001f);
+    EXPECT_NEAR(spot_source.direction.y_, expected_spot_direction.y_, 0.0001f);
+    EXPECT_NEAR(spot_source.direction.z_, expected_spot_direction.z_, 0.0001f);
     EXPECT_FLOAT_EQ(spot_source.inner_cone_radians, spot.inner_cone_radians);
     EXPECT_FLOAT_EQ(spot_source.outer_cone_radians, spot.outer_cone_radians);
 

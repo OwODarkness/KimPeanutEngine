@@ -1,6 +1,6 @@
 # LO3 — Editor Loading Presentation
 
-- Status: loading/workspace UI implemented; runtime visual evidence remains
+- Status: complete
 - Parent roadmap: [Asset Loading Progress TODO](../TODO.md)
 - Depends on: [LO2 — Staged Runtime Startup and Editor Promotion](LO2.md)
 - Cross-stage spec: [Asset Loading Progress](../../../.spec/specs/asset-loading-progress.md)

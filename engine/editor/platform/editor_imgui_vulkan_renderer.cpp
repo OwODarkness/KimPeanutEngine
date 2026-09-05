@@ -67,7 +67,7 @@ namespace kpengine::editor
         {
             editor_bridge_->WaitIdle();
         }
-        ReleaseSceneTexture();
+        ReleaseSceneTextures();
         if (imgui_backend_initialized_)
         {
             ImGui_ImplVulkan_Shutdown();
@@ -117,15 +117,17 @@ namespace kpengine::editor
             return ImTextureID{};
         }
 
-        const VkImageView image_view = reinterpret_cast<VkImageView>(view.native_image_view);
-        if (scene_texture_ == VK_NULL_HANDLE || scene_view_ != image_view)
+        const uintptr_t image_view_key = view.native_image_view;
+        const auto existing_texture = scene_textures_.find(image_view_key);
+        if (existing_texture == scene_textures_.end())
         {
-            ReleaseSceneTexture();
-            scene_texture_ = ImGui_ImplVulkan_AddTexture(
+            const VkImageView image_view = reinterpret_cast<VkImageView>(view.native_image_view);
+            const VkDescriptorSet descriptor_set = ImGui_ImplVulkan_AddTexture(
                 scene_sampler_, image_view, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL);
-            scene_view_ = image_view;
+            scene_textures_.emplace(image_view_key, descriptor_set);
+            return reinterpret_cast<ImTextureID>(descriptor_set);
         }
-        return reinterpret_cast<ImTextureID>(scene_texture_);
+        return reinterpret_cast<ImTextureID>(existing_texture->second);
     }
 
     void EditorImguiVulkanRenderer::DrawSceneImage(ImTextureID texture_id, const ImVec2 &size)
@@ -180,14 +182,17 @@ namespace kpengine::editor
         }
     }
 
-    void EditorImguiVulkanRenderer::ReleaseSceneTexture()
+    void EditorImguiVulkanRenderer::ReleaseSceneTextures()
     {
-        if (scene_texture_ != VK_NULL_HANDLE)
+        for (const auto &[image_view, descriptor_set] : scene_textures_)
         {
-            ImGui_ImplVulkan_RemoveTexture(scene_texture_);
-            scene_texture_ = VK_NULL_HANDLE;
+            static_cast<void>(image_view);
+            if (descriptor_set != VK_NULL_HANDLE)
+            {
+                ImGui_ImplVulkan_RemoveTexture(descriptor_set);
+            }
         }
-        scene_view_ = VK_NULL_HANDLE;
+        scene_textures_.clear();
     }
 
 } // namespace kpengine::editor

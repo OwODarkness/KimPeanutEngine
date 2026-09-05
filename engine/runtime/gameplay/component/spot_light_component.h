@@ -11,8 +11,6 @@ namespace kpengine::gameplay
     class SpotLightComponent final : public SceneComponent
     {
     public:
-        const Vector3f &GetPosition() const { return position_; }
-        const Vector3f &GetDirection() const { return direction_; }
         const Vector3f &GetColor() const { return color_; }
         float GetIntensity() const { return intensity_; }
         float GetRange() const { return range_; }
@@ -22,8 +20,6 @@ namespace kpengine::gameplay
         bool CastsShadow() const { return casts_shadow_; }
         render::LightSourceHandle GetSourceHandle() const { return source_handle_; }
 
-        void SetPosition(const Vector3f &position);
-        void SetDirection(const Vector3f &direction);
         void SetColor(const Vector3f &color);
         void SetIntensity(float intensity);
         void SetRange(float range);
@@ -36,14 +32,13 @@ namespace kpengine::gameplay
         void OnActivate() override;
         void OnDeactivate() override;
         void OnTick(float delta_time) override;
+        void OnTransformChanged() override;
 
     private:
         render::LightSourceDesc BuildSourceDesc() const;
         void MarkSourceDirty();
         void FlushSourceUpdate();
 
-        Vector3f position_{};
-        Vector3f direction_{0.0f, -1.0f, 0.0f};
         Vector3f color_{1.0f, 1.0f, 1.0f};
         float intensity_ = 1.0f;
         float range_ = 1.0f;

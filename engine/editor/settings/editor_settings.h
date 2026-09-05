@@ -23,7 +23,8 @@ namespace kpengine::editor
     struct EditorSettings
     {
         int version = 1;
-        LogColor background_color{0.1f, 0.1f, 0.1f, 1.f};
+        // Matches the Codex-inspired editor surface (#090b14).
+        LogColor background_color{0.0352941f, 0.0431373f, 0.0784314f, 1.f};
         LogLevelColorTable log_colors;
     };
 

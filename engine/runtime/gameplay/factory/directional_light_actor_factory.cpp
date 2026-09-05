@@ -2,6 +2,7 @@
 
 #include "gameplay/actor/actor.h"
 #include "gameplay/component/directional_light_component.h"
+#include "gameplay/scene_transform_utils.h"
 #include "gameplay/world/gameplay_world.h"
 
 namespace kpengine::gameplay
@@ -9,6 +10,12 @@ namespace kpengine::gameplay
     ActorHandle CreateDirectionalLightActor(GameplayWorld &world,
                                             const DirectionalLightActorDesc &desc)
     {
+        Rotatorf rotation;
+        if (!TryMakeSceneForwardRotation(desc.direction, rotation))
+        {
+            return {};
+        }
+
         const ActorHandle handle = world.CreateActor();
         Actor *const actor = world.FindActor(handle);
         DirectionalLightComponent *const light =
@@ -19,7 +26,7 @@ namespace kpengine::gameplay
             return {};
         }
 
-        light->SetDirection(desc.direction);
+        light->SetLocalRotation(rotation);
         light->SetColor(desc.color);
         light->SetIntensity(desc.intensity);
         light->SetLightEnabled(desc.enabled);

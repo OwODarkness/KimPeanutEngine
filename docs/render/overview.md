@@ -9,8 +9,11 @@ and synchronization.
 sequence, material system, prepared-asset catalog, render-source bridge,
 SceneColor target, runtime capture service, and an address-stable scene
 coordinator. Editor presentation uses a typed Graphics bridge and borrowed
-target view; later limits include stronger deterministic visual regression,
-additional debug views, and any independently justified render-graph/
+target view; the editor keeps Scene Color as its 80%-width main image and
+previews the Render-owned G-buffer and shadow conversion views in a separate
+20%-width Debug Viewer window through that same seam. Later limits include
+stronger
+deterministic visual regression and any independently justified render-graph/
 generalized-scene work.
 
 ```text

@@ -94,6 +94,7 @@ namespace kpengine::render
             MaterialPass pass = MaterialPass::Scene);
         graphics::MeshHandle GetOrCreateMesh(asset::AssetID asset_id,
                                              const data::MeshData &data);
+        uint32_t GetMeshTriangleCount(graphics::MeshHandle mesh) const;
         TextureBinding GetOrCreateTextureBinding(
             asset::AssetID asset_id, const data::TextureData &data,
             MaterialTextureColorSpace color_space = MaterialTextureColorSpace::Srgb,
@@ -128,6 +129,7 @@ namespace kpengine::render
         std::unordered_map<PipelineCacheKey, graphics::PipelineHandle, PipelineCacheKeyHash>
             pipeline_cache_;
         std::unordered_map<uint64_t, graphics::MeshHandle> mesh_cache_;
+        std::unordered_map<graphics::MeshHandle, uint32_t> mesh_triangle_counts_;
         std::unordered_map<TextureCacheKey, graphics::TextureHandle, TextureCacheKeyHash>
             texture_cache_;
         std::unordered_map<uint64_t, graphics::SamplerHandle> material_sampler_cache_;

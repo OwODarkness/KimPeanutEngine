@@ -1,5 +1,6 @@
 add_library(Gameplay STATIC
     gameplay_module.cpp
+    scene_transform_utils.cpp
     actor/actor.cpp
     component/actor_component.cpp
     component/scene_component.cpp

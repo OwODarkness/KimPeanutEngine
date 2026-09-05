@@ -30,6 +30,7 @@ namespace kpengine::render
         std::optional<EnvironmentSourceHandle> environment_handle;
         std::function<bool(ShadowHandle)> is_shadow_handle_valid;
         std::optional<CaptureView> pending_capture;
+        std::optional<CaptureView> debug_view;
     };
 
     // Stable Render-owned coordinator for Gameplay source inboxes and the
@@ -44,7 +45,8 @@ namespace kpengine::render
 
         void Bind(MaterialSystem &material_system, RenderResourceResolver &resource_resolver,
                   std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
-        RenderSceneFrameInput PrepareFrame(std::optional<CaptureView> pending_capture);
+        RenderSceneFrameInput PrepareFrame(std::optional<CaptureView> pending_capture,
+                                           std::optional<CaptureView> debug_view);
         void Clear();
 
         IRenderableSourceSink *GetRenderableSourceSink() { return &renderable_sources_; }

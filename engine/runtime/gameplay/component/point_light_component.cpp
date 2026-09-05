@@ -4,15 +4,6 @@
 
 namespace kpengine::gameplay
 {
-    void PointLightComponent::SetPosition(const Vector3f &position)
-    {
-        if (position_ != position)
-        {
-            position_ = position;
-            MarkSourceDirty();
-        }
-    }
-
     void PointLightComponent::SetColor(const Vector3f &color)
     {
         if (color_ != color)
@@ -91,10 +82,15 @@ namespace kpengine::gameplay
         FlushSourceUpdate();
     }
 
+    void PointLightComponent::OnTransformChanged()
+    {
+        MarkSourceDirty();
+    }
+
     render::LightSourceDesc PointLightComponent::BuildSourceDesc() const
     {
         render::PointLightSourceDesc source{};
-        source.position = position_;
+        source.position = GetWorldTransform().position_;
         source.color = color_;
         source.intensity = intensity_;
         source.range = range_;

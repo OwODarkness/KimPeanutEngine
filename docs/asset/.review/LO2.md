@@ -4,7 +4,7 @@
 - Plan: [LO2 — Staged Runtime Startup and Editor Promotion](../.plan/LO2.md)
 - Execution spec: [Asset Loading Progress](../../../.spec/specs/asset-loading-progress.md)
 - Parent roadmap: [Asset Loading Progress TODO](../TODO.md)
-- Review status: round 2 — implementation risks addressed; visual/LO3 evidence remains open
+- Review status: complete — implementation risks and visual/LO3 evidence addressed
 - Review date: 2026-09-04
 
 ## Scope and baseline

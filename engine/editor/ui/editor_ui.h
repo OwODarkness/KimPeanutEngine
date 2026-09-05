@@ -37,6 +37,8 @@ namespace kpengine
     }
 }
 
+struct ImFont;
+
 namespace kpengine::editor
 {
 
@@ -90,11 +92,12 @@ namespace kpengine::editor
                                  WindowSystem *window_system,
                                  input::InputSystem *input_system,
                                  runtime::ISceneCameraControlSink *camera_control_sink);
+        void BuildDebugViewerWindow(render::RenderSystem *render_system);
         void BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors);
         void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                              render::RenderSystem *render_system);
         void BuildConsole(runtime::command::CommandRegistry *command_registry,
-                          input::InputSystem *input_system);
+                          input::InputSystem *input_system, ImFont *code_font);
         void BuildLoadingTree();
         bool RenderActiveTree();
         // Binds the Tool > Capture Screenshot command to the runtime export path.
@@ -112,6 +115,7 @@ namespace kpengine::editor
         bool workspace_promoted_ = false;
         EditorUIInitInfo init_info_{};
         LogLevelColorTable log_colors_;
+        ImFont *code_font_ = nullptr;
 
         // Runtime export path for the render-capture command. Borrowed service,
         // built from the render system's capture service when the UI initializes.

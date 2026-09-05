@@ -1,27 +1,10 @@
 #include "gameplay/component/spot_light_component.h"
 
 #include "gameplay/actor/actor.h"
+#include "gameplay/scene_transform_utils.h"
 
 namespace kpengine::gameplay
 {
-    void SpotLightComponent::SetPosition(const Vector3f &position)
-    {
-        if (position_ != position)
-        {
-            position_ = position;
-            MarkSourceDirty();
-        }
-    }
-
-    void SpotLightComponent::SetDirection(const Vector3f &direction)
-    {
-        if (direction_ != direction)
-        {
-            direction_ = direction;
-            MarkSourceDirty();
-        }
-    }
-
     void SpotLightComponent::SetColor(const Vector3f &color)
     {
         if (color_ != color)
@@ -118,11 +101,17 @@ namespace kpengine::gameplay
         FlushSourceUpdate();
     }
 
+    void SpotLightComponent::OnTransformChanged()
+    {
+        MarkSourceDirty();
+    }
+
     render::LightSourceDesc SpotLightComponent::BuildSourceDesc() const
     {
         render::SpotLightSourceDesc source{};
-        source.position = position_;
-        source.direction = direction_;
+        const Transform3f &world_transform = GetWorldTransform();
+        source.position = world_transform.position_;
+        source.direction = GetSceneForwardDirection(world_transform.rotator_);
         source.color = color_;
         source.intensity = intensity_;
         source.range = range_;

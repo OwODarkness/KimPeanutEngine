@@ -186,9 +186,12 @@ namespace kpengine::render
         std::optional<RenderSceneFrameInput> scene_input;
         if (scene_ready)
         {
+            debug_view_ = requested_debug_view_;
             scene_input.emplace(scene_coordinator_.PrepareFrame(
                 render_capture_service_ ? render_capture_service_->GetPendingView()
-                                        : std::nullopt));
+                                        : std::nullopt,
+                debug_view_ == CaptureView::SceneColor ? std::nullopt
+                                                       : std::optional<CaptureView>{debug_view_}));
             deferred_renderer_->ApplyPendingExtent();
         }
         backend_->BeginFrame();
@@ -317,11 +320,31 @@ namespace kpengine::render
                                    : graphics::RenderTargetView{};
     }
 
+    void RenderSystem::SetDebugView(CaptureView view)
+    {
+        if (view == CaptureView::EngineWindow)
+        {
+            return;
+        }
+        requested_debug_view_ = view;
+    }
+
+    graphics::RenderTargetView RenderSystem::GetDebugRenderTargetView() const
+    {
+        return deferred_renderer_ ? deferred_renderer_->GetViewportRenderTargetView(debug_view_)
+                                   : graphics::RenderTargetView{};
+    }
+
     RenderSystem::RenderSystemMetrics RenderSystem::GetMetrics() const
     {
-        return {prepared_assets_ != nullptr
-                    ? static_cast<uint32_t>(prepared_assets_->GetPreparedShaderCount())
-                    : 0};
+        RenderSystemMetrics metrics{};
+        metrics.prepared_shader_count = prepared_assets_ != nullptr
+                                            ? static_cast<uint32_t>(
+                                                  prepared_assets_->GetPreparedShaderCount())
+                                            : 0U;
+        metrics.triangle_count = deferred_renderer_ ? deferred_renderer_->GetTriangleCount() : 0U;
+        metrics.gpu_usage_percent = backend_ ? backend_->GetGpuUsagePercent() : std::nullopt;
+        return metrics;
     }
 
     graphics::IEditorPresentationBridge *RenderSystem::GetEditorPresentationBridge()
@@ -397,6 +420,8 @@ namespace kpengine::render
         elapsed_seconds_ = 0.0f;
         frame_return_state_ = RenderSystemLifecycleState::Uninitialized;
         window_capture_ = {};
+        debug_view_ = CaptureView::SceneColor;
+        requested_debug_view_ = CaptureView::SceneColor;
     }
 
     void RenderSystem::CleanupSceneState()
@@ -426,6 +451,8 @@ namespace kpengine::render
             resource_resolver_.reset();
         }
         prepared_assets_.reset();
+        debug_view_ = CaptureView::SceneColor;
+        requested_debug_view_ = CaptureView::SceneColor;
     }
 
     void RenderSystem::Shutdown()

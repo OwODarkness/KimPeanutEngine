@@ -3,7 +3,9 @@
 **Status: GP0–GP5 validation and bootstrap-actor migration landed 2026-08-28;
 editor inspection deferred; GP6.1 camera data/source contract, GP6.2 local
 camera traversal, GP6.3 controller/gamepad proof, and GP6.4 viewport camera
-capture landed 2026-08-30.**
+capture landed 2026-08-30. EnTT 3.16.0 dependency foundation landed
+2026-09-05; GP8 light transform alignment landed 2026-09-05; Gameplay has
+not migrated to ECS or reflection.**
 Architecture map: [PLANS.md](PLANS.md). Detailed design:
 [gameplay_module.md](gameplay_module.md).
 The render-side proxy contract is already implemented; its integration ledger is
@@ -12,6 +14,25 @@ The render-side proxy contract is already implemented; its integration ledger is
 **Scope rule:** build the smallest Actor/Primitive/Mesh path that can feed the
 renderer. A component, source descriptor, or system enters this TODO only when
 it has a current data source, a render consumer, a lifetime rule, and a test.
+
+## Foundation — EnTT dependency
+
+**Goal:** make a known ECS/reflection dependency available without coupling the
+current Actor/component runtime to it prematurely.
+
+- [x] Vendor the local EnTT 3.16.0 source, license, and upstream README under
+  `third_party/entt/`; exclude the upstream repository metadata, build tree,
+  tests, and tools.
+- [x] Expose the upstream-style `EnTT::EnTT` header-only CMake target with a
+  target-local C++20 requirement; keep the engine baseline at C++17.
+- [x] Add a focused compile/test seam covering one registry operation and one
+  reflected property read.
+- [ ] Register Gameplay state through the engine-owned Reflection module after
+  its catalog/access contracts and editor snapshot boundary are established.
+  See the [Reflection roadmap](../reflection/TODO.md).
+- [ ] Re-evaluate an ECS migration with ownership, serialization, and render
+  source lifetime evidence; do not replace `GameplayWorld` as part of the
+  dependency integration.
 
 ## GP0 — freeze the boundary
 
@@ -378,6 +399,28 @@ composition or streaming has a concrete consumer.
 process launch while Bootstrap remains the validated persistent default and
 Runtime still receives only a ready Level AssetID. Live level switching remains
 a separate transition/streaming design. **Landed 2026-09-02.**
+
+## GP8 — light transform alignment before Reflection RF2
+
+**Goal:** make light components consume the same SceneComponent transform family
+that Reflection will expose for Mesh and Camera, without changing the V1 level
+file schema.
+
+- [x] Use world-transform position for point and spot sources.
+- [x] Derive directional and spot source directions from world rotation with
+  the Camera convention: zero rotation points along +X.
+- [x] Remove duplicated light position/direction state and setters; mark light
+  sources dirty from `OnTransformChanged()`.
+- [x] Convert the existing level position/direction fields into Scene
+  transform setters at the Gameplay factory boundary, rejecting invalid
+  directions before Actor creation.
+- [x] Cover attachment, world-transform changes, update coalescing, and
+  invalid direction conversion in focused Gameplay tests.
+
+**Landed 2026-09-05:** Gameplay light authoring now has one transform source;
+the level loader/schema remains unchanged. This stage intentionally precedes
+Reflection RF2 so light reflection can expose only color, intensity, range,
+cone, enabled, and shadow properties.
 
 ## After GP6
 

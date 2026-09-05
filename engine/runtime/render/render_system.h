@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -102,12 +103,19 @@ namespace kpengine::render
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
 
         graphics::RenderTargetView GetSceneRenderTargetView() const;
+        // Selects the Render-owned diagnostic output displayed by the editor
+        // viewport. The request takes effect at the next frame boundary.
+        void SetDebugView(CaptureView view);
+        CaptureView GetDebugView() const { return debug_view_; }
+        graphics::RenderTargetView GetDebugRenderTargetView() const;
         // The editor provides its available viewport extent. Reallocation happens
         // at the next safe frame boundary, never while UI is reading the view.
         void RequestSceneRenderTargetExtent(uint32_t width, uint32_t height);
         struct RenderSystemMetrics
         {
             uint32_t prepared_shader_count = 0;
+            uint64_t triangle_count = 0;
+            std::optional<float> gpu_usage_percent;
         };
         RenderSystemMetrics GetMetrics() const;
         IRenderableSourceSink *GetRenderableSourceSink()
@@ -153,6 +161,8 @@ namespace kpengine::render
         bool backend_initialized_ = false;
         RenderSystemLifecycleState frame_return_state_ =
             RenderSystemLifecycleState::Uninitialized;
+        CaptureView debug_view_ = CaptureView::SceneColor;
+        CaptureView requested_debug_view_ = CaptureView::SceneColor;
     };
 }
 

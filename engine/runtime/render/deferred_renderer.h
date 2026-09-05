@@ -73,7 +73,9 @@ namespace kpengine::render
         void RequestExtent(uint32_t width, uint32_t height);
         void ApplyPendingExtent();
         const RenderTarget &GetSceneRenderTarget() const;
+        graphics::RenderTargetView GetViewportRenderTargetView(CaptureView view) const;
         graphics::RenderTargetHandle GetCaptureTarget(CaptureView view) const;
+        uint64_t GetTriangleCount() const { return triangle_count_; }
         bool IsPassSequenceValid() const { return pass_sequence_.has_value(); }
 
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
@@ -170,7 +172,7 @@ namespace kpengine::render
         void RecordShadowCaster(const MeshProxy &proxy,
                                 const graphics::PerPassData &per_pass_data,
                                 graphics::CommandRecorder &recorder);
-        void RecordMeshProxy(const MeshProxy &proxy,
+        bool RecordMeshProxy(const MeshProxy &proxy,
                              const graphics::PerPassData &per_pass_data,
                              graphics::CommandRecorder &recorder, MaterialPass pass);
         void UpdateEnvironment(const RenderSceneFrameInput &input);
@@ -193,6 +195,7 @@ namespace kpengine::render
         bool spot_shadow_recorded_ = false;
         bool point_shadow_recorded_ = false;
         bool point_shadow_profile_logged_ = false;
+        uint64_t triangle_count_ = 0;
         RenderCamera scene_camera_;
         std::optional<CaptureView> active_pending_capture_;
         graphics::PipelineHandle deferred_lighting_pipeline_;

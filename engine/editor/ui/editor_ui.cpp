@@ -1,6 +1,9 @@
 #include "editor/ui/editor_ui.h"
+#include "editor/ui/editor_theme.h"
 
+#include <cstdio>
 #include <imgui.h>
+#include <optional>
 #include <stdexcept>
 #include "config/path.h"
 #include "editor/platform/editor_imgui_glfw_wsi.h"
@@ -9,6 +12,7 @@
 #include "editor/ui/component/editor_window_component.h"
 #include "editor/ui/component/editor_loading_component.h"
 #include "editor/ui/component/editor_console_component.h"
+#include "editor/ui/component/editor_debug_viewer_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
 #include "editor/ui/component/editor_viewport_component.h"
 #include "editor/log/editor_log_component.h"
@@ -23,6 +27,23 @@
 
 namespace kpengine::editor
 {
+    namespace
+    {
+        const char *GraphicsAPIName(GraphicsAPIType api)
+        {
+            switch (api)
+            {
+            case GraphicsAPIType::GRAPHICS_API_OPENGL:
+                return "OpenGL";
+            case GraphicsAPIType::GRAPHICS_API_VULKAN:
+                return "Vulkan";
+            default:
+                return "Unknown";
+            }
+        }
+
+    }
+
     EditorUI::EditorUI() = default;
 
     void EditorUI::Initialize(const EditorUIInitInfo &init_info)
@@ -51,7 +72,7 @@ namespace kpengine::editor
             IMGUI_CHECKVERSION();
             ImGui::CreateContext();
             imgui_context_created_ = true;
-            ImGui::StyleColorsDark();
+            code_font_ = ApplyCodexTheme();
 
             CreateImguiBackends(init_info);
 
@@ -199,6 +220,7 @@ namespace kpengine::editor
         runtime::ISceneCameraControlSink *camera_control_sink)
     {
         EditorWindowConfig config;
+        config.width_ratio = 0.8f;
         config.height_ratio = 0.7f;
         std::unique_ptr<EditorWindowComponent> window_component =
             std::make_unique<EditorWindowComponent>("Viewport", config);
@@ -206,6 +228,12 @@ namespace kpengine::editor
             render_system, renderer_.get(), window_system, input_system, camera_control_sink));
 
         components_.push_back(std::move(window_component));
+    }
+
+    void EditorUI::BuildDebugViewerWindow(render::RenderSystem *render_system)
+    {
+        components_.push_back(std::make_unique<EditorDebugViewerComponent>(
+            render_system, renderer_.get()));
     }
 
     void EditorUI::BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors)
@@ -245,9 +273,41 @@ namespace kpengine::editor
                 return {stats.process_mb, stats.system_available_mb};
             }));
         profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "Shaders",
+            "API",
             [render_system]
-            { return std::to_string(render_system->GetMetrics().prepared_shader_count); }));
+            {
+                const auto *const bridge = render_system->GetEditorPresentationBridge();
+                return GraphicsAPIName(bridge ? bridge->GetGraphicsAPI()
+                                              : GraphicsAPIType::GRAPHICS_API_UNKNOW);
+            }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "Resolution",
+            [render_system]
+            {
+                const graphics::RenderTargetView view = render_system->GetSceneRenderTargetView();
+                return view.IsValid() ? std::to_string(view.width) + "x" +
+                                           std::to_string(view.height)
+                                     : "--";
+            }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "GPU",
+            [render_system]
+            {
+                const std::optional<float> gpu_usage =
+                    render_system->GetMetrics().gpu_usage_percent;
+                if (!gpu_usage.has_value())
+                {
+                    return std::string{"N/A"};
+                }
+                char formatted_usage[16]{};
+                std::snprintf(formatted_usage, sizeof(formatted_usage), "%.1f%%",
+                              static_cast<double>(*gpu_usage));
+                return std::string{formatted_usage};
+            }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "Triangles",
+            [render_system]
+            { return std::to_string(render_system->GetMetrics().triangle_count); }));
         components_.push_back(
             std::make_unique<EditorProfileBarComponent>(std::move(profile_metrics)));
     }
@@ -265,10 +325,11 @@ namespace kpengine::editor
             BuildMenuBar(init_info_.render_system);
             BuildViewportWindow(init_info_.render_system, init_info_.window_system,
                                 init_info_.input_system, init_info_.camera_control_sink);
+            BuildDebugViewerWindow(init_info_.render_system);
             BuildLogWindow(init_info_.log_system, log_colors_);
             BuildProfileBar(init_info_.engine, init_info_.memory_sampler,
                             init_info_.render_system);
-            BuildConsole(init_info_.command_registry, init_info_.input_system);
+            BuildConsole(init_info_.command_registry, init_info_.input_system, code_font_);
             workspace_promoted_ = true;
             loading_components_.clear();
         }
@@ -286,10 +347,10 @@ namespace kpengine::editor
     }
 
     void EditorUI::BuildConsole(runtime::command::CommandRegistry *command_registry,
-                                input::InputSystem *input_system)
+                                input::InputSystem *input_system, ImFont *code_font)
     {
         components_.push_back(std::make_unique<EditorConsoleComponent>(
-            command_registry, input_system));
+            command_registry, input_system, code_font));
     }
 
     void EditorUI::Close()
@@ -302,6 +363,7 @@ namespace kpengine::editor
         workspace_promoted_ = false;
         init_info_ = {};
         log_colors_ = {};
+        code_font_ = nullptr;
         screenshot_service_.reset();
         if (wsi_ && wsi_init_attempted_)
         {

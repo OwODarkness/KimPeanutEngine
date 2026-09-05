@@ -22,7 +22,8 @@ namespace kpengine::render
     }
 
     RenderSceneFrameInput RenderSceneCoordinator::PrepareFrame(
-        std::optional<CaptureView> pending_capture)
+        std::optional<CaptureView> pending_capture,
+        std::optional<CaptureView> debug_view)
     {
         if (!material_system_ || !resource_resolver_ || !prepared_assets_ ||
             !material_asset_resolver_)
@@ -66,6 +67,7 @@ namespace kpengine::render
             environment_sources_.GetActiveHandle(),
             [this](ShadowHandle handle) { return light_sources_.IsShadowHandleValid(handle); },
             std::move(pending_capture),
+            std::move(debug_view),
         };
     }
 

@@ -538,6 +538,8 @@ TEST(RenderSystemLifecycleTest, SeparatesPresentationInitializationFromSceneProm
     EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::PresentationReady);
     EXPECT_FALSE(system.GetSceneRenderTargetView().IsValid());
     EXPECT_EQ(system.GetMetrics().prepared_shader_count, 0U);
+    EXPECT_EQ(system.GetMetrics().triangle_count, 0U);
+    EXPECT_FALSE(system.GetMetrics().gpu_usage_percent.has_value());
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
     ASSERT_TRUE(system.EndFrame());
     EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::PresentationReady);
@@ -545,6 +547,38 @@ TEST(RenderSystemLifecycleTest, SeparatesPresentationInitializationFromSceneProm
     ASSERT_TRUE(system.PromoteToScene(info.prepared_assets));
     EXPECT_EQ(system.GetLifecycleState(), render::RenderSystemLifecycleState::Ready);
     EXPECT_TRUE(system.GetSceneRenderTargetView().IsValid());
+    system.Shutdown();
+}
+
+TEST(RenderSystemLifecycleTest, SelectsViewportDebugTargetAtFrameBoundary)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+
+    const graphics::RenderTargetView scene_view = system.GetDebugRenderTargetView();
+    ASSERT_TRUE(scene_view.IsValid());
+    EXPECT_EQ(system.GetDebugView(), render::CaptureView::SceneColor);
+
+    system.SetDebugView(render::CaptureView::WorldNormal);
+    // The request is intentionally deferred until BeginFrame, so the view
+    // borrowed by the current editor composite remains frame-consistent.
+    EXPECT_EQ(system.GetDebugView(), render::CaptureView::SceneColor);
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    const graphics::RenderTargetView debug_view = system.GetDebugRenderTargetView();
+    ASSERT_TRUE(debug_view.IsValid());
+    EXPECT_EQ(system.GetDebugView(), render::CaptureView::WorldNormal);
+    EXPECT_EQ(system.GetSceneRenderTargetView().native_image_view, scene_view.native_image_view);
+    EXPECT_NE(debug_view.native_image_view, scene_view.native_image_view);
+    ASSERT_TRUE(system.EndFrame());
+
+    system.SetDebugView(render::CaptureView::EngineWindow);
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    EXPECT_EQ(system.GetDebugView(), render::CaptureView::WorldNormal);
+    ASSERT_TRUE(system.EndFrame());
     system.Shutdown();
 }
 

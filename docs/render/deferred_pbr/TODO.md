@@ -177,6 +177,14 @@ stable final `SceneColor` with diagnostic evidence.
   in Resource; Render owns their bindings and the shader applies split-sum
   IBL. See the [journal](../../../.spec/journal/render-deferred-pbr.md#2026-08-31--d57-environment-ibl).
 
+### D5.8 — live editor debug viewer (landed 2026-09-04)
+
+- [x] Reuse the Render-owned capture conversion pass as a per-frame secondary
+  Debug Viewer window preview for Scene Color, G-buffer, and spot/point shadow diagnostics.
+- [x] Keep selection frame-boundary driven and expose only a borrowed,
+  API-neutral `RenderTargetView` to Editor; no CPU readback or backend object
+  is introduced.
+
 **Done when:** the shared scene produces comparable PBR final-color captures
 on both backends, with debug views sufficient to diagnose G-buffer and shadow
 errors. The remaining evidence handoff is tracked in D7.

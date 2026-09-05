@@ -11,13 +11,15 @@
 #include "runtime/command/command_registry.h"
 #include "runtime/input/input_system.h"
 
+struct ImFont;
+
 namespace kpengine::editor
 {
     class EditorConsoleComponent final : public EditorUIComponent
     {
     public:
         EditorConsoleComponent(runtime::command::CommandRegistry *registry,
-                               input::InputSystem *input_system);
+                               input::InputSystem *input_system, ImFont *code_font = nullptr);
         ~EditorConsoleComponent() override;
 
         void Render() override;
@@ -35,6 +37,7 @@ namespace kpengine::editor
 
         runtime::command::CommandRegistry *registry_ = nullptr;
         input::InputSystem *input_system_ = nullptr;
+        ImFont *code_font_ = nullptr;
         input::InputSystem::KeyListenerHandle key_listener_handle_ = 0;
         std::shared_ptr<ConsoleState> state_;
 

@@ -403,7 +403,7 @@ TEST(GameplayWorldTest, DirectionalLightComponentPublishesCoalescedSourceLifecyc
     auto *const light = actor->AddComponent<kpengine::gameplay::DirectionalLightComponent>();
     ASSERT_NE(light, nullptr);
     ASSERT_TRUE(actor->SetRootComponent(light));
-    light->SetDirection({0.0f, -1.0f, 0.0f});
+    light->SetLocalRotation({90.0f, 0.0f, 0.0f});
     light->SetColor({1.0f, 0.5f, 0.25f});
     light->SetIntensity(3.0f);
 
@@ -414,13 +414,15 @@ TEST(GameplayWorldTest, DirectionalLightComponentPublishesCoalescedSourceLifecyc
 
     const auto &created =
         std::get<kpengine::render::DirectionalLightSourceDesc>(source_sink.creates.front());
-    EXPECT_EQ(created.direction, (kpengine::Vector3f{0.0f, -1.0f, 0.0f}));
+    EXPECT_NEAR(created.direction.x_, 0.0f, 0.0001f);
+    EXPECT_NEAR(created.direction.y_, 1.0f, 0.0001f);
+    EXPECT_NEAR(created.direction.z_, 0.0f, 0.0001f);
     EXPECT_EQ(created.color, (kpengine::Vector3f{1.0f, 0.5f, 0.25f}));
     EXPECT_EQ(created.intensity, 3.0f);
     EXPECT_TRUE(created.enabled);
 
-    light->SetDirection({1.0f, -1.0f, 0.0f});
-    light->SetDirection({0.0f, 0.0f, -1.0f});
+    light->SetLocalRotation({0.0f, 0.0f, 0.0f});
+    light->SetLocalRotation({0.0f, -90.0f, 0.0f});
     light->SetIntensity(5.0f);
     light->SetLightEnabled(false);
     world.Tick(0.0f);
@@ -429,7 +431,9 @@ TEST(GameplayWorldTest, DirectionalLightComponentPublishesCoalescedSourceLifecyc
     EXPECT_EQ(source_sink.updates.front().handle, light->GetSourceHandle());
     const auto &updated = std::get<kpengine::render::DirectionalLightSourceDesc>(
         source_sink.updates.front().source);
-    EXPECT_EQ(updated.direction, (kpengine::Vector3f{0.0f, 0.0f, -1.0f}));
+    EXPECT_NEAR(updated.direction.x_, 0.0f, 0.0001f);
+    EXPECT_NEAR(updated.direction.y_, 0.0f, 0.0001f);
+    EXPECT_NEAR(updated.direction.z_, -1.0f, 0.0001f);
     EXPECT_EQ(updated.intensity, 5.0f);
     EXPECT_FALSE(updated.enabled);
 
@@ -501,6 +505,85 @@ TEST(GameplayWorldTest, CameraComponentPublishesValidatedViewStateAndBasis)
     EXPECT_FALSE(camera->GetSourceHandle().IsValid());
 }
 
+TEST(GameplayWorldTest, PointLightPublishesAttachedWorldPositionAndCoalescesTransformChanges)
+{
+    RecordingLightSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{nullptr, &source_sink};
+    const kpengine::gameplay::ActorHandle handle = world.CreateActor();
+    kpengine::gameplay::Actor *const actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+
+    auto *const parent = actor->AddComponent<kpengine::gameplay::SceneComponent>();
+    auto *const light = actor->AddComponent<kpengine::gameplay::PointLightComponent>();
+    ASSERT_NE(parent, nullptr);
+    ASSERT_NE(light, nullptr);
+    ASSERT_TRUE(actor->SetRootComponent(parent));
+    parent->SetLocalLocation({10.0f, 0.0f, 0.0f});
+    light->SetLocalLocation({2.0f, 0.0f, 0.0f});
+    ASSERT_TRUE(light->AttachTo(*parent));
+
+    ASSERT_TRUE(world.InitializeActor(handle));
+    ASSERT_TRUE(world.ActivateActor(handle));
+    ASSERT_EQ(source_sink.creates.size(), 1U);
+    const auto &created =
+        std::get<kpengine::render::PointLightSourceDesc>(source_sink.creates.front());
+    EXPECT_EQ(created.position, (kpengine::Vector3f{12.0f, 0.0f, 0.0f}));
+
+    parent->SetLocalLocation({20.0f, 0.0f, 0.0f});
+    light->SetLocalLocation({3.0f, 0.0f, 0.0f});
+    world.Tick(0.0f);
+
+    ASSERT_EQ(source_sink.updates.size(), 1U);
+    const auto &updated =
+        std::get<kpengine::render::PointLightSourceDesc>(source_sink.updates.front().source);
+    EXPECT_EQ(updated.position, (kpengine::Vector3f{23.0f, 0.0f, 0.0f}));
+}
+
+TEST(GameplayWorldTest, SpotLightPublishesAttachedWorldTransform)
+{
+    RecordingLightSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{nullptr, &source_sink};
+    const kpengine::gameplay::ActorHandle handle = world.CreateActor();
+    kpengine::gameplay::Actor *const actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+
+    auto *const parent = actor->AddComponent<kpengine::gameplay::SceneComponent>();
+    auto *const light = actor->AddComponent<kpengine::gameplay::SpotLightComponent>();
+    ASSERT_NE(parent, nullptr);
+    ASSERT_NE(light, nullptr);
+    ASSERT_TRUE(actor->SetRootComponent(parent));
+    parent->SetLocalLocation({10.0f, 0.0f, 0.0f});
+    parent->SetLocalRotation({0.0f, 90.0f, 0.0f});
+    light->SetLocalLocation({2.0f, 0.0f, 0.0f});
+    light->SetLocalRotation({0.0f, -90.0f, 0.0f});
+    ASSERT_TRUE(light->AttachTo(*parent));
+
+    ASSERT_TRUE(world.InitializeActor(handle));
+    ASSERT_TRUE(world.ActivateActor(handle));
+    ASSERT_EQ(source_sink.creates.size(), 1U);
+    const auto &created =
+        std::get<kpengine::render::SpotLightSourceDesc>(source_sink.creates.front());
+    EXPECT_NEAR(created.position.x_, 10.0f, 0.0001f);
+    EXPECT_NEAR(created.position.y_, 0.0f, 0.0001f);
+    EXPECT_NEAR(created.position.z_, -2.0f, 0.0001f);
+    EXPECT_NEAR(created.direction.x_, 1.0f, 0.0001f);
+    EXPECT_NEAR(created.direction.y_, 0.0f, 0.0001f);
+    EXPECT_NEAR(created.direction.z_, 0.0f, 0.0001f);
+}
+
+TEST(GameplayWorldTest, LightFactoriesRejectInvalidDirectionToRotationConversion)
+{
+    kpengine::gameplay::GameplayWorld world{};
+
+    kpengine::gameplay::DirectionalLightActorDesc directional{};
+    directional.direction = {};
+    EXPECT_FALSE(kpengine::gameplay::CreateDirectionalLightActor(world, directional).IsValid());
+
+    kpengine::gameplay::SpotLightActorDesc spot{};
+    spot.direction = {};
+    EXPECT_FALSE(kpengine::gameplay::CreateSpotLightActor(world, spot).IsValid());
+}
+
 TEST(GameplayWorldTest, DirectionalLightActorFactoryBuildsAnActiveLightComposition)
 {
     RecordingLightSourceSink source_sink{};
@@ -520,7 +603,10 @@ TEST(GameplayWorldTest, DirectionalLightActorFactoryBuildsAnActiveLightCompositi
 
     const auto &source =
         std::get<kpengine::render::DirectionalLightSourceDesc>(source_sink.creates.front());
-    EXPECT_EQ(source.direction, desc.direction);
+    const kpengine::Vector3f expected_direction = desc.direction.GetSafetyNormalize();
+    EXPECT_NEAR(source.direction.x_, expected_direction.x_, 0.0001f);
+    EXPECT_NEAR(source.direction.y_, expected_direction.y_, 0.0001f);
+    EXPECT_NEAR(source.direction.z_, expected_direction.z_, 0.0001f);
     EXPECT_EQ(source.color, desc.color);
     EXPECT_EQ(source.intensity, desc.intensity);
     EXPECT_EQ(source.enabled, desc.enabled);
@@ -582,7 +668,9 @@ TEST(GameplayWorldTest, SpotLightActorFactoryPublishesUnshadowedSpotSource)
     const auto &source =
         std::get<kpengine::render::SpotLightSourceDesc>(source_sink.creates.front());
     EXPECT_EQ(source.position, desc.position);
-    EXPECT_EQ(source.direction, desc.direction);
+    EXPECT_NEAR(source.direction.x_, desc.direction.x_, 0.0001f);
+    EXPECT_NEAR(source.direction.y_, desc.direction.y_, 0.0001f);
+    EXPECT_NEAR(source.direction.z_, desc.direction.z_, 0.0001f);
     EXPECT_EQ(source.color, desc.color);
     EXPECT_EQ(source.intensity, desc.intensity);
     EXPECT_EQ(source.range, desc.range);

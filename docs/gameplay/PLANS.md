@@ -51,6 +51,8 @@ in [Gameplay Module Design](gameplay_module.md).
   — add a typed `--startup-level` launch override so fixtures can be selected
   without editing the durable Bootstrap default; live switching is excluded.
   Landed 2026-09-02.
+- [GP8 — light transform alignment](.plan/GP8.md) — make point, spot, and
+  directional lights consume SceneComponent transforms before Reflection RF2.
 
 The multi-stage ownership, migration, and acceptance contract is the
 [Gameplay Level Asset GP7 spec](../../.spec/specs/gameplay-level-asset.md).

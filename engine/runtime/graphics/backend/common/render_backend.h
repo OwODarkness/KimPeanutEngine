@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_GRAPHICS_RENDER_BACKEND_H
 
 #include <memory>
+#include <optional>
 #include "base/base.h"
 #include "delegate/event_dispatcher.h"
 #include "editor_presentation_bridge.h"
@@ -107,6 +108,9 @@ namespace kpengine::graphics
         virtual uint32_t GetFramesInFlight() const = 0;
         virtual size_t GetUniformBufferAlignment() const = 0;
         virtual Extent2D GetRenderExtent() const = 0;
+        // Optional backend telemetry. A value is a percentage in [0, 100];
+        // nullopt means that this backend cannot provide GPU utilization.
+        virtual std::optional<float> GetGpuUsagePercent() const { return std::nullopt; }
         // Call only at a render-system ownership boundary before replacing GPU
         // resources shared by previously submitted frames.
         virtual void WaitIdle() = 0;

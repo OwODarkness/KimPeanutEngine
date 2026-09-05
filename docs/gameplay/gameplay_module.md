@@ -72,6 +72,13 @@ complete black environment fallback. Bootstrap selects one startup
 level; a separate multi-level `WorldResource` waits for a real composition or
 streaming consumer.
 
+**GP8 light transform alignment landed 2026-09-05.** Point and spot source
+positions now come from `SceneComponent::GetWorldTransform()`. Directional and
+spot source directions use the shared `+X`-forward Camera convention. Factories
+translate the existing level position/direction schema into local Scene
+transform setters and reject invalid direction vectors; light components no
+longer duplicate transform state.
+
 The module architecture map is [PLANS.md](PLANS.md), and the executable
 implementation ledger is [TODO.md](TODO.md). The concrete level-asset stages
 are [GP7.1](.plan/GP7.1.md), [GP7.2](.plan/GP7.2.md), [GP7.3](.plan/GP7.3.md),
@@ -127,6 +134,11 @@ to avoid a first-frame delta spike.
 This module follows Unreal-style names because they express the intended game
 authoring model. It does not adopt Unreal's reflection, UObject, garbage
 collection, networking, editor, or broad gameplay-framework scope.
+
+The repository now vendors EnTT 3.16.0 as an isolated C++17 dependency for
+future reflection/ECS experiments. The current Gameplay module remains the
+hand-written Actor/component runtime; EnTT is not part of its ownership or
+serialization path yet.
 
 ## Tiny-engine scope
 

@@ -56,8 +56,9 @@ the game thread; Editor/ImGui runs on the render thread.
 
 1. **RF1 — contracts and adapter.** Follow the
    [RF1 plan](../../docs/reflection/.plan/RF1.md).
-2. **RF2 — Gameplay registration.** Register the minimum values and component
-   properties, proving setter side effects and owner-thread access.
+2. **RF2 — Gameplay registration.** Follow the
+   [RF2 plan](../../docs/reflection/.plan/RF2.md) to register the minimum
+   component properties and prove setter side effects and owner-thread access.
 3. **RF3 — editor bridge.** Add component-instance identity, immutable
    snapshots, bounded edit commands, result diagnostics, and stale-target
    handling.

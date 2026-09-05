@@ -65,11 +65,16 @@ namespace kpengine::editor
     LogLevelColorTable DefaultLogColors()
     {
         LogLevelColorTable table;
-        table[static_cast<size_t>(program::LogLevel::Debug)] = {1.f, 1.f, 1.f, 1.f};
-        table[static_cast<size_t>(program::LogLevel::Info)] = {1.f, 1.f, 1.f, 1.f};
-        table[static_cast<size_t>(program::LogLevel::Warning)] = {1.f, 1.f, 0.f, 1.f};
-        table[static_cast<size_t>(program::LogLevel::Error)] = {0.5f, 0.2f, 0.f, 1.f};
-        table[static_cast<size_t>(program::LogLevel::Fatal)] = {1.f, 0.f, 0.f, 1.f};
+        table[static_cast<size_t>(program::LogLevel::Debug)] =
+            {0.8431373f, 0.9764706f, 1.f, 1.f}; // ink #d7f9ff
+        table[static_cast<size_t>(program::LogLevel::Info)] =
+            {0.2235294f, 1.f, 0.5333334f, 1.f}; // added #39ff88
+        table[static_cast<size_t>(program::LogLevel::Warning)] =
+            {0.f, 0.8980392f, 1.f, 1.f}; // accent #00e5ff
+        table[static_cast<size_t>(program::LogLevel::Error)] =
+            {1.f, 0.3019608f, 0.5529412f, 1.f}; // removed #ff4d8d
+        table[static_cast<size_t>(program::LogLevel::Fatal)] =
+            {1.f, 0.3019608f, 0.5529412f, 1.f}; // removed #ff4d8d
         return table;
     }
 

@@ -18,7 +18,7 @@ namespace kpengine::gameplay
             return {};
         }
 
-        light->SetPosition(desc.position);
+        light->SetLocalLocation(desc.position);
         light->SetColor(desc.color);
         light->SetIntensity(desc.intensity);
         light->SetRange(desc.range);

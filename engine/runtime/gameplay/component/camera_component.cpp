@@ -3,6 +3,7 @@
 #include <cmath>
 
 #include "gameplay/actor/actor.h"
+#include "gameplay/scene_transform_utils.h"
 
 namespace kpengine::gameplay
 {
@@ -151,11 +152,7 @@ namespace kpengine::gameplay
     void CameraComponent::UpdateBasis()
     {
         const Rotatorf rotation = GetWorldTransform().rotator_;
-        const float pitch = math::DegreeToRadian(rotation.pitch_);
-        const float yaw = math::DegreeToRadian(rotation.yaw_);
-        Vector3f direction{std::cos(pitch) * std::cos(yaw), std::sin(pitch),
-                           std::cos(pitch) * std::sin(yaw)};
-        forward_ = direction.GetSafetyNormalize();
+        forward_ = GetSceneForwardDirection(rotation);
         right_ = forward_.CrossProduct(kWorldUp);
         if (right_.SquareLength() <= kMinimumPlane * kMinimumPlane)
         {

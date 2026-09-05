@@ -330,6 +330,16 @@ namespace kpengine::render
         return scene_target ? *scene_target : empty_target;
     }
 
+    graphics::RenderTargetView DeferredRenderer::GetViewportRenderTargetView(
+        CaptureView view) const
+    {
+        const RenderTargetName target_name = view == CaptureView::SceneColor
+                                                 ? RenderTargetName::SceneColor
+                                                 : RenderTargetName::CaptureOutput;
+        const RenderTarget *const target = frame_targets_.GetTarget(target_name);
+        return target ? target->GetView() : graphics::RenderTargetView{};
+    }
+
     graphics::RenderTargetHandle DeferredRenderer::GetCaptureTarget(CaptureView view) const
     {
         const RenderTargetName target_name = view == CaptureView::SceneColor
@@ -343,6 +353,7 @@ namespace kpengine::render
         FrameContext &frame_context, const RenderSceneFrameInput &input)
     {
         DeferredRendererFrameResult result{};
+        triangle_count_ = 0;
         if (!pass_sequence_.has_value() || active_pass_frame_.has_value())
         {
             result.normal_recording_completed = false;
@@ -351,7 +362,9 @@ namespace kpengine::render
         active_frame_context_ = &frame_context;
         render_world_ = &input.render_world;
         scene_camera_ = input.camera;
-        active_pending_capture_ = input.pending_capture;
+        const std::optional<CaptureView> active_capture_view =
+            input.pending_capture.has_value() ? input.pending_capture : input.debug_view;
+        active_pending_capture_ = active_capture_view;
         UpdateEnvironment(input);
         active_directional_shadow_ = ScheduleDirectionalShadow(input.lights,
                                                                input.is_shadow_handle_valid);
@@ -359,9 +372,9 @@ namespace kpengine::render
         active_point_shadow_ = SchedulePointShadow(input.lights, input.is_shadow_handle_valid);
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
-        active_pass_frame_.emplace(*pass_sequence_,
-                                   input.pending_capture.has_value() &&
-                                       input.pending_capture.value() != CaptureView::SceneColor);
+        active_pass_frame_.emplace(
+            *pass_sequence_, active_capture_view.has_value() &&
+                                 active_capture_view.value() != CaptureView::SceneColor);
         const bool cursor_started = active_pass_frame_->ExecuteRenderer(
             [this, &input](FixedRenderPassId id) { return ExecutePass(id, input.lights); });
         result.normal_recording_completed =
@@ -957,7 +970,11 @@ namespace kpengine::render
                 visible_proxies, *material_system_, *resource_resolver_, MaterialPass::GBuffer);
             for (const SceneDrawItem &item : draw_lists.opaque)
             {
-                RecordMeshProxy(item.proxy, per_pass_data, *recorder, MaterialPass::GBuffer);
+                if (RecordMeshProxy(item.proxy, per_pass_data, *recorder,
+                                    MaterialPass::GBuffer))
+                {
+                    triangle_count_ += resource_resolver_->GetMeshTriangleCount(item.proxy.mesh);
+                }
             }
         }
         gbuffer_target->EndRecording(*recorder);
@@ -1751,14 +1768,14 @@ namespace kpengine::render
         recorder.DrawIndexed();
     }
 
-    void DeferredRenderer::RecordMeshProxy(const MeshProxy &proxy,
-                                       const graphics::PerPassData &per_pass_data,
-                                       graphics::CommandRecorder &recorder,
-                                       MaterialPass pass)
+    bool DeferredRenderer::RecordMeshProxy(const MeshProxy &proxy,
+                                           const graphics::PerPassData &per_pass_data,
+                                           graphics::CommandRecorder &recorder,
+                                           MaterialPass pass)
     {
-        if (!proxy.flags.visible || !proxy.mesh.IsValid())
+        if (!active_frame_context_ || !proxy.flags.visible || !proxy.mesh.IsValid())
         {
-            return;
+            return false;
         }
 
         graphics::PerObjectData per_object_data{};
@@ -1767,7 +1784,7 @@ namespace kpengine::render
         const UniformAllocation per_object = active_frame_context_->AllocateUniform(per_object_data);
         if (!per_pass.IsValid() || !per_object.IsValid())
         {
-            return;
+            return false;
         }
 
         const std::vector<graphics::ResourceBinding> draw_bindings{
@@ -1778,13 +1795,14 @@ namespace kpengine::render
             *material_system_, *resource_resolver_, proxy.material, draw_bindings, pass);
         if (!active_frame_context_->IsMaterialBindingCurrent(material_binding))
         {
-            return;
+            return false;
         }
 
         recorder.BindPipeline(material_binding.pipeline);
         recorder.BindMesh(proxy.mesh);
         recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set);
         recorder.DrawIndexed();
+        return true;
     }
 
     bool DeferredRenderer::ResolveLevelEnvironment(const EnvironmentSourceDesc &source,

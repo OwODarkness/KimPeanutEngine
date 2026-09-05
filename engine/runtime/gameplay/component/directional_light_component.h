@@ -11,14 +11,12 @@ namespace kpengine::gameplay
     class DirectionalLightComponent final : public SceneComponent
     {
     public:
-        const Vector3f &GetDirection() const { return direction_; }
         const Vector3f &GetColor() const { return color_; }
         float GetIntensity() const { return intensity_; }
         bool IsLightEnabled() const { return enabled_; }
         bool CastsShadow() const { return casts_shadow_; }
         render::LightSourceHandle GetSourceHandle() const { return source_handle_; }
 
-        void SetDirection(const Vector3f &direction);
         void SetColor(const Vector3f &color);
         void SetIntensity(float intensity);
         void SetLightEnabled(bool enabled);
@@ -28,13 +26,13 @@ namespace kpengine::gameplay
         void OnActivate() override;
         void OnDeactivate() override;
         void OnTick(float delta_time) override;
+        void OnTransformChanged() override;
 
     private:
         render::LightSourceDesc BuildSourceDesc() const;
         void MarkSourceDirty();
         void FlushSourceUpdate();
 
-        Vector3f direction_{0.0f, -1.0f, 0.0f};
         Vector3f color_{1.0f, 1.0f, 1.0f};
         float intensity_ = 1.0f;
         bool enabled_ = true;

@@ -79,8 +79,10 @@ namespace kpengine::editor
     };
 
     EditorConsoleComponent::EditorConsoleComponent(runtime::command::CommandRegistry *registry,
-                                                   input::InputSystem *input_system)
-        : registry_(registry), input_system_(input_system), state_(std::make_shared<ConsoleState>())
+                                                   input::InputSystem *input_system,
+                                                   ImFont *code_font)
+        : registry_(registry), input_system_(input_system), code_font_(code_font),
+          state_(std::make_shared<ConsoleState>())
     {
         if (input_system_)
         {
@@ -123,6 +125,10 @@ namespace kpengine::editor
         ImGui::SetNextWindowSize(ImVec2(720.0f, 320.0f), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Command Console", &is_open_))
         {
+            if (code_font_)
+            {
+                ImGui::PushFont(code_font_);
+            }
             if (ImGui::BeginChild("##command_output", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing()),
                                   true))
             {
@@ -163,6 +169,10 @@ namespace kpengine::editor
                     }
                 }
                 ImGui::EndChild();
+            }
+            if (code_font_)
+            {
+                ImGui::PopFont();
             }
         }
         ImGui::End();

@@ -4,6 +4,68 @@
 
 ## Done
 
+- **Gameplay GP8 — light transform alignment (2026-09-05)** — point and spot
+  lights now publish world-transform positions, directional and spot lights
+  derive direction from the shared `+X`-forward Camera convention, and all
+  light transform changes coalesce through `OnTransformChanged()`. Factories
+  preserve the existing level position/direction schema at their boundary and
+  reject invalid directions. Focused tests cover attachment, world changes,
+  coalescing, and conversion failure. This lands before Reflection RF2 so
+  lights can reuse the common Transform property family. → [Gameplay roadmap](gameplay/TODO.md),
+  [GP8 plan](gameplay/.plan/GP8.md)
+
+- **Third-party debug-symbol packaging (2026-09-05)** — GoogleTest now builds
+  from its upstream source submodule through a parent-owned CMake wrapper, so
+  each configuration produces matching symbols. The exact miniaudio Debug PDB
+  from `D:\library` is packaged beside its imported `.lib`. Release-specific
+  miniaudio packaging remains a follow-up.
+
+- **Third-party CMake target boundary (2026-09-05)** — dependency details now
+  live in per-library wrappers under `third_party/`, while the central file only
+  orchestrates them. Prebuilt libraries are represented as imported targets,
+  source/header-only libraries expose namespaced `KP::` targets, and engine
+  modules no longer link the transitional `ThirdPartyLib` aggregate. CMake
+  configure and C++17 EnTT/Reflection syntax checks pass. The MSVC build remains
+  blocked before compilation by the machine's denied Windows SDK probe. →
+  [third-party manifest](../third_party/README.md)
+
+- **Runtime Reflection RF1 — contracts and EnTT adapter (2026-09-05)** — a
+  dedicated `Reflection` target now owns engine-neutral IDs, scalar/string
+  values, immutable descriptors, structured diagnostics, owner-thread object
+  references, and catalog/access interfaces. `EnttReflectionRegistry` owns an
+  explicit `entt::meta_ctx`; `ReflectionSystem` publishes only after
+  transactional registration and deterministic freeze. Duplicate names,
+  identifier collisions, read-only properties, conversion failures, setter
+  rejection, failed-init rollback, isolated contexts, shutdown, object/type
+  validation, numeric boundaries, and owner-thread enforcement are covered by
+  six focused tests. MSVC configuration
+  succeeds; the target build is blocked before compilation by the machine's
+  denied Windows SDK probe, while a MinGW C++17 build and test run pass 6/6.
+  → [reflection roadmap](reflection/TODO.md),
+  [RF1 plan](reflection/.plan/RF1.md),
+  [RF1 journal](../.spec/journal/2026-09-05-runtime-reflection-rf1.md)
+
+- **Runtime Reflection RF2 — Gameplay registration (2026-09-05)** — Reflection
+  descriptors now carry validated UI-neutral metadata and the EnTT registrar
+  accepts static/free-function adapters. Gameplay owns a `GameplayReflection`
+  satellite that registers flat transform, mesh, light, and camera properties;
+  Runtime initializes the frozen catalog before presentation and tears it down
+  after Gameplay. MinGW C++17 syntax checks and the focused Reflection test
+  pass 8/8. The Gameplay and Runtime focused targets are configured, but the
+  MSVC build remains blocked before compilation by the denied Windows SDK probe.
+  → [reflection roadmap](reflection/TODO.md),
+  [RF2 plan](reflection/.plan/RF2.md),
+  [RF2 journal](../.spec/journal/2026-09-05-runtime-reflection-rf2.md)
+
+- **EnTT dependency foundation (2026-09-05)** — the local EnTT 3.16.0 source is
+  vendored under `third_party/entt/` with its license and upstream README, and
+  exposed through an isolated `EnTT::EnTT` header-only target. EnTT follows
+  the engine's C++17 baseline; Gameplay has not
+  migrated to ECS or reflection. `EnTTUnitTest` covers registry storage and a
+  reflected property read. MSVC configuration succeeds; the target build is
+  currently blocked before compilation by the machine's denied Windows SDK
+  probe, while a MinGW C++17 syntax check passes. → [gameplay roadmap](gameplay/TODO.md)
+
 - **Gameplay GP7.1 — level asset review risks resolved (2026-09-01)** — the
   Asset-owned V1 `*.level` schema, strict loader, typed dependency requests,
   transactional unregister revalidation, integer `lod_bias`, path-qualified
@@ -104,6 +166,31 @@
   environment-limited evidence follow-up. →
   [R1.5 review](render/.review/R1.5.md),
   [R1.5 journal](../.spec/journal/2026-09-04-render-system-r1-5.md)
+
+- **Editor live debug viewer (2026-09-04)** — the Viewport keeps the normal
+  Scene Color image at 80% width, while a separate 20%-width Debug Viewer
+  window shows a small live preview with a selector for world normal, linear
+  depth, base color, material parameters, and spot/point shadow diagnostics.
+  Both images preserve aspect ratio. Its title bar provides the standard lock
+  control: locked keeps the split layout, unlocked allows moving/resizing.
+  Render drives the selected conversion view at the frame boundary and Editor
+  borrows its target view; no readback or backend type crosses the seam.
+  RenderSystem and Editor lifecycle tests pass, the Debug application builds,
+  and the OpenGL startup smoke remains alive.
+
+- **Editor profile metrics (2026-09-05)** — the bottom status bar now reports
+  render resolution, submitted G-buffer triangle count, and an optional
+  backend GPU-utilization percentage; the old debug-output and shader-count
+  readouts were removed. GPU utilization remains `N/A` until a backend supplies
+  telemetry through the API-neutral `RenderBackend` capability.
+
+- **Asset loading progress screen LO1–LO3 (2026-09-05)** — Asset observation,
+  staged Runtime startup, loading-first Editor presentation, transactional
+  workspace promotion, failure handling, and Vulkan/OpenGL validation are
+  complete. The loading tree consumes copied Runtime snapshots and transitions
+  exactly once to the normal Editor UI without a blank or mixed frame. →
+  [asset roadmap](asset/TODO.md), [LO2 plan](asset/.plan/LO2.md),
+  [LO3 plan](asset/.plan/LO3.md)
 
 - **Deferred PBR D6.4 — bounded point-light shadow atlas (2026-09-01)** —
   point shadow intent/handle lifetime, deterministic slot-2 selection, a fixed
@@ -692,20 +779,13 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-- **Asset loading progress screen (LO1, LO2 core, and LO3 UI landed 2026-09-04)** —
-  Asset now exposes opt-in, session-scoped load observations with recursive
-  operation correlation, bounded immutable snapshots, timing/size facts,
-  cache/dedup dispositions, failure diagnostics, and async sealing safety.
-  Runtime now publishes staged presentation/scene startup state and keeps the
-  Editor presentation alive while startup work proceeds. The loading view now
-  consumes copied snapshots and transitions once to the main scene UI; runtime
-  visual evidence remains. → [architecture map](asset/PLANS.md),
-  [roadmap](asset/TODO.md), [cross-stage spec](../.spec/specs/asset-loading-progress.md),
-  [LO1 journal](../.spec/journal/asset-loading-progress.md)
-- **Gameplay editor inspection (deferred)** — Gameplay is game-thread-owned,
-  while the current editor runs on the render thread. Add a read-only snapshot
-  before exposing Actor/component state to editor tools; do not give Editor
-  mutable GameplayWorld ownership. → [gameplay design](gameplay/gameplay_module.md)
+- **Runtime Reflection RF2–RF4 — Gameplay inspection pipeline (planned)** — add
+  module-owned Gameplay registration, copied Actor/component snapshots, and a
+  game-thread property-edit queue before building the World Outliner and Actor
+  Inspector. Editor receives no EnTT type or mutable Gameplay pointer. →
+  [Reflection architecture](reflection/PLANS.md),
+  [Reflection roadmap](reflection/TODO.md),
+  [cross-stage spec](../.spec/specs/runtime-reflection-module.md)
 - **Gameplay boundary contract (GP0, 2026-08-28)** — the `Gameplay` Runtime
   target now owns `ActorHandle`/`ActorState`; Render owns the header-level
   `IRenderableSourceSink`, generational source token, and static-mesh source

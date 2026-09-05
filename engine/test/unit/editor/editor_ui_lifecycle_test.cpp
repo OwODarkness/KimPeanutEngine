@@ -6,6 +6,7 @@
 #include "editor/platform/editor_imgui_renderer.h"
 #include "editor/platform/editor_imgui_wsi.h"
 #include "editor/ui/component/editor_loading_view_model.h"
+#include "editor/ui/editor_theme.h"
 #include "editor/ui/editor_ui.h"
 
 namespace
@@ -109,6 +110,24 @@ TEST(EditorLoadingViewModelTest, KeepsUnknownProgressIndeterminateAndShowsFailur
     EXPECT_TRUE(model.failed);
     EXPECT_EQ(model.stage_label, "Startup failed");
     EXPECT_EQ(model.diagnostic, "level/demo.level: missing camera");
+}
+
+TEST(EditorThemeTest, AppliesCodexSurfaceAccentAndTypography)
+{
+    ImGui::CreateContext();
+    kpengine::editor::ApplyCodexTheme();
+
+    const ImGuiStyle &style = ImGui::GetStyle();
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_WindowBg].x, 0x09 / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_WindowBg].y, 0x0B / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_WindowBg].z, 0x14 / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_Text].x, 0xD7 / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_CheckMark].y, 0xE5 / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_CheckMark].z, 1.0f);
+    EXPECT_FLOAT_EQ(style.WindowRounding, 6.0f);
+    EXPECT_FLOAT_EQ(style.FrameRounding, 4.0f);
+
+    ImGui::DestroyContext();
 }
 
 TEST(EditorLoadingViewModelTest, NeverShowsCompletionBeforeReady)

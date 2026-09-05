@@ -1,6 +1,6 @@
 # LO2 — Staged Runtime Startup and Editor Promotion
 
-- Status: core implementation landed; hardening and LO3 remain
+- Status: complete
 - Parent roadmap: [Asset Loading Progress TODO](../TODO.md)
 - Depends on: [LO1 — Asset Load Observation](LO1.md)
 - Cross-stage spec: [Asset Loading Progress](../../../.spec/specs/asset-loading-progress.md)

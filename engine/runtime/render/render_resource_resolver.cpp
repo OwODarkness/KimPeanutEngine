@@ -78,8 +78,18 @@ namespace kpengine::render
         if (handle.IsValid())
         {
             mesh_cache_.emplace(key, handle);
+            const uint32_t index_count = data.sections.empty()
+                                              ? static_cast<uint32_t>(data.indices.size())
+                                              : data.sections.front().index_count;
+            mesh_triangle_counts_.emplace(handle, index_count / 3U);
         }
         return handle;
+    }
+
+    uint32_t RenderResourceResolver::GetMeshTriangleCount(graphics::MeshHandle mesh) const
+    {
+        const auto it = mesh_triangle_counts_.find(mesh);
+        return it != mesh_triangle_counts_.end() ? it->second : 0U;
     }
 
     TextureBinding RenderResourceResolver::GetOrCreateTextureBinding(
@@ -308,6 +318,7 @@ namespace kpengine::render
             backend_->DestroyMesh(handle);
         }
         mesh_cache_.clear();
+        mesh_triangle_counts_.clear();
         for (const auto &[key, handle] : texture_cache_)
         {
             (void)key;

@@ -6,6 +6,36 @@
 #include "runtime/runtime_camera_control.h"
 #include "runtime/window/window_system.h"
 
+#include <algorithm>
+
+namespace
+{
+    ImVec2 FitRenderTarget(const kpengine::graphics::RenderTargetView &view,
+                           const ImVec2 &available)
+    {
+        if (!view.IsValid() || available.x <= 0.0f || available.y <= 0.0f)
+        {
+            return available;
+        }
+
+        const float target_aspect = static_cast<float>(view.width) /
+                                    static_cast<float>(view.height);
+        const float available_aspect = available.x / available.y;
+        if (available_aspect > target_aspect)
+        {
+            return ImVec2(available.y * target_aspect, available.y);
+        }
+        return ImVec2(available.x, available.x / target_aspect);
+    }
+
+    void CenterImage(const ImVec2 &available, const ImVec2 &image_size)
+    {
+        ImGui::SetCursorPos(ImVec2(
+            ImGui::GetCursorPosX() + std::max(0.0f, (available.x - image_size.x) * 0.5f),
+            ImGui::GetCursorPosY() + std::max(0.0f, (available.y - image_size.y) * 0.5f)));
+    }
+}
+
 namespace kpengine::editor
 {
     EditorViewportComponent::EditorViewportComponent(render::RenderSystem *render_system,
@@ -38,6 +68,7 @@ namespace kpengine::editor
             return;
         }
 
+        ImGui::BeginChild("##ViewportImage", available_size, false);
         render_system_->RequestSceneRenderTargetExtent(
             static_cast<uint32_t>(available_size.x), static_cast<uint32_t>(available_size.y));
 
@@ -46,22 +77,26 @@ namespace kpengine::editor
         if (!view.IsValid() || !texture_id)
         {
             ImGui::TextUnformatted("Scene viewport is not ready for this graphics API.");
-            return;
         }
-
-        imgui_renderer_->DrawSceneImage(texture_id, available_size);
-
-        if (!camera_capture_active_)
+        else
         {
-            if (ImGui::IsItemHovered() && ImGui::IsItemClicked(ImGuiMouseButton_Left))
+            const ImVec2 image_size = FitRenderTarget(view, available_size);
+            CenterImage(available_size, image_size);
+            imgui_renderer_->DrawSceneImage(texture_id, image_size);
+
+            if (!camera_capture_active_)
             {
-                SetCameraCapture(true);
+                if (ImGui::IsItemHovered() && ImGui::IsItemClicked(ImGuiMouseButton_Left))
+                {
+                    SetCameraCapture(true);
+                }
+            }
+            else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+            {
+                SetCameraCapture(false);
             }
         }
-        else if (ImGui::IsMouseClicked(ImGuiMouseButton_Left))
-        {
-            SetCameraCapture(false);
-        }
+        ImGui::EndChild();
     }
 
     void EditorViewportComponent::SetCameraCapture(bool captured)

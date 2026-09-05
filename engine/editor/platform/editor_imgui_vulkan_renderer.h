@@ -1,6 +1,9 @@
 #ifndef KPENGINE_EDITOR_IMGUI_VULKAN_RENDERER_H
 #define KPENGINE_EDITOR_IMGUI_VULKAN_RENDERER_H
 
+#include <cstdint>
+#include <unordered_map>
+
 #include <vulkan/vulkan.h>
 
 #include "editor/platform/editor_imgui_renderer.h"
@@ -27,14 +30,16 @@ namespace kpengine::editor
     private:
         void CreateDescriptorPool();
         void CreateSceneSampler();
-        void ReleaseSceneTexture();
+        void ReleaseSceneTextures();
 
         graphics::VulkanEditorBridge *editor_bridge_ = nullptr;
         VkDevice logical_device_ = VK_NULL_HANDLE;
         VkDescriptorPool descriptor_pool_ = VK_NULL_HANDLE;
         VkSampler scene_sampler_ = VK_NULL_HANDLE;
-        VkImageView scene_view_ = VK_NULL_HANDLE;
-        VkDescriptorSet scene_texture_ = VK_NULL_HANDLE;
+        // Keep one descriptor per borrowed render-target view. The main
+        // viewport and Debug Viewer are recorded into the same ImGui command
+        // buffer and may reference different views in one frame.
+        std::unordered_map<uintptr_t, VkDescriptorSet> scene_textures_;
         bool imgui_backend_initialized_ = false;
         LogColor background_color_{0.1f, 0.1f, 0.1f, 1.f};
     };

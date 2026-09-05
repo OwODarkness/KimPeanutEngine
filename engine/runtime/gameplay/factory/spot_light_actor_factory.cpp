@@ -2,12 +2,19 @@
 
 #include "gameplay/actor/actor.h"
 #include "gameplay/component/spot_light_component.h"
+#include "gameplay/scene_transform_utils.h"
 #include "gameplay/world/gameplay_world.h"
 
 namespace kpengine::gameplay
 {
     ActorHandle CreateSpotLightActor(GameplayWorld &world, const SpotLightActorDesc &desc)
     {
+        Rotatorf rotation;
+        if (!TryMakeSceneForwardRotation(desc.direction, rotation))
+        {
+            return {};
+        }
+
         const ActorHandle handle = world.CreateActor();
         Actor *const actor = world.FindActor(handle);
         SpotLightComponent *const light =
@@ -18,8 +25,8 @@ namespace kpengine::gameplay
             return {};
         }
 
-        light->SetPosition(desc.position);
-        light->SetDirection(desc.direction);
+        light->SetLocalLocation(desc.position);
+        light->SetLocalRotation(rotation);
         light->SetColor(desc.color);
         light->SetIntensity(desc.intensity);
         light->SetRange(desc.range);

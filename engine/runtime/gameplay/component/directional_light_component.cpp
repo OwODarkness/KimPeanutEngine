@@ -1,18 +1,10 @@
 #include "gameplay/component/directional_light_component.h"
 
 #include "gameplay/actor/actor.h"
+#include "gameplay/scene_transform_utils.h"
 
 namespace kpengine::gameplay
 {
-    void DirectionalLightComponent::SetDirection(const Vector3f &direction)
-    {
-        if (direction_ != direction)
-        {
-            direction_ = direction;
-            MarkSourceDirty();
-        }
-    }
-
     void DirectionalLightComponent::SetColor(const Vector3f &color)
     {
         if (color_ != color)
@@ -83,10 +75,15 @@ namespace kpengine::gameplay
         FlushSourceUpdate();
     }
 
+    void DirectionalLightComponent::OnTransformChanged()
+    {
+        MarkSourceDirty();
+    }
+
     render::LightSourceDesc DirectionalLightComponent::BuildSourceDesc() const
     {
         render::DirectionalLightSourceDesc source{};
-        source.direction = direction_;
+        source.direction = GetSceneForwardDirection(GetWorldTransform().rotator_);
         source.color = color_;
         source.intensity = intensity_;
         source.enabled = enabled_;

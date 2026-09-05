@@ -219,6 +219,7 @@ ctest --test-dir build -C Debug
 - [Render 模块](docs/render/overview.md)
 - [命令系统](docs/command/command_system.md)
 - [Gameplay 模块](docs/gameplay/gameplay_module.md)
+- [Reflection 模块](docs/reflection/PLANS.md)
 - [Asset 模块](docs/asset/asset_module.md)
 - [TTS 模块](docs/tts/tts_module.md)
 - [验证矩阵](docs/validation_matrix.md)
