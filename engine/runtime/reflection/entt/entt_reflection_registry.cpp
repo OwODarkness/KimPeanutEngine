@@ -11,6 +11,110 @@ namespace kpengine::reflection
         {
             return {status, std::move(diagnostic)};
         }
+
+        bool IsNumericValueType(ReflectionValueType value_type) noexcept
+        {
+            return value_type == ReflectionValueType::SignedInteger ||
+                   value_type == ReflectionValueType::UnsignedInteger ||
+                   value_type == ReflectionValueType::FloatingPoint;
+        }
+
+        bool HasMetadataContent(const ReflectionPropertyMetadata &metadata) noexcept
+        {
+            return !metadata.display_name.empty() || !metadata.category.empty() ||
+                   !metadata.tooltip.empty() || metadata.semantic != ReflectionWidgetSemantic::Default ||
+                   metadata.minimum.has_value() || metadata.maximum.has_value() ||
+                   metadata.step.has_value() || !metadata.enum_options.empty();
+        }
+
+        ReflectionResult ValidateMetadata(ReflectionValueType value_type,
+                                           ReflectionPropertyFlags flags,
+                                           const ReflectionPropertyMetadata &metadata)
+        {
+            const bool numeric = IsNumericValueType(value_type);
+            if (!numeric && (metadata.minimum.has_value() || metadata.maximum.has_value() ||
+                             metadata.step.has_value()))
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "numeric metadata requires a numeric property");
+            }
+            if (metadata.minimum.has_value() && !std::isfinite(*metadata.minimum))
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "metadata minimum must be finite");
+            }
+            if (metadata.maximum.has_value() && !std::isfinite(*metadata.maximum))
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "metadata maximum must be finite");
+            }
+            if (metadata.step.has_value() &&
+                (!std::isfinite(*metadata.step) || *metadata.step <= 0.0))
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "metadata step must be finite and positive");
+            }
+            if (metadata.minimum.has_value() && metadata.maximum.has_value() &&
+                *metadata.minimum > *metadata.maximum)
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "metadata minimum cannot exceed maximum");
+            }
+
+            if (metadata.semantic != ReflectionWidgetSemantic::Default &&
+                metadata.semantic != ReflectionWidgetSemantic::Enum && !numeric)
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "numeric widget semantics require a numeric property");
+            }
+            if (metadata.semantic == ReflectionWidgetSemantic::Enum &&
+                value_type != ReflectionValueType::SignedInteger &&
+                value_type != ReflectionValueType::UnsignedInteger)
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "enum widget semantics require an integer property");
+            }
+            if (!metadata.enum_options.empty() && metadata.semantic != ReflectionWidgetSemantic::Enum)
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "enum options require enum widget semantics");
+            }
+            if (metadata.semantic == ReflectionWidgetSemantic::Enum && metadata.enum_options.empty())
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "enum widget semantics require options");
+            }
+            for (std::size_t index = 0; index < metadata.enum_options.size(); ++index)
+            {
+                const ReflectionEnumOption &option = metadata.enum_options[index];
+                if (option.label.empty())
+                {
+                    return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                       "enum option labels cannot be empty");
+                }
+                for (std::size_t previous = 0; previous < index; ++previous)
+                {
+                    const ReflectionEnumOption &other = metadata.enum_options[previous];
+                    if (other.value == option.value)
+                    {
+                        return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                           "enum option values must be unique");
+                    }
+                    if (other.label == option.label)
+                    {
+                        return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                           "enum option labels must be unique");
+                    }
+                }
+            }
+            if (!HasFlag(flags, ReflectionPropertyFlags::EditorVisible) &&
+                HasMetadataContent(metadata))
+            {
+                return MakeFailure(ReflectionResultStatus::InvalidDescriptor,
+                                   "editor metadata requires an editor-visible property");
+            }
+            return {};
+        }
     }
 
     EnttReflectionRegistry::EnttReflectionRegistry(ReflectionHashFunction hash_function)
@@ -121,6 +225,7 @@ namespace kpengine::reflection
         std::string_view name,
         ReflectionValueType value_type,
         ReflectionPropertyFlags flags,
+        ReflectionPropertyMetadata metadata,
         ReadFunction read,
         WriteFunction write,
         PropertyRegistrationHandle &handle)
@@ -186,9 +291,15 @@ namespace kpengine::reflection
                 ~static_cast<uint8_t>(ReflectionPropertyFlags::Writable));
         }
 
+        const ReflectionResult metadata_result = ValidateMetadata(value_type, flags, metadata);
+        if (!metadata_result)
+        {
+            return metadata_result;
+        }
+
         const char *stable_name = StoreStableName(name);
         PropertyRecord record;
-        record.descriptor = {id, std::string(name), value_type, flags};
+        record.descriptor = {id, std::string(name), value_type, flags, std::move(metadata)};
         record.read = std::move(read);
         record.write = std::move(write);
         types_[type_index].properties.push_back(std::move(record));

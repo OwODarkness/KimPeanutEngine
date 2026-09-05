@@ -19,12 +19,27 @@ namespace kpengine::reflection
         struct MemberFunctionTraits<Return (Class::*)() const>
         {
             using return_type = Return;
+            using class_type = Class;
         };
 
         template <typename Return, typename Class>
         struct MemberFunctionTraits<Return (Class::*)()>
         {
             using return_type = Return;
+            using class_type = Class;
+        };
+
+        template <typename Return, typename Class>
+        struct MemberFunctionTraits<Return (*)(const Class &)>
+        {
+            using return_type = Return;
+            using class_type = Class;
+        };
+
+        template <typename Return, typename Class>
+        struct MemberFunctionTraits<Return (&)(const Class &)> :
+            MemberFunctionTraits<Return (*)(const Class &)>
+        {
         };
 
         template <typename T>
@@ -34,6 +49,7 @@ namespace kpengine::reflection
         struct MemberObjectTraits<Value Class::*>
         {
             using value_type = Value;
+            using class_type = Class;
         };
 
         template <typename T>
@@ -44,6 +60,21 @@ namespace kpengine::reflection
         {
             using return_type = Return;
             using argument_type = Argument;
+            using class_type = Class;
+        };
+
+        template <typename Return, typename Class, typename Argument>
+        struct SetterFunctionTraits<Return (*)(Class &, Argument)>
+        {
+            using return_type = Return;
+            using argument_type = Argument;
+            using class_type = Class;
+        };
+
+        template <typename Return, typename Class, typename Argument>
+        struct SetterFunctionTraits<Return (&)(Class &, Argument)> :
+            SetterFunctionTraits<Return (*)(Class &, Argument)>
+        {
         };
     }
 
@@ -61,7 +92,8 @@ namespace kpengine::reflection
             std::string_view name,
             ReflectionPropertyFlags flags = ReflectionPropertyFlags::Readable |
                                             ReflectionPropertyFlags::Writable |
-                                            ReflectionPropertyFlags::EditorVisible)
+                                            ReflectionPropertyFlags::EditorVisible,
+            ReflectionPropertyMetadata metadata = {})
         {
             if (!result_)
             {
@@ -85,6 +117,7 @@ namespace kpengine::reflection
                 EnttReflectionRegistry::PropertyRegistrationHandle handle{};
                 const ReflectionResult registered = registry_->BeginProperty(
                     type_index_, name, GetReflectionValueType<MemberType>(), flags,
+                    std::move(metadata),
                     [registry = registry_, property = ReflectionPropertyId{property_id(name)}](
                         const ReflectionObjectRef &object) {
                         return registry->template ReadMetaProperty<T, MemberType>(object, property);
@@ -110,7 +143,8 @@ namespace kpengine::reflection
             std::string_view name,
             ReflectionPropertyFlags flags = ReflectionPropertyFlags::Readable |
                                             ReflectionPropertyFlags::Writable |
-                                            ReflectionPropertyFlags::EditorVisible)
+                                            ReflectionPropertyFlags::EditorVisible,
+            ReflectionPropertyMetadata metadata = {})
         {
             if (!result_)
             {
@@ -118,6 +152,15 @@ namespace kpengine::reflection
             }
             using Value = typename detail::MemberFunctionTraits<decltype(Getter)>::return_type;
             using CleanValue = ReflectionRemoveCvRefT<Value>;
+            using SetterTraits = detail::SetterFunctionTraits<decltype(Setter)>;
+            using SetterValue =
+                ReflectionRemoveCvRefT<typename SetterTraits::argument_type>;
+            static_assert(std::is_invocable_v<decltype(Getter), const T &>,
+                          "reflection getter must be invocable with the reflected type");
+            static_assert(std::is_invocable_v<decltype(Setter), T &, SetterValue>,
+                          "reflection setter must be invocable with the reflected type");
+            static_assert(std::is_same_v<CleanValue, SetterValue>,
+                          "reflection getter and setter value types must match");
             if constexpr (!IsSupportedReflectionValueType<CleanValue>())
             {
                 return Remember({ReflectionResultStatus::UnsupportedValue,
@@ -128,6 +171,7 @@ namespace kpengine::reflection
                 EnttReflectionRegistry::PropertyRegistrationHandle handle{};
                 const ReflectionResult registered = registry_->BeginProperty(
                     type_index_, name, GetReflectionValueType<CleanValue>(), flags,
+                    std::move(metadata),
                     [registry = registry_, property = ReflectionPropertyId{property_id(name)}](
                         const ReflectionObjectRef &object) {
                         return registry->template ReadMetaProperty<T, CleanValue>(object, property);
@@ -152,7 +196,8 @@ namespace kpengine::reflection
         ReflectionResult ReadOnly(
             std::string_view name,
             ReflectionPropertyFlags flags = ReflectionPropertyFlags::Readable |
-                                            ReflectionPropertyFlags::EditorVisible)
+                                            ReflectionPropertyFlags::EditorVisible,
+            ReflectionPropertyMetadata metadata = {})
         {
             if (!result_)
             {
@@ -160,6 +205,8 @@ namespace kpengine::reflection
             }
             using Value = typename detail::MemberFunctionTraits<decltype(Getter)>::return_type;
             using CleanValue = ReflectionRemoveCvRefT<Value>;
+            static_assert(std::is_invocable_v<decltype(Getter), const T &>,
+                          "reflection getter must be invocable with the reflected type");
             if constexpr (!IsSupportedReflectionValueType<CleanValue>())
             {
                 return Remember({ReflectionResultStatus::UnsupportedValue,
@@ -170,6 +217,7 @@ namespace kpengine::reflection
                 EnttReflectionRegistry::PropertyRegistrationHandle handle{};
                 const ReflectionResult registered = registry_->BeginProperty(
                     type_index_, name, GetReflectionValueType<CleanValue>(), flags,
+                    std::move(metadata),
                     [registry = registry_, property = ReflectionPropertyId{property_id(name)}](
                         const ReflectionObjectRef &object) {
                         return registry->template ReadMetaProperty<T, CleanValue>(object, property);

@@ -152,9 +152,11 @@ an inspector. The current Actor/component ownership remains unchanged.
 - [RF1 — Reflection contracts and EnTT adapter](.plan/RF1.md): create the
   module, public value/descriptor interfaces, explicit context lifecycle,
   registrar, freeze validation, and focused unit tests.
-- **RF2 — Gameplay registration and access:** register the minimum math,
-  transform, scene, mesh, light, and camera properties through behavior-safe
-  accessors; add owner-thread access tests without Editor.
+- [RF2 — Gameplay registration and access](.plan/RF2.md): add neutral property
+  metadata and static adapters, register flat Scene/mesh/light/camera property
+  sets in a Gameplay-owned satellite target, compose the frozen catalog into
+  Runtime, prove owner-thread side effects without Editor, then leave a sealed
+  module-contributor collection as the later extensibility seam.
 - **RF3 — Gameplay editor bridge:** add component-instance identity, copied
   Actor snapshots, queued edit commands, stale-target rejection, and
   game-thread application.

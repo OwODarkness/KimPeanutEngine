@@ -31,6 +31,12 @@ namespace kpengine::script::lua
     class LuaVM;
 }
 
+namespace kpengine::reflection
+{
+    class IReflectionCatalog;
+    class ReflectionSystem;
+}
+
 namespace kpengine::runtime::script
 {
     class LuaCommandBridge;
@@ -85,6 +91,8 @@ namespace kpengine
             }
             void Clear();
             void TickGameplay(float delta_time);
+            StartupResult InitializeReflection();
+            const reflection::IReflectionCatalog *GetReflectionCatalog() const noexcept;
             void SetStartupLevel(asset::AssetID level_asset) { startup_level_asset_ = level_asset; }
             void SetSceneCameraControlCaptured(bool captured) override;
             render::IRenderCaptureService *GetRenderCaptureService()
@@ -100,6 +108,7 @@ namespace kpengine
             std::unique_ptr<command::CommandRegistry> command_registry_;
             std::shared_ptr<RuntimeScreenshotService> screenshot_service_;
             command::CommandRegistration screenshot_command_registration_;
+            std::unique_ptr<reflection::ReflectionSystem> reflection_system_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
             // Owns the committed startup level. Its destructor must unload
             // level-created Actors before GameplayWorld and RenderSystem.

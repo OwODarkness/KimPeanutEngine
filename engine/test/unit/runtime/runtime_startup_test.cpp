@@ -14,6 +14,7 @@
 #include "level/level_instance.h"
 #include "runtime_global_context.h"
 #include "render/render_system.h"
+#include "reflection/i_reflection_catalog.h"
 #include "script/lua/lua_vm.h"
 
 namespace
@@ -107,6 +108,21 @@ TEST(RuntimeStartupTest, CommitsAValidCameraLevel)
     ASSERT_NE(context.level_instance_, nullptr);
     EXPECT_TRUE(context.level_instance_->IsActive());
     EXPECT_EQ(context.level_instance_->GetActorCount(), 1U);
+}
+
+TEST(RuntimeStartupTest, InitializesAndTearsDownGameplayReflectionBeforePresentation)
+{
+    kpengine::runtime::RuntimeContext context;
+    const auto initialized = context.InitializeReflection();
+
+    ASSERT_TRUE(initialized) << initialized.diagnostic;
+    ASSERT_NE(context.GetReflectionCatalog(), nullptr);
+    EXPECT_NE(context.GetReflectionCatalog()->FindType(
+                  "kpengine.gameplay.CameraComponent"),
+              nullptr);
+
+    context.Clear();
+    EXPECT_EQ(context.GetReflectionCatalog(), nullptr);
 }
 
 TEST(RuntimeStartupTest, RejectsCameraFreeLevelAndUnloadsTheAttempt)

@@ -13,7 +13,10 @@
 #include "gameplay/factory/camera_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
 #include "gameplay/controller/player_controller.h"
+#include "gameplay/reflection/gameplay_reflection.h"
 #include "gameplay/world/gameplay_world.h"
+#include "reflection/entt/entt_reflection_registry.h"
+#include "reflection/reflection_system.h"
 #include "log/log_system.h"
 #include "log/logger.h"
 #include "input/input_context.h"
@@ -35,6 +38,7 @@ namespace kpengine
         window_system_(WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW)),
         render_system_(std::make_unique<render::RenderSystem>()),
         command_registry_(std::make_unique<command::CommandRegistry>()),
+        reflection_system_(std::make_unique<reflection::ReflectionSystem>()),
         gameplay_world_(std::make_unique<gameplay::GameplayWorld>(
             render_system_->GetRenderableSourceSink(), render_system_->GetLightSourceSink(),
             render_system_->GetCameraSourceSink())),
@@ -53,12 +57,37 @@ namespace kpengine
 
         void RuntimeContext::Initialize()
         {
+            const StartupResult reflection = InitializeReflection();
+            if (!reflection)
+            {
+                throw std::runtime_error(reflection.diagnostic);
+            }
             InitializePresentation();
             const StartupResult promotion = PromoteRenderAssets();
             if (!promotion)
             {
                 throw std::runtime_error(promotion.diagnostic);
             }
+        }
+
+        RuntimeContext::StartupResult RuntimeContext::InitializeReflection()
+        {
+            if (!reflection_system_)
+            {
+                reflection_system_ = std::make_unique<reflection::ReflectionSystem>();
+            }
+            if (reflection_system_->GetState() == reflection::ReflectionSystem::State::Frozen)
+            {
+                return {true, {}};
+            }
+
+            const reflection::ReflectionResult result =
+                reflection_system_->Initialize({gameplay::RegisterGameplayReflection});
+            if (!result)
+            {
+                return {false, "Runtime reflection initialization failed: " + result.diagnostic};
+            }
+            return {true, {}};
         }
 
         void RuntimeContext::InitializePresentation()
@@ -289,6 +318,11 @@ namespace kpengine
             // gameplay World must therefore die before the sink and GPU teardown.
             level_instance_.reset();
             gameplay_world_.reset();
+            if (reflection_system_)
+            {
+                reflection_system_->Shutdown();
+                reflection_system_.reset();
+            }
             // Drop sol2 callback closures before their Lua state and the command
             // registry they reference are torn down.
             lua_command_bridge_.reset();
@@ -319,6 +353,11 @@ namespace kpengine
         }
 
         RuntimeContext::~RuntimeContext() = default;
+
+        const reflection::IReflectionCatalog *RuntimeContext::GetReflectionCatalog() const noexcept
+        {
+            return reflection_system_ != nullptr ? reflection_system_->GetCatalog() : nullptr;
+        }
 
     }
 }

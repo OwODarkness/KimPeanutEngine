@@ -49,6 +49,22 @@ namespace
         bool enabled = false;
     };
 
+    struct AdapterComponent
+    {
+        float value = 1.0f;
+    };
+
+    float GetAdapterValue(const AdapterComponent &component) { return component.value; }
+    bool SetAdapterValue(AdapterComponent &component, float value)
+    {
+        if (!std::isfinite(value) || value < 0.0f)
+        {
+            return false;
+        }
+        component.value = value;
+        return true;
+    }
+
     ReflectionResult RegisterTestComponent(EnttReflectionRegistrar &registrar)
     {
         auto type = registrar.Type<TestComponent>("tests::TestComponent");
@@ -107,6 +123,27 @@ namespace
             return result;
         }
         return type.Property<&NumericComponent::enabled>("enabled");
+    }
+
+    ReflectionResult RegisterAdapterComponent(EnttReflectionRegistrar &registrar)
+    {
+        auto type = registrar.Type<AdapterComponent>("tests::AdapterComponent");
+        if (!type)
+        {
+            return type.GetResult();
+        }
+        ReflectionPropertyMetadata metadata;
+        metadata.display_name = "Adapter Value";
+        metadata.category = "Test";
+        metadata.tooltip = "A copied metadata value";
+        metadata.minimum = 0.0;
+        metadata.maximum = 10.0;
+        metadata.step = 0.5;
+        return type.Property<&SetAdapterValue, &GetAdapterValue>("value",
+                                                                  ReflectionPropertyFlags::Readable |
+                                                                      ReflectionPropertyFlags::Writable |
+                                                                      ReflectionPropertyFlags::EditorVisible,
+                                                                  std::move(metadata));
     }
 
     const ReflectionTypeDescriptor *GetTestType(const IReflectionCatalog &catalog)
@@ -239,6 +276,75 @@ TEST(ReflectionRegistry, RejectsNumericBoundaryConversions)
                   .status,
               ReflectionResultStatus::TypeMismatch);
     system.Shutdown();
+}
+
+TEST(ReflectionRegistry, SupportsOwnedMetadataAndStaticAdapters)
+{
+    ReflectionSystem system;
+    ASSERT_TRUE(system.Initialize({RegisterAdapterComponent}));
+    const ReflectionTypeDescriptor &type =
+        *system.GetCatalog()->FindType("tests::AdapterComponent");
+    const ReflectionPropertyDescriptor &property = *GetProperty(type, "value");
+    EXPECT_EQ(property.metadata.display_name, "Adapter Value");
+    EXPECT_EQ(property.metadata.category, "Test");
+    EXPECT_EQ(property.metadata.tooltip, "A copied metadata value");
+    ASSERT_TRUE(property.metadata.minimum.has_value());
+    ASSERT_TRUE(property.metadata.maximum.has_value());
+    ASSERT_TRUE(property.metadata.step.has_value());
+    EXPECT_DOUBLE_EQ(*property.metadata.minimum, 0.0);
+    EXPECT_DOUBLE_EQ(*property.metadata.maximum, 10.0);
+    EXPECT_DOUBLE_EQ(*property.metadata.step, 0.5);
+
+    AdapterComponent object;
+    const ReflectionObjectRef object_ref = ReflectionObjectRef::ForMutable(type.id, &object);
+    const IReflectionAccess &access = *system.GetAccess();
+    ASSERT_TRUE(access.Write(object_ref, property.id, ReflectionValue{4.5}));
+    EXPECT_FLOAT_EQ(object.value, 4.5f);
+    EXPECT_EQ(access.Write(object_ref, property.id, ReflectionValue{-1.0}).status,
+              ReflectionResultStatus::SetterRejected);
+    EXPECT_FLOAT_EQ(object.value, 4.5f);
+    system.Shutdown();
+}
+
+TEST(ReflectionRegistry, RejectsInvalidPropertyMetadata)
+{
+    const auto expect_invalid = [](ReflectionPropertyMetadata metadata,
+                                   ReflectionValueType value_type = ReflectionValueType::FloatingPoint) {
+        EnttReflectionRegistry registry;
+        EnttReflectionRegistrar registrar{registry};
+        auto type = registrar.Type<AdapterComponent>("tests::Metadata");
+        EXPECT_TRUE(type);
+        EnttReflectionRegistry::PropertyRegistrationHandle handle{};
+        const ReflectionResult result = registry.BeginProperty(
+            0U,
+            "value", value_type, ReflectionPropertyFlags::Readable |
+                                      ReflectionPropertyFlags::Writable |
+                                      ReflectionPropertyFlags::EditorVisible,
+            std::move(metadata),
+            [](const ReflectionObjectRef &) { return ReflectionReadResult{}; },
+            [](const ReflectionObjectRef &, const ReflectionValue &) { return ReflectionResult{}; },
+            handle);
+        EXPECT_EQ(result.status, ReflectionResultStatus::InvalidDescriptor);
+        registry.Shutdown();
+    };
+
+    ReflectionPropertyMetadata reversed;
+    reversed.minimum = 2.0;
+    reversed.maximum = 1.0;
+    expect_invalid(std::move(reversed));
+
+    ReflectionPropertyMetadata zero_step;
+    zero_step.step = 0.0;
+    expect_invalid(std::move(zero_step));
+
+    ReflectionPropertyMetadata non_numeric;
+    non_numeric.minimum = 0.0;
+    expect_invalid(std::move(non_numeric), ReflectionValueType::Bool);
+
+    ReflectionPropertyMetadata bad_enum;
+    bad_enum.semantic = ReflectionWidgetSemantic::Enum;
+    bad_enum.enum_options = {{0, "Perspective"}, {0, "Duplicate"}};
+    expect_invalid(std::move(bad_enum), ReflectionValueType::SignedInteger);
 }
 
 TEST(ReflectionRegistry, SetterAndCatalogRejectAccessAfterFreeze)

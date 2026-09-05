@@ -63,6 +63,7 @@ namespace kpengine::reflection
                                        std::string_view name,
                                        ReflectionValueType value_type,
                                        ReflectionPropertyFlags flags,
+                                       ReflectionPropertyMetadata metadata,
                                        ReadFunction read,
                                        WriteFunction write,
                                        PropertyRegistrationHandle &handle);

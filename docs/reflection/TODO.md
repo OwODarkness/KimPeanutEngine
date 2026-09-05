@@ -1,9 +1,10 @@
 # Reflection Module TODO
 
-**Status: RF1 landed (2026-09-05).** EnTT 3.16.0 is vendored, and the engine
-Reflection target now owns the RF1 contracts, explicit EnTT context, frozen
-catalog, and headless adapter tests. Gameplay metadata, the snapshot bridge,
-and the Actor panel remain future stages.
+**Status: RF2 implementation landed (2026-09-05); MSVC target validation is
+environment-blocked.** EnTT 3.16.0 is vendored, the engine Reflection target
+owns the RF1/RF2 contracts and frozen catalog, and Gameplay now supplies a
+behavior-preserving registration satellite. The snapshot bridge and Actor
+panel remain future stages.
 
 Architecture and decisions: [PLANS.md](PLANS.md). Cross-stage acceptance:
 [Runtime Reflection Module spec](../../.spec/specs/runtime-reflection-module.md).
@@ -35,17 +36,43 @@ change the frozen catalog.
 
 ## RF2 — Gameplay registration
 
-- [ ] Add module-owned Gameplay registration units; do not centralize Gameplay
+Detailed design: [RF2 plan](.plan/RF2.md). Formal review:
+[RF2 review](.review/RF2.md) — changes requested on 2026-09-05.
+
+- [x] Add module-owned Gameplay registration units; do not centralize Gameplay
   type knowledge inside Reflection.
-- [ ] Register the minimum reusable value types and selected properties of
+- [x] Register the minimum reusable value types and selected properties of
   `SceneComponent`, mesh, directional/point/spot light, and camera components.
-- [ ] Route stateful properties through public getters/setters so transform
+- [x] Route stateful properties through public getters/setters so transform
   dirtiness, validation, activation, and render-source publication remain
   correct.
-- [ ] Define neutral metadata for display name, category, read-only state,
+- [x] Define neutral metadata for display name, category, read-only state,
   numeric range/step, tooltip, and widget semantic.
-- [ ] Test registration coverage, supported value conversion, setter rejection,
+- [x] Test registration coverage, supported value conversion, setter rejection,
   and observable component side effects on the game thread.
+
+**Implementation landed (2026-09-05):** RF2 adds owned descriptor metadata,
+static/free-function adapters, the Gameplay-owned `GameplayReflection` target,
+Runtime startup/teardown composition, and focused Reflection and Gameplay
+tests. MinGW syntax checks and the 8-test Reflection executable pass. The
+Visual Studio focused build is still blocked before compilation by the local
+Windows SDK permission failure; the Gameplay test therefore remains pending
+native execution evidence.
+
+### Further RF2 work — extensible module contribution
+
+- [ ] After direct Gameplay registration is proven, add a sealed
+  `ReflectionRegistrationSet` that collects uniquely named module callbacks in
+  deterministic bootstrap order and rejects late or duplicate contributions.
+- [ ] When a real module-loader participant needs it, add
+  `IReflectionContributor` so modules contribute callbacks without exposing a
+  virtual template registrar or changing their existing
+  `Register<Module>Reflection` functions.
+- [ ] Prove two-module aggregation, collection sealing, duplicate rejection,
+  and full initialization rollback when any contributed callback fails.
+
+This follow-up does not permit post-freeze registration or module hot reload;
+those require generation-aware catalog lifetime work in RF5.
 
 **Done when:** Runtime can inspect and safely mutate one representative
 transform, mesh, light, and camera property without Editor or direct member

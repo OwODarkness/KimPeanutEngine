@@ -176,6 +176,36 @@ namespace kpengine::reflection
         return (flags & flag) != ReflectionPropertyFlags::None;
     }
 
+    enum class ReflectionWidgetSemantic : uint8_t
+    {
+        Default,
+        Position,
+        RotationDegrees,
+        Scale,
+        Color,
+        Distance,
+        AngleRadians,
+        Enum,
+    };
+
+    struct ReflectionEnumOption
+    {
+        int64_t value = 0;
+        std::string label;
+    };
+
+    struct ReflectionPropertyMetadata
+    {
+        std::string display_name;
+        std::string category;
+        std::string tooltip;
+        ReflectionWidgetSemantic semantic = ReflectionWidgetSemantic::Default;
+        std::optional<double> minimum;
+        std::optional<double> maximum;
+        std::optional<double> step;
+        std::vector<ReflectionEnumOption> enum_options;
+    };
+
     enum class ReflectionResultStatus : uint8_t
     {
         Success,
@@ -220,6 +250,7 @@ namespace kpengine::reflection
         std::string name;
         ReflectionValueType value_type = ReflectionValueType::Bool;
         ReflectionPropertyFlags flags = ReflectionPropertyFlags::None;
+        ReflectionPropertyMetadata metadata;
     };
 
     struct ReflectionTypeDescriptor

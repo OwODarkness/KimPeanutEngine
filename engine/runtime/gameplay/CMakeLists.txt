@@ -23,3 +23,5 @@ target_include_directories(Gameplay PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 # Gameplay consumes only the render-owned source contract. Graphics remains a
 # private Render dependency, so gameplay cannot reach backend APIs.
 target_link_libraries(Gameplay PUBLIC Core Render Input)
+
+add_subdirectory(reflection)
