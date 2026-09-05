@@ -3,6 +3,8 @@
 #include "gameplay/component/actor_component.h"
 #include "gameplay/component/scene_component.h"
 
+#include <limits>
+
 namespace kpengine::gameplay
 {
     Actor::Actor(ActorHandle handle, render::IRenderableSourceSink *source_sink,
@@ -102,9 +104,18 @@ namespace kpengine::gameplay
         state_ = ActorState::Destroyed;
     }
 
-    void Actor::AddComponentInternal(std::unique_ptr<ActorComponent> component)
+    bool Actor::AddComponentInternal(std::unique_ptr<ActorComponent> component)
     {
+        if (component == nullptr || next_component_instance_id_ == 0 ||
+            next_component_instance_id_ == std::numeric_limits<uint32_t>::max())
+        {
+            return false;
+        }
+
         component->SetOwner(this);
+        component->SetInstanceId({next_component_instance_id_});
+        ++next_component_instance_id_;
         components_.push_back(std::move(component));
+        return true;
     }
 }

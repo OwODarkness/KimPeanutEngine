@@ -24,6 +24,7 @@ namespace kpengine::render
 namespace kpengine::gameplay
 {
     class PlayerController;
+    class GameplayEditorBridge;
 
     class GameplayWorld
     {
@@ -68,6 +69,8 @@ namespace kpengine::gameplay
         void ReclaimDestroyedActors();
 
     private:
+        friend class GameplayEditorBridge;
+
         HandleSystem<ActorHandle> actor_handles_;
         std::unordered_map<uint32_t, std::unique_ptr<Actor>> actors_;
         std::unique_ptr<PlayerController> local_player_controller_;

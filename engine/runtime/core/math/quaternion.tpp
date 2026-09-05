@@ -1,6 +1,9 @@
 #include "quaternion.h"
 #include "vector3.h"
 #include "rotator.h"
+
+#include <algorithm>
+
 namespace kpengine::math
 {
 

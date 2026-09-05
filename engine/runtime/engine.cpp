@@ -219,6 +219,15 @@ namespace kpengine
                     "RenderSystem startup failed: " + render_start_diagnostic);
             }
 
+            const RuntimeContext::StartupResult reflection_result =
+                global_runtime_context.InitializeReflection();
+            if (!reflection_result)
+            {
+                startup_coordinator_.Fail(reflection_result.diagnostic);
+                throw std::runtime_error("Runtime reflection startup failed: " +
+                                         reflection_result.diagnostic);
+            }
+
             startup_coordinator_.SetPhase(StartupPhase::LoadingAssets,
                                           "Loading startup assets");
             try

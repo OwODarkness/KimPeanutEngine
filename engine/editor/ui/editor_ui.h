@@ -35,6 +35,15 @@ namespace kpengine
     {
         class ISceneCameraControlSink;
     }
+    namespace reflection
+    {
+        class IReflectionCatalog;
+    }
+    namespace gameplay
+    {
+        class IGameplayEditorSnapshotSource;
+        class IGameplayEditorEditSink;
+    }
 }
 
 struct ImFont;
@@ -45,6 +54,7 @@ namespace kpengine::editor
     class IEditorImguiRenderer;
     class IEditorImguiWSI;
     class EditorUIComponent;
+    class ActorEditorModel;
 
     // Parameter bundle for EditorUI::Initialize, so the signature doesn't grow with each
     // injected dependency (mirrors EditorContextInitInfo / WindowCreateInfo). Members are
@@ -61,6 +71,9 @@ namespace kpengine::editor
         input::InputSystem *input_system = nullptr;
         WindowSystem *window_system = nullptr;
         runtime::ISceneCameraControlSink *camera_control_sink = nullptr;
+        const reflection::IReflectionCatalog *reflection_catalog = nullptr;
+        gameplay::IGameplayEditorSnapshotSource *actor_snapshot_source = nullptr;
+        gameplay::IGameplayEditorEditSink *actor_edit_sink = nullptr;
         std::function<runtime::StartupSnapshot()> startup_snapshot_source;
         std::function<std::unique_ptr<IEditorImguiRenderer>(GraphicsAPIType)>
             renderer_factory;
@@ -75,6 +88,10 @@ namespace kpengine::editor
 
         void Initialize(const EditorUIInitInfo &init_info);
         void InitializePresentation(const EditorUIInitInfo &init_info);
+        void SetActorInspectionServices(
+            const reflection::IReflectionCatalog *reflection_catalog,
+            gameplay::IGameplayEditorSnapshotSource *actor_snapshot_source,
+            gameplay::IGameplayEditorEditSink *actor_edit_sink);
         void PromoteToWorkspace();
         bool RenderLoading();
         bool Render();
@@ -98,6 +115,7 @@ namespace kpengine::editor
                              render::RenderSystem *render_system);
         void BuildConsole(runtime::command::CommandRegistry *command_registry,
                           input::InputSystem *input_system, ImFont *code_font);
+        void BuildActorTools();
         void BuildLoadingTree();
         bool RenderActiveTree();
         // Binds the Tool > Capture Screenshot command to the runtime export path.
@@ -120,6 +138,10 @@ namespace kpengine::editor
         // Runtime export path for the render-capture command. Borrowed service,
         // built from the render system's capture service when the UI initializes.
         std::unique_ptr<runtime::RuntimeScreenshotService> screenshot_service_;
+
+        // Declared before the component tree so components are destroyed first;
+        // all of them borrow this model and the injected Runtime interfaces.
+        std::unique_ptr<ActorEditorModel> actor_model_;
 
         std::vector<std::unique_ptr<EditorUIComponent>> components_;
         std::vector<std::unique_ptr<EditorUIComponent>> loading_components_;

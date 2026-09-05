@@ -19,6 +19,7 @@ namespace kpengine::render
 namespace kpengine::gameplay
 {
     class SceneComponent;
+    class GameplayEditorBridge;
 
     class Actor
     {
@@ -54,8 +55,7 @@ namespace kpengine::gameplay
 
             auto component = std::make_unique<ComponentT>(std::forward<Args>(args)...);
             ComponentT *const result = component.get();
-            AddComponentInternal(std::move(component));
-            return result;
+            return AddComponentInternal(std::move(component)) ? result : nullptr;
         }
 
         template <typename ComponentT>
@@ -75,17 +75,19 @@ namespace kpengine::gameplay
 
     private:
         friend class GameplayWorld;
+        friend class GameplayEditorBridge;
 
         bool Initialize();
         bool Activate();
         bool Deactivate();
         void Tick(float delta_time);
         void Destroy();
-        void AddComponentInternal(std::unique_ptr<ActorComponent> component);
+        bool AddComponentInternal(std::unique_ptr<ActorComponent> component);
 
         ActorHandle handle_;
         ActorState state_ = ActorState::Constructed;
         std::vector<std::unique_ptr<ActorComponent>> components_;
+        uint32_t next_component_instance_id_ = 1;
         SceneComponent *root_component_ = nullptr;
         render::IRenderableSourceSink *source_sink_ = nullptr;
         render::ILightSourceSink *light_source_sink_ = nullptr;

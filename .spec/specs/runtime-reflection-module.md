@@ -1,6 +1,6 @@
 # Runtime Reflection Module
 
-- Status: proposed
+- Status: RF4 implementation landed; native/runtime evidence pending
 - Owner: user + Codex
 - Parent TODO: [Reflection Module TODO](../../docs/reflection/TODO.md)
 - Architecture: [Reflection Module Plans](../../docs/reflection/PLANS.md)
@@ -14,11 +14,13 @@ registrar.
 
 ## Current state
 
-EnTT is vendored and its raw ECS/meta API has a narrow integration test. The
-engine has no reflection lifecycle owner, stable descriptor/value vocabulary,
-Gameplay registration, Actor enumeration snapshot, component-instance
-identity, property edit queue, or Actor panel. Gameplay owns mutable Actors on
-the game thread; Editor/ImGui runs on the render thread.
+EnTT is vendored and its raw ECS/meta API has a narrow integration test. RF1 and
+RF2 provide the reflection lifecycle, descriptor/value vocabulary, and
+Gameplay registration. RF3 now provides component-instance identity, copied
+Actor snapshots, and a bounded game-thread property edit queue. RF4 now provides
+the shared Editor actor model, World Outliner, Actor Inspector, metadata-driven
+widgets, and value-only edit feedback. Native lifecycle and dual-backend
+interaction evidence remain pending.
 
 ## Scope
 
@@ -59,11 +61,14 @@ the game thread; Editor/ImGui runs on the render thread.
 2. **RF2 — Gameplay registration.** Follow the
    [RF2 plan](../../docs/reflection/.plan/RF2.md) to register the minimum
    component properties and prove setter side effects and owner-thread access.
-3. **RF3 — editor bridge.** Add component-instance identity, immutable
-   snapshots, bounded edit commands, result diagnostics, and stale-target
-   handling.
-4. **RF4 — Actor tooling.** Add World Outliner and Inspector panels with
-   metadata-driven widgets and dual-backend runtime proof.
+3. **RF3 — editor bridge.** Follow the
+   [RF3 plan](../../docs/reflection/.plan/RF3.md) to add component-instance
+   identity, immutable snapshots, bounded edit commands, result diagnostics,
+   and stale-target handling.
+4. **RF4 — Actor tooling.** Follow the
+   [RF4 plan](../../docs/reflection/.plan/RF4.md) to add shared-selection World
+   Outliner and Inspector panels with metadata-driven widgets and dual-backend
+   runtime proof.
 5. **RF5 — extensions.** Scope undo/redo, save-back, scripting, and hot reload
    independently after the first inspector is stable.
 

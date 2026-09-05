@@ -1,10 +1,11 @@
 # Reflection Module TODO
 
-**Status: RF2 implementation landed (2026-09-05); MSVC target validation is
-environment-blocked.** EnTT 3.16.0 is vendored, the engine Reflection target
-owns the RF1/RF2 contracts and frozen catalog, and Gameplay now supplies a
-behavior-preserving registration satellite. The snapshot bridge and Actor
-panel remain future stages.
+**Status: RF3 implementation landed (2026-09-05); native MSVC validation is
+environment-blocked.** EnTT 3.16.0 is vendored, the engine
+Reflection target owns the RF1/RF2 contracts and frozen catalog, Gameplay
+supplies a behavior-preserving registration satellite, and Runtime now owns a
+bounded value-only Gameplay editor bridge. The World Outliner and Actor panel
+remain future stages.
 
 Architecture and decisions: [PLANS.md](PLANS.md). Cross-stage acceptance:
 [Runtime Reflection Module spec](../../.spec/specs/runtime-reflection-module.md).
@@ -80,32 +81,53 @@ access, while existing Gameplay lifecycle and render-source tests still pass.
 
 ## RF3 — Gameplay editor bridge
 
-- [ ] Introduce stable component-instance identity compatible with duplicate
+Detailed design: [RF3 plan](.plan/RF3.md). Formal review:
+[RF3 review](.review/RF3.md) — resolved on re-review 2026-09-05.
+
+- [x] Introduce stable component-instance identity compatible with duplicate
   component types and Actor destruction/reclamation.
-- [ ] Publish bounded immutable Actor snapshots at a game-thread boundary.
-- [ ] Define value-only property-edit commands and a bounded queue from Editor
+- [x] Publish bounded immutable Actor snapshots at a game-thread boundary.
+- [x] Define value-only property-edit commands and a bounded queue from Editor
   to Runtime/Gameplay.
-- [ ] Revalidate actor generation, component identity, property identity,
+- [x] Revalidate actor generation, component identity, property identity,
   reflected type, access flags, and value conversion on the game thread.
-- [ ] Report accepted/rejected edit results without exposing object pointers.
-- [ ] Test stale actors/components, destruction races, duplicate component
+- [x] Report accepted/rejected edit results without exposing object pointers.
+- [x] Test stale actors/components, destruction races, duplicate component
   types, queue bounds, invalid values, and shutdown cancellation.
 
 **Done when:** a render-thread-style test can retain a copied snapshot, enqueue
 an edit while Gameplay continues owning the object, and observe either the
 validated new value or a deterministic rejection in the next snapshot/result.
 
+**Implementation landed (2026-09-05):** RF3 adds per-Actor component instance
+IDs, an exact bidirectionally validated GameplayReflection binding manifest,
+bounded immutable snapshots with string/value byte accounting, game-thread edit
+application with readback, request backpressure, expanded rejection coverage,
+and Runtime startup/tick/shutdown integration. The final manually linked MinGW
+bridge executable passes 12/12; native MSVC validation remains blocked by the
+local Windows SDK access failure.
+→ [RF3 journal](../../.spec/journal/2026-09-05-runtime-reflection-rf3.md)
+
 ## RF4 — World Outliner and Actor Inspector
 
-- [ ] Add Editor panels that consume only the immutable catalog and gameplay
+Detailed design: [RF4 plan](.plan/RF4.md).
+
+Implementation landed for the shared render-thread model, value-only panels,
+RF2 widget policy, RF3 command/result feedback, and the non-overlapping default
+workspace layout. Focused headless validation passes; native Editor lifecycle
+linking and Vulkan/OpenGL interaction smoke remain environment-blocked or
+pending.
+
+- [x] Add Editor panels that consume only the immutable catalog and gameplay
   editor bridge.
-- [ ] Preserve selection by `ActorHandle`; clear it when the snapshot no longer
+- [x] Preserve selection by `ActorHandle`; clear it when the snapshot no longer
   contains the actor.
-- [ ] Render supported scalar/vector/transform/enum/asset-reference widgets
-  from property descriptors and show unsupported properties read-only.
-- [ ] Submit edits as commands and display pending or rejected state without
+- [x] Render the RF2 scalar/bool/enum/string property set from descriptors,
+  group transform leaves by metadata, and show unsupported properties
+  read-only; compound values and asset references require later contracts.
+- [x] Submit edits as commands and display pending or rejected state without
   optimistic mutation of Gameplay memory.
-- [ ] Keep ImGui widget policy in Editor and all EnTT types below the Reflection
+- [x] Keep ImGui widget policy in Editor and all EnTT types below the Reflection
   implementation boundary.
 - [ ] Validate Editor lifecycle plus a Vulkan/OpenGL startup smoke with Actor
   selection and one visible transform/property edit.
@@ -113,6 +135,8 @@ validated new value or a deterministic rejection in the next snapshot/result.
 **Done when:** the Actor panel enumerates a selected Actor's components and
 edits a gameplay property safely across the thread boundary on both graphics
 backends.
+
+→ [RF4 journal](../../.spec/journal/2026-09-05-runtime-reflection-rf4.md)
 
 ## Deferred
 

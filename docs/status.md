@@ -57,6 +57,16 @@
   [RF2 plan](reflection/.plan/RF2.md),
   [RF2 journal](../.spec/journal/2026-09-05-runtime-reflection-rf2.md)
 
+- **Runtime Reflection RF3 — Gameplay editor bridge (2026-09-05)** — Actors now
+  assign stable per-instance component IDs; Runtime owns a bounded bridge that
+  publishes immutable copied snapshots and applies value-only property edits on
+  the game thread with identity/type/access revalidation and readback. The
+  bridge-focused MinGW executable passes 12/12. MSVC and Runtime native execution
+  remain blocked by the machine's denied Windows SDK probe. →
+  [reflection roadmap](reflection/TODO.md),
+  [RF3 plan](reflection/.plan/RF3.md),
+  [RF3 journal](../.spec/journal/2026-09-05-runtime-reflection-rf3.md)
+
 - **EnTT dependency foundation (2026-09-05)** — the local EnTT 3.16.0 source is
   vendored under `third_party/entt/` with its license and upstream README, and
   exposed through an isolated `EnTT::EnTT` header-only target. EnTT follows
@@ -779,10 +789,12 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-- **Runtime Reflection RF2–RF4 — Gameplay inspection pipeline (planned)** — add
-  module-owned Gameplay registration, copied Actor/component snapshots, and a
-  game-thread property-edit queue before building the World Outliner and Actor
-  Inspector. Editor receives no EnTT type or mutable Gameplay pointer. →
+- **Runtime Reflection RF4 — World Outliner and Actor Inspector (implementation
+  landed; smoke pending)** — the shared render-thread `ActorEditorModel`, World
+  Outliner, Actor Inspector, RF2 widget policy, and RF3 value-only edit feedback
+  now consume only the frozen catalog and copied Gameplay snapshots. Editor
+  receives no EnTT type or mutable Gameplay pointer. Native lifecycle linking
+  and Vulkan/OpenGL interaction smoke remain to be validated. →
   [Reflection architecture](reflection/PLANS.md),
   [Reflection roadmap](reflection/TODO.md),
   [cross-stage spec](../.spec/specs/runtime-reflection-module.md)

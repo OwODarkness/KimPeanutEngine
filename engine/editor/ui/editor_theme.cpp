@@ -24,9 +24,13 @@ namespace kpengine::editor
             return color;
         }
 
-        constexpr ImVec4 kSurface = Color(0x09, 0x0B, 0x14);
-        constexpr ImVec4 kInk = Color(0xD7, 0xF9, 0xFF);
-        constexpr ImVec4 kAccent = Color(0x00, 0xE5, 0xFF);
+        // Dark navy/slate surfaces and cool blue-gray ink match the reference
+        // workspace without turning every control into a bright cyan accent.
+        constexpr ImVec4 kSurface = Color(0x0B, 0x0E, 0x16);
+        constexpr ImVec4 kInk = Color(0xD4, 0xE5, 0xEC);
+        constexpr ImVec4 kMutedInk = Color(0x9B, 0xAF, 0xBA);
+        constexpr ImVec4 kAccent = Color(0xA2, 0xBF, 0xCC);
+        constexpr ImVec4 kFocusAccent = Color(0x48, 0x52, 0x5E);
         constexpr ImVec4 kAdded = Color(0x39, 0xFF, 0x88);
         constexpr ImVec4 kRemoved = Color(0xFF, 0x4D, 0x8D);
         constexpr ImVec4 kSkill = Color(0xB9, 0x67, 0xFF);
@@ -70,66 +74,66 @@ namespace kpengine::editor
         }
         ImFont *const code_font = LoadWindowsFont("CascadiaMono.ttf", 14.0f);
 
-        // Surfaces stay close to the Codex #090b14 base while related layers
-        // gain just enough separation for the editor's overlapping panels.
+        // Surfaces stay close to the reference #0b0e16 base while related
+        // layers gain just enough separation for the editor's panels.
         colors[ImGuiCol_Text] = kInk;
-        colors[ImGuiCol_TextDisabled] = WithAlpha(kInk, 0.52f);
+        colors[ImGuiCol_TextDisabled] = WithAlpha(kMutedInk, 0.82f);
         colors[ImGuiCol_WindowBg] = kSurface;
-        colors[ImGuiCol_ChildBg] = Color(0x0D, 0x10, 0x1D);
-        colors[ImGuiCol_PopupBg] = Color(0x10, 0x14, 0x24);
-        colors[ImGuiCol_Border] = Color(0x25, 0x38, 0x4D);
+        colors[ImGuiCol_ChildBg] = Color(0x0E, 0x12, 0x1A);
+        colors[ImGuiCol_PopupBg] = Color(0x13, 0x17, 0x21);
+        colors[ImGuiCol_Border] = Color(0x28, 0x2D, 0x38);
         colors[ImGuiCol_BorderShadow] = WithAlpha(kSurface, 0.0f);
 
-        colors[ImGuiCol_FrameBg] = Color(0x12, 0x1A, 0x2B);
-        colors[ImGuiCol_FrameBgHovered] = Color(0x18, 0x2A, 0x40);
-        colors[ImGuiCol_FrameBgActive] = Color(0x20, 0x3B, 0x52);
-        colors[ImGuiCol_TitleBg] = Color(0x0C, 0x10, 0x1C);
-        colors[ImGuiCol_TitleBgActive] = Color(0x11, 0x1B, 0x30);
-        colors[ImGuiCol_TitleBgCollapsed] = Color(0x0B, 0x0E, 0x19);
-        colors[ImGuiCol_MenuBarBg] = Color(0x0B, 0x0F, 0x1B);
+        colors[ImGuiCol_FrameBg] = Color(0x15, 0x1A, 0x23);
+        colors[ImGuiCol_FrameBgHovered] = Color(0x1C, 0x22, 0x2D);
+        colors[ImGuiCol_FrameBgActive] = Color(0x24, 0x2C, 0x38);
+        colors[ImGuiCol_TitleBg] = Color(0x0D, 0x11, 0x19);
+        colors[ImGuiCol_TitleBgActive] = Color(0x17, 0x1B, 0x22);
+        colors[ImGuiCol_TitleBgCollapsed] = Color(0x11, 0x17, 0x21);
+        colors[ImGuiCol_MenuBarBg] = Color(0x0D, 0x11, 0x19);
 
-        colors[ImGuiCol_ScrollbarBg] = Color(0x07, 0x09, 0x10);
-        colors[ImGuiCol_ScrollbarGrab] = Color(0x27, 0x38, 0x53);
-        colors[ImGuiCol_ScrollbarGrabHovered] = Color(0x35, 0x58, 0x70);
+        colors[ImGuiCol_ScrollbarBg] = Color(0x08, 0x0A, 0x10);
+        colors[ImGuiCol_ScrollbarGrab] = Color(0x34, 0x41, 0x4E);
+        colors[ImGuiCol_ScrollbarGrabHovered] = Color(0x50, 0x61, 0x70);
         colors[ImGuiCol_ScrollbarGrabActive] = kAccent;
         colors[ImGuiCol_CheckMark] = kAccent;
-        colors[ImGuiCol_SliderGrab] = Color(0x00, 0xB8, 0xD4);
+        colors[ImGuiCol_SliderGrab] = Color(0x8C, 0xAC, 0xB9);
         colors[ImGuiCol_SliderGrabActive] = kAccent;
 
-        colors[ImGuiCol_Button] = Color(0x14, 0x24, 0x38);
-        colors[ImGuiCol_ButtonHovered] = Color(0x16, 0x40, 0x54);
-        colors[ImGuiCol_ButtonActive] = Color(0x00, 0x6C, 0x7A);
-        colors[ImGuiCol_Header] = Color(0x13, 0x24, 0x3C);
-        colors[ImGuiCol_HeaderHovered] = Color(0x1B, 0x3F, 0x55);
-        colors[ImGuiCol_HeaderActive] = Color(0x00, 0x5F, 0x6D);
-        colors[ImGuiCol_Separator] = Color(0x26, 0x3C, 0x55);
-        colors[ImGuiCol_SeparatorHovered] = WithAlpha(kAccent, 0.78f);
+        colors[ImGuiCol_Button] = Color(0x15, 0x1A, 0x23);
+        colors[ImGuiCol_ButtonHovered] = Color(0x23, 0x2A, 0x35);
+        colors[ImGuiCol_ButtonActive] = Color(0x2C, 0x37, 0x43);
+        colors[ImGuiCol_Header] = Color(0x1A, 0x20, 0x2A);
+        colors[ImGuiCol_HeaderHovered] = Color(0x25, 0x2E, 0x39);
+        colors[ImGuiCol_HeaderActive] = Color(0x31, 0x3B, 0x48);
+        colors[ImGuiCol_Separator] = Color(0x27, 0x2D, 0x37);
+        colors[ImGuiCol_SeparatorHovered] = WithAlpha(kAccent, 0.68f);
         colors[ImGuiCol_SeparatorActive] = kAccent;
 
         colors[ImGuiCol_ResizeGrip] = WithAlpha(kAccent, 0.28f);
         colors[ImGuiCol_ResizeGripHovered] = WithAlpha(kAccent, 0.67f);
         colors[ImGuiCol_ResizeGripActive] = kAccent;
-        colors[ImGuiCol_Tab] = Color(0x10, 0x18, 0x2A);
-        colors[ImGuiCol_TabHovered] = Color(0x1E, 0x43, 0x53);
-        colors[ImGuiCol_TabSelected] = Color(0x13, 0x3A, 0x4E);
+        colors[ImGuiCol_Tab] = Color(0x11, 0x16, 0x20);
+        colors[ImGuiCol_TabHovered] = Color(0x25, 0x2E, 0x39);
+        colors[ImGuiCol_TabSelected] = Color(0x28, 0x34, 0x40);
         colors[ImGuiCol_TabSelectedOverline] = kAccent;
-        colors[ImGuiCol_TabDimmed] = Color(0x0D, 0x12, 0x20);
-        colors[ImGuiCol_TabDimmedSelected] = Color(0x12, 0x2B, 0x3B);
+        colors[ImGuiCol_TabDimmed] = Color(0x0D, 0x11, 0x19);
+        colors[ImGuiCol_TabDimmedSelected] = Color(0x1A, 0x22, 0x2C);
         colors[ImGuiCol_TabDimmedSelectedOverline] = WithAlpha(kAccent, 0.52f);
 
         colors[ImGuiCol_PlotLines] = kAccent;
         colors[ImGuiCol_PlotLinesHovered] = kRemoved;
         colors[ImGuiCol_PlotHistogram] = kAdded;
         colors[ImGuiCol_PlotHistogramHovered] = kSkill;
-        colors[ImGuiCol_TableHeaderBg] = Color(0x12, 0x20, 0x35);
-        colors[ImGuiCol_TableBorderStrong] = Color(0x2B, 0x43, 0x5D);
-        colors[ImGuiCol_TableBorderLight] = Color(0x1B, 0x2B, 0x40);
+        colors[ImGuiCol_TableHeaderBg] = Color(0x15, 0x1C, 0x27);
+        colors[ImGuiCol_TableBorderStrong] = Color(0x32, 0x3B, 0x48);
+        colors[ImGuiCol_TableBorderLight] = Color(0x21, 0x28, 0x33);
         colors[ImGuiCol_TableRowBg] = WithAlpha(kSurface, 0.0f);
-        colors[ImGuiCol_TableRowBgAlt] = WithAlpha(Color(0x17, 0x23, 0x35), 0.40f);
+        colors[ImGuiCol_TableRowBgAlt] = WithAlpha(Color(0x1A, 0x21, 0x2C), 0.40f);
         colors[ImGuiCol_TextSelectedBg] = WithAlpha(kAccent, 0.30f);
         colors[ImGuiCol_DragDropTarget] = kAccent;
-        colors[ImGuiCol_NavHighlight] = kAccent;
-        colors[ImGuiCol_NavWindowingHighlight] = kInk;
+        colors[ImGuiCol_NavHighlight] = kFocusAccent;
+        colors[ImGuiCol_NavWindowingHighlight] = kFocusAccent;
         colors[ImGuiCol_NavWindowingDimBg] = WithAlpha(kSurface, 0.32f);
         colors[ImGuiCol_ModalWindowDimBg] = WithAlpha(kSurface, 0.72f);
 

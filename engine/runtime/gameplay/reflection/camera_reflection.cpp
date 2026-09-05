@@ -109,4 +109,9 @@ namespace kpengine::gameplay::reflection_detail
         #undef KP_REFLECT_TRY
         return {};
     }
+
+    void AppendCameraReflectionBindings(std::vector<GameplayReflectionBinding> &bindings)
+    {
+        AppendBinding<CameraComponent>(bindings, "kpengine.gameplay.CameraComponent");
+    }
 }

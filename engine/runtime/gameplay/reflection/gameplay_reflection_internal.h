@@ -3,8 +3,10 @@
 
 #include <cmath>
 #include <optional>
+#include <typeinfo>
 
 #include "gameplay/component/scene_component.h"
+#include "gameplay/reflection/gameplay_reflection.h"
 #include "reflection/entt/entt_reflection_registrar.h"
 
 namespace kpengine::gameplay::reflection_detail
@@ -14,6 +16,42 @@ namespace kpengine::gameplay::reflection_detail
     using reflection::ReflectionPropertyMetadata;
     using reflection::ReflectionResult;
     using reflection::ReflectionWidgetSemantic;
+
+    template <typename T>
+    bool MatchesComponent(const ActorComponent &component) noexcept
+    {
+        return typeid(component) == typeid(T);
+    }
+
+    template <typename T>
+    reflection::ReflectionObjectRef MakeConstObject(
+        reflection::ReflectionTypeId type, const ActorComponent &component) noexcept
+    {
+        return reflection::ReflectionObjectRef::ForConst(
+            type, dynamic_cast<const T *>(&component));
+    }
+
+    template <typename T>
+    reflection::ReflectionObjectRef MakeMutableObject(
+        reflection::ReflectionTypeId type, ActorComponent *component) noexcept
+    {
+        return reflection::ReflectionObjectRef::ForMutable(
+            type, dynamic_cast<T *>(component));
+    }
+
+    template <typename T>
+    GameplayReflectionBinding MakeBinding(const char *canonical_name)
+    {
+        return {canonical_name, &MatchesComponent<T>, &MakeConstObject<T>,
+                &MakeMutableObject<T>};
+    }
+
+    template <typename T>
+    void AppendBinding(std::vector<GameplayReflectionBinding> &bindings,
+                       const char *canonical_name)
+    {
+        bindings.push_back(MakeBinding<T>(canonical_name));
+    }
 
     constexpr ReflectionPropertyFlags kEditable =
         ReflectionPropertyFlags::Readable |
@@ -207,6 +245,9 @@ namespace kpengine::gameplay::reflection_detail
     ReflectionResult RegisterActorReflection(EnttReflectionRegistrar &registrar);
     ReflectionResult RegisterLightReflection(EnttReflectionRegistrar &registrar);
     ReflectionResult RegisterCameraReflection(EnttReflectionRegistrar &registrar);
+    void AppendActorReflectionBindings(std::vector<GameplayReflectionBinding> &bindings);
+    void AppendLightReflectionBindings(std::vector<GameplayReflectionBinding> &bindings);
+    void AppendCameraReflectionBindings(std::vector<GameplayReflectionBinding> &bindings);
 }
 
 #endif

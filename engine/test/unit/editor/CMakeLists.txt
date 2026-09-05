@@ -22,3 +22,22 @@ add_custom_command(TARGET EditorUILifecycleTest POST_BUILD
 
 include(GoogleTest)
 gtest_discover_tests(EditorUILifecycleTest)
+
+add_executable(ActorEditorModelUnitTest
+    actor_editor_model_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/actor/actor_editor_model.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/actor/actor_property_widget.cpp
+)
+
+target_include_directories(ActorEditorModelUnitTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+)
+
+target_link_libraries(ActorEditorModelUnitTest PRIVATE
+    KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(ActorEditorModelUnitTest)

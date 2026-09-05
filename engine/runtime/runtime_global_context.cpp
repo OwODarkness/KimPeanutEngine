@@ -14,6 +14,7 @@
 #include "gameplay/factory/static_mesh_actor_factory.h"
 #include "gameplay/controller/player_controller.h"
 #include "gameplay/reflection/gameplay_reflection.h"
+#include "gameplay/editor_bridge/gameplay_editor_bridge.h"
 #include "gameplay/world/gameplay_world.h"
 #include "reflection/entt/entt_reflection_registry.h"
 #include "reflection/reflection_system.h"
@@ -76,16 +77,41 @@ namespace kpengine
             {
                 reflection_system_ = std::make_unique<reflection::ReflectionSystem>();
             }
-            if (reflection_system_->GetState() == reflection::ReflectionSystem::State::Frozen)
+            if (reflection_system_->GetState() != reflection::ReflectionSystem::State::Frozen)
             {
-                return {true, {}};
+                const reflection::ReflectionResult result =
+                    reflection_system_->Initialize({gameplay::RegisterGameplayReflection});
+                if (!result)
+                {
+                    return {false, "Runtime reflection initialization failed: " + result.diagnostic};
+                }
             }
 
-            const reflection::ReflectionResult result =
-                reflection_system_->Initialize({gameplay::RegisterGameplayReflection});
-            if (!result)
+            if (!gameplay_world_)
             {
-                return {false, "Runtime reflection initialization failed: " + result.diagnostic};
+                return {false, "GameplayWorld is unavailable for the editor bridge"};
+            }
+
+            if (!gameplay_editor_bridge_)
+            {
+                const reflection::IReflectionCatalog *const catalog =
+                    reflection_system_->GetCatalog();
+                const reflection::IReflectionAccess *const access =
+                    reflection_system_->GetAccess();
+                if (catalog == nullptr || access == nullptr)
+                {
+                    return {false, "Reflection capabilities are unavailable for the editor bridge"};
+                }
+
+                auto bridge = std::make_unique<gameplay::GameplayEditorBridge>(
+                    *gameplay_world_, *catalog, *access);
+                const reflection::ReflectionResult bridge_result = bridge->Initialize();
+                if (!bridge_result)
+                {
+                    return {false, "Gameplay editor bridge initialization failed: " +
+                                       bridge_result.diagnostic};
+                }
+                gameplay_editor_bridge_ = std::move(bridge);
             }
             return {true, {}};
         }
@@ -295,9 +321,17 @@ namespace kpengine
                 return;
             }
 
+            if (gameplay_editor_bridge_)
+            {
+                gameplay_editor_bridge_->PumpEdits();
+            }
             gameplay_world_->SetLocalPlayerControllerInputEnabled(
                 scene_camera_control_captured_.load(std::memory_order_acquire));
             gameplay_world_->Tick(delta_time);
+            if (gameplay_editor_bridge_)
+            {
+                gameplay_editor_bridge_->PublishSnapshot();
+            }
         }
 
         void RuntimeContext::SetSceneCameraControlCaptured(bool captured)
@@ -316,6 +350,11 @@ namespace kpengine
             // the GLFW window/context they depend on.
             // Components enqueue source destruction through RenderSystem. The
             // gameplay World must therefore die before the sink and GPU teardown.
+            if (gameplay_editor_bridge_)
+            {
+                gameplay_editor_bridge_->Shutdown();
+                gameplay_editor_bridge_.reset();
+            }
             level_instance_.reset();
             gameplay_world_.reset();
             if (reflection_system_)
@@ -357,6 +396,16 @@ namespace kpengine
         const reflection::IReflectionCatalog *RuntimeContext::GetReflectionCatalog() const noexcept
         {
             return reflection_system_ != nullptr ? reflection_system_->GetCatalog() : nullptr;
+        }
+
+        gameplay::IGameplayEditorSnapshotSource *RuntimeContext::GetGameplayEditorSnapshotSource() noexcept
+        {
+            return gameplay_editor_bridge_.get();
+        }
+
+        gameplay::IGameplayEditorEditSink *RuntimeContext::GetGameplayEditorEditSink() noexcept
+        {
+            return gameplay_editor_bridge_.get();
         }
 
     }

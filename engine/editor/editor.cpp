@@ -61,6 +61,10 @@ namespace kpengine::editor
         init_info.input_system = global_editor_context.input_system_;
         init_info.window_system = global_editor_context.window_system_;
         init_info.camera_control_sink = &runtime::global_runtime_context;
+        init_info.reflection_catalog = runtime::global_runtime_context.GetReflectionCatalog();
+        init_info.actor_snapshot_source =
+            runtime::global_runtime_context.GetGameplayEditorSnapshotSource();
+        init_info.actor_edit_sink = runtime::global_runtime_context.GetGameplayEditorEditSink();
         init_info.startup_snapshot_source = [engine = engine_]
         {
             return engine != nullptr ? engine->GetStartupSnapshot()
@@ -73,6 +77,14 @@ namespace kpengine::editor
     {
         if (initialized_)
         {
+            // Reflection and the Gameplay editor bridge are initialized by the
+            // game thread after render presentation starts. Refresh these
+            // borrowed services at the startup commit barrier, immediately
+            // before the render thread builds the workspace tools.
+            editor_ui_->SetActorInspectionServices(
+                runtime::global_runtime_context.GetReflectionCatalog(),
+                runtime::global_runtime_context.GetGameplayEditorSnapshotSource(),
+                runtime::global_runtime_context.GetGameplayEditorEditSink());
             editor_ui_->PromoteToWorkspace();
         }
     }

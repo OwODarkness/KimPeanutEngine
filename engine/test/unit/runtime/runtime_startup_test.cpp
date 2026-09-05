@@ -14,6 +14,7 @@
 #include "level/level_instance.h"
 #include "runtime_global_context.h"
 #include "render/render_system.h"
+#include "gameplay/editor_bridge/i_gameplay_editor_bridge.h"
 #include "reflection/i_reflection_catalog.h"
 #include "script/lua/lua_vm.h"
 
@@ -117,12 +118,16 @@ TEST(RuntimeStartupTest, InitializesAndTearsDownGameplayReflectionBeforePresenta
 
     ASSERT_TRUE(initialized) << initialized.diagnostic;
     ASSERT_NE(context.GetReflectionCatalog(), nullptr);
+    ASSERT_NE(context.GetGameplayEditorSnapshotSource(), nullptr);
+    ASSERT_NE(context.GetGameplayEditorEditSink(), nullptr);
     EXPECT_NE(context.GetReflectionCatalog()->FindType(
                   "kpengine.gameplay.CameraComponent"),
               nullptr);
 
     context.Clear();
     EXPECT_EQ(context.GetReflectionCatalog(), nullptr);
+    EXPECT_EQ(context.GetGameplayEditorSnapshotSource(), nullptr);
+    EXPECT_EQ(context.GetGameplayEditorEditSink(), nullptr);
 }
 
 TEST(RuntimeStartupTest, RejectsCameraFreeLevelAndUnloadsTheAttempt)

@@ -1,5 +1,6 @@
 add_executable(GameplayUnitTest
     gameplay_world_test.cpp
+    actor_component_identity_test.cpp
 )
 
 target_include_directories(GameplayUnitTest PRIVATE

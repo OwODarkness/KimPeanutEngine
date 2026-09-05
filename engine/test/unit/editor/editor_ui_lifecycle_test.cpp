@@ -118,12 +118,13 @@ TEST(EditorThemeTest, AppliesCodexSurfaceAccentAndTypography)
     kpengine::editor::ApplyCodexTheme();
 
     const ImGuiStyle &style = ImGui::GetStyle();
-    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_WindowBg].x, 0x09 / 255.0f);
-    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_WindowBg].y, 0x0B / 255.0f);
-    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_WindowBg].z, 0x14 / 255.0f);
-    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_Text].x, 0xD7 / 255.0f);
-    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_CheckMark].y, 0xE5 / 255.0f);
-    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_CheckMark].z, 1.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_WindowBg].x, 0x0B / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_WindowBg].y, 0x0E / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_WindowBg].z, 0x16 / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_Text].x, 0xD4 / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_CheckMark].x, 0xA2 / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_CheckMark].y, 0xBF / 255.0f);
+    EXPECT_FLOAT_EQ(style.Colors[ImGuiCol_CheckMark].z, 0xCC / 255.0f);
     EXPECT_FLOAT_EQ(style.WindowRounding, 6.0f);
     EXPECT_FLOAT_EQ(style.FrameRounding, 4.0f);
 

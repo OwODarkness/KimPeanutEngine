@@ -26,3 +26,4 @@ target_include_directories(Gameplay PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
 target_link_libraries(Gameplay PUBLIC Core Render Input)
 
 add_subdirectory(reflection)
+add_subdirectory(editor_bridge)

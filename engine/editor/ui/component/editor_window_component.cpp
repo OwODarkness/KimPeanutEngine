@@ -1,6 +1,10 @@
 #include "editor/ui/component/editor_window_component.h"
 namespace kpengine::editor
 {
+    namespace
+    {
+        constexpr ImVec4 kFocusedTitleText(1.0f, 0.58f, 0.18f, 1.0f);
+    }
 
     EditorWindowComponent::EditorWindowComponent(const std::string &title, EditorWindowConfig config)
         : title_(title), config_(config), locked_(config.locked) {}
@@ -25,9 +29,22 @@ namespace kpengine::editor
             {
                 flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
             }
+
+            // ImGui renders the native title before Begin() returns. Use the
+            // previous frame's focus state so only the title receives the
+            // focus accent; the content keeps the normal theme text color.
+            if (focused_last_frame_)
+            {
+                ImGui::PushStyleColor(ImGuiCol_Text, kFocusedTitleText);
+            }
             ImGui::Begin(title_.c_str(), &is_open_, flags);
+            if (focused_last_frame_)
+            {
+                ImGui::PopStyleColor();
+            }
             RenderWindowChrome();
             RenderContent();
+            focused_last_frame_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
             ImGui::End();
         }
     }
@@ -61,6 +78,13 @@ namespace kpengine::editor
 
         // Padlock: filled body when locked, hollow body + lifted shackle when unlocked.
         ImDrawList *draw = ImGui::GetWindowDrawList();
+        const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        const ImU32 focus_color = ImGui::GetColorU32(
+            focused ? ImGuiCol_NavHighlight : ImGuiCol_Border);
+        draw->AddRectFilled(
+            ImVec2(win_pos.x, win_pos.y),
+            ImVec2(win_pos.x + ImGui::GetWindowWidth(), win_pos.y + 2.0f),
+            focus_color);
         const ImU32 col = ImGui::GetColorU32(ImGuiCol_Text);
         const ImVec2 c(btn_pos.x + btn_size.x * 0.5f, btn_pos.y + btn_size.y * 0.58f);
         const float r = btn_size.x * 0.30f;

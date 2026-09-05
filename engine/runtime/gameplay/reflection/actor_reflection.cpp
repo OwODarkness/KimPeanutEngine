@@ -39,4 +39,10 @@ namespace kpengine::gameplay::reflection_detail
         #undef KP_REFLECT_TRY
         return {};
     }
+
+    void AppendActorReflectionBindings(std::vector<GameplayReflectionBinding> &bindings)
+    {
+        AppendBinding<SceneComponent>(bindings, "kpengine.gameplay.SceneComponent");
+        AppendBinding<MeshComponent>(bindings, "kpengine.gameplay.MeshComponent");
+    }
 }

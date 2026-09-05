@@ -176,4 +176,12 @@ namespace kpengine::gameplay::reflection_detail
         if (!result) return result;
         return RegisterLightProperties<SpotLightComponent, true, true>(spot);
     }
+
+    void AppendLightReflectionBindings(std::vector<GameplayReflectionBinding> &bindings)
+    {
+        AppendBinding<DirectionalLightComponent>(
+            bindings, "kpengine.gameplay.DirectionalLightComponent");
+        AppendBinding<PointLightComponent>(bindings, "kpengine.gameplay.PointLightComponent");
+        AppendBinding<SpotLightComponent>(bindings, "kpengine.gameplay.SpotLightComponent");
+    }
 }

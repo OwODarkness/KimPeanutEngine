@@ -15,6 +15,7 @@ add_subdirectory(platform)
 add_subdirectory(log)
 add_subdirectory(settings)
 add_subdirectory(profile)
+add_subdirectory(actor)
 
 target_include_directories(EditorLib PUBLIC
     ${CMAKE_SOURCE_DIR}/engine
@@ -25,4 +26,4 @@ target_include_directories(EditorUILib PUBLIC
 )
 
 target_link_libraries(EditorLib PRIVATE RuntimeLib EditorUILib)
-target_link_libraries(EditorUILib PRIVATE RuntimeLib RuntimeCommand Input KP::ImGui KP::Glad KP::Vulkan KP::NlohmannJson)
+target_link_libraries(EditorUILib PRIVATE RuntimeLib RuntimeCommand Input KP::ImGui KP::Glfw KP::Glad KP::Vulkan KP::NlohmannJson)

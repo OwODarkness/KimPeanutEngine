@@ -22,4 +22,13 @@ namespace kpengine::gameplay
 
         return reflection_detail::RegisterCameraReflection(registrar);
     }
+
+    std::vector<GameplayReflectionBinding> GetGameplayReflectionBindings()
+    {
+        std::vector<GameplayReflectionBinding> bindings;
+        reflection_detail::AppendActorReflectionBindings(bindings);
+        reflection_detail::AppendLightReflectionBindings(bindings);
+        reflection_detail::AppendCameraReflectionBindings(bindings);
+        return bindings;
+    }
 }

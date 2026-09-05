@@ -137,6 +137,26 @@ Editor-wide preferences live in `config/settings.json` (beside `bootstrap.json`)
 ### Base + composition
 `EditorUIComponent` ([editor_ui_component.h](../../engine/editor/ui/component/editor_ui_component.h)) is a single virtual `Render()`. Components hold `shared_ptr<EditorUIComponent>` children (`AddComponent`), so the UI is a **tree** drawn depth-first each frame — the ImGui immediate-mode idiom. Windows and containers add children; leaves draw one widget.
 
+### Reflection actor tools
+
+The reflection actor tools live under `engine/editor/actor/` and are created
+only when Runtime promotes the frozen reflection catalog and both RF3 bridge
+interfaces. `ActorEditorModel` is owned by `EditorUI` and runs on the render
+thread: it loads one immutable `GameplayEditorSnapshot` per frame, owns the
+single generational `ActorHandle` selection, correlates bounded pending edit
+requests, and retains only short-lived copied diagnostics. `EditorWorldOutlinerComponent`
+and `EditorActorInspectorComponent` borrow that model, so a row click and the
+Inspector resolve the same snapshot in the same frame.
+
+The Inspector's widget policy is pure Editor code. It maps RF2 scalar value
+types, flags, enum metadata, ranges, and read failures to checkbox, enum,
+integer, floating-point, string, or disabled presentation. Writable controls
+submit `PropertyEditCommand` values through RF3; they never hold a Gameplay
+pointer, `ReflectionObjectRef`, `IReflectionAccess`, or EnTT type and never
+optimistically modify snapshot values. The default layout reserves a left
+Outliner/Inspector column, a central viewport, the existing Debug Viewer, and
+the bottom output log without overlap.
+
 ### Windows and containers
 - **`EditorWindowComponent`** — the top-level shell: an ImGui window (`Begin(title_, &is_open_)` → `RenderContent()` → `End()`) whose geometry is an `EditorWindowConfig` of viewport fractions (`pos_x/pos_y/width/height` ratios + `locked`). Unlocked (`locked=false`) applies the geometry once (`ImGuiCond_FirstUseEver`), so the window moves/resizes freely; locked (`locked=true`, default) pins it to the viewport every frame (`ImGuiCond_Always` + `NoMove`/`NoResize`), so it follows the OS window but can't be moved/resized. Each window draws a lock/unlock toggle in its title bar (next to the close button); `SetLocked`/`IsLocked` are the programmatic seam. Tracks `pos_x/pos_y/width_/height_` from ImGui each frame; subclasses override `RenderContent()` to draw panel-specific content and children. Most editor panels are this subclass.
 - **`EditorContainerComponent`** — a bare child container.

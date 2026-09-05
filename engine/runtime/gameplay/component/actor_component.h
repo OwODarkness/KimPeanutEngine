@@ -1,6 +1,8 @@
 #ifndef KPENGINE_RUNTIME_GAMEPLAY_COMPONENT_ACTOR_COMPONENT_H
 #define KPENGINE_RUNTIME_GAMEPLAY_COMPONENT_ACTOR_COMPONENT_H
 
+#include "gameplay/actor/actor_types.h"
+
 namespace kpengine::gameplay
 {
     class Actor;
@@ -11,6 +13,7 @@ namespace kpengine::gameplay
         virtual ~ActorComponent() = default;
 
         Actor *GetOwner() const { return owner_; }
+        ComponentInstanceId GetInstanceId() const noexcept { return instance_id_; }
 
     protected:
         virtual void OnInitialize() {}
@@ -22,12 +25,14 @@ namespace kpengine::gameplay
         friend class Actor;
 
         void SetOwner(Actor *owner) { owner_ = owner; }
+        void SetInstanceId(ComponentInstanceId instance_id) noexcept { instance_id_ = instance_id; }
         void Initialize() { OnInitialize(); }
         void Activate() { OnActivate(); }
         void Deactivate() { OnDeactivate(); }
         void Tick(float delta_time) { OnTick(delta_time); }
 
         Actor *owner_ = nullptr;
+        ComponentInstanceId instance_id_;
     };
 }
 

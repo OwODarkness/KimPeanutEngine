@@ -39,6 +39,7 @@ namespace kpengine{
             std::vector<std::shared_ptr<EditorUIComponent>> components_;
             bool is_open_ = true;
             bool locked_;
+            bool focused_last_frame_ = false;
         public:
             int width_{};
             int height_{};

@@ -19,6 +19,9 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/profile/editor_builtin_metrics.h"
 #include "editor/profile/editor_profile_bar.h"
+#include "editor/actor/actor_editor_model.h"
+#include "editor/actor/editor_world_outliner_component.h"
+#include "editor/actor/editor_actor_inspector_component.h"
 #include "platform/memory_stats_sampler.h"
 #include "runtime/engine.h"
 #include "runtime/render/render_system.h"
@@ -92,6 +95,7 @@ namespace kpengine::editor
 
             ImGuiIO &io = ImGui::GetIO();
             io.ConfigWindowsMoveFromTitleBarOnly = true;
+            io.ConfigDragClickToInputText = true;
             io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
             BuildLoadingTree();
@@ -220,7 +224,8 @@ namespace kpengine::editor
         runtime::ISceneCameraControlSink *camera_control_sink)
     {
         EditorWindowConfig config;
-        config.width_ratio = 0.8f;
+        config.pos_x_ratio = 0.22f;
+        config.width_ratio = 0.58f;
         config.height_ratio = 0.7f;
         std::unique_ptr<EditorWindowComponent> window_component =
             std::make_unique<EditorWindowComponent>("Viewport", config);
@@ -234,6 +239,35 @@ namespace kpengine::editor
     {
         components_.push_back(std::make_unique<EditorDebugViewerComponent>(
             render_system, renderer_.get()));
+    }
+
+    void EditorUI::BuildActorTools()
+    {
+        const bool any_dependency = init_info_.reflection_catalog != nullptr ||
+                                     init_info_.actor_snapshot_source != nullptr ||
+                                     init_info_.actor_edit_sink != nullptr;
+        const bool all_dependencies = init_info_.reflection_catalog != nullptr &&
+                                      init_info_.actor_snapshot_source != nullptr &&
+                                      init_info_.actor_edit_sink != nullptr;
+        if (!any_dependency)
+        {
+            KP_LOG("LogEditorUI", LOG_LEVEL_WARNING,
+                   "actor inspection unavailable: Runtime reflection bridge is not published");
+            return;
+        }
+        if (!all_dependencies)
+        {
+            throw std::runtime_error(
+                "actor inspection requires the reflection catalog, snapshot source, and edit sink");
+        }
+
+        actor_model_ = std::make_unique<ActorEditorModel>(
+            init_info_.reflection_catalog, init_info_.actor_snapshot_source,
+            init_info_.actor_edit_sink);
+        components_.push_back(std::make_unique<EditorWorldOutlinerComponent>(*actor_model_));
+        components_.push_back(std::make_unique<EditorActorInspectorComponent>(
+            *actor_model_, init_info_.window_system, init_info_.input_system,
+            init_info_.camera_control_sink));
     }
 
     void EditorUI::BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors)
@@ -323,6 +357,7 @@ namespace kpengine::editor
             // Scene-dependent tools are deliberately created only after Runtime
             // promotes the prepared catalog to the render thread.
             BuildMenuBar(init_info_.render_system);
+            BuildActorTools();
             BuildViewportWindow(init_info_.render_system, init_info_.window_system,
                                 init_info_.input_system, init_info_.camera_control_sink);
             BuildDebugViewerWindow(init_info_.render_system);
@@ -336,9 +371,25 @@ namespace kpengine::editor
         catch (...)
         {
             components_.clear();
+            actor_model_.reset();
             screenshot_service_.reset();
             throw;
         }
+    }
+
+    void EditorUI::SetActorInspectionServices(
+        const reflection::IReflectionCatalog *reflection_catalog,
+        gameplay::IGameplayEditorSnapshotSource *actor_snapshot_source,
+        gameplay::IGameplayEditorEditSink *actor_edit_sink)
+    {
+        if (workspace_promoted_)
+        {
+            throw std::runtime_error(
+                "actor inspection services cannot change after workspace promotion");
+        }
+        init_info_.reflection_catalog = reflection_catalog;
+        init_info_.actor_snapshot_source = actor_snapshot_source;
+        init_info_.actor_edit_sink = actor_edit_sink;
     }
 
     bool EditorUI::RenderLoading()
@@ -360,6 +411,7 @@ namespace kpengine::editor
         // detached while both services are still alive.
         components_.clear();
         loading_components_.clear();
+        actor_model_.reset();
         workspace_promoted_ = false;
         init_info_ = {};
         log_colors_ = {};
@@ -416,6 +468,10 @@ namespace kpengine::editor
             return false;
         }
         BeginDraw();
+        if (workspace_promoted_ && actor_model_)
+        {
+            actor_model_->BeginFrame();
+        }
         const auto &active_components = workspace_promoted_ ? components_ : loading_components_;
         for (const auto &component : active_components)
         {

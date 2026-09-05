@@ -1,6 +1,6 @@
 # Reflection Module Plans
 
-**Status: proposed.** This page defines the Runtime Reflection architecture and
+**Status: RF4 implementation landed; runtime/visual smoke pending.** This page defines the Runtime Reflection architecture and
 links its implementation stages. Current work belongs in [TODO.md](TODO.md);
 execution evidence belongs in `.spec/journal/`.
 
@@ -157,10 +157,11 @@ an inspector. The current Actor/component ownership remains unchanged.
   sets in a Gameplay-owned satellite target, compose the frozen catalog into
   Runtime, prove owner-thread side effects without Editor, then leave a sealed
   module-contributor collection as the later extensibility seam.
-- **RF3 — Gameplay editor bridge:** add component-instance identity, copied
-  Actor snapshots, queued edit commands, stale-target rejection, and
-  game-thread application.
-- **RF4 — World Outliner and Actor Inspector:** consume snapshots, render
+- [RF3 — Gameplay editor bridge](.plan/RF3.md): add component-instance
+  identity, copied Actor snapshots, bounded queued edit commands, deterministic
+  results, stale-target rejection, and game-thread application.
+- [RF4 — World Outliner and Actor Inspector](.plan/RF4.md): share one
+  render-thread Actor model between both windows, consume snapshots, render
   metadata-selected widgets, preserve selection by handles, and display edit
   diagnostics without an EnTT or Gameplay pointer in Editor.
 - **RF5 — authoring extensions:** design undo/redo transactions, multi-select,
