@@ -12,7 +12,7 @@ target_include_directories(ProfileTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine
 )
 
-target_link_libraries(ProfileTest PRIVATE googletest)
+target_link_libraries(ProfileTest PRIVATE KP::GoogleTest)
 
 include(GoogleTest)
 gtest_discover_tests(ProfileTest)

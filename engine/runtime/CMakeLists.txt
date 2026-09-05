@@ -28,4 +28,4 @@ target_include_directories(RuntimeLib PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(RuntimeLib PUBLIC Core Graphics Script PRIVATE ThirdPartyLib EditorLib Window Input Render Gameplay RuntimeLevel Bootstrap Platform ImageIO RuntimeScreenshot RuntimeCommand RuntimeScreenshotCommand)
+target_link_libraries(RuntimeLib PUBLIC Core Graphics Script PRIVATE EditorLib Window Input Render Gameplay RuntimeLevel Bootstrap Platform ImageIO RuntimeScreenshot RuntimeCommand RuntimeScreenshotCommand)

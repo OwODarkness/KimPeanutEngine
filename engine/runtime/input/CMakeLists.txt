@@ -8,4 +8,4 @@ add_library(Input STATIC
 
 target_include_directories(Input PUBLIC ${CMAKE_CURRENT_SOURCE_DIR})
 
-target_link_libraries(Input PUBLIC Core PRIVATE glfw glad)
+target_link_libraries(Input PUBLIC Core PRIVATE KP::Glfw KP::Glad)

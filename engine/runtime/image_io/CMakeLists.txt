@@ -9,4 +9,4 @@ target_include_directories(ImageIO PUBLIC
 
 # ImageIO owns its codec dependency; Asset and Runtime consume only its CPU
 # image contract and do not include stb headers directly.
-target_link_libraries(ImageIO PUBLIC Base PRIVATE stb_image)
+target_link_libraries(ImageIO PUBLIC Base PRIVATE KP::StbImage)

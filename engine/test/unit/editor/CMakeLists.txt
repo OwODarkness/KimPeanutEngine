@@ -10,8 +10,8 @@ target_include_directories(EditorUILifecycleTest PRIVATE
 
 target_link_libraries(EditorUILifecycleTest PRIVATE
     EditorUILib
-    imgui
-    googletest
+    KP::ImGui
+    KP::GoogleTest
 )
 
 add_custom_command(TARGET EditorUILifecycleTest POST_BUILD

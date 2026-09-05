@@ -10,7 +10,7 @@ target_link_libraries(
     Script
     RuntimeCommand
     RuntimeScreenshotCommand
-    googletest
+    KP::GoogleTest
 )
 
 # Static-only deps (lua53.lib, gtest) — no runtime DLLs to copy.

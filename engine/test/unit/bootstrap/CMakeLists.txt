@@ -9,7 +9,7 @@ target_link_libraries(
     Bootstrap
     Asset
     Config
-    googletest
+    KP::GoogleTest
 )
 
 include(GoogleTest)

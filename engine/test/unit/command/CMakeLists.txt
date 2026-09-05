@@ -5,7 +5,7 @@ add_executable(CommandRegistryTest
     command_local_transport_test.cpp
 )
 
-target_link_libraries(CommandRegistryTest PRIVATE RuntimeCommand googletest)
+target_link_libraries(CommandRegistryTest PRIVATE RuntimeCommand KP::GoogleTest)
 
 include(GoogleTest)
 gtest_discover_tests(CommandRegistryTest)

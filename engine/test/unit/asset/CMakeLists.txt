@@ -7,7 +7,7 @@ add_executable(
     shader_program_variant_test.cpp
 )
 
-target_link_libraries(AssetUnitTest PRIVATE Asset Config googletest)
+target_link_libraries(AssetUnitTest PRIVATE Asset Config KP::GoogleTest)
 
 # AssetManager constructs the current Assimp model loader even though these
 # material-only tests never load a model. Copy its runtime dependency so CMake's

@@ -72,7 +72,7 @@ target_include_directories(Graphics
 
 target_link_libraries(Graphics
     PUBLIC Core
-    PRIVATE Data Asset glfw glad VulkanSDK
+    PRIVATE Data Asset KP::Glfw KP::Glad KP::Vulkan
 )
 
 target_compile_definitions(Graphics PRIVATE

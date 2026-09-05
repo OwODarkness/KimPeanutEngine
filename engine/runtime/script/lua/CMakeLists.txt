@@ -10,8 +10,8 @@ target_include_directories(ScriptLua PUBLIC
 
 target_link_libraries(ScriptLua
 PUBLIC
-    lua
-    sol2
+    KP::Lua
+    KP::Sol2
 PRIVATE
     Log
 )

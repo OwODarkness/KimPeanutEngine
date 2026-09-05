@@ -14,4 +14,4 @@ ${CMAKE_CURRENT_SOURCE_DIR}/..
 ${CMAKE_CURRENT_SOURCE_DIR}/../..
 
 )
-target_link_libraries(Asset PUBLIC Data Base PRIVATE Config ImageIO Log magic_enum nlohmann assimp miniaudio)
+target_link_libraries(Asset PUBLIC Data Base PRIVATE Config ImageIO Log KP::MagicEnum KP::NlohmannJson KP::Assimp KP::Miniaudio)

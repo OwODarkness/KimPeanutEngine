@@ -14,8 +14,8 @@ target_include_directories(GraphicsContractTest PRIVATE
 )
 
 target_link_libraries(GraphicsContractTest PRIVATE
-    googletest
-    VulkanSDK
+    KP::GoogleTest
+    KP::Vulkan
 )
 
 include(GoogleTest)

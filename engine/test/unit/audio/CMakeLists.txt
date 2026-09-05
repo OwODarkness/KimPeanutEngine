@@ -9,7 +9,7 @@ target_link_libraries(
     PRIVATE
     Asset
     Audio
-    googletest
+    KP::GoogleTest
 )
 
 copy_runtime_dependencies(AudioUnitTest)

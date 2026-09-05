@@ -12,4 +12,4 @@ target_include_directories(Audio PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_link_libraries(Audio PRIVATE Data Log miniaudio Math) 
+target_link_libraries(Audio PRIVATE Data Log KP::Miniaudio Math)

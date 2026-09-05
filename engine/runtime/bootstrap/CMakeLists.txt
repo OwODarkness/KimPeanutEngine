@@ -11,4 +11,4 @@ target_include_directories(Bootstrap PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
 )
 
-target_link_libraries(Bootstrap PRIVATE Config Asset Log nlohmann)
+target_link_libraries(Bootstrap PRIVATE Config Asset Log KP::NlohmannJson)

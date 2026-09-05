@@ -6,7 +6,7 @@ target_include_directories(RuntimeScreenshotServiceTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
 )
 
-target_link_libraries(RuntimeScreenshotServiceTest PRIVATE RuntimeScreenshot googletest)
+target_link_libraries(RuntimeScreenshotServiceTest PRIVATE RuntimeScreenshot KP::GoogleTest)
 
 include(GoogleTest)
 gtest_discover_tests(RuntimeScreenshotServiceTest)
@@ -19,7 +19,7 @@ target_include_directories(ScreenshotCommandProviderTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
 )
 
-target_link_libraries(ScreenshotCommandProviderTest PRIVATE RuntimeScreenshotCommand googletest)
+target_link_libraries(ScreenshotCommandProviderTest PRIVATE RuntimeScreenshotCommand KP::GoogleTest)
 
 include(GoogleTest)
 gtest_discover_tests(ScreenshotCommandProviderTest)
@@ -32,7 +32,7 @@ target_include_directories(RuntimeStartupTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
 )
 
-target_link_libraries(RuntimeStartupTest PRIVATE RuntimeLib googletest)
+target_link_libraries(RuntimeStartupTest PRIVATE RuntimeLib KP::GoogleTest)
 
 # RuntimeLib contains AssetManager's Assimp loader even though these tests use
 # synthetic LevelResources. Keep test discovery runnable on Windows.
@@ -53,7 +53,7 @@ target_include_directories(RenderAssetPreparerTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
 )
 
-target_link_libraries(RenderAssetPreparerTest PRIVATE RuntimeLib googletest)
+target_link_libraries(RenderAssetPreparerTest PRIVATE RuntimeLib KP::GoogleTest)
 
 add_custom_command(TARGET RenderAssetPreparerTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -72,7 +72,7 @@ target_include_directories(RuntimeLaunchOptionsTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
 )
 
-target_link_libraries(RuntimeLaunchOptionsTest PRIVATE RuntimeLib googletest)
+target_link_libraries(RuntimeLaunchOptionsTest PRIVATE RuntimeLib KP::GoogleTest)
 
 add_custom_command(TARGET RuntimeLaunchOptionsTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

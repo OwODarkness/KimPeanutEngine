@@ -33,10 +33,7 @@ endif()
 
 target_link_libraries(KimPeanutEngine 
     EngineLib
-    ThirdPartyLib
 )
-
-copy_thirdparty_dlls(KimPeanutEngine)
 
 #TEST
 add_subdirectory(engine/test)

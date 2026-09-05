@@ -6,7 +6,7 @@ target_include_directories(RuntimeLevelTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
 )
 
-target_link_libraries(RuntimeLevelTest PRIVATE RuntimeLevel googletest)
+target_link_libraries(RuntimeLevelTest PRIVATE RuntimeLevel KP::GoogleTest)
 
 # AssetManager constructs the Assimp loader during process startup. Keep the
 # focused test executable self-contained so GoogleTest discovery works on

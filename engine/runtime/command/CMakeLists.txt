@@ -11,7 +11,7 @@ target_include_directories(RuntimeCommand PUBLIC
 
 target_link_libraries(RuntimeCommand
     PUBLIC Core
-    PRIVATE nlohmann ws2_32
+    PRIVATE KP::NlohmannJson ws2_32
 )
 
 add_executable(KimPeanutCommand
