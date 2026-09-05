@@ -92,6 +92,7 @@ target_link_libraries(miniaudio INTERFACE
 )
 
 add_subdirectory(assimp)
+add_subdirectory(entt)
 
 #nlohmann
 add_library(nlohmann INTERFACE)

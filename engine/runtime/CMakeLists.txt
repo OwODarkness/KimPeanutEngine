@@ -1,5 +1,6 @@
 
 add_subdirectory(core)
+add_subdirectory(reflection)
 add_subdirectory(platform)
 add_subdirectory(window)
 add_subdirectory(graphics)
