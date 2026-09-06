@@ -31,6 +31,15 @@ namespace kpengine::gameplay
         }
     }
 
+    void MeshComponent::SetSelected(bool selected)
+    {
+        if (selected_ != selected)
+        {
+            selected_ = selected;
+            MarkSourceDirty();
+        }
+    }
+
     void MeshComponent::OnActivate()
     {
         SceneComponent::OnActivate();
@@ -85,6 +94,7 @@ namespace kpengine::gameplay
         source.world_bounds = GetWorldBounds();
         source.flags.visible = IsVisible();
         source.flags.casts_shadow = CastsShadow();
+        source.flags.selected = selected_;
         source.lod_bias = lod_bias_;
         return source;
     }

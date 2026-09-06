@@ -43,6 +43,12 @@ or audit that dependency confidently. Do not infer a version from a filename.
 ## Current build notes
 
 - The engine baseline is C++17.
+- The checked-in binary packages are MSVC x64 artifacts (`vc143`, MSVC CRT,
+  and MSVC-generated `.lib` files). The supported Windows configuration is
+  therefore the Visual Studio 17 2022 generator, for example
+  `cmake -S . -B build -G "Visual Studio 17 2022"`. A MinGW build cannot link
+  these packages; it must first replace or rebuild every imported binary for
+  MinGW, not just change the linker command.
 - EnTT 3.16.0 is used through `EnTT::EnTT`; the Reflection module owns the
   adapter and does not expose EnTT types through its public contracts.
 - Prebuilt libraries are represented by per-dependency imported targets, while

@@ -320,6 +320,26 @@ namespace kpengine::render
                                    : graphics::RenderTargetView{};
     }
 
+    std::optional<spatial::Ray> RenderSystem::BuildSceneRay(
+        float ndc_x, float ndc_y, float viewport_aspect) const
+    {
+        if (!deferred_renderer_ || viewport_aspect <= 0.0f)
+        {
+            return std::nullopt;
+        }
+        return deferred_renderer_->BuildSceneRay(ndc_x, ndc_y, viewport_aspect);
+    }
+
+    std::optional<Vector3f> RenderSystem::ProjectScenePoint(
+        const Vector3f &world_point, float viewport_aspect) const
+    {
+        if (!deferred_renderer_)
+        {
+            return std::nullopt;
+        }
+        return deferred_renderer_->ProjectScenePoint(world_point, viewport_aspect);
+    }
+
     void RenderSystem::SetDebugView(CaptureView view)
     {
         if (view == CaptureView::EngineWindow)

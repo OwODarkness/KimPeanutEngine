@@ -1,7 +1,10 @@
 #include "gameplay/world/gameplay_world.h"
 
 #include "gameplay/actor/actor.h"
+#include "gameplay/component/mesh_component.h"
 #include "gameplay/controller/player_controller.h"
+
+#include "spatial/ray.h"
 
 namespace kpengine::gameplay
 {
@@ -53,6 +56,60 @@ namespace kpengine::gameplay
                        it->second->GetState() != ActorState::Destroyed
                    ? it->second.get()
                    : nullptr;
+    }
+
+    std::optional<ActorHandle> GameplayWorld::PickActor(const spatial::Ray &ray) const
+    {
+        std::optional<ActorHandle> closest_actor;
+        std::optional<float> closest_distance;
+        for (const auto &[id, actor] : actors_)
+        {
+            (void)id;
+            if (actor == nullptr || actor->GetState() != ActorState::Active)
+            {
+                continue;
+            }
+
+            const MeshComponent *const mesh = actor->FindComponent<MeshComponent>();
+            if (mesh == nullptr || !mesh->IsVisible())
+            {
+                continue;
+            }
+
+            const std::optional<float> distance =
+                spatial::IntersectRayAABB(ray, mesh->GetWorldBounds());
+            if (distance.has_value() &&
+                (!closest_distance.has_value() || *distance < *closest_distance))
+            {
+                closest_distance = distance;
+                closest_actor = actor->GetHandle();
+            }
+        }
+        return closest_actor;
+    }
+
+    void GameplayWorld::SetSelectedActor(std::optional<ActorHandle> actor)
+    {
+        const Actor *const selected = actor.has_value() ? FindActor(*actor) : nullptr;
+        const std::optional<ActorHandle> normalized_selection =
+            selected != nullptr && selected->GetState() == ActorState::Active ? actor
+                                                                                : std::nullopt;
+        selected_actor_ = normalized_selection;
+
+        for (auto &[id, candidate] : actors_)
+        {
+            (void)id;
+            if (candidate == nullptr)
+            {
+                continue;
+            }
+            MeshComponent *const mesh = candidate->FindComponent<MeshComponent>();
+            if (mesh != nullptr)
+            {
+                mesh->SetSelected(normalized_selection.has_value() &&
+                                  candidate->GetHandle() == *normalized_selection);
+            }
+        }
     }
 
     bool GameplayWorld::InitializeActor(ActorHandle handle)
@@ -127,6 +184,7 @@ namespace kpengine::gameplay
 
     void GameplayWorld::Clear()
     {
+        selected_actor_.reset();
         local_player_controller_.reset();
         for (auto &[id, actor] : actors_)
         {

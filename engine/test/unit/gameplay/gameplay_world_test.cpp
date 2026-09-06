@@ -22,6 +22,7 @@
 #include "input/input_context.h"
 #include "input/input_key.h"
 #include "input/input_system.h"
+#include "spatial/ray.h"
 
 namespace
 {
@@ -370,6 +371,66 @@ TEST(GameplayWorldTest, MeshComponentPublishesCoalescedSourceLifecycle)
     ASSERT_EQ(source_sink.destroys.size(), 1U);
     EXPECT_EQ(source_sink.destroys.front(), source_sink.updates.front().handle);
     EXPECT_FALSE(mesh->GetSourceHandle().IsValid());
+}
+
+TEST(GameplayWorldTest, PicksNearestVisibleMeshActorByWorldBounds)
+{
+    kpengine::gameplay::GameplayWorld world{};
+    const kpengine::gameplay::ActorHandle far_handle = world.CreateActor();
+    const kpengine::gameplay::ActorHandle near_handle = world.CreateActor();
+
+    auto *const far_actor = world.FindActor(far_handle);
+    auto *const near_actor = world.FindActor(near_handle);
+    ASSERT_NE(far_actor, nullptr);
+    ASSERT_NE(near_actor, nullptr);
+
+    auto *const far_mesh = far_actor->AddComponent<kpengine::gameplay::MeshComponent>();
+    auto *const near_mesh = near_actor->AddComponent<kpengine::gameplay::MeshComponent>();
+    ASSERT_NE(far_mesh, nullptr);
+    ASSERT_NE(near_mesh, nullptr);
+    far_mesh->SetLocalBounds({{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}});
+    near_mesh->SetLocalBounds({{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}});
+    far_mesh->SetLocalLocation({0.0f, 0.0f, -6.0f});
+    near_mesh->SetLocalLocation({0.0f, 0.0f, -3.0f});
+
+    ASSERT_TRUE(world.InitializeActor(far_handle));
+    ASSERT_TRUE(world.InitializeActor(near_handle));
+    ASSERT_TRUE(world.ActivateActor(far_handle));
+    ASSERT_TRUE(world.ActivateActor(near_handle));
+    world.Tick(0.0f);
+
+    const kpengine::spatial::Ray ray{{0.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f}};
+    EXPECT_EQ(world.PickActor(ray), near_handle);
+
+    near_mesh->SetVisible(false);
+    EXPECT_EQ(world.PickActor(ray), far_handle);
+}
+
+TEST(GameplayWorldTest, PropagatesSelectedActorToRenderableSource)
+{
+    RecordingSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{&source_sink};
+    const kpengine::gameplay::ActorHandle handle = world.CreateActor();
+    auto *const actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+    auto *const mesh = actor->AddComponent<kpengine::gameplay::MeshComponent>();
+    ASSERT_NE(mesh, nullptr);
+    ASSERT_TRUE(world.InitializeActor(handle));
+    ASSERT_TRUE(world.ActivateActor(handle));
+
+    world.SetSelectedActor(handle);
+    world.Tick(0.0f);
+    ASSERT_EQ(source_sink.updates.size(), 1U);
+    const auto &selected_update = std::get<kpengine::render::StaticMeshRenderableSourceDesc>(
+        source_sink.updates.back().source);
+    EXPECT_TRUE(selected_update.flags.selected);
+
+    world.SetSelectedActor(std::nullopt);
+    world.Tick(0.0f);
+    ASSERT_EQ(source_sink.updates.size(), 2U);
+    const auto &cleared_update = std::get<kpengine::render::StaticMeshRenderableSourceDesc>(
+        source_sink.updates.back().source);
+    EXPECT_FALSE(cleared_update.flags.selected);
 }
 
 TEST(GameplayWorldTest, WorldTeardownDeactivatesActiveMeshComponents)

@@ -61,6 +61,7 @@ namespace kpengine::editor
         init_info.input_system = global_editor_context.input_system_;
         init_info.window_system = global_editor_context.window_system_;
         init_info.camera_control_sink = &runtime::global_runtime_context;
+        init_info.scene_selection_sink = &runtime::global_runtime_context;
         init_info.reflection_catalog = runtime::global_runtime_context.GetReflectionCatalog();
         init_info.actor_snapshot_source =
             runtime::global_runtime_context.GetGameplayEditorSnapshotSource();

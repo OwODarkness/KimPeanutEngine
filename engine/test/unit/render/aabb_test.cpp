@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "spatial/aabb.h"
+#include "spatial/ray.h"
 
 namespace
 {
@@ -37,4 +38,22 @@ TEST(AABBTest, PreservesInvalidBoundsWhenTransforming)
     const AABB invalid{{1.0f, 1.0f, 1.0f}, {-1.0f, -1.0f, -1.0f}};
 
     EXPECT_EQ(TransformAABB(invalid, Transform3f{}), invalid);
+}
+
+TEST(RayTest, IntersectsNearestPositiveAABBDistance)
+{
+    const kpengine::spatial::Ray ray{{0.0f, 0.0f, 5.0f}, {0.0f, 0.0f, -1.0f}};
+    const auto distance = kpengine::spatial::IntersectRayAABB(
+        ray, AABB{{-1.0f, -1.0f, -2.0f}, {1.0f, 1.0f, -1.0f}});
+
+    ASSERT_TRUE(distance.has_value());
+    EXPECT_FLOAT_EQ(*distance, 6.0f);
+}
+
+TEST(RayTest, RejectsParallelRayOutsideAABBSlab)
+{
+    const kpengine::spatial::Ray ray{{2.0f, 0.0f, 0.0f}, {0.0f, 0.0f, -1.0f}};
+    EXPECT_FALSE(kpengine::spatial::IntersectRayAABB(
+                     ray, AABB{{-1.0f, -1.0f, -2.0f}, {1.0f, 1.0f, -1.0f}})
+                     .has_value());
 }

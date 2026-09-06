@@ -25,6 +25,7 @@
 #include "platform/memory_stats_sampler.h"
 #include "runtime/engine.h"
 #include "runtime/render/render_system.h"
+#include "runtime/runtime_camera_control.h"
 #include "runtime/screenshot/runtime_screenshot_service.h"
 #include "log/logger.h"
 
@@ -221,7 +222,9 @@ namespace kpengine::editor
     void EditorUI::BuildViewportWindow(
         render::RenderSystem *render_system, WindowSystem *window_system,
         input::InputSystem *input_system,
-        runtime::ISceneCameraControlSink *camera_control_sink)
+        runtime::ISceneCameraControlSink *camera_control_sink,
+        runtime::ISceneSelectionSink *scene_selection_sink,
+        ActorEditorModel *actor_model)
     {
         EditorWindowConfig config;
         config.pos_x_ratio = 0.22f;
@@ -230,7 +233,8 @@ namespace kpengine::editor
         std::unique_ptr<EditorWindowComponent> window_component =
             std::make_unique<EditorWindowComponent>("Viewport", config);
         window_component->AddComponent(std::make_shared<EditorViewportComponent>(
-            render_system, renderer_.get(), window_system, input_system, camera_control_sink));
+            render_system, renderer_.get(), window_system, input_system, camera_control_sink,
+            scene_selection_sink, actor_model));
 
         components_.push_back(std::move(window_component));
     }
@@ -359,7 +363,8 @@ namespace kpengine::editor
             BuildMenuBar(init_info_.render_system);
             BuildActorTools();
             BuildViewportWindow(init_info_.render_system, init_info_.window_system,
-                                init_info_.input_system, init_info_.camera_control_sink);
+                                init_info_.input_system, init_info_.camera_control_sink,
+                                init_info_.scene_selection_sink, actor_model_.get());
             BuildDebugViewerWindow(init_info_.render_system);
             BuildLogWindow(init_info_.log_system, log_colors_);
             BuildProfileBar(init_info_.engine, init_info_.memory_sampler,
@@ -471,6 +476,26 @@ namespace kpengine::editor
         if (workspace_promoted_ && actor_model_)
         {
             actor_model_->BeginFrame();
+            if (init_info_.scene_selection_sink != nullptr)
+            {
+                for (;;)
+                {
+                    const std::optional<runtime::ScenePickResult> result =
+                        init_info_.scene_selection_sink->ConsumeScenePickResult();
+                    if (!result.has_value())
+                    {
+                        break;
+                    }
+                    if (result->hit)
+                    {
+                        (void)actor_model_->SelectActor(result->actor);
+                    }
+                    else
+                    {
+                        actor_model_->ClearSelection();
+                    }
+                }
+            }
         }
         const auto &active_components = workspace_promoted_ ? components_ : loading_components_;
         for (const auto &component : active_components)

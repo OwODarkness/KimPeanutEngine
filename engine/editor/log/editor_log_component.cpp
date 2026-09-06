@@ -21,8 +21,20 @@ namespace kpengine::editor
         // Snapshot under the logger's mutex — never iterate the live vector while a
         // writer thread pushes/clears it (the render thread and writers race).
         const std::vector<program::LogEntry> logs = log_system_->GetLogSnapshot();
+
+        if (ImGui::Checkbox("Follow latest", &follow_latest_) && follow_latest_)
+        {
+            jump_to_latest_ = true;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Latest"))
+        {
+            jump_to_latest_ = true;
+        }
+
         if (logs.empty())
         {
+            last_log_count_ = 0;
             return;
         }
 
@@ -45,6 +57,16 @@ namespace kpengine::editor
                                    program::Logger::FetchStringFromLog(log).c_str());
             }
         }
+
+        const bool logs_grew = logs.size() > last_log_count_;
+        if (jump_to_latest_ || (follow_latest_ && logs_grew))
+        {
+            // The clipper has submitted the visible rows, so ImGui can resolve
+            // the final scroll range after this request.
+            ImGui::SetScrollHereY(1.0f);
+        }
+        jump_to_latest_ = false;
+        last_log_count_ = logs.size();
     }
 
 }

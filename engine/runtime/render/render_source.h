@@ -23,6 +23,8 @@ namespace kpengine::render
         bool visible = true;
         bool opaque = true;
         bool casts_shadow = true;
+        // Copied editor-selection state consumed by the Render-owned mask.
+        bool selected = false;
     };
 
     // The only primitive source in the first gameplay slice. It describes a

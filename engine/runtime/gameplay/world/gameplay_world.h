@@ -2,12 +2,14 @@
 #define KPENGINE_RUNTIME_GAMEPLAY_WORLD_GAMEPLAY_WORLD_H
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <unordered_map>
 
 #include "base/handle.h"
 #include "gameplay/actor/actor.h"
 #include "gameplay/actor/actor_types.h"
+#include "spatial/ray.h"
 
 namespace kpengine::input
 {
@@ -42,6 +44,8 @@ namespace kpengine::gameplay
         ActorHandle CreateActor();
         Actor *FindActor(ActorHandle handle);
         const Actor *FindActor(ActorHandle handle) const;
+        std::optional<ActorHandle> PickActor(const spatial::Ray &ray) const;
+        void SetSelectedActor(std::optional<ActorHandle> actor);
 
         bool InitializeActor(ActorHandle handle);
         bool ActivateActor(ActorHandle handle);
@@ -73,6 +77,7 @@ namespace kpengine::gameplay
 
         HandleSystem<ActorHandle> actor_handles_;
         std::unordered_map<uint32_t, std::unique_ptr<Actor>> actors_;
+        std::optional<ActorHandle> selected_actor_;
         std::unique_ptr<PlayerController> local_player_controller_;
         render::IRenderableSourceSink *source_sink_ = nullptr;
         render::ILightSourceSink *light_source_sink_ = nullptr;

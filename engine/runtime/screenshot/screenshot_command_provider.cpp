@@ -69,6 +69,7 @@ namespace kpengine::runtime
             if (view == "spot_shadow_visibility") return render::CaptureView::SpotShadowVisibility;
             if (view == "point_shadow_depth") return render::CaptureView::PointShadowDepth;
             if (view == "point_shadow_visibility") return render::CaptureView::PointShadowVisibility;
+            if (view == "selection_mask") return render::CaptureView::SelectionMask;
             if (view == "engine_window") return render::CaptureView::EngineWindow;
             return render::CaptureView::SceneColor;
         }
@@ -98,7 +99,8 @@ namespace kpengine::runtime
                                             "base_color", "material_params",
                                             "shadow_visibility", "spot_shadow_depth",
                                             "spot_shadow_visibility", "point_shadow_depth",
-                                            "point_shadow_visibility", "engine_window"}}}},
+                                            "point_shadow_visibility", "selection_mask",
+                                            "engine_window"}}}},
             [screenshot_service = std::move(screenshot_service)](
                 const command::CommandCall &call, const command::CommandContext &context)
             {

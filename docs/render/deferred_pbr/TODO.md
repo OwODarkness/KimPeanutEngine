@@ -136,6 +136,18 @@ stable final `SceneColor` with diagnostic evidence.
 - [x] Separate sampled HDR `SceneHdr` from stable LDR `SceneColor` and add the
   fixed tone-map stage. See the [journal](../../../.spec/journal/render-deferred-pbr.md#2026-08-30--d51-hdr-presentation-spine).
 
+### D5.9 — editor selection highlight (landed 2026-09-06)
+
+- [x] Copy Gameplay selection state into the renderable source flags.
+- [x] Add a depth-tested single-channel selection mask to the G-buffer.
+- [x] Apply a screen-space outline only in ToneMap; preserve the selected
+  material's original fill color.
+
+**Done when:** selecting an opaque mesh from the editor viewport produces a
+visible highlight through the existing Scene Color presentation path on both
+backends. Triangle-accurate picking and object-ID encoding remain separate
+follow-up work.
+
 ### D5.2 — directional Cook-Torrance lighting (landed 2026-08-30)
 
 - [x] Replace the diagnostic HDR producer with deferred PBR lighting and lock
@@ -180,14 +192,15 @@ stable final `SceneColor` with diagnostic evidence.
 ### D5.8 — live editor debug viewer (landed 2026-09-04)
 
 - [x] Reuse the Render-owned capture conversion pass as a per-frame secondary
-  Debug Viewer window preview for Scene Color, G-buffer, and spot/point shadow diagnostics.
+  Debug Viewer window preview for Scene Color, G-buffer, selection-mask, and
+  spot/point shadow diagnostics.
 - [x] Keep selection frame-boundary driven and expose only a borrowed,
   API-neutral `RenderTargetView` to Editor; no CPU readback or backend object
   is introduced.
 
 **Done when:** the shared scene produces comparable PBR final-color captures
-on both backends, with debug views sufficient to diagnose G-buffer and shadow
-errors. The remaining evidence handoff is tracked in D7.
+on both backends, with debug views sufficient to diagnose G-buffer, selection,
+and shadow errors. The remaining evidence handoff is tracked in D7.
 
 ## D6 — light and shadow expansion
 

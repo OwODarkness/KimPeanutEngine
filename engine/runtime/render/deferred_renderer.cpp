@@ -62,6 +62,11 @@ namespace kpengine::render
             Vector4f punctual_depth_params;
         };
 
+        struct alignas(16) SelectionGpuData
+        {
+            Vector4f selected;
+        };
+
         std::optional<spatial::AABB> BuildDirectionalShadowBounds(
             const std::vector<MeshProxy> &proxies, const Vector3f &camera_position)
         {
@@ -328,6 +333,32 @@ namespace kpengine::render
         const RenderTarget *const scene_target =
             frame_targets_.GetTarget(RenderTargetName::SceneColor);
         return scene_target ? *scene_target : empty_target;
+    }
+
+    spatial::Ray DeferredRenderer::BuildSceneRay(float ndc_x, float ndc_y,
+                                                  float viewport_aspect) const
+    {
+        return scene_camera_.BuildWorldRay(ndc_x, ndc_y, viewport_aspect);
+    }
+
+    std::optional<Vector3f> DeferredRenderer::ProjectScenePoint(
+        const Vector3f &world_point, float viewport_aspect) const
+    {
+        if (viewport_aspect <= 0.0f)
+        {
+            return std::nullopt;
+        }
+
+        RenderCamera camera = scene_camera_;
+        camera.SetAspect(viewport_aspect);
+        const Vector4f clip = camera.GetViewProjectionMatrix() * Vector4f(world_point, 1.0f);
+        if (clip.w_ <= 0.0001f)
+        {
+            return std::nullopt;
+        }
+
+        const float inverse_w = 1.0f / clip.w_;
+        return Vector3f{clip.x_ * inverse_w, clip.y_ * inverse_w, clip.z_ * inverse_w};
     }
 
     graphics::RenderTargetView DeferredRenderer::GetViewportRenderTargetView(
@@ -1375,8 +1406,10 @@ namespace kpengine::render
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         RenderTarget *const hdr_target = frame_targets_.GetTarget(RenderTargetName::SceneHdr);
+        RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
         RenderTarget *const scene_target = frame_targets_.GetTarget(RenderTargetName::SceneColor);
-        if (!recorder || !hdr_target || !scene_target || !PrepareToneMapPassResources() ||
+        if (!recorder || !hdr_target || !gbuffer_target || !scene_target ||
+            !PrepareToneMapPassResources() ||
             !scene_target->BeginRecording(*recorder))
         {
             return false;
@@ -1386,9 +1419,12 @@ namespace kpengine::render
             active_frame_context_->AllocateResourceBindingSet(
                 tone_map_pipeline_,
                 {0,
-                 {graphics::SampledTextureBinding{
-                     0, 2, hdr_target->GetColorAttachmentTexture(0),
-                     gbuffer_debug_sampler_}}});
+                  {graphics::SampledTextureBinding{
+                      0, 2, hdr_target->GetColorAttachmentTexture(0),
+                      gbuffer_debug_sampler_},
+                   graphics::SampledTextureBinding{
+                       0, 3, gbuffer_target->GetColorAttachmentTexture(3),
+                       gbuffer_debug_sampler_}}});
         if (tone_map_bindings.IsValid())
         {
             recorder->BindPipeline(tone_map_pipeline_);
@@ -1513,10 +1549,13 @@ namespace kpengine::render
                    graphics::SampledTextureBinding{
                        0, 8, spot_shadow_target->GetSampledDepthTexture(),
                        spot_shadow_sampler_},
-                   graphics::SampledTextureBinding{
+                  graphics::SampledTextureBinding{
                        0, 9, point_shadow_target->GetSampledDepthTexture(),
                        point_shadow_sampler_},
-                   graphics::UniformBufferBinding{
+                  graphics::SampledTextureBinding{
+                      0, 11, gbuffer_target->GetColorAttachmentTexture(3),
+                      gbuffer_debug_sampler_},
+                  graphics::UniformBufferBinding{
                        0, 7, constants.buffer, constants.offset, constants.range},
                    graphics::UniformBufferBinding{
                        0, 10, point_shadow_constants.buffer, point_shadow_constants.offset,
@@ -1576,9 +1615,12 @@ namespace kpengine::render
         };
         desc.raster_state.front_face = graphics::FrontFace::FRONT_FACE_COUNTER_CLOCKWISE;
         desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
-        desc.descriptor_binding_descs = {
-            {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
-              ShaderStage::SHADER_STAGE_FRAGMENT}},
+        desc.descriptor_binding_descs.resize(1);
+        desc.descriptor_binding_descs[0] = {
+            {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+             ShaderStage::SHADER_STAGE_FRAGMENT},
+            {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+             ShaderStage::SHADER_STAGE_FRAGMENT},
         };
         tone_map_pipeline_ = backend_->CreatePipelineResource(desc);
         return tone_map_pipeline_.IsValid();
@@ -1677,7 +1719,9 @@ namespace kpengine::render
               ShaderStage::SHADER_STAGE_FRAGMENT},
              {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
               ShaderStage::SHADER_STAGE_FRAGMENT},
-              {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+             {11, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+              ShaderStage::SHADER_STAGE_FRAGMENT},
+             {6, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                ShaderStage::SHADER_STAGE_FRAGMENT},
               {8, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                ShaderStage::SHADER_STAGE_FRAGMENT},
@@ -1787,10 +1831,23 @@ namespace kpengine::render
             return false;
         }
 
-        const std::vector<graphics::ResourceBinding> draw_bindings{
+        std::vector<graphics::ResourceBinding> draw_bindings{
             graphics::UniformBufferBinding{0, 0, per_pass.buffer, per_pass.offset, per_pass.range},
             graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset, per_object.range},
         };
+        if (pass == MaterialPass::GBuffer)
+        {
+            const SelectionGpuData selection_data{
+                Vector4f{proxy.flags.selected ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f}};
+            const UniformAllocation selection =
+                active_frame_context_->AllocateUniform(selection_data);
+            if (!selection.IsValid())
+            {
+                return false;
+            }
+            draw_bindings.emplace_back(graphics::UniformBufferBinding{
+                0, 9, selection.buffer, selection.offset, selection.range});
+        }
         const FrameMaterialBinding material_binding = active_frame_context_->CreateMaterialBinding(
             *material_system_, *resource_resolver_, proxy.material, draw_bindings, pass);
         if (!active_frame_context_->IsMaterialBindingCurrent(material_binding))

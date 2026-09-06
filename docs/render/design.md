@@ -88,6 +88,16 @@ files, compiles source, or decides pipeline policy.
 Asset shader identity → Resource processing → Render PipelineDesc → Graphics GPU pipeline
 ```
 
+## Editor camera query seam
+
+Render remains the owner of the active scene camera. Editor tools may need to
+place a screen-space affordance over a world point, so `RenderSystem` exposes
+the narrow `ProjectScenePoint()` query and returns NDC coordinates by value.
+This keeps camera matrices and camera lifetime private to Render; Editor owns
+gizmo policy, hit testing, and interaction state. The first transform gizmo is
+therefore an Editor overlay, with a future depth-aware GPU pass treated as a
+rendering implementation detail rather than a new Gameplay dependency.
+
 ## Non-goals
 
 - Do not make Render load arbitrary source files outside Asset/Resource.

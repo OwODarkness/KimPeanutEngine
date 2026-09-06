@@ -377,13 +377,15 @@ namespace kpengine::render
         {
             // Deferred G-buffer: canonical 5-attribute layout (matches the
             // data::Vertex field order and the audited tangent convention) into
-            // a 3-color MRT + depth. Binding 4 is left open for the D5 frame
-            // lighting block; sampler slots 2/5/6/7/8 mirror the StandardPbr
-            // material parameter ABI in material_asset_resolver.cpp.
+            // a 4-color MRT + depth. The fourth attachment is the selected
+            // object mask; binding 4 is left open for the D5 frame lighting
+            // block; sampler slots 2/5/6/7/8 mirror the StandardPbr material
+            // parameter ABI in material_asset_resolver.cpp.
             desc.color_attachment_formats = {
                 TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
                 TextureFormat::TEXTURE_FORMAT_RGBA16F,
-                TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM};
+                TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM,
+                TextureFormat::TEXTURE_FORMAT_R8_UNORM};
             desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_D32;
             desc.binding_descs = {{0, sizeof(data::Vertex), false}};
             desc.attri_descs = {
@@ -414,6 +416,8 @@ namespace kpengine::render
                  {7, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                   ShaderStage::SHADER_STAGE_FRAGMENT},
                  {8, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                  ShaderStage::SHADER_STAGE_FRAGMENT},
+                 {9, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
                   ShaderStage::SHADER_STAGE_FRAGMENT}},
             };
         }

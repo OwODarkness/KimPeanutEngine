@@ -103,6 +103,12 @@ namespace kpengine::render
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
 
         graphics::RenderTargetView GetSceneRenderTargetView() const;
+        std::optional<spatial::Ray> BuildSceneRay(float ndc_x, float ndc_y,
+                                                  float viewport_aspect) const;
+        // Tooling projection helper. The returned coordinates are NDC and the
+        // camera remains private to Render; Editor converts NDC to its image rect.
+        std::optional<Vector3f> ProjectScenePoint(const Vector3f &world_point,
+                                                  float viewport_aspect) const;
         // Selects the Render-owned diagnostic output displayed by the editor
         // viewport. The request takes effect at the next frame boundary.
         void SetDebugView(CaptureView view);

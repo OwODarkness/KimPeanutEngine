@@ -1,9 +1,10 @@
 #version 450
 
-// Deferred G-buffer fragment stage. Outputs a 3-color MRT + depth:
+// Deferred G-buffer fragment stage. Outputs a 4-color MRT + depth:
 //   loc0 albedo   RGBA8_UNORM linear   base_color.rgb * sRGB-sampled albedo
 //   loc1 normal   RGBA16F  raw world-space [-1,1] (no *2-1 encode needed)
 //   loc2 material RGBA8_UNORM linear   metallic R / roughness G / occlusion B
+//   loc3 selection R8_UNORM            selected object mask
 // The constants block is the StandardPbr ABI shared with
 // material_asset_resolver.cpp: base_color@0, metallic@16, roughness@20,
 // occlusion@24, emissive@32. Textures wins over scalars in the resolver, so
@@ -22,6 +23,10 @@ layout(binding = 5) uniform sampler2D normal_texture;
 layout(binding = 6) uniform sampler2D metallic_texture;
 layout(binding = 7) uniform sampler2D roughness_texture;
 layout(binding = 8) uniform sampler2D occlusion_texture;
+layout(binding = 9) uniform SelectionData
+{
+    vec4 selected;
+} selection_data;
 
 layout(location = 0) in vec2 frag_texcoord;
 layout(location = 1) in vec3 frag_T;
@@ -31,6 +36,7 @@ layout(location = 3) in vec3 frag_N;
 layout(location = 0) out vec4 out_albedo;
 layout(location = 1) out vec4 out_normal;
 layout(location = 2) out vec4 out_material;
+layout(location = 3) out float out_selection;
 
 void main()
 {
@@ -71,4 +77,5 @@ void main()
     out_albedo = vec4(albedo, 1.0);
     out_normal = vec4(normal, 1.0);
     out_material = vec4(metallic, roughness, occlusion, 1.0);
+    out_selection = selection_data.selected.x;
 }

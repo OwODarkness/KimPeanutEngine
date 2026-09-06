@@ -16,6 +16,7 @@ add_subdirectory(log)
 add_subdirectory(settings)
 add_subdirectory(profile)
 add_subdirectory(actor)
+add_subdirectory(gizmo)
 
 target_include_directories(EditorLib PUBLIC
     ${CMAKE_SOURCE_DIR}/engine

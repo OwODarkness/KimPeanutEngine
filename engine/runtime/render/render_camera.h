@@ -3,6 +3,7 @@
 
 #include "render/camera_source.h"
 #include "math/math_header.h"
+#include "spatial/ray.h"
 
 namespace kpengine::render
 {
@@ -35,6 +36,8 @@ namespace kpengine::render
         float GetFarPlane() const { return far_; }
 
         CameraData GetCameraData() const;
+        spatial::Ray BuildWorldRay(float ndc_x, float ndc_y,
+                                   float viewport_aspect) const;
         // CPU-side visibility uses the math-library matrix convention directly.
         // GetCameraData() remains GPU-facing and transposes its matrices for UBO upload.
         Matrix4f GetViewProjectionMatrix() const;

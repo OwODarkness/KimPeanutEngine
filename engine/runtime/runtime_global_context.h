@@ -2,8 +2,10 @@
 #define KPENGINE_RUNTIME_GLOBAL_CONTEXT_H
 
 #include <atomic>
+#include <deque>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <thread>
@@ -61,7 +63,8 @@ namespace kpengine
         class RuntimeScreenshotService;
         class LevelInstance;
 
-        class RuntimeContext final : public ISceneCameraControlSink
+        class RuntimeContext final : public ISceneCameraControlSink,
+                                     public ISceneSelectionSink
         {
 
         public:
@@ -100,6 +103,8 @@ namespace kpengine
             gameplay::IGameplayEditorEditSink *GetGameplayEditorEditSink() noexcept;
             void SetStartupLevel(asset::AssetID level_asset) { startup_level_asset_ = level_asset; }
             void SetSceneCameraControlCaptured(bool captured) override;
+            void EnqueueScenePick(const spatial::Ray &ray) override;
+            std::optional<ScenePickResult> ConsumeScenePickResult() override;
             render::IRenderCaptureService *GetRenderCaptureService()
             {
                 return render_system_ ? render_system_->GetRenderCaptureService() : nullptr;
@@ -140,7 +145,12 @@ namespace kpengine
             std::shared_ptr<const render::PreparedRenderAssetCatalog> prepared_render_assets_;
 
         private:
+            void ProcessScenePickRequests();
+
             std::atomic<bool> scene_camera_control_captured_{false};
+            std::mutex scene_pick_mutex_;
+            std::deque<spatial::Ray> pending_scene_picks_;
+            std::deque<ScenePickResult> completed_scene_picks_;
             StartupControllerSetupOverride startup_controller_setup_override_;
 
         };

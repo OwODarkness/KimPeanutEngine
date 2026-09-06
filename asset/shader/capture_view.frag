@@ -9,6 +9,7 @@ const uint CAPTURE_SPOT_SHADOW_DEPTH = 6u;
 const uint CAPTURE_SPOT_SHADOW_VISIBILITY = 7u;
 const uint CAPTURE_POINT_SHADOW_DEPTH = 8u;
 const uint CAPTURE_POINT_SHADOW_VISIBILITY = 9u;
+const uint CAPTURE_SELECTION_MASK = 10u;
 
 layout(binding = 2) uniform sampler2D gbuffer_albedo;
 layout(binding = 3) uniform sampler2D gbuffer_normal;
@@ -17,6 +18,7 @@ layout(binding = 5) uniform sampler2D gbuffer_depth;
 layout(binding = 6) uniform sampler2D directional_shadow_depth;
 layout(binding = 8) uniform sampler2D spot_shadow_depth;
 layout(binding = 9) uniform sampler2D point_shadow_depth;
+layout(binding = 11) uniform sampler2D selection_mask;
 
 layout(std140, binding = 7) uniform CaptureViewConstants
 {
@@ -210,6 +212,11 @@ void main()
     // therefore already cancels this flip.
     source_uv.y = 1.0 - source_uv.y;
 #endif
+    if (view == CAPTURE_SELECTION_MASK)
+    {
+        out_color = vec4(vec3(texture(selection_mask, source_uv).r), 1.0);
+        return;
+    }
     float depth = texture(gbuffer_depth, source_uv).r;
     if (depth >= 0.999999)
     {

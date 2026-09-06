@@ -38,6 +38,11 @@ The initial schedule is explicit and ordered:
 ShadowDepth → GBuffer → DeferredLighting → ToneMap → EditorComposite
 ```
 
+The G-buffer also carries a depth-tested single-channel editor selection mask.
+ToneMap samples that mask and applies the screen-space highlight, so the
+selection effect remains in the existing final-color post-process stage rather
+than introducing a separate mask pass with an independent depth buffer.
+
 Diagnostic capture is a Render conversion/readback path layered onto this
 schedule. A render graph is intentionally deferred until measured dependency,
 aliasing, or scheduling pressure justifies it.

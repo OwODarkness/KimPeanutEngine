@@ -4,6 +4,34 @@
 
 ## Done
 
+- **Editor translate gizmo first slice (2026-09-06)** — `EditorTransformGizmo`
+  is defined under Editor and consumes immutable reflection snapshots. It
+  renders screen-space X/Y/Z arrow handles and a center pivot over the selected
+  actor, captures axis drags, streams the latest value-only location edit through
+  the asynchronous editor bridge, and flushes the final value after pending work
+  is consumed. Render exposes only `ProjectScenePoint()` for camera projection;
+  camera ownership, gizmo policy, hit testing, and drag state remain separated.
+
+- **Editor selection highlight post-process (2026-09-06)** — selected mesh
+  state now reaches Render through copied source flags, the depth-tested G-buffer
+  writes a single-channel selection mask, and ToneMap composites a screen-space
+  amber outline only into SceneColor, preserving the selected material fill. The Debug Viewer now
+  exposes the raw mask, and Vulkan direct G-buffer sampling applies the required
+  source-Y correction so the outline stays aligned with SceneHdr. This keeps the
+  effect cross-backend and occlusion-correct without a second depth buffer.
+
+- **Output log follow-latest control (2026-09-06)** — the editor log now exposes
+  an optional `Follow latest` toggle and a `Latest` jump button, while retaining
+  virtualized rendering and snapshot-based log reads.
+
+- **Editor viewport spatial selection foundation (2026-09-06)** — Core Spatial
+  now provides reusable ray/AABB intersection, Render exposes the active scene
+  camera ray, and Runtime resolves copied viewport-pick requests on the
+  Gameplay thread against the nearest visible mesh bounds. Editor left-click
+  selects the resolved Actor and logs its generated identity; right-click now
+  toggles viewport mouse capture for camera control. Triangle-accurate picking
+  remains follow-up work.
+
 - **Gameplay GP8 — light transform alignment (2026-09-05)** — point and spot
   lights now publish world-transform positions, directional and spot lights
   derive direction from the shared `+X`-forward Camera convention, and all

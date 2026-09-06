@@ -114,11 +114,21 @@ Both seams live behind one virtual interface each and are selected once, by `Gra
 `Initialize(WindowHandle, GraphicsAPIType)` / `Shutdown()` / `NewFrame()`. The only implementation today is `EditorImguiGLFWWSI` ([editor_imgui_glfw_wsi.cpp](../../engine/editor/platform/editor_imgui_glfw_wsi.cpp)), which wraps `imgui_impl_glfw` and delegates to `ImGui_ImplGlfw_InitForOpenGL` or `InitForVulkan` by API type. A future SDL/Win32 backend is a new subclass — `WindowAPIType` already enumerates them, and nothing in the editor would change.
 
 The scene viewport uses a separate injected `WindowSystem` seam for mouse
-capture. Clicking the scene image enters capture and hides the OS cursor;
-clicking the left button again exits capture. `EditorViewportComponent` owns
-only this transient UI state and sends `ISceneCameraControlSink` notifications.
-It does not access the possessed camera or Gameplay objects. Runtime applies
-the notification on the game thread before ticking the world.
+capture. Right-clicking the scene image enters capture and hides the OS cursor;
+right-clicking again exits capture. `EditorViewportComponent` owns only this
+transient UI state and sends `ISceneCameraControlSink` notifications. It does
+not access the possessed camera or Gameplay objects. Runtime applies the
+notification on the game thread before ticking the world.
+
+`EditorTransformGizmo` lives under `engine/editor/gizmo/` because a gizmo is an
+editor interaction tool: it owns translate-mode visuals, hit testing, drag
+state, and value-only reflection edits. It consumes immutable
+`ActorEditorSnapshot` data and never stores a Gameplay component pointer. The
+viewport asks Render only for `ProjectScenePoint()`, which returns NDC values
+while keeping the active camera private to Render. This is intentionally an
+editor overlay for the first translate slice; a later depth-aware GPU gizmo
+pass can reuse the same value-only tool state without moving gizmo policy into
+Runtime.
 
 ### `IEditorImguiRenderer` — drawing
 `Initialize(GraphicsContext)` / `Shutdown()` / `NewFrame()` / `Render()`. Two implementations:
@@ -190,7 +200,7 @@ ImGui is not thread-safe and its backends require a live GL/Vulkan context, so *
 
 ## Current state
 
-- **Minimal UI.** Today the tree is a **top menu bar** (`File`/`Edit`/`Tool`/`Help`), a detachable **`~` command console**, an 80%-width **Viewport** window, a separate 20%-width **Debug Viewer** window with a small live diagnostic viewport, the **log window** (`OutputLog`, fed by `LogSystem`), and the **profile bar** (bottom status bar: FPS, frame ms, memory, graphics API, render resolution, GPU utilization when supplied by the backend, and submitted triangle count, with optional plots for frame time and memory). Both images preserve the render-target aspect ratio. The Debug Viewer has the standard title-bar lock control: locked keeps the initial 20% layout, while unlocked allows moving and resizing. `EditorViewportComponent` keeps the main Scene Color render target independent from the Debug Viewer. The Debug Viewer selects Scene Color, G-buffer, and shadow diagnostic outputs; selection is requested at the Render frame boundary, Render reuses its GPU conversion pass, and the editor borrows the resulting `RenderTargetView` without owning targets or registrations. A left click over the scene image captures the mouse for camera traversal; a subsequent left click releases it. The OpenGL renderer presents the color-texture token now; Vulkan presentation waits for its ImGui descriptor bridge. Log entry colors are configured in `config/settings.json` (per level, with in-code defaults as fallback). The console is a frontend over Runtime's command registry; it owns only text input, history, completion, and result presentation.
+- **Minimal UI.** Today the tree is a **top menu bar** (`File`/`Edit`/`Tool`/`Help`), a detachable **`~` command console**, an 80%-width **Viewport** window, a separate 20%-width **Debug Viewer** window with a small live diagnostic viewport, the **log window** (`OutputLog`, fed by `LogSystem`), and the **profile bar** (bottom status bar: FPS, frame ms, memory, graphics API, render resolution, GPU utilization when supplied by the backend, and submitted triangle count, with optional plots for frame time and memory). Both images preserve the render-target aspect ratio. The Debug Viewer has the standard title-bar lock control: locked keeps the initial 20% layout, while unlocked allows moving and resizing. `EditorViewportComponent` keeps the main Scene Color render target independent from the Debug Viewer. The Debug Viewer selects Scene Color, G-buffer, selection-mask, and shadow diagnostic outputs; selection is requested at the Render frame boundary, Render reuses its GPU conversion pass, and the editor borrows the resulting `RenderTargetView` without owning targets or registrations. A left click over the scene image selects an object unless it hits the editor-owned translate gizmo; the gizmo draws thick triangle-backed X/Y/Z handles plus a center pivot, updates the selected transform through the asynchronous editor bridge while dragging, and flushes the final axis value when the left button is released. A right click toggles mouse capture for camera traversal. The OpenGL renderer presents the color-texture token now; Vulkan presentation waits for its ImGui descriptor bridge. Log entry colors are configured in `config/settings.json` (per level, with in-code defaults as fallback). The console is a frontend over Runtime's command registry; it owns only text input, history, completion, and result presentation.
 - **Deleted seeds (2026-08-13 restructure).** `EditorSceneManager`, `EditorActorControlPanel`, and the scene/camera component implementations were all-comment files and were **removed** during the directory restructure. They are the resurrection seeds for scene-picking + gizmos + the actor transform panel — recover them from git history, don't expect them in the tree.
 - **Vulkan editor presentation** — `EditorImguiVulkanRenderer` records through `VulkanEditorBridge`, which brackets the swapchain UI pass and returns the image to present layout. The bridge is valid only during the active backend frame; Vulkan device/swapchain ownership and submit/present remain in graphics.
 - **GL renderer owns the frame clear** — a stopgap until the render-module reconstruction restores the scene renderer.
@@ -198,7 +208,7 @@ ImGui is not thread-safe and its backends require a live GL/Vulkan context, so *
 ## Follow-up seams
 
 - **Rebuild the scene manager** — resurrect `EditorSceneManager`/`EditorActorControlPanel` against the reconstructed render module (scene viewport, click-to-pick, gizmos, actor transform panel).
-- **Log window polish** — the `OutputLog` window is virtualized (`ImGuiListClipper` — only visible rows are laid out + formatted) and reads a thread-safe snapshot (`LogSystem::GetLogSnapshot()` copies the buffer under the logger mutex), so the render loop never walks the live vector. Remaining: auto-scroll/follow, a level filter, and handling very long lines (they currently overflow horizontally, single-line).
+- **Log window polish** — the `OutputLog` window is virtualized (`ImGuiListClipper` — only visible rows are laid out + formatted), reads a thread-safe snapshot (`LogSystem::GetLogSnapshot()` copies the buffer under the logger mutex), and offers optional `Follow latest` plus a `Latest` jump button. Remaining: a level filter and handling very long lines (they currently overflow horizontally, single-line).
 - **Swap WSI abstraction** — SDL/Win32 `IEditorImguiWSI` implementations when the runtime supports those `WindowAPIType`s.
 - **Break the RuntimeLib ↔ EditorLib cycle** — prefer an editor-owned engine-interface (`Engine` declares what the editor may call, editor implements the rest) or move `Engine::editor_` ownership out of `RuntimeLib`.
 - **Simplify `EditorContext`** — let the hub own fewer raw system pointers as the runtime formalizes its own context API.

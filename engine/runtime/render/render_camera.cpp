@@ -26,6 +26,27 @@ namespace kpengine::render
         return {CalculateViewMatrix().Transpose(), CalculateProjectionMatrix().Transpose()};
     }
 
+    spatial::Ray RenderCamera::BuildWorldRay(float ndc_x, float ndc_y,
+                                             float viewport_aspect) const
+    {
+        const float effective_aspect = viewport_aspect > 0.0f ? viewport_aspect : aspect_;
+        if (projection_mode_ == CameraProjectionMode::Orthographic)
+        {
+            const float half_height = orthographic_height_ * 0.5f;
+            const float half_width = half_height * effective_aspect;
+            const Vector3f ray_origin = position_ + right_ * (ndc_x * half_width) +
+                                         up_ * (ndc_y * half_height);
+            return {ray_origin, forward_};
+        }
+
+        const float half_fov_tangent = std::tan(math::DegreeToRadian(fov_) * 0.5f);
+        const Vector3f ray_direction =
+            (forward_ + right_ * (ndc_x * half_fov_tangent * effective_aspect) +
+             up_ * (ndc_y * half_fov_tangent))
+                .GetSafetyNormalize();
+        return {position_, ray_direction};
+    }
+
     Matrix4f RenderCamera::GetViewProjectionMatrix() const
     {
         return CalculateProjectionMatrix() * CalculateViewMatrix();

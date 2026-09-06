@@ -1156,7 +1156,7 @@ namespace kpengine::example
                     throw std::runtime_error("D5.3 floor mesh resource creation failed");
                 }
 
-                // GBuffer target: 3 color (albedo/normal/material) + D32, matching
+                // GBuffer target: 4 color (albedo/normal/material/selection) + D32, matching
                 // the engine's RendererFrameTargets::BuildDesc encodings.
                 graphics::RenderTargetDesc gbuffer_desc{};
                 gbuffer_desc.width = target_width;
@@ -1177,6 +1177,11 @@ namespace kpengine::example
                          graphics::RenderTargetLoadOp::Clear,
                          graphics::RenderTargetStoreOp::Store,
                          {0.f, 1.f, 1.f, 0.f}}},
+                    {graphics::RenderTargetColorAttachment{
+                         TextureFormat::TEXTURE_FORMAT_R8_UNORM,
+                         graphics::RenderTargetLoadOp::Clear,
+                         graphics::RenderTargetStoreOp::Store,
+                         {0.f, 0.f, 0.f, 0.f}}},
                 };
                 gbuffer_desc.depth = graphics::RenderTargetDepthAttachment{
                     TextureFormat::TEXTURE_FORMAT_D32, graphics::RenderTargetLoadOp::Clear,
@@ -1208,6 +1213,7 @@ namespace kpengine::example
                     !rhi->GetRenderTargetColorAttachment(gbuffer_target, 0).IsValid() ||
                     !rhi->GetRenderTargetColorAttachment(gbuffer_target, 1).IsValid() ||
                     !rhi->GetRenderTargetColorAttachment(gbuffer_target, 2).IsValid() ||
+                    !rhi->GetRenderTargetColorAttachment(gbuffer_target, 3).IsValid() ||
                     !rhi->GetRenderTargetSampledDepthAttachment(gbuffer_target).IsValid() ||
                     !rhi->GetRenderTargetSampledDepthAttachment(d4_shadow_target).IsValid())
                 {
@@ -1301,6 +1307,8 @@ namespace kpengine::example
                 };
                 tone_map_pipeline_desc.descriptor_binding_descs = {
                     {{2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+                      ShaderStage::SHADER_STAGE_FRAGMENT},
+                     {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                       ShaderStage::SHADER_STAGE_FRAGMENT}},
                 };
                 tone_map_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_BACK;
@@ -1415,6 +1423,10 @@ namespace kpengine::example
                                 Matrix4f::MakeTransformMatrix(d5_floor_transform).Transpose();
                             const render::UniformAllocation floor_object =
                                 frame_context.AllocateUniform(floor_object_data);
+                            const render::UniformAllocation rock_selection =
+                                frame_context.AllocateUniform(Vector4f{0.0f, 0.0f, 0.0f, 0.0f});
+                            const render::UniformAllocation floor_selection =
+                                frame_context.AllocateUniform(Vector4f{0.0f, 0.0f, 0.0f, 0.0f});
                             graphics::PerPassData shadow_pass_data{};
                             shadow_pass_data.camera_data.view = d5_shadow_view.Transpose();
                             shadow_pass_data.camera_data.proj = d5_shadow_projection.Transpose();
@@ -1436,7 +1448,8 @@ namespace kpengine::example
                             const render::UniformAllocation d5_point_shadow_constants =
                                 frame_context.AllocateUniform(d5_point_shadow_data);
                             if (!d3_pass.IsValid() || !d3_object.IsValid() ||
-                                !floor_object.IsValid() || !shadow_pass.IsValid() ||
+                                !floor_object.IsValid() || !rock_selection.IsValid() ||
+                                !floor_selection.IsValid() || !shadow_pass.IsValid() ||
                                 !d5_lighting_binding.IsValid() || !d5_constants.IsValid() ||
                                 !d5_point_shadow_constants.IsValid())
                             {
@@ -1471,6 +1484,7 @@ namespace kpengine::example
                             const std::vector<graphics::ResourceBinding> gbuffer_draw_bindings{
                                 graphics::UniformBufferBinding{0, 0, d3_pass.buffer, d3_pass.offset, d3_pass.range},
                                 graphics::UniformBufferBinding{0, 1, d3_object.buffer, d3_object.offset, d3_object.range},
+                                graphics::UniformBufferBinding{0, 9, rock_selection.buffer, rock_selection.offset, rock_selection.range},
                             };
                             const render::FrameMaterialBinding gbuffer_binding =
                                 frame_context.CreateMaterialBinding(
@@ -1488,6 +1502,7 @@ namespace kpengine::example
                             const std::vector<graphics::ResourceBinding> floor_draw_bindings{
                                 graphics::UniformBufferBinding{0, 0, d3_pass.buffer, d3_pass.offset, d3_pass.range},
                                 graphics::UniformBufferBinding{0, 1, floor_object.buffer, floor_object.offset, floor_object.range},
+                                graphics::UniformBufferBinding{0, 9, floor_selection.buffer, floor_selection.offset, floor_selection.range},
                             };
                             const render::FrameMaterialBinding floor_binding =
                                 frame_context.CreateMaterialBinding(
@@ -1568,7 +1583,11 @@ namespace kpengine::example
                                      {graphics::SampledTextureBinding{
                                          0, 2,
                                          rhi->GetRenderTargetColorAttachment(d5_hdr_target, 0),
-                                         debug_sampler}}});
+                                         debug_sampler},
+                                      graphics::SampledTextureBinding{
+                                          0, 3,
+                                          rhi->GetRenderTargetColorAttachment(gbuffer_target, 3),
+                                          debug_sampler}}});
                             if (!tone_map_bindings.IsValid())
                             {
                                 throw std::runtime_error("D5.1 tone-map binding failed");

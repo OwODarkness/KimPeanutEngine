@@ -327,10 +327,69 @@ namespace kpengine
             }
             gameplay_world_->SetLocalPlayerControllerInputEnabled(
                 scene_camera_control_captured_.load(std::memory_order_acquire));
+            ProcessScenePickRequests();
             gameplay_world_->Tick(delta_time);
             if (gameplay_editor_bridge_)
             {
                 gameplay_editor_bridge_->PublishSnapshot();
+            }
+        }
+
+        void RuntimeContext::EnqueueScenePick(const spatial::Ray &ray)
+        {
+            if (!ray.IsValid())
+            {
+                return;
+            }
+            std::scoped_lock lock(scene_pick_mutex_);
+            pending_scene_picks_.push_back(ray);
+        }
+
+        std::optional<ScenePickResult> RuntimeContext::ConsumeScenePickResult()
+        {
+            std::scoped_lock lock(scene_pick_mutex_);
+            if (completed_scene_picks_.empty())
+            {
+                return std::nullopt;
+            }
+            ScenePickResult result = completed_scene_picks_.front();
+            completed_scene_picks_.pop_front();
+            return result;
+        }
+
+        void RuntimeContext::ProcessScenePickRequests()
+        {
+            std::deque<spatial::Ray> requests;
+            {
+                std::scoped_lock lock(scene_pick_mutex_);
+                requests.swap(pending_scene_picks_);
+            }
+
+            for (const spatial::Ray &ray : requests)
+            {
+                const std::optional<gameplay::ActorHandle> actor =
+                    gameplay_world_ ? gameplay_world_->PickActor(ray) : std::nullopt;
+                if (gameplay_world_)
+                {
+                    gameplay_world_->SetSelectedActor(actor);
+                }
+                ScenePickResult result{};
+                if (actor.has_value())
+                {
+                    result.hit = true;
+                    result.actor = *actor;
+                    KP_LOG("LogEditorSelection", LOG_LEVEL_DEBUG,
+                           "Selected object: Actor %u:%u", actor->id,
+                           static_cast<unsigned int>(actor->generation));
+                }
+                else
+                {
+                    KP_LOG("LogEditorSelection", LOG_LEVEL_DEBUG,
+                           "Selected object: <none>");
+                }
+
+                std::scoped_lock lock(scene_pick_mutex_);
+                completed_scene_picks_.push_back(result);
             }
         }
 
@@ -345,6 +404,11 @@ namespace kpengine
 
         void RuntimeContext::Clear()
         {
+            {
+                std::scoped_lock lock(scene_pick_mutex_);
+                pending_scene_picks_.clear();
+                completed_scene_picks_.clear();
+            }
             // This is called by the render thread after ImGui shuts down, while
             // the graphics context is still current. Release GPU objects before
             // the GLFW window/context they depend on.

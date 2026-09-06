@@ -49,6 +49,7 @@ namespace
         {kpengine::render::CaptureView::SpotShadowVisibility, "Spot Shadow Visibility"},
         {kpengine::render::CaptureView::PointShadowDepth, "Point Shadow Depth"},
         {kpengine::render::CaptureView::PointShadowVisibility, "Point Shadow Visibility"},
+        {kpengine::render::CaptureView::SelectionMask, "Selection Mask"},
     };
 
     const char *DebugViewLabel(kpengine::render::CaptureView view)

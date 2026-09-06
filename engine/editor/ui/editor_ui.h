@@ -31,10 +31,11 @@ namespace kpengine
     {
         class RenderSystem;
     }
-    namespace runtime
-    {
-        class ISceneCameraControlSink;
-    }
+        namespace runtime
+        {
+            class ISceneCameraControlSink;
+            class ISceneSelectionSink;
+        }
     namespace reflection
     {
         class IReflectionCatalog;
@@ -71,6 +72,7 @@ namespace kpengine::editor
         input::InputSystem *input_system = nullptr;
         WindowSystem *window_system = nullptr;
         runtime::ISceneCameraControlSink *camera_control_sink = nullptr;
+        runtime::ISceneSelectionSink *scene_selection_sink = nullptr;
         const reflection::IReflectionCatalog *reflection_catalog = nullptr;
         gameplay::IGameplayEditorSnapshotSource *actor_snapshot_source = nullptr;
         gameplay::IGameplayEditorEditSink *actor_edit_sink = nullptr;
@@ -108,7 +110,9 @@ namespace kpengine::editor
         void BuildViewportWindow(render::RenderSystem *render_system,
                                  WindowSystem *window_system,
                                  input::InputSystem *input_system,
-                                 runtime::ISceneCameraControlSink *camera_control_sink);
+                                 runtime::ISceneCameraControlSink *camera_control_sink,
+                                 runtime::ISceneSelectionSink *scene_selection_sink,
+                                 ActorEditorModel *actor_model);
         void BuildDebugViewerWindow(render::RenderSystem *render_system);
         void BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors);
         void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,

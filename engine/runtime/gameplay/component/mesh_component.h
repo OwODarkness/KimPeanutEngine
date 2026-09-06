@@ -16,10 +16,12 @@ namespace kpengine::gameplay
         const asset::AssetID &GetMaterialAsset() const { return material_asset_; }
         int GetLodBias() const { return lod_bias_; }
         render::RenderableSourceHandle GetSourceHandle() const { return source_handle_; }
+        bool IsSelected() const { return selected_; }
 
         void SetMeshAsset(const asset::AssetID &mesh_asset);
         void SetMaterialAsset(const asset::AssetID &material_asset);
         void SetLodBias(int lod_bias);
+        void SetSelected(bool selected);
 
     protected:
         void OnActivate() override;
@@ -36,6 +38,7 @@ namespace kpengine::gameplay
         asset::AssetID mesh_asset_;
         asset::AssetID material_asset_;
         int lod_bias_ = 0;
+        bool selected_ = false;
         bool source_dirty_ = true;
         render::RenderableSourceHandle source_handle_;
     };

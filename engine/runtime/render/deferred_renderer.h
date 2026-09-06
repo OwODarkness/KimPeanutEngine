@@ -73,6 +73,10 @@ namespace kpengine::render
         void RequestExtent(uint32_t width, uint32_t height);
         void ApplyPendingExtent();
         const RenderTarget &GetSceneRenderTarget() const;
+        spatial::Ray BuildSceneRay(float ndc_x, float ndc_y,
+                                   float viewport_aspect) const;
+        std::optional<Vector3f> ProjectScenePoint(const Vector3f &world_point,
+                                                   float viewport_aspect) const;
         graphics::RenderTargetView GetViewportRenderTargetView(CaptureView view) const;
         graphics::RenderTargetHandle GetCaptureTarget(CaptureView view) const;
         uint64_t GetTriangleCount() const { return triangle_count_; }
