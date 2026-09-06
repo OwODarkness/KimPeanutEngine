@@ -564,22 +564,26 @@ namespace kpengine::asset
                     destination.emissive = {color.r, color.g, color.b, color.a};
                 }
 
-                destination.base_color_texture = ReadTexturePath(source, aiTextureType_BASE_COLOR);
+                destination.base_color_texture =
+                    PortablePath(ReadTexturePath(source, aiTextureType_BASE_COLOR));
                 if (destination.base_color_texture.empty())
                 {
-                    destination.base_color_texture = ReadTexturePath(source, aiTextureType_DIFFUSE);
+                    destination.base_color_texture =
+                        PortablePath(ReadTexturePath(source, aiTextureType_DIFFUSE));
                 }
-                destination.normal_texture = ReadTexturePath(source, aiTextureType_NORMALS);
+                destination.normal_texture =
+                    PortablePath(ReadTexturePath(source, aiTextureType_NORMALS));
                 destination.metallic_roughness_texture =
-                    ReadTexturePath(source, aiTextureType_UNKNOWN);
+                    PortablePath(ReadTexturePath(source, aiTextureType_UNKNOWN));
                 if (destination.metallic_roughness_texture.empty())
                 {
                     destination.metallic_roughness_texture =
-                        ReadTexturePath(source, aiTextureType_METALNESS);
+                        PortablePath(ReadTexturePath(source, aiTextureType_METALNESS));
                 }
                 destination.occlusion_texture =
-                    ReadTexturePath(source, aiTextureType_AMBIENT_OCCLUSION);
-                destination.emissive_texture = ReadTexturePath(source, aiTextureType_EMISSIVE);
+                    PortablePath(ReadTexturePath(source, aiTextureType_AMBIENT_OCCLUSION));
+                destination.emissive_texture =
+                    PortablePath(ReadTexturePath(source, aiTextureType_EMISSIVE));
 
                 int double_sided = 0;
                 if (source.Get(AI_MATKEY_TWOSIDED, double_sided) == AI_SUCCESS)

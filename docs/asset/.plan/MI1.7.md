@@ -1,6 +1,6 @@
 # MI1.7 — Runtime Migration
 
-- Status: runtime integration seam landed through MI1.7-R7; checked-in product
+- Status: runtime integration seam landed through MI1.7-R8; checked-in product
   packaging and cross-backend visual validation remain
 - Parent design: [MI1](MI1.md)
 - Prerequisites: MI1.4 and MI1.6
@@ -61,6 +61,12 @@ Levels/bootstrap references, and preserve deterministic per-slot overrides.
   dependencies, recursive shader/texture resolution, reverse references,
   concurrent deduplication, and owned-Mesh cleanup; final package launch and
   Vulkan/OpenGL capture remain MI1.8 evidence.
+- [x] **MI1.7-R8 — Level integration seam.** The native runtime fixture now
+  registers a readable logical model key in a test-owned archive, loads its
+  Level through `AssetManager::LoadSync`, verifies the native Model identity
+  and implicit error-Material fallback, and checks that runtime loading leaves
+  both the Level and archive bytes unchanged. Product promotion and backend
+  capture remain MI1.8 evidence.
 - [ ] Complete the remaining MI1.7 migration evidence: package a native Level
   and reachable product closure, migrate the checked-in Level references, and
   capture the fixture through both runtime graphics backends.

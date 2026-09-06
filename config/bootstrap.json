@@ -1,4 +1,4 @@
 {
     "version": 2,
-    "startup_level": "level/flight_helmet_validation.level"
+    "startup_level": "level/pbr_showcase.level"
 }

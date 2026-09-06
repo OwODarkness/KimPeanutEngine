@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -9,17 +10,23 @@
 #include <string>
 
 #include "asset/model_archive.h"
+#include "asset/material_promotion.h"
 #include "asset/model_import_service.h"
 
 namespace
 {
     using kpengine::asset::ArchiveProductType;
+    using kpengine::asset::ContentHash;
     using kpengine::asset::ModelArchiveDatabase;
     using kpengine::asset::ModelImportError;
     using kpengine::asset::ModelImportErrorCode;
     using kpengine::asset::ModelImportRequest;
     using kpengine::asset::ModelImportService;
     using kpengine::asset::ModelImportStatus;
+    using kpengine::asset::MaterialPromotionError;
+    using kpengine::asset::MaterialPromotionErrorCode;
+    using kpengine::asset::MaterialPromotionRequest;
+    using kpengine::asset::PromoteGeneratedMaterial;
 
     class ImportFixture final
     {
@@ -91,6 +98,26 @@ namespace
         }
         ADD_FAILURE() << "expected ModelImportError";
         return ModelImportErrorCode::PublicationFailed;
+    }
+
+    MaterialPromotionErrorCode CatchPromotionError(const std::function<void()> &function)
+    {
+        try
+        {
+            function();
+        }
+        catch (const MaterialPromotionError &error)
+        {
+            return error.Code();
+        }
+        ADD_FAILURE() << "expected MaterialPromotionError";
+        return MaterialPromotionErrorCode::ArchiveCommitFailed;
+    }
+
+    std::string ReadText(const std::filesystem::path &path)
+    {
+        std::ifstream file(path, std::ios::binary);
+        return {std::istreambuf_iterator<char>(file), std::istreambuf_iterator<char>()};
     }
 }
 
@@ -220,4 +247,68 @@ TEST(ModelImportServiceTest, RebuildsMissingProductAndRejectsImmutableCollision)
         EXPECT_EQ(std::distance(std::filesystem::directory_iterator(staging),
                                 std::filesystem::directory_iterator{}), 0);
     }
+}
+
+TEST(ModelImportServiceTest, PromotesGeneratedMaterialWithoutMutatingArchiveProduct)
+{
+    ImportFixture fixture;
+    ModelImportService service;
+    const auto imported = service.Import(fixture.Request());
+
+    kpengine::asset::ProductRecord material_product{};
+    {
+        ModelArchiveDatabase archive{fixture.Root() / ".archive" / "archive.sqlite3"};
+        const auto before = archive.FindSource("models/triangle.obj");
+        ASSERT_TRUE(before.has_value());
+        const auto material_source_product = std::find_if(
+            before->source_products.begin(), before->source_products.end(),
+            [](const auto &product)
+            {
+                return product.asset_type == ArchiveProductType::Material && product.slot == 0;
+            });
+        ASSERT_NE(material_source_product, before->source_products.end());
+        const auto material_product_iterator = std::find_if(
+            before->products.begin(), before->products.end(),
+            [&material_source_product](const auto &product)
+            {
+                return product.asset_type == ArchiveProductType::Material &&
+                       product.content_hash == material_source_product->content_hash;
+            });
+        ASSERT_NE(material_product_iterator, before->products.end());
+        material_product = *material_product_iterator;
+    }
+    const std::filesystem::path product_path =
+        fixture.Root() / ".archive" / material_product.relative_path;
+    const ContentHash product_hash_before = kpengine::asset::Sha256File(product_path);
+
+    const MaterialPromotionRequest request{
+        fixture.Root(), fixture.Root() / ".archive", "models/triangle", 0,
+        "material/promoted_triangle.material"};
+    const auto promoted = PromoteGeneratedMaterial(request);
+    EXPECT_TRUE(promoted.authored_file_created);
+    EXPECT_EQ(promoted.generated_material_hash, material_product.content_hash);
+    ASSERT_TRUE(std::filesystem::is_regular_file(promoted.authored_material_path));
+    EXPECT_NE(ReadText(promoted.authored_material_path).find("\"shader\":\"../shader/"),
+              std::string::npos);
+    EXPECT_EQ(kpengine::asset::Sha256File(product_path), product_hash_before);
+
+    ModelArchiveDatabase archive{fixture.Root() / ".archive" / "archive.sqlite3"};
+    const auto after = archive.FindSource("models/triangle.obj");
+    ASSERT_TRUE(after.has_value());
+    ASSERT_EQ(after->material_overrides.size(), 1u);
+    EXPECT_EQ(after->material_overrides.front().slot, 0);
+    EXPECT_EQ(after->material_overrides.front().authored_path,
+              "material/promoted_triangle.material");
+
+    const auto repeat = PromoteGeneratedMaterial(request);
+    EXPECT_FALSE(repeat.authored_file_created);
+    EXPECT_EQ(CatchPromotionError(
+                  [&]
+                  {
+                      MaterialPromotionRequest collision = request;
+                      collision.authored_material_path = "material/collision.material";
+                      fixture.Write("material/collision.material", "different");
+                      (void)PromoteGeneratedMaterial(collision);
+                  }),
+              MaterialPromotionErrorCode::Collision);
 }

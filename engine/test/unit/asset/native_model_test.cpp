@@ -15,6 +15,7 @@
 #include "asset/asset_manager.h"
 #include "asset/mesh.h"
 #include "asset/model.h"
+#include "asset/model_archive.h"
 #include "asset/native_model.h"
 #include "asset/native_model_loader.h"
 #include "config/path.h"
@@ -77,6 +78,15 @@ namespace
         ASSERT_TRUE(file.is_open()) << path.string();
         file.write(reinterpret_cast<const char *>(bytes.data()),
                    static_cast<std::streamsize>(bytes.size()));
+        ASSERT_TRUE(file.good()) << path.string();
+    }
+
+    void WriteText(const std::filesystem::path &path, const std::string &text)
+    {
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream file(path, std::ios::binary);
+        ASSERT_TRUE(file.is_open()) << path.string();
+        file.write(text.data(), static_cast<std::streamsize>(text.size()));
         ASSERT_TRUE(file.good()) << path.string();
     }
 
@@ -427,6 +437,56 @@ TEST(NativeModelRuntimeIntegrationTest, LoadsMultiMaterialGraphThroughAssetManag
         model_root / (kpengine::asset::Sha256(model_bytes).ToHex() + ".model");
     WriteBytes(model_path, model_bytes);
 
+    // Register the fixture's readable logical key exactly as the offline
+    // importer would. The runtime must consume this metadata read-only; it
+    // must not rediscover the source or write a replacement product.
+    {
+        kpengine::asset::ModelArchiveDatabase archive{archive_root / "archive.sqlite3"};
+        kpengine::asset::SourceRecord source{};
+        source.normalized_path = "model/native_runtime/multi_material.obj";
+        source.path_hash = kpengine::asset::Sha256(source.normalized_path);
+        source.display_name = "multi_material";
+        source.package_hash = kpengine::asset::HashSourcePackage(
+            {{source.normalized_path, kpengine::asset::Sha256("native-runtime-fixture")}});
+        source.importer_id = "native-runtime-fixture";
+        source.importer_version = 1;
+        source.settings_hash = kpengine::asset::Sha256("native-runtime-fixture-settings");
+        source.native_model_version = kpengine::asset::kNativeModelVersion;
+        source.status = kpengine::asset::SourceImportStatus::Ready;
+
+        const kpengine::asset::ProductRecord model_product{
+            kpengine::asset::Sha256(model_bytes), kpengine::asset::ArchiveProductType::Model,
+            kpengine::asset::ProductRelativePath(kpengine::asset::ArchiveProductType::Model,
+                                                  kpengine::asset::Sha256(model_bytes)),
+            static_cast<std::uint64_t>(model_bytes.size()), kpengine::asset::kNativeModelVersion};
+        const kpengine::asset::ProductRecord first_material_product{
+            first_material_hash, kpengine::asset::ArchiveProductType::Material,
+            kpengine::asset::ProductRelativePath(kpengine::asset::ArchiveProductType::Material,
+                                                  first_material_hash),
+            static_cast<std::uint64_t>(first_material_bytes.size()), 1};
+        const kpengine::asset::ProductRecord second_material_product{
+            second_material_hash, kpengine::asset::ArchiveProductType::Material,
+            kpengine::asset::ProductRelativePath(kpengine::asset::ArchiveProductType::Material,
+                                                  second_material_hash),
+            static_cast<std::uint64_t>(second_material_bytes.size()), 1};
+        archive.ReplaceSource(
+            source, {}, {model_product, first_material_product, second_material_product},
+            {{model_product.content_hash, model_product.asset_type, 0, -1, "multi_material"},
+             {first_material_hash, kpengine::asset::ArchiveProductType::Material, 1, 0,
+              "multi_material_0"},
+             {second_material_hash, kpengine::asset::ArchiveProductType::Material, 1, 1,
+              "multi_material_1"}},
+            {});
+    }
+
+    const std::filesystem::path level_path =
+        std::filesystem::path(kpengine::GetAssetDirectory()) / ".test_native_runtime" /
+        "multi_material.level";
+    WriteText(level_path, level_fixture);
+    const ContentHash archive_hash_before = kpengine::asset::Sha256File(
+        archive_root / "archive.sqlite3");
+    const ContentHash level_hash_before = kpengine::asset::Sha256File(level_path);
+
     auto &assets = kpengine::asset::AssetManager::GetInstance();
     const AssetID model_id = assets.LoadSync(model_path.string());
     ASSERT_TRUE(model_id.IsValid());
@@ -474,6 +534,26 @@ TEST(NativeModelRuntimeIntegrationTest, LoadsMultiMaterialGraphThroughAssetManag
     EXPECT_NE(std::find(texture_refs.begin(), texture_refs.end(), second_material_id),
               texture_refs.end());
 
+    // This is the migration seam: the Level contains only the readable
+    // logical model key and no authored fallback material. LevelLoader must
+    // resolve the key through the archive, while LevelInstance's later
+    // selection policy receives the native Model's ordered material slots.
+    const AssetID level_id = assets.LoadSync(level_path.string());
+    ASSERT_TRUE(level_id.IsValid());
+    ASSERT_EQ(level_id.type, AssetType::KPAT_Level);
+    const Asset *level_asset = assets.GetAsset(level_id);
+    ASSERT_NE(level_asset, nullptr);
+    ASSERT_EQ(level_asset->GetDependencies().size(), 2u);
+    EXPECT_EQ(assets.ResolveDependency(level_id, 0, AssetType::KPAT_Model), model_id);
+    const AssetID error_material_id =
+        assets.ResolveDependency(level_id, 1, AssetType::KPAT_Material);
+    ASSERT_TRUE(error_material_id.IsValid());
+    EXPECT_EQ(level_asset->GetPath(), level_path.string());
+    EXPECT_EQ(kpengine::asset::Sha256File(archive_root / "archive.sqlite3"), archive_hash_before);
+    EXPECT_EQ(kpengine::asset::Sha256File(level_path), level_hash_before);
+
+    assets.UnRegisterAsset(level_id);
+
     auto concurrent_first = std::async(std::launch::async, [&assets, model_path]
                                        { return assets.LoadSync(model_path.string()); });
     auto concurrent_second = std::async(std::launch::async, [&assets, model_path]
@@ -502,4 +582,8 @@ TEST(NativeModelRuntimeIntegrationTest, LoadsMultiMaterialGraphThroughAssetManag
     std::filesystem::remove(second_material_path, error);
     std::filesystem::remove(texture_path, error);
     std::filesystem::remove(texture_path.parent_path(), error);
+    std::filesystem::remove(level_path, error);
+    std::filesystem::remove(archive_root / "archive.sqlite3", error);
+    std::filesystem::remove(archive_root / "archive.sqlite3-shm", error);
+    std::filesystem::remove(archive_root / "archive.sqlite3-wal", error);
 }

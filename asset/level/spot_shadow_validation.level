@@ -9,15 +9,20 @@
       "id": "floor",
       "kind": "static_mesh",
       "transform": { "position": [0, -70, 0], "rotation_degrees": [0, 0, 0], "scale": [30, 30, 30] },
-      "model": "model/brickwall/floor.obj",
-      "material": "material/oakfloor_pbr.material"
+      "model": "model/brickwall/floor",
+      "material": "material/oakfloor_pbr.material",
+      "materials": ["material/oakfloor_pbr.material"]
     },
     {
       "id": "rock",
       "kind": "static_mesh",
       "transform": { "position": [0, 0, 0], "rotation_degrees": [0, 0, 0], "scale": [0.35, 0.35, 0.35] },
-      "model": "model/rock1-bl/rock2.obj",
-      "material": "material/rock_pbr.material"
+      "model": "model/rock1-bl/rock2",
+      "material": "material/rock_pbr.material",
+      "materials": [
+        "material/rock_pbr.material",
+        "material/rock_pbr.material"
+      ]
     },
     {
       "id": "main_camera",

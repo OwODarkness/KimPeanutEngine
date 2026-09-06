@@ -1,6 +1,6 @@
 {
     "version": 1,
-    "shader": "../../shader/simple_triangle.shader",
+    "shader": "../../shader/pbr_gbuffer.shader",
     "surface": {
         "shading_model": "unlit",
         "blend_mode": "opaque",

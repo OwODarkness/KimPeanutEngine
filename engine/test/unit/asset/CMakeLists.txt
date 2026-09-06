@@ -66,7 +66,7 @@ add_executable(
     native_model_test.cpp
 )
 
-target_link_libraries(NativeModelTest PRIVATE AssetRuntime Config KP::GoogleTest)
+target_link_libraries(NativeModelTest PRIVATE AssetRuntime AssetArchive Config KP::GoogleTest)
 
 target_compile_definitions(NativeModelTest PRIVATE
     KPENGINE_NATIVE_RUNTIME_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures/native_runtime"

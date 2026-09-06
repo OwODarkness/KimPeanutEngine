@@ -61,8 +61,8 @@ belongs in the corresponding `.spec/journal/` entry.
   - [ ] [MI1.7 — migrate runtime loading to native Model](.plan/MI1.7.md).
     MI1.7-R1 build ownership, MI1.7-R2 native material selection, MI1.7-R3
     transactional Model-child registration, MI1.7-R5 archive product
-    verification, MI1.7-R6 bounded foreign compatibility, and readable logical
-    Level-model lookup are landed;
+    verification, MI1.7-R6 bounded foreign compatibility, MI1.7-R7 native
+    Model integration, and MI1.7-R8 Level integration are landed;
     checked-in products and the remaining review risks stay open
     in the stage plan.
   - [ ] [MI1.8 — add tooling and end-to-end validation](.plan/MI1.8.md).

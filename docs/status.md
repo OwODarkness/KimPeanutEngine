@@ -2,6 +2,8 @@
 
 **Snapshot: 2026-09-06.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
+**Current release: v1.1.0.**
+
 - **MI1.7-R1 Asset build boundary (2026-09-06)** — split the database-free
   product/native layer, runtime AssetManager, archive database, and offline
   importer into explicit CMake targets. `AssetImport` no longer depends on
@@ -47,6 +49,23 @@
   shader/texture loading, reverse references, concurrent deduplication, and
   owned-Mesh cleanup. Product packaging and Vulkan/OpenGL capture remain MI1.8
   evidence. → [MI1.7 plan](asset/.plan/MI1.7.md),
+  [model-import journal](../.spec/journal/model-import.md)
+- **MI1.7-R8 Level integration seam (2026-09-06)** — the native runtime
+  fixture now registers its readable logical model key in the archive and
+  loads the checked-in Level through `AssetManager`, including the implicit
+  error-material fallback. This verifies the Level lookup boundary in addition
+  to direct Model loading; immutable package promotion and backend captures
+  remain MI1.8 evidence. → [MI1.7 plan](asset/.plan/MI1.7.md),
+  [model-import journal](../.spec/journal/model-import.md)
+- **MI1.8 authoring tool slice (2026-09-06)** — added the standalone
+  `KimPeanutAssetTool` for import/reimport, source status, logical Model
+  inspection, archive integrity checks, and diagnostics. Generated Materials
+  can be promoted to authored paths with rebased references and explicit
+  archive overrides without mutating immutable products. All checked-in Levels
+  now use extensionless logical keys backed by native `.model` products;
+  PBR Showcase material overrides were corrected and captured on Vulkan/OpenGL;
+  broader cross-backend coverage remains open. →
+  [MI1.8 plan](asset/.plan/MI1.8.md),
   [model-import journal](../.spec/journal/model-import.md)
 
 ## Done

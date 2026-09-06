@@ -80,6 +80,7 @@ endif()
 # not running.
 add_library(AssetImport STATIC
     native_material.cpp
+    material_promotion.cpp
     model_import_service.cpp
 )
 target_include_directories(AssetImport PUBLIC

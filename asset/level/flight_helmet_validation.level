@@ -14,8 +14,17 @@
         "rotation_degrees": [0.0, 0.0, 0.0],
         "scale": [3.0, 3.0, 3.0]
       },
-      "model": "model/FlightHelmet/FlightHelmet.gltf",
+      "model": "model/flighthelmet/flighthelmet",
       "material": "material/gold_pbr.material",
+      "materials": [
+        "material/gold_pbr.material",
+        "material/gold_pbr.material",
+        "material/gold_pbr.material",
+        "material/gold_pbr.material",
+        "material/gold_pbr.material",
+        "material/gold_pbr.material",
+        "material/gold_pbr.material"
+      ],
       "casts_shadow": true
     },
     {

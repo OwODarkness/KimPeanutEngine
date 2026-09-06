@@ -155,7 +155,7 @@ as Nanosuit to render each imported surface with its own texture set:
     "rotation_degrees": [0, 0, 0],
     "scale": [1, 1, 1]
   },
-  "model": "model/nanosuit/nanosuit.obj",
+  "model": "model/nanosuit/nanosuit",
   "material": "material/nanosuit_arm.material",
   "materials": [
     "material/nanosuit_arm.material",
@@ -168,6 +168,11 @@ as Nanosuit to render each imported surface with its own texture set:
   ]
 }
 ```
+
+For imported native Models, the Level reference is the extensionless logical
+source key. `LevelLoader` resolves it read-only through `asset/.archive` to the
+verified hash-named `.model` product; the foreign OBJ/FBX/GLTF/GLB source is
+not opened during runtime loading.
 
 ## Assimp GLTF/GLB models
 

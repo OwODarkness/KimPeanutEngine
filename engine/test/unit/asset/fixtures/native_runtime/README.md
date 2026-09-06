@@ -7,6 +7,8 @@ the test; the test then serializes a deterministic two-section native Model
 that refers to those hashes and removes the entries before returning.
 
 `multi_material.level` uses the logical model key that a packaged Level would
-author. The runtime integration test loads the resulting native Model directly
-through `AssetManager` so it does not require a mutable archive database or
-depend on importer code.
+author. The test registers that key in a read-only-compatible archive record,
+loads the Level through `AssetManager`, and verifies the complete native
+Model/Material/shader/texture dependency graph. Product creation remains
+test-owned so the fixture is reproducible without importing source content or
+checking in mutable SQLite state.

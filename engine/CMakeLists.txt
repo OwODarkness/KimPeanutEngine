@@ -2,6 +2,7 @@ add_subdirectory(editor)
 add_subdirectory(runtime)
 add_subdirectory(module)
 add_subdirectory(example)
+add_subdirectory(tool)
 add_library(EngineLib INTERFACE)
 
 target_link_libraries(EngineLib INTERFACE RuntimeLib EditorLib Module ExampleLib

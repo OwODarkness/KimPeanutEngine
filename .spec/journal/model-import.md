@@ -390,5 +390,71 @@ path; the later Level-key resolver is a separate read-only archive boundary.
   - `cmake -S . -B build -G "Visual Studio 17 2022"`
   - `cmake --build build --config Debug --target NativeModelTest`
   - `ctest --test-dir build -C Debug --output-on-failure -R
-    "NativeModelRuntimeIntegrationTest|NativeModelLoaderTest"` — 8/8 tests
-    passed.
+  "NativeModelRuntimeIntegrationTest|NativeModelLoaderTest"` — 8/8 tests
+  passed.
+
+## 2026-09-06 — MI1.7-R8 Level integration seam
+
+- Extended the checked-in native runtime fixture to use the tracked
+  `pbr_gbuffer` shader contract and to register a test-owned readable logical
+  model key in the archive database.
+- `NativeModelRuntimeIntegrationTest` now loads the fixture Level through
+  `AssetManager::LoadSync`, verifies the Level dependency points at the same
+  native Model identity, and verifies that omitting an authored `material`
+  selects the engine error Material fallback dependency.
+- The test still creates and removes only test-owned archive products and
+  SQLite state. It does not invoke the importer, modify source content, or
+  claim the MI1.8 packaged-tree and cross-backend visual evidence.
+- The changed test translation unit passes a C++17 syntax-only check with the
+  repository's generated configuration header and runtime include paths.
+- Validation is currently blocked at the prescribed MSVC build step by the
+  machine's denied Windows SDK probe (`ToolLocationHelper` cannot read
+  `C:\Users\17519\AppData\Local\Microsoft SDKs`).
+
+## 2026-09-06 — MI1.8 authoring tool slice
+
+- Added `KimPeanutAssetTool`, a standalone executable linked to `AssetImport`
+  rather than `AssetRuntime`. It exposes `import` (idempotent reimport),
+  `status`, `diagnostics`, `inspect`, `integrity`, and `promote-material` commands with
+  stable command-line diagnostics.
+- Added `PromoteGeneratedMaterial`, which verifies the immutable archive
+  Material, rebases shader and texture references for the authored destination,
+  publishes the authored file create-if-absent, and records the slot override
+  through the archive transaction. Conflicting authored bytes fail without
+  changing the archive product.
+- Added focused importer-service coverage for promotion, repeat promotion,
+  path rebasing, archive-byte preservation, override recording, and collision
+  rejection.
+- C++17 syntax-only checks pass for the new promotion implementation, CLI, and
+  importer tests. MSVC target compilation remains blocked by the machine's
+  denied Windows SDK probe.
+
+## 2026-09-06 — Checked-in Level native Model migration
+
+- Imported every model referenced by the checked-in Levels into the local
+  `.archive`: Cornell Box OBJ, Flight Helmet GLTF, Nanosuit OBJ, the PBR
+  showcase OBJ/FBX sources, and the point/spot shadow sources.
+- Replaced all checked-in Level foreign model paths with extensionless logical
+  keys. `LevelLoader` now resolves those keys read-only to the verified native
+  hash-named products; Level-authored material overrides remain unchanged.
+- Normalized Assimp material texture references from Windows backslashes before
+  matching decoded image dependencies, which allowed the Cerberus FBX package
+  to import on Windows.
+- `KimPeanutAssetTool integrity` and logical `inspect` passed for all nine
+  unique Level model keys. Runtime build and visual capture remain unverified
+  because the MSVC Windows SDK probe is denied on this machine.
+
+## 2026-09-06 — PBR Showcase native-material visual correction
+
+- Captured the migrated `pbr_showcase.level` through the live Vulkan runtime and
+  found a real visual difference: native Models expose generated Material
+  slots, so a single Level fallback no longer overrides them and the Showcase
+  became largely untextured.
+- Added explicit per-slot `materials` overrides to the PBR, shadow-validation,
+  and Flight Helmet Levels while retaining their authored material policy.
+- Re-captured the Showcase after the correction on Vulkan and OpenGL. The
+  textured floor, gold sphere, rock, teapot, bunny, and Cerberus material now
+  render on both backends. The Cerberus Level rotation was also adjusted for
+  the native product's baked transform so the rifle returns to its prior
+  horizontal presentation. The screenshot captures are preserved under
+  `save/screenshots/validation/`.

@@ -2,50 +2,59 @@
   "version": 1,
   "environment": {
     "texture": "texture/hdr/HDR_041_Path.hdr",
-    "ibl_intensity": 0.25
+    "ibl_intensity": 0.1
   },
   "objects": [
     {
       "id": "rock",
       "kind": "static_mesh",
       "transform": { "position": [0, 0, 0], "rotation_degrees": [0, 0, 0], "scale": [0.35, 0.35, 0.35] },
-      "model": "model/rock1-bl/rock2.obj",
-      "material": "material/rock_pbr.material"
+      "model": "model/rock1-bl/rock2",
+      "material": "material/rock_pbr.material",
+      "materials": [
+        "material/rock_pbr.material",
+        "material/rock_pbr.material"
+      ]
     },
     {
       "id": "floor",
       "kind": "static_mesh",
       "transform": { "position": [0, -70, 0], "rotation_degrees": [0, 0, 0], "scale": [30, 30, 30] },
-      "model": "model/brickwall/floor.obj",
-      "material": "material/oakfloor_pbr.material"
+      "model": "model/brickwall/floor",
+      "material": "material/oakfloor_pbr.material",
+      "materials": ["material/oakfloor_pbr.material"]
     },
     {
       "id": "gold_sphere",
       "kind": "static_mesh",
       "transform": { "position": [70, -52, 0], "rotation_degrees": [0, 0, 0], "scale": [18, 18, 18] },
-      "model": "model/sphere/sphere.obj",
-      "material": "material/gold_pbr.material"
+      "model": "model/sphere/sphere",
+      "material": "material/gold_pbr.material",
+      "materials": ["material/gold_pbr.material"]
     },
     {
       "id": "quartz_bunny",
       "kind": "static_mesh",
       "transform": { "position": [-60, -73.3, 0], "rotation_degrees": [0, 0, 0], "scale": [200, 200, 200] },
-      "model": "model/bunny/stanford-bunny.obj",
-      "material": "material/quartz_pbr.material"
+      "model": "model/bunny/stanford-bunny",
+      "material": "material/quartz_pbr.material",
+      "materials": ["material/quartz_pbr.material"]
     },
     {
       "id": "rusted_teapot",
       "kind": "static_mesh",
       "transform": { "position": [25, -70, 0], "rotation_degrees": [0, 0, 0], "scale": [4, 4, 4] },
-      "model": "model/teapot/teapot.obj",
-      "material": "material/rusted_iron_pbr.material"
+      "model": "model/teapot/teapot",
+      "material": "material/rusted_iron_pbr.material",
+      "materials": ["material/rusted_iron_pbr.material"]
     },
     {
       "id": "cerberus",
       "kind": "static_mesh",
-      "transform": { "position": [-25, -24.4, 25], "rotation_degrees": [-90, 90, 0], "scale": [0.35, 0.35, 0.35] },
-      "model": "model/cerberus/Cerberus_LP.FBX",
-      "material": "material/cerberus_pbr.material"
+      "transform": { "position": [0, -24.4, 25], "rotation_degrees": [0, 90, 0], "scale": [0.35, 0.35, 0.35] },
+      "model": "model/cerberus/cerberus_lp",
+      "material": "material/cerberus_pbr.material",
+      "materials": ["material/cerberus_pbr.material"]
     },
     {
       "id": "main_camera",

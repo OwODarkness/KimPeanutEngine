@@ -1,6 +1,7 @@
 # MI1.8 — Tooling and End-to-End Validation
 
-- Status: blocked by MI1.6 and MI1.7
+- Status: standalone authoring tool, Material promotion, and checked-in Level
+  native-package migration landed; cross-backend capture evidence remains
 - Parent design: [MI1](MI1.md)
 - Prerequisites: MI1.6 and MI1.7
 
@@ -12,13 +13,13 @@ remain usable with the engine application closed.
 
 ## Deliverables
 
-- A CLI and/or Editor-subprocess front end for import, reimport, status,
-  diagnostics, archive integrity/rebuild, and readable source-to-product
-  inspection. The underlying importer must remain callable without opening the
-  engine Runtime or `AssetManager`.
-- Material promotion: copy an immutable generated Material to an authored path,
-  record an explicit override, and produce a new Model reference without
-  mutating the original product.
+- [x] A standalone `KimPeanutAssetTool` provides import/reimport, source
+  status, diagnostics, archive integrity, and readable source-to-product
+  inspection. The underlying importer remains callable without opening Runtime
+  or `AssetManager`.
+- [x] Material promotion copies an immutable generated Material to an authored
+  path, rebases its material-relative shader/texture references, records an
+  explicit slot override, and leaves the original product unchanged.
 - Representative STL, OBJ, FBX, GLTF, and GLB end-to-end fixtures, including
   multiple materials, external dependencies, and embedded images.
 - Focused tests, packaging checks, Vulkan/OpenGL smoke, captured SceneColor

@@ -10,7 +10,7 @@
         "rotation_degrees": [0.0, 0.0, 0.0],
         "scale": [1.0, 1.0, 1.0]
       },
-      "model": "model/cornell-box/cornell-box.obj",
+      "model": "model/cornell-box/cornell-box",
       "material": "material/cornell_light.material",
       "materials": [
         "material/cornell_light.material",
