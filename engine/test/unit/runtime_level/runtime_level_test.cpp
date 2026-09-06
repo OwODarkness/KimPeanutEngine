@@ -394,6 +394,109 @@ TEST(RuntimeLevelTest, InstantiatesStaticMeshesInAuthoredOrderAndMapsIDs)
     EXPECT_EQ(source_sink.destroys.size(), 2U);
 }
 
+TEST(RuntimeLevelTest, SelectsLevelOverridesThenModelMaterialsThenFallback)
+{
+    AssetFixture assets;
+
+    auto mesh_data = std::make_shared<kpengine::data::MeshData>();
+    mesh_data->vertices.resize(6);
+    mesh_data->indices = {0, 1, 2, 3, 4, 5};
+    mesh_data->sections = {{0, 3, 0}, {3, 3, 1}};
+    auto mesh = std::make_shared<MeshResource>();
+    mesh->data = std::move(mesh_data);
+    mesh->local_bounds = {{-1.0f, -1.0f, -1.0f}, {1.0f, 1.0f, 1.0f}};
+    AssetRegisterInfo mesh_info{};
+    mesh_info.resource = mesh;
+    mesh_info.path = "runtime_level_material_selection.mesh";
+    mesh_info.name = "RuntimeLevelMaterialSelectionMesh";
+    mesh_info.type = AssetType::KPAT_Mesh;
+    const AssetID mesh_id = assets.AddExtraAsset(std::move(mesh_info));
+
+    const auto add_material = [&assets](const char *path)
+    {
+        AssetRegisterInfo info{};
+        info.resource = std::make_shared<MaterialResource>();
+        info.path = path;
+        info.name = path;
+        info.type = AssetType::KPAT_Material;
+        return assets.AddExtraAsset(std::move(info));
+    };
+    const AssetID model_material_a = add_material("runtime_level_model_material_a.material");
+    const AssetID model_material_b = add_material("runtime_level_model_material_b.material");
+    const AssetID authored_fallback = add_material("runtime_level_authored_fallback.material");
+    const AssetID level_override = add_material("runtime_level_slot_override.material");
+
+    auto model = std::make_shared<ModelResource>();
+    model->BindData(ModelGeometryType::KPMG_Mesh, mesh_id);
+    model->BindMaterialDependencyIndices({1, 2});
+    AssetRegisterInfo model_info{};
+    model_info.resource = std::move(model);
+    model_info.path = "runtime_level_material_selection.model";
+    model_info.name = "RuntimeLevelMaterialSelectionModel";
+    model_info.dependencies = {mesh_id, model_material_a, model_material_b};
+    model_info.type = AssetType::KPAT_Model;
+    const AssetID model_id = assets.AddExtraAsset(std::move(model_info));
+
+    LevelStaticMeshRecord record = MakeMeshRecord("material-selection");
+    record.model.dependency_index = 0;
+    record.material.dependency_index = 1;
+    record.materials.push_back({"runtime_level_slot_override.material",
+                                AssetType::KPAT_Material, 2});
+    const AssetID level_id = assets.AddLevel({record},
+                                             {model_id, authored_fallback, level_override});
+
+    RecordingSourceSink source_sink;
+    kpengine::gameplay::GameplayWorld world{&source_sink};
+    kpengine::runtime::LevelInstance instance{assets.assets, world};
+    const auto result = instance.Instantiate(level_id);
+    ASSERT_TRUE(result) << result.diagnostic;
+    ASSERT_EQ(source_sink.creates.size(), 1U);
+    const auto &source = std::get<kpengine::render::StaticMeshRenderableSourceDesc>(
+        source_sink.creates.front());
+    EXPECT_EQ(source.material_asset, authored_fallback);
+    ASSERT_EQ(source.material_assets.size(), 2U);
+    EXPECT_EQ(source.material_assets[0], level_override);
+    EXPECT_EQ(source.material_assets[1], model_material_b);
+}
+
+TEST(RuntimeLevelTest, UsesExplicitErrorMaterialWhenNativeModelHasNoMaterialFallback)
+{
+    AssetFixture assets;
+    AssetRegisterInfo error_info{};
+    error_info.resource = std::make_shared<MaterialResource>();
+    error_info.path = "runtime_level_error.material";
+    error_info.name = "RuntimeLevelErrorMaterial";
+    error_info.type = AssetType::KPAT_Material;
+    const AssetID error_material = assets.AddExtraAsset(std::move(error_info));
+
+    auto model = std::make_shared<ModelResource>();
+    model->BindData(ModelGeometryType::KPMG_Mesh, assets.mesh_id);
+    AssetRegisterInfo model_info{};
+    model_info.resource = std::move(model);
+    model_info.path = "runtime_level_no_material.model";
+    model_info.name = "RuntimeLevelNoMaterialModel";
+    model_info.dependencies = {assets.mesh_id};
+    model_info.type = AssetType::KPAT_Model;
+    const AssetID model_id = assets.AddExtraAsset(std::move(model_info));
+
+    LevelStaticMeshRecord record = MakeMeshRecord("error-material");
+    record.model.dependency_index = 0;
+    record.material = {};
+    const AssetID level_id = assets.AddLevel({record}, {model_id});
+
+    RecordingSourceSink source_sink;
+    kpengine::gameplay::GameplayWorld world{&source_sink};
+    kpengine::runtime::LevelInstance instance{assets.assets, world};
+    instance.SetErrorMaterialAsset(error_material);
+    const auto result = instance.Instantiate(level_id);
+    ASSERT_TRUE(result) << result.diagnostic;
+    const auto &source = std::get<kpengine::render::StaticMeshRenderableSourceDesc>(
+        source_sink.creates.front());
+    EXPECT_EQ(source.material_asset, error_material);
+    ASSERT_EQ(source.material_assets.size(), 1U);
+    EXPECT_EQ(source.material_assets.front(), error_material);
+}
+
 TEST(RuntimeLevelTest, InstantiatesNonMeshRecordsAndAllowsEmptyInstance)
 {
     AssetFixture assets;

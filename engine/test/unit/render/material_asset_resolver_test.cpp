@@ -1,5 +1,6 @@
 #include <filesystem>
 #include <fstream>
+#include <array>
 #include <string>
 
 #include <gtest/gtest.h>
@@ -82,7 +83,9 @@ namespace
     }
 
     std::shared_ptr<const kpengine::render::PreparedRenderAssetCatalog>
-    BuildCatalog(kpengine::asset::AssetID material_id)
+    BuildCatalog(kpengine::asset::AssetID material_id,
+                 std::shared_ptr<kpengine::asset::MaterialResource> material_override = nullptr,
+                 std::vector<kpengine::asset::AssetID> material_dependencies = {})
     {
         using namespace kpengine;
         render::PreparedRenderAssetCatalogBuild build;
@@ -122,9 +125,12 @@ namespace
         const asset::AssetID normal_id{7005, 1, asset::AssetType::KPAT_Texture};
         build.records.push_back({white_id, make_texture(255), {}});
         build.records.push_back({normal_id, make_texture(128), {}});
-        build.records.push_back({material_id,
-                                 asset::AssetManager::GetInstance().GetResource<asset::MaterialResource>(material_id),
-                                 {program_id}});
+        auto material = material_override != nullptr
+                            ? std::move(material_override)
+                            : asset::AssetManager::GetInstance().GetResource<asset::MaterialResource>(material_id);
+        std::vector<asset::AssetID> dependencies{program_id};
+        dependencies.insert(dependencies.end(), material_dependencies.begin(), material_dependencies.end());
+        build.records.push_back({material_id, std::move(material), std::move(dependencies)});
         for (const auto &requirement : render::GetBuiltInRenderAssetRequirements())
         {
             build.built_ins[static_cast<size_t>(requirement.role)] =
@@ -209,4 +215,70 @@ TEST(MaterialAssetResolverTest, ReportsInvalidPendingAndBrokenReferences)
 
     std::error_code error;
     std::filesystem::remove_all(directory, error);
+}
+
+TEST(MaterialAssetResolverTest, PreservesPackedChannelsAndAlphaMaskInTemplate)
+{
+    using namespace kpengine;
+    const asset::AssetID material_id{7100, 1, asset::AssetType::KPAT_Material};
+    const asset::AssetID texture_id{7004, 1, asset::AssetType::KPAT_Texture};
+    auto material = std::make_shared<asset::MaterialResource>();
+    material->version = 2;
+    material->shader_dependency_index = 0;
+    material->surface.shading_model = asset::MaterialShadingModel::StandardPbr;
+    material->surface.alpha_mode = asset::MaterialAlphaMode::Mask;
+    material->surface.alpha_cutoff = 0.35f;
+    material->surface.blend_mode = asset::MaterialBlendMode::Opaque;
+
+    auto add_vector = [&material](const char *name, std::array<float, 4> value)
+    {
+        material->parameters.push_back({name, asset::MaterialParameterSourceType::Vector4, value});
+    };
+    auto add_scalar = [&material](const char *name, float value)
+    {
+        material->parameters.push_back({name, asset::MaterialParameterSourceType::Scalar, value});
+    };
+    auto add_texture = [&material](const char *name, asset::MaterialTextureChannel channel)
+    {
+        asset::MaterialParameterSource parameter{};
+        parameter.name = name;
+        parameter.type = asset::MaterialParameterSourceType::Texture;
+        parameter.value = std::string{"packed.texture"};
+        parameter.texture_color_space = asset::MaterialTextureColorSpace::Linear;
+        parameter.texture_channel = channel;
+        parameter.dependency_index = 1;
+        material->parameters.push_back(std::move(parameter));
+    };
+    add_vector("base_color", {1.f, 1.f, 1.f, 1.f});
+    add_scalar("metallic", 1.f);
+    add_scalar("roughness", 1.f);
+    add_scalar("occlusion", 1.f);
+    add_scalar("normal_scale", 0.6f);
+    add_texture("metallic_texture", asset::MaterialTextureChannel::Blue);
+    add_texture("roughness_texture", asset::MaterialTextureChannel::Green);
+    add_texture("occlusion_texture", asset::MaterialTextureChannel::Red);
+
+    ReadyMaterialResolver resource_resolver{};
+    render::MaterialSystem materials{};
+    materials.SetResourceResolver(&resource_resolver);
+    const auto catalog = BuildCatalog(material_id, material, {texture_id});
+    ASSERT_NE(catalog, nullptr);
+    render::MaterialAssetResolver resolver{materials, catalog};
+    render::MaterialInstanceHandle instance;
+    ASSERT_EQ(resolver.Resolve(material_id, instance).state,
+              render::MaterialResourceState::Ready);
+
+    const render::MaterialTemplateHandle template_handle = materials.GetInstanceTemplate(instance);
+    const render::MaterialTemplateDesc *const desc = materials.FindTemplate(template_handle);
+    ASSERT_NE(desc, nullptr);
+    EXPECT_EQ(desc->pipeline_state.blend_mode, render::MaterialBlendMode::Opaque);
+    ASSERT_GE(desc->parameters.size(), 13u);
+    const auto &channels = desc->parameters[10].default_value;
+    ASSERT_TRUE(std::holds_alternative<Vector4f>(channels));
+    const Vector4f channel_values = std::get<Vector4f>(channels);
+    EXPECT_FLOAT_EQ(channel_values[0], 2.0f);
+    EXPECT_FLOAT_EQ(channel_values[1], 1.0f);
+    EXPECT_FLOAT_EQ(channel_values[2], 0.0f);
+    EXPECT_FLOAT_EQ(std::get<float>(desc->parameters[12].default_value), 0.35f);
+    resolver.Clear();
 }
