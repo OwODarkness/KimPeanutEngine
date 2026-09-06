@@ -96,6 +96,13 @@ namespace kpengine::runtime
         LevelInstanceResult Instantiate(const asset::AssetID &level_asset);
         void Unload();
 
+        // Runtime startup supplies the engine-owned fallback Material after
+        // Render preparation has made its dependency graph available.
+        void SetErrorMaterialAsset(asset::AssetID material_asset) noexcept
+        {
+            error_material_asset_ = material_asset;
+        }
+
         bool IsActive() const { return active_; }
         asset::AssetID GetLevelAsset() const { return active_level_asset_; }
         std::size_t GetActorCount() const { return actor_by_authored_id_.size(); }
@@ -131,6 +138,7 @@ namespace kpengine::runtime
         gameplay::GameplayWorld &gameplay_world_;
         LevelActorFactorySet factories_;
         render::IEnvironmentSourceSink *environment_source_sink_ = nullptr;
+        asset::AssetID error_material_asset_;
 
         bool active_ = false;
         asset::AssetID active_level_asset_;

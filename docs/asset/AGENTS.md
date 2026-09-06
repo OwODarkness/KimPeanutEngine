@@ -9,6 +9,10 @@ documentation.
 
 - Asset owns file identity, decoding, CPU payload lifetime, dependency edges,
   cache registration, and observation of Asset-owned load work.
+- The MI1 offline importer is a separate Asset-owned tool/library boundary. It
+  may use Core, foreign decoders, ImageIO, serialization, and the archive
+  repository while the engine is closed, but it must not depend on
+  `AssetManager`, `AssetID`, Runtime, Editor, Render, or Graphics.
 - A load operation is transient execution state. It is not an `Asset`, an
   `AssetID`, persistent authoring metadata, or part of a payload.
 - Runtime owns startup/level-load policy and aggregates Asset, Resource,
@@ -40,6 +44,14 @@ documentation.
   work occurs.
 
 Do not duplicate execution history into the plans or roadmap.
+
+When assigned an exact model-import ID such as `MI1.3`, read the parent
+[MI1 architecture](.plan/MI1.md) and that stage's page, implement only its
+assignment and deliverables, and respect its prerequisite and boundary lists.
+Do not absorb adjacent `MI1.x` stages without an explicit reassignment. Record
+execution evidence in the MI1 journal and mark the matching
+[TODO entry](TODO.md#model-import-roadmap) complete only after its `Done when`
+checks pass.
 
 ## Validation
 

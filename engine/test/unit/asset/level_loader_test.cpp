@@ -1,4 +1,6 @@
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -10,6 +12,8 @@
 #include "asset/asset_manager.h"
 #include "asset/level.h"
 #include "asset/level_loader.h"
+#include "asset/model_archive.h"
+#include "asset/native_model.h"
 #include "config/path.h"
 
 namespace
@@ -20,6 +24,17 @@ namespace
     using kpengine::asset::AssetType;
     using kpengine::asset::LevelLoader;
     using kpengine::asset::LevelPtr;
+    using kpengine::asset::ArchiveProductType;
+    using kpengine::asset::HashSourcePackage;
+    using kpengine::asset::ModelArchiveDatabase;
+    using kpengine::asset::NativeModelData;
+    using kpengine::asset::ProductRecord;
+    using kpengine::asset::ProductRelativePath;
+    using kpengine::asset::SerializeNativeModel;
+    using kpengine::asset::Sha256;
+    using kpengine::asset::SourceImportStatus;
+    using kpengine::asset::SourceProductRecord;
+    using kpengine::asset::SourceRecord;
 
     std::atomic_uint32_t fixture_number{0};
 
@@ -191,6 +206,108 @@ TEST(LevelLoaderTest, LoadsOptionalPerSectionMaterialReferences)
     EXPECT_EQ(mesh.materials[1].dependency_index, 3u);
     EXPECT_EQ(mesh.materials[0].path, section_material_a);
     EXPECT_EQ(mesh.materials[1].path, section_material_b);
+}
+
+TEST(LevelLoaderTest, NativeModelMayOmitMaterialAndGetsImplicitErrorFallback)
+{
+    LevelFixture fixture;
+    fixture.Write("scene.level", R"({
+      "version": 1,
+      "objects": [{
+        "id": "native_mesh",
+        "kind": "static_mesh",
+        "transform": {"position": [0, 0, 0], "rotation_degrees": [0, 0, 0], "scale": [1, 1, 1]},
+        "model": "archive/models/0123456789abcdef0123456789abcdef.model"
+      }]
+    })");
+
+    AssetRegisterInfo info{};
+    ASSERT_TRUE(ParseDirect(fixture.Path("scene.level"), info));
+    ASSERT_EQ(info.dependency_requests.size(), 2u);
+    const auto level = std::get<LevelPtr>(info.resource);
+    ASSERT_NE(level, nullptr);
+    const auto &mesh = std::get<kpengine::asset::LevelStaticMeshRecord>(level->objects.front());
+    EXPECT_EQ(mesh.material.path, kpengine::asset::kEngineErrorMaterialAssetPath);
+    EXPECT_EQ(mesh.material.dependency_index, 1u);
+    EXPECT_EQ(info.dependency_requests[1].expected_type, AssetType::KPAT_Material);
+}
+
+TEST(LevelLoaderTest, LegacyModelStillRequiresAuthoredMaterial)
+{
+    LevelFixture fixture;
+    fixture.Write("scene.level", R"({
+      "version": 1,
+      "objects": [{
+        "id": "legacy_mesh",
+        "kind": "static_mesh",
+        "transform": {"position": [0, 0, 0], "rotation_degrees": [0, 0, 0], "scale": [1, 1, 1]},
+        "model": "source/mesh.obj"
+      }]
+    })");
+
+    AssetRegisterInfo info{};
+    EXPECT_FALSE(ParseDirect(fixture.Path("scene.level"), info));
+}
+
+TEST(LevelLoaderTest, ResolvesReadableLogicalModelKeyThroughReadOnlyArchive)
+{
+    LevelFixture fixture;
+    const std::string source_path = fixture.Relative("mesh.obj");
+    const std::string logical_model = fixture.Relative("mesh");
+    fixture.Write("scene.level", R"({
+      "version": 1,
+      "objects": [{
+        "id": "native_mesh",
+        "kind": "static_mesh",
+        "transform": {"position": [0, 0, 0], "rotation_degrees": [0, 0, 0], "scale": [1, 1, 1]},
+        "model": ")" + logical_model + R"("
+      }]
+    })");
+
+    const std::vector<std::byte> model_bytes = SerializeNativeModel(NativeModelData{});
+    const kpengine::asset::ContentHash model_hash = Sha256(model_bytes);
+    const std::filesystem::path product_path =
+        fixture.Path(".archive") / ProductRelativePath(ArchiveProductType::Model, model_hash);
+    std::filesystem::create_directories(product_path.parent_path());
+    std::ofstream product(product_path, std::ios::binary);
+    ASSERT_TRUE(product.is_open());
+    product.write(reinterpret_cast<const char *>(model_bytes.data()),
+                  static_cast<std::streamsize>(model_bytes.size()));
+    ASSERT_TRUE(product.good());
+    product.close();
+
+    ModelArchiveDatabase archive{fixture.Path(".archive") / "archive.sqlite3"};
+    SourceRecord source;
+    source.normalized_path = source_path;
+    source.path_hash = Sha256(source_path);
+    source.display_name = "mesh";
+    source.importer_id = "test";
+    source.importer_version = 1;
+    source.settings_hash = Sha256("settings");
+    source.native_model_version = 1;
+    source.status = SourceImportStatus::Ready;
+    const auto source_hash = Sha256("source");
+    source.package_hash = HashSourcePackage({{source_path, source_hash}});
+
+    const ProductRecord product_record{
+        model_hash, ArchiveProductType::Model,
+        ProductRelativePath(ArchiveProductType::Model, model_hash),
+        static_cast<std::uint64_t>(model_bytes.size()), 1};
+    const SourceProductRecord source_product{
+        model_hash, ArchiveProductType::Model, 0, -1, "mesh"};
+    archive.ReplaceSource(source, {{source_path, source_hash}}, {product_record},
+                          {source_product}, {});
+
+    LevelLoader loader(fixture.Path(".archive"));
+    AssetRegisterInfo info{};
+    ASSERT_TRUE(loader.Load(fixture.Path("scene.level").string(), info));
+    const auto level = std::get<LevelPtr>(info.resource);
+    ASSERT_NE(level, nullptr);
+    const auto &mesh = std::get<kpengine::asset::LevelStaticMeshRecord>(level->objects.front());
+    EXPECT_EQ(mesh.model.path, logical_model);
+    ASSERT_EQ(info.dependency_requests.size(), 2u);
+    EXPECT_EQ(info.dependency_requests[0].expected_type, AssetType::KPAT_Model);
+    EXPECT_EQ(info.dependency_requests[0].path, product_path.generic_string());
 }
 
 TEST(LevelLoaderTest, NormalizesSafeReferencesAndRejectsRootEscapeOrTypeMismatch)

@@ -1,6 +1,8 @@
 #include "level/level_instance.h"
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 #include <type_traits>
 #include <unordered_set>
 #include <utility>
@@ -380,57 +382,148 @@ namespace kpengine::runtime
                                record.id);
         }
 
-        const asset::AssetID material_asset = asset_manager_.ResolveDependency(
-            level_asset, record.material.dependency_index, asset::AssetType::KPAT_Material);
-        if (!material_asset.IsValid())
+        const auto is_valid_material = [this](const asset::AssetID &material_asset)
         {
-            return Failure(LevelInstanceError::DependencyResolutionFailed,
-                           "material dependency failed for authored ID: " + record.id);
+            if (!material_asset.IsValid() || material_asset.type != asset::AssetType::KPAT_Material)
+            {
+                return false;
+            }
+            asset::Asset *const wrapper = asset_manager_.GetAsset(material_asset);
+            return wrapper != nullptr && wrapper->GetType() == asset::AssetType::KPAT_Material &&
+                   wrapper->GetResource<asset::MaterialResource>() != nullptr;
+        };
+        const auto resolve_material = [this](const asset::AssetID &owner,
+                                              uint32_t dependency_index,
+                                              asset::AssetID &out_material)
+        {
+            out_material = asset_manager_.ResolveDependency(
+                owner, dependency_index, asset::AssetType::KPAT_Material);
+            return out_material.IsValid();
+        };
+
+        const std::vector<uint32_t> &model_material_indices =
+            model_resource->GetMaterialDependencyIndices();
+        std::vector<asset::AssetID> model_materials(model_material_indices.size());
+        for (std::size_t slot = 0; slot < model_material_indices.size(); ++slot)
+        {
+            // Preserve the slot when a malformed or legacy programmatic Model
+            // has an unresolved dependency; the fallback chain handles it.
+            if (!resolve_material(model_asset, model_material_indices[slot],
+                                  model_materials[slot]) ||
+                !is_valid_material(model_materials[slot]))
+            {
+                model_materials[slot] = {};
+            }
         }
 
-        asset::Asset *const material_wrapper = asset_manager_.GetAsset(material_asset);
-        const std::shared_ptr<asset::MaterialResource> material_resource =
-            material_wrapper != nullptr
-                ? material_wrapper->GetResource<asset::MaterialResource>()
-                : nullptr;
-        if (material_wrapper == nullptr ||
-            material_wrapper->GetType() != asset::AssetType::KPAT_Material ||
-            material_resource == nullptr)
+        asset::AssetID authored_fallback;
+        if (record.material.dependency_index != asset::kInvalidLevelDependencyIndex)
         {
-            return Failure(LevelInstanceError::InvalidMaterialResource,
-                           "material dependency has no valid MaterialResource for authored ID: " +
-                               record.id);
+            if (!resolve_material(level_asset, record.material.dependency_index, authored_fallback))
+            {
+                return Failure(LevelInstanceError::DependencyResolutionFailed,
+                               "material dependency failed for authored ID: " + record.id);
+            }
+            if (!is_valid_material(authored_fallback))
+            {
+                return Failure(LevelInstanceError::InvalidMaterialResource,
+                               "material dependency has no valid MaterialResource for authored ID: " +
+                                   record.id);
+            }
         }
 
-        description.mesh_asset = mesh_asset;
-        description.material_asset = material_asset;
-        description.material_assets.clear();
-        description.material_assets.reserve(record.materials.size());
+        std::vector<asset::AssetID> level_overrides;
+        level_overrides.reserve(record.materials.size());
         for (const asset::LevelAssetReference &material_reference : record.materials)
         {
-            const asset::AssetID section_material_asset = asset_manager_.ResolveDependency(
-                level_asset, material_reference.dependency_index, asset::AssetType::KPAT_Material);
-            if (!section_material_asset.IsValid())
+            asset::AssetID section_material_asset;
+            if (!resolve_material(level_asset, material_reference.dependency_index,
+                                  section_material_asset))
             {
                 return Failure(LevelInstanceError::DependencyResolutionFailed,
                                "section material dependency failed for authored ID: " + record.id);
             }
-            asset::Asset *const section_material_wrapper =
-                asset_manager_.GetAsset(section_material_asset);
-            const std::shared_ptr<asset::MaterialResource> section_material_resource =
-                section_material_wrapper != nullptr
-                    ? section_material_wrapper->GetResource<asset::MaterialResource>()
-                    : nullptr;
-            if (section_material_wrapper == nullptr ||
-                section_material_wrapper->GetType() != asset::AssetType::KPAT_Material ||
-                section_material_resource == nullptr)
+            if (!is_valid_material(section_material_asset))
             {
                 return Failure(LevelInstanceError::InvalidMaterialResource,
                                "section material dependency has no valid resource for authored ID: " +
                                    record.id);
             }
-            description.material_assets.push_back(section_material_asset);
+            level_overrides.push_back(section_material_asset);
         }
+
+        std::size_t material_slot_count = 0;
+        for (const asset::MeshSection &section : mesh_resource->data->sections)
+        {
+            const std::size_t slot = static_cast<std::size_t>(section.material_index);
+            if (slot == std::numeric_limits<std::size_t>::max())
+            {
+                return Failure(LevelInstanceError::InvalidMeshData,
+                               "mesh material slot overflows for authored ID: " + record.id);
+            }
+            material_slot_count = std::max(material_slot_count, slot + 1);
+        }
+
+        const asset::AssetID engine_error_material =
+            is_valid_material(error_material_asset_) ? error_material_asset_ : asset::AssetID{};
+
+        description.material_assets.clear();
+        description.material_assets.reserve(material_slot_count);
+        for (std::size_t slot = 0; slot < material_slot_count; ++slot)
+        {
+            asset::AssetID selected;
+            if (slot < level_overrides.size())
+            {
+                selected = level_overrides[slot];
+            }
+            else if (slot < model_materials.size())
+            {
+                selected = model_materials[slot];
+            }
+            if (!selected.IsValid())
+            {
+                selected = authored_fallback.IsValid() ? authored_fallback : engine_error_material;
+            }
+            if (!selected.IsValid())
+            {
+                return Failure(LevelInstanceError::InvalidMaterialResource,
+                               "no valid Material is available for mesh slot " +
+                                   std::to_string(slot) + " on authored ID: " + record.id);
+            }
+            description.material_assets.push_back(selected);
+        }
+
+        // Render uses material_asset when a section has no dense-vector entry.
+        // Preserve the authored fallback first, then the first Model material,
+        // then the selected first slot, then the error product.
+        asset::AssetID material_asset = authored_fallback;
+        if (!material_asset.IsValid())
+        {
+            for (const asset::AssetID candidate : model_materials)
+            {
+                if (candidate.IsValid())
+                {
+                    material_asset = candidate;
+                    break;
+                }
+            }
+        }
+        if (!material_asset.IsValid() && !description.material_assets.empty())
+        {
+            material_asset = description.material_assets.front();
+        }
+        if (!material_asset.IsValid())
+        {
+            material_asset = engine_error_material;
+        }
+        if (!material_asset.IsValid())
+        {
+            return Failure(LevelInstanceError::InvalidMaterialResource,
+                           "no fallback Material is available for authored ID: " + record.id);
+        }
+
+        description.mesh_asset = mesh_asset;
+        description.material_asset = material_asset;
         description.transform = ToGameplayTransform(record.transform);
         description.local_bounds = mesh_resource->local_bounds;
         description.visible = record.visible;

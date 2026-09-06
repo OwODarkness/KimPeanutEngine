@@ -1,0 +1,11 @@
+{
+    "version": 1,
+    "shader": "../../shader/simple_triangle.shader",
+    "surface": {
+        "shading_model": "unlit",
+        "blend_mode": "opaque",
+        "cull_mode": "back",
+        "double_sided": false
+    },
+    "parameters": {}
+}

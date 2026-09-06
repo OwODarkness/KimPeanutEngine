@@ -1,5 +1,7 @@
 #include "runtime_global_context.h"
 #include "asset/asset_manager.h"
+#include "asset/level.h"
+#include "config/path.h"
 #include "level/level_instance.h"
 #include "screenshot/runtime_screenshot_service.h"
 #include "screenshot/screenshot_command_provider.h"
@@ -222,6 +224,12 @@ namespace kpengine
                 return {false, result.diagnostic};
             }
             prepared_render_assets_ = result.catalog;
+            if (level_instance_ != nullptr)
+            {
+                level_instance_->SetErrorMaterialAsset(
+                    asset::AssetManager::GetInstance().LoadSync(
+                        GetAssetDirectory() + asset::kEngineErrorMaterialAssetPath));
+            }
             return {true, {}};
         }
 

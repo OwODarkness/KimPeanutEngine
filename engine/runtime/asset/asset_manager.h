@@ -15,6 +15,7 @@ namespace kpengine::asset{
     // Loaders are owned by the manager but only referenced here as unique_ptr;
     // their full definitions stay out of this header (see asset_manager.cpp).
     class IModelLoader;
+    class NativeModelLoader;
     class ShaderProgramLoader;
     class IAudioLoader;
     class MaterialLoader;
@@ -46,6 +47,7 @@ namespace kpengine::asset{
 
         AssetID RegisterAsset(AssetRegisterInfo& info);
         void UnRegisterAsset(const AssetID& id);
+        std::size_t GetLiveAssetCount(AssetType type);
 
         Asset* GetAsset(const AssetID& id);
 
@@ -86,6 +88,8 @@ namespace kpengine::asset{
         // so lookup/insert/erase always agree on the same file.
         static std::string Key(const std::string& path);
 
+        AssetID RegisterAssetLocked(AssetRegisterInfo &info,
+                                    std::vector<AssetID> owned_children);
         bool LoadByExtension(const std::string& path, AssetType type, AssetRegisterInfo& info);
         AssetID LoadSyncInternal(
             const std::string &path,
@@ -96,6 +100,7 @@ namespace kpengine::asset{
     private:
         static AssetManager instance_;
         std::unique_ptr<IModelLoader> model_loader_;
+        std::unique_ptr<NativeModelLoader> native_model_loader_;
         std::unique_ptr<ShaderProgramLoader> shader_program_loader_;
         std::unique_ptr<IAudioLoader> audio_loader_;
         std::unique_ptr<MaterialLoader> material_loader_;

@@ -27,13 +27,26 @@ namespace kpengine::render
             return name == "base_color" || name == "base_color_texture" ||
                    name == "normal_texture" || name == "metallic" || name == "metallic_texture" ||
                    name == "roughness" || name == "roughness_texture" || name == "occlusion" ||
-                   name == "occlusion_texture" || name == "emissive";
+                   name == "occlusion_texture" || name == "emissive" || name == "normal_scale";
         }
 
         Vector4f AsVector4(const asset::MaterialParameterSource &parameter)
         {
             const auto &value = std::get<std::array<float, 4>>(parameter.value);
             return Vector4f{value[0], value[1], value[2], value[3]};
+        }
+
+        float ChannelSelector(asset::MaterialTextureChannel channel)
+        {
+            switch (channel)
+            {
+            case asset::MaterialTextureChannel::Red: return 0.0f;
+            case asset::MaterialTextureChannel::Green: return 1.0f;
+            case asset::MaterialTextureChannel::Blue: return 2.0f;
+            case asset::MaterialTextureChannel::Alpha: return 3.0f;
+            case asset::MaterialTextureChannel::Rgba: return 0.0f;
+            }
+            return 0.0f;
         }
     }
 
@@ -91,7 +104,8 @@ namespace kpengine::render
         MaterialTemplateDesc template_desc{};
         template_desc.shader_program = shader_program;
         template_desc.pipeline_state.blend_mode =
-            material->surface.blend_mode == asset::MaterialBlendMode::AlphaBlend
+            (material->surface.blend_mode == asset::MaterialBlendMode::AlphaBlend ||
+             material->surface.alpha_mode == asset::MaterialAlphaMode::Blend)
                 ? MaterialBlendMode::AlphaBlend
                 : MaterialBlendMode::Opaque;
         template_desc.pipeline_state.double_sided = material->surface.double_sided ||
@@ -176,14 +190,23 @@ namespace kpengine::render
         // Collect authored semantics. Unknown names or type mismatches fail.
         std::optional<Vector4f> base_color;
         std::optional<asset::AssetID> base_color_texture;
+        std::optional<MaterialTextureColorSpace> base_color_color_space;
         std::optional<asset::AssetID> normal_texture;
+        std::optional<MaterialTextureColorSpace> normal_color_space;
         std::optional<float> metallic;
         std::optional<asset::AssetID> metallic_texture;
+        std::optional<MaterialTextureColorSpace> metallic_color_space;
         std::optional<float> roughness;
         std::optional<asset::AssetID> roughness_texture;
+        std::optional<MaterialTextureColorSpace> roughness_color_space;
         std::optional<float> occlusion;
         std::optional<asset::AssetID> occlusion_texture;
+        std::optional<MaterialTextureColorSpace> occlusion_color_space;
         std::optional<Vector4f> emissive;
+        std::optional<float> normal_scale;
+        float metallic_channel = 0.0f;
+        float roughness_channel = 0.0f;
+        float occlusion_channel = 0.0f;
 
         for (const asset::MaterialParameterSource &parameter : material.parameters)
         {
@@ -206,6 +229,11 @@ namespace kpengine::render
                 else if (name == "roughness") roughness = value;
                 else occlusion = value;
             }
+            else if (name == "normal_scale")
+            {
+                if (parameter.type != asset::MaterialParameterSourceType::Scalar) return false;
+                normal_scale = std::get<float>(parameter.value);
+            }
             else if (name == "base_color_texture" || name == "normal_texture" ||
                      name == "metallic_texture" || name == "roughness_texture" ||
                      name == "occlusion_texture")
@@ -217,11 +245,38 @@ namespace kpengine::render
                 {
                     return false;
                 }
-                if (name == "base_color_texture") base_color_texture = texture_asset;
-                else if (name == "normal_texture") normal_texture = texture_asset;
-                else if (name == "metallic_texture") metallic_texture = texture_asset;
-                else if (name == "roughness_texture") roughness_texture = texture_asset;
-                else occlusion_texture = texture_asset;
+                const MaterialTextureColorSpace color_space =
+                    parameter.texture_color_space == asset::MaterialTextureColorSpace::Srgb
+                        ? MaterialTextureColorSpace::Srgb
+                        : MaterialTextureColorSpace::Linear;
+                if (name == "base_color_texture")
+                {
+                    base_color_texture = texture_asset;
+                    base_color_color_space = color_space;
+                }
+                else if (name == "normal_texture")
+                {
+                    normal_texture = texture_asset;
+                    normal_color_space = color_space;
+                }
+                else if (name == "metallic_texture")
+                {
+                    metallic_texture = texture_asset;
+                    metallic_color_space = color_space;
+                    metallic_channel = ChannelSelector(parameter.texture_channel);
+                }
+                else if (name == "roughness_texture")
+                {
+                    roughness_texture = texture_asset;
+                    roughness_color_space = color_space;
+                    roughness_channel = ChannelSelector(parameter.texture_channel);
+                }
+                else
+                {
+                    occlusion_texture = texture_asset;
+                    occlusion_color_space = color_space;
+                    occlusion_channel = ChannelSelector(parameter.texture_channel);
+                }
             }
             else
             {
@@ -268,19 +323,31 @@ namespace kpengine::render
         add_vector("base_color", base_color_texture ? Vector4f{1.f, 1.f, 1.f, 1.f}
                                                     : base_color.value_or(Vector4f{1.f, 1.f, 1.f, 1.f}));
         add_texture("base_color_texture", kBindingBaseColorTexture,
-                    MaterialTextureColorSpace::Srgb, base_color_texture.value_or(white));
-        add_texture("normal_texture", kBindingNormalTexture, MaterialTextureColorSpace::Linear,
+                    base_color_color_space.value_or(MaterialTextureColorSpace::Srgb),
+                    base_color_texture.value_or(white));
+        add_texture("normal_texture", kBindingNormalTexture,
+                    normal_color_space.value_or(MaterialTextureColorSpace::Linear),
                     normal_texture.value_or(flat_normal));
         add_scalar("metallic", metallic_texture ? 1.0f : metallic.value_or(0.0f));
         add_texture("metallic_texture", kBindingMetallicTexture,
-                    MaterialTextureColorSpace::Linear, metallic_texture.value_or(white));
+                    metallic_color_space.value_or(MaterialTextureColorSpace::Linear),
+                    metallic_texture.value_or(white));
         add_scalar("roughness", roughness_texture ? 1.0f : roughness.value_or(1.0f));
         add_texture("roughness_texture", kBindingRoughnessTexture,
-                    MaterialTextureColorSpace::Linear, roughness_texture.value_or(white));
+                    roughness_color_space.value_or(MaterialTextureColorSpace::Linear),
+                    roughness_texture.value_or(white));
         add_scalar("occlusion", occlusion_texture ? 1.0f : occlusion.value_or(1.0f));
         add_texture("occlusion_texture", kBindingOcclusionTexture,
-                    MaterialTextureColorSpace::Linear, occlusion_texture.value_or(white));
+                    occlusion_color_space.value_or(MaterialTextureColorSpace::Linear),
+                    occlusion_texture.value_or(white));
         add_vector("emissive", emissive.value_or(Vector4f{0.f, 0.f, 0.f, 0.f}));
+        add_vector("texture_channels",
+                   Vector4f{metallic_channel, roughness_channel, occlusion_channel, 0.0f});
+        add_scalar("normal_scale", normal_scale.value_or(1.0f));
+        add_scalar("alpha_cutoff",
+                   material.surface.alpha_mode == asset::MaterialAlphaMode::Mask
+                       ? material.surface.alpha_cutoff
+                       : 0.0f);
 
         template_desc.shading_model = MaterialShadingModel::StandardPbr;
         // PBR resolves bound samplers only (both APIs); bindless is a later

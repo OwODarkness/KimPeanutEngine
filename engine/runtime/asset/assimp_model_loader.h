@@ -2,21 +2,8 @@
 #define KPENGINE_RUNTIME_ASSET_ASSIMP_MODEL_LOADER_H
 
 #include <memory>
-#include <unordered_map>
-
+#include "assimp_model_decoder.h"
 #include "model_loader.h"
-#include "mesh.h"
-
-// Forward declarations keep all Assimp types out of this public header, so
-// consumers only need "model_loader.h"/"mesh.h" and never Assimp include paths.
-namespace Assimp
-{
-    class Importer;
-}
-
-struct aiNode;
-struct aiScene;
-struct aiMesh;
 
 namespace kpengine::asset
 {
@@ -30,18 +17,8 @@ namespace kpengine::asset
 
         virtual bool Load(const std::string& path, ModelGeometryType type,  AssetRegisterInfo &info) override;
     private:
-        struct ImportTransform;
-
-        AssetID LoadMesh(const std::string& path);
-        void ProcessNode(const aiNode *node, const aiScene *scene, MeshPtr resource,
-                         const ImportTransform &parent_transform,
-                         std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices);
-        void ProcessMesh(const aiMesh *mesh, const ImportTransform &node_transform,
-                         MeshPtr resource,
-                         std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices);
-
-        struct Impl;
-        std::unique_ptr<Impl> impl_;
+        AssetID LoadMesh(const std::string &path);
+        AssimpModelDecoder decoder_;
     };
 }
 

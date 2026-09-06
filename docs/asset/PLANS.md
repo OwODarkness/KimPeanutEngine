@@ -48,7 +48,7 @@ still miss Resource/GPU/level-instantiation work.
 ## Model-import architecture
 
 ```text
-Source model
+Offline importer tool (engine may be closed)
   -> source-path hash + SQLite archive lookup
   -> verify root + recorded dependency fingerprint
   -> Assimp decode and rediscovery only on cache miss
@@ -56,16 +56,23 @@ Source model
   -> explicit import/reimport transaction
   -> hash-named native .model + .material products
   -> atomic SQLite name/hash/dependency transaction
-  -> runtime native Model load and dependency registration
+
+Runtime AssetManager (read-only product consumer)
+  -> read-only archive lookup for readable Level model keys
+  -> native Model load and dependency registration
   -> Model material-slot table
   -> Gameplay/Render consumption with authored overrides
 ```
 
-Assimp owns foreign source-format decoding only. Asset import policy owns source
-closure discovery, hash/no-op decisions, native serialization, immutable
-content-addressed products, staging, and short SQLite metadata transactions.
-Runtime `LoadSync` reads native `.model` and `.material` products without
-opening the authoring database and does not import or write project content.
+Assimp owns foreign source-format decoding only. The standalone Asset import
+tool/library owns source closure discovery, hash/no-op decisions, native
+serialization, immutable content-addressed products, staging, and short SQLite
+metadata transactions. It must run without `AssetManager`, `AssetID`, Runtime,
+Editor, Render, or Graphics, so import/reimport remains available while the
+engine application is closed. Runtime Level loading may open the archive in a
+strict read-only mode to resolve a readable logical model key to its verified
+hash-named `.model` product. It never imports, writes the archive, or decodes a
+foreign source at runtime. The native Model loader itself remains database-free.
 Render consumes ordinary Material AssetIDs and never imports files or owns
 source-material metadata.
 
@@ -76,6 +83,8 @@ source-material metadata.
   `.model` format, hash-named `.model`/`.material` products, the
   SQLite name-to-hash/dependency archive, no-op reuse, Model material
   references, transactional publication, runtime migration, and validation.
+  Its implementation is split into independently assignable
+  [MI1.1 through MI1.8 stage contracts](.plan/MI1.md#implementation-sequence).
 
 ## Design decisions
 
@@ -110,6 +119,11 @@ source-material metadata.
   presentation tick draws loading or workspace UI. Future selection, gizmo,
   play/edit, and viewport-world behavior is activated and ticked on the game
   thread through narrow command/adaptor seams.
+
+- **Import is offline authoring work, not runtime loading.** The import
+  library/tool may use Core, Assimp, ImageIO, serialization, and the archive
+  repository, but never constructs runtime Asset identity or calls
+  `AssetManager`. The native runtime loader is a separate read-only adapter.
 
 ## Reference findings
 

@@ -1,15 +1,21 @@
 #include "material_loader.h"
 
 #include <array>
+#include <cstddef>
 #include <cmath>
+#include <cstdint>
+#include <filesystem>
 #include <fstream>
 #include <initializer_list>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 #include <nlohmann/json.hpp>
 
 #include "log/logger.h"
+#include "asset_product.h"
 #include "material.h"
 #include "utility.h"
 
@@ -24,6 +30,33 @@ namespace kpengine::asset
         // emissive); parameter parsing is name-agnostic in both.
         constexpr int kMaterialVersionLatest = 2;
         constexpr int kMaterialVersionMin = 1;
+
+        std::vector<std::byte> ReadMaterialProduct(const std::filesystem::path &path)
+        {
+            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            if (!file.is_open())
+            {
+                throw std::runtime_error("failed to open material product");
+            }
+            const std::streampos end = file.tellg();
+            if (end < 0 || static_cast<std::uintmax_t>(end) >
+                                static_cast<std::uintmax_t>(std::numeric_limits<std::size_t>::max()))
+            {
+                throw std::runtime_error("material product size is invalid");
+            }
+            std::vector<std::byte> bytes(static_cast<std::size_t>(end));
+            file.seekg(0, std::ios::beg);
+            if (!bytes.empty())
+            {
+                file.read(reinterpret_cast<char *>(bytes.data()),
+                          static_cast<std::streamsize>(bytes.size()));
+                if (!file)
+                {
+                    throw std::runtime_error("failed to read material product");
+                }
+            }
+            return bytes;
+        }
 
         bool HasOnlyFields(const json &object, std::initializer_list<const char *> allowed)
         {
@@ -50,7 +83,8 @@ namespace kpengine::asset
         bool ParseSurface(int version, const json &source, MaterialSurfaceSource &surface)
         {
             if (!source.is_object() ||
-                !HasOnlyFields(source, {"shading_model", "blend_mode", "cull_mode", "double_sided"}))
+                !HasOnlyFields(source, {"shading_model", "blend_mode", "alpha_mode",
+                                        "alpha_cutoff", "cull_mode", "double_sided"}))
             {
                 return false;
             }
@@ -89,6 +123,35 @@ namespace kpengine::asset
                 return false;
             }
 
+            surface.alpha_mode = surface.blend_mode == MaterialBlendMode::AlphaBlend
+                                    ? MaterialAlphaMode::Blend
+                                    : MaterialAlphaMode::Opaque;
+            surface.alpha_cutoff = 0.5f;
+            if (source.contains("alpha_mode"))
+            {
+                if (version < 2 || !source["alpha_mode"].is_string()) return false;
+                const std::string alpha_mode = source["alpha_mode"].get<std::string>();
+                if (alpha_mode == "opaque") surface.alpha_mode = MaterialAlphaMode::Opaque;
+                else if (alpha_mode == "mask") surface.alpha_mode = MaterialAlphaMode::Mask;
+                else if (alpha_mode == "blend") surface.alpha_mode = MaterialAlphaMode::Blend;
+                else return false;
+            }
+            if (source.contains("alpha_cutoff"))
+            {
+                if (version < 2 ||
+                    (!source["alpha_cutoff"].is_number_float() &&
+                     !source["alpha_cutoff"].is_number_integer())) return false;
+                surface.alpha_cutoff = source["alpha_cutoff"].get<float>();
+            }
+            if (!std::isfinite(surface.alpha_cutoff) || surface.alpha_cutoff < 0.0f ||
+                surface.alpha_cutoff > 1.0f ||
+                (surface.alpha_mode == MaterialAlphaMode::Blend &&
+                 surface.blend_mode != MaterialBlendMode::AlphaBlend) ||
+                (surface.alpha_mode != MaterialAlphaMode::Blend &&
+                 surface.blend_mode == MaterialBlendMode::AlphaBlend))
+            {
+                return false;
+            }
             if (cull_mode == "none")
             {
                 surface.cull_mode = MaterialCullMode::None;
@@ -140,6 +203,52 @@ namespace kpengine::asset
                     }
                     parameter.type = MaterialParameterSourceType::Texture;
                     parameter.value = texture_path;
+                }
+                else if (value.is_object() &&
+                         HasOnlyFields(value, {"path", "color_space", "channel"}) &&
+                         value.contains("path") && value["path"].is_string())
+                {
+                    const std::string texture_path = value["path"].get<std::string>();
+                    if (texture_path.empty())
+                    {
+                        return false;
+                    }
+                    parameter.type = MaterialParameterSourceType::Texture;
+                    parameter.value = texture_path;
+                    if (value.contains("color_space"))
+                    {
+                        if (!value["color_space"].is_string())
+                        {
+                            return false;
+                        }
+                        const std::string color_space = value["color_space"].get<std::string>();
+                        if (color_space == "srgb")
+                        {
+                            parameter.texture_color_space = MaterialTextureColorSpace::Srgb;
+                        }
+                        else if (color_space == "linear")
+                        {
+                            parameter.texture_color_space = MaterialTextureColorSpace::Linear;
+                        }
+                        else
+                        {
+                            return false;
+                        }
+                    }
+                    if (value.contains("channel"))
+                    {
+                        if (!value["channel"].is_string())
+                        {
+                            return false;
+                        }
+                        const std::string channel = value["channel"].get<std::string>();
+                        if (channel == "rgba") parameter.texture_channel = MaterialTextureChannel::Rgba;
+                        else if (channel == "r") parameter.texture_channel = MaterialTextureChannel::Red;
+                        else if (channel == "g") parameter.texture_channel = MaterialTextureChannel::Green;
+                        else if (channel == "b") parameter.texture_channel = MaterialTextureChannel::Blue;
+                        else if (channel == "a") parameter.texture_channel = MaterialTextureChannel::Alpha;
+                        else return false;
+                    }
                 }
                 else if (value.is_array() && value.size() == 4)
                 {
@@ -212,6 +321,15 @@ namespace kpengine::asset
                         return false;
                     }
                 }
+                else if (parameter.name == "normal_scale")
+                {
+                    if (parameter.type != MaterialParameterSourceType::Scalar ||
+                        !std::isfinite(std::get<float>(parameter.value)) ||
+                        std::get<float>(parameter.value) < 0.0f)
+                    {
+                        return false;
+                    }
+                }
                 else if (parameter.name == "base_color_texture" ||
                          parameter.name == "normal_texture" ||
                          parameter.name == "metallic_texture" ||
@@ -234,17 +352,32 @@ namespace kpengine::asset
 
     bool MaterialLoader::Load(const std::string &path, AssetRegisterInfo &info)
     {
-        std::ifstream file(path);
-        if (!file.is_open())
+        std::vector<std::byte> bytes;
+        try
         {
-            KP_LOG("MaterialLoaderLog", LOG_LEVEL_ERROR, "Failed to open %s", path.c_str());
+            bytes = ReadMaterialProduct(std::filesystem::path{path});
+        }
+        catch (const std::exception &exception)
+        {
+            KP_LOG("MaterialLoaderLog", LOG_LEVEL_ERROR, "Failed to read %s: %s", path.c_str(),
+                   exception.what());
+            return false;
+        }
+
+        std::string archive_diagnostic;
+        if (!VerifyArchiveProduct(std::filesystem::path{path}, ArchiveProductType::Material, bytes,
+                                  archive_diagnostic))
+        {
+            KP_LOG("MaterialLoaderLog", LOG_LEVEL_ERROR,
+                   "Invalid archive material product %s: %s", path.c_str(),
+                   archive_diagnostic.c_str());
             return false;
         }
 
         try
         {
-            json source;
-            file >> source;
+            const std::string text(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+            const json source = json::parse(text);
             if (!source.is_object() ||
                 !HasOnlyFields(source, {"version", "shader", "surface", "parameters"}) ||
                 !source.contains("version") || !source["version"].is_number_integer() ||

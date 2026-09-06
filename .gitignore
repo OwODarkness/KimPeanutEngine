@@ -64,6 +64,9 @@ deprecated/
 !/asset/shader/capture_view.shader
 !/asset/shader/directionalshadow_mapping_depth.vert
 !/asset/shader/directionalshadow_mapping_depth.frag
+!/asset/material/
+/asset/material/*
+!/asset/material/error.material
 
 # Build output
 build/
@@ -91,6 +94,10 @@ Thumbs.db
 
 # ImGui runtime state (window layout)
 imgui.ini
+
+# Checked-in foreign-model characterization fixtures. The general *.obj rule
+# is for compiler objects; these are source fixtures for Asset tests.
+!engine/test/unit/asset/fixtures/mi1_1/**/*.obj
 
 # Logs
 logs/

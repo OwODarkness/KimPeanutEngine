@@ -47,10 +47,14 @@ reimport behavior?
 
 ## Chosen architecture
 
-Separate source import from runtime loading:
+Separate offline source import from runtime loading. The importer is an
+Asset-owned library/tool that can run in a CLI or editor subprocess while the
+engine application is closed; `AssetManager` is only a runtime product
+consumer:
 
 ```text
-Foreign source package
+Offline importer (no AssetManager or engine application)
+  Foreign source package
   STL / OBJ+MTL / FBX / GLTF+BIN+images / GLB
     -> source-path hash and SQLite archive lookup
         prior row -> hash root + recorded source dependencies
@@ -66,8 +70,10 @@ Foreign source package
     -> validate staged products
     -> atomically publish products, then commit the SQLite transaction
 
-Runtime
-  hashed .model path
+Runtime AssetManager
+  readable Level model key
+    -> read-only archive lookup
+  verified hashed .model path
     -> NativeModelLoader
     -> declared hashed .material dependencies
     -> AssetManager registration
@@ -85,16 +91,17 @@ must be visibly deprecated and must not silently write project content from
 | Owner | Responsibility |
 |---|---|
 | Assimp decoder | Parse one supported foreign source into import-only geometry, material, image, node, and dependency descriptions. |
-| Model import pipeline | Discover the source closure, fingerprint inputs/settings, convert data, serialize canonical products, stage/validate/commit, and update the archive. |
+| Standalone model import pipeline | Discover the source closure, fingerprint inputs/settings, convert data, serialize canonical products, stage/validate/commit, and update the archive. It may run as a library or CLI while the engine is closed, but never depends on `AssetManager`, `AssetID`, Runtime, Editor, Render, or Graphics. |
 | SQLite archive database | Index logical source/material names, source fingerprints, immutable product hashes, dependency rows, overrides, and reimport diagnostics. |
 | Native Model loader | Read `.model`, validate its version/chunks, and declare referenced Material dependencies. |
 | AssetManager | Own runtime Asset identity, cache registration, dependency edges, payload lifetime, and unloading. |
 | Render/Graphics | Resolve loaded materials and create/retire GPU resources; never import foreign files. |
-| Editor or CLI front end | Request import/reimport, show names/status/diagnostics, and request explicit cleanup or overrides. |
+| Editor or CLI front end | Launch or call the standalone importer, show names/status/diagnostics, and request explicit cleanup or overrides. It is not required for the importer to operate. |
 
-The import implementation belongs to Asset infrastructure and must not depend
-on Editor, Render, Graphics, or backend types. Editor and CLI are replaceable
-callers.
+The import implementation belongs to standalone Asset infrastructure and must
+not depend on `AssetManager`, `AssetID`, Runtime, Editor, Render, Graphics, or
+backend types. Editor and CLI are replaceable callers; the engine application
+does not need to be running.
 
 ## Archive layout
 
@@ -127,8 +134,9 @@ the expected digest before reuse; a mismatching file at the same address is a
 hard corruption error.
 
 The directory names, database path, and object lookup policy must live in one
-Asset-owned import helper. No decoder or runtime consumer should execute SQL or
-assemble archive paths independently.
+Asset-owned archive helper. Decoders and native product loaders do not execute
+SQL or assemble archive paths independently; the Level logical-key resolver is
+the only narrow runtime read-only archive consumer.
 
 ## SQLite archive schema
 
@@ -200,9 +208,10 @@ repository boundary. Add secondary indices only for demonstrated browsing or
 maintenance queries. Use slot `-1` for singleton roles such as the root Model;
 material roles use their nonnegative source material slot.
 
-The database maps names to hashes for authoring tools, but runtime correctness
-comes from typed product references inside `.model`. Names are presentation
-metadata and never unique runtime identity. The database must be rebuildable by
+The database maps readable logical model paths to hashes for authoring tools and
+Level loading, but runtime correctness still comes from verified native product
+bytes and typed product references inside `.model`. Logical names are not the
+immutable product identity. The database must be rebuildable by
 reimporting foreign sources and scanning verified products; it is derived state
 rather than the sole copy of authored information.
 
@@ -422,17 +431,19 @@ operation over database roots and is outside MI1.
 
 ## Runtime and Level contract
 
-Runtime Levels reference native `.model` assets, never FBX/GLTF/STL directly.
-For MI1 the reference may be the hashed archive path:
+Runtime Levels reference readable logical model paths, never FBX/GLTF/STL
+directly:
 
 ```json
-"model": ".archive/models/<model-content-hash>.model"
+"model": "model/brickwall/floor"
 ```
 
-The SQLite archive lets Editor tooling query the original model name and source
-path despite the hashed runtime filename. A future logical-asset alias layer
-may hide hash paths from authored Levels, but MI1 does not add an unproven
-runtime database dependency.
+At Level-load time, Runtime opens `asset/.archive/archive.sqlite3` in read-only
+mode, maps the logical path (the normalized source path without its foreign
+extension) to the source's verified Model product, and then loads the
+hash-named `.model`. Missing, ambiguous, corrupt, or unavailable mappings fail
+the Level load; Runtime never imports or writes the archive. Direct native
+`.model` paths remain valid for low-level fixtures and migration diagnostics.
 
 The native Model material table supplies the default material per section slot:
 
@@ -526,9 +537,10 @@ product.
 - **Store Model/texture payloads as SQLite BLOBs:** rejected for MI1 because
   large runtime products should remain directly streamable, independently
   verifiable, and packageable without opening the authoring database.
-- **Use SQLite from Runtime to resolve every asset:** rejected because native
-  Model files already contain typed material references and packaged runtime
-  content should not require the authoring index.
+- **Use SQLite from Runtime to resolve every asset:** rejected for ordinary
+  product dependencies, because native Model files already contain typed
+  Material references. A narrow read-only lookup for user-facing Level model
+  keys is accepted; it never replaces product references or performs import.
 - **Store only material display names in `.model`:** names are not stable or
   unique dependency identity.
 - **Split packed GLTF metallic-roughness images:** duplicates content and loses
@@ -536,31 +548,39 @@ product.
 
 ## Implementation sequence
 
-1. **MI1.1 — contract characterization:** add foreign-format fixtures and
-   capture current geometry, section, material, transform, and failure behavior.
-2. **MI1.2 — hashing and SQLite archive core:** integrate SQLite through a
-   dedicated CMake dependency target, implement the versioned schema/repository,
-   canonical paths, stable SHA-256 test vectors, source-closure fingerprints,
-   content-addressed path helpers, integrity verification, migrations, and
-   no-op decisions.
-3. **MI1.3 — pure decoder:** extract Assimp decoding into
-   `ImportedModelDocument`, add STL dispatch to the import front end, and
-   remove Asset registration from decoder execution.
-4. **MI1.4 — native Model V1:** define deterministic `.model` serialization,
-   defensive loading, ordered Material references, and Model dependency
-   declaration.
-5. **MI1.5 — native material conversion:** add canonical Material
-   serialization, foreign material conversion, packed GLTF
-   metallic-roughness/emissive support, and embedded-image memory decoding.
-6. **MI1.6 — transactional importer:** stage and validate products, publish
-   immutable objects with concurrent deduplication, commit source/dependency/
-   product rows in one short transaction, and preserve prior state on failure.
-7. **MI1.7 — runtime migration:** dispatch `.model` through
-   `NativeModelLoader`, update checked-in Levels/bootstrap to native products,
-   and retain a bounded deprecated foreign-load path only as needed.
-8. **MI1.8 — tooling and validation:** add explicit CLI/Editor import,
-   reimport/status diagnostics, material promotion/override, cross-backend
-   runtime fixtures, and visual capture.
+Each numbered stage is an independently assignable work contract. Tell an
+agent the exact ID and link below; the stage page defines its permitted scope,
+dependencies, deliverables, and acceptance checks.
+
+1. [**MI1.1 — contract characterization**](MI1.1.md): freeze current foreign
+   loader behavior with focused fixtures and tests.
+2. [**MI1.2 — hashing and SQLite archive core**](MI1.2.md): provide stable
+   hashes, paths, schema, repository operations, migrations, and no-op queries.
+3. [**MI1.3 — pure foreign-model decoder**](MI1.3.md): produce an
+   `ImportedModelDocument` without Asset registration or archive mutation.
+4. [**MI1.4 — native Model V1**](MI1.4.md): define deterministic native Model
+   bytes, defensive loading, and typed Material dependencies.
+5. [**MI1.5 — native material conversion**](MI1.5.md): generate canonical
+   Material and image products with correct glTF semantics.
+6. [**MI1.6 — transactional model importer**](MI1.6.md): orchestrate cache
+   decisions, staging, immutable publication, and short database commits.
+7. [**MI1.7 — runtime migration**](MI1.7.md): make `.model` the read-only
+   runtime path and migrate checked-in consumers.
+8. [**MI1.8 — tooling and end-to-end validation**](MI1.8.md): expose explicit
+   import workflows, promotion/override tools, diagnostics, and visual proof.
+
+Dependency graph:
+
+```text
+MI1.1 -> [MI1.2 + MI1.3]
+              -> [MI1.4 || MI1.5]
+              -> MI1.6 -> MI1.7 -> MI1.8
+```
+
+MI1.2 and MI1.3 may proceed in parallel after MI1.1. MI1.4 and MI1.5 may then
+proceed in parallel after agreeing on the imported-document and Material-
+reference seams. MI1.6 is the first integration stage and must not begin until
+MI1.2 through MI1.5 have landed.
 
 Each substage must remain buildable. Before implementation begins, create a
 matching `.spec` and factual journal because MI1 changes persistent formats,

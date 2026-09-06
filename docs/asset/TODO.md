@@ -39,30 +39,33 @@ belongs in the corresponding `.spec/journal/` entry.
 
 ## Model-import roadmap
 
-- [ ] **MI1 — content-addressed native model import** — convert foreign
-  STL/OBJ/FBX/GLTF/GLB sources into immutable hash-named native `.model` and
-  `.material` products. Use an Asset-owned SQLite database under `.archive`
-  to index readable source/material names, dependencies, and product hashes;
-  skip verified cache hits without decoding or writing, and keep Material
-  references inside the native Model so runtime does not need SQLite. Ordinary
-  runtime `LoadSync` remains read-only. See the [MI1 plan](.plan/MI1.md).
+- [ ] **MI1 — content-addressed native model import** — use a standalone
+  offline importer, runnable while the engine application is closed, to
+  convert foreign STL/OBJ/FBX/GLTF/GLB sources into immutable hash-named native
+  `.model` and `.material` products. Use an Asset-owned SQLite database under
+  `.archive` to index readable source/material names, dependencies, and product
+  hashes; skip verified cache hits without decoding or writing, and keep
+  Material references inside the native Model so runtime does not need SQLite
+  for ordinary dependency resolution. Level model keys use a narrow read-only
+  archive lookup. Ordinary runtime `LoadSync` remains read-only. See the
+  [MI1 plan](.plan/MI1.md).
 
   Subtasks:
 
-  - [ ] Add stable hashing, dependency-closure fingerprints, a versioned SQLite
-    archive repository, product integrity checks, and exact no-op decisions.
-  - [ ] Extract a pure Assimp imported-model document and support STL, OBJ, FBX,
-    GLTF, and GLB as import sources rather than native runtime formats.
-  - [ ] Define deterministic native Model V1 serialization with ordered typed
-    Material references and defensive loading.
-  - [ ] Add canonical content-hashed Material conversion, embedded-image memory
-    decode, deduplication, and glTF PBR semantics.
-  - [ ] Stage and validate immutable products, then commit their metadata and
-    per-source root in one short SQLite transaction with rollback on failure.
-  - [ ] Dispatch `.model` through the native loader, migrate Levels/bootstrap,
-    and preserve existing material overrides.
-  - [ ] Add explicit import/reimport/status tooling, material promotion, focused
-    filesystem tests, cross-backend smoke, and visual validation.
+  - [x] [MI1.1 — characterize the existing loader contract](.plan/MI1.1.md).
+  - [x] [MI1.2 — implement hashing and the SQLite archive core](.plan/MI1.2.md).
+  - [x] [MI1.3 — extract the pure foreign-model decoder](.plan/MI1.3.md).
+  - [x] [MI1.4 — implement native Model V1](.plan/MI1.4.md).
+  - [x] [MI1.5 — implement native Material conversion](.plan/MI1.5.md).
+  - [x] [MI1.6 — implement the transactional model importer](.plan/MI1.6.md).
+  - [ ] [MI1.7 — migrate runtime loading to native Model](.plan/MI1.7.md).
+    MI1.7-R1 build ownership, MI1.7-R2 native material selection, MI1.7-R3
+    transactional Model-child registration, MI1.7-R5 archive product
+    verification, MI1.7-R6 bounded foreign compatibility, and readable logical
+    Level-model lookup are landed;
+    checked-in products and the remaining review risks stay open
+    in the stage plan.
+  - [ ] [MI1.8 — add tooling and end-to-end validation](.plan/MI1.8.md).
 
 ## Acceptance ledger
 

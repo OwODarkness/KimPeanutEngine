@@ -15,6 +15,7 @@ namespace kpengine::asset
 {
     inline constexpr uint32_t kInvalidLevelDependencyIndex =
         std::numeric_limits<uint32_t>::max();
+    inline constexpr const char *kEngineErrorMaterialAssetPath = "material/error.material";
 
     struct LevelAssetReference
     {

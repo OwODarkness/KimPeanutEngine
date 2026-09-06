@@ -22,6 +22,28 @@ namespace kpengine::asset
         AlphaBlend,
     };
 
+    enum class MaterialAlphaMode : uint8_t
+    {
+        Opaque,
+        Mask,
+        Blend,
+    };
+
+    enum class MaterialTextureColorSpace : uint8_t
+    {
+        Srgb,
+        Linear,
+    };
+
+    enum class MaterialTextureChannel : uint8_t
+    {
+        Rgba,
+        Red,
+        Green,
+        Blue,
+        Alpha,
+    };
+
     enum class MaterialCullMode : uint8_t
     {
         None,
@@ -33,6 +55,8 @@ namespace kpengine::asset
     {
         MaterialShadingModel shading_model = MaterialShadingModel::Unlit;
         MaterialBlendMode blend_mode = MaterialBlendMode::Opaque;
+        MaterialAlphaMode alpha_mode = MaterialAlphaMode::Opaque;
+        float alpha_cutoff = 0.5f;
         MaterialCullMode cull_mode = MaterialCullMode::Back;
         bool double_sided = false;
     };
@@ -53,6 +77,8 @@ namespace kpengine::asset
         std::string name;
         MaterialParameterSourceType type = MaterialParameterSourceType::Scalar;
         MaterialParameterSourceValue value = 0.0f;
+        MaterialTextureColorSpace texture_color_space = MaterialTextureColorSpace::Linear;
+        MaterialTextureChannel texture_channel = MaterialTextureChannel::Rgba;
         uint32_t dependency_index = std::numeric_limits<uint32_t>::max();
     };
 

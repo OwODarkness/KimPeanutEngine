@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_IMAGE_IO_CODEC_H
 
 #include <string>
+#include <vector>
 
 #include "image_io/image_io.h"
 
@@ -15,8 +16,10 @@ namespace kpengine::image_io
         virtual ~IImageCodec() = default;
 
         virtual ImageDecodeResult DecodeFile(const std::string &path) const = 0;
+        virtual ImageDecodeResult DecodeMemory(const std::byte *data, size_t size) const = 0;
         virtual ImageIoResult WritePngFile(const ImageBuffer &image,
                                            const std::string &path) const = 0;
+        virtual ImageEncodeResult EncodePngMemory(const ImageBuffer &image) const = 0;
     };
 
     // The factory is private to ImageIO. A future implementation may choose by

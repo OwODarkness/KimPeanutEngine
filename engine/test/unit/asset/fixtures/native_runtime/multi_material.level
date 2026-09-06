@@ -1,0 +1,18 @@
+{
+    "version": 1,
+    "objects": [
+        {
+            "id": "native_multi_material",
+            "name": "Native multi-material fixture",
+            "kind": "static_mesh",
+            "transform": {
+                "position": [0.0, 0.0, 0.0],
+                "rotation_degrees": [0.0, 0.0, 0.0],
+                "scale": [1.0, 1.0, 1.0]
+            },
+            "model": "model/native_runtime/multi_material",
+            "visible": true,
+            "casts_shadow": true
+        }
+    ]
+}

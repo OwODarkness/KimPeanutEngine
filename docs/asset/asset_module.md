@@ -10,6 +10,24 @@ continues to describe the landed Asset implementation until those stages ship.
 
 The asset module is the engine's "get me this file as a typed resource" layer. It dedups loads by path, assigns stable IDs, tracks which assets depend on which, and hands out resource payloads to the rest of the engine (renderers, audio, editor).
 
+## Build ownership
+
+The module is split into explicit targets so runtime consumers do not acquire
+offline-import state accidentally:
+
+- `AssetProduct` owns database-free content hashes and canonical product paths.
+- `AssetNative` owns native Model serialization shared by runtime and import.
+- `AssetRuntime` owns `AssetManager` and read-only runtime loaders.
+- `AssetArchive` owns the SQLite archive repository.
+- `AssetImport` owns offline model/material import and may run without the
+  engine application or `AssetManager`.
+
+`Database` is not exported through `Core`. Runtime Level parsing may use the
+archive through its read-only resolver target; native product loading remains
+database-free. Legacy foreign-format runtime loading is a migration-only
+compatibility option controlled by `KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT`; the
+native `.model` path does not call the importer or mutate the archive database.
+
 ## Key types
 
 ### `AssetType` and `AssetID` — [`common.h`](../../engine/runtime/asset/common.h)
@@ -115,24 +133,87 @@ Consequence: loads are **serialized**, not parallelized — async loading wins o
 
 ## Loaders and dispatch
 
+The Asset module has two distinct paths. The offline import path is an
+authoring tool/library that creates immutable native products and updates the
+archive without constructing runtime Assets; it can run while the engine
+application is closed. Runtime Level parsing has one additional read-only
+archive lookup that maps a readable logical model key to a verified native
+product. The dispatch below describes the resulting `AssetManager` path, which
+reads products and foreign compatibility sources.
+
 `LoadByExtension` dispatches by `AssetType`:
 
-- `KPAT_Model` → `Assimp_ModelLoader` (also emits `KPAT_Mesh` sub-resources;
-  OBJ, FBX, GLTF, and GLB are currently dispatched here)
+- `KPAT_Model` → `NativeModelLoader` for verified `.model` products; Level
+  parsing resolves readable logical keys before this dispatch. It
+  declares an inline CPU `KPAT_Mesh` child and ordered hashed `.material`
+  dependencies. The loader has no AssetManager side effects: AssetManager
+  resolves external dependencies, registers the inline Mesh, binds its ID into
+  the Model, and commits the parent transactionally. On parent unload it
+  retires the owned Mesh after removing the parent edges. Foreign OBJ, FBX,
+  GLTF, and GLB sources continue through `Assimp_ModelLoader` only while the
+  `KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT` migration option is enabled. Each
+  direct foreign request emits the stable diagnostic family
+  `asset.runtime.foreign_model_compatibility.deprecated`; when disabled, the
+  request fails with the corresponding `.disabled` diagnostic. STL is not a
+  runtime model extension and remains offline-import-only.
 - `KPAT_Texture` → `AssetManager` calls ImageIO directly, then creates
   Asset-owned texture data with the texture-format policy
 - `KPAT_Audio` → `MiniAudio_AudioLoader`
 - `KPAT_ShaderProgram` → `ShaderProgramLoader` (emits `KPAT_Shader` sub-resources)
 - `KPAT_Material` → `MaterialLoader` (parses versioned CPU-side `*.material`
-  authoring data without resolving render handles or child AssetIDs)
+  authoring data without resolving render handles or child AssetIDs). Products
+  under `.archive/materials` must use the canonical hash-named layout and pass
+  a complete-byte SHA-256 check before JSON parsing; authored non-archive
+  Materials remain exempt.
+
+The MI1.5 offline converter emits Material V2 records with explicit alpha,
+color-space, and packed-texture channel semantics. MI1.6 composes it with the
+pure decoder and native Model serializer through `ModelImportService`: it
+probes recorded dependencies before decoding, validates staged products,
+publishes immutable hash-named files create-if-absent, and updates the source
+row only after publication. Runtime MaterialLoader remains a read-only
+consumer; publication belongs to the standalone importer, not AssetManager.
 
 Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h`, `shader_program_loader.h`); the concrete implementations are swappable. The manager owns them as `unique_ptr` and currently hard-codes the concrete types in its constructor.
 
 The Assimp model path is static-mesh oriented. It accumulates and bakes node
 transforms, preserves section/material-slot topology, and retains source PBR
-material metadata in `data::MeshMaterial`. Engine Render materials remain
-explicit `.material` assets; source texture paths are metadata for the import
-boundary and are not loaded as hidden GPU dependencies by Assimp.
+material metadata in `data::MeshMaterial`. The native model path is a
+read-only product loader: it validates the canonical `.model` digest and chunk
+table before creating an Asset registration, then lets AssetManager resolve
+the declared Material products outside the shared loader mutex. Archive native
+Models are accepted by the runtime Asset boundary only from
+`.archive/models/<lowercase-sha256>.model`, with the filename verified against
+the complete product bytes before native format parsing. A mismatch is a
+terminal load failure and never falls through to the foreign compatibility
+path or opens SQLite. Engine Render
+materials remain explicit `.material` assets; source texture paths are
+metadata for the import boundary and are not loaded as hidden GPU dependencies
+by Assimp.
+
+Native Model registration is intentionally split into declaration and commit.
+`NativeModelLoader` can therefore be used by an offline/runtime-independent
+caller without opening the AssetManager or creating cache entries. The manager
+owns the short commit transaction: external dependency failures happen before
+the inline Mesh is installed, and only manager-created inline children are
+  rolled back. A previously cached Material or other external dependency is not
+  unregistered as collateral.
+
+The compatibility window is bounded. A missing or corrupt native `.model` or
+dependency fails its owning load transaction and never invokes foreign loading
+or import. The compatibility option may be removed only after tracked Levels
+have no foreign references, native equivalents cover the characterized OBJ,
+FBX, GLTF, and GLB cases, and packaging evidence proves the native product
+closure is available without foreign sources. A missing or corrupt archive
+database affects only offline import and the read-only logical Level-key
+resolver; direct native Model loading remains database-free.
+
+When a serialized native Level omits its authored fallback Material, LevelLoader
+adds the engine-owned `material/error.material` product as an implicit Level
+dependency. LevelInstance then selects dense per-slot overrides first, followed
+by the native Model Material slot, the authored/implicit fallback, and finally
+fails closed if the engine fallback is unavailable. Foreign model Levels retain
+the required authored `material` field during the migration window.
 
 ## Bootstrap preload, HDR cost, and streaming policy
 

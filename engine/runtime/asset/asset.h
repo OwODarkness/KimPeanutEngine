@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_ASSET_H
 #define KPENGINE_RUNTIME_ASSET_H
 
+#include <functional>
 #include <string>
 #include <variant>
 #include <vector>
@@ -35,6 +36,18 @@ namespace kpengine::asset
                           { return ptr != nullptr; }, resource);
     }
 
+    // A loader may return a CPU child payload that must be installed together
+    // with its parent. AssetManager assigns the child AssetID only after all
+    // external dependency requests have resolved.
+    struct AssetOwnedChildInfo
+    {
+        AssetPayload resource;
+        std::string path;
+        std::string name;
+        std::vector<AssetID> dependencies;
+        AssetType type = AssetType::Undefined;
+    };
+
     struct AssetRegisterInfo
     {
         struct DependencyRequest
@@ -49,6 +62,8 @@ namespace kpengine::asset
         std::vector<AssetID> ref_assets;
         std::vector<AssetID> dependencies;
         std::vector<DependencyRequest> dependency_requests;
+        std::vector<AssetOwnedChildInfo> owned_children;
+        std::function<void(const std::vector<AssetID> &)> bind_owned_children;
         AssetType type;
         uint32_t flags = 0;
     };
@@ -65,6 +80,7 @@ namespace kpengine::asset
         std::string GetPath() const { return abs_path; }
         std::vector<AssetID> GetRefs() const{return ref_assets;}
         std::vector<AssetID> GetDependencies() const{return dependencies;}
+        const std::vector<AssetID> &GetOwnedChildren() const noexcept { return owned_children; }
         bool IsValid() const { return IsValidResource(resource); }
         template <typename T>
         std::shared_ptr<T> GetResource()
@@ -84,6 +100,7 @@ namespace kpengine::asset
         AssetPayload resource;
         std::vector<AssetID> ref_assets;//used by
         std::vector<AssetID> dependencies;//uses
+        std::vector<AssetID> owned_children;
     };
 }
 

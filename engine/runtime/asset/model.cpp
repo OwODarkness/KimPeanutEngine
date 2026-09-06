@@ -1,5 +1,6 @@
 #include "model.h"
 #include <string>
+#include <utility>
 #include <magic_enum/magic_enum.hpp>
 #include "mesh.h"
 #include "asset_manager.h"
@@ -25,6 +26,16 @@ namespace kpengine::asset
     std::shared_ptr<MeshResource> ModelResource::GetMesh()
     {
         return AssetManager::GetInstance().GetResource<MeshResource>(GetData(ModelGeometryType::KPMG_Mesh));
+    }
+
+    void ModelResource::BindMaterialDependencyIndices(std::vector<std::uint32_t> indices)
+    {
+        material_dependency_indices_ = std::move(indices);
+    }
+
+    const std::vector<std::uint32_t> &ModelResource::GetMaterialDependencyIndices() const noexcept
+    {
+        return material_dependency_indices_;
     }
     
 }

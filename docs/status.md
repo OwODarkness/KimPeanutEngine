@@ -2,7 +2,94 @@
 
 **Snapshot: 2026-09-06.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
+- **MI1.7-R1 Asset build boundary (2026-09-06)** — split the database-free
+  product/native layer, runtime AssetManager, archive database, and offline
+  importer into explicit CMake targets. `AssetImport` no longer depends on
+  `AssetRuntime`; `Core` no longer exports `Database`; legacy Assimp runtime
+  loading is controlled by `KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT`. MI1.7
+  remains open for the later material-resolution, rollback, packaging, and
+  integration-validation findings. → [MI1.7 plan](asset/.plan/MI1.7.md),
+  [model-import journal](../.spec/journal/model-import.md)
+- **MI1.7-R2 native material selection (2026-09-06)** — native Model ordered
+  Material dependencies now participate in LevelInstance section selection;
+  dense Level overrides take precedence, followed by Model slots, authored
+  fallback, and the engine-owned magenta error Material. Native Levels may
+  omit `material`; legacy foreign Levels remain strict. → [MI1.7 plan](asset/.plan/MI1.7.md)
+- **MI1.7-R3 transactional native Model registration (2026-09-06)** —
+  `NativeModelLoader` is declaration-only; AssetManager now resolves external
+  dependencies before registering and binding the inline Mesh child, commits
+  Model/child ownership together, rolls back failed parent registration, and
+  retires owned children on parent unload. Missing/corrupt dependencies and
+  concurrent duplicate loads no longer leave unreachable Mesh assets. →
+  [MI1.7 plan](asset/.plan/MI1.7.md), [model-import journal](../.spec/journal/model-import.md)
+- **Readable Level model references (2026-09-06)** — Levels may now expose a
+  logical model key such as `model/brickwall/floor`; Level parsing resolves it
+  through a read-only archive lookup to a verified hash-named native Model.
+  Native product loading remains database-free, and missing/ambiguous/corrupt
+  mappings fail without importing or mutating project content. →
+  [MI1 plan](asset/.plan/MI1.md), [MI1.7 plan](asset/.plan/MI1.7.md)
+- **MI1.7-R5 archive product verification (2026-09-06)** — Native Models and
+  generated Materials under `.archive` now require canonical `models`/
+  `materials` layout and a lowercase SHA-256 filename matching the complete
+  product bytes before parsing. Invalid native products fail without SQLite
+  access or foreign fallback; authored non-archive Materials remain valid. →
+  [MI1.7 plan](asset/.plan/MI1.7.md),
+  [model-import journal](../.spec/journal/model-import.md)
+- **MI1.7-R6 bounded foreign compatibility (2026-09-06)** — OBJ, FBX, GLTF,
+  and GLB runtime loading is explicitly transitional, compile-time gated, and
+  emits stable enabled/disabled diagnostics. STL remains offline-import-only;
+  native failures never auto-import or fall through to foreign loading. →
+  [MI1.7 plan](asset/.plan/MI1.7.md),
+  [model-import journal](../.spec/journal/model-import.md)
+- **MI1.7-R7 runtime integration seam (2026-09-06)** — added a checked-in
+  multi-material fixture contract and composed `AssetManager::LoadSync` test.
+  It verifies canonical native Model/Material dependency ordering, recursive
+  shader/texture loading, reverse references, concurrent deduplication, and
+  owned-Mesh cleanup. Product packaging and Vulkan/OpenGL capture remain MI1.8
+  evidence. → [MI1.7 plan](asset/.plan/MI1.7.md),
+  [model-import journal](../.spec/journal/model-import.md)
+
 ## Done
+
+- **Model-import MI1.6 transactional importer (2026-09-06)** — Asset now
+  exposes a standalone `ModelImportService` that runs without AssetManager or
+  the engine application. It probes recorded dependencies before Assimp,
+  validates native model/material/image products, publishes immutable
+  hash-named files with create-if-absent coordination, and commits the source
+  root last. Five focused importer tests cover cache hits, stale dependencies,
+  rollback, shared products, concurrency, immutable collisions, and path escape
+  rejection. →
+  [MI1.6 plan](asset/.plan/MI1.6.md),
+  [model-import journal](../.spec/journal/model-import.md)
+
+- **Model-import MI1.5 native Material conversion (2026-09-06)** — Added a
+  standalone converter for deterministic V2 `.material` bytes, memory image
+  decode/encode, content-addressed embedded-image products, packed
+  metallic-roughness channel metadata, alpha-mask/blend semantics, and Render
+  sampling support. Emissive textures fail precisely until the G-buffer gains
+  emissive output; publication remains MI1.6. → [MI1.5 plan](asset/.plan/MI1.5.md)
+
+- **Model-import MI1.4 native Model V1 (2026-09-06)** — Added a canonical
+  little-endian, chunked `.model` product with version/features, bounds,
+  geometry, ordered typed Material hashes, integrity verification, defensive
+  parsing, and a read-only native loader that declares Material dependencies.
+  Foreign Assimp loading remains available for the pre-MI1.7 migration path.
+  → [MI1.4 plan](asset/.plan/MI1.4.md)
+
+- **Model-import MI1.2 archive core (2026-09-06)** — Asset now owns stable
+  SHA-256/source-closure/import-key hashing and canonical product paths, plus a
+  SQLite-backed `.archive` repository with schema checks, foreign keys, WAL,
+  bounded busy handling, short checked transactions, immutable product metadata,
+  and source/product probe diagnostics. Native product serialization remains
+  MI1.4–MI1.8. → [Asset roadmap](asset/TODO.md),
+  [MI1.2 plan](asset/.plan/MI1.2.md)
+
+- **Model-import MI1.3 pure decoder (2026-09-06)** — Assimp parsing now returns
+  an Asset-owned value document with mesh topology, baked transforms, inverse-
+  transpose normals, material/image descriptions, embedded bytes, external
+  sidecars, and stable source-scoped diagnostics. The legacy loader is only an
+  Asset registration adapter; archive publication and native serialization
+  remain later MI1 stages. → [MI1.3 plan](asset/.plan/MI1.3.md)
 
 - **Multi-section static-mesh submission (2026-09-06)** — Assimp now preserves
   each imported section's material index, Render caches API-neutral section

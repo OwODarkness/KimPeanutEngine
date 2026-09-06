@@ -18,6 +18,7 @@
 #include "config/path.h"
 #include "level.h"
 #include "log/logger.h"
+#include "model_archive.h"
 #include "utility.h"
 
 namespace kpengine::asset
@@ -57,8 +58,9 @@ namespace kpengine::asset
         class LevelParser
         {
         public:
-            LevelParser(const std::string &path, AssetRegisterInfo &info)
-                : path_(path), info_(info)
+            LevelParser(const std::string &path, AssetRegisterInfo &info,
+                        const std::filesystem::path &archive_root)
+                : path_(path), info_(info), archive_root_(archive_root)
             {
             }
 
@@ -116,11 +118,28 @@ namespace kpengine::asset
                         LevelStaticMeshRecord record;
                         record.id = std::move(id);
                         record.name = std::move(name);
+                        const auto parse_material = [&]()
+                        {
+                            if (object.contains("material"))
+                            {
+                                return ParseReference(object, "material", AssetType::KPAT_Material,
+                                                       location, record.material);
+                            }
+                            const std::string model_extension = GetFileExtension(record.model.path);
+                            if (model_extension != "model" && model_extension != "")
+                            {
+                                return Fail(location + ".material",
+                                            "must be provided for a non-native model");
+                            }
+                            return ParseReferenceValue(json(kEngineErrorMaterialAssetPath),
+                                                       AssetType::KPAT_Material,
+                                                       location + ".material", record.material);
+                        };
                         if (!ValidateOnlyFields(object, {"id", "name", "kind", "transform", "model",
                                                           "material", "materials", "visible", "casts_shadow", "lod_bias"}, location) ||
                             !ParseTransform(object, "transform", location, record.transform) ||
                             !ParseReference(object, "model", AssetType::KPAT_Model, location, record.model) ||
-                            !ParseReference(object, "material", AssetType::KPAT_Material, location, record.material) ||
+                            !parse_material() ||
                             !ParseOptionalReferenceArray(object, "materials", AssetType::KPAT_Material,
                                                          location, record.materials) ||
                             !ParseOptionalBool(object, "visible", location, record.visible) ||
@@ -435,7 +454,14 @@ namespace kpengine::asset
                 }
                 const std::string authored_path = value.get<std::string>();
                 std::string normalized;
-                if (!NormalizeAssetRootRelativePath(authored_path, expected_type, normalized))
+                const bool logical_model = expected_type == AssetType::KPAT_Model &&
+                                            GetFileExtension(authored_path).empty();
+                const bool valid_path = logical_model
+                                            ? NormalizeAssetRootRelativePath(
+                                                  authored_path, AssetType::Undefined, normalized)
+                                            : NormalizeAssetRootRelativePath(
+                                                  authored_path, expected_type, normalized);
+                if (!valid_path)
                 {
                     return Fail(location,
                                 "asset path must be a normalized asset-root-relative reference of the expected type");
@@ -463,8 +489,42 @@ namespace kpengine::asset
 
                 const uint32_t index = static_cast<uint32_t>(info_.dependency_requests.size());
                 dependency_indices_.emplace(key, index);
-                const std::string resolved_path =
-                    (std::filesystem::path(GetAssetDirectory()) / std::filesystem::path(normalized)).generic_string();
+                std::string resolved_path;
+                if (logical_model)
+                {
+                    std::optional<std::filesystem::path> product_path;
+                    try
+                    {
+                        if (!model_archive_)
+                        {
+                            model_archive_ = std::make_unique<ModelArchiveDatabase>(
+                                (archive_root_.empty()
+                                     ? std::filesystem::path(GetAssetDirectory()) / ".archive"
+                                     : archive_root_) /
+                                    "archive.sqlite3",
+                                2500, ModelArchiveOpenMode::ReadOnly);
+                        }
+                        product_path = model_archive_->ResolveModelProductPath(normalized);
+                    }
+                    catch (const ModelArchiveError &error)
+                    {
+                        return Fail(location,
+                                    "failed to resolve logical model '" + normalized + "': " +
+                                        error.what());
+                    }
+                    if (!product_path.has_value())
+                    {
+                        return Fail(location,
+                                    "logical model is not present in the archive: " + normalized);
+                    }
+                    resolved_path = product_path->generic_string();
+                }
+                else
+                {
+                    resolved_path =
+                        (std::filesystem::path(GetAssetDirectory()) /
+                         std::filesystem::path(normalized)).generic_string();
+                }
                 info_.dependency_requests.push_back({resolved_path, expected_type});
                 reference.dependency_index = index;
                 return true;
@@ -567,8 +627,15 @@ namespace kpengine::asset
 
             const std::string &path_;
             AssetRegisterInfo &info_;
+            const std::filesystem::path &archive_root_;
             std::unordered_map<std::string, uint32_t> dependency_indices_;
+            std::unique_ptr<ModelArchiveDatabase> model_archive_;
         };
+    }
+
+    LevelLoader::LevelLoader(std::filesystem::path archive_root)
+        : archive_root_(std::move(archive_root))
+    {
     }
 
     bool LevelLoader::Load(const std::string &path, AssetRegisterInfo &info)
@@ -585,7 +652,7 @@ namespace kpengine::asset
             json source;
             file >> source;
             AssetRegisterInfo parsed_info{};
-            LevelParser parser(path, parsed_info);
+            LevelParser parser(path, parsed_info, archive_root_);
             if (!parser.Parse(source))
             {
                 return false;

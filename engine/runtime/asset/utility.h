@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_ASSET_UTILITY_H
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <algorithm>
 #include <cctype>
@@ -10,6 +11,11 @@
 #include "config/path.h"
 namespace kpengine::asset
 {
+    // Stable diagnostic family for the temporary foreign-format runtime path.
+    // Callers and tests may key on this prefix; path text remains contextual.
+    inline constexpr std::string_view kForeignModelCompatibilityDiagnostic =
+        "asset.runtime.foreign_model_compatibility";
+
     inline std::string CanonicalAssetPathKey(const std::string &path)
     {
         std::string key = path;
@@ -34,7 +40,7 @@ namespace kpengine::asset
 
     inline bool IsModelExtension(const std::string &ext)
     {
-        static const std::vector<std::string> model_exts = {"obj", "fbx", "gltf", "glb"};
+        static const std::vector<std::string> model_exts = {"model", "obj", "fbx", "gltf", "glb"};
         return std::find(model_exts.begin(), model_exts.end(), ext) != model_exts.end();
     }
 

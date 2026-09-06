@@ -40,14 +40,24 @@ namespace kpengine::image_io
         ImageBuffer image;
     };
 
+    struct ImageEncodeResult
+    {
+        ImageIoResult result;
+        std::vector<std::byte> bytes;
+    };
+
     // Decodes LDR sources into tightly packed RGBA8 and Radiance HDR sources
     // into tightly packed RGBA32F, both in the engine's bottom-origin texture
     // convention. The caller owns file identity, caching, and GPU format policy.
     ImageDecodeResult DecodeImageFile(const std::string &path);
 
+    ImageDecodeResult DecodeImageMemory(const std::vector<std::byte> &encoded);
+
     // Writes a tightly packed RGBA8 image as a lossless PNG. Path selection and
     // directory creation remain caller policy.
     ImageIoResult WritePng(const ImageBuffer &image, const std::string &path);
+
+    ImageEncodeResult EncodePngMemory(const ImageBuffer &image);
 }
 
 #endif

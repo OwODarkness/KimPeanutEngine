@@ -7,7 +7,8 @@
 //   loc3 selection R8_UNORM            selected object mask
 // The constants block is the StandardPbr ABI shared with
 // material_asset_resolver.cpp: base_color@0, metallic@16, roughness@20,
-// occlusion@24, emissive@32. Textures wins over scalars in the resolver, so
+// occlusion@24, emissive@32, texture_channels@48, normal_scale@64,
+// alpha_cutoff@68. Textures wins over scalars in the resolver, so
 // here scalars are always multiplied (identity default when no texture).
 
 layout(binding = 2) uniform sampler2D base_color_texture;
@@ -18,6 +19,9 @@ layout(binding = 3) uniform KpMaterialData
     float roughness;
     float occlusion;
     vec4 emissive;
+    vec4 texture_channels;
+    float normal_scale;
+    float alpha_cutoff;
 } material_data;
 layout(binding = 5) uniform sampler2D normal_texture;
 layout(binding = 6) uniform sampler2D metallic_texture;
@@ -41,11 +45,18 @@ layout(location = 3) out float out_selection;
 void main()
 {
     // Hardware sRGB decode linearizes the base-color fetch.
-    vec3 albedo = material_data.base_color.rgb * texture(base_color_texture, frag_texcoord).rgb;
+    vec4 base_sample = texture(base_color_texture, frag_texcoord);
+    if (material_data.alpha_cutoff > 0.0 && base_sample.a < material_data.alpha_cutoff)
+    {
+        discard;
+    }
+    vec3 albedo = material_data.base_color.rgb * base_sample.rgb;
 
     // Tangent-degenerate guard: data::Vertex zero-fills tangents for meshes
     // without UVs, so a zero-length T/B falls back to the geometric normal.
     vec3 tangent_normal = texture(normal_texture, frag_texcoord).rgb * 2.0 - 1.0;
+    tangent_normal.xy *= material_data.normal_scale;
+    tangent_normal = normalize(tangent_normal);
     vec3 normal = frag_N;
     if (dot(normal, normal) > 1e-8)
     {
@@ -70,11 +81,23 @@ void main()
         }
     }
 
-    float metallic = material_data.metallic * texture(metallic_texture, frag_texcoord).r;
-    float roughness = material_data.roughness * texture(roughness_texture, frag_texcoord).r;
-    float occlusion = material_data.occlusion * texture(occlusion_texture, frag_texcoord).r;
+    vec4 metallic_sample = texture(metallic_texture, frag_texcoord);
+    vec4 roughness_sample = texture(roughness_texture, frag_texcoord);
+    vec4 occlusion_sample = texture(occlusion_texture, frag_texcoord);
+    float metallic = material_data.metallic *
+                     (material_data.texture_channels.x < 0.5 ? metallic_sample.r :
+                      material_data.texture_channels.x < 1.5 ? metallic_sample.g :
+                      material_data.texture_channels.x < 2.5 ? metallic_sample.b : metallic_sample.a);
+    float roughness = material_data.roughness *
+                      (material_data.texture_channels.y < 0.5 ? roughness_sample.r :
+                       material_data.texture_channels.y < 1.5 ? roughness_sample.g :
+                       material_data.texture_channels.y < 2.5 ? roughness_sample.b : roughness_sample.a);
+    float occlusion = material_data.occlusion *
+                      (material_data.texture_channels.z < 0.5 ? occlusion_sample.r :
+                       material_data.texture_channels.z < 1.5 ? occlusion_sample.g :
+                       material_data.texture_channels.z < 2.5 ? occlusion_sample.b : occlusion_sample.a);
 
-    out_albedo = vec4(albedo, 1.0);
+    out_albedo = vec4(albedo, base_sample.a * material_data.base_color.a);
     out_normal = vec4(normal, 1.0);
     out_material = vec4(metallic, roughness, occlusion, 1.0);
     out_selection = selection_data.selected.x;

@@ -22,6 +22,7 @@ the upstream library is intentionally upgraded or patched.
 | nlohmann/json | 3.12.0 | MIT | Header-only vendored source | `KP::NlohmannJson` | Asset, Bootstrap, Editor, Commands |
 | OpenSSL | TBD | Apache-2.0 | Vendored files; current build consumer TBD | TBD | TBD |
 | sol2 | 3.5.0 | MIT | Header-only vendored source | `KP::Sol2` | Script |
+| SQLite | 3.53.4 | Public domain | Compiled amalgamation source | `KP::SQLite` | Core/Database |
 | stb_image | TBD | Public domain / MIT-style dedication | Compiled static source | `KP::StbImage` | ImageIO, Window |
 | Vulkan/shaderc bundle | TBD | Verify upstream components | System Vulkan target plus local shaderc import | `KP::Vulkan`, `KP::Shaderc` | Graphics, Resource, Editor |
 

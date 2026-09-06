@@ -55,6 +55,15 @@ namespace kpengine::image_io
         return GetDefaultImageCodec().DecodeFile(path);
     }
 
+    ImageDecodeResult DecodeImageMemory(const std::vector<std::byte> &encoded)
+    {
+        if (encoded.empty())
+        {
+            return {{false, "encoded image payload is empty"}, {}};
+        }
+        return GetDefaultImageCodec().DecodeMemory(encoded.data(), encoded.size());
+    }
+
     ImageIoResult WritePng(const ImageBuffer &image, const std::string &path)
     {
         if (path.empty())
@@ -66,5 +75,14 @@ namespace kpengine::image_io
             return {false, "PNG export requires a valid tightly packed RGBA8 image"};
         }
         return GetDefaultImageCodec().WritePngFile(image, path);
+    }
+
+    ImageEncodeResult EncodePngMemory(const ImageBuffer &image)
+    {
+        if (!image.IsValid() || image.format != ImagePixelFormat::Rgba8)
+        {
+            return {{false, "PNG export requires a valid tightly packed RGBA8 image"}, {}};
+        }
+        return GetDefaultImageCodec().EncodePngMemory(image);
     }
 }

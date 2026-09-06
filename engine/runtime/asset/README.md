@@ -130,6 +130,10 @@ StandardPbr authoring values are validated while loading: `base_color`,
 `metallic`, `roughness`, and `occlusion` must be finite and within `[0, 1]`;
 `emissive` must be finite and non-negative (HDR values are allowed). Unknown
 StandardPbr semantics and type mismatches are rejected at the asset boundary.
+Material V2 also carries alpha mode/cutoff and texture color-space/channel
+metadata. The MI1.5 offline converter emits these fields deterministically;
+Render selects packed metallic-roughness G/B channels without splitting the
+source image.
 
 ## Multi-section mesh materials
 
@@ -178,6 +182,7 @@ Each mesh also retains CPU-side `MeshMaterial` metadata: the source name, PBR
 factors, alpha mode, and source texture paths for base color, normal,
 metallic/roughness, occlusion, and emissive maps. This metadata is intentionally
 not a Render material or GPU resource. The current level schema still selects
-engine `.material` assets explicitly through `material` and `materials`; a
-future import/conversion step can use the retained metadata to author those
-assets, including GLTF's packed occlusion/roughness/metallic map.
+engine `.material` assets explicitly through `material` and `materials`; the
+MI1.5 standalone conversion step can now use the retained metadata to author
+those assets, including GLTF's packed occlusion/roughness/metallic map. Runtime
+automatic source migration remains MI1.7.

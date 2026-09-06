@@ -27,6 +27,7 @@ add_subdirectory(httplib)
 add_subdirectory(miniaudio)
 add_subdirectory(meshoptimizer)
 add_subdirectory(stb_image)
+add_subdirectory(sqlite)
 
 # The upstream GoogleTest CMakeLists.txt is preserved unchanged. This wrapper
 # adapts the checked-in prebuilt libraries to the engine's target convention.

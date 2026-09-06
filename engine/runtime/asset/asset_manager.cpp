@@ -6,7 +6,10 @@
 #include <filesystem>
 #include <limits>
 #include <magic_enum/magic_enum.hpp>
+#if defined(KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT)
 #include "assimp_model_loader.h"
+#endif
+#include "native_model_loader.h"
 #include "image_io/image_io.h"
 #include "shader_program_loader.h"
 #include "miniaudio_audio_loader.h"
@@ -216,6 +219,17 @@ namespace kpengine::asset
                     return std::nullopt;
                 }
                 uint64_t total = 0;
+                for (const AssetOwnedChildInfo &child : info.owned_children)
+                {
+                    if (const MeshPtr *mesh = std::get_if<MeshPtr>(&child.resource))
+                    {
+                        const std::optional<uint64_t> mesh_bytes = MeshPayloadSize(*mesh);
+                        if (!mesh_bytes || !CheckedAdd(total, *mesh_bytes))
+                        {
+                            return std::nullopt;
+                        }
+                    }
+                }
                 for (const AssetID &dependency : info.dependencies)
                 {
                     if (dependency.type != AssetType::KPAT_Mesh)
@@ -460,7 +474,14 @@ namespace kpengine::asset
 
     AssetManager AssetManager::instance_;
     AssetManager::~AssetManager() = default;
-    AssetManager::AssetManager() : model_loader_(std::make_unique<Assimp_ModelLoader>()),
+    AssetManager::AssetManager()
+#if defined(KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT)
+                                   : model_loader_(std::make_unique<Assimp_ModelLoader>()),
+#else
+                                   : model_loader_(nullptr),
+#endif
+                                   native_model_loader_(std::make_unique<NativeModelLoader>(
+                                       std::filesystem::path(GetAssetDirectory()) / ".archive")),
                                    shader_program_loader_(std::make_unique<ShaderProgramLoader>()),
                                    audio_loader_(std::make_unique<MiniAudio_AudioLoader>()),
                                    material_loader_(std::make_unique<MaterialLoader>()),
@@ -929,6 +950,77 @@ namespace kpengine::asset
 
         std::lock_guard<std::recursive_mutex> lock(state_mutex_);
 
+        std::vector<AssetID> owned_child_ids;
+        owned_child_ids.reserve(info.owned_children.size());
+        const auto rollback_owned_children = [this, &owned_child_ids]() noexcept
+        {
+            for (auto it = owned_child_ids.rbegin(); it != owned_child_ids.rend(); ++it)
+            {
+                UnRegisterAsset(*it);
+            }
+            owned_child_ids.clear();
+        };
+
+        for (AssetOwnedChildInfo &child : info.owned_children)
+        {
+            if (!IsValidResource(child.resource))
+            {
+                rollback_owned_children();
+                return AssetID();
+            }
+
+            AssetRegisterInfo child_info{};
+            child_info.resource = std::move(child.resource);
+            child_info.path = std::move(child.path);
+            child_info.name = std::move(child.name);
+            child_info.dependencies = std::move(child.dependencies);
+            child_info.type = child.type;
+            const AssetID child_id = RegisterAssetLocked(child_info, {});
+            if (!child_id.IsValid())
+            {
+                rollback_owned_children();
+                return AssetID();
+            }
+            owned_child_ids.push_back(child_id);
+        }
+
+        if (info.bind_owned_children)
+        {
+            try
+            {
+                info.bind_owned_children(owned_child_ids);
+            }
+            catch (...)
+            {
+                rollback_owned_children();
+                return AssetID();
+            }
+        }
+
+        // Inline children occupy the leading dependency slots. Native Model
+        // material indices are authored against this stable layout.
+        info.dependencies.insert(info.dependencies.begin(), owned_child_ids.begin(),
+                                 owned_child_ids.end());
+        const AssetID id = RegisterAssetLocked(info, owned_child_ids);
+        if (!id.IsValid())
+        {
+            rollback_owned_children();
+        }
+        else
+        {
+            owned_child_ids.clear();
+        }
+        return id;
+    }
+
+    AssetID AssetManager::RegisterAssetLocked(AssetRegisterInfo &info,
+                                              std::vector<AssetID> owned_children)
+    {
+        if (!IsValidResource(info.resource))
+        {
+            return AssetID();
+        }
+
         AssetType type = info.type;
         AssetCache &cache = Cache(type);
         AssetHandle handle = cache.handles.Create();
@@ -947,6 +1039,7 @@ namespace kpengine::asset
         asset->name = std::move(info.name);
         asset->ref_assets = std::move(info.ref_assets);
         asset->dependencies = std::move(info.dependencies);
+        asset->owned_children = std::move(owned_children);
 
         AssetID id(handle.id, handle.generation, type);
         cache.assets[handle.id] = std::move(asset);
@@ -979,6 +1072,19 @@ namespace kpengine::asset
             return nullptr;
         }
         return cache->assets[id.id].get();
+    }
+
+    std::size_t AssetManager::GetLiveAssetCount(AssetType type)
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+        const AssetCache *cache = FindCache(type);
+        if (cache == nullptr)
+        {
+            return 0;
+        }
+        return static_cast<std::size_t>(std::count_if(
+            cache->assets.begin(), cache->assets.end(),
+            [](const std::unique_ptr<Asset> &asset) { return asset != nullptr; }));
     }
 
     AssetID AssetManager::ResolveDependency(const AssetID &owner, size_t dependency_index,
@@ -1037,6 +1143,7 @@ namespace kpengine::asset
             return;
         }
 
+        const std::vector<AssetID> owned_children = asset->GetOwnedChildren();
         RemoveReferences(asset->GetID(), asset->GetDependencies());
 
         cache->path_index.erase(Key(asset->GetPath()));
@@ -1047,6 +1154,14 @@ namespace kpengine::asset
 
         cache->assets[id.id].reset();
         cache->handles.Destroy(AssetHandle(id.id, id.generation));
+
+        // Inline children have no independent path ownership. Retire them
+        // only after the parent is gone; ordinary shared dependencies remain
+        // governed by their own reference graph.
+        for (auto it = owned_children.rbegin(); it != owned_children.rend(); ++it)
+        {
+            UnRegisterAsset(*it);
+        }
     }
 
     bool AssetManager::CanDelete(const Asset *asset)
@@ -1121,7 +1236,23 @@ namespace kpengine::asset
     {
         if (type == AssetType::KPAT_Model)
         {
-            assert(model_loader_);
+            if (GetFileExtension(path) == "model")
+            {
+                assert(native_model_loader_);
+                return native_model_loader_->Load(path, ModelGeometryType::KPMG_Mesh, info);
+            }
+            if (!model_loader_)
+            {
+                KP_LOG("AssetManagerLog", LOG_LEVEL_ERROR,
+                       "%s.disabled: foreign model runtime compatibility is disabled; import "
+                       "the source to a native .model product: %s",
+                       kForeignModelCompatibilityDiagnostic.data(), path.c_str());
+                return false;
+            }
+            KP_LOG("AssetManagerLog", LOG_LEVEL_WARNING,
+                   "%s.deprecated: direct foreign model runtime loading is transitional; "
+                   "import the source to a native .model product: %s",
+                   kForeignModelCompatibilityDiagnostic.data(), path.c_str());
             return model_loader_->Load(path, ModelGeometryType::KPMG_Mesh, info);
         }
         else if (type == AssetType::KPAT_Texture)
