@@ -116,6 +116,26 @@ namespace kpengine::render
             return {RenderableSourceState::Pending, material_resolution.diagnostic, std::nullopt};
         }
 
+        std::vector<MaterialInstanceHandle> section_materials;
+        section_materials.reserve(static_mesh->material_assets.size());
+        for (const asset::AssetID section_material_asset : static_mesh->material_assets)
+        {
+            MaterialInstanceHandle section_material_instance;
+            const MaterialResolution section_material_resolution =
+                ResolveMaterialAsset(section_material_asset, section_material_instance);
+            if (section_material_resolution.state == MaterialResourceState::Failed)
+            {
+                return {RenderableSourceState::Failed,
+                        section_material_resolution.diagnostic, std::nullopt};
+            }
+            if (section_material_resolution.state != MaterialResourceState::Ready)
+            {
+                return {RenderableSourceState::Pending,
+                        section_material_resolution.diagnostic, std::nullopt};
+            }
+            section_materials.push_back(section_material_instance);
+        }
+
         const auto mesh = prepared_assets_->Get<asset::MeshResource>(static_mesh->mesh_asset);
         if (!mesh || !mesh->data)
         {
@@ -131,6 +151,7 @@ namespace kpengine::render
         MeshProxyDesc proxy_desc{};
         proxy_desc.mesh = mesh_handle;
         proxy_desc.material = material_instance;
+        proxy_desc.section_materials = std::move(section_materials);
         proxy_desc.world_transform = static_mesh->world_transform;
         proxy_desc.world_bounds = static_mesh->world_bounds;
         proxy_desc.flags = static_mesh->flags;

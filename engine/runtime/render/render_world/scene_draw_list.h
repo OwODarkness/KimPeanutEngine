@@ -1,6 +1,8 @@
 #ifndef KPENGINE_RUNTIME_RENDER_RENDER_WORLD_SCENE_DRAW_LIST_H
 #define KPENGINE_RUNTIME_RENDER_RENDER_WORLD_SCENE_DRAW_LIST_H
 
+#include <cstdint>
+#include <limits>
 #include <vector>
 
 #include "graphics/backend/common/api.h"
@@ -16,6 +18,9 @@ namespace kpengine::render
     {
         MeshProxy proxy;
         graphics::PipelineHandle pipeline;
+        // Index into the resolver-owned mesh section list. The sentinel means
+        // that the proxy has no section metadata and uses the legacy full draw.
+        uint32_t section_index = std::numeric_limits<uint32_t>::max();
     };
 
     struct SceneDrawLists

@@ -1,11 +1,10 @@
-# Asset Loading and Progress Plans
+# Asset Module Plans
 
-**Status: proposed.** This page maps the Asset architecture and the three
-coordinated plans required to present truthful loading progress. Current work
-belongs in [TODO.md](TODO.md); the multi-stage acceptance contract is the
-[Asset Loading Progress spec](../../.spec/specs/asset-loading-progress.md).
+**Status: active.** This page maps the Asset architecture and links its concrete
+stage plans. Current work belongs in [TODO.md](TODO.md). Detailed landed
+behavior remains in [asset_module.md](asset_module.md).
 
-## Architecture
+## Loading-progress architecture
 
 The feature crosses three owners without creating a shared mutable loading
 object:
@@ -25,7 +24,7 @@ Render/Graphics: presentation and later scene/GPU readiness
 The detailed current Asset cache, ownership, dependency, and locking behavior
 remains documented in [Asset Module Design](asset_module.md).
 
-## Coordinated plans
+## Loading-progress plans
 
 - [LO1 — Asset load observation](.plan/LO1.md) defines transient operation
   identity, states, phases, immutable snapshots, dependency correlation,
@@ -45,6 +44,38 @@ The order is intentional. LO1 supplies observable facts; LO2 gives them a
 live, cross-subsystem transaction and a frame loop; LO3 renders that contract.
 Implementing LO3 directly against `AssetManager` would invert ownership and
 still miss Resource/GPU/level-instantiation work.
+
+## Model-import architecture
+
+```text
+Source model
+  -> source-path hash + SQLite archive lookup
+  -> verify root + recorded dependency fingerprint
+  -> Assimp decode and rediscovery only on cache miss
+  -> Asset-owned imported document
+  -> explicit import/reimport transaction
+  -> hash-named native .model + .material products
+  -> atomic SQLite name/hash/dependency transaction
+  -> runtime native Model load and dependency registration
+  -> Model material-slot table
+  -> Gameplay/Render consumption with authored overrides
+```
+
+Assimp owns foreign source-format decoding only. Asset import policy owns source
+closure discovery, hash/no-op decisions, native serialization, immutable
+content-addressed products, staging, and short SQLite metadata transactions.
+Runtime `LoadSync` reads native `.model` and `.material` products without
+opening the authoring database and does not import or write project content.
+Render consumes ordinary Material AssetIDs and never imports files or owns
+source-material metadata.
+
+## Model-import plans
+
+- [MI1 — content-addressed native model import](.plan/MI1.md) defines foreign
+  STL/OBJ/FBX/GLTF/GLB source import, dependency-aware fingerprints, the native
+  `.model` format, hash-named `.model`/`.material` products, the
+  SQLite name-to-hash/dependency archive, no-op reuse, Model material
+  references, transactional publication, runtime migration, and validation.
 
 ## Design decisions
 

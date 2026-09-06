@@ -1,4 +1,5 @@
 #include "asset_manager.h"
+#include <array>
 #include <algorithm>
 #include <cctype>
 #include <cstring>
@@ -152,6 +153,29 @@ namespace kpengine::asset
                 !CheckedAdd(total, bytes))
             {
                 return std::nullopt;
+            }
+            if (!CheckedMultiply(static_cast<uint64_t>(mesh->data->materials.size()),
+                                 static_cast<uint64_t>(sizeof(MeshMaterial)), bytes) ||
+                !CheckedAdd(total, bytes))
+            {
+                return std::nullopt;
+            }
+            for (const MeshMaterial &material : mesh->data->materials)
+            {
+                const std::array<const std::string *, 5> strings = {
+                    &material.name, &material.base_color_texture, &material.normal_texture,
+                    &material.metallic_roughness_texture, &material.occlusion_texture};
+                for (const std::string *const value : strings)
+                {
+                    if (!CheckedAdd(total, static_cast<uint64_t>(value->size())))
+                    {
+                        return std::nullopt;
+                    }
+                }
+                if (!CheckedAdd(total, static_cast<uint64_t>(material.emissive_texture.size())))
+                {
+                    return std::nullopt;
+                }
             }
             return total;
         }

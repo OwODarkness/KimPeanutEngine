@@ -1,6 +1,8 @@
 #ifndef KPENGINE_RUNTIME_GAMEPLAY_COMPONENT_MESH_COMPONENT_H
 #define KPENGINE_RUNTIME_GAMEPLAY_COMPONENT_MESH_COMPONENT_H
 
+#include <vector>
+
 #include "asset/common.h"
 #include "gameplay/component/primitive_component.h"
 #include "render/render_source.h"
@@ -14,12 +16,17 @@ namespace kpengine::gameplay
     public:
         const asset::AssetID &GetMeshAsset() const { return mesh_asset_; }
         const asset::AssetID &GetMaterialAsset() const { return material_asset_; }
+        const std::vector<asset::AssetID> &GetMaterialAssets() const
+        {
+            return material_assets_;
+        }
         int GetLodBias() const { return lod_bias_; }
         render::RenderableSourceHandle GetSourceHandle() const { return source_handle_; }
         bool IsSelected() const { return selected_; }
 
         void SetMeshAsset(const asset::AssetID &mesh_asset);
         void SetMaterialAsset(const asset::AssetID &material_asset);
+        void SetMaterialAssets(std::vector<asset::AssetID> material_assets);
         void SetLodBias(int lod_bias);
         void SetSelected(bool selected);
 
@@ -37,6 +44,7 @@ namespace kpengine::gameplay
 
         asset::AssetID mesh_asset_;
         asset::AssetID material_asset_;
+        std::vector<asset::AssetID> material_assets_;
         int lod_bias_ = 0;
         bool selected_ = false;
         bool source_dirty_ = true;

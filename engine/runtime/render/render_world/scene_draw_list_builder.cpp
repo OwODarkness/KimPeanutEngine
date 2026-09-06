@@ -1,6 +1,10 @@
 #include "render/render_world/scene_draw_list.h"
 
 #include <algorithm>
+#include <limits>
+#include <utility>
+
+#include "data/mesh.h"
 
 #include "render/render_resource_resolver.h"
 
@@ -22,12 +26,13 @@ namespace kpengine::render
         SceneDrawLists draw_lists;
         draw_lists.opaque.reserve(visible_proxies.size());
         draw_lists.alpha_blend.reserve(visible_proxies.size());
-        for (const MeshProxy &proxy : visible_proxies)
+
+        const auto append_item = [&](const MeshProxy &proxy, uint32_t section_index)
         {
-            if (!proxy.mesh.IsValid() ||
+            if (!proxy.material.IsValid() ||
                 materials.GetInstanceResolution(proxy.material).state != MaterialResourceState::Ready)
             {
-                continue;
+                return;
             }
 
             const MaterialTemplateHandle template_handle =
@@ -40,10 +45,10 @@ namespace kpengine::render
             if (!template_desc || !SupportsPass(*template_desc, pass) ||
                 !pipeline.IsValid() || !draw_class)
             {
-                continue;
+                return;
             }
 
-            SceneDrawItem item{proxy, pipeline};
+            SceneDrawItem item{proxy, pipeline, section_index};
             if (*draw_class == MaterialDrawClass::Opaque)
             {
                 draw_lists.opaque.push_back(std::move(item));
@@ -51,6 +56,36 @@ namespace kpengine::render
             else
             {
                 draw_lists.alpha_blend.push_back(std::move(item));
+            }
+        };
+
+        for (const MeshProxy &proxy : visible_proxies)
+        {
+            if (!proxy.mesh.IsValid())
+            {
+                continue;
+            }
+
+            const std::vector<data::MeshSection> *const sections =
+                resource_resolver.FindMeshSections(proxy.mesh);
+            if (sections == nullptr || sections->empty())
+            {
+                append_item(proxy, std::numeric_limits<uint32_t>::max());
+                continue;
+            }
+
+            for (std::size_t section_index = 0; section_index < sections->size(); ++section_index)
+            {
+                const data::MeshSection &section = (*sections)[section_index];
+                if (section.index_count == 0 ||
+                    section_index > std::numeric_limits<uint32_t>::max())
+                {
+                    continue;
+                }
+                MeshProxy section_proxy = proxy;
+                section_proxy.material = proxy.GetMaterialForSection(section.material_index);
+                section_proxy.section_materials.clear();
+                append_item(section_proxy, static_cast<uint32_t>(section_index));
             }
         }
         SortOpaque(draw_lists.opaque);

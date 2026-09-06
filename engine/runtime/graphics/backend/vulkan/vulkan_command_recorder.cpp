@@ -31,6 +31,7 @@ namespace kpengine::graphics
         bindless_table_ = bindless_table;
         frame_index_ = frame_index;
         recorded_index_count_ = 0;
+        recorded_first_index_ = 0;
         active_target_ = {};
         draws_suppressed_ = false;
     }
@@ -133,6 +134,7 @@ namespace kpengine::graphics
         vkCmdBindVertexBuffers(command_buffer_, 0, 1, vertex_buffers, offsets);
         vkCmdBindIndexBuffer(command_buffer_, index->buffer, 0, VK_INDEX_TYPE_UINT32);
         recorded_index_count_ = static_cast<uint32_t>(mesh_resource->sections[0].index_count);
+        recorded_first_index_ = static_cast<uint32_t>(mesh_resource->sections[0].index_start);
     }
 
     void VulkanCommandRecorder::BindResourceBindings(PipelineHandle pipeline,
@@ -173,9 +175,10 @@ namespace kpengine::graphics
     {
         if (command_buffer_ == VK_NULL_HANDLE || draws_suppressed_) return;
         const uint32_t count = index_count == 0 ? recorded_index_count_ : index_count;
+        const uint32_t first = index_count == 0 ? recorded_first_index_ : first_index;
         if (count != 0)
         {
-            vkCmdDrawIndexed(command_buffer_, count, instance_count, first_index,
+            vkCmdDrawIndexed(command_buffer_, count, instance_count, first,
                              vertex_offset, first_instance);
         }
     }

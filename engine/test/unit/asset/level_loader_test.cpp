@@ -72,7 +72,8 @@ namespace
     };
 
     std::string CompleteLevel(const std::string &model, const std::string &material,
-                              const std::string &environment = {})
+                              const std::string &environment = {},
+                              const std::vector<std::string> &section_materials = {})
     {
         const auto JsonEscape = [](const std::string &value)
         {
@@ -98,6 +99,20 @@ namespace
         const std::string escaped_model = JsonEscape(model);
         const std::string escaped_material = JsonEscape(material);
         const std::string escaped_environment = JsonEscape(environment);
+        std::string section_materials_field;
+        if (!section_materials.empty())
+        {
+            section_materials_field = ",\n        \"materials\": [";
+            for (std::size_t index = 0; index < section_materials.size(); ++index)
+            {
+                if (index != 0)
+                {
+                    section_materials_field += ", ";
+                }
+                section_materials_field += "\"" + JsonEscape(section_materials[index]) + "\"";
+            }
+            section_materials_field += "]";
+        }
         const std::string environment_field = environment.empty()
                                                    ? ""
                                                    : ",\n        \"environment\": {\"texture\": \"" +
@@ -107,7 +122,8 @@ namespace
                "  \"objects\": [\n"
                "    {\"id\": \"mesh\", \"name\": \"Mesh\", \"kind\": \"static_mesh\","
                "     \"transform\": {\"position\": [0, 1, 2], \"rotation_degrees\": [0, 10, 0], \"scale\": [1, 2, 1]},"
-               "     \"model\": \"" + escaped_model + "\", \"material\": \"" + escaped_material + "\", \"lod_bias\": 2},\n"
+               "     \"model\": \"" + escaped_model + "\", \"material\": \"" + escaped_material + "\"" +
+                   section_materials_field + ", \"lod_bias\": 2},\n"
                "    {\"id\": \"mesh_copy\", \"kind\": \"static_mesh\","
                "     \"transform\": {\"position\": [0, 0, 0], \"rotation_degrees\": [0, 0, 0], \"scale\": [1, 1, 1]},"
                "     \"model\": \"" + escaped_model + "\", \"material\": \"" + escaped_material + "\"},\n"
@@ -152,6 +168,29 @@ TEST(LevelLoaderTest, LoadsCompleteV1RecordsAndDeduplicatesRequests)
     EXPECT_EQ(mesh_copy.material.dependency_index, mesh.material.dependency_index);
     EXPECT_EQ(level->environment->texture.dependency_index, 0u);
     EXPECT_EQ(mesh.model.path, model);
+}
+
+TEST(LevelLoaderTest, LoadsOptionalPerSectionMaterialReferences)
+{
+    LevelFixture fixture;
+    const std::string model = fixture.Relative("mesh.obj");
+    const std::string material = fixture.Relative("surface.material");
+    const std::string section_material_a = fixture.Relative("surface_a.material");
+    const std::string section_material_b = fixture.Relative("surface_b.material");
+    fixture.Write("scene.level", CompleteLevel(model, material, {},
+                                                {section_material_a, section_material_b}));
+
+    AssetRegisterInfo info{};
+    ASSERT_TRUE(ParseDirect(fixture.Path("scene.level"), info));
+    ASSERT_EQ(info.dependency_requests.size(), 4u);
+    const auto level = std::get<LevelPtr>(info.resource);
+    ASSERT_NE(level, nullptr);
+    const auto &mesh = std::get<kpengine::asset::LevelStaticMeshRecord>(level->objects[0]);
+    ASSERT_EQ(mesh.materials.size(), 2u);
+    EXPECT_EQ(mesh.materials[0].dependency_index, 2u);
+    EXPECT_EQ(mesh.materials[1].dependency_index, 3u);
+    EXPECT_EQ(mesh.materials[0].path, section_material_a);
+    EXPECT_EQ(mesh.materials[1].path, section_material_b);
 }
 
 TEST(LevelLoaderTest, NormalizesSafeReferencesAndRejectsRootEscapeOrTypeMismatch)

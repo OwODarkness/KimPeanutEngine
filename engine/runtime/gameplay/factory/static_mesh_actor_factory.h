@@ -1,6 +1,8 @@
 #ifndef KPENGINE_RUNTIME_GAMEPLAY_FACTORY_STATIC_MESH_ACTOR_FACTORY_H
 #define KPENGINE_RUNTIME_GAMEPLAY_FACTORY_STATIC_MESH_ACTOR_FACTORY_H
 
+#include <vector>
+
 #include "asset/common.h"
 #include "gameplay/actor/actor_types.h"
 #include "render/render_source.h"
@@ -20,6 +22,7 @@ namespace kpengine::gameplay
         bool visible = true;
         bool casts_shadow = true;
         int lod_bias = 0;
+        std::vector<asset::AssetID> material_assets;
     };
 
     // Constructs and activates one standard Actor composition. GameplayWorld

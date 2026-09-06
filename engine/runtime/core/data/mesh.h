@@ -1,8 +1,9 @@
 #ifndef KPENGINE_RUNTIME_CORE_DATA_MESH_H
 #define KPENGINE_RUNTIME_CORE_DATA_MESH_H
 
-#include <vector>
 #include <cstdint>
+#include <string>
+#include <vector>
 
 #include "math/math_header.h"
 
@@ -63,9 +64,28 @@ namespace kpengine::data
 
     struct MeshSection
     {
-        uint32_t index_start;
-        uint32_t index_count;
-        uint32_t material_index;
+        uint32_t index_start = 0;
+        uint32_t index_count = 0;
+        uint32_t material_index = 0;
+    };
+
+    // Imported material metadata remains CPU-side mesh data. Render policy
+    // still comes from engine Material assets, but this preserves the source
+    // GLTF/Assimp material for import tools and future conversion.
+    struct MeshMaterial
+    {
+        std::string name;
+        Vector4f base_color{1.0f, 1.0f, 1.0f, 1.0f};
+        float metallic = 1.0f;
+        float roughness = 1.0f;
+        Vector4f emissive{0.0f, 0.0f, 0.0f, 1.0f};
+        std::string base_color_texture;
+        std::string normal_texture;
+        std::string metallic_roughness_texture;
+        std::string occlusion_texture;
+        std::string emissive_texture;
+        bool double_sided = false;
+        bool alpha_blended = false;
     };
 
     struct MeshData
@@ -73,6 +93,7 @@ namespace kpengine::data
         std::vector<Vertex> vertices;
         std::vector<uint32_t> indices;
         std::vector<MeshSection> sections;
+        std::vector<MeshMaterial> materials;
     };
 
 }

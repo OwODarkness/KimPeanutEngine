@@ -130,3 +130,54 @@ StandardPbr authoring values are validated while loading: `base_color`,
 `metallic`, `roughness`, and `occlusion` must be finite and within `[0, 1]`;
 `emissive` must be finite and non-negative (HDR values are allowed). Unknown
 StandardPbr semantics and type mismatches are rejected at the asset boundary.
+
+## Multi-section mesh materials
+
+A level static-mesh object may provide an optional `materials` array alongside
+its fallback `material` reference. Entries are material assets indexed by the
+imported `MeshSection::material_index`; omitted slots use the fallback material.
+For the Nanosuit OBJ, Assimp produces material slots 1..6 for Arm, Body, Glass,
+Hand, Helmet, and Leg; slot 0 is retained as the fallback entry. Multiple
+sections may legitimately reuse one slot (for example glass).
+This keeps mesh geometry and material policy separate while allowing models such
+as Nanosuit to render each imported surface with its own texture set:
+
+```json
+{
+  "id": "nanosuit",
+  "kind": "static_mesh",
+  "transform": {
+    "position": [0, 0, 0],
+    "rotation_degrees": [0, 0, 0],
+    "scale": [1, 1, 1]
+  },
+  "model": "model/nanosuit/nanosuit.obj",
+  "material": "material/nanosuit_arm.material",
+  "materials": [
+    "material/nanosuit_arm.material",
+    "material/nanosuit_arm.material",
+    "material/nanosuit_body.material",
+    "material/nanosuit_glass.material",
+    "material/nanosuit_hand.material",
+    "material/nanosuit_helmet.material",
+    "material/nanosuit_leg.material"
+  ]
+}
+```
+
+## Assimp GLTF/GLB models
+
+`AssetManager` dispatches both `.gltf` and `.glb` files to the existing
+`Assimp_ModelLoader`. The loader emits one mesh resource while preserving every
+imported section, including the source material slot. Static node transforms
+are accumulated and baked into the mesh vertices; normals use the inverse
+transpose of the node's linear transform, while tangents and bitangents use
+the linear transform and are renormalized.
+
+Each mesh also retains CPU-side `MeshMaterial` metadata: the source name, PBR
+factors, alpha mode, and source texture paths for base color, normal,
+metallic/roughness, occlusion, and emissive maps. This metadata is intentionally
+not a Render material or GPU resource. The current level schema still selects
+engine `.material` assets explicitly through `material` and `materials`; a
+future import/conversion step can use the retained metadata to author those
+assets, including GLTF's packed occlusion/roughness/metallic map.

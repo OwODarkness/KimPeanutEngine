@@ -14,6 +14,13 @@ namespace kpengine::gameplay
         {
             return {};
         }
+        for (const asset::AssetID material_asset : desc.material_assets)
+        {
+            if (!material_asset.IsValid() || material_asset.type != asset::AssetType::KPAT_Material)
+            {
+                return {};
+            }
+        }
 
         const ActorHandle handle = world.CreateActor();
         Actor *const actor = world.FindActor(handle);
@@ -26,6 +33,7 @@ namespace kpengine::gameplay
 
         mesh->SetMeshAsset(desc.mesh_asset);
         mesh->SetMaterialAsset(desc.material_asset);
+        mesh->SetMaterialAssets(desc.material_assets);
         mesh->SetLocalTransform(desc.transform);
         mesh->SetLocalBounds(desc.local_bounds);
         mesh->SetVisible(desc.visible);

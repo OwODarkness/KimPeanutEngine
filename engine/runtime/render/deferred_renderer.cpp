@@ -49,6 +49,46 @@ namespace kpengine::render
         constexpr uint64_t kPointShadowTargetBytes =
             static_cast<uint64_t>(kPointShadowAtlasWidth) * kPointShadowAtlasHeight * 4;
 
+        void DrawMeshSections(const RenderResourceResolver &resource_resolver,
+                              graphics::CommandRecorder &recorder,
+                              graphics::MeshHandle mesh,
+                              uint32_t section_index = std::numeric_limits<uint32_t>::max())
+        {
+            const std::vector<data::MeshSection> *const sections =
+                resource_resolver.FindMeshSections(mesh);
+            if (sections == nullptr || sections->empty() ||
+                section_index == std::numeric_limits<uint32_t>::max())
+            {
+                if (section_index == std::numeric_limits<uint32_t>::max())
+                {
+                    if (sections == nullptr || sections->empty())
+                    {
+                        // Preserve the legacy fallback for meshes created
+                        // outside the resolver's section cache.
+                        recorder.DrawIndexed();
+                        return;
+                    }
+                    for (const data::MeshSection &section : *sections)
+                    {
+                        if (section.index_count != 0)
+                        {
+                            recorder.DrawIndexed(section.index_count, 1, section.index_start);
+                        }
+                    }
+                }
+                return;
+            }
+
+            if (section_index < sections->size())
+            {
+                const data::MeshSection &section = (*sections)[section_index];
+                if (section.index_count != 0)
+                {
+                    recorder.DrawIndexed(section.index_count, 1, section.index_start);
+                }
+            }
+        }
+
         struct alignas(16) CaptureViewGpuData
         {
             Matrix4f inverse_view_projection;
@@ -1002,9 +1042,21 @@ namespace kpengine::render
             for (const SceneDrawItem &item : draw_lists.opaque)
             {
                 if (RecordMeshProxy(item.proxy, per_pass_data, *recorder,
-                                    MaterialPass::GBuffer))
+                                    MaterialPass::GBuffer, item.section_index))
                 {
-                    triangle_count_ += resource_resolver_->GetMeshTriangleCount(item.proxy.mesh);
+                    if (item.section_index != std::numeric_limits<uint32_t>::max())
+                    {
+                        const auto *const sections =
+                            resource_resolver_->FindMeshSections(item.proxy.mesh);
+                        if (sections != nullptr && item.section_index < sections->size())
+                        {
+                            triangle_count_ += (*sections)[item.section_index].index_count / 3U;
+                        }
+                    }
+                    else
+                    {
+                        triangle_count_ += resource_resolver_->GetMeshTriangleCount(item.proxy.mesh);
+                    }
                 }
             }
         }
@@ -1809,13 +1861,13 @@ namespace kpengine::render
         recorder.BindPipeline(directional_shadow_pipeline_);
         recorder.BindMesh(proxy.mesh);
         recorder.BindResourceBindings(directional_shadow_pipeline_, bindings);
-        recorder.DrawIndexed();
+        DrawMeshSections(*resource_resolver_, recorder, proxy.mesh);
     }
 
     bool DeferredRenderer::RecordMeshProxy(const MeshProxy &proxy,
                                            const graphics::PerPassData &per_pass_data,
                                            graphics::CommandRecorder &recorder,
-                                           MaterialPass pass)
+                                           MaterialPass pass, uint32_t section_index)
     {
         if (!active_frame_context_ || !proxy.flags.visible || !proxy.mesh.IsValid())
         {
@@ -1858,7 +1910,7 @@ namespace kpengine::render
         recorder.BindPipeline(material_binding.pipeline);
         recorder.BindMesh(proxy.mesh);
         recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set);
-        recorder.DrawIndexed();
+        DrawMeshSections(*resource_resolver_, recorder, proxy.mesh, section_index);
         return true;
     }
 

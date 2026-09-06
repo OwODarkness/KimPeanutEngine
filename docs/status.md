@@ -1,8 +1,33 @@
 # Project Status
 
-**Snapshot: 2026-09-05.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-06.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
 ## Done
+
+- **Multi-section static-mesh submission (2026-09-06)** — Assimp now preserves
+  each imported section's material index, Render caches API-neutral section
+  ranges, and scene/shadow recording emits one indexed draw per non-empty
+  section on both OpenGL and Vulkan. Triangle metrics now include all sections;
+  Gameplay can now provide optional material-asset overrides indexed by section
+  material slot, with the source's material asset retained as fallback.
+
+- **Nanosuit render fixture (2026-09-06)** — Added six local Standard PBR
+  materials and a camera/light level for the supplied Nanosuit OBJ; bootstrap
+  now selects `level/nanosuit.level` as the current startup level.
+
+- **Cornell-box render fixture (2026-09-06)** — Added four local Standard PBR
+  material variants and `level/cornell_box.level` for the existing multi-section
+  Cornell-box OBJ. The fixture uses the importer’s default material slot at
+  index 0, maps the four authored slots explicitly, and includes an interior
+  camera plus ceiling point light for renderer validation.
+
+- **Assimp GLTF/GLB static import (2026-09-06)** — Model dispatch now accepts
+  `.gltf` and `.glb`; the loader bakes accumulated static node transforms,
+  inverse-transpose transforms normals, preserves section/material-slot
+  topology, and retains source PBR material and texture-path metadata. Engine
+  `.material` assets remain explicit; automatic GLTF material conversion,
+  packed ORM channel handling, embedded-image extraction, skins, and animation
+  remain follow-up work.
 
 - **Editor translate gizmo first slice (2026-09-06)** — `EditorTransformGizmo`
   is defined under Editor and consumes immutable reflection snapshots. It

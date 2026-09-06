@@ -54,8 +54,9 @@ threading model rather than revive the deprecated framework piecemeal.
 - [x] Define the source command payload as a small concrete primitive variant.
   Its first and only alternative is static mesh; do not add point-cloud,
   skinned-mesh, terrain, or generic proxy types without their own consumer.
-- [x] Decide and document the MP3 transitional material input: use an opaque
-  material-instance identity until a serialized Material asset exists.
+- [x] Use serialized Material asset identities for the fallback material and
+  optional imported-section material-slot overrides; Render resolves them to
+  private material instances.
 
 **Done when:** a dependency check shows Gameplay → Render's small source API,
 Render → Graphics, and no dependency in the reverse direction. **Landed

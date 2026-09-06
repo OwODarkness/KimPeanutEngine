@@ -47,6 +47,7 @@ namespace kpengine::graphics
         VulkanBindlessTextureTable *bindless_table_ = nullptr;
         uint32_t frame_index_ = 0;
         uint32_t recorded_index_count_ = 0;
+        uint32_t recorded_first_index_ = 0;
         RenderTargetHandle active_target_;
         // Suppresses draws when the bound pipeline's attachment formats do not
         // match the active render target; recording stays pass-scoped instead of

@@ -8,6 +8,7 @@
 namespace kpengine::asset
 {
     using MeshData = kpengine::data::MeshData;
+    using MeshMaterial = kpengine::data::MeshMaterial;
     using MeshSection = kpengine::data::MeshSection;
     using Vertex = kpengine::data::Vertex;
     using VertexHash = kpengine::data::VertexHash;

@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "render/render_world/mesh_proxy.h"
 #include "render/render_world/render_world.h"
 
 namespace
@@ -46,9 +47,38 @@ TEST(RenderWorldTest, AppliesQueuedUpdatesInOrderAndSnapshotsByValue)
     EXPECT_EQ(snapshot.front().mesh.id, 2);
     EXPECT_FALSE(snapshot.front().flags.visible);
     EXPECT_EQ(snapshot.front().lod_bias, 3);
+    EXPECT_TRUE(snapshot.front().section_materials.empty());
 
     updated.lod_bias = 7;
     EXPECT_EQ(snapshot.front().lod_bias, 3);
+}
+
+TEST(RenderWorldTest, CopiesPerSectionMaterialInstancesWithTheProxy)
+{
+    kpengine::render::RenderWorld world{};
+    auto desc = MakeProxyDesc();
+    desc.section_materials = {{10, 1}, {11, 2}};
+    const kpengine::render::RenderableHandle handle = world.EnqueueCreate(desc);
+    world.ApplyPendingCommands();
+
+    const auto snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    ASSERT_EQ(snapshot.front().section_materials.size(), 2U);
+    EXPECT_EQ(snapshot.front().section_materials[0],
+              (kpengine::render::MaterialInstanceHandle{10, 1}));
+    EXPECT_EQ(snapshot.front().section_materials[1],
+              (kpengine::render::MaterialInstanceHandle{11, 2}));
+}
+
+TEST(RenderWorldTest, UsesFallbackMaterialForMissingSectionSlots)
+{
+    kpengine::render::MeshProxy proxy{};
+    proxy.material = {1, 0};
+    proxy.section_materials = {{2, 0}};
+
+    EXPECT_EQ(proxy.GetMaterialForSection(0),
+              (kpengine::render::MaterialInstanceHandle{2, 0}));
+    EXPECT_EQ(proxy.GetMaterialForSection(1), proxy.material);
 }
 
 TEST(RenderWorldTest, RejectsForgedAndDestroyedHandles)

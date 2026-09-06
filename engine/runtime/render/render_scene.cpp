@@ -67,7 +67,22 @@ namespace kpengine::render
         recorder.BindPipeline(material_binding.pipeline);
         recorder.BindMesh(mesh_handle_);
         recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set);
-        recorder.DrawIndexed();
+        const std::vector<data::MeshSection> *const sections =
+            resource_resolver.FindMeshSections(mesh_handle_);
+        if (sections == nullptr || sections->empty())
+        {
+            recorder.DrawIndexed();
+        }
+        else
+        {
+            for (const data::MeshSection &section : *sections)
+            {
+                if (section.index_count != 0)
+                {
+                    recorder.DrawIndexed(section.index_count, 1, section.index_start);
+                }
+            }
+        }
     }
 
     void RenderScene::Cleanup()

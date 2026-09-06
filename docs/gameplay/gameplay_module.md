@@ -306,6 +306,7 @@ struct MeshRenderableSourceDesc
 {
     asset::AssetID mesh_asset;
     asset::AssetID material_asset;
+    std::vector<asset::AssetID> material_assets; // optional section-slot overrides
     Transform3f world_transform;
     spatial::AABB world_bounds;
     RenderableFlags flags;
@@ -319,8 +320,10 @@ the list look complete.
 
 `material_asset` is a serialized authoring identity. Render resolves it to a
 private shared template plus default instance; Gameplay never receives either
-render handle. Per-Actor parameter overrides remain deferred until they have a
-separate copied override-value contract.
+render handle. `material_assets`, when present, is indexed by the imported
+`MeshSection::material_index`; missing or invalid slots fall back to
+`material_asset`. Per-Actor parameter overrides remain deferred until they have
+a separate copied override-value contract.
 
 The RenderSystem implementation owns source registration tokens, tracks
 pending source records, resolves ready mesh/material resources, and only then
@@ -332,7 +335,7 @@ an opaque registration token for update/destroy; it never stores a
 MeshComponent Activate/dirty/deactivate
   → Create/Update/Destroy MeshRenderableSourceDesc
   → RenderSystem source registry
-  → resolve asset + material readiness
+  → resolve mesh + fallback/section material readiness
   → RenderWorld queued MeshProxy command
   → apply at render-frame boundary
 ```

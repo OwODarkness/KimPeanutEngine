@@ -122,7 +122,7 @@ namespace kpengine::render
 
     MeshProxy RenderWorld::MakeProxy(RenderableHandle handle, const MeshProxyDesc &desc)
     {
-        return {handle, desc.mesh, desc.material, desc.world_transform, desc.world_bounds,
-                desc.flags, desc.lod_bias};
+        return {handle, desc.mesh, desc.material, desc.section_materials,
+                desc.world_transform, desc.world_bounds, desc.flags, desc.lod_bias};
     }
 }

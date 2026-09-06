@@ -58,6 +58,10 @@ work.
   the resulting order is legal for the pass.
 - [x] Make the current scene pass consume this list through `FrameContext` and
   `CommandRecorder` only.
+- [x] Preserve and submit every imported `MeshSection` range in scene and
+  shadow passes. `RenderResourceResolver` owns the API-neutral section cache;
+  each section is emitted as an explicit indexed draw with its own
+  `index_start`/`index_count` (2026-09-06).
 - [x] Keep static GPU resource ownership in render caches; proxies borrow
   resolved handles and never destroy them.
 
@@ -78,6 +82,9 @@ coupling it to graphics implementation details.
 - [x] RenderSystem resolves source readiness into `MeshProxyDesc`; an
   incomplete mesh/material produces no proxy draw and retains a render-owned
   pending/failed diagnostic (2026-08-28).
+- [x] Static-mesh sources carry optional material-asset overrides per imported
+  section material slot; Render resolves them to private material instances and
+  expands the draw list to one item per non-empty section (2026-09-06).
 - [x] Implement [GP4](../gameplay/TODO.md): component/world teardown drains
   source destruction before render-registry and resource retirement
   (2026-08-28).

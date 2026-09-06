@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_RENDER_SOURCE_H
 
 #include <variant>
+#include <vector>
 
 #include "asset/common.h"
 #include "base/handle.h"
@@ -35,6 +36,9 @@ namespace kpengine::render
         // Gameplay selects serialized material identity only. Render resolves
         // the private template/default-instance pair.
         asset::AssetID material_asset;
+        // Optional material-slot overrides indexed by MeshSection::material_index.
+        // material_asset remains the fallback for omitted slots.
+        std::vector<asset::AssetID> material_assets;
         Transform3f world_transform;
         // Local bounds are the mesh-space bounds used when bootstrap creates a
         // Gameplay component. World bounds are the already-transformed bounds

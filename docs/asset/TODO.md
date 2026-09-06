@@ -1,11 +1,10 @@
-# Asset Loading Progress TODO
+# Asset Module TODO
 
-**Status: complete.** The architecture map is [PLANS.md](PLANS.md); the
-cross-stage contract is the [Asset Loading Progress spec](../../.spec/specs/asset-loading-progress.md).
-Concrete implementation decisions belong in the linked stage plans. Execution
-evidence belongs in the corresponding `.spec/journal/` entry.
+**Status: active.** The architecture map is [PLANS.md](PLANS.md). Concrete
+implementation decisions belong in the linked stage plans. Execution evidence
+belongs in the corresponding `.spec/journal/` entry.
 
-## Roadmap
+## Loading-progress roadmap
 
 - [x] **LO1 — Asset load observation** — implement the Asset-owned,
   session-scoped observation contract and bounded snapshots. See
@@ -38,6 +37,33 @@ evidence belongs in the corresponding `.spec/journal/` entry.
   - [x] Transactionally replace the loading tree with the existing main UI.
   - [x] Validate loading-first ordering, failure display, and both backends.
 
+## Model-import roadmap
+
+- [ ] **MI1 — content-addressed native model import** — convert foreign
+  STL/OBJ/FBX/GLTF/GLB sources into immutable hash-named native `.model` and
+  `.material` products. Use an Asset-owned SQLite database under `.archive`
+  to index readable source/material names, dependencies, and product hashes;
+  skip verified cache hits without decoding or writing, and keep Material
+  references inside the native Model so runtime does not need SQLite. Ordinary
+  runtime `LoadSync` remains read-only. See the [MI1 plan](.plan/MI1.md).
+
+  Subtasks:
+
+  - [ ] Add stable hashing, dependency-closure fingerprints, a versioned SQLite
+    archive repository, product integrity checks, and exact no-op decisions.
+  - [ ] Extract a pure Assimp imported-model document and support STL, OBJ, FBX,
+    GLTF, and GLB as import sources rather than native runtime formats.
+  - [ ] Define deterministic native Model V1 serialization with ordered typed
+    Material references and defensive loading.
+  - [ ] Add canonical content-hashed Material conversion, embedded-image memory
+    decode, deduplication, and glTF PBR semantics.
+  - [ ] Stage and validate immutable products, then commit their metadata and
+    per-source root in one short SQLite transaction with rollback on failure.
+  - [ ] Dispatch `.model` through the native loader, migrate Levels/bootstrap,
+    and preserve existing material overrides.
+  - [ ] Add explicit import/reimport/status tooling, material promotion, focused
+    filesystem tests, cross-backend smoke, and visual validation.
+
 ## Acceptance ledger
 
 - [x] LO1 exposes coherent root and recursive Asset load observations without
@@ -48,6 +74,8 @@ evidence belongs in the corresponding `.spec/journal/` entry.
   transition to the existing main Editor UI with no blank or mixed frame.
 - [x] The complete acceptance contract in the
   [spec](../../.spec/specs/asset-loading-progress.md) passes.
+- [ ] MI1 satisfies its
+  [native-model-import acceptance criteria](.plan/MI1.md#acceptance-criteria).
 
 ## Completion record
 

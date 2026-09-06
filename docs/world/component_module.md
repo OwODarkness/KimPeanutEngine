@@ -56,6 +56,7 @@ struct MeshProxy
     RenderableHandle handle;       // render-owned generational identity
     graphics::MeshHandle mesh;     // render-private resolved resource
     MaterialInstanceHandle material; // render-owned material identity
+    std::vector<MaterialInstanceHandle> section_materials; // indexed by mesh section slot
 
     Transform3f world_transform;
     spatial::AABB world_bounds;

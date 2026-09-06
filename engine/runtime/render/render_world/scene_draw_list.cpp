@@ -11,10 +11,12 @@ namespace kpengine::render
         {
             return std::tie(lhs.pipeline.id, lhs.pipeline.generation,
                             lhs.proxy.material.id, lhs.proxy.material.generation,
-                            lhs.proxy.mesh.id, lhs.proxy.mesh.generation) <
+                            lhs.proxy.mesh.id, lhs.proxy.mesh.generation,
+                            lhs.section_index) <
                    std::tie(rhs.pipeline.id, rhs.pipeline.generation,
                             rhs.proxy.material.id, rhs.proxy.material.generation,
-                            rhs.proxy.mesh.id, rhs.proxy.mesh.generation);
+                            rhs.proxy.mesh.id, rhs.proxy.mesh.generation,
+                            rhs.section_index);
         }
     }
 

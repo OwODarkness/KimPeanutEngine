@@ -4,6 +4,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <limits>
 #include <optional>
 #include <string>
 #include <vector>
@@ -178,7 +179,8 @@ namespace kpengine::render
                                 graphics::CommandRecorder &recorder);
         bool RecordMeshProxy(const MeshProxy &proxy,
                              const graphics::PerPassData &per_pass_data,
-                             graphics::CommandRecorder &recorder, MaterialPass pass);
+                             graphics::CommandRecorder &recorder, MaterialPass pass,
+                             uint32_t section_index = std::numeric_limits<uint32_t>::max());
         void UpdateEnvironment(const RenderSceneFrameInput &input);
         void ApplyPendingSceneRenderTargetExtent();
 

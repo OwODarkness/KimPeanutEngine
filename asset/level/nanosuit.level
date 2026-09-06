@@ -1,0 +1,64 @@
+{
+  "version": 1,
+  "environment": {
+    "texture": "texture/hdr/HDR_041_Path.hdr",
+    "ibl_intensity": 0.35
+  },
+  "objects": [
+    {
+      "id": "nanosuit",
+      "name": "Nanosuit",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0, 0, 0],
+        "rotation_degrees": [0, 0, 0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": "model/nanosuit/nanosuit.obj",
+      "material": "material/nanosuit_arm.material",
+      "materials": [
+        "material/nanosuit_arm.material",
+        "material/nanosuit_arm.material",
+        "material/nanosuit_body.material",
+        "material/nanosuit_glass.material",
+        "material/nanosuit_hand.material",
+        "material/nanosuit_helmet.material",
+        "material/nanosuit_leg.material"
+      ]
+    },
+    {
+      "id": "main_camera",
+      "kind": "camera",
+      "transform": {
+        "position": [0, 7.5, 45],
+        "rotation_degrees": [0, -90, 0],
+        "scale": [1, 1, 1]
+      },
+      "projection": "perspective",
+      "near_plane": 0.1,
+      "far_plane": 200,
+      "field_of_view_degrees": 45,
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "id": "sun",
+      "kind": "directional_light",
+      "direction": [0.35, -0.8, -0.45],
+      "color": [1, 0.95, 0.9],
+      "intensity": 2.0,
+      "enabled": true,
+      "casts_shadow": true
+    },
+    {
+      "id": "fill",
+      "kind": "point_light",
+      "position": [-12, 10, 25],
+      "color": [0.35, 0.5, 1.0],
+      "intensity": 700,
+      "range": 100,
+      "enabled": true,
+      "casts_shadow": false
+    }
+  ]
+}

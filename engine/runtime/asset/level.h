@@ -43,6 +43,7 @@ namespace kpengine::asset
         LevelTransform transform{};
         LevelAssetReference model;
         LevelAssetReference material;
+        std::vector<LevelAssetReference> materials;
         bool visible = true;
         bool casts_shadow = true;
         int lod_bias = 0;

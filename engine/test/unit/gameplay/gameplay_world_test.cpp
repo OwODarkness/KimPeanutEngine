@@ -751,7 +751,7 @@ TEST(GameplayWorldTest, StaticMeshActorFactoryBuildsAnActiveMeshComposition)
 {
     RecordingSourceSink source_sink{};
     kpengine::gameplay::GameplayWorld world{&source_sink};
-    const kpengine::gameplay::StaticMeshActorDesc desc{
+    kpengine::gameplay::StaticMeshActorDesc desc{
         {9, 1, kpengine::asset::AssetType::KPAT_Mesh},
         {6, 2, kpengine::asset::AssetType::KPAT_Material},
         {{3.0f, 0.0f, 0.0f}, {}, {2.0f, 2.0f, 2.0f}},
@@ -759,6 +759,8 @@ TEST(GameplayWorldTest, StaticMeshActorFactoryBuildsAnActiveMeshComposition)
         false,
         false,
         3};
+    desc.material_assets = {{7, 3, kpengine::asset::AssetType::KPAT_Material},
+                            {8, 4, kpengine::asset::AssetType::KPAT_Material}};
 
     const kpengine::gameplay::ActorHandle handle =
         kpengine::gameplay::CreateStaticMeshActor(world, desc);
@@ -774,6 +776,7 @@ TEST(GameplayWorldTest, StaticMeshActorFactoryBuildsAnActiveMeshComposition)
         source_sink.creates.front());
     EXPECT_EQ(source.mesh_asset, desc.mesh_asset);
     EXPECT_EQ(source.material_asset, desc.material_asset);
+    EXPECT_EQ(source.material_assets, desc.material_assets);
     EXPECT_EQ(source.world_transform, desc.transform);
     EXPECT_FALSE(source.flags.visible);
     EXPECT_FALSE(source.flags.casts_shadow);

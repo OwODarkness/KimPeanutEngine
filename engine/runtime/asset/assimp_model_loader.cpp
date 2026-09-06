@@ -1,16 +1,123 @@
 #include "assimp_model_loader.h"
+#include <assimp/GltfMaterial.h>
+#include <assimp/material.h>
+#include <assimp/matrix3x3.h>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 #include <assimp/Importer.hpp>
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <magic_enum/magic_enum.hpp>
+#include <string>
 #include "log/logger.h"
 #include "asset_manager.h"
 #include "model.h"
 #include "utility.h"
 namespace kpengine::asset
 {
+    struct Assimp_ModelLoader::ImportTransform
+    {
+        aiMatrix4x4 value;
+    };
+
+    namespace
+    {
+        constexpr float kMinimumImportedVectorLength = 1.0e-6f;
+
+        Vector3f ToVector3(const aiVector3D &value)
+        {
+            return {static_cast<float>(value.x), static_cast<float>(value.y),
+                    static_cast<float>(value.z)};
+        }
+
+        Vector3f NormalizeImportedVector(const aiVector3D &value)
+        {
+            const float length = static_cast<float>(value.Length());
+            if (!std::isfinite(length) || length <= kMinimumImportedVectorLength)
+            {
+                return {};
+            }
+            return ToVector3(value) * (1.0f / length);
+        }
+
+        std::string ReadTexturePath(const aiMaterial &material, aiTextureType type)
+        {
+            aiString path;
+            if (material.GetTexture(type, 0, &path) != AI_SUCCESS)
+            {
+                return {};
+            }
+            return path.C_Str();
+        }
+
+        void ReadMaterialMetadata(const aiScene &scene, MeshData &mesh_data)
+        {
+            mesh_data.materials.resize(scene.mNumMaterials);
+            for (uint32_t index = 0; index < scene.mNumMaterials; ++index)
+            {
+                const aiMaterial *const source = scene.mMaterials[index];
+                MeshMaterial &destination = mesh_data.materials[index];
+                if (source == nullptr)
+                {
+                    continue;
+                }
+
+                aiString name;
+                if (source->Get(AI_MATKEY_NAME, name) == AI_SUCCESS)
+                {
+                    destination.name = name.C_Str();
+                }
+
+                aiColor4D color{1.0f, 1.0f, 1.0f, 1.0f};
+                if (source->Get(AI_MATKEY_BASE_COLOR, color) != AI_SUCCESS)
+                {
+                    (void)source->Get(AI_MATKEY_COLOR_DIFFUSE, color);
+                }
+                destination.base_color = {color.r, color.g, color.b, color.a};
+
+                float factor = 0.0f;
+                if (source->Get(AI_MATKEY_METALLIC_FACTOR, factor) == AI_SUCCESS)
+                {
+                    destination.metallic = factor;
+                }
+                if (source->Get(AI_MATKEY_ROUGHNESS_FACTOR, factor) == AI_SUCCESS)
+                {
+                    destination.roughness = factor;
+                }
+                if (source->Get(AI_MATKEY_COLOR_EMISSIVE, color) == AI_SUCCESS)
+                {
+                    destination.emissive = {color.r, color.g, color.b, color.a};
+                }
+
+                destination.base_color_texture =
+                    ReadTexturePath(*source, aiTextureType_BASE_COLOR);
+                if (destination.base_color_texture.empty())
+                {
+                    destination.base_color_texture =
+                        ReadTexturePath(*source, aiTextureType_DIFFUSE);
+                }
+                destination.normal_texture = ReadTexturePath(*source, aiTextureType_NORMALS);
+                destination.metallic_roughness_texture =
+                    ReadTexturePath(*source, aiTextureType_UNKNOWN);
+                if (destination.metallic_roughness_texture.empty())
+                {
+                    destination.metallic_roughness_texture =
+                        ReadTexturePath(*source, aiTextureType_METALNESS);
+                }
+                destination.occlusion_texture =
+                    ReadTexturePath(*source, aiTextureType_AMBIENT_OCCLUSION);
+                destination.emissive_texture =
+                    ReadTexturePath(*source, aiTextureType_EMISSIVE);
+
+                aiString alpha_mode;
+                if (source->Get(AI_MATKEY_GLTF_ALPHAMODE, alpha_mode) == AI_SUCCESS)
+                {
+                    destination.alpha_blended = std::string(alpha_mode.C_Str()) == "BLEND";
+                }
+            }
+        }
+    }
 
     // Defined only here so the public header never needs Assimp.
     struct Assimp_ModelLoader::Impl
@@ -71,7 +178,9 @@ namespace kpengine::asset
         std::unordered_map<Vertex, uint32_t, VertexHash> unique_vertices{};
         std::shared_ptr<MeshResource> mesh_asset = std::make_shared<MeshResource>();
 
-        ProcessNode(scene->mRootNode, scene, mesh_asset, unique_vertices);
+        ReadMaterialMetadata(*scene, *mesh_asset->data);
+        ImportTransform root_transform{};
+        ProcessNode(scene->mRootNode, scene, mesh_asset, root_transform, unique_vertices);
         if (!mesh_asset->data->vertices.empty())
         {
             spatial::AABB bounds{mesh_asset->data->vertices.front().position,
@@ -88,7 +197,7 @@ namespace kpengine::asset
             mesh_asset->local_bounds = bounds;
         }
         uint32_t face_count = 0;
-        for(auto section : mesh_asset->data->sections)
+        for (const MeshSection &section : mesh_asset->data->sections)
         {
             face_count += section.index_count;
         }
@@ -105,31 +214,51 @@ namespace kpengine::asset
         return AssetManager::GetInstance().RegisterAsset(info);
     }
 
-    void Assimp_ModelLoader::ProcessNode(aiNode *node, const aiScene *scene, MeshPtr mesh_asset, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
+    void Assimp_ModelLoader::ProcessNode(const aiNode *node, const aiScene *scene,
+                                         MeshPtr mesh_asset,
+                                         const ImportTransform &parent_transform,
+                                         std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
     {
-        if (node == nullptr)
+        if (node == nullptr || scene == nullptr || mesh_asset == nullptr)
         {
             return;
         }
 
+        const ImportTransform node_transform{
+            parent_transform.value * node->mTransformation};
         for (uint32_t i = 0; i < node->mNumMeshes; i++)
         {
-            aiMesh *mesh = scene->mMeshes[node->mMeshes[i]];
-            ProcessMesh(mesh, scene, mesh_asset, unique_vertices);
+            const uint32_t mesh_index = node->mMeshes[i];
+            if (mesh_index < scene->mNumMeshes && scene->mMeshes[mesh_index] != nullptr)
+            {
+                ProcessMesh(scene->mMeshes[mesh_index], node_transform, mesh_asset,
+                            unique_vertices);
+            }
         }
 
         for (uint32_t i = 0; i < node->mNumChildren; i++)
         {
-            ProcessNode(node->mChildren[i], scene, mesh_asset, unique_vertices);
+            ProcessNode(node->mChildren[i], scene, mesh_asset, node_transform, unique_vertices);
         }
     }
-    void Assimp_ModelLoader::ProcessMesh(aiMesh *mesh, const aiScene *scene, MeshPtr mesh_asset, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
+    void Assimp_ModelLoader::ProcessMesh(const aiMesh *mesh,
+                                         const ImportTransform &node_transform,
+                                         MeshPtr mesh_asset,
+                                         std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices)
     {
+        if (mesh == nullptr || mesh_asset == nullptr || mesh->mVertices == nullptr)
+        {
+            return;
+        }
+
         std::shared_ptr<MeshData> resource = mesh_asset->data;
         uint32_t index_start = static_cast<uint32_t>(resource->indices.size());
         const bool has_normal = mesh->HasNormals();
         const bool has_texcoord = mesh->mTextureCoords[0];
         const bool has_tangent_and_bitangent = mesh->HasTangentsAndBitangents();
+        const aiMatrix3x3 linear_transform(node_transform.value);
+        aiMatrix3x3 normal_transform = linear_transform;
+        normal_transform.Inverse().Transpose();
 
         // Assimp's vertex array is not a draw-order index buffer. The faces
         // define which vertex records form each primitive; iterating
@@ -142,15 +271,16 @@ namespace kpengine::asset
             {
                 const uint32_t vertex_index = face.mIndices[corner];
                 Vertex vertex{};
-                vertex.position = {mesh->mVertices[vertex_index].x,
-                                   mesh->mVertices[vertex_index].y,
-                                   mesh->mVertices[vertex_index].z};
+                if (vertex_index >= mesh->mNumVertices)
+                {
+                    continue;
+                }
+                vertex.position = ToVector3(node_transform.value * mesh->mVertices[vertex_index]);
 
                 if (has_normal)
                 {
-                    vertex.normal = {mesh->mNormals[vertex_index].x,
-                                     mesh->mNormals[vertex_index].y,
-                                     mesh->mNormals[vertex_index].z};
+                    vertex.normal = NormalizeImportedVector(
+                        normal_transform * mesh->mNormals[vertex_index]);
                 }
                 if (has_texcoord)
                 {
@@ -159,12 +289,10 @@ namespace kpengine::asset
                 }
                 if (has_tangent_and_bitangent)
                 {
-                    vertex.tangent = {mesh->mTangents[vertex_index].x,
-                                      mesh->mTangents[vertex_index].y,
-                                      mesh->mTangents[vertex_index].z};
-                    vertex.bitangent = {mesh->mBitangents[vertex_index].x,
-                                        mesh->mBitangents[vertex_index].y,
-                                        mesh->mBitangents[vertex_index].z};
+                    vertex.tangent = NormalizeImportedVector(
+                        linear_transform * mesh->mTangents[vertex_index]);
+                    vertex.bitangent = NormalizeImportedVector(
+                        linear_transform * mesh->mBitangents[vertex_index]);
                 }
 
                 const auto [it, inserted] = unique_vertices.emplace(
@@ -182,6 +310,7 @@ namespace kpengine::asset
         MeshSection section{};
         section.index_start = index_start;
         section.index_count = index_count;
+        section.material_index = mesh->mMaterialIndex;
 
         resource->sections.push_back(section);
     }

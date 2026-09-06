@@ -27,18 +27,25 @@ TEST(SceneDrawListTest, SortsOpaqueItemsByPipelineThenMaterialThenMesh)
         MakeItem(1, 3, 1),
         MakeItem(1, 2, 2),
         MakeItem(1, 2, 1),
+        MakeItem(1, 2, 1),
     };
+    items[3].section_index = 1;
+    items[4].section_index = 0;
 
     SceneDrawListBuilder::SortOpaque(items);
 
-    ASSERT_EQ(items.size(), 4);
+    ASSERT_EQ(items.size(), 5);
     EXPECT_EQ(items[0].pipeline.id, 1);
     EXPECT_EQ(items[0].proxy.material.id, 2);
     EXPECT_EQ(items[0].proxy.mesh.id, 1);
+    EXPECT_EQ(items[0].section_index, 0U);
     EXPECT_EQ(items[1].pipeline.id, 1);
     EXPECT_EQ(items[1].proxy.material.id, 2);
-    EXPECT_EQ(items[1].proxy.mesh.id, 2);
+    EXPECT_EQ(items[1].proxy.mesh.id, 1);
+    EXPECT_EQ(items[1].section_index, 1U);
     EXPECT_EQ(items[2].pipeline.id, 1);
-    EXPECT_EQ(items[2].proxy.material.id, 3);
-    EXPECT_EQ(items[3].pipeline.id, 2);
+    EXPECT_EQ(items[2].proxy.material.id, 2);
+    EXPECT_EQ(items[2].proxy.mesh.id, 2);
+    EXPECT_EQ(items[3].proxy.material.id, 3);
+    EXPECT_EQ(items[4].pipeline.id, 2);
 }

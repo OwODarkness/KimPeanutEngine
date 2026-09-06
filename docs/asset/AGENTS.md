@@ -32,7 +32,8 @@ documentation.
 - `PLANS.md` maps architecture and the coordinated load-progress stages.
 - `asset_module.md` describes the detailed landed Asset implementation.
 - `TODO.md` is the acceptance-oriented roadmap.
-- `.plan/LO*.md` contains the concrete stage designs.
+- `.plan/LO*.md` contains the coordinated load-progress stage designs.
+- `.plan/MI*.md` contains model-import stage designs.
 - `.spec/specs/asset-loading-progress.md` owns the cross-stage objective,
   invariants, and final acceptance contract.
 - `.spec/journal/` records implementation and validation evidence only after

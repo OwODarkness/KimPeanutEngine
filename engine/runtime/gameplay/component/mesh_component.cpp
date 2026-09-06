@@ -1,5 +1,7 @@
 #include "gameplay/component/mesh_component.h"
 
+#include <utility>
+
 #include "gameplay/actor/actor.h"
 
 namespace kpengine::gameplay
@@ -18,6 +20,15 @@ namespace kpengine::gameplay
         if (!(material_asset_ == material_asset))
         {
             material_asset_ = material_asset;
+            MarkSourceDirty();
+        }
+    }
+
+    void MeshComponent::SetMaterialAssets(std::vector<asset::AssetID> material_assets)
+    {
+        if (material_assets_ != material_assets)
+        {
+            material_assets_ = std::move(material_assets);
             MarkSourceDirty();
         }
     }
@@ -89,6 +100,7 @@ namespace kpengine::gameplay
         render::StaticMeshRenderableSourceDesc source{};
         source.mesh_asset = mesh_asset_;
         source.material_asset = material_asset_;
+        source.material_assets = material_assets_;
         source.world_transform = GetWorldTransform();
         source.local_bounds = GetLocalBounds();
         source.world_bounds = GetWorldBounds();

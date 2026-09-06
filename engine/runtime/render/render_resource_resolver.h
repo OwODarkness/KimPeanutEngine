@@ -5,12 +5,14 @@
 #include <cstdint>
 #include <functional>
 #include <unordered_map>
+#include <vector>
 
 #include "asset/common.h"
 #include "graphics/backend/common/api.h"
 #include "graphics/backend/common/bindless_texture.h"
 #include "graphics/backend/common/pipeline_types.h"
 #include "graphics/backend/common/texture.h"
+#include "data/mesh.h"
 #include "pipeline_cache_key.h"
 #include "render/material/material_system.h"
 #include "prepared_render_asset_catalog.h"
@@ -23,7 +25,6 @@ namespace kpengine::asset
 
 namespace kpengine::data
 {
-    struct MeshData;
     struct TextureData;
 }
 
@@ -95,6 +96,11 @@ namespace kpengine::render
         graphics::MeshHandle GetOrCreateMesh(asset::AssetID asset_id,
                                              const data::MeshData &data);
         uint32_t GetMeshTriangleCount(graphics::MeshHandle mesh) const;
+        // Render owns this API-neutral copy of the imported section ranges.
+        // Callers use it to issue one indexed draw per section without
+        // reaching into backend mesh resources.
+        const std::vector<data::MeshSection> *FindMeshSections(
+            graphics::MeshHandle mesh) const;
         TextureBinding GetOrCreateTextureBinding(
             asset::AssetID asset_id, const data::TextureData &data,
             MaterialTextureColorSpace color_space = MaterialTextureColorSpace::Srgb,
@@ -130,6 +136,8 @@ namespace kpengine::render
             pipeline_cache_;
         std::unordered_map<uint64_t, graphics::MeshHandle> mesh_cache_;
         std::unordered_map<graphics::MeshHandle, uint32_t> mesh_triangle_counts_;
+        std::unordered_map<graphics::MeshHandle, std::vector<data::MeshSection>>
+            mesh_sections_;
         std::unordered_map<TextureCacheKey, graphics::TextureHandle, TextureCacheKeyHash>
             texture_cache_;
         std::unordered_map<uint64_t, graphics::SamplerHandle> material_sampler_cache_;

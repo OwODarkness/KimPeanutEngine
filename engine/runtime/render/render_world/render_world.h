@@ -15,6 +15,7 @@ namespace kpengine::render
     {
         graphics::MeshHandle mesh;
         MaterialInstanceHandle material;
+        std::vector<MaterialInstanceHandle> section_materials;
         Transform3f world_transform;
         spatial::AABB world_bounds{};
         RenderableFlags flags;

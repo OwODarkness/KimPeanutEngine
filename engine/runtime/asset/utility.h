@@ -34,7 +34,7 @@ namespace kpengine::asset
 
     inline bool IsModelExtension(const std::string &ext)
     {
-        static const std::vector<std::string> model_exts = {"obj", "fbx", "gltf"};
+        static const std::vector<std::string> model_exts = {"obj", "fbx", "gltf", "glb"};
         return std::find(model_exts.begin(), model_exts.end(), ext) != model_exts.end();
     }
 

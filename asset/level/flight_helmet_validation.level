@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "environment": {
+    "texture": "texture/hdr/HDR_041_Path.hdr",
+    "ibl_intensity": 0.35
+  },
+  "objects": [
+    {
+      "id": "flight_helmet",
+      "name": "Flight Helmet",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [3.0, 3.0, 3.0]
+      },
+      "model": "model/FlightHelmet/FlightHelmet.gltf",
+      "material": "material/gold_pbr.material",
+      "casts_shadow": true
+    },
+    {
+      "id": "main_camera",
+      "kind": "camera",
+      "transform": {
+        "position": [0.0, 0.8, 4.5],
+        "rotation_degrees": [0.0, -90.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "projection": "perspective",
+      "near_plane": 0.05,
+      "far_plane": 100.0,
+      "field_of_view_degrees": 45.0,
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "id": "key_light",
+      "kind": "point_light",
+      "position": [2.0, 3.0, 4.0],
+      "color": [1.0, 1.0, 1.0],
+      "intensity": 500.0,
+      "range": 20.0,
+      "enabled": true,
+      "casts_shadow": true
+    }
+  ]
+}

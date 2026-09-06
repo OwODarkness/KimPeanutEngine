@@ -117,10 +117,12 @@ namespace kpengine::asset
                         record.id = std::move(id);
                         record.name = std::move(name);
                         if (!ValidateOnlyFields(object, {"id", "name", "kind", "transform", "model",
-                                                          "material", "visible", "casts_shadow", "lod_bias"}, location) ||
+                                                          "material", "materials", "visible", "casts_shadow", "lod_bias"}, location) ||
                             !ParseTransform(object, "transform", location, record.transform) ||
                             !ParseReference(object, "model", AssetType::KPAT_Model, location, record.model) ||
                             !ParseReference(object, "material", AssetType::KPAT_Material, location, record.material) ||
+                            !ParseOptionalReferenceArray(object, "materials", AssetType::KPAT_Material,
+                                                         location, record.materials) ||
                             !ParseOptionalBool(object, "visible", location, record.visible) ||
                             !ParseOptionalBool(object, "casts_shadow", location, record.casts_shadow) ||
                             !ParseOptionalInt(object, "lod_bias", location, record.lod_bias))
@@ -424,24 +426,24 @@ namespace kpengine::asset
                 return true;
             }
 
-            bool ParseReference(const json &object, const char *name, AssetType expected_type,
-                                const std::string &location, LevelAssetReference &reference)
+            bool ParseReferenceValue(const json &value, AssetType expected_type,
+                                     const std::string &location, LevelAssetReference &reference)
             {
-                if (!object.contains(name) || !object[name].is_string())
+                if (!value.is_string())
                 {
-                    return Fail(location + "." + name, "must be a non-empty asset path");
+                    return Fail(location, "must be a non-empty asset path");
                 }
-                const std::string authored_path = object[name].get<std::string>();
+                const std::string authored_path = value.get<std::string>();
                 std::string normalized;
                 if (!NormalizeAssetRootRelativePath(authored_path, expected_type, normalized))
                 {
-                    return Fail(location + "." + name,
+                    return Fail(location,
                                 "asset path must be a normalized asset-root-relative reference of the expected type");
                 }
                 if (expected_type == AssetType::KPAT_Texture &&
                     GetFileExtension(normalized) != "hdr")
                 {
-                    return Fail(location + "." + name,
+                    return Fail(location,
                                 "level environment texture must use the HDR format");
                 }
 
@@ -453,7 +455,7 @@ namespace kpengine::asset
                 {
                     if (info_.dependency_requests[existing->second].expected_type != expected_type)
                     {
-                        return Fail(location + "." + name, "asset path has incompatible types");
+                        return Fail(location, "asset path has incompatible types");
                     }
                     reference.dependency_index = existing->second;
                     return true;
@@ -465,6 +467,48 @@ namespace kpengine::asset
                     (std::filesystem::path(GetAssetDirectory()) / std::filesystem::path(normalized)).generic_string();
                 info_.dependency_requests.push_back({resolved_path, expected_type});
                 reference.dependency_index = index;
+                return true;
+            }
+
+            bool ParseReference(const json &object, const char *name, AssetType expected_type,
+                                const std::string &location, LevelAssetReference &reference)
+            {
+                if (!object.contains(name))
+                {
+                    return Fail(location + "." + name, "must be a non-empty asset path");
+                }
+                return ParseReferenceValue(object[name], expected_type,
+                                           location + "." + name, reference);
+            }
+
+            bool ParseOptionalReferenceArray(const json &object, const char *name,
+                                             AssetType expected_type,
+                                             const std::string &location,
+                                             std::vector<LevelAssetReference> &references)
+            {
+                if (!object.contains(name))
+                {
+                    return true;
+                }
+                if (!object[name].is_array())
+                {
+                    return Fail(location + "." + name, "must be an array of asset paths");
+                }
+
+                references.clear();
+                references.reserve(object[name].size());
+                for (std::size_t index = 0; index < object[name].size(); ++index)
+                {
+                    LevelAssetReference reference{};
+                    if (!ParseReferenceValue(
+                            object[name][index], expected_type,
+                            location + "." + name + "[" + std::to_string(index) + "]",
+                            reference))
+                    {
+                        return false;
+                    }
+                    references.push_back(std::move(reference));
+                }
                 return true;
             }
 

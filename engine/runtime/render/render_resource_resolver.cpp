@@ -78,10 +78,21 @@ namespace kpengine::render
         if (handle.IsValid())
         {
             mesh_cache_.emplace(key, handle);
-            const uint32_t index_count = data.sections.empty()
-                                              ? static_cast<uint32_t>(data.indices.size())
-                                              : data.sections.front().index_count;
-            mesh_triangle_counts_.emplace(handle, index_count / 3U);
+            mesh_sections_.emplace(handle, data.sections);
+
+            uint32_t triangle_count = 0;
+            if (data.sections.empty())
+            {
+                triangle_count = static_cast<uint32_t>(data.indices.size()) / 3U;
+            }
+            else
+            {
+                for (const data::MeshSection &section : data.sections)
+                {
+                    triangle_count += section.index_count / 3U;
+                }
+            }
+            mesh_triangle_counts_.emplace(handle, triangle_count);
         }
         return handle;
     }
@@ -90,6 +101,13 @@ namespace kpengine::render
     {
         const auto it = mesh_triangle_counts_.find(mesh);
         return it != mesh_triangle_counts_.end() ? it->second : 0U;
+    }
+
+    const std::vector<data::MeshSection> *RenderResourceResolver::FindMeshSections(
+        graphics::MeshHandle mesh) const
+    {
+        const auto it = mesh_sections_.find(mesh);
+        return it != mesh_sections_.end() ? &it->second : nullptr;
     }
 
     TextureBinding RenderResourceResolver::GetOrCreateTextureBinding(
@@ -319,6 +337,7 @@ namespace kpengine::render
         }
         mesh_cache_.clear();
         mesh_triangle_counts_.clear();
+        mesh_sections_.clear();
         for (const auto &[key, handle] : texture_cache_)
         {
             (void)key;

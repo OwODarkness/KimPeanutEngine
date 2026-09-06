@@ -117,7 +117,8 @@ Consequence: loads are **serialized**, not parallelized — async loading wins o
 
 `LoadByExtension` dispatches by `AssetType`:
 
-- `KPAT_Model` → `Assimp_ModelLoader` (also emits `KPAT_Mesh` sub-resources)
+- `KPAT_Model` → `Assimp_ModelLoader` (also emits `KPAT_Mesh` sub-resources;
+  OBJ, FBX, GLTF, and GLB are currently dispatched here)
 - `KPAT_Texture` → `AssetManager` calls ImageIO directly, then creates
   Asset-owned texture data with the texture-format policy
 - `KPAT_Audio` → `MiniAudio_AudioLoader`
@@ -126,6 +127,12 @@ Consequence: loads are **serialized**, not parallelized — async loading wins o
   authoring data without resolving render handles or child AssetIDs)
 
 Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h`, `shader_program_loader.h`); the concrete implementations are swappable. The manager owns them as `unique_ptr` and currently hard-codes the concrete types in its constructor.
+
+The Assimp model path is static-mesh oriented. It accumulates and bakes node
+transforms, preserves section/material-slot topology, and retains source PBR
+material metadata in `data::MeshMaterial`. Engine Render materials remain
+explicit `.material` assets; source texture paths are metadata for the import
+boundary and are not loaded as hidden GPU dependencies by Assimp.
 
 ## Bootstrap preload, HDR cost, and streaming policy
 

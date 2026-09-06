@@ -316,27 +316,21 @@ TEST(GameplayReflection, TransformWritesPropagateToAttachedMeshSources)
 
     RecordingRenderableSink sink;
     gameplay::GameplayWorld world{&sink};
-    const gameplay::ActorHandle parent_handle = world.CreateActor();
-    const gameplay::ActorHandle child_handle = world.CreateActor();
-    gameplay::Actor *const parent_actor = world.FindActor(parent_handle);
-    gameplay::Actor *const child_actor = world.FindActor(child_handle);
-    ASSERT_NE(parent_actor, nullptr);
-    ASSERT_NE(child_actor, nullptr);
+    const gameplay::ActorHandle actor_handle = world.CreateActor();
+    gameplay::Actor *const actor = world.FindActor(actor_handle);
+    ASSERT_NE(actor, nullptr);
 
     gameplay::SceneComponent *const parent =
-        parent_actor->AddComponent<gameplay::SceneComponent>();
-    gameplay::MeshComponent *const child = child_actor->AddComponent<gameplay::MeshComponent>();
+        actor->AddComponent<gameplay::SceneComponent>();
+    gameplay::MeshComponent *const child = actor->AddComponent<gameplay::MeshComponent>();
     ASSERT_NE(parent, nullptr);
     ASSERT_NE(child, nullptr);
-    ASSERT_TRUE(parent_actor->SetRootComponent(parent));
-    ASSERT_TRUE(child_actor->SetRootComponent(child));
+    ASSERT_TRUE(actor->SetRootComponent(parent));
     parent->SetLocalLocation({10.0f, 0.0f, 0.0f});
     child->SetLocalLocation({2.0f, 0.0f, 0.0f});
     ASSERT_TRUE(child->AttachTo(*parent));
-    ASSERT_TRUE(world.InitializeActor(parent_handle));
-    ASSERT_TRUE(world.InitializeActor(child_handle));
-    ASSERT_TRUE(world.ActivateActor(parent_handle));
-    ASSERT_TRUE(world.ActivateActor(child_handle));
+    ASSERT_TRUE(world.InitializeActor(actor_handle));
+    ASSERT_TRUE(world.ActivateActor(actor_handle));
     sink.updates.clear();
 
     const ReflectionObjectRef parent_object = ReflectionObjectRef::ForMutable(scene_type.id, parent);

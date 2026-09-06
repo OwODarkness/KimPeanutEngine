@@ -404,6 +404,33 @@ namespace kpengine::runtime
 
         description.mesh_asset = mesh_asset;
         description.material_asset = material_asset;
+        description.material_assets.clear();
+        description.material_assets.reserve(record.materials.size());
+        for (const asset::LevelAssetReference &material_reference : record.materials)
+        {
+            const asset::AssetID section_material_asset = asset_manager_.ResolveDependency(
+                level_asset, material_reference.dependency_index, asset::AssetType::KPAT_Material);
+            if (!section_material_asset.IsValid())
+            {
+                return Failure(LevelInstanceError::DependencyResolutionFailed,
+                               "section material dependency failed for authored ID: " + record.id);
+            }
+            asset::Asset *const section_material_wrapper =
+                asset_manager_.GetAsset(section_material_asset);
+            const std::shared_ptr<asset::MaterialResource> section_material_resource =
+                section_material_wrapper != nullptr
+                    ? section_material_wrapper->GetResource<asset::MaterialResource>()
+                    : nullptr;
+            if (section_material_wrapper == nullptr ||
+                section_material_wrapper->GetType() != asset::AssetType::KPAT_Material ||
+                section_material_resource == nullptr)
+            {
+                return Failure(LevelInstanceError::InvalidMaterialResource,
+                               "section material dependency has no valid resource for authored ID: " +
+                                   record.id);
+            }
+            description.material_assets.push_back(section_material_asset);
+        }
         description.transform = ToGameplayTransform(record.transform);
         description.local_bounds = mesh_resource->local_bounds;
         description.visible = record.visible;

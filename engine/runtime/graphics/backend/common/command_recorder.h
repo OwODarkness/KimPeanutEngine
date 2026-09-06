@@ -44,6 +44,9 @@ namespace kpengine::graphics
         virtual void SetScissor(const Scissor &scissor) = 0;
         virtual void DrawIndexed(uint32_t index_count = 0,
                                  uint32_t instance_count = 1,
+                                 // Offset in index elements within the bound
+                                 // mesh. A zero index_count uses the first
+                                 // section's recorded range.
                                  uint32_t first_index = 0,
                                  int32_t vertex_offset = 0,
                                  uint32_t first_instance = 0) = 0;

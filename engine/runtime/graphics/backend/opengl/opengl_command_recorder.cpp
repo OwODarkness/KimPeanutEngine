@@ -175,6 +175,9 @@ namespace kpengine::graphics
         recorded_index_count_ = mesh_resource->sections.empty()
                                     ? 0u
                                     : static_cast<uint32_t>(mesh_resource->sections[0].index_count);
+        recorded_first_index_ = mesh_resource->sections.empty()
+                                    ? 0u
+                                    : static_cast<uint32_t>(mesh_resource->sections[0].index_start);
     }
 
     void OpenglCommandRecorder::BindResourceBindings(PipelineHandle pipeline,
@@ -223,11 +226,12 @@ namespace kpengine::graphics
         (void)first_instance;
         if (draws_suppressed_) return;
         const uint32_t count = index_count == 0 ? recorded_index_count_ : index_count;
+        const uint32_t offset = index_count == 0 ? recorded_first_index_ : first_index;
         if (count != 0)
         {
             glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(count),
                                     GL_UNSIGNED_INT,
-                                    reinterpret_cast<const void *>(first_index * sizeof(uint32_t)),
+                                    reinterpret_cast<const void *>(offset * sizeof(uint32_t)),
                                     static_cast<GLsizei>(instance_count));
         }
     }

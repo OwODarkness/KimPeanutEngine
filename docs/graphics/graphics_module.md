@@ -349,6 +349,10 @@ BeginFrame → FrameContext allocation/bindings → BeginRenderTarget
 `CommandRecorder*` is available only between `BeginFrame` and `EndFrame`.
 Static resources and pipelines are render-owned; frame UBO ranges and binding
 sets are transient and must not be retained after their frame slot ends.
+`DrawIndexed` accepts an explicit index-element range, so Render submits one
+draw for each imported mesh section while the backend keeps the index buffer
+bound once. Omitting the range retains the convenience behavior of drawing the
+first section.
 
 ### Contract verification (2026-08-24)
 

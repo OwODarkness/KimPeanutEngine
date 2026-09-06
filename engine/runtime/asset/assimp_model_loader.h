@@ -30,9 +30,15 @@ namespace kpengine::asset
 
         virtual bool Load(const std::string& path, ModelGeometryType type,  AssetRegisterInfo &info) override;
     private:
+        struct ImportTransform;
+
         AssetID LoadMesh(const std::string& path);
-        void ProcessNode(aiNode *node, const aiScene *scene, MeshPtr resource, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices);
-        void ProcessMesh(aiMesh *mesh, const aiScene *scene, MeshPtr resource, std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices);
+        void ProcessNode(const aiNode *node, const aiScene *scene, MeshPtr resource,
+                         const ImportTransform &parent_transform,
+                         std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices);
+        void ProcessMesh(const aiMesh *mesh, const ImportTransform &node_transform,
+                         MeshPtr resource,
+                         std::unordered_map<Vertex, uint32_t, VertexHash> &unique_vertices);
 
         struct Impl;
         std::unique_ptr<Impl> impl_;
