@@ -52,6 +52,22 @@ namespace kpengine::render
         constexpr uint32_t kPointShadowAtlasHeight = kPointShadowFaceResolution * 2;
         constexpr uint64_t kPointShadowTargetBytes =
             static_cast<uint64_t>(kPointShadowAtlasWidth) * kPointShadowAtlasHeight * 4;
+        constexpr uint64_t kDirectionalShadowPerPassUniformKey = 0x534841444f575f44ull;
+        constexpr uint64_t kSpotShadowPerPassUniformKey = 0x534841444f575f53ull;
+        constexpr uint64_t kPointShadowPerPassUniformKey = 0x534841444f575f50ull;
+        constexpr uint64_t kGBufferPerPassUniformKey = 0x4742554646455250ull;
+
+        uint64_t GetObjectUniformKey(const RenderableHandle handle)
+        {
+            return 0x4f424a4543545f55ull ^
+                   (static_cast<uint64_t>(handle.id) << 32) ^ handle.generation;
+        }
+
+        uint64_t GetSelectionUniformKey(const RenderableHandle handle)
+        {
+            return 0x53454c4543545f55ull ^
+                   (static_cast<uint64_t>(handle.id) << 32) ^ handle.generation;
+        }
 
         uint64_t DrawMeshSections(const RenderResourceResolver &resource_resolver,
                                   graphics::CommandRecorder &recorder,
@@ -1065,6 +1081,13 @@ namespace kpengine::render
         graphics::PerPassData per_pass_data{};
         per_pass_data.camera_data.view = shadow.view.Transpose();
         per_pass_data.camera_data.proj = shadow.projection.Transpose();
+        const UniformAllocation per_pass = active_frame_context_->UpdateStableUniform(
+            kDirectionalShadowPerPassUniformKey, per_pass_data);
+        if (!per_pass.IsValid())
+        {
+            shadow_target->EndRecording(*recorder);
+            return false;
+        }
         const std::vector<VisibleMeshSection> shadow_caster_candidates =
             BuildSectionCandidatesProfiled();
         for (const VisibleMeshSection &candidate : shadow_caster_candidates)
@@ -1076,7 +1099,7 @@ namespace kpengine::render
                 *draw_class == MaterialDrawClass::Opaque &&
                 material_system_->GetInstanceResolution(proxy.material).state == MaterialResourceState::Ready)
             {
-                RecordShadowCaster(proxy, per_pass_data, *recorder, candidate.section_index);
+                RecordShadowCaster(proxy, per_pass, *recorder, candidate.section_index);
             }
         }
         shadow_target->EndRecording(*recorder);
@@ -1113,6 +1136,13 @@ namespace kpengine::render
         graphics::PerPassData per_pass_data{};
         per_pass_data.camera_data.view = shadow.view.Transpose();
         per_pass_data.camera_data.proj = shadow.projection.Transpose();
+        const UniformAllocation per_pass = active_frame_context_->UpdateStableUniform(
+            kSpotShadowPerPassUniformKey, per_pass_data);
+        if (!per_pass.IsValid())
+        {
+            shadow_target->EndRecording(*recorder);
+            return false;
+        }
         const std::vector<VisibleMeshSection> shadow_caster_candidates =
             BuildSectionCandidatesProfiled();
         for (const VisibleMeshSection &candidate : shadow_caster_candidates)
@@ -1130,7 +1160,7 @@ namespace kpengine::render
             {
                 continue;
             }
-            RecordShadowCaster(proxy, per_pass_data, *recorder, candidate.section_index);
+            RecordShadowCaster(proxy, per_pass, *recorder, candidate.section_index);
         }
         shadow_target->EndRecording(*recorder);
         spot_shadow_recorded_ = true;
@@ -1195,6 +1225,13 @@ namespace kpengine::render
             graphics::PerPassData per_pass_data{};
             per_pass_data.camera_data.view = view.Transpose();
             per_pass_data.camera_data.proj = projection.Transpose();
+            const UniformAllocation per_pass = active_frame_context_->UpdateStableUniform(
+                kPointShadowPerPassUniformKey + face_index, per_pass_data);
+            if (!per_pass.IsValid())
+            {
+                shadow_target->EndRecording(*recorder);
+                return false;
+            }
             for (const VisibleMeshSection &candidate : caster_candidates)
             {
                 if (!camera::IsAABBInsidePerspectiveFace(
@@ -1202,7 +1239,7 @@ namespace kpengine::render
                 {
                     continue;
                 }
-                RecordShadowCaster(candidate.proxy, per_pass_data, *recorder,
+                RecordShadowCaster(candidate.proxy, per_pass, *recorder,
                                    candidate.section_index);
                 ++face_draw_counts[face_index];
             }
@@ -1264,9 +1301,16 @@ namespace kpengine::render
                 visible_sections, *material_system_, *resource_resolver_, MaterialPass::GBuffer);
             SceneDrawListBuilder::SortOpaqueFrontToBack(
                 draw_lists.opaque, scene_camera_.GetPosition(), scene_camera_.GetForward());
+            const UniformAllocation per_pass = active_frame_context_->UpdateStableUniform(
+                kGBufferPerPassUniformKey, per_pass_data);
+            if (!per_pass.IsValid())
+            {
+                gbuffer_target->EndRecording(*recorder);
+                return false;
+            }
             for (const SceneDrawItem &item : draw_lists.opaque)
             {
-                if (RecordMeshProxy(item.proxy, per_pass_data, *recorder,
+                if (RecordMeshProxy(item.proxy, per_pass, *recorder,
                                     MaterialPass::GBuffer, item.section_index))
                 {
                     if (item.section_index != std::numeric_limits<uint32_t>::max())
@@ -2063,9 +2107,9 @@ namespace kpengine::render
         // separate common-RHI extension, so this slice does not fake one.
         desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
         desc.descriptor_binding_descs = {
-            {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+            {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
               ShaderStage::SHADER_STAGE_VERTEX},
-             {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+             {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
               ShaderStage::SHADER_STAGE_VERTEX}},
         };
         directional_shadow_pipeline_ = backend_->CreatePipelineResource(desc);
@@ -2073,7 +2117,7 @@ namespace kpengine::render
     }
 
     void DeferredRenderer::RecordShadowCaster(const MeshProxy &proxy,
-                                          const graphics::PerPassData &per_pass_data,
+                                          const UniformAllocation &per_pass,
                                           graphics::CommandRecorder &recorder,
                                           uint32_t section_index)
     {
@@ -2084,31 +2128,32 @@ namespace kpengine::render
         }
         graphics::PerObjectData per_object_data{};
         per_object_data.model = Matrix4f::MakeTransformMatrix(proxy.world_transform).Transpose();
-        const UniformAllocation per_pass = active_frame_context_->AllocateUniform(per_pass_data);
-        const UniformAllocation per_object = active_frame_context_->AllocateUniform(per_object_data);
+        const UniformAllocation per_object = active_frame_context_->UpdateStableUniform(
+            GetObjectUniformKey(proxy.handle), per_object_data);
         if (!per_pass.IsValid() || !per_object.IsValid())
         {
             return;
         }
-        const graphics::DescriptorSetHandle bindings = active_frame_context_->AllocateResourceBindingSet(
-            directional_shadow_pipeline_,
-            {0,
-             {graphics::UniformBufferBinding{0, 0, per_pass.buffer, per_pass.offset, per_pass.range},
-              graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset, per_object.range}}});
-        if (!bindings.IsValid())
+        const std::vector<graphics::ResourceBinding> draw_bindings{
+            graphics::UniformBufferBinding{0, 0, per_pass.buffer, per_pass.offset, per_pass.range},
+            graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset, per_object.range}};
+        const FrameResourceBinding resource_binding = active_frame_context_->CreateOrGetStableBindingSet(
+            0x534841444f575f42ull, directional_shadow_pipeline_, draw_bindings);
+        if (!resource_binding.IsValid())
         {
             return;
         }
         recorder.BindPipeline(directional_shadow_pipeline_);
         recorder.BindMesh(proxy.mesh);
-        recorder.BindResourceBindings(directional_shadow_pipeline_, bindings);
+        recorder.BindResourceBindings(directional_shadow_pipeline_, resource_binding.descriptor_set,
+                                      resource_binding.dynamic_offsets);
         const uint64_t draw_count =
             DrawMeshSections(*resource_resolver_, recorder, proxy.mesh, section_index);
         AddProfileDraws(draw_count, draw_count);
     }
 
     bool DeferredRenderer::RecordMeshProxy(const MeshProxy &proxy,
-                                           const graphics::PerPassData &per_pass_data,
+                                           const UniformAllocation &per_pass,
                                            graphics::CommandRecorder &recorder,
                                            MaterialPass pass, uint32_t section_index)
     {
@@ -2119,8 +2164,8 @@ namespace kpengine::render
 
         graphics::PerObjectData per_object_data{};
         per_object_data.model = Matrix4f::MakeTransformMatrix(proxy.world_transform).Transpose();
-        const UniformAllocation per_pass = active_frame_context_->AllocateUniform(per_pass_data);
-        const UniformAllocation per_object = active_frame_context_->AllocateUniform(per_object_data);
+        const UniformAllocation per_object = active_frame_context_->UpdateStableUniform(
+            GetObjectUniformKey(proxy.handle), per_object_data);
         if (!per_pass.IsValid() || !per_object.IsValid())
         {
             return false;
@@ -2135,7 +2180,8 @@ namespace kpengine::render
             const SelectionGpuData selection_data{
                 Vector4f{proxy.flags.selected ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f}};
             const UniformAllocation selection =
-                active_frame_context_->AllocateUniform(selection_data);
+                active_frame_context_->UpdateStableUniform(
+                    GetSelectionUniformKey(proxy.handle), selection_data);
             if (!selection.IsValid())
             {
                 return false;
@@ -2152,7 +2198,8 @@ namespace kpengine::render
 
         recorder.BindPipeline(material_binding.pipeline);
         recorder.BindMesh(proxy.mesh);
-        recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set);
+        recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set,
+                                      material_binding.dynamic_offsets);
         const uint64_t draw_count =
             DrawMeshSections(*resource_resolver_, recorder, proxy.mesh, section_index);
         AddProfileDraws(draw_count, draw_count);

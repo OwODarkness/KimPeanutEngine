@@ -113,7 +113,7 @@ namespace kpengine::render
 
         const MaterialInstanceHandle handle = instance_handles_.Create();
         auto [instance_it, inserted] = instances_.emplace(
-            handle.id, MaterialInstanceRecord{handle, desc.template_handle, std::move(overrides), {}});
+            handle.id, MaterialInstanceRecord{handle, desc.template_handle, std::move(overrides), {}, 1});
         (void)inserted;
         ++template_it->second.instance_count;
         ResolveInstance(handle, template_it->second, instance_it->second);
@@ -142,6 +142,7 @@ namespace kpengine::render
         }
         instance_it->second.overrides = std::move(updated_overrides);
         instance_it->second.resolution = {};
+        ++instance_it->second.revision;
         ResolveInstance(handle, template_it->second, instance_it->second);
         return true;
     }
@@ -174,6 +175,12 @@ namespace kpengine::render
         const auto instance_it = instances_.find(instance_handles_.Get(handle));
         return instance_it != instances_.end() ? instance_it->second.template_handle
                                                : MaterialTemplateHandle{};
+    }
+
+    uint64_t MaterialSystem::GetInstanceRevision(MaterialInstanceHandle handle) const
+    {
+        const auto instance_it = instances_.find(instance_handles_.Get(handle));
+        return instance_it != instances_.end() ? instance_it->second.revision : 0;
     }
 
     const MaterialParameterValue *MaterialSystem::GetParameterValue(

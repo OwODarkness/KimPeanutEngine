@@ -431,13 +431,13 @@ namespace kpengine::render
                  offsetof(data::Vertex, bitangent)},
             };
             desc.descriptor_binding_descs = {
-                {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
                   ShaderStage::SHADER_STAGE_VERTEX},
-                 {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                 {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
                   ShaderStage::SHADER_STAGE_VERTEX},
                  {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                   ShaderStage::SHADER_STAGE_FRAGMENT},
-                 {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                 {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
                   ShaderStage::SHADER_STAGE_FRAGMENT},
                  {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                   ShaderStage::SHADER_STAGE_FRAGMENT},
@@ -447,7 +447,7 @@ namespace kpengine::render
                   ShaderStage::SHADER_STAGE_FRAGMENT},
                  {8, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                   ShaderStage::SHADER_STAGE_FRAGMENT},
-                 {9, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                 {9, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
                   ShaderStage::SHADER_STAGE_FRAGMENT}},
             };
         }
@@ -463,11 +463,11 @@ namespace kpengine::render
                  offsetof(data::Vertex, tex_coord)},
             };
             desc.descriptor_binding_descs = {
-                {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                {{0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
                   ShaderStage::SHADER_STAGE_VERTEX},
-                 {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                 {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
                   ShaderStage::SHADER_STAGE_VERTEX},
-                 {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+                 {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM_DYNAMIC,
                   ShaderStage::SHADER_STAGE_FRAGMENT}},
             };
             if (!bindless_texture_table_compatible)

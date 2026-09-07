@@ -1,12 +1,13 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_OPENGL_DESCRIPTOR_SET_H
 #define KPENGINE_RUNTIME_GRAPHICS_OPENGL_DESCRIPTOR_SET_H
 
-#include <unordered_map>
+#include <map>
 #include <variant>
 #include <cstdint>
 #include <cstddef>
 
 #include "common/descriptor_types.h"
+#include "common/resource_binding.h"
 
 namespace kpengine::graphics{
 
@@ -29,11 +30,11 @@ namespace kpengine::graphics{
     class OpenglDescriptorSet{
     public:
         void SetUniformBuffer(uint32_t binding, uint32_t buffer_id,
-                              size_t offset = 0, size_t range = 0);
+                              size_t offset, size_t range, DescriptorType type);
         void SetCombinedImageSampler(uint32_t binding, uint32_t image_id, uint32_t sampler_id);
-        void Bind();
+        void Bind(const DynamicUniformOffsets &dynamic_offsets);
     private:
-        std::unordered_map<uint32_t, OpenglDescriptorResource> resources_;
+        std::map<uint32_t, OpenglDescriptorResource> resources_;
     };
 }
 

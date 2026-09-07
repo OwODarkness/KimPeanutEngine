@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <chrono>
 #include <cstring>
+#include <unordered_map>
 #include <vector>
 
 #include "graphics/backend/common/render_backend.h"
@@ -49,6 +50,7 @@ namespace kpengine::render
         graphics::PipelineHandle pipeline;
         graphics::DescriptorSetHandle descriptor_set;
         UniformAllocation constants;
+        graphics::DynamicUniformOffsets dynamic_offsets;
         bool uses_bindless_textures = false;
         uint32_t frame_index = 0;
         uint64_t frame_number = 0;
@@ -57,6 +59,14 @@ namespace kpengine::render
         {
             return pipeline.IsValid() && descriptor_set.IsValid();
         }
+    };
+
+    struct FrameResourceBinding
+    {
+        graphics::DescriptorSetHandle descriptor_set;
+        graphics::DynamicUniformOffsets dynamic_offsets;
+
+        bool IsValid() const { return descriptor_set.IsValid(); }
     };
 
     // A frame-slot-local lighting UBO. It stays valid only until this
@@ -90,6 +100,10 @@ namespace kpengine::render
         graphics::Extent2D GetRenderExtent() const { return render_extent_; }
 
         UniformAllocation AllocateUniform(size_t size);
+        UniformAllocation UpdateStableUniform(uint64_t key, const void *data, size_t size);
+        FrameResourceBinding CreateOrGetStableBindingSet(
+            uint64_t key, graphics::PipelineHandle pipeline,
+            const std::vector<graphics::ResourceBinding> &bindings);
         graphics::DescriptorSetHandle AllocateResourceBindingSet(
             graphics::PipelineHandle pipeline,
             const graphics::ResourceBindingSetDesc &desc);
@@ -122,6 +136,12 @@ namespace kpengine::render
             return allocation;
         }
 
+        template <typename T>
+        UniformAllocation UpdateStableUniform(uint64_t key, const T &value)
+        {
+            return UpdateStableUniform(key, &value, sizeof(T));
+        }
+
         // RenderSystem is the normal owner. The explicit lifecycle also keeps the
         // standalone RHI example able to exercise the same render-layer path.
         void Initialize(graphics::RenderBackend &backend, size_t uniform_capacity);
@@ -133,6 +153,26 @@ namespace kpengine::render
     private:
         static constexpr uint32_t kMaterialConstantsBinding = 3;
         void ReleaseTransientBindings();
+        void ReleaseStableBindings();
+
+        struct StableUniformRecord
+        {
+            UniformAllocation allocation;
+            bool initialized = false;
+        };
+
+        struct StableBindingRecord
+        {
+            graphics::DescriptorSetHandle descriptor_set;
+            std::vector<uint32_t> dynamic_bindings;
+        };
+
+        struct CachedMaterialRecord
+        {
+            UniformAllocation constants;
+            std::vector<graphics::ResourceBinding> bindings;
+            bool uses_bindless_textures = false;
+        };
         void RecordUniformWrite(size_t bytes, double milliseconds) noexcept
         {
             ++profile_counters_.uniform_writes;
@@ -146,10 +186,14 @@ namespace kpengine::render
         size_t uniform_capacity_ = 0;
         size_t uniform_alignment_ = 1;
         size_t uniform_cursor_ = 0;
+        size_t stable_uniform_cursor_ = 0;
         uint32_t frame_index_ = 0;
         FrameGlobals globals_;
         graphics::Extent2D render_extent_;
         std::vector<graphics::DescriptorSetHandle> transient_binding_sets_;
+        std::unordered_map<uint64_t, StableUniformRecord> stable_uniforms_;
+        std::unordered_map<uint64_t, StableBindingRecord> stable_binding_sets_;
+        std::unordered_map<uint64_t, CachedMaterialRecord> cached_materials_;
         bool active_ = false;
         FrameContextProfileCounters profile_counters_{};
     };

@@ -295,7 +295,8 @@ warm-up. Any effective map change forces a miss.
 
 #### Stage 6.2 — stable binding sets plus dynamic uniform offsets
 
-- Extend the common binding description with an API-neutral dynamic-uniform
+- Implementation status: landed. Stable per-frame-context geometry bindings use
+  an API-neutral dynamic-uniform
   intent and extend binding commands with ordered dynamic offsets. Preserve
   the existing uniform alignment and range validation.
 - Pack per-pass data once per pass, per-object data once per proxy/revision,
@@ -316,7 +317,8 @@ warm-up. Any effective map change forces a miss.
 Exit: after warm-up, each geometry draw performs zero descriptor allocation
 and zero descriptor update. Descriptor counts scale with pipelines, changed
 stable materials, and frame slots—not sections. Vulkan and OpenGL render the
-same frame data through the common contract.
+same frame data through the common contract. Focused stable-binding coverage
+passes; fixed-scenario runtime counters and visual comparison remain pending.
 
 #### Stage 6.3 — recorder state cache and lean draw packets
 

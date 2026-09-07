@@ -1,4 +1,5 @@
 #include "opengl_backend.h"
+#include <algorithm>
 #include <chrono>
 #include <type_traits>
 #include <glad/glad.h>
@@ -575,10 +576,23 @@ namespace kpengine::graphics
     DescriptorSetHandle OpenglBackend::CreateResourceBindingSet(
         PipelineHandle pipeline, const ResourceBindingSetDesc &desc)
     {
-        if (!pipeline_manager_->GetPipelineResource(pipeline))
+        OpenglPipeline *const pipeline_resource = pipeline_manager_->GetPipelineResource(pipeline);
+        if (!pipeline_resource || desc.set >= pipeline_resource->descriptor_binding_descs_.size())
         {
             return {};
         }
+        const auto get_descriptor_type = [pipeline_resource, set_index = desc.set](uint32_t binding)
+        {
+            const auto &declared = pipeline_resource->descriptor_binding_descs_[set_index];
+            const auto it = std::find_if(
+                declared.begin(), declared.end(),
+                [binding](const DescriptorBindingDesc &candidate)
+                {
+                    return candidate.binding == binding;
+                });
+            return it == declared.end() ? DescriptorType::DESCRIPTOR_TYPE_UNIFORM
+                                         : it->descriptor_type;
+        };
         const auto allocation_started = std::chrono::steady_clock::now();
         const DescriptorSetHandle handle = resource_binding_set_handles_.Create();
         if (handle.id == resource_binding_sets_.size())
@@ -600,7 +614,8 @@ namespace kpengine::graphics
                         return;
                     }
                     set->SetUniformBuffer(value.binding, value.buffer.id,
-                                          value.offset, value.range);
+                                          value.offset, value.range,
+                                          get_descriptor_type(value.binding));
                 }
                 else
                 {
@@ -683,7 +698,7 @@ namespace kpengine::graphics
                 glBindBuffer(GL_UNIFORM_BUFFER, mapped.native);
                 glBufferSubData(GL_UNIFORM_BUFFER, 0, mapped.data.size(), mapped.data.data());
             }
-            resource_binding_sets_[index]->Bind();
+            resource_binding_sets_[index]->Bind({});
         }
     }
 

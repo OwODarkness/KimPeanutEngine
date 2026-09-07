@@ -153,7 +153,8 @@ namespace kpengine::graphics
     }
 
     void VulkanCommandRecorder::BindResourceBindings(PipelineHandle pipeline,
-                                                       DescriptorSetHandle bindings)
+                                                       DescriptorSetHandle bindings,
+                                                       const DynamicUniformOffsets &dynamic_offsets)
     {
         ++profile_counters_.resource_binding_bind_requests;
         if (command_buffer_ == VK_NULL_HANDLE)
@@ -165,7 +166,9 @@ namespace kpengine::graphics
         if (pipeline_resource && descriptor_set != VK_NULL_HANDLE)
         {
             vkCmdBindDescriptorSets(command_buffer_, VK_PIPELINE_BIND_POINT_GRAPHICS,
-                                    pipeline_resource->layout, 0, 1, &descriptor_set, 0, nullptr);
+                                    pipeline_resource->layout, 0, 1, &descriptor_set,
+                                    static_cast<uint32_t>(dynamic_offsets.size()),
+                                    dynamic_offsets.empty() ? nullptr : dynamic_offsets.data());
             ++profile_counters_.resource_binding_bind_emitted;
         }
     }

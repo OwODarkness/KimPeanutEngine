@@ -20,6 +20,7 @@ namespace kpengine::graphics
     {
         constexpr uint32_t kInitialDescriptorSets = 1024;
         constexpr uint32_t kInitialUniformDescriptors = 4096;
+        constexpr uint32_t kInitialDynamicUniformDescriptors = 4096;
         constexpr uint32_t kInitialSampledTextureDescriptors = 4096;
 
         uint32_t GrowCapacity(uint32_t current, uint32_t required)
@@ -34,10 +35,12 @@ namespace kpengine::graphics
         }
 
         bool HasCapacity(const VulkanDescriptorPoolArena &arena, uint32_t uniform_count,
-                         uint32_t sampled_texture_count)
+                         uint32_t dynamic_uniform_count, uint32_t sampled_texture_count)
         {
             return arena.used_sets < arena.max_sets &&
                    uniform_count <= arena.uniform_capacity - arena.used_uniform_descriptors &&
+                   dynamic_uniform_count <= arena.dynamic_uniform_capacity -
+                                               arena.used_dynamic_uniform_descriptors &&
                    sampled_texture_count <=
                        arena.sampled_texture_capacity - arena.used_sampled_texture_descriptors;
         }
@@ -74,6 +77,7 @@ namespace kpengine::graphics
             }
             arena.used_sets = 0;
             arena.used_uniform_descriptors = 0;
+            arena.used_dynamic_uniform_descriptors = 0;
             arena.used_sampled_texture_descriptors = 0;
         }
 
@@ -96,11 +100,14 @@ namespace kpengine::graphics
     VulkanDescriptorPoolArena &VulkanDescriptorSetManager::CreateArena(
         VkDevice logical_device, std::vector<VulkanDescriptorPoolArena> &arenas,
         uint32_t required_sets,
-        uint32_t required_uniform_descriptors, uint32_t required_sampled_texture_descriptors)
+        uint32_t required_uniform_descriptors, uint32_t required_dynamic_uniform_descriptors,
+        uint32_t required_sampled_texture_descriptors)
     {
         uint32_t max_sets = std::max(kInitialDescriptorSets, required_sets);
         uint32_t uniform_capacity =
             std::max(kInitialUniformDescriptors, required_uniform_descriptors);
+        uint32_t dynamic_uniform_capacity =
+            std::max(kInitialDynamicUniformDescriptors, required_dynamic_uniform_descriptors);
         uint32_t sampled_texture_capacity =
             std::max(kInitialSampledTextureDescriptors, required_sampled_texture_descriptors);
         if (!arenas.empty())
@@ -108,22 +115,26 @@ namespace kpengine::graphics
             const VulkanDescriptorPoolArena &previous = arenas.back();
             max_sets = GrowCapacity(previous.max_sets, required_sets);
             uniform_capacity = GrowCapacity(previous.uniform_capacity, required_uniform_descriptors);
+            dynamic_uniform_capacity =
+                GrowCapacity(previous.dynamic_uniform_capacity, required_dynamic_uniform_descriptors);
             sampled_texture_capacity =
                 GrowCapacity(previous.sampled_texture_capacity, required_sampled_texture_descriptors);
         }
 
         const VkDescriptorPoolSize pool_sizes[] = {
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uniform_capacity},
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, dynamic_uniform_capacity},
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sampled_texture_capacity}};
         VkDescriptorPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         pool_info.maxSets = max_sets;
-        pool_info.poolSizeCount = 2;
+        pool_info.poolSizeCount = 3;
         pool_info.pPoolSizes = pool_sizes;
 
         VulkanDescriptorPoolArena arena{};
         arena.max_sets = max_sets;
         arena.uniform_capacity = uniform_capacity;
+        arena.dynamic_uniform_capacity = dynamic_uniform_capacity;
         arena.sampled_texture_capacity = sampled_texture_capacity;
         if (vkCreateDescriptorPool(logical_device, &pool_info, nullptr, &arena.pool) != VK_SUCCESS)
         {
@@ -151,7 +162,24 @@ namespace kpengine::graphics
             throw std::runtime_error("descriptor set manager is not initialized");
         }
 
+        const auto &layout_bindings = pipeline.descriptor_set_layouts[desc.set].bindings;
+        const auto get_descriptor_type = [&layout_bindings](uint32_t binding)
+        {
+            const auto layout_binding = std::find_if(
+                layout_bindings.begin(), layout_bindings.end(),
+                [binding](const VkDescriptorSetLayoutBinding &candidate)
+                {
+                    return candidate.binding == binding;
+                });
+            if (layout_binding == layout_bindings.end())
+            {
+                throw std::runtime_error("resource binding is not declared by the pipeline");
+            }
+            return layout_binding->descriptorType;
+        };
+
         uint32_t uniform_count = 0;
+        uint32_t dynamic_uniform_count = 0;
         uint32_t sampled_texture_count = 0;
         for (const ResourceBinding &binding : desc.bindings)
         {
@@ -159,7 +187,14 @@ namespace kpengine::graphics
                 using Binding = std::decay_t<decltype(value)>;
                 if constexpr (std::is_same_v<Binding, UniformBufferBinding>)
                 {
-                    ++uniform_count;
+                    if (get_descriptor_type(value.binding) == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+                    {
+                        ++dynamic_uniform_count;
+                    }
+                    else
+                    {
+                        ++uniform_count;
+                    }
                 }
                 else
                 {
@@ -168,13 +203,18 @@ namespace kpengine::graphics
             }, binding);
         }
 
-        const uint32_t resource_frame_slot = frame_active_ ? current_frame_slot_ : UINT32_MAX;
-        auto &arenas = frame_active_ ? frame_arenas_[current_frame_slot_] : persistent_arenas_;
+        const uint32_t resource_frame_slot = desc.persistent || !frame_active_
+                                                 ? UINT32_MAX
+                                                 : current_frame_slot_;
+        auto &arenas = desc.persistent || !frame_active_
+                           ? persistent_arenas_
+                           : frame_arenas_[current_frame_slot_];
         const auto search_started = std::chrono::steady_clock::now();
         std::size_t arena_index = std::numeric_limits<std::size_t>::max();
         for (std::size_t index = 0; index < arenas.size(); ++index)
         {
-            if (HasCapacity(arenas[index], uniform_count, sampled_texture_count))
+            if (HasCapacity(arenas[index], uniform_count, dynamic_uniform_count,
+                            sampled_texture_count))
             {
                 arena_index = index;
                 break;
@@ -182,7 +222,8 @@ namespace kpengine::graphics
         }
         if (arena_index == std::numeric_limits<std::size_t>::max())
         {
-            CreateArena(logical_device, arenas, 1, uniform_count, sampled_texture_count);
+            CreateArena(logical_device, arenas, 1, uniform_count, dynamic_uniform_count,
+                        sampled_texture_count);
             arena_index = arenas.size() - 1;
             if (pool_created)
             {
@@ -207,7 +248,8 @@ namespace kpengine::graphics
         VkResult allocate_result = vkAllocateDescriptorSets(logical_device, &allocate_info, &descriptor_set);
         if (allocate_result == VK_ERROR_OUT_OF_POOL_MEMORY || allocate_result == VK_ERROR_FRAGMENTED_POOL)
         {
-            CreateArena(logical_device, arenas, 1, uniform_count, sampled_texture_count);
+            CreateArena(logical_device, arenas, 1, uniform_count, dynamic_uniform_count,
+                        sampled_texture_count);
             arena_index = arenas.size() - 1;
             allocate_info.descriptorPool = arenas[arena_index].pool;
             allocate_result = vkAllocateDescriptorSets(logical_device, &allocate_info, &descriptor_set);
@@ -230,7 +272,7 @@ namespace kpengine::graphics
         std::vector<VkDescriptorBufferInfo> buffer_infos;
         std::vector<VkDescriptorImageInfo> image_infos;
         writes.reserve(desc.bindings.size());
-        buffer_infos.reserve(uniform_count);
+        buffer_infos.reserve(uniform_count + dynamic_uniform_count);
         image_infos.reserve(sampled_texture_count);
 
         for (const ResourceBinding &binding : desc.bindings)
@@ -251,8 +293,18 @@ namespace kpengine::graphics
                     {
                         throw std::runtime_error("invalid uniform-buffer handle");
                     }
-                    buffer_infos.push_back({buffer->buffer, value.offset, value.range});
-                    write.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+                    const VkDescriptorType descriptor_type = get_descriptor_type(value.binding);
+                    if (descriptor_type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER &&
+                        descriptor_type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC)
+                    {
+                        throw std::runtime_error("uniform binding type does not match pipeline layout");
+                    }
+                    buffer_infos.push_back({buffer->buffer,
+                                            descriptor_type == VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC
+                                                ? 0
+                                                : value.offset,
+                                            value.range});
+                    write.descriptorType = descriptor_type;
                     write.pBufferInfo = &buffer_infos.back();
                 }
                 else
@@ -295,6 +347,7 @@ namespace kpengine::graphics
         resources_[handle.id] = {descriptor_set, resource_frame_slot, arena_index, handle};
         ++arenas[arena_index].used_sets;
         arenas[arena_index].used_uniform_descriptors += uniform_count;
+        arenas[arena_index].used_dynamic_uniform_descriptors += dynamic_uniform_count;
         arenas[arena_index].used_sampled_texture_descriptors += sampled_texture_count;
         return handle;
     }

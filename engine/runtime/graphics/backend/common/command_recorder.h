@@ -5,6 +5,7 @@
 
 #include "api.h"
 #include "profile_counters.h"
+#include "resource_binding.h"
 
 namespace kpengine::graphics
 {
@@ -40,7 +41,8 @@ namespace kpengine::graphics
         virtual void BindPipeline(PipelineHandle pipeline) = 0;
         virtual void BindMesh(MeshHandle mesh) = 0;
         virtual void BindResourceBindings(PipelineHandle pipeline,
-                                           DescriptorSetHandle bindings) = 0;
+                                           DescriptorSetHandle bindings,
+                                           const DynamicUniformOffsets &dynamic_offsets = {}) = 0;
         virtual void SetViewport(const Viewport &viewport) = 0;
         virtual void SetScissor(const Scissor &scissor) = 0;
         virtual void DrawIndexed(uint32_t index_count = 0,

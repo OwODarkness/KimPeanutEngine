@@ -567,7 +567,8 @@ namespace kpengine::example
                                 recorder->BindPipeline(material_binding.pipeline);
                                 recorder->BindMesh(proxy.mesh);
                                 recorder->BindResourceBindings(material_binding.pipeline,
-                                                               material_binding.descriptor_set);
+                                                               material_binding.descriptor_set,
+                                                               material_binding.dynamic_offsets);
                                 recorder->DrawIndexed();
                             }
                         }
@@ -1497,7 +1498,8 @@ namespace kpengine::example
                             recorder->BindPipeline(gbuffer_binding.pipeline);
                             recorder->BindMesh(rock_mesh_handle);
                             recorder->BindResourceBindings(gbuffer_binding.pipeline,
-                                                           gbuffer_binding.descriptor_set);
+                                                           gbuffer_binding.descriptor_set,
+                                                           gbuffer_binding.dynamic_offsets);
                             recorder->DrawIndexed();
                             const std::vector<graphics::ResourceBinding> floor_draw_bindings{
                                 graphics::UniformBufferBinding{0, 0, d3_pass.buffer, d3_pass.offset, d3_pass.range},
@@ -1515,7 +1517,8 @@ namespace kpengine::example
                             recorder->BindPipeline(floor_binding.pipeline);
                             recorder->BindMesh(floor_mesh_handle);
                             recorder->BindResourceBindings(floor_binding.pipeline,
-                                                           floor_binding.descriptor_set);
+                                                           floor_binding.descriptor_set,
+                                                           floor_binding.dynamic_offsets);
                             recorder->DrawIndexed();
                             recorder->EndRenderTarget();
 

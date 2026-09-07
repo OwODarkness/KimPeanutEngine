@@ -10,6 +10,8 @@
 
 namespace kpengine::graphics
 {
+    using DynamicUniformOffsets = std::vector<uint32_t>;
+
     struct UniformBufferBinding
     {
         uint32_t set = 0;
@@ -33,6 +35,9 @@ namespace kpengine::graphics
     {
         uint32_t set = 0;
         std::vector<ResourceBinding> bindings;
+        // Persistent sets are owned by the caller until explicitly destroyed.
+        // Frame-local sets remain eligible for backend frame-slot recycling.
+        bool persistent = false;
     };
 }
 

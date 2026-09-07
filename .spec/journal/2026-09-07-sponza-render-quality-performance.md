@@ -317,3 +317,28 @@ below adds the first runtime instrumentation slice.
 - Runtime Vulkan/OpenGL fixed-window capture and visual inspection remain
   pending; this correction directly addresses the Editor runtime invalidation
   path.
+
+## Stage 6.2 stable binding sets and dynamic uniform offsets
+
+- Added an API-neutral persistent binding-set flag and ordered dynamic offset
+  list to the common graphics contract. Vulkan now allocates dynamic uniform
+  descriptors from dedicated reusable pool capacity and binds per-draw offsets
+  at command recording; OpenGL resolves the pipeline descriptor type and
+  applies offsets through `glBindBufferRange`.
+- `FrameContext` now retains stable uniform allocations and persistent binding
+  sets for a frame-slot context. Per-pass and per-object data are allocated
+  once per stable key, material constants and sampled bindings are cached by
+  material revision plus texture/sampler generations, and stable resources are
+  destroyed with the frame context. Geometry draws reuse their descriptor set
+  while supplying only dynamic offsets.
+- Updated G-buffer, Scene, and shadow geometry pipeline declarations to use
+  dynamic uniform descriptors. Added a focused regression test proving a
+  stable binding set is created once and returns the same ordered offsets.
+- `cmake --build build --config Debug --target RenderSystemTest` — passed.
+- `RenderSystemTest.exe --gtest_color=no` — 20/20 tests passed.
+- `cmake --build build --config Debug --target GraphicsContractTest GraphicsSmoke`
+  — passed; `GraphicsContractTest.exe --gtest_color=no` — 15/15 tests passed.
+  `GraphicsSmoke.exe` reached both Vulkan and OpenGL and completed its three
+  frames per API, but failed the existing D5 cross-API silhouette comparator
+  (`raw=375`, `structural=82`). Fixed-window Sponza runtime counters and visual
+  comparison remain pending.

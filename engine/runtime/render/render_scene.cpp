@@ -8,6 +8,11 @@
 namespace kpengine::render
 {
 #define KP_RENDER_SCENE_LOG_NAME "RenderSceneLog"
+    namespace
+    {
+        constexpr uint64_t kScenePerPassUniformKey = 0x5343454e455f5050ull;
+        constexpr uint64_t kSceneObjectUniformKey = 0x5343454e455f4f42ull;
+    }
 
     void RenderScene::Initialize(const RenderSceneInitInfo &info)
     {
@@ -46,8 +51,10 @@ namespace kpengine::render
         graphics::PerObjectData per_object_data{};
         per_object_data.model = Matrix4f::MakeTransformMatrix(model).Transpose();
 
-        const UniformAllocation per_pass = frame.AllocateUniform(per_pass_data);
-        const UniformAllocation per_object = frame.AllocateUniform(per_object_data);
+        const UniformAllocation per_pass = frame.UpdateStableUniform(
+            kScenePerPassUniformKey, per_pass_data);
+        const UniformAllocation per_object = frame.UpdateStableUniform(
+            kSceneObjectUniformKey, per_object_data);
         if (!per_pass.IsValid() || !per_object.IsValid())
         {
             return;
@@ -66,7 +73,8 @@ namespace kpengine::render
 
         recorder.BindPipeline(material_binding.pipeline);
         recorder.BindMesh(mesh_handle_);
-        recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set);
+        recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set,
+                                      material_binding.dynamic_offsets);
         const std::vector<data::MeshSection> *const sections =
             resource_resolver.FindMeshSections(mesh_handle_);
         if (sections == nullptr || sections->empty())

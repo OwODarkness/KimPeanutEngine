@@ -182,11 +182,11 @@ namespace kpengine::render
         bool PrepareToneMapPassResources();
         bool PrepareCaptureViewPassResources();
         void RecordShadowCaster(const MeshProxy &proxy,
-                                const graphics::PerPassData &per_pass_data,
+                                const UniformAllocation &per_pass,
                                 graphics::CommandRecorder &recorder,
                                 uint32_t section_index = std::numeric_limits<uint32_t>::max());
         bool RecordMeshProxy(const MeshProxy &proxy,
-                             const graphics::PerPassData &per_pass_data,
+                             const UniformAllocation &per_pass,
                              graphics::CommandRecorder &recorder, MaterialPass pass,
                              uint32_t section_index = std::numeric_limits<uint32_t>::max());
         void UpdateEnvironment(const RenderSceneFrameInput &input);

@@ -24,7 +24,8 @@ details and stage checklists belong in the linked submodule documents.
   GPU. Stage 6 targets ineffective shadow reuse, per-draw descriptor updates,
   redundant state work, section-packet copying, and OpenGL whole-arena uploads;
   its fixed-scenario record-time budget is 12.73 ms p95. Runtime Stage 6.0
-  proof on both APIs remains pending; Stage 6.2 binding work is next. The solved black-frame defect is out of
+  proof on both APIs remains pending; Stage 6.2 stable binding work is landed.
+  The solved black-frame defect is out of
   scope. →
   [issue](issue/issue-9.7.md), [plan](.plan/issue-9.7.md),
   [review](.review/issue-9.7.md),

@@ -48,7 +48,8 @@ namespace kpengine::graphics
         void BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
         void BindResourceBindings(PipelineHandle pipeline,
-                                  DescriptorSetHandle bindings) override;
+                                  DescriptorSetHandle bindings,
+                                  const DynamicUniformOffsets &dynamic_offsets = {}) override;
         void SetViewport(const Viewport &viewport) override;
         void SetScissor(const Scissor &scissor) override;
         void DrawIndexed(uint32_t index_count, uint32_t instance_count,

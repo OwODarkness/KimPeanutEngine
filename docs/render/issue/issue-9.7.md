@@ -1,6 +1,6 @@
 # Issue 9.7 — Sponza Texture Aliasing and Frame Throughput
 
-**Status: active; Stage 5 and the Stage 6.0 telemetry implementation slice are landed; Stage 6.0 runtime proof is next.** The Sponza startup fixture renders,
+**Status: active; Stages 5–6.2 are landed; fixed-scenario runtime proof remains open.** The Sponza startup fixture renders,
 but its material channels contain severe high-frequency speckle and the
 observed frame rate falls to approximately 30 FPS.
 
@@ -45,6 +45,11 @@ outside this issue.
 - Stage 6.1 corrected the directional-shadow cache to stamp effective fitted
   bounds/matrices. Focused tests prove reuse for inside-fit camera motion and
   invalidation when the camera leaves the fit or light/caster inputs change.
+- Stage 6.2 now caches stable geometry/material binding sets per frame context,
+  supplies ordered dynamic uniform offsets, and uses Vulkan dynamic descriptors
+  or OpenGL ranged UBO binds. Material revisions and resource generations are
+  part of the cache key; descriptor allocation/update is no longer per geometry
+  draw after warm-up.
 
 ## Resolution documents
 

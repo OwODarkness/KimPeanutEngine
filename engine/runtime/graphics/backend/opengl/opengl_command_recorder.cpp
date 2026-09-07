@@ -195,7 +195,8 @@ namespace kpengine::graphics
     }
 
     void OpenglCommandRecorder::BindResourceBindings(PipelineHandle pipeline,
-                                                       DescriptorSetHandle bindings)
+                                                       DescriptorSetHandle bindings,
+                                                       const DynamicUniformOffsets &dynamic_offsets)
     {
         ++profile_counters_.resource_binding_bind_requests;
         (void)pipeline;
@@ -218,7 +219,7 @@ namespace kpengine::graphics
             glBindBuffer(GL_UNIFORM_BUFFER, mapped.native);
             glBufferSubData(GL_UNIFORM_BUFFER, 0, mapped.data.size(), mapped.data.data());
         }
-        (*services_.resource_binding_sets)[index]->Bind();
+        (*services_.resource_binding_sets)[index]->Bind(dynamic_offsets);
         ++profile_counters_.resource_binding_bind_emitted;
     }
 

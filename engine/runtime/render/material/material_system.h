@@ -214,6 +214,7 @@ namespace kpengine::render
                             const std::vector<MaterialParameterOverride> &overrides);
         bool DestroyInstance(MaterialInstanceHandle handle);
         MaterialTemplateHandle GetInstanceTemplate(MaterialInstanceHandle handle) const;
+        uint64_t GetInstanceRevision(MaterialInstanceHandle handle) const;
         const MaterialParameterValue *GetParameterValue(MaterialInstanceHandle instance_handle,
                                                         MaterialParameterID parameter_id) const;
         bool IsInstanceValid(MaterialInstanceHandle handle) const;
@@ -238,6 +239,7 @@ namespace kpengine::render
             MaterialTemplateHandle template_handle;
             std::unordered_map<uint32_t, MaterialParameterValue> overrides;
             MaterialResolution resolution;
+            uint64_t revision = 1;
         };
 
         bool IsTemplateDescValid(const MaterialTemplateDesc &desc) const;

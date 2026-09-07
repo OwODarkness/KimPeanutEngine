@@ -30,9 +30,11 @@ namespace kpengine::graphics
         VkDescriptorPool pool = VK_NULL_HANDLE;
         uint32_t max_sets = 0;
         uint32_t uniform_capacity = 0;
+        uint32_t dynamic_uniform_capacity = 0;
         uint32_t sampled_texture_capacity = 0;
         uint32_t used_sets = 0;
         uint32_t used_uniform_descriptors = 0;
+        uint32_t used_dynamic_uniform_descriptors = 0;
         uint32_t used_sampled_texture_descriptors = 0;
     };
 
@@ -55,6 +57,7 @@ namespace kpengine::graphics
         VulkanDescriptorPoolArena &CreateArena(
             VkDevice logical_device, std::vector<VulkanDescriptorPoolArena> &arenas,
             uint32_t required_sets, uint32_t required_uniform_descriptors,
+            uint32_t required_dynamic_uniform_descriptors,
             uint32_t required_sampled_texture_descriptors);
 
         std::vector<std::vector<VulkanDescriptorPoolArena>> frame_arenas_;

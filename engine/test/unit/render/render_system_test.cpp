@@ -58,6 +58,7 @@ namespace
         int sampler_create_count = 0;
         int sampler_destroy_count = 0;
         int render_target_destroy_count = 0;
+        int descriptor_set_create_count = 0;
         std::vector<std::array<uint32_t, 4>> environment_binding_snapshots;
     };
 
@@ -109,7 +110,8 @@ namespace
         void BindPipeline(graphics::PipelineHandle) override {}
         void BindMesh(graphics::MeshHandle) override {}
         void BindResourceBindings(graphics::PipelineHandle,
-                                  graphics::DescriptorSetHandle) override
+                                   graphics::DescriptorSetHandle,
+                                   const graphics::DynamicUniformOffsets &) override
         {
         }
         void SetViewport(const graphics::Viewport &) override {}
@@ -268,6 +270,7 @@ namespace
         graphics::DescriptorSetHandle CreateResourceBindingSet(
             graphics::PipelineHandle, const graphics::ResourceBindingSetDesc &desc) override
         {
+            ++probe_->descriptor_set_create_count;
             std::array<uint32_t, 4> environment_texture_ids{
                 KPENGINE_NULL_HANDLE, KPENGINE_NULL_HANDLE,
                 KPENGINE_NULL_HANDLE, KPENGINE_NULL_HANDLE};
@@ -541,6 +544,39 @@ namespace
         backend.EndFrame();
         return renderer.GetProfileSnapshot();
     }
+}
+
+TEST(FrameContextTest, ReusesStableBindingSetAndPublishesDynamicOffsets)
+{
+    auto probe = std::make_shared<BackendProbe>();
+    FakeBackend backend(probe);
+    render::FrameContext frame;
+    frame.Initialize(backend, 1024);
+    frame.Begin(0, {1, 0.0f, 1.0f / 60.0f}, {320, 200});
+
+    const graphics::PipelineHandle pipeline{1, 0};
+    const render::UniformAllocation per_pass =
+        frame.UpdateStableUniform(1, uint32_t{11});
+    const render::UniformAllocation per_object =
+        frame.UpdateStableUniform(2, uint32_t{22});
+    ASSERT_TRUE(per_pass.IsValid());
+    ASSERT_TRUE(per_object.IsValid());
+    const std::vector<graphics::ResourceBinding> bindings{
+        graphics::UniformBufferBinding{0, 0, per_pass.buffer, per_pass.offset, per_pass.range},
+        graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset, per_object.range}};
+
+    const render::FrameResourceBinding first =
+        frame.CreateOrGetStableBindingSet(3, pipeline, bindings);
+    const render::FrameResourceBinding second =
+        frame.CreateOrGetStableBindingSet(3, pipeline, bindings);
+    ASSERT_TRUE(first.IsValid());
+    ASSERT_TRUE(second.IsValid());
+    EXPECT_EQ(first.descriptor_set, second.descriptor_set);
+    EXPECT_EQ(first.dynamic_offsets, second.dynamic_offsets);
+    EXPECT_EQ(first.dynamic_offsets.size(), 2u);
+    EXPECT_EQ(probe->descriptor_set_create_count, 1);
+
+    frame.Cleanup();
 }
 
 TEST(RenderSystemLifecycleTest, RejectsInvalidStateAndMakesShutdownIdempotent)
