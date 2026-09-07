@@ -17,9 +17,12 @@
   redraw. The pool lifetime, section visibility, and shadow-cache mechanisms
   are landed, but a supplied post-Stage-5 profile
   attributes the frame to CPU submission: 28.12 ms record versus 10.98 ms GPU.
-  Stage 6.0 telemetry now publishes those subphase timings and counters;
-  fixed-scenario Vulkan/OpenGL profile capture is still the gate before any
-  common-contract or multithreaded/GPU-driven redesign. →
+  Stage 6.0 telemetry now publishes those subphase timings and counters, and
+  Stage 6.1 now stamps effective directional-shadow fits so inside-fit camera
+  motion reuses the map, and repeated unchanged editor viewport-size requests
+  no longer reset the cache; fixed-scenario Vulkan/OpenGL profile capture is
+  still the gate before any common-contract or multithreaded/GPU-driven
+  redesign. →
   [issue](render/issue/issue-9.7.md), [plan](render/.plan/issue-9.7.md),
   [review](render/.review/issue-9.7.md)
 - **MI1.7-R1 Asset build boundary (2026-09-06)** — split the database-free

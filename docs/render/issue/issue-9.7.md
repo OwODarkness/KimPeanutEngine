@@ -29,9 +29,9 @@ outside this issue.
   shadow passes reject section bounds independently, while directional shadows
   use the same section candidates for fitting and recording.
 - Directional shadow maps now carry a conservative validity stamp over the
-  light, camera fit input, caster transforms/bounds, materials, and section
-  identities. An unchanged static frame reuses the previous depth target and
-  records no directional shadow-caster draws; target resize and any stamp input
+  light, effective fitted bounds/matrices, caster transforms/bounds, materials,
+  and section identities. Camera motion inside the unchanged fitted volume
+  reuses the previous depth target; target resize and any effective stamp input
   change force a redraw.
 - The supplied post-Stage-5 snapshot separates the approximately 30 FPS result:
   frame time is 32.0568 ms, Render CPU is 30.924 ms, command recording is
@@ -42,9 +42,9 @@ outside this issue.
   allocates and updates a descriptor set whose uniform offsets are unique to
   that draw. Pipeline/target compatibility and identical pipeline/mesh state
   are also resolved and bound repeatedly.
-- The directional-shadow cache reports zero hits and one miss. Its stamp hashes
-  raw camera position even when the camera remains inside identical fitted
-  caster bounds, so camera motion can redraw an unchanged map.
+- Stage 6.1 corrected the directional-shadow cache to stamp effective fitted
+  bounds/matrices. Focused tests prove reuse for inside-fit camera motion and
+  invalidation when the camera leaves the fit or light/caster inputs change.
 
 ## Resolution documents
 
@@ -90,4 +90,4 @@ Stage 6.0 now exposes the required Render/Graphics subphase timers and counts,
 including descriptor search/allocation/update work, requested versus emitted
 native binds, and CPU-subphase p50/p95 summaries. The fixed-scenario runtime
 profile still needs to be captured on Vulkan Debug, Vulkan performance, and
-OpenGL performance builds before selecting the Stage 6.1+ optimization path.
+OpenGL performance builds before selecting the Stage 6.2+ optimization path.

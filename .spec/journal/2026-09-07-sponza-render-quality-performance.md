@@ -282,3 +282,38 @@ below adds the first runtime instrumentation slice.
 - Runtime fixed-window captures on Vulkan Debug/performance and OpenGL remain
   pending. No Stage 6.1+ optimization or performance claim is made from this
   instrumentation-only checkpoint.
+
+## Stage 6.1 effective directional-shadow validity checkpoint
+
+- Reworked directional shadow fitting to derive caster bounds first, fit the
+  orthographic volume, and include the camera only when it lies outside that
+  initial effective volume. The cache stamp now hashes the effective bounds and
+  fitted view/projection matrices instead of raw camera position, while
+  retaining light, shadow, caster, transform, visibility, material, and section
+  identity inputs.
+- Added focused tests for camera motion inside the fitted volume, camera motion
+  outside the fit, and light/caster invalidation. The inside-fit case reuses the
+  prior directional target; every changed effective input forces a miss.
+- `cmake --build build --config Debug --target RenderSystemTest` — passed.
+- `RenderSystemTest.exe --gtest_filter=DeferredRendererTest.* --gtest_color=no`
+  — 4/4 tests passed.
+- The implementation remains Render-local and keeps the exact-fit path; no
+  texel snapping or common Graphics contract change was introduced. Runtime
+  Vulkan/OpenGL capture and visual inspection remain pending.
+
+## Stage 6.1 viewport-resize cache correction
+
+- Diagnosed the live `hits 0, misses 1` report: the Editor submits the current
+  viewport extent every UI frame, and `DeferredRenderer::ApplyPendingSceneRenderTargetExtent`
+  reset directional-shadow validity for every request even when the target
+  extent was unchanged. `RendererFrameTargets::RebuildForExtent` already
+  skipped stable-size rebuilds, so the cache was being invalidated without a
+  target change.
+- The reset now occurs only when the scene target width or height actually
+  changes. The focused reuse test repeats an unchanged extent request between
+  frames and still observes one initial miss followed by a hit.
+- `cmake --build build --config Debug --target RenderSystemTest` — passed.
+- `RenderSystemTest.exe --gtest_color=no` — 19/19 tests passed.
+- Runtime Vulkan/OpenGL fixed-window capture and visual inspection remain
+  pending; this correction directly addresses the Editor runtime invalidation
+  path.

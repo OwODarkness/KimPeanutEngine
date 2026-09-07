@@ -173,8 +173,9 @@ visibility while retaining proxy-level ownership.
 
 ### issue-9.7-F5 — P1: an unchanged directional shadow map is rebuilt
 
-**Implementation status: cache mechanism landed, but the supplied profile
-shows zero hits and one miss; the performance finding remains open.**
+**Implementation status: Stage 6.1 corrected the cache stamp and the repeated
+viewport-size invalidation path; focused reuse/invalidation tests pass. Runtime
+profile confirmation remains open.**
 
 At the original review, the directional shadow pass submitted all caster
 sections every frame. Stage 4 added a cache, but the current miss still submits
@@ -184,15 +185,12 @@ Shadow validity needs an explicit stamp derived from light state, caster/world
 bounds, and relevant geometry revisions. Reuse must remain conservative for
 dynamic casters.
 
-The landed stamp hashes the raw camera position at
-`deferred_renderer.cpp:232-276`, while the fitted shadow bounds only change
-when that position expands the caster bounds at lines 118–146. Camera movement
-inside the already-covered Sponza caster bounds therefore invalidates an
-identical map. Compute the effective fitted bounds/matrices first and stamp the
-inputs that can actually change recorded depth. Retain light, caster identity,
-geometry/material revision, transform, visibility, and target-generation
-dependencies. Any camera/receiver contribution must be stabilized and included
-only when it changes the fitted projection.
+Stage 6.1 now computes caster-driven effective fitted bounds and matrices before
+stamping. The camera is included in that fit only when it lies outside the
+initial orthographic volume, and the stamp hashes the resulting fit rather than
+raw camera position. Focused tests cover inside-fit reuse, outside-fit camera
+invalidation, light/caster changes, and unchanged editor extent requests.
+Runtime profile confirmation and visual inspection remain open.
 
 ### issue-9.7-F6 — P1: FPS is not yet attributable
 

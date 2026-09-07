@@ -221,12 +221,12 @@ changed materials/frame slots, not Sponza draw count.
   reject individual section world bounds after the proxy broad phase and issue
   section-indexed draws.
 - Implementation status: directional shadow targets use conservative validity
-  stamps over light, camera-fit, caster transform/bounds, material, and section
-  identity inputs. Resize and changed dependencies invalidate the stamp; an
-  unchanged static frame skips directional caster recording. The supplied
-  profile nevertheless reports zero hits and one miss. The raw camera position
-  is currently stamped even when it does not change the fitted caster bounds,
-  so effective-map reuse remains open in Stage 6.
+  stamps over light, effective fitted bounds/matrices, caster transform/bounds,
+  material, and section identity inputs. The initial fit is caster-driven and
+  includes the camera only when it lies outside that fit; camera motion inside
+  the unchanged fitted volume no longer invalidates the map. Resize and changed
+  dependencies still invalidate the stamp. Stage 6.1 focused tests cover
+  inside-fit reuse, outside-fit camera invalidation, and light/caster changes.
 
 Exit: hidden Sponza sections do not produce camera or shadow draws, and an
 unchanged static frame records zero shadow-caster draws after warm-up.
@@ -272,6 +272,13 @@ do not, use a sampling CPU profiler and revise the stage rather than guessing.
 
 #### Stage 6.1 — effective directional-shadow validity
 
+- Implementation status: landed. The directional shadow stamp now hashes the
+  effective caster fit and fitted matrices rather than raw camera position.
+  Cameras inside the existing orthographic fit reuse the depth target; cameras
+  outside it expand the effective fit and force a redraw. Light and caster
+  changes remain conservative invalidation inputs. Repeated editor viewport
+  extent requests now preserve the cache when the extent is unchanged; actual
+  target-size changes still invalidate it.
 - Build the effective caster bounds and fitted matrices before computing the
   validity stamp. Do not hash raw camera position when it lies inside the same
   fitted volume and produces identical matrices.

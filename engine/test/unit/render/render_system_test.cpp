@@ -513,6 +513,34 @@ namespace
         texture_info.type = asset::AssetType::KPAT_Texture;
         return asset::AssetManager::GetInstance().RegisterAsset(texture_info);
     }
+
+    render::RenderProfileSnapshot RecordDirectionalShadowCacheFrame(
+        render::DeferredRenderer &renderer, graphics::RenderBackend &backend,
+        render::FrameContext &frame_context, const render::RenderWorld &render_world,
+        uint64_t frame_number, const Vector3f &camera_position,
+        const Vector3f &light_direction)
+    {
+        render::RenderSceneFrameInput input{render_world};
+        input.camera.SetPosition(camera_position);
+        render::Light light{};
+        light.handle = {42, 1};
+        light.desc.type = render::LightType::Directional;
+        light.desc.shadow = render::ShadowHandle{7, 1};
+        light.desc.type_data = render::DirectionalLightData{light_direction};
+        input.lights.push_back(light);
+        input.is_shadow_handle_valid = [](render::ShadowHandle) { return true; };
+
+        backend.BeginFrame();
+        frame_context.Begin(backend.GetCurrentFrameIndex(),
+                            {frame_number, 0.0f, 1.0f / 60.0f},
+                            backend.GetRenderExtent());
+        renderer.RecordFrame(frame_context, input);
+        EXPECT_TRUE(renderer.ExecuteEditorCompositePass([] {}));
+        EXPECT_TRUE(renderer.FinalizeFrame());
+        frame_context.End();
+        backend.EndFrame();
+        return renderer.GetProfileSnapshot();
+    }
 }
 
 TEST(RenderSystemLifecycleTest, RejectsInvalidStateAndMakesShutdownIdempotent)
@@ -732,6 +760,128 @@ TEST(DeferredRendererTest, OwnsTargetLifetimeAndCleanupIsIdempotent)
     EXPECT_EQ(probe->render_target_destroy_count,
               static_cast<int>(probe->targets.size()));
     EXPECT_EQ(probe->cleanup_count, 0);
+    resolver.Cleanup();
+}
+
+TEST(DeferredRendererTest, ReusesDirectionalShadowWhenCameraStaysInsideEffectiveFit)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    FakeBackend backend(probe);
+    render::MaterialSystem materials;
+    const auto prepared_assets = BuildPreparedCatalog();
+    ASSERT_NE(prepared_assets, nullptr);
+    render::RenderResourceResolver resolver(backend, *prepared_assets);
+    render::DeferredRenderer renderer;
+    ASSERT_TRUE(renderer.Initialize({backend, resolver, materials, *prepared_assets}, 320, 200));
+
+    render::RenderWorld render_world;
+    render::MeshProxyDesc proxy{};
+    proxy.world_bounds = {{-10.0f, -10.0f, -10.0f}, {10.0f, 10.0f, 10.0f}};
+    proxy.flags.visible = true;
+    proxy.flags.casts_shadow = true;
+    render_world.EnqueueCreate(proxy);
+    render_world.ApplyPendingCommands();
+
+    render::FrameContext frame_context;
+    frame_context.Initialize(backend, 1024 * 1024);
+    const Vector3f light_direction{0.0f, -1.0f, 0.0f};
+    const auto first = RecordDirectionalShadowCacheFrame(
+        renderer, backend, frame_context, render_world, 1, {0.0f, 0.0f, 2.0f}, light_direction);
+    // The Editor submits the current viewport extent every UI frame. Repeating
+    // an unchanged request must not invalidate the shadow cache.
+    renderer.RequestExtent(320, 200);
+    renderer.ApplyPendingExtent();
+    const auto second = RecordDirectionalShadowCacheFrame(
+        renderer, backend, frame_context, render_world, 2, {1.0f, 0.0f, 2.0f}, light_direction);
+
+    EXPECT_EQ(first.shadow_cache_hits, 0U);
+    EXPECT_EQ(first.shadow_cache_misses, 1U);
+    EXPECT_EQ(second.shadow_cache_hits, 1U);
+    EXPECT_EQ(second.shadow_cache_misses, 0U);
+
+    frame_context.Cleanup();
+    renderer.Cleanup();
+    resolver.Cleanup();
+}
+
+TEST(DeferredRendererTest, InvalidatesDirectionalShadowWhenCameraLeavesEffectiveFit)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    FakeBackend backend(probe);
+    render::MaterialSystem materials;
+    const auto prepared_assets = BuildPreparedCatalog();
+    ASSERT_NE(prepared_assets, nullptr);
+    render::RenderResourceResolver resolver(backend, *prepared_assets);
+    render::DeferredRenderer renderer;
+    ASSERT_TRUE(renderer.Initialize({backend, resolver, materials, *prepared_assets}, 320, 200));
+
+    render::RenderWorld render_world;
+    render::MeshProxyDesc proxy{};
+    proxy.world_bounds = {{-10.0f, -10.0f, -10.0f}, {10.0f, 10.0f, 10.0f}};
+    proxy.flags.visible = true;
+    proxy.flags.casts_shadow = true;
+    render_world.EnqueueCreate(proxy);
+    render_world.ApplyPendingCommands();
+
+    render::FrameContext frame_context;
+    frame_context.Initialize(backend, 1024 * 1024);
+    const Vector3f light_direction{0.0f, -1.0f, 0.0f};
+    RecordDirectionalShadowCacheFrame(
+        renderer, backend, frame_context, render_world, 1, {0.0f, 0.0f, 2.0f}, light_direction);
+    const auto moved_outside = RecordDirectionalShadowCacheFrame(
+        renderer, backend, frame_context, render_world, 2, {40.0f, 0.0f, 2.0f}, light_direction);
+
+    EXPECT_EQ(moved_outside.shadow_cache_hits, 0U);
+    EXPECT_EQ(moved_outside.shadow_cache_misses, 1U);
+
+    frame_context.Cleanup();
+    renderer.Cleanup();
+    resolver.Cleanup();
+}
+
+TEST(DeferredRendererTest, InvalidatesDirectionalShadowWhenLightOrCasterChanges)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    FakeBackend backend(probe);
+    render::MaterialSystem materials;
+    const auto prepared_assets = BuildPreparedCatalog();
+    ASSERT_NE(prepared_assets, nullptr);
+    render::RenderResourceResolver resolver(backend, *prepared_assets);
+    render::DeferredRenderer renderer;
+    ASSERT_TRUE(renderer.Initialize({backend, resolver, materials, *prepared_assets}, 320, 200));
+
+    render::RenderWorld render_world;
+    render::MeshProxyDesc proxy{};
+    proxy.world_bounds = {{-10.0f, -10.0f, -10.0f}, {10.0f, 10.0f, 10.0f}};
+    proxy.flags.visible = true;
+    proxy.flags.casts_shadow = true;
+    const render::RenderableHandle proxy_handle = render_world.EnqueueCreate(proxy);
+    render_world.ApplyPendingCommands();
+
+    render::FrameContext frame_context;
+    frame_context.Initialize(backend, 1024 * 1024);
+    const Vector3f initial_direction{0.0f, -1.0f, 0.0f};
+    const auto first = RecordDirectionalShadowCacheFrame(
+        renderer, backend, frame_context, render_world, 1, {0.0f, 0.0f, 2.0f}, initial_direction);
+    const auto light_changed = RecordDirectionalShadowCacheFrame(
+        renderer, backend, frame_context, render_world, 2, {0.0f, 0.0f, 2.0f},
+        {1.0f, -1.0f, 0.0f});
+
+    proxy.world_bounds = {{-20.0f, -10.0f, -10.0f}, {10.0f, 10.0f, 10.0f}};
+    ASSERT_TRUE(render_world.EnqueueUpdate(proxy_handle, proxy));
+    render_world.ApplyPendingCommands();
+    const auto caster_changed = RecordDirectionalShadowCacheFrame(
+        renderer, backend, frame_context, render_world, 3, {0.0f, 0.0f, 2.0f},
+        {1.0f, -1.0f, 0.0f});
+
+    EXPECT_EQ(first.shadow_cache_misses, 1U);
+    EXPECT_EQ(light_changed.shadow_cache_hits, 0U);
+    EXPECT_EQ(light_changed.shadow_cache_misses, 1U);
+    EXPECT_EQ(caster_changed.shadow_cache_hits, 0U);
+    EXPECT_EQ(caster_changed.shadow_cache_misses, 1U);
+
+    frame_context.Cleanup();
+    renderer.Cleanup();
     resolver.Cleanup();
 }
 

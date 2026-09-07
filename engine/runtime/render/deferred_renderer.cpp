@@ -115,8 +115,20 @@ namespace kpengine::render
             Vector4f selected;
         };
 
-        std::optional<spatial::AABB> BuildDirectionalShadowBounds(
-            const std::vector<VisibleMeshSection> &sections, const Vector3f &camera_position)
+        struct DirectionalShadowMatrices
+        {
+            Matrix4f view;
+            Matrix4f projection;
+        };
+
+        struct DirectionalShadowFit
+        {
+            spatial::AABB bounds{};
+            DirectionalShadowMatrices matrices{};
+        };
+
+        std::optional<spatial::AABB> BuildDirectionalShadowCasterBounds(
+            const std::vector<VisibleMeshSection> &sections)
         {
             const float maximum = std::numeric_limits<float>::max();
             spatial::AABB bounds{{maximum, maximum, maximum},
@@ -138,19 +150,8 @@ namespace kpengine::render
             {
                 return std::nullopt;
             }
-
-            // Keep the current view origin inside the fitted region. The complete
-            // receiver volume is a later cascade/receiver-fit concern, but this
-            // prevents an off-camera caster fit from immediately losing the view.
-            bounds.ExpandToInclude(camera_position);
             return bounds;
         }
-
-        struct DirectionalShadowMatrices
-        {
-            Matrix4f view;
-            Matrix4f projection;
-        };
 
         DirectionalShadowMatrices FitDirectionalShadowMatrices(
             const spatial::AABB &caster_bounds, const Vector3f &direction)
@@ -188,6 +189,38 @@ namespace kpengine::render
             return {view, Matrix4f::MakeOrthProjMatrix(min_x - kMargin, max_x + kMargin,
                                                         min_y - kMargin, max_y + kMargin,
                                                         near_plane, far_plane)};
+        }
+
+        bool IsPointInsideDirectionalShadowFit(const DirectionalShadowMatrices &matrices,
+                                               const Vector3f &point)
+        {
+            constexpr float kContainmentEpsilon = 1.0e-4f;
+            const Vector4f clip = matrices.projection *
+                                  (matrices.view * Vector4f{point, 1.0f});
+            return std::abs(clip.x_) <= 1.0f + kContainmentEpsilon &&
+                   std::abs(clip.y_) <= 1.0f + kContainmentEpsilon &&
+                   std::abs(clip.z_) <= 1.0f + kContainmentEpsilon;
+        }
+
+        std::optional<DirectionalShadowFit> BuildEffectiveDirectionalShadowFit(
+            const std::vector<VisibleMeshSection> &sections,
+            const Vector3f &camera_position, const Vector3f &direction)
+        {
+            const std::optional<spatial::AABB> caster_bounds =
+                BuildDirectionalShadowCasterBounds(sections);
+            if (!caster_bounds.has_value())
+            {
+                return std::nullopt;
+            }
+
+            DirectionalShadowFit fit{*caster_bounds,
+                                     FitDirectionalShadowMatrices(*caster_bounds, direction)};
+            if (!IsPointInsideDirectionalShadowFit(fit.matrices, camera_position))
+            {
+                fit.bounds.ExpandToInclude(camera_position);
+                fit.matrices = FitDirectionalShadowMatrices(fit.bounds, direction);
+            }
+            return fit;
         }
 
         bool IsSpotBoundsInsideFrustum(const spatial::AABB &bounds,
@@ -231,7 +264,7 @@ namespace kpengine::render
 
         uint64_t ComputeDirectionalShadowStamp(
             const Light &light, const std::vector<VisibleMeshSection> &sections,
-            const Vector3f &camera_position)
+            const DirectionalShadowFit &fit)
         {
             uint64_t stamp = 1469598103934665603ULL;
             const auto add = [&stamp](uint64_t value)
@@ -252,7 +285,24 @@ namespace kpengine::render
             add(light.desc.shadow->id);
             add(light.desc.shadow->generation);
             add_vector(std::get<DirectionalLightData>(light.desc.type_data).direction);
-            add_vector(camera_position);
+            add(fit.bounds.IsValid() ? 1u : 0u);
+            if (fit.bounds.IsValid())
+            {
+                add_vector(fit.bounds.min_);
+                add_vector(fit.bounds.max_);
+            }
+            const auto add_matrix = [&add_float](const Matrix4f &matrix)
+            {
+                for (size_t row = 0; row < 4; ++row)
+                {
+                    for (size_t column = 0; column < 4; ++column)
+                    {
+                        add_float(matrix[row][column]);
+                    }
+                }
+            };
+            add_matrix(fit.matrices.view);
+            add_matrix(fit.matrices.projection);
             for (const VisibleMeshSection &candidate : sections)
             {
                 const MeshProxy &proxy = candidate.proxy;
@@ -807,17 +857,16 @@ namespace kpengine::render
                          kDirectionalShadowResolution, 0};
             frame.shadow = *light.desc.shadow;
             frame.light_direction = direction;
-            ++profile_.shadow_stamp_evaluations;
-            frame.validity_stamp = ComputeDirectionalShadowStamp(
-                light, caster_candidates, scene_camera_.GetPosition());
-            if (const std::optional<spatial::AABB> caster_bounds =
-                    BuildDirectionalShadowBounds(caster_candidates, scene_camera_.GetPosition()))
+            DirectionalShadowFit stamp_fit{};
+            const std::optional<DirectionalShadowFit> effective_fit =
+                BuildEffectiveDirectionalShadowFit(caster_candidates,
+                                                    scene_camera_.GetPosition(), direction);
+            if (effective_fit.has_value())
             {
                 ++profile_.shadow_fit_evaluations;
-                const DirectionalShadowMatrices matrices =
-                    FitDirectionalShadowMatrices(*caster_bounds, direction);
-                frame.view = matrices.view;
-                frame.projection = matrices.projection;
+                frame.view = effective_fit->matrices.view;
+                frame.projection = effective_fit->matrices.projection;
+                stamp_fit = *effective_fit;
             }
             else
             {
@@ -833,7 +882,11 @@ namespace kpengine::render
                 frame.view = Matrix4f::MakeCameraMatrix(eye, direction, up);
                 frame.projection = Matrix4f::MakeOrthProjMatrix(
                     -kHalfExtent, kHalfExtent, -kHalfExtent, kHalfExtent, 0.1f, kDepthRange);
+                stamp_fit.matrices = {frame.view, frame.projection};
             }
+            ++profile_.shadow_stamp_evaluations;
+            frame.validity_stamp =
+                ComputeDirectionalShadowStamp(light, caster_candidates, stamp_fit);
             return frame;
         }
         return std::nullopt;
@@ -2196,14 +2249,22 @@ namespace kpengine::render
 
         const graphics::Extent2D requested = pending_scene_render_target_extent_;
         pending_scene_render_target_extent_ = {};
+        const RenderTarget *const scene_target =
+            frame_targets_.GetTarget(RenderTargetName::SceneColor);
+        const bool extent_changed =
+            scene_target == nullptr || scene_target->GetWidth() != requested.width ||
+            scene_target->GetHeight() != requested.height;
         // RebuildForExtent retires via WaitIdle internally only when the extent
         // changed, so a stable size keeps the shared target's GPU generations
         // intact across frames. active_frame_context_ is nulled here to match the
         // old pre-rebuild boundary; the next BeginFrame re-acquires it.
         frame_targets_.RebuildForExtent(*backend_, requested.width, requested.height);
-        directional_shadow_valid_ = false;
-        directional_shadow_stamp_ = 0;
-        active_frame_context_ = nullptr;
+        if (extent_changed)
+        {
+            directional_shadow_valid_ = false;
+            directional_shadow_stamp_ = 0;
+            active_frame_context_ = nullptr;
+        }
         if (!frame_targets_.GetTarget(RenderTargetName::SceneColor)->IsValid())
         {
             KP_LOG("RenderLog", LOG_LEVEL_ERROR,
