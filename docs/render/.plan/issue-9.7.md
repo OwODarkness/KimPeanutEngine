@@ -1,9 +1,9 @@
 # issue-9.7 — Sponza Quality and Throughput Stage Design
 
-**Status: Stages 0–5 and the Stage 6.0 telemetry implementation slice have
-landed. A supplied post-Stage-5 snapshot attributes the remaining approximately
-30 FPS result to CPU command submission; the fixed-window Stage 6.0 runtime
-profile is the next gate. Block compression remains pending.**
+**Status: Stages 0–5 and Stage 6.0–6.3 CPU submission slices have landed. A
+supplied post-Stage-5 snapshot attributes the remaining approximately 30 FPS
+result to CPU command submission; fixed-window performance-build proof remains
+open. Block compression remains pending.**
 
 Links: [issue](../issue/issue-9.7.md),
 [formal review](../.review/issue-9.7.md),
@@ -321,6 +321,12 @@ same frame data through the common contract. Focused stable-binding coverage
 passes; fixed-scenario runtime counters and visual comparison remain pending.
 
 #### Stage 6.3 — recorder state cache and lean draw packets
+
+- Implementation status: landed. Recorder-local compatibility, pipeline, mesh,
+  and binding state is reused within each target/frame boundary. Deferred
+  rendering now snapshots `RenderWorld` once per frame and prepares one shared
+  section-packet array; camera visibility filters that array, and section
+  packets do not copy `section_materials`.
 
 - Validate target/pipeline compatibility when the active target or pipeline
   changes, not for repeated requests of the same pair. Keep generational-handle

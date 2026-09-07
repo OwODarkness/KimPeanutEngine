@@ -43,6 +43,8 @@ namespace kpengine::graphics
         }
 
     private:
+        void ResetStateCache() noexcept;
+
         VkCommandBuffer command_buffer_ = VK_NULL_HANDLE;
         VulkanPipelineManager *pipeline_manager_ = nullptr;
         VulkanDescriptorSetManager *descriptor_set_manager_ = nullptr;
@@ -53,6 +55,14 @@ namespace kpengine::graphics
         uint32_t frame_index_ = 0;
         uint32_t recorded_index_count_ = 0;
         uint32_t recorded_first_index_ = 0;
+        PipelineHandle recorded_pipeline_;
+        MeshHandle recorded_mesh_;
+        PipelineHandle validated_pipeline_;
+        RenderTargetHandle validated_target_;
+        bool cached_pipeline_compatibility_ = false;
+        DescriptorSetHandle recorded_bindings_;
+        PipelineHandle recorded_bindings_pipeline_;
+        DynamicUniformOffsets recorded_dynamic_offsets_;
         RenderTargetHandle active_target_;
         // Suppresses draws when the bound pipeline's attachment formats do not
         // match the active render target; recording stays pass-scoped instead of

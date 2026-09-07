@@ -17,6 +17,22 @@ namespace kpengine::render
             return std::find(desc.compatible_passes.begin(), desc.compatible_passes.end(), pass) !=
                    desc.compatible_passes.end();
         }
+
+        MeshProxy MakeDrawPacketProxy(const MeshProxy &source)
+        {
+            // SceneDrawItem is a draw packet. Copy only the scalar snapshot
+            // state needed by sorting and recording; section_materials belongs
+            // to the RenderWorld snapshot and must not be copied per section.
+            MeshProxy packet{};
+            packet.handle = source.handle;
+            packet.mesh = source.mesh;
+            packet.material = source.material;
+            packet.world_transform = source.world_transform;
+            packet.world_bounds = source.world_bounds;
+            packet.flags = source.flags;
+            packet.lod_bias = source.lod_bias;
+            return packet;
+        }
     }
 
     SceneDrawLists SceneDrawListBuilder::Build(
@@ -48,7 +64,7 @@ namespace kpengine::render
                 return;
             }
 
-            SceneDrawItem item{proxy, pipeline, section_index};
+            SceneDrawItem item{MakeDrawPacketProxy(proxy), pipeline, section_index};
             if (*draw_class == MaterialDrawClass::Opaque)
             {
                 draw_lists.opaque.push_back(std::move(item));
@@ -82,9 +98,8 @@ namespace kpengine::render
                 {
                     continue;
                 }
-                MeshProxy section_proxy = proxy;
+                MeshProxy section_proxy = MakeDrawPacketProxy(proxy);
                 section_proxy.material = proxy.GetMaterialForSection(section.material_index);
-                section_proxy.section_materials.clear();
                 append_item(section_proxy, static_cast<uint32_t>(section_index));
             }
         }
@@ -122,7 +137,8 @@ namespace kpengine::render
             {
                 continue;
             }
-            SceneDrawItem item{proxy, pipeline, visible_section.section_index};
+            SceneDrawItem item{MakeDrawPacketProxy(proxy), pipeline,
+                               visible_section.section_index};
             if (*draw_class == MaterialDrawClass::Opaque)
             {
                 draw_lists.opaque.push_back(std::move(item));

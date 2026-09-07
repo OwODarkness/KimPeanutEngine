@@ -155,7 +155,7 @@ namespace kpengine::render
         std::optional<PointShadowFrame> SchedulePointShadow(
             const std::vector<Light> &lights,
             const std::function<bool(ShadowHandle)> &is_shadow_handle_valid);
-        std::vector<VisibleMeshSection> BuildSectionCandidatesProfiled();
+        const std::vector<VisibleMeshSection> &BuildSectionCandidatesProfiled();
         std::vector<VisibleMeshSection> BuildVisibleSectionsProfiled(
             const Matrix4f &view_projection);
         bool RecordDirectionalShadowPass();
@@ -203,6 +203,11 @@ namespace kpengine::render
         graphics::Extent2D pending_scene_render_target_extent_;
         FrameContext *active_frame_context_ = nullptr;
         const RenderWorld *render_world_ = nullptr;
+        // One immutable, frame-local section packet snapshot is shared by
+        // shadow scheduling, shadow recording, and G-buffer visibility.
+        std::vector<MeshProxy> frame_render_world_snapshot_;
+        std::vector<VisibleMeshSection> frame_section_packets_;
+        bool frame_section_packets_ready_ = false;
         FrameLightingBinding frame_lighting_binding_;
         std::optional<DirectionalShadowFrame> active_directional_shadow_;
         std::optional<SpotShadowFrame> active_spot_shadow_;

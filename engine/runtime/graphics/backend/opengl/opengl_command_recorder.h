@@ -61,10 +61,19 @@ namespace kpengine::graphics
         }
 
     private:
+        void ResetStateCache() noexcept;
+
         Services services_;
         PipelineHandle recorded_pipeline_;
         uint32_t recorded_index_count_ = 0;
         uint32_t recorded_first_index_ = 0;
+        MeshHandle recorded_mesh_;
+        DescriptorSetHandle recorded_bindings_;
+        PipelineHandle recorded_bindings_pipeline_;
+        DynamicUniformOffsets recorded_dynamic_offsets_;
+        RenderTargetHandle validated_target_;
+        PipelineHandle validated_pipeline_;
+        bool cached_pipeline_compatibility_ = false;
         RenderTargetHandle active_render_target_;
         // Suppresses draws when the bound pipeline's attachment formats do not
         // match the active render target; recording stays pass-scoped instead of

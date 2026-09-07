@@ -17,6 +17,20 @@
 
 namespace kpengine::graphics
 {
+    void VulkanCommandRecorder::ResetStateCache() noexcept
+    {
+        recorded_pipeline_ = {};
+        recorded_mesh_ = {};
+        validated_pipeline_ = {};
+        validated_target_ = {};
+        cached_pipeline_compatibility_ = false;
+        recorded_bindings_ = {};
+        recorded_bindings_pipeline_ = {};
+        recorded_dynamic_offsets_.clear();
+        recorded_index_count_ = 0;
+        recorded_first_index_ = 0;
+    }
+
     void VulkanCommandRecorder::Begin(
         VkCommandBuffer command_buffer, VulkanPipelineManager &pipeline_manager,
         VulkanDescriptorSetManager &descriptor_set_manager,
@@ -32,10 +46,9 @@ namespace kpengine::graphics
         render_target_manager_ = &render_target_manager;
         bindless_table_ = bindless_table;
         frame_index_ = frame_index;
-        recorded_index_count_ = 0;
-        recorded_first_index_ = 0;
         active_target_ = {};
         draws_suppressed_ = false;
+        ResetStateCache();
         profile_counters_ = {};
     }
 
@@ -55,6 +68,7 @@ namespace kpengine::graphics
             return false;
         }
         active_target_ = target;
+        ResetStateCache();
         return true;
     }
 
@@ -65,6 +79,7 @@ namespace kpengine::graphics
             render_target_manager_->EndRendering(command_buffer_);
         }
         active_target_ = {};
+        ResetStateCache();
     }
 
     void VulkanCommandRecorder::BindPipeline(PipelineHandle pipeline)
@@ -80,9 +95,23 @@ namespace kpengine::graphics
             draws_suppressed_ = true;
             return;
         }
+        if (recorded_pipeline_ == pipeline && !draws_suppressed_)
+        {
+            return;
+        }
+
+        const bool validation_cached = validated_pipeline_ == pipeline &&
+                                       validated_target_ == active_target_;
+        if (validation_cached && !cached_pipeline_compatibility_)
+        {
+            draws_suppressed_ = true;
+            return;
+        }
+
         const RenderTargetDesc *target_desc =
             render_target_manager_ ? render_target_manager_->GetDesc(active_target_) : nullptr;
-        if (target_desc)
+        bool compatible = true;
+        if (!validation_cached && target_desc)
         {
             const auto validation_started = std::chrono::steady_clock::now();
             PipelineDesc pipeline_desc{};
@@ -91,7 +120,7 @@ namespace kpengine::graphics
             pipeline_desc.multisample_state.rasterization_samples =
                 resource->rasterization_samples;
             std::string error;
-            const bool compatible =
+            compatible =
                 ValidateRenderTargetPipelineCompatibility(*target_desc, pipeline_desc, &error);
             ++profile_counters_.pipeline_validation_calls;
             profile_counters_.pipeline_validation_cpu_ms +=
@@ -102,10 +131,17 @@ namespace kpengine::graphics
             {
                 KP_LOG(KP_VULKAN_COMMAND_RECORDER_LOG_NAME, LOG_LEVEL_ERROR,
                        "Rejected pipeline for incompatible render target: %s", error.c_str());
-                draws_suppressed_ = true;
-                return;
             }
         }
+        validated_pipeline_ = pipeline;
+        validated_target_ = active_target_;
+        cached_pipeline_compatibility_ = compatible;
+        if (!compatible)
+        {
+            draws_suppressed_ = true;
+            return;
+        }
+        draws_suppressed_ = false;
         {
             vkCmdBindPipeline(command_buffer_, VK_PIPELINE_BIND_POINT_GRAPHICS, resource->pipeline);
             if (bindless_table_ && bindless_table_->IsReady())
@@ -119,6 +155,11 @@ namespace kpengine::graphics
                                             &descriptor_set, 0, nullptr);
                 }
             }
+            recorded_pipeline_ = pipeline;
+            recorded_mesh_ = {};
+            recorded_bindings_ = {};
+            recorded_bindings_pipeline_ = {};
+            recorded_dynamic_offsets_.clear();
             ++profile_counters_.pipeline_bind_emitted;
         }
     }
@@ -127,6 +168,10 @@ namespace kpengine::graphics
     {
         ++profile_counters_.mesh_bind_requests;
         if (command_buffer_ == VK_NULL_HANDLE)
+        {
+            return;
+        }
+        if (recorded_mesh_ == mesh && recorded_pipeline_.IsValid())
         {
             return;
         }
@@ -149,6 +194,7 @@ namespace kpengine::graphics
         vkCmdBindIndexBuffer(command_buffer_, index->buffer, 0, VK_INDEX_TYPE_UINT32);
         recorded_index_count_ = static_cast<uint32_t>(mesh_resource->sections[0].index_count);
         recorded_first_index_ = static_cast<uint32_t>(mesh_resource->sections[0].index_start);
+        recorded_mesh_ = mesh;
         ++profile_counters_.mesh_bind_emitted;
     }
 
@@ -161,6 +207,11 @@ namespace kpengine::graphics
         {
             return;
         }
+        if (recorded_bindings_pipeline_ == pipeline && recorded_bindings_ == bindings &&
+            recorded_dynamic_offsets_ == dynamic_offsets)
+        {
+            return;
+        }
         VulkanPipelineResource *pipeline_resource = pipeline_manager_->GetPipelineResource(pipeline);
         const VkDescriptorSet descriptor_set = descriptor_set_manager_->GetDescriptorSet(bindings);
         if (pipeline_resource && descriptor_set != VK_NULL_HANDLE)
@@ -169,6 +220,9 @@ namespace kpengine::graphics
                                     pipeline_resource->layout, 0, 1, &descriptor_set,
                                     static_cast<uint32_t>(dynamic_offsets.size()),
                                     dynamic_offsets.empty() ? nullptr : dynamic_offsets.data());
+            recorded_bindings_pipeline_ = pipeline;
+            recorded_bindings_ = bindings;
+            recorded_dynamic_offsets_ = dynamic_offsets;
             ++profile_counters_.resource_binding_bind_emitted;
         }
     }

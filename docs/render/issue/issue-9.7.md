@@ -1,6 +1,6 @@
 # Issue 9.7 — Sponza Texture Aliasing and Frame Throughput
 
-**Status: active; Stages 5–6.2 are landed; fixed-scenario runtime proof remains open.** The Sponza startup fixture renders,
+**Status: active; Stages 5–6.3 are landed; fixed-scenario runtime proof remains open.** The Sponza startup fixture renders,
 but its material channels contain severe high-frequency speckle and the
 observed frame rate falls to approximately 30 FPS.
 
@@ -50,6 +50,11 @@ outside this issue.
   or OpenGL ranged UBO binds. Material revisions and resource generations are
   part of the cache key; descriptor allocation/update is no longer per geometry
   draw after warm-up.
+- Stage 6.3 now caches recorder-local target/pipeline compatibility and
+  redundant pipeline, mesh, and binding requests at native recording
+  boundaries. Deferred rendering builds one frame-local section packet source
+  from one `RenderWorld` snapshot and reuses it for shadow scheduling,
+  filtering, and G-buffer visibility without copying section material arrays.
 
 ## Resolution documents
 
@@ -95,4 +100,4 @@ Stage 6.0 now exposes the required Render/Graphics subphase timers and counts,
 including descriptor search/allocation/update work, requested versus emitted
 native binds, and CPU-subphase p50/p95 summaries. The fixed-scenario runtime
 profile still needs to be captured on Vulkan Debug, Vulkan performance, and
-OpenGL performance builds before selecting the Stage 6.2+ optimization path.
+OpenGL performance builds before declaring the Stage 6 CPU path complete.

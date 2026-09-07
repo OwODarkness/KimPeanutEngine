@@ -16,6 +16,20 @@
 
 namespace kpengine::graphics
 {
+    void OpenglCommandRecorder::ResetStateCache() noexcept
+    {
+        recorded_pipeline_ = {};
+        recorded_mesh_ = {};
+        recorded_bindings_ = {};
+        recorded_bindings_pipeline_ = {};
+        recorded_dynamic_offsets_.clear();
+        validated_pipeline_ = {};
+        validated_target_ = {};
+        cached_pipeline_compatibility_ = false;
+        recorded_index_count_ = 0;
+        recorded_first_index_ = 0;
+    }
+
     OpenglCommandRecorder::OpenglCommandRecorder(Services services)
         : services_(services)
     {
@@ -89,6 +103,7 @@ namespace kpengine::graphics
         }
         draws_suppressed_ = false;
         active_render_target_ = target;
+        ResetStateCache();
         return true;
     }
 
@@ -105,6 +120,7 @@ namespace kpengine::graphics
         glDisable(GL_FRAMEBUFFER_SRGB);
         active_render_target_ = {};
         draws_suppressed_ = false;
+        ResetStateCache();
     }
 
     void OpenglCommandRecorder::BindPipeline(PipelineHandle pipeline)
@@ -121,7 +137,21 @@ namespace kpengine::graphics
             draws_suppressed_ = true;
             return;
         }
-        if (active_render_target_.IsValid() && services_.render_target_handles &&
+        if (recorded_pipeline_ == pipeline && !draws_suppressed_)
+        {
+            return;
+        }
+
+        const bool validation_cached = validated_pipeline_ == pipeline &&
+                                       validated_target_ == active_render_target_;
+        if (validation_cached && !cached_pipeline_compatibility_)
+        {
+            draws_suppressed_ = true;
+            return;
+        }
+
+        bool compatible = true;
+        if (!validation_cached && active_render_target_.IsValid() && services_.render_target_handles &&
             services_.render_targets)
         {
             const uint32_t index = services_.render_target_handles->Get(active_render_target_);
@@ -134,7 +164,7 @@ namespace kpengine::graphics
                 pipeline_desc.multisample_state.rasterization_samples =
                     resource->rasterization_samples_;
                 std::string error;
-                const bool compatible = ValidateRenderTargetPipelineCompatibility(
+                compatible = ValidateRenderTargetPipelineCompatibility(
                     (*services_.render_targets)[index].desc, pipeline_desc, &error);
                 ++profile_counters_.pipeline_validation_calls;
                 profile_counters_.pipeline_validation_cpu_ms +=
@@ -147,10 +177,19 @@ namespace kpengine::graphics
                            "Rejected pipeline for incompatible render target: %s",
                            error.c_str());
                     draws_suppressed_ = true;
-                    return;
                 }
             }
         }
+
+        validated_pipeline_ = pipeline;
+        validated_target_ = active_render_target_;
+        cached_pipeline_compatibility_ = compatible;
+        if (!compatible)
+        {
+            draws_suppressed_ = true;
+            return;
+        }
+        draws_suppressed_ = false;
 
         resource->Bind();
         if (services_.bindless_texture_table)
@@ -159,6 +198,10 @@ namespace kpengine::graphics
         }
         glBindVertexArray(resource->vao);
         recorded_pipeline_ = pipeline;
+        recorded_mesh_ = {};
+        recorded_bindings_ = {};
+        recorded_bindings_pipeline_ = {};
+        recorded_dynamic_offsets_.clear();
         ++profile_counters_.pipeline_bind_emitted;
     }
 
@@ -166,6 +209,10 @@ namespace kpengine::graphics
     {
         ++profile_counters_.mesh_bind_requests;
         if (!services_.mesh_manager || !services_.pipeline_manager)
+        {
+            return;
+        }
+        if (recorded_mesh_ == mesh && recorded_pipeline_.IsValid())
         {
             return;
         }
@@ -191,6 +238,7 @@ namespace kpengine::graphics
         recorded_first_index_ = mesh_resource->sections.empty()
                                      ? 0u
                                      : static_cast<uint32_t>(mesh_resource->sections[0].index_start);
+        recorded_mesh_ = mesh;
         ++profile_counters_.mesh_bind_emitted;
     }
 
@@ -213,13 +261,24 @@ namespace kpengine::graphics
             return;
         }
 
+        const bool redundant = recorded_bindings_pipeline_ == pipeline &&
+                               recorded_bindings_ == bindings &&
+                               recorded_dynamic_offsets_ == dynamic_offsets;
+
         for (const auto &[id, mapped] : *services_.mapped_uniform_buffers)
         {
             (void)id;
             glBindBuffer(GL_UNIFORM_BUFFER, mapped.native);
             glBufferSubData(GL_UNIFORM_BUFFER, 0, mapped.data.size(), mapped.data.data());
         }
+        if (redundant)
+        {
+            return;
+        }
         (*services_.resource_binding_sets)[index]->Bind(dynamic_offsets);
+        recorded_bindings_pipeline_ = pipeline;
+        recorded_bindings_ = bindings;
+        recorded_dynamic_offsets_ = dynamic_offsets;
         ++profile_counters_.resource_binding_bind_emitted;
     }
 

@@ -38,6 +38,12 @@ namespace kpengine::render
         static std::vector<VisibleMeshSection> BuildSectionCandidates(
             const std::vector<MeshProxy> &proxies,
             const RenderResourceResolver &resource_resolver);
+
+        // Filters an already prepared section-packet snapshot for a camera
+        // without rebuilding section identity, bounds, or material state.
+        static std::vector<VisibleMeshSection> FilterVisibleSections(
+            const Matrix4f &view_projection,
+            const std::vector<VisibleMeshSection> &section_packets);
     };
 }
 

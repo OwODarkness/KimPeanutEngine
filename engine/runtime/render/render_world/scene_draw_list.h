@@ -14,7 +14,8 @@ namespace kpengine::render
 {
     class RenderResourceResolver;
 
-    // A draw-ready proxy plus the resolved pipeline used as its opaque batch key.
+    // A compact draw packet plus the resolved pipeline used as its opaque batch
+    // key. The packet proxy intentionally has no section_materials ownership.
     struct SceneDrawItem
     {
         MeshProxy proxy;

@@ -441,6 +441,9 @@ namespace kpengine::render
         directional_shadow_stamp_ = 0;
         active_frame_context_ = nullptr;
         render_world_ = nullptr;
+        frame_render_world_snapshot_.clear();
+        frame_section_packets_.clear();
+        frame_section_packets_ready_ = false;
         pending_scene_render_target_extent_ = {};
         active_pass_frame_.reset();
         active_pending_capture_.reset();
@@ -487,27 +490,32 @@ namespace kpengine::render
         }
     }
 
-    std::vector<VisibleMeshSection> DeferredRenderer::BuildSectionCandidatesProfiled()
+    const std::vector<VisibleMeshSection> &DeferredRenderer::BuildSectionCandidatesProfiled()
     {
-        const auto started = std::chrono::steady_clock::now();
-        std::vector<VisibleMeshSection> result =
-            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
-                                                    *resource_resolver_);
-        profile_.cpu_section_packet_build_ms +=
-            std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - started)
-                .count();
-        ++profile_.section_packet_build_calls;
-        profile_.section_packets_built += result.size();
-        return result;
+        if (!frame_section_packets_ready_)
+        {
+            const auto started = std::chrono::steady_clock::now();
+            frame_section_packets_ = SceneVisibility::BuildSectionCandidates(
+                frame_render_world_snapshot_, *resource_resolver_);
+            profile_.cpu_section_packet_build_ms +=
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - started)
+                    .count();
+            ++profile_.section_packet_build_calls;
+            profile_.section_packets_built += frame_section_packets_.size();
+            frame_section_packets_ready_ = true;
+        }
+        return frame_section_packets_;
     }
 
     std::vector<VisibleMeshSection> DeferredRenderer::BuildVisibleSectionsProfiled(
         const Matrix4f &view_projection)
     {
         const auto started = std::chrono::steady_clock::now();
-        std::vector<VisibleMeshSection> result = SceneVisibility::BuildVisibleSections(
-            view_projection, render_world_->Snapshot(), *resource_resolver_);
+        const std::vector<VisibleMeshSection> &section_packets =
+            BuildSectionCandidatesProfiled();
+        std::vector<VisibleMeshSection> result =
+            SceneVisibility::FilterVisibleSections(view_projection, section_packets);
         profile_.cpu_section_packet_build_ms +=
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - started)
@@ -594,6 +602,9 @@ namespace kpengine::render
         }
         active_frame_context_ = &frame_context;
         render_world_ = &input.render_world;
+        frame_render_world_snapshot_ = render_world_->Snapshot();
+        frame_section_packets_.clear();
+        frame_section_packets_ready_ = false;
         scene_camera_ = input.camera;
         const std::optional<CaptureView> active_capture_view =
             input.pending_capture.has_value() ? input.pending_capture : input.debug_view;
@@ -866,7 +877,7 @@ namespace kpengine::render
             // Camera frustum culling applies only to GBufferPass. Shadow casters
             // come from the full render-world snapshot, so fit the directional
             // volume to their world bounds instead of a camera-derived box.
-            const std::vector<VisibleMeshSection> caster_candidates =
+            const std::vector<VisibleMeshSection> &caster_candidates =
                 BuildSectionCandidatesProfiled();
             DirectionalShadowFrame frame{};
             frame.job = {light.handle, ShadowKind::Directional2D,
@@ -950,7 +961,7 @@ namespace kpengine::render
             frame.projection = Matrix4f::MakePerProjMatrix(
                 spot->outer_cone_radians * 2.0f, 1.0f, near_plane, spot->range);
             bool has_caster = false;
-            const std::vector<VisibleMeshSection> caster_candidates =
+            const std::vector<VisibleMeshSection> &caster_candidates =
                 BuildSectionCandidatesProfiled();
             for (const VisibleMeshSection &candidate : caster_candidates)
             {
@@ -982,7 +993,7 @@ namespace kpengine::render
         const std::vector<Light> &lights,
         const std::function<bool(ShadowHandle)> &is_shadow_handle_valid)
     {
-        const std::vector<VisibleMeshSection> proxies = BuildSectionCandidatesProfiled();
+        const std::vector<VisibleMeshSection> &proxies = BuildSectionCandidatesProfiled();
         for (const Light &light : lights)
         {
             if (!light.desc.enabled || light.desc.type != LightType::Point ||
@@ -1088,7 +1099,7 @@ namespace kpengine::render
             shadow_target->EndRecording(*recorder);
             return false;
         }
-        const std::vector<VisibleMeshSection> shadow_caster_candidates =
+        const std::vector<VisibleMeshSection> &shadow_caster_candidates =
             BuildSectionCandidatesProfiled();
         for (const VisibleMeshSection &candidate : shadow_caster_candidates)
         {
@@ -1143,7 +1154,7 @@ namespace kpengine::render
             shadow_target->EndRecording(*recorder);
             return false;
         }
-        const std::vector<VisibleMeshSection> shadow_caster_candidates =
+        const std::vector<VisibleMeshSection> &shadow_caster_candidates =
             BuildSectionCandidatesProfiled();
         for (const VisibleMeshSection &candidate : shadow_caster_candidates)
         {
@@ -1192,7 +1203,7 @@ namespace kpengine::render
 
         const PointShadowFrame &shadow = *active_point_shadow_;
         const auto profile_start = std::chrono::steady_clock::now();
-        const std::vector<VisibleMeshSection> proxies = BuildSectionCandidatesProfiled();
+        const std::vector<VisibleMeshSection> &proxies = BuildSectionCandidatesProfiled();
         std::vector<VisibleMeshSection> caster_candidates;
         caster_candidates.reserve(proxies.size());
         for (const VisibleMeshSection &candidate : proxies)

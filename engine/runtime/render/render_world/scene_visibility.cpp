@@ -9,6 +9,28 @@
 
 namespace kpengine::render
 {
+    namespace
+    {
+        MeshProxy MakeSectionPacketProxy(const MeshProxy &source,
+                                         MaterialInstanceHandle material,
+                                         const spatial::AABB &world_bounds)
+        {
+            // VisibleMeshSection is a value packet, not another owner of the
+            // RenderWorld material-slot array. Keep only data consumed by
+            // filtering and recording so section count cannot multiply heap
+            // allocations for section_materials.
+            MeshProxy packet{};
+            packet.handle = source.handle;
+            packet.mesh = source.mesh;
+            packet.material = material;
+            packet.world_transform = source.world_transform;
+            packet.world_bounds = world_bounds;
+            packet.flags = source.flags;
+            packet.lod_bias = source.lod_bias;
+            return packet;
+        }
+    }
+
     std::vector<MeshProxy> SceneVisibility::BuildVisibleProxies(
         const Matrix4f &view_projection, const std::vector<MeshProxy> &proxies)
     {
@@ -46,7 +68,9 @@ namespace kpengine::render
                     resource_resolver.FindMeshSections(proxy.mesh);
                 if (sections == nullptr || sections->empty())
                 {
-                    result.push_back({proxy, proxy.world_bounds,
+                    result.push_back({MakeSectionPacketProxy(proxy, proxy.material,
+                                                             proxy.world_bounds),
+                                      proxy.world_bounds,
                                       std::numeric_limits<uint32_t>::max()});
                     continue;
                 }
@@ -70,10 +94,8 @@ namespace kpengine::render
                     {
                         continue;
                     }
-                    MeshProxy section_proxy = proxy;
-                    section_proxy.material = proxy.GetMaterialForSection(section.material_index);
-                    section_proxy.section_materials.clear();
-                    section_proxy.world_bounds = world_bounds;
+                    MeshProxy section_proxy = MakeSectionPacketProxy(
+                        proxy, proxy.GetMaterialForSection(section.material_index), world_bounds);
                     result.push_back({std::move(section_proxy), world_bounds,
                                       static_cast<uint32_t>(section_index)});
                 }
@@ -95,5 +117,22 @@ namespace kpengine::render
         const RenderResourceResolver &resource_resolver)
     {
         return BuildSections(proxies, resource_resolver, nullptr);
+    }
+
+    std::vector<VisibleMeshSection> SceneVisibility::FilterVisibleSections(
+        const Matrix4f &view_projection,
+        const std::vector<VisibleMeshSection> &section_packets)
+    {
+        const Frustum frustum = Frustum::FromViewProjection(view_projection);
+        std::vector<VisibleMeshSection> visible;
+        visible.reserve(section_packets.size());
+        for (const VisibleMeshSection &packet : section_packets)
+        {
+            if (frustum.Intersects(packet.world_bounds))
+            {
+                visible.push_back(packet);
+            }
+        }
+        return visible;
     }
 }

@@ -342,3 +342,28 @@ below adds the first runtime instrumentation slice.
   frames per API, but failed the existing D5 cross-API silhouette comparator
   (`raw=375`, `structural=82`). Fixed-window Sponza runtime counters and visual
   comparison remain pending.
+
+## Stage 6.3 recorder state cache and lean packet checkpoint
+
+- Added recorder-local caches for target/pipeline compatibility validation,
+  pipeline binds, mesh binds, descriptor-set binds, and ordered dynamic
+  offsets. Caches reset at Vulkan command-buffer/frame boundaries and at every
+  OpenGL recorder target boundary; pipeline changes conservatively invalidate
+  mesh and binding state. Requested counters remain per call while emitted
+  counters now reflect native state changes.
+- Deferred rendering now captures one `RenderWorld` snapshot per frame and
+  lazily prepares one shared section-packet array for directional/spot/point
+  shadow work and G-buffer visibility. Camera visibility filters the prepared
+  packets instead of rebuilding section metadata. Packet copies retain only
+  scalar recording state and no longer duplicate `section_materials`.
+- OpenGL still performs its mapped-buffer upload loop on binding requests;
+  removing that whole-arena upload remains explicitly deferred to Stage 6.4.
+- `cmake --build build --config Debug --target RenderSystemTest
+  RenderPassScheduleTest GraphicsContractTest GraphicsSmoke` — passed.
+- `RenderSystemTest.exe --gtest_color=no` — 20/20 passed;
+  `RenderPassScheduleTest.exe --gtest_color=no` — 100/100 passed;
+  `GraphicsContractTest.exe --gtest_color=no` — 15/15 passed.
+- `GraphicsSmoke.exe` completed the Vulkan and OpenGL frame sequences but
+  retained the existing D5 silhouette comparator failure
+  (`raw=375`, `edge=293`, `structural=82`, `area_delta=135`, bounds match).
+  Fixed-window Sponza performance counters and visual comparison remain open.
