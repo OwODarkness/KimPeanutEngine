@@ -16,17 +16,19 @@ The module is split into explicit targets so runtime consumers do not acquire
 offline-import state accidentally:
 
 - `AssetProduct` owns database-free content hashes and canonical product paths.
-- `AssetNative` owns native Model serialization shared by runtime and import.
+- `AssetNative` owns native Model and Texture serialization shared by runtime
+  and import.
 - `AssetRuntime` owns `AssetManager` and read-only runtime loaders.
 - `AssetArchive` owns the SQLite archive repository.
-- `AssetImport` owns offline model/material import and may run without the
-  engine application or `AssetManager`.
+- `AssetImport` owns offline model/material/texture import and cooking and may
+  run without the engine application or `AssetManager`.
 
 `Database` is not exported through `Core`. Runtime Level parsing may use the
 archive through its read-only resolver target; native product loading remains
 database-free. Legacy foreign-format runtime loading is a migration-only
 compatibility option controlled by `KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT`; the
-native `.model` path does not call the importer or mutate the archive database.
+native `.model` and `.texture` paths do not call the importer or mutate the
+archive database.
 
 ## Key types
 
@@ -175,6 +177,13 @@ row only after publication. Runtime MaterialLoader remains a read-only
 consumer; publication belongs to the standalone importer, not AssetManager.
 
 Each loader is an interface (`model_loader.h`, `image_loader.h`, `audio_loader.h`, `shader_program_loader.h`); the concrete implementations are swappable. The manager owns them as `unique_ptr` and currently hard-codes the concrete types in its constructor.
+
+Native texture products follow a separate offline/import boundary. `TextureImporter`
+decodes a source image through ImageIO, and `TextureCooker` applies the declared
+semantic, dimension, mip, and portable-format policy before serializing a
+content-addressed `.texture` product. `NativeTextureLoader` only verifies and
+deserializes that product at runtime. Loose PNG/JPG/TGA/HDR loading remains a
+transitional fallback for authored files that have not been cooked.
 
 The Assimp model path is static-mesh oriented. It accumulates and bakes node
 transforms, preserves section/material-slot topology, and retains source PBR

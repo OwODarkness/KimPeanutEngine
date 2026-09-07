@@ -1,6 +1,7 @@
 target_sources(EditorUILib PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_console_component.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_debug_viewer_component.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/editor_gpu_profiler_component.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_loading_component.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_loading_view_model.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_button_component.cpp

@@ -148,6 +148,7 @@ namespace kpengine::asset
                            const std::vector<ProductRecord> &products,
                            const std::vector<SourceProductRecord> &source_products,
                            const std::vector<MaterialOverrideRecord> &material_overrides);
+        void RemoveSource(std::string_view normalized_path);
 
         ArchiveProbeResult ProbeSource(const SourceProbeRequest &request);
         void IntegrityCheck();

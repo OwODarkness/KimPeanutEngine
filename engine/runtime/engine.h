@@ -55,6 +55,26 @@ namespace kpengine
             void SetStartupLevelOverride(std::string authored_or_normalized_path);
             StartupSnapshot GetStartupSnapshot() const;
 
+            struct FrameLoopMetrics
+            {
+                double frame_total_ms = 0.0;
+                double game_wait_ms = 0.0;
+                double render_work_ms = 0.0;
+                double frame_pacing_ms = 0.0;
+                double game_tick_work_ms = 0.0;
+                double game_tick_pacing_ms = 0.0;
+            };
+
+            FrameLoopMetrics GetFrameLoopMetrics() const
+            {
+                FrameLoopMetrics metrics = frame_loop_metrics_;
+                metrics.game_tick_work_ms =
+                    game_tick_work_ms_.load(std::memory_order_relaxed);
+                metrics.game_tick_pacing_ms =
+                    game_tick_pacing_ms_.load(std::memory_order_relaxed);
+                return metrics;
+            }
+
             inline int GetFPS() const { return measured_fps; }
             const int *GetFPSRef() const { return &measured_fps; }
 
@@ -88,6 +108,9 @@ namespace kpengine
             float avg_time_cost = 0.f;
             int target_fps = 120; // fixed update rate
             int measured_fps = 0; // for display
+            FrameLoopMetrics frame_loop_metrics_{};
+            std::atomic<double> game_tick_work_ms_{0.0};
+            std::atomic<double> game_tick_pacing_ms_{0.0};
 
             // game (main) → render (spawned) frame handshake.
             std::condition_variable game_ready_cv_;

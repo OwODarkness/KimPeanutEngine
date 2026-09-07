@@ -4,8 +4,9 @@
 
 **Disposition: changes requested.**
 
-**Implementation status: Stage 0 instrumentation and the Stage 1 runtime mip
-path landed; native products and baseline evidence remain pending.**
+**Implementation status: Stage 0 instrumentation, Stage 1 runtime mips, and the
+Stage 2 portable native texture cook path landed; block-compression and
+baseline evidence remain pending.**
 
 Related records: [issue](../issue/issue-9.7.md),
 [stage design](../.plan/issue-9.7.md),
@@ -57,7 +58,8 @@ pacing.
 ### issue-9.7-F1 — P0: sampled textures have no minification hierarchy
 
 **Runtime implementation status: addressed.** Native archive-product
-serialization and Vulkan/OpenGL runtime capture evidence remain open.
+serialization is now landed; Vulkan/OpenGL runtime capture evidence remains
+open.
 
 The former `DefaultTextureSettings()`/sampler path fixed `mip_levels` and
 `max_lod` at zero. The runtime path now creates explicit initialized semantic
@@ -72,15 +74,20 @@ region; merely increasing `mip_levels` without payload data is rejected.
 
 ### issue-9.7-F2 — P0: the current texture product has no viable memory budget
 
+**Implementation status: bounded portable product landed; hardware compression
+remains open.**
+
 The selected model references 72 4096×4096 images. Decoded RGBA8 base levels
 occupy about 4.5 GiB; a complete uncompressed mip hierarchy is about 6 GiB.
 This corrects the earlier directory-wide count of 135 images, which was not the
 selected model's dependency closure.
 
-Mip correctness must land with telemetry and a staged native texture-product
-policy: semantic downsampling, a maximum-dimension profile, GPU-native
-compression where supported, and an explicit fallback. Blindly resizing every
-map to one resolution would lose author intent and still leave format waste.
+The database-free importer/cooker now applies semantic downsampling, a
+2048-dimension default profile, and canonical native `.texture` products with
+RGBA8/RGBA16F portable storage. Runtime consumes these products without source
+decode. The current RHI exposes no BCn/ASTC formats, so block compression is an
+explicit follow-up rather than an unrecorded fallback. Resident-byte ceiling
+evidence for the Sponza profile is still required.
 
 ### issue-9.7-F3 — P1: Vulkan allocates a descriptor pool per transient set
 
@@ -127,9 +134,10 @@ claiming a performance cause or improvement.
 
 ### issue-9.7-F7 — P2: later pass optimizations must remain measured choices
 
-Per-section culling from the reference implementation applies directly. A
-depth pre-pass may also pay when G-buffer fragments are the measured GPU limit,
-and front-to-back order is a cheaper candidate. PCF kernel size, shadow
+Per-section culling from the reference implementation applies directly.
+Front-to-back opaque G-buffer ordering is now the cheaper candidate and uses
+section bounds already produced by Stage 4. A depth pre-pass may also pay when
+G-buffer fragments are the measured GPU limit. PCF kernel size, shadow
 resolution, and post-process anti-aliasing are quality/performance controls,
 not substitutes for mip correctness or CPU submission fixes.
 

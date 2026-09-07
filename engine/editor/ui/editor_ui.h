@@ -101,6 +101,16 @@ namespace kpengine::editor
         void BeginDraw();
         void EndDraw();
 
+        double GetLastRenderTimeMs() const noexcept { return last_render_time_ms_; }
+        double GetLastImGuiBuildTimeMs() const noexcept
+        {
+            return last_imgui_build_time_ms_;
+        }
+        double GetLastImGuiSubmitTimeMs() const noexcept
+        {
+            return last_imgui_submit_time_ms_;
+        }
+
     private:
         // Backend factory (chosen by the active graphics API) and the panel builders
         // that assemble the tool tree. Each panel is one helper — Initialize stays an
@@ -114,6 +124,9 @@ namespace kpengine::editor
                                  runtime::ISceneSelectionSink *scene_selection_sink,
                                  ActorEditorModel *actor_model);
         void BuildDebugViewerWindow(render::RenderSystem *render_system);
+        void BuildGpuProfilerWindow(runtime::Engine *engine,
+                                    render::RenderSystem *render_system,
+                                    const EditorUI *editor_ui);
         void BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors);
         void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                              render::RenderSystem *render_system);
@@ -138,6 +151,9 @@ namespace kpengine::editor
         EditorUIInitInfo init_info_{};
         LogLevelColorTable log_colors_;
         ImFont *code_font_ = nullptr;
+        double last_render_time_ms_ = 0.0;
+        double last_imgui_build_time_ms_ = 0.0;
+        double last_imgui_submit_time_ms_ = 0.0;
 
         // Runtime export path for the render-capture command. Borrowed service,
         // built from the render system's capture service when the UI initializes.

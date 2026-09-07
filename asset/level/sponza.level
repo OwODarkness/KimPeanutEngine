@@ -1,9 +1,5 @@
 {
   "version": 1,
-  "environment": {
-    "texture": "texture/hdr/HDR_041_Path.hdr",
-    "ibl_intensity": 0.35
-  },
   "objects": [
     {
       "id": "sponza",
@@ -18,12 +14,36 @@
       "casts_shadow": true
     },
     {
+      "id": "sponza_curtains",
+      "name": "Sponza Curtains",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": "model/sponza/pkg_a_curtains/newsponza_curtains_gltf",
+      "casts_shadow": true
+    },
+    {
+      "id": "sponza_ivy",
+      "name": "Sponza Ivy",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": "model/sponza/pkg_b_ivy/newsponza_ivygrowth_gltf",
+      "casts_shadow": true
+    },
+    {
       "id": "main_camera",
       "name": "Sponza Camera",
       "kind": "camera",
       "transform": {
-        "position": [-8.80743, 1.59222, -0.85826],
-        "rotation_degrees": [8.1, 10.7, 0.0],
+        "position": [10.80743, 1.59222, 0.0],
+        "rotation_degrees": [0.0, 180.0, 0.0],
         "scale": [1.0, 1.0, 1.0]
       },
       "projection": "perspective",

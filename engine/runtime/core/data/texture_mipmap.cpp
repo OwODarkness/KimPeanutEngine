@@ -389,9 +389,8 @@ namespace kpengine::data
         {
             return texture.mip_subresources.empty() && texture.pixels.empty();
         }
-        if (!texture.pixels.empty() &&
-            texture.pixels.size() !=
-                static_cast<size_t>(texture.width) * texture.height * bytes_per_pixel)
+        if (texture.pixels.size() !=
+            static_cast<size_t>(texture.width) * texture.height * bytes_per_pixel)
         {
             return false;
         }

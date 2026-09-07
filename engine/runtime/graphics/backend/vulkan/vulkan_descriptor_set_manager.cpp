@@ -1,5 +1,7 @@
 #include "vulkan_descriptor_set_manager.h"
 
+#include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <type_traits>
 
@@ -13,14 +15,138 @@
 
 namespace kpengine::graphics
 {
+    namespace
+    {
+        constexpr uint32_t kInitialDescriptorSets = 1024;
+        constexpr uint32_t kInitialUniformDescriptors = 4096;
+        constexpr uint32_t kInitialSampledTextureDescriptors = 4096;
+
+        uint32_t GrowCapacity(uint32_t current, uint32_t required)
+        {
+            const uint64_t doubled = static_cast<uint64_t>(current) * 2;
+            const uint64_t target = std::max<uint64_t>(doubled, required);
+            if (target > std::numeric_limits<uint32_t>::max())
+            {
+                throw std::runtime_error("descriptor pool arena capacity overflow");
+            }
+            return static_cast<uint32_t>(target);
+        }
+
+        bool HasCapacity(const VulkanDescriptorPoolArena &arena, uint32_t uniform_count,
+                         uint32_t sampled_texture_count)
+        {
+            return arena.used_sets < arena.max_sets &&
+                   uniform_count <= arena.uniform_capacity - arena.used_uniform_descriptors &&
+                   sampled_texture_count <=
+                       arena.sampled_texture_capacity - arena.used_sampled_texture_descriptors;
+        }
+    }
+
+    void VulkanDescriptorSetManager::Initialize(uint32_t frame_slot_count)
+    {
+        if (frame_slot_count == 0)
+        {
+            throw std::runtime_error("descriptor set manager requires a frame slot");
+        }
+        frame_arenas_.clear();
+        frame_arenas_.resize(frame_slot_count);
+        persistent_arenas_.clear();
+        current_frame_slot_ = 0;
+        frame_active_ = false;
+    }
+
+    void VulkanDescriptorSetManager::BeginFrame(VkDevice logical_device, uint32_t frame_slot)
+    {
+        if (frame_slot >= frame_arenas_.size())
+        {
+            throw std::runtime_error("descriptor set manager received an invalid frame slot");
+        }
+
+        // VulkanBackend calls this immediately after waiting for the slot's
+        // fence. No command buffer can still reference descriptors from these
+        // pools at this point.
+        for (VulkanDescriptorPoolArena &arena : frame_arenas_[frame_slot])
+        {
+            if (vkResetDescriptorPool(logical_device, arena.pool, 0) != VK_SUCCESS)
+            {
+                throw std::runtime_error("failed to reset descriptor pool arena");
+            }
+            arena.used_sets = 0;
+            arena.used_uniform_descriptors = 0;
+            arena.used_sampled_texture_descriptors = 0;
+        }
+
+        // FrameContext releases its old transient handles after Backend's
+        // BeginFrame. Invalidate them here first, so a recycled handle id can
+        // never resolve to a descriptor set from the new frame.
+        for (VulkanDescriptorSetResource &resource : resources_)
+        {
+            if (resource.descriptor_set != VK_NULL_HANDLE && resource.frame_slot == frame_slot)
+            {
+                handle_system_.Destroy(resource.handle);
+                resource = {};
+            }
+        }
+        current_frame_slot_ = frame_slot;
+        frame_active_ = true;
+    }
+
+    VulkanDescriptorPoolArena &VulkanDescriptorSetManager::CreateArena(
+        VkDevice logical_device, std::vector<VulkanDescriptorPoolArena> &arenas,
+        uint32_t required_sets,
+        uint32_t required_uniform_descriptors, uint32_t required_sampled_texture_descriptors)
+    {
+        uint32_t max_sets = std::max(kInitialDescriptorSets, required_sets);
+        uint32_t uniform_capacity =
+            std::max(kInitialUniformDescriptors, required_uniform_descriptors);
+        uint32_t sampled_texture_capacity =
+            std::max(kInitialSampledTextureDescriptors, required_sampled_texture_descriptors);
+        if (!arenas.empty())
+        {
+            const VulkanDescriptorPoolArena &previous = arenas.back();
+            max_sets = GrowCapacity(previous.max_sets, required_sets);
+            uniform_capacity = GrowCapacity(previous.uniform_capacity, required_uniform_descriptors);
+            sampled_texture_capacity =
+                GrowCapacity(previous.sampled_texture_capacity, required_sampled_texture_descriptors);
+        }
+
+        const VkDescriptorPoolSize pool_sizes[] = {
+            {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uniform_capacity},
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sampled_texture_capacity}};
+        VkDescriptorPoolCreateInfo pool_info{};
+        pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_info.maxSets = max_sets;
+        pool_info.poolSizeCount = 2;
+        pool_info.pPoolSizes = pool_sizes;
+
+        VulkanDescriptorPoolArena arena{};
+        arena.max_sets = max_sets;
+        arena.uniform_capacity = uniform_capacity;
+        arena.sampled_texture_capacity = sampled_texture_capacity;
+        if (vkCreateDescriptorPool(logical_device, &pool_info, nullptr, &arena.pool) != VK_SUCCESS)
+        {
+            throw std::runtime_error("failed to create descriptor pool arena");
+        }
+        arenas.push_back(arena);
+        return arenas.back();
+    }
+
     DescriptorSetHandle VulkanDescriptorSetManager::CreateResourceBindingSet(
         VkDevice logical_device, const VulkanPipelineResource &pipeline,
         const ResourceBindingSetDesc &desc, VulkanBufferManager &buffers,
-        TextureManager &textures, SamplerManager &samplers)
+        TextureManager &textures, SamplerManager &samplers, bool *pool_created)
     {
+        if (pool_created)
+        {
+            *pool_created = false;
+        }
         if (desc.set >= pipeline.descriptor_set_layouts.size())
         {
             throw std::runtime_error("descriptor set index is not declared by the pipeline");
+        }
+        if (frame_arenas_.empty())
+        {
+            throw std::runtime_error("descriptor set manager is not initialized");
         }
 
         uint32_t uniform_count = 0;
@@ -40,39 +166,49 @@ namespace kpengine::graphics
             }, binding);
         }
 
-        std::vector<VkDescriptorPoolSize> pool_sizes;
-        if (uniform_count != 0)
+        const uint32_t resource_frame_slot = frame_active_ ? current_frame_slot_ : UINT32_MAX;
+        auto &arenas = frame_active_ ? frame_arenas_[current_frame_slot_] : persistent_arenas_;
+        std::size_t arena_index = std::numeric_limits<std::size_t>::max();
+        for (std::size_t index = 0; index < arenas.size(); ++index)
         {
-            pool_sizes.push_back({VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uniform_count});
+            if (HasCapacity(arenas[index], uniform_count, sampled_texture_count))
+            {
+                arena_index = index;
+                break;
+            }
         }
-        if (sampled_texture_count != 0)
+        if (arena_index == std::numeric_limits<std::size_t>::max())
         {
-            pool_sizes.push_back({VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sampled_texture_count});
-        }
-
-        VkDescriptorPoolCreateInfo pool_info{};
-        pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
-        pool_info.maxSets = 1;
-        pool_info.poolSizeCount = static_cast<uint32_t>(pool_sizes.size());
-        pool_info.pPoolSizes = pool_sizes.data();
-
-        VkDescriptorPool pool = VK_NULL_HANDLE;
-        if (vkCreateDescriptorPool(logical_device, &pool_info, nullptr, &pool) != VK_SUCCESS)
-        {
-            throw std::runtime_error("failed to create descriptor pool");
+            CreateArena(logical_device, arenas, 1, uniform_count, sampled_texture_count);
+            arena_index = arenas.size() - 1;
+            if (pool_created)
+            {
+                *pool_created = true;
+            }
         }
 
         VkDescriptorSetLayout layout = pipeline.descriptor_set_layouts[desc.set].layout;
         VkDescriptorSetAllocateInfo allocate_info{};
         allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
-        allocate_info.descriptorPool = pool;
+        allocate_info.descriptorPool = arenas[arena_index].pool;
         allocate_info.descriptorSetCount = 1;
         allocate_info.pSetLayouts = &layout;
 
         VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
-        if (vkAllocateDescriptorSets(logical_device, &allocate_info, &descriptor_set) != VK_SUCCESS)
+        VkResult allocate_result = vkAllocateDescriptorSets(logical_device, &allocate_info, &descriptor_set);
+        if (allocate_result == VK_ERROR_OUT_OF_POOL_MEMORY || allocate_result == VK_ERROR_FRAGMENTED_POOL)
         {
-            vkDestroyDescriptorPool(logical_device, pool, nullptr);
+            CreateArena(logical_device, arenas, 1, uniform_count, sampled_texture_count);
+            arena_index = arenas.size() - 1;
+            allocate_info.descriptorPool = arenas[arena_index].pool;
+            allocate_result = vkAllocateDescriptorSets(logical_device, &allocate_info, &descriptor_set);
+            if (pool_created)
+            {
+                *pool_created = true;
+            }
+        }
+        if (allocate_result != VK_SUCCESS)
+        {
             throw std::runtime_error("failed to allocate descriptor set");
         }
 
@@ -136,19 +272,22 @@ namespace kpengine::graphics
         {
             resources_.emplace_back();
         }
-        resources_[handle.id] = {pool, descriptor_set};
+        resources_[handle.id] = {descriptor_set, resource_frame_slot, arena_index, handle};
+        ++arenas[arena_index].used_sets;
+        arenas[arena_index].used_uniform_descriptors += uniform_count;
+        arenas[arena_index].used_sampled_texture_descriptors += sampled_texture_count;
         return handle;
     }
 
     bool VulkanDescriptorSetManager::DestroyResourceBindingSet(VkDevice logical_device,
                                                                 DescriptorSetHandle handle)
     {
+        (void)logical_device;
         const uint32_t index = handle_system_.Get(handle);
-        if (index >= resources_.size() || resources_[index].pool == VK_NULL_HANDLE)
+        if (index >= resources_.size() || resources_[index].descriptor_set == VK_NULL_HANDLE)
         {
             return false;
         }
-        vkDestroyDescriptorPool(logical_device, resources_[index].pool, nullptr);
         resources_[index] = {};
         return handle_system_.Destroy(handle);
     }
@@ -157,18 +296,39 @@ namespace kpengine::graphics
     {
         for (VulkanDescriptorSetResource &resource : resources_)
         {
-            if (resource.pool != VK_NULL_HANDLE)
+            if (resource.descriptor_set != VK_NULL_HANDLE)
             {
-                vkDestroyDescriptorPool(logical_device, resource.pool, nullptr);
+                handle_system_.Destroy(resource.handle);
                 resource = {};
             }
         }
+        for (auto &arenas : frame_arenas_)
+        {
+            for (VulkanDescriptorPoolArena &arena : arenas)
+            {
+                if (arena.pool != VK_NULL_HANDLE)
+                {
+                    vkDestroyDescriptorPool(logical_device, arena.pool, nullptr);
+                    arena = {};
+                }
+            }
+        }
+        for (VulkanDescriptorPoolArena &arena : persistent_arenas_)
+        {
+            if (arena.pool != VK_NULL_HANDLE)
+            {
+                vkDestroyDescriptorPool(logical_device, arena.pool, nullptr);
+                arena = {};
+            }
+        }
+        persistent_arenas_.clear();
+        frame_arenas_.clear();
     }
 
     VkDescriptorSet VulkanDescriptorSetManager::GetDescriptorSet(DescriptorSetHandle handle)
     {
         const uint32_t index = handle_system_.Get(handle);
-        if (index >= resources_.size())
+        if (index >= resources_.size() || resources_[index].descriptor_set == VK_NULL_HANDLE)
         {
             KP_LOG("VulkanDescriptorSetManagerLog", LOG_LEVEL_ERROR,
                    "failed to find descriptor set resource");

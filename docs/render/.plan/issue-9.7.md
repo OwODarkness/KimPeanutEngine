@@ -1,7 +1,8 @@
 # issue-9.7 — Sponza Quality and Throughput Stage Design
 
-**Status: Stage 0 instrumentation and the Stage 1 runtime mip path landed
-2026-09-07; native-product and runtime baseline evidence remain pending.**
+**Status: Stage 0 instrumentation, Stage 1 runtime mips, and the Stage 2
+portable native texture cook path landed 2026-09-07; block-compression and
+runtime baseline evidence remain pending.**
 
 Links: [issue](../issue/issue-9.7.md),
 [formal review](../.review/issue-9.7.md),
@@ -140,18 +141,30 @@ backends sample only initialized mip levels.
 
 ### Stage 2 — texture budget
 
-- Add maximum-dimension and compression policy to AssetImport's native texture
-  processing.
-- Select formats from declared device capabilities with a portable fallback.
-- Expose artifact and resident-byte accounting; reject products that violate
-  declared dimensions or subresource sizes.
+- Implementation status: the database-free `TextureImporter` →
+  `TextureCooker` path now emits immutable `.texture` products with semantic
+  metadata, explicit mip payloads, bounded dimensions, and portable RGBA8 or
+  RGBA16F storage. Runtime `NativeTextureLoader` consumes those products;
+  model import emits them for embedded and external material images, and the
+  asset tool exposes `cook-texture` for direct sources.
+- The compression policy is explicit: `Portable` is supported by the current
+  RHI contract, while `RequireBlockCompression` fails clearly because BCn/
+  ASTC formats are not yet represented by `TextureFormat` or both backends.
+- Product parsing validates dimensions, format, semantic value, mip extents,
+  byte ranges, and integrity before accepting a product.
 
 Exit: the reference profile meets its recorded memory ceiling without visible
-loss of material identity or alpha coverage.
+loss of material identity or alpha coverage, with a measured native-product
+resident-byte report. Block-compression selection is a follow-up capability
+stage rather than a silent fallback.
 
 ### Stage 3 — descriptor and submission lifetime
 
-- Replace pool-per-set creation with fence-safe frame-slot arenas.
+- Implementation status: Vulkan descriptor allocation now uses reusable,
+  fence-safe frame-slot arenas. Each slot resets its arenas only after the
+  matching in-flight fence completes; a full arena grows by adding a reusable
+  arena for that slot. Destroying a transient set releases only its generational
+  handle, so it no longer destroys a Vulkan pool per draw.
 - Cache stable material texture bindings and retain transient bindings only for
   genuinely frame-local resources.
 - Add lifecycle, arena-growth, and deferred-destruction tests.
@@ -161,17 +174,32 @@ changed materials/frame slots, not Sponza draw count.
 
 ### Stage 4 — visibility granularity and static shadows
 
-- Persist section bounds in native model artifacts and validate them at load.
-- Add section-level frustum rejection after proxy broad phase.
-- Add directional-shadow validity stamps and conservative invalidation tests.
+- Implementation status: native model version 2 persists section local AABBs and
+  validates every indexed vertex against its section bounds. Version 1 products
+  remain loadable by deriving section bounds from their indexed vertices.
+- Implementation status: camera, directional, spot, and point shadow paths
+  reject individual section world bounds after the proxy broad phase and issue
+  section-indexed draws.
+- Implementation status: directional shadow targets use conservative validity
+  stamps over light, camera-fit, caster transform/bounds, material, and section
+  identity inputs. Resize and changed dependencies invalidate the stamp; an
+  unchanged static frame skips directional caster recording.
 
 Exit: hidden Sponza sections do not produce camera or shadow draws, and an
 unchanged static frame records zero shadow-caster draws after warm-up.
 
 ### Stage 5 — measured pass optimization
 
-Re-profile. Only if GPU evidence still identifies G-buffer overdraw, compare
-front-to-back sorting with a depth pre-pass and `EQUAL` G-buffer depth testing.
+Implementation status: the G-buffer opaque list now has a Render-owned
+front-to-back ordering policy based on section world-bound centers and the
+active camera direction. Equal-depth items retain the existing deterministic
+pipeline/material/mesh/section tie-break. This is the low-risk candidate from
+the measured pass options; a depth pre-pass and `EQUAL` G-buffer depth testing
+remain deferred until a valid GPU comparison shows that the extra pass pays.
+
+Re-profile the fixed Sponza scenario after startup has completed. Only if GPU
+evidence still identifies G-buffer overdraw, compare front-to-back sorting with
+a depth pre-pass and `EQUAL` G-buffer depth testing.
 Only if shadow sampling is material, evaluate kernel/resolution changes. Add
 post-process anti-aliasing only for remaining geometry/shader edges.
 

@@ -72,7 +72,7 @@
       "kind": "directional_light",
       "direction": [0, -1, 0],
       "color": [1, 1, 1],
-      "intensity": 1.0,
+      "intensity": 0.5,
       "enabled": true,
       "casts_shadow": true
     },

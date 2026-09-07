@@ -64,6 +64,20 @@ Runtime AssetManager (read-only product consumer)
   -> Gameplay/Render consumption with authored overrides
 ```
 
+Texture products use the same boundary without requiring runtime Asset state:
+
+```text
+TextureImporter (decode source, database-free)
+  -> TextureCooker (semantic mips + bounded portable format)
+  -> immutable .archive/textures/<hash>.texture
+  -> NativeTextureLoader (read-only runtime adapter)
+```
+
+`TextureImporter` and `TextureCooker` are separate stages. The importer owns
+source decoding only; the cooker owns semantic filtering, dimension bounds,
+portable format selection, and canonical native serialization. Neither stage
+constructs an `Asset`, opens the runtime manager, or creates a GPU object.
+
 Assimp owns foreign source-format decoding only. The standalone Asset import
 tool/library owns source closure discovery, hash/no-op decisions, native
 serialization, immutable content-addressed products, staging, and short SQLite
@@ -124,6 +138,9 @@ source-material metadata.
   library/tool may use Core, Assimp, ImageIO, serialization, and the archive
   repository, but never constructs runtime Asset identity or calls
   `AssetManager`. The native runtime loader is a separate read-only adapter.
+  Texture importing and cooking follow the same rule: they may consume ImageIO
+  and CPU data, but never construct runtime Asset identity or call
+  `AssetManager`.
 
 ## Reference findings
 

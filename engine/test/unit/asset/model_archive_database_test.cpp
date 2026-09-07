@@ -32,6 +32,7 @@ namespace
     using kpengine::asset::SourceProductRecord;
     using kpengine::asset::SourceRecord;
     using kpengine::database::Database;
+    using kpengine::asset::VerifyArchiveProduct;
 
     class TemporaryArchive final
     {
@@ -176,6 +177,26 @@ TEST(ModelArchiveHashTest, ProducesStableVectorsAndCanonicalPaths)
               ModelArchiveErrorCode::InvalidArgument);
 }
 
+TEST(ModelArchiveHashTest, VerifiesNativeTextureProductsUsingTheirExtension)
+{
+    const std::vector<std::byte> bytes = Bytes("native-texture-product");
+    const ContentHash hash = Sha256(bytes);
+    const std::filesystem::path archive_root = "test-archive";
+    const std::filesystem::path product =
+        archive_root / ProductRelativePath(ArchiveProductType::Texture, hash, "texture");
+    std::string diagnostic;
+
+    EXPECT_TRUE(VerifyArchiveProduct(product, ArchiveProductType::Texture, bytes,
+                                     diagnostic, archive_root));
+    EXPECT_TRUE(diagnostic.empty());
+
+    diagnostic.clear();
+    EXPECT_FALSE(VerifyArchiveProduct(archive_root / "textures" / hash.ToHex(),
+                                     ArchiveProductType::Texture, bytes, diagnostic,
+                                     archive_root));
+    EXPECT_EQ(diagnostic, "archive texture product has no extension");
+}
+
 TEST(ModelArchiveHashTest, OrdersSourceClosureAndSeparatesImportSettings)
 {
     const ContentHash first = Sha256("first");
@@ -263,6 +284,10 @@ TEST(ModelArchiveDatabaseTest, PublishesSourcesAndDistinguishesProbeStates)
 
     WriteBytes(archive.ArchiveRoot() / published.product.relative_path, published.product_bytes);
     EXPECT_EQ(archive.ProbeSource(request).status, ArchiveProbeStatus::UpToDate);
+
+    archive.RemoveSource(published.source.normalized_path);
+    EXPECT_FALSE(archive.FindSource(published.source.normalized_path).has_value());
+    EXPECT_FALSE(archive.FindSourceByLogicalPath("models/triangle").has_value());
 }
 
 TEST(ModelArchiveDatabaseTest, RejectsNewerAndCorruptDatabases)

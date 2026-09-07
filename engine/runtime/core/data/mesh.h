@@ -6,6 +6,7 @@
 #include <vector>
 
 #include "math/math_header.h"
+#include "spatial/aabb.h"
 
 namespace kpengine::data
 {
@@ -67,6 +68,8 @@ namespace kpengine::data
         uint32_t index_start = 0;
         uint32_t index_count = 0;
         uint32_t material_index = 0;
+        // Bounds of indexed vertices in mesh-local space.
+        spatial::AABB local_bounds{};
     };
 
     // Imported material metadata remains CPU-side mesh data. Render policy

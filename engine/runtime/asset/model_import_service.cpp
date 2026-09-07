@@ -10,14 +10,24 @@
 #include <utility>
 
 #include "assimp_model_decoder.h"
-#include "image_io/image_io.h"
 #include "native_material.h"
 #include "native_model.h"
+#include "native_texture.h"
 
 namespace kpengine::asset
 {
     namespace
     {
+        void ReportProgress(const ModelImportRequest &request, ModelImportProgressStage stage,
+                            std::string message, std::size_t completed = 0,
+                            std::size_t total = 0)
+        {
+            if (request.progress_callback)
+            {
+                request.progress_callback({stage, std::move(message), completed, total});
+            }
+        }
+
         constexpr std::int32_t kModelProductRole = 0;
         constexpr std::int32_t kMaterialProductRole = 1;
 
@@ -150,6 +160,9 @@ namespace kpengine::asset
             append_u32(settings.native_model_version);
             append_u32(settings.material_schema_version);
             append_string(settings.shader_asset_path);
+            append_u32(settings.texture_settings.max_dimension);
+            append_u32(settings.texture_settings.max_levels);
+            append_u32(static_cast<std::uint32_t>(settings.texture_settings.compression));
             return bytes;
         }
 
@@ -158,7 +171,11 @@ namespace kpengine::asset
             if (settings.importer_id.empty() || settings.importer_version == 0 ||
                 settings.native_model_version != kNativeModelVersion ||
                 settings.material_schema_version != kNativeMaterialSchemaVersion ||
-                settings.shader_asset_path.empty())
+                settings.shader_asset_path.empty() ||
+                settings.texture_settings.max_dimension == 0 ||
+                settings.texture_settings.max_dimension > kNativeTextureMaxDimension ||
+                settings.texture_settings.max_levels > kNativeTextureMaxMipLevels ||
+                settings.texture_settings.compression != TextureCompressionPolicy::Portable)
             {
                 Fail(ModelImportErrorCode::InvalidArgument, "model import settings are incomplete");
             }
@@ -329,11 +346,14 @@ namespace kpengine::asset
                 }
                 else if (product.asset_type == ArchiveProductType::Texture)
                 {
-                    const image_io::ImageDecodeResult decoded = image_io::DecodeImageMemory(bytes);
-                    if (!decoded.result.success)
+                    try
+                    {
+                        (void)DeserializeNativeTexture(bytes);
+                    }
+                    catch (const NativeTextureError &error)
                     {
                         Fail(ModelImportErrorCode::ProductInvalid,
-                             "archive texture product cannot be decoded: " + product.relative_path);
+                             "archive texture product is invalid: " + std::string{error.what()});
                     }
                 }
             }
@@ -565,6 +585,9 @@ namespace kpengine::asset
         }
         std::lock_guard<std::mutex> source_lock(*source_mutex);
 
+        ReportProgress(request, ModelImportProgressStage::CheckingCache,
+                       "checking archive cache for " + source_relative_path);
+
         std::error_code error;
         std::filesystem::create_directories(archive_root, error);
         if (error)
@@ -579,6 +602,8 @@ namespace kpengine::asset
                     TryCacheHit(request, asset_root, archive_root, source_relative_path,
                                 settings_hash, impl_->busy_timeout_ms))
             {
+                ReportProgress(request, ModelImportProgressStage::Complete,
+                               "cache hit; native products are up to date");
                 return *hit;
             }
         }
@@ -593,8 +618,13 @@ namespace kpengine::asset
         ImportedModelDocument document;
         try
         {
+            ReportProgress(request, ModelImportProgressStage::DecodingSource,
+                           "decoding source model " + source_path.filename().string());
             AssimpModelDecoder decoder;
             document = decoder.Decode(source_path);
+            ReportProgress(request, ModelImportProgressStage::DecodingSource,
+                           "decoded " + std::to_string(document.materials.size()) +
+                               " materials and " + std::to_string(document.images.size()) + " images");
         }
         catch (const ImportedModelDecodeError &error)
         {
@@ -604,7 +634,11 @@ namespace kpengine::asset
         std::vector<SourceDependencyRecord> dependencies;
         try
         {
+            ReportProgress(request, ModelImportProgressStage::HashingDependencies,
+                           "hashing source dependencies");
             dependencies = HashDependencies(document, asset_root, source_path, source_relative_path);
+            ReportProgress(request, ModelImportProgressStage::HashingDependencies,
+                           "hashed " + std::to_string(dependencies.size()) + " dependencies");
         }
         catch (const ModelArchiveError &error)
         {
@@ -625,8 +659,19 @@ namespace kpengine::asset
         NativeMaterialConversionResult converted_materials;
         try
         {
-            converted_materials = ConvertImportedMaterials(
-                document, {asset_root, request.settings.shader_asset_path});
+            ReportProgress(request, ModelImportProgressStage::CookingTextures,
+                           "cooking material textures");
+            NativeMaterialConversionSettings conversion_settings{
+                asset_root, request.settings.shader_asset_path, request.settings.texture_settings};
+            conversion_settings.texture_progress_callback = [&request](std::string_view image_path)
+            {
+                ReportProgress(request, ModelImportProgressStage::CookingTextures,
+                               "cooking texture " + std::string{image_path});
+            };
+            converted_materials = ConvertImportedMaterials(document, conversion_settings);
+            ReportProgress(request, ModelImportProgressStage::CookingTextures,
+                           "cooked " + std::to_string(converted_materials.embedded_images.size()) +
+                               " native texture products");
         }
         catch (const NativeMaterialConversionError &error)
         {
@@ -648,6 +693,8 @@ namespace kpengine::asset
         std::vector<std::byte> model_bytes;
         try
         {
+            ReportProgress(request, ModelImportProgressStage::SerializingProducts,
+                           "serializing native model and material products");
             model_bytes = SerializeNativeModel(model_data);
             const NativeModelProduct decoded = DeserializeNativeModel(model_bytes);
             if (!(decoded.data == model_data))
@@ -661,11 +708,14 @@ namespace kpengine::asset
             }
             for (const NativeImageProduct &image : converted_materials.embedded_images)
             {
-                const image_io::ImageDecodeResult decoded_image = image_io::DecodeImageMemory(image.bytes);
-                if (!decoded_image.result.success)
+                try
+                {
+                    (void)DeserializeNativeTexture(image.bytes);
+                }
+                catch (const NativeTextureError &error)
                 {
                     Fail(ModelImportErrorCode::ProductInvalid,
-                         "serialized embedded image failed validation");
+                         "serialized texture failed validation: " + std::string{error.what()});
                 }
             }
         }
@@ -715,7 +765,7 @@ namespace kpengine::asset
             texture_hashes.push_back(image.content_hash);
             products.push_back({{image.content_hash, ArchiveProductType::Texture,
                                  ProductRelativePath(ArchiveProductType::Texture,
-                                                      image.content_hash, image.extension),
+                                                      image.content_hash, "texture"),
                                  static_cast<std::uint64_t>(image.bytes.size()), 1},
                                 image.bytes});
         }
@@ -725,12 +775,20 @@ namespace kpengine::asset
             (source_path.stem().string() + "-" + std::to_string(
                 impl_->operation_sequence.fetch_add(1, std::memory_order_relaxed)));
         StagingCleanup cleanup{operation_root};
-        for (const PendingProduct &product : products)
+        for (std::size_t index = 0; index < products.size(); ++index)
         {
+            const PendingProduct &product = products[index];
+            ReportProgress(request, ModelImportProgressStage::PublishingProducts,
+                           "staging " + product.record.relative_path,
+                           index + 1, products.size());
             WriteBytes(operation_root / product.record.relative_path, product.bytes);
         }
-        for (const PendingProduct &product : products)
+        for (std::size_t index = 0; index < products.size(); ++index)
         {
+            const PendingProduct &product = products[index];
+            ReportProgress(request, ModelImportProgressStage::PublishingProducts,
+                           "publishing " + product.record.relative_path,
+                           index + 1, products.size());
             PublishProduct(archive_root, operation_root, product);
         }
 
@@ -754,6 +812,8 @@ namespace kpengine::asset
 
         try
         {
+            ReportProgress(request, ModelImportProgressStage::UpdatingArchive,
+                           "updating archive index");
             ModelArchiveDatabase archive{archive_root / "archive.sqlite3", impl_->busy_timeout_ms};
             archive.ReplaceSource(source, dependencies, product_records, source_products, {});
         }
@@ -773,6 +833,8 @@ namespace kpengine::asset
         result.model_path = archive_root / ProductRelativePath(ArchiveProductType::Model, model_hash);
         result.material_hashes = std::move(material_hashes);
         result.texture_hashes = std::move(texture_hashes);
+        ReportProgress(request, ModelImportProgressStage::Complete,
+                       "import completed: " + std::to_string(products.size()) + " products");
         return result;
     }
 

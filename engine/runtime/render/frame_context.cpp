@@ -3,6 +3,7 @@
 #include <stdexcept>
 
 #include "graphics/backend/common/render_backend.h"
+#include "log/logger.h"
 #include "render_resource_resolver.h"
 
 namespace kpengine::render
@@ -116,11 +117,19 @@ namespace kpengine::render
     {
         if (!active_ || !IsLightGpuFrameHeaderCompatible(lighting_data.header))
         {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Failed to allocate frame lighting binding: active=%s header_valid=%s used=%zu capacity=%zu",
+                   active_ ? "yes" : "no",
+                   IsLightGpuFrameHeaderCompatible(lighting_data.header) ? "yes" : "no",
+                   uniform_cursor_, uniform_capacity_);
             return {};
         }
         const UniformAllocation allocation = AllocateUniform(lighting_data);
         if (!allocation.IsValid())
         {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Failed to allocate frame lighting constants: used=%zu requested=%zu capacity=%zu",
+                   uniform_cursor_, sizeof(lighting_data), uniform_capacity_);
             return {};
         }
         return {allocation, frame_index_, globals_.frame_number};

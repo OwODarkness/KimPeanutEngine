@@ -37,6 +37,17 @@ belongs in the corresponding `.spec/journal/` entry.
   - [x] Transactionally replace the loading tree with the existing main UI.
   - [x] Validate loading-first ordering, failure display, and both backends.
 
+## Native texture products
+
+- [x] Add database-free `TextureImporter` and `TextureCooker` stages for
+  semantic mip generation, bounded portable RGBA products, and canonical
+  `.texture` serialization.
+- [x] Load native `.texture` products through a read-only runtime adapter and
+  expose direct `cook-texture` tooling.
+- [ ] Add BCn/ASTC product variants after the common format contract and both
+  backend upload paths support capability selection; retain the portable
+  fallback.
+
 ## Model-import roadmap
 
 - [ ] **MI1 — content-addressed native model import** — use a standalone

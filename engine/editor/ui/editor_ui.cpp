@@ -1,6 +1,7 @@
 #include "editor/ui/editor_ui.h"
 #include "editor/ui/editor_theme.h"
 
+#include <chrono>
 #include <cstdio>
 #include <imgui.h>
 #include <optional>
@@ -13,6 +14,7 @@
 #include "editor/ui/component/editor_loading_component.h"
 #include "editor/ui/component/editor_console_component.h"
 #include "editor/ui/component/editor_debug_viewer_component.h"
+#include "editor/ui/component/editor_gpu_profiler_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
 #include "editor/ui/component/editor_viewport_component.h"
 #include "editor/log/editor_log_component.h"
@@ -31,23 +33,6 @@
 
 namespace kpengine::editor
 {
-    namespace
-    {
-        const char *GraphicsAPIName(GraphicsAPIType api)
-        {
-            switch (api)
-            {
-            case GraphicsAPIType::GRAPHICS_API_OPENGL:
-                return "OpenGL";
-            case GraphicsAPIType::GRAPHICS_API_VULKAN:
-                return "Vulkan";
-            default:
-                return "Unknown";
-            }
-        }
-
-    }
-
     EditorUI::EditorUI() = default;
 
     void EditorUI::Initialize(const EditorUIInitInfo &init_info)
@@ -245,6 +230,14 @@ namespace kpengine::editor
             render_system, renderer_.get()));
     }
 
+    void EditorUI::BuildGpuProfilerWindow(runtime::Engine *engine,
+                                          render::RenderSystem *render_system,
+                                          const EditorUI *editor_ui)
+    {
+        components_.push_back(
+            std::make_unique<EditorGpuProfilerComponent>(engine, render_system, editor_ui));
+    }
+
     void EditorUI::BuildActorTools()
     {
         const bool any_dependency = init_info_.reflection_catalog != nullptr ||
@@ -276,19 +269,22 @@ namespace kpengine::editor
 
     void EditorUI::BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors)
     {
-        // Log console: top 30% of the viewport, full width.
+        // Keep the log beside the profiler in the lower tool row and leave the
+        // profile bar its own bottom row. Long diagnostic lines remain reachable
+        // through the horizontal scrollbar.
         EditorWindowConfig log_config;
-        log_config.height_ratio = 0.27f;
+        log_config.width_ratio = 0.8f;
+        log_config.height_ratio = 0.26f;
         log_config.pos_y_ratio = 0.7f;
+        log_config.extra_flags = ImGuiWindowFlags_HorizontalScrollbar;
         components_.push_back(std::make_unique<EditorLogComponent>(log_system, log_colors, log_config));
     }
 
     void EditorUI::BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                                    render::RenderSystem *render_system)
     {
-        // Bottom status bar. Metrics are injected via samplers, so the bar never sees
-        // the engine or the OS — FPS from the engine (render-thread counter, race-free
-        // here), memory from the platform sampler via EditorContext.
+        // Bottom status bar. Keep this surface limited to the five live headline
+        // metrics; detailed pass timings and geometry counters live in GPU Profiler.
         if (!engine || !memory_sampler || !render_system)
         {
             return;
@@ -304,48 +300,6 @@ namespace kpengine::editor
                 const int fps = engine->GetFPS();
                 return fps > 0 ? 1000.f / static_cast<float>(fps) : 0.f;
             }));
-        profile_metrics.push_back(std::make_unique<EditorMemoryMetric>(
-            [memory_sampler]() -> EditorMemoryMetric::Stats
-            {
-                const MemoryStats stats = memory_sampler->Sample();
-                return {stats.process_mb, stats.system_available_mb};
-            }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "API",
-            [render_system]
-            {
-                const auto *const bridge = render_system->GetEditorPresentationBridge();
-                return GraphicsAPIName(bridge ? bridge->GetGraphicsAPI()
-                                              : GraphicsAPIType::GRAPHICS_API_UNKNOW);
-            }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "Resolution",
-            [render_system]
-            {
-                const graphics::RenderTargetView view = render_system->GetSceneRenderTargetView();
-                return view.IsValid() ? std::to_string(view.width) + "x" +
-                                           std::to_string(view.height)
-                                     : "--";
-            }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "Usage",
-            [render_system]
-            {
-                const std::optional<float> gpu_usage =
-                    render_system->GetMetrics().gpu_usage_percent;
-                if (!gpu_usage.has_value())
-                {
-                    return std::string{"N/A"};
-                }
-                char formatted_usage[16]{};
-                std::snprintf(formatted_usage, sizeof(formatted_usage), "%.1f%%",
-                              static_cast<double>(*gpu_usage));
-                return std::string{formatted_usage};
-            }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "Triangles",
-            [render_system]
-            { return std::to_string(render_system->GetMetrics().triangle_count); }));
         profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
             "CPU",
             [render_system]
@@ -356,47 +310,33 @@ namespace kpengine::editor
                 return std::string{value};
             }));
         profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "GPass",
+            "GPU",
             [render_system]
             {
                 const auto profile = render_system->GetMetrics().profile;
-                const auto &gbuffer = profile.passes[static_cast<size_t>(
-                    render::RenderProfilePass::GBuffer)];
-                if (!gbuffer.gpu_time_ms.has_value())
+                double total = 0.0;
+                bool measured = false;
+                for (const auto &pass : profile.passes)
+                {
+                    if (pass.gpu_time_ms.has_value())
+                    {
+                        total += *pass.gpu_time_ms;
+                        measured = true;
+                    }
+                }
+                if (!measured)
                 {
                     return std::string{"N/A"};
                 }
                 char value[32]{};
-                std::snprintf(value, sizeof(value), "%.2f ms", *gbuffer.gpu_time_ms);
+                std::snprintf(value, sizeof(value), "%.2f ms", total);
                 return std::string{value};
             }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "Draws",
-            [render_system]
+        profile_metrics.push_back(std::make_unique<EditorMemoryMetric>(
+            [memory_sampler]() -> EditorMemoryMetric::Stats
             {
-                const auto profile = render_system->GetMetrics().profile;
-                return std::to_string(profile.draw_calls) + "/" +
-                       std::to_string(profile.sections);
-            }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "Desc",
-            [render_system]
-            {
-                const auto profile = render_system->GetMetrics().profile;
-                return std::to_string(profile.descriptor_sets_created) + "/" +
-                       std::to_string(profile.descriptor_pools_created);
-            }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "Tex",
-            [render_system]
-            {
-                const auto profile = render_system->GetMetrics().profile;
-                char value[48]{};
-                std::snprintf(value, sizeof(value), "%u / %.1f MB",
-                              profile.textures.dependency_count,
-                              static_cast<double>(profile.textures.resident_bytes) /
-                                  (1024.0 * 1024.0));
-                return std::string{value};
+                const MemoryStats stats = memory_sampler->Sample();
+                return {stats.process_mb, stats.system_available_mb};
             }));
         components_.push_back(
             std::make_unique<EditorProfileBarComponent>(std::move(profile_metrics)));
@@ -421,6 +361,7 @@ namespace kpengine::editor
             BuildLogWindow(init_info_.log_system, log_colors_);
             BuildProfileBar(init_info_.engine, init_info_.memory_sampler,
                             init_info_.render_system);
+            BuildGpuProfilerWindow(init_info_.engine, init_info_.render_system, this);
             BuildConsole(init_info_.command_registry, init_info_.input_system, code_font_);
             workspace_promoted_ = true;
             loading_components_.clear();
@@ -473,6 +414,9 @@ namespace kpengine::editor
         init_info_ = {};
         log_colors_ = {};
         code_font_ = nullptr;
+        last_render_time_ms_ = 0.0;
+        last_imgui_build_time_ms_ = 0.0;
+        last_imgui_submit_time_ms_ = 0.0;
         screenshot_service_.reset();
         if (wsi_ && wsi_init_attempted_)
         {
@@ -524,6 +468,7 @@ namespace kpengine::editor
         {
             return false;
         }
+        const auto render_started = std::chrono::steady_clock::now();
         BeginDraw();
         if (workspace_promoted_ && actor_model_)
         {
@@ -555,8 +500,19 @@ namespace kpengine::editor
             component->Render();
         }
         ImGui::Render();
+        const auto imgui_build_finished = std::chrono::steady_clock::now();
         renderer_->Render();
+        const auto imgui_submit_finished = std::chrono::steady_clock::now();
         EndDraw();
+        last_imgui_build_time_ms_ =
+            std::chrono::duration<double, std::milli>(imgui_build_finished - render_started)
+                .count();
+        last_imgui_submit_time_ms_ =
+            std::chrono::duration<double, std::milli>(imgui_submit_finished - imgui_build_finished)
+                .count();
+        last_render_time_ms_ =
+            std::chrono::duration<double, std::milli>(imgui_submit_finished - render_started)
+                .count();
         return true;
     }
 

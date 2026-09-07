@@ -201,8 +201,10 @@ the ScenePass's visible proxy list; the pass submits that list through
 `FrameContext` and the common command recorder. `SceneDrawListBuilder` sorts
 opaque candidates by resolved pipeline, material instance, then mesh; alpha
 blend candidates remain separate pending pass-specific depth ordering. Invalid
-bounds fall back to visible. There is deliberately no partition, LOD, or
-occlusion culling yet. This gives later shadow,
+bounds fall back to visible. Native model sections carry local bounds into the
+render resolver, and Stage 4 performs section-level frustum rejection after the
+proxy broad phase for camera and shadow candidates. There is deliberately no
+partition, LOD, or occlusion culling yet. This gives later shadow,
 G-buffer, and graph passes real scene inputs instead of a bootstrap-only
 `RenderScene`. The design and task ledger are in
 [world/component_module.md](../world/component_module.md) and

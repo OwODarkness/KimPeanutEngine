@@ -10,6 +10,7 @@
 #include "assimp_model_loader.h"
 #endif
 #include "native_model_loader.h"
+#include "native_texture_loader.h"
 #include "image_io/image_io.h"
 #include "shader_program_loader.h"
 #include "miniaudio_audio_loader.h"
@@ -482,6 +483,8 @@ namespace kpengine::asset
                                    : model_loader_(nullptr),
 #endif
                                    native_model_loader_(std::make_unique<NativeModelLoader>(
+                                       std::filesystem::path(GetAssetDirectory()) / ".archive")),
+                                   native_texture_loader_(std::make_unique<NativeTextureLoader>(
                                        std::filesystem::path(GetAssetDirectory()) / ".archive")),
                                    shader_program_loader_(std::make_unique<ShaderProgramLoader>()),
                                    audio_loader_(std::make_unique<MiniAudio_AudioLoader>()),
@@ -1258,6 +1261,11 @@ namespace kpengine::asset
         }
         else if (type == AssetType::KPAT_Texture)
         {
+            if (GetFileExtension(path) == "texture")
+            {
+                assert(native_texture_loader_);
+                return native_texture_loader_->Load(path, info);
+            }
             image_io::ImageDecodeResult decoded = image_io::DecodeImageFile(path);
             if (!decoded.result.success)
             {

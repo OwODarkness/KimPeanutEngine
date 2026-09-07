@@ -152,6 +152,7 @@ namespace kpengine::render
         void CleanupSceneState();
         bool IsState(RenderSystemLifecycleState expected) const;
         void LogCompletedProfileSummary();
+        void ObserveProfileFrame();
 
         FrameContext *GetCurrentFrameContext();
 
@@ -179,6 +180,7 @@ namespace kpengine::render
                                             GetSponzaProfileScenario().sample_frames};
         std::chrono::steady_clock::time_point profile_frame_start_{};
         bool profile_summary_logged_ = false;
+        bool profile_scene_seen_ = false;
         CaptureView debug_view_ = CaptureView::SceneColor;
         CaptureView requested_debug_view_ = CaptureView::SceneColor;
     };

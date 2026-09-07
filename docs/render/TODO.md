@@ -21,8 +21,9 @@ details and stage checklists belong in the linked submodule documents.
   fixed CPU/GPU/present baseline, then promote the mip path to native products
   and land bounded
   native texture products, replace Vulkan pool-per-draw descriptor allocation,
-  add section visibility and unchanged-shadow reuse, then retain pass tuning
-  only when measured. The solved black-frame defect is out of scope. →
+  add section visibility and unchanged-shadow reuse, and add measured
+  front-to-back G-buffer ordering. The solved black-frame defect is out of
+  scope. →
   [issue](issue/issue-9.7.md), [plan](.plan/issue-9.7.md),
   [review](.review/issue-9.7.md),
   [spec](../../.spec/specs/sponza-render-quality-performance.md),

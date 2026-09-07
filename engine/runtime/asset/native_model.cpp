@@ -15,7 +15,8 @@ namespace kpengine::asset
         constexpr std::array<std::uint8_t, 8> kMagic{{'K', 'P', 'M', 'O', 'D', 'E', 'L', '1'}};
         constexpr std::size_t kVertexStride = 14u * sizeof(float);
         constexpr std::size_t kIndexStride = sizeof(std::uint32_t);
-        constexpr std::size_t kSectionStride = 3u * sizeof(std::uint32_t);
+        constexpr std::size_t kSectionStride = 3u * sizeof(std::uint32_t) +
+                                                6u * sizeof(float);
         constexpr std::size_t kBoundsStride = 6u * sizeof(float);
         constexpr std::size_t kMaterialReferenceStride = sizeof(std::uint16_t) * 2u +
                                                            kModelArchiveHashSize;
@@ -221,6 +222,29 @@ namespace kpengine::asset
                                                           : section.material_index < data.material_references.size(),
                         NativeModelErrorCode::InvalidValue,
                         "native model section material slot is invalid");
+                const float section_bounds[] = {
+                    section.local_bounds.min_.x_, section.local_bounds.min_.y_,
+                    section.local_bounds.min_.z_, section.local_bounds.max_.x_,
+                    section.local_bounds.max_.y_, section.local_bounds.max_.z_};
+                for (const float value : section_bounds)
+                {
+                    Require(IsFinite(value), NativeModelErrorCode::InvalidValue,
+                            "native model contains non-finite section bounds");
+                }
+                Require(section.local_bounds.IsValid(), NativeModelErrorCode::InvalidValue,
+                        "native model section bounds are inverted");
+                for (std::size_t index = section.index_start; index < end; ++index)
+                {
+                    const data::Vertex &vertex = data.vertices[data.indices[index]];
+                    Require(vertex.position.x_ >= section.local_bounds.min_.x_ &&
+                                vertex.position.x_ <= section.local_bounds.max_.x_ &&
+                                vertex.position.y_ >= section.local_bounds.min_.y_ &&
+                                vertex.position.y_ <= section.local_bounds.max_.y_ &&
+                                vertex.position.z_ >= section.local_bounds.min_.z_ &&
+                                vertex.position.z_ <= section.local_bounds.max_.z_,
+                            NativeModelErrorCode::InvalidValue,
+                            "native model section bounds do not contain indexed vertices");
+                }
             }
 
             const float bounds[] = {data.local_bounds.min_.x_, data.local_bounds.min_.y_,
@@ -299,6 +323,12 @@ namespace kpengine::asset
                     AppendU32(bytes, section.index_start);
                     AppendU32(bytes, section.index_count);
                     AppendU32(bytes, section.material_index);
+                    AppendFloat(bytes, section.local_bounds.min_.x_);
+                    AppendFloat(bytes, section.local_bounds.min_.y_);
+                    AppendFloat(bytes, section.local_bounds.min_.z_);
+                    AppendFloat(bytes, section.local_bounds.max_.x_);
+                    AppendFloat(bytes, section.local_bounds.max_.y_);
+                    AppendFloat(bytes, section.local_bounds.max_.z_);
                 }
                 break;
             case NativeModelChunkType::Bounds:
@@ -408,7 +438,8 @@ namespace kpengine::asset
                           {
                               return lhs.index_start == rhs.index_start &&
                                      lhs.index_count == rhs.index_count &&
-                                     lhs.material_index == rhs.material_index;
+                                     lhs.material_index == rhs.material_index &&
+                                     lhs.local_bounds == rhs.local_bounds;
                           });
     }
 
@@ -525,7 +556,8 @@ namespace kpengine::asset
         const std::uint32_t section_count = ReadU32(bytes, 80);
         const std::uint32_t material_count = ReadU32(bytes, 84);
 
-        Require(version == kNativeModelVersion, NativeModelErrorCode::UnsupportedVersion,
+        Require(version == 1 || version == kNativeModelVersion,
+                NativeModelErrorCode::UnsupportedVersion,
                 "native model version is unsupported");
         Require(header_size == kNativeModelHeaderSize, NativeModelErrorCode::InvalidChunkTable,
                 "native model header size is invalid");
@@ -575,14 +607,17 @@ namespace kpengine::asset
 
         const std::size_t vertex_size = static_cast<std::size_t>(vertex_count) * kVertexStride;
         const std::size_t index_size = static_cast<std::size_t>(index_count) * kIndexStride;
-        const std::size_t section_size = static_cast<std::size_t>(section_count) * kSectionStride;
+        const std::size_t section_stride = version == 1
+                                                ? 3u * sizeof(std::uint32_t)
+                                                : kSectionStride;
+        const std::size_t section_size = static_cast<std::size_t>(section_count) * section_stride;
         const std::size_t material_size = static_cast<std::size_t>(material_count) * kMaterialReferenceStride;
         RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Vertices), vertex_size,
                      vertex_count, static_cast<std::uint32_t>(kVertexStride));
         RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Indices), index_size,
                      index_count, static_cast<std::uint32_t>(kIndexStride));
         RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Sections), section_size,
-                     section_count, static_cast<std::uint32_t>(kSectionStride));
+                     section_count, static_cast<std::uint32_t>(section_stride));
         RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Bounds), kBoundsStride,
                      1, static_cast<std::uint32_t>(kBoundsStride));
         RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::MaterialReferences), material_size,
@@ -631,8 +666,40 @@ namespace kpengine::asset
         const Chunk &section_chunk = FindChunk(chunks, NativeModelChunkType::Sections);
         for (std::size_t index = 0; index < product.data.sections.size(); ++index)
         {
-            const std::size_t offset = ChunkOffset(section_chunk) + index * kSectionStride;
-            product.data.sections[index] = {ReadU32(bytes, offset), ReadU32(bytes, offset + 4), ReadU32(bytes, offset + 8)};
+            const std::size_t offset = ChunkOffset(section_chunk) + index * section_stride;
+            product.data.sections[index] = {
+                ReadU32(bytes, offset), ReadU32(bytes, offset + 4), ReadU32(bytes, offset + 8),
+                {}};
+            if (version == 1)
+            {
+                data::MeshSection &section = product.data.sections[index];
+                const bool range_valid =
+                    section.index_start <= product.data.indices.size() &&
+                    section.index_count <= product.data.indices.size() - section.index_start;
+                const std::size_t end = static_cast<std::size_t>(section.index_start) +
+                                        section.index_count;
+                if (range_valid && section.index_count != 0)
+                {
+                    section.local_bounds = {
+                        product.data.vertices[product.data.indices[section.index_start]].position,
+                        product.data.vertices[product.data.indices[section.index_start]].position};
+                    for (std::size_t vertex_index = section.index_start + 1;
+                         vertex_index < end; ++vertex_index)
+                    {
+                        section.local_bounds.ExpandToInclude(
+                            product.data.vertices[product.data.indices[vertex_index]].position);
+                    }
+                }
+            }
+            else
+            {
+                data::MeshSection &section = product.data.sections[index];
+                section.local_bounds = {
+                    {ReadFloat(bytes, offset + 12), ReadFloat(bytes, offset + 16),
+                     ReadFloat(bytes, offset + 20)},
+                    {ReadFloat(bytes, offset + 24), ReadFloat(bytes, offset + 28),
+                     ReadFloat(bytes, offset + 32)}};
+            }
         }
 
         const Chunk &bounds_chunk = FindChunk(chunks, NativeModelChunkType::Bounds);

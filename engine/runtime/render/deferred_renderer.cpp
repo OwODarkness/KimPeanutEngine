@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <limits>
 #include <stdexcept>
 #include <utility>
@@ -115,21 +116,22 @@ namespace kpengine::render
         };
 
         std::optional<spatial::AABB> BuildDirectionalShadowBounds(
-            const std::vector<MeshProxy> &proxies, const Vector3f &camera_position)
+            const std::vector<VisibleMeshSection> &sections, const Vector3f &camera_position)
         {
             const float maximum = std::numeric_limits<float>::max();
             spatial::AABB bounds{{maximum, maximum, maximum},
                                  {-maximum, -maximum, -maximum}};
             bool has_caster = false;
-            for (const MeshProxy &proxy : proxies)
+            for (const VisibleMeshSection &candidate : sections)
             {
+                const MeshProxy &proxy = candidate.proxy;
                 if (!proxy.flags.visible || !proxy.flags.casts_shadow ||
-                    !proxy.world_bounds.IsValid())
+                    !candidate.world_bounds.IsValid())
                 {
                     continue;
                 }
-                bounds.ExpandToInclude(proxy.world_bounds.min_);
-                bounds.ExpandToInclude(proxy.world_bounds.max_);
+                bounds.ExpandToInclude(candidate.world_bounds.min_);
+                bounds.ExpandToInclude(candidate.world_bounds.max_);
                 has_caster = true;
             }
             if (!has_caster)
@@ -226,6 +228,53 @@ namespace kpengine::render
             const Vector3f delta = closest - center;
             return delta.SquareLength() <= radius * radius;
         }
+
+        uint64_t ComputeDirectionalShadowStamp(
+            const Light &light, const std::vector<VisibleMeshSection> &sections,
+            const Vector3f &camera_position)
+        {
+            uint64_t stamp = 1469598103934665603ULL;
+            const auto add = [&stamp](uint64_t value)
+            {
+                stamp ^= value;
+                stamp *= 1099511628211ULL;
+            };
+            const auto add_float = [&add](float value)
+            { add(static_cast<uint64_t>(std::hash<float>{}(value))); };
+            const auto add_vector = [&add_float](const Vector3f &value)
+            {
+                add_float(value.x_);
+                add_float(value.y_);
+                add_float(value.z_);
+            };
+            add(light.handle.id);
+            add(light.handle.generation);
+            add(light.desc.shadow->id);
+            add(light.desc.shadow->generation);
+            add_vector(std::get<DirectionalLightData>(light.desc.type_data).direction);
+            add_vector(camera_position);
+            for (const VisibleMeshSection &candidate : sections)
+            {
+                const MeshProxy &proxy = candidate.proxy;
+                add(proxy.handle.id);
+                add(proxy.handle.generation);
+                add(proxy.mesh.id);
+                add(proxy.mesh.generation);
+                add(proxy.material.id);
+                add(proxy.material.generation);
+                add(candidate.section_index);
+                add(proxy.flags.visible ? 1u : 0u);
+                add(proxy.flags.casts_shadow ? 1u : 0u);
+                add_vector(proxy.world_transform.position_);
+                add_vector(proxy.world_transform.scale_);
+                add_float(proxy.world_transform.rotator_.pitch_);
+                add_float(proxy.world_transform.rotator_.yaw_);
+                add_float(proxy.world_transform.rotator_.roll_);
+                add_vector(candidate.world_bounds.min_);
+                add_vector(candidate.world_bounds.max_);
+            }
+            return stamp;
+        }
     }
 
     DeferredRenderer::~DeferredRenderer()
@@ -321,6 +370,9 @@ namespace kpengine::render
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
         point_shadow_profile_logged_ = false;
+        directional_shadow_cache_hit_ = false;
+        directional_shadow_valid_ = false;
+        directional_shadow_stamp_ = 0;
         active_frame_context_ = nullptr;
         render_world_ = nullptr;
         pending_scene_render_target_extent_ = {};
@@ -452,7 +504,14 @@ namespace kpengine::render
         UpdateEnvironment(input);
         active_directional_shadow_ = ScheduleDirectionalShadow(input.lights,
                                                                input.is_shadow_handle_valid);
-        profile_.shadow_cache_misses = active_directional_shadow_.has_value() ? 1 : 0;
+        directional_shadow_cache_hit_ =
+            active_directional_shadow_.has_value() && directional_shadow_valid_ &&
+            active_directional_shadow_->validity_stamp == directional_shadow_stamp_;
+        profile_.shadow_cache_hits = directional_shadow_cache_hit_ ? 1 : 0;
+        profile_.shadow_cache_misses = active_directional_shadow_.has_value() &&
+                                               !directional_shadow_cache_hit_
+                                           ? 1
+                                           : 0;
         active_spot_shadow_ = ScheduleSpotShadow(input.lights, input.is_shadow_handle_valid);
         active_point_shadow_ = SchedulePointShadow(input.lights, input.is_shadow_handle_valid);
         spot_shadow_recorded_ = false;
@@ -695,12 +754,16 @@ namespace kpengine::render
             // Camera frustum culling applies only to GBufferPass. Shadow casters
             // come from the full render-world snapshot, so fit the directional
             // volume to their world bounds instead of a camera-derived box.
-            const std::vector<MeshProxy> caster_candidates = render_world_->Snapshot();
+            const std::vector<VisibleMeshSection> caster_candidates =
+                SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
+                                                         *resource_resolver_);
             DirectionalShadowFrame frame{};
             frame.job = {light.handle, ShadowKind::Directional2D,
                          kDirectionalShadowResolution, 0};
             frame.shadow = *light.desc.shadow;
             frame.light_direction = direction;
+            frame.validity_stamp = ComputeDirectionalShadowStamp(
+                light, caster_candidates, scene_camera_.GetPosition());
             if (const std::optional<spatial::AABB> caster_bounds =
                     BuildDirectionalShadowBounds(caster_candidates, scene_camera_.GetPosition()))
             {
@@ -771,12 +834,16 @@ namespace kpengine::render
             frame.projection = Matrix4f::MakePerProjMatrix(
                 spot->outer_cone_radians * 2.0f, 1.0f, near_plane, spot->range);
             bool has_caster = false;
-            for (const MeshProxy &proxy : render_world_->Snapshot())
+            const std::vector<VisibleMeshSection> caster_candidates =
+                SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
+                                                         *resource_resolver_);
+            for (const VisibleMeshSection &candidate : caster_candidates)
             {
+                const MeshProxy &proxy = candidate.proxy;
                 const std::optional<MaterialDrawClass> draw_class =
                     material_system_->GetDrawClass(proxy.material);
                 if (proxy.flags.visible && proxy.flags.casts_shadow &&
-                    IsSpotBoundsInsideFrustum(proxy.world_bounds, frame.view,
+                    IsSpotBoundsInsideFrustum(candidate.world_bounds, frame.view,
                                               frame.outer_cone_radians,
                                               frame.near_plane, frame.far_plane) &&
                     draw_class.has_value() && *draw_class == MaterialDrawClass::Opaque &&
@@ -800,7 +867,9 @@ namespace kpengine::render
         const std::vector<Light> &lights,
         const std::function<bool(ShadowHandle)> &is_shadow_handle_valid) const
     {
-        const std::vector<MeshProxy> proxies = render_world_->Snapshot();
+        const std::vector<VisibleMeshSection> proxies =
+            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
+                                                     *resource_resolver_);
         for (const Light &light : lights)
         {
             if (!light.desc.enabled || light.desc.type != LightType::Point ||
@@ -830,13 +899,14 @@ namespace kpengine::render
             frame.near_plane = near_plane;
             frame.far_plane = point->range;
             bool has_caster = false;
-            for (const MeshProxy &proxy : proxies)
+            for (const VisibleMeshSection &candidate : proxies)
             {
+                const MeshProxy &proxy = candidate.proxy;
                 const std::optional<MaterialDrawClass> draw_class =
                     material_system_->GetDrawClass(proxy.material);
                 const auto resolution = material_system_->GetInstanceResolution(proxy.material);
                 if (proxy.flags.visible && proxy.flags.casts_shadow &&
-                    IsBoundsInsideSphere(proxy.world_bounds, point->position, point->range) &&
+                    IsBoundsInsideSphere(candidate.world_bounds, point->position, point->range) &&
                     draw_class.has_value() && *draw_class == MaterialDrawClass::Opaque &&
                     resolution.state == MaterialResourceState::Ready)
                 {
@@ -869,6 +939,10 @@ namespace kpengine::render
         {
             return false;
         }
+        if (directional_shadow_cache_hit_)
+        {
+            return true;
+        }
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         RenderTarget *const shadow_target = frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
         if (!recorder || !shadow_target || !shadow_target->BeginRecording(*recorder))
@@ -881,6 +955,7 @@ namespace kpengine::render
             // Keep the always-bound fallback depth image in a valid sampled
             // layout when the directional fixture is intentionally disabled.
             shadow_target->EndRecording(*recorder);
+            directional_shadow_valid_ = false;
             return true;
         }
         if (!PrepareDirectionalShadowPassResources())
@@ -893,21 +968,24 @@ namespace kpengine::render
         graphics::PerPassData per_pass_data{};
         per_pass_data.camera_data.view = shadow.view.Transpose();
         per_pass_data.camera_data.proj = shadow.projection.Transpose();
-        // Camera visibility remains a G-buffer optimization. The fitted shadow
-        // volume and this pass both consume the complete caster snapshot.
-        const std::vector<MeshProxy> shadow_caster_candidates = render_world_->Snapshot();
-        for (const MeshProxy &proxy : shadow_caster_candidates)
+        const std::vector<VisibleMeshSection> shadow_caster_candidates =
+            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
+                                                     *resource_resolver_);
+        for (const VisibleMeshSection &candidate : shadow_caster_candidates)
         {
+            const MeshProxy &proxy = candidate.proxy;
             const std::optional<MaterialDrawClass> draw_class =
                 material_system_->GetDrawClass(proxy.material);
             if (proxy.flags.casts_shadow && draw_class.has_value() &&
                 *draw_class == MaterialDrawClass::Opaque &&
                 material_system_->GetInstanceResolution(proxy.material).state == MaterialResourceState::Ready)
             {
-                RecordShadowCaster(proxy, per_pass_data, *recorder);
+                RecordShadowCaster(proxy, per_pass_data, *recorder, candidate.section_index);
             }
         }
         shadow_target->EndRecording(*recorder);
+        directional_shadow_valid_ = true;
+        directional_shadow_stamp_ = shadow.validity_stamp;
         return true;
     }
 
@@ -939,12 +1017,16 @@ namespace kpengine::render
         graphics::PerPassData per_pass_data{};
         per_pass_data.camera_data.view = shadow.view.Transpose();
         per_pass_data.camera_data.proj = shadow.projection.Transpose();
-        for (const MeshProxy &proxy : render_world_->Snapshot())
+        const std::vector<VisibleMeshSection> shadow_caster_candidates =
+            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
+                                                     *resource_resolver_);
+        for (const VisibleMeshSection &candidate : shadow_caster_candidates)
         {
+            const MeshProxy &proxy = candidate.proxy;
             const std::optional<MaterialDrawClass> draw_class =
                 material_system_->GetDrawClass(proxy.material);
             if (!proxy.flags.visible || !proxy.flags.casts_shadow ||
-                !IsSpotBoundsInsideFrustum(proxy.world_bounds, shadow.view,
+                !IsSpotBoundsInsideFrustum(candidate.world_bounds, shadow.view,
                                            shadow.outer_cone_radians,
                                            shadow.near_plane, shadow.far_plane) ||
                 !draw_class.has_value() || *draw_class != MaterialDrawClass::Opaque ||
@@ -953,7 +1035,7 @@ namespace kpengine::render
             {
                 continue;
             }
-            RecordShadowCaster(proxy, per_pass_data, *recorder);
+            RecordShadowCaster(proxy, per_pass_data, *recorder, candidate.section_index);
         }
         shadow_target->EndRecording(*recorder);
         spot_shadow_recorded_ = true;
@@ -985,20 +1067,23 @@ namespace kpengine::render
 
         const PointShadowFrame &shadow = *active_point_shadow_;
         const auto profile_start = std::chrono::steady_clock::now();
-        const std::vector<MeshProxy> proxies = render_world_->Snapshot();
-        std::vector<MeshProxy> caster_candidates;
+        const std::vector<VisibleMeshSection> proxies =
+            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
+                                                     *resource_resolver_);
+        std::vector<VisibleMeshSection> caster_candidates;
         caster_candidates.reserve(proxies.size());
-        for (const MeshProxy &proxy : proxies)
+        for (const VisibleMeshSection &candidate : proxies)
         {
+            const MeshProxy &proxy = candidate.proxy;
             const std::optional<MaterialDrawClass> draw_class =
                 material_system_->GetDrawClass(proxy.material);
             if (proxy.flags.visible && proxy.flags.casts_shadow &&
-                IsBoundsInsideSphere(proxy.world_bounds, shadow.position, shadow.far_plane) &&
+                IsBoundsInsideSphere(candidate.world_bounds, shadow.position, shadow.far_plane) &&
                 draw_class.has_value() && *draw_class == MaterialDrawClass::Opaque &&
                 material_system_->GetInstanceResolution(proxy.material).state ==
                     MaterialResourceState::Ready)
             {
-                caster_candidates.push_back(proxy);
+                caster_candidates.push_back(candidate);
             }
         }
         const auto &faces = GetPointShadowFaceTable();
@@ -1017,14 +1102,15 @@ namespace kpengine::render
             graphics::PerPassData per_pass_data{};
             per_pass_data.camera_data.view = view.Transpose();
             per_pass_data.camera_data.proj = projection.Transpose();
-            for (const MeshProxy &proxy : caster_candidates)
+            for (const VisibleMeshSection &candidate : caster_candidates)
             {
                 if (!camera::IsAABBInsidePerspectiveFace(
-                        proxy.world_bounds, view, shadow.near_plane, shadow.far_plane))
+                        candidate.world_bounds, view, shadow.near_plane, shadow.far_plane))
                 {
                     continue;
                 }
-                RecordShadowCaster(proxy, per_pass_data, *recorder);
+                RecordShadowCaster(candidate.proxy, per_pass_data, *recorder,
+                                   candidate.section_index);
                 ++face_draw_counts[face_index];
             }
         }
@@ -1077,12 +1163,16 @@ namespace kpengine::render
             graphics::PerPassData per_pass_data{};
             per_pass_data.camera_data.view = camera_data.view;
             per_pass_data.camera_data.proj = camera_data.proj;
-            const std::vector<MeshProxy> visible_proxies = SceneVisibility::BuildVisibleProxies(
-                scene_camera_.GetViewProjectionMatrix(), render_world_->Snapshot());
+            const std::vector<VisibleMeshSection> visible_sections =
+                SceneVisibility::BuildVisibleSections(
+                    scene_camera_.GetViewProjectionMatrix(), render_world_->Snapshot(),
+                    *resource_resolver_);
             // Opaque-only for the deferred G-buffer; alpha-blended surfaces need
             // a forward pass (a later roadmap step), so they are skipped here.
-            const SceneDrawLists draw_lists = SceneDrawListBuilder::Build(
-                visible_proxies, *material_system_, *resource_resolver_, MaterialPass::GBuffer);
+            SceneDrawLists draw_lists = SceneDrawListBuilder::Build(
+                visible_sections, *material_system_, *resource_resolver_, MaterialPass::GBuffer);
+            SceneDrawListBuilder::SortOpaqueFrontToBack(
+                draw_lists.opaque, scene_camera_.GetPosition(), scene_camera_.GetForward());
             for (const SceneDrawItem &item : draw_lists.opaque)
             {
                 if (RecordMeshProxy(item.proxy, per_pass_data, *recorder,
@@ -1125,10 +1215,22 @@ namespace kpengine::render
         RenderTarget *const point_shadow_target =
             frame_targets_.GetTarget(RenderTargetName::PointShadow);
         if (!recorder || !hdr_target || !gbuffer_target || !shadow_target ||
-            !spot_shadow_target || !point_shadow_target ||
-             !PrepareDeferredLightingPassResources() ||
-            !hdr_target->BeginRecording(*recorder))
+            !spot_shadow_target || !point_shadow_target)
         {
+            KP_LOG("RenderLog", LOG_LEVEL_WARNING,
+                   "Deferred lighting skipped: missing recorder or render target");
+            return false;
+        }
+        if (!PrepareDeferredLightingPassResources())
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_WARNING,
+                   "Deferred lighting skipped: resources are not ready");
+            return false;
+        }
+        if (!hdr_target->BeginRecording(*recorder))
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_WARNING,
+                   "Deferred lighting skipped: SceneHdr target could not begin recording");
             return false;
         }
 
@@ -1881,7 +1983,8 @@ namespace kpengine::render
 
     void DeferredRenderer::RecordShadowCaster(const MeshProxy &proxy,
                                           const graphics::PerPassData &per_pass_data,
-                                          graphics::CommandRecorder &recorder)
+                                          graphics::CommandRecorder &recorder,
+                                          uint32_t section_index)
     {
         if (!proxy.flags.visible || !proxy.flags.casts_shadow || !proxy.mesh.IsValid() ||
             !directional_shadow_pipeline_.IsValid())
@@ -1908,7 +2011,8 @@ namespace kpengine::render
         recorder.BindPipeline(directional_shadow_pipeline_);
         recorder.BindMesh(proxy.mesh);
         recorder.BindResourceBindings(directional_shadow_pipeline_, bindings);
-        const uint64_t draw_count = DrawMeshSections(*resource_resolver_, recorder, proxy.mesh);
+        const uint64_t draw_count =
+            DrawMeshSections(*resource_resolver_, recorder, proxy.mesh, section_index);
         AddProfileDraws(draw_count, draw_count);
     }
 
@@ -2059,6 +2163,8 @@ namespace kpengine::render
         // intact across frames. active_frame_context_ is nulled here to match the
         // old pre-rebuild boundary; the next BeginFrame re-acquires it.
         frame_targets_.RebuildForExtent(*backend_, requested.width, requested.height);
+        directional_shadow_valid_ = false;
+        directional_shadow_stamp_ = 0;
         active_frame_context_ = nullptr;
         if (!frame_targets_.GetTarget(RenderTargetName::SceneColor)->IsValid())
         {

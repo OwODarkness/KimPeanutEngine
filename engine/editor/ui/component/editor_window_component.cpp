@@ -29,6 +29,7 @@ namespace kpengine::editor
             {
                 flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
             }
+            flags |= config_.extra_flags;
 
             // ImGui renders the native title before Begin() returns. Use the
             // previous frame's focus state so only the title receives the

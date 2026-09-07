@@ -5,13 +5,19 @@
 **Current release: v1.1.0.**
 
 - **Render issue-9.7 Sponza quality/throughput (2026-09-07)** — Stage 0
-  instrumentation and the Stage 1 runtime mip path are landed; native
-  baseline capture remains pending. The
+  instrumentation, the Stage 1 runtime mip path, the Stage 2 portable native
+  texture importer/cooker, and the Stage 3 Vulkan frame-slot descriptor-pool
+  arena slice, the Stage 4 section-visibility/static-shadow slice, and the
+  Stage 5 front-to-back G-buffer ordering slice are landed; post-startup
+  before/after profile capture remains pending. The
   remaining failures are texture-minification speckle and approximately 30 FPS,
   with the resolved black-frame defect excluded. Verified pressure includes
   missing mip chains, a 72×4K RGBA8 texture closure, Vulkan pool-per-draw
   descriptors, whole-model visibility, and unconditional static-shadow redraw;
-  timing attribution is the first execution gate. →
+  timing attribution is the first execution gate; the former pool-per-draw
+  descriptor pressure is now reduced by the Stage 3 Vulkan arena slice; camera
+  and shadow work now cull by native mesh section, and unchanged directional
+  shadow maps reuse their depth target. →
   [issue](render/issue/issue-9.7.md), [plan](render/.plan/issue-9.7.md),
   [review](render/.review/issue-9.7.md)
 - **MI1.7-R1 Asset build boundary (2026-09-06)** — split the database-free

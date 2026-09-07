@@ -89,7 +89,12 @@ namespace kpengine::render
             backend_initialized_ = true;
             window_capture_ = info.window_capture;
 
-            constexpr size_t kFrameUniformCapacity = 64 * 1024;
+            // Imported scenes can contain many mesh sections. Each section
+            // consumes per-pass, per-object, and material constants from the
+            // frame arena before deferred lighting allocates its frame block.
+            // Keep the arena large enough that a valid scene cannot silently
+            // skip lighting after exhausting the old 64 KiB budget.
+            constexpr size_t kFrameUniformCapacity = 4 * 1024 * 1024;
             frame_contexts_.resize(backend_->GetFramesInFlight());
             for (FrameContext &context : frame_contexts_)
             {
@@ -159,6 +164,7 @@ namespace kpengine::render
                 [this] { return frame_number_; });
             profile_window_.Reset();
             profile_summary_logged_ = false;
+            profile_scene_seen_ = false;
             lifecycle_state_ = RenderSystemLifecycleState::Ready;
             last_diagnostic_.clear();
             return {true, {}};
@@ -251,11 +257,22 @@ namespace kpengine::render
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - record_started)
                 .count();
+        // The editor's external composite is recorded after BeginFrame has
+        // published this snapshot but before EndFrame finalizes it. Preserve
+        // the last completed frame's aggregate/finalize/present values so the
+        // in-frame profiler does not display artificial zeros during this
+        // transition.
+        const double previous_cpu_total_ms = profile_.cpu_total_ms;
+        const double previous_cpu_finalize_ms = profile_.cpu_finalize_ms;
+        const double previous_cpu_present_ms = profile_.cpu_present_ms;
         profile_ = deferred_renderer_->GetProfileSnapshot();
         profile_.summary = profile_window_.GetSummary();
         profile_.cpu_scene_prepare_ms = scene_prepare_ms;
         profile_.cpu_backend_begin_ms = backend_begin_ms;
         profile_.cpu_record_ms = record_ms;
+        profile_.cpu_total_ms = previous_cpu_total_ms;
+        profile_.cpu_finalize_ms = previous_cpu_finalize_ms;
+        profile_.cpu_present_ms = previous_cpu_present_ms;
         profile_.present_mode = backend_->GetPresentModeName();
         for (const graphics::GpuProfileTiming &timing : completed_gpu_timings)
         {
@@ -320,9 +337,7 @@ namespace kpengine::render
         // sample until RecordPresentationTime() has measured SwapBuffers().
         if (backend_->GetGraphicsAPI() != GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
-            profile_window_.Observe(profile_);
-            profile_.summary = profile_window_.GetSummary();
-            LogCompletedProfileSummary();
+            ObserveProfileFrame();
         }
         lifecycle_state_ = frame_return_state_;
         return true;
@@ -341,10 +356,28 @@ namespace kpengine::render
                 .count();
         if (backend_ && backend_->GetGraphicsAPI() == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
-            profile_window_.Observe(profile_);
-            profile_.summary = profile_window_.GetSummary();
-            LogCompletedProfileSummary();
+            ObserveProfileFrame();
         }
+    }
+
+    void RenderSystem::ObserveProfileFrame()
+    {
+        // The fixed profile describes the selected Sponza scene. RenderSystem
+        // can become scene-ready a few frames before asynchronous level
+        // promotion publishes its renderables; do not spend the entire profile
+        // window measuring that empty transition.
+        if (profile_.draw_calls == 0 || profile_.textures.dependency_count == 0)
+        {
+            return;
+        }
+        if (!profile_scene_seen_)
+        {
+            profile_window_.Reset();
+            profile_scene_seen_ = true;
+        }
+        profile_window_.Observe(profile_);
+        profile_.summary = profile_window_.GetSummary();
+        LogCompletedProfileSummary();
     }
 
     void RenderSystem::LogCompletedProfileSummary()
@@ -425,7 +458,15 @@ namespace kpengine::render
         {
             return false;
         }
-        return deferred_renderer_->ExecuteEditorCompositePass(record_pass);
+        const bool succeeded = deferred_renderer_->ExecuteEditorCompositePass(record_pass);
+        // The editor composite is recorded after BeginFrame has published the
+        // RenderSystem snapshot. Publish its completed CPU scope immediately so
+        // the in-frame profiler does not show a stale zero for this pass.
+        profile_.passes[static_cast<size_t>(RenderProfilePass::EditorComposite)].cpu_time_ms =
+            deferred_renderer_->GetProfileSnapshot()
+                .passes[static_cast<size_t>(RenderProfilePass::EditorComposite)]
+                .cpu_time_ms;
+        return succeeded;
     }
 
     void RenderSystem::RequestSceneRenderTargetExtent(uint32_t width, uint32_t height)
@@ -492,6 +533,14 @@ namespace kpengine::render
         metrics.triangle_count = deferred_renderer_ ? deferred_renderer_->GetTriangleCount() : 0U;
         metrics.gpu_usage_percent = backend_ ? backend_->GetGpuUsagePercent() : std::nullopt;
         metrics.profile = profile_;
+        if (lifecycle_state_ == RenderSystemLifecycleState::FrameActive &&
+            profile_frame_start_ != std::chrono::steady_clock::time_point{})
+        {
+            metrics.profile.cpu_total_ms =
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - profile_frame_start_)
+                    .count();
+        }
         return metrics;
     }
 
@@ -569,6 +618,7 @@ namespace kpengine::render
         profile_ = {};
         profile_window_.Reset();
         profile_summary_logged_ = false;
+        profile_scene_seen_ = false;
         profile_frame_start_ = {};
         frame_return_state_ = RenderSystemLifecycleState::Uninitialized;
         window_capture_ = {};

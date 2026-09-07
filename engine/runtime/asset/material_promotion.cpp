@@ -237,7 +237,13 @@ namespace kpengine::asset
         const std::vector<std::byte> authored_bytes = RebaseMaterialBytes(
             generated_bytes, product_path.parent_path(), authored_path.parent_path(), asset_root);
         std::error_code error;
-        const bool authored_exists = std::filesystem::is_regular_file(authored_path, error);
+        std::filesystem::create_directories(authored_path.parent_path(), error);
+        if (error)
+        {
+            Fail(MaterialPromotionErrorCode::IoError,
+                 "failed to create authored Material directory: " + error.message());
+        }
+        const bool authored_exists = std::filesystem::exists(authored_path, error);
         if (error)
         {
             Fail(MaterialPromotionErrorCode::IoError,
@@ -245,6 +251,11 @@ namespace kpengine::asset
         }
         if (authored_exists)
         {
+            if (!std::filesystem::is_regular_file(authored_path, error) || error)
+            {
+                Fail(MaterialPromotionErrorCode::IoError,
+                     "authored Material path is not a regular file: " + authored_path.string());
+            }
             const std::vector<std::byte> existing = ReadBytes(authored_path);
             if (existing != authored_bytes)
             {
@@ -255,12 +266,6 @@ namespace kpengine::asset
         }
         else
         {
-            std::filesystem::create_directories(authored_path.parent_path(), error);
-            if (error)
-            {
-                Fail(MaterialPromotionErrorCode::IoError,
-                     "failed to create authored Material directory: " + error.message());
-            }
             const std::filesystem::path temporary_path = authored_path.string() + ".promotion.tmp";
             WriteBytes(temporary_path, authored_bytes);
             std::filesystem::rename(temporary_path, authored_path, error);

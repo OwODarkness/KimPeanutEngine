@@ -9,9 +9,22 @@
 #include "data/texture_mipmap.h"
 namespace kpengine::graphics
 {
+    namespace
+    {
+        bool IsGpuAllocationOnlyTexture(const TextureData &data) noexcept
+        {
+            return data.width != 0 && data.height != 0 && data.depth == 1 &&
+                   data.array_layers == 1 && data.pixels.empty() &&
+                   data.mip_subresources.empty();
+        }
+    }
+
     TextureHandle TextureManager::CreateTexture(GraphicsContext context, const TextureData& data,  const TextureSettings& settings)
     {
-        if (!data::IsTextureMipChainValid(data))
+        // Render targets intentionally provide dimensions without CPU pixels:
+        // the backend allocates and initializes their GPU storage directly.
+        // File-backed textures must still provide a complete validated chain.
+        if (!IsGpuAllocationOnlyTexture(data) && !data::IsTextureMipChainValid(data))
         {
             KP_LOG("TextureManagerLog", LOG_LEVEL_ERROR,
                    "texture payload contains an invalid mip chain");

@@ -3,12 +3,15 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "model_archive.h"
+#include "texture_importer.h"
 
 namespace kpengine::asset
 {
@@ -42,13 +45,36 @@ namespace kpengine::asset
         ModelImportErrorCode code_{};
     };
 
+    enum class ModelImportProgressStage : std::uint8_t
+    {
+        CheckingCache,
+        DecodingSource,
+        HashingDependencies,
+        CookingTextures,
+        SerializingProducts,
+        PublishingProducts,
+        UpdatingArchive,
+        Complete,
+    };
+
+    struct ModelImportProgress
+    {
+        ModelImportProgressStage stage{ModelImportProgressStage::CheckingCache};
+        std::string message;
+        std::size_t completed{};
+        std::size_t total{};
+    };
+
+    using ModelImportProgressCallback = std::function<void(const ModelImportProgress &)>;
+
     struct ModelImportSettings
     {
         std::string importer_id{"assimp"};
         std::uint32_t importer_version{1};
-        std::uint32_t native_model_version{1};
+        std::uint32_t native_model_version{2};
         std::uint32_t material_schema_version{2};
         std::string shader_asset_path{"shader/pbr_gbuffer.shader"};
+        TextureCookSettings texture_settings{};
     };
 
     struct ModelImportRequest
@@ -57,6 +83,7 @@ namespace kpengine::asset
         std::filesystem::path archive_root;
         std::filesystem::path source_path;
         ModelImportSettings settings{};
+        ModelImportProgressCallback progress_callback;
     };
 
     struct ModelImportResult

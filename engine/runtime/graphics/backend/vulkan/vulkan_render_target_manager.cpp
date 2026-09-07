@@ -3,6 +3,7 @@
 #include "common/render_target_validation.h"
 #include "common/texture.h"
 #include "common/texture_manager.h"
+#include "log/logger.h"
 #include "vulkan_frame_context.h"
 #include "vulkan_texture.h"
 
@@ -267,11 +268,21 @@ namespace kpengine::graphics
     bool VulkanRenderTargetManager::BeginRendering(VkCommandBuffer command_buffer,
                                                     RenderTargetHandle handle)
     {
-        if (command_buffer == VK_NULL_HANDLE || active_target_.IsValid()) return false;
+        const auto reject = [&handle](const char *reason)
+        {
+            KP_LOG("VulkanRenderTargetManagerLog", LOG_LEVEL_WARNING,
+                   "Rejected begin render target: target=%u reason=%s", handle.id, reason);
+            return false;
+        };
+        if (command_buffer == VK_NULL_HANDLE) return reject("null command buffer");
+        if (active_target_.IsValid()) return reject("another target is active");
         const uint32_t index = handles_.Get(handle);
-        if (index >= targets_.size()) return false;
+        if (index >= targets_.size()) return reject("invalid handle");
         const RenderTargetResource &target = targets_[index];
-        if (target.color_attachments.empty() && !target.depth.IsValid()) return false;
+        if (target.color_attachments.empty() && !target.depth.IsValid())
+        {
+            return reject("target has no attachments");
+        }
 
         TargetState &state = states_[index];
         std::vector<VkRenderingAttachmentInfo> color_attachments;
@@ -282,7 +293,10 @@ namespace kpengine::graphics
             const VulkanTextureResource color = color_texture
                 ? ConvertToVulkanTextureResource(color_texture->GetTextueHandle())
                 : VulkanTextureResource{};
-            if (color.image == VK_NULL_HANDLE || color.view == VK_NULL_HANDLE) return false;
+            if (color.image == VK_NULL_HANDLE || color.view == VK_NULL_HANDLE)
+            {
+                return reject("color attachment has no Vulkan image or view");
+            }
             frame_context_->TransitionImageLayout(command_buffer, color.image,
                 state.color_layouts[i], VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL,
                 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT, VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -309,7 +323,10 @@ namespace kpengine::graphics
             const VulkanTextureResource depth = depth_texture
                 ? ConvertToVulkanTextureResource(depth_texture->GetTextueHandle())
                 : VulkanTextureResource{};
-            if (depth.image == VK_NULL_HANDLE || depth.view == VK_NULL_HANDLE) return false;
+            if (depth.image == VK_NULL_HANDLE || depth.view == VK_NULL_HANDLE)
+            {
+                return reject("depth attachment has no Vulkan image or view");
+            }
             if (state.depth_layout != VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL)
             {
                 frame_context_->TransitionImageLayout(command_buffer, depth.image, state.depth_layout,

@@ -1,5 +1,7 @@
 #include "native_material.h"
 
+#include "texture_importer.h"
+
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -95,48 +97,6 @@ namespace kpengine::asset
             return result;
         }
 
-        std::string ToGenericPath(const std::filesystem::path &path)
-        {
-            return path.generic_string();
-        }
-
-        std::string AssetRelativePath(const std::filesystem::path &asset_root,
-                                      const std::filesystem::path &path)
-        {
-            const std::filesystem::path normalized_root =
-                std::filesystem::absolute(asset_root).lexically_normal();
-            const std::filesystem::path normalized_path =
-                std::filesystem::absolute(path).lexically_normal();
-            const std::filesystem::path relative = normalized_path.lexically_relative(normalized_root);
-            const std::string relative_text = relative.generic_string();
-            if (relative.empty() || relative.is_absolute() || relative_text == ".." ||
-                relative_text.rfind("../", 0) == 0)
-            {
-                Fail(NativeMaterialErrorCode::InvalidArgument,
-                     "external material image is outside the Asset root: " + path.string());
-            }
-            return NormalizeAssetRelativePath(ToGenericPath(relative));
-        }
-
-        std::string TextureExtension(const ImportedImageSource &image)
-        {
-            std::string extension = image.format_hint;
-            if (extension.empty() && !image.resolved_path.empty())
-            {
-                extension = image.resolved_path.extension().string();
-            }
-            if (!extension.empty() && extension.front() == '.') extension.erase(0, 1);
-            std::transform(extension.begin(), extension.end(), extension.begin(),
-                           [](unsigned char character) { return static_cast<char>(std::tolower(character)); });
-            if (extension == "jpeg") extension = "jpg";
-            if (extension != "png" && extension != "jpg" && extension != "hdr" &&
-                extension != "bmp" && extension != "tga")
-            {
-                extension = "png";
-            }
-            return extension;
-        }
-
         const ImportedImageSource *FindImage(const ImportedModelDocument &document,
                                              const std::string &reference)
         {
@@ -158,10 +118,14 @@ namespace kpengine::asset
 
         ImageReference PrepareImage(const ImportedImageSource &image,
                                     const NativeMaterialConversionSettings &settings,
+                                    data::TextureSemantic semantic,
                                     NativeMaterialConversionResult &result)
         {
+            if (settings.texture_progress_callback)
+            {
+                settings.texture_progress_callback(image.path);
+            }
             ImageBuffer decoded;
-            std::vector<std::byte> encoded;
             if (image.storage == ImportedImageStorage::EmbeddedBytes)
             {
                 if (image.embedded_is_raw_rgba8)
@@ -178,13 +142,6 @@ namespace kpengine::asset
                     }
                     std::copy(image.embedded_bytes.begin(), image.embedded_bytes.end(),
                               reinterpret_cast<std::byte *>(decoded.pixels.data()));
-                    const image_io::ImageEncodeResult encoded_result = image_io::EncodePngMemory(decoded);
-                    if (!encoded_result.result.success)
-                    {
-                        Fail(NativeMaterialErrorCode::MalformedImage,
-                             "embedded raw image could not be encoded: " + image.path);
-                    }
-                    encoded = encoded_result.bytes;
                 }
                 else
                 {
@@ -197,7 +154,6 @@ namespace kpengine::asset
                                  decoded_result.result.diagnostic);
                     }
                     decoded = decoded_result.image;
-                    encoded = image.embedded_bytes;
                 }
             }
             else
@@ -207,20 +163,52 @@ namespace kpengine::asset
                     Fail(NativeMaterialErrorCode::MissingImage,
                          "external material image has no resolved path: " + image.path);
                 }
-                const image_io::ImageDecodeResult decoded_result =
-                    image_io::DecodeImageFile(image.resolved_path.string());
-                if (!decoded_result.result.success)
+                try
+                {
+                    const ImportedTexture imported = TextureImporter{}.Import(
+                        {image.resolved_path,
+                         {semantic, settings.texture_settings.max_dimension,
+                          settings.texture_settings.max_levels,
+                          settings.texture_settings.compression}});
+                    const CookedTexture cooked = TextureCooker{}.Cook(imported);
+                    const auto existing = std::find_if(
+                        result.embedded_images.begin(), result.embedded_images.end(),
+                        [&cooked](const NativeImageProduct &product)
+                        {
+                            return product.content_hash == cooked.product_hash;
+                        });
+                    if (existing == result.embedded_images.end())
+                    {
+                        result.embedded_images.push_back(
+                            {cooked.product_hash, "texture", cooked.bytes, imported.image});
+                    }
+                    return {"../" + ProductRelativePath(ArchiveProductType::Texture,
+                                                           cooked.product_hash, "texture"),
+                            "texture"};
+                }
+                catch (const TextureCookError &error)
                 {
                     Fail(NativeMaterialErrorCode::MalformedImage,
-                         "external image could not be decoded: " + image.resolved_path.string());
+                         "external image could not be cooked: " + image.resolved_path.string() + ": " +
+                             error.what());
                 }
-                decoded = decoded_result.image;
-                const std::string authored_path = AssetRelativePath(settings.asset_root, image.resolved_path);
-                return {"../../" + authored_path, {}};
             }
 
-            const ContentHash content_hash = Sha256(encoded);
-            const std::string extension = TextureExtension(image);
+            ImportedTexture imported{};
+            imported.image = decoded;
+            imported.settings = settings.texture_settings;
+            imported.settings.semantic = semantic;
+            CookedTexture cooked;
+            try
+            {
+                cooked = TextureCooker{}.Cook(imported);
+            }
+            catch (const TextureCookError &error)
+            {
+                Fail(NativeMaterialErrorCode::MalformedImage,
+                     "embedded image could not be cooked: " + std::string{error.what()});
+            }
+            const ContentHash content_hash = cooked.product_hash;
             const auto existing = std::find_if(
                 result.embedded_images.begin(), result.embedded_images.end(),
                 [&content_hash](const NativeImageProduct &product)
@@ -229,10 +217,10 @@ namespace kpengine::asset
                 });
             if (existing == result.embedded_images.end())
             {
-                result.embedded_images.push_back({content_hash, extension, std::move(encoded), decoded});
+                result.embedded_images.push_back({content_hash, "texture", std::move(cooked.bytes), decoded});
             }
-            return {"../" + ProductRelativePath(ArchiveProductType::Texture, content_hash, extension),
-                    extension};
+            return {"../" + ProductRelativePath(ArchiveProductType::Texture, content_hash, "texture"),
+                    "texture"};
         }
 
         MaterialTextureChannel ChannelFor(const std::string &name)
@@ -396,7 +384,8 @@ namespace kpengine::asset
                                               source.emissive[3]});
 
             const auto add_texture = [&](const std::string &name, const std::string &reference,
-                                         MaterialTextureColorSpace color_space)
+                                         MaterialTextureColorSpace color_space,
+                                         data::TextureSemantic semantic)
             {
                 if (reference.empty()) return;
                 const ImportedImageSource *const image = FindImage(document, reference);
@@ -405,7 +394,7 @@ namespace kpengine::asset
                     Fail(NativeMaterialErrorCode::MissingImage,
                          "material references an image that was not decoded: " + reference);
                 }
-                const ImageReference prepared = PrepareImage(*image, settings, result);
+                const ImageReference prepared = PrepareImage(*image, settings, semantic, result);
                 MaterialParameterSource parameter{};
                 parameter.name = name;
                 parameter.type = MaterialParameterSourceType::Texture;
@@ -414,13 +403,16 @@ namespace kpengine::asset
                 parameter.texture_channel = ChannelFor(name);
                 material.parameters.push_back(std::move(parameter));
             };
-            add_texture("base_color_texture", source.base_color_texture, MaterialTextureColorSpace::Srgb);
-            add_texture("normal_texture", source.normal_texture, MaterialTextureColorSpace::Linear);
+            add_texture("base_color_texture", source.base_color_texture, MaterialTextureColorSpace::Srgb,
+                        data::TextureSemantic::Color);
+            add_texture("normal_texture", source.normal_texture, MaterialTextureColorSpace::Linear,
+                        data::TextureSemantic::Normal);
             add_texture("metallic_texture", source.metallic_roughness_texture,
-                        MaterialTextureColorSpace::Linear);
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
             add_texture("roughness_texture", source.metallic_roughness_texture,
-                        MaterialTextureColorSpace::Linear);
-            add_texture("occlusion_texture", source.occlusion_texture, MaterialTextureColorSpace::Linear);
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
+            add_texture("occlusion_texture", source.occlusion_texture, MaterialTextureColorSpace::Linear,
+                        data::TextureSemantic::PackedLinear);
 
             const std::string json = MaterialJson(material);
             std::vector<std::byte> bytes(json.size());

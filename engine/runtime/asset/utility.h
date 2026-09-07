@@ -46,7 +46,7 @@ namespace kpengine::asset
 
     inline bool IsTextureExtension(const std::string &ext)
     {
-        static const std::vector<std::string> tex_exts = {"png", "jpg", "jpeg", "tga", "hdr"};
+        static const std::vector<std::string> tex_exts = {"texture", "png", "jpg", "jpeg", "tga", "hdr"};
         return std::find(tex_exts.begin(), tex_exts.end(), ext) != tex_exts.end();
     }
 

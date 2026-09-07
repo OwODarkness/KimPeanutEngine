@@ -126,6 +126,7 @@ namespace kpengine::render
         {
             ShadowJobDesc job;
             ShadowHandle shadow;
+            uint64_t validity_stamp = 0;
             Vector3f light_direction;
             Matrix4f view;
             Matrix4f projection;
@@ -178,7 +179,8 @@ namespace kpengine::render
         bool PrepareCaptureViewPassResources();
         void RecordShadowCaster(const MeshProxy &proxy,
                                 const graphics::PerPassData &per_pass_data,
-                                graphics::CommandRecorder &recorder);
+                                graphics::CommandRecorder &recorder,
+                                uint32_t section_index = std::numeric_limits<uint32_t>::max());
         bool RecordMeshProxy(const MeshProxy &proxy,
                              const graphics::PerPassData &per_pass_data,
                              graphics::CommandRecorder &recorder, MaterialPass pass,
@@ -203,6 +205,9 @@ namespace kpengine::render
         std::optional<PointShadowFrame> active_point_shadow_;
         bool spot_shadow_recorded_ = false;
         bool point_shadow_recorded_ = false;
+        bool directional_shadow_cache_hit_ = false;
+        bool directional_shadow_valid_ = false;
+        uint64_t directional_shadow_stamp_ = 0;
         bool point_shadow_profile_logged_ = false;
         uint64_t triangle_count_ = 0;
         RenderCamera scene_camera_;

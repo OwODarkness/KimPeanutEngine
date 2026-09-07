@@ -48,7 +48,10 @@ TEST(NativeMaterialTest, ProducesDeterministicProductsAndReusesEmbeddedImages)
     const auto second = kpengine::asset::ConvertImportedMaterials(document, settings);
 
     ASSERT_EQ(first.materials.size(), 2u);
-    ASSERT_EQ(first.embedded_images.size(), 1u);
+    // The same source pixels are cooked separately when consumed with
+    // different semantics: color filtering and packed-linear filtering are
+    // different products by design.
+    ASSERT_EQ(first.embedded_images.size(), 2u);
     EXPECT_EQ(first.materials[0].bytes, first.materials[1].bytes);
     EXPECT_EQ(first.materials[0].bytes, second.materials[0].bytes);
     EXPECT_EQ(first.materials[0].content_hash, kpengine::asset::Sha256(first.materials[0].bytes));

@@ -8,6 +8,7 @@
 #include "graphics/backend/common/api.h"
 #include "render/material/material_system.h"
 #include "render/render_world/mesh_proxy.h"
+#include "render/render_world/scene_visibility.h"
 
 namespace kpengine::render
 {
@@ -40,7 +41,16 @@ namespace kpengine::render
                                     const MaterialSystem &materials,
                                     const RenderResourceResolver &resource_resolver,
                                     MaterialPass pass);
+        static SceneDrawLists Build(const std::vector<VisibleMeshSection> &visible_sections,
+                                    const MaterialSystem &materials,
+                                    const RenderResourceResolver &resource_resolver,
+                                    MaterialPass pass);
         static void SortOpaque(std::vector<SceneDrawItem> &items);
+        // Orders opaque work by increasing camera distance so completed depth
+        // can reject later fragments before their material shader runs.
+        static void SortOpaqueFrontToBack(std::vector<SceneDrawItem> &items,
+                                          const Vector3f &camera_position,
+                                          const Vector3f &camera_forward);
     };
 }
 

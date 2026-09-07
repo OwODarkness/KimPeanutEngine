@@ -142,3 +142,118 @@ below adds the first runtime instrumentation slice.
   read.
 - Sponza runtime image captures and measured memory/LOD behavior still require
   the controllable Runtime host and remain unclaimed.
+
+## Stage 2 native texture cook checkpoint
+
+- Added `NativeTexture` V1, a canonical little-endian `.texture` product with
+  semantic metadata, explicit level directories, integrity digest, bounded
+  dimensions, and complete payload-range validation before allocation.
+- Added database-free `TextureImporter` and `TextureCooker` stages. The
+  importer decodes source files through ImageIO; the cooker converts RGBA32F
+  HDR data to RGBA16F, selects portable RGBA8/RGBA16F storage, applies the
+  bounded semantic mip policy, and serializes native bytes. No AssetManager,
+  Runtime, Render, Graphics, or GPU object is involved.
+- Updated native model/material import so embedded and external material images
+  become content-addressed `.archive/textures/<hash>.texture` products.
+  Runtime `NativeTextureLoader` consumes those products read-only; loose image
+  loading remains as a migration fallback for authored sources.
+- Added `KimPeanutAssetTool cook-texture` for direct source cooking and tests
+  for importer/cooker independence, native round-trip mips, and explicit
+  rejection of unavailable block compression.
+
+## Stage 2 validation
+
+- `cmake --build build --config Debug --target TextureImportTest` — passed.
+- `cmake --build build --config Debug --target AssetRuntime` — passed.
+- `cmake --build build --config Debug --target NativeMaterialTest ModelImportServiceTest` — passed.
+- `ctest --test-dir build -C Debug -R "(NativeMaterialTest|ModelImportServiceTest|TextureImportTest)" --output-on-failure` — 13/13 passed.
+- The current common `TextureFormat` contract has no BCn/ASTC formats, so
+  `RequireBlockCompression` fails explicitly and portable products remain the
+  only supported cooked profile. Cross-backend Sponza capture and resident-byte
+  ceiling evidence remain pending.
+
+## Stage 3 descriptor-pool lifetime checkpoint
+
+- Replaced Vulkan's pool-per-resource-binding-set path with private descriptor
+  arenas owned by backend frame slots. The initial arena is sized for the
+  expected steady-state material workload; a full arena grows by appending a
+  larger arena for that slot, which is retained and reused on later cycles.
+- `VulkanBackend::BeginFrame` resets only the current slot's arenas immediately
+  after its in-flight fence wait. Transient descriptor handles from that slot
+  are invalidated before `FrameContext` releases its previous list, and set
+  destruction no longer calls `vkDestroyDescriptorPool`.
+- Corrected Stage 0 descriptor telemetry so `descriptor_pools_created` counts
+  actual arena creation rather than every descriptor set creation.
+
+## Stage 3 validation
+
+- `cmake --build build --config Debug --target GraphicsSmoke` — passed.
+- `GraphicsSmoke.exe` — reached the existing D5 cross-backend silhouette
+  comparator failure, but no descriptor lookup errors or Vulkan missing-set
+  validation errors were emitted after the arena change.
+- Stable material-binding caching and dedicated pool lifecycle/growth tests —
+  not yet implemented; the current checkpoint fixes the pool lifetime/churn
+  defect only.
+
+## Stage 4 visibility and static-shadow checkpoint
+
+- Extended `data::MeshSection` with a mesh-local AABB. Native model version 2
+  serializes six section-bound floats per section and validates finite,
+  non-inverted bounds plus containment of every indexed vertex. Version 1
+  products remain readable by deriving section bounds from their existing index
+  ranges, which preserves checked-in archives during migration.
+- Added a Render-owned section visibility helper. It first rejects invisible or
+  out-of-frustum proxies, then transforms each section AABB into world space
+  and rejects individual sections. Missing/invalid bounds remain conservative.
+  G-buffer, directional, spot, and point shadow recording now use the resulting
+  section identity and issue one indexed draw for each retained section.
+- Added a conservative directional shadow validity stamp covering light and
+  shadow identity, camera fit position, caster-section identity, transforms,
+  materials, and world bounds. A matching valid stamp skips the directional
+  target recording; resize, disabled-target clearing, or any stamp input change
+  forces redraw. This keeps correctness ahead of aggressive cache assumptions.
+
+## Stage 4 validation
+
+- `cmake --build build --config Debug --target AssetUnitTest RenderPassScheduleTest` — passed.
+- `AssetUnitTest.exe --gtest_filter=LevelLoaderTest.LoadsCheckedInGameplayLevelFixtures` — passed; legacy version-1 model products remained readable.
+- `RenderPassScheduleTest.exe` — 98/98 tests passed.
+- `cmake --build build --config Debug --target GraphicsSmoke` — passed.
+- `GraphicsSmoke.exe` — reached the existing D5 Vulkan/OpenGL silhouette
+  comparator failure (`raw=375`, `structural=82`, `area_delta=135`, bounds
+  match). No new Vulkan descriptor/set errors were emitted; this remains an
+  existing cross-backend validation blocker rather than a Stage 4 compile or
+  initialization failure.
+- Full asset suite and fresh Sponza capture remain pending; runtime smoke still
+  uses the checked-in legacy/native mix, so section-cull draw-count evidence
+  should be captured with the controllable Runtime host in the next checkpoint.
+
+## Stage 5 measured pass optimization checkpoint
+
+- Added a Render-owned `SortOpaqueFrontToBack` policy for opaque G-buffer
+  sections. It orders section world-bound centers by camera depth and uses the
+  existing pipeline/material/mesh/section key as a deterministic tie-break.
+  Alpha-blend lists and shadow ordering are unchanged.
+- Hardened the profile hook so its fixed Sponza window does not consume
+  scene-empty frames during asynchronous startup; sampling begins only after
+  renderable sections and texture dependencies are present.
+- The policy reuses Stage 4's section world bounds, so it does not add asset
+  ownership or backend-specific state. A depth pre-pass was not added because
+  it would require a new common depth/color-write contract and has no measured
+  payoff yet.
+- The prior valid Sponza profile remains the comparison baseline:
+  Vulkan Debug, 1093x695, CPU p50/p95 31.232/34.766 ms, G-buffer GPU p95
+  4.698 ms, 725 draws and 725 sections. A fresh post-startup profile and
+  inspected before/after image comparison are still required; an early CLI
+  launch profile completed before asynchronous Sponza promotion and was
+  discarded as invalid evidence.
+
+## Stage 5 validation
+
+- `cmake --build build --config Debug --target RenderPassScheduleTest` — passed.
+- `RenderPassScheduleTest.exe` — 99/99 tests passed, including deterministic
+  front-to-back ordering.
+- `cmake --build build --config Debug --target KimPeanutEngine` — passed.
+- Fresh Sponza runtime A/B profiling is pending because the validation launch
+  remained in asynchronous startup/resource promotion without opening the
+  local command transport; no timing or visual claim is made from that run.

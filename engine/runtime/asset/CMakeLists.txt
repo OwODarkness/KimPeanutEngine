@@ -24,6 +24,7 @@ target_link_libraries(AssetArchive PUBLIC AssetProduct Database PRIVATE Log)
 
 add_library(AssetNative STATIC
     native_model.cpp
+    native_texture.cpp
 )
 target_include_directories(AssetNative PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
@@ -53,6 +54,7 @@ add_library(AssetRuntime STATIC
     asset_manager.cpp
     asset_load_observation.cpp
     native_model_loader.cpp
+    native_texture_loader.cpp
     model.cpp
     shader_program.cpp
     shader_program_loader.cpp
@@ -82,6 +84,7 @@ add_library(AssetImport STATIC
     native_material.cpp
     material_promotion.cpp
     model_import_service.cpp
+    texture_importer.cpp
 )
 target_include_directories(AssetImport PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..

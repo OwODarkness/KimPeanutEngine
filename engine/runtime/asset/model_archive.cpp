@@ -487,7 +487,30 @@ namespace kpengine::asset
     {
         const std::filesystem::path normalized = path.lexically_normal();
         const std::string expected_directory = ProductDirectory(type);
-        const std::string expected_extension = ProductExtension(type, {});
+        std::string expected_extension;
+        if (type == ArchiveProductType::Texture)
+        {
+            const std::string actual_extension = normalized.extension().generic_string();
+            if (actual_extension.size() <= 1)
+            {
+                diagnostic = "archive texture product has no extension";
+                return false;
+            }
+            try
+            {
+                expected_extension = ProductExtension(
+                    type, std::string_view{actual_extension}.substr(1));
+            }
+            catch (const ModelArchiveError &)
+            {
+                diagnostic = "archive texture product has an invalid extension";
+                return false;
+            }
+        }
+        else
+        {
+            expected_extension = ProductExtension(type, {});
+        }
         const std::filesystem::path parent = normalized.parent_path();
 
         if (!product_root.empty())
@@ -1215,6 +1238,26 @@ namespace kpengine::asset
                 override_insert.Reset();
                 override_insert.ClearBindings();
             }
+            transaction.Commit();
+        });
+    }
+
+    void ModelArchiveDatabase::RemoveSource(std::string_view normalized_path)
+    {
+        const std::string canonical_path = NormalizeAssetRelativePath(normalized_path);
+        if (canonical_path != normalized_path)
+        {
+            throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
+                                    "source path is not canonical");
+        }
+
+        CatchDatabaseErrors([&]
+        {
+            database::Transaction transaction{*impl_->database};
+            auto statement = impl_->database->Prepare(
+                "DELETE FROM sources WHERE normalized_path=?;");
+            statement.Bind(1, canonical_path);
+            (void)statement.Step();
             transaction.Commit();
         });
     }

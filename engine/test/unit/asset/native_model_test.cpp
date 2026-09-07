@@ -50,7 +50,7 @@ namespace
             {{0.0f, 1.0f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}, {1.0f, 0.0f, 0.0f}, {0.0f, 1.0f, 0.0f}},
         };
         model.indices = {0, 1, 2};
-        model.sections = {{0, 3, 0}};
+        model.sections = {{0, 3, 0, {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}}};
         model.local_bounds = {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}};
         model.material_references = {{AssetType::KPAT_Material,
                                       kpengine::asset::Sha256("material-slot-0")}};
@@ -134,7 +134,8 @@ namespace
     {
         NativeModelData model = MakeModelWithoutMaterials();
         model.indices = {0, 1, 2, 0, 2, 1};
-        model.sections = {{0, 3, 0}, {3, 3, 1}};
+        model.sections = {{0, 3, 0, {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}},
+                          {3, 3, 1, {{0.0f, 0.0f, 0.0f}, {1.0f, 1.0f, 0.0f}}}};
         model.material_references = {{AssetType::KPAT_Material, first_material},
                                      {AssetType::KPAT_Material, second_material}};
         return model;
@@ -167,7 +168,7 @@ TEST(NativeModelFormatTest, SerializesDeterministicallyAndRoundTrips)
     EXPECT_EQ(static_cast<char>(std::to_integer<unsigned char>(first[1])), 'P');
     EXPECT_EQ(static_cast<char>(std::to_integer<unsigned char>(first[2])), 'M');
     EXPECT_EQ(static_cast<char>(std::to_integer<unsigned char>(first[3])), 'O');
-    EXPECT_EQ(first[8], std::byte{1});
+    EXPECT_EQ(first[8], static_cast<std::byte>(kpengine::asset::kNativeModelVersion));
     EXPECT_EQ(first[9], std::byte{0});
 
     const auto product = DeserializeNativeModel(first);
@@ -192,7 +193,7 @@ TEST(NativeModelFormatTest, RejectsTamperingAndUnsupportedValues)
     EXPECT_EQ(CatchNativeModelError(bytes), NativeModelErrorCode::IntegrityMismatch);
 
     bytes = SerializeNativeModel(MakeModel());
-    bytes[8] = std::byte{2};
+    bytes[8] = std::byte{3};
     EXPECT_EQ(CatchNativeModelError(bytes), NativeModelErrorCode::UnsupportedVersion);
 }
 
@@ -583,7 +584,8 @@ TEST(NativeModelRuntimeIntegrationTest, LoadsMultiMaterialGraphThroughAssetManag
     std::filesystem::remove(texture_path, error);
     std::filesystem::remove(texture_path.parent_path(), error);
     std::filesystem::remove(level_path, error);
-    std::filesystem::remove(archive_root / "archive.sqlite3", error);
-    std::filesystem::remove(archive_root / "archive.sqlite3-shm", error);
-    std::filesystem::remove(archive_root / "archive.sqlite3-wal", error);
+    {
+        kpengine::asset::ModelArchiveDatabase archive{archive_root / "archive.sqlite3"};
+        archive.RemoveSource("model/native_runtime/multi_material.obj");
+    }
 }

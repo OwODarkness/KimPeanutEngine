@@ -112,3 +112,13 @@ add_custom_command(TARGET ModelImportServiceTest POST_BUILD
 
 include(GoogleTest)
 gtest_discover_tests(ModelImportServiceTest)
+
+add_executable(
+    TextureImportTest
+    texture_import_test.cpp
+)
+
+target_link_libraries(TextureImportTest PRIVATE AssetImport Config KP::GoogleTest)
+
+include(GoogleTest)
+gtest_discover_tests(TextureImportTest)

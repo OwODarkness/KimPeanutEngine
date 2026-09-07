@@ -567,13 +567,22 @@ namespace kpengine
             game_ready_cv_.notify_one();
 
             auto frame_end = clock::now();
+            game_tick_work_ms_.store(
+                std::chrono::duration<double, std::milli>(frame_end - frame_start).count(),
+                std::memory_order_relaxed);
             std::chrono::duration<double> elapsed = frame_end - frame_start;
             double sleep_seconds = target_frame_time - elapsed.count();
 
+            double pacing_ms = 0.0;
             if (sleep_seconds > 0.0)
             {
+                const auto pacing_started = clock::now();
                 std::this_thread::sleep_for(std::chrono::duration<double>(sleep_seconds));
+                pacing_ms =
+                    std::chrono::duration<double, std::milli>(clock::now() - pacing_started)
+                        .count();
             }
+            game_tick_pacing_ms_.store(pacing_ms, std::memory_order_relaxed);
         }
 
         void Engine::RenderThreadFunc()
@@ -880,18 +889,23 @@ namespace kpengine
 
         void Engine::RenderTick()
         {
+            using clock = std::chrono::steady_clock;
+            const auto tick_started = clock::now();
+
             // Consume the game thread's produced frame. The game thread paces at
             // target_fps, so this blocking wait wakes ~once per frame.
+            const auto game_wait_started = tick_started;
             {
                 std::unique_lock<std::mutex> lock(game_ready_mutex_);
                 game_ready_cv_.wait(lock, [this]
                                     { return is_game_thread_loaded_; });
                 is_game_thread_loaded_ = false;
             }
+            const auto game_wait_finished = clock::now();
 
             float delta_time = CalculateDeltaTime();
 
-            using clock = std::chrono::steady_clock;
+            const auto render_work_started = clock::now();
             const double target_frame_time = 1.0 / target_fps;
             auto frame_start = clock::now();
 
@@ -904,11 +918,26 @@ namespace kpengine
             case RenderFrameBeginDisposition::Record:
                 break;
             case RenderFrameBeginDisposition::SkipRecoverable:
+            {
                 // A backend may legitimately skip a frame while rebuilding its
                 // swapchain. Do not construct ImGui, record a terminal pass, or
                 // present an unrelated buffer without an active Render bracket.
                 global_runtime_context.window_system_->PollEvents();
+                const auto frame_finished = clock::now();
+                frame_loop_metrics_.frame_total_ms =
+                    std::chrono::duration<double, std::milli>(frame_finished - tick_started)
+                        .count();
+                frame_loop_metrics_.game_wait_ms =
+                    std::chrono::duration<double, std::milli>(
+                        game_wait_finished - game_wait_started)
+                        .count();
+                frame_loop_metrics_.render_work_ms =
+                    std::chrono::duration<double, std::milli>(
+                        frame_finished - render_work_started)
+                        .count();
+                frame_loop_metrics_.frame_pacing_ms = 0.0;
                 return;
+            }
             case RenderFrameBeginDisposition::Fatal:
                 throw std::runtime_error(
                     "Render frame begin failed: " +
@@ -947,10 +976,26 @@ namespace kpengine
             std::chrono::duration<double> elapsed = frame_end - frame_start;
             double sleep_seconds = target_frame_time - elapsed.count();
 
+            double frame_pacing_ms = 0.0;
             if (sleep_seconds > 0.0)
             {
+                const auto pacing_started = clock::now();
                 std::this_thread::sleep_for(std::chrono::duration<double>(sleep_seconds));
+                frame_pacing_ms =
+                    std::chrono::duration<double, std::milli>(clock::now() - pacing_started)
+                        .count();
             }
+            const auto tick_finished = clock::now();
+            frame_loop_metrics_.frame_total_ms =
+                std::chrono::duration<double, std::milli>(tick_finished - tick_started).count();
+            frame_loop_metrics_.game_wait_ms =
+                std::chrono::duration<double, std::milli>(
+                    game_wait_finished - game_wait_started)
+                    .count();
+            frame_loop_metrics_.render_work_ms =
+                std::chrono::duration<double, std::milli>(tick_finished - render_work_started)
+                    .count() - frame_pacing_ms;
+            frame_loop_metrics_.frame_pacing_ms = frame_pacing_ms;
         }
 
         bool Engine::RenderLoadingTick()

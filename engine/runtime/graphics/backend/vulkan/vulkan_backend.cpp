@@ -71,6 +71,7 @@ namespace kpengine::graphics
 
         frame_context_ = std::make_unique<VulkanFrameContext>();
         frame_context_->Initialize(device_.get(), static_cast<uint32_t>(swapchain_->GetImageCount()));
+        descriptor_set_manager_->Initialize(VulkanFrameContext::MAX_FRAMES_IN_FLIGHT);
         if (device_->SupportsBindlessTextures())
         {
             auto candidate = std::make_unique<VulkanBindlessTextureTable>();
@@ -119,6 +120,8 @@ namespace kpengine::graphics
         // 3. caller selects render targets and records draws, then EndFrame submits
 
         frame_context_->WaitForInFlightFence();
+        descriptor_set_manager_->BeginFrame(device_->GetLogicalDevice(),
+                                             frame_context_->GetCurrentFrameIndex());
         CollectCompletedGpuProfileTimings();
         if (render_target_readback_)
         {
@@ -137,6 +140,7 @@ namespace kpengine::graphics
         if (acquire_image_res == VK_ERROR_OUT_OF_DATE_KHR)
         {
             RecreateSwapchain();
+            descriptor_set_manager_->EndFrame();
             frame_active_ = false;
             return;
         }
@@ -206,6 +210,7 @@ namespace kpengine::graphics
         }
 
         frame_context_->AdvanceFrame();
+        descriptor_set_manager_->EndFrame();
         frame_active_ = false;
     }
 
@@ -509,12 +514,13 @@ namespace kpengine::graphics
         {
             return {};
         }
+        bool pool_created = false;
         const DescriptorSetHandle handle = descriptor_set_manager_->CreateResourceBindingSet(
             device_->GetLogicalDevice(), *pipeline_resource, desc, *buffer_manager_,
-            *texture_manager_, *sampler_manager_);
+            *texture_manager_, *sampler_manager_, &pool_created);
         if (handle.IsValid())
         {
-            RecordDescriptorSetCreated(true);
+            RecordDescriptorSetCreated(pool_created);
         }
         return handle;
     }

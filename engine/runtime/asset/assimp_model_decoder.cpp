@@ -626,6 +626,8 @@ namespace kpengine::asset
                          std::unordered_map<data::Vertex, std::uint32_t, data::VertexHash> &unique_vertices)
         {
             const std::uint32_t index_start = static_cast<std::uint32_t>(destination.indices.size());
+            spatial::AABB section_bounds{};
+            bool has_section_vertex = false;
             const bool has_normal = mesh.HasNormals();
             const bool has_texcoord = mesh.mTextureCoords[0] != nullptr;
             const bool has_tangent_and_bitangent = mesh.HasTangentsAndBitangents();
@@ -648,6 +650,15 @@ namespace kpengine::asset
 
                     data::Vertex vertex{};
                     vertex.position = ToVector3(node_transform * mesh.mVertices[vertex_index]);
+                    if (!has_section_vertex)
+                    {
+                        section_bounds = {vertex.position, vertex.position};
+                        has_section_vertex = true;
+                    }
+                    else
+                    {
+                        section_bounds.ExpandToInclude(vertex.position);
+                    }
                     if (has_normal)
                     {
                         vertex.normal = NormalizeImportedVector(
@@ -679,7 +690,8 @@ namespace kpengine::asset
             destination.sections.push_back(
                 {index_start,
                  static_cast<std::uint32_t>(destination.indices.size()) - index_start,
-                 mesh.mMaterialIndex});
+                 mesh.mMaterialIndex,
+                 section_bounds});
         }
 
         void ProcessNode(const aiNode &node, const aiScene &scene, const aiMatrix4x4 &parent,

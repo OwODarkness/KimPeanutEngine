@@ -4,14 +4,17 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "image_io/image_io.h"
 #include "imported_model.h"
 #include "material.h"
 #include "asset_product.h"
+#include "texture_importer.h"
 
 namespace kpengine::asset
 {
@@ -21,6 +24,8 @@ namespace kpengine::asset
     {
         std::filesystem::path asset_root;
         std::string shader_asset_path{"shader/pbr_gbuffer.shader"};
+        TextureCookSettings texture_settings{};
+        std::function<void(std::string_view)> texture_progress_callback;
     };
 
     struct NativeImageProduct

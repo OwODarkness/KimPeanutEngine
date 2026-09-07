@@ -19,6 +19,7 @@ namespace kpengine{
             float width_ratio = 1.0f;
             float height_ratio = 1.0f;
             bool locked = true;
+            int extra_flags = 0;
         };
 
         class EditorWindowComponent : public EditorUIComponent{

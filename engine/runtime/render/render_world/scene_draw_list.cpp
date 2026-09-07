@@ -1,6 +1,7 @@
 #include "render/render_world/scene_draw_list.h"
 
 #include <algorithm>
+#include <cmath>
 #include <tuple>
 
 namespace kpengine::render
@@ -23,5 +24,33 @@ namespace kpengine::render
     void SceneDrawListBuilder::SortOpaque(std::vector<SceneDrawItem> &items)
     {
         std::sort(items.begin(), items.end(), IsLessOpaqueBatchKey);
+    }
+
+    void SceneDrawListBuilder::SortOpaqueFrontToBack(
+        std::vector<SceneDrawItem> &items, const Vector3f &camera_position,
+        const Vector3f &camera_forward)
+    {
+        const Vector3f forward = camera_forward.GetSafetyNormalize();
+        const auto depth = [&camera_position, &forward](const SceneDrawItem &item)
+        {
+            const spatial::AABB &bounds = item.proxy.world_bounds;
+            const Vector3f center = bounds.IsValid()
+                                         ? (bounds.min_ + bounds.max_) * 0.5f
+                                         : item.proxy.world_transform.position_;
+            const float result = (center - camera_position).DotProduct(forward);
+            return std::isfinite(result) ? result : std::numeric_limits<float>::max();
+        };
+
+        std::stable_sort(items.begin(), items.end(), [&depth](const SceneDrawItem &lhs,
+                                                               const SceneDrawItem &rhs)
+        {
+            const float lhs_depth = depth(lhs);
+            const float rhs_depth = depth(rhs);
+            if (lhs_depth != rhs_depth)
+            {
+                return lhs_depth < rhs_depth;
+            }
+            return IsLessOpaqueBatchKey(lhs, rhs);
+        });
     }
 }

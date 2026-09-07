@@ -37,6 +37,7 @@ add_executable(
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_capture_service.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/frustum.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/scene_visibility.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_resource_resolver.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/scene_draw_list.cpp
 )
 
@@ -48,7 +49,7 @@ target_include_directories(RenderPassScheduleTest PRIVATE
 
 # Config propagates the generated global.h (project-root define) that
 # config/path.h requires; material_asset_resolver.cpp compiles here too.
-target_link_libraries(RenderPassScheduleTest PRIVATE Asset Resource KP::GoogleTest Math Config)
+target_link_libraries(RenderPassScheduleTest PRIVATE Asset Resource Graphics KP::GoogleTest Math Config)
 
 add_custom_command(TARGET RenderPassScheduleTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different

@@ -15,7 +15,7 @@
 
 namespace kpengine::asset
 {
-    constexpr std::uint16_t kNativeModelVersion = 1;
+    constexpr std::uint16_t kNativeModelVersion = 2;
     constexpr std::uint32_t kNativeModelFeatures = 0;
     constexpr std::size_t kNativeModelHeaderSize = 88;
     constexpr std::size_t kNativeModelChunkEntrySize = 32;
