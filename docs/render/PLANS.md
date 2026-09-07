@@ -63,6 +63,9 @@ public policy while the coordinator owns scene preparation.
   preparation behind one stable coordinator, replace the raw Editor graphics
   context with a typed presentation bridge, narrow target/metrics access, and
   close R1 with cross-backend evidence.
+- [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
+  texture minification and bound texture, descriptor, visibility, and static-
+  shadow costs through Resource, Render, and Graphics ownership boundaries.
 
 ## Focused submodules
 

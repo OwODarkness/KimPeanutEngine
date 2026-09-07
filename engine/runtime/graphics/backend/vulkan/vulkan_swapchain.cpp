@@ -50,6 +50,7 @@ namespace kpengine::graphics
         VkExtent2D resolution = ChooseSwapChainExtent(swapchain_support_detail.capacities, fallback_width, fallback_height);
         VkSurfaceFormatKHR surface_format = ChooseSwapChainSurfaceFormat(swapchain_support_detail.surface_formats);
         VkPresentModeKHR present_mode = ChooseSwapChainPresentMode(swapchain_support_detail.present_modes);
+        present_mode_ = present_mode;
         uint32_t min_image_count = swapchain_support_detail.capacities.minImageCount + 1;
         if (swapchain_support_detail.capacities.maxImageCount > 0 && min_image_count > swapchain_support_detail.capacities.maxImageCount)
         {
@@ -154,6 +155,22 @@ namespace kpengine::graphics
             }
         }
         return VK_PRESENT_MODE_FIFO_KHR;
+    }
+
+    const char *VulkanSwapchain::GetPresentModeName() const
+    {
+        switch (present_mode_)
+        {
+        case VK_PRESENT_MODE_MAILBOX_KHR:
+            return "mailbox";
+        case VK_PRESENT_MODE_IMMEDIATE_KHR:
+            return "immediate";
+        case VK_PRESENT_MODE_FIFO_RELAXED_KHR:
+            return "fifo_relaxed";
+        case VK_PRESENT_MODE_FIFO_KHR:
+        default:
+            return "fifo";
+        }
     }
 
     VkExtent2D VulkanSwapchain::ChooseSwapChainExtent(const VkSurfaceCapabilitiesKHR &capacity, uint32_t fallback_width, uint32_t fallback_height) const

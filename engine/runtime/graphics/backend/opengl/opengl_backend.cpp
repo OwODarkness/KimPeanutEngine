@@ -24,6 +24,10 @@ namespace kpengine::graphics
 {
     static_assert(!std::is_base_of_v<IRenderTargetReadback, OpenglBackend>);
     static_assert(!std::is_base_of_v<CommandRecorder, OpenglBackend>);
+    namespace
+    {
+        constexpr uint32_t kProfilePassCount = 8;
+    }
 
     OpenglBackend::OpenglBackend() : mesh_manager_(std::make_unique<MeshManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
@@ -59,6 +63,14 @@ namespace kpengine::graphics
             bindless_texture_table_ = std::move(bindless_table);
         }
         InitializeCapabilities();
+        profile_gpu_timing_available_ = glad_glQueryCounter != nullptr &&
+                                        glad_glGetQueryObjectui64v != nullptr;
+        if (profile_gpu_timing_available_)
+        {
+            profile_query_ids_.resize(kProfilePassCount * 2);
+            glGenQueries(static_cast<GLsizei>(profile_query_ids_.size()),
+                         profile_query_ids_.data());
+        }
     }
 
     void OpenglBackend::InitializeCapabilities()
@@ -78,6 +90,8 @@ namespace kpengine::graphics
     {
         // OpenGL executes synchronously, so the previous frame's draws have
         // already produced the scene target; collect reads it before recording.
+        CollectCompletedGpuProfileTimings();
+        ResetBackendProfileCounters();
         if (render_target_readback_)
         {
             render_target_readback_->CollectCompletedReadbacks();
@@ -130,6 +144,56 @@ namespace kpengine::graphics
         return frame_active_ ? command_recorder_.get() : nullptr;
     }
 
+    void OpenglBackend::BeginGpuProfilePass(const uint32_t pass_id)
+    {
+        if (!profile_gpu_timing_available_ || !frame_active_ ||
+            pass_id >= kProfilePassCount || profile_query_ids_.empty())
+        {
+            return;
+        }
+        glQueryCounter(profile_query_ids_[pass_id * 2], GL_TIMESTAMP);
+        profile_queries_written_ = true;
+    }
+
+    void OpenglBackend::EndGpuProfilePass(const uint32_t pass_id)
+    {
+        if (!profile_gpu_timing_available_ || !frame_active_ ||
+            pass_id >= kProfilePassCount || profile_query_ids_.empty())
+        {
+            return;
+        }
+        glQueryCounter(profile_query_ids_[pass_id * 2 + 1], GL_TIMESTAMP);
+    }
+
+    std::vector<GpuProfileTiming> OpenglBackend::ConsumeCompletedGpuProfileTimings()
+    {
+        std::vector<GpuProfileTiming> result;
+        result.swap(completed_gpu_profile_timings_);
+        return result;
+    }
+
+    void OpenglBackend::CollectCompletedGpuProfileTimings()
+    {
+        completed_gpu_profile_timings_.clear();
+        if (!profile_gpu_timing_available_ || !profile_queries_written_ ||
+            profile_query_ids_.empty())
+        {
+            return;
+        }
+        for (uint32_t pass_id = 0; pass_id < kProfilePassCount; ++pass_id)
+        {
+            GLuint64 begin = 0;
+            GLuint64 end = 0;
+            glGetQueryObjectui64v(profile_query_ids_[pass_id * 2], GL_QUERY_RESULT, &begin);
+            glGetQueryObjectui64v(profile_query_ids_[pass_id * 2 + 1], GL_QUERY_RESULT, &end);
+            if (end >= begin && end != 0)
+            {
+                completed_gpu_profile_timings_.push_back({pass_id, end - begin});
+            }
+        }
+        profile_queries_written_ = false;
+    }
+
     BufferHandle OpenglBackend::CreateUniformBuffer(uint32_t size)
     {
         GLuint buffer = 0;
@@ -170,6 +234,12 @@ namespace kpengine::graphics
         {
             command_recorder_->EndRenderTarget();
             command_recorder_.reset();
+        }
+        if (!profile_query_ids_.empty())
+        {
+            glDeleteQueries(static_cast<GLsizei>(profile_query_ids_.size()),
+                            profile_query_ids_.data());
+            profile_query_ids_.clear();
         }
         // Cancel pending readbacks before any referenced attachment is destroyed.
         if (render_target_readback_)
@@ -556,6 +626,7 @@ namespace kpengine::graphics
             return {};
         }
         resource_binding_sets_[handle.id] = std::move(set);
+        RecordDescriptorSetCreated(false);
         return handle;
     }
 

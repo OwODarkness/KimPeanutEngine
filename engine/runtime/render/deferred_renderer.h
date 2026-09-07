@@ -23,6 +23,7 @@
 #include "prepared_render_asset_catalog.h"
 #include "render_world/render_world.h"
 #include "renderer_frame_targets.h"
+#include "render_profile.h"
 
 namespace kpengine::data
 {
@@ -81,6 +82,7 @@ namespace kpengine::render
         graphics::RenderTargetView GetViewportRenderTargetView(CaptureView view) const;
         graphics::RenderTargetHandle GetCaptureTarget(CaptureView view) const;
         uint64_t GetTriangleCount() const { return triangle_count_; }
+        RenderProfileSnapshot GetProfileSnapshot() const { return profile_; }
         bool IsPassSequenceValid() const { return pass_sequence_.has_value(); }
 
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
@@ -183,6 +185,7 @@ namespace kpengine::render
                              uint32_t section_index = std::numeric_limits<uint32_t>::max());
         void UpdateEnvironment(const RenderSceneFrameInput &input);
         void ApplyPendingSceneRenderTargetExtent();
+        void AddProfileDraws(uint64_t draw_calls, uint64_t sections);
 
         graphics::RenderBackend *backend_ = nullptr;
         RenderResourceResolver *resource_resolver_ = nullptr;
@@ -217,6 +220,8 @@ namespace kpengine::render
         std::optional<EnvironmentSourceHandle> failed_environment_source_;
         graphics::PipelineHandle tone_map_pipeline_;
         graphics::PipelineHandle directional_shadow_pipeline_;
+        RenderProfileSnapshot profile_;
+        std::optional<size_t> active_profile_pass_;
     };
 }
 

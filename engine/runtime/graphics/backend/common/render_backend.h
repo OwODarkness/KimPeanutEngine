@@ -3,6 +3,8 @@
 
 #include <memory>
 #include <optional>
+#include <string>
+#include <vector>
 #include "base/base.h"
 #include "delegate/event_dispatcher.h"
 #include "editor_presentation_bridge.h"
@@ -36,6 +38,18 @@ namespace kpengine::graphics
     struct PerObjectData
     {
         Matrix4f model;
+    };
+
+    struct GpuProfileTiming
+    {
+        uint32_t pass_id = 0;
+        uint64_t nanoseconds = 0;
+    };
+
+    struct BackendProfileCounters
+    {
+        uint64_t descriptor_sets_created = 0;
+        uint64_t descriptor_pools_created = 0;
     };
 
     struct Extent2D
@@ -95,6 +109,16 @@ namespace kpengine::graphics
         virtual void BindResourceBindingSet(PipelineHandle pipeline,
                                             DescriptorSetHandle handle) = 0;
         virtual void BeginFrame() = 0;
+        // Optional frame instrumentation. The pass identifier is owned by
+        // Render; Graphics only records the pair on the active command stream.
+        virtual void BeginGpuProfilePass(uint32_t pass_id) { (void)pass_id; }
+        virtual void EndGpuProfilePass(uint32_t pass_id) { (void)pass_id; }
+        virtual std::vector<GpuProfileTiming> ConsumeCompletedGpuProfileTimings()
+        {
+            return {};
+        }
+        virtual const char *GetPresentModeName() const { return "unknown"; }
+        virtual BackendProfileCounters GetBackendProfileCounters() const { return {}; }
         virtual CommandRecorder *GetCommandRecorder() = 0;
         virtual void EndFrame() = 0;
         virtual GraphicsAPIType GetGraphicsAPI() const = 0;
@@ -126,6 +150,16 @@ namespace kpengine::graphics
     protected:
         virtual void FramebufferResizeCallback(const ResizeEvent &event);
 
+        void RecordDescriptorSetCreated(bool pool_created) noexcept
+        {
+            ++profile_counters_.descriptor_sets_created;
+            if (pool_created)
+            {
+                ++profile_counters_.descriptor_pools_created;
+            }
+        }
+        void ResetBackendProfileCounters() noexcept { profile_counters_ = {}; }
+
     public:
         RenderBackend() = default;
         virtual ~RenderBackend() = default;
@@ -136,6 +170,7 @@ namespace kpengine::graphics
         int width_ = 0;
         int height_ = 0;
         GraphicsCapabilities capabilities_{};
+        BackendProfileCounters profile_counters_{};
     };
 }
 

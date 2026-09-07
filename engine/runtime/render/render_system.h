@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <vector>
+#include <chrono>
 
 #include "base/event.h"
 #include "base/type.h"
@@ -20,6 +21,7 @@
 #include "render_resource.h"
 #include "prepared_render_asset_catalog.h"
 #include "render_scene_coordinator.h"
+#include "render_profile.h"
 
 namespace kpengine::graphics
 {
@@ -94,6 +96,9 @@ namespace kpengine::render
         // the API-specific editor renderer composites before submission/present.
         bool BeginFrame(float delta_time);
         bool EndFrame();
+        // Runtime calls this after an external window-system swap (OpenGL).
+        // Vulkan reports present time from its backend EndFrame bracket.
+        void RecordPresentationTime(double milliseconds);
         // Completes a pending EngineWindow capture at the presentation
         // boundary. Must be called by the render thread that owns the window
         // and graphics API.
@@ -122,6 +127,7 @@ namespace kpengine::render
             uint32_t prepared_shader_count = 0;
             uint64_t triangle_count = 0;
             std::optional<float> gpu_usage_percent;
+            RenderProfileSnapshot profile;
         };
         RenderSystemMetrics GetMetrics() const;
         IRenderableSourceSink *GetRenderableSourceSink()
@@ -145,6 +151,7 @@ namespace kpengine::render
         void CleanupOwnedState();
         void CleanupSceneState();
         bool IsState(RenderSystemLifecycleState expected) const;
+        void LogCompletedProfileSummary();
 
         FrameContext *GetCurrentFrameContext();
 
@@ -167,6 +174,11 @@ namespace kpengine::render
         bool backend_initialized_ = false;
         RenderSystemLifecycleState frame_return_state_ =
             RenderSystemLifecycleState::Uninitialized;
+        RenderProfileSnapshot profile_;
+        RenderProfileWindow profile_window_{GetSponzaProfileScenario().warmup_frames,
+                                            GetSponzaProfileScenario().sample_frames};
+        std::chrono::steady_clock::time_point profile_frame_start_{};
+        bool profile_summary_logged_ = false;
         CaptureView debug_view_ = CaptureView::SceneColor;
         CaptureView requested_debug_view_ = CaptureView::SceneColor;
     };

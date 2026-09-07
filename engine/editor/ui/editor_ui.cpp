@@ -328,7 +328,7 @@ namespace kpengine::editor
                                      : "--";
             }));
         profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "GPU",
+            "Usage",
             [render_system]
             {
                 const std::optional<float> gpu_usage =
@@ -346,6 +346,58 @@ namespace kpengine::editor
             "Triangles",
             [render_system]
             { return std::to_string(render_system->GetMetrics().triangle_count); }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "CPU",
+            [render_system]
+            {
+                char value[32]{};
+                std::snprintf(value, sizeof(value), "%.2f ms",
+                              render_system->GetMetrics().profile.cpu_total_ms);
+                return std::string{value};
+            }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "GPass",
+            [render_system]
+            {
+                const auto profile = render_system->GetMetrics().profile;
+                const auto &gbuffer = profile.passes[static_cast<size_t>(
+                    render::RenderProfilePass::GBuffer)];
+                if (!gbuffer.gpu_time_ms.has_value())
+                {
+                    return std::string{"N/A"};
+                }
+                char value[32]{};
+                std::snprintf(value, sizeof(value), "%.2f ms", *gbuffer.gpu_time_ms);
+                return std::string{value};
+            }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "Draws",
+            [render_system]
+            {
+                const auto profile = render_system->GetMetrics().profile;
+                return std::to_string(profile.draw_calls) + "/" +
+                       std::to_string(profile.sections);
+            }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "Desc",
+            [render_system]
+            {
+                const auto profile = render_system->GetMetrics().profile;
+                return std::to_string(profile.descriptor_sets_created) + "/" +
+                       std::to_string(profile.descriptor_pools_created);
+            }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "Tex",
+            [render_system]
+            {
+                const auto profile = render_system->GetMetrics().profile;
+                char value[48]{};
+                std::snprintf(value, sizeof(value), "%u / %.1f MB",
+                              profile.textures.dependency_count,
+                              static_cast<double>(profile.textures.resident_bytes) /
+                                  (1024.0 * 1024.0));
+                return std::string{value};
+            }));
         components_.push_back(
             std::make_unique<EditorProfileBarComponent>(std::move(profile_metrics)));
     }

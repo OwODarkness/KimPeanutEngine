@@ -1,9 +1,18 @@
 # Project Status
 
-**Snapshot: 2026-09-06.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-07.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
 **Current release: v1.1.0.**
 
+- **Render issue-9.7 Sponza quality/throughput (2026-09-07)** — Stage 0
+  instrumentation is landed; native baseline capture remains pending. The
+  remaining failures are texture-minification speckle and approximately 30 FPS,
+  with the resolved black-frame defect excluded. Verified pressure includes
+  missing mip chains, a 72×4K RGBA8 texture closure, Vulkan pool-per-draw
+  descriptors, whole-model visibility, and unconditional static-shadow redraw;
+  timing attribution is the first execution gate. →
+  [issue](render/issue/issue-9.7.md), [plan](render/.plan/issue-9.7.md),
+  [review](render/.review/issue-9.7.md)
 - **MI1.7-R1 Asset build boundary (2026-09-06)** — split the database-free
   product/native layer, runtime AssetManager, archive database, and offline
   importer into explicit CMake targets. `AssetImport` no longer depends on

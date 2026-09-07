@@ -27,6 +27,9 @@
 
 namespace kpengine::render
 {
+    static_assert(static_cast<uint8_t>(RenderProfilePass::Count) ==
+                  static_cast<uint8_t>(FixedRenderPassId::Count));
+
     namespace
     {
         constexpr const char *GetGraphicsApiName(GraphicsAPIType api_type)
@@ -49,11 +52,12 @@ namespace kpengine::render
         constexpr uint64_t kPointShadowTargetBytes =
             static_cast<uint64_t>(kPointShadowAtlasWidth) * kPointShadowAtlasHeight * 4;
 
-        void DrawMeshSections(const RenderResourceResolver &resource_resolver,
-                              graphics::CommandRecorder &recorder,
-                              graphics::MeshHandle mesh,
-                              uint32_t section_index = std::numeric_limits<uint32_t>::max())
+        uint64_t DrawMeshSections(const RenderResourceResolver &resource_resolver,
+                                  graphics::CommandRecorder &recorder,
+                                  graphics::MeshHandle mesh,
+                                  uint32_t section_index = std::numeric_limits<uint32_t>::max())
         {
+            uint64_t draw_count = 0;
             const std::vector<data::MeshSection> *const sections =
                 resource_resolver.FindMeshSections(mesh);
             if (sections == nullptr || sections->empty() ||
@@ -66,17 +70,18 @@ namespace kpengine::render
                         // Preserve the legacy fallback for meshes created
                         // outside the resolver's section cache.
                         recorder.DrawIndexed();
-                        return;
+                        return 1;
                     }
                     for (const data::MeshSection &section : *sections)
                     {
                         if (section.index_count != 0)
                         {
                             recorder.DrawIndexed(section.index_count, 1, section.index_start);
+                            ++draw_count;
                         }
                     }
                 }
-                return;
+                return 0;
             }
 
             if (section_index < sections->size())
@@ -85,8 +90,10 @@ namespace kpengine::render
                 if (section.index_count != 0)
                 {
                     recorder.DrawIndexed(section.index_count, 1, section.index_start);
+                    ++draw_count;
                 }
             }
+            return draw_count;
         }
 
         struct alignas(16) CaptureViewGpuData
@@ -425,6 +432,12 @@ namespace kpengine::render
     {
         DeferredRendererFrameResult result{};
         triangle_count_ = 0;
+        profile_ = {};
+        profile_.frame_number = frame_context.GetGlobals().frame_number;
+        profile_.graphics_api = backend_->GetGraphicsAPI();
+        profile_.viewport_width = frame_context.GetRenderExtent().width;
+        profile_.viewport_height = frame_context.GetRenderExtent().height;
+        profile_.textures = resource_resolver_->GetTextureMetrics();
         if (!pass_sequence_.has_value() || active_pass_frame_.has_value())
         {
             result.normal_recording_completed = false;
@@ -439,6 +452,7 @@ namespace kpengine::render
         UpdateEnvironment(input);
         active_directional_shadow_ = ScheduleDirectionalShadow(input.lights,
                                                                input.is_shadow_handle_valid);
+        profile_.shadow_cache_misses = active_directional_shadow_.has_value() ? 1 : 0;
         active_spot_shadow_ = ScheduleSpotShadow(input.lights, input.is_shadow_handle_valid);
         active_point_shadow_ = SchedulePointShadow(input.lights, input.is_shadow_handle_valid);
         spot_shadow_recorded_ = false;
@@ -463,16 +477,25 @@ namespace kpengine::render
 
     bool DeferredRenderer::ExecutePass(FixedRenderPassId id, const std::vector<Light> &lights)
     {
+        const size_t profile_index = static_cast<size_t>(id);
+        const auto started = std::chrono::steady_clock::now();
+        active_profile_pass_ = profile_index;
+        backend_->BeginGpuProfilePass(static_cast<uint32_t>(profile_index));
+        bool succeeded = false;
         switch (id)
         {
         case FixedRenderPassId::DirectionalShadow:
-            return RecordDirectionalShadowPass();
+            succeeded = RecordDirectionalShadowPass();
+            break;
         case FixedRenderPassId::SpotShadow:
-            return RecordSpotShadowPass();
+            succeeded = RecordSpotShadowPass();
+            break;
         case FixedRenderPassId::PointShadow:
-            return RecordPointShadowPass();
+            succeeded = RecordPointShadowPass();
+            break;
         case FixedRenderPassId::GBuffer:
-            return RecordGBufferPass();
+            succeeded = RecordGBufferPass();
+            break;
         case FixedRenderPassId::DeferredLighting:
         {
             ResolvedLightShadowBindings resolved_shadows;
@@ -496,24 +519,45 @@ namespace kpengine::render
             }
             frame_lighting_binding_ = active_frame_context_->CreateLightingBinding(
                 BuildLightGpuFrameData(lights, resolved_shadows));
-            return RecordDeferredLightingPass();
+            succeeded = RecordDeferredLightingPass();
+            break;
         }
         case FixedRenderPassId::ToneMap:
-            return RecordToneMapPass();
+            succeeded = RecordToneMapPass();
+            break;
         case FixedRenderPassId::CaptureView:
-            return active_pending_capture_.has_value() &&
-                   RecordCaptureViewPass(*active_pending_capture_);
+            succeeded = active_pending_capture_.has_value() &&
+                        RecordCaptureViewPass(*active_pending_capture_);
+            break;
         case FixedRenderPassId::EditorComposite:
         case FixedRenderPassId::Count:
-            return false;
+            succeeded = false;
+            break;
         }
-        return false;
+        backend_->EndGpuProfilePass(static_cast<uint32_t>(profile_index));
+        profile_.passes[profile_index].cpu_time_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started)
+                .count();
+        active_profile_pass_.reset();
+        return succeeded;
     }
 
     bool DeferredRenderer::ExecuteEditorCompositePass(const std::function<void()> &record_pass)
     {
-        return active_pass_frame_.has_value() &&
-               active_pass_frame_->ExecuteExternal(record_pass);
+        if (!active_pass_frame_.has_value())
+        {
+            return false;
+        }
+        const auto started = std::chrono::steady_clock::now();
+        backend_->BeginGpuProfilePass(static_cast<uint32_t>(RenderProfilePass::EditorComposite));
+        const bool succeeded = active_pass_frame_->ExecuteExternal(record_pass);
+        backend_->EndGpuProfilePass(static_cast<uint32_t>(RenderProfilePass::EditorComposite));
+        profile_.passes[static_cast<size_t>(RenderProfilePass::EditorComposite)].cpu_time_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started)
+                .count();
+        return succeeded;
     }
 
     bool DeferredRenderer::FinalizeFrame()
@@ -1182,6 +1226,7 @@ namespace kpengine::render
                 recorder->BindMesh(gbuffer_debug_fullscreen_mesh_);
                 recorder->BindResourceBindings(deferred_lighting_pipeline_, bindings);
                 recorder->DrawIndexed();
+                AddProfileDraws(1, 1);
                 recorded = true;
             }
         }
@@ -1483,6 +1528,7 @@ namespace kpengine::render
             recorder->BindMesh(gbuffer_debug_fullscreen_mesh_);
             recorder->BindResourceBindings(tone_map_pipeline_, tone_map_bindings);
             recorder->DrawIndexed();
+            AddProfileDraws(1, 1);
         }
         scene_target->EndRecording(*recorder);
         return tone_map_bindings.IsValid();
@@ -1622,6 +1668,7 @@ namespace kpengine::render
         recorder->BindMesh(gbuffer_debug_fullscreen_mesh_);
         recorder->BindResourceBindings(capture_view_pipeline_, bindings);
         recorder->DrawIndexed();
+        AddProfileDraws(1, 1);
         output_target->EndRecording(*recorder);
         return true;
     }
@@ -1861,7 +1908,8 @@ namespace kpengine::render
         recorder.BindPipeline(directional_shadow_pipeline_);
         recorder.BindMesh(proxy.mesh);
         recorder.BindResourceBindings(directional_shadow_pipeline_, bindings);
-        DrawMeshSections(*resource_resolver_, recorder, proxy.mesh);
+        const uint64_t draw_count = DrawMeshSections(*resource_resolver_, recorder, proxy.mesh);
+        AddProfileDraws(draw_count, draw_count);
     }
 
     bool DeferredRenderer::RecordMeshProxy(const MeshProxy &proxy,
@@ -1910,8 +1958,23 @@ namespace kpengine::render
         recorder.BindPipeline(material_binding.pipeline);
         recorder.BindMesh(proxy.mesh);
         recorder.BindResourceBindings(material_binding.pipeline, material_binding.descriptor_set);
-        DrawMeshSections(*resource_resolver_, recorder, proxy.mesh, section_index);
+        const uint64_t draw_count =
+            DrawMeshSections(*resource_resolver_, recorder, proxy.mesh, section_index);
+        AddProfileDraws(draw_count, draw_count);
         return true;
+    }
+
+    void DeferredRenderer::AddProfileDraws(const uint64_t draw_calls,
+                                           const uint64_t sections)
+    {
+        profile_.draw_calls += draw_calls;
+        profile_.sections += sections;
+        if (active_profile_pass_.has_value())
+        {
+            RenderProfilePassMetrics &pass = profile_.passes[*active_profile_pass_];
+            pass.draw_calls += draw_calls;
+            pass.sections += sections;
+        }
     }
 
     bool DeferredRenderer::ResolveLevelEnvironment(const EnvironmentSourceDesc &source,

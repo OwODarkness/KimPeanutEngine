@@ -17,6 +17,7 @@
 #include "render/material/material_system.h"
 #include "prepared_render_asset_catalog.h"
 #include "render_resource.h"
+#include "render_profile.h"
 
 namespace kpengine::asset
 {
@@ -118,6 +119,7 @@ namespace kpengine::render
         const ResolvedMaterialTextureBindings *FindTextureBindings(
             MaterialInstanceHandle handle) const;
         bool UsesBindlessTextures(MaterialInstanceHandle handle) const;
+        RenderProfileTextureMetrics GetTextureMetrics() const;
         void Cleanup();
 
     private:
@@ -147,6 +149,7 @@ namespace kpengine::render
         std::unordered_map<MaterialInstanceHandle, ResolvedMaterialTextureBindings>
             material_texture_bindings_;
         graphics::SamplerHandle default_sampler_handle_;
+        uint64_t resident_texture_bytes_ = 0;
     };
 }
 

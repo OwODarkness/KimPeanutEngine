@@ -138,6 +138,7 @@ namespace kpengine::render
             if (texture.IsValid())
             {
                 texture_cache_.emplace(key, texture);
+                resident_texture_bytes_ += data.pixels.size();
             }
         }
         if (!texture.IsValid())
@@ -312,6 +313,15 @@ namespace kpengine::render
         return bindings && bindings->uses_bindless_textures;
     }
 
+    RenderProfileTextureMetrics RenderResourceResolver::GetTextureMetrics() const
+    {
+        RenderProfileTextureMetrics metrics = prepared_assets_ != nullptr
+                                                  ? prepared_assets_->GetTextureMetrics()
+                                                  : RenderProfileTextureMetrics{};
+        metrics.resident_bytes = resident_texture_bytes_;
+        return metrics;
+    }
+
     void RenderResourceResolver::Cleanup()
     {
         if (!backend_)
@@ -344,6 +354,7 @@ namespace kpengine::render
             backend_->DestroyTexture(handle);
         }
         texture_cache_.clear();
+        resident_texture_bytes_ = 0;
         if (default_sampler_handle_.IsValid())
         {
             backend_->DestroySampler(default_sampler_handle_);

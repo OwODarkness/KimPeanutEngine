@@ -49,6 +49,14 @@ namespace kpengine::graphics
         void BindResourceBindingSet(PipelineHandle pipeline,
                                     DescriptorSetHandle handle) override;
         virtual void BeginFrame() override;
+        void BeginGpuProfilePass(uint32_t pass_id) override;
+        void EndGpuProfilePass(uint32_t pass_id) override;
+        std::vector<GpuProfileTiming> ConsumeCompletedGpuProfileTimings() override;
+        const char *GetPresentModeName() const override { return "vsync"; }
+        BackendProfileCounters GetBackendProfileCounters() const override
+        {
+            return profile_counters_;
+        }
         CommandRecorder *GetCommandRecorder() override;
         virtual void EndFrame() override;
         GraphicsAPIType GetGraphicsAPI() const override
@@ -75,6 +83,7 @@ namespace kpengine::graphics
     private:
         void InitializeCapabilities();
         GraphicsContext CreateGraphicsContext();
+        void CollectCompletedGpuProfileTimings();
         OpenglRenderTargetReadbackSource GetRenderTargetReadbackSource(
             RenderTargetHandle handle) const;
     private:
@@ -97,6 +106,10 @@ namespace kpengine::graphics
         std::unordered_map<uint32_t, OpenglMappedUniformBuffer> mapped_uniform_buffers_;
         std::unique_ptr<OpenglCommandRecorder> command_recorder_;
         bool frame_active_ = false;
+        std::vector<GLuint> profile_query_ids_;
+        std::vector<GpuProfileTiming> completed_gpu_profile_timings_;
+        bool profile_gpu_timing_available_ = false;
+        bool profile_queries_written_ = false;
 
     };
 }

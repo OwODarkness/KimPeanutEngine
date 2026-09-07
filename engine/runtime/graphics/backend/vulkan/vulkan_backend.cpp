@@ -30,6 +30,11 @@ namespace kpengine::graphics
 
 
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
+    namespace
+    {
+        constexpr uint32_t kProfilePassCount = 8;
+        constexpr uint32_t kProfileQueriesPerFrame = kProfilePassCount * 2;
+    }
 
     VulkanBackend::VulkanBackend() : pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
                                      descriptor_set_manager_(std::make_unique<VulkanDescriptorSetManager>()),
@@ -52,6 +57,9 @@ namespace kpengine::graphics
 
         device_ = std::make_unique<VulkanDevice>();
         device_->Initialize(window);
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(device_->GetPhysicalDevice(), &properties);
+        profile_timestamp_period_ns_ = properties.limits.timestampPeriod;
         memory_manager_ = std::make_unique<VulkanMemoryManager>(
             device_->GetPhysicalDevice(), device_->GetLogicalDevice());
         image_memory_manager_ = std::make_unique<VulkanImageMemoryManager>(*memory_manager_);
@@ -79,6 +87,18 @@ namespace kpengine::graphics
             }
         }
         InitializeCapabilities();
+        VkQueryPoolCreateInfo query_pool_info{};
+        query_pool_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+        query_pool_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+        query_pool_info.queryCount = VulkanFrameContext::MAX_FRAMES_IN_FLIGHT *
+                                     kProfileQueriesPerFrame;
+        if (vkCreateQueryPool(device_->GetLogicalDevice(), &query_pool_info, nullptr,
+                              &profile_query_pool_) != VK_SUCCESS)
+        {
+            profile_query_pool_ = VK_NULL_HANDLE;
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_WARNING,
+                   "GPU pass timestamp query pool unavailable; CPU profile remains active");
+        }
         editor_bridge_ = std::make_unique<VulkanEditorBridge>(*device_, *swapchain_, *frame_context_);
         upload_context_ = std::make_unique<VulkanUploadContext>();
         upload_context_->Initialize(device_.get(), frame_context_.get(), buffer_manager_.get());
@@ -99,6 +119,7 @@ namespace kpengine::graphics
         // 3. caller selects render targets and records draws, then EndFrame submits
 
         frame_context_->WaitForInFlightFence();
+        CollectCompletedGpuProfileTimings();
         if (render_target_readback_)
         {
             render_target_readback_->CollectCompletedReadbacks();
@@ -134,6 +155,14 @@ namespace kpengine::graphics
         {
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_ERROR, "Failed to begin command buffer");
             throw std::runtime_error("Failed to begin command buffer");
+        }
+        ResetBackendProfileCounters();
+        if (profile_query_pool_ != VK_NULL_HANDLE)
+        {
+            const uint32_t base_query = frame_context_->GetCurrentFrameIndex() *
+                                        kProfileQueriesPerFrame;
+            vkCmdResetQueryPool(frame_context_->GetCurrentSceneCommandBuffer(),
+                                profile_query_pool_, base_query, kProfileQueriesPerFrame);
         }
 
         current_image_index_ = image_index;
@@ -185,6 +214,76 @@ namespace kpengine::graphics
         return frame_active_ ? command_recorder_.get() : nullptr;
     }
 
+    void VulkanBackend::BeginGpuProfilePass(const uint32_t pass_id)
+    {
+        if (profile_query_pool_ == VK_NULL_HANDLE || !frame_active_ ||
+            pass_id >= kProfilePassCount)
+        {
+            return;
+        }
+        const uint32_t query = frame_context_->GetCurrentFrameIndex() * kProfileQueriesPerFrame +
+                               pass_id * 2;
+        vkCmdWriteTimestamp2(frame_context_->GetCurrentSceneCommandBuffer(),
+                             VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, profile_query_pool_, query);
+    }
+
+    void VulkanBackend::EndGpuProfilePass(const uint32_t pass_id)
+    {
+        if (profile_query_pool_ == VK_NULL_HANDLE || !frame_active_ ||
+            pass_id >= kProfilePassCount)
+        {
+            return;
+        }
+        const uint32_t query = frame_context_->GetCurrentFrameIndex() * kProfileQueriesPerFrame +
+                               pass_id * 2 + 1;
+        vkCmdWriteTimestamp2(frame_context_->GetCurrentSceneCommandBuffer(),
+                             VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, profile_query_pool_, query);
+    }
+
+    std::vector<GpuProfileTiming> VulkanBackend::ConsumeCompletedGpuProfileTimings()
+    {
+        std::vector<GpuProfileTiming> result;
+        result.swap(completed_gpu_profile_timings_);
+        return result;
+    }
+
+    const char *VulkanBackend::GetPresentModeName() const
+    {
+        return swapchain_ ? swapchain_->GetPresentModeName() : "unknown";
+    }
+
+    void VulkanBackend::CollectCompletedGpuProfileTimings()
+    {
+        completed_gpu_profile_timings_.clear();
+        if (profile_query_pool_ == VK_NULL_HANDLE || profile_timestamp_period_ns_ <= 0.0f)
+        {
+            return;
+        }
+        const uint32_t base_query = frame_context_->GetCurrentFrameIndex() *
+                                    kProfileQueriesPerFrame;
+        std::array<uint64_t, kProfileQueriesPerFrame> timestamps{};
+        const VkResult result = vkGetQueryPoolResults(
+            device_->GetLogicalDevice(), profile_query_pool_, base_query,
+            kProfileQueriesPerFrame, sizeof(timestamps), timestamps.data(), sizeof(uint64_t),
+            VK_QUERY_RESULT_64_BIT);
+        if (result != VK_SUCCESS)
+        {
+            return;
+        }
+        for (uint32_t pass_id = 0; pass_id < kProfilePassCount; ++pass_id)
+        {
+            const uint64_t begin = timestamps[pass_id * 2];
+            const uint64_t end = timestamps[pass_id * 2 + 1];
+            if (end >= begin && end != 0)
+            {
+                completed_gpu_profile_timings_.push_back(
+                    {pass_id, static_cast<uint64_t>(
+                                  static_cast<double>(end - begin) *
+                                  static_cast<double>(profile_timestamp_period_ns_))});
+            }
+        }
+    }
+
     IEditorPresentationBridge *VulkanBackend::GetEditorPresentationBridge()
     {
         return editor_bridge_.get();
@@ -193,6 +292,11 @@ namespace kpengine::graphics
     void VulkanBackend::Cleanup()
     {
         vkDeviceWaitIdle(device_->GetLogicalDevice());
+        if (profile_query_pool_ != VK_NULL_HANDLE)
+        {
+            vkDestroyQueryPool(device_->GetLogicalDevice(), profile_query_pool_, nullptr);
+            profile_query_pool_ = VK_NULL_HANDLE;
+        }
         command_recorder_.reset();
 
         if (render_target_readback_)
@@ -405,9 +509,14 @@ namespace kpengine::graphics
         {
             return {};
         }
-        return descriptor_set_manager_->CreateResourceBindingSet(
+        const DescriptorSetHandle handle = descriptor_set_manager_->CreateResourceBindingSet(
             device_->GetLogicalDevice(), *pipeline_resource, desc, *buffer_manager_,
             *texture_manager_, *sampler_manager_);
+        if (handle.IsValid())
+        {
+            RecordDescriptorSetCreated(true);
+        }
+        return handle;
     }
 
     bool VulkanBackend::DestroyResourceBindingSet(DescriptorSetHandle handle)

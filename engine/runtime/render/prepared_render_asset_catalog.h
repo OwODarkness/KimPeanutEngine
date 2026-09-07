@@ -15,6 +15,7 @@
 #include "asset/common.h"
 #include "base/type.h"
 #include "resource/environment_ibl_processor.h"
+#include "render/render_profile.h"
 
 namespace kpengine::runtime
 {
@@ -70,6 +71,7 @@ namespace kpengine::render
         std::array<asset::AssetID, static_cast<size_t>(BuiltInRenderAsset::Count)> built_ins{};
         std::vector<PreparedEnvironmentIbl> environment_ibl;
         std::size_t prepared_shader_count = 0;
+        RenderProfileTextureMetrics texture_metrics;
     };
 
     class PreparedRenderAssetCatalog final
@@ -107,6 +109,10 @@ namespace kpengine::render
                                          asset::AssetType expected_type) const noexcept;
         const PreparedEnvironmentIbl *FindEnvironmentIbl(asset::AssetID source_texture) const;
         std::size_t GetPreparedShaderCount() const noexcept { return prepared_shader_count_; }
+        const RenderProfileTextureMetrics &GetTextureMetrics() const noexcept
+        {
+            return texture_metrics_;
+        }
 
     private:
         friend class runtime::RenderAssetPreparer;
@@ -115,6 +121,7 @@ namespace kpengine::render
         std::array<asset::AssetID, static_cast<size_t>(BuiltInRenderAsset::Count)> built_ins_{};
         std::unordered_map<uint64_t, PreparedEnvironmentIbl> environment_ibl_;
         std::size_t prepared_shader_count_ = 0;
+        RenderProfileTextureMetrics texture_metrics_;
     };
 }
 

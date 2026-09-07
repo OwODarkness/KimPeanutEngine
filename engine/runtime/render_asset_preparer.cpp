@@ -1,6 +1,7 @@
 #include "render_asset_preparer.h"
 
 #include <algorithm>
+#include <filesystem>
 #include <unordered_set>
 #include <utility>
 
@@ -53,6 +54,8 @@ namespace kpengine::runtime
                 {
                     return Failure(diagnostic_);
                 }
+                const render::RenderProfileTextureMetrics level_texture_metrics =
+                    texture_metrics_;
 
                 render::PreparedRenderAssetCatalogBuild build;
                 build.graphics_api = api_type_;
@@ -76,6 +79,7 @@ namespace kpengine::runtime
                 }
                 build.records = std::move(records_);
                 build.prepared_shader_count = hooks_.processed_shader_count();
+                build.texture_metrics = level_texture_metrics;
 
                 if (!PrepareEnvironment(level_asset, build))
                 {
@@ -153,6 +157,15 @@ namespace kpengine::runtime
                     {
                         diagnostic_ = "texture AssetID has no ready TextureData payload";
                         return false;
+                    }
+                    ++texture_metrics_.dependency_count;
+                    texture_metrics_.decoded_bytes += texture->data->pixels.size();
+                    std::error_code error;
+                    const uintmax_t source_bytes =
+                        std::filesystem::file_size(wrapper->GetPath(), error);
+                    if (!error)
+                    {
+                        texture_metrics_.source_bytes += source_bytes;
                     }
                 }
                 else if (id.type != asset::AssetType::KPAT_Shader &&
@@ -292,6 +305,7 @@ namespace kpengine::runtime
             std::vector<render::PreparedRenderAssetRecord> records_;
             std::unordered_set<uint64_t> visited_;
             std::string diagnostic_;
+            render::RenderProfileTextureMetrics texture_metrics_;
         };
     }
 

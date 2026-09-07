@@ -49,6 +49,14 @@ namespace kpengine::graphics
         void BindResourceBindingSet(PipelineHandle pipeline,
                                     DescriptorSetHandle handle) override;
         virtual void BeginFrame() override;
+        void BeginGpuProfilePass(uint32_t pass_id) override;
+        void EndGpuProfilePass(uint32_t pass_id) override;
+        std::vector<GpuProfileTiming> ConsumeCompletedGpuProfileTimings() override;
+        const char *GetPresentModeName() const override;
+        BackendProfileCounters GetBackendProfileCounters() const override
+        {
+            return profile_counters_;
+        }
         CommandRecorder *GetCommandRecorder() override;
         virtual void EndFrame() override;
         GraphicsAPIType GetGraphicsAPI() const override
@@ -82,6 +90,7 @@ namespace kpengine::graphics
         void RecreateSwapchain();
         void CleanupSwapchain();
         void FramebufferResizeCallback(const ResizeEvent &event) override;
+        void CollectCompletedGpuProfileTimings();
 
     private:
         std::unique_ptr<class VulkanDevice> device_;
@@ -110,6 +119,9 @@ namespace kpengine::graphics
         uint32_t msaa_sampe_count_ = 1;
         uint32_t current_image_index_ = 0;
         bool frame_active_ = false;
+        VkQueryPool profile_query_pool_ = VK_NULL_HANDLE;
+        float profile_timestamp_period_ns_ = 0.0f;
+        std::vector<GpuProfileTiming> completed_gpu_profile_timings_;
     };
 }
 

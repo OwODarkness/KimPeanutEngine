@@ -25,6 +25,7 @@ renderer_frame_targets.cpp
 render_camera.cpp
 camera_utils.cpp
 render_scene.cpp
+render_profile.cpp
 )
 
 target_include_directories(Render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

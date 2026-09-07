@@ -37,6 +37,7 @@ namespace kpengine::graphics
         size_t GetImageCount() const { return swapchain_images_.size(); }
         const VkExtent2D &GetExtent() const { return extent_; }
         VkFormat GetImageFormat() const { return swapchain_image_format_; }
+        const char *GetPresentModeName() const;
 
         uint32_t GetMaxUsableSampleCount() const;
 
@@ -54,6 +55,7 @@ namespace kpengine::graphics
         VkSwapchainKHR swapchain_ = VK_NULL_HANDLE;
         VkExtent2D extent_{};
         VkFormat swapchain_image_format_ = VK_FORMAT_UNDEFINED;
+        VkPresentModeKHR present_mode_ = VK_PRESENT_MODE_FIFO_KHR;
         std::vector<VkImage> swapchain_images_;
         std::vector<VkImageView> swapchain_imageviews_;
         bool has_resized_ = false;

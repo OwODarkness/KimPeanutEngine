@@ -157,6 +157,7 @@ namespace kpengine::render
 
         PreparedRenderAssetCatalog catalog;
         catalog.prepared_shader_count_ = build.prepared_shader_count;
+        catalog.texture_metrics_ = build.texture_metrics;
 
         for (auto &record : build.records)
         {

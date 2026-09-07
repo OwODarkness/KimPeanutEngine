@@ -1,6 +1,7 @@
 #include "render_system.h"
 
 #include <stdexcept>
+#include <chrono>
 #include <utility>
 
 #include "asset/mesh.h"
@@ -156,6 +157,8 @@ namespace kpengine::render
                                                : graphics::RenderTargetHandle{};
                 },
                 [this] { return frame_number_; });
+            profile_window_.Reset();
+            profile_summary_logged_ = false;
             lifecycle_state_ = RenderSystemLifecycleState::Ready;
             last_diagnostic_.clear();
             return {true, {}};
@@ -182,8 +185,11 @@ namespace kpengine::render
         {
             return false;
         }
+        const auto frame_started = std::chrono::steady_clock::now();
+        profile_frame_start_ = frame_started;
         const bool scene_ready = deferred_renderer_ != nullptr;
         std::optional<RenderSceneFrameInput> scene_input;
+        const auto scene_prepare_started = std::chrono::steady_clock::now();
         if (scene_ready)
         {
             debug_view_ = requested_debug_view_;
@@ -194,7 +200,18 @@ namespace kpengine::render
                                                        : std::optional<CaptureView>{debug_view_}));
             deferred_renderer_->ApplyPendingExtent();
         }
+        const double scene_prepare_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - scene_prepare_started)
+                .count();
+        const auto backend_begin_started = std::chrono::steady_clock::now();
         backend_->BeginFrame();
+        const double backend_begin_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - backend_begin_started)
+                .count();
+        const std::vector<graphics::GpuProfileTiming> completed_gpu_timings =
+            backend_->ConsumeCompletedGpuProfileTimings();
         active_frame_context_ = GetCurrentFrameContext();
         if (!active_frame_context_)
         {
@@ -217,10 +234,38 @@ namespace kpengine::render
             {extent.width, extent.height});
         if (!scene_ready)
         {
+            profile_ = {};
+            profile_.frame_number = frame_number_;
+            profile_.graphics_api = backend_->GetGraphicsAPI();
+            profile_.viewport_width = extent.width;
+            profile_.viewport_height = extent.height;
+            profile_.cpu_scene_prepare_ms = scene_prepare_ms;
+            profile_.cpu_backend_begin_ms = backend_begin_ms;
+            profile_.present_mode = backend_->GetPresentModeName();
             return true;
         }
+        const auto record_started = std::chrono::steady_clock::now();
         const DeferredRendererFrameResult result =
             deferred_renderer_->RecordFrame(*active_frame_context_, *scene_input);
+        const double record_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - record_started)
+                .count();
+        profile_ = deferred_renderer_->GetProfileSnapshot();
+        profile_.summary = profile_window_.GetSummary();
+        profile_.cpu_scene_prepare_ms = scene_prepare_ms;
+        profile_.cpu_backend_begin_ms = backend_begin_ms;
+        profile_.cpu_record_ms = record_ms;
+        profile_.present_mode = backend_->GetPresentModeName();
+        for (const graphics::GpuProfileTiming &timing : completed_gpu_timings)
+        {
+            if (timing.pass_id < profile_.passes.size())
+            {
+                profile_.passes[timing.pass_id].gpu_time_ms =
+                    static_cast<double>(timing.nanoseconds) / 1000000.0;
+                profile_.gpu_frame_number = frame_number_;
+            }
+        }
         if (scene_input->pending_capture.has_value())
         {
             if (!result.capture_target_ready)
@@ -242,6 +287,7 @@ namespace kpengine::render
         {
             return false;
         }
+        const auto finalize_started = std::chrono::steady_clock::now();
         if (active_frame_context_)
         {
             if (deferred_renderer_)
@@ -252,9 +298,90 @@ namespace kpengine::render
             active_frame_context_ = nullptr;
             ++frame_number_;
         }
+        profile_.cpu_finalize_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - finalize_started)
+                .count();
+        const auto present_started = std::chrono::steady_clock::now();
         backend_->EndFrame();
+        profile_.cpu_present_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - present_started)
+                .count();
+        const graphics::BackendProfileCounters backend_profile =
+            backend_->GetBackendProfileCounters();
+        profile_.descriptor_sets_created = backend_profile.descriptor_sets_created;
+        profile_.descriptor_pools_created = backend_profile.descriptor_pools_created;
+        profile_.cpu_total_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - profile_frame_start_)
+                .count();
+        // OpenGL presents outside the backend frame bracket, so defer the
+        // sample until RecordPresentationTime() has measured SwapBuffers().
+        if (backend_->GetGraphicsAPI() != GraphicsAPIType::GRAPHICS_API_OPENGL)
+        {
+            profile_window_.Observe(profile_);
+            profile_.summary = profile_window_.GetSummary();
+            LogCompletedProfileSummary();
+        }
         lifecycle_state_ = frame_return_state_;
         return true;
+    }
+
+    void RenderSystem::RecordPresentationTime(const double milliseconds)
+    {
+        if (milliseconds < 0.0)
+        {
+            return;
+        }
+        profile_.cpu_present_ms = milliseconds;
+        profile_.cpu_total_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - profile_frame_start_)
+                .count();
+        if (backend_ && backend_->GetGraphicsAPI() == GraphicsAPIType::GRAPHICS_API_OPENGL)
+        {
+            profile_window_.Observe(profile_);
+            profile_.summary = profile_window_.GetSummary();
+            LogCompletedProfileSummary();
+        }
+    }
+
+    void RenderSystem::LogCompletedProfileSummary()
+    {
+        if (profile_summary_logged_ || !profile_.summary.complete)
+        {
+            return;
+        }
+        const RenderProfileScenario scenario = GetSponzaProfileScenario();
+        const auto &gbuffer = profile_.summary.passes[
+            static_cast<size_t>(RenderProfilePass::GBuffer)];
+        const double gbuffer_p95 = gbuffer.gpu_p95_ms.value_or(0.0);
+        KP_LOG("RenderLog", LOG_LEVEL_INFO,
+               "Render profile complete: scenario=%s level=%s camera=%s api=%s "
+               "viewport=%ux%u warmup=%u samples=%u cpu_p50_ms=%.3f cpu_p95_ms=%.3f "
+               "present_p50_ms=%.3f present_p95_ms=%.3f gbuffer_gpu_p95_ms=%.3f "
+               "draws=%llu sections=%llu descriptor_sets=%llu descriptor_pools=%llu "
+               "textures=%u source_bytes=%llu decoded_bytes=%llu resident_bytes=%llu "
+               "present_mode=%s shadow_hits=%llu shadow_misses=%llu",
+               scenario.name, scenario.startup_level, scenario.camera_id,
+               GetGraphicsApiName(profile_.graphics_api), profile_.viewport_width,
+               profile_.viewport_height, profile_.summary.warmup_frames_completed,
+               profile_.summary.samples_collected, profile_.summary.cpu_total_p50_ms,
+               profile_.summary.cpu_total_p95_ms, profile_.summary.cpu_present_p50_ms,
+               profile_.summary.cpu_present_p95_ms, gbuffer_p95,
+               static_cast<unsigned long long>(profile_.draw_calls),
+               static_cast<unsigned long long>(profile_.sections),
+               static_cast<unsigned long long>(profile_.descriptor_sets_created),
+               static_cast<unsigned long long>(profile_.descriptor_pools_created),
+               profile_.textures.dependency_count,
+               static_cast<unsigned long long>(profile_.textures.source_bytes),
+               static_cast<unsigned long long>(profile_.textures.decoded_bytes),
+               static_cast<unsigned long long>(profile_.textures.resident_bytes),
+               profile_.present_mode.c_str(),
+               static_cast<unsigned long long>(profile_.shadow_cache_hits),
+               static_cast<unsigned long long>(profile_.shadow_cache_misses));
+        profile_summary_logged_ = true;
     }
 
     bool RenderSystem::CompletePendingWindowCapture()
@@ -364,6 +491,7 @@ namespace kpengine::render
                                             : 0U;
         metrics.triangle_count = deferred_renderer_ ? deferred_renderer_->GetTriangleCount() : 0U;
         metrics.gpu_usage_percent = backend_ ? backend_->GetGpuUsagePercent() : std::nullopt;
+        metrics.profile = profile_;
         return metrics;
     }
 
@@ -438,6 +566,10 @@ namespace kpengine::render
         active_frame_context_ = nullptr;
         frame_number_ = 0;
         elapsed_seconds_ = 0.0f;
+        profile_ = {};
+        profile_window_.Reset();
+        profile_summary_logged_ = false;
+        profile_frame_start_ = {};
         frame_return_state_ = RenderSystemLifecycleState::Uninitialized;
         window_capture_ = {};
         debug_view_ = CaptureView::SceneColor;

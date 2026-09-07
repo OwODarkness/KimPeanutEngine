@@ -16,6 +16,16 @@ details and stage checklists belong in the linked submodule documents.
 
 ## Cross-cutting Render work
 
+- [ ] **issue-9.7 — Sponza texture aliasing and frame throughput:** Stage 0
+  instrumentation is landed; establish the fixed CPU/GPU/present baseline,
+  then land semantic mip artifacts and bounded
+  native texture products, replace Vulkan pool-per-draw descriptor allocation,
+  add section visibility and unchanged-shadow reuse, then retain pass tuning
+  only when measured. The solved black-frame defect is out of scope. →
+  [issue](issue/issue-9.7.md), [plan](.plan/issue-9.7.md),
+  [review](.review/issue-9.7.md),
+  [spec](../../.spec/specs/sponza-render-quality-performance.md),
+  [journal](../../.spec/journal/2026-09-07-sponza-render-quality-performance.md)
 - [ ] **R1 — RenderSystem responsibility split:** R1.1–R1.5 code fixes are
   landed and the independent source findings are addressed. The comparator now
   bounds edge and structural differences, Runtime skips recoverable failed

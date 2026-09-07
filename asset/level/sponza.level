@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "environment": {
+    "texture": "texture/hdr/HDR_041_Path.hdr",
+    "ibl_intensity": 0.35
+  },
+  "objects": [
+    {
+      "id": "sponza",
+      "name": "Sponza",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": "model/sponza/main_sponza/newsponza_main_gltf_003",
+      "casts_shadow": true
+    },
+    {
+      "id": "main_camera",
+      "name": "Sponza Camera",
+      "kind": "camera",
+      "transform": {
+        "position": [-8.80743, 1.59222, -0.85826],
+        "rotation_degrees": [8.1, 10.7, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "projection": "perspective",
+      "near_plane": 0.05,
+      "far_plane": 1000.0,
+      "field_of_view_degrees": 58.5,
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "id": "sun",
+      "name": "Sponza Sun",
+      "kind": "directional_light",
+      "direction": [0.35, -0.8, -0.45],
+      "color": [1.0, 0.95, 0.9],
+      "intensity": 2.0,
+      "enabled": true,
+      "casts_shadow": true
+    },
+    {
+      "id": "fill_light",
+      "name": "Sponza Fill",
+      "kind": "point_light",
+      "position": [0.0, 5.0, 0.0],
+      "color": [1.0, 0.8, 0.65],
+      "intensity": 250.0,
+      "range": 25.0,
+      "enabled": true,
+      "casts_shadow": false
+    }
+  ]
+}
