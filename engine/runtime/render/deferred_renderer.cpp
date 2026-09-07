@@ -421,6 +421,36 @@ namespace kpengine::render
         }
     }
 
+    std::vector<VisibleMeshSection> DeferredRenderer::BuildSectionCandidatesProfiled()
+    {
+        const auto started = std::chrono::steady_clock::now();
+        std::vector<VisibleMeshSection> result =
+            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
+                                                    *resource_resolver_);
+        profile_.cpu_section_packet_build_ms +=
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started)
+                .count();
+        ++profile_.section_packet_build_calls;
+        profile_.section_packets_built += result.size();
+        return result;
+    }
+
+    std::vector<VisibleMeshSection> DeferredRenderer::BuildVisibleSectionsProfiled(
+        const Matrix4f &view_projection)
+    {
+        const auto started = std::chrono::steady_clock::now();
+        std::vector<VisibleMeshSection> result = SceneVisibility::BuildVisibleSections(
+            view_projection, render_world_->Snapshot(), *resource_resolver_);
+        profile_.cpu_section_packet_build_ms +=
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started)
+                .count();
+        ++profile_.section_packet_build_calls;
+        profile_.section_packets_built += result.size();
+        return result;
+    }
+
     void DeferredRenderer::ApplyPendingExtent()
     {
         ApplyPendingSceneRenderTargetExtent();
@@ -490,6 +520,7 @@ namespace kpengine::render
         profile_.viewport_width = frame_context.GetRenderExtent().width;
         profile_.viewport_height = frame_context.GetRenderExtent().height;
         profile_.textures = resource_resolver_->GetTextureMetrics();
+        material_system_->ResetProfileCounters();
         if (!pass_sequence_.has_value() || active_pass_frame_.has_value())
         {
             result.normal_recording_completed = false;
@@ -502,8 +533,13 @@ namespace kpengine::render
             input.pending_capture.has_value() ? input.pending_capture : input.debug_view;
         active_pending_capture_ = active_capture_view;
         UpdateEnvironment(input);
+        const auto shadow_stamp_fit_started = std::chrono::steady_clock::now();
         active_directional_shadow_ = ScheduleDirectionalShadow(input.lights,
                                                                input.is_shadow_handle_valid);
+        profile_.cpu_shadow_stamp_fit_ms +=
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - shadow_stamp_fit_started)
+                .count();
         directional_shadow_cache_hit_ =
             active_directional_shadow_.has_value() && directional_shadow_valid_ &&
             active_directional_shadow_->validity_stamp == directional_shadow_stamp_;
@@ -530,6 +566,16 @@ namespace kpengine::render
                 active_pass_frame_->GetOutcome(FixedRenderPassId::CaptureView) ==
                     RenderPassOutcome::Executed;
         }
+        const MaterialProfileCounters material_profile =
+            material_system_->GetProfileCounters();
+        const FrameContextProfileCounters frame_profile =
+            frame_context.GetProfileCounters();
+        profile_.cpu_material_resolution_ms += material_profile.resolution_cpu_ms;
+        profile_.material_resolution_calls += material_profile.resolution_calls;
+        profile_.cpu_material_resolution_ms += frame_profile.material_resolution_cpu_ms;
+        profile_.cpu_uniform_write_ms += frame_profile.uniform_write_cpu_ms;
+        profile_.uniform_writes += frame_profile.uniform_writes;
+        profile_.uniform_write_bytes += frame_profile.uniform_write_bytes;
         frame_lighting_binding_ = {};
         return result;
     }
@@ -729,7 +775,7 @@ namespace kpengine::render
 
     std::optional<DeferredRenderer::DirectionalShadowFrame> DeferredRenderer::ScheduleDirectionalShadow(
         const std::vector<Light> &lights,
-        const std::function<bool(ShadowHandle)> &is_shadow_handle_valid) const
+        const std::function<bool(ShadowHandle)> &is_shadow_handle_valid)
     {
         // The first implementation schedules at most one requested directional
         // map. The source's private ShadowHandle is the opt-in; absent, disabled,
@@ -755,18 +801,19 @@ namespace kpengine::render
             // come from the full render-world snapshot, so fit the directional
             // volume to their world bounds instead of a camera-derived box.
             const std::vector<VisibleMeshSection> caster_candidates =
-                SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
-                                                         *resource_resolver_);
+                BuildSectionCandidatesProfiled();
             DirectionalShadowFrame frame{};
             frame.job = {light.handle, ShadowKind::Directional2D,
                          kDirectionalShadowResolution, 0};
             frame.shadow = *light.desc.shadow;
             frame.light_direction = direction;
+            ++profile_.shadow_stamp_evaluations;
             frame.validity_stamp = ComputeDirectionalShadowStamp(
                 light, caster_candidates, scene_camera_.GetPosition());
             if (const std::optional<spatial::AABB> caster_bounds =
                     BuildDirectionalShadowBounds(caster_candidates, scene_camera_.GetPosition()))
             {
+                ++profile_.shadow_fit_evaluations;
                 const DirectionalShadowMatrices matrices =
                     FitDirectionalShadowMatrices(*caster_bounds, direction);
                 frame.view = matrices.view;
@@ -794,7 +841,7 @@ namespace kpengine::render
 
     std::optional<DeferredRenderer::SpotShadowFrame> DeferredRenderer::ScheduleSpotShadow(
         const std::vector<Light> &lights,
-        const std::function<bool(ShadowHandle)> &is_shadow_handle_valid) const
+        const std::function<bool(ShadowHandle)> &is_shadow_handle_valid)
     {
         constexpr uint32_t kSpotShadowResolution = 1024;
         for (const Light &light : lights)
@@ -835,8 +882,7 @@ namespace kpengine::render
                 spot->outer_cone_radians * 2.0f, 1.0f, near_plane, spot->range);
             bool has_caster = false;
             const std::vector<VisibleMeshSection> caster_candidates =
-                SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
-                                                         *resource_resolver_);
+                BuildSectionCandidatesProfiled();
             for (const VisibleMeshSection &candidate : caster_candidates)
             {
                 const MeshProxy &proxy = candidate.proxy;
@@ -865,11 +911,9 @@ namespace kpengine::render
 
     std::optional<DeferredRenderer::PointShadowFrame> DeferredRenderer::SchedulePointShadow(
         const std::vector<Light> &lights,
-        const std::function<bool(ShadowHandle)> &is_shadow_handle_valid) const
+        const std::function<bool(ShadowHandle)> &is_shadow_handle_valid)
     {
-        const std::vector<VisibleMeshSection> proxies =
-            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
-                                                     *resource_resolver_);
+        const std::vector<VisibleMeshSection> proxies = BuildSectionCandidatesProfiled();
         for (const Light &light : lights)
         {
             if (!light.desc.enabled || light.desc.type != LightType::Point ||
@@ -969,8 +1013,7 @@ namespace kpengine::render
         per_pass_data.camera_data.view = shadow.view.Transpose();
         per_pass_data.camera_data.proj = shadow.projection.Transpose();
         const std::vector<VisibleMeshSection> shadow_caster_candidates =
-            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
-                                                     *resource_resolver_);
+            BuildSectionCandidatesProfiled();
         for (const VisibleMeshSection &candidate : shadow_caster_candidates)
         {
             const MeshProxy &proxy = candidate.proxy;
@@ -1018,8 +1061,7 @@ namespace kpengine::render
         per_pass_data.camera_data.view = shadow.view.Transpose();
         per_pass_data.camera_data.proj = shadow.projection.Transpose();
         const std::vector<VisibleMeshSection> shadow_caster_candidates =
-            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
-                                                     *resource_resolver_);
+            BuildSectionCandidatesProfiled();
         for (const VisibleMeshSection &candidate : shadow_caster_candidates)
         {
             const MeshProxy &proxy = candidate.proxy;
@@ -1067,9 +1109,7 @@ namespace kpengine::render
 
         const PointShadowFrame &shadow = *active_point_shadow_;
         const auto profile_start = std::chrono::steady_clock::now();
-        const std::vector<VisibleMeshSection> proxies =
-            SceneVisibility::BuildSectionCandidates(render_world_->Snapshot(),
-                                                     *resource_resolver_);
+        const std::vector<VisibleMeshSection> proxies = BuildSectionCandidatesProfiled();
         std::vector<VisibleMeshSection> caster_candidates;
         caster_candidates.reserve(proxies.size());
         for (const VisibleMeshSection &candidate : proxies)
@@ -1164,9 +1204,7 @@ namespace kpengine::render
             per_pass_data.camera_data.view = camera_data.view;
             per_pass_data.camera_data.proj = camera_data.proj;
             const std::vector<VisibleMeshSection> visible_sections =
-                SceneVisibility::BuildVisibleSections(
-                    scene_camera_.GetViewProjectionMatrix(), render_world_->Snapshot(),
-                    *resource_resolver_);
+                BuildVisibleSectionsProfiled(scene_camera_.GetViewProjectionMatrix());
             // Opaque-only for the deferred G-buffer; alpha-blended surfaces need
             // a forward pass (a later roadmap step), so they are skipped here.
             SceneDrawLists draw_lists = SceneDrawListBuilder::Build(

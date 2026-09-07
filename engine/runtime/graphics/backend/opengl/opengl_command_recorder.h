@@ -54,6 +54,10 @@ namespace kpengine::graphics
         void DrawIndexed(uint32_t index_count, uint32_t instance_count,
                          uint32_t first_index, int32_t vertex_offset,
                          uint32_t first_instance) override;
+        CommandRecorderProfileCounters GetProfileCounters() const override
+        {
+            return profile_counters_;
+        }
 
     private:
         Services services_;
@@ -65,6 +69,7 @@ namespace kpengine::graphics
         // match the active render target; recording stays pass-scoped instead of
         // submitting a pipeline-state mismatch to the driver.
         bool draws_suppressed_ = false;
+        CommandRecorderProfileCounters profile_counters_{};
     };
 }
 

@@ -1,8 +1,9 @@
 # issue-9.7 — Sponza Quality and Throughput Stage Design
 
-**Status: Stage 0 instrumentation, Stage 1 runtime mips, and the Stage 2
-portable native texture cook path landed 2026-09-07; block-compression and
-runtime baseline evidence remain pending.**
+**Status: Stages 0–5 and the Stage 6.0 telemetry implementation slice have
+landed. A supplied post-Stage-5 snapshot attributes the remaining approximately
+30 FPS result to CPU command submission; the fixed-window Stage 6.0 runtime
+profile is the next gate. Block compression remains pending.**
 
 Links: [issue](../issue/issue-9.7.md),
 [formal review](../.review/issue-9.7.md),
@@ -22,6 +23,10 @@ descriptor lifetime, visibility granularity, and static-shadow validity be
 represented so cost scales with visible work rather than imported source size
 or draw count?
 
+The Stage 6 refinement is: how can one prepared draw packet select frame-local
+uniform ranges and stable resources without allocating/updating descriptors,
+revalidating invariant state, or copying section ownership data per draw?
+
 ## Boundary and ownership
 
 - **Asset and offline import** own source identity, decoding, semantic metadata,
@@ -37,6 +42,37 @@ or draw count?
   and releases resources only after submitted work is safe.
 
 No common contract may expose Vulkan or OpenGL types.
+
+## Measured CPU constraint
+
+The supplied snapshot reports 32.0568 ms/frame, 30.924 ms Render CPU,
+28.1182 ms record CPU, and 10.98 ms total GPU. Directional shadow consumes
+9.127 ms CPU for 446 draws and the G-buffer consumes 16.232 ms CPU for 264
+draws. Present is 0.2795 ms and pacing is zero.
+
+With about 3.94 ms outside recording, the 60 Hz record budget is at most
+12.73 ms. Stage 6 must reduce record CPU by at least 55% in the same scenario.
+A shadow-cache hit saves about 9.13 ms but is insufficient alone; after that
+win, the G-buffer must save at least 6.26 ms (about 39%) if other costs remain
+fixed. The 8.33 ms stretch goal is deferred until GPU work drops below that
+budget.
+
+## Reference decision
+
+- The Khronos [descriptor-management sample](https://github.com/KhronosGroup/Vulkan-Samples/blob/main/samples/performance/descriptor_management/README.adoc)
+  matches the measured failure and recommends cached descriptors plus a small
+  number of per-frame buffers addressed with dynamic offsets.
+- The Khronos [dynamic uniform-buffer sample](https://github.com/KhronosGroup/Vulkan-Samples/blob/main/samples/api/dynamic_uniform_buffers/dynamic_uniform_buffers.cpp)
+  demonstrates one aligned buffer and stable descriptor set with a changing
+  per-draw offset. Adopt that data flow behind the common RHI contract.
+- Godot's [RenderingDevice](https://github.com/godotengine/godot/blob/master/servers/rendering/rendering_device.h)
+  caches layout compatibility to avoid costly redundant rebinds. Adopt the
+  recorder-local state-cache principle without importing its render graph or
+  RID architecture.
+- Khronos' [command-buffer usage sample](https://github.com/KhronosGroup/Vulkan-Samples/blob/main/samples/performance/command_buffer_usage/README.adoc)
+  supports multithreaded secondary recording only after enough draw work exists
+  per buffer. Defer it for the current 713-draw frame until serial descriptor
+  and state churn are removed and measured again.
 
 ## Chosen design
 
@@ -160,13 +196,17 @@ stage rather than a silent fallback.
 
 ### Stage 3 — descriptor and submission lifetime
 
-- Implementation status: Vulkan descriptor allocation now uses reusable,
+- Implementation status: partially landed. Vulkan descriptor allocation now
+  uses reusable,
   fence-safe frame-slot arenas. Each slot resets its arenas only after the
   matching in-flight fence completes; a full arena grows by adding a reusable
   arena for that slot. Destroying a transient set releases only its generational
-  handle, so it no longer destroys a Vulkan pool per draw.
-- Cache stable material texture bindings and retain transient bindings only for
-  genuinely frame-local resources.
+  handle, so it no longer destroys a Vulkan pool per draw. The supplied profile
+  shows that set allocation/update per draw is still open and is promoted into
+  Stage 6.
+- Cache stable material texture bindings and retain transient binding objects
+  only for genuinely frame-local resources. Offset changes within the frame
+  uniform arena must not create a new descriptor set.
 - Add lifecycle, arena-growth, and deferred-destruction tests.
 
 Exit: steady-state pool creation is zero and descriptor work is bounded by
@@ -183,7 +223,10 @@ changed materials/frame slots, not Sponza draw count.
 - Implementation status: directional shadow targets use conservative validity
   stamps over light, camera-fit, caster transform/bounds, material, and section
   identity inputs. Resize and changed dependencies invalidate the stamp; an
-  unchanged static frame skips directional caster recording.
+  unchanged static frame skips directional caster recording. The supplied
+  profile nevertheless reports zero hits and one miss. The raw camera position
+  is currently stamped even when it does not change the fitted caster bounds,
+  so effective-map reuse remains open in Stage 6.
 
 Exit: hidden Sponza sections do not produce camera or shadow draws, and an
 unchanged static frame records zero shadow-caster draws after warm-up.
@@ -206,7 +249,117 @@ post-process anti-aliasing only for remaining geometry/shader edges.
 Exit: every retained option has before/after pass timings and inspected image
 comparisons; rejected options and their cost are journaled.
 
-### Stage 6 — closure evidence
+### Stage 6 — CPU submission path
+
+#### Stage 6.0 — subphase proof
+
+- Implementation status: Render/Graphics now publish per-frame subphase timers
+  and counters for section preparation, shadow scheduling, material lookup,
+  uniform writes, descriptor work, pipeline validation, requested/emitted binds,
+  and native draws. The fixed profile window reports CPU-subphase p50/p95 and
+  the completion log includes the diagnostic counters. Runtime Vulkan Debug,
+  Vulkan performance, and OpenGL performance captures remain pending.
+- Add CPU timers and counts for section-packet build, shadow stamp/fit,
+  material resolution, uniform writes, descriptor search/allocation/update,
+  pipeline validation, requested/emitted native binds, and draw calls.
+- Record one warm fixed-window profile on Vulkan Debug with validation, Vulkan
+  performance build without validation, and OpenGL performance build. Keep the
+  supplied snapshot as the diagnostic baseline, not the final comparator.
+
+Gate: descriptor/update and state-bind counters explain the majority of the
+25.359 ms geometry-pass CPU time before changing the common contract. If they
+do not, use a sampling CPU profiler and revise the stage rather than guessing.
+
+#### Stage 6.1 — effective directional-shadow validity
+
+- Build the effective caster bounds and fitted matrices before computing the
+  validity stamp. Do not hash raw camera position when it lies inside the same
+  fitted volume and produces identical matrices.
+- Stamp light/shadow identity, target generation, effective fit, caster
+  membership, mesh/material revisions, visibility, and transforms. Add focused
+  invalidation tests for every dependency.
+- For a moving camera that changes receiver coverage, compare a stable texel-
+  snapped/quantized fit with exact refits. Retain the exact path unless the
+  stable fit has inspected image and invalidation evidence.
+
+Exit: an unchanged static Sponza scene, including camera motion inside the same
+effective fitted volume, records zero directional-shadow caster draws after
+warm-up. Any effective map change forces a miss.
+
+#### Stage 6.2 — stable binding sets plus dynamic uniform offsets
+
+- Extend the common binding description with an API-neutral dynamic-uniform
+  intent and extend binding commands with ordered dynamic offsets. Preserve
+  the existing uniform alignment and range validation.
+- Pack per-pass data once per pass, per-object data once per proxy/revision,
+  material constants once per material instance/revision per frame slot, and
+  selection constants from shared selected/unselected allocations where
+  practical.
+- Allocate one compatible geometry binding set per pipeline/frame slot (or a
+  small cache keyed by stable buffer/image/sampler identities). Vulkan maps the
+  dynamic intent to `VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC`; OpenGL selects
+  the same ranges with `glBindBufferRange`.
+- Keep bindless image/sampler bindings in the existing table. On non-bindless
+  devices, cache the stable material texture set separately from the dynamic
+  object/frame set so texture identity does not force per-draw reconstruction.
+- Key cache retirement by pipeline layout generation, resource generations,
+  frame slot, and completed submission/fence epoch. Never reuse a set across an
+  incompatible layout or before its slot is safe.
+
+Exit: after warm-up, each geometry draw performs zero descriptor allocation
+and zero descriptor update. Descriptor counts scale with pipelines, changed
+stable materials, and frame slots—not sections. Vulkan and OpenGL render the
+same frame data through the common contract.
+
+#### Stage 6.3 — recorder state cache and lean draw packets
+
+- Validate target/pipeline compatibility when the active target or pipeline
+  changes, not for repeated requests of the same pair. Keep generational-handle
+  checks and failure diagnostics at state transitions.
+- Track recorder-local last-bound pipeline, mesh, descriptor set, and bindless
+  table. Suppress only native calls proven redundant for the active command
+  buffer; reset the cache at target/frame boundaries as required by each API.
+- Build one lean immutable section-packet array from one RenderWorld snapshot.
+  A packet carries identities, resolved handles, world bounds, section range,
+  dynamic offsets, and sort keys; it must not own a copied
+  `section_materials` vector.
+- Reuse those packets for directional fitting/stamping, shadow filtering, and
+  G-buffer visibility. Cache static resolution by explicit RenderWorld,
+  mesh-section, and material revisions; do not infer immutability from pointer
+  stability.
+- Preserve front-to-back ordering within a bounded pipeline/material strategy.
+  Measure requested versus emitted binds so GPU overdraw and CPU state locality
+  can be compared rather than assumed.
+
+Exit: compatibility checks and native pipeline/mesh binds scale with actual
+state changes, section preparation performs no per-section heap allocation,
+and the same packet identity drives profiling and drawing.
+
+#### Stage 6.4 — OpenGL uniform upload correction
+
+- Track the dirty range of the active frame-slot uniform arena. Upload that
+  range once before its first consumer, or use a capability-gated persistent
+  mapping path only when measured.
+- Remove the all-mapped-buffer `glBufferSubData()` loop from descriptor bind
+  paths. A draw bind may select ranges/offsets but may not upload every frame
+  arena.
+
+Exit: OpenGL uploaded uniform bytes are bounded by the active slot's written
+range rather than `draw_count × total_mapped_capacity`.
+
+#### Stage 6.5 — re-profile before larger submission features
+
+- Repeat the exact fixed window after each substage and retain only changes
+  with improved p50/p95 CPU record time and no GPU/visual regression.
+- If record p95 remains above 12.73 ms, capture a sampling CPU profile. Consider
+  multithreaded secondary command recording, indirect/multi-draw, or a GPU-
+  driven path only when the remaining trace proves command encoding itself is
+  dominant. These are not prerequisites for 60 Hz.
+
+Exit: performance-build p95 record time is at most 12.73 ms and total frame
+p95 is at most 16.67 ms in the fixed scenario.
+
+### Stage 7 — closure evidence
 
 - Run focused tests, full validation, and Vulkan/OpenGL smoke/captures.
 - Measure the same baseline scenario in a non-validation performance build;
@@ -221,12 +374,17 @@ comparisons; rejected options and their cost are journaled.
   geometry from the same explicit mip artifacts.
 - The reference fixture reports 72 texture dependencies and stays within the
   recorded resident-memory ceiling.
-- No per-draw descriptor pool creation occurs in steady state, and lifetime
-  tests prove reset/destruction happens only after the owning frame fence.
+- No per-draw descriptor allocation or update occurs in steady state, and
+  lifetime tests prove cache reset/destruction happens only after the owning
+  frame fence. Counts scale with pipelines/material revisions/frame slots.
 - Visibility counters demonstrate section rejection for camera views that do
   not contain the complete model.
-- An unchanged static sun/caster frame reuses its shadow map; all declared
+- An unchanged effective static sun/caster map reuses its shadow target even
+  when raw camera motion remains inside the same fitted volume; all declared
   dependency changes invalidate it.
+- Performance-build p95 record time is at most 12.73 ms for the supplied
+  hardware/scenario, with descriptor, bind, packet-build, and uniform-upload
+  counters attached to the result.
 - On the reference machine and fixed scenario, the performance build reaches
   p95 total frame time at or below 16.67 ms after warm-up. The stretch target is
   8.33 ms. CPU, GPU-pass, and present measurements accompany the result.
@@ -251,5 +409,11 @@ comparisons; rejected options and their cost are journaled.
 - Alpha-coverage preservation and normal filtering are quality-sensitive.
 - Descriptor caching can retain textures or race deferred destruction if
   ownership keys and fence epochs are incomplete.
+- Dynamic uniform offsets require layout-order and alignment agreement across
+  shaders, common RHI validation, Vulkan, and OpenGL; a mismatch can select the
+  wrong object's constants without an obvious lifetime failure.
 - Incorrect shadow stamps can reuse stale depth, so invalidation tests must
   cover light, transform, load/unload, and bounds changes.
+- Recorder state suppression is valid only inside a known command-buffer and
+  target lifetime; external/editor recording must invalidate or isolate the
+  cache.

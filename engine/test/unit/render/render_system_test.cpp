@@ -448,12 +448,15 @@ namespace
                     resource::EnvironmentIblData ibl{};
                     ibl.irradiance.width = 1;
                     ibl.irradiance.height = 1;
+                    ibl.irradiance.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
                     ibl.irradiance.pixels.resize(8, 0);
                     ibl.prefiltered_radiance.width = 1;
                     ibl.prefiltered_radiance.height = 1;
+                    ibl.prefiltered_radiance.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
                     ibl.prefiltered_radiance.pixels.resize(8, 0);
                     ibl.brdf_lut.width = 1;
                     ibl.brdf_lut.height = 1;
+                    ibl.brdf_lut.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
                     ibl.brdf_lut.pixels.resize(8, 0);
                     ibl.prefilter_level_count = 1;
                     build.environment_ibl.push_back({extra, std::move(ibl)});

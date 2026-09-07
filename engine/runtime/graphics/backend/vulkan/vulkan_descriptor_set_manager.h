@@ -8,6 +8,7 @@
 #include <vulkan/vulkan.h>
 
 #include "common/resource_binding.h"
+#include "common/profile_counters.h"
 
 namespace kpengine::graphics
 {
@@ -48,6 +49,7 @@ namespace kpengine::graphics
         bool DestroyResourceBindingSet(VkDevice logical_device, DescriptorSetHandle handle);
         void DestroyAll(VkDevice logical_device);
         VkDescriptorSet GetDescriptorSet(DescriptorSetHandle handle);
+        DescriptorProfileCounters GetProfileCounters() const { return profile_counters_; }
 
     private:
         VulkanDescriptorPoolArena &CreateArena(
@@ -61,6 +63,7 @@ namespace kpengine::graphics
         HandleSystem<DescriptorSetHandle> handle_system_;
         uint32_t current_frame_slot_ = 0;
         bool frame_active_ = false;
+        DescriptorProfileCounters profile_counters_{};
     };
 }
 

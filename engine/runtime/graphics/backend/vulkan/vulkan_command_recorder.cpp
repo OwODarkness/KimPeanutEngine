@@ -1,5 +1,7 @@
 #include "vulkan_command_recorder.h"
 
+#include <chrono>
+
 #include "common/mesh.h"
 #include "common/mesh_manager.h"
 #include "common/render_target_validation.h"
@@ -34,6 +36,7 @@ namespace kpengine::graphics
         recorded_first_index_ = 0;
         active_target_ = {};
         draws_suppressed_ = false;
+        profile_counters_ = {};
     }
 
     bool VulkanCommandRecorder::BeginRenderTarget(RenderTargetHandle target)
@@ -66,6 +69,7 @@ namespace kpengine::graphics
 
     void VulkanCommandRecorder::BindPipeline(PipelineHandle pipeline)
     {
+        ++profile_counters_.pipeline_bind_requests;
         if (command_buffer_ == VK_NULL_HANDLE)
         {
             return;
@@ -80,13 +84,21 @@ namespace kpengine::graphics
             render_target_manager_ ? render_target_manager_->GetDesc(active_target_) : nullptr;
         if (target_desc)
         {
+            const auto validation_started = std::chrono::steady_clock::now();
             PipelineDesc pipeline_desc{};
             pipeline_desc.color_attachment_formats = resource->color_attachment_formats;
             pipeline_desc.depth_attachment_format = resource->depth_attachment_format;
             pipeline_desc.multisample_state.rasterization_samples =
                 resource->rasterization_samples;
             std::string error;
-            if (!ValidateRenderTargetPipelineCompatibility(*target_desc, pipeline_desc, &error))
+            const bool compatible =
+                ValidateRenderTargetPipelineCompatibility(*target_desc, pipeline_desc, &error);
+            ++profile_counters_.pipeline_validation_calls;
+            profile_counters_.pipeline_validation_cpu_ms +=
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - validation_started)
+                    .count();
+            if (!compatible)
             {
                 KP_LOG(KP_VULKAN_COMMAND_RECORDER_LOG_NAME, LOG_LEVEL_ERROR,
                        "Rejected pipeline for incompatible render target: %s", error.c_str());
@@ -107,11 +119,13 @@ namespace kpengine::graphics
                                             &descriptor_set, 0, nullptr);
                 }
             }
+            ++profile_counters_.pipeline_bind_emitted;
         }
     }
 
     void VulkanCommandRecorder::BindMesh(MeshHandle mesh)
     {
+        ++profile_counters_.mesh_bind_requests;
         if (command_buffer_ == VK_NULL_HANDLE)
         {
             return;
@@ -135,11 +149,13 @@ namespace kpengine::graphics
         vkCmdBindIndexBuffer(command_buffer_, index->buffer, 0, VK_INDEX_TYPE_UINT32);
         recorded_index_count_ = static_cast<uint32_t>(mesh_resource->sections[0].index_count);
         recorded_first_index_ = static_cast<uint32_t>(mesh_resource->sections[0].index_start);
+        ++profile_counters_.mesh_bind_emitted;
     }
 
     void VulkanCommandRecorder::BindResourceBindings(PipelineHandle pipeline,
                                                        DescriptorSetHandle bindings)
     {
+        ++profile_counters_.resource_binding_bind_requests;
         if (command_buffer_ == VK_NULL_HANDLE)
         {
             return;
@@ -150,6 +166,7 @@ namespace kpengine::graphics
         {
             vkCmdBindDescriptorSets(command_buffer_, VK_PIPELINE_BIND_POINT_GRAPHICS,
                                     pipeline_resource->layout, 0, 1, &descriptor_set, 0, nullptr);
+            ++profile_counters_.resource_binding_bind_emitted;
         }
     }
 
@@ -180,6 +197,7 @@ namespace kpengine::graphics
         {
             vkCmdDrawIndexed(command_buffer_, count, instance_count, first,
                              vertex_offset, first_instance);
+            ++profile_counters_.draw_calls_emitted;
         }
     }
 }

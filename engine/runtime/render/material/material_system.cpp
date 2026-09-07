@@ -1,5 +1,6 @@
 #include "render/material/material_system.h"
 
+#include <chrono>
 #include <unordered_set>
 
 namespace kpengine::render
@@ -204,25 +205,51 @@ namespace kpengine::render
 
     MaterialResolution MaterialSystem::GetInstanceResolution(MaterialInstanceHandle handle) const
     {
+        const auto started = std::chrono::steady_clock::now();
         const auto instance_it = instances_.find(instance_handles_.Get(handle));
-        return instance_it != instances_.end() ? instance_it->second.resolution : MaterialResolution{};
+        const MaterialResolution result =
+            instance_it != instances_.end() ? instance_it->second.resolution : MaterialResolution{};
+        ++profile_counters_.resolution_calls;
+        profile_counters_.resolution_cpu_ms +=
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started)
+                .count();
+        return result;
     }
 
     std::optional<MaterialDrawClass> MaterialSystem::GetDrawClass(MaterialInstanceHandle handle) const
     {
+        const auto started = std::chrono::steady_clock::now();
         const auto instance_it = instances_.find(instance_handles_.Get(handle));
         if (instance_it == instances_.end())
         {
+            ++profile_counters_.resolution_calls;
+            profile_counters_.resolution_cpu_ms +=
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - started)
+                    .count();
             return std::nullopt;
         }
         const auto template_it = templates_.find(template_handles_.Get(instance_it->second.template_handle));
         if (template_it == templates_.end())
         {
+            ++profile_counters_.resolution_calls;
+            profile_counters_.resolution_cpu_ms +=
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - started)
+                    .count();
             return std::nullopt;
         }
-        return template_it->second.desc.pipeline_state.blend_mode == MaterialBlendMode::Opaque
-                   ? MaterialDrawClass::Opaque
-                   : MaterialDrawClass::AlphaBlend;
+        const std::optional<MaterialDrawClass> result =
+            template_it->second.desc.pipeline_state.blend_mode == MaterialBlendMode::Opaque
+                ? MaterialDrawClass::Opaque
+                : MaterialDrawClass::AlphaBlend;
+        ++profile_counters_.resolution_calls;
+        profile_counters_.resolution_cpu_ms +=
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - started)
+                .count();
+        return result;
     }
 
     bool MaterialSystem::IsTemplateDescValid(const MaterialTemplateDesc &desc) const

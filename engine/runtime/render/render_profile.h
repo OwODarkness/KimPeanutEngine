@@ -25,6 +25,19 @@ namespace kpengine::render
         Count,
     };
 
+    enum class RenderProfileCpuSubphase : uint8_t
+    {
+        SectionPacketBuild,
+        ShadowStampFit,
+        MaterialResolution,
+        UniformWrite,
+        DescriptorSearch,
+        DescriptorAllocation,
+        DescriptorUpdate,
+        PipelineValidation,
+        Count,
+    };
+
     struct RenderProfilePassMetrics
     {
         double cpu_time_ms = 0.0;
@@ -39,6 +52,12 @@ namespace kpengine::render
         std::optional<double> gpu_p95_ms;
     };
 
+    struct RenderProfileCpuSubphaseSummary
+    {
+        std::optional<double> cpu_p50_ms;
+        std::optional<double> cpu_p95_ms;
+    };
+
     struct RenderProfileSummary
     {
         bool complete = false;
@@ -51,6 +70,9 @@ namespace kpengine::render
         std::array<RenderProfilePassSummary,
                    static_cast<size_t>(RenderProfilePass::Count)>
             passes{};
+        std::array<RenderProfileCpuSubphaseSummary,
+                   static_cast<size_t>(RenderProfileCpuSubphase::Count)>
+            cpu_subphases{};
     };
 
     struct RenderProfileTextureMetrics
@@ -79,6 +101,32 @@ namespace kpengine::render
         uint64_t shadow_cache_misses = 0;
         uint64_t descriptor_sets_created = 0;
         uint64_t descriptor_pools_created = 0;
+        double cpu_section_packet_build_ms = 0.0;
+        uint64_t section_packet_build_calls = 0;
+        uint64_t section_packets_built = 0;
+        double cpu_shadow_stamp_fit_ms = 0.0;
+        uint64_t shadow_stamp_evaluations = 0;
+        uint64_t shadow_fit_evaluations = 0;
+        double cpu_material_resolution_ms = 0.0;
+        uint64_t material_resolution_calls = 0;
+        double cpu_uniform_write_ms = 0.0;
+        uint64_t uniform_writes = 0;
+        uint64_t uniform_write_bytes = 0;
+        double descriptor_search_cpu_ms = 0.0;
+        double descriptor_allocation_cpu_ms = 0.0;
+        double descriptor_update_cpu_ms = 0.0;
+        uint64_t descriptor_searches = 0;
+        uint64_t descriptor_allocations = 0;
+        uint64_t descriptor_updates = 0;
+        double pipeline_validation_cpu_ms = 0.0;
+        uint64_t pipeline_validation_calls = 0;
+        uint64_t pipeline_bind_requests = 0;
+        uint64_t pipeline_bind_emitted = 0;
+        uint64_t mesh_bind_requests = 0;
+        uint64_t mesh_bind_emitted = 0;
+        uint64_t resource_binding_bind_requests = 0;
+        uint64_t resource_binding_bind_emitted = 0;
+        uint64_t native_draw_calls = 0;
         std::string present_mode = "unknown";
         RenderProfileTextureMetrics textures;
         std::array<RenderProfilePassMetrics,
@@ -121,6 +169,9 @@ namespace kpengine::render
         uint32_t frames_observed_ = 0;
         std::vector<double> cpu_total_samples_;
         std::vector<double> cpu_present_samples_;
+        std::array<std::vector<double>,
+                   static_cast<size_t>(RenderProfileCpuSubphase::Count)>
+            cpu_subphase_samples_;
         std::array<std::vector<double>, static_cast<size_t>(RenderProfilePass::Count)>
             gpu_samples_;
     };

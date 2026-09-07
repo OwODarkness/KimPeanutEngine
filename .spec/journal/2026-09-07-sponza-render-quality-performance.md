@@ -257,3 +257,28 @@ below adds the first runtime instrumentation slice.
 - Fresh Sponza runtime A/B profiling is pending because the validation launch
   remained in asynchronous startup/resource promotion without opening the
   local command transport; no timing or visual claim is made from that run.
+
+## Stage 6.0 telemetry implementation checkpoint
+
+- Added API-neutral graphics profile counters for descriptor search,
+  allocation, and update work, plus command-recorder requested/emitted
+  pipeline, mesh, resource-binding, and native-draw counts. Vulkan measures
+  its descriptor-arena search and native allocation/update calls; OpenGL
+  measures descriptor-set construction as its allocation/update equivalent.
+- Added Render/FrameContext/MaterialSystem timing for section-candidate and
+  visible-section preparation, directional shadow scheduling, material
+  resolution, and mapped uniform writes. The fixed profile window now retains
+  CPU-subphase p50/p95 values and the completion log emits the subphase and
+  bind/descriptor counters.
+- `cmake --build build --config Debug --target RenderSystemTest` — passed.
+- `cmake --build build --config Debug --target RenderPassScheduleTest` — passed.
+- `RenderPassScheduleTest.exe --gtest_color=no` — 100/100 tests passed,
+  including CPU-subphase percentile coverage.
+- `RenderSystemTest.exe --gtest_color=no` — 13/16 passed; three existing
+  environment-fixture tests fail before scene promotion because their extra
+  RGBA16F fixture makes `BuildPreparedCatalog()` return null. The diagnostic is
+  `RenderSystem scene promotion requires prepared assets`; no Stage 6.0 code
+  runs in those failures.
+- Runtime fixed-window captures on Vulkan Debug/performance and OpenGL remain
+  pending. No Stage 6.1+ optimization or performance claim is made from this
+  instrumentation-only checkpoint.

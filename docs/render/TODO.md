@@ -16,13 +16,13 @@ details and stage checklists belong in the linked submodule documents.
 
 ## Cross-cutting Render work
 
-- [ ] **issue-9.7 — Sponza texture aliasing and frame throughput:** Stage 0
-  instrumentation and the Stage 1 runtime mip slice are landed; establish the
-  fixed CPU/GPU/present baseline, then promote the mip path to native products
-  and land bounded
-  native texture products, replace Vulkan pool-per-draw descriptor allocation,
-  add section visibility and unchanged-shadow reuse, and add measured
-  front-to-back G-buffer ordering. The solved black-frame defect is out of
+- [ ] **issue-9.7 — Sponza texture aliasing and frame throughput:** Stages 0–5
+  and the Stage 6.0 telemetry implementation are landed. The supplied profile attributes the remaining approximately
+  30 FPS result to 28.12 ms of CPU command recording versus 10.98 ms on the
+  GPU. Stage 6 targets ineffective shadow reuse, per-draw descriptor updates,
+  redundant state work, section-packet copying, and OpenGL whole-arena uploads;
+  its fixed-scenario record-time budget is 12.73 ms p95. Runtime Stage 6.0
+  proof on both APIs remains pending. The solved black-frame defect is out of
   scope. →
   [issue](issue/issue-9.7.md), [plan](.plan/issue-9.7.md),
   [review](.review/issue-9.7.md),

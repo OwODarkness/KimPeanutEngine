@@ -1,6 +1,6 @@
 # Issue 9.7 — Sponza Texture Aliasing and Frame Throughput
 
-**Status: active; Stage 5 front-to-back G-buffer ordering slice landed.** The Sponza startup fixture renders,
+**Status: active; Stage 5 and the Stage 6.0 telemetry implementation slice are landed; Stage 6.0 runtime proof is next.** The Sponza startup fixture renders,
 but its material channels contain severe high-frequency speckle and the
 observed frame rate falls to approximately 30 FPS.
 
@@ -33,9 +33,18 @@ outside this issue.
   identities. An unchanged static frame reuses the previous depth target and
   records no directional shadow-caster draws; target resize and any stamp input
   change force a redraw.
-- The 30 FPS observation has not yet been separated into CPU recording, GPU
-  execution, present pacing, or validation overhead. Measurement is a required
-  gate before pass-level tuning.
+- The supplied post-Stage-5 snapshot separates the approximately 30 FPS result:
+  frame time is 32.0568 ms, Render CPU is 30.924 ms, command recording is
+  28.1182 ms, GPU total is 10.98 ms, and present is 0.2795 ms. Geometry-pass
+  recording is dominant: directional shadow is 9.127 ms CPU for 446 draws and
+  G-buffer is 16.232 ms CPU for 264 draws.
+- Frame-slot descriptor pools are reused, but every geometry draw still
+  allocates and updates a descriptor set whose uniform offsets are unique to
+  that draw. Pipeline/target compatibility and identical pipeline/mesh state
+  are also resolved and bound repeatedly.
+- The directional-shadow cache reports zero hits and one miss. Its stamp hashes
+  raw camera position even when the camera remains inside identical fitted
+  caster bounds, so camera motion can redraw an unchanged map.
 
 ## Resolution documents
 
@@ -69,3 +78,16 @@ the execution journal.
 
 Stage 5 adds measured-candidate front-to-back ordering for opaque G-buffer
 sections. A depth pre-pass remains gated on a fresh GPU comparison.
+
+Stage 6 targets the measured CPU bottleneck: effective shadow-map validity,
+stable descriptor sets with dynamic uniform offsets, recorder-local redundant-
+state suppression, lean reusable section packets, and one dirty-range OpenGL
+uniform upload per active frame slot. Larger changes such as multithreaded
+recording or indirect/GPU-driven submission remain gated on the resulting CPU
+profile.
+
+Stage 6.0 now exposes the required Render/Graphics subphase timers and counts,
+including descriptor search/allocation/update work, requested versus emitted
+native binds, and CPU-subphase p50/p95 summaries. The fixed-scenario runtime
+profile still needs to be captured on Vulkan Debug, Vulkan performance, and
+OpenGL performance builds before selecting the Stage 6.1+ optimization path.

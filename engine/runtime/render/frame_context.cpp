@@ -1,6 +1,7 @@
 #include "frame_context.h"
 
 #include <stdexcept>
+#include <chrono>
 
 #include "graphics/backend/common/render_backend.h"
 #include "log/logger.h"
@@ -73,6 +74,7 @@ namespace kpengine::render
         render_extent_ = render_extent;
         ReleaseTransientBindings();
         uniform_cursor_ = 0;
+        profile_counters_ = {};
         active_ = true;
     }
 
@@ -140,6 +142,19 @@ namespace kpengine::render
         MaterialInstanceHandle material_instance,
         const std::vector<graphics::ResourceBinding> &draw_bindings, MaterialPass pass)
     {
+        const auto material_resolution_started = std::chrono::steady_clock::now();
+        bool material_resolution_timer_stopped = false;
+        const auto stop_material_resolution_timer = [&]()
+        {
+            if (!material_resolution_timer_stopped)
+            {
+                profile_counters_.material_resolution_cpu_ms +=
+                    std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - material_resolution_started)
+                        .count();
+                material_resolution_timer_stopped = true;
+            }
+        };
         if (!active_ ||
             materials.GetInstanceResolution(material_instance).state != MaterialResourceState::Ready)
         {
@@ -204,6 +219,7 @@ namespace kpengine::render
             constant_size = AlignUp(constant_size, GetMaterialConstantAlignment(*value));
             constant_size += GetMaterialConstantSize(*value);
         }
+        stop_material_resolution_timer();
 
         UniformAllocation constants;
         if (constant_size != 0)
@@ -218,9 +234,15 @@ namespace kpengine::render
             {
                 for (const auto &[parameter_id, slot] : textures->bindless_slots)
                 {
+                    const auto started = std::chrono::steady_clock::now();
                     std::memcpy(static_cast<uint8_t *>(constants.mapped) +
                                     parameter_id * kUniformVectorAlignment,
                                 &slot.id, sizeof(slot.id));
+                    RecordUniformWrite(
+                        sizeof(slot.id),
+                        std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - started)
+                            .count());
                 }
             }
             size_t constant_offset = bindless_index_bytes;
@@ -235,13 +257,25 @@ namespace kpengine::render
                 constant_offset = AlignUp(constant_offset, GetMaterialConstantAlignment(*value));
                 if (const auto *const scalar = std::get_if<float>(value))
                 {
+                    const auto started = std::chrono::steady_clock::now();
                     std::memcpy(static_cast<uint8_t *>(constants.mapped) + constant_offset,
                                 scalar, sizeof(*scalar));
+                    RecordUniformWrite(
+                        sizeof(*scalar),
+                        std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - started)
+                            .count());
                 }
                 else if (const auto *const vector = std::get_if<Vector4f>(value))
                 {
+                    const auto started = std::chrono::steady_clock::now();
                     std::memcpy(static_cast<uint8_t *>(constants.mapped) + constant_offset,
                                 vector, sizeof(*vector));
+                    RecordUniformWrite(
+                        sizeof(*vector),
+                        std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - started)
+                            .count());
                 }
                 constant_offset += GetMaterialConstantSize(*value);
             }

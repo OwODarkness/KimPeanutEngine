@@ -22,6 +22,7 @@
 #include "render_resource.h"
 #include "prepared_render_asset_catalog.h"
 #include "render_world/render_world.h"
+#include "render_world/scene_visibility.h"
 #include "renderer_frame_targets.h"
 #include "render_profile.h"
 
@@ -147,13 +148,16 @@ namespace kpengine::render
         void ConfigurePassSequence();
         std::optional<DirectionalShadowFrame> ScheduleDirectionalShadow(
             const std::vector<Light> &lights,
-            const std::function<bool(ShadowHandle)> &is_shadow_handle_valid) const;
+            const std::function<bool(ShadowHandle)> &is_shadow_handle_valid);
         std::optional<SpotShadowFrame> ScheduleSpotShadow(
             const std::vector<Light> &lights,
-            const std::function<bool(ShadowHandle)> &is_shadow_handle_valid) const;
+            const std::function<bool(ShadowHandle)> &is_shadow_handle_valid);
         std::optional<PointShadowFrame> SchedulePointShadow(
             const std::vector<Light> &lights,
-            const std::function<bool(ShadowHandle)> &is_shadow_handle_valid) const;
+            const std::function<bool(ShadowHandle)> &is_shadow_handle_valid);
+        std::vector<VisibleMeshSection> BuildSectionCandidatesProfiled();
+        std::vector<VisibleMeshSection> BuildVisibleSectionsProfiled(
+            const Matrix4f &view_projection);
         bool RecordDirectionalShadowPass();
         bool RecordSpotShadowPass();
         bool RecordPointShadowPass();

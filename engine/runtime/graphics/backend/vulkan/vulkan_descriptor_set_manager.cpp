@@ -1,6 +1,7 @@
 #include "vulkan_descriptor_set_manager.h"
 
 #include <algorithm>
+#include <chrono>
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
@@ -89,6 +90,7 @@ namespace kpengine::graphics
         }
         current_frame_slot_ = frame_slot;
         frame_active_ = true;
+        profile_counters_ = {};
     }
 
     VulkanDescriptorPoolArena &VulkanDescriptorSetManager::CreateArena(
@@ -168,6 +170,7 @@ namespace kpengine::graphics
 
         const uint32_t resource_frame_slot = frame_active_ ? current_frame_slot_ : UINT32_MAX;
         auto &arenas = frame_active_ ? frame_arenas_[current_frame_slot_] : persistent_arenas_;
+        const auto search_started = std::chrono::steady_clock::now();
         std::size_t arena_index = std::numeric_limits<std::size_t>::max();
         for (std::size_t index = 0; index < arenas.size(); ++index)
         {
@@ -186,6 +189,11 @@ namespace kpengine::graphics
                 *pool_created = true;
             }
         }
+        ++profile_counters_.searches;
+        profile_counters_.search_cpu_ms +=
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - search_started)
+                .count();
 
         VkDescriptorSetLayout layout = pipeline.descriptor_set_layouts[desc.set].layout;
         VkDescriptorSetAllocateInfo allocate_info{};
@@ -195,6 +203,7 @@ namespace kpengine::graphics
         allocate_info.pSetLayouts = &layout;
 
         VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+        const auto allocation_started = std::chrono::steady_clock::now();
         VkResult allocate_result = vkAllocateDescriptorSets(logical_device, &allocate_info, &descriptor_set);
         if (allocate_result == VK_ERROR_OUT_OF_POOL_MEMORY || allocate_result == VK_ERROR_FRAGMENTED_POOL)
         {
@@ -211,6 +220,11 @@ namespace kpengine::graphics
         {
             throw std::runtime_error("failed to allocate descriptor set");
         }
+        ++profile_counters_.allocations;
+        profile_counters_.allocation_cpu_ms +=
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - allocation_started)
+                .count();
 
         std::vector<VkWriteDescriptorSet> writes;
         std::vector<VkDescriptorBufferInfo> buffer_infos;
@@ -265,7 +279,13 @@ namespace kpengine::graphics
             }, binding);
         }
 
+        const auto update_started = std::chrono::steady_clock::now();
         vkUpdateDescriptorSets(logical_device, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
+        ++profile_counters_.updates;
+        profile_counters_.update_cpu_ms +=
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - update_started)
+                .count();
 
         const DescriptorSetHandle handle = handle_system_.Create();
         if (handle.id == resources_.size())

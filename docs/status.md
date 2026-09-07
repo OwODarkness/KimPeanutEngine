@@ -11,13 +11,15 @@
   Stage 5 front-to-back G-buffer ordering slice are landed; post-startup
   before/after profile capture remains pending. The
   remaining failures are texture-minification speckle and approximately 30 FPS,
-  with the resolved black-frame defect excluded. Verified pressure includes
-  missing mip chains, a 72×4K RGBA8 texture closure, Vulkan pool-per-draw
-  descriptors, whole-model visibility, and unconditional static-shadow redraw;
-  timing attribution is the first execution gate; the former pool-per-draw
-  descriptor pressure is now reduced by the Stage 3 Vulkan arena slice; camera
-  and shadow work now cull by native mesh section, and unchanged directional
-  shadow maps reuse their depth target. →
+  with the resolved black-frame defect excluded. Earlier verified pressure
+  included missing mip chains, a 72×4K RGBA8 texture closure, Vulkan pool-per-
+  draw descriptors, whole-model visibility, and unconditional static-shadow
+  redraw. The pool lifetime, section visibility, and shadow-cache mechanisms
+  are landed, but a supplied post-Stage-5 profile
+  attributes the frame to CPU submission: 28.12 ms record versus 10.98 ms GPU.
+  Stage 6.0 telemetry now publishes those subphase timings and counters;
+  fixed-scenario Vulkan/OpenGL profile capture is still the gate before any
+  common-contract or multithreaded/GPU-driven redesign. →
   [issue](render/issue/issue-9.7.md), [plan](render/.plan/issue-9.7.md),
   [review](render/.review/issue-9.7.md)
 - **MI1.7-R1 Asset build boundary (2026-09-06)** — split the database-free

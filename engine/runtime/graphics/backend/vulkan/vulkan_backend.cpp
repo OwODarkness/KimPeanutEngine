@@ -188,6 +188,8 @@ namespace kpengine::graphics
         }
 
         command_recorder_->EndRenderTarget();
+        AccumulateCommandRecorderProfileCounters(command_recorder_.get());
+        AccumulateDescriptorProfileCounters(descriptor_set_manager_->GetProfileCounters());
         command_recorder_.reset();
         VkCommandBuffer scene_command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
         render_target_readback_->RecordPendingCopies(

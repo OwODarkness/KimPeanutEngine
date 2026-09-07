@@ -329,6 +329,25 @@ namespace kpengine::render
             backend_->GetBackendProfileCounters();
         profile_.descriptor_sets_created = backend_profile.descriptor_sets_created;
         profile_.descriptor_pools_created = backend_profile.descriptor_pools_created;
+        profile_.descriptor_searches = backend_profile.descriptor_searches;
+        profile_.descriptor_allocations = backend_profile.descriptor_allocations;
+        profile_.descriptor_updates = backend_profile.descriptor_updates;
+        profile_.descriptor_search_cpu_ms = backend_profile.descriptor_search_cpu_ms;
+        profile_.descriptor_allocation_cpu_ms = backend_profile.descriptor_allocation_cpu_ms;
+        profile_.descriptor_update_cpu_ms = backend_profile.descriptor_update_cpu_ms;
+        profile_.pipeline_validation_cpu_ms =
+            backend_profile.recorder.pipeline_validation_cpu_ms;
+        profile_.pipeline_validation_calls =
+            backend_profile.recorder.pipeline_validation_calls;
+        profile_.pipeline_bind_requests = backend_profile.recorder.pipeline_bind_requests;
+        profile_.pipeline_bind_emitted = backend_profile.recorder.pipeline_bind_emitted;
+        profile_.mesh_bind_requests = backend_profile.recorder.mesh_bind_requests;
+        profile_.mesh_bind_emitted = backend_profile.recorder.mesh_bind_emitted;
+        profile_.resource_binding_bind_requests =
+            backend_profile.recorder.resource_binding_bind_requests;
+        profile_.resource_binding_bind_emitted =
+            backend_profile.recorder.resource_binding_bind_emitted;
+        profile_.native_draw_calls = backend_profile.recorder.draw_calls_emitted;
         profile_.cpu_total_ms =
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - profile_frame_start_)
@@ -390,11 +409,23 @@ namespace kpengine::render
         const auto &gbuffer = profile_.summary.passes[
             static_cast<size_t>(RenderProfilePass::GBuffer)];
         const double gbuffer_p95 = gbuffer.gpu_p95_ms.value_or(0.0);
+        const auto cpu_subphase_p95 = [this](const RenderProfileCpuSubphase subphase)
+        {
+            return profile_.summary.cpu_subphases[static_cast<size_t>(subphase)]
+                .cpu_p95_ms.value_or(0.0);
+        };
         KP_LOG("RenderLog", LOG_LEVEL_INFO,
                "Render profile complete: scenario=%s level=%s camera=%s api=%s "
                "viewport=%ux%u warmup=%u samples=%u cpu_p50_ms=%.3f cpu_p95_ms=%.3f "
                "present_p50_ms=%.3f present_p95_ms=%.3f gbuffer_gpu_p95_ms=%.3f "
-               "draws=%llu sections=%llu descriptor_sets=%llu descriptor_pools=%llu "
+               "draws=%llu native_draws=%llu sections=%llu descriptor_sets=%llu "
+               "descriptor_pools=%llu descriptor_searches=%llu descriptor_allocations=%llu "
+               "descriptor_updates=%llu descriptor_ms=[%.3f,%.3f,%.3f] "
+               "binds=[pipeline:%llu/%llu mesh:%llu/%llu descriptors:%llu/%llu] "
+               "pipeline_validation_ms=%.3f "
+               "cpu_subphase_p95_ms=[packets:%.3f shadow:%.3f material:%.3f "
+               "uniform:%.3f descriptor_search:%.3f descriptor_alloc:%.3f "
+               "descriptor_update:%.3f validation:%.3f] "
                "textures=%u source_bytes=%llu decoded_bytes=%llu resident_bytes=%llu "
                "present_mode=%s shadow_hits=%llu shadow_misses=%llu",
                scenario.name, scenario.startup_level, scenario.camera_id,
@@ -404,9 +435,31 @@ namespace kpengine::render
                profile_.summary.cpu_total_p95_ms, profile_.summary.cpu_present_p50_ms,
                profile_.summary.cpu_present_p95_ms, gbuffer_p95,
                static_cast<unsigned long long>(profile_.draw_calls),
+               static_cast<unsigned long long>(profile_.native_draw_calls),
                static_cast<unsigned long long>(profile_.sections),
                static_cast<unsigned long long>(profile_.descriptor_sets_created),
                static_cast<unsigned long long>(profile_.descriptor_pools_created),
+               static_cast<unsigned long long>(profile_.descriptor_searches),
+               static_cast<unsigned long long>(profile_.descriptor_allocations),
+               static_cast<unsigned long long>(profile_.descriptor_updates),
+               profile_.descriptor_search_cpu_ms,
+               profile_.descriptor_allocation_cpu_ms,
+               profile_.descriptor_update_cpu_ms,
+               static_cast<unsigned long long>(profile_.pipeline_bind_requests),
+               static_cast<unsigned long long>(profile_.pipeline_bind_emitted),
+               static_cast<unsigned long long>(profile_.mesh_bind_requests),
+               static_cast<unsigned long long>(profile_.mesh_bind_emitted),
+               static_cast<unsigned long long>(profile_.resource_binding_bind_requests),
+               static_cast<unsigned long long>(profile_.resource_binding_bind_emitted),
+               profile_.pipeline_validation_cpu_ms,
+               cpu_subphase_p95(RenderProfileCpuSubphase::SectionPacketBuild),
+               cpu_subphase_p95(RenderProfileCpuSubphase::ShadowStampFit),
+               cpu_subphase_p95(RenderProfileCpuSubphase::MaterialResolution),
+               cpu_subphase_p95(RenderProfileCpuSubphase::UniformWrite),
+               cpu_subphase_p95(RenderProfileCpuSubphase::DescriptorSearch),
+               cpu_subphase_p95(RenderProfileCpuSubphase::DescriptorAllocation),
+               cpu_subphase_p95(RenderProfileCpuSubphase::DescriptorUpdate),
+               cpu_subphase_p95(RenderProfileCpuSubphase::PipelineValidation),
                profile_.textures.dependency_count,
                static_cast<unsigned long long>(profile_.textures.source_bytes),
                static_cast<unsigned long long>(profile_.textures.decoded_bytes),

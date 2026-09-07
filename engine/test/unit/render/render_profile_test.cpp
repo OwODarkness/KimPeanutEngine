@@ -26,6 +26,11 @@ TEST(RenderProfileSnapshot, StartsWithNoMeasurements)
     EXPECT_EQ(snapshot.sections, 0U);
     EXPECT_EQ(snapshot.descriptor_sets_created, 0U);
     EXPECT_EQ(snapshot.descriptor_pools_created, 0U);
+    EXPECT_EQ(snapshot.descriptor_searches, 0U);
+    EXPECT_EQ(snapshot.descriptor_allocations, 0U);
+    EXPECT_EQ(snapshot.descriptor_updates, 0U);
+    EXPECT_EQ(snapshot.pipeline_bind_requests, 0U);
+    EXPECT_EQ(snapshot.native_draw_calls, 0U);
     EXPECT_EQ(snapshot.textures.dependency_count, 0U);
     EXPECT_EQ(snapshot.passes.size(),
               static_cast<size_t>(kpengine::render::RenderProfilePass::Count));
@@ -57,4 +62,24 @@ TEST(RenderProfileWindow, IgnoresWarmupAndComputesPercentiles)
     EXPECT_EQ(summary.samples_collected, 3U);
     EXPECT_DOUBLE_EQ(summary.cpu_total_p50_ms, 20.0);
     EXPECT_DOUBLE_EQ(summary.cpu_total_p95_ms, 29.0);
+}
+
+TEST(RenderProfileWindow, ComputesCpuSubphasePercentiles)
+{
+    kpengine::render::RenderProfileWindow window(0, 3);
+    kpengine::render::RenderProfileSnapshot snapshot{};
+    snapshot.cpu_section_packet_build_ms = 1.0;
+    window.Observe(snapshot);
+    snapshot.cpu_section_packet_build_ms = 2.0;
+    window.Observe(snapshot);
+    snapshot.cpu_section_packet_build_ms = 3.0;
+    window.Observe(snapshot);
+
+    const auto &summary = window.GetSummary();
+    const auto &section_summary = summary.cpu_subphases[
+        static_cast<size_t>(kpengine::render::RenderProfileCpuSubphase::SectionPacketBuild)];
+    ASSERT_TRUE(section_summary.cpu_p50_ms.has_value());
+    ASSERT_TRUE(section_summary.cpu_p95_ms.has_value());
+    EXPECT_DOUBLE_EQ(*section_summary.cpu_p50_ms, 2.0);
+    EXPECT_DOUBLE_EQ(*section_summary.cpu_p95_ms, 2.9);
 }

@@ -15,6 +15,7 @@
 #include "graphics_capabilities.h"
 #include "mesh.h"
 #include "pipeline_types.h"
+#include "profile_counters.h"
 #include "resource_binding.h"
 #include "render_target.h"
 #include "render_target_readback.h"
@@ -50,6 +51,13 @@ namespace kpengine::graphics
     {
         uint64_t descriptor_sets_created = 0;
         uint64_t descriptor_pools_created = 0;
+        uint64_t descriptor_searches = 0;
+        uint64_t descriptor_allocations = 0;
+        uint64_t descriptor_updates = 0;
+        double descriptor_search_cpu_ms = 0.0;
+        double descriptor_allocation_cpu_ms = 0.0;
+        double descriptor_update_cpu_ms = 0.0;
+        CommandRecorderProfileCounters recorder;
     };
 
     struct Extent2D
@@ -159,6 +167,26 @@ namespace kpengine::graphics
             }
         }
         void ResetBackendProfileCounters() noexcept { profile_counters_ = {}; }
+
+        void AccumulateCommandRecorderProfileCounters(
+            const CommandRecorder *recorder) noexcept
+        {
+            if (recorder)
+            {
+                profile_counters_.recorder = recorder->GetProfileCounters();
+            }
+        }
+
+        void AccumulateDescriptorProfileCounters(
+            const DescriptorProfileCounters &counters) noexcept
+        {
+            profile_counters_.descriptor_searches += counters.searches;
+            profile_counters_.descriptor_allocations += counters.allocations;
+            profile_counters_.descriptor_updates += counters.updates;
+            profile_counters_.descriptor_search_cpu_ms += counters.search_cpu_ms;
+            profile_counters_.descriptor_allocation_cpu_ms += counters.allocation_cpu_ms;
+            profile_counters_.descriptor_update_cpu_ms += counters.update_cpu_ms;
+        }
 
     public:
         RenderBackend() = default;

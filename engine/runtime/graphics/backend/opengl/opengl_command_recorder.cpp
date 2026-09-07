@@ -1,5 +1,7 @@
 #include "opengl_command_recorder.h"
 
+#include <chrono>
+
 #include "common/mesh.h"
 #include "common/mesh_manager.h"
 #include "common/render_target_validation.h"
@@ -17,6 +19,7 @@ namespace kpengine::graphics
     OpenglCommandRecorder::OpenglCommandRecorder(Services services)
         : services_(services)
     {
+        profile_counters_ = {};
     }
 
     bool OpenglCommandRecorder::BeginRenderTarget(RenderTargetHandle target)
@@ -106,6 +109,7 @@ namespace kpengine::graphics
 
     void OpenglCommandRecorder::BindPipeline(PipelineHandle pipeline)
     {
+        ++profile_counters_.pipeline_bind_requests;
         if (!services_.pipeline_manager)
         {
             return;
@@ -123,14 +127,21 @@ namespace kpengine::graphics
             const uint32_t index = services_.render_target_handles->Get(active_render_target_);
             if (index < services_.render_targets->size())
             {
+                const auto validation_started = std::chrono::steady_clock::now();
                 PipelineDesc pipeline_desc{};
                 pipeline_desc.color_attachment_formats = resource->color_attachment_formats_;
                 pipeline_desc.depth_attachment_format = resource->depth_attachment_format_;
                 pipeline_desc.multisample_state.rasterization_samples =
                     resource->rasterization_samples_;
                 std::string error;
-                if (!ValidateRenderTargetPipelineCompatibility(
-                        (*services_.render_targets)[index].desc, pipeline_desc, &error))
+                const bool compatible = ValidateRenderTargetPipelineCompatibility(
+                    (*services_.render_targets)[index].desc, pipeline_desc, &error);
+                ++profile_counters_.pipeline_validation_calls;
+                profile_counters_.pipeline_validation_cpu_ms +=
+                    std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - validation_started)
+                        .count();
+                if (!compatible)
                 {
                     KP_LOG(KP_OPENGL_COMMAND_RECORDER_LOG_NAME, LOG_LEVEL_ERROR,
                            "Rejected pipeline for incompatible render target: %s",
@@ -148,10 +159,12 @@ namespace kpengine::graphics
         }
         glBindVertexArray(resource->vao);
         recorded_pipeline_ = pipeline;
+        ++profile_counters_.pipeline_bind_emitted;
     }
 
     void OpenglCommandRecorder::BindMesh(MeshHandle mesh)
     {
+        ++profile_counters_.mesh_bind_requests;
         if (!services_.mesh_manager || !services_.pipeline_manager)
         {
             return;
@@ -176,13 +189,15 @@ namespace kpengine::graphics
                                     ? 0u
                                     : static_cast<uint32_t>(mesh_resource->sections[0].index_count);
         recorded_first_index_ = mesh_resource->sections.empty()
-                                    ? 0u
-                                    : static_cast<uint32_t>(mesh_resource->sections[0].index_start);
+                                     ? 0u
+                                     : static_cast<uint32_t>(mesh_resource->sections[0].index_start);
+        ++profile_counters_.mesh_bind_emitted;
     }
 
     void OpenglCommandRecorder::BindResourceBindings(PipelineHandle pipeline,
                                                        DescriptorSetHandle bindings)
     {
+        ++profile_counters_.resource_binding_bind_requests;
         (void)pipeline;
         if (!services_.resource_binding_set_handles || !services_.resource_binding_sets ||
             !services_.mapped_uniform_buffers)
@@ -204,6 +219,7 @@ namespace kpengine::graphics
             glBufferSubData(GL_UNIFORM_BUFFER, 0, mapped.data.size(), mapped.data.data());
         }
         (*services_.resource_binding_sets)[index]->Bind();
+        ++profile_counters_.resource_binding_bind_emitted;
     }
 
     void OpenglCommandRecorder::SetViewport(const Viewport &viewport)
@@ -233,6 +249,7 @@ namespace kpengine::graphics
                                     GL_UNSIGNED_INT,
                                     reinterpret_cast<const void *>(offset * sizeof(uint32_t)),
                                     static_cast<GLsizei>(instance_count));
+            ++profile_counters_.draw_calls_emitted;
         }
     }
 }

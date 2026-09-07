@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "api.h"
+#include "profile_counters.h"
 
 namespace kpengine::graphics
 {
@@ -50,6 +51,8 @@ namespace kpengine::graphics
                                  uint32_t first_index = 0,
                                  int32_t vertex_offset = 0,
                                  uint32_t first_instance = 0) = 0;
+
+        virtual CommandRecorderProfileCounters GetProfileCounters() const { return {}; }
     };
 }
 

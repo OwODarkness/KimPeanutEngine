@@ -1,4 +1,5 @@
 #include "opengl_backend.h"
+#include <chrono>
 #include <type_traits>
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
@@ -110,6 +111,7 @@ namespace kpengine::graphics
     }
     void OpenglBackend::EndFrame()
     {
+        AccumulateCommandRecorderProfileCounters(command_recorder_.get());
         if (command_recorder_)
         {
             command_recorder_->EndRenderTarget();
@@ -577,6 +579,7 @@ namespace kpengine::graphics
         {
             return {};
         }
+        const auto allocation_started = std::chrono::steady_clock::now();
         const DescriptorSetHandle handle = resource_binding_set_handles_.Create();
         if (handle.id == resource_binding_sets_.size())
         {
@@ -627,6 +630,14 @@ namespace kpengine::graphics
         }
         resource_binding_sets_[handle.id] = std::move(set);
         RecordDescriptorSetCreated(false);
+        ++profile_counters_.descriptor_allocations;
+        ++profile_counters_.descriptor_updates;
+        const double create_ms =
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - allocation_started)
+                .count();
+        profile_counters_.descriptor_allocation_cpu_ms += create_ms;
+        profile_counters_.descriptor_update_cpu_ms += create_ms;
         return handle;
     }
 

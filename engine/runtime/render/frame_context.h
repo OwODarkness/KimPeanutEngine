@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <chrono>
 #include <cstring>
 #include <vector>
 
@@ -31,6 +32,14 @@ namespace kpengine::render
         void *mapped = nullptr;
 
         bool IsValid() const { return buffer.IsValid() && mapped != nullptr && range != 0; }
+    };
+
+    struct FrameContextProfileCounters
+    {
+        double uniform_write_cpu_ms = 0.0;
+        uint64_t uniform_writes = 0;
+        uint64_t uniform_write_bytes = 0;
+        double material_resolution_cpu_ms = 0.0;
     };
 
     // A transient, frame-slot-owned material binding. The contained descriptor
@@ -91,6 +100,10 @@ namespace kpengine::render
             const std::vector<graphics::ResourceBinding> &draw_bindings,
             MaterialPass pass);
         bool IsMaterialBindingCurrent(const FrameMaterialBinding &binding) const;
+        FrameContextProfileCounters GetProfileCounters() const
+        {
+            return profile_counters_;
+        }
 
         template <typename T>
         UniformAllocation AllocateUniform(const T &value)
@@ -98,7 +111,13 @@ namespace kpengine::render
             UniformAllocation allocation = AllocateUniform(sizeof(T));
             if (allocation.IsValid())
             {
+                const auto started = std::chrono::steady_clock::now();
                 std::memcpy(allocation.mapped, &value, sizeof(T));
+                RecordUniformWrite(
+                    sizeof(T),
+                    std::chrono::duration<double, std::milli>(
+                        std::chrono::steady_clock::now() - started)
+                        .count());
             }
             return allocation;
         }
@@ -114,6 +133,12 @@ namespace kpengine::render
     private:
         static constexpr uint32_t kMaterialConstantsBinding = 3;
         void ReleaseTransientBindings();
+        void RecordUniformWrite(size_t bytes, double milliseconds) noexcept
+        {
+            ++profile_counters_.uniform_writes;
+            profile_counters_.uniform_write_bytes += bytes;
+            profile_counters_.uniform_write_cpu_ms += milliseconds;
+        }
 
         graphics::RenderBackend *backend_ = nullptr;
         graphics::BufferHandle uniform_buffer_;
@@ -126,6 +151,7 @@ namespace kpengine::render
         graphics::Extent2D render_extent_;
         std::vector<graphics::DescriptorSetHandle> transient_binding_sets_;
         bool active_ = false;
+        FrameContextProfileCounters profile_counters_{};
     };
 }
 

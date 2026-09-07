@@ -22,6 +22,7 @@ namespace
 namespace kpengine::render
 {
     static_assert(static_cast<size_t>(RenderProfilePass::Count) == 8);
+    static_assert(static_cast<size_t>(RenderProfileCpuSubphase::Count) == 8);
 
     RenderProfileWindow::RenderProfileWindow(const uint32_t warmup_frames,
                                              const uint32_t sample_frames)
@@ -29,6 +30,10 @@ namespace kpengine::render
     {
         cpu_total_samples_.reserve(sample_frames_);
         cpu_present_samples_.reserve(sample_frames_);
+        for (auto &samples : cpu_subphase_samples_)
+        {
+            samples.reserve(sample_frames_);
+        }
         for (auto &samples : gpu_samples_)
         {
             samples.reserve(sample_frames_);
@@ -48,6 +53,20 @@ namespace kpengine::render
         }
         cpu_total_samples_.push_back(snapshot.cpu_total_ms);
         cpu_present_samples_.push_back(snapshot.cpu_present_ms);
+        const std::array<double, static_cast<size_t>(RenderProfileCpuSubphase::Count)>
+            cpu_subphases = {
+                snapshot.cpu_section_packet_build_ms,
+                snapshot.cpu_shadow_stamp_fit_ms,
+                snapshot.cpu_material_resolution_ms,
+                snapshot.cpu_uniform_write_ms,
+                snapshot.descriptor_search_cpu_ms,
+                snapshot.descriptor_allocation_cpu_ms,
+                snapshot.descriptor_update_cpu_ms,
+                snapshot.pipeline_validation_cpu_ms};
+        for (size_t index = 0; index < cpu_subphase_samples_.size(); ++index)
+        {
+            cpu_subphase_samples_[index].push_back(cpu_subphases[index]);
+        }
         for (size_t index = 0; index < gpu_samples_.size(); ++index)
         {
             if (snapshot.passes[index].gpu_time_ms.has_value())
@@ -76,6 +95,16 @@ namespace kpengine::render
                 summary.passes[index].gpu_p95_ms = Percentile(gpu_samples_[index], 0.95);
             }
         }
+        for (size_t index = 0; index < cpu_subphase_samples_.size(); ++index)
+        {
+            if (!cpu_subphase_samples_[index].empty())
+            {
+                summary.cpu_subphases[index].cpu_p50_ms =
+                    Percentile(cpu_subphase_samples_[index], 0.50);
+                summary.cpu_subphases[index].cpu_p95_ms =
+                    Percentile(cpu_subphase_samples_[index], 0.95);
+            }
+        }
         return summary;
     }
 
@@ -85,6 +114,10 @@ namespace kpengine::render
         cpu_total_samples_.clear();
         cpu_present_samples_.clear();
         for (auto &samples : gpu_samples_)
+        {
+            samples.clear();
+        }
+        for (auto &samples : cpu_subphase_samples_)
         {
             samples.clear();
         }

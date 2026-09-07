@@ -168,6 +168,12 @@ namespace kpengine::render
         std::string diagnostic;
     };
 
+    struct MaterialProfileCounters
+    {
+        double resolution_cpu_ms = 0.0;
+        uint64_t resolution_calls = 0;
+    };
+
     enum class MaterialDrawClass : uint8_t
     {
         Opaque,
@@ -213,6 +219,8 @@ namespace kpengine::render
         bool IsInstanceValid(MaterialInstanceHandle handle) const;
         MaterialResolution GetInstanceResolution(MaterialInstanceHandle handle) const;
         std::optional<MaterialDrawClass> GetDrawClass(MaterialInstanceHandle handle) const;
+        MaterialProfileCounters GetProfileCounters() const { return profile_counters_; }
+        void ResetProfileCounters() const { profile_counters_ = {}; }
 
     private:
         struct MaterialTemplateRecord
@@ -249,6 +257,7 @@ namespace kpengine::render
         std::unordered_map<uint32_t, MaterialTemplateRecord> templates_;
         std::unordered_map<uint32_t, MaterialInstanceRecord> instances_;
         IMaterialResourceResolver *resource_resolver_ = nullptr;
+        mutable MaterialProfileCounters profile_counters_{};
     };
 }
 
