@@ -18,7 +18,7 @@ namespace kpengine::graphics
         float max_anisotropy = 1.f;
         float mip_lod_bias = 0.f;
         float min_lod = 0.f;
-        float max_lod = 0.f;
+        float max_lod = 16.f;
     };
 
     struct SamplerResource{

@@ -17,8 +17,9 @@ details and stage checklists belong in the linked submodule documents.
 ## Cross-cutting Render work
 
 - [ ] **issue-9.7 — Sponza texture aliasing and frame throughput:** Stage 0
-  instrumentation is landed; establish the fixed CPU/GPU/present baseline,
-  then land semantic mip artifacts and bounded
+  instrumentation and the Stage 1 runtime mip slice are landed; establish the
+  fixed CPU/GPU/present baseline, then promote the mip path to native products
+  and land bounded
   native texture products, replace Vulkan pool-per-draw descriptor allocation,
   add section visibility and unchanged-shadow reuse, then retain pass tuning
   only when measured. The solved black-frame defect is out of scope. →

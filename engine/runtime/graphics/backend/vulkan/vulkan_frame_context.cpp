@@ -203,20 +203,16 @@ namespace kpengine::graphics
         }
     }
 
-    void VulkanFrameContext::CopyBufferToImage(VkCommandBuffer cmd, VkBuffer src_buffer, VkImage image, uint32_t width, uint32_t height)
+    void VulkanFrameContext::CopyBufferToImage(
+        VkCommandBuffer cmd, VkBuffer src_buffer, VkImage image,
+        const std::vector<VkBufferImageCopy> &regions)
     {
-        VkBufferImageCopy region{};
-        region.bufferRowLength = 0;
-        region.bufferOffset = 0;
-        region.bufferImageHeight = 0;
-        region.imageOffset = {0, 0, 0};
-        region.imageExtent = {width, height, 1};
-        region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
-        region.imageSubresource.mipLevel = 0;
-        region.imageSubresource.baseArrayLayer = 0;
-        region.imageSubresource.layerCount = 1;
-
-        vkCmdCopyBufferToImage(cmd, src_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL, 1, &region);
+        if (regions.empty())
+        {
+            return;
+        }
+        vkCmdCopyBufferToImage(cmd, src_buffer, image, VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+                               static_cast<uint32_t>(regions.size()), regions.data());
     }
 
     void VulkanFrameContext::CreateCommandPools()

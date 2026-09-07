@@ -15,6 +15,7 @@
 #include "miniaudio_audio_loader.h"
 #include "material_loader.h"
 #include "level_loader.h"
+#include "data/texture_mipmap.h"
 #include "utility.h"
 #include "model.h"
 #include "mesh.h"
@@ -194,7 +195,7 @@ namespace kpengine::asset
                 {
                     return std::nullopt;
                 }
-                return static_cast<uint64_t>((*texture)->data->pixels.size());
+                return static_cast<uint64_t>((*texture)->data->GetTotalByteCount());
             }
             if (const AudioPtr *audio = std::get_if<AudioPtr>(&info.resource))
             {
@@ -1267,9 +1268,11 @@ namespace kpengine::asset
 
             std::shared_ptr<TextureResource> texture = std::make_shared<TextureResource>();
             texture->channel_count = 4;
+            texture->data->semantic = data::ClassifyTextureSemantic(path);
             if (decoded.image.format == image_io::ImagePixelFormat::Rgba32Float)
             {
                 *texture->data = ConvertHdrTexture(decoded.image);
+                texture->data->semantic = data::ClassifyTextureSemantic(path);
             }
             else
             {
@@ -1277,6 +1280,13 @@ namespace kpengine::asset
                 texture->data->height = decoded.image.height;
                 texture->data->format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
                 texture->data->pixels = std::move(decoded.image.pixels);
+            }
+
+            if (!data::GenerateTextureMipChain(*texture->data, texture->data->semantic))
+            {
+                KP_LOG("AssetManagerLog", LOG_LEVEL_ERROR,
+                       "Failed to generate mip chain for %s", path.c_str());
+                return false;
             }
 
             info.type = AssetType::KPAT_Texture;

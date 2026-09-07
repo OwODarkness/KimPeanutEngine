@@ -82,8 +82,7 @@ namespace kpengine::graphics
         void InitVulkanContext();
         GraphicsContext CreateGraphicsContext() const;
         BufferHandle CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage);
-        void UploadTexturePixels(TextureHandle texture, const void *pixels, size_t pixel_size,
-                                 uint32_t width, uint32_t height, uint32_t mip_levels);
+        void UploadTexturePixels(TextureHandle texture, const data::TextureData &data);
 
         void FinishFrame(VkCommandBuffer commandbuffer, uint32_t image_index);
 

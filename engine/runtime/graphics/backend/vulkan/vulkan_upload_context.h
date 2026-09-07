@@ -23,8 +23,7 @@ namespace kpengine::graphics
                         VulkanBufferManager *buffer_manager);
 
         void UploadBuffer(BufferHandle destination, size_t size, const void *data);
-        void UploadTexture(VkImage image, const void *pixels, size_t pixel_size,
-                           uint32_t width, uint32_t height, uint32_t mip_levels);
+        void UploadTexture(VkImage image, const TextureData &data);
 
     private:
         BufferHandle CreateUploadStageBuffer(size_t size);

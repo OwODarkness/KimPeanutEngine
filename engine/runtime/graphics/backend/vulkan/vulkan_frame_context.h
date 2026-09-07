@@ -46,7 +46,8 @@ namespace kpengine::graphics
         // sync2 image barrier + TextureUsage-level transitions
         void TransitionImageLayout(VkCommandBuffer cmd, VkImage image, VkImageLayout old_layout, VkImageLayout new_layout, VkPipelineStageFlags2 src_stage, VkPipelineStageFlags2 dst_stage, VkAccessFlags2 src_access, VkAccessFlags2 dst_access, VkImageAspectFlags aspect_mask, uint32_t base_mip_level, uint32_t level_count);
         void TransitionImageLayout(VkCommandBuffer cmd, VkImage image, TextureUsage src_usage, TextureUsage dst_usage, uint32_t base_mip_level, uint32_t level_count);
-        void CopyBufferToImage(VkCommandBuffer cmd, VkBuffer src_buffer, VkImage image, uint32_t width, uint32_t height);
+        void CopyBufferToImage(VkCommandBuffer cmd, VkBuffer src_buffer, VkImage image,
+                               const std::vector<VkBufferImageCopy> &regions);
 
     private:
         void CreateCommandPools();

@@ -6,10 +6,22 @@
 #include "opengl/opengl_texture.h"
 #endif
 #include "log/logger.h"
+#include "data/texture_mipmap.h"
 namespace kpengine::graphics
 {
     TextureHandle TextureManager::CreateTexture(GraphicsContext context, const TextureData& data,  const TextureSettings& settings)
     {
+        if (!data::IsTextureMipChainValid(data))
+        {
+            KP_LOG("TextureManagerLog", LOG_LEVEL_ERROR,
+                   "texture payload contains an invalid mip chain");
+            return {};
+        }
+        // A texture image may only declare levels for which the CPU payload
+        // contains initialized subresources. Native products and the loose
+        // fallback both express level zero plus the explicit chain in data.
+        TextureSettings resolved_settings = settings;
+        resolved_settings.mip_levels = data.GetMipLevelCount();
         TextureHandle handle = handle_system_.Create();
         if(handle.id == resources_.size())
         {
@@ -36,7 +48,7 @@ namespace kpengine::graphics
             return {};
         }
 
-        resource.texture->Initialize(context, data, settings);
+        resource.texture->Initialize(context, data, resolved_settings);
 
         return handle;
     }

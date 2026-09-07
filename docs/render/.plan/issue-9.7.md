@@ -1,6 +1,7 @@
 # issue-9.7 — Sponza Quality and Throughput Stage Design
 
-**Status: Stage 0 instrumentation landed 2026-09-07; baseline evidence pending.**
+**Status: Stage 0 instrumentation and the Stage 1 runtime mip path landed
+2026-09-07; native-product and runtime baseline evidence remain pending.**
 
 Links: [issue](../issue/issue-9.7.md),
 [formal review](../.review/issue-9.7.md),
@@ -119,6 +120,12 @@ Exit: p50/p95 frame time is split into CPU, GPU passes, and present behavior,
 and the 72-texture dependency closure is reported by the runtime path.
 
 ### Stage 1 — mip correctness
+
+Implementation status: the runtime slice is landed. `TextureData` carries
+semantic metadata plus explicit initialized levels, the bounded loose-texture
+fallback generates semantic-aware chains, samplers allow the populated LOD
+range, and Vulkan/OpenGL upload every supplied level. Native archive texture
+products remain the follow-up required for the offline-artifact portion.
 
 - Define semantic texture metadata and explicit mip-subresource artifacts.
 - Implement offline semantic-aware mip generation, a bounded loose-texture

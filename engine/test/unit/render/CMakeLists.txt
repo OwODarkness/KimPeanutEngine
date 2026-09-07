@@ -19,6 +19,7 @@ add_executable(
     aabb_test.cpp
     camera_utils_test.cpp
     render_profile_test.cpp
+    texture_mipmap_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_system.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_asset_resolver.cpp

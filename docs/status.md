@@ -5,7 +5,8 @@
 **Current release: v1.1.0.**
 
 - **Render issue-9.7 Sponza quality/throughput (2026-09-07)** — Stage 0
-  instrumentation is landed; native baseline capture remains pending. The
+  instrumentation and the Stage 1 runtime mip path are landed; native
+  baseline capture remains pending. The
   remaining failures are texture-minification speckle and approximately 30 FPS,
   with the resolved black-frame defect excluded. Verified pressure includes
   missing mip chains, a 72×4K RGBA8 texture closure, Vulkan pool-per-draw

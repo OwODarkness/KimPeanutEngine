@@ -4,8 +4,8 @@
 
 **Disposition: changes requested.**
 
-**Implementation status: Stage 0 instrumentation landed; baseline evidence
-pending.**
+**Implementation status: Stage 0 instrumentation and the Stage 1 runtime mip
+path landed; native products and baseline evidence remain pending.**
 
 Related records: [issue](../issue/issue-9.7.md),
 [stage design](../.plan/issue-9.7.md),
@@ -56,16 +56,19 @@ pacing.
 
 ### issue-9.7-F1 — P0: sampled textures have no minification hierarchy
 
-`DefaultTextureSettings()` fixes `mip_levels` at one, and the common sampler
-defaults `max_lod` to zero. The G-buffer shader samples full-resolution base
-color, normal, metallic, roughness, and occlusion maps at arbitrary projected
-sizes. Speckle is present in those G-buffer channels, so lighting and shadow
-changes cannot solve the root defect.
+**Runtime implementation status: addressed.** Native archive-product
+serialization and Vulkan/OpenGL runtime capture evidence remain open.
 
-OpenGL can generate mipmaps when more than one level is declared. Vulkan
-currently transitions all declared levels but copies only level zero; merely
-increasing `mip_levels` would expose uninitialized Vulkan subresources. Render-
-ready mip data and explicit per-level upload are required.
+The former `DefaultTextureSettings()`/sampler path fixed `mip_levels` and
+`max_lod` at zero. The runtime path now creates explicit initialized semantic
+mip subresources, derives the image level count from that payload, and permits
+sampling across the populated chain. The G-buffer shader therefore no longer
+has to sample only the full-resolution base level at arbitrary projected
+sizes.
+
+OpenGL uploads every supplied level explicitly. Vulkan packs every supplied
+level into one staging upload and copies each level with its own subresource
+region; merely increasing `mip_levels` without payload data is rejected.
 
 ### issue-9.7-F2 — P0: the current texture product has no viable memory budget
 

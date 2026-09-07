@@ -138,7 +138,7 @@ namespace kpengine::render
             if (texture.IsValid())
             {
                 texture_cache_.emplace(key, texture);
-                resident_texture_bytes_ += data.pixels.size();
+                resident_texture_bytes_ += data.GetTotalByteCount();
             }
         }
         if (!texture.IsValid())

@@ -16,6 +16,7 @@
 #include "config/path.h"
 #include "log/logger.h"
 #include "resource/resource_pipeline.h"
+#include "data/texture_mipmap.h"
 
 namespace kpengine::runtime
 {
@@ -23,7 +24,8 @@ namespace kpengine::runtime
     {
         bool IsTextureDataReady(const data::TextureData &data)
         {
-            return data.width != 0 && data.height != 0 && !data.pixels.empty();
+            return data.width != 0 && data.height != 0 && !data.pixels.empty() &&
+                   data::IsTextureMipChainValid(data);
         }
 
         class PreparationTransaction final
@@ -159,7 +161,7 @@ namespace kpengine::runtime
                         return false;
                     }
                     ++texture_metrics_.dependency_count;
-                    texture_metrics_.decoded_bytes += texture->data->pixels.size();
+                    texture_metrics_.decoded_bytes += texture->data->GetTotalByteCount();
                     std::error_code error;
                     const uintmax_t source_bytes =
                         std::filesystem::file_size(wrapper->GetPath(), error);

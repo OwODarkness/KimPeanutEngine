@@ -1,5 +1,7 @@
 #include "prepared_render_asset_catalog.h"
 
+#include "data/texture_mipmap.h"
+
 #include <algorithm>
 #include <type_traits>
 
@@ -66,7 +68,8 @@ namespace kpengine::render
 
         bool IsTextureDataReady(const data::TextureData &data)
         {
-            return data.width != 0 && data.height != 0 && !data.pixels.empty();
+            return data.width != 0 && data.height != 0 && !data.pixels.empty() &&
+                   data::IsTextureMipChainValid(data);
         }
 
         bool IsSupportedGraphicsApi(GraphicsAPIType api)

@@ -12,6 +12,8 @@ namespace kpengine::graphics
 
         glSamplerParameteri(resource_.sampler, GL_TEXTURE_MIN_FILTER, min_filter);
         glSamplerParameteri(resource_.sampler, GL_TEXTURE_MAG_FILTER, mag_filter);
+        glSamplerParameterf(resource_.sampler, GL_TEXTURE_MIN_LOD, settings.min_lod);
+        glSamplerParameterf(resource_.sampler, GL_TEXTURE_MAX_LOD, settings.max_lod);
 
         // wrap/address_mode
         GLenum address_u = ConvertToOpenglSamplerAddressMode(settings.address_mode_u);

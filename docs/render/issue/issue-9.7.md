@@ -38,9 +38,9 @@ outside this issue.
 - [Investigation journal](../../../.spec/journal/2026-09-07-sponza-render-quality-performance.md)
 - [Render roadmap](../TODO.md)
 
-The first implementation slice is Stage 0 instrumentation: a checked-in
-Sponza scenario, Render-owned CPU/pass/draw telemetry, Vulkan/OpenGL pass timer
-queries, descriptor/present counters, and texture closure/resident-byte
-accounting. Semantic-aware mip artifacts and Vulkan/OpenGL subresource upload
-remain Stage 1; texture product compression and size policy follow because
+Stage 0 instrumentation and the Stage 1 runtime mip slice are now landed: a
+checked-in Sponza scenario, Render-owned telemetry, semantic-aware explicit
+mip subresources, a bounded loose-texture fallback, sampler LOD range, and
+Vulkan/OpenGL upload of every supplied level. Native archive texture products,
+compression, and profile-specific size policy remain follow-up work because
 full-resolution RGBA8 mip chains are not an acceptable steady-state solution.

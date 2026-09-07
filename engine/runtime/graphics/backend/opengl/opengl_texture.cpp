@@ -32,10 +32,21 @@ namespace kpengine::graphics
                 glTextureSubImage3D(resource_.image, 0, 0, 0, 0, data.width, data.height, data.depth, texture_cpu_format, texture_cpu_type, data.pixels.data());
             }
         }
-
-        if (settings.mip_levels > 1)
+        for (uint32_t index = 0; index < data.mip_subresources.size(); ++index)
         {
-            glGenerateTextureMipmap(resource_.image);
+            const data::TextureMipSubresource &level = data.mip_subresources[index];
+            if (settings.type == TextureType::TEXTURE_TYPE_2D || settings.type == TextureType::TEXTURE_TYPE_CUBE)
+            {
+                glTextureSubImage2D(resource_.image, static_cast<GLint>(index + 1U), 0, 0,
+                                     level.width, level.height, texture_cpu_format,
+                                     texture_cpu_type, level.pixels.data());
+            }
+            else if (settings.type == TextureType::TEXTURE_TYPE_3D)
+            {
+                glTextureSubImage3D(resource_.image, static_cast<GLint>(index + 1U), 0, 0, 0,
+                                     level.width, level.height, data.depth, texture_cpu_format,
+                                     texture_cpu_type, level.pixels.data());
+            }
         }
 
     }

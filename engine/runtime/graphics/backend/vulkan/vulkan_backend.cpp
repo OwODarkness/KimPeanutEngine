@@ -255,7 +255,8 @@ namespace kpengine::graphics
     void VulkanBackend::CollectCompletedGpuProfileTimings()
     {
         completed_gpu_profile_timings_.clear();
-        if (profile_query_pool_ == VK_NULL_HANDLE || profile_timestamp_period_ns_ <= 0.0f)
+        if (profile_query_pool_ == VK_NULL_HANDLE || profile_timestamp_period_ns_ <= 0.0f ||
+            frame_context_->GetCompletedSubmissionSerial() == 0)
         {
             return;
         }
@@ -422,8 +423,7 @@ namespace kpengine::graphics
         const TextureHandle handle = texture_manager_->CreateTexture(CreateGraphicsContext(), data, settings);
         if (handle.IsValid() && !data.pixels.empty())
         {
-            UploadTexturePixels(handle, data.pixels.data(), data.pixels.size(),
-                                data.width, data.height, settings.mip_levels);
+            UploadTexturePixels(handle, data);
         }
         return handle;
     }
@@ -639,7 +639,7 @@ namespace kpengine::graphics
         return buffer_manager_->GetMappedAddress(handle, size);
     }
 
-    void VulkanBackend::UploadTexturePixels(TextureHandle texture, const void *pixels, size_t pixel_size, uint32_t width, uint32_t height, uint32_t mip_levels)
+    void VulkanBackend::UploadTexturePixels(TextureHandle texture, const data::TextureData &data)
     {
         Texture *texture_entity = texture_manager_->GetTexture(texture);
         if (!texture_entity)
@@ -649,7 +649,7 @@ namespace kpengine::graphics
         }
         VkImage image = ConvertToVulkanTextureResource(texture_entity->GetTextueHandle()).image;
 
-        upload_context_->UploadTexture(image, pixels, pixel_size, width, height, mip_levels);
+        upload_context_->UploadTexture(image, data);
     }
 
     void VulkanBackend::RecreateSwapchain()

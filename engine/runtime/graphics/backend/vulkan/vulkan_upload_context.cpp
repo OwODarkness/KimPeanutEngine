@@ -1,6 +1,9 @@
 #include "vulkan_upload_context.h"
 
+#include <cstring>
+#include <limits>
 #include <stdexcept>
+#include <vector>
 
 #include "log/logger.h"
 #include "vulkan_buffer_manager.h"
@@ -114,19 +117,49 @@ namespace kpengine::graphics
         buffer_manager_->DestroyBufferResource(device_->GetLogicalDevice(), staging);
     }
 
-    void VulkanUploadContext::UploadTexture(VkImage image, const void *pixels, size_t pixel_size,
-                                            uint32_t width, uint32_t height, uint32_t mip_levels)
+    void VulkanUploadContext::UploadTexture(VkImage image, const TextureData &data)
     {
         if (!device_ || !frame_context_ || !buffer_manager_ || image == VK_NULL_HANDLE ||
-            !pixels || pixel_size == 0 || width == 0 || height == 0 || mip_levels == 0)
+            data.width == 0 || data.height == 0 || data.pixels.empty())
         {
             throw std::runtime_error("invalid Vulkan texture upload");
         }
 
-        const BufferHandle staging = CreateUploadStageBuffer(pixel_size);
+        std::vector<VkBufferImageCopy> regions;
+        std::vector<uint8_t> packed_pixels;
+        packed_pixels.reserve(data.GetTotalByteCount());
+        auto append_level = [&](uint32_t level, uint32_t width, uint32_t height,
+                                const std::vector<uint8_t> &pixels)
+        {
+            if (width == 0 || height == 0 || pixels.empty() ||
+                packed_pixels.size() > std::numeric_limits<size_t>::max() - pixels.size())
+            {
+                throw std::runtime_error("invalid Vulkan texture mip payload");
+            }
+            const VkDeviceSize offset = static_cast<VkDeviceSize>(packed_pixels.size());
+            packed_pixels.insert(packed_pixels.end(), pixels.begin(), pixels.end());
+            VkBufferImageCopy region{};
+            region.bufferOffset = offset;
+            region.bufferRowLength = 0;
+            region.bufferImageHeight = 0;
+            region.imageSubresource.aspectMask = VK_IMAGE_ASPECT_COLOR_BIT;
+            region.imageSubresource.mipLevel = level;
+            region.imageSubresource.baseArrayLayer = 0;
+            region.imageSubresource.layerCount = 1;
+            region.imageExtent = {width, height, 1};
+            regions.push_back(region);
+        };
+        append_level(0, data.width, data.height, data.pixels);
+        for (uint32_t index = 0; index < data.mip_subresources.size(); ++index)
+        {
+            const data::TextureMipSubresource &level = data.mip_subresources[index];
+            append_level(index + 1U, level.width, level.height, level.pixels);
+        }
+
+        const BufferHandle staging = CreateUploadStageBuffer(packed_pixels.size());
         try
         {
-            buffer_manager_->UploadData(staging, pixel_size, pixels);
+            buffer_manager_->UploadData(staging, packed_pixels.size(), packed_pixels.data());
             VulkanBufferResource *source_resource = buffer_manager_->GetBufferResource(staging);
             if (!source_resource)
             {
@@ -135,11 +168,13 @@ namespace kpengine::graphics
 
             VkCommandBuffer command_buffer = BeginOneShot(frame_context_->GetGraphicsCommandPool());
             frame_context_->TransitionImageLayout(command_buffer, image, TextureUsage::None,
-                                                  TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0, mip_levels);
-            frame_context_->CopyBufferToImage(command_buffer, source_resource->buffer, image, width, height);
+                                                  TextureUsage::TEXTURE_USAGE_TRANSFER_DST, 0,
+                                                  data.GetMipLevelCount());
+            frame_context_->CopyBufferToImage(command_buffer, source_resource->buffer, image, regions);
             frame_context_->TransitionImageLayout(command_buffer, image,
                                                   TextureUsage::TEXTURE_USAGE_TRANSFER_DST,
-                                                  TextureUsage::TEXTURE_USAGE_SAMPLE, 0, mip_levels);
+                                                  TextureUsage::TEXTURE_USAGE_SAMPLE, 0,
+                                                  data.GetMipLevelCount());
             SubmitAndRelease(command_buffer, frame_context_->GetGraphicsCommandPool(),
                              device_->GetGraphicsQueue().queue);
         }

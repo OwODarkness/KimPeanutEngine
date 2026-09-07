@@ -92,3 +92,53 @@ below adds the first runtime instrumentation slice.
   while evaluating the Windows SDK probe.
 - Vulkan/OpenGL runtime baseline samples and image captures — not claimed;
   they require the blocked native build and a controllable GLFW window.
+
+## Stage 1 runtime mip checkpoint
+
+- Added `TextureSemantic` metadata and explicit level-one-through-N
+  `TextureMipSubresource` payloads while retaining level-zero `pixels` for
+  existing CPU consumers.
+- Added the bounded loose-texture mip generator. LDR color mips filter in
+  linear space before sRGB encoding, normal mips average tangent-space
+  vectors and renormalize, packed channels remain linear, and opacity masks
+  retain covered texels at the cutout threshold. The fallback caps the base
+  dimension at 2048 until native profile-specific texture products exist.
+- Added filename classification for transitional loose textures. Native
+  archive products still need to carry authoritative semantic metadata rather
+  than relying on this fallback.
+- Changed the common texture manager to derive the image mip count from the
+  initialized payload and reject malformed chains. Vulkan packs all supplied
+  levels into one staging upload with one `VkBufferImageCopy` region per mip;
+  OpenGL uploads each level explicitly and no longer relies on implicit
+  driver generation. Sampler LOD bounds now permit the populated chain.
+- Updated decoded/resident texture accounting to include all uploaded levels.
+- Added deterministic tests for bounded chains, sRGB color filtering, normal
+  renormalization, packed linear averages, opacity coverage, and semantic
+  classification.
+
+## Stage 1 validation
+
+- `cmake --build build --config Debug --target RenderPassScheduleTest` — passed.
+- `RenderPassScheduleTest.exe` — 98/98 tests passed.
+- `ctest --test-dir build -C Debug -R "TextureMipmaps" --output-on-failure` —
+  5/5 tests passed.
+- MinGW C++17 syntax checks for the changed data, Asset, Render, OpenGL, and
+  Vulkan translation units — passed.
+- GitHub MCP reference discovery — unavailable in this session; existing
+  local engine-reference studies and the repository's Vulkan/OpenGL contracts
+  were used instead.
+
+## Stage 1 remaining evidence
+
+- Native archive texture products with serialized semantic mip artifacts are
+  not yet implemented; the current path is the bounded runtime fallback.
+- The existing `GraphicsSmoke` executable built and exercised both Vulkan and
+  OpenGL with the mip-backed textures. Its D5 cross-backend silhouette policy
+  failed at `raw=375`, `structural=82`, although the captures were visually
+  aligned; this remains an image-comparison follow-up, not a claimed smoke
+  pass.
+- The initial profile-query poll was also hardened to skip collection until a
+  frame submission has completed, avoiding an uninitialized first-frame query
+  read.
+- Sponza runtime image captures and measured memory/LOD behavior still require
+  the controllable Runtime host and remain unclaimed.
