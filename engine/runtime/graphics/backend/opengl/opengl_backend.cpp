@@ -107,7 +107,7 @@ namespace kpengine::graphics
                                             bindless_texture_table_.get(), &render_targets_,
                                             &render_target_framebuffers_, &render_target_handles_,
                                             &resource_binding_sets_, &resource_binding_set_handles_,
-                                            &mapped_uniform_buffers_});
+                                            [this]() { UploadDirtyUniformBuffers(); }});
         frame_active_ = true;
     }
     void OpenglBackend::EndFrame()
@@ -216,7 +216,36 @@ namespace kpengine::graphics
             return nullptr;
         }
         it->second.data.resize(size);
+        it->second.ClearDirtyRange();
         return it->second.data.data();
+    }
+
+    void OpenglBackend::MarkUniformBufferRangeWritten(BufferHandle handle, size_t offset,
+                                                        size_t size)
+    {
+        const auto it = mapped_uniform_buffers_.find(handle.id);
+        if (it != mapped_uniform_buffers_.end())
+        {
+            it->second.MarkDirtyRange(offset, size);
+        }
+    }
+
+    void OpenglBackend::UploadDirtyUniformBuffers()
+    {
+        for (auto &[id, mapped] : mapped_uniform_buffers_)
+        {
+            (void)id;
+            if (!mapped.HasDirtyRange())
+            {
+                continue;
+            }
+            const size_t offset = mapped.dirty_begin;
+            const size_t size = mapped.dirty_end - mapped.dirty_begin;
+            glBindBuffer(GL_UNIFORM_BUFFER, mapped.native);
+            glBufferSubData(GL_UNIFORM_BUFFER, static_cast<GLintptr>(offset),
+                            static_cast<GLsizeiptr>(size), mapped.data.data() + offset);
+            mapped.ClearDirtyRange();
+        }
     }
 
     size_t OpenglBackend::GetUniformBufferAlignment() const
@@ -693,11 +722,7 @@ namespace kpengine::graphics
         const uint32_t index = resource_binding_set_handles_.Get(handle);
         if (index < resource_binding_sets_.size() && resource_binding_sets_[index])
         {
-            for (const auto &[id, mapped] : mapped_uniform_buffers_)
-            {
-                glBindBuffer(GL_UNIFORM_BUFFER, mapped.native);
-                glBufferSubData(GL_UNIFORM_BUFFER, 0, mapped.data.size(), mapped.data.data());
-            }
+            UploadDirtyUniformBuffers();
             resource_binding_sets_[index]->Bind({});
         }
     }

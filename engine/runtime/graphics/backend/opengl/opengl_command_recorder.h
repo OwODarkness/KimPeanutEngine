@@ -1,6 +1,8 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_OPENGL_COMMAND_RECORDER_H
 #define KPENGINE_RUNTIME_GRAPHICS_OPENGL_COMMAND_RECORDER_H
 
+#include <algorithm>
+#include <functional>
 #include <memory>
 #include <unordered_map>
 #include <vector>
@@ -21,6 +23,33 @@ namespace kpengine::graphics
     {
         GLuint native = 0;
         std::vector<uint8_t> data;
+        size_t dirty_begin = 0;
+        size_t dirty_end = 0;
+
+        bool HasDirtyRange() const noexcept { return dirty_begin < dirty_end; }
+
+        void MarkDirtyRange(size_t offset, size_t size) noexcept
+        {
+            if (size == 0 || offset >= data.size())
+            {
+                return;
+            }
+            const size_t end = offset + std::min(size, data.size() - offset);
+            if (!HasDirtyRange())
+            {
+                dirty_begin = offset;
+                dirty_end = end;
+                return;
+            }
+            dirty_begin = std::min(dirty_begin, offset);
+            dirty_end = std::max(dirty_end, end);
+        }
+
+        void ClearDirtyRange() noexcept
+        {
+            dirty_begin = 0;
+            dirty_end = 0;
+        }
     };
 
     // Valid only for the OpenGL backend's active frame. It borrows recording
@@ -38,7 +67,7 @@ namespace kpengine::graphics
             const HandleSystem<RenderTargetHandle> *render_target_handles = nullptr;
             std::vector<std::unique_ptr<OpenglDescriptorSet>> *resource_binding_sets = nullptr;
             const HandleSystem<DescriptorSetHandle> *resource_binding_set_handles = nullptr;
-            std::unordered_map<uint32_t, OpenglMappedUniformBuffer> *mapped_uniform_buffers = nullptr;
+            std::function<void()> flush_dirty_uniform_buffers;
         };
 
         explicit OpenglCommandRecorder(Services services);

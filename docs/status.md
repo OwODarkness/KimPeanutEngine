@@ -22,9 +22,10 @@
   reuses the map, Stage 6.2 now reuses stable geometry/material binding sets
   with dynamic uniform offsets, and Stage 6.3 now suppresses redundant native
   recorder state work while sharing one lean section-packet source per frame;
-  repeated unchanged editor viewport-size requests no longer reset the cache.
-  Fixed-scenario Vulkan/OpenGL profile capture remains open before larger
-  submission redesign. →
+  Stage 6.4 now bounds OpenGL uniform uploads to dirty written ranges; repeated
+  unchanged editor viewport-size requests no longer reset the cache. Fixed-
+  scenario Vulkan/OpenGL profile capture remains open before larger submission
+  redesign. →
   [issue](render/issue/issue-9.7.md), [plan](render/.plan/issue-9.7.md),
   [review](render/.review/issue-9.7.md)
 - **MI1.7-R1 Asset build boundary (2026-09-06)** — split the database-free

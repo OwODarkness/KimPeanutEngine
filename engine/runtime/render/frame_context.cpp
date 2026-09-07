@@ -109,8 +109,11 @@ namespace kpengine::render
             return {};
         }
         uniform_cursor_ = offset + size;
-        return {uniform_buffer_, offset, size,
-                static_cast<uint8_t *>(uniform_mapped_) + offset};
+        const UniformAllocation allocation{
+            uniform_buffer_, offset, size, static_cast<uint8_t *>(uniform_mapped_) + offset};
+        backend_->MarkUniformBufferRangeWritten(allocation.buffer, allocation.offset,
+                                                 allocation.range);
+        return allocation;
     }
 
     UniformAllocation FrameContext::UpdateStableUniform(uint64_t key, const void *data, size_t size)
@@ -137,6 +140,9 @@ namespace kpengine::render
         {
             const auto started = std::chrono::steady_clock::now();
             std::memcpy(record.allocation.mapped, data, size);
+            backend_->MarkUniformBufferRangeWritten(record.allocation.buffer,
+                                                     record.allocation.offset,
+                                                     record.allocation.range);
             RecordUniformWrite(
                 size,
                 std::chrono::duration<double, std::milli>(

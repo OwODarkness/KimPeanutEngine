@@ -136,6 +136,16 @@ namespace kpengine::graphics
         const GraphicsCapabilities &GetCapabilities() const { return capabilities_; }
         virtual BufferHandle CreateUniformBuffer(uint32_t size) = 0;
         virtual void *MapUniformBuffer(BufferHandle handle, size_t size) = 0;
+        // Render marks CPU writes so a backend with a staged mapped-buffer
+        // implementation can upload only the ranges consumed by the frame.
+        // Persistently mapped backends do not need to do anything here.
+        virtual void MarkUniformBufferRangeWritten(BufferHandle handle,
+                                                    size_t offset, size_t size)
+        {
+            (void)handle;
+            (void)offset;
+            (void)size;
+        }
         virtual uint32_t GetCurrentFrameIndex() const = 0;
         virtual uint32_t GetFramesInFlight() const = 0;
         virtual size_t GetUniformBufferAlignment() const = 0;

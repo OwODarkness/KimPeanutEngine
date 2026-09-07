@@ -352,6 +352,11 @@ and the same packet identity drives profiling and drawing.
 
 #### Stage 6.4 — OpenGL uniform upload correction
 
+- Implementation status: landed. `FrameContext` marks written uniform ranges
+  through the common backend hook; OpenGL coalesces those ranges per mapped
+  buffer and flushes them before a binding consumer. Descriptor binding no
+  longer uploads every mapped buffer at full capacity.
+
 - Track the dirty range of the active frame-slot uniform arena. Upload that
   range once before its first consumer, or use a capability-gated persistent
   mapping path only when measured.

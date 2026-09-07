@@ -18,15 +18,16 @@ details and stage checklists belong in the linked submodule documents.
 
 - [ ] **issue-9.7 — Sponza texture aliasing and frame throughput:** Stages 0–5,
   Stage 6.0 telemetry, Stage 6.1 effective shadow validity, Stage 6.2 stable
-  bindings, and Stage 6.3 recorder/packet reuse are landed,
+  bindings, Stage 6.3 recorder/packet reuse, and Stage 6.4 dirty-range OpenGL
+  uploads are landed,
   including the unchanged editor viewport-size cache fix. The supplied profile
   attributes the remaining approximately
   30 FPS result to 28.12 ms of CPU command recording versus 10.98 ms on the
   GPU. Stage 6 targets ineffective shadow reuse, per-draw descriptor updates,
   redundant state work, section-packet copying, and OpenGL whole-arena uploads;
   its fixed-scenario record-time budget is 12.73 ms p95. Runtime Stage 6.0
-  proof on both APIs remains pending; Stage 6.2 and Stage 6.3 implementation
-  work is landed.
+  proof on both APIs remains pending; Stage 6.2–6.4 implementation work is
+  landed.
   The solved black-frame defect is out of
   scope. →
   [issue](issue/issue-9.7.md), [plan](.plan/issue-9.7.md),

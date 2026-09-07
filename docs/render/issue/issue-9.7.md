@@ -1,6 +1,6 @@
 # Issue 9.7 — Sponza Texture Aliasing and Frame Throughput
 
-**Status: active; Stages 5–6.3 are landed; fixed-scenario runtime proof remains open.** The Sponza startup fixture renders,
+**Status: active; Stages 5–6.4 are landed; fixed-scenario runtime proof remains open.** The Sponza startup fixture renders,
 but its material channels contain severe high-frequency speckle and the
 observed frame rate falls to approximately 30 FPS.
 
@@ -55,6 +55,10 @@ outside this issue.
   boundaries. Deferred rendering builds one frame-local section packet source
   from one `RenderWorld` snapshot and reuses it for shadow scheduling,
   filtering, and G-buffer visibility without copying section material arrays.
+- Stage 6.4 now tracks frame-context uniform writes through the common backend
+  boundary. OpenGL coalesces and uploads only dirty mapped-buffer ranges before
+  their first binding consumer; the legacy backend binding path uses the same
+  flush logic.
 
 ## Resolution documents
 

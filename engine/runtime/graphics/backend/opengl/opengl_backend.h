@@ -69,6 +69,8 @@ namespace kpengine::graphics
         }
         BufferHandle CreateUniformBuffer(uint32_t size) override;
         void *MapUniformBuffer(BufferHandle handle, size_t size) override;
+        void MarkUniformBufferRangeWritten(BufferHandle handle, size_t offset,
+                                            size_t size) override;
         uint32_t GetCurrentFrameIndex() const override { return 0; }
         uint32_t GetFramesInFlight() const override { return 1; }
         size_t GetUniformBufferAlignment() const override;
@@ -84,6 +86,7 @@ namespace kpengine::graphics
         void InitializeCapabilities();
         GraphicsContext CreateGraphicsContext();
         void CollectCompletedGpuProfileTimings();
+        void UploadDirtyUniformBuffers();
         OpenglRenderTargetReadbackSource GetRenderTargetReadbackSource(
             RenderTargetHandle handle) const;
     private:

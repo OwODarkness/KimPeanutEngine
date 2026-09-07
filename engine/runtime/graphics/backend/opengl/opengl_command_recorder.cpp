@@ -248,8 +248,7 @@ namespace kpengine::graphics
     {
         ++profile_counters_.resource_binding_bind_requests;
         (void)pipeline;
-        if (!services_.resource_binding_set_handles || !services_.resource_binding_sets ||
-            !services_.mapped_uniform_buffers)
+        if (!services_.resource_binding_set_handles || !services_.resource_binding_sets)
         {
             return;
         }
@@ -265,11 +264,9 @@ namespace kpengine::graphics
                                recorded_bindings_ == bindings &&
                                recorded_dynamic_offsets_ == dynamic_offsets;
 
-        for (const auto &[id, mapped] : *services_.mapped_uniform_buffers)
+        if (services_.flush_dirty_uniform_buffers)
         {
-            (void)id;
-            glBindBuffer(GL_UNIFORM_BUFFER, mapped.native);
-            glBufferSubData(GL_UNIFORM_BUFFER, 0, mapped.data.size(), mapped.data.data());
+            services_.flush_dirty_uniform_buffers();
         }
         if (redundant)
         {

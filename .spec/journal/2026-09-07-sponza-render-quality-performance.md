@@ -367,3 +367,22 @@ below adds the first runtime instrumentation slice.
   retained the existing D5 silhouette comparator failure
   (`raw=375`, `edge=293`, `structural=82`, `area_delta=135`, bounds match).
   Fixed-window Sponza performance counters and visual comparison remain open.
+
+## Stage 6.4 OpenGL dirty uniform-range checkpoint
+
+- Added the common `RenderBackend::MarkUniformBufferRangeWritten` hook. The
+  render-owned `FrameContext` reports exact allocation/update ranges; Vulkan
+  keeps the default no-op because its mapped memory is already visible to the
+  submitted command stream.
+- OpenGL now owns coalesced dirty ranges for each mapped uniform buffer and
+  flushes only the dirty span before a recorder binding or legacy backend
+  binding consumes it. The previous all-buffer, full-capacity
+  `glBufferSubData()` loops were removed.
+- `cmake --build build --config Debug --target RenderSystemTest
+  RenderPassScheduleTest GraphicsContractTest GraphicsSmoke` — passed.
+- `RenderSystemTest.exe --gtest_color=no` — 20/20 passed;
+  `RenderPassScheduleTest.exe --gtest_color=no` — 100/100 passed;
+  `GraphicsContractTest.exe --gtest_color=no` — 15/15 passed.
+- GraphicsSmoke runtime verification remains the same cross-backend D5
+  silhouette comparator blocker; no new initialization or frame-recording
+  failure was observed in the build/test pass.
