@@ -70,6 +70,51 @@ The module is **two-tier**:
 
 `AssetRegisterInfo` is the struct loaders fill in: the payload, path, name, type, and declared dependencies.
 
+### Registering an asset extension
+
+Feature modules register runtime asset types through
+`AssetManager::RegisterAssetType(AssetTypeDescriptor, diagnostic)` before the
+first load. The descriptor is the public composition boundary:
+
+```cpp
+AssetTypeDescriptor descriptor{};
+descriptor.type = module_type_from_custom_range;
+descriptor.name = "ModuleAsset";
+descriptor.extensions = {"module_asset"};
+descriptor.loader = [](const std::string &path, AssetRegisterInfo &info)
+{
+    info.path = path;
+    info.name = "ModuleAssetPayload";
+    info.type = module_type_from_custom_range;
+    info.resource = std::make_shared<ModulePayload>();
+    return true;
+};
+
+std::string diagnostic;
+AssetManager::GetInstance().RegisterAssetType(
+    std::move(descriptor), diagnostic);
+```
+
+The module owns the concrete `IAssetPayload` and chooses a stable value in the
+custom range `0x1000..0xEFFF`. The suffix is normalized and must not collide
+with another descriptor. `info.type`, the payload's `GetAssetType()`, and the
+descriptor type must match; otherwise the load fails before cache publication.
+The callback only decodes/fills `AssetRegisterInfo`: it must not allocate
+`AssetID`s, mutate Asset caches, publish offline products, or recursively call
+`AssetManager`. Dependencies are declared in `dependency_requests` and are
+resolved by the manager after the callback returns.
+
+`AssetManager` registers all built-in descriptors during construction, so a
+built-in asset does not need a module registration call. The registry seals on
+the first load; late registration and replacement are rejected by design. This
+is a registration phase boundary, not a dynamic plugin unload mechanism.
+
+`LoadAsync` uses the same transaction on a worker thread. Concurrent requests
+for one path converge on one `AssetID`, but the current shared loader lock
+serializes callbacks because existing loader instances are not thread-safe.
+AX1.4 therefore hardens correctness and deduplication; it does not claim
+parallel decode throughput.
+
 ### `AssetCache` — [`asset_manager.h`](../../engine/runtime/asset/asset_manager.h)
 
 One cache per `AssetType`, three fields with three distinct jobs:
@@ -416,7 +461,9 @@ Complete. The migration from "shared_ptr everywhere + `weak_ptr` path map" to th
   - The top-level `AssetPayload` is polymorphic, and AX1.2 now routes runtime
     suffixes through the Asset-owned registry. New module payload classes and
     custom type values no longer require central Asset source edits. Offline
-    importer registration remains AX1.3 work; see [AX1](.plan/AX1.md).
+    importer/provider selection now belongs to the database-free
+    `AssetImportRegistry`; product publication remains in AssetImport and
+    runtime loading stays read-only. See [AX1](.plan/AX1.md).
   
   Before wiring this up, decide whether a file is *either* mesh or point cloud (geometry type becomes a load parameter, defaulting to `KPMG_Mesh`) or *can carry both* (the loader emits multiple geometry sub-assets and binds them all into one `ModelResource`). Keep `GetMesh()` as sugar on top of a generic accessor rather than the only way in.
 - `CompileFailed` status exists but carries no error text; the render layer still compiles from source / loads prebuilt `.spv` bypassing the asset graph, and two stale shader-module files aren't in the build — see the **Shader pipeline** section above.

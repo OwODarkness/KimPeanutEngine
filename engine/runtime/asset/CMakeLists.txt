@@ -78,10 +78,21 @@ if(KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT)
     target_link_libraries(AssetRuntime PRIVATE AssetForeignDecode KP::Assimp)
 endif()
 
+# The provider contract is database-free and can be embedded by a small
+# offline tool without AssetRuntime or the archive repository.
+add_library(AssetImportRegistry STATIC
+    asset_import_registry.cpp
+)
+target_include_directories(AssetImportRegistry PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..
+)
+
 # Offline model/material import is intentionally independent of AssetRuntime.
 # It may be used by a command-line importer while the engine application is
 # not running.
 add_library(AssetImport STATIC
+    asset_import_adapters.cpp
     native_material.cpp
     material_promotion.cpp
     model_import_service.cpp
@@ -91,7 +102,7 @@ target_include_directories(AssetImport PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
-target_link_libraries(AssetImport PUBLIC AssetArchive AssetNative Data Base
+target_link_libraries(AssetImport PUBLIC AssetImportRegistry AssetArchive AssetNative Data Base
     PRIVATE Config ImageIO Log KP::NlohmannJson KP::Assimp AssetForeignDecode)
 
 # Compatibility target name retained for existing runtime consumers. New code

@@ -68,6 +68,15 @@ belongs in the corresponding `.spec/journal/` entry.
     the reserved range, and payload/type validation before publication. See
     the [AX1 plan](.plan/AX1.md) and
     [AX1.2 journal](../../.spec/journal/2026-09-08-asset-ax1-2.md).
+  - [x] **AX1.3 — offline importer registry:** added the database-free
+    provider contract, explicit/longest-suffix selection, model/texture
+    adapters, and AssetImport-owned texture publication. See the
+    [AX1 plan](.plan/AX1.md) and
+    [AX1.3 journal](../../.spec/journal/2026-09-08-asset-ax1-3.md).
+  - [x] **AX1.4 — extension hardening:** added fake-module transaction tests,
+    custom-type async observation routing, rollback/unload coverage, and the
+    public registration contract. See the [AX1 plan](.plan/AX1.md) and
+    [AX1.4 journal](../../.spec/journal/2026-09-08-asset-ax1-4.md).
 - [ ] **Live2D consumer handoff:** verify that Live2D can register its payload,
   native loader, and offline importer through AX1 without an Asset-specific
   Live2D branch. See [L2D2](../live2d/.plan/L2D2.md).

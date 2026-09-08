@@ -957,7 +957,9 @@ namespace kpengine::asset
         AssetLoadSession session)
     {
         const std::shared_ptr<detail::AssetLoadSessionState> state = session.state_;
-        const AssetType type = ExtractAssetType(GetFileExtension(path));
+        std::string type_diagnostic;
+        const AssetType type =
+            ResolveAssetType(GetFileExtension(path), type_diagnostic);
         const std::string display_path = state ? DisplayPath(path) : std::string{};
         const AssetLoadOperationID reserved = state
                                                   ? state->BeginOperation(

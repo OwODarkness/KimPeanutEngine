@@ -1,6 +1,6 @@
 # Project Status
 
-**Snapshot: 2026-09-07.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-08.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
 **Current release: v1.1.0.**
 
@@ -38,9 +38,26 @@
   registered loader callbacks, preserved built-in `AssetType` values, and
   reserved `0x1000..0xEFFF` for module-owned custom types. Payload/type
   mismatches are rejected before cache publication; the registry contains no
-  Live2D knowledge. Offline importer registration remains AX1.3 work. →
+  Live2D knowledge. →
   [AX1 plan](asset/.plan/AX1.md),
   [AX1.2 journal](../.spec/journal/2026-09-08-asset-ax1-2.md)
+
+- **Asset AX1.3 offline importer registry (2026-09-08)** — added the
+  database-free `AssetImportRegistry` with explicit provider selection,
+  longest compound suffix matching, typed polymorphic provider results, and
+  model/texture adapters. AssetImport owns texture publication and model
+  archive transactions; the registry builds without AssetRuntime and runtime
+  loading remains archive-read-only. → [AX1 plan](asset/.plan/AX1.md),
+  [AX1.3 journal](../.spec/journal/2026-09-08-asset-ax1-3.md)
+
+- **Asset AX1.4 extension hardening (2026-09-08)** — added isolated fake-module
+  coverage for malformed payloads, throwing loaders, dependency rollback,
+  concurrent same-path deduplication, serialized loader access, unload, and
+  direct registration validation. Async observations now resolve custom types
+  through the generic registry; the public registration contract documents the
+  custom range and pre-first-load sealing rule. Live2D remains a consumer of
+  this generic contract, not an Asset special case. → [AX1 plan](asset/.plan/AX1.md),
+  [AX1.4 journal](../.spec/journal/2026-09-08-asset-ax1-4.md)
 
 - **Local MCP engine bridge (2026-09-08)** — added a stdio MCP server and
   machine-readable command catalog for launching or attaching to the live

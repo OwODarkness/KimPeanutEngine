@@ -111,8 +111,8 @@ AX1 preserves built-in type values, `AssetID` packing, cache transactions,
 dependency ownership, observation, rollback, concurrency, and unload semantics.
 It also defines the migration adapters for existing built-in loaders. Optional
 modules consume the resulting registration contract; they do not design or
-modify Asset's extension mechanism. AX1.1 and AX1.2 are landed; AX1.3 remains
-the offline importer-provider registry stage.
+modify Asset's extension mechanism. AX1.1 through AX1.4 are landed; the
+remaining AX1 work is verification by the Live2D consumer.
 
 Live2D's use of the contract is documented in
 [L2D2 — Live2D Asset integration](../live2d/.plan/L2D2.md).

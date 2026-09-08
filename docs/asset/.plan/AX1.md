@@ -1,6 +1,6 @@
 # AX1 — Extensible Asset Types and Polymorphic Payloads
 
-- Status: active; AX1.2 landed 2026-09-08
+- Status: active; AX1.4 landed 2026-09-08
 - Parent roadmap: [Asset Module TODO](../TODO.md)
 - Module architecture: [Asset Module Plans](../PLANS.md)
 - Live2D consumer: [L2D2 — Live2D Asset integration](../../live2d/.plan/L2D2.md)
@@ -15,9 +15,10 @@ The Asset module owns the generic extension mechanism. Optional modules such as
 Live2D only provide their format-specific payload and loader/importer
 implementation through that mechanism.
 
-AX1.1 landed the polymorphic payload boundary. AX1.2 now provides the
-Asset-owned runtime type/loader registry and reserves a stable custom range;
-offline importer registration remains the separate AX1.3 stage.
+AX1.1 landed the polymorphic payload boundary. AX1.2 provides the Asset-owned
+runtime type/loader registry and reserves a stable custom range. AX1.3 provides
+the separate offline importer/provider registry. AX1.4 hardens the extension
+transaction boundary and documents the consumer-facing registration contract.
 
 ## Design question
 
@@ -247,26 +248,107 @@ Implementation evidence:
 
 ### AX1.3 — Offline importer registry
 
-- Define the database-free importer/provider contract in AssetImport.
-- Register existing model/material/texture import paths through adapters where
-  their request/result shapes match.
-- Test explicit importer selection and longest compound suffix selection.
-- Keep product publication and archive transactions owned by AssetImport.
+- `AssetImportRegistry` now owns a database-free provider descriptor contract:
+  stable provider ID/version, provider kind, source suffixes, and a callback
+  returning a polymorphic `IImportProduct`. The registry target has no
+  `AssetRuntime`, SQLite, or archive dependency.
+- Automatic selection normalizes source suffixes case-insensitively and chooses
+  the longest matching suffix, so `model3.json` wins over `json`. Equal-length
+  matches are reported as ambiguous. An explicit provider ID bypasses suffix
+  selection and is useful for importer overrides.
+- Existing typed model and texture services are connected through adapters.
+  Model import retains its typed request/result and progress callback; texture
+  import/cook retains its typed result and publishes through AssetImport.
+  Material conversion remains a model-stage operation because its input is an
+  `ImportedModelDocument`, not a standalone source-path request/result shape.
+- Product publication and archive transactions stay in AssetImport services.
+  Runtime only consumes products and never invokes the offline registry.
 
 Gate: the tool works without AssetRuntime, and runtime loading remains read-only
 with respect to the archive.
 
-### AX1.4 — Extension hardening and consumer handoff
+Implementation evidence:
 
-- Add collision, late-registration, malformed-payload, throwing-loader,
-  dependency-failure, concurrent-load, and unload tests.
-- Inspect the dependency graph and lock table for inverse edges.
-- Document the public registration calls that feature modules consume.
-- Hand the stable contract to Live2D; do not add Live2D-specific behavior to
-  Asset.
+- [`asset_import_registry.h`](../../../engine/runtime/asset/asset_import_registry.h)
+  defines the standalone provider contract and typed polymorphic result
+  wrapper; [`asset_import_registry.cpp`](../../../engine/runtime/asset/asset_import_registry.cpp)
+  implements registration, sealing, explicit lookup, and suffix resolution.
+- [`asset_import_adapters.h`](../../../engine/runtime/asset/asset_import_adapters.h)
+  adapts `ModelImportService` and the database-free texture pipeline without
+  adding feature-specific branches to AssetRuntime.
+- `KimPeanutAssetTool` now composes the registry for `import` and
+  `cook-texture`; the registry test links only `AssetImportRegistry`, proving
+  the contract is independently buildable without AssetRuntime or the archive.
+- Validation evidence is recorded in the
+  [AX1.3 journal](../../../.spec/journal/2026-09-08-asset-ax1-3.md).
+
+### AX1.4 — Extension hardening and consumer handoff (landed 2026-09-08)
+
+- Added an isolated `AssetExtensionHardeningTest` target covering a valid
+  external type, malformed payload rejection, throwing-loader rollback,
+  dependency-failure rollback, concurrent same-path deduplication, serialized
+  loader access, unload/stale-handle behavior, and direct registration type
+  validation.
+- Confirmed the lock graph remains `load_mutex_` → `state_mutex_`: registered
+  callbacks run under the existing shared-loader serialization window, while
+  dependency requests are resolved after that window and before publication.
+- Corrected the observed `LoadAsync(path, session)` entry point to resolve its
+  type through the generic registry, so custom extensions report their actual
+  type instead of the legacy built-in suffix switch.
+- Documented `AssetManager::RegisterAssetType`, `AssetTypeDescriptor`, the
+  custom value range, registration timing, callback obligations, and the
+  built-in registration rule. Live2D receives this generic contract in its
+  consumer stage; Asset contains no Live2D-specific behavior.
+
+Public registration contract:
+
+```cpp
+AssetTypeDescriptor descriptor{};
+descriptor.type = module_type_from_custom_range;
+descriptor.name = "ModuleAsset";
+descriptor.extensions = {"module_asset"};
+descriptor.loader = [](const std::string &path, AssetRegisterInfo &info)
+{
+    info.path = path;
+    info.name = "ModuleAssetPayload";
+    info.type = module_type_from_custom_range;
+    info.resource = std::make_shared<ModulePayload>();
+    return true;
+};
+
+std::string diagnostic;
+AssetManager::GetInstance().RegisterAssetType(
+    std::move(descriptor), diagnostic);
+```
+
+The module must choose a stable value in `0x1000..0xEFFF`, use a unique
+normalized suffix, and register before the first runtime load. The manager
+registers built-in descriptors during construction; modules do not re-register
+built-ins. The registry seals on first load, so late registration is rejected.
+The callback only fills `AssetRegisterInfo`; it must not allocate `AssetID`s,
+mutate caches, publish archive products, or recursively call `AssetManager`.
+`info.type`, the payload's `GetAssetType()`, and the descriptor type must agree
+or the transaction is rejected without cache publication. Dependencies are
+declared through `dependency_requests` and resolved by AssetManager.
+
+AX1.4 deliberately does not promise parallel decoding. `LoadAsync` moves the
+same transaction to a worker and concurrent requests for one path converge on
+one cache identity; the current shared loader lock keeps callbacks serialized.
+Parallel throughput is a later loader-pool/per-thread-instance decision.
+
+Implementation evidence:
+
+- [`asset_extension_hardening_test.cpp`](../../../engine/test/unit/asset/asset_extension_hardening_test.cpp)
+  exercises the generic runtime transaction without Live2D or Asset source
+  branches.
+- [`asset_manager.cpp`](../../../engine/runtime/asset/asset_manager.cpp)
+  resolves custom types for observed asynchronous loads through the same
+  registry used by synchronous loads.
+- Validation evidence is recorded in the
+  [AX1.4 journal](../../../.spec/journal/2026-09-08-asset-ax1-4.md).
 
 Gate: Asset owns the extension mechanism and a fake extension can load through
-  ordinary Asset transactions before Live2D is enabled.
+ordinary Asset transactions before Live2D is enabled.
 
 ## Invariants
 
@@ -295,7 +377,7 @@ Gate: Asset owns the extension mechanism and a fake extension can load through
 - [x] A test-only external payload loads through the same cache and transaction
   path as built-in assets.
 - [x] The Asset extension registry is generic and contains no Live2D knowledge.
-- [ ] Runtime and offline importer contracts are independently testable.
+- [x] Runtime and offline importer contracts are independently testable.
 - [ ] Live2D can register its payload and loader without editing Asset source.
 
 ## Validation plan

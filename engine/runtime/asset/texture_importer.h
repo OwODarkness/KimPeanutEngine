@@ -87,6 +87,11 @@ namespace kpengine::asset
 
     ImportedTexture ImportTexture(const TextureImportRequest &request);
     CookedTexture CookTexture(const ImportedTexture &source);
+
+    // Product publication is an offline AssetImport operation. Runtime never
+    // calls this function and never writes the archive.
+    void PublishCookedTextureProduct(const std::filesystem::path &archive_root,
+                                     const CookedTexture &cooked);
 }
 
 #endif

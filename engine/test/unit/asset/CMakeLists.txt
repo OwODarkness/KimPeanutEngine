@@ -123,3 +123,51 @@ target_link_libraries(TextureImportTest PRIVATE AssetImport Config KP::GoogleTes
 
 include(GoogleTest)
 gtest_discover_tests(TextureImportTest)
+
+add_executable(
+    AssetImportRegistryTest
+    asset_import_registry_test.cpp
+)
+
+target_link_libraries(AssetImportRegistryTest PRIVATE AssetImportRegistry KP::GoogleTest)
+
+add_custom_command(TARGET AssetImportRegistryTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll
+        $<TARGET_FILE_DIR:AssetImportRegistryTest>
+)
+
+include(GoogleTest)
+gtest_discover_tests(AssetImportRegistryTest)
+
+add_executable(
+    AssetImportAdapterTest
+    asset_import_adapter_test.cpp
+)
+
+target_link_libraries(AssetImportAdapterTest PRIVATE AssetImport Config KP::GoogleTest)
+
+add_custom_command(TARGET AssetImportAdapterTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll
+        $<TARGET_FILE_DIR:AssetImportAdapterTest>
+)
+
+include(GoogleTest)
+gtest_discover_tests(AssetImportAdapterTest)
+
+add_executable(
+    AssetExtensionHardeningTest
+    asset_extension_hardening_test.cpp
+)
+
+target_link_libraries(AssetExtensionHardeningTest PRIVATE AssetRuntime Config KP::GoogleTest)
+
+add_custom_command(TARGET AssetExtensionHardeningTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll
+        $<TARGET_FILE_DIR:AssetExtensionHardeningTest>
+)
+
+include(GoogleTest)
+gtest_discover_tests(AssetExtensionHardeningTest)

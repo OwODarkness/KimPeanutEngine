@@ -1,7 +1,6 @@
 #include <cstdint>
 #include <chrono>
 #include <filesystem>
-#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -10,6 +9,8 @@
 #include <string_view>
 #include <vector>
 
+#include "asset/asset_import_adapters.h"
+#include "asset/asset_import_registry.h"
 #include "asset/material_promotion.h"
 #include "asset/model_archive.h"
 #include "asset/model_import_service.h"
@@ -27,7 +28,7 @@ namespace
     {
         std::cout
             << "KimPeanutAssetTool\n"
-            << "  import|reimport --source <asset-relative-path> [--asset-root <path>] "
+            << "  import|reimport --source <asset-relative-path> [--importer <id>] [--asset-root <path>] "
                "[--archive-root <path>]\n"
             << "  cook-texture --source <asset-relative-path> [--semantic <generic|color|normal|packed|opacity>] "
                "[--max-dimension <n>] [--asset-root <path>] [--archive-root <path>]\n"
@@ -171,53 +172,6 @@ namespace
         std::chrono::steady_clock::time_point started_;
     };
 
-    void PublishTexture(const std::filesystem::path &archive_root,
-                        const kpengine::asset::CookedTexture &cooked)
-    {
-        const std::filesystem::path destination =
-            archive_root / kpengine::asset::ProductRelativePath(
-                               kpengine::asset::ArchiveProductType::Texture,
-                               cooked.product_hash, "texture");
-        std::error_code error;
-        std::filesystem::create_directories(destination.parent_path(), error);
-        if (error)
-        {
-            throw std::runtime_error("failed to create texture archive directory: " + error.message());
-        }
-        if (std::filesystem::exists(destination, error) && !error)
-        {
-            std::ifstream existing(destination, std::ios::binary | std::ios::ate);
-            if (!existing.is_open()) throw std::runtime_error("failed to inspect cooked texture product");
-            const std::streampos end = existing.tellg();
-            std::vector<std::byte> bytes(static_cast<std::size_t>(end));
-            existing.seekg(0, std::ios::beg);
-            existing.read(reinterpret_cast<char *>(bytes.data()),
-                         static_cast<std::streamsize>(bytes.size()));
-            if (bytes != cooked.bytes)
-            {
-                throw std::runtime_error("immutable cooked texture product collision: " +
-                                         destination.string());
-            }
-            return;
-        }
-        if (error)
-        {
-            throw std::runtime_error("failed to inspect cooked texture destination: " + error.message());
-        }
-        const std::filesystem::path temporary = destination.string() + ".tmp";
-        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-        if (!output.is_open()) throw std::runtime_error("failed to create cooked texture product");
-        output.write(reinterpret_cast<const char *>(cooked.bytes.data()),
-                     static_cast<std::streamsize>(cooked.bytes.size()));
-        output.close();
-        std::filesystem::rename(temporary, destination, error);
-        if (error)
-        {
-            std::filesystem::remove(temporary);
-            throw std::runtime_error("failed to publish cooked texture product: " + error.message());
-        }
-    }
-
     void PrintSnapshot(const kpengine::asset::SourceArchiveSnapshot &snapshot)
     {
         std::cout << "source: " << snapshot.source.normalized_path << '\n'
@@ -245,18 +199,39 @@ namespace
 
         if (command.command == "import" || command.command == "reimport")
         {
-            kpengine::asset::ModelImportRequest request{};
+            kpengine::asset::ModelImportService service{};
+            kpengine::asset::ImportProviderRegistry registry{};
+            std::string diagnostic;
+            const ProgressReporter progress_reporter{};
+            if (!kpengine::asset::RegisterModelImportProvider(
+                    registry, service, {}, diagnostic,
+                    [&progress_reporter](const kpengine::asset::ModelImportProgress &progress)
+                    {
+                        progress_reporter.Report(progress);
+                    }) ||
+                !registry.Seal(diagnostic))
+            {
+                throw std::runtime_error("failed to initialize model import providers: " + diagnostic);
+            }
+            kpengine::asset::ImportProviderRequest request{};
             request.asset_root = asset_root;
             request.archive_root = archive_root;
             request.source_path = Option(command, "source", true);
-            const ProgressReporter progress_reporter{};
-            request.progress_callback = [&progress_reporter](
-                                            const kpengine::asset::ModelImportProgress &progress)
+            const kpengine::asset::ImportProviderResult provider_result =
+                registry.Execute(request, Option(command, "importer"), diagnostic);
+            if (provider_result.product == nullptr)
             {
-                progress_reporter.Report(progress);
-            };
-            const kpengine::asset::ModelImportResult result =
-                kpengine::asset::ImportModel(request);
+                throw std::runtime_error("model import provider failed: " + diagnostic);
+            }
+            const auto result_product =
+                std::dynamic_pointer_cast<kpengine::asset::TypedImportProduct<
+                    kpengine::asset::ModelImportResult,
+                    kpengine::asset::ImportProviderKind::Model>>(provider_result.product);
+            if (result_product == nullptr)
+            {
+                throw std::runtime_error("model import provider returned an invalid result type");
+            }
+            const kpengine::asset::ModelImportResult &result = result_product->value;
             std::cout << (result.status == kpengine::asset::ModelImportStatus::UpToDate
                               ? "UpToDate"
                               : "Imported")
@@ -271,21 +246,37 @@ namespace
 
         if (command.command == "cook-texture")
         {
+            kpengine::asset::ImportProviderRegistry registry{};
+            std::string diagnostic;
+            kpengine::asset::TextureCookSettings settings{};
+            settings.semantic = TextureSemantic(command);
+            settings.max_dimension = MaxDimension(command);
+            if (!kpengine::asset::RegisterTextureImportProvider(registry, settings, diagnostic) ||
+                !registry.Seal(diagnostic))
+            {
+                throw std::runtime_error("failed to initialize texture import providers: " + diagnostic);
+            }
             const std::filesystem::path source = asset_root / Option(command, "source", true);
             const ProgressReporter progress_reporter{};
             progress_reporter.Report({kpengine::asset::ModelImportProgressStage::DecodingSource,
                                        "decoding " + source.string(), 0, 0});
-            kpengine::asset::TextureImportRequest request{};
-            request.source_path = source;
-            request.settings.semantic = TextureSemantic(command);
-            request.settings.max_dimension = MaxDimension(command);
-            const auto imported = kpengine::asset::TextureImporter{}.Import(request);
-            progress_reporter.Report({kpengine::asset::ModelImportProgressStage::CookingTextures,
-                                       "generating semantic mip chain", 0, 0});
-            const auto cooked = kpengine::asset::TextureCooker{}.Cook(imported);
+            kpengine::asset::ImportProviderRequest request{};
+            request.asset_root = asset_root;
+            request.archive_root = archive_root;
+            request.source_path = Option(command, "source", true);
+            const kpengine::asset::ImportProviderResult provider_result =
+                registry.Execute(request, Option(command, "importer"), diagnostic);
+            const auto result_product =
+                std::dynamic_pointer_cast<kpengine::asset::TypedImportProduct<
+                    kpengine::asset::CookedTexture,
+                    kpengine::asset::ImportProviderKind::Texture>>(provider_result.product);
+            if (result_product == nullptr)
+            {
+                throw std::runtime_error("texture import provider failed: " + diagnostic);
+            }
+            const kpengine::asset::CookedTexture &cooked = result_product->value;
             progress_reporter.Report({kpengine::asset::ModelImportProgressStage::PublishingProducts,
                                        "publishing native texture product", 1, 1});
-            PublishTexture(archive_root, cooked);
             const auto product_path = archive_root / kpengine::asset::ProductRelativePath(
                 kpengine::asset::ArchiveProductType::Texture, cooked.product_hash, "texture");
             std::cout << "Cooked\n"

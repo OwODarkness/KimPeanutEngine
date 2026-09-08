@@ -182,4 +182,78 @@ namespace kpengine::asset
     {
         return TextureCooker{}.Cook(source);
     }
+
+    void PublishCookedTextureProduct(const std::filesystem::path &archive_root,
+                                     const CookedTexture &cooked)
+    {
+        const std::filesystem::path destination =
+            archive_root / ProductRelativePath(ArchiveProductType::Texture,
+                                               cooked.product_hash, "texture");
+        std::error_code error;
+        std::filesystem::create_directories(destination.parent_path(), error);
+        if (error)
+        {
+            throw std::runtime_error("failed to create texture archive directory: " +
+                                     error.message());
+        }
+
+        if (std::filesystem::exists(destination, error))
+        {
+            if (error)
+            {
+                throw std::runtime_error("failed to inspect cooked texture destination: " +
+                                         error.message());
+            }
+            std::ifstream existing(destination, std::ios::binary | std::ios::ate);
+            if (!existing.is_open())
+            {
+                throw std::runtime_error("failed to inspect cooked texture product");
+            }
+            const std::streampos end = existing.tellg();
+            if (end < 0)
+            {
+                throw std::runtime_error("failed to determine cooked texture product size");
+            }
+            std::vector<std::byte> bytes(static_cast<std::size_t>(end));
+            existing.seekg(0, std::ios::beg);
+            existing.read(reinterpret_cast<char *>(bytes.data()),
+                          static_cast<std::streamsize>(bytes.size()));
+            if (!existing.good() && !existing.eof())
+            {
+                throw std::runtime_error("failed to read cooked texture product");
+            }
+            if (bytes != cooked.bytes)
+            {
+                throw std::runtime_error("immutable cooked texture product collision: " +
+                                         destination.string());
+            }
+            return;
+        }
+        if (error)
+        {
+            throw std::runtime_error("failed to inspect cooked texture destination: " +
+                                     error.message());
+        }
+
+        const std::filesystem::path temporary = destination.string() + ".tmp";
+        std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
+        if (!output.is_open())
+        {
+            throw std::runtime_error("failed to create cooked texture product");
+        }
+        output.write(reinterpret_cast<const char *>(cooked.bytes.data()),
+                     static_cast<std::streamsize>(cooked.bytes.size()));
+        if (!output.good())
+        {
+            throw std::runtime_error("failed to write cooked texture product");
+        }
+        output.close();
+        std::filesystem::rename(temporary, destination, error);
+        if (error)
+        {
+            std::filesystem::remove(temporary);
+            throw std::runtime_error("failed to publish cooked texture product: " +
+                                     error.message());
+        }
+    }
 }
