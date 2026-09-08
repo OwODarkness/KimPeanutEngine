@@ -1,9 +1,10 @@
 # Live2D Module Plans
 
-**Status: proposed.** This document records the analysis and architecture for
+**Status: active implementation.** This document records the analysis and architecture for
 an optional Live2D module. Current work is tracked in [TODO.md](TODO.md), the
-first-stage SDK design is in [`.plan/L2D1.md`](.plan/L2D1.md), and the complete
-V1 execution contract is in
+SDK design is in [`.plan/L2D1.md`](.plan/L2D1.md), the generic Asset migration
+is owned by [AX1](../asset/.plan/AX1.md), Live2D's Asset handoff is staged in
+[`.plan/L2D2.md`](.plan/L2D2.md), and the complete V1 execution contract is in
 [`.spec/specs/live2d-v1-rendering.md`](../../.spec/specs/live2d-v1-rendering.md).
 
 ## Outcome
@@ -25,7 +26,9 @@ physics authoring, hit testing, and gameplay components are future stages.
 ### Asset is closed to optional types
 
 The current Asset implementation cannot accept an optional Live2D type without
-editing Asset itself:
+editing Asset itself. This is an Asset-module problem, not a Live2D design
+problem. The generic solution is owned by [AX1 — Extensible Asset Types and
+Polymorphic Payloads](../asset/.plan/AX1.md):
 
 - [`AssetType`](../../engine/runtime/asset/common.h) is a closed enum.
 - [`AssetPayload`](../../engine/runtime/asset/asset.h) is a closed
@@ -38,9 +41,10 @@ editing Asset itself:
   asking an importer registry.
 
 Adding `Live2DModelResource` to those switches would make Asset depend on an
-optional feature and repeat the same edit for every future asset type. The
-required prerequisite is an Asset-owned extension contract, not a Live2D case
-inside Asset.
+optional feature and repeat the same edit for every future asset type. Asset
+must first provide its own generic type/loader registry and polymorphic
+`IAssetPayload` boundary. Live2D only implements and registers its own payload
+and loader after AX1 is available.
 
 ### Graphics has most static draw concepts but not Live2D streaming geometry
 
@@ -141,72 +145,33 @@ The importer remains usable without the running engine. The runtime target
 does not depend on the authoring archive/database. The render target never
 opens model files or constructs Asset identity.
 
-## Asset extension architecture
+## Asset integration boundary
 
-### Registered type descriptors
+The generic Asset extensibility design belongs to Asset and is specified in
+[AX1](../asset/.plan/AX1.md). Live2D does not define `AssetType`, payload
+erasure, registry sealing, suffix collision policy, loader ownership, cache
+transactions, or importer-provider infrastructure.
 
-Replace the closed `AssetType` enum boundary with a small 16-bit
-`AssetTypeId` value type. Preserve current built-in numeric values and the
-64-bit `AssetID` packing layout. Built-in names move to constants in Asset;
-optional modules define their own stable code and canonical name without Asset
-including the module header.
-
-An `AssetTypeRegistry` entry contains:
-
-```cpp
-struct AssetTypeRegistration
-{
-    AssetTypeId id;                    // stable numeric code
-    std::string canonical_name;        // e.g. "live2d.model"
-    std::vector<std::string> runtime_extensions;
-    std::type_index payload_type;
-    std::shared_ptr<IAssetLoader> loader;
-    PayloadMeasureFn measure_payload;  // optional observation hook
-};
-```
-
-The registry rejects undefined/reserved codes, duplicate IDs, names, and
-runtime suffixes. It is explicitly populated at the composition root and
-frozen before the first load. No registration occurs in a global/static
-constructor. Built-in Asset types use the same registry and adapters, so there
-is one dispatch path rather than a second plugin-only path.
-
-Runtime extension matching is for native products. Live2D registers a unique
-`.live2d` product suffix; it does not register generic `.json`. Compound source
-suffix matching such as `.model3.json` belongs to the offline importer
-registry.
-
-### Open payload without open ownership
-
-Replace the closed payload variant with an `AssetPayload` value that stores a
-`shared_ptr<void>` plus its `std::type_index`. `AssetPayload::From<T>` and
-`GetResource<T>` perform an exact type check before returning an aliasing
-`shared_ptr<T>`. The shared control block still runs the concrete destructor,
-so Asset owns the shared CPU lifetime without knowing the type.
-
-The descriptor's expected payload type is checked during registration. This
-keeps extension open while preventing a loader from registering the wrong C++
-payload under a type ID. V1 modules are static libraries like TTS; a stable
-cross-DLL payload ABI is explicitly outside V1.
-
-### Loader and importer providers are separate
-
-`IAssetLoader` receives a load context and returns `AssetRegisterInfo`; it does
-not mutate caches directly. Existing built-in loaders get adapters. The current
-dependency-request, owned-child, reference, rollback, observation, and lock-
-ordering behavior remains owned by `AssetManager`.
-
-An independent `IAssetImporter` registry in the offline `AssetImport` boundary
-selects providers by explicit type or longest recognized source suffix. Model,
-texture, and Live2D importers use the same tool dispatch contract. Importers do
-not receive `AssetManager`, create `AssetID`s, or register runtime payloads.
-
-Live2D registration is explicit:
+Live2D's responsibility is limited to supplying Live2D-specific registrations:
 
 ```text
-RegisterLive2DAssetTypes(AssetTypeRegistry&)   // runtime .live2d loader
-RegisterLive2DImporters(AssetImporterRegistry&) // source .model3.json importer
+RegisterLive2DAssetTypes(AssetTypeRegistry&)    // .live2d runtime product
+RegisterLive2DImporters(AssetImporterRegistry&) // .model3.json source import
 ```
+
+The Live2D registration must provide a stable type value, the canonical
+`.live2d` native suffix, `Live2DModelResource` implementing `IAssetPayload`, a
+native-product loader, and an offline importer provider. Asset remains the
+owner of identity, `AssetID` creation, dependency requests, rollback,
+observation, cache lifetime, and unload behavior.
+
+The L2D2 implementation now provides a versioned product codec, an immutable
+payload, explicit registrations, and a database-free source provider. The
+provider consumes the checked-in Hiyori package under `asset/live2d` for
+validation; archive publication and RHI rendering remain later stages. The
+Live2D-specific integration sequence and acceptance criteria are in
+[L2D2](.plan/L2D2.md). The generic migration gates, lock policy, and payload
+tests are in [AX1](../asset/.plan/AX1.md).
 
 ## Native Live2D product
 
@@ -247,7 +212,7 @@ into `ModelArchiveDatabase` internals merely to obtain hashing.
 
 ```text
 .live2d path
-  -> AssetTypeRegistry
+  -> Asset type registry
   -> Live2DAssetLoader
   -> immutable Live2DModelAsset + ordered Texture dependency requests
   -> AssetManager registration/cache/reference graph

@@ -52,22 +52,65 @@ set(KPENGINE_LIVE2D_MSVC_RUNTIME
     "${_kpengine_live2d_msvc_runtime}"
     CACHE INTERNAL "Live2D target MSVC runtime base")
 
+add_library(Live2DProduct STATIC
+    runtime/live2d_product.cpp)
+target_include_directories(Live2DProduct PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
+set_property(TARGET Live2DProduct PROPERTY
+    MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
+
+add_library(Live2DAssetRuntime STATIC
+    runtime/live2d_asset_runtime.cpp)
+target_include_directories(Live2DAssetRuntime PUBLIC
+    "${CMAKE_SOURCE_DIR}/engine/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
+target_link_libraries(Live2DAssetRuntime PUBLIC Live2DProduct AssetRuntime)
+set_property(TARGET Live2DAssetRuntime PROPERTY
+    MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
+
+add_library(Live2DImport STATIC
+    runtime/live2d_import.cpp)
+target_include_directories(Live2DImport PUBLIC
+    "${CMAKE_SOURCE_DIR}/engine/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
+target_link_libraries(Live2DImport PUBLIC Live2DProduct AssetImport
+    PRIVATE KP::NlohmannJson)
+set_property(TARGET Live2DImport PROPERTY
+    MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
+
 add_library(Live2DRuntime STATIC
     runtime/live2d_cubism_lifecycle.cpp
+    runtime/live2d_model_instance.cpp
     runtime/live2d_system.cpp)
 target_include_directories(Live2DRuntime PUBLIC
+    "${CMAKE_SOURCE_DIR}/engine/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime/core"
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
 target_include_directories(Live2DRuntime SYSTEM PRIVATE
     "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}"
     "${KPENGINE_CUBISM_CORE_INCLUDE_DIR}")
 target_link_libraries(Live2DRuntime
-    PUBLIC Core Log
+    PUBLIC Core Log AssetRuntime Live2DProduct
     PRIVATE Live2DCubismFrameworkRuntime)
 set_property(TARGET Live2DRuntime PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
 
+add_library(Live2DRegistration STATIC
+    runtime/live2d_registration.cpp)
+target_include_directories(Live2DRegistration PUBLIC
+    "${CMAKE_SOURCE_DIR}/engine/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
+target_link_libraries(Live2DRegistration PUBLIC Live2DProduct Live2DAssetRuntime
+    AssetRuntime)
+set_property(TARGET Live2DRegistration PROPERTY
+    MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
+
 add_library(Live2D INTERFACE)
-target_link_libraries(Live2D INTERFACE Live2DRuntime)
+target_link_libraries(Live2D INTERFACE Live2DRuntime Live2DProduct
+    Live2DAssetRuntime Live2DRegistration)
 
 add_library(Live2DModule STATIC
     live2d_module.cpp)

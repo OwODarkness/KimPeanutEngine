@@ -5,10 +5,8 @@ Cubism 5 SDK for Native R5 (`5-r.5`)**. It is enabled by default for engine
 development. A local Cubism SDK path is therefore required unless the module
 is explicitly disabled.
 
-Current scope includes L2D1 Cubism Core/Framework discovery, lifecycle
-ownership, allocator/log bridging, model-instance lifetime tests, and a
-placeholder editor preview. Asset import, Cubism-backed rendering, and the
-dedicated model viewer are planned in [TODO.md](TODO.md).
+The module provides Cubism SDK integration, native Live2D asset products, and
+the foundation for future model rendering.
 
 ## SDK location
 
@@ -63,19 +61,87 @@ settings. Do not put the SDK path in a tracked preset or source file.
 matches the engine's default MSVC runtime. Use `MT` only when the whole build
 and the matching SDK Core library are intentionally configured for `/MT`.
 
-The MOC path is only a lifecycle/instance test fixture at this stage; it is
-not yet an engine asset or rendered model.
+Cubism-backed rendering is not included in the current editor preview.
 
 ## Run the Live2D tests
 
 ```powershell
 cmake --build build-live2d --config Debug --target Live2DCoreTest -- /m:2
-ctest --test-dir build-live2d/engine/test -C Debug -R Live2DCore --output-on-failure
+ctest --test-dir build-live2d/engine/test -C Debug -R Live2D --output-on-failure
 ```
 
 The tests verify repeated initialize/shutdown, allocator alignment, shutdown
-protection while model leases are alive, and independent parameter state for
-two `CubismModel` instances created from the same MOC data.
+protection while model leases are alive, independent parameter state for two
+`CubismModel` instances, deterministic Hiyori `.model3.json` import, path
+escape rejection, malformed product rejection, and ordinary AssetManager
+texture dependency registration.
+
+## Native `.live2d` product format
+
+`.live2d` is KimPeanutEngine's native binary product. It is not the authored
+Cubism `.model3.json` file and it is not a ZIP/archive container. The offline
+importer reads the authored source closure once, embeds the model bytes and
+required metadata, cooks atlas images into native Texture products, and emits
+deterministic `.live2d` bytes. Runtime loading reads only this product and its
+native dependency closure.
+
+A deployed product currently has this layout:
+
+```text
+content/
+  hiyori.live2d
+  .archive/
+    textures/
+      <sha256>.texture
+```
+
+The product stores texture references such as
+`.archive/textures/<sha256>.texture`. They are resolved relative to the
+directory containing the `.live2d` file. The referenced `.texture` files are
+content-addressed native products; their bytes and hash are verified by the
+ordinary Asset texture loader.
+
+### Binary layout
+
+All integer fields are unsigned 32-bit little-endian values. Variable-size
+blobs and strings are prefixed by their unsigned 32-bit byte length. Strings
+are UTF-8-like byte strings with no NUL terminator; paths use `/` separators.
+
+| Order | Field | Meaning |
+| --- | --- | --- |
+| 1 | `magic[8]` | ASCII `KPL2DPRD` |
+| 2 | `product_version` | Current value: `1` |
+| 3 | `model3_version` | Authored Cubism model schema version; current value: `3` |
+| 4 | `texture_count` | Number of ordered native Texture references |
+| 5 | `optional_chunk_count` | Number of named optional source chunks |
+| 6 | `moc_bytes` | Length-prefixed embedded `.moc3` bytes |
+| 7 | `textures[]` | Length-prefixed dependency path for each atlas |
+| 8 | `optional_chunks[]` | Each entry contains a length-prefixed name and byte blob |
+
+Conceptually, a decoded product looks like this:
+
+```text
+Live2DProductData {
+  product_version: 1,
+  model3_version: 3,
+  moc_bytes: <embedded MOC3 bytes>,
+  textures: [
+    { path: ".archive/textures/<sha256-a>.texture" },
+    { path: ".archive/textures/<sha256-b>.texture" }
+  ],
+  optional_chunks: [
+    { name: "Physics", bytes: <embedded physics JSON> },
+    { name: "Expressions/0", bytes: <embedded expression JSON> }
+  ]
+}
+```
+
+The shared runtime payload contains immutable product data only. It does not
+contain GPU objects, Cubism model instances, parameter state, motion state,
+deformed vertices, or frame-local mask data. The current codec limits the
+complete product to 512 MiB, each individual blob/string to 1 MiB, and each
+collection to 4096 entries. Full Cubism MOC compatibility and required-feature
+validation are not yet performed by the importer.
 
 ## Disable Live2D
 
@@ -92,64 +158,3 @@ cmake --build build-live2d-off --config Debug --target KimPeanutEngine -- /m:2
 When disabled, no `Live2D` targets are added and no Cubism SDK path is needed.
 When changing an existing build tree, rerun CMake with the desired option so
 the cache is refreshed.
-
-## CMake integration
-
-The integration is composed at the module layer:
-
-```text
-KPENGINE_ENABLE_LIVE2D=ON
-  -> FindLive2DCubism.cmake
-  -> Live2DCubismFrameworkRuntime
-  -> Live2DRuntime
-  -> Live2D -> Live2DModule -> ModuleBootstrap -> Module
-  -> Live2DEditor::RegisterEditorExtensions
-  -> EditorExtensionRegistry -> EditorUILib
-```
-
-### Module ownership and startup
-
-`engine/editor/main.cpp` is the current application composition root. It calls
-`kpengine::module::RegisterModules(engine)`, which creates the enabled
-`Live2DModule` and passes it to `Engine::RegisterModule`. `Engine` owns the
-module after registration and schedules its `OnRegister`, `Initialize`,
-`Tick`, and reverse-order `Shutdown` callbacks.
-
-`Live2DModule` owns `Live2DSystem`, and `Live2DSystem` owns the
-`CubismLifecycle`. This keeps Cubism startup and teardown inside the Live2D
-module. The module bootstrap also asks `Live2DEditor` to register its viewer
-factory with the generic `EditorExtensionRegistry`; `EditorUI` does not know
-the Live2D type. A future dynamic module loader can replace the application
-bootstrap function without changing the engine lifecycle contract.
-
-Relevant files are:
-
-- `cmake/FindLive2DCubism.cmake` — validates the local SDK and creates the
-  imported `Live2D::CubismCore` target.
-- `engine/module/live2d/CMakeLists.txt` — compiles the selected backend-neutral
-  Cubism Framework sources, the Live2D lifecycle runtime, and the editor
-  placeholder target.
-- `engine/module/live2d/editor/` — Live2D-specific editor UI; currently draws
-  an animated aspect-fit placeholder until the Cubism render proxy is ready.
-  It registers its workspace component factory through the generic editor
-  extension registry; `EditorUILib` does not include Live2D headers.
-- `engine/module/module_bootstrap.*` — application composition-root entry that
-  creates enabled runtime modules and invokes their editor registration through
-  the generic registry without putting feature names in `EditorUI`.
-- `engine/editor/ui/editor_extension_registry.*` — generic editor extension
-  seam consumed by enabled modules during workspace promotion.
-- `engine/module/CMakeLists.txt` — adds the optional `Live2D` aggregate to the
-  existing `Module` target only when enabled.
-- `engine/test/unit/live2d/` — focused Cubism integration tests.
-
-The Framework renderer backends are intentionally not compiled. OpenGL/Vulkan
-rendering will be implemented through KimPeanutEngine's API-neutral Graphics
-contract in a later stage. The current editor panel only proves the UI layout
-and aspect-fit presentation seam; it does not load or draw a Cubism model.
-
-## Related documentation
-
-- [Architecture and ownership plan](PLANS.md)
-- [Roadmap and acceptance criteria](TODO.md)
-- [L2D1 stage design](.plan/L2D1.md)
-- [L2D1 implementation journal](../../.spec/journal/2026-09-08-live2d-l2d1.md)

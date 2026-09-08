@@ -18,6 +18,15 @@
   [Live2D roadmap](live2d/TODO.md),
   [L2D1 journal](../.spec/journal/2026-09-08-live2d-l2d1.md)
 
+- **Live2D L2D2 Asset integration (2026-09-08)** — added the module-owned
+  `Live2DModelResource`, custom type `0x1000`, bounded versioned `.live2d`
+  product codec/loader, and database-free `.model3.json` importer. The Hiyori
+  package under `asset/live2d` is covered by deterministic import, traversal,
+  malformed-product, ordinary AssetManager texture-dependency, and
+  Cubism-backed instance-isolation tests. Later rendering remains open. →
+  [L2D2 plan](live2d/.plan/L2D2.md),
+  [L2D2 journal](../.spec/journal/2026-09-08-live2d-l2d2.md)
+
 - **Asset AX1.0 baseline characterization (2026-09-08)** — pinned current
   built-in `AssetType` values, `AssetID` packing, suffix routing, typed payload
   lifetime, dependency-protected unload, owned-child rollback, and load

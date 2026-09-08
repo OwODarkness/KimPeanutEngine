@@ -31,8 +31,8 @@ In scope:
 
 - optional Cubism 5 SDK for Native R5 integration, enabled by default during
   engine development;
-- explicit extensible Asset type/loader/payload and importer-provider
-  contracts;
+- a generic Asset-owned extensible type/loader/payload and importer-provider
+  contract, consumed by Live2D without Live2D-specific Asset branches;
 - deterministic native `.live2d` product and offline importer;
 - immutable model Asset plus independent mutable model instances;
 - custom API-neutral Live2D renderer with correct still-frame drawable,
@@ -66,7 +66,8 @@ Out of scope:
 ## Stages
 
 1. [L2D1 — SDK integration](../../docs/live2d/.plan/L2D1.md).
-2. L2D2 — extensible Asset and importer contracts.
+2. [AX1 — Asset extensibility](../../docs/asset/.plan/AX1.md), then
+   [L2D2 — Live2D Asset integration](../../docs/live2d/.plan/L2D2.md).
 3. L2D3 — native Live2D product, importer, and runtime loader.
 4. L2D4 — mutable instance model and common RHI renderer.
 5. L2D5 — dedicated viewer and V1 validation evidence.
@@ -80,7 +81,9 @@ viewer is the final integration consumer, not the owner of module logic.
 - [ ] All [V1 acceptance items](../../docs/live2d/TODO.md#v1-acceptance) pass.
 - [ ] The exact SDK, Framework commit, Core package, runtime binary mode, and
   applicable licenses are recorded in the implementation journal.
-- [ ] Asset registry migration preserves all existing built-in asset tests.
+- [ ] The Asset-owned polymorphic payload/type/loader migration preserves
+  existing built-in type values, packed IDs, routing, payload access, and
+  asset tests.
 - [ ] Import/product tests prove deterministic bytes and transactional root
   publication under malformed/missing/path-escape failures.
 - [ ] Multiple instances from one asset have isolated parameter state.

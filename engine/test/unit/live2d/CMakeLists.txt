@@ -3,13 +3,16 @@ if(POLICY CMP0091)
 endif()
 
 add_executable(Live2DCoreTest
-    live2d_core_test.cpp)
+    live2d_core_test.cpp
+    live2d_asset_test.cpp)
 
 target_include_directories(Live2DCoreTest PRIVATE
     "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}"
     "${KPENGINE_CUBISM_CORE_INCLUDE_DIR}")
 
 target_link_libraries(Live2DCoreTest PRIVATE
+    Live2D
+    Live2DImport
     Live2DRuntime
     Live2DCubismFrameworkRuntime
     Live2D::CubismCore
@@ -23,6 +26,11 @@ target_compile_definitions(Live2DCoreTest PRIVATE
 set_property(TARGET Live2DCoreTest PROPERTY
     MSVC_RUNTIME_LIBRARY
     "${KPENGINE_LIVE2D_MSVC_RUNTIME}$<$<CONFIG:Debug>:Debug>")
+
+add_custom_command(TARGET Live2DCoreTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll
+        $<TARGET_FILE_DIR:Live2DCoreTest>)
 
 include(GoogleTest)
 gtest_discover_tests(Live2DCoreTest)

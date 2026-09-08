@@ -3,6 +3,7 @@
 
 #include "module/engine_module.h"
 #include "module/live2d/runtime/live2d_system.h"
+#include "module/live2d/runtime/live2d_registration.h"
 
 namespace kpengine::live2d
 {
@@ -17,10 +18,16 @@ namespace kpengine::live2d
 
         Live2DSystem& System() noexcept { return system_; }
         const Live2DSystem& System() const noexcept { return system_; }
+        const std::string& RegistrationDiagnostic() const noexcept
+        {
+            return registration_diagnostic_;
+        }
 
     private:
         kpengine::runtime::Engine *engine_ = nullptr;
         Live2DSystem system_;
+        bool registration_succeeded_ = false;
+        std::string registration_diagnostic_;
     };
 }
 

@@ -15,10 +15,12 @@
   The editor now contains a temporary aspect-fit animated placeholder panel;
   Cubism-backed model rendering remains below.
   → [L2D1 journal](../../.spec/journal/2026-09-08-live2d-l2d1.md)
-- [ ] **L2D2 — extensible Asset and importer contracts:** replace hard-coded
-  runtime type/loader/payload dispatch with validated explicit registration;
-  add offline importer-provider registration; migrate built-ins without
-  changing cache, dependency, observation, rollback, or unload semantics.
+- [x] **L2D2 — Live2D Asset integration** ([plan](.plan/L2D2.md)): consume the
+  generic Asset extension contract after AX1. Register the Live2D type,
+  `Live2DModelResource`, `.live2d` native loader, and `.model3.json` offline
+  importer without adding Live2D names or branches to Asset. L2D2.0–L2D2.4
+  are landed; renderer integration
+  remains in later stages.
 - [ ] **L2D3 — native Live2D product and importer:** import a safe
   `.model3.json` source closure into deterministic `.live2d` bytes plus native
   Texture dependencies; load the immutable payload through ordinary
@@ -41,8 +43,11 @@
   fails during configuration or initialization with a precise diagnostic.
 - [ ] Asset and AssetImport contain no Live2D include, type declaration, loader
   branch, or source-suffix branch.
-- [ ] Built-in and Live2D types use one registry path, with tested collisions,
-  payload mismatch rejection, dependency handling, and unloading.
+- [ ] Live2D uses the Asset-owned polymorphic payload and registration path;
+  Asset contains no Live2D name, include, payload, suffix, or loader branch.
+- [ ] Live2D integration tests cover payload type agreement, native loader
+  registration, texture dependency handling, rollback, and unloading through
+  ordinary AssetManager transactions.
 - [ ] Import rejects path escape, malformed JSON, missing `.moc3`/texture data,
   unsupported required features, and corrupt products without publishing a
   partial root.
@@ -77,8 +82,8 @@
 
 ## Open decisions before L2D3
 
-- [ ] Select the stable external `AssetTypeId` numeric code and record it in a
-  collision-tested registry catalog.
+- [ ] Request and record the stable Live2D type value through the Asset-owned
+  type registry; do not add a Live2D-specific type branch to Asset.
 - [ ] Decide whether V1 publishes to an explicit authored output path or uses a
   new generic content-addressed archive API. Do not couple Live2D to the current
   model-specific database internals.
