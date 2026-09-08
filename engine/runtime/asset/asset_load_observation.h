@@ -121,6 +121,10 @@ namespace kpengine::asset
         // Closes the observation scope; existing operations and their children
         // remain observable, but new root operations are excluded.
         void Seal() noexcept;
+        // Requests cooperative cancellation of the load using this session.
+        // Existing loader calls finish their current bounded operation, while
+        // the AssetManager stops before starting the next source/dependency.
+        void Cancel() noexcept;
         AssetLoadSnapshot GetSnapshot() const;
 
     private:

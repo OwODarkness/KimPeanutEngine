@@ -283,6 +283,22 @@ TEST(RuntimeStartupCoordinatorTest, TerminalStateIsImmutableToOrdinaryMutators)
     EXPECT_EQ(coordinator.GetSnapshot().revision, rolled_back.revision);
 }
 
+TEST(RuntimeStartupCoordinatorTest, CancelCancelsAttachedAssetSession)
+{
+    const auto session = AssetManager::GetInstance().BeginLoadObservation();
+    kpengine::runtime::StartupCoordinator coordinator;
+    coordinator.Begin();
+    coordinator.SetAssetSession(session);
+
+    coordinator.Cancel("Window closed during startup");
+
+    const auto snapshot = coordinator.GetSnapshot();
+    EXPECT_EQ(snapshot.phase, kpengine::runtime::StartupPhase::Cancelled);
+    ASSERT_TRUE(snapshot.asset.has_value());
+    EXPECT_TRUE(snapshot.asset->sealed);
+    EXPECT_TRUE(snapshot.asset->terminal);
+}
+
 TEST(RuntimeStartupCoordinatorTest, WaiterObservesNestedAssetRevisionChanges)
 {
     auto &assets = AssetManager::GetInstance();

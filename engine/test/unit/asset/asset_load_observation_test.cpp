@@ -265,6 +265,23 @@ TEST(AssetLoadObservationTest, CacheHitDoesNotProbeSourceOrDecodePayload)
     manager.UnRegisterAsset(material_id);
 }
 
+TEST(AssetLoadObservationTest, CancelledSessionStopsNewLoadBeforeRegistration)
+{
+    AssetObservationFixture fixture;
+    const std::filesystem::path shader = fixture.Path("cancelled.shader");
+    WriteText(shader, R"({"version": 1, "shaders": []})");
+
+    AssetManager &manager = AssetManager::GetInstance();
+    auto session = manager.BeginLoadObservation();
+    session.Cancel();
+
+    EXPECT_FALSE(manager.LoadSync(shader.string(), session).IsValid());
+    const auto snapshot = session.GetSnapshot();
+    EXPECT_TRUE(snapshot.sealed);
+    EXPECT_TRUE(snapshot.terminal);
+    EXPECT_EQ(snapshot.summary.operations_started, 0u);
+}
+
 TEST(AssetLoadObservationTest, FailureDiagnosticsKeepRelativeDisplayPath)
 {
     AssetManager &manager = AssetManager::GetInstance();

@@ -7,6 +7,7 @@
 #include <limits>
 #include <magic_enum/magic_enum.hpp>
 #include <stdexcept>
+#include <thread>
 #if defined(KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT)
 #include "assimp_model_loader.h"
 #endif
@@ -595,6 +596,25 @@ namespace kpengine::asset
                                                                     parent_operation)
                                                               : 0);
         ObservedOperation observation(observation_state, operation_id);
+        const auto cancelled = [&observation, &display_path, &session_state](
+                                   AssetLoadPhase phase) noexcept
+        {
+            if (!session_state || !session_state->IsCancellationRequested())
+            {
+                return false;
+            }
+            if (observation.IsActive())
+            {
+                observation.Fail(MakeDiagnostic(observation.ID(), display_path, phase,
+                                                "asset load cancelled"));
+            }
+            return true;
+        };
+
+        if (cancelled(AssetLoadPhase::CacheLookup))
+        {
+            return AssetID();
+        }
 
         if (extension.empty())
         {
@@ -693,16 +713,22 @@ namespace kpengine::asset
         }
         try
         {
+            std::unique_lock<std::mutex> lock(load_mutex_, std::defer_lock);
+            while (!lock.try_lock())
             {
-                std::lock_guard<std::mutex> lock(load_mutex_);
-                loader_acquired = observation.IsActive()
+                if (cancelled(AssetLoadPhase::WaitingForLoader))
+                {
+                    return AssetID();
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+            loader_acquired = observation.IsActive()
+                                  ? std::chrono::steady_clock::now()
+                                  : std::chrono::steady_clock::time_point{};
+            source_load_started = observation.IsActive()
                                       ? std::chrono::steady_clock::now()
                                       : std::chrono::steady_clock::time_point{};
-                source_load_started = observation.IsActive()
-                                          ? std::chrono::steady_clock::now()
-                                          : std::chrono::steady_clock::time_point{};
-                loaded = LoadByExtension(path, type, register_info);
-            }
+            loaded = LoadByExtension(path, type, register_info);
             source_load_finished = observation.IsActive()
                                        ? std::chrono::steady_clock::now()
                                        : std::chrono::steady_clock::time_point{};
@@ -723,6 +749,11 @@ namespace kpengine::asset
                                                 "loader threw an exception"));
             }
             throw;
+        }
+
+        if (cancelled(AssetLoadPhase::LoadSource))
+        {
+            return AssetID();
         }
 
         if (observation.IsActive())
@@ -799,6 +830,10 @@ namespace kpengine::asset
                                            register_info.dependency_requests.size());
             for (const AssetRegisterInfo::DependencyRequest &request : register_info.dependency_requests)
             {
+                if (cancelled(AssetLoadPhase::ResolveDependencies))
+                {
+                    return AssetID();
+                }
                 AssetID dependency;
                 try
                 {
@@ -866,6 +901,10 @@ namespace kpengine::asset
         if (observation.IsActive())
         {
             observation.SetPhase(AssetLoadPhase::Register);
+        }
+        if (cancelled(AssetLoadPhase::Register))
+        {
+            return AssetID();
         }
         try
         {

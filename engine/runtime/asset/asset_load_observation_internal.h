@@ -50,7 +50,9 @@ namespace kpengine::asset::detail
                       const std::string &diagnostic) noexcept;
 
         void Seal() noexcept;
+        void Cancel() noexcept;
         bool IsSealed() const noexcept;
+        bool IsCancellationRequested() const noexcept;
         AssetLoadSnapshot GetSnapshot() const;
 
     private:
@@ -77,6 +79,7 @@ namespace kpengine::asset::detail
         std::chrono::steady_clock::time_point started_;
         std::chrono::steady_clock::time_point terminal_time_{};
         bool sealed_ = false;
+        bool cancellation_requested_ = false;
         bool terminal_ = false;
         bool recording_disabled_ = false;
         AssetLoadOperationID next_operation_ = 1;

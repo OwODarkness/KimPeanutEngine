@@ -146,7 +146,7 @@ namespace kpengine::runtime
         }
         if (asset_session)
         {
-            asset_session->Seal();
+            asset_session->Cancel();
         }
         changed_cv_.notify_all();
     }

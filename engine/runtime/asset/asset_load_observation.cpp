@@ -276,10 +276,35 @@ namespace kpengine::asset::detail
         }
     }
 
+    void AssetLoadSessionState::Cancel() noexcept
+    {
+        const auto cancelled_time = Now();
+        std::lock_guard<std::mutex> lock(mutex_);
+        if (cancellation_requested_)
+        {
+            return;
+        }
+        cancellation_requested_ = true;
+        sealed_ = true;
+        IncrementRevision();
+        if (active_.empty() && !terminal_)
+        {
+            terminal_ = true;
+            terminal_time_ = cancelled_time;
+            IncrementRevision();
+        }
+    }
+
     bool AssetLoadSessionState::IsSealed() const noexcept
     {
         std::lock_guard<std::mutex> lock(mutex_);
         return sealed_;
+    }
+
+    bool AssetLoadSessionState::IsCancellationRequested() const noexcept
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return cancellation_requested_;
     }
 
     AssetLoadSnapshot AssetLoadSessionState::GetSnapshot() const
@@ -400,6 +425,14 @@ namespace kpengine::asset
         if (state_)
         {
             state_->Seal();
+        }
+    }
+
+    void AssetLoadSession::Cancel() noexcept
+    {
+        if (state_)
+        {
+            state_->Cancel();
         }
     }
 
