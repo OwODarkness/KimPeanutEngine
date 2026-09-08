@@ -9,6 +9,9 @@ below are stable built-ins today.
 | `commands.list` | List registered command names. | [`commands.list`](#commandslist) |
 | `help` | Show help for one command or list names. | [`help`](#help) |
 | `capture.screenshot` | Capture a live final or diagnostic render view and export a PNG. | [`capture.screenshot`](#capturescreenshot) |
+| `gpu-stats` | Return the latest completed-frame GPU statistics. | [`gpu-stats`](#gpu-stats-cpu-stats-and-stats) |
+| `cpu-stats` | Return the latest completed-frame CPU and frame-loop statistics. | [`cpu-stats`](#gpu-stats-cpu-stats-and-stats) |
+| `stats` | Return the latest completed-frame CPU and GPU statistics. | [`stats`](#gpu-stats-cpu-stats-and-stats) |
 
 ## `commands.list`
 
@@ -86,8 +89,31 @@ white for visible and black for occluded, and `spot_shadow_depth` visualizes
 the sampled D32 spotlight map; `point_shadow_depth` visualizes the fixed
 3×2 point-shadow depth atlas.
 
+## `gpu-stats`, `cpu-stats`, and `stats`
+
+These Runtime commands read the last fully completed render frame. They are
+available from the Editor console, Agent transport, Lua, and in-process C++
+callers. The `--json` text flag explicitly selects machine-readable output;
+structured Agent calls use `{"json":true}`. Agent responses are already JSON
+lines, and the command-specific values are in `data` under the stable
+`kimpeanut.profiler.v1` schema.
+
+```text
+gpu-stats --json
+cpu-stats --json
+stats --json
+```
+
+```json
+{"op":"execute","command":"stats","arguments":{"json":true}}
+```
+
+Unavailable GPU timings and utilization are returned as JSON `null`. The
+snapshot is published by Render at the presentation boundary, so a Game-thread
+command never reads a partially updated render profile.
+
 ## Planned, not registered
 
-`engine.stats`, `render.reload_shaders`, and render debug-view commands are
-not predefined yet. They remain deliberately absent until their underlying
-services have stable ownership and safe execution boundaries.
+`engine.stats`, `render.reload_shaders`, and render debug-view commands are not
+predefined yet. They remain deliberately absent until their underlying services
+have stable ownership and safe execution boundaries.

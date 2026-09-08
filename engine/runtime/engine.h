@@ -14,6 +14,7 @@
 #include "base/type.h"
 #include "command/command_local_transport.h"
 #include "runtime_startup.h"
+#include "stats/performance_stats_command_provider.h"
 
 namespace kpengine
 {
@@ -176,6 +177,7 @@ namespace kpengine
 
             command::LocalCommandTransportConfig command_transport_config_{};
             std::unique_ptr<command::CommandLocalTransport> command_transport_;
+            PerformanceStatsCommandRegistrationResult performance_stats_commands_{};
 
             // Engine-owned editor. Its UI (ImGui) is initialized and ticked on the
             // render thread where the GL/Vulkan context lives (see InitEditorUI).

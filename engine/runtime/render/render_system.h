@@ -130,6 +130,8 @@ namespace kpengine::render
             RenderProfileSnapshot profile;
         };
         RenderSystemMetrics GetMetrics() const;
+        // Returns the last fully completed frame without racing the render thread.
+        RenderSystemMetrics GetPublishedMetrics() const;
         IRenderableSourceSink *GetRenderableSourceSink()
         { return scene_coordinator_.GetRenderableSourceSink(); }
         ILightSourceSink *GetLightSourceSink()
@@ -153,6 +155,7 @@ namespace kpengine::render
         bool IsState(RenderSystemLifecycleState expected) const;
         void LogCompletedProfileSummary();
         void ObserveProfileFrame();
+        void PublishMetricsSnapshot();
 
         FrameContext *GetCurrentFrameContext();
 
@@ -176,6 +179,7 @@ namespace kpengine::render
         RenderSystemLifecycleState frame_return_state_ =
             RenderSystemLifecycleState::Uninitialized;
         RenderProfileSnapshot profile_;
+        std::shared_ptr<const RenderSystemMetrics> published_metrics_;
         RenderProfileWindow profile_window_{GetSponzaProfileScenario().warmup_frames,
                                             GetSponzaProfileScenario().sample_frames};
         std::chrono::steady_clock::time_point profile_frame_start_{};

@@ -1,5 +1,6 @@
 #include "render_system.h"
 
+#include <atomic>
 #include <stdexcept>
 #include <chrono>
 #include <utility>
@@ -357,6 +358,7 @@ namespace kpengine::render
         if (backend_->GetGraphicsAPI() != GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
             ObserveProfileFrame();
+            PublishMetricsSnapshot();
         }
         lifecycle_state_ = frame_return_state_;
         return true;
@@ -376,6 +378,7 @@ namespace kpengine::render
         if (backend_ && backend_->GetGraphicsAPI() == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
             ObserveProfileFrame();
+            PublishMetricsSnapshot();
         }
     }
 
@@ -595,6 +598,28 @@ namespace kpengine::render
                     .count();
         }
         return metrics;
+    }
+
+    RenderSystem::RenderSystemMetrics RenderSystem::GetPublishedMetrics() const
+    {
+        const std::shared_ptr<const RenderSystemMetrics> metrics =
+            std::atomic_load_explicit(&published_metrics_, std::memory_order_acquire);
+        return metrics != nullptr ? *metrics : RenderSystemMetrics{};
+    }
+
+    void RenderSystem::PublishMetricsSnapshot()
+    {
+        auto metrics = std::make_shared<RenderSystemMetrics>();
+        metrics->prepared_shader_count = prepared_assets_ != nullptr
+                                             ? static_cast<uint32_t>(
+                                                   prepared_assets_->GetPreparedShaderCount())
+                                             : 0U;
+        metrics->triangle_count = deferred_renderer_ ? deferred_renderer_->GetTriangleCount() : 0U;
+        metrics->gpu_usage_percent = backend_ ? backend_->GetGpuUsagePercent() : std::nullopt;
+        metrics->profile = profile_;
+        std::shared_ptr<const RenderSystemMetrics> published = std::move(metrics);
+        std::atomic_store_explicit(&published_metrics_, std::move(published),
+                                   std::memory_order_release);
     }
 
     graphics::IEditorPresentationBridge *RenderSystem::GetEditorPresentationBridge()

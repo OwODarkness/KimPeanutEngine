@@ -1,0 +1,42 @@
+{
+  "version": 1,
+  "environment": {
+    "texture": "texture/hdr/qwantani_dusk_2_puresky_4k.hdr",
+    "ibl_intensity": 0.35
+  },
+  "objects": [
+    {
+      "id": "quartz_bunny",
+      "kind": "static_mesh",
+      "transform": { "position": [0, -80, 0], "rotation_degrees": [0, 0, 0], "scale": [800, 800, 800] },
+      "model": "model/bunny/stanford-bunny",
+      "material": "material/quartz_pbr.material",
+      "materials": ["material/quartz_pbr.material"]
+    },
+    {
+      "id": "main_camera",
+      "kind": "camera",
+      "transform": {
+        "position": [0.0, 0.0, 300.0],
+        "rotation_degrees": [0.0, -90.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "projection": "perspective",
+      "near_plane": 1.0,
+      "far_plane": 2000.0,
+      "field_of_view_degrees": 45.0,
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "id": "key_light",
+      "kind": "point_light",
+      "position": [2.0, 3.0, 4.0],
+      "color": [1.0, 1.0, 1.0],
+      "intensity": 500.0,
+      "range": 20.0,
+      "enabled": true,
+      "casts_shadow": true
+    }
+  ]
+}

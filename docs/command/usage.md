@@ -40,6 +40,19 @@ KimPeanutEngine --graphics-api opengl `
 Use `--graphics-api vulkan` or `--graphics-api opengl` to select the backend
 for a reproducible capture run. The default remains Vulkan.
 
+Once the live Engine is running, query performance from the same command
+transport:
+
+```json
+{"op":"execute","command":"gpu-stats","arguments":{"json":true}}
+{"op":"execute","command":"cpu-stats","arguments":{"json":true}}
+{"op":"execute","command":"stats","arguments":{"json":true}}
+```
+
+From the Editor `~` console, the equivalent explicit text form is
+`gpu-stats --json`, `cpu-stats --json`, or `stats --json`. The returned `data`
+object uses the `kimpeanut.profiler.v1` schema.
+
 Lua uses the same registry and result protocol on the Game/Lua thread:
 
 ```lua

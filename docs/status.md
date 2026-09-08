@@ -659,8 +659,17 @@
   PNG export in `RuntimeScreenshotService`, and translates final capture/export
   state into structured command data. Agent/test callers can use the registry
   without Editor, ImGui, or direct Render/Graphics access; shader reload,
-  debug-view, and stats commands remain deferred until their services are real.
+  and debug-view commands remain deferred until their services are real.
   → [command system plan](command/command_system.md)
+
+- **Performance stats command provider (2026-09-08)** — Runtime now registers
+  `gpu-stats`, `cpu-stats`, and combined `stats` after scene startup. Each reads
+  a Render-published completed-frame snapshot, accepts an explicit `--json`
+  text flag (or structured `json: true`), and returns the stable
+  `kimpeanut.profiler.v1` fields through the existing JSON-lines transport.
+  The small `performance_profile.level` fixture uses the HDR environment and
+  existing Stanford bunny model for repeatable command validation. → [built-in
+  command catalogue](command/built_in_commands.md)
 
 - **Command system C5 (2026-08-29)** — Runtime now binds WindowSystem key,
   mouse, cursor, and scroll dispatchers into InputSystem. Editor owns a

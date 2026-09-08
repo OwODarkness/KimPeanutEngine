@@ -78,6 +78,7 @@ namespace kpengine
                 command_transport_->Stop();
                 command_transport_.reset();
             }
+            performance_stats_commands_ = {};
             editor_.reset();
         }
 
@@ -311,6 +312,37 @@ namespace kpengine
                 throw std::runtime_error("Runtime startup failed: " + startup_result.diagnostic);
             }
 
+            command::CommandRegistry *const registry =
+                global_runtime_context.GetCommandRegistry();
+            if (registry != nullptr && global_runtime_context.render_system_ != nullptr)
+            {
+                auto registration = RegisterPerformanceStatsCommands(
+                    *registry,
+                    [this]
+                    {
+                        const render::RenderSystem::RenderSystemMetrics metrics =
+                            global_runtime_context.render_system_->GetPublishedMetrics();
+                        const FrameLoopMetrics frame = GetFrameLoopMetrics();
+                        return PerformanceStatsSnapshot{
+                            metrics.profile,
+                            {frame.frame_total_ms, frame.game_wait_ms, frame.render_work_ms,
+                             frame.frame_pacing_ms, frame.game_tick_work_ms,
+                             frame.game_tick_pacing_ms},
+                            metrics.triangle_count,
+                            metrics.gpu_usage_percent};
+                    });
+                if (!registration.IsSuccess())
+                {
+                    KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                           "Could not register performance stats commands: %s",
+                           registration.diagnostic.c_str());
+                }
+                else
+                {
+                    performance_stats_commands_ = std::move(registration);
+                }
+            }
+
             startup_coordinator_.SetPhase(StartupPhase::ActivatingEditorWorkspace,
                                           "Activating editor workspace");
             editor_->ActivateWorkspace();
@@ -499,6 +531,7 @@ namespace kpengine
                 command_transport_->Stop();
                 command_transport_.reset();
             }
+            performance_stats_commands_ = {};
             // Runs after the render thread joined, so the editor's ImGui state was
             // already shut down on that thread (CloseUI); this only clears the
             // editor-side context.
@@ -537,6 +570,7 @@ namespace kpengine
             {
                 render_thread_.join();
             }
+            performance_stats_commands_ = {};
         }
 
         void Engine::GameTick()

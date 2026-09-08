@@ -157,3 +157,26 @@ TEST(CommandParserTest, CompletesCommandsArgumentsAndEnumValuesDeterministically
               (std::vector<std::string>{"count=", "enabled=", "label=", "limit=", "mode=",
                                         "ratio="}));
 }
+
+TEST(CommandParserTest, SupportsExplicitBooleanFlags)
+{
+    const CommandDesc descriptor{
+        "test.flags",
+        "ParserTest",
+        "Parse an explicit flag",
+        CommandCategory::Test,
+        {},
+        {{{"json", CommandValueType::Boolean, false, false, {}}}},
+        [](const CommandCall &, const kpengine::runtime::command::CommandContext &)
+        { return kpengine::runtime::command::CommandResult{CommandStatus::Success, {}, 0, {}}; },
+    };
+
+    const auto flag = CommandParser::Parse("test.flags --json", descriptor);
+    ASSERT_TRUE(flag.IsSuccess()) << flag.diagnostic;
+    EXPECT_TRUE(std::get<bool>(flag.call->arguments.at("json")));
+
+    const auto named = CommandParser::Parse("test.flags json=false", descriptor);
+    ASSERT_TRUE(named.IsSuccess()) << named.diagnostic;
+    EXPECT_FALSE(std::get<bool>(named.call->arguments.at("json")));
+    EXPECT_NE(CommandParser::FormatHelp(descriptor).find("[--json]"), std::string::npos);
+}

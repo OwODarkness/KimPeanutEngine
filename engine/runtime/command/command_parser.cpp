@@ -373,7 +373,11 @@ namespace kpengine::runtime::command
         output << "\nUsage: " << descriptor.name;
         for (const CommandArgumentDesc &argument : descriptor.schema.arguments)
         {
-            output << (argument.required ? " " : " [") << argument.name;
+            const std::string display_name =
+                !argument.required && argument.type == CommandValueType::Boolean
+                    ? "--" + argument.name
+                    : argument.name;
+            output << (argument.required ? " " : " [") << display_name;
             if (!argument.required)
             {
                 output << "]";
@@ -384,7 +388,11 @@ namespace kpengine::runtime::command
             output << "\nArguments:";
             for (const CommandArgumentDesc &argument : descriptor.schema.arguments)
             {
-                output << "\n  " << argument.name << ": " << ExpectedTypeName(argument.type);
+                const std::string display_name =
+                    !argument.required && argument.type == CommandValueType::Boolean
+                        ? "--" + argument.name
+                        : argument.name;
+                output << "\n  " << display_name << ": " << ExpectedTypeName(argument.type);
                 if (argument.required)
                 {
                     output << ", required";
@@ -507,6 +515,22 @@ namespace kpengine::runtime::command
             const size_t equals = token.find('=');
             if (equals == std::string::npos)
             {
+                if (token.rfind("--", 0) == 0)
+                {
+                    const std::string name = token.substr(2);
+                    const CommandArgumentDesc *const argument =
+                        FindArgument(descriptor.schema, name);
+                    if (argument == nullptr || argument->type != CommandValueType::Boolean)
+                    {
+                        return {{}, "argument '" + token + "': expected a boolean flag"};
+                    }
+                    if (raw_arguments.find(name) != raw_arguments.end())
+                    {
+                        return {{}, "argument '" + name + "': duplicate argument"};
+                    }
+                    raw_arguments.emplace(name, true);
+                    continue;
+                }
                 positional.push_back(token);
                 continue;
             }
@@ -612,9 +636,12 @@ namespace kpengine::runtime::command
         for (size_t index = 1; index + (trailing_space ? 0 : 1) < tokens.size(); ++index)
         {
             const std::string name = TokenArgumentName(tokens[index].value);
-            if (tokens[index].value.find('=') != std::string::npos)
+            if (tokens[index].value.find('=') != std::string::npos ||
+                tokens[index].value.rfind("--", 0) == 0)
             {
-                used_names.insert(name);
+                used_names.insert(tokens[index].value.rfind("--", 0) == 0
+                                      ? tokens[index].value.substr(2)
+                                      : name);
             }
         }
 
@@ -671,6 +698,10 @@ namespace kpengine::runtime::command
         {
             if (used_names.find(argument.name) == used_names.end())
             {
+                if (!argument.required && argument.type == CommandValueType::Boolean)
+                {
+                    AddCompletion(candidates, "--" + argument.name, current);
+                }
                 AddCompletion(candidates, argument.name + "=", current);
             }
         }

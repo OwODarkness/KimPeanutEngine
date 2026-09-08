@@ -24,6 +24,21 @@ target_link_libraries(ScreenshotCommandProviderTest PRIVATE RuntimeScreenshotCom
 include(GoogleTest)
 gtest_discover_tests(ScreenshotCommandProviderTest)
 
+add_executable(PerformanceStatsCommandProviderTest
+    performance_stats_command_provider_test.cpp
+)
+
+target_include_directories(PerformanceStatsCommandProviderTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+)
+
+target_link_libraries(PerformanceStatsCommandProviderTest PRIVATE
+    RuntimePerformanceStatsCommand KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(PerformanceStatsCommandProviderTest)
+
 add_executable(RuntimeStartupTest
     runtime_startup_test.cpp
 )

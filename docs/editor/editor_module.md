@@ -184,6 +184,7 @@ the bottom output log without overlap.
 - **`EditorSceneComponent`** — a window presenting a `FrameBuffer` (the scene view) that tracks mouse state (`is_left_mouse_down/drag/release/click`, position) and exposes `FOnMouseClickCallback` + `is_scene_window_focus`. It is the input seam for scene picking.
 - **`EditorCameraControlComponent`** — camera config window (fov, move/rotate speed, near/far, reset) over a `RenderCamera*`.
 - **`EditorLogComponent`** — the log window (`log/`). Created by `EditorUI` with the context's `LogSystem*` plus the `LogLevelColorTable` and rendered through the component tree; each entry is `TextColored` with its level's color, which comes from `config/settings.json` ([Project settings](#project-settings-configsettingsjson)).
+- **`EditorGpuProfilerComponent`** — the performance profiler. It displays frame, CPU, GPU, pass, cache, descriptor, recorder, texture, and summary metrics; the current snapshot can be copied as either human-readable text or pretty-printed JSON (`kimpeanut.profiler.v1`).
 - **`EditorProfileBarComponent`** — the bottom status bar (`profile/`). Samples a list of injected `EditorMetric`s and draws them in one row, anchored to the bottom of the main viewport via public ImGui API only. It never sees the engine or Win32 — the metrics are the decoupling seam.
 
 ### Profile metrics (status bar)
