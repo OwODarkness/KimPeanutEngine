@@ -15,6 +15,7 @@
 #include "render/render_system.h"
 #include "gameplay/world/gameplay_world.h"
 #include "editor/editor.h"
+#include "module/engine_module.h"
 
 // [reconstruction] The legacy render/world systems are still being reconstructed;
 // the editor is back (minimal — a single ImGui window). The render module remains
@@ -79,7 +80,24 @@ namespace kpengine
                 command_transport_.reset();
             }
             performance_stats_commands_ = {};
+            ShutdownModules();
             editor_.reset();
+        }
+
+        void Engine::RegisterModule(std::unique_ptr<module::EngineModule> module)
+        {
+            if (!module)
+            {
+                throw std::invalid_argument("Engine cannot register a null module");
+            }
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "Engine modules must be registered before Engine::Initialize");
+            }
+
+            module->OnRegister(*this);
+            modules_.push_back(std::move(module));
         }
 
         void Engine::SetCommandTransportConfig(command::LocalCommandTransportConfig config)
@@ -138,6 +156,8 @@ namespace kpengine
             startup_coordinator_.SetPhase(StartupPhase::PresentationStarting,
                                           "Starting presentation");
             auto startup_guard = ScopeGuard{[this]() noexcept { AbortStartupTransaction(); }};
+
+            InitializeModules();
 
             // Editor setup (pointers into the runtime context, no GPU state) is safe
             // on the main thread; its ImGui UI is built on the render thread by
@@ -465,6 +485,7 @@ namespace kpengine
                 }
                 editor_attached_ = false;
             }
+            ShutdownModules();
         }
 
         void Engine::EndStartupAccess() noexcept
@@ -537,6 +558,7 @@ namespace kpengine
             // editor-side context.
             editor_->Clear();
             editor_attached_ = false;
+            ShutdownModules();
 
             // RuntimeContext::Clear() is terminal: it releases the global
             // composition root rather than leaving a reconstructible shell.
@@ -594,6 +616,8 @@ namespace kpengine
                 global_runtime_context.TickGameplay(1.0f / target_fps);
             }
 
+            TickModules(1.0f / static_cast<float>(target_fps));
+
             {
                 std::lock_guard<std::mutex> lock(game_ready_mutex_);
                 is_game_thread_loaded_ = true;
@@ -617,6 +641,60 @@ namespace kpengine
                         .count();
             }
             game_tick_pacing_ms_.store(pacing_ms, std::memory_order_relaxed);
+        }
+
+        void Engine::InitializeModules()
+        {
+            initialized_module_count_ = 0;
+            for (const std::unique_ptr<module::EngineModule> &module : modules_)
+            {
+                if (!module->Initialize(*this))
+                {
+                    throw std::runtime_error(
+                        std::string("Module initialization failed: ") + module->Name());
+                }
+                ++initialized_module_count_;
+            }
+        }
+
+        void Engine::TickModules(float delta_time) noexcept
+        {
+            for (std::size_t index = 0; index < initialized_module_count_; ++index)
+            {
+                module::EngineModule &module = *modules_[index];
+                try
+                {
+                    module.Tick(delta_time);
+                }
+                catch (const std::exception &error)
+                {
+                    KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                           "Module '%s' tick failed: %s", module.Name(), error.what());
+                }
+                catch (...)
+                {
+                    KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                           "Module '%s' tick failed with an unknown exception",
+                           module.Name());
+                }
+            }
+        }
+
+        void Engine::ShutdownModules() noexcept
+        {
+            while (initialized_module_count_ > 0)
+            {
+                --initialized_module_count_;
+                try
+                {
+                    modules_[initialized_module_count_]->Shutdown();
+                }
+                catch (...)
+                {
+                    KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                           "Module shutdown raised an exception");
+                }
+            }
         }
 
         void Engine::RenderThreadFunc()

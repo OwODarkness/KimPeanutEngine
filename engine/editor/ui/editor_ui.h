@@ -123,6 +123,7 @@ namespace kpengine::editor
                                  runtime::ISceneCameraControlSink *camera_control_sink,
                                  runtime::ISceneSelectionSink *scene_selection_sink,
                                  ActorEditorModel *actor_model);
+        void BuildRegisteredWorkspaceExtensions();
         void BuildDebugViewerWindow(render::RenderSystem *render_system);
         void BuildGpuProfilerWindow(runtime::Engine *engine,
                                     render::RenderSystem *render_system,

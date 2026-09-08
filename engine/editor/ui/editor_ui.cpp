@@ -17,6 +17,7 @@
 #include "editor/ui/component/editor_gpu_profiler_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
 #include "editor/ui/component/editor_viewport_component.h"
+#include "editor/ui/editor_extension_registry.h"
 #include "editor/log/editor_log_component.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/profile/editor_builtin_metrics.h"
@@ -230,6 +231,18 @@ namespace kpengine::editor
             render_system, renderer_.get()));
     }
 
+    void EditorUI::BuildRegisteredWorkspaceExtensions()
+    {
+        for (const auto &factory :
+             GetEditorExtensionRegistry().SnapshotWorkspaceComponentFactories())
+        {
+            if (std::unique_ptr<EditorUIComponent> component = factory())
+            {
+                components_.push_back(std::move(component));
+            }
+        }
+    }
+
     void EditorUI::BuildGpuProfilerWindow(runtime::Engine *engine,
                                           render::RenderSystem *render_system,
                                           const EditorUI *editor_ui)
@@ -357,6 +370,7 @@ namespace kpengine::editor
             BuildViewportWindow(init_info_.render_system, init_info_.window_system,
                                 init_info_.input_system, init_info_.camera_control_sink,
                                 init_info_.scene_selection_sink, actor_model_.get());
+            BuildRegisteredWorkspaceExtensions();
             BuildDebugViewerWindow(init_info_.render_system);
             BuildLogWindow(init_info_.log_system, log_colors_);
             BuildProfileBar(init_info_.engine, init_info_.memory_sampler,

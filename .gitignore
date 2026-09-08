@@ -1,5 +1,7 @@
 .vscode/
 .idea/
+.vs/
+.venv/
 
 # Retired code kept for reference only (not built, see docs/dead_code.md)
 deprecated/
@@ -79,6 +81,22 @@ compile_commands.json
 Testing/
 .ninja_*
 
+# CMake output when configured in a source or custom directory
+CMakeFiles/
+CMakeScripts/
+CMakeCache.txt
+cmake_install.cmake
+install_manifest.txt
+
+# MSVC and compiler-generated metadata
+*.pdb
+*.ilk
+*.idb
+*.ipdb
+*.iobj
+*.tlog
+*.lastbuildstate
+
 # CMake user settings
 CMakeUserPresets.json
 
@@ -101,6 +119,18 @@ imgui.ini
 
 # Logs
 logs/
+*.log
+
+# Common generated tool/runtime directories
+__pycache__/
+.pytest_cache/
+.mypy_cache/
+*.pyc
+coverage/
+
+# External prebuilt tools kept outside source control
+/third_party/assimp/bin/
+/third_party/vulkan/bin/
 
 # Generated render captures and visual-validation artifacts
 save/

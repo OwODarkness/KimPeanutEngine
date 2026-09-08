@@ -7,9 +7,11 @@
 #include <mutex>
 #include <memory>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "base/type.h"
 #include "command/command_local_transport.h"
@@ -26,6 +28,11 @@ namespace kpengine
     namespace editor
     {
         class Editor;
+    }
+
+    namespace module
+    {
+        class EngineModule;
     }
 
     namespace runtime
@@ -48,6 +55,9 @@ namespace kpengine
             Engine();
             ~Engine();
 
+            // Takes ownership of a module before Initialize(). The module is
+            // then driven by this Engine for the remainder of its lifetime.
+            void RegisterModule(std::unique_ptr<module::EngineModule> module);
             void Initialize();
             void Clear();
             void Run();
@@ -96,6 +106,9 @@ namespace kpengine
             void EndStartupAccess() noexcept;
             void WaitForStartupAccessToEnd() noexcept;
             void SealStartupObservation() noexcept;
+            void InitializeModules();
+            void TickModules(float delta_time) noexcept;
+            void ShutdownModules() noexcept;
             float CalculateDeltaTime();
             void CalculateFPS(float delta_time);
 
@@ -178,6 +191,9 @@ namespace kpengine
             command::LocalCommandTransportConfig command_transport_config_{};
             std::unique_ptr<command::CommandLocalTransport> command_transport_;
             PerformanceStatsCommandRegistrationResult performance_stats_commands_{};
+
+            std::vector<std::unique_ptr<module::EngineModule>> modules_;
+            std::size_t initialized_module_count_ = 0;
 
             // Engine-owned editor. Its UI (ImGui) is initialized and ticked on the
             // render thread where the GL/Vulkan context lives (see InitEditorUI).

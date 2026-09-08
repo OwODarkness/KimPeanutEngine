@@ -1,0 +1,28 @@
+if(POLICY CMP0091)
+    cmake_policy(SET CMP0091 NEW)
+endif()
+
+add_executable(Live2DCoreTest
+    live2d_core_test.cpp)
+
+target_include_directories(Live2DCoreTest PRIVATE
+    "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}"
+    "${KPENGINE_CUBISM_CORE_INCLUDE_DIR}")
+
+target_link_libraries(Live2DCoreTest PRIVATE
+    Live2DRuntime
+    Live2DCubismFrameworkRuntime
+    Live2D::CubismCore
+    KP::GoogleTest)
+
+string(REPLACE "\\" "/" _kpengine_live2d_moc_path
+    "${KPENGINE_LIVE2D_MOC_PATH}")
+target_compile_definitions(Live2DCoreTest PRIVATE
+    KPENGINE_LIVE2D_MOC_PATH="${_kpengine_live2d_moc_path}")
+
+set_property(TARGET Live2DCoreTest PROPERTY
+    MSVC_RUNTIME_LIBRARY
+    "${KPENGINE_LIVE2D_MSVC_RUNTIME}$<$<CONFIG:Debug>:Debug>")
+
+include(GoogleTest)
+gtest_discover_tests(Live2DCoreTest)

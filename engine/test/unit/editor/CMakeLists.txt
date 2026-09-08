@@ -14,6 +14,10 @@ target_link_libraries(EditorUILifecycleTest PRIVATE
     KP::GoogleTest
 )
 
+if(TARGET Live2DEditor)
+    target_link_libraries(EditorUILifecycleTest PRIVATE Live2DEditor)
+endif()
+
 add_custom_command(TARGET EditorUILifecycleTest POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll

@@ -69,7 +69,7 @@ namespace kpengine::editor
 {
     EditorDebugViewerComponent::EditorDebugViewerComponent(
         render::RenderSystem *render_system, IEditorImguiRenderer *imgui_renderer)
-        : EditorWindowComponent("Debug Viewer", EditorWindowConfig{0.8f, 0.0f, 0.2f, 0.7f, true}),
+        : EditorWindowComponent("Debug Viewer", EditorWindowConfig{0.8f, 0.35f, 0.2f, 0.35f, true}),
           render_system_(render_system), imgui_renderer_(imgui_renderer)
     {
         if (render_system_ != nullptr)

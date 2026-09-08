@@ -4,6 +4,20 @@
 
 **Current release: v1.1.0.**
 
+- **Live2D L2D1 SDK integration (2026-09-08)** — added an optional Cubism 5
+  Native R5 build boundary, enabled by default for development, using the
+  external SDK at configuration time,
+  backend-neutral Framework runtime sources, allocator/log/lifecycle guards,
+  three focused Core/model tests, and an editor aspect-fit animated placeholder
+  panel. The application composition root creates an Engine-owned
+  `Live2DModule`; the module owns `Live2DSystem`/Cubism lifetime and registers
+  the placeholder through the generic editor extension registry;
+  `EditorUILib` has no Live2D dependency.
+  SDK-off and SDK-on main-engine builds pass; Asset import and custom rendering
+  remain L2D2–L2D5 work. →
+  [Live2D roadmap](live2d/TODO.md),
+  [L2D1 journal](../.spec/journal/2026-09-08-live2d-l2d1.md)
+
 - **Local MCP engine bridge (2026-09-08)** — added a stdio MCP server and
   machine-readable command catalog for launching or attaching to the live
   Runtime agent endpoint. Typed tools expose GPU/CPU/combined profiler data,

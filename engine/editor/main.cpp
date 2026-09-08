@@ -1,5 +1,6 @@
 #include "runtime/engine.h"
 #include "runtime/launch_options.h"
+#include "module/module_bootstrap.h"
 
 #include <cstdio>
 #include <exception>
@@ -44,6 +45,7 @@ int main(int argc, char **argv)
     }
 
     Engine engine;
+    kpengine::module::RegisterModules(engine);
     engine.SetCommandTransportConfig(launch_options.options.command_transport_config);
     engine.SetGraphicsAPI(launch_options.options.graphics_api_type);
     if (launch_options.options.startup_level_override.has_value())
