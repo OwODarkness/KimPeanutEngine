@@ -127,6 +127,7 @@ KimPeanutEngine/
 ├── docs/                  # 架构、状态、设计决策和参考引擎研究
 ├── third_party/           # 第三方依赖，不属于引擎核心
 ├── cmake/                 # CMake 辅助逻辑
+├── mcp/                   # Agent-facing MCP bridge and command dictionary
 └── CMakeLists.txt
 ```
 

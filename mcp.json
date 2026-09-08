@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "kimpeanut-engine": {
+      "command": "python",
+      "args": ["mcp/server.py"],
+      "cwd": ".",
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
+}

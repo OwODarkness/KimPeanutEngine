@@ -70,3 +70,24 @@ end
 `engine.command.list()` returns descriptors and schema metadata; `help(name)`
 returns one descriptor. `execute` accepts boolean, integer, float, and string
 Lua values only. It cannot bypass `LuaAllowed` or command capabilities.
+
+## MCP host integration
+
+For an MCP-capable agent, use the repository's [`mcp.json`](../../mcp.json)
+configuration or launch [`mcp/server.py`](../../mcp/server.py) over stdio. The
+server provides explicit tools for `launch_engine`, `connect_engine`,
+`gpu_stats`, `cpu_stats`, `stats`, and `capture_screenshot`. It delegates to
+the same live Runtime endpoint documented above; it does not duplicate command
+handlers.
+
+The recommended workflow is:
+
+```text
+launch_engine()
+stats()
+capture_screenshot(view="world_normal")
+capture_screenshot(view="linear_depth")
+```
+
+`world_normal` and `linear_depth` are the exact diagnostic view names. Capture
+paths are restricted to `save/screenshots/validation/`.

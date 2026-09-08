@@ -1,0 +1,71 @@
+{
+  "catalog_version": 1,
+  "server": {
+    "name": "KimPeanutEngine",
+    "transport": "stdio",
+    "entrypoint": "mcp/server.py",
+    "sdk": "mcp>=2.0,<3.0"
+  },
+  "engine_transport": {
+    "kind": "loopback_json_lines",
+    "host": "127.0.0.1",
+    "default_port": 37373,
+    "operations": ["list", "execute", "poll", "cancel"],
+    "readiness": "port availability is not render readiness; wait for stats success with frame_number greater than zero",
+    "default_connect_timeout_seconds": 30,
+    "default_ready_timeout_seconds": 120,
+    "async_behavior": "execute may return pending with request_id; poll until status is not pending",
+    "argument_types": ["boolean", "integer", "unsigned integer", "float", "string"],
+    "unsupported_argument_types": ["array", "object", "null"]
+  },
+  "launch_defaults": {
+    "executable": "build/Debug/KimPeanutEngine.exe",
+    "graphics_api": "vulkan",
+    "startup_level": "level/performance_profile.level",
+    "agent_port": 37373
+  },
+  "workflows": [
+    {
+      "name": "profile_frame",
+      "steps": [
+        "launch_engine or connect_engine",
+        "gpu_stats",
+        "cpu_stats",
+        "stats"
+      ],
+      "notes": [
+        "Statistics describe the last fully completed render frame.",
+        "GPU values may be null when the backend does not publish them.",
+        "The combined result uses schema kimpeanut.profiler.v1."
+      ]
+    },
+    {
+      "name": "capture_render_diagnostics",
+      "steps": [
+        "launch_engine or connect_engine",
+        "capture_screenshot(view=scene_color)",
+        "capture_screenshot(view=world_normal)",
+        "capture_screenshot(view=linear_depth)"
+      ],
+      "notes": [
+        "Use exact view names world_normal and linear_depth; normal and depth are invalid aliases.",
+        "Paths must be PNGs below save/screenshots/validation/."
+      ]
+    }
+  ],
+  "tools": [
+    {"name": "launch_engine", "purpose": "start the default Debug runtime and attach"},
+    {"name": "connect_engine", "purpose": "attach to an already-running EXE"},
+    {"name": "engine_status", "purpose": "inspect connection and process ownership"},
+    {"name": "disconnect_engine", "purpose": "close only the MCP socket"},
+    {"name": "stop_engine", "purpose": "stop only a process launched by this server"},
+    {"name": "list_engine_commands", "purpose": "discover live Runtime commands"},
+    {"name": "describe_engine_command", "purpose": "inspect one live command schema"},
+    {"name": "execute_engine_command", "purpose": "execute a discovered scalar-argument command"},
+    {"name": "poll_engine_request", "purpose": "poll a manually-managed async request"},
+    {"name": "gpu_stats", "purpose": "read latest completed-frame GPU metrics"},
+    {"name": "cpu_stats", "purpose": "read latest completed-frame CPU metrics"},
+    {"name": "stats", "purpose": "read combined latest completed-frame metrics"},
+    {"name": "capture_screenshot", "purpose": "export scene or diagnostic PNG"}
+  ]
+}

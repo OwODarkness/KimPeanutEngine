@@ -4,6 +4,12 @@
 
 **Current release: v1.1.0.**
 
+- **Local MCP engine bridge (2026-09-08)** — added a stdio MCP server and
+  machine-readable command catalog for launching or attaching to the live
+  Runtime agent endpoint. Typed tools expose GPU/CPU/combined profiler data,
+  command discovery, async polling, and scene/normal/depth captures while
+  preserving C++ Runtime ownership of command policy, thread dispatch, and
+  render synchronization. → [MCP bridge](../mcp/README.md)
 - **Render issue-9.7 Sponza quality/throughput (2026-09-07)** — Stage 0
   instrumentation, the Stage 1 runtime mip path, the Stage 2 portable native
   texture importer/cooker, and the Stage 3 Vulkan frame-slot descriptor-pool

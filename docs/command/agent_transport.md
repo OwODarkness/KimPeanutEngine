@@ -47,3 +47,18 @@ build/Debug/KimPeanutEngine.exe `
 `--startup-level` has precedence over Bootstrap's `startup_level` for this
 process only. It is validated before Engine initialization and never writes the
 Bootstrap file. Omit it to use the durable default.
+
+## MCP bridge
+
+The repository provides a local MCP adapter in [`mcp/`](../../mcp/README.md).
+It uses MCP stdio for the host-facing connection and this endpoint for live
+engine work. Install `mcp/requirements.txt`, register `python mcp/server.py`
+with the host, then call `launch_engine()` or `connect_engine()` before using
+the typed `gpu_stats`, `cpu_stats`, `stats`, and `capture_screenshot` tools.
+The machine-readable [`command_catalog.json`](../../mcp/command_catalog.json)
+is also exposed as the `kimpeanut://command-catalog` MCP resource.
+
+MCP launch readiness is separate from transport readiness: `launch_engine()`
+first waits for the port, then waits for a successful `stats` result with a
+completed frame. The default port timeout is 30 seconds and the default render
+readiness timeout is 120 seconds; both are configurable in the MCP tool.
