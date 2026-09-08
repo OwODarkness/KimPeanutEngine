@@ -504,6 +504,7 @@ TEST(RuntimeLevelTest, InstantiatesNonMeshRecordsAndAllowsEmptyInstance)
     kpengine::gameplay::GameplayWorld world{nullptr, &light_sink};
     kpengine::asset::LevelDirectionalLightRecord light{};
     light.id = "light";
+    light.direction = {1.0f, 0.0f, 0.0f};
     const AssetID level_id = assets.AddLevel({light});
 
     kpengine::runtime::LevelInstance instance{assets.assets, world};
@@ -548,7 +549,7 @@ TEST(RuntimeLevelTest, RejectsInvalidLevelAssetBeforeCreatingActors)
     EXPECT_TRUE(source_sink.destroys.empty());
 }
 
-TEST(RuntimeLevelTest, RejectsInvalidModelResourceBeforeCreatingActors)
+TEST(RuntimeLevelTest, RejectsMismatchedModelPayloadBeforeCreatingActors)
 {
     AssetFixture assets;
     RecordingSourceSink source_sink;
@@ -560,12 +561,13 @@ TEST(RuntimeLevelTest, RejectsInvalidModelResourceBeforeCreatingActors)
     invalid_model_info.name = "RuntimeLevelInvalidModelResource";
     invalid_model_info.type = AssetType::KPAT_Model;
     const AssetID invalid_model = assets.AddExtraAsset(std::move(invalid_model_info));
+    EXPECT_FALSE(invalid_model.IsValid());
     const AssetID level_id =
         assets.AddLevel({MakeMeshRecord("invalid-model")}, {invalid_model, assets.material_id});
 
     kpengine::runtime::LevelInstance instance{assets.assets, world};
     const auto result = instance.Instantiate(level_id);
-    EXPECT_EQ(result.error, kpengine::runtime::LevelInstanceError::InvalidModelResource);
+    EXPECT_EQ(result.error, kpengine::runtime::LevelInstanceError::DependencyResolutionFailed);
     EXPECT_FALSE(instance.IsActive());
     EXPECT_EQ(instance.GetActorCount(), 0U);
     EXPECT_TRUE(source_sink.creates.empty());
@@ -642,7 +644,7 @@ TEST(RuntimeLevelTest, RejectsInvalidBoundsBeforeCreatingActors)
     EXPECT_TRUE(source_sink.destroys.empty());
 }
 
-TEST(RuntimeLevelTest, RejectsInvalidMaterialResourceBeforeCreatingActors)
+TEST(RuntimeLevelTest, RejectsMismatchedMaterialPayloadBeforeCreatingActors)
 {
     AssetFixture assets;
     RecordingSourceSink source_sink;
@@ -654,12 +656,13 @@ TEST(RuntimeLevelTest, RejectsInvalidMaterialResourceBeforeCreatingActors)
     invalid_material_info.name = "RuntimeLevelInvalidMaterialResource";
     invalid_material_info.type = AssetType::KPAT_Material;
     const AssetID invalid_material = assets.AddExtraAsset(std::move(invalid_material_info));
+    EXPECT_FALSE(invalid_material.IsValid());
     const AssetID level_id =
         assets.AddLevel({MakeMeshRecord("invalid-material")}, {assets.model_id, invalid_material});
 
     kpengine::runtime::LevelInstance instance{assets.assets, world};
     const auto result = instance.Instantiate(level_id);
-    EXPECT_EQ(result.error, kpengine::runtime::LevelInstanceError::InvalidMaterialResource);
+    EXPECT_EQ(result.error, kpengine::runtime::LevelInstanceError::DependencyResolutionFailed);
     EXPECT_FALSE(instance.IsActive());
     EXPECT_EQ(instance.GetActorCount(), 0U);
     EXPECT_TRUE(source_sink.creates.empty());
@@ -979,6 +982,7 @@ TEST(RuntimeLevelTest, EnvironmentRegistrationFailureRollsBackMixedActorsAndRetr
 
     kpengine::asset::LevelDirectionalLightRecord light{};
     light.id = "light";
+    light.direction = {1.0f, 0.0f, 0.0f};
     kpengine::asset::LevelEnvironmentRecord environment{};
     environment.texture.dependency_index = 2;
     const AssetID level_id = assets.AddLevel(
@@ -1072,6 +1076,7 @@ TEST(RuntimeLevelTest, SpotFactoryFailureRollsBackAndRetriesImmediately)
     kpengine::gameplay::GameplayWorld world{&source_sink, &light_sink};
     kpengine::asset::LevelSpotLightRecord spot{};
     spot.id = "spot";
+    spot.direction = {1.0f, 0.0f, 0.0f};
     const AssetID level_id = assets.AddLevel({MakeMeshRecord("mesh"), spot});
 
     bool fail_once = true;

@@ -139,7 +139,7 @@ TEST(NativeMaterialTest, CanonicalBytesRoundTripThroughMaterialLoader)
 
     kpengine::asset::AssetRegisterInfo info{};
     ASSERT_TRUE(kpengine::asset::MaterialLoader{}.Load(path.string(), info));
-    const auto material = std::get<kpengine::asset::MaterialPtr>(info.resource);
+    const auto material = std::dynamic_pointer_cast<kpengine::asset::MaterialResource>(info.resource);
     ASSERT_NE(material, nullptr);
     EXPECT_EQ(material->surface.alpha_mode, kpengine::asset::MaterialAlphaMode::Mask);
     const auto metallic = std::find_if(

@@ -38,6 +38,7 @@ archive database.
 enum class AssetType : uint16_t {
     Undefined, KPAT_Model, KPAT_Texture, KPAT_Audio,
     KPAT_Shader, KPAT_ShaderProgram, KPAT_Mesh, KPAT_Material,
+    KPAT_Level,
 };
 ```
 
@@ -47,6 +48,12 @@ enum class AssetType : uint16_t {
 [16-bit type][16-bit generation][32-bit slot id]
 ```
 
+The existing built-in values are append-only. Values `0x1000..0xEFFF` are
+reserved for stable module-owned custom types; values outside the exact
+built-in set and that custom range are not registerable. A new common
+`AssetType` belongs in the built-in set only when Asset core owns its identity,
+native suffix, loader contract, and baseline runtime behavior.
+
 **The generation is not decoration.** Slots are recycled, so `(slot, generation)` is what distinguishes "the mesh that used to be at slot 3" from "the texture that is now at slot 3." A stale `AssetID` must resolve to `nullptr`, never to a different asset.
 
 ### `Asset` vs `AssetPayload` — [`asset.h`](../../engine/runtime/asset/asset.h)
@@ -54,7 +61,12 @@ enum class AssetType : uint16_t {
 The module is **two-tier**:
 
 - **`Asset`** — the metadata wrapper: `AssetID`, `name`, `abs_path`, the payload, and the dependency graph (`ref_assets` = who uses me, `dependencies` = what I use). Owned by the cache.
-- **`AssetPayload`** — the payload, a `std::variant` of `shared_ptr<ModelResource | MeshResource | TextureResource | AudioResource | ShaderResource | ShaderProgramResource>`. Ref-counted, borrowed by subsystems, and **may outlive its wrapper**.
+- **`AssetPayload`** — a `std::shared_ptr<IAssetPayload>` whose concrete
+  payload is supplied by the defining asset module. It is ref-counted, borrowed
+  by subsystems, and **may outlive its wrapper**. `Asset::GetResource<T>()`
+  uses `std::dynamic_pointer_cast<T>` for typed access; closed `std::variant`
+  values remain appropriate for format-local choices such as material
+  parameters and level records. See [AX1](.plan/AX1.md).
 
 `AssetRegisterInfo` is the struct loaders fill in: the payload, path, name, type, and declared dependencies.
 
@@ -73,7 +85,9 @@ One cache per `AssetType`, three fields with three distinct jobs:
 ## Ownership model — the contract
 
 1. **The cache owns the `Asset` wrapper** (`unique_ptr`). `GetAsset` returns a non-owning `Asset*`; callers must not hold it past `UnRegisterAsset`.
-2. **The payload is shared** (`shared_ptr<T>` inside the variant). `GetResource<T>(id)` returns the payload's own `shared_ptr`, so a borrowed resource outlives its wrapper.
+2. **The payload is shared** (`AssetPayload` points to an `IAssetPayload`).
+   `GetResource<T>(id)` returns the payload's own typed `shared_ptr`, so a
+   borrowed resource outlives its wrapper.
 3. **`path_index` never owns anything** — no `weak_ptr`, no `shared_ptr`. It is a pure string → `AssetID` lookup.
 4. **`GetAsset` must validate the generation** (slot recycled → old id → `nullptr`) **and null-check the slot** (freed-but-not-yet-reused slots still pass the generation check, because `HandleSystem::Destroy` doesn't bump the generation until reuse).
 
@@ -83,10 +97,14 @@ One cache per `AssetType`, three fields with three distinct jobs:
 
 `LoadSync` runs this pipeline on the calling thread; `LoadAsync(path) -> std::future<AssetID>` runs the *same* pipeline on a worker thread (`std::async`), so they behave identically except for which thread blocks:
 
-1. Sniff the extension (`GetFileExtension` in `utility.h`), map to an `AssetType`; bail on unknown.
+1. Sniff the extension (`GetFileExtension` in `utility.h`) and resolve it
+   through the sealed Asset type registry; bail on unknown.
 2. Dedup: `key = Key(path)`, look up `path_index`. If the entry exists **and** still resolves via `GetAsset` (i.e. the id isn't stale), return the cached id.
-3. Otherwise dispatch to a per-type loader via `LoadByExtension`, which fills an `AssetRegisterInfo`.
-4. `RegisterAsset(info)` allocates a slot, assigns the id, and records dependencies.
+3. Otherwise dispatch to the registered loader descriptor, which fills an
+   `AssetRegisterInfo`.
+4. Validate the descriptor type, `AssetRegisterInfo::type`, and
+   `IAssetPayload::GetAssetType()`, then allocate a slot and record
+   dependencies.
 5. Index the loaded asset: `path_index[Key(asset->GetPath())] = id`.
 
 Because the loaders are shared instances, concurrent loads serialize on `load_mutex_`; the dedup check runs again under the state lock after loading, so two concurrent requests for the same file can't double-register. Note: destroying a `LoadAsync` future without `get()`/`wait()` blocks until the load finishes (`std::async` semantics).
@@ -124,10 +142,18 @@ The only eviction path. Must validate the id's generation, refuse while `CanDele
 
 ## Threading model
 
-The manager is thread-safe via two mutexes:
+The manager is thread-safe via two mutexes plus a registration phase boundary:
 
 - **`state_mutex_`** (`std::recursive_mutex`) — guards `caches_` and `path_index`. Every public method (`LoadSync`, `RegisterAsset`, `GetAsset`, `UnRegisterAsset`, `AddReferences`, `RemoveReferences`) takes it. It is **recursive** because the public methods compose internally (`RegisterAsset` → `AddReferences`, `UnRegisterAsset` → `RemoveReferences` → `GetAsset`, `LoadSync` → `GetAsset`/`RegisterAsset`); a plain mutex would self-deadlock.
-- **`load_mutex_`** (`std::mutex`) — serializes `LoadByExtension`, because the Assimp and miniaudio loaders are single shared instances and are not thread-safe. Texture decoding calls the stateless ImageIO contract directly, but remains inside this serialized pipeline for consistent load/dedup behavior.
+- **`load_mutex_`** (`std::mutex`) — serializes registered loader callbacks,
+  because the Assimp and miniaudio loaders are single shared instances and are
+  not thread-safe. Texture decoding calls the stateless ImageIO contract
+  directly, but remains inside this serialized pipeline for consistent
+  load/dedup behavior.
+- **Registration phase** — built-in descriptors are installed during
+  `AssetManager` construction. Feature modules call `RegisterAssetType` before
+  the first load; the first load seals the registry, after which descriptors
+  cannot be added or replaced.
 
 Lock ordering is strictly **load → state** (never state → load), so there is no deadlock. The split exists so a `GetAsset` on the game thread only contends during the short dedup/register critical sections, not during another thread's disk I/O.
 
@@ -143,7 +169,8 @@ archive lookup that maps a readable logical model key to a verified native
 product. The dispatch below describes the resulting `AssetManager` path, which
 reads products and foreign compatibility sources.
 
-`LoadByExtension` dispatches by `AssetType`:
+The sealed registry dispatches each normalized native suffix through an
+`AssetTypeDescriptor`:
 
 - `KPAT_Model` → `NativeModelLoader` for verified `.model` products; Level
   parsing resolves readable logical keys before this dispatch. It
@@ -386,7 +413,10 @@ Complete. The migration from "shared_ptr everywhere + `weak_ptr` path map" to th
 - `ModelResource` is already a container keyed by `ModelGeometryType` (a model = a set of geometry sub-assets) — the right shape for extending to point clouds — but "mesh" is hardcoded in the three places that would have to become geometry-aware:
   - `GetMesh()` ([`model.h`](../../engine/runtime/asset/model.h)) returns only the `KPMG_Mesh` slot; there is no generic `GetGeometry(type)` accessor.
   - `LoadByExtension` always calls the model loader with `ModelGeometryType::KPMG_Mesh`, so **no point cloud can be loaded at all** — `LoadSync`/`LoadAsync` take only a path and never a geometry type.
-  - Neither `AssetType` nor the `AssetPayload` variant has a point-cloud payload slot; adding one means growing the variant and touching its visitors.
+  - The top-level `AssetPayload` is polymorphic, and AX1.2 now routes runtime
+    suffixes through the Asset-owned registry. New module payload classes and
+    custom type values no longer require central Asset source edits. Offline
+    importer registration remains AX1.3 work; see [AX1](.plan/AX1.md).
   
   Before wiring this up, decide whether a file is *either* mesh or point cloud (geometry type becomes a load parameter, defaulting to `KPMG_Mesh`) or *can carry both* (the loader emits multiple geometry sub-assets and binds them all into one `ModelResource`). Keep `GetMesh()` as sugar on top of a generic accessor rather than the only way in.
 - `CompileFailed` status exists but carries no error text; the render layer still compiles from source / loads prebuilt `.spv` bypassing the asset graph, and two stale shader-module files aren't in the build — see the **Shader pipeline** section above.

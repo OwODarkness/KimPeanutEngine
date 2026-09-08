@@ -14,9 +14,33 @@
   the placeholder through the generic editor extension registry;
   `EditorUILib` has no Live2D dependency.
   SDK-off and SDK-on main-engine builds pass; Asset import and custom rendering
-  remain L2D2–L2D5 work. →
+  remain Asset AX1 and Live2D L2D2–L2D5 work. →
   [Live2D roadmap](live2d/TODO.md),
   [L2D1 journal](../.spec/journal/2026-09-08-live2d-l2d1.md)
+
+- **Asset AX1.0 baseline characterization (2026-09-08)** — pinned current
+  built-in `AssetType` values, `AssetID` packing, suffix routing, typed payload
+  lifetime, dependency-protected unload, owned-child rollback, and load
+  observation behavior. → [AX1 plan](asset/.plan/AX1.md),
+  [AX1.0 journal](../.spec/journal/2026-09-08-asset-ax1.md)
+
+- **Asset AX1.1 polymorphic payload core (2026-09-08)** — replaced the
+  top-level built-in resource variant with `std::shared_ptr<IAssetPayload>`;
+  built-in resources now report their type through the common interface, and
+  typed access uses `std::dynamic_pointer_cast` while preserving payload
+  lifetime, built-in IDs, routing, and cache transactions. Generic loader
+  registration and the reserved custom type range remain AX1.2 work. →
+  [AX1 plan](asset/.plan/AX1.md),
+  [AX1.1 journal](../.spec/journal/2026-09-08-asset-ax1-1.md)
+
+- **Asset AX1.2 generic type/loader registry (2026-09-08)** — added explicit
+  descriptor registration and one-way sealing, routed runtime suffixes through
+  registered loader callbacks, preserved built-in `AssetType` values, and
+  reserved `0x1000..0xEFFF` for module-owned custom types. Payload/type
+  mismatches are rejected before cache publication; the registry contains no
+  Live2D knowledge. Offline importer registration remains AX1.3 work. →
+  [AX1 plan](asset/.plan/AX1.md),
+  [AX1.2 journal](../.spec/journal/2026-09-08-asset-ax1-2.md)
 
 - **Local MCP engine bridge (2026-09-08)** — added a stdio MCP server and
   machine-readable command catalog for launching or attaching to the live

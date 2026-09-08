@@ -19,6 +19,45 @@ namespace kpengine::asset
         KPAT_Level,
     };
 
+    // AssetID reserves the low range for Asset-core types and a separate range
+    // for feature-module types. Existing values are append-only and must not
+    // be renumbered because AssetID packs the type into its serialized form.
+    inline constexpr uint16_t kFirstBuiltInAssetTypeValue = 1u;
+    inline constexpr uint16_t kLastBuiltInAssetTypeValue = 0x0fffu;
+    inline constexpr uint16_t kFirstCustomAssetTypeValue = 0x1000u;
+    inline constexpr uint16_t kLastCustomAssetTypeValue = 0xefffu;
+
+    constexpr bool IsBuiltInAssetType(AssetType type) noexcept
+    {
+        switch (type)
+        {
+        case AssetType::KPAT_Model:
+        case AssetType::KPAT_Texture:
+        case AssetType::KPAT_Audio:
+        case AssetType::KPAT_Shader:
+        case AssetType::KPAT_ShaderProgram:
+        case AssetType::KPAT_Mesh:
+        case AssetType::KPAT_Material:
+        case AssetType::KPAT_Level:
+            return true;
+        case AssetType::Undefined:
+            return false;
+        }
+        return false;
+    }
+
+    constexpr bool IsCustomAssetType(AssetType type) noexcept
+    {
+        const uint16_t value = static_cast<uint16_t>(type);
+        return value >= kFirstCustomAssetTypeValue &&
+               value <= kLastCustomAssetTypeValue;
+    }
+
+    constexpr bool IsAssetTypeValueInExtensionRange(AssetType type) noexcept
+    {
+        return IsBuiltInAssetType(type) || IsCustomAssetType(type);
+    }
+
     enum class ModelGeometryType : uint8_t
     {
         KPMG_Mesh,

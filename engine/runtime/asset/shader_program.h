@@ -4,6 +4,7 @@
 #include <unordered_map>
 #include <memory>
 #include <vector>
+#include "asset_payload.h"
 #include "common.h"
 #include "base/graphics_type.h"
 #include "shader.h"
@@ -22,7 +23,7 @@ namespace kpengine::asset{
     // The multi-stage composition loaded from a .shader file. Maps
     // (stage, source format, variant) -> ShaderResource asset; distinct from
     // ShaderStageDesc, which is the per-stage identity.
-    struct ShaderProgramResource{
+    struct ShaderProgramResource final : IAssetPayload{
     public:
         void BindData(ShaderStage stage, ShaderFormat format, AssetID id,
                       ShaderProgramVariant variant = ShaderProgramVariant::Bound);
@@ -37,6 +38,10 @@ namespace kpengine::asset{
         // processes this form so it does not compile an inactive variant.
         std::vector<std::shared_ptr<struct ShaderResource>> GatherShaders(
             ShaderProgramVariant variant) const;
+        AssetType GetAssetType() const noexcept override
+        {
+            return AssetType::KPAT_ShaderProgram;
+        }
     private:
         std::unordered_map<ShaderStage, std::vector<ShaderProgramEntry>> datas;
     };

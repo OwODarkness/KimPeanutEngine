@@ -272,10 +272,12 @@ TEST(NativeModelLoaderTest, DeclaresMaterialDependenciesFromHashReferences)
     EXPECT_TRUE(info.dependencies.empty());
     ASSERT_EQ(info.owned_children.size(), 1u);
     EXPECT_EQ(info.owned_children[0].type, AssetType::KPAT_Mesh);
-    EXPECT_NE(std::get<kpengine::asset::MeshPtr>(info.owned_children[0].resource), nullptr);
+    EXPECT_NE(std::dynamic_pointer_cast<kpengine::asset::MeshResource>(
+                  info.owned_children[0].resource),
+              nullptr);
     EXPECT_EQ(info.type, AssetType::KPAT_Model);
 
-    const auto model = std::get<kpengine::asset::ModelPtr>(info.resource);
+    const auto model = std::dynamic_pointer_cast<kpengine::asset::ModelResource>(info.resource);
     ASSERT_NE(model, nullptr);
     EXPECT_EQ(model->GetMaterialDependencyIndices(), std::vector<std::uint32_t>{1});
     std::filesystem::remove_all(root);

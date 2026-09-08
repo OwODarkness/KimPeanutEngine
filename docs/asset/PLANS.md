@@ -100,6 +100,23 @@ source-material metadata.
   Its implementation is split into independently assignable
   [MI1.1 through MI1.8 stage contracts](.plan/MI1.md#implementation-sequence).
 
+## Asset extensibility plan
+
+[AX1 — Extensible Asset Types and Polymorphic Payloads](.plan/AX1.md) owns the
+generic extension mechanism. It replaces the top-level closed payload variant
+with `std::shared_ptr<IAssetPayload>`, gives Asset an explicit type/loader
+registry, and defines the separate offline importer-provider boundary.
+
+AX1 preserves built-in type values, `AssetID` packing, cache transactions,
+dependency ownership, observation, rollback, concurrency, and unload semantics.
+It also defines the migration adapters for existing built-in loaders. Optional
+modules consume the resulting registration contract; they do not design or
+modify Asset's extension mechanism. AX1.1 and AX1.2 are landed; AX1.3 remains
+the offline importer-provider registry stage.
+
+Live2D's use of the contract is documented in
+[L2D2 — Live2D Asset integration](../live2d/.plan/L2D2.md).
+
 ## Design decisions
 
 - **Operation state is separate from `Asset`.** Loading begins before an Asset

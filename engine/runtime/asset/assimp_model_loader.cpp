@@ -29,8 +29,8 @@ namespace kpengine::asset
             return false;
         }
 
-        auto model_ptr = std::get_if<ModelPtr>(&info.resource);
-        std::shared_ptr<ModelResource> resource = model_ptr != nullptr ? *model_ptr : nullptr;
+        std::shared_ptr<ModelResource> resource =
+            std::dynamic_pointer_cast<ModelResource>(info.resource);
         if (!resource)
         {
             resource = std::make_shared<ModelResource>();

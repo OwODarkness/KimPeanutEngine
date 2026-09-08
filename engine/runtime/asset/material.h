@@ -8,6 +8,8 @@
 #include <variant>
 #include <vector>
 
+#include "asset_payload.h"
+
 namespace kpengine::asset
 {
     enum class MaterialShadingModel : uint8_t
@@ -84,13 +86,18 @@ namespace kpengine::asset
 
     // Parsed, API-neutral authoring data from one .material file. It contains
     // no render handles, resolved AssetIDs, or graphics implementation state.
-    struct MaterialResource
+    struct MaterialResource final : IAssetPayload
     {
         int version = 1;
         std::string shader_path;
         uint32_t shader_dependency_index = std::numeric_limits<uint32_t>::max();
         MaterialSurfaceSource surface;
         std::vector<MaterialParameterSource> parameters;
+
+        AssetType GetAssetType() const noexcept override
+        {
+            return AssetType::KPAT_Material;
+        }
     };
 }
 

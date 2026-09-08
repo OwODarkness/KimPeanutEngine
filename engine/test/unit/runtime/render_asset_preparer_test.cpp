@@ -165,7 +165,9 @@ namespace
             texture->data->width = 1;
             texture->data->height = 1;
             texture->data->format = format;
-            texture->data->pixels.resize(8, 0);
+            const std::size_t bytes_per_pixel =
+                format == TextureFormat::TEXTURE_FORMAT_RGBA16F ? 8U : 4U;
+            texture->data->pixels.resize(bytes_per_pixel, 0);
             return AddAsset(asset::AssetType::KPAT_Texture, texture, {}, path);
         }
 

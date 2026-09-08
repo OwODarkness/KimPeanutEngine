@@ -43,6 +43,7 @@
 #include "runtime/core/data/mesh.h"
 #include "runtime/core/config/path.h"
 #include "runtime/asset/asset_manager.h"
+#include "runtime/asset/material.h"
 #include "runtime/asset/model.h"
 #include "runtime/asset/mesh.h"
 #include "runtime/asset/shader.h"

@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <vector>
+#include "asset_payload.h"
 #include "data/shader.h"
 
 
@@ -42,7 +43,7 @@ struct ShaderStageDesc{
     std::vector<std::string> defines;
 };
 
-struct ShaderResource{
+struct ShaderResource final : IAssetPayload{
     std::shared_ptr<ShaderData> data;
     ShaderStageDesc desc;
     ShaderProgramVariant variant = ShaderProgramVariant::Bound;
@@ -51,6 +52,11 @@ struct ShaderResource{
     ShaderResource():
     format(ShaderFormat::Unknown),
     status(ShaderStatus::Uncompiled){}
+
+    AssetType GetAssetType() const noexcept override
+    {
+        return AssetType::KPAT_Shader;
+    }
 };
 }
 

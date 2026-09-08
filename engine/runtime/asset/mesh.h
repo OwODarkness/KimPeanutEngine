@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_ASSET_MESH_RESOURCE_H
 
 #include <memory>
+#include "asset_payload.h"
 #include "data/mesh.h"
 #include "spatial/aabb.h"
 
@@ -12,7 +13,7 @@ namespace kpengine::asset
     using MeshSection = kpengine::data::MeshSection;
     using Vertex = kpengine::data::Vertex;
     using VertexHash = kpengine::data::VertexHash;
-    struct MeshResource
+    struct MeshResource final : IAssetPayload
     {
         std::shared_ptr<MeshData> data;
         spatial::AABB local_bounds{};
@@ -20,6 +21,11 @@ namespace kpengine::asset
         uint32_t vertex_count;
 
         MeshResource() : data(std::make_shared<MeshData>()) {}
+
+        AssetType GetAssetType() const noexcept override
+        {
+            return AssetType::KPAT_Mesh;
+        }
     };
 }
 

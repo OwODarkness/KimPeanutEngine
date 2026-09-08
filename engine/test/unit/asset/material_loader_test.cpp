@@ -84,7 +84,7 @@ TEST(MaterialLoaderTest, LoadsVersionedUnlitMaterialSource)
 
     kpengine::asset::AssetRegisterInfo info{};
     ASSERT_TRUE(kpengine::asset::MaterialLoader{}.Load(path.string(), info));
-    const auto material = std::get<kpengine::asset::MaterialPtr>(info.resource);
+    const auto material = std::dynamic_pointer_cast<kpengine::asset::MaterialResource>(info.resource);
 
     ASSERT_NE(material, nullptr);
     EXPECT_EQ(info.type, kpengine::asset::AssetType::KPAT_Material);
@@ -148,7 +148,7 @@ TEST(MaterialLoaderTest, LoadsStandardPbrMaterialSource)
 
     kpengine::asset::AssetRegisterInfo info{};
     ASSERT_TRUE(kpengine::asset::MaterialLoader{}.Load(path.string(), info));
-    const auto material = std::get<kpengine::asset::MaterialPtr>(info.resource);
+    const auto material = std::dynamic_pointer_cast<kpengine::asset::MaterialResource>(info.resource);
 
     ASSERT_NE(material, nullptr);
     EXPECT_EQ(info.type, kpengine::asset::AssetType::KPAT_Material);

@@ -6,10 +6,11 @@
 #include <memory>
 #include <vector>
 
+#include "asset_payload.h"
 #include "common.h"
 namespace kpengine::asset
 {
-    struct ModelResource
+    struct ModelResource final : IAssetPayload
     {
     public:
         void BindData(ModelGeometryType type, AssetID id);
@@ -17,6 +18,10 @@ namespace kpengine::asset
         std::shared_ptr<struct MeshResource> GetMesh();
         void BindMaterialDependencyIndices(std::vector<std::uint32_t> indices);
         const std::vector<std::uint32_t> &GetMaterialDependencyIndices() const noexcept;
+        AssetType GetAssetType() const noexcept override
+        {
+            return AssetType::KPAT_Model;
+        }
     private:
         std::unordered_map<ModelGeometryType, AssetID> datas;
         std::vector<std::uint32_t> material_dependency_indices_;

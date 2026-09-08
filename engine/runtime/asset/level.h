@@ -8,6 +8,7 @@
 #include <variant>
 #include <vector>
 
+#include "asset_payload.h"
 #include "common.h"
 #include "math/math_header.h"
 
@@ -116,11 +117,16 @@ namespace kpengine::asset
 
     // Immutable-by-convention CPU authoring data. Runtime instantiation and
     // dependency IDs are deliberately kept outside this payload.
-    struct LevelResource
+    struct LevelResource final : IAssetPayload
     {
         int version = 1;
         std::optional<LevelEnvironmentRecord> environment;
         std::vector<LevelObject> objects;
+
+        AssetType GetAssetType() const noexcept override
+        {
+            return AssetType::KPAT_Level;
+        }
     };
 }
 

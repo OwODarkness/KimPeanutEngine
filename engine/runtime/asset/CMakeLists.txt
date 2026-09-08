@@ -52,6 +52,7 @@ option(KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT
 
 add_library(AssetRuntime STATIC
     asset_manager.cpp
+    asset_type_registry.cpp
     asset_load_observation.cpp
     native_model_loader.cpp
     native_texture_loader.cpp

@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <limits>
 #include <magic_enum/magic_enum.hpp>
+#include <stdexcept>
 #if defined(KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT)
 #include "assimp_model_loader.h"
 #endif
@@ -189,43 +190,39 @@ namespace kpengine::asset
             AssetManager &manager,
             const AssetRegisterInfo &info) noexcept
         {
-            if (const TexturePtr *texture = std::get_if<TexturePtr>(&info.resource))
+            if (const auto texture = std::dynamic_pointer_cast<TextureResource>(info.resource))
             {
-                if (!*texture || !(*texture)->data ||
-                    (*texture)->data->pixels.size() > std::numeric_limits<uint64_t>::max())
+                if (!texture->data ||
+                    texture->data->pixels.size() > std::numeric_limits<uint64_t>::max())
                 {
                     return std::nullopt;
                 }
-                return static_cast<uint64_t>((*texture)->data->GetTotalByteCount());
+                return static_cast<uint64_t>(texture->data->GetTotalByteCount());
             }
-            if (const AudioPtr *audio = std::get_if<AudioPtr>(&info.resource))
+            if (const auto audio = std::dynamic_pointer_cast<AudioResource>(info.resource))
             {
-                if (!*audio || !(*audio)->data)
+                if (!audio->data)
                 {
                     return std::nullopt;
                 }
                 uint64_t bytes = 0;
-                return CheckedMultiply(static_cast<uint64_t>((*audio)->data->pcm.size()),
+                return CheckedMultiply(static_cast<uint64_t>(audio->data->pcm.size()),
                                        static_cast<uint64_t>(sizeof(float)), bytes)
                            ? std::optional<uint64_t>(bytes)
                            : std::nullopt;
             }
-            if (const MeshPtr *mesh = std::get_if<MeshPtr>(&info.resource))
+            if (const auto mesh = std::dynamic_pointer_cast<MeshResource>(info.resource))
             {
-                return MeshPayloadSize(*mesh);
+                return MeshPayloadSize(mesh);
             }
-            if (const ModelPtr *model = std::get_if<ModelPtr>(&info.resource))
+            if (std::dynamic_pointer_cast<ModelResource>(info.resource) != nullptr)
             {
-                if (!*model)
-                {
-                    return std::nullopt;
-                }
                 uint64_t total = 0;
                 for (const AssetOwnedChildInfo &child : info.owned_children)
                 {
-                    if (const MeshPtr *mesh = std::get_if<MeshPtr>(&child.resource))
+                    if (const auto mesh = std::dynamic_pointer_cast<MeshResource>(child.resource))
                     {
-                        const std::optional<uint64_t> mesh_bytes = MeshPayloadSize(*mesh);
+                        const std::optional<uint64_t> mesh_bytes = MeshPayloadSize(mesh);
                         if (!mesh_bytes || !CheckedAdd(total, *mesh_bytes))
                         {
                             return std::nullopt;
@@ -491,11 +488,69 @@ namespace kpengine::asset
                                    material_loader_(std::make_unique<MaterialLoader>()),
                                    level_loader_(std::make_unique<LevelLoader>())
     {
+        std::string diagnostic;
+        if (!RegisterBuiltInAssetTypes(diagnostic))
+        {
+            throw std::logic_error("failed to register built-in Asset types: " + diagnostic);
+        }
     }
 
     std::string AssetManager::Key(const std::string &path)
     {
         return CanonicalAssetPathKey(path);
+    }
+
+    bool AssetManager::RegisterAssetType(AssetTypeDescriptor descriptor,
+                                         std::string &diagnostic)
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+        return type_registry_.Register(std::move(descriptor), diagnostic);
+    }
+
+    bool AssetManager::RegisterBuiltInAssetTypes(std::string &diagnostic)
+    {
+        const auto register_type = [this, &diagnostic](AssetType type, const char *name,
+                                                        std::vector<std::string> extensions)
+        {
+            AssetTypeDescriptor descriptor{};
+            descriptor.type = type;
+            descriptor.name = name;
+            descriptor.extensions = std::move(extensions);
+            descriptor.loader = [this, type](const std::string &path, AssetRegisterInfo &info)
+            { return LoadBuiltInAsset(path, type, info); };
+            return RegisterAssetType(std::move(descriptor), diagnostic);
+        };
+
+        return register_type(AssetType::KPAT_Model, "KPAT_Model",
+                             {"model", "obj", "fbx", "gltf", "glb"}) &&
+               register_type(AssetType::KPAT_Mesh, "KPAT_Mesh", {}) &&
+               register_type(AssetType::KPAT_Texture, "KPAT_Texture",
+                             {"texture", "png", "jpg", "jpeg", "tga", "hdr"}) &&
+               register_type(AssetType::KPAT_Audio, "KPAT_Audio",
+                             {"wav", "mp3", "flac", "ogg"}) &&
+               register_type(AssetType::KPAT_Shader, "KPAT_Shader",
+                             {"vert", "vs", "frag", "fs", "geom", "gs", "comp", "cs", "spv"}) &&
+               register_type(AssetType::KPAT_ShaderProgram, "KPAT_ShaderProgram", {"shader"}) &&
+               register_type(AssetType::KPAT_Material, "KPAT_Material", {"material"}) &&
+               register_type(AssetType::KPAT_Level, "KPAT_Level", {"level"});
+    }
+
+    AssetType AssetManager::ResolveAssetType(std::string_view extension,
+                                             std::string &diagnostic)
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+        if (!type_registry_.Seal(diagnostic))
+        {
+            return AssetType::Undefined;
+        }
+        const AssetTypeDescriptor *const descriptor =
+            type_registry_.FindByExtension(extension);
+        if (descriptor == nullptr)
+        {
+            diagnostic = "unsupported asset extension";
+            return AssetType::Undefined;
+        }
+        return descriptor->type;
     }
 
     AssetID AssetManager::LoadSync(const std::string &path)
@@ -522,8 +577,9 @@ namespace kpengine::asset
         std::optional<AssetLoadOperationID> parent_operation,
         std::optional<AssetLoadOperationID> reserved_operation)
     {
-        std::string extension = GetFileExtension(path);
-        const AssetType type = ExtractAssetType(extension);
+        const std::string extension = GetFileExtension(path);
+        std::string type_diagnostic;
+        const AssetType type = ResolveAssetType(extension, type_diagnostic);
         const bool can_record = session_state &&
                                 (reserved_operation.has_value() ||
                                  parent_operation.has_value() ||
@@ -553,7 +609,9 @@ namespace kpengine::asset
 
         if (type == AssetType::Undefined)
         {
-            KP_LOG("AssetManagerLog", LOG_LEVEL_WARNING, "Unrecognize asset extension: %s ", extension.c_str());
+            KP_LOG("AssetManagerLog", LOG_LEVEL_WARNING,
+                   "Unrecognize asset extension: %s (%s)", extension.c_str(),
+                   type_diagnostic.c_str());
             if (observation.IsActive())
             {
                 observation.Fail(MakeDiagnostic(observation.ID(), display_path,
@@ -696,6 +754,18 @@ namespace kpengine::asset
                 observation.Fail(MakeDiagnostic(observation.ID(), display_path,
                                                 AssetLoadPhase::LoadSource,
                                                 "loader returned no resource"));
+            }
+            return AssetID();
+        }
+
+        if (register_info.type != type || !ValidateRegistration(register_info))
+        {
+            if (observation.IsActive())
+            {
+                observation.SetPhase(AssetLoadPhase::LoadSource);
+                observation.Fail(MakeDiagnostic(observation.ID(), display_path,
+                                                AssetLoadPhase::LoadSource,
+                                                "loader returned a mismatched asset type"));
             }
             return AssetID();
         }
@@ -945,6 +1015,17 @@ namespace kpengine::asset
         return caches_[type];
     }
 
+    bool AssetManager::ValidateRegistration(const AssetRegisterInfo &info) const
+    {
+        if (!IsValidResource(info.resource) || !IsAssetTypeValueInExtensionRange(info.type) ||
+            info.resource->GetAssetType() != info.type ||
+            type_registry_.FindByType(info.type) == nullptr)
+        {
+            return false;
+        }
+        return true;
+    }
+
     AssetID AssetManager::RegisterAsset(AssetRegisterInfo &info)
     {
         if (!IsValidResource(info.resource))
@@ -953,6 +1034,10 @@ namespace kpengine::asset
         }
 
         std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+        if (!ValidateRegistration(info))
+        {
+            return AssetID();
+        }
 
         std::vector<AssetID> owned_child_ids;
         owned_child_ids.reserve(info.owned_children.size());
@@ -1020,7 +1105,7 @@ namespace kpengine::asset
     AssetID AssetManager::RegisterAssetLocked(AssetRegisterInfo &info,
                                               std::vector<AssetID> owned_children)
     {
-        if (!IsValidResource(info.resource))
+        if (!ValidateRegistration(info))
         {
             return AssetID();
         }
@@ -1237,6 +1322,18 @@ namespace kpengine::asset
     }
 
     bool AssetManager::LoadByExtension(const std::string &path, AssetType type, AssetRegisterInfo &info)
+    {
+        const AssetTypeDescriptor *const descriptor =
+            type_registry_.FindByExtension(GetFileExtension(path));
+        if (descriptor == nullptr || descriptor->type != type || !descriptor->loader)
+        {
+            return false;
+        }
+        return descriptor->loader(path, info);
+    }
+
+    bool AssetManager::LoadBuiltInAsset(const std::string &path, AssetType type,
+                                         AssetRegisterInfo &info)
     {
         if (type == AssetType::KPAT_Model)
         {

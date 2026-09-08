@@ -3,16 +3,22 @@
 
 
 #include <memory>
+#include "asset_payload.h"
 #include "data/texture.h"
 
 
 namespace kpengine::asset{
     using TextureData = kpengine::data::TextureData;
 
-    struct TextureResource{
+    struct TextureResource final : IAssetPayload{
         std::shared_ptr<TextureData> data;
         uint32_t channel_count;
         TextureResource():data(std::make_shared<TextureData>()){}
+
+        AssetType GetAssetType() const noexcept override
+        {
+            return AssetType::KPAT_Texture;
+        }
     };
 }
 

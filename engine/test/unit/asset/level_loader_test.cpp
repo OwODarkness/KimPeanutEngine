@@ -170,7 +170,7 @@ TEST(LevelLoaderTest, LoadsCompleteV1RecordsAndDeduplicatesRequests)
     ASSERT_TRUE(ParseDirect(fixture.Path("scene.level"), info));
     ASSERT_EQ(info.type, AssetType::KPAT_Level);
     ASSERT_EQ(info.dependency_requests.size(), 3u);
-    const auto level = std::get<LevelPtr>(info.resource);
+    const auto level = std::dynamic_pointer_cast<kpengine::asset::LevelResource>(info.resource);
     ASSERT_NE(level, nullptr);
     ASSERT_EQ(level->objects.size(), 6u);
     ASSERT_TRUE(level->environment.has_value());
@@ -198,7 +198,7 @@ TEST(LevelLoaderTest, LoadsOptionalPerSectionMaterialReferences)
     AssetRegisterInfo info{};
     ASSERT_TRUE(ParseDirect(fixture.Path("scene.level"), info));
     ASSERT_EQ(info.dependency_requests.size(), 4u);
-    const auto level = std::get<LevelPtr>(info.resource);
+    const auto level = std::dynamic_pointer_cast<kpengine::asset::LevelResource>(info.resource);
     ASSERT_NE(level, nullptr);
     const auto &mesh = std::get<kpengine::asset::LevelStaticMeshRecord>(level->objects[0]);
     ASSERT_EQ(mesh.materials.size(), 2u);
@@ -224,7 +224,7 @@ TEST(LevelLoaderTest, NativeModelMayOmitMaterialAndGetsImplicitErrorFallback)
     AssetRegisterInfo info{};
     ASSERT_TRUE(ParseDirect(fixture.Path("scene.level"), info));
     ASSERT_EQ(info.dependency_requests.size(), 2u);
-    const auto level = std::get<LevelPtr>(info.resource);
+    const auto level = std::dynamic_pointer_cast<kpengine::asset::LevelResource>(info.resource);
     ASSERT_NE(level, nullptr);
     const auto &mesh = std::get<kpengine::asset::LevelStaticMeshRecord>(level->objects.front());
     EXPECT_EQ(mesh.material.path, kpengine::asset::kEngineErrorMaterialAssetPath);
@@ -301,7 +301,7 @@ TEST(LevelLoaderTest, ResolvesReadableLogicalModelKeyThroughReadOnlyArchive)
     LevelLoader loader(fixture.Path(".archive"));
     AssetRegisterInfo info{};
     ASSERT_TRUE(loader.Load(fixture.Path("scene.level").string(), info));
-    const auto level = std::get<LevelPtr>(info.resource);
+    const auto level = std::dynamic_pointer_cast<kpengine::asset::LevelResource>(info.resource);
     ASSERT_NE(level, nullptr);
     const auto &mesh = std::get<kpengine::asset::LevelStaticMeshRecord>(level->objects.front());
     EXPECT_EQ(mesh.model.path, logical_model);
@@ -320,7 +320,7 @@ TEST(LevelLoaderTest, NormalizesSafeReferencesAndRejectsRootEscapeOrTypeMismatch
 
     AssetRegisterInfo info{};
     ASSERT_TRUE(ParseDirect(fixture.Path("scene.level"), info));
-    const auto level = std::get<LevelPtr>(info.resource);
+    const auto level = std::dynamic_pointer_cast<kpengine::asset::LevelResource>(info.resource);
     EXPECT_EQ(std::get<kpengine::asset::LevelStaticMeshRecord>(level->objects[0]).model.path, model);
 
     const std::vector<std::string> invalid_references{

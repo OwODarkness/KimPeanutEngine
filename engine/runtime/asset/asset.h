@@ -3,11 +3,9 @@
 
 #include <functional>
 #include <string>
-#include <variant>
 #include <vector>
-#include <memory>
 
-#include "common.h"
+#include "asset_payload.h"
 namespace kpengine::asset
 {
     struct MeshResource;
@@ -27,13 +25,9 @@ namespace kpengine::asset
     using AudioPtr = std::shared_ptr<AudioResource>;
     using MaterialPtr = std::shared_ptr<MaterialResource>;
     using LevelPtr = std::shared_ptr<LevelResource>;
-    using AssetPayload = std::variant<ModelPtr, MeshPtr, TexturePtr, AudioPtr, ShaderPtr,
-                                      ShaderProgramPtr, MaterialPtr, LevelPtr>;
-
     inline bool IsValidResource(const AssetPayload &resource)
     {
-        return std::visit([](auto &&ptr)
-                          { return ptr != nullptr; }, resource);
+        return resource != nullptr;
     }
 
     // A loader may return a CPU child payload that must be installed together
@@ -83,13 +77,9 @@ namespace kpengine::asset
         const std::vector<AssetID> &GetOwnedChildren() const noexcept { return owned_children; }
         bool IsValid() const { return IsValidResource(resource); }
         template <typename T>
-        std::shared_ptr<T> GetResource()
+        std::shared_ptr<T> GetResource() const
         {
-            if (auto ptr = std::get_if<std::shared_ptr<T>>(&resource))
-            {
-                return *ptr;
-            }
-            return nullptr;
+            return std::dynamic_pointer_cast<T>(resource);
         }
         friend class AssetManager;
 

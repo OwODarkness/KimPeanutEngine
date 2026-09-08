@@ -48,6 +48,30 @@ belongs in the corresponding `.spec/journal/` entry.
   backend upload paths support capability selection; retain the portable
   fallback.
 
+## Asset extensibility
+
+- [ ] **AX1 — extensible Asset types and polymorphic payloads:** complete the
+  generic type/loader registration and keep runtime and offline importer
+  ownership separate. The AX1.1 payload migration is landed; see the
+  [AX1 plan](.plan/AX1.md).
+  - [x] **AX1.0 — baseline characterization:** pinned built-in type values,
+    packed-ID encoding, suffix routing, typed payload lifetime, dependency
+    unload protection, owned-child rollback, and observation behavior. See the
+    [AX1.0 journal](../../.spec/journal/2026-09-08-asset-ax1.md).
+  - [x] **AX1.1 — polymorphic payload core:** replaced the top-level resource
+    variant with `std::shared_ptr<IAssetPayload>`, migrated built-in resources
+    and consumers, and preserved built-in identity/routing. See the
+    [AX1 plan](.plan/AX1.md) and
+    [AX1.1 journal](../../.spec/journal/2026-09-08-asset-ax1-1.md).
+  - [x] **AX1.2 — generic type/loader registry:** added explicit descriptor
+    registration and sealing, built-in loader adapters, custom type values in
+    the reserved range, and payload/type validation before publication. See
+    the [AX1 plan](.plan/AX1.md) and
+    [AX1.2 journal](../../.spec/journal/2026-09-08-asset-ax1-2.md).
+- [ ] **Live2D consumer handoff:** verify that Live2D can register its payload,
+  native loader, and offline importer through AX1 without an Asset-specific
+  Live2D branch. See [L2D2](../live2d/.plan/L2D2.md).
+
 ## Model-import roadmap
 
 - [ ] **MI1 — content-addressed native model import** — use a standalone
