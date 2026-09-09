@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 
@@ -95,4 +96,36 @@ TEST(TextureImportTest, RequiredBlockCompressionIsDeterministic)
     EXPECT_EQ(first.data.format, TextureFormat::TEXTURE_FORMAT_BC3_SRGB);
     EXPECT_EQ(first.bytes, second.bytes);
     EXPECT_EQ(first.product_hash, second.product_hash);
+}
+
+TEST(TextureImportTest, Bc4OpacityUsesRedChannelAndAllInterpolatedEntries)
+{
+    kpengine::asset::ImportedTexture source{};
+    source.image = MakeImage();
+    source.image.height = 4;
+    source.image.pixels.resize(4U * 4U * 4U, 255);
+    for (std::size_t index = 0; index < 16; ++index)
+    {
+        source.image.pixels[index * 4U + 0U] = 0;
+        source.image.pixels[index * 4U + 3U] = 128;
+    }
+    source.image.pixels[0] = 255;
+    source.image.pixels[4] = 0;
+    source.image.pixels[8] = 37;
+    source.settings.semantic = kpengine::data::TextureSemantic::OpacityMask;
+    source.settings.compression =
+        kpengine::asset::TextureCompressionPolicy::RequireBlockCompression;
+
+    const kpengine::asset::CookedTexture cooked = kpengine::asset::TextureCooker{}.Cook(source);
+    ASSERT_EQ(cooked.data.format, TextureFormat::TEXTURE_FORMAT_BC4_UNORM);
+    ASSERT_GE(cooked.data.pixels.size(), 8U);
+    EXPECT_EQ(cooked.data.pixels[0], 255U);
+    EXPECT_EQ(cooked.data.pixels[1], 0U);
+
+    std::uint64_t indices = 0;
+    for (std::size_t index = 0; index < 6; ++index)
+    {
+        indices |= static_cast<std::uint64_t>(cooked.data.pixels[2U + index]) << (index * 8U);
+    }
+    EXPECT_EQ((indices >> 6U) & 0x7U, 7U);
 }

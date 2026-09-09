@@ -184,6 +184,18 @@ TEST(NativeModelFormatTest, SerializesDeterministicallyAndRoundTrips)
               sizeof(std::uint16_t));
 
     const auto product = DeserializeNativeModel(first);
+    EXPECT_EQ(product.format_version, kpengine::asset::kNativeModelVersion);
+    EXPECT_EQ(product.format_features, kpengine::asset::kNativeModelFeatures);
+    EXPECT_EQ(product.vertex_stride, kpengine::asset::kNativeModelCompactVertexStride);
+    EXPECT_EQ(product.index_stride, sizeof(std::uint16_t));
+    EXPECT_EQ(product.product_bytes, first.size());
+    EXPECT_EQ(product.decoded_payload_bytes,
+              source.vertices.size() * sizeof(kpengine::data::Vertex) +
+                  source.indices.size() * sizeof(std::uint32_t) +
+                  source.sections.size() * sizeof(kpengine::data::MeshSection) +
+                  source.material_references.size() *
+                      sizeof(NativeModelMaterialReference) +
+                  sizeof(source.local_bounds));
     ASSERT_EQ(product.data.vertices.size(), source.vertices.size());
     ASSERT_EQ(product.data.indices, source.indices);
     ASSERT_EQ(product.data.sections.size(), source.sections.size());
@@ -232,6 +244,22 @@ TEST(NativeModelFormatTest, RejectsTruncatedAndInvalidChunkBounds)
     bytes = SerializeNativeModel(MakeModel());
     bytes[32] = std::byte{4};
     EXPECT_EQ(CatchNativeModelError(bytes), NativeModelErrorCode::InvalidChunkTable);
+}
+
+TEST(NativeModelFormatTest, RejectsVertexOutsideModelBounds)
+{
+    NativeModelData source = MakeModel();
+    source.vertices[0].position.x_ = -0.1f;
+    source.sections[0].local_bounds.min_.x_ = -0.1f;
+    try
+    {
+        (void)SerializeNativeModel(source);
+        FAIL() << "expected NativeModelError";
+    }
+    catch (const NativeModelError &error)
+    {
+        EXPECT_EQ(error.Code(), NativeModelErrorCode::InvalidValue);
+    }
 }
 
 TEST(NativeModelLoaderTest, VerifiesArchiveHashAndCanonicalLayoutBeforeParsing)

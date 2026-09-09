@@ -224,6 +224,13 @@ V1 and V2 products remain readable for migration. Reimporting a source with
 the current `ModelImportSettings` publishes V3; runtime loading never opens the
 foreign source as a fallback when a native product is malformed.
 
+For repeatable product measurements, run
+`KimPeanutAssetTool inspect --model <logical-model-key>`. The command reports
+the native format version, on-disk vertex/index strides, product bytes, the
+decoded CPU payload estimate, geometry counts, and separate file-read and
+decode timings. The decoded estimate excludes allocator overhead and GPU
+residency; the command does not reimport or modify the archive.
+
 ## Multi-section mesh materials
 
 A level static-mesh object may provide an optional `materials` array alongside

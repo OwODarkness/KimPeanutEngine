@@ -144,12 +144,13 @@ namespace kpengine::asset
                     palette[index + 1] = static_cast<std::uint8_t>(
                         ((7U - index) * endpoint0 + index * endpoint1 + 3U) / 7U);
                 }
-                palette[7] = endpoint1;
             }
             else
             {
                 palette[2] = static_cast<std::uint8_t>((2U * endpoint0 + endpoint1 + 1U) / 3U);
                 palette[3] = static_cast<std::uint8_t>((endpoint0 + 2U * endpoint1 + 1U) / 3U);
+                palette[4] = static_cast<std::uint8_t>((4U * endpoint0 + endpoint1 + 2U) / 5U);
+                palette[5] = static_cast<std::uint8_t>((3U * endpoint0 + 2U * endpoint1 + 2U) / 5U);
                 palette[6] = 0;
                 palette[7] = 255;
             }
@@ -296,7 +297,7 @@ namespace kpengine::asset
                         std::array<std::uint8_t, 16> values{};
                         for (std::size_t index = 0; index < values.size(); ++index)
                         {
-                            values[index] = pixels[index][3];
+                            values[index] = pixels[index][0];
                         }
                         EncodeBc4Block(values, output);
                     }

@@ -74,14 +74,15 @@ belongs in the corresponding `.spec/journal/` entry.
     computes the content and embedded-digest hashes without a product-sized
     integrity clone, reuses those results for archive verification and decode,
     and retains strict corruption rejection. See the [AP1 journal](../../.spec/journal/2026-09-09-asset-ap1-0.md#ap11-product-verification).
-  - [x] **AP1.2 — Texture compression:** add BC4/BC5/BC3 desktop products,
-    block-aware native texture V2 validation, common Graphics capability
-    reporting, Vulkan/OpenGL mappings and uploads, and portable cooking.
-    Material-level profile selection and Vulkan/OpenGL fixture captures are
-    landed; BC7/ASTC and the Sponza byte-budget measurement remain open.
-  - [ ] **AP1.3 — Model compaction:** V3 compact Model serialization and
-    bounded decode are implemented; Sponza reimport byte/decode/visual
-    measurement remains for acceptance.
+  - [ ] **AP1.2 — Texture compression:** BC4/BC5/BC3 products, block-aware
+    native texture V2 validation, common Graphics capability reporting,
+    Vulkan/OpenGL mappings and uploads, and portable cooking are implemented.
+    The AP1.2 exit measurement and final visual acceptance remain open; BC7
+    and ASTC are also future work.
+  - [ ] **AP1.3 — Model compaction:** V3 compact Model serialization,
+    bounded decode, repeatable `AssetTool inspect` measurements, and the first
+    Sponza validation are implemented. Review found a serialization correctness
+    gap in out-of-bounds position handling; fix and revalidation remain open.
   - [ ] **AP1.4 — Asset package:** build and mount a read-only dependency-closure
     package whose TOC preserves product identity, shared Texture deduplication,
     corruption bounds, and priority-ordered byte ranges.

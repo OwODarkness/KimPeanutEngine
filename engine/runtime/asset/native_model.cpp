@@ -415,9 +415,15 @@ namespace kpengine::asset
             const float extent = maximum - minimum;
             if (extent <= std::numeric_limits<float>::epsilon())
             {
+                Require(value >= minimum && value <= maximum,
+                        NativeModelErrorCode::InvalidValue,
+                        "native model vertex position lies outside model bounds");
                 return 0;
             }
-            const float normalized = std::clamp((value - minimum) / extent, 0.0f, 1.0f);
+            const float normalized = (value - minimum) / extent;
+            Require(normalized >= 0.0f && normalized <= 1.0f,
+                    NativeModelErrorCode::InvalidValue,
+                    "native model vertex position lies outside model bounds");
             return static_cast<std::uint16_t>(std::lround(normalized * 65535.0f));
         }
 
@@ -900,6 +906,17 @@ namespace kpengine::asset
         NativeModelProduct product;
         product.integrity_digest = stored_digest;
         product.product_hash = hashes.content_hash;
+        product.format_version = version;
+        product.format_features = features;
+        product.vertex_stride = static_cast<std::uint32_t>(vertex_stride);
+        product.index_stride = static_cast<std::uint32_t>(index_stride);
+        product.product_bytes = bytes.size();
+        product.decoded_payload_bytes =
+            static_cast<std::size_t>(vertex_count) * sizeof(data::Vertex) +
+            static_cast<std::size_t>(index_count) * sizeof(std::uint32_t) +
+            static_cast<std::size_t>(section_count) * sizeof(data::MeshSection) +
+            static_cast<std::size_t>(material_count) * sizeof(NativeModelMaterialReference) +
+            sizeof(product.data.local_bounds);
         product.data.vertices.resize(vertex_count);
         product.data.indices.resize(index_count);
         product.data.sections.resize(section_count);

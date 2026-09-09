@@ -91,6 +91,16 @@ namespace kpengine::asset
         NativeModelData data;
         ContentHash integrity_digest{};
         ContentHash product_hash{};
+
+        // Decode measurements are populated by DeserializeNativeModel. They
+        // describe the on-disk chunks and the decoded payload, not allocator
+        // overhead or GPU residency.
+        std::uint16_t format_version{};
+        std::uint32_t format_features{};
+        std::uint32_t vertex_stride{};
+        std::uint32_t index_stride{};
+        std::size_t product_bytes{};
+        std::size_t decoded_payload_bytes{};
     };
 
     // Serializes only explicit fields. The returned bytes are canonical and

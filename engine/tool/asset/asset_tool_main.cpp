@@ -15,6 +15,7 @@
 #include "asset/material_promotion.h"
 #include "asset/model_archive.h"
 #include "asset/model_import_service.h"
+#include "asset/native_model.h"
 #include "asset/texture_importer.h"
 
 #if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
@@ -96,6 +97,29 @@ namespace
         const std::string value = Option(command, "asset-root");
         return value.empty() ? std::filesystem::current_path() / "asset"
                              : std::filesystem::path{value};
+    }
+
+    std::vector<std::byte> ReadBytes(const std::filesystem::path &path)
+    {
+        std::ifstream stream(path, std::ios::binary | std::ios::ate);
+        if (!stream)
+        {
+            throw std::runtime_error("failed to read file: " + path.string());
+        }
+        const std::streampos end = stream.tellg();
+        if (end < 0)
+        {
+            throw std::runtime_error("failed to determine file size: " + path.string());
+        }
+        std::vector<std::byte> bytes(static_cast<std::size_t>(end));
+        stream.seekg(0, std::ios::beg);
+        if (!bytes.empty() &&
+            !stream.read(reinterpret_cast<char *>(bytes.data()),
+                         static_cast<std::streamsize>(bytes.size())))
+        {
+            throw std::runtime_error("failed to read file: " + path.string());
+        }
+        return bytes;
     }
 
     std::filesystem::path ArchiveRoot(const CommandLine &command,
@@ -213,29 +237,6 @@ namespace
     }
 
 #if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
-    std::vector<std::byte> ReadBytes(const std::filesystem::path &path)
-    {
-        std::ifstream stream(path, std::ios::binary | std::ios::ate);
-        if (!stream)
-        {
-            throw std::runtime_error("failed to read file: " + path.string());
-        }
-        const std::streampos end = stream.tellg();
-        if (end < 0)
-        {
-            throw std::runtime_error("failed to determine file size: " + path.string());
-        }
-        std::vector<std::byte> bytes(static_cast<std::size_t>(end));
-        stream.seekg(0, std::ios::beg);
-        if (!bytes.empty() &&
-            !stream.read(reinterpret_cast<char *>(bytes.data()),
-                         static_cast<std::streamsize>(bytes.size())))
-        {
-            throw std::runtime_error("failed to read file: " + path.string());
-        }
-        return bytes;
-    }
-
     void WriteBytes(const std::filesystem::path &path,
                     const std::vector<std::byte> &bytes)
     {
@@ -593,18 +594,89 @@ namespace
 
         if (command.command == "inspect")
         {
-            const auto snapshot = archive.FindSourceByLogicalPath(
-                Option(command, "model", true));
+            const std::string logical_model_path = Option(command, "model", true);
+            const auto snapshot = archive.FindSourceByLogicalPath(logical_model_path);
             if (!snapshot.has_value())
             {
                 std::cout << "model: missing\n";
                 return 2;
             }
             PrintSnapshot(*snapshot);
-            const auto model_path = archive.ResolveModelProductPath(
-                Option(command, "model", true));
-            std::cout << "model_path: "
-                      << (model_path.has_value() ? model_path->string() : "missing") << '\n';
+            if (snapshot->source.status != kpengine::asset::SourceImportStatus::Ready)
+            {
+                throw kpengine::asset::ModelArchiveError(
+                    kpengine::asset::ModelArchiveErrorCode::SourceNotFound,
+                    "logical model source is not ready: " + logical_model_path);
+            }
+
+            const kpengine::asset::ProductRecord *model_record = nullptr;
+            for (const auto &source_product : snapshot->source_products)
+            {
+                if (source_product.asset_type != kpengine::asset::ArchiveProductType::Model)
+                {
+                    continue;
+                }
+                for (const auto &product : snapshot->products)
+                {
+                    if (product.asset_type == kpengine::asset::ArchiveProductType::Model &&
+                        product.content_hash == source_product.content_hash)
+                    {
+                        model_record = &product;
+                        break;
+                    }
+                }
+                if (model_record != nullptr)
+                {
+                    break;
+                }
+            }
+            if (model_record == nullptr)
+            {
+                throw kpengine::asset::ModelArchiveError(
+                    kpengine::asset::ModelArchiveErrorCode::InvalidDatabase,
+                    "logical model source has no Model product");
+            }
+
+            const std::filesystem::path model_path = archive.ArchiveRoot() /
+                                                      model_record->relative_path;
+            std::cout << "model_path: " << model_path.string() << '\n';
+
+            const auto read_started = std::chrono::steady_clock::now();
+            const std::vector<std::byte> model_bytes = ReadBytes(model_path);
+            const auto read_finished = std::chrono::steady_clock::now();
+            const auto decode_started = read_finished;
+            const kpengine::asset::NativeModelProduct product =
+                kpengine::asset::DeserializeNativeModel(model_bytes);
+            const auto decode_finished = std::chrono::steady_clock::now();
+            std::string product_diagnostic;
+            if (model_bytes.size() != model_record->byte_size ||
+                product.product_hash != model_record->content_hash ||
+                !kpengine::asset::VerifyArchiveProduct(
+                    model_path, kpengine::asset::ArchiveProductType::Model, model_bytes,
+                    product_diagnostic, archive.ArchiveRoot(), product.product_hash))
+            {
+                throw kpengine::asset::ModelArchiveError(
+                    kpengine::asset::ModelArchiveErrorCode::CorruptProduct,
+                    product_diagnostic.empty()
+                        ? "archive Model product failed integrity verification: " +
+                              model_path.string()
+                        : product_diagnostic);
+            }
+            const auto read_seconds = std::chrono::duration<double>(read_finished - read_started);
+            const auto decode_seconds = std::chrono::duration<double>(decode_finished - decode_started);
+            std::cout << std::fixed << std::setprecision(6)
+                      << "format_version: " << product.format_version << '\n'
+                      << "format_features: " << product.format_features << '\n'
+                      << "product_bytes: " << product.product_bytes << '\n'
+                      << "decoded_payload_bytes: " << product.decoded_payload_bytes << '\n'
+                      << "vertex_count: " << product.data.vertices.size() << '\n'
+                      << "index_count: " << product.data.indices.size() << '\n'
+                      << "section_count: " << product.data.sections.size() << '\n'
+                      << "material_count: " << product.data.material_references.size() << '\n'
+                      << "vertex_stride: " << product.vertex_stride << '\n'
+                      << "index_stride: " << product.index_stride << '\n'
+                      << "read_seconds: " << read_seconds.count() << '\n'
+                      << "decode_seconds: " << decode_seconds.count() << '\n';
             return 0;
         }
 

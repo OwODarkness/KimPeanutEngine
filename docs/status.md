@@ -499,9 +499,9 @@
   Vulkan/OpenGL compressed uploads, and reports per-format backend capability.
   Portable RGBA products remain available. Material V2 now publishes portable
   and BC alternatives, and Runtime selects exactly one supported profile before
-  Asset dependency loading. Vulkan/OpenGL visual captures pass on the small
-  bunny + Cerberus fixture; BC7/ASTC and Sponza closure measurement remain
-  open. →
+  Asset dependency loading. The implementation slice is landed, but AP1.2's
+  exit measurement and final visual acceptance remain open; BC7/ASTC and
+  Sponza closure measurement also remain open. →
   [AP1 plan](asset/.plan/AP1.md),
   [AP1.2 journal](../.spec/journal/2026-09-09-asset-ap1-0.md#ap12-gpu-native-texture-compression)
 
@@ -509,9 +509,12 @@
   now quantizes positions, octahedrally encodes normal/tangent data, stores
   half UVs and bitangent handedness, uses 16-bit indices when possible, and
   reorders/removes vertices by first use. Runtime decodes into the existing
-  CPU mesh ABI; V1/V2 products remain readable. Sponza reimport size/decode
-  and cross-backend visual acceptance remain open. →
-  [AP1 plan](asset/.plan/AP1.md)
+  CPU mesh ABI; V1/V2 products remain readable. Initial Sponza validation
+  reported approximately 45% smaller products and faster decode, but review
+  found a V3 serialization correctness gap for positions outside model bounds;
+  AP1.3 remains pending fix and revalidation. →
+  [AP1 plan](asset/.plan/AP1.md),
+  [AP1 journal](../.spec/journal/2026-09-09-asset-ap1-0.md#ap13-acceptance)
 
 - **Runtime shutdown progress presentation (2026-09-09)** — the render-thread
   teardown path now keeps the existing loading panel alive while RuntimeContext

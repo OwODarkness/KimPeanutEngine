@@ -334,12 +334,19 @@ and reorders vertices by first index use while removing unreferenced vertices.
 The runtime decodes back to the existing `data::Vertex` and `uint32_t` index
 vectors, so Graphics/RHI vertex contracts are unchanged. V1/V2 products remain
 readable; the importer default is V3 and cache settings include the schema
-version. Sponza reimport measurements and Vulkan/OpenGL visual evidence remain
-the acceptance gate.
+version. `KimPeanutAssetTool inspect --model` now reports product bytes,
+decoded-payload estimates, chunk strides, geometry counts, and read/decode
+timings without modifying the archive. Initial Sponza reimport validation
+reported V3 products approximately 45% smaller with faster decode and no
+reported Vulkan/OpenGL visual regression. Review then found a serialization
+correctness gap: position quantization silently clamped vertices outside the
+stored model bounds. The fix and revalidation are now required before
+acceptance.
 
 Exit: the three Sponza Model products are materially smaller than the current
-approximately 486 MB baseline and decode faster in RelWithDebInfo; the exact
-byte target is set from AP1.3 characterization rather than guessed in advance.
+approximately 486 MB baseline and decode faster in RelWithDebInfo, with
+serialization correctness and cross-backend visual validation confirmed after
+the review fixes.
 
 ### AP1.4 — Scene/install Asset package
 
