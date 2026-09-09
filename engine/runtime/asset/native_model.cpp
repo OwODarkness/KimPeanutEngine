@@ -1040,6 +1040,139 @@ namespace kpengine::asset
         return product;
     }
 
+    void ValidateNativeModelProductStructure(const std::vector<std::byte> &bytes,
+                                             const ContentHashPair *verified_hashes)
+    {
+        Require(bytes.size() <= kNativeModelMaxBytes, NativeModelErrorCode::Overflow,
+                "native model exceeds the product size limit");
+        Require(bytes.size() >= kNativeModelHeaderSize, NativeModelErrorCode::Truncated,
+                "native model is shorter than its header");
+        for (std::size_t index = 0; index < kMagic.size(); ++index)
+        {
+            Require(std::to_integer<std::uint8_t>(bytes[index]) == kMagic[index],
+                    NativeModelErrorCode::InvalidArgument, "native model magic is invalid");
+        }
+
+        const std::uint16_t version = ReadU16(bytes, 8);
+        const std::uint16_t header_size = ReadU16(bytes, 10);
+        const std::uint32_t features = ReadU32(bytes, 12);
+        const std::uint64_t total_size = ReadU64(bytes, 16);
+        const std::uint64_t directory_offset = ReadU64(bytes, 24);
+        const std::uint32_t chunk_count = ReadU32(bytes, 32);
+        const std::uint32_t vertex_count = ReadU32(bytes, 72);
+        const std::uint32_t index_count = ReadU32(bytes, 76);
+        const std::uint32_t section_count = ReadU32(bytes, 80);
+        const std::uint32_t material_count = ReadU32(bytes, 84);
+
+        Require(version == 1 || version == 2 || version == kNativeModelVersion,
+                NativeModelErrorCode::UnsupportedVersion,
+                "native model version is unsupported");
+        const bool compact = version == kNativeModelVersion;
+        Require(header_size == kNativeModelHeaderSize, NativeModelErrorCode::InvalidChunkTable,
+                "native model header size is invalid");
+        Require(features == (compact ? kNativeModelFeatures : 0u),
+                NativeModelErrorCode::UnsupportedFeatures,
+                "native model features are unsupported");
+        Require(total_size == bytes.size(), NativeModelErrorCode::InvalidChunkTable,
+                "native model total size is invalid");
+        Require(directory_offset == kNativeModelHeaderSize && chunk_count == 5,
+                NativeModelErrorCode::InvalidChunkTable, "native model chunk directory is invalid");
+        Require(vertex_count <= kNativeModelMaxVertices && index_count <= kNativeModelMaxIndices &&
+                    section_count <= kNativeModelMaxSections && material_count <= kNativeModelMaxMaterials,
+                NativeModelErrorCode::Overflow, "native model count exceeds the limit");
+
+        const std::size_t directory_end = kNativeModelHeaderSize +
+                                           kNativeModelChunkEntrySize * chunk_count;
+        Require(directory_end <= bytes.size(), NativeModelErrorCode::Truncated,
+                "native model chunk directory is truncated");
+
+        std::array<Chunk, 5> chunks{};
+        for (std::size_t index = 0; index < chunks.size(); ++index)
+        {
+            const std::size_t offset = kNativeModelHeaderSize + index * kNativeModelChunkEntrySize;
+            chunks[index].type = static_cast<NativeModelChunkType>(ReadU32(bytes, offset));
+            Require(ReadU32(bytes, offset + 4) == 0, NativeModelErrorCode::InvalidChunkTable,
+                    "native model chunk reserved field is nonzero");
+            chunks[index].offset = ReadU64(bytes, offset + 8);
+            chunks[index].byte_size = ReadU64(bytes, offset + 16);
+            chunks[index].element_size = ReadU32(bytes, offset + 24);
+            chunks[index].count = ReadU32(bytes, offset + 28);
+            Require(chunks[index].offset >= directory_end,
+                    NativeModelErrorCode::InvalidChunkTable,
+                    "native model chunk overlaps its directory");
+        }
+        for (std::size_t left = 0; left < chunks.size(); ++left)
+        {
+            for (std::size_t right = left + 1; right < chunks.size(); ++right)
+            {
+                Require(chunks[left].type != chunks[right].type,
+                        NativeModelErrorCode::InvalidChunkTable, "native model has duplicate chunks");
+            }
+        }
+
+        ContentHashPair hashes{};
+        if (verified_hashes != nullptr)
+        {
+            hashes = *verified_hashes;
+        }
+        else
+        {
+            const auto computed = Sha256WithZeroedRange(bytes, kNativeModelDigestOffset,
+                                                        kNativeModelDigestSize);
+            Require(computed.has_value(), NativeModelErrorCode::Truncated,
+                    "native model digest is truncated");
+            hashes = *computed;
+        }
+        Require(ReadHash(bytes, kNativeModelDigestOffset) == hashes.zeroed_range_hash,
+                NativeModelErrorCode::IntegrityMismatch,
+                "native model integrity digest does not match");
+
+        const std::size_t vertex_stride = compact ? kNativeModelCompactVertexStride : kVertexStride;
+        const std::size_t index_stride = compact && vertex_count <= 65535u
+                                             ? sizeof(std::uint16_t)
+                                             : kIndexStride;
+        std::size_t vertex_size = 0;
+        std::size_t index_size = 0;
+        std::size_t section_size = 0;
+        std::size_t material_size = 0;
+        Require(CheckedMultiply(vertex_count, vertex_stride, vertex_size) &&
+                    CheckedMultiply(index_count, index_stride, index_size) &&
+                    CheckedMultiply(section_count,
+                                    version == 1 ? 3u * sizeof(std::uint32_t) : kSectionStride,
+                                    section_size) &&
+                    CheckedMultiply(material_count, kMaterialReferenceStride, material_size),
+                NativeModelErrorCode::Overflow, "native model chunk size overflows");
+        const std::size_t section_stride = version == 1 ? 3u * sizeof(std::uint32_t) : kSectionStride;
+        RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Vertices), vertex_size,
+                     vertex_count, static_cast<std::uint32_t>(vertex_stride));
+        RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Indices), index_size,
+                     index_count, static_cast<std::uint32_t>(index_stride));
+        RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Sections), section_size,
+                     section_count, static_cast<std::uint32_t>(section_stride));
+        RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Bounds), kBoundsStride,
+                     1, static_cast<std::uint32_t>(kBoundsStride));
+        RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::MaterialReferences), material_size,
+                     material_count, static_cast<std::uint32_t>(kMaterialReferenceStride));
+
+        for (std::size_t left = 0; left < chunks.size(); ++left)
+        {
+            const std::size_t left_begin = ChunkOffset(chunks[left]);
+            std::size_t left_end = 0;
+            Require(CheckedAdd(left_begin, static_cast<std::size_t>(chunks[left].byte_size), left_end),
+                    NativeModelErrorCode::Overflow, "native model chunk range overflows");
+            for (std::size_t right = left + 1; right < chunks.size(); ++right)
+            {
+                const std::size_t right_begin = ChunkOffset(chunks[right]);
+                std::size_t right_end = 0;
+                Require(CheckedAdd(right_begin, static_cast<std::size_t>(chunks[right].byte_size),
+                                   right_end),
+                        NativeModelErrorCode::Overflow, "native model chunk range overflows");
+                Require(left_end <= right_begin || right_end <= left_begin,
+                        NativeModelErrorCode::InvalidChunkTable, "native model chunks overlap");
+            }
+        }
+    }
+
     ContentHash ComputeNativeModelProductHash(const std::vector<std::byte> &bytes)
     {
         return Sha256(bytes);

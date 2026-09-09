@@ -234,9 +234,10 @@ residency; the command does not reimport or modify the archive.
 `KimPeanutAssetTool import` and `reimport` also print an `metrics:` block for
 AT1 attribution. It includes per-stage wall time, process CPU time and
 logical-processor count, peak working set, source/product bytes read, bytes
-written, texture binding/cook counts, and product-write count. The baseline
-path is intentionally reported as `peak_reserved_bytes: 0 (not budgeted)`;
-memory admission and bounded workers belong to the later AT1.3 stage.
+written, texture binding/cook counts, and product-write count. Fresh AT1.1
+imports count one staging write per produced product; the baseline path is
+reported as `peak_reserved_bytes: 0 (not budgeted)`, while memory admission
+and bounded workers belong to the later AT1.3 stage.
 
 ## Multi-section mesh materials
 

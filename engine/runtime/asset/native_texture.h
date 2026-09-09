@@ -63,6 +63,12 @@ namespace kpengine::asset
         const std::vector<std::byte> &bytes,
         const ContentHashPair *verified_hashes = nullptr);
 
+    // Validates only the bounded container structure and integrity digest.
+    // Unlike DeserializeNativeTexture, this never allocates mip payloads.
+    void ValidateNativeTextureProductStructure(
+        const std::vector<std::byte> &bytes,
+        const ContentHashPair *verified_hashes = nullptr);
+
     ContentHash ComputeNativeTextureProductHash(const std::vector<std::byte> &bytes);
 }
 

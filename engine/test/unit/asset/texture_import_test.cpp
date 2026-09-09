@@ -43,6 +43,7 @@ TEST(TextureImportTest, ImportAndCookAreIndependentAndRoundTripNativeMips)
         kpengine::asset::TextureImporter{}.Import(request);
     const kpengine::asset::CookedTexture cooked =
         kpengine::asset::TextureCooker{}.Cook(imported);
+    EXPECT_NO_THROW(kpengine::asset::ValidateNativeTextureProductStructure(cooked.bytes));
     const kpengine::asset::NativeTextureProduct product =
         kpengine::asset::DeserializeNativeTexture(cooked.bytes);
 

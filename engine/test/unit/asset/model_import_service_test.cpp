@@ -136,7 +136,7 @@ TEST(ModelImportServiceTest, PublishesProductsAndRepeatsAsVerifiedCacheHit)
     const auto expected_product_count = first.material_hashes.size() +
                                         first.texture_hashes.size() + 1u;
     EXPECT_EQ(first.metrics.product_count, expected_product_count);
-    EXPECT_EQ(first.metrics.product_write_count, expected_product_count * 2u);
+    EXPECT_EQ(first.metrics.product_write_count, expected_product_count);
     EXPECT_EQ(first.metrics.peak_active_jobs, 1u);
 
     const auto second = service.Import(fixture.Request());

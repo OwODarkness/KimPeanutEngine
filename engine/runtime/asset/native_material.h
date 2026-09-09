@@ -34,7 +34,6 @@ namespace kpengine::asset
         ContentHash content_hash;
         std::string extension;
         std::vector<std::byte> bytes;
-        image_io::ImageBuffer decoded_image;
     };
 
     struct NativeMaterialConversionMetrics

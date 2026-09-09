@@ -119,8 +119,7 @@ namespace kpengine::asset
             std::string extension;
         };
 
-        std::string PublishTextureProduct(const CookedTexture &cooked,
-                                          const ImageBuffer &decoded,
+        std::string PublishTextureProduct(CookedTexture cooked,
                                           NativeMaterialConversionResult &result)
         {
             const auto existing = std::find_if(
@@ -131,10 +130,11 @@ namespace kpengine::asset
                 });
             if (existing == result.embedded_images.end())
             {
+                const std::size_t product_bytes = cooked.bytes.size();
                 result.embedded_images.push_back(
-                    {cooked.product_hash, "texture", cooked.bytes, decoded});
+                    {cooked.product_hash, "texture", std::move(cooked.bytes)});
                 ++result.metrics.unique_texture_product_count;
-                result.metrics.texture_product_bytes += cooked.bytes.size();
+                result.metrics.texture_product_bytes += product_bytes;
             }
             return "../" + ProductRelativePath(ArchiveProductType::Texture,
                                                  cooked.product_hash, "texture");
@@ -240,10 +240,10 @@ namespace kpengine::asset
                           settings.texture_settings.max_levels, import_compression}});
                     const auto cooked = CookTextureProfiles(imported, settings, result.metrics);
                     const std::string portable_path =
-                        PublishTextureProduct(cooked.first, imported.image, result);
+                        PublishTextureProduct(std::move(cooked.first), result);
                     const std::string block_path = cooked.second.has_value()
-                                                       ? PublishTextureProduct(*cooked.second,
-                                                                               imported.image, result)
+                                                       ? PublishTextureProduct(
+                                                             std::move(*cooked.second), result)
                                                        : std::string{};
                     return {portable_path, block_path, "texture"};
                 }
@@ -263,10 +263,10 @@ namespace kpengine::asset
             {
                 const auto cooked = CookTextureProfiles(imported, settings, result.metrics);
                 const std::string portable_path =
-                    PublishTextureProduct(cooked.first, decoded, result);
+                    PublishTextureProduct(std::move(cooked.first), result);
                 const std::string block_path = cooked.second.has_value()
-                                                   ? PublishTextureProduct(*cooked.second,
-                                                                           decoded, result)
+                                                   ? PublishTextureProduct(
+                                                         std::move(*cooked.second), result)
                                                    : std::string{};
                 return {portable_path, block_path, "texture"};
             }

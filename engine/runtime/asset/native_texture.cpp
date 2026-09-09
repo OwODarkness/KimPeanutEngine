@@ -389,6 +389,96 @@ namespace kpengine::asset
         return {std::move(data), stored_digest, hashes.content_hash};
     }
 
+    void ValidateNativeTextureProductStructure(const std::vector<std::byte> &bytes,
+                                               const ContentHashPair *verified_hashes)
+    {
+        if (bytes.size() > kNativeTextureMaxBytes || bytes.size() < kNativeTextureHeaderSize)
+        {
+            Fail(NativeTextureErrorCode::Truncated, "native texture size is invalid");
+        }
+        for (std::size_t index = 0; index < kMagic.size(); ++index)
+        {
+            if (std::to_integer<std::uint8_t>(bytes[index]) != kMagic[index])
+            {
+                Fail(NativeTextureErrorCode::InvalidArgument, "native texture magic is invalid");
+            }
+        }
+
+        const std::uint16_t version = ReadU16(bytes, 8);
+        const std::uint16_t header_size = ReadU16(bytes, 10);
+        const std::uint32_t features = ReadU32(bytes, 12);
+        const std::uint64_t total_size = ReadU64(bytes, 16);
+        const std::uint64_t directory_offset = ReadU64(bytes, 24);
+        const std::uint32_t mip_count = ReadU32(bytes, 32);
+        const TextureFormat format = static_cast<TextureFormat>(ReadU32(bytes, 36));
+        const data::TextureSemantic semantic =
+            static_cast<data::TextureSemantic>(ReadU32(bytes, 40));
+        const std::uint32_t width = ReadU32(bytes, 44);
+        const std::uint32_t height = ReadU32(bytes, 48);
+        const std::uint32_t depth = ReadU32(bytes, 52);
+        const std::uint32_t array_layers = ReadU32(bytes, 56);
+
+        if (version != kNativeTextureVersion && version != kNativeTextureLegacyVersion)
+            Fail(NativeTextureErrorCode::UnsupportedVersion, "native texture version is unsupported");
+        if (header_size != kNativeTextureHeaderSize || directory_offset != kNativeTextureHeaderSize)
+            Fail(NativeTextureErrorCode::InvalidDirectory, "native texture header or directory is invalid");
+        if (features != kNativeTextureFeatures)
+            Fail(NativeTextureErrorCode::UnsupportedFeatures, "native texture features are unsupported");
+        if (total_size != bytes.size() || mip_count == 0 || mip_count > kNativeTextureMaxMipLevels)
+            Fail(NativeTextureErrorCode::InvalidDirectory, "native texture total size or mip count is invalid");
+        if (width == 0 || height == 0 || depth != 1 || array_layers != 1 ||
+            width > kNativeTextureMaxDimension || height > kNativeTextureMaxDimension ||
+            !IsKnownSemantic(semantic) || ExpectedLevelBytes(width, height, format) == 0)
+            Fail(NativeTextureErrorCode::InvalidValue, "native texture metadata is invalid");
+
+        const std::size_t directory_size = static_cast<std::size_t>(mip_count) *
+                                           kNativeTextureMipEntrySize;
+        std::size_t directory_end = 0;
+        if (!CheckedAdd(kNativeTextureHeaderSize, directory_size, directory_end) ||
+            directory_end > bytes.size())
+            Fail(NativeTextureErrorCode::Truncated, "native texture directory is truncated");
+
+        ContentHashPair hashes{};
+        if (verified_hashes != nullptr)
+        {
+            hashes = *verified_hashes;
+        }
+        else
+        {
+            const auto computed = Sha256WithZeroedRange(bytes, kNativeTextureDigestOffset,
+                                                        kNativeTextureDigestSize);
+            if (!computed)
+                Fail(NativeTextureErrorCode::Truncated, "native texture digest is truncated");
+            hashes = *computed;
+        }
+        if (ReadHash(bytes, kNativeTextureDigestOffset) != hashes.zeroed_range_hash)
+            Fail(NativeTextureErrorCode::IntegrityMismatch,
+                 "native texture integrity digest does not match");
+
+        std::size_t expected_offset = directory_end;
+        for (std::uint32_t index = 0; index < mip_count; ++index)
+        {
+            const std::size_t offset = kNativeTextureHeaderSize +
+                                       static_cast<std::size_t>(index) * kNativeTextureMipEntrySize;
+            const std::uint32_t level_width = ReadU32(bytes, offset);
+            const std::uint32_t level_height = ReadU32(bytes, offset + 4);
+            const std::uint32_t reserved = ReadU32(bytes, offset + 8);
+            const std::uint64_t payload_offset = ReadU64(bytes, offset + 12);
+            const std::uint64_t payload_size = ReadU64(bytes, offset + 20);
+            const std::uint32_t level_index = ReadU32(bytes, offset + 28);
+            if (reserved != 0 || level_index != index || payload_offset != expected_offset ||
+                payload_offset > bytes.size() || payload_size > bytes.size() - payload_offset ||
+                payload_size != ExpectedLevelBytes(level_width, level_height, format))
+                Fail(NativeTextureErrorCode::InvalidDirectory,
+                     "native texture mip directory is invalid");
+            if (!CheckedAdd(expected_offset, static_cast<std::size_t>(payload_size), expected_offset))
+                Fail(NativeTextureErrorCode::Overflow, "native texture mip payload overflows");
+        }
+        if (expected_offset != bytes.size())
+            Fail(NativeTextureErrorCode::InvalidDirectory,
+                 "native texture has trailing payload bytes");
+    }
+
     ContentHash ComputeNativeTextureProductHash(const std::vector<std::byte> &bytes)
     {
         return Sha256(bytes);

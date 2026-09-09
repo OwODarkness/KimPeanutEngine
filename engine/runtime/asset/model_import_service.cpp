@@ -619,6 +619,8 @@ namespace kpengine::asset
                          "immutable archive product collides with different bytes: " +
                              destination.string());
                 }
+                const std::filesystem::path staged = operation_root / product.record.relative_path;
+                std::filesystem::remove(staged, error);
                 return;
             }
             if (error)
@@ -628,7 +630,6 @@ namespace kpengine::asset
             }
 
             const std::filesystem::path staged = operation_root / product.record.relative_path;
-            WriteBytes(staged, product.bytes, &metrics);
             std::filesystem::create_directories(destination.parent_path(), error);
             if (error)
             {
@@ -861,34 +862,7 @@ namespace kpengine::asset
             }
             {
                 MetricTimer timer(metrics, ModelImportMetricStage::ProductValidate);
-                const NativeModelProduct decoded = DeserializeNativeModel(model_bytes);
-                bool metadata_matches =
-                    decoded.data.vertices.size() <= model_data.vertices.size() &&
-                    decoded.data.indices.size() == model_data.indices.size() &&
-                    decoded.data.sections.size() == model_data.sections.size() &&
-                    decoded.data.material_references == model_data.material_references &&
-                    decoded.data.local_bounds == model_data.local_bounds;
-                if (metadata_matches)
-                {
-                    for (std::size_t index = 0; index < decoded.data.sections.size(); ++index)
-                    {
-                        const data::MeshSection &decoded_section = decoded.data.sections[index];
-                        const data::MeshSection &source_section = model_data.sections[index];
-                        if (decoded_section.index_start != source_section.index_start ||
-                            decoded_section.index_count != source_section.index_count ||
-                            decoded_section.material_index != source_section.material_index ||
-                            decoded_section.local_bounds != source_section.local_bounds)
-                        {
-                            metadata_matches = false;
-                            break;
-                        }
-                    }
-                }
-                if (!metadata_matches)
-                {
-                    Fail(ModelImportErrorCode::ProductInvalid,
-                         "serialized native model failed its topology/metadata round-trip validation");
-                }
+                ValidateNativeModelProductStructure(model_bytes);
                 for (const NativeMaterialProduct &material : converted_materials.materials)
                 {
                     ValidateNativeMaterialProduct(material.bytes);
@@ -897,7 +871,7 @@ namespace kpengine::asset
                 {
                     try
                     {
-                        (void)DeserializeNativeTexture(image.bytes);
+                        ValidateNativeTextureProductStructure(image.bytes);
                     }
                     catch (const NativeTextureError &error)
                     {
@@ -912,6 +886,10 @@ namespace kpengine::asset
             Fail(ModelImportErrorCode::ProductInvalid, error.what());
         }
         catch (const NativeMaterialConversionError &error)
+        {
+            Fail(ModelImportErrorCode::ProductInvalid, error.what());
+        }
+        catch (const NativeTextureError &error)
         {
             Fail(ModelImportErrorCode::ProductInvalid, error.what());
         }
@@ -935,14 +913,14 @@ namespace kpengine::asset
         material_hashes.reserve(converted_materials.materials.size());
         for (std::size_t index = 0; index < converted_materials.materials.size(); ++index)
         {
-            const NativeMaterialProduct &material = converted_materials.materials[index];
+            NativeMaterialProduct &material = converted_materials.materials[index];
             material_hashes.push_back(material.content_hash);
             products.push_back({{material.content_hash, ArchiveProductType::Material,
                                  ProductRelativePath(ArchiveProductType::Material,
                                                       material.content_hash),
                                  static_cast<std::uint64_t>(material.bytes.size()),
                                  request.settings.material_schema_version},
-                                material.bytes});
+                                std::move(material.bytes)});
             const std::string display_name = material.display_name.empty()
                                                   ? "Material_" + std::to_string(index)
                                                   : material.display_name;
@@ -952,14 +930,14 @@ namespace kpengine::asset
         }
 
         std::vector<ContentHash> texture_hashes;
-        for (const NativeImageProduct &image : converted_materials.embedded_images)
+        for (NativeImageProduct &image : converted_materials.embedded_images)
         {
             texture_hashes.push_back(image.content_hash);
             products.push_back({{image.content_hash, ArchiveProductType::Texture,
                                  ProductRelativePath(ArchiveProductType::Texture,
                                                       image.content_hash, "texture"),
                                  static_cast<std::uint64_t>(image.bytes.size()), 1},
-                                image.bytes});
+                                std::move(image.bytes)});
         }
 
         const std::filesystem::path operation_root =
@@ -967,25 +945,21 @@ namespace kpengine::asset
             (source_path.stem().string() + "-" + std::to_string(
                 impl_->operation_sequence.fetch_add(1, std::memory_order_relaxed)));
         StagingCleanup cleanup{operation_root};
+        for (std::size_t index = 0; index < products.size(); ++index)
         {
-            MetricTimer timer(metrics, ModelImportMetricStage::StagingWrite);
-            for (std::size_t index = 0; index < products.size(); ++index)
+            const PendingProduct &product = products[index];
+            ReportProgress(request, ModelImportProgressStage::PublishingProducts,
+                           "staging " + product.record.relative_path,
+                           index + 1, products.size());
             {
-                const PendingProduct &product = products[index];
-                ReportProgress(request, ModelImportProgressStage::PublishingProducts,
-                               "staging " + product.record.relative_path,
-                               index + 1, products.size());
+                MetricTimer timer(metrics, ModelImportMetricStage::StagingWrite);
                 WriteBytes(operation_root / product.record.relative_path, product.bytes, &metrics);
             }
-        }
-        {
-            MetricTimer timer(metrics, ModelImportMetricStage::Publication);
-            for (std::size_t index = 0; index < products.size(); ++index)
+            ReportProgress(request, ModelImportProgressStage::PublishingProducts,
+                           "publishing " + product.record.relative_path,
+                           index + 1, products.size());
             {
-                const PendingProduct &product = products[index];
-                ReportProgress(request, ModelImportProgressStage::PublishingProducts,
-                               "publishing " + product.record.relative_path,
-                               index + 1, products.size());
+                MetricTimer timer(metrics, ModelImportMetricStage::Publication);
                 PublishProduct(archive_root, operation_root, product, metrics);
             }
         }

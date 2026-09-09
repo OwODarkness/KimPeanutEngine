@@ -40,6 +40,7 @@ namespace
     using kpengine::asset::NativeModelMaterialReference;
     using kpengine::asset::SerializeNativeModel;
     using kpengine::asset::DeserializeNativeModel;
+    using kpengine::asset::ValidateNativeModelProductStructure;
 
     NativeModelData MakeModel()
     {
@@ -164,6 +165,7 @@ TEST(NativeModelFormatTest, SerializesDeterministicallyAndRoundTrips)
 
     ASSERT_EQ(first, second);
     ASSERT_GE(first.size(), kpengine::asset::kNativeModelHeaderSize);
+    EXPECT_NO_THROW(ValidateNativeModelProductStructure(first));
     EXPECT_EQ(static_cast<char>(std::to_integer<unsigned char>(first[0])), 'K');
     EXPECT_EQ(static_cast<char>(std::to_integer<unsigned char>(first[1])), 'P');
     EXPECT_EQ(static_cast<char>(std::to_integer<unsigned char>(first[2])), 'M');
