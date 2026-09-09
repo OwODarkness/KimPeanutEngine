@@ -700,10 +700,31 @@ namespace kpengine::asset
                            "serializing native model and material products");
             model_bytes = SerializeNativeModel(model_data);
             const NativeModelProduct decoded = DeserializeNativeModel(model_bytes);
-            if (!(decoded.data == model_data))
+            bool metadata_matches = decoded.data.vertices.size() <= model_data.vertices.size() &&
+                                    decoded.data.indices.size() == model_data.indices.size() &&
+                                    decoded.data.sections.size() == model_data.sections.size() &&
+                                    decoded.data.material_references == model_data.material_references &&
+                                    decoded.data.local_bounds == model_data.local_bounds;
+            if (metadata_matches)
+            {
+                for (std::size_t index = 0; index < decoded.data.sections.size(); ++index)
+                {
+                    const data::MeshSection &decoded_section = decoded.data.sections[index];
+                    const data::MeshSection &source_section = model_data.sections[index];
+                    if (decoded_section.index_start != source_section.index_start ||
+                        decoded_section.index_count != source_section.index_count ||
+                        decoded_section.material_index != source_section.material_index ||
+                        decoded_section.local_bounds != source_section.local_bounds)
+                    {
+                        metadata_matches = false;
+                        break;
+                    }
+                }
+            }
+            if (!metadata_matches)
             {
                 Fail(ModelImportErrorCode::ProductInvalid,
-                     "serialized native model failed its round-trip validation");
+                     "serialized native model failed its topology/metadata round-trip validation");
             }
             for (const NativeMaterialProduct &material : converted_materials.materials)
             {

@@ -15,8 +15,11 @@
 
 namespace kpengine::asset
 {
-    constexpr std::uint16_t kNativeModelVersion = 2;
-    constexpr std::uint32_t kNativeModelFeatures = 0;
+    // V3 is the compact runtime profile. V1/V2 remain readable so existing
+    // archive products can be used until their source is reimported.
+    constexpr std::uint16_t kNativeModelVersion = 3;
+    constexpr std::uint32_t kNativeModelFeatures = 1;
+    constexpr std::size_t kNativeModelCompactVertexStride = 24;
     constexpr std::size_t kNativeModelHeaderSize = 88;
     constexpr std::size_t kNativeModelChunkEntrySize = 32;
     constexpr std::size_t kNativeModelDigestOffset = 40;

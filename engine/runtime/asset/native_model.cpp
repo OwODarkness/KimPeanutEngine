@@ -138,6 +138,14 @@ namespace kpengine::asset
                    static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset + 1])) << 8;
         }
 
+        std::int16_t ReadI16(const std::vector<std::byte> &bytes, std::size_t offset)
+        {
+            const std::uint16_t raw = ReadU16(bytes, offset);
+            std::int16_t value = 0;
+            std::memcpy(&value, &raw, sizeof(value));
+            return value;
+        }
+
         std::uint32_t ReadU32(const std::vector<std::byte> &bytes, std::size_t offset)
         {
             std::uint32_t value = 0;
@@ -191,7 +199,7 @@ namespace kpengine::asset
             }
         }
 
-        void ValidateData(const NativeModelData &data)
+        void ValidateData(const NativeModelData &data, bool allow_quantization_error = false)
         {
             Require(data.vertices.size() <= kNativeModelMaxVertices,
                     NativeModelErrorCode::Overflow, "native model vertex count exceeds the limit");
@@ -233,15 +241,22 @@ namespace kpengine::asset
                 }
                 Require(section.local_bounds.IsValid(), NativeModelErrorCode::InvalidValue,
                         "native model section bounds are inverted");
+                const float global_extent = std::max({
+                    std::abs(data.local_bounds.max_.x_ - data.local_bounds.min_.x_),
+                    std::abs(data.local_bounds.max_.y_ - data.local_bounds.min_.y_),
+                    std::abs(data.local_bounds.max_.z_ - data.local_bounds.min_.z_)});
+                const float bounds_epsilon = allow_quantization_error
+                                                 ? std::max(1.0e-3f, global_extent / 65535.0f * 2.0f)
+                                                 : 0.0f;
                 for (std::size_t index = section.index_start; index < end; ++index)
                 {
                     const data::Vertex &vertex = data.vertices[data.indices[index]];
-                    Require(vertex.position.x_ >= section.local_bounds.min_.x_ &&
-                                vertex.position.x_ <= section.local_bounds.max_.x_ &&
-                                vertex.position.y_ >= section.local_bounds.min_.y_ &&
-                                vertex.position.y_ <= section.local_bounds.max_.y_ &&
-                                vertex.position.z_ >= section.local_bounds.min_.z_ &&
-                                vertex.position.z_ <= section.local_bounds.max_.z_,
+                    Require(vertex.position.x_ >= section.local_bounds.min_.x_ - bounds_epsilon &&
+                                vertex.position.x_ <= section.local_bounds.max_.x_ + bounds_epsilon &&
+                                vertex.position.y_ >= section.local_bounds.min_.y_ - bounds_epsilon &&
+                                vertex.position.y_ <= section.local_bounds.max_.y_ + bounds_epsilon &&
+                                vertex.position.z_ >= section.local_bounds.min_.z_ - bounds_epsilon &&
+                                vertex.position.z_ <= section.local_bounds.max_.z_ + bounds_epsilon,
                             NativeModelErrorCode::InvalidValue,
                             "native model section bounds do not contain indexed vertices");
                 }
@@ -268,6 +283,214 @@ namespace kpengine::asset
             }
         }
 
+        std::uint16_t FloatToHalf(float value)
+        {
+            std::uint32_t bits = 0;
+            std::memcpy(&bits, &value, sizeof(bits));
+            const std::uint32_t sign = (bits >> 16) & 0x8000u;
+            const std::uint32_t exponent = (bits >> 23) & 0xffu;
+            const std::uint32_t mantissa = bits & 0x7fffffu;
+            if (exponent == 0xffu)
+            {
+                return static_cast<std::uint16_t>(sign | 0x7c00u | (mantissa != 0 ? 0x0200u : 0u));
+            }
+            if (exponent > 142u)
+            {
+                return static_cast<std::uint16_t>(sign | 0x7c00u);
+            }
+            if (exponent < 113u)
+            {
+                if (exponent < 103u)
+                {
+                    return static_cast<std::uint16_t>(sign);
+                }
+                const std::uint32_t shifted = (mantissa | 0x800000u) >> (113u - exponent);
+                return static_cast<std::uint16_t>(sign | ((shifted + 0x1000u) >> 13));
+            }
+            const std::uint32_t half_exponent = exponent - 112u;
+            const std::uint32_t rounded_mantissa = mantissa + 0x1000u;
+            if ((rounded_mantissa & 0x800000u) != 0)
+            {
+                return static_cast<std::uint16_t>(sign | ((half_exponent + 1u) << 10));
+            }
+            return static_cast<std::uint16_t>(sign | (half_exponent << 10) |
+                                               (rounded_mantissa >> 13));
+        }
+
+        float HalfToFloat(std::uint16_t value)
+        {
+            const std::uint32_t sign = (static_cast<std::uint32_t>(value & 0x8000u)) << 16;
+            const std::uint32_t exponent = (value >> 10) & 0x1fu;
+            const std::uint32_t mantissa = value & 0x03ffu;
+            std::uint32_t bits = 0;
+            if (exponent == 0)
+            {
+                if (mantissa == 0)
+                {
+                    bits = sign;
+                }
+                else
+                {
+                    std::uint32_t normalized = mantissa;
+                    std::uint32_t shift = 0;
+                    while ((normalized & 0x0400u) == 0)
+                    {
+                        normalized <<= 1;
+                        ++shift;
+                    }
+                    bits = sign | ((127u - 15u - shift) << 23) |
+                           ((normalized & 0x03ffu) << 13);
+                }
+            }
+            else if (exponent == 0x1fu)
+            {
+                bits = sign | 0x7f800000u | (mantissa << 13);
+            }
+            else
+            {
+                bits = sign | ((exponent + 112u) << 23) | (mantissa << 13);
+            }
+            float result = 0.0f;
+            std::memcpy(&result, &bits, sizeof(result));
+            return result;
+        }
+
+        float ClampUnit(float value)
+        {
+            return std::clamp(value, -1.0f, 1.0f);
+        }
+
+        std::array<std::int16_t, 2> EncodeOctahedral(const Vector3f &source)
+        {
+            float x = source.x_;
+            float y = source.y_;
+            float z = source.z_;
+            const float length = std::sqrt(x * x + y * y + z * z);
+            if (length <= std::numeric_limits<float>::epsilon())
+            {
+                x = 0.0f;
+                y = 0.0f;
+                z = 1.0f;
+            }
+            else
+            {
+                x /= length;
+                y /= length;
+                z /= length;
+            }
+            const float inverse_l1 = 1.0f / (std::abs(x) + std::abs(y) + std::abs(z));
+            x *= inverse_l1;
+            y *= inverse_l1;
+            if (z < 0.0f)
+            {
+                const float old_x = x;
+                x = (1.0f - std::abs(y)) * (old_x < 0.0f ? -1.0f : 1.0f);
+                y = (1.0f - std::abs(old_x)) * (y < 0.0f ? -1.0f : 1.0f);
+            }
+            return {static_cast<std::int16_t>(std::lround(ClampUnit(x) * 32767.0f)),
+                    static_cast<std::int16_t>(std::lround(ClampUnit(y) * 32767.0f))};
+        }
+
+        Vector3f DecodeOctahedral(std::int16_t encoded_x, std::int16_t encoded_y)
+        {
+            float x = static_cast<float>(encoded_x) / 32767.0f;
+            float y = static_cast<float>(encoded_y) / 32767.0f;
+            float z = 1.0f - std::abs(x) - std::abs(y);
+            if (z < 0.0f)
+            {
+                const float old_x = x;
+                x = (1.0f - std::abs(y)) * (old_x < 0.0f ? -1.0f : 1.0f);
+                y = (1.0f - std::abs(old_x)) * (y < 0.0f ? -1.0f : 1.0f);
+            }
+            const float length = std::sqrt(x * x + y * y + z * z);
+            if (length <= std::numeric_limits<float>::epsilon())
+            {
+                return {0.0f, 0.0f, 1.0f};
+            }
+            return {x / length, y / length, z / length};
+        }
+
+        std::uint16_t QuantizePosition(float value, float minimum, float maximum)
+        {
+            const float extent = maximum - minimum;
+            if (extent <= std::numeric_limits<float>::epsilon())
+            {
+                return 0;
+            }
+            const float normalized = std::clamp((value - minimum) / extent, 0.0f, 1.0f);
+            return static_cast<std::uint16_t>(std::lround(normalized * 65535.0f));
+        }
+
+        float DequantizePosition(std::uint16_t value, float minimum, float maximum)
+        {
+            const float extent = maximum - minimum;
+            if (extent <= std::numeric_limits<float>::epsilon())
+            {
+                return minimum;
+            }
+            return minimum + extent * (static_cast<float>(value) / 65535.0f);
+        }
+
+        NativeModelData CompactForSerialization(const NativeModelData &source)
+        {
+            NativeModelData compact;
+            compact.indices.resize(source.indices.size());
+            compact.vertices.reserve(source.vertices.size());
+            compact.sections = source.sections;
+            compact.local_bounds = source.local_bounds;
+            compact.material_references = source.material_references;
+
+            const std::uint32_t unused = std::numeric_limits<std::uint32_t>::max();
+            std::vector<std::uint32_t> remap(source.vertices.size(), unused);
+            for (std::size_t index = 0; index < source.indices.size(); ++index)
+            {
+                const std::uint32_t source_index = source.indices[index];
+                if (remap[source_index] == unused)
+                {
+                    remap[source_index] = static_cast<std::uint32_t>(compact.vertices.size());
+                    compact.vertices.push_back(source.vertices[source_index]);
+                }
+                compact.indices[index] = remap[source_index];
+            }
+            ValidateData(compact);
+            return compact;
+        }
+
+        void AppendCompactVertex(std::vector<std::byte> &bytes, const NativeModelData &data,
+                                 const data::Vertex &vertex)
+        {
+            Require(std::abs(vertex.tex_coord.x_) <= 65504.0f &&
+                        std::abs(vertex.tex_coord.y_) <= 65504.0f,
+                    NativeModelErrorCode::InvalidValue,
+                    "native model UV exceeds the V3 half-float range");
+            AppendU16(bytes, QuantizePosition(vertex.position.x_, data.local_bounds.min_.x_,
+                                              data.local_bounds.max_.x_));
+            AppendU16(bytes, QuantizePosition(vertex.position.y_, data.local_bounds.min_.y_,
+                                              data.local_bounds.max_.y_));
+            AppendU16(bytes, QuantizePosition(vertex.position.z_, data.local_bounds.min_.z_,
+                                              data.local_bounds.max_.z_));
+            const auto normal = EncodeOctahedral(vertex.normal);
+            const auto tangent = EncodeOctahedral(vertex.tangent);
+            AppendU16(bytes, static_cast<std::uint16_t>(normal[0]));
+            AppendU16(bytes, static_cast<std::uint16_t>(normal[1]));
+            AppendU16(bytes, static_cast<std::uint16_t>(tangent[0]));
+            AppendU16(bytes, static_cast<std::uint16_t>(tangent[1]));
+            AppendU16(bytes, FloatToHalf(vertex.tex_coord.x_));
+            AppendU16(bytes, FloatToHalf(vertex.tex_coord.y_));
+            const Vector3f cross{
+                vertex.normal.y_ * vertex.tangent.z_ - vertex.normal.z_ * vertex.tangent.y_,
+                vertex.normal.z_ * vertex.tangent.x_ - vertex.normal.x_ * vertex.tangent.z_,
+                vertex.normal.x_ * vertex.tangent.y_ - vertex.normal.y_ * vertex.tangent.x_};
+            const float handedness = cross.x_ * vertex.bitangent.x_ +
+                                     cross.y_ * vertex.bitangent.y_ +
+                                     cross.z_ * vertex.bitangent.z_;
+            AppendByte(bytes, handedness < 0.0f ? 1u : 0u);
+            while (bytes.size() % kNativeModelCompactVertexStride != 0)
+            {
+                AppendByte(bytes, 0);
+            }
+        }
+
         void AppendVertex(std::vector<std::byte> &bytes, const data::Vertex &vertex)
         {
             AppendFloat(bytes, vertex.position.x_);
@@ -286,25 +509,45 @@ namespace kpengine::asset
             AppendFloat(bytes, vertex.bitangent.z_);
         }
 
-        std::vector<std::byte> BuildChunk(const NativeModelData &data, NativeModelChunkType type)
+        std::vector<std::byte> BuildChunk(const NativeModelData &data, NativeModelChunkType type,
+                                           bool compact)
         {
             std::vector<std::byte> bytes;
             switch (type)
             {
             case NativeModelChunkType::Vertices:
-                bytes.reserve(data.vertices.size() * kVertexStride);
+                bytes.reserve(data.vertices.size() *
+                              (compact ? kNativeModelCompactVertexStride : kVertexStride));
                 for (const data::Vertex &vertex : data.vertices)
                 {
-                    AppendVertex(bytes, vertex);
+                    if (compact)
+                    {
+                        AppendCompactVertex(bytes, data, vertex);
+                    }
+                    else
+                    {
+                        AppendVertex(bytes, vertex);
+                    }
                 }
                 break;
             case NativeModelChunkType::Indices:
-                bytes.reserve(data.indices.size() * kIndexStride);
+            {
+                const bool use_16_bit_indices = compact && data.vertices.size() <= 65535u;
+                bytes.reserve(data.indices.size() *
+                              (use_16_bit_indices ? sizeof(std::uint16_t) : kIndexStride));
                 for (const std::uint32_t index : data.indices)
                 {
-                    AppendU32(bytes, index);
+                    if (use_16_bit_indices)
+                    {
+                        AppendU16(bytes, static_cast<std::uint16_t>(index));
+                    }
+                    else
+                    {
+                        AppendU32(bytes, index);
+                    }
                 }
                 break;
+            }
             case NativeModelChunkType::Sections:
                 bytes.reserve(data.sections.size() * kSectionStride);
                 for (const data::MeshSection &section : data.sections)
@@ -360,14 +603,18 @@ namespace kpengine::asset
             return 0;
         }
 
-        std::uint32_t ChunkElementSize(NativeModelChunkType type)
+        std::uint32_t ChunkElementSize(const NativeModelData &data, NativeModelChunkType type,
+                                       bool compact)
         {
             switch (type)
             {
             case NativeModelChunkType::Vertices:
-                return static_cast<std::uint32_t>(kVertexStride);
+                return static_cast<std::uint32_t>(compact ? kNativeModelCompactVertexStride
+                                                          : kVertexStride);
             case NativeModelChunkType::Indices:
-                return static_cast<std::uint32_t>(kIndexStride);
+                return static_cast<std::uint32_t>(compact && data.vertices.size() <= 65535u
+                                                       ? sizeof(std::uint16_t)
+                                                       : kIndexStride);
             case NativeModelChunkType::Sections:
                 return static_cast<std::uint32_t>(kSectionStride);
             case NativeModelChunkType::Bounds:
@@ -445,6 +692,7 @@ namespace kpengine::asset
     std::vector<std::byte> SerializeNativeModel(const NativeModelData &data)
     {
         ValidateData(data);
+        const NativeModelData compact_data = CompactForSerialization(data);
 
         constexpr std::array<NativeModelChunkType, 5> chunk_types{{
             NativeModelChunkType::Vertices,
@@ -457,10 +705,10 @@ namespace kpengine::asset
         std::array<Chunk, chunk_types.size()> chunks{};
         for (std::size_t index = 0; index < chunk_types.size(); ++index)
         {
-            chunk_bytes[index] = BuildChunk(data, chunk_types[index]);
+            chunk_bytes[index] = BuildChunk(compact_data, chunk_types[index], true);
             chunks[index].type = chunk_types[index];
-            chunks[index].element_size = ChunkElementSize(chunk_types[index]);
-            chunks[index].count = ChunkCount(data, chunk_types[index]);
+            chunks[index].element_size = ChunkElementSize(compact_data, chunk_types[index], true);
+            chunks[index].count = ChunkCount(compact_data, chunk_types[index]);
         }
 
         std::vector<std::byte> bytes;
@@ -480,10 +728,10 @@ namespace kpengine::asset
         {
             AppendByte(bytes, 0);
         }
-        AppendU32(bytes, static_cast<std::uint32_t>(data.vertices.size()));
-        AppendU32(bytes, static_cast<std::uint32_t>(data.indices.size()));
-        AppendU32(bytes, static_cast<std::uint32_t>(data.sections.size()));
-        AppendU32(bytes, static_cast<std::uint32_t>(data.material_references.size()));
+        AppendU32(bytes, static_cast<std::uint32_t>(compact_data.vertices.size()));
+        AppendU32(bytes, static_cast<std::uint32_t>(compact_data.indices.size()));
+        AppendU32(bytes, static_cast<std::uint32_t>(compact_data.sections.size()));
+        AppendU32(bytes, static_cast<std::uint32_t>(compact_data.material_references.size()));
         Require(bytes.size() == kNativeModelHeaderSize, NativeModelErrorCode::InvalidArgument,
                 "native model header size is inconsistent");
 
@@ -550,12 +798,14 @@ namespace kpengine::asset
         const std::uint32_t section_count = ReadU32(bytes, 80);
         const std::uint32_t material_count = ReadU32(bytes, 84);
 
-        Require(version == 1 || version == kNativeModelVersion,
+        Require(version == 1 || version == 2 || version == kNativeModelVersion,
                 NativeModelErrorCode::UnsupportedVersion,
                 "native model version is unsupported");
+        const bool compact = version == kNativeModelVersion;
         Require(header_size == kNativeModelHeaderSize, NativeModelErrorCode::InvalidChunkTable,
                 "native model header size is invalid");
-        Require(features == kNativeModelFeatures, NativeModelErrorCode::UnsupportedFeatures,
+        Require(features == (compact ? kNativeModelFeatures : 0u),
+                NativeModelErrorCode::UnsupportedFeatures,
                 "native model features are unsupported");
         Require(total_size == bytes.size(), NativeModelErrorCode::InvalidChunkTable,
                 "native model total size is invalid");
@@ -612,17 +862,21 @@ namespace kpengine::asset
                 NativeModelErrorCode::IntegrityMismatch,
                 "native model integrity digest does not match");
 
-        const std::size_t vertex_size = static_cast<std::size_t>(vertex_count) * kVertexStride;
-        const std::size_t index_size = static_cast<std::size_t>(index_count) * kIndexStride;
+        const std::size_t vertex_stride = compact ? kNativeModelCompactVertexStride : kVertexStride;
+        const std::size_t index_stride = compact && vertex_count <= 65535u
+                                             ? sizeof(std::uint16_t)
+                                             : kIndexStride;
+        const std::size_t vertex_size = static_cast<std::size_t>(vertex_count) * vertex_stride;
+        const std::size_t index_size = static_cast<std::size_t>(index_count) * index_stride;
         const std::size_t section_stride = version == 1
                                                 ? 3u * sizeof(std::uint32_t)
                                                 : kSectionStride;
         const std::size_t section_size = static_cast<std::size_t>(section_count) * section_stride;
         const std::size_t material_size = static_cast<std::size_t>(material_count) * kMaterialReferenceStride;
         RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Vertices), vertex_size,
-                     vertex_count, static_cast<std::uint32_t>(kVertexStride));
+                     vertex_count, static_cast<std::uint32_t>(vertex_stride));
         RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Indices), index_size,
-                     index_count, static_cast<std::uint32_t>(kIndexStride));
+                     index_count, static_cast<std::uint32_t>(index_stride));
         RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Sections), section_size,
                      section_count, static_cast<std::uint32_t>(section_stride));
         RequireChunk(bytes, FindChunk(chunks, NativeModelChunkType::Bounds), kBoundsStride,
@@ -651,23 +905,70 @@ namespace kpengine::asset
         product.data.sections.resize(section_count);
         product.data.material_references.resize(material_count);
 
+        const Chunk &bounds_chunk = FindChunk(chunks, NativeModelChunkType::Bounds);
+        const std::size_t bounds_offset = ChunkOffset(bounds_chunk);
+        product.data.local_bounds.min_ = {ReadFloat(bytes, bounds_offset),
+                                          ReadFloat(bytes, bounds_offset + 4),
+                                          ReadFloat(bytes, bounds_offset + 8)};
+        product.data.local_bounds.max_ = {ReadFloat(bytes, bounds_offset + 12),
+                                          ReadFloat(bytes, bounds_offset + 16),
+                                          ReadFloat(bytes, bounds_offset + 20)};
+
         const Chunk &vertex_chunk = FindChunk(chunks, NativeModelChunkType::Vertices);
         for (std::size_t index = 0; index < product.data.vertices.size(); ++index)
         {
-            const std::size_t offset = ChunkOffset(vertex_chunk) + index * kVertexStride;
+            const std::size_t offset = ChunkOffset(vertex_chunk) + index * vertex_stride;
             data::Vertex &vertex = product.data.vertices[index];
-            vertex.position = {ReadFloat(bytes, offset), ReadFloat(bytes, offset + 4), ReadFloat(bytes, offset + 8)};
-            vertex.normal = {ReadFloat(bytes, offset + 12), ReadFloat(bytes, offset + 16), ReadFloat(bytes, offset + 20)};
-            vertex.tex_coord = {ReadFloat(bytes, offset + 24), ReadFloat(bytes, offset + 28)};
-            vertex.tangent = {ReadFloat(bytes, offset + 32), ReadFloat(bytes, offset + 36), ReadFloat(bytes, offset + 40)};
-            vertex.bitangent = {ReadFloat(bytes, offset + 44), ReadFloat(bytes, offset + 48), ReadFloat(bytes, offset + 52)};
+            if (compact)
+            {
+                vertex.position = {
+                    DequantizePosition(ReadU16(bytes, offset), product.data.local_bounds.min_.x_,
+                                       product.data.local_bounds.max_.x_),
+                    DequantizePosition(ReadU16(bytes, offset + 2), product.data.local_bounds.min_.y_,
+                                       product.data.local_bounds.max_.y_),
+                    DequantizePosition(ReadU16(bytes, offset + 4), product.data.local_bounds.min_.z_,
+                                       product.data.local_bounds.max_.z_)};
+                vertex.normal = DecodeOctahedral(ReadI16(bytes, offset + 6),
+                                                 ReadI16(bytes, offset + 8));
+                vertex.tangent = DecodeOctahedral(ReadI16(bytes, offset + 10),
+                                                  ReadI16(bytes, offset + 12));
+                vertex.tex_coord = {HalfToFloat(ReadU16(bytes, offset + 14)),
+                                    HalfToFloat(ReadU16(bytes, offset + 16))};
+                const Vector3f cross{
+                    vertex.normal.y_ * vertex.tangent.z_ - vertex.normal.z_ * vertex.tangent.y_,
+                    vertex.normal.z_ * vertex.tangent.x_ - vertex.normal.x_ * vertex.tangent.z_,
+                    vertex.normal.x_ * vertex.tangent.y_ - vertex.normal.y_ * vertex.tangent.x_};
+                const float cross_length = std::sqrt(cross.x_ * cross.x_ + cross.y_ * cross.y_ +
+                                                     cross.z_ * cross.z_);
+                vertex.bitangent = cross_length <= std::numeric_limits<float>::epsilon()
+                                       ? Vector3f{0.0f, 1.0f, 0.0f}
+                                       : Vector3f{cross.x_ / cross_length, cross.y_ / cross_length,
+                                                  cross.z_ / cross_length};
+                if (std::to_integer<std::uint8_t>(bytes[offset + 18]) != 0)
+                {
+                    vertex.bitangent.x_ = -vertex.bitangent.x_;
+                    vertex.bitangent.y_ = -vertex.bitangent.y_;
+                    vertex.bitangent.z_ = -vertex.bitangent.z_;
+                }
+            }
+            else
+            {
+                vertex.position = {ReadFloat(bytes, offset), ReadFloat(bytes, offset + 4), ReadFloat(bytes, offset + 8)};
+                vertex.normal = {ReadFloat(bytes, offset + 12), ReadFloat(bytes, offset + 16), ReadFloat(bytes, offset + 20)};
+                vertex.tex_coord = {ReadFloat(bytes, offset + 24), ReadFloat(bytes, offset + 28)};
+                vertex.tangent = {ReadFloat(bytes, offset + 32), ReadFloat(bytes, offset + 36), ReadFloat(bytes, offset + 40)};
+                vertex.bitangent = {ReadFloat(bytes, offset + 44), ReadFloat(bytes, offset + 48), ReadFloat(bytes, offset + 52)};
+            }
             ValidateVertex(vertex);
         }
 
         const Chunk &index_chunk = FindChunk(chunks, NativeModelChunkType::Indices);
         for (std::size_t index = 0; index < product.data.indices.size(); ++index)
         {
-            product.data.indices[index] = ReadU32(bytes, ChunkOffset(index_chunk) + index * kIndexStride);
+            const std::size_t offset = ChunkOffset(index_chunk) + index * index_stride;
+            product.data.indices[index] = index_stride == sizeof(std::uint16_t)
+                                              ? ReadU16(bytes, offset)
+                                              : ReadU32(bytes, offset);
         }
 
         const Chunk &section_chunk = FindChunk(chunks, NativeModelChunkType::Sections);
@@ -709,11 +1010,6 @@ namespace kpengine::asset
             }
         }
 
-        const Chunk &bounds_chunk = FindChunk(chunks, NativeModelChunkType::Bounds);
-        const std::size_t bounds_offset = ChunkOffset(bounds_chunk);
-        product.data.local_bounds.min_ = {ReadFloat(bytes, bounds_offset), ReadFloat(bytes, bounds_offset + 4), ReadFloat(bytes, bounds_offset + 8)};
-        product.data.local_bounds.max_ = {ReadFloat(bytes, bounds_offset + 12), ReadFloat(bytes, bounds_offset + 16), ReadFloat(bytes, bounds_offset + 20)};
-
         const Chunk &material_chunk = FindChunk(chunks, NativeModelChunkType::MaterialReferences);
         for (std::size_t index = 0; index < product.data.material_references.size(); ++index)
         {
@@ -723,7 +1019,7 @@ namespace kpengine::asset
             product.data.material_references[index].asset_type = static_cast<AssetType>(ReadU16(bytes, offset));
             product.data.material_references[index].content_hash = ReadHash(bytes, offset + 4);
         }
-        ValidateData(product.data);
+        ValidateData(product.data, compact);
         return product;
     }
 

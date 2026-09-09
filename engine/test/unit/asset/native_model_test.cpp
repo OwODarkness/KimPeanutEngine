@@ -170,9 +170,35 @@ TEST(NativeModelFormatTest, SerializesDeterministicallyAndRoundTrips)
     EXPECT_EQ(static_cast<char>(std::to_integer<unsigned char>(first[3])), 'O');
     EXPECT_EQ(first[8], static_cast<std::byte>(kpengine::asset::kNativeModelVersion));
     EXPECT_EQ(first[9], std::byte{0});
+    const auto read_u32 = [&first](std::size_t offset)
+    {
+        return static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(first[offset])) |
+               (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(first[offset + 1])) << 8) |
+               (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(first[offset + 2])) << 16) |
+               (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(first[offset + 3])) << 24);
+    };
+    EXPECT_EQ(read_u32(kpengine::asset::kNativeModelHeaderSize + 24),
+              kpengine::asset::kNativeModelCompactVertexStride);
+    EXPECT_EQ(read_u32(kpengine::asset::kNativeModelHeaderSize +
+                       kpengine::asset::kNativeModelChunkEntrySize + 24),
+              sizeof(std::uint16_t));
 
     const auto product = DeserializeNativeModel(first);
-    EXPECT_EQ(product.data, source);
+    ASSERT_EQ(product.data.vertices.size(), source.vertices.size());
+    ASSERT_EQ(product.data.indices, source.indices);
+    ASSERT_EQ(product.data.sections.size(), source.sections.size());
+    EXPECT_EQ(product.data.local_bounds, source.local_bounds);
+    for (std::size_t index = 0; index < source.vertices.size(); ++index)
+    {
+        EXPECT_NEAR(product.data.vertices[index].position.x_, source.vertices[index].position.x_, 1.0e-4f);
+        EXPECT_NEAR(product.data.vertices[index].position.y_, source.vertices[index].position.y_, 1.0e-4f);
+        EXPECT_NEAR(product.data.vertices[index].position.z_, source.vertices[index].position.z_, 1.0e-4f);
+        EXPECT_NEAR(product.data.vertices[index].normal.x_, source.vertices[index].normal.x_, 1.0e-4f);
+        EXPECT_NEAR(product.data.vertices[index].normal.y_, source.vertices[index].normal.y_, 1.0e-4f);
+        EXPECT_NEAR(product.data.vertices[index].normal.z_, source.vertices[index].normal.z_, 1.0e-4f);
+        EXPECT_NEAR(product.data.vertices[index].tex_coord.x_, source.vertices[index].tex_coord.x_, 1.0e-3f);
+        EXPECT_NEAR(product.data.vertices[index].tex_coord.y_, source.vertices[index].tex_coord.y_, 1.0e-3f);
+    }
     EXPECT_EQ(product.product_hash, kpengine::asset::ComputeNativeModelProductHash(first));
     EXPECT_EQ(product.integrity_digest,
               kpengine::asset::Sha256([&]
@@ -193,7 +219,7 @@ TEST(NativeModelFormatTest, RejectsTamperingAndUnsupportedValues)
     EXPECT_EQ(CatchNativeModelError(bytes), NativeModelErrorCode::IntegrityMismatch);
 
     bytes = SerializeNativeModel(MakeModel());
-    bytes[8] = std::byte{3};
+    bytes[8] = std::byte{4};
     EXPECT_EQ(CatchNativeModelError(bytes), NativeModelErrorCode::UnsupportedVersion);
 }
 

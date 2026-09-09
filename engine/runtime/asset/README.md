@@ -196,6 +196,34 @@ metadata. The MI1.5 offline converter emits these fields deterministically;
 Render selects packed metallic-roughness G/B channels without splitting the
 source image.
 
+## Native `.model` products (Model V3 compact profile)
+
+Native Model products use a canonical little-endian chunk container with a
+versioned header, embedded integrity digest, bounds, sections, material hash
+references, vertex data, and index data. Model V3 is the compact offline-cooked
+profile. It keeps the same decoded `data::Vertex`, section, and material-slot
+semantics used by Render, but stores the geometry more densely:
+
+| Data | V3 representation | Runtime reconstruction |
+|---|---|---|
+| Position | 16-bit unsigned coordinates relative to model Bounds | dequantized `float3` |
+| Normal/tangent | signed 16-bit octahedral X/Y pairs | normalized `float3` |
+| UV | two IEEE-754 half values | `float2` |
+| Bitangent | one handedness byte | normalized cross product of normal/tangent |
+| Indices | 16-bit when the compact vertex count is at most 65535, otherwise 32-bit | `uint32_t` |
+
+The V3 vertex record is 24 bytes instead of the V2 56-byte float record. The
+importer also reorders vertices by first index use and removes unreferenced
+vertices; triangle order, section ranges, material slots, and bounds remain
+unchanged. Quantization is bounded and deterministic, so the product hash still
+identifies the complete immutable bytes. V3 decode is bounded by the same
+native-product and element-count limits as V2 and writes directly into the
+existing CPU mesh vectors.
+
+V1 and V2 products remain readable for migration. Reimporting a source with
+the current `ModelImportSettings` publishes V3; runtime loading never opens the
+foreign source as a fallback when a native product is malformed.
+
 ## Multi-section mesh materials
 
 A level static-mesh object may provide an optional `materials` array alongside

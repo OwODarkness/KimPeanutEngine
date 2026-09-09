@@ -505,6 +505,14 @@
   [AP1 plan](asset/.plan/AP1.md),
   [AP1.2 journal](../.spec/journal/2026-09-09-asset-ap1-0.md#ap12-gpu-native-texture-compression)
 
+- **Asset AP1.3 compact native Model profile (2026-09-09)** — native Model V3
+  now quantizes positions, octahedrally encodes normal/tangent data, stores
+  half UVs and bitangent handedness, uses 16-bit indices when possible, and
+  reorders/removes vertices by first use. Runtime decodes into the existing
+  CPU mesh ABI; V1/V2 products remain readable. Sponza reimport size/decode
+  and cross-backend visual acceptance remain open. →
+  [AP1 plan](asset/.plan/AP1.md)
+
 - **Runtime shutdown progress presentation (2026-09-09)** — the render-thread
   teardown path now keeps the existing loading panel alive while RuntimeContext
   releases gameplay, level, reflection/scripting, renderer, prepared assets,

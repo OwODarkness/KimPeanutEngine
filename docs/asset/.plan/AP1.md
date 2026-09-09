@@ -327,6 +327,16 @@ regression.
 - Preserve bounds, sections, material slots, and deterministic product hashes.
 - Measure product bytes, decode time, retained bytes, and render correctness.
 
+Implementation slice landed 2026-09-09. Native Model V3 now stores 24-byte
+quantized vertex records (position, octahedral normal/tangent, half UV, and
+bitangent handedness), uses 16-bit indices when the compact vertex count fits,
+and reorders vertices by first index use while removing unreferenced vertices.
+The runtime decodes back to the existing `data::Vertex` and `uint32_t` index
+vectors, so Graphics/RHI vertex contracts are unchanged. V1/V2 products remain
+readable; the importer default is V3 and cache settings include the schema
+version. Sponza reimport measurements and Vulkan/OpenGL visual evidence remain
+the acceptance gate.
+
 Exit: the three Sponza Model products are materially smaller than the current
 approximately 486 MB baseline and decode faster in RelWithDebInfo; the exact
 byte target is set from AP1.3 characterization rather than guessed in advance.

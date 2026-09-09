@@ -71,7 +71,7 @@ namespace kpengine::asset
     {
         std::string importer_id{"assimp"};
         std::uint32_t importer_version{1};
-        std::uint32_t native_model_version{2};
+        std::uint32_t native_model_version{3};
         std::uint32_t material_schema_version{2};
         std::string shader_asset_path{"shader/pbr_gbuffer.shader"};
         TextureCookSettings texture_settings{};

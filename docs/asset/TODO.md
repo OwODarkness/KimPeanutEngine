@@ -65,9 +65,11 @@ belongs in the corresponding `.spec/journal/` entry.
 
   Subtasks:
 
-  - [ ] **AP1.0 — Baseline and attribution:** report exclusive load costs,
+  - [x] **AP1.0 — Baseline and attribution:** report exclusive load costs,
     bytes, slowest operations, build configuration, cache condition, and peak
-    memory for the fixed Sponza startup.
+    memory for the fixed Sponza startup. The Startup Profiler and fixed-scene
+    measurements are accepted; the 126-asset Debug baseline is recorded in the
+    AP1 journal.
   - [x] **AP1.1 — Product verification:** native Texture/Model loading now
     computes the content and embedded-digest hashes without a product-sized
     integrity clone, reuses those results for archive verification and decode,
@@ -77,9 +79,9 @@ belongs in the corresponding `.spec/journal/` entry.
     reporting, Vulkan/OpenGL mappings and uploads, and portable cooking.
     Material-level profile selection and Vulkan/OpenGL fixture captures are
     landed; BC7/ASTC and the Sponza byte-budget measurement remain open.
-  - [ ] **AP1.3 — Model compaction:** characterize and implement a versioned
-    locality-optimized, quantized/compressed native Model profile with measured
-    quality and decode evidence.
+  - [ ] **AP1.3 — Model compaction:** V3 compact Model serialization and
+    bounded decode are implemented; Sponza reimport byte/decode/visual
+    measurement remains for acceptance.
   - [ ] **AP1.4 — Asset package:** build and mount a read-only dependency-closure
     package whose TOC preserves product identity, shared Texture deduplication,
     corruption bounds, and priority-ordered byte ranges.
