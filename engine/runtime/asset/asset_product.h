@@ -71,6 +71,18 @@ namespace kpengine::asset
     ContentHash Sha256(const std::vector<std::byte> &value);
     ContentHash Sha256File(const std::filesystem::path &path);
 
+    struct ContentHashPair
+    {
+        ContentHash content_hash{};
+        ContentHash zeroed_range_hash{};
+    };
+
+    // Computes the full-content hash and a hash with one in-memory range
+    // treated as zeroes without allocating a second product-sized buffer.
+    std::optional<ContentHashPair> Sha256WithZeroedRange(
+        const std::vector<std::byte> &value, std::size_t zero_offset,
+        std::size_t zero_size);
+
     // Returns a portable, lower-case Asset-relative path. Absolute paths and
     // traversal outside the Asset root are rejected at the archive boundary.
     std::string NormalizeAssetRelativePath(std::string_view path);
@@ -111,6 +123,16 @@ namespace kpengine::asset
                               const std::vector<std::byte> &bytes,
                               std::string &diagnostic,
                               const std::filesystem::path &product_root = {});
+
+    // Variant for callers that already computed the content hash while
+    // reading the product. It preserves the same path checks without a
+    // redundant full-product hash.
+    bool VerifyArchiveProduct(const std::filesystem::path &path,
+                              ArchiveProductType type,
+                              const std::vector<std::byte> &bytes,
+                              std::string &diagnostic,
+                              const std::filesystem::path &product_root,
+                              const ContentHash &content_hash);
 
     std::string ProductRelativePath(ArchiveProductType type, const ContentHash &content_hash,
                                     std::string_view texture_extension = {});

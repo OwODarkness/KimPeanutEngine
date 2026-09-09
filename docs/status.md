@@ -484,6 +484,15 @@
   Cerberus; Sponza remains the later stress baseline. →
   [AP1 plan](asset/.plan/AP1.md), [AP1.0 journal](../.spec/journal/2026-09-09-asset-ap1-0.md)
 
+- **Asset AP1.1 single-verification native loading (2026-09-09)** — native
+  Texture and Model products now compute their content hash and
+  digest-with-zeroed-range hash without cloning the product buffer. The loader
+  reuses those hashes for archive filename verification and structural decode,
+  removing the redundant post-decode hash and `BuildIntegrityInput` allocation
+  while preserving malformed, truncated, filename, and embedded-digest
+  rejection. → [AP1 plan](asset/.plan/AP1.md),
+  [AP1 journal](../.spec/journal/2026-09-09-asset-ap1-0.md#ap11-product-verification)
+
 - **Runtime shutdown progress presentation (2026-09-09)** — the render-thread
   teardown path now keeps the existing loading panel alive while RuntimeContext
   releases gameplay, level, reflection/scripting, renderer, prepared assets,

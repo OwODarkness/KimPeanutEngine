@@ -268,17 +268,6 @@ namespace kpengine::asset
             }
         }
 
-        std::vector<std::byte> BuildIntegrityInput(const std::vector<std::byte> &bytes)
-        {
-            Require(bytes.size() >= kNativeModelHeaderSize, NativeModelErrorCode::Truncated,
-                    "native model is shorter than its header");
-            std::vector<std::byte> result = bytes;
-            std::fill(result.begin() + kNativeModelDigestOffset,
-                      result.begin() + kNativeModelDigestOffset + kNativeModelDigestSize,
-                      std::byte{0});
-            return result;
-        }
-
         void AppendVertex(std::vector<std::byte> &bytes, const data::Vertex &vertex)
         {
             AppendFloat(bytes, vertex.position.x_);
@@ -528,12 +517,17 @@ namespace kpengine::asset
                 "native model chunk layout is inconsistent");
         WriteAtU64(bytes, 16, bytes.size());
 
-        const ContentHash integrity_digest = Sha256(BuildIntegrityInput(bytes));
+        const auto hashes = Sha256WithZeroedRange(bytes, kNativeModelDigestOffset,
+                                                   kNativeModelDigestSize);
+        Require(hashes.has_value(), NativeModelErrorCode::Truncated,
+                "native model digest is truncated");
+        const ContentHash integrity_digest = hashes->zeroed_range_hash;
         WriteAtHash(bytes, kNativeModelDigestOffset, integrity_digest);
         return bytes;
     }
 
-    NativeModelProduct DeserializeNativeModel(const std::vector<std::byte> &bytes)
+    NativeModelProduct DeserializeNativeModel(const std::vector<std::byte> &bytes,
+                                              const ContentHashPair *verified_hashes)
     {
         Require(bytes.size() <= kNativeModelMaxBytes, NativeModelErrorCode::Overflow,
                 "native model exceeds the product size limit");
@@ -600,9 +594,22 @@ namespace kpengine::asset
             }
         }
 
+        ContentHashPair hashes{};
+        if (verified_hashes != nullptr)
+        {
+            hashes = *verified_hashes;
+        }
+        else
+        {
+            const auto computed = Sha256WithZeroedRange(bytes, kNativeModelDigestOffset,
+                                                        kNativeModelDigestSize);
+            Require(computed.has_value(), NativeModelErrorCode::Truncated,
+                    "native model digest is truncated");
+            hashes = *computed;
+        }
         const ContentHash stored_digest = ReadHash(bytes, kNativeModelDigestOffset);
-        const ContentHash computed_digest = Sha256(BuildIntegrityInput(bytes));
-        Require(stored_digest == computed_digest, NativeModelErrorCode::IntegrityMismatch,
+        Require(stored_digest == hashes.zeroed_range_hash,
+                NativeModelErrorCode::IntegrityMismatch,
                 "native model integrity digest does not match");
 
         const std::size_t vertex_size = static_cast<std::size_t>(vertex_count) * kVertexStride;
@@ -638,7 +645,7 @@ namespace kpengine::asset
 
         NativeModelProduct product;
         product.integrity_digest = stored_digest;
-        product.product_hash = Sha256(bytes);
+        product.product_hash = hashes.content_hash;
         product.data.vertices.resize(vertex_count);
         product.data.indices.resize(index_count);
         product.data.sections.resize(section_count);

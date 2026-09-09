@@ -24,6 +24,7 @@ namespace
     using kpengine::asset::ProductRecord;
     using kpengine::asset::ProductRelativePath;
     using kpengine::asset::Sha256;
+    using kpengine::asset::Sha256WithZeroedRange;
     using kpengine::asset::SourceArchiveSnapshot;
     using kpengine::asset::SourceDependencyRecord;
     using kpengine::asset::SourceFingerprintInput;
@@ -170,6 +171,15 @@ TEST(ModelArchiveHashTest, ProducesStableVectorsAndCanonicalPaths)
     EXPECT_EQ(ProductRelativePath(ArchiveProductType::Texture, Sha256("texture"), "PNG"),
               "textures/" + Sha256("texture").ToHex() + ".png");
 
+    const std::vector<std::byte> product_bytes = Bytes("product-with-digest");
+    const auto hashes = Sha256WithZeroedRange(product_bytes, 3, 5);
+    ASSERT_TRUE(hashes.has_value());
+    EXPECT_EQ(hashes->content_hash, Sha256(product_bytes));
+    std::vector<std::byte> zeroed_bytes = product_bytes;
+    std::fill(zeroed_bytes.begin() + 3, zeroed_bytes.begin() + 8, std::byte{0});
+    EXPECT_EQ(hashes->zeroed_range_hash, Sha256(zeroed_bytes));
+    EXPECT_FALSE(Sha256WithZeroedRange(product_bytes, product_bytes.size() + 1, 0));
+
     EXPECT_EQ(CatchArchiveError([] { (void)NormalizeAssetRelativePath("../outside.obj"); }),
               ModelArchiveErrorCode::InvalidArgument);
     EXPECT_EQ(CatchArchiveError(
@@ -188,6 +198,8 @@ TEST(ModelArchiveHashTest, VerifiesNativeTextureProductsUsingTheirExtension)
 
     EXPECT_TRUE(VerifyArchiveProduct(product, ArchiveProductType::Texture, bytes,
                                      diagnostic, archive_root));
+    EXPECT_TRUE(VerifyArchiveProduct(product, ArchiveProductType::Texture, bytes,
+                                     diagnostic, archive_root, hash));
     EXPECT_TRUE(diagnostic.empty());
 
     diagnostic.clear();

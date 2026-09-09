@@ -64,9 +64,10 @@ belongs in the corresponding `.spec/journal/` entry.
   - [ ] **AP1.0 — Baseline and attribution:** report exclusive load costs,
     bytes, slowest operations, build configuration, cache condition, and peak
     memory for the fixed Sponza startup.
-  - [ ] **AP1.1 — Product verification:** remove the unused third Texture/Model
-    hash and full-product integrity copies while retaining strict corruption
-    rejection.
+  - [x] **AP1.1 — Product verification:** native Texture/Model loading now
+    computes the content and embedded-digest hashes without a product-sized
+    integrity clone, reuses those results for archive verification and decode,
+    and retains strict corruption rejection. See the [AP1 journal](../../.spec/journal/2026-09-09-asset-ap1-0.md#ap11-product-verification).
   - [ ] **AP1.2 — Texture compression:** add capability-aware BC desktop
     products and portable fallbacks across Asset cook, common Graphics, Vulkan,
     and OpenGL; keep the Sponza desktop texture closure at or below 550 MB.

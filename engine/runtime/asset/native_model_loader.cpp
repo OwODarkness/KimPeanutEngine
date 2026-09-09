@@ -63,14 +63,21 @@ namespace kpengine::asset
         {
             const std::filesystem::path product_path{path};
             const std::vector<std::byte> bytes = ReadProduct(product_path);
+            const auto hashes = Sha256WithZeroedRange(bytes, kNativeModelDigestOffset,
+                                                      kNativeModelDigestSize);
+            if (!hashes)
+            {
+                throw NativeModelError(NativeModelErrorCode::Truncated,
+                                       "native model digest is truncated");
+            }
             std::string diagnostic;
             if (!VerifyArchiveProduct(product_path, ArchiveProductType::Model, bytes, diagnostic,
-                                      product_root_))
+                                      product_root_, hashes->content_hash))
             {
                 throw NativeModelError(NativeModelErrorCode::IntegrityMismatch,
                                        "invalid native model archive product: " + diagnostic);
             }
-            product = DeserializeNativeModel(bytes);
+            product = DeserializeNativeModel(bytes, &*hashes);
         }
         catch (const NativeModelError &error)
         {

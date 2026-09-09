@@ -69,7 +69,8 @@ Render/Graphics: mip usability, upload, synchronization, GPU lifetime
 ```
 
 [AP1 — Startup Asset Loading Performance](.plan/AP1.md) owns this design. It
-starts with reproducible attribution and removal of triple product hashing,
+starts with reproducible attribution and removal of redundant product hashing
+and integrity copies,
 then adds GPU-native Texture compression, compact Model products, package
 locality, bounded dependency scheduling, and low-mip initial readiness. The
 literal embedding of Texture bytes in Material products is rejected; packages

@@ -1,6 +1,6 @@
 # AP1 — Startup Asset Loading Performance
 
-- Status: proposed
+- Status: active
 - Parent roadmap: [Asset Module TODO](../TODO.md#startup-performance-roadmap)
 - Execution spec: [Asset Startup Loading Performance](../../../.spec/specs/asset-startup-loading-performance.md)
 - Architecture map: [Asset Module Plans](../PLANS.md)
@@ -269,12 +269,26 @@ same-level baseline that identifies the dominant product types and phases.
 
 ### AP1.1 — Single-verification, copy-bounded native loading
 
-- Return the computed product hash from archive verification.
-- Remove the unused post-deserialization Texture and Model hash pass.
-- Replace `BuildIntegrityInput` full-product copies with incremental hashing or
-  a verified-product structural decode path.
+- Compute the content hash and digest-with-zeroed-range hash while traversing
+  the loaded product, without allocating a second product-sized buffer.
+- Pass the computed content hash through archive verification and pass both
+  verified hashes into native Texture and Model structural decoding.
+- Remove the unused post-deserialization Texture and Model hash pass and the
+  old `BuildIntegrityInput` full-product copies.
 - Keep malformed, truncated, digest-mismatch, and filename-mismatch rejection.
-- Add allocation/copy-sensitive tests or counters for large synthetic products.
+- Cover the zeroed-range hash contract, invalid ranges, and the precomputed
+  archive-verification path in Asset unit tests.
+
+Landed 2026-09-09. Native runtime products now perform the required content
+and embedded-digest checks from one source-buffer traversal. The loader still
+owns one product-sized read buffer for structural decoding; AP1.1 does not yet
+introduce memory mapping, package ranges, or allocator counters.
+
+Reference comparison used for this slice: Distill's packfile reader keeps
+immutable mapped/buffer-backed bytes alive for decoding, while O3DE and Godot
+document chunked file hashing. KimPeanutEngine retains its current owned
+`std::vector<std::byte>` boundary and adopts only the relevant property—the
+hash path does not clone the product or reread it for each validation decision.
 
 Exit: a runtime product is read once, has at most one authoritative full-byte
 verification on the selected policy path, and is not cloned solely for hashing.

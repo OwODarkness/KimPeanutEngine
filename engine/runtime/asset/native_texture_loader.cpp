@@ -55,6 +55,13 @@ namespace kpengine::asset
         {
             const std::filesystem::path product_path{path};
             const std::vector<std::byte> bytes = ReadProduct(product_path);
+            const auto hashes = Sha256WithZeroedRange(bytes, kNativeTextureDigestOffset,
+                                                      kNativeTextureDigestSize);
+            if (!hashes)
+            {
+                throw NativeTextureError(NativeTextureErrorCode::Truncated,
+                                         "native texture digest is truncated");
+            }
             std::string diagnostic;
             std::filesystem::path verification_root = product_root_;
             if (!verification_root.empty() &&
@@ -69,12 +76,12 @@ namespace kpengine::asset
                 }
             }
             if (!VerifyArchiveProduct(product_path, ArchiveProductType::Texture, bytes,
-                                       diagnostic, verification_root))
+                                       diagnostic, verification_root, hashes->content_hash))
             {
                 throw NativeTextureError(NativeTextureErrorCode::IntegrityMismatch,
                                          "invalid native texture archive product: " + diagnostic);
             }
-            NativeTextureProduct product = DeserializeNativeTexture(bytes);
+            NativeTextureProduct product = DeserializeNativeTexture(bytes, &*hashes);
             auto texture = std::make_shared<TextureResource>();
             texture->channel_count = 4;
             *texture->data = std::move(product.data);

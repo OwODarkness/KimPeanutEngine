@@ -450,6 +450,46 @@ namespace kpengine::asset
         return HashBytes(reinterpret_cast<const std::uint8_t *>(value.data()), value.size());
     }
 
+    std::optional<ContentHashPair> Sha256WithZeroedRange(
+        const std::vector<std::byte> &value, std::size_t zero_offset, std::size_t zero_size)
+    {
+        if (zero_offset > value.size() || zero_size > value.size() - zero_offset)
+        {
+            return std::nullopt;
+        }
+
+        Sha256State content_state;
+        Sha256State zeroed_state;
+        const auto update = [](Sha256State &state, const std::byte *data, std::size_t size)
+        {
+            if (size != 0)
+            {
+                state.Update(reinterpret_cast<const std::uint8_t *>(data), size);
+            }
+        };
+
+        update(content_state, value.data(), value.size());
+        update(zeroed_state, value.data(), zero_offset);
+
+        std::array<std::uint8_t, 64> zeros{};
+        std::size_t remaining = zero_size;
+        while (remaining != 0)
+        {
+            const std::size_t count = std::min(remaining, zeros.size());
+            zeroed_state.Update(zeros.data(), count);
+            remaining -= count;
+        }
+
+        const std::size_t suffix_offset = zero_offset + zero_size;
+        const std::byte *suffix = value.data();
+        if (suffix_offset != 0)
+        {
+            suffix += suffix_offset;
+        }
+        update(zeroed_state, suffix, value.size() - suffix_offset);
+        return ContentHashPair{content_state.Final(), zeroed_state.Final()};
+    }
+
     ContentHash Sha256File(const std::filesystem::path &path)
     {
         std::ifstream file(path, std::ios::binary);
@@ -479,11 +519,14 @@ namespace kpengine::asset
         return state.Final();
     }
 
-    bool VerifyArchiveProduct(const std::filesystem::path &path,
-                              ArchiveProductType type,
-                              const std::vector<std::byte> &bytes,
-                              std::string &diagnostic,
-                              const std::filesystem::path &product_root)
+    namespace
+    {
+    bool VerifyArchiveProductInternal(const std::filesystem::path &path,
+                                      ArchiveProductType type,
+                                      const std::vector<std::byte> &bytes,
+                                      std::string &diagnostic,
+                                      const std::filesystem::path &product_root,
+                                      const ContentHash *precomputed_content_hash)
     {
         const std::filesystem::path normalized = path.lexically_normal();
         const std::string expected_directory = ProductDirectory(type);
@@ -560,7 +603,9 @@ namespace kpengine::asset
             diagnostic = "archive product filename is not a lowercase SHA-256";
             return false;
         }
-        const ContentHash content_hash = Sha256(bytes);
+        const ContentHash content_hash = precomputed_content_hash != nullptr
+                                             ? *precomputed_content_hash
+                                             : Sha256(bytes);
         if (content_hash != *filename_hash)
         {
             diagnostic = "archive product filename does not match its bytes";
@@ -569,6 +614,27 @@ namespace kpengine::asset
 
         diagnostic.clear();
         return true;
+    }
+    }
+
+    bool VerifyArchiveProduct(const std::filesystem::path &path,
+                              ArchiveProductType type,
+                              const std::vector<std::byte> &bytes,
+                              std::string &diagnostic,
+                              const std::filesystem::path &product_root)
+    {
+        return VerifyArchiveProductInternal(path, type, bytes, diagnostic, product_root, nullptr);
+    }
+
+    bool VerifyArchiveProduct(const std::filesystem::path &path,
+                              ArchiveProductType type,
+                              const std::vector<std::byte> &bytes,
+                              std::string &diagnostic,
+                              const std::filesystem::path &product_root,
+                              const ContentHash &content_hash)
+    {
+        return VerifyArchiveProductInternal(path, type, bytes, diagnostic, product_root,
+                                             &content_hash);
     }
 
     std::string NormalizeAssetRelativePath(std::string_view path)

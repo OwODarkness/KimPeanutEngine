@@ -95,7 +95,9 @@ namespace kpengine::asset
     std::vector<std::byte> SerializeNativeModel(const NativeModelData &data);
 
     // Validates the complete product before allocating payload vectors.
-    NativeModelProduct DeserializeNativeModel(const std::vector<std::byte> &bytes);
+    NativeModelProduct DeserializeNativeModel(
+        const std::vector<std::byte> &bytes,
+        const ContentHashPair *verified_hashes = nullptr);
 
     ContentHash ComputeNativeModelProductHash(const std::vector<std::byte> &bytes);
 }

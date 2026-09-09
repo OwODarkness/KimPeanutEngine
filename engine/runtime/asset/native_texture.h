@@ -58,7 +58,9 @@ namespace kpengine::asset
     std::vector<std::byte> SerializeNativeTexture(const data::TextureData &data);
 
     // Validates the directory and digest before allocating any mip payload.
-    NativeTextureProduct DeserializeNativeTexture(const std::vector<std::byte> &bytes);
+    NativeTextureProduct DeserializeNativeTexture(
+        const std::vector<std::byte> &bytes,
+        const ContentHashPair *verified_hashes = nullptr);
 
     ContentHash ComputeNativeTextureProductHash(const std::vector<std::byte> &bytes);
 }

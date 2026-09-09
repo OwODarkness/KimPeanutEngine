@@ -168,20 +168,6 @@ namespace kpengine::asset
             return result;
         }
 
-        std::vector<std::byte> BuildIntegrityInput(const std::vector<std::byte> &bytes)
-        {
-            std::vector<std::byte> result = bytes;
-            if (result.size() < kNativeTextureDigestOffset + kNativeTextureDigestSize)
-            {
-                Fail(NativeTextureErrorCode::Truncated, "native texture digest is truncated");
-            }
-            std::fill(result.begin() + static_cast<std::ptrdiff_t>(kNativeTextureDigestOffset),
-                      result.begin() + static_cast<std::ptrdiff_t>(
-                          kNativeTextureDigestOffset + kNativeTextureDigestSize),
-                      std::byte{0});
-            return result;
-        }
-
         std::size_t ExpectedLevelBytes(std::uint32_t width, std::uint32_t height,
                                        TextureFormat format)
         {
@@ -316,12 +302,19 @@ namespace kpengine::asset
         {
             Fail(NativeTextureErrorCode::InvalidArgument, "native texture payload layout is inconsistent");
         }
-        const ContentHash digest = Sha256(BuildIntegrityInput(bytes));
+        const auto hashes = Sha256WithZeroedRange(bytes, kNativeTextureDigestOffset,
+                                                   kNativeTextureDigestSize);
+        if (!hashes)
+        {
+            Fail(NativeTextureErrorCode::Truncated, "native texture digest is truncated");
+        }
+        const ContentHash digest = hashes->zeroed_range_hash;
         WriteAtHash(bytes, kNativeTextureDigestOffset, digest);
         return bytes;
     }
 
-    NativeTextureProduct DeserializeNativeTexture(const std::vector<std::byte> &bytes)
+    NativeTextureProduct DeserializeNativeTexture(const std::vector<std::byte> &bytes,
+                                                  const ContentHashPair *verified_hashes)
     {
         if (bytes.size() > kNativeTextureMaxBytes || bytes.size() < kNativeTextureHeaderSize)
         {
@@ -358,8 +351,23 @@ namespace kpengine::asset
         std::size_t directory_end = 0;
         if (!CheckedAdd(kNativeTextureHeaderSize, directory_size, directory_end) || directory_end > bytes.size())
             Fail(NativeTextureErrorCode::Truncated, "native texture directory is truncated");
+        ContentHashPair hashes{};
+        if (verified_hashes != nullptr)
+        {
+            hashes = *verified_hashes;
+        }
+        else
+        {
+            const auto computed = Sha256WithZeroedRange(bytes, kNativeTextureDigestOffset,
+                                                        kNativeTextureDigestSize);
+            if (!computed)
+            {
+                Fail(NativeTextureErrorCode::Truncated, "native texture digest is truncated");
+            }
+            hashes = *computed;
+        }
         const ContentHash stored_digest = ReadHash(bytes, kNativeTextureDigestOffset);
-        if (stored_digest != Sha256(BuildIntegrityInput(bytes)))
+        if (stored_digest != hashes.zeroed_range_hash)
             Fail(NativeTextureErrorCode::IntegrityMismatch, "native texture integrity digest does not match");
 
         data::TextureData data{};
@@ -402,7 +410,7 @@ namespace kpengine::asset
         if (expected_offset != bytes.size())
             Fail(NativeTextureErrorCode::InvalidDirectory, "native texture has trailing payload bytes");
         ValidateData(data);
-        return {std::move(data), stored_digest, Sha256(bytes)};
+        return {std::move(data), stored_digest, hashes.content_hash};
     }
 
     ContentHash ComputeNativeTextureProductHash(const std::vector<std::byte> &bytes)
