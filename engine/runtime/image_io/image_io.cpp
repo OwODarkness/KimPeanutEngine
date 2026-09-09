@@ -64,6 +64,24 @@ namespace kpengine::image_io
         return GetDefaultImageCodec().DecodeMemory(encoded.data(), encoded.size());
     }
 
+    ImageMetadataResult ProbeImageFile(const std::string &path)
+    {
+        if (path.empty())
+        {
+            return {{false, "image probe path is empty"}, {}};
+        }
+        return GetDefaultImageCodec().ProbeFile(path);
+    }
+
+    ImageMetadataResult ProbeImageMemory(const std::vector<std::byte> &encoded)
+    {
+        if (encoded.empty())
+        {
+            return {{false, "encoded image payload is empty"}, {}};
+        }
+        return GetDefaultImageCodec().ProbeMemory(encoded.data(), encoded.size());
+    }
+
     ImageIoResult WritePng(const ImageBuffer &image, const std::string &path)
     {
         if (path.empty())

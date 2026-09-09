@@ -65,6 +65,44 @@ namespace kpengine::asset
         NativeMaterialConversionMetrics metrics{};
     };
 
+    struct NativeMaterialTextureBindingPlan
+    {
+        std::string name;
+        MaterialTextureColorSpace color_space{MaterialTextureColorSpace::Linear};
+        MaterialTextureChannel channel{MaterialTextureChannel::Rgba};
+        std::size_t job_ordinal{};
+    };
+
+    struct NativeMaterialMaterialPlan
+    {
+        std::size_t source_material_index{};
+        std::vector<NativeMaterialTextureBindingPlan> texture_bindings;
+    };
+
+    struct NativeTextureCookJob
+    {
+        std::size_t image_index{};
+        data::TextureSemantic semantic{data::TextureSemantic::Generic};
+    };
+
+    struct NativeTextureCookResult
+    {
+        std::size_t job_ordinal{};
+        std::string portable_path;
+        std::string block_compressed_path;
+        std::vector<NativeImageProduct> products;
+        NativeMaterialConversionMetrics metrics{};
+        std::uint64_t estimated_bytes{};
+        std::uint64_t actual_bytes{};
+    };
+
+    struct NativeMaterialCookPlan
+    {
+        std::vector<NativeMaterialMaterialPlan> materials;
+        std::vector<NativeTextureCookJob> texture_jobs;
+        std::uint64_t requested_texture_bindings{};
+    };
+
     enum class NativeMaterialErrorCode : std::uint8_t
     {
         InvalidArgument,
@@ -89,6 +127,22 @@ namespace kpengine::asset
     // Runtime, Render, Graphics, or an archive database.
     NativeMaterialConversionResult ConvertImportedMaterials(
         const ImportedModelDocument &document,
+        const NativeMaterialConversionSettings &settings);
+
+    NativeMaterialCookPlan BuildNativeMaterialCookPlan(
+        const ImportedModelDocument &document,
+        const NativeMaterialConversionSettings &settings);
+
+    NativeTextureCookResult ExecuteNativeTextureCookJob(
+        const ImportedModelDocument &document,
+        const NativeMaterialConversionSettings &settings,
+        const NativeTextureCookJob &job,
+        std::size_t job_ordinal);
+
+    NativeMaterialConversionResult FinalizeNativeMaterials(
+        const ImportedModelDocument &document,
+        const NativeMaterialCookPlan &plan,
+        const std::vector<NativeTextureCookResult> &texture_results,
         const NativeMaterialConversionSettings &settings);
 
     // Validates canonical material product bytes without opening the runtime

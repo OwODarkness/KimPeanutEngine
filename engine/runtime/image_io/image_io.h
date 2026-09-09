@@ -40,6 +40,20 @@ namespace kpengine::image_io
         ImageBuffer image;
     };
 
+    struct ImageMetadata
+    {
+        uint32_t width = 0;
+        uint32_t height = 0;
+        ImagePixelFormat decoded_format = ImagePixelFormat::Rgba8;
+        uint64_t decoded_byte_count = 0;
+    };
+
+    struct ImageMetadataResult
+    {
+        ImageIoResult result;
+        ImageMetadata metadata;
+    };
+
     struct ImageEncodeResult
     {
         ImageIoResult result;
@@ -52,6 +66,9 @@ namespace kpengine::image_io
     ImageDecodeResult DecodeImageFile(const std::string &path);
 
     ImageDecodeResult DecodeImageMemory(const std::vector<std::byte> &encoded);
+
+    ImageMetadataResult ProbeImageFile(const std::string &path);
+    ImageMetadataResult ProbeImageMemory(const std::vector<std::byte> &encoded);
 
     // Writes a tightly packed RGBA8 image as a lossless PNG. Path selection and
     // directory creation remain caller policy.

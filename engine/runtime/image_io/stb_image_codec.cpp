@@ -20,6 +20,28 @@ namespace kpengine::image_io
             return {false, std::move(diagnostic)};
         }
 
+        ImageMetadataResult BuildMetadata(int width, int height, bool hdr)
+        {
+            if (width <= 0 || height <= 0)
+            {
+                return {Failure("Image metadata has an invalid extent"), {}};
+            }
+            const std::uint64_t bytes_per_pixel = hdr ? sizeof(float) * 4u : 4u;
+            const std::uint64_t pixel_count = static_cast<std::uint64_t>(width) *
+                                              static_cast<std::uint64_t>(height);
+            if (pixel_count > std::numeric_limits<std::uint64_t>::max() / bytes_per_pixel)
+            {
+                return {Failure("Image metadata exceeds the supported byte range"), {}};
+            }
+            ImageMetadata metadata{};
+            metadata.width = static_cast<std::uint32_t>(width);
+            metadata.height = static_cast<std::uint32_t>(height);
+            metadata.decoded_format = hdr ? ImagePixelFormat::Rgba32Float
+                                           : ImagePixelFormat::Rgba8;
+            metadata.decoded_byte_count = pixel_count * bytes_per_pixel;
+            return {{true, {}}, metadata};
+        }
+
         class StbImageCodec final : public IImageCodec
         {
         public:
@@ -157,6 +179,41 @@ namespace kpengine::image_io
                 image.pixels.assign(decoded, decoded + byte_count);
                 stbi_image_free(decoded);
                 return {{true, {}}, std::move(image)};
+            }
+
+            ImageMetadataResult ProbeFile(const std::string &path) const override
+            {
+                int width = 0;
+                int height = 0;
+                int channels = 0;
+                const bool hdr = stbi_is_hdr(path.c_str()) != 0;
+                if (stbi_info(path.c_str(), &width, &height, &channels) == 0)
+                {
+                    const char *reason = stbi_failure_reason();
+                    return {Failure(reason ? reason : "Image metadata probe failed"), {}};
+                }
+                return BuildMetadata(width, height, hdr);
+            }
+
+            ImageMetadataResult ProbeMemory(const std::byte *data, size_t size) const override
+            {
+                if (data == nullptr || size == 0 ||
+                    size > static_cast<size_t>(std::numeric_limits<int>::max()))
+                {
+                    return {Failure("encoded image memory is empty or too large"), {}};
+                }
+                const auto *bytes = reinterpret_cast<const stbi_uc *>(data);
+                int width = 0;
+                int height = 0;
+                int channels = 0;
+                const bool hdr = stbi_is_hdr_from_memory(bytes, static_cast<int>(size)) != 0;
+                if (stbi_info_from_memory(bytes, static_cast<int>(size), &width, &height,
+                                          &channels) == 0)
+                {
+                    const char *reason = stbi_failure_reason();
+                    return {Failure(reason ? reason : "Image metadata probe failed"), {}};
+                }
+                return BuildMetadata(width, height, hdr);
             }
 
             ImageIoResult WritePngFile(const ImageBuffer &image,

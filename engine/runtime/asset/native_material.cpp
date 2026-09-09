@@ -13,6 +13,7 @@
 #include <initializer_list>
 #include <map>
 #include <optional>
+#include <set>
 #include <tuple>
 
 #include <nlohmann/json.hpp>
@@ -156,6 +157,111 @@ namespace kpengine::asset
                    std::to_string(image.embedded_width) + "x" +
                    std::to_string(image.embedded_height) + ":raw=" +
                    std::to_string(image.embedded_is_raw_rgba8 ? 1 : 0);
+        }
+
+        TextureCookKey MakeTextureCookKey(const ImportedImageSource &image,
+                                          const NativeMaterialConversionSettings &settings,
+                                          data::TextureSemantic semantic)
+        {
+            TextureCookKey key{};
+            key.source_identity = TextureSourceIdentity(image);
+            key.source_hash = image.source_hash;
+            key.semantic = semantic;
+            key.max_dimension = settings.texture_settings.max_dimension;
+            key.max_levels = settings.texture_settings.max_levels;
+            key.compression = settings.texture_settings.compression;
+            key.emit_texture_profile_variants = settings.emit_texture_profile_variants;
+            if (image.storage == ImportedImageStorage::EmbeddedBytes && IsZeroHash(key.source_hash))
+            {
+                key.source_hash = Sha256(image.embedded_bytes);
+            }
+            return key;
+        }
+
+        void ValidateMaterialSource(const ImportedMaterialSource &source)
+        {
+            if (!IsUnit(source.base_color[0]) || !IsUnit(source.base_color[1]) ||
+                !IsUnit(source.base_color[2]) || !IsUnit(source.base_color[3]) ||
+                !IsUnit(source.metallic) || !IsUnit(source.roughness) ||
+                !IsFiniteNonNegative(source.normal_scale) || !IsUnit(source.occlusion_strength) ||
+                !IsFiniteNonNegative(source.alpha_cutoff) || source.alpha_cutoff > 1.0f)
+            {
+                Fail(NativeMaterialErrorCode::InvalidValue, "imported material contains an invalid value");
+            }
+            if (!source.emissive_texture.empty())
+            {
+                Fail(NativeMaterialErrorCode::UnsupportedSemantics,
+                     "emissive textures are unsupported until the G-buffer carries emissive output");
+            }
+        }
+
+        ImportedTexture DecodeTextureSource(const ImportedImageSource &image,
+                                            const NativeMaterialConversionSettings &settings,
+                                            data::TextureSemantic semantic,
+                                            NativeMaterialConversionMetrics &metrics)
+        {
+            ++metrics.texture_decode_count;
+            if (image.storage == ImportedImageStorage::ExternalFile)
+            {
+                if (image.resolved_path.empty())
+                {
+                    Fail(NativeMaterialErrorCode::MissingImage,
+                         "external material image has no resolved path: " + image.path);
+                }
+                const TextureCompressionPolicy import_compression =
+                    settings.emit_texture_profile_variants
+                        ? TextureCompressionPolicy::Portable
+                        : settings.texture_settings.compression;
+                try
+                {
+                    return TextureImporter{}.Import(
+                        {image.resolved_path,
+                         {semantic, settings.texture_settings.max_dimension,
+                          settings.texture_settings.max_levels, import_compression}});
+                }
+                catch (const TextureCookError &error)
+                {
+                    Fail(NativeMaterialErrorCode::MalformedImage,
+                         "external image could not be cooked: " + image.resolved_path.string() + ": " +
+                             error.what());
+                }
+            }
+
+            ImageBuffer decoded;
+            if (image.embedded_is_raw_rgba8)
+            {
+                decoded.width = image.embedded_width;
+                decoded.height = image.embedded_height;
+                decoded.format = image_io::ImagePixelFormat::Rgba8;
+                decoded.pixels.assign(image.embedded_bytes.size(), 0);
+                if (decoded.ExpectedByteCount() == 0 ||
+                    decoded.ExpectedByteCount() != image.embedded_bytes.size())
+                {
+                    Fail(NativeMaterialErrorCode::MalformedImage,
+                         "embedded raw image has an invalid extent or byte count: " + image.path);
+                }
+                std::copy(image.embedded_bytes.begin(), image.embedded_bytes.end(),
+                          reinterpret_cast<std::byte *>(decoded.pixels.data()));
+            }
+            else
+            {
+                const image_io::ImageDecodeResult decoded_result =
+                    image_io::DecodeImageMemory(image.embedded_bytes);
+                if (!decoded_result.result.success)
+                {
+                    Fail(NativeMaterialErrorCode::MalformedImage,
+                         "embedded image could not be decoded: " + image.path + ": " +
+                             decoded_result.result.diagnostic);
+                }
+                decoded = decoded_result.image;
+            }
+
+            ImportedTexture imported{};
+            imported.image = std::move(decoded);
+            imported.source_hash = image.source_hash;
+            imported.settings = settings.texture_settings;
+            imported.settings.semantic = semantic;
+            return imported;
         }
 
         std::string PublishTextureProduct(CookedTexture cooked,
@@ -445,7 +551,7 @@ namespace kpengine::asset
         return code_;
     }
 
-    NativeMaterialConversionResult ConvertImportedMaterials(
+    NativeMaterialCookPlan BuildNativeMaterialCookPlan(
         const ImportedModelDocument &document,
         const NativeMaterialConversionSettings &settings)
     {
@@ -454,27 +560,143 @@ namespace kpengine::asset
             Fail(NativeMaterialErrorCode::InvalidArgument,
                  "material conversion requires an Asset root and shader path");
         }
-        NativeMaterialConversionResult result;
-        std::map<TextureCookKey, ImageReference> cooked_images;
-        result.metrics.unique_texture_product_count = 0;
-        result.materials.reserve(document.materials.size());
-        for (std::size_t material_index = 0; material_index < document.materials.size(); ++material_index)
+
+        NativeMaterialCookPlan plan;
+        plan.materials.reserve(document.materials.size());
+        std::map<TextureCookKey, std::size_t> job_ordinals;
+        for (std::size_t material_index = 0; material_index < document.materials.size();
+             ++material_index)
         {
             const ImportedMaterialSource &source = document.materials[material_index];
-            if (!IsUnit(source.base_color[0]) || !IsUnit(source.base_color[1]) ||
-                !IsUnit(source.base_color[2]) || !IsUnit(source.base_color[3]) ||
-                !IsUnit(source.metallic) || !IsUnit(source.roughness) ||
-                !IsFiniteNonNegative(source.normal_scale) || !IsUnit(source.occlusion_strength) ||
-                !IsFiniteNonNegative(source.alpha_cutoff) || source.alpha_cutoff > 1.0f)
+            ValidateMaterialSource(source);
+            NativeMaterialMaterialPlan material_plan{};
+            material_plan.source_material_index = material_index;
+            const auto add_texture = [&](const std::string &name, const std::string &reference,
+                                         MaterialTextureColorSpace color_space,
+                                         data::TextureSemantic semantic)
             {
-                Fail(NativeMaterialErrorCode::InvalidValue, "imported material contains an invalid value");
-            }
-            if (!source.emissive_texture.empty())
-            {
-                Fail(NativeMaterialErrorCode::UnsupportedSemantics,
-                     "emissive textures are unsupported until the G-buffer carries emissive output");
-            }
+                if (reference.empty()) return;
+                const ImportedImageSource *const image = FindImage(document, reference);
+                if (image == nullptr)
+                {
+                    Fail(NativeMaterialErrorCode::MissingImage,
+                         "material references an image that was not decoded: " + reference);
+                }
+                ++plan.requested_texture_bindings;
+                const TextureCookKey key = MakeTextureCookKey(*image, settings, semantic);
+                const auto [iterator, inserted] = job_ordinals.emplace(key, plan.texture_jobs.size());
+                if (inserted)
+                {
+                    plan.texture_jobs.push_back(
+                        {static_cast<std::size_t>(image - document.images.data()), semantic});
+                }
+                material_plan.texture_bindings.push_back(
+                    {name, color_space, ChannelFor(name), iterator->second});
+            };
+            add_texture("base_color_texture", source.base_color_texture,
+                        MaterialTextureColorSpace::Srgb, data::TextureSemantic::Color);
+            add_texture("normal_texture", source.normal_texture,
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::Normal);
+            add_texture("metallic_texture", source.metallic_roughness_texture,
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
+            add_texture("roughness_texture", source.metallic_roughness_texture,
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
+            add_texture("occlusion_texture", source.occlusion_texture,
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
+            plan.materials.push_back(std::move(material_plan));
+        }
+        return plan;
+    }
 
+    NativeTextureCookResult ExecuteNativeTextureCookJob(
+        const ImportedModelDocument &document,
+        const NativeMaterialConversionSettings &settings,
+        const NativeTextureCookJob &job,
+        std::size_t job_ordinal)
+    {
+        if (job.image_index >= document.images.size())
+        {
+            Fail(NativeMaterialErrorCode::InvalidArgument, "texture cook job image index is invalid");
+        }
+        NativeTextureCookResult result{};
+        result.job_ordinal = job_ordinal;
+        result.metrics.requested_texture_bindings = 1;
+        result.metrics.unique_cook_keys = 1;
+        const ImportedTexture imported =
+            DecodeTextureSource(document.images[job.image_index], settings, job.semantic,
+                                result.metrics);
+        const data::TextureData prepared = TextureCooker{}.Prepare(imported);
+        ++result.metrics.texture_prepare_count;
+        const auto cooked = CookTextureProfiles(prepared, settings, result.metrics);
+        const auto add_product = [&result](CookedTexture product)
+        {
+            try
+            {
+                ValidateNativeTextureProductStructure(product.bytes);
+            }
+            catch (const NativeTextureError &error)
+            {
+                Fail(NativeMaterialErrorCode::MalformedImage,
+                     "serialized texture failed validation: " + std::string{error.what()});
+            }
+            const std::string path =
+                "../" + ProductRelativePath(ArchiveProductType::Texture,
+                                               product.product_hash, "texture");
+            result.products.push_back(
+                {product.product_hash, "texture", std::move(product.bytes)});
+            return path;
+        };
+        result.portable_path = add_product(std::move(cooked.first));
+        if (cooked.second.has_value())
+        {
+            result.block_compressed_path = add_product(std::move(*cooked.second));
+        }
+        return result;
+    }
+
+    NativeMaterialConversionResult FinalizeNativeMaterials(
+        const ImportedModelDocument &document,
+        const NativeMaterialCookPlan &plan,
+        const std::vector<NativeTextureCookResult> &texture_results,
+        const NativeMaterialConversionSettings &settings)
+    {
+        if (texture_results.size() != plan.texture_jobs.size())
+        {
+            Fail(NativeMaterialErrorCode::InvalidArgument,
+                 "texture cook results do not match the cook plan");
+        }
+        NativeMaterialConversionResult result;
+        result.materials.reserve(plan.materials.size());
+        result.metrics.requested_texture_bindings = plan.requested_texture_bindings;
+        result.metrics.unique_cook_keys = plan.texture_jobs.size();
+        std::set<ContentHash> unique_products;
+        for (std::size_t index = 0; index < texture_results.size(); ++index)
+        {
+            const NativeTextureCookResult &texture_result = texture_results[index];
+            if (texture_result.job_ordinal != index)
+            {
+                Fail(NativeMaterialErrorCode::InvalidArgument,
+                     "texture cook result order is not deterministic");
+            }
+            result.metrics.texture_decode_count += texture_result.metrics.texture_decode_count;
+            result.metrics.texture_prepare_count += texture_result.metrics.texture_prepare_count;
+            result.metrics.texture_cook_count += texture_result.metrics.texture_cook_count;
+            result.metrics.portable_encode_count += texture_result.metrics.portable_encode_count;
+            result.metrics.block_encode_count += texture_result.metrics.block_encode_count;
+            for (const NativeImageProduct &product : texture_result.products)
+            {
+                if (unique_products.insert(product.content_hash).second)
+                {
+                    ++result.metrics.unique_texture_product_count;
+                    result.metrics.texture_product_bytes += product.bytes.size();
+                }
+            }
+        }
+
+        for (const NativeMaterialMaterialPlan &material_plan : plan.materials)
+        {
+            const ImportedMaterialSource &source = document.materials[material_plan.source_material_index];
+            ValidateMaterialSource(source);
             MaterialResource material{};
             material.version = kNativeMaterialSchemaVersion;
             material.shader_path = "../../" + NormalizeAssetRelativePath(settings.shader_asset_path);
@@ -490,7 +712,6 @@ namespace kpengine::asset
                                              ? MaterialBlendMode::AlphaBlend
                                              : MaterialBlendMode::Opaque;
             material.surface.alpha_cutoff = source.alpha_cutoff;
-
             AddParameter(material, "base_color", MaterialParameterSourceType::Vector4,
                          std::array<float, 4>{source.base_color[0], source.base_color[1],
                                               source.base_color[2], source.base_color[3]});
@@ -502,49 +723,59 @@ namespace kpengine::asset
             AddParameter(material, "emissive", MaterialParameterSourceType::Vector4,
                          std::array<float, 4>{source.emissive[0], source.emissive[1], source.emissive[2],
                                               source.emissive[3]});
-
-            const auto add_texture = [&](const std::string &name, const std::string &reference,
-                                         MaterialTextureColorSpace color_space,
-                                         data::TextureSemantic semantic)
+            for (const NativeMaterialTextureBindingPlan &binding : material_plan.texture_bindings)
             {
-                if (reference.empty()) return;
-                const ImportedImageSource *const image = FindImage(document, reference);
-                if (image == nullptr)
-                {
-                    Fail(NativeMaterialErrorCode::MissingImage,
-                         "material references an image that was not decoded: " + reference);
-                }
-                ++result.metrics.requested_texture_bindings;
-                const ImageReference prepared =
-                    PrepareImage(*image, settings, semantic, result, cooked_images);
+                const NativeTextureCookResult &texture_result = texture_results[binding.job_ordinal];
                 MaterialParameterSource parameter{};
-                parameter.name = name;
+                parameter.name = binding.name;
                 parameter.type = MaterialParameterSourceType::Texture;
-                parameter.value = prepared.path;
-                parameter.block_compressed_path = prepared.block_compressed_path;
-                parameter.texture_color_space = color_space;
-                parameter.texture_channel = ChannelFor(name);
+                parameter.value = texture_result.portable_path;
+                parameter.block_compressed_path = texture_result.block_compressed_path;
+                parameter.texture_color_space = binding.color_space;
+                parameter.texture_channel = binding.channel;
                 material.parameters.push_back(std::move(parameter));
-            };
-            add_texture("base_color_texture", source.base_color_texture, MaterialTextureColorSpace::Srgb,
-                        data::TextureSemantic::Color);
-            add_texture("normal_texture", source.normal_texture, MaterialTextureColorSpace::Linear,
-                        data::TextureSemantic::Normal);
-            add_texture("metallic_texture", source.metallic_roughness_texture,
-                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
-            add_texture("roughness_texture", source.metallic_roughness_texture,
-                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
-            add_texture("occlusion_texture", source.occlusion_texture, MaterialTextureColorSpace::Linear,
-                        data::TextureSemantic::PackedLinear);
-
+            }
             const std::string json = MaterialJson(material);
             std::vector<std::byte> bytes(json.size());
             std::transform(json.begin(), json.end(), bytes.begin(),
                            [](char character) { return static_cast<std::byte>(character); });
-            result.materials.push_back({material_index, source.name, std::move(material), std::move(bytes), {}});
+            result.materials.push_back(
+                {material_plan.source_material_index, source.name, std::move(material), std::move(bytes), {}});
             result.materials.back().content_hash = Sha256(result.materials.back().bytes);
         }
-        result.metrics.unique_cook_keys = cooked_images.size();
+        return result;
+    }
+
+    NativeMaterialConversionResult ConvertImportedMaterials(
+        const ImportedModelDocument &document,
+        const NativeMaterialConversionSettings &settings)
+    {
+        const NativeMaterialCookPlan plan = BuildNativeMaterialCookPlan(document, settings);
+        std::vector<NativeTextureCookResult> texture_results;
+        texture_results.reserve(plan.texture_jobs.size());
+        for (std::size_t ordinal = 0; ordinal < plan.texture_jobs.size(); ++ordinal)
+        {
+            const NativeTextureCookJob &job = plan.texture_jobs[ordinal];
+            if (settings.texture_progress_callback)
+            {
+                settings.texture_progress_callback(document.images[job.image_index].path);
+            }
+            texture_results.push_back(
+                ExecuteNativeTextureCookJob(document, settings, job, ordinal));
+        }
+        NativeMaterialConversionResult result =
+            FinalizeNativeMaterials(document, plan, texture_results, settings);
+        std::set<ContentHash> published_products;
+        for (NativeTextureCookResult &texture_result : texture_results)
+        {
+            for (NativeImageProduct &product : texture_result.products)
+            {
+                if (published_products.insert(product.content_hash).second)
+                {
+                    result.embedded_images.push_back(std::move(product));
+                }
+            }
+        }
         return result;
     }
 

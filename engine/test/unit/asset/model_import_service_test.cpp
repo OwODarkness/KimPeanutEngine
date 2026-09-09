@@ -156,6 +156,66 @@ TEST(ModelImportServiceTest, PublishesProductsAndRepeatsAsVerifiedCacheHit)
     EXPECT_EQ(snapshot->source_products[1].asset_type, ArchiveProductType::Material);
 }
 
+TEST(ModelImportServiceTest, ExecutionPolicyChangesDoNotChangeCookedProducts)
+{
+    ImportFixture fixture;
+    fixture.Write("models/albedo.ppm",
+                  "P3\n"
+                  "2 2\n"
+                  "255\n"
+                  "255 0 0 0 255 0\n"
+                  "0 0 255 255 255 255\n");
+    fixture.Write("models/triangle.mtl",
+                  "newmtl TriangleMaterial\n"
+                  "Kd 0.8 0.7 0.6\n"
+                  "map_Kd albedo.ppm\n");
+
+    ModelImportService service;
+    ModelImportRequest serial_request = fixture.Request();
+    serial_request.archive_root = fixture.Root() / ".archive_serial";
+    serial_request.execution.texture_worker_count = 1;
+    serial_request.execution.texture_memory_budget_bytes = 5ull * 1024ull * 1024ull;
+    serial_request.execution.completion_queue_capacity = 1;
+    const auto serial = service.Import(serial_request);
+
+    ModelImportRequest parallel_request = fixture.Request();
+    parallel_request.archive_root = fixture.Root() / ".archive_parallel";
+    parallel_request.execution.texture_worker_count = 2;
+    parallel_request.execution.texture_memory_budget_bytes = 5ull * 1024ull * 1024ull;
+    parallel_request.execution.completion_queue_capacity = 1;
+    const auto parallel = service.Import(parallel_request);
+
+    EXPECT_EQ(parallel.model_hash, serial.model_hash);
+    EXPECT_EQ(parallel.material_hashes, serial.material_hashes);
+    EXPECT_EQ(parallel.texture_hashes, serial.texture_hashes);
+    EXPECT_GT(parallel.metrics.total_texture_jobs, 0u);
+    EXPECT_EQ(parallel.metrics.completed_texture_jobs, parallel.metrics.total_texture_jobs);
+    EXPECT_EQ(parallel.metrics.texture_worker_count, 2u);
+    EXPECT_EQ(parallel.metrics.completion_queue_capacity, 1u);
+    EXPECT_LE(parallel.metrics.peak_completion_queue_size, 1u);
+    EXPECT_EQ(parallel.metrics.current_reserved_bytes, 0u);
+
+    fixture.Write("models/triangle.mtl",
+                  "newmtl TriangleMaterial\n"
+                  "Kd 0.2 0.3 0.4\n"
+                  "map_Kd albedo.ppm\n");
+    ModelImportRequest cancelled_request = parallel_request;
+    cancelled_request.execution.cancellation_requested = [] { return true; };
+    EXPECT_EQ(CatchImportError([&] { (void)service.Import(cancelled_request); }),
+              ModelImportErrorCode::Cancelled);
+
+    ModelArchiveDatabase archive{parallel_request.archive_root / "archive.sqlite3"};
+    const auto snapshot = archive.FindSource("models/triangle.obj");
+    ASSERT_TRUE(snapshot.has_value());
+    EXPECT_EQ(snapshot->source.package_hash, parallel.source_package_hash);
+    const std::filesystem::path staging = parallel_request.archive_root / "staging";
+    if (std::filesystem::exists(staging))
+    {
+        EXPECT_EQ(std::distance(std::filesystem::directory_iterator(staging),
+                                std::filesystem::directory_iterator{}), 0);
+    }
+}
+
 TEST(ModelImportServiceTest, ReimportsWhenRecordedDependencyChangesAndPreservesRootOnFailure)
 {
     ImportFixture fixture;

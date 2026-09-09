@@ -40,6 +40,8 @@ namespace kpengine::asset
         double cpu_utilization_percent{};
         double storage_write_megabytes_per_second{};
         std::uint32_t logical_processor_count{};
+        std::uint32_t texture_worker_count{};
+        std::uint32_t completion_queue_capacity{};
 
         std::uint64_t source_image_count{};
         std::uint64_t requested_texture_bindings{};
@@ -60,6 +62,18 @@ namespace kpengine::asset
         std::uint64_t peak_working_set_bytes{};
         std::uint64_t peak_reserved_bytes{};
         std::uint64_t peak_active_jobs{};
+        std::uint64_t texture_memory_budget_bytes{};
+        std::uint64_t current_reserved_bytes{};
+        std::uint64_t estimated_texture_bytes{};
+        std::uint64_t actual_texture_bytes{};
+        std::uint64_t oversized_job_count{};
+        std::uint64_t memory_estimate_correction_count{};
+        std::uint64_t completed_texture_jobs{};
+        std::uint64_t total_texture_jobs{};
+        std::uint64_t peak_completion_queue_size{};
+        double worker_memory_wait_seconds{};
+        double worker_queue_wait_seconds{};
+        double coordinator_wait_seconds{};
         bool has_memory_budget{false};
         bool cache_hit{false};
     };
@@ -81,6 +95,7 @@ namespace kpengine::asset
         ProductCollision,
         PublicationFailed,
         ArchiveCommitFailed,
+        Cancelled,
     };
 
     class ModelImportError final : public std::runtime_error
@@ -127,6 +142,14 @@ namespace kpengine::asset
         bool emit_texture_profile_variants{true};
     };
 
+    struct ModelImportExecutionPolicy
+    {
+        std::uint32_t texture_worker_count{};
+        std::uint64_t texture_memory_budget_bytes{};
+        std::uint32_t completion_queue_capacity{2};
+        std::function<bool()> cancellation_requested;
+    };
+
     struct ModelImportRequest
     {
         std::filesystem::path asset_root;
@@ -134,6 +157,7 @@ namespace kpengine::asset
         std::filesystem::path source_path;
         ModelImportSettings settings{};
         ModelImportProgressCallback progress_callback;
+        ModelImportExecutionPolicy execution{};
     };
 
     struct ModelImportResult

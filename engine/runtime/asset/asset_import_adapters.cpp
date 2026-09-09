@@ -10,7 +10,8 @@ namespace kpengine::asset
                                      ModelImportService &service,
                                      ModelImportSettings settings,
                                      std::string &diagnostic,
-                                     ModelImportProgressCallback progress_callback)
+                                     ModelImportProgressCallback progress_callback,
+                                     ModelImportExecutionPolicy execution)
     {
         if (settings.importer_id.empty())
         {
@@ -22,7 +23,7 @@ namespace kpengine::asset
         descriptor.version = settings.importer_version;
         descriptor.kind = ImportProviderKind::Model;
         descriptor.source_suffixes = {"obj", "fbx", "gltf", "glb", "stl"};
-        descriptor.callback = [&service, settings, progress_callback](const ImportProviderRequest &request)
+        descriptor.callback = [&service, settings, progress_callback, execution](const ImportProviderRequest &request)
         {
             ModelImportRequest model_request{};
             model_request.asset_root = request.asset_root;
@@ -30,6 +31,7 @@ namespace kpengine::asset
             model_request.source_path = request.source_path;
             model_request.settings = settings;
             model_request.progress_callback = progress_callback;
+            model_request.execution = execution;
             const ModelImportResult model_result = service.Import(model_request);
 
             ImportProviderResult result{};

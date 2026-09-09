@@ -4,6 +4,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -36,7 +37,8 @@ namespace
             << "KimPeanutAssetTool\n"
             << "  import|reimport --source <asset-relative-path> [--importer <id>] "
                "[--compression <portable|bc>] [--asset-root <path>] "
-               "[--archive-root <path>]\n"
+               "[--archive-root <path>] [--jobs <count>] "
+               "[--memory-budget-mib <count>] [--writer-queue-depth <count>]\n"
 #if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
             << "  import-live2d --source <asset-relative-path> --output <product-path> "
                "[--asset-root <path>] [--archive-root <path>]\n"
@@ -165,6 +167,46 @@ namespace
         return static_cast<std::uint32_t>(parsed);
     }
 
+    std::uint32_t TextureWorkerCount(const CommandLine &command)
+    {
+        const std::string value = Option(command, "jobs");
+        if (value.empty()) return 0;
+        std::size_t consumed = 0;
+        const unsigned long parsed = std::stoul(value, &consumed);
+        if (consumed != value.size() || parsed > UINT32_MAX)
+        {
+            throw std::invalid_argument("--jobs must be a non-negative 32-bit integer");
+        }
+        return static_cast<std::uint32_t>(parsed);
+    }
+
+    std::uint64_t TextureMemoryBudgetBytes(const CommandLine &command)
+    {
+        const std::string value = Option(command, "memory-budget-mib");
+        if (value.empty()) return 0;
+        std::size_t consumed = 0;
+        const unsigned long long parsed = std::stoull(value, &consumed);
+        constexpr std::uint64_t kMiB = 1024ull * 1024ull;
+        if (consumed != value.size() || parsed > UINT64_MAX / kMiB)
+        {
+            throw std::invalid_argument("--memory-budget-mib must fit in a 64-bit byte count");
+        }
+        return static_cast<std::uint64_t>(parsed) * kMiB;
+    }
+
+    std::uint32_t CompletionQueueCapacity(const CommandLine &command)
+    {
+        const std::string value = Option(command, "writer-queue-depth");
+        if (value.empty()) return 2;
+        std::size_t consumed = 0;
+        const unsigned long parsed = std::stoul(value, &consumed);
+        if (consumed != value.size() || parsed == 0 || parsed > UINT32_MAX)
+        {
+            throw std::invalid_argument("--writer-queue-depth must be a positive 32-bit integer");
+        }
+        return static_cast<std::uint32_t>(parsed);
+    }
+
     kpengine::asset::TextureCompressionPolicy CompressionPolicy(const CommandLine &command)
     {
         const std::string value = Option(command, "compression");
@@ -232,6 +274,9 @@ namespace
         }
         std::cout << "  process_cpu_seconds: " << metrics.process_cpu_seconds << '\n'
                   << "  logical_processor_count: " << metrics.logical_processor_count << '\n'
+                  << "  texture_worker_count: " << metrics.texture_worker_count << '\n'
+                  << "  completion_queue_capacity: " << metrics.completion_queue_capacity << '\n'
+                  << "  texture_memory_budget_bytes: " << metrics.texture_memory_budget_bytes << '\n'
                   << "  cpu_utilization_percent: " << metrics.cpu_utilization_percent << '\n'
                   << "  storage_write_megabytes_per_second: "
                   << metrics.storage_write_megabytes_per_second << '\n'
@@ -254,6 +299,18 @@ namespace
                   << "  peak_working_set_bytes: " << metrics.peak_working_set_bytes << '\n'
                   << "  peak_reserved_bytes: " << metrics.peak_reserved_bytes
                   << (metrics.has_memory_budget ? "\n" : " (not budgeted)\n")
+                  << "  current_reserved_bytes: " << metrics.current_reserved_bytes << '\n'
+                  << "  estimated_texture_bytes: " << metrics.estimated_texture_bytes << '\n'
+                  << "  actual_texture_bytes: " << metrics.actual_texture_bytes << '\n'
+                  << "  oversized_job_count: " << metrics.oversized_job_count << '\n'
+                  << "  memory_estimate_correction_count: "
+                  << metrics.memory_estimate_correction_count << '\n'
+                  << "  completed_texture_jobs: " << metrics.completed_texture_jobs << '\n'
+                  << "  total_texture_jobs: " << metrics.total_texture_jobs << '\n'
+                  << "  peak_completion_queue_size: " << metrics.peak_completion_queue_size << '\n'
+                  << "  worker_memory_wait_seconds: " << metrics.worker_memory_wait_seconds << '\n'
+                  << "  worker_queue_wait_seconds: " << metrics.worker_queue_wait_seconds << '\n'
+                  << "  coordinator_wait_seconds: " << metrics.coordinator_wait_seconds << '\n'
                   << "  peak_active_jobs: " << metrics.peak_active_jobs << '\n';
     }
 
@@ -524,13 +581,17 @@ namespace
             std::string diagnostic;
             kpengine::asset::ModelImportSettings model_settings{};
             model_settings.texture_settings.compression = CompressionPolicy(command);
+            kpengine::asset::ModelImportExecutionPolicy execution{};
+            execution.texture_worker_count = TextureWorkerCount(command);
+            execution.texture_memory_budget_bytes = TextureMemoryBudgetBytes(command);
+            execution.completion_queue_capacity = CompletionQueueCapacity(command);
             const ProgressReporter progress_reporter{};
             if (!kpengine::asset::RegisterModelImportProvider(
                     registry, service, model_settings, diagnostic,
                     [&progress_reporter](const kpengine::asset::ModelImportProgress &progress)
                     {
                         progress_reporter.Report(progress);
-                    }) ||
+                    }, execution) ||
                 !registry.Seal(diagnostic))
             {
                 throw std::runtime_error("failed to initialize model import providers: " + diagnostic);

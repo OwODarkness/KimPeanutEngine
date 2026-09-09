@@ -16,7 +16,8 @@ namespace kpengine::asset
                                      ModelImportService &service,
                                      ModelImportSettings settings,
                                      std::string &diagnostic,
-                                     ModelImportProgressCallback progress_callback = {});
+                                     ModelImportProgressCallback progress_callback = {},
+                                     ModelImportExecutionPolicy execution = {});
 
     bool RegisterTextureImportProvider(ImportProviderRegistry &registry,
                                       TextureCookSettings settings,

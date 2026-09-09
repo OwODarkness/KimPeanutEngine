@@ -17,6 +17,8 @@ namespace kpengine::image_io
 
         virtual ImageDecodeResult DecodeFile(const std::string &path) const = 0;
         virtual ImageDecodeResult DecodeMemory(const std::byte *data, size_t size) const = 0;
+        virtual ImageMetadataResult ProbeFile(const std::string &path) const = 0;
+        virtual ImageMetadataResult ProbeMemory(const std::byte *data, size_t size) const = 0;
         virtual ImageIoResult WritePngFile(const ImageBuffer &image,
                                            const std::string &path) const = 0;
         virtual ImageEncodeResult EncodePngMemory(const ImageBuffer &image) const = 0;

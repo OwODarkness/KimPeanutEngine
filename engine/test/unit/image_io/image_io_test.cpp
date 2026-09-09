@@ -64,6 +64,14 @@ TEST(ImageIOTest, WritesAndDecodesLosslessPng)
     const auto write_result = kpengine::image_io::WritePng(image, output.string());
     ASSERT_TRUE(write_result.success) << write_result.diagnostic;
 
+    const auto metadata = kpengine::image_io::ProbeImageFile(output.string());
+    ASSERT_TRUE(metadata.result.success) << metadata.result.diagnostic;
+    EXPECT_EQ(metadata.metadata.width, image.width);
+    EXPECT_EQ(metadata.metadata.height, image.height);
+    EXPECT_EQ(metadata.metadata.decoded_format,
+              kpengine::image_io::ImagePixelFormat::Rgba8);
+    EXPECT_EQ(metadata.metadata.decoded_byte_count, image.pixels.size());
+
     const auto decoded = kpengine::image_io::DecodeImageFile(output.string());
     cleanup();
     ASSERT_TRUE(decoded.result.success) << decoded.result.diagnostic;
