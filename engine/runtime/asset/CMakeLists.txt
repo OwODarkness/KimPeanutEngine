@@ -104,6 +104,9 @@ target_include_directories(AssetImport PUBLIC
 )
 target_link_libraries(AssetImport PUBLIC AssetImportRegistry AssetArchive AssetNative Data Base
     PRIVATE Config ImageIO Log KP::NlohmannJson KP::Assimp AssetForeignDecode)
+if(WIN32)
+    target_link_libraries(AssetImport PRIVATE Psapi)
+endif()
 
 # Compatibility target name retained for existing runtime consumers. New code
 # should choose AssetRuntime, AssetImport, or AssetArchive explicitly.

@@ -130,11 +130,23 @@ TEST(ModelImportServiceTest, PublishesProductsAndRepeatsAsVerifiedCacheHit)
     ASSERT_FALSE(first.model_hash.ToHex().empty());
     ASSERT_TRUE(std::filesystem::is_regular_file(first.model_path));
     ASSERT_GE(first.material_hashes.size(), 1u);
+    EXPECT_GT(first.metrics.total_seconds, 0.0);
+    EXPECT_GT(first.metrics.stage_seconds[static_cast<std::size_t>(
+                  kpengine::asset::ModelImportMetricStage::SourceDecode)], 0.0);
+    const auto expected_product_count = first.material_hashes.size() +
+                                        first.texture_hashes.size() + 1u;
+    EXPECT_EQ(first.metrics.product_count, expected_product_count);
+    EXPECT_EQ(first.metrics.product_write_count, expected_product_count * 2u);
+    EXPECT_EQ(first.metrics.peak_active_jobs, 1u);
 
     const auto second = service.Import(fixture.Request());
     EXPECT_EQ(second.status, ModelImportStatus::UpToDate);
     EXPECT_EQ(second.model_hash, first.model_hash);
     EXPECT_EQ(second.material_hashes, first.material_hashes);
+    EXPECT_TRUE(second.metrics.cache_hit);
+    EXPECT_EQ(second.metrics.cache_hit_count, 1u);
+    EXPECT_EQ(second.metrics.product_count, expected_product_count);
+    EXPECT_GT(second.metrics.product_bytes_read, 0u);
 
     ModelArchiveDatabase archive{fixture.Root() / ".archive" / "archive.sqlite3"};
     const auto snapshot = archive.FindSource("models/triangle.obj");

@@ -196,6 +196,66 @@ namespace
         return "unknown";
     }
 
+    const char *MetricStageName(kpengine::asset::ModelImportMetricStage stage)
+    {
+        using Stage = kpengine::asset::ModelImportMetricStage;
+        switch (stage)
+        {
+        case Stage::CacheProbe: return "cache_probe";
+        case Stage::SourceDecode: return "source_decode";
+        case Stage::DependencyHash: return "dependency_hash";
+        case Stage::TextureCook: return "texture_cook";
+        case Stage::ProductSerialize: return "product_serialize";
+        case Stage::ProductValidate: return "product_validate";
+        case Stage::ProductHash: return "product_hash";
+        case Stage::StagingWrite: return "staging_write";
+        case Stage::Publication: return "publication";
+        case Stage::ArchiveCommit: return "archive_commit";
+        case Stage::Count: break;
+        }
+        return "unknown";
+    }
+
+    void PrintImportMetrics(const kpengine::asset::ModelImportMetrics &metrics)
+    {
+        std::cout << "metrics:\n"
+                  << "  cache_hit: " << (metrics.cache_hit ? "true" : "false") << '\n'
+                  << "  total_seconds: " << std::fixed << std::setprecision(6)
+                  << metrics.total_seconds << '\n';
+        for (std::size_t index = 0;
+             index < static_cast<std::size_t>(kpengine::asset::ModelImportMetricStage::Count);
+             ++index)
+        {
+            const auto stage = static_cast<kpengine::asset::ModelImportMetricStage>(index);
+            std::cout << "  " << MetricStageName(stage) << "_seconds: "
+                      << metrics.stage_seconds[index] << '\n';
+        }
+        std::cout << "  process_cpu_seconds: " << metrics.process_cpu_seconds << '\n'
+                  << "  logical_processor_count: " << metrics.logical_processor_count << '\n'
+                  << "  cpu_utilization_percent: " << metrics.cpu_utilization_percent << '\n'
+                  << "  storage_write_megabytes_per_second: "
+                  << metrics.storage_write_megabytes_per_second << '\n'
+                  << "  source_image_count: " << metrics.source_image_count << '\n'
+                  << "  requested_texture_bindings: " << metrics.requested_texture_bindings << '\n'
+                  << "  unique_cook_keys: " << metrics.unique_cook_keys << '\n'
+                  << "  texture_decode_count: " << metrics.texture_decode_count << '\n'
+                  << "  texture_cook_count: " << metrics.texture_cook_count << '\n'
+                  << "  portable_encode_count: " << metrics.portable_encode_count << '\n'
+                  << "  block_encode_count: " << metrics.block_encode_count << '\n'
+                  << "  unique_texture_product_count: " << metrics.unique_texture_product_count << '\n'
+                  << "  texture_product_bytes: " << metrics.texture_product_bytes << '\n'
+                  << "  cache_hit_count: " << metrics.cache_hit_count << '\n'
+                  << "  product_count: " << metrics.product_count << '\n'
+                  << "  product_write_count: " << metrics.product_write_count << '\n'
+                  << "  source_bytes_read: " << metrics.source_bytes_read << '\n'
+                  << "  product_bytes_read: " << metrics.product_bytes_read << '\n'
+                  << "  bytes_written: " << metrics.bytes_written << '\n'
+                  << "  peak_working_set_bytes: " << metrics.peak_working_set_bytes << '\n'
+                  << "  peak_reserved_bytes: " << metrics.peak_reserved_bytes
+                  << (metrics.has_memory_budget ? "\n" : " (not budgeted)\n")
+                  << "  peak_active_jobs: " << metrics.peak_active_jobs << '\n';
+    }
+
     class ProgressReporter final
     {
     public:
@@ -502,6 +562,7 @@ namespace
                       << "model_hash: " << result.model_hash.ToHex() << '\n'
                       << "materials: " << result.material_hashes.size() << '\n'
                       << "textures: " << result.texture_hashes.size() << '\n';
+            PrintImportMetrics(result.metrics);
             return 0;
         }
 

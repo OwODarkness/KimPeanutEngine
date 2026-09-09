@@ -12,6 +12,7 @@
 #include <cctype>
 #include <initializer_list>
 #include <optional>
+#include <set>
 
 #include <nlohmann/json.hpp>
 
@@ -132,6 +133,8 @@ namespace kpengine::asset
             {
                 result.embedded_images.push_back(
                     {cooked.product_hash, "texture", cooked.bytes, decoded});
+                ++result.metrics.unique_texture_product_count;
+                result.metrics.texture_product_bytes += cooked.bytes.size();
             }
             return "../" + ProductRelativePath(ArchiveProductType::Texture,
                                                  cooked.product_hash, "texture");
@@ -139,21 +142,28 @@ namespace kpengine::asset
 
         std::pair<CookedTexture, std::optional<CookedTexture>> CookTextureProfiles(
             const ImportedTexture &imported,
-            const NativeMaterialConversionSettings &settings)
+            const NativeMaterialConversionSettings &settings,
+            NativeMaterialConversionMetrics &metrics)
         {
             TextureCooker cooker;
             if (!settings.emit_texture_profile_variants)
             {
+                ++metrics.texture_cook_count;
+                ++metrics.portable_encode_count;
                 return {cooker.Cook(imported), std::nullopt};
             }
 
             ImportedTexture portable_source = imported;
             portable_source.settings.compression = TextureCompressionPolicy::Portable;
+            ++metrics.texture_cook_count;
+            ++metrics.portable_encode_count;
             CookedTexture portable = cooker.Cook(portable_source);
 
             ImportedTexture block_source = imported;
             block_source.settings.compression =
                 TextureCompressionPolicy::PreferBlockCompression;
+            ++metrics.texture_cook_count;
+            ++metrics.block_encode_count;
             CookedTexture block = cooker.Cook(block_source);
             if (block.product_hash == portable.product_hash)
             {
@@ -165,13 +175,22 @@ namespace kpengine::asset
         ImageReference PrepareImage(const ImportedImageSource &image,
                                     const NativeMaterialConversionSettings &settings,
                                     data::TextureSemantic semantic,
-                                    NativeMaterialConversionResult &result)
+                                    NativeMaterialConversionResult &result,
+                                    std::set<std::string> &unique_cook_keys)
         {
+            std::string cook_key = image.storage == ImportedImageStorage::ExternalFile
+                                       ? image.resolved_path.lexically_normal().generic_string()
+                                       : "embedded:" + image.path + ":" + image.format_hint;
+            cook_key += ":semantic=" + std::to_string(static_cast<int>(semantic));
+            cook_key += ":dimension=" + std::to_string(settings.texture_settings.max_dimension);
+            cook_key += ":levels=" + std::to_string(settings.texture_settings.max_levels);
+            unique_cook_keys.insert(std::move(cook_key));
             if (settings.texture_progress_callback)
             {
                 settings.texture_progress_callback(image.path);
             }
             ImageBuffer decoded;
+            ++result.metrics.texture_decode_count;
             if (image.storage == ImportedImageStorage::EmbeddedBytes)
             {
                 if (image.embedded_is_raw_rgba8)
@@ -219,7 +238,7 @@ namespace kpengine::asset
                         {image.resolved_path,
                          {semantic, settings.texture_settings.max_dimension,
                           settings.texture_settings.max_levels, import_compression}});
-                    const auto cooked = CookTextureProfiles(imported, settings);
+                    const auto cooked = CookTextureProfiles(imported, settings, result.metrics);
                     const std::string portable_path =
                         PublishTextureProduct(cooked.first, imported.image, result);
                     const std::string block_path = cooked.second.has_value()
@@ -242,7 +261,7 @@ namespace kpengine::asset
             imported.settings.semantic = semantic;
             try
             {
-                const auto cooked = CookTextureProfiles(imported, settings);
+                const auto cooked = CookTextureProfiles(imported, settings, result.metrics);
                 const std::string portable_path =
                     PublishTextureProduct(cooked.first, decoded, result);
                 const std::string block_path = cooked.second.has_value()
@@ -380,6 +399,8 @@ namespace kpengine::asset
                  "material conversion requires an Asset root and shader path");
         }
         NativeMaterialConversionResult result;
+        std::set<std::string> unique_cook_keys;
+        result.metrics.unique_texture_product_count = 0;
         result.materials.reserve(document.materials.size());
         for (std::size_t material_index = 0; material_index < document.materials.size(); ++material_index)
         {
@@ -437,7 +458,9 @@ namespace kpengine::asset
                     Fail(NativeMaterialErrorCode::MissingImage,
                          "material references an image that was not decoded: " + reference);
                 }
-                const ImageReference prepared = PrepareImage(*image, settings, semantic, result);
+                ++result.metrics.requested_texture_bindings;
+                const ImageReference prepared =
+                    PrepareImage(*image, settings, semantic, result, unique_cook_keys);
                 MaterialParameterSource parameter{};
                 parameter.name = name;
                 parameter.type = MaterialParameterSourceType::Texture;
@@ -465,6 +488,7 @@ namespace kpengine::asset
             result.materials.push_back({material_index, source.name, std::move(material), std::move(bytes), {}});
             result.materials.back().content_hash = Sha256(result.materials.back().bytes);
         }
+        result.metrics.unique_cook_keys = unique_cook_keys.size();
         return result;
     }
 

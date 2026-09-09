@@ -52,6 +52,11 @@ TEST(NativeMaterialTest, ProducesDeterministicProductsAndReusesEmbeddedImages)
     // different semantics: color filtering and packed-linear filtering are
     // different products by design.
     ASSERT_EQ(first.embedded_images.size(), 2u);
+    EXPECT_EQ(first.metrics.requested_texture_bindings, 6u);
+    EXPECT_EQ(first.metrics.unique_cook_keys, 2u);
+    EXPECT_EQ(first.metrics.texture_decode_count, 6u);
+    EXPECT_EQ(first.metrics.texture_cook_count, 6u);
+    EXPECT_EQ(first.metrics.unique_texture_product_count, 2u);
     EXPECT_EQ(first.materials[0].bytes, first.materials[1].bytes);
     EXPECT_EQ(first.materials[0].bytes, second.materials[0].bytes);
     EXPECT_EQ(first.materials[0].content_hash, kpengine::asset::Sha256(first.materials[0].bytes));
@@ -86,6 +91,13 @@ TEST(NativeMaterialTest, EmitsPortableAndBlockCompressedTextureVariants)
     // The one embedded image is consumed once as Color and once as
     // PackedLinear; each semantic has a portable and a BC product.
     ASSERT_EQ(converted.embedded_images.size(), 4u);
+    EXPECT_EQ(converted.metrics.requested_texture_bindings, 6u);
+    EXPECT_EQ(converted.metrics.unique_cook_keys, 2u);
+    EXPECT_EQ(converted.metrics.texture_decode_count, 6u);
+    EXPECT_EQ(converted.metrics.texture_cook_count, 12u);
+    EXPECT_EQ(converted.metrics.portable_encode_count, 6u);
+    EXPECT_EQ(converted.metrics.block_encode_count, 6u);
+    EXPECT_EQ(converted.metrics.unique_texture_product_count, 4u);
     for (const auto &material : converted.materials)
     {
         kpengine::asset::ValidateNativeMaterialProduct(material.bytes);

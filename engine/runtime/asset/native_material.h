@@ -37,6 +37,18 @@ namespace kpengine::asset
         image_io::ImageBuffer decoded_image;
     };
 
+    struct NativeMaterialConversionMetrics
+    {
+        std::uint64_t requested_texture_bindings{};
+        std::uint64_t unique_cook_keys{};
+        std::uint64_t texture_decode_count{};
+        std::uint64_t texture_cook_count{};
+        std::uint64_t portable_encode_count{};
+        std::uint64_t block_encode_count{};
+        std::uint64_t unique_texture_product_count{};
+        std::uint64_t texture_product_bytes{};
+    };
+
     struct NativeMaterialProduct
     {
         std::size_t source_material_index{};
@@ -50,6 +62,7 @@ namespace kpengine::asset
     {
         std::vector<NativeMaterialProduct> materials;
         std::vector<NativeImageProduct> embedded_images;
+        NativeMaterialConversionMetrics metrics{};
     };
 
     enum class NativeMaterialErrorCode : std::uint8_t

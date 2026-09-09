@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_ASSET_MODEL_IMPORT_SERVICE_H
 #define KPENGINE_RUNTIME_ASSET_MODEL_IMPORT_SERVICE_H
 
+#include <array>
 #include <cstdint>
 #include <filesystem>
 #include <functional>
@@ -15,6 +16,53 @@
 
 namespace kpengine::asset
 {
+    enum class ModelImportMetricStage : std::uint8_t
+    {
+        CacheProbe,
+        SourceDecode,
+        DependencyHash,
+        TextureCook,
+        ProductSerialize,
+        ProductValidate,
+        ProductHash,
+        StagingWrite,
+        Publication,
+        ArchiveCommit,
+        Count,
+    };
+
+    struct ModelImportMetrics
+    {
+        std::array<double, static_cast<std::size_t>(ModelImportMetricStage::Count)>
+            stage_seconds{};
+        double total_seconds{};
+        double process_cpu_seconds{};
+        double cpu_utilization_percent{};
+        double storage_write_megabytes_per_second{};
+        std::uint32_t logical_processor_count{};
+
+        std::uint64_t source_image_count{};
+        std::uint64_t requested_texture_bindings{};
+        std::uint64_t unique_cook_keys{};
+        std::uint64_t texture_decode_count{};
+        std::uint64_t texture_cook_count{};
+        std::uint64_t portable_encode_count{};
+        std::uint64_t block_encode_count{};
+        std::uint64_t unique_texture_product_count{};
+        std::uint64_t texture_product_bytes{};
+        std::uint64_t cache_hit_count{};
+        std::uint64_t product_count{};
+        std::uint64_t product_write_count{};
+        std::uint64_t source_bytes_read{};
+        std::uint64_t product_bytes_read{};
+        std::uint64_t bytes_written{};
+        std::uint64_t peak_working_set_bytes{};
+        std::uint64_t peak_reserved_bytes{};
+        std::uint64_t peak_active_jobs{};
+        bool has_memory_budget{false};
+        bool cache_hit{false};
+    };
+
     enum class ModelImportStatus : std::uint8_t
     {
         Imported,
@@ -96,6 +144,7 @@ namespace kpengine::asset
         std::filesystem::path model_path;
         std::vector<ContentHash> material_hashes;
         std::vector<ContentHash> texture_hashes;
+        ModelImportMetrics metrics{};
     };
 
     // Offline authoring service. It owns no runtime Asset identity and does
