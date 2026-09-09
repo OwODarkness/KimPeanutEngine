@@ -96,6 +96,24 @@ namespace kpengine::runtime
         changed_cv_.notify_all();
     }
 
+    bool StartupCoordinator::BeginClosing()
+    {
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if (state_.phase == StartupPhase::Closing)
+            {
+                return false;
+            }
+            state_.phase = StartupPhase::Closing;
+            state_.progress = {0, 7, true, 0.0f};
+            state_.display_label = "Closing engine";
+            state_.diagnostic.clear();
+            ++state_.revision;
+        }
+        changed_cv_.notify_all();
+        return true;
+    }
+
     void StartupCoordinator::Fail(std::string diagnostic)
     {
         std::optional<asset::AssetLoadSession> asset_session;
@@ -279,6 +297,9 @@ namespace kpengine::runtime
         case StartupPhase::ActivatingEditorWorkspace:
             return to == StartupPhase::Ready;
         case StartupPhase::Ready:
+            return to == StartupPhase::Closing;
+        case StartupPhase::Closing:
+            return false;
         case StartupPhase::Failed:
         case StartupPhase::Cancelled:
         case StartupPhase::RolledBack:

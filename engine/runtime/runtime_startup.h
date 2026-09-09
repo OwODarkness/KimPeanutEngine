@@ -23,6 +23,7 @@ namespace kpengine::runtime
         InstantiatingLevel,
         ActivatingEditorWorkspace,
         Ready,
+        Closing,
         Failed,
         Cancelled,
         RolledBack,
@@ -74,6 +75,7 @@ namespace kpengine::runtime
         bool SetPhase(StartupPhase phase, std::string display_label = {});
         void SetProgress(StartupProgress progress);
         void SetAssetSession(asset::AssetLoadSession session);
+        bool BeginClosing();
         void Fail(std::string diagnostic);
         void Cancel(std::string diagnostic);
         void Rollback() noexcept;

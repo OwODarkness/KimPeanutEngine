@@ -26,5 +26,12 @@ target_include_directories(EditorUILib PUBLIC
     ${CMAKE_SOURCE_DIR}/engine
 )
 
+target_compile_definitions(EditorUILib PRIVATE
+    $<$<CONFIG:Debug>:KPENGINE_BUILD_CONFIGURATION_DEBUG>
+    $<$<CONFIG:Release>:KPENGINE_BUILD_CONFIGURATION_RELEASE>
+    $<$<CONFIG:RelWithDebInfo>:KPENGINE_BUILD_CONFIGURATION_RELWITHDEBINFO>
+    $<$<CONFIG:MinSizeRel>:KPENGINE_BUILD_CONFIGURATION_MINSIZEREL>
+)
+
 target_link_libraries(EditorLib PRIVATE RuntimeLib EditorUILib)
 target_link_libraries(EditorUILib PRIVATE RuntimeLib RuntimeCommand Input KP::ImGui KP::Glfw KP::Glad KP::Vulkan KP::NlohmannJson)

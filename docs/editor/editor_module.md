@@ -187,6 +187,7 @@ the bottom output log without overlap.
 - **`EditorCameraControlComponent`** — camera config window (fov, move/rotate speed, near/far, reset) over a `RenderCamera*`.
 - **`EditorLogComponent`** — the log window (`log/`). Created by `EditorUI` with the context's `LogSystem*` plus the `LogLevelColorTable` and rendered through the component tree; each entry is `TextColored` with its level's color, which comes from `config/settings.json` ([Project settings](#project-settings-configsettingsjson)).
 - **`EditorGpuProfilerComponent`** — the performance profiler. It displays frame, CPU, GPU, pass, cache, descriptor, recorder, texture, and summary metrics; the current snapshot can be copied as either human-readable text or pretty-printed JSON (`kimpeanut.profiler.v1`).
+- **`EditorStartupProfilerComponent`** — the loading-only AP1.0 profiler. It consumes copied Runtime startup snapshots and shows Asset phase costs, bytes, a completion-indexed operation ledger sortable by index/time/source/memory, type attribution, and sampled peak process memory without touching AssetManager state.
 - **`EditorProfileBarComponent`** — the bottom status bar (`profile/`). Samples a list of injected `EditorMetric`s and draws them in one row, anchored to the bottom of the main viewport via public ImGui API only. It never sees the engine or Win32 — the metrics are the decoupling seam.
 
 ### Profile metrics (status bar)

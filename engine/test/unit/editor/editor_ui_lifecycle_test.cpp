@@ -143,6 +143,23 @@ TEST(EditorLoadingViewModelTest, NeverShowsCompletionBeforeReady)
     EXPECT_LT(model.fraction, 1.0f);
 }
 
+TEST(EditorLoadingViewModelTest, ShowsClosingStageAndCompleteProgress)
+{
+    kpengine::runtime::StartupSnapshot snapshot{};
+    snapshot.phase = kpengine::runtime::StartupPhase::Closing;
+    snapshot.display_label = "Releasing renderer";
+    snapshot.progress = {7, 7, true, 1.0f};
+
+    const auto model = kpengine::editor::BuildEditorLoadingViewModel(snapshot);
+
+    EXPECT_TRUE(model.closing);
+    EXPECT_TRUE(model.determinate);
+    EXPECT_FLOAT_EQ(model.fraction, 1.0f);
+    EXPECT_EQ(model.stage_label, "Releasing renderer");
+    EXPECT_EQ(model.counts_label, "Shutdown steps: 7 / 7");
+    EXPECT_FALSE(model.failed);
+}
+
 TEST(EditorUILifecycleTest, NullBridgeRollsBackContextAndCloseIsIdempotent)
 {
     kpengine::editor::EditorUI ui;

@@ -474,6 +474,23 @@
   [asset roadmap](asset/TODO.md), [LO2 plan](asset/.plan/LO2.md),
   [LO3 plan](asset/.plan/LO3.md)
 
+- **Asset AP1.0 startup profiler first slice (2026-09-09)** — the loading tree
+  now includes a movable Startup Profiler window. It consumes copied Asset
+  observations and reports phase costs, source/decoded bytes, cache-hit
+  evidence, per-type totals, and every completed operation in a completion-
+  indexed ledger sortable by index/time/source/memory. Durations at or above
+  one second use seconds, and sampled peak process memory remains visible. The
+  small `level/performance_profile.level` fixture contains the bunny and
+  Cerberus; Sponza remains the later stress baseline. →
+  [AP1 plan](asset/.plan/AP1.md), [AP1.0 journal](../.spec/journal/2026-09-09-asset-ap1-0.md)
+
+- **Runtime shutdown progress presentation (2026-09-09)** — the render-thread
+  teardown path now keeps the existing loading panel alive while RuntimeContext
+  releases gameplay, level, reflection/scripting, renderer, prepared assets,
+  input, and window resources. Each boundary publishes copied progress and a
+  stage label before the corresponding release work begins; ImGui is closed
+  after the visible early stages and before renderer-bridge destruction.
+
 - **Deferred PBR D6.4 — bounded point-light shadow atlas (2026-09-01)** —
   point shadow intent/handle lifetime, deterministic slot-2 selection, a fixed
   six-face 1536×1024 D32 atlas, deferred point PCF consumption, and point depth

@@ -180,6 +180,11 @@ namespace kpengine::asset::detail
         active.observation.timing = timing;
         active.observation.timing.inclusive_elapsed_us =
             ElapsedMicroseconds(active.started, completed);
+        active.observation.completion_index = next_completion_index_++;
+        if (active.observation.completion_index == 0)
+        {
+            active.observation.completion_index = next_completion_index_++;
+        }
         active.observation.size_cost = size_cost;
         active.observation.disposition = disposition;
         active.observation.result = result;
@@ -216,6 +221,8 @@ namespace kpengine::asset::detail
                 timing.loader_queue_wait_us);
         AddCost(summary_.cost.cumulative_source_load_us,
                 timing.source_load_us);
+        AddCost(summary_.cost.cumulative_dependency_wait_us,
+                timing.dependency_wait_us);
         AddCost(summary_.cost.cumulative_registration_us,
                 timing.registration_us);
         if (size_cost.source_file_bytes)
@@ -238,6 +245,8 @@ namespace kpengine::asset::detail
             {
                 recent_terminal_.pop_front();
             }
+            completed_operations_.push_back(active.observation);
+            RecordTerminalAttribution(active.observation);
         }
         catch (...)
         {
@@ -341,6 +350,14 @@ namespace kpengine::asset::detail
         }
         snapshot.recent_terminal_operations.assign(recent_terminal_.begin(),
                                                     recent_terminal_.end());
+        snapshot.completed_operations = completed_operations_;
+        snapshot.type_summaries.reserve(type_summaries_.size());
+        for (const auto &[type, summary] : type_summaries_)
+        {
+            (void)type;
+            snapshot.type_summaries.push_back(summary);
+        }
+        snapshot.slowest_operations = slowest_operations_;
         return snapshot;
     }
 
@@ -378,6 +395,55 @@ namespace kpengine::asset::detail
         if (total != std::numeric_limits<uint32_t>::max())
         {
             ++total;
+        }
+    }
+
+    void AssetLoadSessionState::RecordTerminalAttribution(
+        const AssetLoadObservation &observation) noexcept
+    {
+        AssetLoadTypeSummary &type_summary = type_summaries_[observation.expected_type];
+        type_summary.type = observation.expected_type;
+        AddCount(type_summary.operations);
+        if (observation.state == AssetLoadState::Succeeded)
+        {
+            AddCount(type_summary.succeeded);
+            if (observation.disposition == AssetLoadDisposition::CacheHit)
+            {
+                AddCount(type_summary.cache_hits);
+            }
+        }
+        else if (observation.state == AssetLoadState::Failed)
+        {
+            AddCount(type_summary.failed);
+        }
+        AddCost(type_summary.source_load_us, observation.timing.source_load_us);
+        if (observation.size_cost.source_file_bytes)
+        {
+            AddCost(type_summary.source_file_bytes,
+                    *observation.size_cost.source_file_bytes);
+        }
+        if (observation.size_cost.decoded_payload_bytes)
+        {
+            AddCost(type_summary.decoded_payload_bytes,
+                    *observation.size_cost.decoded_payload_bytes);
+        }
+
+        constexpr std::size_t kSlowestOperationLimit = 8;
+        slowest_operations_.push_back(observation);
+        std::stable_sort(
+            slowest_operations_.begin(), slowest_operations_.end(),
+            [](const AssetLoadObservation &left, const AssetLoadObservation &right)
+            {
+                if (left.timing.inclusive_elapsed_us != right.timing.inclusive_elapsed_us)
+                {
+                    return left.timing.inclusive_elapsed_us >
+                           right.timing.inclusive_elapsed_us;
+                }
+                return left.operation < right.operation;
+            });
+        if (slowest_operations_.size() > kSlowestOperationLimit)
+        {
+            slowest_operations_.resize(kSlowestOperationLimit);
         }
     }
 

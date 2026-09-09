@@ -1,5 +1,6 @@
 #include "engine.h"
 #include <cassert>
+#include <chrono>
 #include <exception>
 #include <stdexcept>
 #include <utility>
@@ -251,6 +252,10 @@ namespace kpengine
 
             startup_coordinator_.SetPhase(StartupPhase::LoadingAssets,
                                           "Loading startup assets");
+            asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
+            const std::size_t live_asset_count_before =
+                asset_manager.GetTotalLiveAssetCount();
+            const auto asset_loading_started = std::chrono::steady_clock::now();
             try
             {
                 LoadStartupLevel(*startup_asset_session_);
@@ -266,6 +271,21 @@ namespace kpengine
                 throw;
             }
             startup_asset_session_->Seal();
+            const auto asset_loading_elapsed = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - asset_loading_started).count();
+            const std::size_t live_asset_count_after = asset_manager.GetTotalLiveAssetCount();
+            const std::size_t registered_asset_count =
+                live_asset_count_after >= live_asset_count_before
+                    ? live_asset_count_after - live_asset_count_before
+                    : 0;
+            const asset::AssetLoadSnapshot asset_snapshot =
+                startup_asset_session_->GetSnapshot();
+            KP_LOG("EngineLog", LOG_LEVEL_INFO,
+                   "Startup asset loading complete: %zu assets registered in %.3f ms "
+                   "(%u load operations, %u cache hits)",
+                   registered_asset_count, asset_loading_elapsed,
+                   asset_snapshot.summary.operations_started,
+                   asset_snapshot.summary.cache_hits);
             if (shutdown_requested_.load(std::memory_order_acquire))
             {
                 throw std::runtime_error("Startup cancelled while loading assets");
@@ -708,7 +728,8 @@ namespace kpengine
             bool startup_committed = false;
             bool loading_frame_presented = false;
             bool context_cleared = false;
-            const auto clear_context = [this, &context_cleared]() noexcept
+            const auto clear_context = [this, &context_cleared,
+                                        &editor_ui_initialized]() noexcept
             {
                 if (context_cleared)
                 {
@@ -717,7 +738,56 @@ namespace kpengine
                 context_cleared = true;
                 try
                 {
-                    global_runtime_context.Clear();
+                    startup_coordinator_.BeginClosing();
+                    if (editor_ui_initialized)
+                    {
+                        editor_->BeginClosing();
+                    }
+                    global_runtime_context.Clear(
+                        [this, &editor_ui_initialized](
+                            const RuntimeContext::ShutdownProgress &progress) noexcept
+                        {
+                            StartupProgress startup_progress{};
+                            startup_progress.completed_units = progress.completed_units;
+                            startup_progress.total_units = progress.total_units;
+                            startup_progress.total_known = progress.total_units > 0U;
+                            startup_progress.fraction = startup_progress.total_known
+                                                            ? static_cast<float>(
+                                                                  progress.completed_units) /
+                                                                  static_cast<float>(
+                                                                      progress.total_units)
+                                                            : 0.0f;
+                            startup_coordinator_.SetPhase(StartupPhase::Closing,
+                                                          progress.label);
+                            startup_coordinator_.SetProgress(startup_progress);
+                            if (global_runtime_context.render_system_ != nullptr &&
+                                global_runtime_context.window_system_ != nullptr)
+                            {
+                                try
+                                {
+                                    RenderLoadingTick();
+                                }
+                                catch (...)
+                                {
+                                    // Teardown must continue even if a final UI frame cannot
+                                    // be presented after the backend starts shutting down.
+                                }
+                            }
+                            if (progress.label == "Releasing renderer" && editor_ui_initialized)
+                            {
+                                try
+                                {
+                                    // The ImGui Vulkan backend borrows the render bridge, so
+                                    // release ImGui immediately after presenting this stage and
+                                    // before RenderSystem destroys that bridge.
+                                    editor_->CloseUI();
+                                }
+                                catch (...)
+                                {
+                                }
+                                editor_ui_initialized = false;
+                            }
+                        });
                 }
                 catch (...)
                 {
@@ -910,12 +980,16 @@ namespace kpengine
                     }
                 }
 
-                // Shut ImGui down on the same thread that built it, before the window
-                // teardown at exit.
+                // Keep ImGui alive for the early shutdown stages. The progress callback
+                // closes it immediately before RenderSystem destroys its presentation
+                // bridge; this fallback covers partial-startup paths.
                 WaitForStartupAccessToEnd();
-                editor_->CloseUI();
-                editor_ui_initialized = false;
                 clear_context();
+                if (editor_ui_initialized)
+                {
+                    editor_->CloseUI();
+                    editor_ui_initialized = false;
+                }
             }
             catch (const std::exception &error)
             {
@@ -943,6 +1017,7 @@ namespace kpengine
                 {
                     EndStartupAccess();
                 }
+                clear_context();
                 if (editor_ui_initialized)
                 {
                     try
@@ -952,8 +1027,8 @@ namespace kpengine
                     catch (...)
                     {
                     }
+                    editor_ui_initialized = false;
                 }
-                clear_context();
                 KP_LOG("EngineLog", LOG_LEVEL_ERROR,
                        "Render thread failed after startup: %s", error.what());
             }
@@ -983,6 +1058,7 @@ namespace kpengine
                 {
                     EndStartupAccess();
                 }
+                clear_context();
                 if (editor_ui_initialized)
                 {
                     try
@@ -992,8 +1068,8 @@ namespace kpengine
                     catch (...)
                     {
                     }
+                    editor_ui_initialized = false;
                 }
-                clear_context();
                 KP_LOG("EngineLog", LOG_LEVEL_ERROR,
                        "Render thread failed after startup: unknown exception");
             }

@@ -24,6 +24,7 @@ namespace kpengine::editor{
         void ActivateWorkspace(); // game thread — startup composition boundary
         void TickPresentation(); // render thread — active loading/workspace frame
         void Tick();              // compatibility forwarder to TickPresentation
+        void BeginClosing();      // render thread — switches back to closing UI
         void Clear();          // main thread, after the render thread joined
         void CloseUI();        // render thread — shuts ImGui down before window teardown
 

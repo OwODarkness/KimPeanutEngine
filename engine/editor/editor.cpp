@@ -109,6 +109,14 @@ namespace kpengine::editor
         TickPresentation();
     }
 
+    void Editor::BeginClosing()
+    {
+        if (initialized_ && editor_ui_)
+        {
+            editor_ui_->BeginClosing();
+        }
+    }
+
     void Editor::Clear()
     {
         // Called on the main thread after the render thread joined; the ImGui state

@@ -45,6 +45,39 @@ live, cross-subsystem transaction and a frame loop; LO3 renders that contract.
 Implementing LO3 directly against `AssetManager` would invert ownership and
 still miss Resource/GPU/level-instantiation work.
 
+## Startup performance architecture
+
+The loading-progress work explains what startup is doing; it does not make the
+dependency closure smaller or faster. The measured Sponza startup instead
+requires coordinated product, package, scheduling, and residency changes:
+
+```text
+Offline Asset import/cook
+  -> compact native Model and GPU-compressed Texture products
+  -> dependency-closure package with independently addressable entries/ranges
+
+Runtime startup policy
+  -> Asset dependency jobs with in-flight deduplication
+  -> verified low-mip and metadata readiness
+  -> initial scene commit
+  -> background high-mip completion
+
+Asset: product identity, verification, dependency scheduling, CPU payloads
+Runtime: startup priority and initial/full readiness policy
+Resource: CPU-to-GPU artifact preparation
+Render/Graphics: mip usability, upload, synchronization, GPU lifetime
+```
+
+[AP1 — Startup Asset Loading Performance](.plan/AP1.md) owns this design. It
+starts with reproducible attribution and removal of triple product hashing,
+then adds GPU-native Texture compression, compact Model products, package
+locality, bounded dependency scheduling, and low-mip initial readiness. The
+literal embedding of Texture bytes in Material products is rejected; packages
+preserve independent content identities while colocating related entries.
+
+The multi-session acceptance contract is
+[Asset Startup Loading Performance](../../.spec/specs/asset-startup-loading-performance.md).
+
 ## Model-import architecture
 
 ```text
@@ -158,6 +191,12 @@ Live2D's use of the contract is documented in
   Texture importing and cooking follow the same rule: they may consume ImageIO
   and CPU data, but never construct runtime Asset identity or call
   `AssetManager`.
+- **Packaging changes placement, not ownership.** A package table maps stable
+  product identities to byte ranges. Material remains metadata with Texture
+  dependencies; it does not become the owner of embedded Texture payloads.
+- **Initial readiness is distinct from full residency.** Runtime decides when
+  the selected scene has enough verified data to commit; Render/Graphics ensure
+  only initialized mip ranges are sampleable while later ranges stream.
 
 ## Reference findings
 

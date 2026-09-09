@@ -46,7 +46,43 @@ belongs in the corresponding `.spec/journal/` entry.
   expose direct `cook-texture` tooling.
 - [ ] Add BCn/ASTC product variants after the common format contract and both
   backend upload paths support capability selection; retain the portable
-  fallback.
+  fallback. This is coordinated by
+  [AP1.2](.plan/AP1.md#ap12--gpu-native-texture-compression).
+
+## Startup performance roadmap
+
+- [ ] **AP1 — Startup Asset Loading Performance** — reduce the measured
+  317.488-second Debug Sponza Asset phase through single-verification native
+  loading, compact cooked products, package locality, bounded dependency
+  scheduling, and low-mip initial readiness. Keep Material and Texture as
+  independent Asset identities even when their bytes share a package. See the
+  [AP1 plan](.plan/AP1.md) and
+  [execution spec](../../.spec/specs/asset-startup-loading-performance.md).
+
+  Subtasks:
+
+  - [ ] **AP1.0 — Baseline and attribution:** report exclusive load costs,
+    bytes, slowest operations, build configuration, cache condition, and peak
+    memory for the fixed Sponza startup.
+  - [ ] **AP1.1 — Product verification:** remove the unused third Texture/Model
+    hash and full-product integrity copies while retaining strict corruption
+    rejection.
+  - [ ] **AP1.2 — Texture compression:** add capability-aware BC desktop
+    products and portable fallbacks across Asset cook, common Graphics, Vulkan,
+    and OpenGL; keep the Sponza desktop texture closure at or below 550 MB.
+  - [ ] **AP1.3 — Model compaction:** characterize and implement a versioned
+    locality-optimized, quantized/compressed native Model profile with measured
+    quality and decode evidence.
+  - [ ] **AP1.4 — Asset package:** build and mount a read-only dependency-closure
+    package whose TOC preserves product identity, shared Texture deduplication,
+    corruption bounds, and priority-ordered byte ranges.
+  - [ ] **AP1.5 — Scheduling and mip readiness:** add shared in-flight loads,
+    explicit loader concurrency policy, a bounded memory budget, low-mip scene
+    commit, and observable background high-mip streaming.
+  - [ ] **AP1.6 — Integration gate:** reach initial packaged Sponza scene commit
+    within 5 seconds in RelWithDebInfo on the reference laptop and record full
+    tests, Vulkan/OpenGL captures, latency, bytes, memory, and final-residency
+    evidence.
 
 ## Asset extensibility
 
@@ -121,6 +157,9 @@ belongs in the corresponding `.spec/journal/` entry.
   transition to the existing main Editor UI with no blank or mixed frame.
 - [x] The complete acceptance contract in the
   [spec](../../.spec/specs/asset-loading-progress.md) passes.
+- [ ] AP1 satisfies the latency, byte-budget, integrity, package-equivalence,
+  concurrency, lifetime, and cross-backend visual criteria in the
+  [startup performance spec](../../.spec/specs/asset-startup-loading-performance.md).
 - [ ] MI1 satisfies its
   [native-model-import acceptance criteria](.plan/MI1.md#acceptance-criteria).
 

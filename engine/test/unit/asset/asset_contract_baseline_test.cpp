@@ -229,13 +229,16 @@ TEST(AssetContractBaselineTest, PolymorphicPayloadAcceptsExternalConcreteTypes)
 TEST(AssetContractBaselineTest, DependenciesPreventPrematureUnload)
 {
     AssetManager &manager = AssetManager::GetInstance();
+    const std::size_t total_before = manager.GetTotalLiveAssetCount();
     AssetRegisterInfo texture_info = MakeTextureInfo("ax1_baseline_dependency.texture");
     const AssetID texture_id = manager.RegisterAsset(texture_info);
     ASSERT_TRUE(texture_id.IsValid());
+    EXPECT_EQ(manager.GetTotalLiveAssetCount(), total_before + 1);
 
     AssetRegisterInfo model_info = MakeModelInfo("ax1_baseline_owner.model", texture_id);
     const AssetID model_id = manager.RegisterAsset(model_info);
     ASSERT_TRUE(model_id.IsValid());
+    EXPECT_EQ(manager.GetTotalLiveAssetCount(), total_before + 2);
 
     manager.UnRegisterAsset(texture_id);
     EXPECT_NE(manager.GetAsset(texture_id), nullptr);
@@ -245,6 +248,7 @@ TEST(AssetContractBaselineTest, DependenciesPreventPrematureUnload)
 
     manager.UnRegisterAsset(texture_id);
     EXPECT_EQ(manager.GetAsset(texture_id), nullptr);
+    EXPECT_EQ(manager.GetTotalLiveAssetCount(), total_before);
 }
 
 TEST(AssetContractBaselineTest, InvalidOwnedChildRollsBackWithoutCacheResidue)

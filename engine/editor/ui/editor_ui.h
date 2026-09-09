@@ -95,6 +95,7 @@ namespace kpengine::editor
             gameplay::IGameplayEditorSnapshotSource *actor_snapshot_source,
             gameplay::IGameplayEditorEditSink *actor_edit_sink);
         void PromoteToWorkspace();
+        void BeginClosing();
         bool RenderLoading();
         bool Render();
         void Close();
@@ -136,6 +137,7 @@ namespace kpengine::editor
                           input::InputSystem *input_system, ImFont *code_font);
         void BuildActorTools();
         void BuildLoadingTree();
+        void BuildStartupProfilerWindow();
         bool RenderActiveTree();
         // Binds the Tool > Capture Screenshot command to the runtime export path.
         void TriggerScreenshot();
@@ -150,6 +152,7 @@ namespace kpengine::editor
         bool wsi_init_attempted_ = false;
         bool wsi_initialized_ = false;
         bool workspace_promoted_ = false;
+        bool closing_ = false;
         EditorUIInitInfo init_info_{};
         LogLevelColorTable log_colors_;
         ImFont *code_font_ = nullptr;

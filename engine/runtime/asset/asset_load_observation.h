@@ -64,6 +64,7 @@ namespace kpengine::asset
         std::optional<AssetLoadOperationID> parent;
         std::string display_path;
         AssetType expected_type = AssetType::Undefined;
+        uint64_t completion_index = 0;
         AssetLoadState state = AssetLoadState::Running;
         AssetLoadPhase phase = AssetLoadPhase::CacheLookup;
         uint32_t completed_children = 0;
@@ -80,11 +81,24 @@ namespace kpengine::asset
         uint64_t cumulative_cache_lookup_us = 0;
         uint64_t cumulative_loader_queue_wait_us = 0;
         uint64_t cumulative_source_load_us = 0;
+        uint64_t cumulative_dependency_wait_us = 0;
         uint64_t cumulative_registration_us = 0;
         uint64_t measured_source_file_bytes = 0;
         uint64_t measured_decoded_payload_bytes = 0;
         uint32_t source_file_measurement_count = 0;
         uint32_t decoded_payload_measurement_count = 0;
+    };
+
+    struct AssetLoadTypeSummary
+    {
+        AssetType type = AssetType::Undefined;
+        uint32_t operations = 0;
+        uint32_t succeeded = 0;
+        uint32_t failed = 0;
+        uint32_t cache_hits = 0;
+        uint64_t source_load_us = 0;
+        uint64_t source_file_bytes = 0;
+        uint64_t decoded_payload_bytes = 0;
     };
 
     struct AssetLoadSummary
@@ -110,6 +124,11 @@ namespace kpengine::asset
         AssetLoadSummary summary;
         std::vector<AssetLoadObservation> active_operations;
         std::vector<AssetLoadObservation> recent_terminal_operations;
+        std::vector<AssetLoadObservation> completed_operations;
+        // Bounded attribution data for startup diagnostics. The Asset session
+        // remains useful for profiling without retaining the full operation log.
+        std::vector<AssetLoadTypeSummary> type_summaries;
+        std::vector<AssetLoadObservation> slowest_operations;
     };
 
     class AssetLoadSession

@@ -33,7 +33,8 @@ namespace kpengine::editor
                                                    ImGuiWindowFlags_NoBringToFrontOnFocus;
         ImGui::Begin("##StartupLoading", nullptr, window_flags);
         ImGui::TextUnformatted("KimPeanut Engine");
-        ImGui::TextUnformatted("Loading startup scene");
+        ImGui::TextUnformatted(last_view_model_.closing ? "Closing engine"
+                                                        : "Loading startup scene");
         ImGui::Separator();
         ImGui::Text("Stage: %s", last_view_model_.stage_label.c_str());
         if (!last_view_model_.current_item.empty())

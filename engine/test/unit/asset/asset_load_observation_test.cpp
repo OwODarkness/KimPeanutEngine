@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <chrono>
 #include <filesystem>
 #include <fstream>
@@ -189,7 +190,72 @@ TEST(AssetLoadObservationStateTest, BoundsActiveAndTerminalDetailsButKeepsAggreg
     EXPECT_TRUE(terminal.terminal);
     EXPECT_EQ(terminal.summary.operations_failed, 20u);
     EXPECT_EQ(terminal.recent_terminal_operations.size(), 16u);
+    ASSERT_EQ(terminal.completed_operations.size(), 20u);
+    EXPECT_EQ(terminal.completed_operations.front().completion_index, 1u);
+    EXPECT_EQ(terminal.completed_operations.back().completion_index, 20u);
+    EXPECT_EQ(terminal.slowest_operations.size(), 8u);
+    ASSERT_EQ(terminal.type_summaries.size(), 1u);
+    EXPECT_EQ(terminal.type_summaries.front().type, AssetType::KPAT_Texture);
+    EXPECT_EQ(terminal.type_summaries.front().failed, 20u);
     EXPECT_EQ(terminal.summary.first_failure, "first failure");
+}
+
+TEST(AssetLoadObservationStateTest, PublishesExclusiveCostsBytesAndSlowestAttribution)
+{
+    const auto clock = MakeClock();
+    AssetLoadSessionState state(20, ClockFor(clock));
+
+    const auto texture = state.BeginOperation(
+        "texture/large.texture", AssetType::KPAT_Texture, std::nullopt);
+    ASSERT_NE(texture, 0u);
+    clock->now += 20us;
+    kpengine::asset::AssetLoadTiming texture_timing{};
+    texture_timing.cache_lookup_us = 3;
+    texture_timing.loader_queue_wait_us = 4;
+    texture_timing.source_load_us = 11;
+    texture_timing.dependency_wait_us = 5;
+    texture_timing.registration_us = 7;
+    kpengine::asset::AssetLoadSizeCost texture_size{};
+    texture_size.source_file_bytes = 1024;
+    texture_size.decoded_payload_bytes = 4096;
+    state.Complete(texture, AssetLoadState::Succeeded,
+                   AssetLoadDisposition::LoadedAndRegistered, {}, texture_timing,
+                   texture_size, {});
+
+    const auto material = state.BeginOperation(
+        "material/slow.material", AssetType::KPAT_Material, std::nullopt);
+    ASSERT_NE(material, 0u);
+    clock->now += 80us;
+    kpengine::asset::AssetLoadTiming material_timing{};
+    material_timing.source_load_us = 13;
+    state.Complete(material, AssetLoadState::Succeeded,
+                   AssetLoadDisposition::CacheHit, {}, material_timing, {}, {});
+    state.Seal();
+
+    const auto snapshot = state.GetSnapshot();
+    EXPECT_EQ(snapshot.summary.cost.cumulative_dependency_wait_us, 5u);
+    EXPECT_EQ(snapshot.summary.cost.measured_source_file_bytes, 1024u);
+    EXPECT_EQ(snapshot.summary.cost.measured_decoded_payload_bytes, 4096u);
+    ASSERT_EQ(snapshot.type_summaries.size(), 2u);
+    const auto material_summary = std::find_if(
+        snapshot.type_summaries.begin(), snapshot.type_summaries.end(),
+        [](const kpengine::asset::AssetLoadTypeSummary &summary)
+        { return summary.type == AssetType::KPAT_Material; });
+    const auto texture_summary = std::find_if(
+        snapshot.type_summaries.begin(), snapshot.type_summaries.end(),
+        [](const kpengine::asset::AssetLoadTypeSummary &summary)
+        { return summary.type == AssetType::KPAT_Texture; });
+    ASSERT_NE(material_summary, snapshot.type_summaries.end());
+    ASSERT_NE(texture_summary, snapshot.type_summaries.end());
+    EXPECT_EQ(material_summary->cache_hits, 1u);
+    EXPECT_EQ(texture_summary->source_load_us, 11u);
+    ASSERT_EQ(snapshot.slowest_operations.size(), 2u);
+    EXPECT_EQ(snapshot.completed_operations.size(), 2u);
+    EXPECT_EQ(snapshot.completed_operations.front().completion_index, 1u);
+    EXPECT_EQ(snapshot.completed_operations.back().completion_index, 2u);
+    EXPECT_EQ(snapshot.slowest_operations.front().display_path,
+              "material/slow.material");
+    EXPECT_EQ(snapshot.slowest_operations.front().timing.inclusive_elapsed_us, 80u);
 }
 
 TEST(AssetLoadObservationTest, ObservesRecursiveMaterialDependency)

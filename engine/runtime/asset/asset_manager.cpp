@@ -1211,6 +1211,20 @@ namespace kpengine::asset
             [](const std::unique_ptr<Asset> &asset) { return asset != nullptr; }));
     }
 
+    std::size_t AssetManager::GetTotalLiveAssetCount()
+    {
+        std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+        std::size_t count = 0;
+        for (const auto &[type, cache] : caches_)
+        {
+            (void)type;
+            count += static_cast<std::size_t>(std::count_if(
+                cache.assets.begin(), cache.assets.end(),
+                [](const std::unique_ptr<Asset> &asset) { return asset != nullptr; }));
+        }
+        return count;
+    }
+
     AssetID AssetManager::ResolveDependency(const AssetID &owner, size_t dependency_index,
                                              AssetType expected_type)
     {

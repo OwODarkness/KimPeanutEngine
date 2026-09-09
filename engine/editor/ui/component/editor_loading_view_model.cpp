@@ -29,6 +29,8 @@ namespace kpengine::editor
                 return "Activating editor workspace";
             case runtime::StartupPhase::Ready:
                 return "Ready";
+            case runtime::StartupPhase::Closing:
+                return "Closing engine";
             case runtime::StartupPhase::Failed:
                 return "Startup failed";
             case runtime::StartupPhase::Cancelled:
@@ -103,6 +105,7 @@ namespace kpengine::editor
         EditorLoadingViewModel model{};
         model.revision = snapshot.revision;
         model.ready = snapshot.phase == runtime::StartupPhase::Ready;
+        model.closing = snapshot.phase == runtime::StartupPhase::Closing;
         model.failed = snapshot.phase == runtime::StartupPhase::Failed ||
                        snapshot.phase == runtime::StartupPhase::Cancelled ||
                        snapshot.phase == runtime::StartupPhase::RolledBack;
@@ -114,13 +117,19 @@ namespace kpengine::editor
         {
             model.determinate = true;
             model.fraction = std::clamp(snapshot.progress.fraction, 0.0f, 1.0f);
-            if (!model.ready)
+            if (!model.ready && !model.closing)
             {
                 model.fraction = std::min(model.fraction, 0.999f);
             }
         }
 
-        if (snapshot.asset.has_value())
+        if (model.closing && snapshot.progress.total_known)
+        {
+            model.counts_label = "Shutdown steps: " +
+                                 std::to_string(snapshot.progress.completed_units) + " / " +
+                                 std::to_string(snapshot.progress.total_units);
+        }
+        else if (snapshot.asset.has_value())
         {
             const asset::AssetLoadSnapshot &asset_snapshot = *snapshot.asset;
             model.counts_label = BuildCountsLabel(asset_snapshot);

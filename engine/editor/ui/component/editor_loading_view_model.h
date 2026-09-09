@@ -13,6 +13,7 @@ namespace kpengine::editor
         uint64_t revision = 0;
         bool determinate = false;
         bool ready = false;
+        bool closing = false;
         bool failed = false;
         float fraction = -1.0f;
         std::string stage_label;

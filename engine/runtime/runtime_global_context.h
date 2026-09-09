@@ -70,6 +70,14 @@ namespace kpengine
         public:
             RuntimeContext();
             ~RuntimeContext();
+            struct ShutdownProgress
+            {
+                uint32_t completed_units = 0;
+                uint32_t total_units = 0;
+                std::string label;
+            };
+            using ShutdownProgressCallback =
+                std::function<void(const ShutdownProgress &)>;
             // Called by Engine after the render startup handshake, on the game thread.
             // This is the Runtime-owned boundary for initial World composition.
             struct StartupResult
@@ -95,7 +103,7 @@ namespace kpengine
             {
                 startup_controller_setup_override_ = std::move(override);
             }
-            void Clear();
+            void Clear(ShutdownProgressCallback progress_callback = {});
             void TickGameplay(float delta_time);
             StartupResult InitializeReflection();
             const reflection::IReflectionCatalog *GetReflectionCatalog() const noexcept;

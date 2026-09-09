@@ -124,10 +124,19 @@ TEST(RuntimeStartupTest, InitializesAndTearsDownGameplayReflectionBeforePresenta
                   "kpengine.gameplay.CameraComponent"),
               nullptr);
 
-    context.Clear();
+    std::vector<kpengine::runtime::RuntimeContext::ShutdownProgress> shutdown_progress;
+    context.Clear(
+        [&shutdown_progress](
+            const kpengine::runtime::RuntimeContext::ShutdownProgress &progress)
+            { shutdown_progress.push_back(progress); });
     EXPECT_EQ(context.GetReflectionCatalog(), nullptr);
     EXPECT_EQ(context.GetGameplayEditorSnapshotSource(), nullptr);
     EXPECT_EQ(context.GetGameplayEditorEditSink(), nullptr);
+    ASSERT_EQ(shutdown_progress.size(), 8U);
+    EXPECT_EQ(shutdown_progress.front().completed_units, 0U);
+    EXPECT_EQ(shutdown_progress.front().label, "Stopping gameplay");
+    EXPECT_EQ(shutdown_progress.back().completed_units, 7U);
+    EXPECT_EQ(shutdown_progress.back().label, "Shutdown complete");
 }
 
 TEST(RuntimeStartupTest, RejectsCameraFreeLevelAndUnloadsTheAttempt)
@@ -253,6 +262,34 @@ TEST(RuntimeStartupCoordinatorTest, WakesWaitersAndPreservesFirstFailure)
     EXPECT_EQ(coordinator.GetSnapshot().diagnostic, "first failure");
     coordinator.Rollback();
     EXPECT_EQ(coordinator.GetSnapshot().phase, kpengine::runtime::StartupPhase::RolledBack);
+}
+
+TEST(RuntimeStartupCoordinatorTest, PublishesClosingProgressAfterReady)
+{
+    kpengine::runtime::StartupCoordinator coordinator;
+    coordinator.Begin();
+    coordinator.SetPhase(kpengine::runtime::StartupPhase::PresentationStarting);
+    coordinator.SetPhase(kpengine::runtime::StartupPhase::PresentationReady);
+    coordinator.SetPhase(kpengine::runtime::StartupPhase::LoadingAssets);
+    coordinator.SetPhase(kpengine::runtime::StartupPhase::PreparingCpuArtifacts);
+    coordinator.SetPhase(kpengine::runtime::StartupPhase::PromotingSceneRenderer);
+    coordinator.SetPhase(kpengine::runtime::StartupPhase::InstantiatingLevel);
+    coordinator.SetPhase(kpengine::runtime::StartupPhase::ActivatingEditorWorkspace);
+    coordinator.SetReady();
+
+    EXPECT_TRUE(coordinator.BeginClosing());
+    const auto snapshot = coordinator.GetSnapshot();
+    EXPECT_EQ(snapshot.phase, kpengine::runtime::StartupPhase::Closing);
+    EXPECT_EQ(snapshot.progress.completed_units, 0U);
+    EXPECT_EQ(snapshot.progress.total_units, 7U);
+    EXPECT_FLOAT_EQ(snapshot.progress.fraction, 0.0f);
+    EXPECT_FALSE(coordinator.BeginClosing());
+
+    coordinator.SetPhase(kpengine::runtime::StartupPhase::Closing, "Releasing renderer");
+    coordinator.SetProgress({3, 7, true, 3.0f / 7.0f});
+    const auto updated = coordinator.GetSnapshot();
+    EXPECT_EQ(updated.display_label, "Releasing renderer");
+    EXPECT_FLOAT_EQ(updated.progress.fraction, 3.0f / 7.0f);
 }
 
 TEST(RuntimeStartupCoordinatorTest, TerminalStateIsImmutableToOrdinaryMutators)

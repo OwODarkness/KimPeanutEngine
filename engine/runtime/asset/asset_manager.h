@@ -51,6 +51,7 @@ namespace kpengine::asset{
         bool RegisterAssetType(AssetTypeDescriptor descriptor, std::string &diagnostic);
         void UnRegisterAsset(const AssetID& id);
         std::size_t GetLiveAssetCount(AssetType type);
+        std::size_t GetTotalLiveAssetCount();
 
         Asset* GetAsset(const AssetID& id);
 

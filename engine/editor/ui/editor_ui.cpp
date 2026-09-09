@@ -13,6 +13,7 @@
 #include "editor/ui/component/editor_window_component.h"
 #include "editor/ui/component/editor_camera_settings_component.h"
 #include "editor/ui/component/editor_loading_component.h"
+#include "editor/ui/component/editor_startup_profiler_component.h"
 #include "editor/ui/component/editor_console_component.h"
 #include "editor/ui/component/editor_debug_viewer_component.h"
 #include "editor/ui/component/editor_gpu_profiler_component.h"
@@ -398,6 +399,22 @@ namespace kpengine::editor
         }
     }
 
+    void EditorUI::BeginClosing()
+    {
+        if (closing_)
+        {
+            return;
+        }
+        // Workspace components borrow Runtime services (the console, log, actor
+        // tools, and screenshot bridge). Destroy them before RuntimeContext starts
+        // releasing those services, while retaining the loading components and
+        // ImGui backend for the visible closing stages.
+        components_.clear();
+        actor_model_.reset();
+        screenshot_service_.reset();
+        closing_ = true;
+    }
+
     void EditorUI::SetActorInspectionServices(
         const reflection::IReflectionCatalog *reflection_catalog,
         gameplay::IGameplayEditorSnapshotSource *actor_snapshot_source,
@@ -434,6 +451,7 @@ namespace kpengine::editor
         loading_components_.clear();
         actor_model_.reset();
         workspace_promoted_ = false;
+        closing_ = false;
         init_info_ = {};
         log_colors_ = {};
         code_font_ = nullptr;
@@ -483,6 +501,13 @@ namespace kpengine::editor
         loading_components_.clear();
         loading_components_.push_back(std::make_unique<EditorLoadingComponent>(
             init_info_.startup_snapshot_source));
+        BuildStartupProfilerWindow();
+    }
+
+    void EditorUI::BuildStartupProfilerWindow()
+    {
+        loading_components_.push_back(std::make_unique<EditorStartupProfilerComponent>(
+            init_info_.startup_snapshot_source, init_info_.memory_sampler));
     }
 
     bool EditorUI::RenderActiveTree()
@@ -517,7 +542,8 @@ namespace kpengine::editor
                 }
             }
         }
-        const auto &active_components = workspace_promoted_ ? components_ : loading_components_;
+        const auto &active_components = workspace_promoted_ && !closing_ ? components_
+                                                                         : loading_components_;
         for (const auto &component : active_components)
         {
             component->Render();

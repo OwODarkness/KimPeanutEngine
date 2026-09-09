@@ -14,6 +14,14 @@
       "materials": ["material/quartz_pbr.material"]
     },
     {
+      "id": "cerberus",
+      "kind": "static_mesh",
+      "transform": { "position": [0, -24.4, 25], "rotation_degrees": [0, 90, 0], "scale": [0.35, 0.35, 0.35] },
+      "model": "model/cerberus/cerberus_lp",
+      "material": "material/cerberus_pbr.material",
+      "materials": ["material/cerberus_pbr.material"]
+    },
+    {
       "id": "main_camera",
       "kind": "camera",
       "transform": {

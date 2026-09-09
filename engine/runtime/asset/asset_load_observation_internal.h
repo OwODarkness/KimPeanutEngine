@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <deque>
 #include <functional>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <unordered_map>
@@ -68,6 +69,7 @@ namespace kpengine::asset::detail
         static uint32_t ToCount(std::size_t value) noexcept;
         static void AddCost(uint64_t &total, uint64_t value) noexcept;
         static void AddCount(uint32_t &total) noexcept;
+        void RecordTerminalAttribution(const AssetLoadObservation &observation) noexcept;
 
         void IncrementRevision() noexcept;
         void TrySetFirstFailure(const std::string &diagnostic) noexcept;
@@ -83,9 +85,13 @@ namespace kpengine::asset::detail
         bool terminal_ = false;
         bool recording_disabled_ = false;
         AssetLoadOperationID next_operation_ = 1;
+        uint64_t next_completion_index_ = 1;
         AssetLoadSummary summary_;
         std::unordered_map<AssetLoadOperationID, ActiveOperation> active_;
         std::deque<AssetLoadObservation> recent_terminal_;
+        std::vector<AssetLoadObservation> completed_operations_;
+        std::map<AssetType, AssetLoadTypeSummary> type_summaries_;
+        std::vector<AssetLoadObservation> slowest_operations_;
     };
 }
 

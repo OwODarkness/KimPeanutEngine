@@ -434,8 +434,21 @@ namespace kpengine
             }
         }
 
-        void RuntimeContext::Clear()
+        void RuntimeContext::Clear(ShutdownProgressCallback progress_callback)
         {
+            constexpr uint32_t shutdown_units = 7;
+            const auto report_progress = [&progress_callback, shutdown_units](
+                uint32_t completed_units, const char *label)
+            {
+                if (!progress_callback)
+                {
+                    return;
+                }
+                progress_callback(ShutdownProgress{
+                    completed_units, shutdown_units, label != nullptr ? label : ""});
+            };
+
+            report_progress(0, "Stopping gameplay");
             scene_camera_control_captured_.store(false, std::memory_order_release);
             scene_camera_move_speed_.store(kDefaultSceneCameraMoveSpeed,
                                            std::memory_order_release);
@@ -444,9 +457,9 @@ namespace kpengine
                 pending_scene_picks_.clear();
                 completed_scene_picks_.clear();
             }
-            // This is called by the render thread after ImGui shuts down, while
-            // the graphics context is still current. Release GPU objects before
-            // the GLFW window/context they depend on.
+            // This is called by the render thread while ImGui and the graphics
+            // context are still alive. Release GPU objects before the GLFW
+            // window/context they depend on.
             // Components enqueue source destruction through RenderSystem. The
             // gameplay World must therefore die before the sink and GPU teardown.
             if (gameplay_editor_bridge_)
@@ -454,8 +467,10 @@ namespace kpengine
                 gameplay_editor_bridge_->Shutdown();
                 gameplay_editor_bridge_.reset();
             }
+            report_progress(1, "Releasing level");
             level_instance_.reset();
             gameplay_world_.reset();
+            report_progress(2, "Stopping reflection and scripting");
             if (reflection_system_)
             {
                 reflection_system_->Shutdown();
@@ -470,21 +485,26 @@ namespace kpengine
             }
             screenshot_command_registration_ = {};
             screenshot_service_.reset();
+            report_progress(3, "Releasing renderer");
             if (render_system_)
             {
                 render_system_->Shutdown();
                 render_system_.reset();
             }
+            report_progress(4, "Releasing prepared assets");
             prepared_render_assets_.reset();
+            report_progress(5, "Releasing input");
             if (input_system_)
             {
                 input_system_->Shutdown();
             }
+            report_progress(6, "Closing window");
             if (window_system_)
             {
                 window_system_->Cleanup();
                 window_system_.reset();
             }
+            report_progress(7, "Shutdown complete");
             log_system_.reset();
             lua_vm_.reset();
             memory_sampler_.reset();
