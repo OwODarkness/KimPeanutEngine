@@ -86,6 +86,10 @@ namespace kpengine::render
     struct MaterialTextureSamplerValue
     {
         asset::AssetID texture_asset;
+        // Asset startup resolves exactly one declared product into
+        // texture_asset. The optional second field remains a compatibility
+        // path for callers that provide both already-loaded products.
+        asset::AssetID block_compressed_texture_asset;
         MaterialSamplerDesc sampler;
         MaterialTextureColorSpace color_space = MaterialTextureColorSpace::Srgb;
     };

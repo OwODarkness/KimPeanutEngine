@@ -1,6 +1,7 @@
 #include "material_asset_resolver.h"
 
 #include <array>
+#include <limits>
 #include <optional>
 #include <string>
 #include <utility>
@@ -156,7 +157,16 @@ namespace kpengine::render
                         return {MaterialResourceState::Pending,
                                 "material texture dependency is not ready"};
                     }
-                    desc.default_value = MaterialTextureSamplerValue{texture_asset, {}};
+                    const asset::AssetID block_compressed_texture_asset =
+                        parameter.block_compressed_dependency_index ==
+                                std::numeric_limits<uint32_t>::max()
+                            ? asset::AssetID{}
+                            : prepared_assets_->ResolveDependency(
+                                  material_asset,
+                                  parameter.block_compressed_dependency_index,
+                                  asset::AssetType::KPAT_Texture);
+                    desc.default_value = MaterialTextureSamplerValue{
+                        texture_asset, block_compressed_texture_asset, {}};
                     desc.resource_binding = 2;
                     break;
                 }
@@ -190,17 +200,22 @@ namespace kpengine::render
         // Collect authored semantics. Unknown names or type mismatches fail.
         std::optional<Vector4f> base_color;
         std::optional<asset::AssetID> base_color_texture;
+        std::optional<asset::AssetID> base_color_block_texture;
         std::optional<MaterialTextureColorSpace> base_color_color_space;
         std::optional<asset::AssetID> normal_texture;
+        std::optional<asset::AssetID> normal_block_texture;
         std::optional<MaterialTextureColorSpace> normal_color_space;
         std::optional<float> metallic;
         std::optional<asset::AssetID> metallic_texture;
+        std::optional<asset::AssetID> metallic_block_texture;
         std::optional<MaterialTextureColorSpace> metallic_color_space;
         std::optional<float> roughness;
         std::optional<asset::AssetID> roughness_texture;
+        std::optional<asset::AssetID> roughness_block_texture;
         std::optional<MaterialTextureColorSpace> roughness_color_space;
         std::optional<float> occlusion;
         std::optional<asset::AssetID> occlusion_texture;
+        std::optional<asset::AssetID> occlusion_block_texture;
         std::optional<MaterialTextureColorSpace> occlusion_color_space;
         std::optional<Vector4f> emissive;
         std::optional<float> normal_scale;
@@ -245,6 +260,14 @@ namespace kpengine::render
                 {
                     return false;
                 }
+                const asset::AssetID block_compressed_texture_asset =
+                    parameter.block_compressed_dependency_index ==
+                            std::numeric_limits<uint32_t>::max()
+                        ? asset::AssetID{}
+                        : prepared_assets_->ResolveDependency(
+                              material_asset,
+                              parameter.block_compressed_dependency_index,
+                              asset::AssetType::KPAT_Texture);
                 const MaterialTextureColorSpace color_space =
                     parameter.texture_color_space == asset::MaterialTextureColorSpace::Srgb
                         ? MaterialTextureColorSpace::Srgb
@@ -252,28 +275,33 @@ namespace kpengine::render
                 if (name == "base_color_texture")
                 {
                     base_color_texture = texture_asset;
+                    base_color_block_texture = block_compressed_texture_asset;
                     base_color_color_space = color_space;
                 }
                 else if (name == "normal_texture")
                 {
                     normal_texture = texture_asset;
+                    normal_block_texture = block_compressed_texture_asset;
                     normal_color_space = color_space;
                 }
                 else if (name == "metallic_texture")
                 {
                     metallic_texture = texture_asset;
+                    metallic_block_texture = block_compressed_texture_asset;
                     metallic_color_space = color_space;
                     metallic_channel = ChannelSelector(parameter.texture_channel);
                 }
                 else if (name == "roughness_texture")
                 {
                     roughness_texture = texture_asset;
+                    roughness_block_texture = block_compressed_texture_asset;
                     roughness_color_space = color_space;
                     roughness_channel = ChannelSelector(parameter.texture_channel);
                 }
                 else
                 {
                     occlusion_texture = texture_asset;
+                    occlusion_block_texture = block_compressed_texture_asset;
                     occlusion_color_space = color_space;
                     occlusion_channel = ChannelSelector(parameter.texture_channel);
                 }
@@ -311,11 +339,13 @@ namespace kpengine::render
         };
         const auto add_texture = [&template_desc](std::string name, uint32_t binding,
                                                   MaterialTextureColorSpace color_space,
-                                                  asset::AssetID texture_asset)
+                                                  asset::AssetID texture_asset,
+                                                  asset::AssetID block_compressed_texture_asset)
         {
             MaterialParameterDesc desc{};
             desc.name = std::move(name);
-            desc.default_value = MaterialTextureSamplerValue{texture_asset, {}, color_space};
+            desc.default_value = MaterialTextureSamplerValue{
+                texture_asset, block_compressed_texture_asset, {}, color_space};
             desc.resource_binding = binding;
             template_desc.parameters.push_back(std::move(desc));
         };
@@ -324,22 +354,27 @@ namespace kpengine::render
                                                     : base_color.value_or(Vector4f{1.f, 1.f, 1.f, 1.f}));
         add_texture("base_color_texture", kBindingBaseColorTexture,
                     base_color_color_space.value_or(MaterialTextureColorSpace::Srgb),
-                    base_color_texture.value_or(white));
+                    base_color_texture.value_or(white),
+                    base_color_block_texture.value_or(asset::AssetID{}));
         add_texture("normal_texture", kBindingNormalTexture,
                     normal_color_space.value_or(MaterialTextureColorSpace::Linear),
-                    normal_texture.value_or(flat_normal));
+                    normal_texture.value_or(flat_normal),
+                    normal_block_texture.value_or(asset::AssetID{}));
         add_scalar("metallic", metallic_texture ? 1.0f : metallic.value_or(0.0f));
         add_texture("metallic_texture", kBindingMetallicTexture,
                     metallic_color_space.value_or(MaterialTextureColorSpace::Linear),
-                    metallic_texture.value_or(white));
+                    metallic_texture.value_or(white),
+                    metallic_block_texture.value_or(asset::AssetID{}));
         add_scalar("roughness", roughness_texture ? 1.0f : roughness.value_or(1.0f));
         add_texture("roughness_texture", kBindingRoughnessTexture,
                     roughness_color_space.value_or(MaterialTextureColorSpace::Linear),
-                    roughness_texture.value_or(white));
+                    roughness_texture.value_or(white),
+                    roughness_block_texture.value_or(asset::AssetID{}));
         add_scalar("occlusion", occlusion_texture ? 1.0f : occlusion.value_or(1.0f));
         add_texture("occlusion_texture", kBindingOcclusionTexture,
                     occlusion_color_space.value_or(MaterialTextureColorSpace::Linear),
-                    occlusion_texture.value_or(white));
+                    occlusion_texture.value_or(white),
+                    occlusion_block_texture.value_or(asset::AssetID{}));
         add_vector("emissive", emissive.value_or(Vector4f{0.f, 0.f, 0.f, 0.f}));
         add_vector("texture_channels",
                    Vector4f{metallic_channel, roughness_channel, occlusion_channel, 0.0f});

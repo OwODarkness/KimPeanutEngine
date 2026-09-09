@@ -54,8 +54,16 @@ void main()
 
     // Tangent-degenerate guard: data::Vertex zero-fills tangents for meshes
     // without UVs, so a zero-length T/B falls back to the geometric normal.
-    vec3 tangent_normal = texture(normal_texture, frag_texcoord).rgb * 2.0 - 1.0;
-    tangent_normal.xy *= material_data.normal_scale;
+    // Normal products use BC5_UNORM when the compressed profile is selected.
+    // BC5 stores tangent-space X/Y in RG; reconstruct the positive-Z
+    // hemisphere instead of reading the format's unused B channel. This is
+    // also valid for the portable RGBA8 normal product and keeps both paths
+    // on the same tangent-normal convention.
+    vec2 tangent_xy = texture(normal_texture, frag_texcoord).rg * 2.0 - 1.0;
+    tangent_xy *= material_data.normal_scale;
+    vec3 tangent_normal = vec3(
+        tangent_xy,
+        sqrt(max(0.0, 1.0 - dot(tangent_xy, tangent_xy))));
     tangent_normal = normalize(tangent_normal);
     vec3 normal = frag_N;
     if (dot(normal, normal) > 1e-8)

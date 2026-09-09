@@ -81,6 +81,26 @@ stages, and be non-empty; vertex binding/location and per-set descriptor
 binding indices must be unique; descriptor counts and attachment formats must
 be valid. Invalid descriptions return an invalid `PipelineHandle`.
 
+### Sampled texture formats and GPU-native BC products (AP1.2 landed 2026-09-09)
+
+`TextureFormat` is the API-neutral contract for both uncompressed and sampled
+block-compressed images. Native texture V2 products currently use BC3 UNORM/
+sRGB, BC4 UNORM, and BC5 UNORM. Their payloads remain compressed through Asset,
+Resource, staging, and GPU image creation; the GPU performs block decode during
+sampling. The Vulkan mapping uses the corresponding `VK_FORMAT_BC*_BLOCK`
+values. OpenGL uses RGTC for BC4/BC5 and the stable S3TC DXT5 tokens for BC3,
+then uploads each mip with `glCompressedTextureSubImage*`.
+
+Backends publish per-format sampled-texture capability bits through
+`GraphicsCapabilities`. Render selects a compressed source format only when
+the initialized backend supports it; it does not reinterpret compressed bytes
+as RGBA8. Material V2 declares the portable and BC products together, while
+Runtime converts initialized backend capabilities into an API-neutral Asset
+texture profile before startup dependency resolution. Asset loads only that
+product; Render receives the selected resource and still validates its format.
+Package-level logical-texture selection for non-material streaming resources
+remains a later package/profile concern.
+
 **Attachment semantics (D2 landed 2026-08-29):** empty `color_attachment_formats`
 is a legal **depth-only** pipeline and `depth_attachment_format ==
 `TEXTURE_FORMAT_UNKNOW`` means **no depth**; a description is rejected only when

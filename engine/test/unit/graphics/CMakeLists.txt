@@ -4,6 +4,7 @@ add_executable(
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend/common/bindless_texture.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend/common/render_target_validation.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend/common/pipeline_validation.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core/data/texture_mipmap.cpp
 )
 
 target_include_directories(GraphicsContractTest PRIVATE

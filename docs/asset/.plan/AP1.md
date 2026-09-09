@@ -300,6 +300,21 @@ verification on the selected policy path, and is not cloned solely for hashing.
 - Add semantic BC format tests, mip-size validation, and backend upload tests.
 - Re-cook Sponza and measure product, CPU payload, staging, and GPU residency.
 
+Landed 2026-09-09 as the first product/backend slice. Native Texture V2 now
+accepts deterministic BC3 UNORM/sRGB, BC4 UNORM, and BC5 UNORM mip payloads;
+the cooker selects them by texture semantic, while Portable remains the
+default profile. Common mip-size validation, Vulkan/OpenGL format translation,
+compressed upload calls, and per-format sampled capability reporting are
+covered. Material V2 now records both portable and BC texture products.
+Runtime converts initialized backend capabilities into an API-neutral Asset
+texture profile before startup dependency resolution, so Asset loads exactly
+one product: BC when the complete desktop profile is supported, otherwise
+portable. Render still validates the selected format. The current
+`level/performance_profile.level` fixture was visually captured on both Vulkan
+and OpenGL. Package-level selection for other logical resources, ASTC, BC7
+quality, and the Sponza closure budget remain open until measured on the target
+devices.
+
 Exit: the Sponza texture closure is at most 550 MB for the desktop compressed
 profile, with portable fallback behavior and no unacceptable captured visual
 regression.

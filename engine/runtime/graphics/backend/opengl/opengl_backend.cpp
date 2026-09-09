@@ -86,6 +86,26 @@ namespace kpengine::graphics
         capabilities_.bindless_texture_table_capacity = capabilities_.bindless_textures
                                                              ? bindless_texture_table_->GetCapacity()
                                                              : 0;
+
+        const auto supports_internal_format = [](GLenum format)
+        {
+            if (glGetInternalformativ == nullptr)
+            {
+                return false;
+            }
+            GLint supported = GL_FALSE;
+            glGetInternalformativ(GL_TEXTURE_2D, format, GL_INTERNALFORMAT_SUPPORTED, 1,
+                                  &supported);
+            return supported == GL_TRUE;
+        };
+        capabilities_.bc4_unorm_textures =
+            supports_internal_format(GL_COMPRESSED_RED_RGTC1);
+        capabilities_.bc5_unorm_textures =
+            supports_internal_format(GL_COMPRESSED_RG_RGTC2);
+        capabilities_.bc3_unorm_textures =
+            supports_internal_format(kCompressedRgbaS3tcDxt5);
+        capabilities_.bc3_srgb_textures =
+            supports_internal_format(kCompressedSrgbAlphaS3tcDxt5);
     }
 
     void OpenglBackend::BeginFrame()

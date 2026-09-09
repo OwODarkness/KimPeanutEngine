@@ -44,9 +44,13 @@ belongs in the corresponding `.spec/journal/` entry.
   `.texture` serialization.
 - [x] Load native `.texture` products through a read-only runtime adapter and
   expose direct `cook-texture` tooling.
-- [ ] Add BCn/ASTC product variants after the common format contract and both
+- [x] Add BCn product variants after the common format contract and both
   backend upload paths support capability selection; retain the portable
-  fallback. This is coordinated by
+  profile. BC4/BC5/BC3 products, block-sized validation, and backend mappings
+  are landed. Material V2 now publishes portable/BC alternatives and Runtime
+  selects exactly one supported variant before Asset dependency loading;
+  package-level selection for non-material products and ASTC remain open.
+  This is coordinated by
   [AP1.2](.plan/AP1.md#ap12--gpu-native-texture-compression).
 
 ## Startup performance roadmap
@@ -68,9 +72,11 @@ belongs in the corresponding `.spec/journal/` entry.
     computes the content and embedded-digest hashes without a product-sized
     integrity clone, reuses those results for archive verification and decode,
     and retains strict corruption rejection. See the [AP1 journal](../../.spec/journal/2026-09-09-asset-ap1-0.md#ap11-product-verification).
-  - [ ] **AP1.2 — Texture compression:** add capability-aware BC desktop
-    products and portable fallbacks across Asset cook, common Graphics, Vulkan,
-    and OpenGL; keep the Sponza desktop texture closure at or below 550 MB.
+  - [x] **AP1.2 — Texture compression:** add BC4/BC5/BC3 desktop products,
+    block-aware native texture V2 validation, common Graphics capability
+    reporting, Vulkan/OpenGL mappings and uploads, and portable cooking.
+    Material-level profile selection and Vulkan/OpenGL fixture captures are
+    landed; BC7/ASTC and the Sponza byte-budget measurement remain open.
   - [ ] **AP1.3 — Model compaction:** characterize and implement a versioned
     locality-optimized, quantized/compressed native Model profile with measured
     quality and decode evidence.

@@ -565,6 +565,12 @@ namespace kpengine::asset
             detail::AllocateAssetLoadSessionID()));
     }
 
+    void AssetManager::SetTextureVariantProfile(TextureVariantProfile profile)
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        material_loader_->SetTextureVariantProfile(profile);
+    }
+
     AssetID AssetManager::LoadSync(
         const std::string &path,
         const AssetLoadSession &session)

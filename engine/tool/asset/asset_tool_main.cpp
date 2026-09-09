@@ -33,14 +33,16 @@ namespace
     {
         std::cout
             << "KimPeanutAssetTool\n"
-            << "  import|reimport --source <asset-relative-path> [--importer <id>] [--asset-root <path>] "
+            << "  import|reimport --source <asset-relative-path> [--importer <id>] "
+               "[--compression <portable|bc>] [--asset-root <path>] "
                "[--archive-root <path>]\n"
 #if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
             << "  import-live2d --source <asset-relative-path> --output <product-path> "
                "[--asset-root <path>] [--archive-root <path>]\n"
 #endif
             << "  cook-texture --source <asset-relative-path> [--semantic <generic|color|normal|packed|opacity>] "
-               "[--max-dimension <n>] [--asset-root <path>] [--archive-root <path>]\n"
+               "[--compression <portable|bc>] [--max-dimension <n>] [--asset-root <path>] "
+               "[--archive-root <path>]\n"
             << "  status --source <asset-relative-path> [--asset-root <path>] "
                "[--archive-root <path>]\n"
             << "  diagnostics --source <asset-relative-path> [--asset-root <path>] "
@@ -137,6 +139,20 @@ namespace
             throw std::invalid_argument("--max-dimension must be a positive 32-bit integer");
         }
         return static_cast<std::uint32_t>(parsed);
+    }
+
+    kpengine::asset::TextureCompressionPolicy CompressionPolicy(const CommandLine &command)
+    {
+        const std::string value = Option(command, "compression");
+        if (value.empty() || value == "portable")
+        {
+            return kpengine::asset::TextureCompressionPolicy::Portable;
+        }
+        if (value == "bc")
+        {
+            return kpengine::asset::TextureCompressionPolicy::PreferBlockCompression;
+        }
+        throw std::invalid_argument("--compression must be portable or bc");
     }
 
     const char *ProgressStageName(kpengine::asset::ModelImportProgressStage stage)
@@ -444,9 +460,11 @@ namespace
             kpengine::asset::ModelImportService service{};
             kpengine::asset::ImportProviderRegistry registry{};
             std::string diagnostic;
+            kpengine::asset::ModelImportSettings model_settings{};
+            model_settings.texture_settings.compression = CompressionPolicy(command);
             const ProgressReporter progress_reporter{};
             if (!kpengine::asset::RegisterModelImportProvider(
-                    registry, service, {}, diagnostic,
+                    registry, service, model_settings, diagnostic,
                     [&progress_reporter](const kpengine::asset::ModelImportProgress &progress)
                     {
                         progress_reporter.Report(progress);
@@ -493,6 +511,7 @@ namespace
             kpengine::asset::TextureCookSettings settings{};
             settings.semantic = TextureSemantic(command);
             settings.max_dimension = MaxDimension(command);
+            settings.compression = CompressionPolicy(command);
             if (!kpengine::asset::RegisterTextureImportProvider(registry, settings, diagnostic) ||
                 !registry.Seal(diagnostic))
             {

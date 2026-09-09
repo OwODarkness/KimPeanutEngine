@@ -77,6 +77,38 @@ TEST(NativeMaterialTest, ProducesDeterministicProductsAndReusesEmbeddedImages)
               kpengine::asset::MaterialAlphaMode::Mask);
 }
 
+TEST(NativeMaterialTest, EmitsPortableAndBlockCompressedTextureVariants)
+{
+    auto settings = MakeSettings();
+    settings.emit_texture_profile_variants = true;
+    const auto converted = kpengine::asset::ConvertImportedMaterials(MakeDocument(), settings);
+
+    // The one embedded image is consumed once as Color and once as
+    // PackedLinear; each semantic has a portable and a BC product.
+    ASSERT_EQ(converted.embedded_images.size(), 4u);
+    for (const auto &material : converted.materials)
+    {
+        kpengine::asset::ValidateNativeMaterialProduct(material.bytes);
+        for (const auto &parameter : material.material.parameters)
+        {
+            if (parameter.type == kpengine::asset::MaterialParameterSourceType::Texture)
+            {
+                EXPECT_FALSE(parameter.block_compressed_path.empty());
+            }
+        }
+    }
+
+    const auto &base_color = converted.materials[0].material.parameters.front();
+    EXPECT_EQ(base_color.name, "base_color");
+    const auto base_color_texture = std::find_if(
+        converted.materials[0].material.parameters.begin(),
+        converted.materials[0].material.parameters.end(),
+        [](const auto &parameter) { return parameter.name == "base_color_texture"; });
+    ASSERT_NE(base_color_texture, converted.materials[0].material.parameters.end());
+    EXPECT_NE(base_color_texture->block_compressed_path,
+              std::get<std::string>(base_color_texture->value));
+}
+
 TEST(NativeMaterialTest, RejectsMalformedEmbeddedImages)
 {
     kpengine::asset::ImportedModelDocument document;

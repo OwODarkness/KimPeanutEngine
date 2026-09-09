@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstring>
+#include <limits>
 #include <string>
 
 namespace kpengine::data
@@ -21,6 +22,21 @@ namespace kpengine::data
                 return 4;
             case TextureFormat::TEXTURE_FORMAT_RGBA16F:
                 return 8;
+            default:
+                return 0;
+            }
+        }
+
+        size_t BlockByteCount(TextureFormat format) noexcept
+        {
+            switch (format)
+            {
+            case TextureFormat::TEXTURE_FORMAT_BC4_UNORM:
+                return 8;
+            case TextureFormat::TEXTURE_FORMAT_BC5_UNORM:
+            case TextureFormat::TEXTURE_FORMAT_BC3_UNORM:
+            case TextureFormat::TEXTURE_FORMAT_BC3_SRGB:
+                return 16;
             default:
                 return 0;
             }
@@ -288,6 +304,53 @@ namespace kpengine::data
         }
     }
 
+    bool IsTextureFormatBlockCompressed(TextureFormat format) noexcept
+    {
+        return BlockByteCount(format) != 0;
+    }
+
+    std::size_t TextureFormatBlockByteCount(TextureFormat format) noexcept
+    {
+        return BlockByteCount(format);
+    }
+
+    std::size_t GetTextureMipByteCount(std::uint32_t width, std::uint32_t height,
+                                       TextureFormat format) noexcept
+    {
+        if (width == 0 || height == 0)
+        {
+            return 0;
+        }
+        const std::size_t bytes_per_pixel = BytesPerPixel(format);
+        if (bytes_per_pixel != 0)
+        {
+            const std::size_t pixel_count = static_cast<std::size_t>(width) * height;
+            if (pixel_count / width != height ||
+                pixel_count > std::numeric_limits<std::size_t>::max() / bytes_per_pixel)
+            {
+                return 0;
+            }
+            return pixel_count * bytes_per_pixel;
+        }
+        const std::size_t block_bytes = BlockByteCount(format);
+        if (block_bytes == 0)
+        {
+            return 0;
+        }
+        const std::size_t block_width = (static_cast<std::size_t>(width) + 3U) / 4U;
+        const std::size_t block_height = (static_cast<std::size_t>(height) + 3U) / 4U;
+        if (block_width > std::numeric_limits<std::size_t>::max() / block_height)
+        {
+            return 0;
+        }
+        const std::size_t block_count = block_width * block_height;
+        if (block_count > std::numeric_limits<std::size_t>::max() / block_bytes)
+        {
+            return 0;
+        }
+        return block_count * block_bytes;
+    }
+
     TextureSemantic ClassifyTextureSemantic(std::string_view path)
     {
         std::string lower(path);
@@ -321,6 +384,10 @@ namespace kpengine::data
     bool GenerateTextureMipChain(TextureData &texture, TextureSemantic semantic,
                                  const TextureMipGenerationSettings &settings)
     {
+        if (IsTextureFormatBlockCompressed(texture.format))
+        {
+            return false;
+        }
         const size_t bytes_per_pixel = BytesPerPixel(texture.format);
         if (!IsValidBase(texture, bytes_per_pixel) || settings.max_dimension == 0)
         {
@@ -384,13 +451,13 @@ namespace kpengine::data
 
     bool IsTextureMipChainValid(const TextureData &texture) noexcept
     {
-        const size_t bytes_per_pixel = BytesPerPixel(texture.format);
-        if (texture.width == 0 || texture.height == 0 || bytes_per_pixel == 0)
+        const size_t expected_base_bytes =
+            GetTextureMipByteCount(texture.width, texture.height, texture.format);
+        if (texture.width == 0 || texture.height == 0 || expected_base_bytes == 0)
         {
             return texture.mip_subresources.empty() && texture.pixels.empty();
         }
-        if (texture.pixels.size() !=
-            static_cast<size_t>(texture.width) * texture.height * bytes_per_pixel)
+        if (texture.pixels.size() != expected_base_bytes)
         {
             return false;
         }
@@ -401,8 +468,8 @@ namespace kpengine::data
             expected_width = std::max(1U, expected_width / 2U);
             expected_height = std::max(1U, expected_height / 2U);
             if (level.width != expected_width || level.height != expected_height ||
-                level.pixels.size() !=
-                    static_cast<size_t>(level.width) * level.height * bytes_per_pixel)
+                level.pixels.size() != GetTextureMipByteCount(level.width, level.height,
+                                                               texture.format))
             {
                 return false;
             }

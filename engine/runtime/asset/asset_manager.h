@@ -10,6 +10,7 @@
 #include "asset_load_observation.h"
 #include "asset_type_registry.h"
 #include "base/handle.h"
+#include "texture_variant_profile.h"
 
 namespace kpengine::asset{
 
@@ -43,6 +44,9 @@ namespace kpengine::asset{
         AssetLoadSession BeginLoadObservation();
         AssetID LoadSync(const std::string& path,
                          const AssetLoadSession &session);
+        // Selects the one material texture product declared to Asset loaders
+        // before startup dependency resolution. The default is portable.
+        void SetTextureVariantProfile(TextureVariantProfile profile);
         std::future<AssetID> LoadAsync(const std::string& path);
         std::future<AssetID> LoadAsync(const std::string& path,
                                        AssetLoadSession session);

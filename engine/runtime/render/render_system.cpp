@@ -34,6 +34,19 @@ namespace kpengine::render
 
     RenderSystem::RenderSystem() = default;
 
+    bool RenderSystem::SupportsCompleteBlockCompressedTextureProfile() const noexcept
+    {
+        if (!backend_)
+        {
+            return false;
+        }
+        const graphics::GraphicsCapabilities &capabilities = backend_->GetCapabilities();
+        return capabilities.SupportsTextureFormat(TextureFormat::TEXTURE_FORMAT_BC4_UNORM) &&
+               capabilities.SupportsTextureFormat(TextureFormat::TEXTURE_FORMAT_BC5_UNORM) &&
+               capabilities.SupportsTextureFormat(TextureFormat::TEXTURE_FORMAT_BC3_UNORM) &&
+               capabilities.SupportsTextureFormat(TextureFormat::TEXTURE_FORMAT_BC3_SRGB);
+    }
+
     RenderSystem::~RenderSystem()
     {
         Shutdown();

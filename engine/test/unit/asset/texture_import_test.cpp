@@ -5,6 +5,7 @@
 
 #include "asset/native_texture.h"
 #include "asset/texture_importer.h"
+#include "data/texture_mipmap.h"
 
 namespace
 {
@@ -54,13 +55,44 @@ TEST(TextureImportTest, ImportAndCookAreIndependentAndRoundTripNativeMips)
     std::filesystem::remove(root, error);
 }
 
-TEST(TextureImportTest, RejectsUnavailableBlockCompressionInsteadOfSilentlyFallingBack)
+TEST(TextureImportTest, CooksSemanticBlockFormatsWithValidatedMipSizes)
+{
+    kpengine::asset::ImportedTexture source{};
+    source.image = MakeImage();
+    source.settings.semantic = kpengine::data::TextureSemantic::Normal;
+    source.settings.compression =
+        kpengine::asset::TextureCompressionPolicy::PreferBlockCompression;
+
+    const kpengine::asset::CookedTexture cooked = kpengine::asset::TextureCooker{}.Cook(source);
+    EXPECT_EQ(cooked.data.format, TextureFormat::TEXTURE_FORMAT_BC5_UNORM);
+    EXPECT_EQ(cooked.data.pixels.size(),
+              kpengine::data::GetTextureMipByteCount(cooked.data.width, cooked.data.height,
+                                                      cooked.data.format));
+    EXPECT_TRUE(kpengine::data::IsTextureMipChainValid(cooked.data));
+
+    const kpengine::asset::NativeTextureProduct product =
+        kpengine::asset::DeserializeNativeTexture(cooked.bytes);
+    EXPECT_EQ(product.data.format, TextureFormat::TEXTURE_FORMAT_BC5_UNORM);
+    EXPECT_EQ(product.data.GetTotalByteCount(), cooked.data.GetTotalByteCount());
+
+    source.settings.semantic = kpengine::data::TextureSemantic::OpacityMask;
+    EXPECT_EQ(kpengine::asset::TextureCooker{}.Cook(source).data.format,
+              TextureFormat::TEXTURE_FORMAT_BC4_UNORM);
+    source.settings.semantic = kpengine::data::TextureSemantic::PackedLinear;
+    EXPECT_EQ(kpengine::asset::TextureCooker{}.Cook(source).data.format,
+              TextureFormat::TEXTURE_FORMAT_BC3_UNORM);
+}
+
+TEST(TextureImportTest, RequiredBlockCompressionIsDeterministic)
 {
     kpengine::asset::ImportedTexture source{};
     source.image = MakeImage();
     source.settings.semantic = kpengine::data::TextureSemantic::Color;
     source.settings.compression =
         kpengine::asset::TextureCompressionPolicy::RequireBlockCompression;
-    EXPECT_THROW(kpengine::asset::TextureCooker{}.Cook(source),
-                 kpengine::asset::TextureCookError);
+    const kpengine::asset::CookedTexture first = kpengine::asset::TextureCooker{}.Cook(source);
+    const kpengine::asset::CookedTexture second = kpengine::asset::TextureCooker{}.Cook(source);
+    EXPECT_EQ(first.data.format, TextureFormat::TEXTURE_FORMAT_BC3_SRGB);
+    EXPECT_EQ(first.bytes, second.bytes);
+    EXPECT_EQ(first.product_hash, second.product_hash);
 }

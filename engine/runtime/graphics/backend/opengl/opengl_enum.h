@@ -7,6 +7,11 @@
 
 namespace kpengine::graphics
 {
+    // These S3TC tokens are not present in the checked-in core GL header on
+    // every loader configuration, but are stable extension values.
+    constexpr GLenum kCompressedRgbaS3tcDxt5 = 0x83F3;
+    constexpr GLenum kCompressedSrgbAlphaS3tcDxt5 = 0x8C4F;
+
     inline GLenum ConvertToOpenglTextureInternalFormat(TextureFormat format)
     {
         switch (format)
@@ -25,6 +30,14 @@ namespace kpengine::graphics
             return GL_SRGB8_ALPHA8;
         case TextureFormat::TEXTURE_FORMAT_RGBA16F:
             return GL_RGBA16F;
+        case TextureFormat::TEXTURE_FORMAT_BC4_UNORM:
+            return GL_COMPRESSED_RED_RGTC1;
+        case TextureFormat::TEXTURE_FORMAT_BC5_UNORM:
+            return GL_COMPRESSED_RG_RGTC2;
+        case TextureFormat::TEXTURE_FORMAT_BC3_UNORM:
+            return kCompressedRgbaS3tcDxt5;
+        case TextureFormat::TEXTURE_FORMAT_BC3_SRGB:
+            return kCompressedSrgbAlphaS3tcDxt5;
         case TextureFormat::TEXTURE_FORMAT_D24S8:
             return GL_DEPTH24_STENCIL8;
         case TextureFormat::TEXTURE_FORMAT_D32:
@@ -90,6 +103,11 @@ namespace kpengine::graphics
         case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
         case TextureFormat::TEXTURE_FORMAT_RGBA16F:
             return GL_RGBA;
+        case TextureFormat::TEXTURE_FORMAT_BC4_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_BC5_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_BC3_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_BC3_SRGB:
+            return 0;
         case TextureFormat::TEXTURE_FORMAT_D24S8:
             return GL_DEPTH_STENCIL;
         case TextureFormat::TEXTURE_FORMAT_D32:
@@ -113,6 +131,11 @@ namespace kpengine::graphics
 
         case TextureFormat::TEXTURE_FORMAT_RGBA16F:
             return GL_HALF_FLOAT;
+        case TextureFormat::TEXTURE_FORMAT_BC4_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_BC5_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_BC3_UNORM:
+        case TextureFormat::TEXTURE_FORMAT_BC3_SRGB:
+            return 0;
 
         case TextureFormat::TEXTURE_FORMAT_D24S8:
             return GL_UNSIGNED_INT_24_8;

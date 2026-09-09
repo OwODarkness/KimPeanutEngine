@@ -154,7 +154,7 @@ namespace kpengine::asset
                     bytes.push_back(static_cast<std::byte>(static_cast<unsigned char>(character)));
                 }
             };
-            append_string("KPENGINE_IMPORT_SETTINGS_V1");
+            append_string("KPENGINE_IMPORT_SETTINGS_V3");
             append_string(settings.importer_id);
             append_u32(settings.importer_version);
             append_u32(settings.native_model_version);
@@ -163,6 +163,7 @@ namespace kpengine::asset
             append_u32(settings.texture_settings.max_dimension);
             append_u32(settings.texture_settings.max_levels);
             append_u32(static_cast<std::uint32_t>(settings.texture_settings.compression));
+            append_u32(settings.emit_texture_profile_variants ? 1U : 0U);
             return bytes;
         }
 
@@ -175,7 +176,8 @@ namespace kpengine::asset
                 settings.texture_settings.max_dimension == 0 ||
                 settings.texture_settings.max_dimension > kNativeTextureMaxDimension ||
                 settings.texture_settings.max_levels > kNativeTextureMaxMipLevels ||
-                settings.texture_settings.compression != TextureCompressionPolicy::Portable)
+                static_cast<std::uint8_t>(settings.texture_settings.compression) >
+                    static_cast<std::uint8_t>(TextureCompressionPolicy::RequireBlockCompression))
             {
                 Fail(ModelImportErrorCode::InvalidArgument, "model import settings are incomplete");
             }
@@ -662,7 +664,8 @@ namespace kpengine::asset
             ReportProgress(request, ModelImportProgressStage::CookingTextures,
                            "cooking material textures");
             NativeMaterialConversionSettings conversion_settings{
-                asset_root, request.settings.shader_asset_path, request.settings.texture_settings};
+                asset_root, request.settings.shader_asset_path, request.settings.texture_settings,
+                request.settings.emit_texture_profile_variants};
             conversion_settings.texture_progress_callback = [&request](std::string_view image_path)
             {
                 ReportProgress(request, ModelImportProgressStage::CookingTextures,

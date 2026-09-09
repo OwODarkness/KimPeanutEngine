@@ -25,6 +25,7 @@ namespace kpengine::asset
         std::filesystem::path asset_root;
         std::string shader_asset_path{"shader/pbr_gbuffer.shader"};
         TextureCookSettings texture_settings{};
+        bool emit_texture_profile_variants{false};
         std::function<void(std::string_view)> texture_progress_callback;
     };
 

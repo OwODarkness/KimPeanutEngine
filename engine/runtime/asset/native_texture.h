@@ -12,7 +12,8 @@
 
 namespace kpengine::asset
 {
-    constexpr std::uint16_t kNativeTextureVersion = 1;
+    constexpr std::uint16_t kNativeTextureVersion = 2;
+    constexpr std::uint16_t kNativeTextureLegacyVersion = 1;
     constexpr std::uint32_t kNativeTextureFeatures = 0;
     constexpr std::size_t kNativeTextureHeaderSize = 92;
     constexpr std::size_t kNativeTextureMipEntrySize = 32;

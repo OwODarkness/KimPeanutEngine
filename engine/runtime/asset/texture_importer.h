@@ -17,6 +17,7 @@ namespace kpengine::asset
     enum class TextureCompressionPolicy : std::uint8_t
     {
         Portable,
+        PreferBlockCompression,
         RequireBlockCompression,
     };
 

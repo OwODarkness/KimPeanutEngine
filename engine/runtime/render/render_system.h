@@ -91,6 +91,9 @@ namespace kpengine::render
 
         RenderSystemLifecycleState GetLifecycleState() const { return lifecycle_state_; }
         const std::string &GetLastDiagnostic() const { return last_diagnostic_; }
+        // Asset startup uses this API-neutral result to choose exactly one
+        // material texture profile before resolving Material dependencies.
+        bool SupportsCompleteBlockCompressedTextureProfile() const noexcept;
 
         // Split frame bracket for the editor: scene work is recorded first, then
         // the API-specific editor renderer composites before submission/present.

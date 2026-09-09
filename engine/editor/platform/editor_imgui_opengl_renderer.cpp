@@ -87,7 +87,11 @@ namespace kpengine::editor
         // colors continue to render to the default framebuffer unchanged.
         ImDrawList *draw_list = ImGui::GetWindowDrawList();
         draw_list->AddCallback(EnableFramebufferSrgb, nullptr);
-        ImGui::Image(texture_id, size);
+        // OpenGL render-target textures use a bottom-left image origin while
+        // ImGui's image UV convention starts at the top-left. Reverse only
+        // the V range here; scene rendering and asset texture UVs stay API
+        // neutral.
+        ImGui::Image(texture_id, size, ImVec2(0.0f, 1.0f), ImVec2(1.0f, 0.0f));
         draw_list->AddCallback(DisableFramebufferSrgb, nullptr);
     }
 

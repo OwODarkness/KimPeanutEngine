@@ -14,20 +14,6 @@ namespace kpengine::asset
     {
         constexpr std::array<std::uint8_t, 8> kMagic{{'K', 'P', 'T', 'E', 'X', 'T', '1', '\0'}};
 
-        std::size_t BytesPerPixel(TextureFormat format)
-        {
-            switch (format)
-            {
-            case TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM:
-            case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
-                return 4;
-            case TextureFormat::TEXTURE_FORMAT_RGBA16F:
-                return 8;
-            default:
-                return 0;
-            }
-        }
-
         bool IsKnownSemantic(data::TextureSemantic semantic) noexcept
         {
             switch (semantic)
@@ -49,16 +35,6 @@ namespace kpengine::asset
                 return false;
             }
             result = lhs + rhs;
-            return true;
-        }
-
-        bool CheckedMultiply(std::size_t lhs, std::size_t rhs, std::size_t &result)
-        {
-            if (lhs != 0 && rhs > std::numeric_limits<std::size_t>::max() / lhs)
-            {
-                return false;
-            }
-            result = lhs * rhs;
             return true;
         }
 
@@ -171,10 +147,8 @@ namespace kpengine::asset
         std::size_t ExpectedLevelBytes(std::uint32_t width, std::uint32_t height,
                                        TextureFormat format)
         {
-            std::size_t pixels = 0;
-            std::size_t bytes = 0;
-            if (!CheckedMultiply(width, height, pixels) ||
-                !CheckedMultiply(pixels, BytesPerPixel(format), bytes))
+            const std::size_t bytes = data::GetTextureMipByteCount(width, height, format);
+            if (bytes == 0)
             {
                 Fail(NativeTextureErrorCode::Overflow, "native texture level size overflows");
             }
@@ -183,8 +157,9 @@ namespace kpengine::asset
 
         void ValidateData(const data::TextureData &data)
         {
-            const std::size_t bytes_per_pixel = BytesPerPixel(data.format);
-            if (data.width == 0 || data.height == 0 || bytes_per_pixel == 0 ||
+            const std::size_t base_bytes =
+                data::GetTextureMipByteCount(data.width, data.height, data.format);
+            if (data.width == 0 || data.height == 0 || base_bytes == 0 ||
                 data.depth != 1 || data.array_layers != 1 || !IsKnownSemantic(data.semantic) ||
                 data.width > kNativeTextureMaxDimension || data.height > kNativeTextureMaxDimension)
             {
@@ -341,7 +316,8 @@ namespace kpengine::asset
         const std::uint32_t depth = ReadU32(bytes, 52);
         const std::uint32_t array_layers = ReadU32(bytes, 56);
 
-        if (version != kNativeTextureVersion) Fail(NativeTextureErrorCode::UnsupportedVersion, "native texture version is unsupported");
+        if (version != kNativeTextureVersion && version != kNativeTextureLegacyVersion)
+            Fail(NativeTextureErrorCode::UnsupportedVersion, "native texture version is unsupported");
         if (header_size != kNativeTextureHeaderSize || directory_offset != kNativeTextureHeaderSize)
             Fail(NativeTextureErrorCode::InvalidDirectory, "native texture header or directory is invalid");
         if (features != kNativeTextureFeatures) Fail(NativeTextureErrorCode::UnsupportedFeatures, "native texture features are unsupported");

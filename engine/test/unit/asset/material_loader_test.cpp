@@ -1,5 +1,7 @@
 #include <filesystem>
 #include <fstream>
+#include <limits>
+#include <cstdint>
 
 #include <gtest/gtest.h>
 
@@ -169,6 +171,54 @@ TEST(MaterialLoaderTest, LoadsStandardPbrMaterialSource)
     EXPECT_EQ(material->parameters[2].name, "metallic");
     EXPECT_EQ(material->parameters[2].type, kpengine::asset::MaterialParameterSourceType::Scalar);
     EXPECT_EQ(std::get<float>(material->parameters[2].value), 0.1f);
+    std::error_code error;
+    std::filesystem::remove(path, error);
+}
+
+TEST(MaterialLoaderTest, ResolvesOnlyTheSelectedTextureVariant)
+{
+    const std::filesystem::path path =
+        MakeMaterialPath("kpengine_material_texture_variants.material");
+    WriteMaterialFile(path, R"({
+        "version": 2,
+        "shader": "../shader/pbr_gbuffer.shader",
+        "surface": {
+            "shading_model": "standard_pbr",
+            "blend_mode": "opaque",
+            "cull_mode": "back",
+            "double_sided": false
+        },
+        "parameters": {
+            "base_color_texture": {
+                "path": "../textures/portable.texture",
+                "variants": {
+                    "portable": "../textures/portable.texture",
+                    "bc": "../textures/block_compressed.texture"
+                },
+                "color_space": "srgb",
+                "channel": "rgba"
+            }
+        }
+    })");
+
+    kpengine::asset::MaterialLoader loader;
+    loader.SetTextureVariantProfile(kpengine::asset::TextureVariantProfile::BlockCompressed);
+    kpengine::asset::AssetRegisterInfo info{};
+    ASSERT_TRUE(loader.Load(path.string(), info));
+    ASSERT_EQ(info.dependency_requests.size(), 2u);
+    EXPECT_EQ(std::filesystem::path(info.dependency_requests[1].path).generic_string(),
+              (std::filesystem::path(kpengine::GetAssetDirectory()) /
+               "textures/block_compressed.texture")
+                  .generic_string());
+
+    const auto material =
+        std::dynamic_pointer_cast<kpengine::asset::MaterialResource>(info.resource);
+    ASSERT_NE(material, nullptr);
+    ASSERT_EQ(material->parameters.size(), 1u);
+    EXPECT_EQ(material->parameters[0].dependency_index, 1u);
+    EXPECT_EQ(material->parameters[0].block_compressed_dependency_index,
+              std::numeric_limits<uint32_t>::max());
+
     std::error_code error;
     std::filesystem::remove(path, error);
 }

@@ -6,6 +6,7 @@
 #include "asset/shader_program.h"
 #include "asset/texture.h"
 #include "data/mesh.h"
+#include "data/texture_mipmap.h"
 #include "graphics/backend/common/render_backend.h"
 #include "graphics/backend/common/sampler.h"
 #include "graphics/backend/common/texture.h"
@@ -118,11 +119,23 @@ namespace kpengine::render
         // The same LDR asset can be sampled as sRGB (base color) and linear
         // (normal/metallic/roughness/occlusion), while HDR assets retain their
         // imported RGBA16F format. Each resolved format needs its own GPU image.
-        const TextureFormat format = data.format == TextureFormat::TEXTURE_FORMAT_RGBA16F
-                                         ? data.format
-                                         : color_space == MaterialTextureColorSpace::Linear
-                                               ? TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM
-                                               : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        TextureFormat format = data.format == TextureFormat::TEXTURE_FORMAT_RGBA16F
+                                   ? data.format
+                                   : color_space == MaterialTextureColorSpace::Linear
+                                         ? TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM
+                                         : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+        // A cooked block payload is already in the GPU sampling format. Do
+        // not reinterpret it as RGBA8 or expand it on the runtime path. A
+        // profile-specific portable product must be selected by the Asset
+        // package/profile layer when the backend lacks this format.
+        if (data::IsTextureFormatBlockCompressed(data.format))
+        {
+            if (!backend_->GetCapabilities().SupportsTextureFormat(data.format))
+            {
+                return {};
+            }
+            format = data.format;
+        }
         const TextureCacheKey key{asset_id, format, variant};
         const auto existing = texture_cache_.find(key);
         graphics::TextureHandle texture;
@@ -217,14 +230,25 @@ namespace kpengine::render
             {
                 continue;
             }
-            auto texture = prepared_assets_->Get<asset::TextureResource>(
-                texture_value->texture_asset);
+            asset::AssetID selected_texture_asset = texture_value->texture_asset;
+            if (texture_value->block_compressed_texture_asset.IsValid())
+            {
+                const auto block_texture = prepared_assets_->Get<asset::TextureResource>(
+                    texture_value->block_compressed_texture_asset);
+                if (block_texture && block_texture->data &&
+                    data::IsTextureFormatBlockCompressed(block_texture->data->format) &&
+                    backend_->GetCapabilities().SupportsTextureFormat(block_texture->data->format))
+                {
+                    selected_texture_asset = texture_value->block_compressed_texture_asset;
+                }
+            }
+            auto texture = prepared_assets_->Get<asset::TextureResource>(selected_texture_asset);
             if (!texture || !texture->data)
             {
                 return {MaterialResourceState::Pending, "material texture asset is not loaded"};
             }
             const TextureBinding binding =
-                GetOrCreateTextureBinding(texture_value->texture_asset, *texture->data,
+                GetOrCreateTextureBinding(selected_texture_asset, *texture->data,
                                           texture_value->color_space, &texture_value->sampler);
             if (!binding.texture.IsValid() || !binding.sampler.IsValid())
             {

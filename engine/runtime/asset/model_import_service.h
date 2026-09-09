@@ -75,6 +75,7 @@ namespace kpengine::asset
         std::uint32_t material_schema_version{2};
         std::string shader_asset_path{"shader/pbr_gbuffer.shader"};
         TextureCookSettings texture_settings{};
+        bool emit_texture_profile_variants{true};
     };
 
     struct ModelImportRequest

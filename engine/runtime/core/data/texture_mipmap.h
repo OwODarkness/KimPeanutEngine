@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_TEXTURE_MIPMAP_H
 #define KPENGINE_RUNTIME_TEXTURE_MIPMAP_H
 
+#include <cstddef>
 #include <cstdint>
 #include <string_view>
 
@@ -19,6 +20,11 @@ namespace kpengine::data
 
     // Transitional loose textures do not carry native semantic metadata yet.
     TextureSemantic ClassifyTextureSemantic(std::string_view path);
+
+    bool IsTextureFormatBlockCompressed(TextureFormat format) noexcept;
+    std::size_t TextureFormatBlockByteCount(TextureFormat format) noexcept;
+    std::size_t GetTextureMipByteCount(std::uint32_t width, std::uint32_t height,
+                                       TextureFormat format) noexcept;
 
     bool IsTextureMipChainValid(const TextureData &texture) noexcept;
 

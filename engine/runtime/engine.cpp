@@ -255,6 +255,13 @@ namespace kpengine
             asset::AssetManager &asset_manager = asset::AssetManager::GetInstance();
             const std::size_t live_asset_count_before =
                 asset_manager.GetTotalLiveAssetCount();
+            const asset::TextureVariantProfile texture_profile =
+                global_runtime_context.render_system_ != nullptr &&
+                        global_runtime_context.render_system_->
+                            SupportsCompleteBlockCompressedTextureProfile()
+                    ? asset::TextureVariantProfile::BlockCompressed
+                    : asset::TextureVariantProfile::Portable;
+            asset_manager.SetTextureVariantProfile(texture_profile);
             const auto asset_loading_started = std::chrono::steady_clock::now();
             try
             {

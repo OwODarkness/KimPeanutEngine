@@ -66,6 +66,67 @@ The current V1 shader ABI supports one sampled surface texture named
 `base_color_texture`; Render maps it to binding 2. Other texture parameter
 names are rejected until the material schema grows explicit binding metadata.
 
+## Native `.texture` products and BC formats
+
+Native texture products are canonical little-endian `.texture` containers. The
+header records the dimensions, semantic, `TextureFormat`, mip count, and an
+embedded integrity digest; the directory records one contiguous payload range
+per mip. Runtime validates the directory and digest before exposing the
+texture to Resource/Render. Mip payloads are generated from the portable
+RGBA source first, then optionally block-compressed during cooking.
+
+The current desktop compressed profile uses these API-neutral formats:
+
+| `TextureFormat` | Block layout | Bytes per 4x4 block | Intended semantic | Sampling rule |
+|---|---|---:|---|---|
+| `BC4_UNORM` | one BC4 scalar block | 8 | opacity/mask | sampled from `r` |
+| `BC5_UNORM` | two BC4 blocks for R and G | 16 | tangent-space normal | sampled from `rg`; reconstruct positive Z |
+| `BC3_UNORM` | BC4 alpha + BC1 color | 16 | packed linear channels | sampled as linear |
+| `BC3_SRGB` | BC4 alpha + BC1 color | 16 | color/generic LDR data | color RGB is sRGB-decoded by the GPU |
+
+All BC formats use 4x4 blocks, including the edge blocks of non-multiple-of-4
+dimensions. The payload size for one mip is therefore
+`ceil(width / 4) * ceil(height / 4) * block_bytes`; each subsequent mip uses
+the same rule with its own dimensions. A complete RGBA8 mip chain is 4 bytes
+per texel, while BC products are 1 byte per texel, so the compressed payload is
+approximately one quarter the storage of the portable LDR product before
+container overhead.
+
+Normal maps are tangent-space, positive-Z maps. BC5 stores only encoded X/Y in
+the red and green channels; the PBR shader decodes them to `[-1, 1]`, applies
+the authored normal scale, reconstructs `z = sqrt(max(0, 1 - dot(xy, xy)))`,
+and normalizes the result. Object-space normals must not use this BC5 semantic.
+Normal mip levels are renormalized before compression so filtering does not
+create a non-unit tangent normal. BC compression is lossy; the portable
+profile remains available for unsupported backends, HDR data, and quality
+comparisons.
+
+The cooker currently maps `Color`/`Generic` to `BC3_SRGB`, `PackedLinear` to
+`BC3_UNORM`, `Normal` to `BC5_UNORM`, and `OpacityMask` to `BC4_UNORM` when
+`PreferBlockCompression` or `RequireBlockCompression` is selected. Runtime
+does not reinterpret compressed bytes as RGBA8. Generated Material V2 products
+may publish both products for one texture parameter while retaining the
+portable path as the explicit fallback:
+
+```json
+{
+  "path": "../textures/<portable-hash>.texture",
+  "variants": {
+    "portable": "../textures/<portable-hash>.texture",
+    "bc": "../textures/<bc-hash>.texture"
+  },
+  "color_space": "srgb",
+  "channel": "rgba"
+}
+```
+
+Runtime derives an API-neutral `TextureVariantProfile` from the initialized
+backend before startup Asset dependency resolution. Material loading then
+declares exactly one dependency: BC when the complete BC4/BC5/BC3 profile is
+supported, otherwise portable. The other path remains metadata for recook and
+profile tooling; it is not read during startup. Existing materials with only
+`path` remain valid. A backend never silently expands unsupported BC bytes.
+
 ## `.material` (Material Asset V2)
 
 Version 2 adds the `standard_pbr` shading model beside `unlit`. The parser

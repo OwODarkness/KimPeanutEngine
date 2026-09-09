@@ -362,6 +362,23 @@ namespace kpengine::graphics
         capabilities_.bindless_texture_table_capacity = capabilities_.bindless_textures
                                                              ? device_->GetBindlessTextureTableCapacity()
                                                              : 0;
+
+        const auto supports_sampled_format = [physical_device = device_->GetPhysicalDevice()](
+                                                 VkFormat format)
+        {
+            VkFormatProperties format_properties{};
+            vkGetPhysicalDeviceFormatProperties(physical_device, format, &format_properties);
+            return (format_properties.optimalTilingFeatures &
+                    VK_FORMAT_FEATURE_SAMPLED_IMAGE_BIT) != 0;
+        };
+        capabilities_.bc4_unorm_textures =
+            supports_sampled_format(VK_FORMAT_BC4_UNORM_BLOCK);
+        capabilities_.bc5_unorm_textures =
+            supports_sampled_format(VK_FORMAT_BC5_UNORM_BLOCK);
+        capabilities_.bc3_unorm_textures =
+            supports_sampled_format(VK_FORMAT_BC3_UNORM_BLOCK);
+        capabilities_.bc3_srgb_textures =
+            supports_sampled_format(VK_FORMAT_BC3_SRGB_BLOCK);
     }
 
     void VulkanBackend::InitVulkanContext()

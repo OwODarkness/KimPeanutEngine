@@ -205,7 +205,7 @@ namespace kpengine::asset
                     parameter.value = texture_path;
                 }
                 else if (value.is_object() &&
-                         HasOnlyFields(value, {"path", "color_space", "channel"}) &&
+                         HasOnlyFields(value, {"path", "variants", "color_space", "channel"}) &&
                          value.contains("path") && value["path"].is_string())
                 {
                     const std::string texture_path = value["path"].get<std::string>();
@@ -215,6 +215,20 @@ namespace kpengine::asset
                     }
                     parameter.type = MaterialParameterSourceType::Texture;
                     parameter.value = texture_path;
+                    if (value.contains("variants"))
+                    {
+                        const json &variants = value["variants"];
+                        if (!variants.is_object() ||
+                            !HasOnlyFields(variants, {"portable", "bc"}) ||
+                            !variants.contains("portable") || !variants["portable"].is_string() ||
+                            !variants.contains("bc") || !variants["bc"].is_string() ||
+                            variants["portable"].get<std::string>() != texture_path ||
+                            variants["bc"].get<std::string>().empty())
+                        {
+                            return false;
+                        }
+                        parameter.block_compressed_path = variants["bc"].get<std::string>();
+                    }
                     if (value.contains("color_space"))
                     {
                         if (!value["color_space"].is_string())
@@ -430,8 +444,14 @@ namespace kpengine::asset
                 }
                 const std::string &authored_texture =
                     std::get<std::string>(parameter.value);
+                const bool use_block_compressed_profile =
+                    texture_variant_profile_ == TextureVariantProfile::BlockCompressed &&
+                    !parameter.block_compressed_path.empty();
+                const std::string &selected_texture = use_block_compressed_profile
+                                                           ? parameter.block_compressed_path
+                                                           : authored_texture;
                 std::string resolved_texture_path;
-                if (!ResolveOwnedAssetPath(path, authored_texture, AssetType::KPAT_Texture,
+                if (!ResolveOwnedAssetPath(path, selected_texture, AssetType::KPAT_Texture,
                                            resolved_texture_path))
                 {
                     KP_LOG("MaterialLoaderLog", LOG_LEVEL_ERROR,
@@ -443,6 +463,11 @@ namespace kpengine::asset
                     static_cast<uint32_t>(info.dependency_requests.size());
                 info.dependency_requests.push_back(
                     {std::move(resolved_texture_path), AssetType::KPAT_Texture});
+                // Only the selected product is an eager Asset dependency. The
+                // other declared path remains metadata for recook/profile
+                // tooling and is not read during startup.
+                parameter.block_compressed_dependency_index =
+                    std::numeric_limits<uint32_t>::max();
             }
 
             info.type = AssetType::KPAT_Material;

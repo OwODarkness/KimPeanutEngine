@@ -7,7 +7,9 @@
 #include "common/render_target_validation.h"
 #include "common/render_target_readback.h"
 #include "data/shader.h"
+#include "data/texture_mipmap.h"
 #include "render/pipeline_cache_key.h"
+#include "vulkan/vulkan_enum.h"
 #include "vulkan/vulkan_memory_free_range_list.h"
 
 namespace
@@ -67,6 +69,32 @@ TEST(GraphicsCapabilities, DefaultsToThePortableBoundResourcePath)
     EXPECT_FALSE(capabilities.bindless_textures);
     EXPECT_EQ(capabilities.bindless_texture_table_capacity, 0u);
     EXPECT_FALSE(capabilities.SupportsBindlessTextures());
+    EXPECT_FALSE(capabilities.SupportsTextureFormat(
+        TextureFormat::TEXTURE_FORMAT_BC3_SRGB));
+
+    kpengine::graphics::GraphicsCapabilities compressed{};
+    compressed.bc3_srgb_textures = true;
+    EXPECT_TRUE(compressed.SupportsTextureFormat(
+        TextureFormat::TEXTURE_FORMAT_BC3_SRGB));
+}
+
+TEST(TextureFormatContract, DefinesBlockSizedMipPayloadsAndBackendMappings)
+{
+    EXPECT_TRUE(kpengine::data::IsTextureFormatBlockCompressed(
+        TextureFormat::TEXTURE_FORMAT_BC3_SRGB));
+    EXPECT_EQ(kpengine::data::TextureFormatBlockByteCount(
+                  TextureFormat::TEXTURE_FORMAT_BC5_UNORM),
+              16u);
+    EXPECT_EQ(kpengine::data::GetTextureMipByteCount(
+                  1, 1, TextureFormat::TEXTURE_FORMAT_BC4_UNORM),
+              8u);
+    EXPECT_EQ(kpengine::data::GetTextureMipByteCount(
+                  5, 5, TextureFormat::TEXTURE_FORMAT_BC3_SRGB),
+              64u);
+
+    EXPECT_EQ(kpengine::graphics::ConvertToVulkanTextureFormat(
+                  TextureFormat::TEXTURE_FORMAT_BC5_UNORM),
+              VK_FORMAT_BC5_UNORM_BLOCK);
 }
 
 TEST(RenderTargetReadbackContract, ValidatesOwnedRgba8Output)

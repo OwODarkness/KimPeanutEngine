@@ -257,6 +257,18 @@ content-addressed `.texture` product. `NativeTextureLoader` only verifies and
 deserializes that product at runtime. Loose PNG/JPG/TGA/HDR loading remains a
 transitional fallback for authored files that have not been cooked.
 
+The native texture V2 product also supports deterministic GPU-native BC payloads:
+BC3 sRGB for color/generic data, BC3 UNORM for packed linear data, BC5 UNORM for
+normal maps, and BC4 UNORM for opacity masks. Each mip directory entry stores
+the block-compressed byte count, and the common `TextureFormat` contract maps
+the product directly to Vulkan/OpenGL sampled images. The cooker keeps
+portable RGBA8/RGBA16F output available; the runtime does not expand an
+unsupported BC product to RGBA8. Profile-specific variant publication and
+selection are supported for Material V2: the material retains a portable path
+and an optional BC path, Runtime selects one API-neutral texture profile before
+Asset dependency resolution, and only that product is loaded. Package-level
+variant maps for non-material streaming resources remain future work.
+
 The Assimp model path is static-mesh oriented. It accumulates and bakes node
 transforms, preserves section/material-slot topology, and retains source PBR
 material metadata in `data::MeshMaterial`. The native model path is a

@@ -1,6 +1,6 @@
 # Project Status
 
-**Snapshot: 2026-09-08.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-09.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
 **Current release: v1.1.0.**
 
@@ -492,6 +492,18 @@
   while preserving malformed, truncated, filename, and embedded-digest
   rejection. → [AP1 plan](asset/.plan/AP1.md),
   [AP1 journal](../.spec/journal/2026-09-09-asset-ap1-0.md#ap11-product-verification)
+
+- **Asset AP1.2 GPU-native texture product slice (2026-09-09)** — native
+  Texture V2 now cooks deterministic BC3/BC4/BC5 products by semantic, validates
+  block-sized mip payloads, maps them through the common Graphics contract to
+  Vulkan/OpenGL compressed uploads, and reports per-format backend capability.
+  Portable RGBA products remain available. Material V2 now publishes portable
+  and BC alternatives, and Runtime selects exactly one supported profile before
+  Asset dependency loading. Vulkan/OpenGL visual captures pass on the small
+  bunny + Cerberus fixture; BC7/ASTC and Sponza closure measurement remain
+  open. →
+  [AP1 plan](asset/.plan/AP1.md),
+  [AP1.2 journal](../.spec/journal/2026-09-09-asset-ap1-0.md#ap12-gpu-native-texture-compression)
 
 - **Runtime shutdown progress presentation (2026-09-09)** — the render-thread
   teardown path now keeps the existing loading panel alive while RuntimeContext

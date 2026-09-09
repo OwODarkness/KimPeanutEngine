@@ -79,9 +79,16 @@ namespace kpengine::asset
         std::string name;
         MaterialParameterSourceType type = MaterialParameterSourceType::Scalar;
         MaterialParameterSourceValue value = 0.0f;
+        // Texture assets may publish an explicit portable product and an
+        // optional desktop block-compressed product. Asset keeps both paths;
+        // the active startup profile chooses which one becomes the eager
+        // dependency. Render may still consume an optional second dependency
+        // supplied by older callers.
+        std::string block_compressed_path;
         MaterialTextureColorSpace texture_color_space = MaterialTextureColorSpace::Linear;
         MaterialTextureChannel texture_channel = MaterialTextureChannel::Rgba;
         uint32_t dependency_index = std::numeric_limits<uint32_t>::max();
+        uint32_t block_compressed_dependency_index = std::numeric_limits<uint32_t>::max();
     };
 
     // Parsed, API-neutral authoring data from one .material file. It contains
