@@ -11,8 +11,9 @@
 #include <string_view>
 #include <cctype>
 #include <initializer_list>
+#include <map>
 #include <optional>
-#include <set>
+#include <tuple>
 
 #include <nlohmann/json.hpp>
 
@@ -119,6 +120,44 @@ namespace kpengine::asset
             std::string extension;
         };
 
+        struct TextureCookKey
+        {
+            std::string source_identity;
+            ContentHash source_hash{};
+            data::TextureSemantic semantic{data::TextureSemantic::Generic};
+            std::uint32_t max_dimension{};
+            std::uint32_t max_levels{};
+            TextureCompressionPolicy compression{TextureCompressionPolicy::Portable};
+            bool emit_texture_profile_variants{false};
+
+            friend bool operator<(const TextureCookKey &lhs, const TextureCookKey &rhs) noexcept
+            {
+                return std::tie(lhs.source_identity, lhs.source_hash, lhs.semantic,
+                                 lhs.max_dimension, lhs.max_levels, lhs.compression,
+                                 lhs.emit_texture_profile_variants) <
+                       std::tie(rhs.source_identity, rhs.source_hash, rhs.semantic,
+                                rhs.max_dimension, rhs.max_levels, rhs.compression,
+                                rhs.emit_texture_profile_variants);
+            }
+        };
+
+        bool IsZeroHash(const ContentHash &hash)
+        {
+            return hash.bytes == ModelArchiveHashBytes{};
+        }
+
+        std::string TextureSourceIdentity(const ImportedImageSource &image)
+        {
+            if (image.storage == ImportedImageStorage::ExternalFile)
+            {
+                return image.resolved_path.lexically_normal().generic_string();
+            }
+            return "embedded:" + image.path + ":" + image.format_hint + ":" +
+                   std::to_string(image.embedded_width) + "x" +
+                   std::to_string(image.embedded_height) + ":raw=" +
+                   std::to_string(image.embedded_is_raw_rgba8 ? 1 : 0);
+        }
+
         std::string PublishTextureProduct(CookedTexture cooked,
                                           NativeMaterialConversionResult &result)
         {
@@ -141,30 +180,31 @@ namespace kpengine::asset
         }
 
         std::pair<CookedTexture, std::optional<CookedTexture>> CookTextureProfiles(
-            const ImportedTexture &imported,
+            const data::TextureData &prepared,
             const NativeMaterialConversionSettings &settings,
             NativeMaterialConversionMetrics &metrics)
         {
             TextureCooker cooker;
-            if (!settings.emit_texture_profile_variants)
+            const auto cook_profile = [&](TextureCompressionPolicy compression)
             {
                 ++metrics.texture_cook_count;
-                ++metrics.portable_encode_count;
-                return {cooker.Cook(imported), std::nullopt};
+                if (compression == TextureCompressionPolicy::Portable)
+                {
+                    ++metrics.portable_encode_count;
+                }
+                else
+                {
+                    ++metrics.block_encode_count;
+                }
+                return cooker.CookPrepared(prepared, compression);
+            };
+            if (!settings.emit_texture_profile_variants)
+            {
+                return {cook_profile(settings.texture_settings.compression), std::nullopt};
             }
 
-            ImportedTexture portable_source = imported;
-            portable_source.settings.compression = TextureCompressionPolicy::Portable;
-            ++metrics.texture_cook_count;
-            ++metrics.portable_encode_count;
-            CookedTexture portable = cooker.Cook(portable_source);
-
-            ImportedTexture block_source = imported;
-            block_source.settings.compression =
-                TextureCompressionPolicy::PreferBlockCompression;
-            ++metrics.texture_cook_count;
-            ++metrics.block_encode_count;
-            CookedTexture block = cooker.Cook(block_source);
+            CookedTexture portable = cook_profile(TextureCompressionPolicy::Portable);
+            CookedTexture block = cook_profile(TextureCompressionPolicy::PreferBlockCompression);
             if (block.product_hash == portable.product_hash)
             {
                 return {std::move(portable), std::nullopt};
@@ -172,19 +212,57 @@ namespace kpengine::asset
             return {std::move(portable), std::move(block)};
         }
 
+        ImageReference CookPreparedImage(
+            ImportedTexture imported, TextureCookKey key,
+            const NativeMaterialConversionSettings &settings,
+            NativeMaterialConversionResult &result,
+            std::map<TextureCookKey, ImageReference> &cooked_images)
+        {
+            try
+            {
+                const data::TextureData prepared = TextureCooker{}.Prepare(imported);
+                ++result.metrics.texture_prepare_count;
+                const auto cooked = CookTextureProfiles(prepared, settings, result.metrics);
+                const std::string portable_path =
+                    PublishTextureProduct(std::move(cooked.first), result);
+                const std::string block_path = cooked.second.has_value()
+                                                   ? PublishTextureProduct(
+                                                         std::move(*cooked.second), result)
+                                                   : std::string{};
+                const ImageReference reference{portable_path, block_path, "texture"};
+                cooked_images.emplace(std::move(key), reference);
+                return reference;
+            }
+            catch (const TextureCookError &error)
+            {
+                Fail(NativeMaterialErrorCode::MalformedImage,
+                     "image could not be cooked: " + std::string{error.what()});
+            }
+            return {};
+        }
+
         ImageReference PrepareImage(const ImportedImageSource &image,
                                     const NativeMaterialConversionSettings &settings,
                                     data::TextureSemantic semantic,
                                     NativeMaterialConversionResult &result,
-                                    std::set<std::string> &unique_cook_keys)
+                                    std::map<TextureCookKey, ImageReference> &cooked_images)
         {
-            std::string cook_key = image.storage == ImportedImageStorage::ExternalFile
-                                       ? image.resolved_path.lexically_normal().generic_string()
-                                       : "embedded:" + image.path + ":" + image.format_hint;
-            cook_key += ":semantic=" + std::to_string(static_cast<int>(semantic));
-            cook_key += ":dimension=" + std::to_string(settings.texture_settings.max_dimension);
-            cook_key += ":levels=" + std::to_string(settings.texture_settings.max_levels);
-            unique_cook_keys.insert(std::move(cook_key));
+            TextureCookKey key{};
+            key.source_identity = TextureSourceIdentity(image);
+            key.source_hash = image.source_hash;
+            key.semantic = semantic;
+            key.max_dimension = settings.texture_settings.max_dimension;
+            key.max_levels = settings.texture_settings.max_levels;
+            key.compression = settings.texture_settings.compression;
+            key.emit_texture_profile_variants = settings.emit_texture_profile_variants;
+            if (image.storage == ImportedImageStorage::EmbeddedBytes && IsZeroHash(key.source_hash))
+            {
+                key.source_hash = Sha256(image.embedded_bytes);
+            }
+            if (const auto existing = cooked_images.find(key); existing != cooked_images.end())
+            {
+                return existing->second;
+            }
             if (settings.texture_progress_callback)
             {
                 settings.texture_progress_callback(image.path);
@@ -228,24 +306,17 @@ namespace kpengine::asset
                     Fail(NativeMaterialErrorCode::MissingImage,
                          "external material image has no resolved path: " + image.path);
                 }
+                const TextureCompressionPolicy import_compression =
+                    settings.emit_texture_profile_variants
+                        ? TextureCompressionPolicy::Portable
+                        : settings.texture_settings.compression;
+                ImportedTexture imported{};
                 try
                 {
-                    const TextureCompressionPolicy import_compression =
-                        settings.emit_texture_profile_variants
-                            ? TextureCompressionPolicy::Portable
-                            : settings.texture_settings.compression;
-                    const ImportedTexture imported = TextureImporter{}.Import(
+                    imported = TextureImporter{}.Import(
                         {image.resolved_path,
                          {semantic, settings.texture_settings.max_dimension,
                           settings.texture_settings.max_levels, import_compression}});
-                    const auto cooked = CookTextureProfiles(imported, settings, result.metrics);
-                    const std::string portable_path =
-                        PublishTextureProduct(std::move(cooked.first), result);
-                    const std::string block_path = cooked.second.has_value()
-                                                       ? PublishTextureProduct(
-                                                             std::move(*cooked.second), result)
-                                                       : std::string{};
-                    return {portable_path, block_path, "texture"};
                 }
                 catch (const TextureCookError &error)
                 {
@@ -253,29 +324,14 @@ namespace kpengine::asset
                          "external image could not be cooked: " + image.resolved_path.string() + ": " +
                              error.what());
                 }
+                return CookPreparedImage(std::move(imported), key, settings, result, cooked_images);
             }
 
             ImportedTexture imported{};
-            imported.image = decoded;
+            imported.image = std::move(decoded);
             imported.settings = settings.texture_settings;
             imported.settings.semantic = semantic;
-            try
-            {
-                const auto cooked = CookTextureProfiles(imported, settings, result.metrics);
-                const std::string portable_path =
-                    PublishTextureProduct(std::move(cooked.first), result);
-                const std::string block_path = cooked.second.has_value()
-                                                   ? PublishTextureProduct(
-                                                         std::move(*cooked.second), result)
-                                                   : std::string{};
-                return {portable_path, block_path, "texture"};
-            }
-            catch (const TextureCookError &error)
-            {
-                Fail(NativeMaterialErrorCode::MalformedImage,
-                     "embedded image could not be cooked: " + std::string{error.what()});
-            }
-            return {};
+            return CookPreparedImage(std::move(imported), key, settings, result, cooked_images);
         }
 
         MaterialTextureChannel ChannelFor(const std::string &name)
@@ -399,7 +455,7 @@ namespace kpengine::asset
                  "material conversion requires an Asset root and shader path");
         }
         NativeMaterialConversionResult result;
-        std::set<std::string> unique_cook_keys;
+        std::map<TextureCookKey, ImageReference> cooked_images;
         result.metrics.unique_texture_product_count = 0;
         result.materials.reserve(document.materials.size());
         for (std::size_t material_index = 0; material_index < document.materials.size(); ++material_index)
@@ -460,7 +516,7 @@ namespace kpengine::asset
                 }
                 ++result.metrics.requested_texture_bindings;
                 const ImageReference prepared =
-                    PrepareImage(*image, settings, semantic, result, unique_cook_keys);
+                    PrepareImage(*image, settings, semantic, result, cooked_images);
                 MaterialParameterSource parameter{};
                 parameter.name = name;
                 parameter.type = MaterialParameterSourceType::Texture;
@@ -488,7 +544,7 @@ namespace kpengine::asset
             result.materials.push_back({material_index, source.name, std::move(material), std::move(bytes), {}});
             result.materials.back().content_hash = Sha256(result.materials.back().bytes);
         }
-        result.metrics.unique_cook_keys = unique_cook_keys.size();
+        result.metrics.unique_cook_keys = cooked_images.size();
         return result;
     }
 

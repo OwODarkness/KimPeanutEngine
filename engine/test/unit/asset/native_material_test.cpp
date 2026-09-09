@@ -48,14 +48,14 @@ TEST(NativeMaterialTest, ProducesDeterministicProductsAndReusesEmbeddedImages)
     const auto second = kpengine::asset::ConvertImportedMaterials(document, settings);
 
     ASSERT_EQ(first.materials.size(), 2u);
-    // The same source pixels are cooked separately when consumed with
-    // different semantics: color filtering and packed-linear filtering are
-    // different products by design.
+    // The same source is prepared once per semantic and reused by repeated
+    // bindings and equivalent materials.
     ASSERT_EQ(first.embedded_images.size(), 2u);
     EXPECT_EQ(first.metrics.requested_texture_bindings, 6u);
     EXPECT_EQ(first.metrics.unique_cook_keys, 2u);
-    EXPECT_EQ(first.metrics.texture_decode_count, 6u);
-    EXPECT_EQ(first.metrics.texture_cook_count, 6u);
+    EXPECT_EQ(first.metrics.texture_decode_count, 2u);
+    EXPECT_EQ(first.metrics.texture_prepare_count, 2u);
+    EXPECT_EQ(first.metrics.texture_cook_count, 2u);
     EXPECT_EQ(first.metrics.unique_texture_product_count, 2u);
     EXPECT_EQ(first.materials[0].bytes, first.materials[1].bytes);
     EXPECT_EQ(first.materials[0].bytes, second.materials[0].bytes);
@@ -93,10 +93,11 @@ TEST(NativeMaterialTest, EmitsPortableAndBlockCompressedTextureVariants)
     ASSERT_EQ(converted.embedded_images.size(), 4u);
     EXPECT_EQ(converted.metrics.requested_texture_bindings, 6u);
     EXPECT_EQ(converted.metrics.unique_cook_keys, 2u);
-    EXPECT_EQ(converted.metrics.texture_decode_count, 6u);
-    EXPECT_EQ(converted.metrics.texture_cook_count, 12u);
-    EXPECT_EQ(converted.metrics.portable_encode_count, 6u);
-    EXPECT_EQ(converted.metrics.block_encode_count, 6u);
+    EXPECT_EQ(converted.metrics.texture_decode_count, 2u);
+    EXPECT_EQ(converted.metrics.texture_prepare_count, 2u);
+    EXPECT_EQ(converted.metrics.texture_cook_count, 4u);
+    EXPECT_EQ(converted.metrics.portable_encode_count, 2u);
+    EXPECT_EQ(converted.metrics.block_encode_count, 2u);
     EXPECT_EQ(converted.metrics.unique_texture_product_count, 4u);
     for (const auto &material : converted.materials)
     {

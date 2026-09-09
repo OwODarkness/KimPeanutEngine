@@ -422,12 +422,18 @@ namespace kpengine::asset
         }
     }
 
-    CookedTexture TextureCooker::Cook(const ImportedTexture &source) const
+    data::TextureData TextureCooker::Prepare(const ImportedTexture &source) const
     {
-        data::TextureData data = ConvertImage(source.image, source.settings);
-        if (source.settings.compression != TextureCompressionPolicy::Portable)
+        return ConvertImage(source.image, source.settings);
+    }
+
+    CookedTexture TextureCooker::CookPrepared(const data::TextureData &prepared,
+                                              TextureCompressionPolicy compression) const
+    {
+        data::TextureData data = prepared;
+        if (compression != TextureCompressionPolicy::Portable)
         {
-            data = CompressTexture(data, source.settings.compression);
+            data = CompressTexture(data, compression);
         }
         std::vector<std::byte> bytes;
         try
@@ -440,6 +446,11 @@ namespace kpengine::asset
         }
         const ContentHash product_hash = Sha256(bytes);
         return {std::move(data), std::move(bytes), product_hash};
+    }
+
+    CookedTexture TextureCooker::Cook(const ImportedTexture &source) const
+    {
+        return CookPrepared(Prepare(source), source.settings.compression);
     }
 
     ImportedTexture ImportTexture(const TextureImportRequest &request)

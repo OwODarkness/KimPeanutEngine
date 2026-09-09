@@ -41,6 +41,7 @@ namespace kpengine::asset
         std::uint64_t requested_texture_bindings{};
         std::uint64_t unique_cook_keys{};
         std::uint64_t texture_decode_count{};
+        std::uint64_t texture_prepare_count{};
         std::uint64_t texture_cook_count{};
         std::uint64_t portable_encode_count{};
         std::uint64_t block_encode_count{};

@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "data/mesh.h"
+#include "asset_product.h"
 #include "spatial/aabb.h"
 
 namespace kpengine::asset
@@ -51,6 +52,9 @@ namespace kpengine::asset
         std::uint32_t embedded_width{};
         std::uint32_t embedded_height{};
         bool embedded_is_raw_rgba8{false};
+        // Populated by the model import coordinator from the dependency hash.
+        // Embedded images use a hash of their encoded or raw payload.
+        ContentHash source_hash{};
     };
 
     enum class ImportedAlphaMode : std::uint8_t

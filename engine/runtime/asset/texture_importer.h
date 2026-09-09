@@ -83,6 +83,9 @@ namespace kpengine::asset
     class TextureCooker final
     {
     public:
+        data::TextureData Prepare(const ImportedTexture &source) const;
+        CookedTexture CookPrepared(const data::TextureData &prepared,
+                                   TextureCompressionPolicy compression) const;
         CookedTexture Cook(const ImportedTexture &source) const;
     };
 

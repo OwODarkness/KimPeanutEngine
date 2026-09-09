@@ -297,7 +297,7 @@ namespace kpengine::asset
         }
 
         std::vector<SourceDependencyRecord> HashDependencies(
-            const ImportedModelDocument &document, const std::filesystem::path &asset_root,
+            ImportedModelDocument &document, const std::filesystem::path &asset_root,
             const std::filesystem::path &source_path, const std::string &source_relative_path,
             ModelImportMetrics &metrics)
         {
@@ -344,6 +344,23 @@ namespace kpengine::asset
             if (unique.empty())
             {
                 Fail(ModelImportErrorCode::InvalidArgument, "import source has no hashable dependencies");
+            }
+            for (ImportedImageSource &image : document.images)
+            {
+                if (image.storage == ImportedImageStorage::EmbeddedBytes)
+                {
+                    image.source_hash = Sha256(image.embedded_bytes);
+                    continue;
+                }
+                if (!image.resolved_path.empty())
+                {
+                    const std::string normalized = AssetRelativePath(asset_root, image.resolved_path);
+                    const auto found = unique.find(normalized);
+                    if (found != unique.end())
+                    {
+                        image.source_hash = found->second;
+                    }
+                }
             }
             std::vector<SourceDependencyRecord> result;
             result.reserve(unique.size());
@@ -1013,6 +1030,7 @@ namespace kpengine::asset
         result.metrics.requested_texture_bindings =
             converted_materials.metrics.requested_texture_bindings;
         result.metrics.texture_decode_count = converted_materials.metrics.texture_decode_count;
+        result.metrics.texture_prepare_count = converted_materials.metrics.texture_prepare_count;
         result.metrics.texture_cook_count = converted_materials.metrics.texture_cook_count;
         result.metrics.portable_encode_count = converted_materials.metrics.portable_encode_count;
         result.metrics.block_encode_count = converted_materials.metrics.block_encode_count;

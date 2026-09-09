@@ -239,6 +239,7 @@ namespace
                   << "  requested_texture_bindings: " << metrics.requested_texture_bindings << '\n'
                   << "  unique_cook_keys: " << metrics.unique_cook_keys << '\n'
                   << "  texture_decode_count: " << metrics.texture_decode_count << '\n'
+                  << "  texture_prepare_count: " << metrics.texture_prepare_count << '\n'
                   << "  texture_cook_count: " << metrics.texture_cook_count << '\n'
                   << "  portable_encode_count: " << metrics.portable_encode_count << '\n'
                   << "  block_encode_count: " << metrics.block_encode_count << '\n'
