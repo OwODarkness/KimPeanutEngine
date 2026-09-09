@@ -1,6 +1,6 @@
 # Live2D V1 Rendering
 
-- Status: proposed
+- Status: active implementation; L2D1–L2D3 landed, L2D4 planned
 - Owner: unassigned
 - Parent TODO: [Live2D Module Roadmap](../../docs/live2d/TODO.md)
 - Architecture: [Live2D Module Plans](../../docs/live2d/PLANS.md)
@@ -14,16 +14,20 @@ instance, Render, and GPU ownership boundaries for later character behavior.
 
 ## Current state
 
-- TTS demonstrates an optional static module but has no asset/render burden.
-- Asset type, payload, extension mapping, loader dispatch, and importer-tool
-  dispatch are closed over built-in types.
+- L2D1 integrates the optional pinned Cubism R5 SDK and process lifecycle.
+- AX1 and L2D2 provide the Asset-owned polymorphic payload/registry boundary,
+  module-owned custom type `0x1000`, native product, loader, and importer.
+- L2D3 publishes deterministic `.live2d` roots and native Texture dependencies
+  through `KimPeanutAssetTool import-live2d`.
+- `Live2DModelInstance` already owns independent mutable Cubism model state;
+  it does not yet expose an SDK-free render snapshot or retain Texture payloads.
 - Graphics supports static indexed mesh drawing, textures, bindings, blend
   state, scissor/viewport, and offscreen targets, but not generic frame-safe
   streaming geometry.
 - Render has a fixed schedule and API-neutral backend but no Cubism-backed
-  Live2D source, pass, or viewer composition; the editor currently has only a
+  Live2D renderer or viewer composition; the editor still has the temporary
   placeholder preview panel.
-- Cubism SDK is not present in the repository and Cubism Core is proprietary.
+- Cubism Core remains an external proprietary SDK input and is not committed.
 
 ## Scope and non-goals
 
@@ -68,8 +72,8 @@ Out of scope:
 1. [L2D1 — SDK integration](../../docs/live2d/.plan/L2D1.md).
 2. [AX1 — Asset extensibility](../../docs/asset/.plan/AX1.md), then
    [L2D2 — Live2D Asset integration](../../docs/live2d/.plan/L2D2.md).
-3. L2D3 — native Live2D product, importer, and runtime loader.
-4. L2D4 — mutable instance model and common RHI renderer.
+3. L2D3 — native Live2D product, importer, and runtime loader (landed).
+4. [L2D4 — model snapshot and common RHI renderer](../../docs/live2d/.plan/L2D4.md).
 5. L2D5 — dedicated viewer and V1 validation evidence.
 
 Each stage remains independently buildable. Asset migration lands before the

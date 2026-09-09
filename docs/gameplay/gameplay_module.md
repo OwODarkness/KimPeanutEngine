@@ -131,6 +131,12 @@ camera actions; changing that gate also clears pending logical events at the
 same mutex-protected boundary. Cursor tracking is reset at each mode transition
 to avoid a first-frame delta spike.
 
+The editor camera settings panel uses the same boundary for move speed. The
+panel records a bounded units-per-second value; `RuntimeContext` stores it
+atomically and applies it to `PlayerController` on the game thread. Built-in
+camera movement remains unchanged when the setting is left at its default of
+100 units per second.
+
 This module follows Unreal-style names because they express the intended game
 authoring model. It does not adopt Unreal's reflection, UObject, garbage
 collection, networking, editor, or broad gameplay-framework scope.

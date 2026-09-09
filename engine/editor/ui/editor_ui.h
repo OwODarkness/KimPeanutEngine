@@ -117,6 +117,7 @@ namespace kpengine::editor
         // orchestration list instead of one long build routine.
         void CreateImguiBackends(const EditorUIInitInfo &init_info);
         void BuildMenuBar(render::RenderSystem *render_system);
+        void BuildCameraSettingsWindow(runtime::ISceneCameraControlSink *camera_control_sink);
         void BuildViewportWindow(render::RenderSystem *render_system,
                                  WindowSystem *window_system,
                                  input::InputSystem *input_system,

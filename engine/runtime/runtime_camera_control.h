@@ -8,6 +8,10 @@
 
 namespace kpengine::runtime
 {
+    inline constexpr float kDefaultSceneCameraMoveSpeed = 100.0f;
+    inline constexpr float kMinimumSceneCameraMoveSpeed = 0.0f;
+    inline constexpr float kMaximumSceneCameraMoveSpeed = 10000.0f;
+
     // Render-thread/editor notification seam for the currently selected scene
     // camera. Implementations must only record the request; Runtime applies it
     // at the game-thread gameplay boundary.
@@ -16,6 +20,10 @@ namespace kpengine::runtime
     public:
         virtual ~ISceneCameraControlSink() = default;
         virtual void SetSceneCameraControlCaptured(bool captured) = 0;
+        // Editor-side camera settings are recorded here and applied by Runtime
+        // on the game thread; the UI never mutates Gameplay directly.
+        virtual float GetSceneCameraMoveSpeed() const noexcept = 0;
+        virtual void SetSceneCameraMoveSpeed(float units_per_second) = 0;
     };
 
     struct ScenePickResult

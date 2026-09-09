@@ -808,6 +808,11 @@ TEST(GameplayWorldTest, LocalPlayerControllerPossessesAndMovesFreeCamera)
             world.CreateLocalPlayerController(&input_system, "Gameplay");
         ASSERT_NE(controller, nullptr);
         ASSERT_TRUE(controller->Possess(camera_handle));
+        EXPECT_FLOAT_EQ(controller->GetMoveSpeed(), 100.0f);
+        controller->SetMoveSpeed(200.0f);
+        EXPECT_FLOAT_EQ(controller->GetMoveSpeed(), 200.0f);
+        controller->SetMoveSpeed(-1.0f);
+        EXPECT_FLOAT_EQ(controller->GetMoveSpeed(), 200.0f);
 
         context->ProcessKeyInput(
             {kpengine::input::InputDevice::Keyboard,
@@ -818,7 +823,7 @@ TEST(GameplayWorldTest, LocalPlayerControllerPossessesAndMovesFreeCamera)
         auto *const camera = world.FindActor(camera_handle)->FindComponent<
             kpengine::gameplay::CameraComponent>();
         ASSERT_NE(camera, nullptr);
-        EXPECT_NEAR(camera->GetLocalLocation().z_, 250.0f, 0.0001f);
+        EXPECT_NEAR(camera->GetLocalLocation().z_, 200.0f, 0.0001f);
 
         context->ProcessKeyInput(
             {kpengine::input::InputDevice::Keyboard,

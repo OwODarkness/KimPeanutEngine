@@ -4,6 +4,18 @@
 
 **Current release: v1.1.0.**
 
+- **Live2D L2D4.0 render contract freeze (2026-09-09)** — froze the R5
+  conformance policy for linear shader math, premultiplied RGBA8 sRGB output,
+  stable equal-order drawing, compatible normal/additive/multiplicative
+  blending, inverse packed-mask storage, and one 256² RGBA8 mask atlas with
+  36 active contexts. Added an SDK-free CPU contract test and a value-only
+  `Live2DRenderFeatureReport` with stable unsupported-feature diagnostics.
+  Official image capture remains blocked by the external-only sample fixture
+  and the absence of a built official sample executable; synthetic cases are
+  the CI evidence until redistribution is approved. →
+  [L2D4.0 plan](live2d/.plan/L2D4.0.md),
+  [L2D4.0 journal](../.spec/journal/2026-09-09-live2d-l2d4-0.md)
+
 - **Live2D L2D1 SDK integration (2026-09-08)** — added an optional Cubism 5
   Native R5 build boundary, enabled by default for development, using the
   external SDK at configuration time,
@@ -26,6 +38,13 @@
   Cubism-backed instance-isolation tests. Later rendering remains open. →
   [L2D2 plan](live2d/.plan/L2D2.md),
   [L2D2 journal](../.spec/journal/2026-09-08-live2d-l2d2.md)
+
+- **Live2D L2D3 offline import command (2026-09-08)** — connected the
+  module-owned `.model3.json` provider to `KimPeanutAssetTool import-live2d`.
+  The command stages and validates immutable Texture products, publishes the
+  sibling `.archive`, and writes the `.live2d` root last. →
+  [Live2D roadmap](live2d/TODO.md),
+  [L2D3 journal](../.spec/journal/2026-09-08-live2d-l2d3.md)
 
 - **Asset AX1.0 baseline characterization (2026-09-08)** — pinned current
   built-in `AssetType` values, `AssetID` packing, suffix routing, typed payload

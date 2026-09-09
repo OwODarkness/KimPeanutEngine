@@ -1,6 +1,7 @@
 #include <cstdint>
 #include <chrono>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <map>
@@ -16,6 +17,10 @@
 #include "asset/model_import_service.h"
 #include "asset/texture_importer.h"
 
+#if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
+#include "live2d_import.h"
+#endif
+
 namespace
 {
     struct CommandLine final
@@ -30,6 +35,10 @@ namespace
             << "KimPeanutAssetTool\n"
             << "  import|reimport --source <asset-relative-path> [--importer <id>] [--asset-root <path>] "
                "[--archive-root <path>]\n"
+#if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
+            << "  import-live2d --source <asset-relative-path> --output <product-path> "
+               "[--asset-root <path>] [--archive-root <path>]\n"
+#endif
             << "  cook-texture --source <asset-relative-path> [--semantic <generic|color|normal|packed|opacity>] "
                "[--max-dimension <n>] [--asset-root <path>] [--archive-root <path>]\n"
             << "  status --source <asset-relative-path> [--asset-root <path>] "
@@ -187,6 +196,232 @@ namespace
         }
     }
 
+#if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
+    std::vector<std::byte> ReadBytes(const std::filesystem::path &path)
+    {
+        std::ifstream stream(path, std::ios::binary | std::ios::ate);
+        if (!stream)
+        {
+            throw std::runtime_error("failed to read file: " + path.string());
+        }
+        const std::streampos end = stream.tellg();
+        if (end < 0)
+        {
+            throw std::runtime_error("failed to determine file size: " + path.string());
+        }
+        std::vector<std::byte> bytes(static_cast<std::size_t>(end));
+        stream.seekg(0, std::ios::beg);
+        if (!bytes.empty() &&
+            !stream.read(reinterpret_cast<char *>(bytes.data()),
+                         static_cast<std::streamsize>(bytes.size())))
+        {
+            throw std::runtime_error("failed to read file: " + path.string());
+        }
+        return bytes;
+    }
+
+    void WriteBytes(const std::filesystem::path &path,
+                    const std::vector<std::byte> &bytes)
+    {
+        if (!path.parent_path().empty())
+        {
+            std::filesystem::create_directories(path.parent_path());
+        }
+        std::ofstream stream(path, std::ios::binary | std::ios::trunc);
+        if (!stream)
+        {
+            throw std::runtime_error("failed to open file for writing: " + path.string());
+        }
+        if (!bytes.empty())
+        {
+            stream.write(reinterpret_cast<const char *>(bytes.data()),
+                         static_cast<std::streamsize>(bytes.size()));
+        }
+        if (!stream)
+        {
+            throw std::runtime_error("failed to write file: " + path.string());
+        }
+    }
+
+    bool WriteNewProduct(const std::filesystem::path &path,
+                         const std::vector<std::byte> &bytes)
+    {
+        if (std::filesystem::exists(path))
+        {
+            if (ReadBytes(path) != bytes)
+            {
+                throw std::runtime_error("immutable product collision: " + path.string());
+            }
+            return false;
+        }
+
+        const auto unique_id = std::chrono::steady_clock::now().time_since_epoch().count();
+        std::filesystem::path temporary = path;
+        temporary += ".tmp." + std::to_string(unique_id);
+        try
+        {
+            WriteBytes(temporary, bytes);
+            std::error_code error;
+            std::filesystem::rename(temporary, path, error);
+            if (error)
+            {
+                throw std::runtime_error("failed to publish product " + path.string() + ": " +
+                                         error.message());
+            }
+        }
+        catch (...)
+        {
+            std::error_code ignored;
+            std::filesystem::remove(temporary, ignored);
+            throw;
+        }
+        return true;
+    }
+
+    void RemoveFiles(const std::vector<std::filesystem::path> &paths) noexcept
+    {
+        for (auto path = paths.rbegin(); path != paths.rend(); ++path)
+        {
+            std::error_code ignored;
+            std::filesystem::remove(*path, ignored);
+        }
+    }
+
+    std::filesystem::path Live2DArchiveRoot(const CommandLine &command,
+                                            const std::filesystem::path &output)
+    {
+        const auto output_parent =
+            std::filesystem::absolute(output.parent_path()).lexically_normal();
+        const auto archive = Option(command, "archive-root").empty()
+                                 ? output_parent / ".archive"
+                                 : std::filesystem::path{Option(command, "archive-root")};
+        const auto normalized_archive = std::filesystem::absolute(archive).lexically_normal();
+        if (normalized_archive.filename() != ".archive" ||
+            normalized_archive.parent_path() != output_parent)
+        {
+            throw std::invalid_argument(
+                "Live2D --archive-root must be the .archive directory beside --output");
+        }
+        return normalized_archive;
+    }
+
+    int RunLive2DImport(const CommandLine &command,
+                        const std::filesystem::path &asset_root)
+    {
+        const std::filesystem::path output = Option(command, "output", true);
+        if (output.extension() != ".live2d")
+        {
+            throw std::invalid_argument("Live2D --output must have a .live2d extension");
+        }
+        const std::filesystem::path archive_root = Live2DArchiveRoot(command, output);
+        const std::filesystem::path stage_root =
+            output.parent_path() /
+            (".live2d-import-" +
+             std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+        const std::filesystem::path stage_archive = stage_root / ".archive";
+        std::vector<std::filesystem::path> created_files;
+        bool created_product = false;
+
+        try
+        {
+            kpengine::asset::ImportProviderRegistry registry{};
+            std::string diagnostic;
+            if (!kpengine::live2d::RegisterLive2DImporters(registry, diagnostic) ||
+                !registry.Seal(diagnostic))
+            {
+                throw std::runtime_error("failed to initialize Live2D import provider: " +
+                                         diagnostic);
+            }
+
+            kpengine::asset::ImportProviderRequest request{};
+            request.asset_root = asset_root;
+            request.archive_root = stage_archive;
+            request.source_path = Option(command, "source", true);
+            const kpengine::asset::ImportProviderResult provider_result =
+                registry.Execute(request, "live2d", diagnostic);
+            if (provider_result.product == nullptr)
+            {
+                const std::string message = provider_result.diagnostic.empty()
+                                                ? diagnostic
+                                                : provider_result.diagnostic;
+                throw std::runtime_error("Live2D import failed: " + message);
+            }
+            const auto result_product =
+                std::dynamic_pointer_cast<kpengine::asset::TypedImportProduct<
+                    kpengine::live2d::Live2DImportProduct,
+                    kpengine::asset::ImportProviderKind::Custom>>(provider_result.product);
+            if (result_product == nullptr)
+            {
+                throw std::runtime_error("Live2D provider returned an invalid result type");
+            }
+
+            const auto &product = result_product->value;
+            if (std::filesystem::exists(output) && ReadBytes(output) != product.product_bytes)
+            {
+                throw std::runtime_error("immutable product collision: " + output.string());
+            }
+
+            std::vector<std::pair<std::filesystem::path, std::filesystem::path>> staged_files;
+            if (std::filesystem::exists(stage_archive))
+            {
+                for (const auto &entry :
+                     std::filesystem::recursive_directory_iterator(stage_archive))
+                {
+                    if (!entry.is_regular_file()) continue;
+                    const auto relative = std::filesystem::relative(entry.path(), stage_archive);
+                    staged_files.emplace_back(entry.path(), archive_root / relative);
+                    if (std::filesystem::exists(staged_files.back().second) &&
+                        ReadBytes(staged_files.back().second) != ReadBytes(entry.path()))
+                    {
+                        throw std::runtime_error("immutable product collision: " +
+                                                 staged_files.back().second.string());
+                    }
+                }
+            }
+
+            for (const auto &[source, destination] : staged_files)
+            {
+                if (std::filesystem::exists(destination)) continue;
+                if (!destination.parent_path().empty())
+                {
+                    std::filesystem::create_directories(destination.parent_path());
+                }
+                std::error_code error;
+                std::filesystem::copy_file(source, destination,
+                                            std::filesystem::copy_options::none, error);
+                if (error)
+                {
+                    throw std::runtime_error("failed to publish texture product " +
+                                             destination.string() + ": " + error.message());
+                }
+                created_files.push_back(destination);
+            }
+
+            created_product = WriteNewProduct(output, product.product_bytes);
+            std::error_code ignored;
+            std::filesystem::remove_all(stage_root, ignored);
+            std::cout << "Imported\n"
+                      << "source: " << request.source_path.string() << '\n'
+                      << "product: " << output.string() << '\n'
+                      << "archive: " << archive_root.string() << '\n'
+                      << "textures: " << product.product.textures.size() << '\n';
+            return 0;
+        }
+        catch (...)
+        {
+            RemoveFiles(created_files);
+            if (created_product)
+            {
+                std::error_code ignored;
+                std::filesystem::remove(output, ignored);
+            }
+            std::error_code ignored;
+            std::filesystem::remove_all(stage_root, ignored);
+            throw;
+        }
+    }
+#endif
+
     int Run(const CommandLine &command)
     {
         if (command.command == "help" || command.command == "--help")
@@ -196,6 +431,13 @@ namespace
         }
         const std::filesystem::path asset_root = AssetRoot(command);
         const std::filesystem::path archive_root = ArchiveRoot(command, asset_root);
+
+#if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
+        if (command.command == "import-live2d")
+        {
+            return RunLive2DImport(command, asset_root);
+        }
+#endif
 
         if (command.command == "import" || command.command == "reimport")
         {

@@ -41,6 +41,14 @@ namespace kpengine::gameplay
         UnbindInput();
     }
 
+    void PlayerController::SetMoveSpeed(float units_per_second)
+    {
+        if (std::isfinite(units_per_second) && units_per_second >= 0.0f)
+        {
+            move_speed_ = units_per_second;
+        }
+    }
+
     bool PlayerController::BindInput()
     {
         if (input_bound_)

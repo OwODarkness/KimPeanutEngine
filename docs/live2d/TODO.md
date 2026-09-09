@@ -1,6 +1,6 @@
 # Live2D Module Roadmap
 
-**Status: proposed.** Architecture and reference analysis live in
+**Status: active.** Architecture and reference analysis live in
 [PLANS.md](PLANS.md). The cross-stage V1 contract is
 [live2d-v1-rendering](../../.spec/specs/live2d-v1-rendering.md).
 
@@ -21,14 +21,20 @@
   importer without adding Live2D names or branches to Asset. L2D2.0–L2D2.4
   are landed; renderer integration
   remains in later stages.
-- [ ] **L2D3 — native Live2D product and importer:** import a safe
-  `.model3.json` source closure into deterministic `.live2d` bytes plus native
-  Texture dependencies; load the immutable payload through ordinary
-  `AssetManager` without source import or archive writes.
-- [ ] **L2D4 — model instance and common renderer:** create independent mutable
-  instances, add frame-safe streaming geometry to the common RHI, implement
-  draw order/color/blend/culling/mask rendering, and validate both OpenGL and
-  Vulkan implementations.
+- [x] **L2D3 — offline Live2D import command:** connect the module-owned
+  `.model3.json` provider to `KimPeanutAssetTool import-live2d`, publish the
+  deterministic `.live2d` root and native Texture dependencies beside the
+  requested output, and reject immutable product collisions without exposing a
+  partial root.
+- [ ] **L2D4 — model snapshot and common renderer**
+  ([concrete plan](.plan/L2D4.md)): execute six gated subtasks—
+  [x] [contract freeze](.plan/L2D4.0.md) ([journal](../../.spec/journal/2026-09-09-live2d-l2d4-0.md)),
+  [common streaming geometry](.plan/L2D4.1.md),
+  [SDK-free extraction](.plan/L2D4.2.md),
+  [unmasked rendering](.plan/L2D4.3.md),
+  [packed clipping](.plan/L2D4.4.md), and
+  [cross-backend hardening](.plan/L2D4.5.md). L2D4 ends with an offscreen
+  renderer; the window, presentation, and final capture workflow remain L2D5.
 - [ ] **L2D5 — dedicated viewer and V1 evidence:** add
   `KimPeanutLive2DViewer`, resize and capture support, a legally usable fixture,
   official-reference comparison, cross-backend screenshots, and clean shutdown
@@ -80,16 +86,16 @@
   streaming, shared mask atlases, bindless batching, update-rate decoupling, or
   Sakura-style CPU-visible VRAM paths.
 
-## Open decisions before L2D3
+## L2D4 planning decisions and remaining gates
 
-- [ ] Request and record the stable Live2D type value through the Asset-owned
-  type registry; do not add a Live2D-specific type branch to Asset.
-- [ ] Decide whether V1 publishes to an explicit authored output path or uses a
-  new generic content-addressed archive API. Do not couple Live2D to the current
-  model-specific database internals.
+- [x] Live2D owns registered custom type value `0x1000`; Asset contains no
+  Live2D-specific type branch.
+- [x] V1 uses an explicit `.live2d` output path with a sibling `.archive`
+  directory; it does not couple Live2D to the current model-specific database
+  internals.
 - [ ] Approve the runtime/import test model and document its redistribution
   terms before checking it into the repository.
-- [ ] Freeze the native `.live2d` required/optional feature-bit policy,
-  including how Cubism 5.3 offscreen drawing is rejected or represented.
+- [x] L2D4 V1 rejects Cubism 5.3 offscreen/blend groups during static model
+  extraction before GPU publication; support requires a later planned stage.
 - [ ] Freeze texture alpha/color-space handling from an official R5 reference
-  capture before shader implementation.
+  capture before shader implementation; this is the L2D4.0 exit gate.

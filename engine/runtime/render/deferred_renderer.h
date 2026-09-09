@@ -217,7 +217,6 @@ namespace kpengine::render
         bool directional_shadow_cache_hit_ = false;
         bool directional_shadow_valid_ = false;
         uint64_t directional_shadow_stamp_ = 0;
-        bool point_shadow_profile_logged_ = false;
         uint64_t triangle_count_ = 0;
         RenderCamera scene_camera_;
         std::optional<CaptureView> active_pending_capture_;

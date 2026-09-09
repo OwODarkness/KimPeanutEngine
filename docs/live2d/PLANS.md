@@ -4,7 +4,8 @@
 an optional Live2D module. Current work is tracked in [TODO.md](TODO.md), the
 SDK design is in [`.plan/L2D1.md`](.plan/L2D1.md), the generic Asset migration
 is owned by [AX1](../asset/.plan/AX1.md), Live2D's Asset handoff is staged in
-[`.plan/L2D2.md`](.plan/L2D2.md), and the complete V1 execution contract is in
+[`.plan/L2D2.md`](.plan/L2D2.md), the common renderer is staged in
+[`.plan/L2D4.md`](.plan/L2D4.md), and the complete V1 execution contract is in
 [`.spec/specs/live2d-v1-rendering.md`](../../.spec/specs/live2d-v1-rendering.md).
 
 ## Outcome
@@ -23,28 +24,14 @@ physics authoring, hit testing, and gameplay components are future stages.
 
 ## Current-state analysis
 
-### Asset is closed to optional types
+### Asset extension prerequisite is landed
 
-The current Asset implementation cannot accept an optional Live2D type without
-editing Asset itself. This is an Asset-module problem, not a Live2D design
-problem. The generic solution is owned by [AX1 — Extensible Asset Types and
-Polymorphic Payloads](../asset/.plan/AX1.md):
-
-- [`AssetType`](../../engine/runtime/asset/common.h) is a closed enum.
-- [`AssetPayload`](../../engine/runtime/asset/asset.h) is a closed
-  `std::variant` of built-in `shared_ptr<T>` types.
-- extension-to-type mapping in
-  [`utility.h`](../../engine/runtime/asset/utility.h) is a hard-coded chain.
-- loader ownership and dispatch in
-  [`AssetManager`](../../engine/runtime/asset/asset_manager.cpp) are hard-coded.
-- `KimPeanutAssetTool` directly chooses model or texture import rather than
-  asking an importer registry.
-
-Adding `Live2DModelResource` to those switches would make Asset depend on an
-optional feature and repeat the same edit for every future asset type. Asset
-must first provide its own generic type/loader registry and polymorphic
-`IAssetPayload` boundary. Live2D only implements and registers its own payload
-and loader after AX1 is available.
+AX1 replaced the former closed payload variant with `shared_ptr<IAssetPayload>`
+and added Asset-owned runtime/importer registries. L2D2 consumes that boundary
+with module-owned type value `0x1000`, `.live2d` loader, and `.model3.json`
+provider; L2D3 connects it to the offline tool. Asset contains no Live2D branch.
+The renderer therefore consumes an already loaded `Live2DModelResource` and
+ordered Texture dependencies; it must not reopen source files or redesign Asset.
 
 ### Graphics has most static draw concepts but not Live2D streaming geometry
 
@@ -165,10 +152,12 @@ native-product loader, and an offline importer provider. Asset remains the
 owner of identity, `AssetID` creation, dependency requests, rollback,
 observation, cache lifetime, and unload behavior.
 
-The L2D2 implementation now provides a versioned product codec, an immutable
-payload, explicit registrations, and a database-free source provider. The
-provider consumes the checked-in Hiyori package under `asset/live2d` for
-validation; archive publication and RHI rendering remain later stages. The
+The L2D2 implementation provides a versioned product codec, an immutable
+payload, explicit registrations, and a database-free source provider. L2D3
+connects that provider to the offline `KimPeanutAssetTool import-live2d`
+command. The command stages the provider output, validates immutable
+content-addressed collisions, publishes native Texture products, and writes
+the `.live2d` root last. Runtime and RHI rendering remain later stages. The
 Live2D-specific integration sequence and acceptance criteria are in
 [L2D2](.plan/L2D2.md). The generic migration gates, lock policy, and payload
 tests are in [AX1](../asset/.plan/AX1.md).
@@ -192,7 +181,7 @@ typed optional chunks prevents the importer from discarding authored behavior
 that later stages need. Unknown optional roles may be preserved; unknown
 required feature flags are rejected.
 
-The importer:
+The provider and offline command:
 
 1. normalizes the `.model3.json` path under the Asset root;
 2. parses and validates every relative reference without allowing path escape;
@@ -201,12 +190,22 @@ The importer:
 4. validates `.moc3` compatibility against the selected Core release;
 5. imports/cooks texture atlases through the existing native Texture path;
 6. writes and re-reads a staged deterministic `.live2d` product;
-7. publishes the root last so failure cannot expose a half-built asset.
+7. validates existing immutable products before publication;
+8. publishes native Texture products and the root product last.
 
-The first implementation may require an explicit output path. Reuse of the
-project's content-addressed archive is a later decision after the model-specific
-archive repository has a justified generic product API; Live2D must not reach
-into `ModelArchiveDatabase` internals merely to obtain hashing.
+The command requires an explicit output path, for example:
+
+```text
+KimPeanutAssetTool import-live2d \
+  --source live2d/hiyori_pro/runtime/hiyori_pro_t11.model3.json \
+  --output content/hiyori_pro.live2d \
+  --asset-root asset
+```
+
+The output's sibling `.archive` directory is the publication root. An
+explicit `--archive-root` is accepted only when it names that sibling
+directory, keeping the product's dependency paths valid without reaching into
+`ModelArchiveDatabase` internals.
 
 ## Runtime ownership and data flow
 
@@ -233,8 +232,9 @@ Ownership is intentionally three-tiered:
 | `Live2DRenderProxy` | `Live2DRenderer` | GPU handles and per-frame draw metadata; retired only after submitted work is safe. |
 
 Multiple instances may share one asset and texture dependencies but never share
-mutable Cubism model parameters. Asset unload is refused while dependency edges
-or retained payload references remain.
+mutable Cubism model parameters. Asset dependency edges protect Texture assets
+while the root wrapper is live; instance-held payload `shared_ptr`s keep the
+immutable model and Texture CPU data valid if that wrapper is later unloaded.
 
 Cubism Framework uses a module-owned allocator and log bridge. Framework
 startup/initialize happens once in `Live2DSystem::Initialize`; shutdown first
@@ -256,12 +256,13 @@ a correct still frame:
 - explicit rejection of an unsupported required Cubism 5.3/R5 offscreen
   drawing feature rather than silent corruption.
 
-The common Graphics addition should be a bounded streaming-mesh contract, not
+The common Graphics addition is specified by [L2D4](.plan/L2D4.md): generic
+immutable/per-frame buffers plus an explicit multi-stream geometry view, not
 public `MapVkBuffer`/`glBufferSubData` hooks. Static UV/index data is uploaded
-once. Deformed positions are written into a frame-slot-safe vertex region after
-`BeginFrame`; the backend chooses persistent mapping, staging, or another safe
-implementation. Indexed ranges and base-vertex offsets let one concatenated
-model buffer serve all drawables.
+once. One common per-frame position handle owns backend frame-slot storage and
+is written only after `BeginFrame` selects a safe slot. Indexed ranges and
+base-vertex offsets let one concatenated model buffer serve all drawables while
+the existing static `MeshHandle` path remains compatible.
 
 V1 uses correctness-oriented pipeline variants for mask, normal, additive, and
 multiplicative draws. Pipeline-switch elimination, bindless batching, CPU-

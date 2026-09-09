@@ -435,7 +435,6 @@ namespace kpengine::render
         frame_lighting_binding_ = {};
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
-        point_shadow_profile_logged_ = false;
         directional_shadow_cache_hit_ = false;
         directional_shadow_valid_ = false;
         directional_shadow_stamp_ = 0;
@@ -1202,7 +1201,6 @@ namespace kpengine::render
         }
 
         const PointShadowFrame &shadow = *active_point_shadow_;
-        const auto profile_start = std::chrono::steady_clock::now();
         const std::vector<VisibleMeshSection> &proxies = BuildSectionCandidatesProfiled();
         std::vector<VisibleMeshSection> caster_candidates;
         caster_candidates.reserve(proxies.size());
@@ -1257,29 +1255,6 @@ namespace kpengine::render
         }
         shadow_target->EndRecording(*recorder);
         point_shadow_recorded_ = true;
-        if (!point_shadow_profile_logged_)
-        {
-            uint32_t total_draw_count = 0;
-            uint32_t empty_face_count = 0;
-            for (const uint32_t draw_count : face_draw_counts)
-            {
-                total_draw_count += draw_count;
-                empty_face_count += draw_count == 0 ? 1U : 0U;
-            }
-            const auto profile_duration = std::chrono::duration_cast<std::chrono::microseconds>(
-                std::chrono::steady_clock::now() - profile_start);
-            KP_LOG("RenderLog", LOG_LEVEL_INFO,
-                   "Point shadow profile: face_draws=[%u,%u,%u,%u,%u,%u] total_draws=%u "
-                   "empty_faces=%u candidates=%zu cpu_record_us=%llu target=%ux%u D32 "
-                   "target_bytes=%llu gpu_time=unavailable",
-                   face_draw_counts[0], face_draw_counts[1], face_draw_counts[2],
-                   face_draw_counts[3], face_draw_counts[4], face_draw_counts[5],
-                   total_draw_count, empty_face_count, caster_candidates.size(),
-                   static_cast<unsigned long long>(profile_duration.count()),
-                   kPointShadowAtlasWidth, kPointShadowAtlasHeight,
-                   static_cast<unsigned long long>(kPointShadowTargetBytes));
-            point_shadow_profile_logged_ = true;
-        }
         return true;
     }
 

@@ -6,13 +6,16 @@ and the engine's existing loopback JSON-lines endpoint for live commands.
 
 ## Install
 
-From the repository root:
+From the repository root, create the local environment and install the SDK:
 
 ```powershell
-python -m pip install -r mcp/requirements.txt
+python -m venv .venv
+.venv\Scripts\python.exe -m pip install -r mcp/requirements.txt
 ```
 
 Python 3.10 or newer is required. The MCP SDK is intentionally not vendored.
+The root `mcp.json` launches `mcp/run-server.bat`, which always uses this
+repository-local interpreter.
 
 ## Configure an MCP host
 
@@ -20,7 +23,7 @@ Use the root [`mcp.json`](../mcp.json) as a starting point. The portable launch
 command is:
 
 ```text
-python mcp/server.py
+mcp/run-server.bat
 ```
 
 The MCP server does not start the engine during import. The agent chooses one

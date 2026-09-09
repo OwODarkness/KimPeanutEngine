@@ -417,7 +417,7 @@ namespace kpengine::render
             return profile_.summary.cpu_subphases[static_cast<size_t>(subphase)]
                 .cpu_p95_ms.value_or(0.0);
         };
-        KP_LOG("RenderLog", LOG_LEVEL_INFO,
+        KP_LOG("RenderLog", LOG_LEVEL_DEBUG,
                "Render profile complete: scenario=%s level=%s camera=%s api=%s "
                "viewport=%ux%u warmup=%u samples=%u cpu_p50_ms=%.3f cpu_p95_ms=%.3f "
                "present_p50_ms=%.3f present_p95_ms=%.3f gbuffer_gpu_p95_ms=%.3f "

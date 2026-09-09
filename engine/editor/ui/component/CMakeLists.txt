@@ -1,4 +1,5 @@
 target_sources(EditorUILib PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/editor_camera_settings_component.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_console_component.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_debug_viewer_component.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/editor_gpu_profiler_component.cpp

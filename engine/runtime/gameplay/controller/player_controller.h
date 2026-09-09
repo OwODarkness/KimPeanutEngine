@@ -43,7 +43,8 @@ namespace kpengine::gameplay
         ActorHandle GetPossessedActor() const { return possessed_actor_; }
         const Rotatorf &GetControlRotation() const { return control_rotation_; }
 
-        void SetMoveSpeed(float units_per_second) { move_speed_ = units_per_second; }
+        float GetMoveSpeed() const noexcept { return move_speed_; }
+        void SetMoveSpeed(float units_per_second);
         void SetLookSensitivity(float degrees_per_pixel)
         {
             look_sensitivity_ = degrees_per_pixel;

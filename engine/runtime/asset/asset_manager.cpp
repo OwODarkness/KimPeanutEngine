@@ -1175,12 +1175,6 @@ namespace kpengine::asset
         cache.assets[handle.id] = std::move(asset);
         AddReferences(id, cache.assets[handle.id]->dependencies);
 
-        std::string type_name = std::string(magic_enum::enum_name(type));
-        KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG, "Register Aseset [%s|%s|%llu] from %s successfully",
-               type_name.c_str(),
-               cache.assets[handle.id]->GetName().c_str(),
-               id.Pack(),
-               cache.assets[handle.id]->GetPath().c_str());
         return id;
     }
 
@@ -1277,10 +1271,6 @@ namespace kpengine::asset
         RemoveReferences(asset->GetID(), asset->GetDependencies());
 
         cache->path_index.erase(Key(asset->GetPath()));
-
-        KP_LOG("AssetManagerLog", LOG_LEVEL_DEBUG,
-               "Unregister asset[%s, %llu] successfully",
-               asset->GetName().c_str(), id.Pack());
 
         cache->assets[id.id].reset();
         cache->handles.Destroy(AssetHandle(id.id, id.generation));

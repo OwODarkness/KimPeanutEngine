@@ -8,6 +8,12 @@ is explicitly disabled.
 The module provides Cubism SDK integration, native Live2D asset products, and
 the foundation for future model rendering.
 
+Planning entry points:
+
+- [module architecture](PLANS.md);
+- [roadmap and acceptance ledger](TODO.md);
+- [L2D4 concrete renderer plan](.plan/L2D4.md).
+
 ## SDK location
 
 Keep the proprietary SDK outside the repository. Set `[SDK_PATH]` to the local
@@ -75,6 +81,36 @@ protection while model leases are alive, independent parameter state for two
 `CubismModel` instances, deterministic Hiyori `.model3.json` import, path
 escape rejection, malformed product rejection, and ordinary AssetManager
 texture dependency registration.
+
+## Import a Live2D model offline
+
+Build the asset tool, then import a `.model3.json` source closure with an
+explicit `.live2d` output path:
+
+```powershell
+cmake --build build-live2d --config Debug --target KimPeanutAssetTool -- /m:2
+
+build-live2d/engine/tool/asset/Debug/KimPeanutAssetTool.exe import-live2d `
+  --source live2d/hiyori_pro/runtime/hiyori_pro_t11.model3.json `
+  --output content/hiyori_pro.live2d `
+  --asset-root asset
+```
+
+The command publishes the `.live2d` product and its native Texture products
+under the output directory:
+
+```text
+content/
+  hiyori_pro.live2d
+  .archive/
+    textures/
+      <sha256>.texture
+```
+
+Re-running the same command is safe: existing products must have identical
+bytes or the import fails with an immutable product collision. `--archive-root`
+is optional and, when provided, must name the `.archive` directory beside the
+requested `.live2d` output.
 
 ## Native `.live2d` product format
 

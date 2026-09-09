@@ -103,6 +103,8 @@ namespace kpengine
             gameplay::IGameplayEditorEditSink *GetGameplayEditorEditSink() noexcept;
             void SetStartupLevel(asset::AssetID level_asset) { startup_level_asset_ = level_asset; }
             void SetSceneCameraControlCaptured(bool captured) override;
+            float GetSceneCameraMoveSpeed() const noexcept override;
+            void SetSceneCameraMoveSpeed(float units_per_second) override;
             void EnqueueScenePick(const spatial::Ray &ray) override;
             std::optional<ScenePickResult> ConsumeScenePickResult() override;
             render::IRenderCaptureService *GetRenderCaptureService()
@@ -148,6 +150,7 @@ namespace kpengine
             void ProcessScenePickRequests();
 
             std::atomic<bool> scene_camera_control_captured_{false};
+            std::atomic<float> scene_camera_move_speed_{kDefaultSceneCameraMoveSpeed};
             std::mutex scene_pick_mutex_;
             std::deque<spatial::Ray> pending_scene_picks_;
             std::deque<ScenePickResult> completed_scene_picks_;

@@ -56,8 +56,20 @@ namespace kpengine::asset
             const std::filesystem::path product_path{path};
             const std::vector<std::byte> bytes = ReadProduct(product_path);
             std::string diagnostic;
+            std::filesystem::path verification_root = product_root_;
+            if (!verification_root.empty() &&
+                product_path.parent_path() != verification_root / "textures")
+            {
+                const std::filesystem::path candidate_root =
+                    product_path.parent_path().parent_path();
+                if (product_path.parent_path().filename() == "textures" &&
+                    candidate_root.filename() == ".archive")
+                {
+                    verification_root = candidate_root;
+                }
+            }
             if (!VerifyArchiveProduct(product_path, ArchiveProductType::Texture, bytes,
-                                       diagnostic, product_root_))
+                                       diagnostic, verification_root))
             {
                 throw NativeTextureError(NativeTextureErrorCode::IntegrityMismatch,
                                          "invalid native texture archive product: " + diagnostic);

@@ -11,6 +11,7 @@
 #include "editor/platform/editor_imgui_opengl_renderer.h"
 #include "editor/platform/editor_imgui_vulkan_renderer.h"
 #include "editor/ui/component/editor_window_component.h"
+#include "editor/ui/component/editor_camera_settings_component.h"
 #include "editor/ui/component/editor_loading_component.h"
 #include "editor/ui/component/editor_console_component.h"
 #include "editor/ui/component/editor_debug_viewer_component.h"
@@ -225,6 +226,13 @@ namespace kpengine::editor
         components_.push_back(std::move(window_component));
     }
 
+    void EditorUI::BuildCameraSettingsWindow(
+        runtime::ISceneCameraControlSink *camera_control_sink)
+    {
+        components_.push_back(
+            std::make_unique<EditorCameraSettingsComponent>(camera_control_sink));
+    }
+
     void EditorUI::BuildDebugViewerWindow(render::RenderSystem *render_system)
     {
         components_.push_back(std::make_unique<EditorDebugViewerComponent>(
@@ -370,6 +378,7 @@ namespace kpengine::editor
             BuildViewportWindow(init_info_.render_system, init_info_.window_system,
                                 init_info_.input_system, init_info_.camera_control_sink,
                                 init_info_.scene_selection_sink, actor_model_.get());
+            BuildCameraSettingsWindow(init_info_.camera_control_sink);
             BuildRegisteredWorkspaceExtensions();
             BuildDebugViewerWindow(init_info_.render_system);
             BuildLogWindow(init_info_.log_system, log_colors_);

@@ -116,9 +116,11 @@ Both seams live behind one virtual interface each and are selected once, by `Gra
 The scene viewport uses a separate injected `WindowSystem` seam for mouse
 capture. Right-clicking the scene image enters capture and hides the OS cursor;
 right-clicking again exits capture. `EditorViewportComponent` owns only this
-transient UI state and sends `ISceneCameraControlSink` notifications. It does
-not access the possessed camera or Gameplay objects. Runtime applies the
-notification on the game thread before ticking the world.
+transient UI state and sends `ISceneCameraControlSink` notifications. The
+adjacent `Camera Settings` panel edits the free-camera move speed through the
+same sink; it does not access the possessed camera or Gameplay objects.
+Runtime applies capture and speed requests on the game thread before ticking
+the world.
 
 `EditorTransformGizmo` lives under `engine/editor/gizmo/` because a gizmo is an
 editor interaction tool: it owns translate-mode visuals, hit testing, drag

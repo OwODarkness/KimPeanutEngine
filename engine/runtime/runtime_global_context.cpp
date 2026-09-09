@@ -29,6 +29,8 @@
 
 #include <utility>
 #include <stdexcept>
+#include <cmath>
+#include <algorithm>
 
 namespace kpengine
 {
@@ -333,6 +335,12 @@ namespace kpengine
             {
                 gameplay_editor_bridge_->PumpEdits();
             }
+            if (gameplay::PlayerController *const controller =
+                    gameplay_world_->GetLocalPlayerController())
+            {
+                controller->SetMoveSpeed(
+                    scene_camera_move_speed_.load(std::memory_order_acquire));
+            }
             gameplay_world_->SetLocalPlayerControllerInputEnabled(
                 scene_camera_control_captured_.load(std::memory_order_acquire));
             ProcessScenePickRequests();
@@ -410,8 +418,27 @@ namespace kpengine
             }
         }
 
+        float RuntimeContext::GetSceneCameraMoveSpeed() const noexcept
+        {
+            return scene_camera_move_speed_.load(std::memory_order_acquire);
+        }
+
+        void RuntimeContext::SetSceneCameraMoveSpeed(float units_per_second)
+        {
+            if (std::isfinite(units_per_second))
+            {
+                scene_camera_move_speed_.store(
+                    std::clamp(units_per_second, kMinimumSceneCameraMoveSpeed,
+                               kMaximumSceneCameraMoveSpeed),
+                    std::memory_order_release);
+            }
+        }
+
         void RuntimeContext::Clear()
         {
+            scene_camera_control_captured_.store(false, std::memory_order_release);
+            scene_camera_move_speed_.store(kDefaultSceneCameraMoveSpeed,
+                                           std::memory_order_release);
             {
                 std::scoped_lock lock(scene_pick_mutex_);
                 pending_scene_picks_.clear();
