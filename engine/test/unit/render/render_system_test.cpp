@@ -22,6 +22,7 @@
 #include "render/deferred_renderer.h"
 #include "render/render_resource_resolver.h"
 #include "render/render_system.h"
+#include "render/render_submission_executor.h"
 #include "render/prepared_render_asset_catalog.h"
 
 namespace
@@ -409,6 +410,58 @@ namespace
     }
 
     void FakeCommandRecorder::EndRenderTarget() { backend_.RecordEndTarget(); }
+
+    TEST(RenderSubmissionExecutorTest, PreparesAndRecordsGenericWorkInOrder)
+    {
+        const auto probe = std::make_shared<BackendProbe>();
+        FakeBackend backend(probe);
+        backend.Initialize({});
+
+        render::FrameContext frame;
+        frame.Initialize(backend, 256u);
+        frame.Begin(0u, {1u, 0.0f, 1.0f / 60.0f}, {64u, 64u});
+
+        graphics::BufferDesc buffer_desc{};
+        buffer_desc.role = graphics::BufferRole::Vertex;
+        buffer_desc.update_mode = graphics::BufferUpdateMode::PerFrame;
+        buffer_desc.capacity_bytes = 64u;
+        const graphics::BufferHandle position_buffer =
+            backend.CreateBuffer(buffer_desc, nullptr, 0u);
+        const graphics::RenderTargetDesc target_desc{
+            64u, 64u, 1u, {graphics::RenderTargetColorAttachment{}}, std::nullopt};
+        const graphics::RenderTargetHandle target = backend.CreateRenderTarget(target_desc);
+
+        render::RenderSubmission submission{};
+        submission.buffer_writes.push_back({position_buffer, 0u, {std::byte{7}}});
+        render::SubmissionPass pass{};
+        pass.target = target;
+        render::SubmissionDraw draw{};
+        draw.pipeline = {20u, 0u};
+        draw.geometry.vertices = {{0u, position_buffer, 0u}};
+        draw.geometry.indices = {{21u, 0u}, 0u, graphics::IndexElementType::UInt16};
+        draw.viewport = {0.0f, 0.0f, 64.0f, 64.0f, 0.0f, 1.0f};
+        draw.index_count = 3u;
+        draw.uniforms.push_back({0u, 0u, {std::byte{1}, std::byte{2}}});
+        draw.textures.push_back({0u, 1u, {22u, 0u}, {23u, 0u}});
+        pass.draws.push_back(std::move(draw));
+        submission.passes.push_back(std::move(pass));
+
+        const render::RenderSubmissionExecutionResult result =
+            render::RenderSubmissionExecutor::Execute(
+                submission, frame, *backend.GetCommandRecorder());
+        ASSERT_TRUE(result.succeeded) << result.diagnostic;
+        EXPECT_EQ(result.pass_count, 1u);
+        EXPECT_EQ(result.draw_count, 1u);
+        EXPECT_EQ(result.upload_bytes, 1u);
+        EXPECT_EQ(result.uniform_bytes, 2u);
+        EXPECT_EQ(result.binding_count, 1u);
+        EXPECT_EQ(probe->events.back(), "end_target");
+
+        frame.End();
+        frame.Cleanup();
+        backend.DestroyRenderTarget(target);
+        backend.Cleanup();
+    }
 
     std::shared_ptr<const render::PreparedRenderAssetCatalog> BuildPreparedCatalog(
         const std::vector<asset::AssetID> &extra_textures = {})

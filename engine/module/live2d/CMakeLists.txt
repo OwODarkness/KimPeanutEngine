@@ -59,6 +59,17 @@ target_include_directories(Live2DProduct PUBLIC
 set_property(TARGET Live2DProduct PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
 
+add_library(Live2DRender STATIC
+    render/live2d_render_contract.cpp
+    render/live2d_render_planner.cpp)
+target_include_directories(Live2DRender PUBLIC
+    "${CMAKE_SOURCE_DIR}/engine/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime/core"
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(Live2DRender PUBLIC Render)
+set_property(TARGET Live2DRender PROPERTY
+    MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
+
 add_library(Live2DAssetRuntime STATIC
     runtime/live2d_asset_runtime.cpp)
 target_include_directories(Live2DAssetRuntime PUBLIC
@@ -111,7 +122,7 @@ set_property(TARGET Live2DRegistration PROPERTY
 
 add_library(Live2D INTERFACE)
 target_link_libraries(Live2D INTERFACE Live2DRuntime Live2DProduct
-    Live2DAssetRuntime Live2DRegistration)
+    Live2DAssetRuntime Live2DRegistration Live2DRender)
 
 add_library(Live2DModule STATIC
     live2d_module.cpp)

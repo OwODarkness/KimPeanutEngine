@@ -4,6 +4,16 @@
 
 **Current release: v1.1.0.**
 
+- **Live2D L2D4.3 generic submission and unmasked planning (2026-09-10)** —
+  Render now owns an API-neutral ordered submission protocol and executor for
+  frame-local uniforms, sampled textures, geometry uploads, targets, and
+  indexed draws. Live2D compiles SDK-free snapshots into that protocol with
+  stable drawable order, visibility/opacity policy, blend/culling pipeline
+  selection, and explicit position/UV/index streams. Masked drawables fail
+  before publication until L2D4.4. Focused submission/planner tests and the
+  existing Live2D, Render, and schedule tests pass. →
+  [L2D4.3 journal](../.spec/journal/2026-09-10-live2d-l2d4-3.md)
+
 - **Live2D L2D4.2 SDK-free model extraction (2026-09-10)** — added retained,
   ordered Texture payloads, value-only static topology and frame snapshots,
   canonical mask-source contexts, topology revisions, finite/range validation,

@@ -107,6 +107,8 @@ namespace kpengine::render
         graphics::DescriptorSetHandle AllocateResourceBindingSet(
             graphics::PipelineHandle pipeline,
             const graphics::ResourceBindingSetDesc &desc);
+        bool WriteFrameBuffer(graphics::BufferHandle buffer, std::size_t offset,
+                              const void *data, std::size_t size);
         FrameLightingBinding CreateLightingBinding(const LightGpuFrameData &lighting_data);
         FrameMaterialBinding CreateMaterialBinding(
             const MaterialSystem &materials, const RenderResourceResolver &resolver,

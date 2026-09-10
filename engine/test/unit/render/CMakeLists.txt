@@ -41,6 +41,17 @@ add_executable(
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/scene_draw_list.cpp
 )
 
+add_executable(RenderSubmissionContractTest
+    render_submission_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_submission.cpp)
+target_include_directories(RenderSubmissionContractTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+    ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend)
+target_link_libraries(RenderSubmissionContractTest PRIVATE KP::GoogleTest)
+include(GoogleTest)
+gtest_discover_tests(RenderSubmissionContractTest)
+
 target_include_directories(RenderPassScheduleTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
     ${CMAKE_SOURCE_DIR}/engine/runtime/core
