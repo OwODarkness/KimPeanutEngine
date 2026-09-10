@@ -1,8 +1,18 @@
 # Project Status
 
-**Snapshot: 2026-09-09.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-10.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
 **Current release: v1.1.0.**
+
+- **Live2D L2D4.1 common streaming geometry (2026-09-10)** — corrected the
+  API-neutral buffer/geometry-view contract, immutable and per-frame buffer
+  storage on OpenGL and Vulkan, explicit UInt16/UInt32 indexed geometry with
+  topology, index-view offsets, base-vertex support, observable bind failures,
+  and a six-frame two-stream runtime smoke sequence. `GraphicsContractTest`
+  passes 19/19 and `RenderPassScheduleTest` passes 100/100. The full
+  `GraphicsSmoke` executable reaches both backends and the new path, but
+  remains non-zero because of the pre-existing D5 Vulkan/OpenGL silhouette
+  comparator mismatch; L2D4.1 therefore remains open.
 
 - **Live2D L2D4.0 render contract freeze (2026-09-09)** — froze the R5
   conformance policy for linear shader math, premultiplied RGBA8 sRGB output,

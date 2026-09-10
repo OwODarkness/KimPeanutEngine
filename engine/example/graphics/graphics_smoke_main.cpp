@@ -5,7 +5,7 @@
 
 int main()
 {
-    constexpr uint32_t kSmokeFramesPerAPI = 3;
+    constexpr uint32_t kSmokeFramesPerAPI = 6;
     const bool succeeded = kpengine::example::RunGraphicsSmokeSuite(kSmokeFramesPerAPI);
     std::printf("Graphics smoke (%u frames/API): %s\n", kSmokeFramesPerAPI,
                 succeeded ? "passed" : "failed");

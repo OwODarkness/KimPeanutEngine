@@ -1,5 +1,7 @@
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -303,6 +305,47 @@ namespace kpengine::example
                 throw std::runtime_error("failed to create secondary graphics pipeline");
             }
 
+            graphics::PipelineDesc streaming_pipeline_desc = pipeline_desc;
+            streaming_pipeline_desc.primitive_topology_type =
+                graphics::PrimitiveTopologyType::PRIMITIVE_TOPOLOGY_TRIANGLE_STRIP;
+            streaming_pipeline_desc.binding_descs = {
+                {0, sizeof(float) * 3, false},
+                {1, sizeof(float) * 2, false},
+            };
+            streaming_pipeline_desc.attri_descs = {
+                {0, 0, graphics::VertexFormat::VERTEX_FORMAT_THREE_FLOATS, 0},
+                {1, 1, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, 0},
+            };
+            streaming_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
+            streaming_pipeline_desc.depth_attachment_format =
+                TextureFormat::TEXTURE_FORMAT_UNKNOW;
+            const graphics::PipelineHandle streaming_pipeline =
+                rhi->CreatePipelineResource(streaming_pipeline_desc);
+            if (!streaming_pipeline.IsValid())
+            {
+                throw std::runtime_error("failed to create streaming geometry pipeline");
+            }
+            const std::array<float, 8> streaming_uvs{
+                0.0f, 0.0f, 1.0f, 0.0f, 1.0f, 1.0f, 0.0f, 1.0f};
+            const std::array<uint16_t, 6> streaming_indices{77, 99, 0, 1, 2, 3};
+            const graphics::BufferHandle streaming_positions = rhi->CreateBuffer(
+                {graphics::BufferRole::Vertex, graphics::BufferUpdateMode::PerFrame,
+                 sizeof(float) * 15},
+                nullptr, 0);
+            const graphics::BufferHandle streaming_uv_buffer = rhi->CreateBuffer(
+                {graphics::BufferRole::Vertex, graphics::BufferUpdateMode::Immutable,
+                 sizeof(streaming_uvs) + sizeof(float)},
+                streaming_uvs.data(), sizeof(streaming_uvs));
+            const graphics::BufferHandle streaming_index_buffer = rhi->CreateBuffer(
+                {graphics::BufferRole::Index, graphics::BufferUpdateMode::Immutable,
+                 sizeof(streaming_indices)},
+                streaming_indices.data(), sizeof(streaming_indices));
+            if (!streaming_positions.IsValid() || !streaming_uv_buffer.IsValid() ||
+                !streaming_index_buffer.IsValid())
+            {
+                throw std::runtime_error("failed to create streaming geometry buffers");
+            }
+
             const asset::AssetID texture_id = asset::AssetManager::GetInstance().LoadSync(
                 GetTextureDirectory() + "wallpaper.jpg");
             const asset::AssetID alternate_texture_id = asset::AssetManager::GetInstance().LoadSync(
@@ -525,8 +568,8 @@ namespace kpengine::example
                             graphics::PerPassData per_pass_data{};
                             per_pass_data.camera_data.view = camera_data.view;
                             per_pass_data.camera_data.proj = camera_data.proj;
-                            const render::UniformAllocation per_pass =
-                                frame_context.AllocateUniform(per_pass_data);
+                        const render::UniformAllocation per_pass =
+                            frame_context.AllocateUniform(per_pass_data);
                             for (const render::MeshProxy &proxy : render_world.Snapshot())
                             {
                                 if (!proxy.flags.visible || !proxy.mesh.IsValid() ||
@@ -571,6 +614,82 @@ namespace kpengine::example
                                                                material_binding.descriptor_set,
                                                                material_binding.dynamic_offsets);
                                 recorder->DrawIndexed();
+                            }
+
+                            const float animation = std::sin(static_cast<float>(frame_number) * 0.1f) * 0.05f;
+                            const std::array<float, 15> streaming_positions_data{
+                                100.0f, 100.0f, 0.0f,
+                                -0.75f + animation, -0.65f, 0.0f,
+                                 0.25f + animation, -0.65f, 0.0f,
+                                 0.25f + animation,  0.15f, 0.0f,
+                                -0.75f + animation,  0.15f, 0.0f};
+                            const auto *const streaming_texture_bindings =
+                                resource_resolver.FindTextureBindings(first_bound_material_instance);
+                            if (!streaming_texture_bindings || streaming_texture_bindings->textures.empty())
+                            {
+                                throw std::runtime_error("streaming geometry texture binding is unavailable");
+                            }
+                            const render::TextureBinding streaming_texture =
+                                streaming_texture_bindings->textures.begin()->second;
+                            graphics::PerPassData streaming_pass_data{};
+                            streaming_pass_data.camera_data.view = Matrix4f::Identity();
+                            streaming_pass_data.camera_data.proj = Matrix4f::Identity();
+                            const render::UniformAllocation streaming_pass =
+                                frame_context.AllocateUniform(streaming_pass_data);
+                            graphics::PerObjectData streaming_object_data{};
+                            streaming_object_data.model = Matrix4f::Identity();
+                            const render::UniformAllocation streaming_object =
+                                frame_context.AllocateUniform(streaming_object_data);
+                            if (!streaming_pass.IsValid() || !streaming_object.IsValid())
+                            {
+                                throw std::runtime_error("streaming geometry uniform allocation failed");
+                            }
+                            const graphics::ResourceBindingSetDesc streaming_binding_desc{
+                                0,
+                                {graphics::UniformBufferBinding{
+                                     0, 0, streaming_pass.buffer, streaming_pass.offset, streaming_pass.range},
+                                 graphics::UniformBufferBinding{
+                                     0, 1, streaming_object.buffer, streaming_object.offset,
+                                     streaming_object.range},
+                                 graphics::SampledTextureBinding{
+                                     0, 2, streaming_texture.texture, streaming_texture.sampler},
+                                 graphics::UniformBufferBinding{
+                                     0, 3, streaming_object.buffer, streaming_object.offset,
+                                     streaming_object.range}},
+                                false};
+                            const graphics::DescriptorSetHandle streaming_bindings =
+                                frame_context.AllocateResourceBindingSet(
+                                    streaming_pipeline, streaming_binding_desc);
+                            const graphics::GeometryView streaming_geometry{
+                                {{0, streaming_positions, 0}, {1, streaming_uv_buffer, 0}},
+                                {streaming_index_buffer, sizeof(uint16_t),
+                                 graphics::IndexElementType::UInt16}};
+                            if (!streaming_bindings.IsValid() ||
+                                !recorder->BindPipeline(streaming_pipeline))
+                            {
+                                throw std::runtime_error("streaming geometry binding failed");
+                            }
+                            if (recorder->BindGeometry(streaming_geometry))
+                            {
+                                throw std::runtime_error(
+                                    "unwritten streaming geometry buffer was bindable");
+                            }
+                            if (!rhi->WriteFrameBuffer(streaming_positions, 0,
+                                                       streaming_positions_data.data(),
+                                                       sizeof(streaming_positions_data)) ||
+                                !recorder->BindGeometry(streaming_geometry) ||
+                                !recorder->BindResourceBindings(streaming_pipeline,
+                                                                 streaming_bindings))
+                            {
+                                throw std::runtime_error("streaming geometry binding failed");
+                            }
+                            const uint64_t draw_count_before =
+                                recorder->GetProfileCounters().draw_calls_emitted;
+                            recorder->DrawIndexed(4, 1, 1, 1, 0);
+                            if (recorder->GetProfileCounters().draw_calls_emitted !=
+                                draw_count_before + 1)
+                            {
+                                throw std::runtime_error("streaming geometry draw was suppressed");
                             }
                         }
                         recorder->EndRenderTarget();
@@ -723,6 +842,29 @@ namespace kpengine::example
                 if (!has_varied_pixels)
                 {
                     throw std::runtime_error("smoke screenshot PNG is a uniform image");
+                }
+                const uint32_t sample_min_x = decoded.image.width / 16;
+                const uint32_t sample_max_x = decoded.image.width * 3 / 8;
+                const uint32_t sample_min_y = decoded.image.height / 16;
+                const uint32_t sample_max_y = decoded.image.height * 15 / 16;
+                bool has_streaming_quad_pixels = false;
+                for (uint32_t y = sample_min_y; y < sample_max_y && !has_streaming_quad_pixels; ++y)
+                {
+                    for (uint32_t x = sample_min_x; x < sample_max_x; ++x)
+                    {
+                        const size_t pixel = (static_cast<size_t>(y) * decoded.image.width + x) * 4;
+                        if (static_cast<uint32_t>(pixels[pixel]) + pixels[pixel + 1] +
+                                pixels[pixel + 2] >
+                            48)
+                        {
+                            has_streaming_quad_pixels = true;
+                            break;
+                        }
+                    }
+                }
+                if (!has_streaming_quad_pixels)
+                {
+                    throw std::runtime_error("streaming geometry quad was absent from the smoke readback");
                 }
             }
             // D2 cross-backend contract proof: multiple named color attachments,
@@ -1725,10 +1867,14 @@ namespace kpengine::example
             {
                 frame_context.Cleanup();
             }
-            rhi->DestroyBufferResource(dedicated_smoke_buffer);
-            rhi->DestroyRenderTarget(scene_target);
-            rhi->DestroyMesh(demo_resources.mesh);
-            rhi->DestroyPipelineResource(secondary_pipeline);
+                rhi->DestroyBufferResource(dedicated_smoke_buffer);
+                rhi->DestroyBufferResource(streaming_positions);
+                rhi->DestroyBufferResource(streaming_uv_buffer);
+                rhi->DestroyBufferResource(streaming_index_buffer);
+                rhi->DestroyRenderTarget(scene_target);
+                rhi->DestroyMesh(demo_resources.mesh);
+                rhi->DestroyPipelineResource(secondary_pipeline);
+                rhi->DestroyPipelineResource(streaming_pipeline);
             resource_resolver.Cleanup();
             rhi->Cleanup();
             input->Shutdown();
@@ -2006,9 +2152,13 @@ namespace kpengine::example
 
     bool RunGraphicsSmokeSuite(uint32_t frames_per_api)
     {
+        // Two Vulkan frame slots must both be reused at least twice by the
+        // streaming-geometry path; OpenGL exercises the same sequence with its
+        // single synchronous slot.
+        const uint32_t streaming_smoke_frames = std::max(frames_per_api, 6u);
         return VerifySilhouetteComparatorPolicy() &&
-               RunRHI(GraphicsAPIType::GRAPHICS_API_VULKAN, frames_per_api, true) &&
-               RunRHI(GraphicsAPIType::GRAPHICS_API_OPENGL, frames_per_api, true) &&
+               RunRHI(GraphicsAPIType::GRAPHICS_API_VULKAN, streaming_smoke_frames, true) &&
+               RunRHI(GraphicsAPIType::GRAPHICS_API_OPENGL, streaming_smoke_frames, true) &&
                D5CapturesHaveMatchingSilhouettes();
     }
 }

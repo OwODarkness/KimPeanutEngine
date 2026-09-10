@@ -69,6 +69,7 @@ namespace kpengine::graphics
 
         try
         {
+            pipeline_resource.binding_descs = pipeline_desc.binding_descs;
             // vertex stage
             std::vector<VkVertexInputBindingDescription> bindings{};
             for (const auto &bind_desc : pipeline_desc.binding_descs)

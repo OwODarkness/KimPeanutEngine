@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include "api.h"
+#include "buffer_types.h"
 #include "profile_counters.h"
 #include "resource_binding.h"
 
@@ -38,11 +39,12 @@ namespace kpengine::graphics
         // beginning another target or ending the frame.
         virtual bool BeginRenderTarget(RenderTargetHandle target) = 0;
         virtual void EndRenderTarget() = 0;
-        virtual void BindPipeline(PipelineHandle pipeline) = 0;
+        virtual bool BindPipeline(PipelineHandle pipeline) = 0;
         virtual void BindMesh(MeshHandle mesh) = 0;
-        virtual void BindResourceBindings(PipelineHandle pipeline,
-                                           DescriptorSetHandle bindings,
-                                           const DynamicUniformOffsets &dynamic_offsets = {}) = 0;
+        virtual bool BindGeometry(const GeometryView &geometry) = 0;
+        virtual bool BindResourceBindings(PipelineHandle pipeline,
+                                          DescriptorSetHandle bindings,
+                                          const DynamicUniformOffsets &dynamic_offsets = {}) = 0;
         virtual void SetViewport(const Viewport &viewport) = 0;
         virtual void SetScissor(const Scissor &scissor) = 0;
         virtual void DrawIndexed(uint32_t index_count = 0,

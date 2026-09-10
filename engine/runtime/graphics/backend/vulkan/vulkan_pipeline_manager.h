@@ -17,6 +17,7 @@ namespace kpengine::graphics{
 
     struct VulkanPipelineResource{
         std::vector<VulkanDescriptorSetLayout> descriptor_set_layouts;
+        std::vector<VertexBindingDesc> binding_descs;
         VkPipelineLayout layout = VK_NULL_HANDLE;
         VkPipeline pipeline = VK_NULL_HANDLE;
         // Baked attachment formats so a recorder can validate target

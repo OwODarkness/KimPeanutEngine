@@ -1,6 +1,9 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_VULKAN_COMMAND_RECORDER_H
 #define KPENGINE_RUNTIME_GRAPHICS_VULKAN_COMMAND_RECORDER_H
 
+#include <functional>
+#include <optional>
+#include <utility>
 #include <vulkan/vulkan.h>
 
 #include "common/command_recorder.h"
@@ -27,11 +30,20 @@ namespace kpengine::graphics
 
         bool BeginRenderTarget(RenderTargetHandle target) override;
         void EndRenderTarget() override;
-        void BindPipeline(PipelineHandle pipeline) override;
+        bool BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
-        void BindResourceBindings(PipelineHandle pipeline,
+        bool BindGeometry(const GeometryView &geometry) override;
+        bool BindResourceBindings(PipelineHandle pipeline,
                                   DescriptorSetHandle bindings,
                                   const DynamicUniformOffsets &dynamic_offsets = {}) override;
+
+        void SetGeometryBufferResolvers(
+            std::function<std::optional<BufferDesc>(BufferHandle)> desc_lookup,
+            std::function<BufferHandle(BufferHandle)> handle_lookup)
+        {
+            get_geometry_buffer_desc_ = std::move(desc_lookup);
+            get_geometry_buffer_handle_ = std::move(handle_lookup);
+        }
         void SetViewport(const Viewport &viewport) override;
         void SetScissor(const Scissor &scissor) override;
         void DrawIndexed(uint32_t index_count, uint32_t instance_count,
@@ -55,8 +67,11 @@ namespace kpengine::graphics
         uint32_t frame_index_ = 0;
         uint32_t recorded_index_count_ = 0;
         uint32_t recorded_first_index_ = 0;
+        size_t recorded_index_offset_ = 0;
+        IndexElementType recorded_index_type_ = IndexElementType::UInt32;
         PipelineHandle recorded_pipeline_;
         MeshHandle recorded_mesh_;
+        bool recorded_geometry_ = false;
         PipelineHandle validated_pipeline_;
         RenderTargetHandle validated_target_;
         bool cached_pipeline_compatibility_ = false;
@@ -68,6 +83,8 @@ namespace kpengine::graphics
         // match the active render target; recording stays pass-scoped instead of
         // submitting a pipeline-state mismatch to the driver.
         bool draws_suppressed_ = false;
+        std::function<std::optional<BufferDesc>(BufferHandle)> get_geometry_buffer_desc_;
+        std::function<BufferHandle(BufferHandle)> get_geometry_buffer_handle_;
         CommandRecorderProfileCounters profile_counters_{};
     };
 }

@@ -1,6 +1,8 @@
 #include "opengl_command_recorder.h"
 
 #include <chrono>
+#include <limits>
+#include <string>
 
 #include "common/mesh.h"
 #include "common/mesh_manager.h"
@@ -28,6 +30,9 @@ namespace kpengine::graphics
         cached_pipeline_compatibility_ = false;
         recorded_index_count_ = 0;
         recorded_first_index_ = 0;
+        recorded_index_offset_ = 0;
+        recorded_index_type_ = IndexElementType::UInt32;
+        recorded_geometry_ = false;
     }
 
     OpenglCommandRecorder::OpenglCommandRecorder(Services services)
@@ -123,23 +128,25 @@ namespace kpengine::graphics
         ResetStateCache();
     }
 
-    void OpenglCommandRecorder::BindPipeline(PipelineHandle pipeline)
+    bool OpenglCommandRecorder::BindPipeline(PipelineHandle pipeline)
     {
         ++profile_counters_.pipeline_bind_requests;
         if (!services_.pipeline_manager)
         {
-            return;
+            draws_suppressed_ = true;
+            return false;
         }
 
         OpenglPipeline *resource = services_.pipeline_manager->GetPipelineResource(pipeline);
         if (!resource)
         {
             draws_suppressed_ = true;
-            return;
+            ResetStateCache();
+            return false;
         }
         if (recorded_pipeline_ == pipeline && !draws_suppressed_)
         {
-            return;
+            return true;
         }
 
         const bool validation_cached = validated_pipeline_ == pipeline &&
@@ -147,7 +154,7 @@ namespace kpengine::graphics
         if (validation_cached && !cached_pipeline_compatibility_)
         {
             draws_suppressed_ = true;
-            return;
+            return false;
         }
 
         bool compatible = true;
@@ -187,7 +194,8 @@ namespace kpengine::graphics
         if (!compatible)
         {
             draws_suppressed_ = true;
-            return;
+            ResetStateCache();
+            return false;
         }
         draws_suppressed_ = false;
 
@@ -203,16 +211,28 @@ namespace kpengine::graphics
         recorded_bindings_pipeline_ = {};
         recorded_dynamic_offsets_.clear();
         ++profile_counters_.pipeline_bind_emitted;
+        return true;
     }
 
     void OpenglCommandRecorder::BindMesh(MeshHandle mesh)
     {
         ++profile_counters_.mesh_bind_requests;
+        const auto reject = [this]()
+        {
+            recorded_mesh_ = {};
+            recorded_geometry_ = false;
+            recorded_index_count_ = 0;
+            recorded_first_index_ = 0;
+            recorded_index_offset_ = 0;
+            draws_suppressed_ = true;
+        };
         if (!services_.mesh_manager || !services_.pipeline_manager)
         {
+            reject();
             return;
         }
-        if (recorded_mesh_ == mesh && recorded_pipeline_.IsValid())
+        if (recorded_mesh_ == mesh && recorded_pipeline_.IsValid() &&
+            !recorded_geometry_ && !draws_suppressed_)
         {
             return;
         }
@@ -226,6 +246,7 @@ namespace kpengine::graphics
             services_.pipeline_manager->GetPipelineResource(recorded_pipeline_);
         if (!mesh_resource || !pipeline)
         {
+            reject();
             return;
         }
 
@@ -238,26 +259,110 @@ namespace kpengine::graphics
         recorded_first_index_ = mesh_resource->sections.empty()
                                      ? 0u
                                      : static_cast<uint32_t>(mesh_resource->sections[0].index_start);
+        recorded_index_offset_ = 0;
+        recorded_index_type_ = IndexElementType::UInt32;
+        recorded_geometry_ = false;
         recorded_mesh_ = mesh;
+        draws_suppressed_ = false;
         ++profile_counters_.mesh_bind_emitted;
     }
 
-    void OpenglCommandRecorder::BindResourceBindings(PipelineHandle pipeline,
-                                                       DescriptorSetHandle bindings,
-                                                       const DynamicUniformOffsets &dynamic_offsets)
+    bool OpenglCommandRecorder::BindGeometry(const GeometryView &geometry)
+    {
+        ++profile_counters_.mesh_bind_requests;
+        OpenglPipeline *const pipeline = services_.pipeline_manager
+                                             ? services_.pipeline_manager->GetPipelineResource(
+                                                   recorded_pipeline_)
+                                             : nullptr;
+        if (!pipeline || !services_.get_geometry_buffer_desc ||
+            !services_.get_geometry_buffer)
+        {
+            recorded_mesh_ = {};
+            recorded_geometry_ = false;
+            draws_suppressed_ = true;
+            return false;
+        }
+
+        std::string error;
+        if (!ValidateGeometryView(geometry, pipeline->binding_descs_,
+                                  services_.get_geometry_buffer_desc, &error))
+        {
+            KP_LOG(KP_OPENGL_COMMAND_RECORDER_LOG_NAME, LOG_LEVEL_ERROR,
+                   "Rejected geometry view: %s", error.c_str());
+            recorded_mesh_ = {};
+            recorded_geometry_ = false;
+            recorded_index_count_ = 0;
+            recorded_first_index_ = 0;
+            draws_suppressed_ = true;
+            return false;
+        }
+
+        for (const VertexBufferView &view : geometry.vertices)
+        {
+            const GLuint native = services_.get_geometry_buffer(view.buffer);
+            if (native == 0)
+            {
+                recorded_mesh_ = {};
+                recorded_geometry_ = false;
+                draws_suppressed_ = true;
+                return false;
+            }
+            const auto binding_it = std::find_if(
+                pipeline->binding_descs_.begin(), pipeline->binding_descs_.end(),
+                [&view](const VertexBindingDesc &binding) {
+                    return binding.binding == view.binding;
+                });
+            if (binding_it == pipeline->binding_descs_.end())
+            {
+                recorded_mesh_ = {};
+                recorded_geometry_ = false;
+                draws_suppressed_ = true;
+                return false;
+            }
+            glVertexArrayVertexBuffer(pipeline->vao, view.binding, native,
+                                      static_cast<GLintptr>(view.offset),
+                                      static_cast<GLsizei>(binding_it->stride));
+        }
+
+        const GLuint index_native = services_.get_geometry_buffer(geometry.indices.buffer);
+        if (index_native == 0)
+        {
+            recorded_mesh_ = {};
+            recorded_geometry_ = false;
+            draws_suppressed_ = true;
+            return false;
+        }
+        glVertexArrayElementBuffer(pipeline->vao, index_native);
+        glBindVertexArray(pipeline->vao);
+        recorded_mesh_ = {};
+        recorded_geometry_ = true;
+        recorded_index_type_ = geometry.indices.type;
+        recorded_index_count_ = 0;
+        recorded_first_index_ = 0;
+        recorded_index_offset_ = geometry.indices.offset;
+        draws_suppressed_ = false;
+        return true;
+    }
+
+    bool OpenglCommandRecorder::BindResourceBindings(PipelineHandle pipeline,
+                                                      DescriptorSetHandle bindings,
+                                                      const DynamicUniformOffsets &dynamic_offsets)
     {
         ++profile_counters_.resource_binding_bind_requests;
-        (void)pipeline;
-        if (!services_.resource_binding_set_handles || !services_.resource_binding_sets)
+        if (!services_.pipeline_manager ||
+            !services_.pipeline_manager->GetPipelineResource(pipeline) ||
+            !services_.resource_binding_set_handles || !services_.resource_binding_sets)
         {
-            return;
+            draws_suppressed_ = true;
+            return false;
         }
 
         const uint32_t index = services_.resource_binding_set_handles->Get(bindings);
         if (index >= services_.resource_binding_sets->size() ||
             !(*services_.resource_binding_sets)[index])
         {
-            return;
+            draws_suppressed_ = true;
+            return false;
         }
 
         const bool redundant = recorded_bindings_pipeline_ == pipeline &&
@@ -270,13 +375,14 @@ namespace kpengine::graphics
         }
         if (redundant)
         {
-            return;
+            return true;
         }
         (*services_.resource_binding_sets)[index]->Bind(dynamic_offsets);
         recorded_bindings_pipeline_ = pipeline;
         recorded_bindings_ = bindings;
         recorded_dynamic_offsets_ = dynamic_offsets;
         ++profile_counters_.resource_binding_bind_emitted;
+        return true;
     }
 
     void OpenglCommandRecorder::SetViewport(const Viewport &viewport)
@@ -295,17 +401,36 @@ namespace kpengine::graphics
                                              uint32_t first_index, int32_t vertex_offset,
                                              uint32_t first_instance)
     {
-        (void)vertex_offset;
         (void)first_instance;
         if (draws_suppressed_) return;
+        const OpenglPipeline *const pipeline = services_.pipeline_manager
+                                                   ? services_.pipeline_manager->GetPipelineResource(
+                                                         recorded_pipeline_)
+                                                   : nullptr;
+        if (!pipeline)
+        {
+            draws_suppressed_ = true;
+            return;
+        }
         const uint32_t count = index_count == 0 ? recorded_index_count_ : index_count;
         const uint32_t offset = index_count == 0 ? recorded_first_index_ : first_index;
         if (count != 0)
         {
-            glDrawElementsInstanced(GL_TRIANGLES, static_cast<GLsizei>(count),
-                                    GL_UNSIGNED_INT,
-                                    reinterpret_cast<const void *>(offset * sizeof(uint32_t)),
-                                    static_cast<GLsizei>(instance_count));
+            const GLenum index_type = recorded_index_type_ == IndexElementType::UInt16
+                                          ? GL_UNSIGNED_SHORT : GL_UNSIGNED_INT;
+            const size_t element_size = recorded_index_type_ == IndexElementType::UInt16
+                                             ? sizeof(uint16_t) : sizeof(uint32_t);
+            if (offset > (std::numeric_limits<size_t>::max() - recorded_index_offset_) /
+                            element_size)
+            {
+                draws_suppressed_ = true;
+                return;
+            }
+            const size_t byte_offset = recorded_index_offset_ + offset * element_size;
+            glDrawElementsInstancedBaseVertex(
+                pipeline->primitive_topology_type_, static_cast<GLsizei>(count), index_type,
+                reinterpret_cast<const void *>(byte_offset),
+                static_cast<GLsizei>(instance_count), vertex_offset);
             ++profile_counters_.draw_calls_emitted;
         }
     }

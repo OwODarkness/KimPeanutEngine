@@ -122,11 +122,20 @@ namespace kpengine::graphics
         {
             bindless_texture_table_->BeginFrame(*texture_manager_, *sampler_manager_);
         }
+        ResetCurrentFrameGeometryBuffers();
         command_recorder_ = std::make_unique<OpenglCommandRecorder>(
             OpenglCommandRecorder::Services{pipeline_manager_.get(), mesh_manager_.get(),
                                             bindless_texture_table_.get(), &render_targets_,
                                             &render_target_framebuffers_, &render_target_handles_,
                                             &resource_binding_sets_, &resource_binding_set_handles_,
+                                            [this](BufferHandle handle) {
+                                                const std::optional<BufferDesc> desc =
+                                                    GetGeometryBufferDesc(handle);
+                                                return desc;
+                                            },
+                                            [this](BufferHandle handle) {
+                                                return GetGeometryBuffer(handle);
+                                            },
                                             [this]() { UploadDirtyUniformBuffers(); }});
         frame_active_ = true;
     }
@@ -323,6 +332,7 @@ namespace kpengine::graphics
         render_target_framebuffers_.clear();
         pipeline_manager_->DestroyAll();
         resource_binding_sets_.clear();
+        DestroyGeometryBuffers();
         if (bindless_texture_table_)
         {
             bindless_texture_table_->Destroy();
@@ -352,9 +362,137 @@ namespace kpengine::graphics
 
     bool OpenglBackend::DestroyBufferResource(BufferHandle handle)
     {
+        const auto geometry_it = geometry_buffers_.find(handle);
+        if (geometry_it != geometry_buffers_.end())
+        {
+            if (geometry_it->second->native != 0)
+            {
+                glDeleteBuffers(1, &geometry_it->second->native);
+            }
+            geometry_buffers_.erase(geometry_it);
+            return geometry_buffer_handles_.Destroy({handle.id & 0x7fffffffu,
+                                                     handle.generation});
+        }
+        if ((handle.id & 0x80000000u) != 0)
+        {
+            return false;
+        }
         mapped_uniform_buffers_.erase(handle.id);
         glDeleteBuffers(1, &handle.id);
         return true;
+    }
+
+    BufferHandle OpenglBackend::CreateBuffer(const BufferDesc &desc, const void *initial_data,
+                                             const size_t initial_size)
+    {
+        if (!ValidateBufferDesc(desc, initial_data, initial_size))
+        {
+            return {};
+        }
+
+        auto resource = std::make_unique<GeometryBufferResource>();
+        resource->desc = desc;
+        const GLenum target = desc.role == BufferRole::Index ? GL_ELEMENT_ARRAY_BUFFER
+                                                               : GL_ARRAY_BUFFER;
+        glGenBuffers(1, &resource->native);
+        if (resource->native == 0)
+        {
+            return {};
+        }
+        glBindBuffer(target, resource->native);
+        const GLenum usage = desc.update_mode == BufferUpdateMode::PerFrame
+                                 ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW;
+        glBufferData(target, static_cast<GLsizeiptr>(desc.capacity_bytes), nullptr, usage);
+        if (initial_size != 0)
+        {
+            glBufferSubData(target, 0, static_cast<GLsizeiptr>(initial_size), initial_data);
+        }
+        resource->written_slots.assign(1, desc.update_mode == BufferUpdateMode::Immutable);
+
+        const BufferHandle internal = geometry_buffer_handles_.Create();
+        const BufferHandle public_handle{internal.id | 0x80000000u, internal.generation};
+        geometry_buffers_.emplace(public_handle, std::move(resource));
+        return public_handle;
+    }
+
+    bool OpenglBackend::WriteFrameBuffer(BufferHandle buffer, const size_t offset,
+                                         const void *data, const size_t size)
+    {
+        const auto it = geometry_buffers_.find(buffer);
+        if (!frame_active_ || it == geometry_buffers_.end() ||
+            it->second->desc.update_mode != BufferUpdateMode::PerFrame ||
+            (size != 0 && data == nullptr) || offset > it->second->desc.capacity_bytes ||
+            size > it->second->desc.capacity_bytes - offset)
+        {
+            return false;
+        }
+        const GLenum target = it->second->desc.role == BufferRole::Index
+                                  ? GL_ELEMENT_ARRAY_BUFFER : GL_ARRAY_BUFFER;
+        glBindBuffer(target, it->second->native);
+        if (size != 0)
+        {
+            glBufferSubData(target, static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(size), data);
+            it->second->written_slots[0] = true;
+        }
+        return true;
+    }
+
+    std::optional<BufferDesc> OpenglBackend::GetGeometryBufferDesc(BufferHandle handle) const
+    {
+        const auto it = geometry_buffers_.find(handle);
+        if (it == geometry_buffers_.end())
+        {
+            return std::nullopt;
+        }
+        if (it->second->desc.update_mode == BufferUpdateMode::PerFrame &&
+            (!frame_active_ || it->second->written_slots.empty() ||
+             !it->second->written_slots[0]))
+        {
+            return std::nullopt;
+        }
+        return it->second->desc;
+    }
+
+    GLuint OpenglBackend::GetGeometryBuffer(BufferHandle handle) const
+    {
+        const auto it = geometry_buffers_.find(handle);
+        if (it == geometry_buffers_.end())
+        {
+            return 0u;
+        }
+        if (it->second->desc.update_mode == BufferUpdateMode::PerFrame &&
+            (!frame_active_ || it->second->written_slots.empty() ||
+             !it->second->written_slots[0]))
+        {
+            return 0u;
+        }
+        return it->second->native;
+    }
+
+    void OpenglBackend::ResetCurrentFrameGeometryBuffers() noexcept
+    {
+        for (const auto &[handle, resource] : geometry_buffers_)
+        {
+            (void)handle;
+            if (resource && resource->desc.update_mode == BufferUpdateMode::PerFrame &&
+                !resource->written_slots.empty())
+            {
+                resource->written_slots[0] = false;
+            }
+        }
+    }
+
+    void OpenglBackend::DestroyGeometryBuffers()
+    {
+        for (const auto &[handle, resource] : geometry_buffers_)
+        {
+            (void)handle;
+            if (resource && resource->native != 0)
+            {
+                glDeleteBuffers(1, &resource->native);
+            }
+        }
+        geometry_buffers_.clear();
     }
 
     PipelineHandle OpenglBackend::CreatePipelineResource(const PipelineDesc &pipeline_desc)

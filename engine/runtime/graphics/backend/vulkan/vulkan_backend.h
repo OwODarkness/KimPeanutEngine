@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <unordered_map>
 #include <vulkan/vulkan.h>
 
 #include "math/math_header.h"
@@ -66,6 +68,10 @@ namespace kpengine::graphics
         IEditorPresentationBridge *GetEditorPresentationBridge() override;
         BufferHandle CreateUniformBuffer(uint32_t size) override;
         void *MapUniformBuffer(BufferHandle handle, size_t size) override;
+        BufferHandle CreateBuffer(const BufferDesc &desc, const void *initial_data,
+                                  size_t initial_size) override;
+        bool WriteFrameBuffer(BufferHandle buffer, size_t offset, const void *data,
+                              size_t size) override;
         uint32_t GetCurrentFrameIndex() const override;
         uint32_t GetFramesInFlight() const override;
         size_t GetUniformBufferAlignment() const override;
@@ -82,6 +88,11 @@ namespace kpengine::graphics
         void InitVulkanContext();
         GraphicsContext CreateGraphicsContext() const;
         BufferHandle CreateBuffer(const void *data, size_t size, VkBufferUsageFlags usage);
+        std::optional<BufferDesc> GetGeometryBufferDesc(BufferHandle handle,
+                                                         uint32_t frame_index) const;
+        BufferHandle GetGeometryBufferHandle(BufferHandle handle, uint32_t frame_index) const;
+        void ResetCurrentFrameGeometryBuffers(uint32_t frame_index) noexcept;
+        void DestroyGeometryBuffers();
         void UploadTexturePixels(TextureHandle texture, const data::TextureData &data);
 
         void FinishFrame(VkCommandBuffer commandbuffer, uint32_t image_index);
@@ -114,6 +125,15 @@ namespace kpengine::graphics
         std::unique_ptr<class TextureManager> texture_manager_;
         std::unique_ptr<class SamplerManager> sampler_manager_;
         std::unique_ptr<class MeshManager> mesh_manager_;
+
+        struct GeometryBufferResource
+        {
+            BufferDesc desc;
+            std::vector<BufferHandle> native_buffers;
+            std::vector<bool> written_slots;
+        };
+        std::unordered_map<BufferHandle, std::unique_ptr<GeometryBufferResource>> geometry_buffers_;
+        HandleSystem<BufferHandle> geometry_buffer_handles_;
 
         uint32_t msaa_sampe_count_ = 1;
         uint32_t current_image_index_ = 0;

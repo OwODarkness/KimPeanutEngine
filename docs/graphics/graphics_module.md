@@ -187,7 +187,17 @@ virtual DescriptorSetHandle CreateResourceBindingSet(PipelineHandle,
                                                       const ResourceBindingSetDesc&) = 0;
 virtual BufferHandle CreateVertexBuffer(const void*, size_t) = 0;
 virtual BufferHandle CreateIndexBuffer(const void*, size_t) = 0;
+virtual BufferHandle CreateBuffer(const BufferDesc&, const void*, size_t) = 0;
+virtual bool WriteFrameBuffer(BufferHandle, size_t, const void*, size_t) = 0;
 ```
+
+The general buffer path is additive to the legacy static mesh wrappers. An
+immutable buffer owns one native allocation and copies its initial bytes during
+creation. A `PerFrame` buffer owns one backend allocation per frame slot and
+accepts writes only between `BeginFrame()` and `EndFrame()`; the backend selects
+the slot after its fence is safe. `GeometryView` binds separate vertex streams
+and an explicitly typed UInt16/UInt32 index buffer without exposing native
+objects. `BindMesh` remains the PBR/static-mesh path.
 
 The `window_` test seam is gone (Phase 5, 2026-08-16): `Initialize` takes the native window handle (`WindowHandle` = `void*`) as an explicit parameter — the backends cast it back to `GLFWwindow*` internally, so the common interface never sees GLFW. The dead public `CameraData camera_data` member was removed with it. The `ShaderManager shader_manager_` member was **deleted 2026-08-15** — shader caching belongs to the render module / resource pipeline.
 
@@ -362,7 +372,7 @@ The stable recording interval is deliberately small:
 
 ```text
 BeginFrame → FrameContext allocation/bindings → BeginRenderTarget
-           → BindPipeline / BindMesh / BindResourceBindings
+           → BindPipeline / BindMesh or BindGeometry / BindResourceBindings
            → SetViewport / SetScissor / DrawIndexed → EndRenderTarget → EndFrame
 ```
 

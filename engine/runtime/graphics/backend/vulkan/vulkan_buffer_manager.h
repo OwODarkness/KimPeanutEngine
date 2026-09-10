@@ -39,7 +39,8 @@ namespace kpengine::graphics
         bool DestroyBufferResource(VkDevice logical_device, BufferHandle handle);
         void DestroyAll(VkDevice logical_device);
         VulkanBufferResource *GetBufferResource(BufferHandle handle);
-        void UploadData(BufferHandle handle, VkDeviceSize size, const void *src);
+        void UploadData(BufferHandle handle, VkDeviceSize size, const void *src,
+                        VkDeviceSize offset = 0);
         void *GetMappedAddress(BufferHandle handle, VkDeviceSize size);
 
     private:

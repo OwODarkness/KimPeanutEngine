@@ -1,6 +1,7 @@
 add_executable(
     GraphicsContractTest
     graphics_contract_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend/common/buffer_types.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend/common/bindless_texture.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend/common/render_target_validation.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend/common/pipeline_validation.cpp

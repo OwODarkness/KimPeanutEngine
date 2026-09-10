@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 
@@ -67,6 +68,8 @@ namespace kpengine::graphics
             const HandleSystem<RenderTargetHandle> *render_target_handles = nullptr;
             std::vector<std::unique_ptr<OpenglDescriptorSet>> *resource_binding_sets = nullptr;
             const HandleSystem<DescriptorSetHandle> *resource_binding_set_handles = nullptr;
+            std::function<std::optional<BufferDesc>(BufferHandle)> get_geometry_buffer_desc;
+            std::function<GLuint(BufferHandle)> get_geometry_buffer;
             std::function<void()> flush_dirty_uniform_buffers;
         };
 
@@ -74,9 +77,10 @@ namespace kpengine::graphics
 
         bool BeginRenderTarget(RenderTargetHandle target) override;
         void EndRenderTarget() override;
-        void BindPipeline(PipelineHandle pipeline) override;
+        bool BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
-        void BindResourceBindings(PipelineHandle pipeline,
+        bool BindGeometry(const GeometryView &geometry) override;
+        bool BindResourceBindings(PipelineHandle pipeline,
                                   DescriptorSetHandle bindings,
                                   const DynamicUniformOffsets &dynamic_offsets = {}) override;
         void SetViewport(const Viewport &viewport) override;
@@ -96,7 +100,10 @@ namespace kpengine::graphics
         PipelineHandle recorded_pipeline_;
         uint32_t recorded_index_count_ = 0;
         uint32_t recorded_first_index_ = 0;
+        size_t recorded_index_offset_ = 0;
+        IndexElementType recorded_index_type_ = IndexElementType::UInt32;
         MeshHandle recorded_mesh_;
+        bool recorded_geometry_ = false;
         DescriptorSetHandle recorded_bindings_;
         PipelineHandle recorded_bindings_pipeline_;
         DynamicUniformOffsets recorded_dynamic_offsets_;

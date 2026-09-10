@@ -120,6 +120,7 @@ namespace kpengine::graphics
         // 3. caller selects render targets and records draws, then EndFrame submits
 
         frame_context_->WaitForInFlightFence();
+        ResetCurrentFrameGeometryBuffers(frame_context_->GetCurrentFrameIndex());
         descriptor_set_manager_->BeginFrame(device_->GetLogicalDevice(),
                                              frame_context_->GetCurrentFrameIndex());
         CollectCompletedGpuProfileTimings();
@@ -177,6 +178,14 @@ namespace kpengine::graphics
                                  *descriptor_set_manager_, *buffer_manager_, *mesh_manager_,
                                  *render_target_manager_, bindless_texture_table_.get(),
                                  frame_context_->GetCurrentFrameIndex());
+        const uint32_t frame_index = frame_context_->GetCurrentFrameIndex();
+        command_recorder_->SetGeometryBufferResolvers(
+            [this, frame_index](BufferHandle handle) {
+                return GetGeometryBufferDesc(handle, frame_index);
+            },
+            [this, frame_index](BufferHandle handle) {
+                return GetGeometryBufferHandle(handle, frame_index);
+            });
         frame_active_ = true;
     }
 
@@ -326,6 +335,7 @@ namespace kpengine::graphics
             bindless_texture_table_.reset();
         }
 
+        DestroyGeometryBuffers();
         buffer_manager_->DestroyAll(device_->GetLogicalDevice());
         image_memory_manager_.reset();
         memory_manager_->Destroy();
@@ -583,6 +593,21 @@ namespace kpengine::graphics
 
     bool VulkanBackend::DestroyBufferResource(BufferHandle handle)
     {
+        const auto geometry_it = geometry_buffers_.find(handle);
+        if (geometry_it != geometry_buffers_.end())
+        {
+            for (const BufferHandle native : geometry_it->second->native_buffers)
+            {
+                buffer_manager_->DestroyBufferResource(device_->GetLogicalDevice(), native);
+            }
+            geometry_buffers_.erase(geometry_it);
+            return geometry_buffer_handles_.Destroy({handle.id & 0x7fffffffu,
+                                                     handle.generation});
+        }
+        if ((handle.id & 0x80000000u) != 0)
+        {
+            return false;
+        }
         return buffer_manager_->DestroyBufferResource(device_->GetLogicalDevice(), handle);
     }
 
@@ -605,6 +630,163 @@ namespace kpengine::graphics
             throw;
         }
         return dst_handle;
+    }
+
+    BufferHandle VulkanBackend::CreateBuffer(const BufferDesc &desc, const void *initial_data,
+                                             const size_t initial_size)
+    {
+        if (!ValidateBufferDesc(desc, initial_data, initial_size))
+        {
+            return {};
+        }
+
+        auto resource = std::make_unique<GeometryBufferResource>();
+        resource->desc = desc;
+        const uint32_t slot_count = desc.update_mode == BufferUpdateMode::PerFrame
+                                        ? GetFramesInFlight() : 1u;
+        resource->written_slots.assign(slot_count,
+                                       desc.update_mode == BufferUpdateMode::Immutable);
+        const VkBufferUsageFlags usage = desc.role == BufferRole::Index
+                                             ? VK_BUFFER_USAGE_INDEX_BUFFER_BIT
+                                             : VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        try
+        {
+            for (uint32_t slot = 0; slot < slot_count; ++slot)
+            {
+                VkBufferCreateInfo create_info{};
+                create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+                create_info.size = static_cast<VkDeviceSize>(desc.capacity_bytes);
+                create_info.usage = usage;
+                if (desc.update_mode == BufferUpdateMode::Immutable)
+                {
+                    create_info.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+                }
+                create_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+                const BufferHandle native = buffer_manager_->CreateBufferResource(
+                    device_->GetLogicalDevice(), &create_info,
+                    desc.update_mode == BufferUpdateMode::PerFrame
+                        ? VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM
+                        : VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
+                resource->native_buffers.push_back(native);
+                if (desc.update_mode == BufferUpdateMode::Immutable && initial_size != 0)
+                {
+                    upload_context_->UploadBuffer(native, initial_size, initial_data);
+                }
+            }
+        }
+        catch (...)
+        {
+            for (const BufferHandle native : resource->native_buffers)
+            {
+                buffer_manager_->DestroyBufferResource(device_->GetLogicalDevice(), native);
+            }
+            throw;
+        }
+
+        const BufferHandle internal = geometry_buffer_handles_.Create();
+        const BufferHandle public_handle{internal.id | 0x80000000u, internal.generation};
+        geometry_buffers_.emplace(public_handle, std::move(resource));
+        return public_handle;
+    }
+
+    bool VulkanBackend::WriteFrameBuffer(BufferHandle buffer, const size_t offset,
+                                         const void *data, const size_t size)
+    {
+        const auto it = geometry_buffers_.find(buffer);
+        if (!frame_active_ || it == geometry_buffers_.end() ||
+            it->second->desc.update_mode != BufferUpdateMode::PerFrame ||
+            (size != 0 && data == nullptr) || offset > it->second->desc.capacity_bytes ||
+            size > it->second->desc.capacity_bytes - offset)
+        {
+            return false;
+        }
+        const uint32_t frame_index = GetCurrentFrameIndex();
+        if (frame_index >= it->second->native_buffers.size())
+        {
+            return false;
+        }
+        const BufferHandle native = it->second->native_buffers[frame_index];
+        try
+        {
+            if (size != 0)
+            {
+                buffer_manager_->UploadData(native, static_cast<VkDeviceSize>(size), data,
+                                             static_cast<VkDeviceSize>(offset));
+                it->second->written_slots[frame_index] = true;
+            }
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+
+    std::optional<BufferDesc> VulkanBackend::GetGeometryBufferDesc(
+        BufferHandle handle, const uint32_t frame_index) const
+    {
+        const auto it = geometry_buffers_.find(handle);
+        if (it == geometry_buffers_.end())
+        {
+            return std::nullopt;
+        }
+        if (it->second->desc.update_mode == BufferUpdateMode::PerFrame &&
+            (frame_index >= it->second->written_slots.size() ||
+             !it->second->written_slots[frame_index]))
+        {
+            return std::nullopt;
+        }
+        return it->second->desc;
+    }
+
+    BufferHandle VulkanBackend::GetGeometryBufferHandle(BufferHandle handle,
+                                                         const uint32_t frame_index) const
+    {
+        const auto it = geometry_buffers_.find(handle);
+        if (it == geometry_buffers_.end() || it->second->native_buffers.empty())
+        {
+            return {};
+        }
+        const uint32_t slot = it->second->desc.update_mode == BufferUpdateMode::PerFrame
+                                  ? frame_index : 0u;
+        if (slot >= it->second->native_buffers.size() ||
+            (it->second->desc.update_mode == BufferUpdateMode::PerFrame &&
+             (slot >= it->second->written_slots.size() ||
+              !it->second->written_slots[slot])))
+        {
+            return {};
+        }
+        return it->second->native_buffers[slot];
+    }
+
+    void VulkanBackend::ResetCurrentFrameGeometryBuffers(const uint32_t frame_index) noexcept
+    {
+        for (const auto &[handle, resource] : geometry_buffers_)
+        {
+            (void)handle;
+            if (resource && resource->desc.update_mode == BufferUpdateMode::PerFrame &&
+                frame_index < resource->written_slots.size())
+            {
+                resource->written_slots[frame_index] = false;
+            }
+        }
+    }
+
+    void VulkanBackend::DestroyGeometryBuffers()
+    {
+        for (const auto &[handle, resource] : geometry_buffers_)
+        {
+            (void)handle;
+            if (!resource)
+            {
+                continue;
+            }
+            for (const BufferHandle native : resource->native_buffers)
+            {
+                buffer_manager_->DestroyBufferResource(device_->GetLogicalDevice(), native);
+            }
+        }
+        geometry_buffers_.clear();
     }
 
     uint32_t VulkanBackend::GetCurrentFrameIndex() const

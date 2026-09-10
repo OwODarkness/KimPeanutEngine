@@ -10,6 +10,7 @@
 #include "editor_presentation_bridge.h"
 #include "math/math_header.h"
 #include "api.h"
+#include "buffer_types.h"
 #include "bindless_texture.h"
 #include "command_recorder.h"
 #include "graphics_capabilities.h"
@@ -136,6 +137,11 @@ namespace kpengine::graphics
         const GraphicsCapabilities &GetCapabilities() const { return capabilities_; }
         virtual BufferHandle CreateUniformBuffer(uint32_t size) = 0;
         virtual void *MapUniformBuffer(BufferHandle handle, size_t size) = 0;
+        virtual BufferHandle CreateBuffer(const BufferDesc &desc,
+                                          const void *initial_data,
+                                          size_t initial_size) = 0;
+        virtual bool WriteFrameBuffer(BufferHandle buffer, size_t offset,
+                                      const void *data, size_t size) = 0;
         // Render marks CPU writes so a backend with a staged mapped-buffer
         // implementation can upload only the ranges consumed by the frame.
         // Persistently mapped backends do not need to do anything here.

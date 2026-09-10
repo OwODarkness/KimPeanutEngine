@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_GRAPHICS_OPENGL_BACKEND_H
 
 #include <memory>
+#include <optional>
 #include <unordered_map>
 #include <vector>
 #include <glad/glad.h>
@@ -69,6 +70,10 @@ namespace kpengine::graphics
         }
         BufferHandle CreateUniformBuffer(uint32_t size) override;
         void *MapUniformBuffer(BufferHandle handle, size_t size) override;
+        BufferHandle CreateBuffer(const BufferDesc &desc, const void *initial_data,
+                                  size_t initial_size) override;
+        bool WriteFrameBuffer(BufferHandle buffer, size_t offset, const void *data,
+                              size_t size) override;
         void MarkUniformBufferRangeWritten(BufferHandle handle, size_t offset,
                                             size_t size) override;
         uint32_t GetCurrentFrameIndex() const override { return 0; }
@@ -87,6 +92,10 @@ namespace kpengine::graphics
         GraphicsContext CreateGraphicsContext();
         void CollectCompletedGpuProfileTimings();
         void UploadDirtyUniformBuffers();
+        std::optional<BufferDesc> GetGeometryBufferDesc(BufferHandle handle) const;
+        GLuint GetGeometryBuffer(BufferHandle handle) const;
+        void ResetCurrentFrameGeometryBuffers() noexcept;
+        void DestroyGeometryBuffers();
         OpenglRenderTargetReadbackSource GetRenderTargetReadbackSource(
             RenderTargetHandle handle) const;
     private:
@@ -107,6 +116,14 @@ namespace kpengine::graphics
         std::vector<std::unique_ptr<class OpenglDescriptorSet>> resource_binding_sets_;
         HandleSystem<DescriptorSetHandle> resource_binding_set_handles_;
         std::unordered_map<uint32_t, OpenglMappedUniformBuffer> mapped_uniform_buffers_;
+        struct GeometryBufferResource
+        {
+            BufferDesc desc;
+            GLuint native = 0;
+            std::vector<bool> written_slots;
+        };
+        std::unordered_map<BufferHandle, std::unique_ptr<GeometryBufferResource>> geometry_buffers_;
+        HandleSystem<BufferHandle> geometry_buffer_handles_;
         std::unique_ptr<OpenglCommandRecorder> command_recorder_;
         bool frame_active_ = false;
         std::vector<GLuint> profile_query_ids_;

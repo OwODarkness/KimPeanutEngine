@@ -130,14 +130,14 @@ namespace kpengine::graphics
     }
 
     void VulkanBufferManager::UploadData(BufferHandle handle, VkDeviceSize size,
-                                         const void *source)
+                                         const void *source, VkDeviceSize offset)
     {
         VulkanBufferResource *resource = GetBufferResource(handle);
         if (!resource)
         {
             throw std::runtime_error("cannot upload to an invalid Vulkan buffer");
         }
-        memory_manager_->Write(resource->allocation, source, size);
+        memory_manager_->Write(resource->allocation, source, size, offset);
     }
 
     void *VulkanBufferManager::GetMappedAddress(BufferHandle handle,

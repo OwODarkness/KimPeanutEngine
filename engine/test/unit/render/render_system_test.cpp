@@ -107,12 +107,14 @@ namespace
 
         bool BeginRenderTarget(graphics::RenderTargetHandle target) override;
         void EndRenderTarget() override;
-        void BindPipeline(graphics::PipelineHandle) override {}
+        bool BindPipeline(graphics::PipelineHandle) override { return true; }
         void BindMesh(graphics::MeshHandle) override {}
-        void BindResourceBindings(graphics::PipelineHandle,
-                                   graphics::DescriptorSetHandle,
-                                   const graphics::DynamicUniformOffsets &) override
+        bool BindGeometry(const graphics::GeometryView &) override { return true; }
+        bool BindResourceBindings(graphics::PipelineHandle,
+                                  graphics::DescriptorSetHandle,
+                                  const graphics::DynamicUniformOffsets &) override
         {
+            return true;
         }
         void SetViewport(const graphics::Viewport &) override {}
         void SetScissor(const graphics::Scissor &) override {}
@@ -333,6 +335,17 @@ namespace
             auto &storage = uniform_buffers_[handle.id];
             storage.resize(size);
             return storage.data();
+        }
+
+        graphics::BufferHandle CreateBuffer(const graphics::BufferDesc &, const void *,
+                                            size_t) override
+        {
+            return MakeHandle<graphics::BufferHandle>();
+        }
+
+        bool WriteFrameBuffer(graphics::BufferHandle, size_t, const void *, size_t) override
+        {
+            return true;
         }
 
         uint32_t GetCurrentFrameIndex() const override { return 0; }

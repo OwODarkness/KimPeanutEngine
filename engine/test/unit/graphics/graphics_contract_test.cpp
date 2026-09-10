@@ -1,7 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <optional>
+#include <stdexcept>
+#include <unordered_map>
+
 #include "base/handle.h"
 #include "common/bindless_texture.h"
+#include "common/buffer_types.h"
 #include "common/graphics_capabilities.h"
 #include "common/pipeline_validation.h"
 #include "common/render_target_validation.h"
@@ -200,6 +205,93 @@ TEST(PipelineValidation, AcceptsCompleteOpenGlDescription)
     kpengine::data::ShaderData fragment = MakeOpenGlShader(ShaderStage::SHADER_STAGE_FRAGMENT);
     const PipelineDesc desc = MakeValidOpenGlPipeline(vertex, fragment);
     EXPECT_TRUE(ValidatePipelineDesc(desc, kpengine::GraphicsAPIType::GRAPHICS_API_OPENGL));
+}
+
+TEST(BufferContract, ValidatesStreamingBufferRules)
+{
+    using namespace kpengine::graphics;
+    const BufferDesc immutable{BufferRole::Vertex, BufferUpdateMode::Immutable, 32};
+    const uint8_t initial[4] = {};
+    EXPECT_TRUE(ValidateBufferDesc(immutable, initial, sizeof(initial)));
+    EXPECT_FALSE(ValidateBufferDesc(immutable, nullptr, sizeof(initial)));
+    EXPECT_FALSE(ValidateBufferDesc(immutable, initial, 64));
+
+    const BufferDesc per_frame{BufferRole::Vertex, BufferUpdateMode::PerFrame, 32};
+    EXPECT_TRUE(ValidateBufferDesc(per_frame, nullptr, 0));
+    EXPECT_FALSE(ValidateBufferDesc(per_frame, initial, sizeof(initial)));
+    EXPECT_FALSE(ValidateBufferDesc({BufferRole::Vertex, BufferUpdateMode::Immutable, 0},
+                                    nullptr, 0));
+}
+
+TEST(BufferContract, ValidatesTwoStreamsIndexTypeAndOffsets)
+{
+    using namespace kpengine::graphics;
+    const BufferHandle positions{1, 0};
+    const BufferHandle uvs{2, 0};
+    const BufferHandle indices{3, 0};
+    const std::unordered_map<BufferHandle, BufferDesc> descriptions{
+        {positions, {BufferRole::Vertex, BufferUpdateMode::PerFrame, 48}},
+        {uvs, {BufferRole::Vertex, BufferUpdateMode::Immutable, 32}},
+        {indices, {BufferRole::Index, BufferUpdateMode::Immutable, 12}},
+    };
+    const BufferDescLookup lookup = [&descriptions](BufferHandle handle)
+    {
+        const auto it = descriptions.find(handle);
+        return it == descriptions.end() ? std::optional<BufferDesc>{}
+                                         : std::optional<BufferDesc>{it->second};
+    };
+    const std::vector<VertexBindingDesc> bindings{{0, 12, false}, {1, 8, false}};
+    GeometryView geometry{{{0, positions, 0}, {1, uvs, 0}}, {indices, 2, IndexElementType::UInt16}};
+    EXPECT_TRUE(ValidateGeometryView(geometry, bindings, lookup));
+
+    geometry.vertices[1].binding = 0;
+    EXPECT_FALSE(ValidateGeometryView(geometry, bindings, lookup));
+    geometry.vertices[1].binding = 1;
+    geometry.indices.offset = 1;
+    EXPECT_FALSE(ValidateGeometryView(geometry, bindings, lookup));
+    geometry.indices.offset = 2;
+    geometry.indices.buffer = positions;
+    EXPECT_FALSE(ValidateGeometryView(geometry, bindings, lookup));
+}
+
+TEST(BufferContract, ValidationReportsUnwrittenSlotsAndMayPropagateLookupErrors)
+{
+    using namespace kpengine::graphics;
+    const BufferHandle positions{1, 0};
+    const BufferHandle indices{2, 0};
+    const std::vector<VertexBindingDesc> bindings{{0, 12, false}};
+    GeometryView geometry{{{0, positions, 0}}, {indices, 0, IndexElementType::UInt16}};
+
+    bool written = false;
+    const BufferDescLookup slot_lookup = [&written, positions, indices](BufferHandle handle)
+        -> std::optional<BufferDesc>
+    {
+        if (handle == positions && !written)
+        {
+            return std::optional<BufferDesc>{};
+        }
+        if (handle == positions)
+        {
+            return std::optional<BufferDesc>{
+                BufferDesc{BufferRole::Vertex, BufferUpdateMode::PerFrame, 32}};
+        }
+        if (handle == indices)
+        {
+            return std::optional<BufferDesc>{
+                BufferDesc{BufferRole::Index, BufferUpdateMode::Immutable, 8}};
+        }
+        return std::optional<BufferDesc>{};
+    };
+    EXPECT_FALSE(ValidateGeometryView(geometry, bindings, slot_lookup));
+    written = true;
+    EXPECT_TRUE(ValidateGeometryView(geometry, bindings, slot_lookup));
+
+    const BufferDescLookup throwing_lookup = [](BufferHandle) -> std::optional<BufferDesc>
+    {
+        throw std::runtime_error("lookup failure");
+    };
+    EXPECT_FALSE(noexcept(ValidateGeometryView(geometry, bindings, throwing_lookup)));
+    EXPECT_THROW(ValidateGeometryView(geometry, bindings, throwing_lookup), std::runtime_error);
 }
 
 TEST(RenderTargetValidation, ValidatesTargetDescriptions)

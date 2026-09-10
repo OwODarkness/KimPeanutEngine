@@ -4,6 +4,7 @@ option(USE_OPENGL "Build the OpenGL backend" ON)
 option(USE_VULKAN "Build the Vulkan backend" ON)
 
 set(GRAPHICS_COMMON_SOURCES
+    backend/common/buffer_types.cpp
     backend/common/bindless_texture.cpp
     backend/common/render_backend.cpp
     backend/common/render_target_validation.cpp
