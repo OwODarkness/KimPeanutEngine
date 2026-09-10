@@ -27,6 +27,7 @@ namespace kpengine::asset
         TextureCookSettings texture_settings{};
         bool emit_texture_profile_variants{false};
         std::function<void(std::string_view)> texture_progress_callback;
+        std::function<bool()> texture_cancellation_query;
     };
 
     struct NativeImageProduct
@@ -45,6 +46,7 @@ namespace kpengine::asset
         std::uint64_t texture_cook_count{};
         std::uint64_t portable_encode_count{};
         std::uint64_t block_encode_count{};
+        TextureBcEncodingMetrics bc_encoding{};
         std::uint64_t unique_texture_product_count{};
         std::uint64_t texture_product_bytes{};
     };
@@ -110,6 +112,7 @@ namespace kpengine::asset
         MissingImage,
         MalformedImage,
         InvalidValue,
+        Cancelled,
     };
 
     class NativeMaterialConversionError final : public std::runtime_error

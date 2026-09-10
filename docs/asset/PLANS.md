@@ -147,7 +147,9 @@ foreign decode and dependency discovery
 
 [AT1 — AssetTool Import Throughput and Memory](.plan/AT1.md) owns the staged
 design, with the concurrency and memory contract detailed in
-[AT1.3 — Bounded Parallel Cook/Write Pipeline](.plan/AT1.3.md). AT1 first
+[AT1.3 — Bounded Parallel Cook/Write Pipeline](.plan/AT1.3.md) and the encoder
+contract and acceptance gates detailed in
+[AT1.4 — CPU Texture Compression Throughput](.plan/AT1.4.md). AT1 first
 establishes a Release/Debug, cold/warm/no-op baseline; removes
 known redundant lifetime, copies, and writes; deduplicates before cooking;
 introduces byte-budgeted compute/write overlap; improves CPU compression; and

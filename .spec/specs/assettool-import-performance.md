@@ -75,8 +75,9 @@ Out of scope:
 4. **[AT1.3](../../docs/asset/.plan/AT1.3.md):** add a bounded CPU and
    staged-writer pipeline with byte-budget backpressure, cancellation, and
    deterministic result assembly.
-5. **AT1.4:** benchmark and adopt or implement an appropriate SIMD/
-   multithreaded BC3/BC4/BC5 path.
+5. **[AT1.4](../../docs/asset/.plan/AT1.4.md):** remove avoidable per-block
+   allocation, then benchmark and gate a versioned CPU BC3/BC4/BC5 encoder
+   behind Asset's cooker contract without adding nested worker pools.
 6. **AT1.5:** separate lightweight unchanged-source probing from the explicit
    full archive integrity audit.
 7. **AT1.6:** complete Sponza performance, determinism, transaction, integrity,

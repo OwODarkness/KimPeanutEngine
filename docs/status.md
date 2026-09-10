@@ -100,6 +100,30 @@
   → [AT1.3 plan](asset/.plan/AT1.3.md),
   [AT1.3 journal](../.spec/journal/2026-09-10-assettool-at1-3.md)
 
+- **AssetTool AT1.4.3 compression bakeoff (2026-09-10)** — BC3, BC4,
+  and BC5 cooking now allocates each mip payload at its exact block-compressed
+  size and writes blocks directly into that storage. The per-block output
+  growth and BC3 alpha temporary vector are gone; semantic routing, clamped
+  edges, byte order, and deterministic products remain unchanged. Versioned
+  encoder/quality settings now participate in model and texture cook identity,
+  and AssetTool exposes the selection. Encoder-only metrics and cancellation
+  checks are now exposed, and a pinned `rgbcx` candidate is available for
+  diagnostics. Independent BC decoding and semantic quality checks pass for
+  the current fixture set, while concurrent initialization remains
+  deterministic. Its BC3 throughput fails the Sponza gate at both Fast and
+  Balanced quality, so `ReferenceV1` remains the production default. Three
+  fresh ReferenceV1 runs establish a 62.563 s median total and 40.501 s
+  median TextureCook baseline. A 4-GiB diagnostic control reaches 21.927 s
+  TextureCook with eight active jobs but peaks at 1.47 GiB, so the 1-GiB
+  bounded policy remains unchanged. The next lifetime slice moves decoded
+  pixels into preparation, removes the redundant compression mip-chain copy,
+  and releases prepared/profile CPU data before publication. A fresh
+  same-policy run measured 38.527 s TextureCook and 60.654 s total; peak
+  working set remained about 750 MB and admission remained three jobs, so the
+  estimator was not lowered yet. →
+  [AT1.4 plan](asset/.plan/AT1.4.md),
+  [AT1.4 journal](../.spec/journal/2026-09-10-assettool-at1-4.md)
+
 - **Local MCP engine bridge (2026-09-08)** — added a stdio MCP server and
   machine-readable command catalog for launching or attaching to the live
   Runtime agent endpoint. Typed tools expose GPU/CPU/combined profiler data,

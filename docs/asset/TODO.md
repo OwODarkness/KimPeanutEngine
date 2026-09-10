@@ -81,9 +81,21 @@ belongs in the corresponding `.spec/journal/` entry.
     Focused/full tests, three-run Sponza timing, Vulkan/OpenGL runtime smoke,
     closure-growth memory stress, and the injected-failure matrix are recorded.
     See the [AT1.3 journal](../../.spec/journal/2026-09-10-assettool-at1-3.md).
-  - [ ] **AT1.4 — CPU compression:** benchmark and integrate or implement a
-    deterministic SIMD/multithreaded BC3/BC4/BC5 path behind Asset's cooker
-    contract.
+  - [ ] **[AT1.4 — CPU compression](.plan/AT1.4.md):** AT1.4.1 landed the
+    allocation-free `ReferenceV1` BC3/BC4/BC5 write path and odd-edge
+    determinism coverage. AT1.4.2 now carries encoder/quality identity through
+    settings hashes, texture cook keys, and AssetTool diagnostics. Encoder-only
+    metrics and per-mip cancellation checks are landed. AT1.4.4 now has an
+    independent BC decoder and semantic quality gate, plus concurrent rgbcx
+    determinism coverage. A pinned `rgbcx` bakeoff is diagnostic-only because
+    its BC3 throughput fails the AT1.4 gate. The three-run ReferenceV1 median
+    is recorded in the AT1.4 journal; candidate comparison and final runtime
+    acceptance remain. A 4-GiB control reaches 21.93 s TextureCook with eight
+    active jobs but peaks at 1.47 GiB, so the next optimization must reduce
+    live per-job storage before changing 1-GiB admission. The current lifetime
+    cleanup moves decoded pixels into preparation, consumes compression input
+    in place, and drops CPU mip chains after serialization; it improves one
+    measured run but does not yet increase 1-GiB admission.
   - [ ] **AT1.5 — Fast no-op import:** avoid foreign decode/cook and full
     Texture-closure scans during ordinary unchanged imports while retaining an
     explicit complete `integrity` audit.

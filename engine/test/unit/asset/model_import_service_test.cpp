@@ -338,6 +338,42 @@ TEST(ModelImportServiceTest, ExecutionPolicyChangesDoNotChangeCookedProducts)
     }
 }
 
+TEST(ModelImportServiceTest, EncoderQualityParticipatesInImportIdentity)
+{
+    ImportFixture fixture;
+    fixture.WriteBinary("models/albedo.png",
+                        {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+                         0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52,
+                         0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x01,
+                         0x08, 0x06, 0x00, 0x00, 0x00, 0x1F, 0x15, 0xC4,
+                         0x89, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x44, 0x41,
+                         0x54, 0x78, 0x9C, 0x63, 0x68, 0x68, 0xF8, 0xFF,
+                         0x1F, 0x00, 0x06, 0x82, 0x02, 0xFF, 0xB3, 0xBE,
+                         0x51, 0x33, 0x00, 0x00, 0x00, 0x00, 0x49, 0x45,
+                         0x4E, 0x44, 0xAE, 0x42, 0x60, 0x82});
+    fixture.Write("models/triangle.mtl",
+                  "newmtl TriangleMaterial\n"
+                  "Kd 0.8 0.7 0.6\n"
+                  "map_Kd albedo.png\n");
+
+    ModelImportService service;
+    const ModelImportRequest balanced_request = fixture.Request();
+    const auto balanced = service.Import(balanced_request);
+    ASSERT_EQ(balanced.status, ModelImportStatus::Imported);
+
+    ModelImportRequest fast_request = balanced_request;
+    fast_request.settings.texture_settings.bc_quality =
+        kpengine::asset::TextureBcQuality::Fast;
+    const auto fast = service.Import(fast_request);
+    EXPECT_EQ(fast.status, ModelImportStatus::Imported);
+    EXPECT_FALSE(fast.metrics.cache_hit);
+    EXPECT_EQ(fast.model_hash, balanced.model_hash);
+
+    const auto repeated_fast = service.Import(fast_request);
+    EXPECT_EQ(repeated_fast.status, ModelImportStatus::UpToDate);
+    EXPECT_TRUE(repeated_fast.metrics.cache_hit);
+}
+
 TEST(ModelImportServiceTest, QueueDepthOneBackpressuresWorkersWithSlowCoordinator)
 {
     ImportFixture fixture;

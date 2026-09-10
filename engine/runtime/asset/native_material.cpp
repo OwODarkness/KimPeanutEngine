@@ -129,15 +129,19 @@ namespace kpengine::asset
             std::uint32_t max_dimension{};
             std::uint32_t max_levels{};
             TextureCompressionPolicy compression{TextureCompressionPolicy::Portable};
+            TextureBcEncoder bc_encoder{TextureBcEncoder::ReferenceV1};
+            TextureBcQuality bc_quality{TextureBcQuality::Balanced};
             bool emit_texture_profile_variants{false};
 
             friend bool operator<(const TextureCookKey &lhs, const TextureCookKey &rhs) noexcept
             {
                 return std::tie(lhs.source_identity, lhs.source_hash, lhs.semantic,
                                  lhs.max_dimension, lhs.max_levels, lhs.compression,
+                                 lhs.bc_encoder, lhs.bc_quality,
                                  lhs.emit_texture_profile_variants) <
                        std::tie(rhs.source_identity, rhs.source_hash, rhs.semantic,
                                 rhs.max_dimension, rhs.max_levels, rhs.compression,
+                                rhs.bc_encoder, rhs.bc_quality,
                                 rhs.emit_texture_profile_variants);
             }
         };
@@ -170,6 +174,8 @@ namespace kpengine::asset
             key.max_dimension = settings.texture_settings.max_dimension;
             key.max_levels = settings.texture_settings.max_levels;
             key.compression = settings.texture_settings.compression;
+            key.bc_encoder = settings.texture_settings.bc_encoder;
+            key.bc_quality = settings.texture_settings.bc_quality;
             key.emit_texture_profile_variants = settings.emit_texture_profile_variants;
             if (image.storage == ImportedImageStorage::EmbeddedBytes && IsZeroHash(key.source_hash))
             {
@@ -302,7 +308,11 @@ namespace kpengine::asset
                 {
                     ++metrics.block_encode_count;
                 }
-                return cooker.CookPrepared(prepared, compression);
+                return cooker.CookPrepared(prepared, compression,
+                                           settings.texture_settings.bc_encoder,
+                                           settings.texture_settings.bc_quality,
+                                           &metrics.bc_encoding,
+                                           settings.texture_cancellation_query);
             };
             if (!settings.emit_texture_profile_variants)
             {
@@ -310,7 +320,11 @@ namespace kpengine::asset
             }
 
             CookedTexture portable = cook_profile(TextureCompressionPolicy::Portable);
+            // Native material publication needs serialized bytes and hashes,
+            // not the duplicate CPU mip chain retained by CookedTexture.
+            portable.data = {};
             CookedTexture block = cook_profile(TextureCompressionPolicy::PreferBlockCompression);
+            block.data = {};
             if (block.product_hash == portable.product_hash)
             {
                 return {std::move(portable), std::nullopt};
@@ -326,9 +340,13 @@ namespace kpengine::asset
         {
             try
             {
-                const data::TextureData prepared = TextureCooker{}.Prepare(imported);
-                ++result.metrics.texture_prepare_count;
-                const auto cooked = CookTextureProfiles(prepared, settings, result.metrics);
+                const auto cooked = [&]
+                {
+                    const data::TextureData prepared =
+                        TextureCooker{}.Prepare(std::move(imported));
+                    ++result.metrics.texture_prepare_count;
+                    return CookTextureProfiles(prepared, settings, result.metrics);
+                }();
                 const std::string portable_path =
                     PublishTextureProduct(std::move(cooked.first), result);
                 const std::string block_path = cooked.second.has_value()
@@ -341,6 +359,10 @@ namespace kpengine::asset
             }
             catch (const TextureCookError &error)
             {
+                if (error.Code() == TextureCookErrorCode::Cancelled)
+                {
+                    Fail(NativeMaterialErrorCode::Cancelled, error.what());
+                }
                 Fail(NativeMaterialErrorCode::MalformedImage,
                      "image could not be cooked: " + std::string{error.what()});
             }
@@ -360,6 +382,8 @@ namespace kpengine::asset
             key.max_dimension = settings.texture_settings.max_dimension;
             key.max_levels = settings.texture_settings.max_levels;
             key.compression = settings.texture_settings.compression;
+            key.bc_encoder = settings.texture_settings.bc_encoder;
+            key.bc_quality = settings.texture_settings.bc_quality;
             key.emit_texture_profile_variants = settings.emit_texture_profile_variants;
             if (image.storage == ImportedImageStorage::EmbeddedBytes && IsZeroHash(key.source_hash))
             {
@@ -622,12 +646,16 @@ namespace kpengine::asset
         result.job_ordinal = job_ordinal;
         result.metrics.requested_texture_bindings = 1;
         result.metrics.unique_cook_keys = 1;
-        const ImportedTexture imported =
+        ImportedTexture imported =
             DecodeTextureSource(document.images[job.image_index], settings, job.semantic,
                                 result.metrics);
-        const data::TextureData prepared = TextureCooker{}.Prepare(imported);
-        ++result.metrics.texture_prepare_count;
-        const auto cooked = CookTextureProfiles(prepared, settings, result.metrics);
+        const auto cooked = [&]
+        {
+            const data::TextureData prepared =
+                TextureCooker{}.Prepare(std::move(imported));
+            ++result.metrics.texture_prepare_count;
+            return CookTextureProfiles(prepared, settings, result.metrics);
+        }();
         const auto add_product = [&result](CookedTexture product)
         {
             try
@@ -683,6 +711,7 @@ namespace kpengine::asset
             result.metrics.texture_cook_count += texture_result.metrics.texture_cook_count;
             result.metrics.portable_encode_count += texture_result.metrics.portable_encode_count;
             result.metrics.block_encode_count += texture_result.metrics.block_encode_count;
+            result.metrics.bc_encoding += texture_result.metrics.bc_encoding;
             for (const NativeImageProduct &product : texture_result.products)
             {
                 if (unique_products.insert(product.content_hash).second)

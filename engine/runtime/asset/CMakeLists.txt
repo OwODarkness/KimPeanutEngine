@@ -103,7 +103,7 @@ target_include_directories(AssetImport PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
 target_link_libraries(AssetImport PUBLIC AssetImportRegistry AssetArchive AssetNative Data Base
-    PRIVATE Config ImageIO Log KP::NlohmannJson KP::Assimp AssetForeignDecode)
+    PRIVATE Config ImageIO Log KP::NlohmannJson KP::Assimp AssetForeignDecode KP::Rgbcx)
 if(WIN32)
     target_link_libraries(AssetImport PRIVATE Psapi)
 endif()

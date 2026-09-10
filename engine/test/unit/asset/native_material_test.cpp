@@ -98,6 +98,10 @@ TEST(NativeMaterialTest, EmitsPortableAndBlockCompressedTextureVariants)
     EXPECT_EQ(converted.metrics.texture_cook_count, 4u);
     EXPECT_EQ(converted.metrics.portable_encode_count, 2u);
     EXPECT_EQ(converted.metrics.block_encode_count, 2u);
+    EXPECT_EQ(converted.metrics.bc_encoding.bc3.block_count, 2u);
+    EXPECT_EQ(converted.metrics.bc_encoding.bc4.block_count, 0u);
+    EXPECT_EQ(converted.metrics.bc_encoding.bc5.block_count, 0u);
+    EXPECT_GT(converted.metrics.bc_encoding.bc3.encode_seconds, 0.0);
     EXPECT_EQ(converted.metrics.unique_texture_product_count, 4u);
     for (const auto &material : converted.materials)
     {

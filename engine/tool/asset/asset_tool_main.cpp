@@ -36,7 +36,8 @@ namespace
         std::cout
             << "KimPeanutAssetTool\n"
             << "  import|reimport --source <asset-relative-path> [--importer <id>] "
-               "[--compression <portable|bc>] [--asset-root <path>] "
+               "[--compression <portable|bc>] [--bc-encoder <reference|rgbcx>] "
+               "[--bc-quality <fast|balanced>] [--asset-root <path>] "
                "[--archive-root <path>] [--jobs <count>] "
                "[--memory-budget-mib <count>] [--writer-queue-depth <count>]\n"
 #if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
@@ -44,7 +45,8 @@ namespace
                "[--asset-root <path>] [--archive-root <path>]\n"
 #endif
             << "  cook-texture --source <asset-relative-path> [--semantic <generic|color|normal|packed|opacity>] "
-               "[--compression <portable|bc>] [--max-dimension <n>] [--asset-root <path>] "
+               "[--compression <portable|bc>] [--bc-encoder <reference|rgbcx>] "
+               "[--bc-quality <fast|balanced>] [--max-dimension <n>] [--asset-root <path>] "
                "[--archive-root <path>]\n"
             << "  status --source <asset-relative-path> [--asset-root <path>] "
                "[--archive-root <path>]\n"
@@ -221,6 +223,54 @@ namespace
         throw std::invalid_argument("--compression must be portable or bc");
     }
 
+    kpengine::asset::TextureBcEncoder BcEncoder(const CommandLine &command)
+    {
+        const std::string value = Option(command, "bc-encoder");
+        if (value.empty() || value == "reference")
+        {
+            return kpengine::asset::TextureBcEncoder::ReferenceV1;
+        }
+        if (value == "rgbcx")
+        {
+            return kpengine::asset::TextureBcEncoder::RgbcxV113;
+        }
+        throw std::invalid_argument("--bc-encoder must be reference or rgbcx");
+    }
+
+    kpengine::asset::TextureBcQuality BcQuality(const CommandLine &command)
+    {
+        const std::string value = Option(command, "bc-quality");
+        if (value.empty() || value == "balanced")
+        {
+            return kpengine::asset::TextureBcQuality::Balanced;
+        }
+        if (value == "fast")
+        {
+            return kpengine::asset::TextureBcQuality::Fast;
+        }
+        throw std::invalid_argument("--bc-quality must be fast or balanced");
+    }
+
+    const char *BcEncoderName(kpengine::asset::TextureBcEncoder encoder)
+    {
+        switch (encoder)
+        {
+        case kpengine::asset::TextureBcEncoder::ReferenceV1: return "reference-v1";
+        case kpengine::asset::TextureBcEncoder::RgbcxV113: return "rgbcx-v113";
+        }
+        return "unknown";
+    }
+
+    const char *BcQualityName(kpengine::asset::TextureBcQuality quality)
+    {
+        switch (quality)
+        {
+        case kpengine::asset::TextureBcQuality::Fast: return "fast";
+        case kpengine::asset::TextureBcQuality::Balanced: return "balanced";
+        }
+        return "unknown";
+    }
+
     const char *ProgressStageName(kpengine::asset::ModelImportProgressStage stage)
     {
         using Stage = kpengine::asset::ModelImportProgressStage;
@@ -276,6 +326,8 @@ namespace
                   << "  logical_processor_count: " << metrics.logical_processor_count << '\n'
                   << "  texture_worker_count: " << metrics.texture_worker_count << '\n'
                   << "  completion_queue_capacity: " << metrics.completion_queue_capacity << '\n'
+                  << "  bc_encoder: " << BcEncoderName(metrics.bc_encoder) << '\n'
+                  << "  bc_quality: " << BcQualityName(metrics.bc_quality) << '\n'
                   << "  texture_memory_budget_bytes: " << metrics.texture_memory_budget_bytes << '\n'
                   << "  cpu_utilization_percent: " << metrics.cpu_utilization_percent << '\n'
                   << "  storage_write_megabytes_per_second: "
@@ -288,6 +340,33 @@ namespace
                   << "  texture_cook_count: " << metrics.texture_cook_count << '\n'
                   << "  portable_encode_count: " << metrics.portable_encode_count << '\n'
                   << "  block_encode_count: " << metrics.block_encode_count << '\n'
+                  << "  bc3_block_count: " << metrics.bc_encoding.bc3.block_count << '\n'
+                  << "  bc3_source_megapixels: " << metrics.bc_encoding.bc3.source_megapixels << '\n'
+                  << "  bc3_encode_seconds: " << metrics.bc_encoding.bc3.encode_seconds << '\n'
+                  << "  bc3_megapixels_per_second: "
+                  << (metrics.bc_encoding.bc3.encode_seconds > 0.0
+                          ? metrics.bc_encoding.bc3.source_megapixels /
+                                metrics.bc_encoding.bc3.encode_seconds
+                          : 0.0)
+                  << '\n'
+                  << "  bc4_block_count: " << metrics.bc_encoding.bc4.block_count << '\n'
+                  << "  bc4_source_megapixels: " << metrics.bc_encoding.bc4.source_megapixels << '\n'
+                  << "  bc4_encode_seconds: " << metrics.bc_encoding.bc4.encode_seconds << '\n'
+                  << "  bc4_megapixels_per_second: "
+                  << (metrics.bc_encoding.bc4.encode_seconds > 0.0
+                          ? metrics.bc_encoding.bc4.source_megapixels /
+                                metrics.bc_encoding.bc4.encode_seconds
+                          : 0.0)
+                  << '\n'
+                  << "  bc5_block_count: " << metrics.bc_encoding.bc5.block_count << '\n'
+                  << "  bc5_source_megapixels: " << metrics.bc_encoding.bc5.source_megapixels << '\n'
+                  << "  bc5_encode_seconds: " << metrics.bc_encoding.bc5.encode_seconds << '\n'
+                  << "  bc5_megapixels_per_second: "
+                  << (metrics.bc_encoding.bc5.encode_seconds > 0.0
+                          ? metrics.bc_encoding.bc5.source_megapixels /
+                                metrics.bc_encoding.bc5.encode_seconds
+                          : 0.0)
+                  << '\n'
                   << "  unique_texture_product_count: " << metrics.unique_texture_product_count << '\n'
                   << "  texture_product_bytes: " << metrics.texture_product_bytes << '\n'
                   << "  cache_hit_count: " << metrics.cache_hit_count << '\n'
@@ -581,6 +660,8 @@ namespace
             std::string diagnostic;
             kpengine::asset::ModelImportSettings model_settings{};
             model_settings.texture_settings.compression = CompressionPolicy(command);
+            model_settings.texture_settings.bc_encoder = BcEncoder(command);
+            model_settings.texture_settings.bc_quality = BcQuality(command);
             kpengine::asset::ModelImportExecutionPolicy execution{};
             execution.texture_worker_count = TextureWorkerCount(command);
             execution.texture_memory_budget_bytes = TextureMemoryBudgetBytes(command);
@@ -636,6 +717,8 @@ namespace
             settings.semantic = TextureSemantic(command);
             settings.max_dimension = MaxDimension(command);
             settings.compression = CompressionPolicy(command);
+            settings.bc_encoder = BcEncoder(command);
+            settings.bc_quality = BcQuality(command);
             if (!kpengine::asset::RegisterTextureImportProvider(registry, settings, diagnostic) ||
                 !registry.Seal(diagnostic))
             {

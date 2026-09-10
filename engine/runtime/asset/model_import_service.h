@@ -42,6 +42,8 @@ namespace kpengine::asset
         std::uint32_t logical_processor_count{};
         std::uint32_t texture_worker_count{};
         std::uint32_t completion_queue_capacity{};
+        TextureBcEncoder bc_encoder{TextureBcEncoder::ReferenceV1};
+        TextureBcQuality bc_quality{TextureBcQuality::Balanced};
 
         std::uint64_t source_image_count{};
         std::uint64_t requested_texture_bindings{};
@@ -51,6 +53,7 @@ namespace kpengine::asset
         std::uint64_t texture_cook_count{};
         std::uint64_t portable_encode_count{};
         std::uint64_t block_encode_count{};
+        TextureBcEncodingMetrics bc_encoding{};
         std::uint64_t unique_texture_product_count{};
         std::uint64_t texture_product_bytes{};
         std::uint64_t cache_hit_count{};

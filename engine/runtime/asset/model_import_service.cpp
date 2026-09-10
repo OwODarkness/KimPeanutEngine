@@ -283,6 +283,8 @@ namespace kpengine::asset
             append_u32(settings.texture_settings.max_dimension);
             append_u32(settings.texture_settings.max_levels);
             append_u32(static_cast<std::uint32_t>(settings.texture_settings.compression));
+            append_u32(static_cast<std::uint32_t>(settings.texture_settings.bc_encoder));
+            append_u32(static_cast<std::uint32_t>(settings.texture_settings.bc_quality));
             append_u32(settings.emit_texture_profile_variants ? 1U : 0U);
             return bytes;
         }
@@ -297,7 +299,11 @@ namespace kpengine::asset
                 settings.texture_settings.max_dimension > kNativeTextureMaxDimension ||
                 settings.texture_settings.max_levels > kNativeTextureMaxMipLevels ||
                 static_cast<std::uint8_t>(settings.texture_settings.compression) >
-                    static_cast<std::uint8_t>(TextureCompressionPolicy::RequireBlockCompression))
+                    static_cast<std::uint8_t>(TextureCompressionPolicy::RequireBlockCompression) ||
+                static_cast<std::uint8_t>(settings.texture_settings.bc_encoder) >
+                    static_cast<std::uint8_t>(TextureBcEncoder::RgbcxV113) ||
+                static_cast<std::uint8_t>(settings.texture_settings.bc_quality) >
+                    static_cast<std::uint8_t>(TextureBcQuality::Balanced))
             {
                 Fail(ModelImportErrorCode::InvalidArgument, "model import settings are incomplete");
             }
@@ -1251,8 +1257,11 @@ namespace kpengine::asset
                                    peak, active, std::memory_order_relaxed))
                         {
                         }
+                        NativeMaterialConversionSettings worker_settings = settings;
+                        worker_settings.texture_cancellation_query =
+                            [&stop] { return stop.CheckCancellation(); };
                         NativeTextureCookResult result = ExecuteNativeTextureCookJob(
-                            document, settings, plan.texture_jobs[ordinal], ordinal);
+                            document, worker_settings, plan.texture_jobs[ordinal], ordinal);
                         result.estimated_bytes = estimates[ordinal];
                         for (const NativeImageProduct &product : result.products)
                         {
@@ -1412,6 +1421,8 @@ namespace kpengine::asset
         ModelImportMetrics metrics{};
         metrics.peak_active_jobs = 1;
         const ResolvedExecutionPolicy execution_policy = ResolveExecutionPolicy(request.execution);
+        metrics.bc_encoder = request.settings.texture_settings.bc_encoder;
+        metrics.bc_quality = request.settings.texture_settings.bc_quality;
         metrics.texture_worker_count = execution_policy.worker_count;
         metrics.completion_queue_capacity = execution_policy.completion_queue_capacity;
         metrics.texture_memory_budget_bytes = execution_policy.memory_budget_bytes;
@@ -1547,6 +1558,10 @@ namespace kpengine::asset
             }
             catch (const NativeMaterialConversionError &error)
             {
+                if (error.Code() == NativeMaterialErrorCode::Cancelled)
+                {
+                    Fail(ModelImportErrorCode::Cancelled, error.what());
+                }
                 Fail(ModelImportErrorCode::ConversionFailed, error.what());
             }
         }
@@ -1733,6 +1748,7 @@ namespace kpengine::asset
         result.metrics.texture_cook_count = converted_materials.metrics.texture_cook_count;
         result.metrics.portable_encode_count = converted_materials.metrics.portable_encode_count;
         result.metrics.block_encode_count = converted_materials.metrics.block_encode_count;
+        result.metrics.bc_encoding = converted_materials.metrics.bc_encoding;
         result.metrics.unique_texture_product_count =
             converted_materials.metrics.unique_texture_product_count;
         result.metrics.texture_product_bytes = converted_materials.metrics.texture_product_bytes;

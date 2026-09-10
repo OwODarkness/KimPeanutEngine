@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -21,12 +22,56 @@ namespace kpengine::asset
         RequireBlockCompression,
     };
 
+    enum class TextureBcEncoder : std::uint8_t
+    {
+        ReferenceV1,
+        RgbcxV113,
+    };
+
+    enum class TextureBcQuality : std::uint8_t
+    {
+        Fast,
+        Balanced,
+    };
+
+    struct TextureBcFormatMetrics
+    {
+        std::uint64_t block_count{};
+        double source_megapixels{};
+        double encode_seconds{};
+
+        TextureBcFormatMetrics &operator+=(const TextureBcFormatMetrics &other) noexcept
+        {
+            block_count += other.block_count;
+            source_megapixels += other.source_megapixels;
+            encode_seconds += other.encode_seconds;
+            return *this;
+        }
+    };
+
+    struct TextureBcEncodingMetrics
+    {
+        TextureBcFormatMetrics bc3{};
+        TextureBcFormatMetrics bc4{};
+        TextureBcFormatMetrics bc5{};
+
+        TextureBcEncodingMetrics &operator+=(const TextureBcEncodingMetrics &other) noexcept
+        {
+            bc3 += other.bc3;
+            bc4 += other.bc4;
+            bc5 += other.bc5;
+            return *this;
+        }
+    };
+
     struct TextureCookSettings
     {
         data::TextureSemantic semantic{data::TextureSemantic::Generic};
         std::uint32_t max_dimension{2048};
         std::uint32_t max_levels{};
         TextureCompressionPolicy compression{TextureCompressionPolicy::Portable};
+        TextureBcEncoder bc_encoder{TextureBcEncoder::ReferenceV1};
+        TextureBcQuality bc_quality{TextureBcQuality::Balanced};
     };
 
     struct TextureImportRequest
@@ -57,6 +102,7 @@ namespace kpengine::asset
         UnsupportedCompression,
         ConversionFailed,
         ProductInvalid,
+        Cancelled,
     };
 
     class TextureCookError final : public std::runtime_error
@@ -84,8 +130,15 @@ namespace kpengine::asset
     {
     public:
         data::TextureData Prepare(const ImportedTexture &source) const;
+        // Consumes the source image pixel storage; use when the imported
+        // source will not be reused after preparation.
+        data::TextureData Prepare(ImportedTexture &&source) const;
         CookedTexture CookPrepared(const data::TextureData &prepared,
-                                   TextureCompressionPolicy compression) const;
+                                   TextureCompressionPolicy compression,
+                                   TextureBcEncoder bc_encoder = TextureBcEncoder::ReferenceV1,
+                                   TextureBcQuality bc_quality = TextureBcQuality::Balanced,
+                                   TextureBcEncodingMetrics *encoding_metrics = nullptr,
+                                   std::function<bool()> cancellation_requested = {}) const;
         CookedTexture Cook(const ImportedTexture &source) const;
     };
 
