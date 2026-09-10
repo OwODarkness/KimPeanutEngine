@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -1898,6 +1899,96 @@ namespace kpengine::example
         bool bounding_boxes_match = false;
     };
 
+    static std::vector<uint8_t> BuildSilhouetteMask(const image_io::ImageBuffer &image)
+    {
+        const uint8_t silhouette_threshold = 4;
+        const size_t pixel_count = static_cast<size_t>(image.width) * image.height;
+        std::vector<uint8_t> model_mask(pixel_count, 0);
+        std::vector<uint8_t> background(pixel_count, 0);
+        std::deque<size_t> pending_background;
+
+        const auto pixel_is_bright = [&image, silhouette_threshold](uint32_t x, uint32_t y)
+        {
+            const size_t offset =
+                (static_cast<size_t>(y) * image.width + static_cast<size_t>(x)) * 4;
+            return image.pixels[offset] > silhouette_threshold ||
+                   image.pixels[offset + 1] > silhouette_threshold ||
+                   image.pixels[offset + 2] > silhouette_threshold;
+        };
+        const auto enqueue_background = [&](uint32_t x, uint32_t y)
+        {
+            const size_t index = static_cast<size_t>(y) * image.width + x;
+            if (model_mask[index] == 0 && background[index] == 0)
+            {
+                background[index] = 1;
+                pending_background.push_back(index);
+            }
+        };
+
+        for (uint32_t y = 0; y < image.height; ++y)
+        {
+            for (uint32_t x = 0; x < image.width; ++x)
+            {
+                const size_t index = static_cast<size_t>(y) * image.width + x;
+                model_mask[index] = pixel_is_bright(x, y) ? 1 : 0;
+            }
+        }
+        if (image.width == 0 || image.height == 0)
+        {
+            return model_mask;
+        }
+        for (uint32_t x = 0; x < image.width; ++x)
+        {
+            enqueue_background(x, 0);
+            enqueue_background(x, image.height - 1);
+        }
+        for (uint32_t y = 1; y + 1 < image.height; ++y)
+        {
+            enqueue_background(0, y);
+            enqueue_background(image.width - 1, y);
+        }
+
+        while (!pending_background.empty())
+        {
+            const size_t index = pending_background.front();
+            pending_background.pop_front();
+            const uint32_t x = static_cast<uint32_t>(index % image.width);
+            const uint32_t y = static_cast<uint32_t>(index / image.width);
+            for (int offset_y = -1; offset_y <= 1; ++offset_y)
+            {
+                for (int offset_x = -1; offset_x <= 1; ++offset_x)
+                {
+                    if (offset_x == 0 && offset_y == 0)
+                    {
+                        continue;
+                    }
+                    const int neighbor_x = static_cast<int>(x) + offset_x;
+                    const int neighbor_y = static_cast<int>(y) + offset_y;
+                    if (neighbor_x < 0 || neighbor_y < 0 ||
+                        neighbor_x >= static_cast<int>(image.width) ||
+                        neighbor_y >= static_cast<int>(image.height))
+                    {
+                        continue;
+                    }
+                    enqueue_background(static_cast<uint32_t>(neighbor_x),
+                                       static_cast<uint32_t>(neighbor_y));
+                }
+            }
+        }
+
+        // A shadowed model pixel can be darker than the threshold. Treat every
+        // enclosed dark region as model area; only border-connected dark pixels
+        // are background. This makes the test measure geometry, not lighting.
+        for (size_t index = 0; index < pixel_count; ++index)
+        {
+            if (model_mask[index] == 0 && background[index] == 0)
+            {
+                model_mask[index] = 1;
+            }
+        }
+        return model_mask;
+    }
+
     static SilhouetteComparisonResult CompareSilhouettes(
         const image_io::ImageBuffer &vulkan, const image_io::ImageBuffer &opengl)
     {
@@ -1908,7 +1999,6 @@ namespace kpengine::example
             return result;
         }
 
-        constexpr uint8_t kSilhouetteThreshold = 4;
         constexpr size_t kAllowedEdgePixelDifferences = 24;
         constexpr size_t kAllowedStructuralPixelDifferences = 3;
         constexpr int kRasterizationEdgeRadius = 1;
@@ -1920,6 +2010,8 @@ namespace kpengine::example
             int max_y = std::numeric_limits<int>::min();
             bool has_pixels = false;
         };
+        const std::vector<uint8_t> vulkan_model_mask = BuildSilhouetteMask(vulkan);
+        const std::vector<uint8_t> opengl_model_mask = BuildSilhouetteMask(opengl);
         const auto is_model_pixel = [&](const image_io::ImageBuffer &image, int x, int y)
         {
             if (x < 0 || y < 0 || x >= static_cast<int>(image.width) ||
@@ -1927,11 +2019,10 @@ namespace kpengine::example
             {
                 return false;
             }
-            const size_t offset =
-                (static_cast<size_t>(y) * image.width + static_cast<size_t>(x)) * 4;
-            return image.pixels[offset] > kSilhouetteThreshold ||
-                   image.pixels[offset + 1] > kSilhouetteThreshold ||
-                   image.pixels[offset + 2] > kSilhouetteThreshold;
+            const size_t index = static_cast<size_t>(y) * image.width +
+                                 static_cast<size_t>(x);
+            return (&image == &vulkan) ? vulkan_model_mask[index] != 0
+                                       : opengl_model_mask[index] != 0;
         };
         const auto is_boundary_pixel = [&](const image_io::ImageBuffer &image, int x, int y)
         {

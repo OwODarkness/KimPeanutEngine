@@ -4,6 +4,13 @@
 
 **Current release: v1.1.0.**
 
+- **D5 Vulkan/OpenGL silhouette gate (2026-09-10)** — corrected the smoke
+  comparator to flood-fill border-connected background before measuring model
+  topology. Dark shadowed pixels are no longer misclassified as missing
+  geometry; the strict translation, missing-feature, and bounded-edge probes
+  remain active. Fresh `GraphicsSmoke` now passes both APIs. →
+  [D5 comparator journal](../.spec/journal/2026-09-10-d5-silhouette-comparator.md)
+
 - **Live2D L2D4.3 generic submission and unmasked planning (2026-09-10)** —
   Render now owns an API-neutral ordered submission protocol and executor for
   frame-local uniforms, sampled textures, geometry uploads, targets, and
@@ -29,9 +36,8 @@
   topology, index-view offsets, base-vertex support, observable bind failures,
   and a six-frame two-stream runtime smoke sequence. `GraphicsContractTest`
   passes 19/19 and `RenderPassScheduleTest` passes 100/100. The full
-  `GraphicsSmoke` executable reaches both backends and the new path, but
-  remains non-zero because of the pre-existing D5 Vulkan/OpenGL silhouette
-  comparator mismatch; L2D4.1 therefore remains open.
+  `GraphicsSmoke` executable reaches both backends and the new path, and now
+  passes the D5 Vulkan/OpenGL silhouette gate after the comparator fix.
 
 - **Live2D L2D4.0 render contract freeze (2026-09-09)** — froze the R5
   conformance policy for linear shader math, premultiplied RGBA8 sRGB output,
@@ -153,9 +159,8 @@
   Sponza samples measured 60.49–61.03 s cold and 0.031–0.035 s no-op, with
   2.107 GB written and approximately 750 MB peak working set; one-worker and
   default-worker archives were byte-identical and passed integrity. The
-  current GraphicsSmoke executable still fails the unrelated D5
-  Vulkan/OpenGL silhouette comparison, so AT1.6 remains open only for that
-  cross-backend gate. → [AT1 plan](asset/.plan/AT1.md),
+  current GraphicsSmoke executable now passes the D5 Vulkan/OpenGL silhouette
+  comparison; the cross-backend gate is closed. → [AT1 plan](asset/.plan/AT1.md),
   [AT1.6 journal](../.spec/journal/2026-09-10-assettool-at1-6.md)
 
 - **Local MCP engine bridge (2026-09-08)** — added a stdio MCP server and

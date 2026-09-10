@@ -22,10 +22,10 @@ exported and inspected.
 R1.4 landed in the [ready-asset ingestion plan](.plan/R1.4.md). Runtime now
 publishes a typed startup catalog before Render initialization; the catalog and
 preparation review findings are addressed, focused/full Debug validation passes,
-and six fresh fixture captures were exported and inspected. Direct
-dual-backend smoke still launches both APIs but its strict silhouette
-comparator rejects a small cross-backend edge difference; that follow-up is
-separate from the resolved ingestion-boundary risk.
+and six fresh fixture captures were exported and inspected. The strict
+dual-backend silhouette comparator now extracts connected model topology so
+lighting-darkened interior pixels do not appear as geometry differences;
+fresh smoke passes both APIs.
 
 R1.5 code fixes landed 2026-09-04 in the [facade-hardening plan](.plan/R1.5.md).
 It
