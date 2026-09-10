@@ -3,6 +3,11 @@
 
 #include <cstddef>
 #include <memory>
+#include <string>
+#include <vector>
+
+#include "asset/texture.h"
+#include "live2d_model_data.h"
 
 namespace kpengine::live2d
 {
@@ -33,16 +38,30 @@ namespace kpengine::live2d
         bool SetParameterValue(std::size_t index, float value) noexcept;
         bool Update() noexcept;
 
+        const std::vector<std::shared_ptr<const asset::TextureResource>> &
+        TextureDependencies() const noexcept;
+
+        bool ExtractStaticData(Live2DStaticModelData &out,
+                               std::string &diagnostic) const;
+        bool ExtractFrameSnapshot(Live2DFrameSnapshot &out,
+                                  std::string &diagnostic);
+
     private:
         struct Impl;
 
         Live2DModelInstance(std::shared_ptr<const Live2DModelResource> resource,
+                            std::vector<std::shared_ptr<const asset::TextureResource>>
+                                texture_dependencies,
                             std::unique_ptr<Impl> impl) noexcept;
         static std::unique_ptr<Live2DModelInstance> Create(
             std::shared_ptr<const Live2DModelResource> resource,
+            std::vector<std::shared_ptr<const asset::TextureResource>>
+                texture_dependencies,
             CubismLifecycle &lifecycle);
 
         std::shared_ptr<const Live2DModelResource> resource_;
+        std::vector<std::shared_ptr<const asset::TextureResource>>
+            texture_dependencies_;
         std::unique_ptr<Impl> impl_;
 
         friend class Live2DSystem;

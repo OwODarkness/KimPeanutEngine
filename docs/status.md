@@ -4,6 +4,15 @@
 
 **Current release: v1.1.0.**
 
+- **Live2D L2D4.2 SDK-free model extraction (2026-09-10)** — added retained,
+  ordered Texture payloads, value-only static topology and frame snapshots,
+  canonical mask-source contexts, topology revisions, finite/range validation,
+  and atomic extraction tests. Two instances now share immutable model/texture
+  payloads while keeping independent Cubism state; the imported Hiyori fixture
+  remains valid after its Asset wrapper is unregistered. →
+  [L2D4.2 plan](live2d/.plan/L2D4.2.md),
+  [L2D4.2 journal](../.spec/journal/2026-09-10-live2d-l2d4-2.md)
+
 - **Live2D L2D4.1 common streaming geometry (2026-09-10)** — corrected the
   API-neutral buffer/geometry-view contract, immutable and per-frame buffer
   storage on OpenGL and Vulkan, explicit UInt16/UInt32 indexed geometry with

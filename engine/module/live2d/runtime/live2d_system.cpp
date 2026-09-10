@@ -3,6 +3,7 @@
 #include <utility>
 
 #include "asset/asset_manager.h"
+#include "asset/texture.h"
 #include "live2d_model_resource.h"
 
 namespace kpengine::live2d
@@ -43,15 +44,45 @@ namespace kpengine::live2d
             return nullptr;
         }
 
+        asset::AssetManager &manager = asset::AssetManager::GetInstance();
+        asset::Asset *asset = manager.GetAsset(asset_id);
+        if (asset == nullptr)
+        {
+            return nullptr;
+        }
         const std::shared_ptr<Live2DModelResource> resource =
-            asset::AssetManager::GetInstance().GetResource<Live2DModelResource>(
-                asset_id);
+            asset->GetResource<Live2DModelResource>();
         if (resource == nullptr)
         {
             return nullptr;
         }
+
+        const std::vector<asset::AssetID> dependencies =
+            asset->GetDependencies();
+        if (dependencies.size() != resource->Product().textures.size())
+        {
+            return nullptr;
+        }
+        std::vector<std::shared_ptr<const asset::TextureResource>> textures;
+        textures.reserve(dependencies.size());
+        for (const asset::AssetID &dependency : dependencies)
+        {
+            if (!dependency.IsValid() ||
+                dependency.type != asset::AssetType::KPAT_Texture)
+            {
+                return nullptr;
+            }
+            const std::shared_ptr<asset::TextureResource> texture =
+                manager.GetResource<asset::TextureResource>(dependency);
+            if (texture == nullptr || texture->data == nullptr)
+            {
+                return nullptr;
+            }
+            textures.push_back(std::shared_ptr<const asset::TextureResource>(
+                std::move(texture)));
+        }
         return Live2DModelInstance::Create(
             std::shared_ptr<const Live2DModelResource>(std::move(resource)),
-            cubism_);
+            std::move(textures), cubism_);
     }
 }

@@ -82,6 +82,7 @@ set_property(TARGET Live2DImport PROPERTY
 
 add_library(Live2DRuntime STATIC
     runtime/live2d_cubism_lifecycle.cpp
+    runtime/live2d_model_data.cpp
     runtime/live2d_model_instance.cpp
     runtime/live2d_system.cpp)
 target_include_directories(Live2DRuntime PUBLIC

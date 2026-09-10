@@ -146,6 +146,52 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     ASSERT_TRUE(first_instance->IsValid());
     ASSERT_TRUE(second_instance->IsValid());
     EXPECT_EQ(&first_instance->Resource(), &second_instance->Resource());
+    ASSERT_EQ(first_instance->TextureDependencies().size(), 2u);
+    ASSERT_EQ(second_instance->TextureDependencies().size(), 2u);
+    EXPECT_EQ(first_instance->TextureDependencies()[0].get(),
+              second_instance->TextureDependencies()[0].get());
+    EXPECT_EQ(first_instance->TextureDependencies()[1].get(),
+              second_instance->TextureDependencies()[1].get());
+
+    kpengine::live2d::Live2DStaticModelData static_data;
+    std::string extraction_diagnostic;
+    ASSERT_TRUE(first_instance->ExtractStaticData(static_data,
+                                                   extraction_diagnostic))
+        << extraction_diagnostic;
+    ASSERT_FALSE(static_data.drawables.empty());
+    EXPECT_EQ(static_data.feature_report.drawable_count,
+              static_data.drawables.size());
+    EXPECT_EQ(static_data.maximum_position_bytes,
+              static_data.uvs.size() * sizeof(kpengine::live2d::Live2DVector2));
+
+    kpengine::live2d::Live2DStaticModelData second_static_data;
+    ASSERT_TRUE(second_instance->ExtractStaticData(second_static_data,
+                                                   extraction_diagnostic))
+        << extraction_diagnostic;
+    EXPECT_EQ(static_data.topology_revision, second_static_data.topology_revision);
+    EXPECT_EQ(static_data.uvs.size(), second_static_data.uvs.size());
+    EXPECT_EQ(static_data.indices, second_static_data.indices);
+
+    kpengine::live2d::Live2DFrameSnapshot first_frame;
+    kpengine::live2d::Live2DFrameSnapshot second_frame;
+    ASSERT_TRUE(first_instance->ExtractFrameSnapshot(first_frame,
+                                                     extraction_diagnostic))
+        << extraction_diagnostic;
+    ASSERT_TRUE(second_instance->ExtractFrameSnapshot(second_frame,
+                                                      extraction_diagnostic))
+        << extraction_diagnostic;
+    EXPECT_EQ(first_frame.frame_sequence, 1u);
+    EXPECT_EQ(second_frame.frame_sequence, 1u);
+    EXPECT_EQ(first_frame.positions.size(), second_frame.positions.size());
+    ASSERT_EQ(first_frame.positions.size(), static_data.uvs.size());
+    for (std::size_t vertex = 0u; vertex < first_frame.positions.size(); ++vertex)
+    {
+        EXPECT_FLOAT_EQ(first_frame.positions[vertex].x,
+                        second_frame.positions[vertex].x);
+        EXPECT_FLOAT_EQ(first_frame.positions[vertex].y,
+                        second_frame.positions[vertex].y);
+    }
+
     ASSERT_GT(first_instance->ParameterCount(), 0u);
 
     float first_before = 0.0f;
@@ -159,6 +205,23 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     ASSERT_NE(changed_value, first_before);
     ASSERT_TRUE(first_instance->SetParameterValue(0, changed_value));
     ASSERT_TRUE(first_instance->Update());
+    kpengine::live2d::Live2DFrameSnapshot changed_frame;
+    ASSERT_TRUE(first_instance->ExtractFrameSnapshot(changed_frame,
+                                                     extraction_diagnostic))
+        << extraction_diagnostic;
+    EXPECT_EQ(changed_frame.frame_sequence, 2u);
+    bool position_changed = false;
+    for (std::size_t vertex = 0u;
+         vertex < changed_frame.positions.size(); ++vertex)
+    {
+        if (changed_frame.positions[vertex].x != first_frame.positions[vertex].x ||
+            changed_frame.positions[vertex].y != first_frame.positions[vertex].y)
+        {
+            position_changed = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(position_changed);
     float first_after = 0.0f;
     float second_after = 0.0f;
     ASSERT_TRUE(first_instance->GetParameterValue(0, first_after));
@@ -166,13 +229,19 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     EXPECT_FLOAT_EQ(first_after, changed_value);
     EXPECT_FLOAT_EQ(second_after, second_before);
 
+    manager.UnRegisterAsset(id);
+    EXPECT_EQ(manager.GetLiveAssetCount(kpengine::live2d::kLive2DModelAssetType), 0u);
+    EXPECT_TRUE(first_instance->IsValid());
+    EXPECT_TRUE(second_instance->IsValid());
+    EXPECT_TRUE(second_instance->ExtractFrameSnapshot(second_frame,
+                                                      extraction_diagnostic))
+        << extraction_diagnostic;
+    EXPECT_EQ(second_frame.frame_sequence, 2u);
+
     second_instance.reset();
     first_instance.reset();
     system.Shutdown();
     EXPECT_FALSE(system.IsInitialized());
-
-    manager.UnRegisterAsset(id);
-    EXPECT_EQ(manager.GetLiveAssetCount(kpengine::live2d::kLive2DModelAssetType), 0u);
 
     std::vector<std::byte> malformed = product->value.product_bytes;
     malformed[0] = static_cast<std::byte>('X');

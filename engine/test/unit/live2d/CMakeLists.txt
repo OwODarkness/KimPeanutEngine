@@ -14,6 +14,20 @@ target_link_libraries(Live2DRenderContractTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
 gtest_discover_tests(Live2DRenderContractTest)
 
+add_executable(Live2DModelDataContractTest
+    live2d_model_data_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_model_data.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_render_contract.cpp)
+
+target_include_directories(Live2DModelDataContractTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render)
+
+target_link_libraries(Live2DModelDataContractTest PRIVATE KP::GoogleTest)
+
+include(GoogleTest)
+gtest_discover_tests(Live2DModelDataContractTest)
+
 if(KPENGINE_ENABLE_LIVE2D)
     add_executable(Live2DCoreTest
         live2d_core_test.cpp
