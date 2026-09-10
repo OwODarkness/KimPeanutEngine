@@ -124,6 +124,40 @@ foreign source at runtime. The native Model loader itself remains database-free.
 Render consumes ordinary Material AssetIDs and never imports files or owns
 source-material metadata.
 
+## AssetTool import-performance architecture
+
+The offline boundary is correct, but the present implementation processes
+Texture requests serially, deduplicates only after cooking, retains the complete
+cooked closure, and separates staging from publication in a way that writes new
+products twice. Import throughput and memory therefore require a bounded
+pipeline inside AssetImport, not a Runtime or Graphics ownership change:
+
+```text
+foreign decode and dependency discovery
+  -> unique Texture cook-key graph
+  -> memory-budgeted CPU workers
+       shared decode/semantic mip preparation
+       portable and BC encoders
+  -> bounded staged-file writer with backpressure
+  -> small product manifest
+  -> deterministic Model/Material assembly
+  -> immutable product publication
+  -> source database commit last
+```
+
+[AT1 — AssetTool Import Throughput and Memory](.plan/AT1.md) owns the staged
+design, with the concurrency and memory contract detailed in
+[AT1.3 — Bounded Parallel Cook/Write Pipeline](.plan/AT1.3.md). AT1 first
+establishes a Release/Debug, cold/warm/no-op baseline; removes
+known redundant lifetime, copies, and writes; deduplicates before cooking;
+introduces byte-budgeted compute/write overlap; improves CPU compression; and
+separates ordinary cache probing from explicit archive integrity auditing. GPU
+compression is a final measured decision gate, not a prerequisite for the
+pipeline.
+
+The multi-session acceptance contract is
+[AssetTool Import Performance](../../.spec/specs/assettool-import-performance.md).
+
 ## Model-import plans
 
 - [MI1 — content-addressed native model import](.plan/MI1.md) defines foreign

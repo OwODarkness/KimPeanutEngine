@@ -53,6 +53,45 @@ belongs in the corresponding `.spec/journal/` entry.
   This is coordinated by
   [AP1.2](.plan/AP1.md#ap12--gpu-native-texture-compression).
 
+## AssetTool import performance roadmap
+
+- [ ] **AT1 — AssetTool Import Throughput and Memory** — reduce the reported
+  approximately 1,200-second Sponza import by eliminating repeated Texture
+  work, bounding payload lifetime, overlapping CPU cooking with single-write
+  staging, and improving BC compression without changing Runtime ownership or
+  the root-last archive transaction. See the [AT1 plan](.plan/AT1.md) and
+  [execution spec](../../.spec/specs/assettool-import-performance.md).
+
+  Subtasks:
+
+  - [ ] **AT1.0 — Baseline and attribution:** record Debug/RelWithDebInfo cold,
+    warm, and no-op timings plus stage costs, Texture jobs, bytes, CPU, disk, and
+    peak memory for the fixed Sponza import. The import telemetry is landed;
+    remaining matrix evidence is recorded in the [AT1.0 journal](../../.spec/journal/2026-09-09-assettool-at1-0.md).
+  - [x] **AT1.1 — Remove amplification:** eliminated unused decoded-image
+    retention, publication copies, redundant validation work, and the second
+    staging write while preserving product and collision checks. See the
+    [AT1.1 journal](../../.spec/journal/2026-09-09-assettool-at1-1.md).
+  - [x] **AT1.2 — Unique cook graph:** deduplicate before cooking and reuse one
+    compatible decode/semantic mip preparation for portable and BC variants.
+    See the [AT1.2 journal](../../.spec/journal/2026-09-09-assettool-at1-2.md).
+  - [x] **[AT1.3 — Bounded pipeline](.plan/AT1.3.md):** implementation landed:
+    memory-budgeted CPU workers, a bounded completion/staged-writer queue,
+    deterministic assembly, cancellation, and root-last failure behavior.
+    Focused/full tests, three-run Sponza timing, Vulkan/OpenGL runtime smoke,
+    closure-growth memory stress, and the injected-failure matrix are recorded.
+    See the [AT1.3 journal](../../.spec/journal/2026-09-10-assettool-at1-3.md).
+  - [ ] **AT1.4 — CPU compression:** benchmark and integrate or implement a
+    deterministic SIMD/multithreaded BC3/BC4/BC5 path behind Asset's cooker
+    contract.
+  - [ ] **AT1.5 — Fast no-op import:** avoid foreign decode/cook and full
+    Texture-closure scans during ordinary unchanged imports while retaining an
+    explicit complete `integrity` audit.
+  - [ ] **AT1.6 — Integration gate:** meet the provisional 120-second
+    RelWithDebInfo cold-import and 5-second no-op Sponza budgets, prove bounded
+    memory and deterministic products, complete archive/concurrency tests and
+    Vulkan/OpenGL visual validation, then decide whether GPU cooking is needed.
+
 ## Startup performance roadmap
 
 - [ ] **AP1 — Startup Asset Loading Performance** — reduce the measured
@@ -170,6 +209,9 @@ belongs in the corresponding `.spec/journal/` entry.
 - [ ] AP1 satisfies the latency, byte-budget, integrity, package-equivalence,
   concurrency, lifetime, and cross-backend visual criteria in the
   [startup performance spec](../../.spec/specs/asset-startup-loading-performance.md).
+- [ ] AT1 satisfies the throughput, bounded-memory, deterministic-output,
+  transaction, cache-probe, integrity, and cross-backend criteria in the
+  [AssetTool import performance spec](../../.spec/specs/assettool-import-performance.md).
 - [ ] MI1 satisfies its
   [native-model-import acceptance criteria](.plan/MI1.md#acceptance-criteria).
 

@@ -87,6 +87,19 @@
   this generic contract, not an Asset special case. → [AX1 plan](asset/.plan/AX1.md),
   [AX1.4 journal](../.spec/journal/2026-09-08-asset-ax1-4.md)
 
+- **AssetTool AT1.3 bounded pipeline implementation (2026-09-10)** — added
+  metadata-first texture estimation, memory-budgeted worker cooking, bounded
+  completion backpressure, coordinator-only staging/publication, cancellation,
+  and operation-scoped cleanup while preserving the root-last archive
+  transaction. CLI policy controls and regression coverage are in place;
+  focused/full tests pass, three-run RelWithDebInfo Sponza samples show a
+  2.095× default-worker speedup over one worker, and fresh Vulkan/OpenGL Sponza
+  captures match. Closure-growth memory stress and the complete injected-
+  failure matrix now pass, including blocked-producer and blocked-memory
+  cancellation cleanup.
+  → [AT1.3 plan](asset/.plan/AT1.3.md),
+  [AT1.3 journal](../.spec/journal/2026-09-10-assettool-at1-3.md)
+
 - **Local MCP engine bridge (2026-09-08)** — added a stdio MCP server and
   machine-readable command catalog for launching or attaching to the live
   Runtime agent endpoint. Typed tools expose GPU/CPU/combined profiler data,
@@ -483,6 +496,31 @@
   small `level/performance_profile.level` fixture contains the bunny and
   Cerberus; Sponza remains the later stress baseline. →
   [AP1 plan](asset/.plan/AP1.md), [AP1.0 journal](../.spec/journal/2026-09-09-asset-ap1-0.md)
+
+- **AssetTool AT1.0 import attribution (2026-09-09)** — model imports now
+  return and print bounded stage timings, process CPU/peak working-set
+  measurements, source/product byte counts, texture binding/cook counts, and
+  staging-write amplification. The Debug Sponza run completed at the user-
+  observed 1,509.4 seconds; RelWithDebInfo and repeat-cache evidence remain
+  open before AT1.0 acceptance. → [AT1 plan](asset/.plan/AT1.md),
+  [AT1.0 journal](../.spec/journal/2026-09-09-assettool-at1-0.md)
+
+- **AssetTool AT1.1 import amplification removal (2026-09-09)** — fresh
+  imports now retain only cooked product bytes, move those buffers into the
+  publication list, validate newly serialized Model/Texture containers
+  structurally without decoding payloads, and stage each product exactly once
+  before atomic hard-link publication. The focused 16-test asset suite passes;
+  Sponza post-change timing evidence remains open for AT1.6. →
+  [AT1 plan](asset/.plan/AT1.md),
+  [AT1.1 journal](../.spec/journal/2026-09-09-assettool-at1-1.md)
+
+- **AssetTool AT1.2 unique cook graph (2026-09-09)** — material texture
+  conversion now memoizes typed source/semantic/settings jobs, shares packed
+  metallic-roughness bindings and equivalent material references, and feeds
+  portable/block encoders from one prepared mip chain. Focused AssetTool tests
+  pass; a cold Debug Cerberus import measured 15.574 seconds with one decode
+  and one preparation for its unique texture job. → [AT1 plan](asset/.plan/AT1.md),
+  [AT1.2 journal](../.spec/journal/2026-09-09-assettool-at1-2.md)
 
 - **Asset AP1.1 single-verification native loading (2026-09-09)** — native
   Texture and Model products now compute their content hash and

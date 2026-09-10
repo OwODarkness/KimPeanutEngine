@@ -710,10 +710,16 @@ namespace kpengine::asset
                 if (IsRequested()) return true;
                 if (cancellation_requested_ && cancellation_requested_())
                 {
+                    externally_cancelled_.store(true, std::memory_order_release);
                     requested_.store(true, std::memory_order_release);
                     return true;
                 }
                 return false;
+            }
+
+            bool WasExternallyCancelled() const noexcept
+            {
+                return externally_cancelled_.load(std::memory_order_acquire);
             }
 
             void Request() noexcept
@@ -723,6 +729,7 @@ namespace kpengine::asset
 
         private:
             std::atomic_bool requested_{false};
+            std::atomic_bool externally_cancelled_{false};
             std::mutex cancellation_mutex_;
             std::function<bool()> cancellation_requested_;
         };
@@ -1287,6 +1294,10 @@ namespace kpengine::asset
                 std::size_t completed = 0;
                 while (completed < job_count && !stop.IsRequested())
                 {
+                    if (request.execution.before_completion_consume)
+                    {
+                        request.execution.before_completion_consume();
+                    }
                     std::uint64_t coordinator_wait = 0;
                     std::optional<TextureCompletion> completion = completions.Pop(coordinator_wait);
                     metrics.coordinator_wait_seconds +=
@@ -1326,9 +1337,12 @@ namespace kpengine::asset
                 if (stop.CheckCancellation())
                 {
                     stop_and_wake();
-                    Fail(ModelImportErrorCode::Cancelled, "model import was cancelled");
                 }
                 join_workers();
+                if (stop.WasExternallyCancelled())
+                {
+                    Fail(ModelImportErrorCode::Cancelled, "model import was cancelled");
+                }
                 if (const std::exception_ptr error = completions.FirstError())
                 {
                     std::rethrow_exception(error);

@@ -148,6 +148,9 @@ namespace kpengine::asset
         std::uint64_t texture_memory_budget_bytes{};
         std::uint32_t completion_queue_capacity{2};
         std::function<bool()> cancellation_requested;
+        // Test/diagnostic seam invoked by the coordinator before consuming a
+        // completion. It is intentionally not exposed by the AssetTool CLI.
+        std::function<void()> before_completion_consume;
     };
 
     struct ModelImportRequest
