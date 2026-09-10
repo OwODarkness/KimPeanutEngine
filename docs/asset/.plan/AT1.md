@@ -1,6 +1,7 @@
 # AT1 — AssetTool Import Throughput and Memory
 
-- Status: active; AT1.1 and AT1.2 landed, AT1.0 measurement remains open
+- Status: active; AT1.0 through AT1.6 performance work landed; cross-backend
+  smoke closure remains blocked by the existing D5 silhouette comparison
 - Parent roadmap: [AssetTool import performance](../TODO.md#assettool-import-performance-roadmap)
 - Execution spec: [AssetTool Import Performance](../../../.spec/specs/assettool-import-performance.md)
 - Related runtime work: [AP1 — Startup Asset Loading Performance](AP1.md)
@@ -11,9 +12,9 @@ The initial Sponza model import was reported at approximately 1,200 seconds
 with excessive process memory. AP1.2 and AP1.3 reduce the size and runtime cost
 of native Texture and Model products, but the initial offline production path
 performed redundant work and retained the complete cooked Texture closure
-before publication. AT1.1 and AT1.2 have since removed the first copy/write
-amplification and duplicate Texture preparation; bounded concurrent execution
-remains AT1.3.
+before publication. AT1.1 through AT1.3 have since removed the first copy/write
+amplification and duplicate Texture preparation, then added bounded concurrent
+cook/write execution. CPU compression throughput remains AT1.4.
 
 The observed import path has five independent forms of amplification:
 
@@ -32,9 +33,10 @@ The observed import path has five independent forms of amplification:
    candidate searches. A Debug build magnifies this cost, but Release alone
    does not remove the redundant work, copies, or unbounded lifetime.
 
-The no-op path is a separate cost center. `TryCacheHit` hashes recorded source
-dependencies, then reads, hashes, and structurally deserializes every archived
-product. This is a full integrity scan disguised as a routine cache probe.
+The no-op path is a separate cost center. Before AT1.5, `TryCacheHit` hashed
+recorded source dependencies, then read, hashed, and structurally deserialized
+every archived product. This was a full integrity scan disguised as a routine
+cache probe.
 
 ## Design question
 
@@ -151,16 +153,21 @@ Routine `import` distinguishes source freshness from archive auditing:
 - validate database identity, canonical product metadata, existence, and size;
 - reuse products without reading and deserializing their complete payloads when
   the immutable archive metadata and verification policy allow it; and
-- keep `AssetTool integrity` as the explicit full byte/hash/structure audit.
+- keep `AssetTool integrity` as the explicit full archive byte/hash audit while
+  leaving native runtime structure verification unchanged.
 
 If strict verification is required on every import, add a verification cache
 keyed by stable file identity, size, modification metadata, and expected content
-hash rather than silently weakening validation. The chosen trust policy must be
-recorded before AT1.5 implementation.
+hash rather than silently weakening validation. AT1.5 chooses the documented
+metadata trust policy for routine import and reserves strict verification for
+the explicit audit.
 
 ## Implementation sequence
 
 ### AT1.0 — Reproducible import baseline and attribution
+
+Status: complete; telemetry and the available baseline evidence are recorded
+in the AT1.0 journal.
 
 - Add elapsed time and byte counters for dependency probing, Assimp decode,
   image decode, semantic conversion, mip generation, portable serialization,
@@ -229,7 +236,10 @@ Exit: peak Texture-cook memory is bounded by the configured budget plus one
 documented oversized-job allowance and does not grow linearly with Texture
 count. One-worker and multi-worker runs publish identical product identities.
 
-### AT1.4 — CPU compression throughput
+### [AT1.4 — CPU compression throughput](AT1.4.md)
+
+Status: complete; `ReferenceV1` is the accepted production path and the
+candidate comparison is closed with `rgbcx` retained for diagnostics only.
 
 - Benchmark the existing scalar encoder against candidate SIMD/multithreaded
   implementations on representative color, normal, and packed textures.
@@ -241,11 +251,19 @@ count. One-worker and multi-worker runs publish identical product identities.
 - Measure encode time, quality, determinism, build/platform cost, and license or
   maintenance risk before selecting a dependency.
 
+The encoder boundary, candidate decision, cache identity, implementation
+slices, and quantitative acceptance gates are owned by the
+[AT1.4 stage contract](AT1.4.md).
+
 Exit: the selected CPU path materially reduces BC3/BC4/BC5 time, produces
 deterministic valid blocks, passes visual/quality thresholds, and remains usable
 in headless offline builds.
 
 ### AT1.5 — Fast no-op import and explicit integrity audit
+
+Status: complete. Routine cache hits use dependency hashes and product
+metadata checks without reading product bytes; explicit `integrity` performs
+the complete product hash scan.
 
 - Separate the ordinary freshness probe from `integrity`'s complete archive
   scan without changing native Runtime verification.
@@ -260,6 +278,10 @@ or read/deserialise the full Texture closure; the explicit integrity command
 continues to detect product corruption.
 
 ### AT1.6 — Sponza integration and optional GPU decision gate
+
+- Performance portion complete; the cross-backend smoke gate remains blocked
+  by the unrelated D5 Vulkan/OpenGL silhouette comparison. See the AT1.6
+  journal for exact measurements.
 
 - Run at least three RelWithDebInfo cold-import and no-op samples on the same
   reference machine and settings; record median and range.

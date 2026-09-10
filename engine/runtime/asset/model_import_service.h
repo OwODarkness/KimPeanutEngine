@@ -57,6 +57,8 @@ namespace kpengine::asset
         std::uint64_t unique_texture_product_count{};
         std::uint64_t texture_product_bytes{};
         std::uint64_t cache_hit_count{};
+        std::uint64_t cache_probe_dependency_count{};
+        std::uint64_t cache_probe_product_metadata_count{};
         std::uint64_t product_count{};
         std::uint64_t product_write_count{};
         std::uint64_t source_bytes_read{};

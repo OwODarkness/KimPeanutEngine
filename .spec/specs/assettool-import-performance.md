@@ -1,6 +1,6 @@
 # AssetTool Import Performance
 
-- Status: proposed
+- Status: active
 - Owner: project team
 - Parent TODO: [AssetTool import performance roadmap](../../docs/asset/TODO.md#assettool-import-performance-roadmap)
 - Design authority: [AT1 plan](../../docs/asset/.plan/AT1.md)
@@ -21,7 +21,12 @@ Decoded images and all serialized Texture products remain alive until the
 complete model is ready, product bytes are copied into a second publication
 collection, and new staged products are written twice. BC encoding is scalar
 and single-threaded. Routine cache reuse also performs a complete product
-integrity scan.
+integrity scan. AT1.5 now implements this as a dependency-hash and
+product-metadata fast probe; full product byte/hash verification remains an
+explicit archive audit. AT1.6 additionally records local dependency
+size/write-time metadata in an auxiliary archive table so an unchanged
+process invocation can reuse recorded dependency hashes without rescanning the
+source closure.
 
 The evidence and exact affected call paths are recorded in the
 [AT1 problem statement](../../docs/asset/.plan/AT1.md#problem).

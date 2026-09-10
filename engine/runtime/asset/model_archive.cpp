@@ -773,6 +773,7 @@ namespace kpengine::asset
         }
 
         std::unique_ptr<database::Database> database;
+        bool dependency_metadata_available{false};
     };
 
     ModelArchiveDatabase::ModelArchiveDatabase(std::filesystem::path database_path,
@@ -915,7 +916,31 @@ namespace kpengine::asset
                 transaction.Commit();
             });
         }
-        IntegrityCheck();
+        if (open_mode_ == ModelArchiveOpenMode::ReadWrite)
+        {
+            CatchDatabaseErrors([&]
+            {
+                impl_->database->Execute(
+                    "CREATE TABLE IF NOT EXISTS source_dependency_metadata ("
+                    "source_id INTEGER NOT NULL, normalized_path TEXT NOT NULL, "
+                    "byte_size INTEGER NOT NULL, last_write_time INTEGER NOT NULL, "
+                    "PRIMARY KEY(source_id, normalized_path), "
+                    "FOREIGN KEY(source_id, normalized_path) REFERENCES "
+                    "source_dependencies(source_id, normalized_path) ON DELETE CASCADE);");
+            });
+            impl_->dependency_metadata_available = true;
+        }
+        else
+        {
+            impl_->dependency_metadata_available = CatchDatabaseErrors([&]
+            {
+                auto statement = impl_->database->Prepare(
+                    "SELECT 1 FROM sqlite_master WHERE type='table' AND "
+                    "name='source_dependency_metadata';");
+                return statement.Step() == database::StatementStep::Row;
+            });
+        }
+        QuickDatabaseCheck();
         CatchDatabaseErrors([&]
         {
             auto statement = impl_->database->Prepare(
@@ -969,6 +994,30 @@ namespace kpengine::asset
             {
                 snapshot.dependencies.push_back(
                     {dependency_statement.ColumnText(0), FromBlob(dependency_statement.ColumnBlob(1))});
+            }
+
+            if (impl_->dependency_metadata_available)
+            {
+                auto metadata_statement = impl_->database->Prepare(
+                    "SELECT normalized_path, byte_size, last_write_time "
+                    "FROM source_dependency_metadata WHERE source_id=?;");
+                metadata_statement.Bind(1, snapshot.source.id);
+                while (metadata_statement.Step() == database::StatementStep::Row)
+                {
+                    const std::string path = metadata_statement.ColumnText(0);
+                    const auto dependency = std::find_if(
+                        snapshot.dependencies.begin(), snapshot.dependencies.end(),
+                        [&path](const SourceDependencyRecord &candidate)
+                        {
+                            return candidate.normalized_path == path;
+                        });
+                    if (dependency != snapshot.dependencies.end())
+                    {
+                        dependency->byte_size = static_cast<std::uint64_t>(
+                            metadata_statement.ColumnInt64(1));
+                        dependency->last_write_time = metadata_statement.ColumnInt64(2);
+                    }
+                }
             }
 
             auto product_statement = impl_->database->Prepare(
@@ -1257,7 +1306,8 @@ namespace kpengine::asset
                 source_id = impl_->database->LastInsertRowID();
             }
 
-            for (const char *table : {"source_dependencies", "source_products", "material_overrides"})
+            for (const char *table : {"source_dependency_metadata", "source_dependencies",
+                                      "source_products", "material_overrides"})
             {
                 auto delete_statement = impl_->database->Prepare(
                     std::string{"DELETE FROM "} + table + " WHERE source_id=?;");
@@ -1275,6 +1325,20 @@ namespace kpengine::asset
                 (void)dependency_insert.Step();
                 dependency_insert.Reset();
                 dependency_insert.ClearBindings();
+            }
+
+            auto dependency_metadata_insert = impl_->database->Prepare(
+                "INSERT INTO source_dependency_metadata(source_id, normalized_path, byte_size, "
+                "last_write_time) VALUES(?,?,?,?);");
+            for (const SourceDependencyRecord &dependency : dependencies)
+            {
+                dependency_metadata_insert.Bind(1, source_id);
+                dependency_metadata_insert.Bind(2, dependency.normalized_path);
+                dependency_metadata_insert.Bind(3, static_cast<std::int64_t>(dependency.byte_size));
+                dependency_metadata_insert.Bind(4, dependency.last_write_time);
+                (void)dependency_metadata_insert.Step();
+                dependency_metadata_insert.Reset();
+                dependency_metadata_insert.ClearBindings();
             }
 
             auto product_reference_insert = impl_->database->Prepare(
@@ -1328,7 +1392,7 @@ namespace kpengine::asset
         });
     }
 
-    ArchiveProbeResult ModelArchiveDatabase::ProbeSource(const SourceProbeRequest &request)
+    ArchiveProbeResult ModelArchiveDatabase::ProbeSourceFast(const SourceProbeRequest &request)
     {
         ArchiveProbeResult result;
         result.snapshot = FindSource(request.normalized_path);
@@ -1366,7 +1430,21 @@ namespace kpengine::asset
             {
                 try
                 {
-                    VerifyProductFile(product);
+                    ValidateHashPath(product);
+                    const std::filesystem::path path = ArchiveRoot() / product.relative_path;
+                    std::error_code error;
+                    const auto size = std::filesystem::file_size(path, error);
+                    if (error)
+                    {
+                        throw ModelArchiveError(ModelArchiveErrorCode::MissingProduct,
+                                                "archive product is missing: " + path.string());
+                    }
+                    if (size != product.byte_size)
+                    {
+                        throw ModelArchiveError(
+                            ModelArchiveErrorCode::CorruptProduct,
+                            "archive product size failed metadata verification: " + path.string());
+                    }
                 }
                 catch (const ModelArchiveError &error)
                 {
@@ -1383,7 +1461,33 @@ namespace kpengine::asset
         return result;
     }
 
-    void ModelArchiveDatabase::IntegrityCheck()
+    ArchiveProbeResult ModelArchiveDatabase::ProbeSource(const SourceProbeRequest &request)
+    {
+        ArchiveProbeResult result = ProbeSourceFast(request);
+        if (result.status != ArchiveProbeStatus::UpToDate || !result.snapshot.has_value())
+        {
+            return result;
+        }
+        for (const ProductRecord &product : result.snapshot->products)
+        {
+            try
+            {
+                VerifyProductFile(product);
+            }
+            catch (const ModelArchiveError &error)
+            {
+                result.status = error.Code() == ModelArchiveErrorCode::MissingProduct
+                                    ? ArchiveProbeStatus::MissingProduct
+                                    : ArchiveProbeStatus::CorruptProduct;
+                result.diagnostic = error.what();
+                return result;
+            }
+        }
+        result.diagnostic = ProbeDiagnostic(result.status);
+        return result;
+    }
+
+    void ModelArchiveDatabase::QuickDatabaseCheck()
     {
         CatchDatabaseErrors([&]
         {
@@ -1393,6 +1497,25 @@ namespace kpengine::asset
             {
                 throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
                                         "archive database quick_check failed");
+            }
+        });
+    }
+
+    void ModelArchiveDatabase::IntegrityCheck()
+    {
+        QuickDatabaseCheck();
+        CatchDatabaseErrors([&]
+        {
+            auto statement = impl_->database->Prepare(
+                "SELECT content_hash, asset_type, relative_path, byte_size, schema_version "
+                "FROM products ORDER BY relative_path;");
+            while (statement.Step() == database::StatementStep::Row)
+            {
+                VerifyProductFile({FromBlob(statement.ColumnBlob(0)),
+                                   static_cast<ArchiveProductType>(statement.ColumnInt64(1)),
+                                   statement.ColumnText(2),
+                                   static_cast<std::uint64_t>(statement.ColumnInt64(3)),
+                                   static_cast<std::uint32_t>(statement.ColumnInt64(4))});
             }
         });
     }

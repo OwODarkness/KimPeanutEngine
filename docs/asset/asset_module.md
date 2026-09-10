@@ -30,6 +30,22 @@ compatibility option controlled by `KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT`; the
 native `.model` and `.texture` paths do not call the importer or mutate the
 archive database.
 
+## Effective model import command
+
+For the normal performance-oriented import, use the repository wrapper:
+
+```bat
+tools\asset-import.bat import model\sponza\main_sponza\NewSponza_Main_glTF_003.gltf
+tools\asset-import.bat reimport model\sponza\main_sponza\NewSponza_Main_glTF_003.gltf
+```
+
+It invokes the RelWithDebInfo `KimPeanutAssetTool` with the accepted AT1.6
+profile: BC `ReferenceV1`/`Balanced`, eight workers, a 1 GiB Texture memory
+budget, and a completion queue depth of two. Repeated runs automatically use
+the fast unchanged-source path. Use `--asset-root` or `--archive-root` only
+when importing into an isolated asset/archive tree; the full AssetTool CLI
+remains available for codec experiments and diagnostics.
+
 ## Key types
 
 ### `AssetType` and `AssetID` — [`common.h`](../../engine/runtime/asset/common.h)

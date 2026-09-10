@@ -2,11 +2,11 @@
 
 ## Status
 
-AT1.4.1 landed. AT1.4.2's settings/cache identity, encoder-only metrics, and
-per-mip cancellation seam are in place. AT1.4.3 is integrated and its
-concurrent initialization coverage passes, but its first Sponza bakeoff fails
-the throughput gate, so `ReferenceV1` remains the default. AT1.4.4's
-independent BC decoder and semantic quality gate now pass in RelWithDebInfo.
+AT1.4 is complete. AT1.4.1's allocation-free `ReferenceV1` path, AT1.4.2's
+settings/cache identity and metrics, AT1.4.3's pinned candidate integration,
+and AT1.4.4's independent quality/determinism checks are landed. The candidate
+fails the Sponza throughput gate, so `ReferenceV1` remains the accepted
+production default and `rgbcx` is diagnostic-only.
 The first live-buffer cleanup also landed: decoded pixels and compression
 storage are moved/consumed in place, and native material cooking releases CPU
 mip chains after serialization. This improves measured cook time but has not
@@ -158,7 +158,7 @@ The mode must never change during the process lifetime.
 Implementation pins an exact upstream commit, preserves its license notice,
 adds a `KP::Rgbcx` CMake wrapper, and documents the provenance in
 `third_party/README.md`. The user-approved vendor addition is complete; the
-remaining gate is whether the candidate is good enough to become the default.
+candidate promotion decision is closed with `ReferenceV1` as the default.
 
 ### Alternatives considered
 
@@ -176,18 +176,17 @@ remaining gate is whether the candidate is good enough to become the default.
 
 The selected first integration is therefore `rgbcx`, not a new handwritten
 SIMD encoder. AT1.4 remains an evidence-driven CPU-compression stage rather than
-promising that its implementation must use SIMD. The first pinned `rgbcx`
-bakeoff is recorded in the AT1.4 journal; it is diagnostic-only until all
-quality and throughput gates pass.
+promising that its implementation must use SIMD. The pinned `rgbcx` bakeoff is
+recorded in the AT1.4 journal; it remains diagnostic-only after failing the
+throughput promotion gate.
 
 ## Work breakdown
 
 ### AT1.4.0 — Freeze measurement and correctness fixtures
 
-Status: deterministic in-source quality fixtures and independent decoded
-quality measurements are landed. The three-run ReferenceV1 baseline is now
-recorded; literal pre-change compressed-byte/decoded-quality fixtures remain
-measurement follow-up.
+Status: complete; deterministic fixtures, independent decoded quality
+measurements, and the three-run ReferenceV1 baseline are recorded. Literal
+pre-change fixtures were not required for the accepted production decision.
 
 - Record a three-run RelWithDebInfo Sponza baseline using the landed AT1.3
   defaults and the same machine/configuration used by its journal.
@@ -205,8 +204,7 @@ cleanup, encoder changes, and pipeline effects.
 ### AT1.4.1 — Make the reference encoder allocation-free
 
 Status: landed. The exact-sized mip buffer and direct BC3/BC4/BC5 destination
-writes preserve clamped edge behavior and deterministic output. AT1.4.0
-measurement fixtures and AT1.4.2's public encoder/settings seam remain open.
+writes preserve clamped edge behavior and deterministic output.
 
 - Pre-size each mip output to its exact block-compressed byte count.
 - Change block encoders to write to fixed destination pointers/spans.
@@ -288,11 +286,13 @@ diagnostic-only because AT1.4.5 throughput already rejects it.
 
 Exit: the candidate meets every semantic quality gate and produces identical
 bytes independent of scheduling. A failed candidate remains selectable only
-for diagnostics and cannot become the production default. The current fixture
-quality and focused determinism evidence pass; full three-run and runtime
-acceptance evidence remains in AT1.4.5.
+for diagnostics and cannot become the production default. The accepted result
+is recorded in the AT1.4 journal.
 
 ### AT1.4.5 — Sponza and runtime acceptance
+
+Status: complete; the production decision is closed with `ReferenceV1` as the
+default and `rgbcx` retained for diagnostics after failing the throughput gate.
 
 - Run at least three RelWithDebInfo Sponza imports for the reference and
   candidate with identical AT1.3 worker, queue, and memory settings. The
@@ -312,13 +312,12 @@ acceptance evidence remains in AT1.4.5.
 
 The current 4 GiB control is diagnostic only: it reaches 21.93 s TextureCook
 with eight active jobs but peaks at 1.47 GiB, so it cannot replace the 1 GiB
-acceptance policy. The next performance change must reduce live per-job storage
-before increasing admission under the existing memory gate.
+acceptance policy. AT1.4 leaves that policy unchanged.
 
-Exit: all performance, memory, quality, determinism, failure, and visual gates
-pass. Only then make `RgbcxV113/Balanced` the default. If throughput or quality
-fails, retain the allocation-free reference default and record a separate
-Compressonator Core decision instead of weakening the gates.
+Exit: all required reference-path correctness, memory, determinism, failure,
+and visual gates pass. Candidate promotion is conditional; when throughput or
+quality fails, retaining the allocation-free reference default is the accepted
+terminal outcome for AT1.4.
 
 ## Expected change surface
 

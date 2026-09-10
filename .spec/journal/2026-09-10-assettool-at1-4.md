@@ -183,3 +183,13 @@ Compared with the current three-run median, this is 1.909323 s faster overall
 and 1.973565 s faster in TextureCook. Peak RSS and admission did not change
 materially, so the 1-GiB estimator remains unchanged pending direct evidence
 that a lower reservation is safe.
+
+## Closure decision — 2026-09-10
+
+The user accepted AT1.4 as complete. The production outcome is the
+allocation-free `ReferenceV1` path with versioned settings, deterministic
+quality coverage, bounded cancellation, and the measured lifetime cleanup.
+The pinned `rgbcx` candidate remains available for diagnostics but is not made
+the default because its Sponza BC3 throughput fails the promotion gate. The
+AT1.4 plan's candidate-promotion thresholds are therefore recorded as a
+negative candidate result, not as unfinished work for this stage.

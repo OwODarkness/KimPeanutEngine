@@ -372,6 +372,9 @@ namespace
                   << "  cache_hit_count: " << metrics.cache_hit_count << '\n'
                   << "  product_count: " << metrics.product_count << '\n'
                   << "  product_write_count: " << metrics.product_write_count << '\n'
+                  << "  cache_probe_dependency_count: " << metrics.cache_probe_dependency_count << '\n'
+                  << "  cache_probe_product_metadata_count: "
+                  << metrics.cache_probe_product_metadata_count << '\n'
                   << "  source_bytes_read: " << metrics.source_bytes_read << '\n'
                   << "  product_bytes_read: " << metrics.product_bytes_read << '\n'
                   << "  bytes_written: " << metrics.bytes_written << '\n'

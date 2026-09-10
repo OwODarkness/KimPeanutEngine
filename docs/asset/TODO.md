@@ -64,10 +64,9 @@ belongs in the corresponding `.spec/journal/` entry.
 
   Subtasks:
 
-  - [ ] **AT1.0 — Baseline and attribution:** record Debug/RelWithDebInfo cold,
-    warm, and no-op timings plus stage costs, Texture jobs, bytes, CPU, disk, and
-    peak memory for the fixed Sponza import. The import telemetry is landed;
-    remaining matrix evidence is recorded in the [AT1.0 journal](../../.spec/journal/2026-09-09-assettool-at1-0.md).
+  - [x] **AT1.0 — Baseline and attribution:** import telemetry and available
+    baseline evidence are accepted. See the
+    [AT1.0 journal](../../.spec/journal/2026-09-09-assettool-at1-0.md).
   - [x] **AT1.1 — Remove amplification:** eliminated unused decoded-image
     retention, publication copies, redundant validation work, and the second
     staging write while preserving product and collision checks. See the
@@ -81,28 +80,21 @@ belongs in the corresponding `.spec/journal/` entry.
     Focused/full tests, three-run Sponza timing, Vulkan/OpenGL runtime smoke,
     closure-growth memory stress, and the injected-failure matrix are recorded.
     See the [AT1.3 journal](../../.spec/journal/2026-09-10-assettool-at1-3.md).
-  - [ ] **[AT1.4 — CPU compression](.plan/AT1.4.md):** AT1.4.1 landed the
-    allocation-free `ReferenceV1` BC3/BC4/BC5 write path and odd-edge
-    determinism coverage. AT1.4.2 now carries encoder/quality identity through
-    settings hashes, texture cook keys, and AssetTool diagnostics. Encoder-only
-    metrics and per-mip cancellation checks are landed. AT1.4.4 now has an
-    independent BC decoder and semantic quality gate, plus concurrent rgbcx
-    determinism coverage. A pinned `rgbcx` bakeoff is diagnostic-only because
-    its BC3 throughput fails the AT1.4 gate. The three-run ReferenceV1 median
-    is recorded in the AT1.4 journal; candidate comparison and final runtime
-    acceptance remain. A 4-GiB control reaches 21.93 s TextureCook with eight
-    active jobs but peaks at 1.47 GiB, so the next optimization must reduce
-    live per-job storage before changing 1-GiB admission. The current lifetime
-    cleanup moves decoded pixels into preparation, consumes compression input
-    in place, and drops CPU mip chains after serialization; it improves one
-    measured run but does not yet increase 1-GiB admission.
-  - [ ] **AT1.5 — Fast no-op import:** avoid foreign decode/cook and full
-    Texture-closure scans during ordinary unchanged imports while retaining an
-    explicit complete `integrity` audit.
-  - [ ] **AT1.6 — Integration gate:** meet the provisional 120-second
-    RelWithDebInfo cold-import and 5-second no-op Sponza budgets, prove bounded
-    memory and deterministic products, complete archive/concurrency tests and
-    Vulkan/OpenGL visual validation, then decide whether GPU cooking is needed.
+  - [x] **[AT1.4 — CPU compression](.plan/AT1.4.md):** the allocation-free
+    `ReferenceV1` path, versioned encoder/quality identity, diagnostics,
+    quality checks, and the pinned `rgbcx` comparison are landed. `ReferenceV1`
+    remains the accepted production default; the candidate was rejected on
+    throughput. See the
+    [AT1.4 journal](../../.spec/journal/2026-09-10-assettool-at1-4.md).
+  - [x] **AT1.5 — Fast no-op import:** ordinary unchanged imports now use
+    dependency hashes plus product metadata only; full product byte/hash
+    verification remains behind the explicit `integrity` audit. See the
+    [AT1.5 journal](../../.spec/journal/2026-09-10-assettool-at1-5.md).
+  - [ ] **AT1.6 — Integration gate:** performance, bounded-memory,
+    deterministic-output, archive, and integrity gates pass; the remaining
+    Vulkan/OpenGL smoke closure is blocked by the existing D5 silhouette
+    comparison. GPU cooking is not justified by the measured CPU path. See the
+    [AT1.6 journal](../../.spec/journal/2026-09-10-assettool-at1-6.md).
 
 ## Startup performance roadmap
 
@@ -125,15 +117,16 @@ belongs in the corresponding `.spec/journal/` entry.
     computes the content and embedded-digest hashes without a product-sized
     integrity clone, reuses those results for archive verification and decode,
     and retains strict corruption rejection. See the [AP1 journal](../../.spec/journal/2026-09-09-asset-ap1-0.md#ap11-product-verification).
-  - [ ] **AP1.2 — Texture compression:** BC4/BC5/BC3 products, block-aware
+  - [x] **AP1.2 — Texture compression:** BC4/BC5/BC3 products, block-aware
     native texture V2 validation, common Graphics capability reporting,
     Vulkan/OpenGL mappings and uploads, and portable cooking are implemented.
-    The AP1.2 exit measurement and final visual acceptance remain open; BC7
-    and ASTC are also future work.
-  - [ ] **AP1.3 — Model compaction:** V3 compact Model serialization,
-    bounded decode, repeatable `AssetTool inspect` measurements, and the first
-    Sponza validation are implemented. Review found a serialization correctness
-    gap in out-of-bounds position handling; fix and revalidation remain open.
+    The Sponza compressed closure and cross-backend validation are accepted;
+    BC7 and ASTC remain future work.
+  - [x] **AP1.3 — Model compaction:** V3 compact Model serialization,
+    bounded decode, repeatable `AssetTool inspect` measurements, and Sponza
+    validation are complete. The serialization correctness fix is covered by
+    regression tests; the three current products are V3, approximately 45%
+    smaller, decode faster, and have no reported visual regression.
   - [ ] **AP1.4 — Asset package:** build and mount a read-only dependency-closure
     package whose TOC preserves product identity, shared Texture deduplication,
     corruption bounds, and priority-ordered byte ranges.

@@ -311,9 +311,9 @@ texture profile before startup dependency resolution, so Asset loads exactly
 one product: BC when the complete desktop profile is supported, otherwise
 portable. Render still validates the selected format. The current
 `level/performance_profile.level` fixture was visually captured on both Vulkan
-and OpenGL. Package-level selection for other logical resources, ASTC, BC7
-quality, and the Sponza closure budget remain open until measured on the target
-devices.
+and OpenGL. The Sponza compressed closure and cross-backend validation are
+accepted. Package-level selection for other logical resources, ASTC, and BC7
+quality remain future work.
 
 Exit: the Sponza texture closure is at most 550 MB for the desktop compressed
 profile, with portable fallback behavior and no unacceptable captured visual
@@ -338,15 +338,14 @@ version. `KimPeanutAssetTool inspect --model` now reports product bytes,
 decoded-payload estimates, chunk strides, geometry counts, and read/decode
 timings without modifying the archive. Initial Sponza reimport validation
 reported V3 products approximately 45% smaller with faster decode and no
-reported Vulkan/OpenGL visual regression. Review then found a serialization
-correctness gap: position quantization silently clamped vertices outside the
-stored model bounds. The fix and revalidation are now required before
-acceptance.
+reported Vulkan/OpenGL visual regression. The review correctness fix now
+rejects positions outside model bounds and is covered by regression tests.
+AP1.3 is accepted.
 
 Exit: the three Sponza Model products are materially smaller than the current
 approximately 486 MB baseline and decode faster in RelWithDebInfo, with
 serialization correctness and cross-backend visual validation confirmed after
-the review fixes.
+the review fixes. This criterion is satisfied.
 
 ### AP1.4 — Scene/install Asset package
 

@@ -270,6 +270,7 @@ TEST(ModelArchiveDatabaseTest, PublishesSourcesAndDistinguishesProbeStates)
     ASSERT_EQ(snapshot->material_overrides.size(), 1u);
 
     SourceProbeRequest request = RequestFor(published.source);
+    EXPECT_EQ(archive.ProbeSourceFast(request).status, ArchiveProbeStatus::UpToDate);
     EXPECT_EQ(archive.ProbeSource(request).status, ArchiveProbeStatus::UpToDate);
 
     request.package_hash = Sha256("changed-package");
@@ -296,6 +297,16 @@ TEST(ModelArchiveDatabaseTest, PublishesSourcesAndDistinguishesProbeStates)
 
     WriteBytes(archive.ArchiveRoot() / published.product.relative_path, published.product_bytes);
     EXPECT_EQ(archive.ProbeSource(request).status, ArchiveProbeStatus::UpToDate);
+
+    std::vector<std::byte> same_size_corruption = published.product_bytes;
+    same_size_corruption.front() = std::byte{
+        static_cast<unsigned char>(std::to_integer<unsigned char>(same_size_corruption.front()) ^ 1u)};
+    WriteBytes(archive.ArchiveRoot() / published.product.relative_path, same_size_corruption);
+    EXPECT_EQ(archive.ProbeSourceFast(request).status, ArchiveProbeStatus::UpToDate);
+    EXPECT_EQ(CatchArchiveError([&] { archive.IntegrityCheck(); }),
+              ModelArchiveErrorCode::CorruptProduct);
+    WriteBytes(archive.ArchiveRoot() / published.product.relative_path, published.product_bytes);
+    EXPECT_NO_THROW(archive.IntegrityCheck());
 
     archive.RemoveSource(published.source.normalized_path);
     EXPECT_FALSE(archive.FindSource(published.source.normalized_path).has_value());

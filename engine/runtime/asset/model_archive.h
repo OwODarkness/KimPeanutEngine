@@ -49,6 +49,8 @@ namespace kpengine::asset
     {
         std::string normalized_path;
         ContentHash content_hash;
+        std::uint64_t byte_size{};
+        std::int64_t last_write_time{};
     };
 
     struct ProductRecord
@@ -150,6 +152,10 @@ namespace kpengine::asset
                            const std::vector<MaterialOverrideRecord> &material_overrides);
         void RemoveSource(std::string_view normalized_path);
 
+        // Fast routine probe: validates source identity and product metadata
+        // without reading product bytes. Full byte/hash verification remains
+        // available through ProbeSource and IntegrityCheck.
+        ArchiveProbeResult ProbeSourceFast(const SourceProbeRequest &request);
         ArchiveProbeResult ProbeSource(const SourceProbeRequest &request);
         void IntegrityCheck();
 
@@ -159,6 +165,7 @@ namespace kpengine::asset
         void Initialize(std::int32_t busy_timeout_ms);
         void EnsureSchema();
         void ConfigureConnection(std::int32_t busy_timeout_ms);
+        void QuickDatabaseCheck();
         void VerifyProductFile(const ProductRecord &product) const;
 
         std::filesystem::path database_path_;

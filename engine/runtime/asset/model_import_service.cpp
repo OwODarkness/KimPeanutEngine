@@ -380,7 +380,18 @@ namespace kpengine::asset
             result.reserve(unique.size());
             for (const auto &[path, hash] : unique)
             {
-                result.push_back({path, hash});
+                const std::filesystem::path resolved = asset_root / path;
+                std::error_code size_error;
+                const std::uintmax_t byte_count = std::filesystem::file_size(resolved, size_error);
+                std::error_code write_time_error;
+                const auto write_time = std::filesystem::last_write_time(resolved, write_time_error);
+                if (size_error || write_time_error)
+                {
+                    Fail(ModelImportErrorCode::IoError,
+                         "failed to determine dependency metadata: " + resolved.string());
+                }
+                result.push_back({path, hash, static_cast<std::uint64_t>(byte_count),
+                                  static_cast<std::int64_t>(write_time.time_since_epoch().count())});
             }
             return result;
         }
@@ -402,9 +413,27 @@ namespace kpengine::asset
                     throw ModelArchiveError(ModelArchiveErrorCode::IoError,
                                             "failed to determine dependency size: " + path.string());
                 }
+                std::error_code write_time_error;
+                const auto write_time = std::filesystem::last_write_time(path, write_time_error);
+                if (write_time_error)
+                {
+                    throw ModelArchiveError(
+                        ModelArchiveErrorCode::IoError,
+                        "failed to determine dependency timestamp: " + path.string());
+                }
+                const std::int64_t write_time_key =
+                    static_cast<std::int64_t>(write_time.time_since_epoch().count());
+                if (dependency.byte_size == byte_count && dependency.last_write_time == write_time_key &&
+                    dependency.last_write_time != 0)
+                {
+                    result.push_back({normalized, dependency.content_hash,
+                                      static_cast<std::uint64_t>(byte_count), write_time_key});
+                    continue;
+                }
                 metrics.source_bytes_read += byte_count;
                 const ContentHash current = Sha256File(path);
-                result.push_back({normalized, current});
+                result.push_back({normalized, current, static_cast<std::uint64_t>(byte_count),
+                                  write_time_key});
             }
             return result;
         }
@@ -565,24 +594,19 @@ namespace kpengine::asset
                     }
                     return result;
                 }());
-            const ArchiveProbeResult probe = archive.ProbeSource(
+            metrics.cache_probe_dependency_count = dependencies.size();
+            const ArchiveProbeResult probe = archive.ProbeSourceFast(
                 {source_relative_path, package_hash, request.settings.importer_id,
                  request.settings.importer_version, settings_hash,
                  request.settings.native_model_version});
+            if (probe.snapshot.has_value())
+            {
+                metrics.cache_probe_product_metadata_count = probe.snapshot->products.size();
+            }
             if (probe.status != ArchiveProbeStatus::UpToDate || !probe.snapshot.has_value())
             {
                 return std::nullopt;
             }
-            try
-            {
-                MetricTimer timer(metrics, ModelImportMetricStage::ProductValidate);
-                ValidateProducts(archive_root, *probe.snapshot, metrics);
-            }
-            catch (const ModelImportError &)
-            {
-                return std::nullopt;
-            }
-
             ModelImportResult result;
             result.status = ModelImportStatus::UpToDate;
             result.metrics = metrics;

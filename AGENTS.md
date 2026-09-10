@@ -156,4 +156,6 @@ Never claim a task is complete based only on compilation if the task changes run
 - Do not commit build directories, generated binaries, logs, or temporary captures.
 - Do not use destructive Git commands without explicit user instruction.
 - Preserve existing uncommitted changes unless the user asks for cleanup or replacement.
+- Use Conventional Commits for commit subjects: `<type>(<scope>): <imperative
+  description>` (for example, `feat(asset): add bounded import pipeline`).
 - Keep comments short and explain non-obvious reasons; put extended rationale in `docs/`.

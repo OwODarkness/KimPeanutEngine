@@ -100,29 +100,34 @@
   → [AT1.3 plan](asset/.plan/AT1.3.md),
   [AT1.3 journal](../.spec/journal/2026-09-10-assettool-at1-3.md)
 
-- **AssetTool AT1.4.3 compression bakeoff (2026-09-10)** — BC3, BC4,
-  and BC5 cooking now allocates each mip payload at its exact block-compressed
-  size and writes blocks directly into that storage. The per-block output
-  growth and BC3 alpha temporary vector are gone; semantic routing, clamped
-  edges, byte order, and deterministic products remain unchanged. Versioned
-  encoder/quality settings now participate in model and texture cook identity,
-  and AssetTool exposes the selection. Encoder-only metrics and cancellation
-  checks are now exposed, and a pinned `rgbcx` candidate is available for
-  diagnostics. Independent BC decoding and semantic quality checks pass for
-  the current fixture set, while concurrent initialization remains
-  deterministic. Its BC3 throughput fails the Sponza gate at both Fast and
-  Balanced quality, so `ReferenceV1` remains the production default. Three
-  fresh ReferenceV1 runs establish a 62.563 s median total and 40.501 s
-  median TextureCook baseline. A 4-GiB diagnostic control reaches 21.927 s
-  TextureCook with eight active jobs but peaks at 1.47 GiB, so the 1-GiB
-  bounded policy remains unchanged. The next lifetime slice moves decoded
-  pixels into preparation, removes the redundant compression mip-chain copy,
-  and releases prepared/profile CPU data before publication. A fresh
-  same-policy run measured 38.527 s TextureCook and 60.654 s total; peak
-  working set remained about 750 MB and admission remained three jobs, so the
-  estimator was not lowered yet. →
+- **AssetTool AT1.4 CPU compression (complete 2026-09-10)** — the allocation-free
+  `ReferenceV1` path, versioned encoder/quality identity, diagnostics, quality
+  checks, and pinned `rgbcx` comparison are landed. The lifetime cleanup moves
+  decoded pixels and releases intermediate CPU mip data. `ReferenceV1` remains
+  the accepted production default; `rgbcx` is diagnostic-only after failing
+  the throughput gate. →
   [AT1.4 plan](asset/.plan/AT1.4.md),
   [AT1.4 journal](../.spec/journal/2026-09-10-assettool-at1-4.md)
+
+- **AssetTool AT1.5 fast no-op import (complete 2026-09-10)** — routine cache
+  hits now hash recorded source dependencies and check product metadata without
+  reading or deserializing native product bytes. Missing/truncated products
+  still rebuild; same-size replacement and full archive corruption remain the
+  explicit `integrity` audit's responsibility. Cache-probe counters and byte
+  telemetry are printed by AssetTool. →
+  [AT1 plan](asset/.plan/AT1.md),
+  [AT1.5 journal](../.spec/journal/2026-09-10-assettool-at1-5.md)
+
+- **AssetTool AT1.6 integration performance gate (2026-09-10)** — added a
+  transactional dependency metadata cache that reuses recorded source hashes
+  when size/write-time identity is unchanged. Three fresh RelWithDebInfo
+  Sponza samples measured 60.49–61.03 s cold and 0.031–0.035 s no-op, with
+  2.107 GB written and approximately 750 MB peak working set; one-worker and
+  default-worker archives were byte-identical and passed integrity. The
+  current GraphicsSmoke executable still fails the unrelated D5
+  Vulkan/OpenGL silhouette comparison, so AT1.6 remains open only for that
+  cross-backend gate. → [AT1 plan](asset/.plan/AT1.md),
+  [AT1.6 journal](../.spec/journal/2026-09-10-assettool-at1-6.md)
 
 - **Local MCP engine bridge (2026-09-08)** — added a stdio MCP server and
   machine-readable command catalog for launching or attaching to the live
@@ -521,12 +526,12 @@
   Cerberus; Sponza remains the later stress baseline. →
   [AP1 plan](asset/.plan/AP1.md), [AP1.0 journal](../.spec/journal/2026-09-09-asset-ap1-0.md)
 
-- **AssetTool AT1.0 import attribution (2026-09-09)** — model imports now
+- **AssetTool AT1.0 import attribution (accepted 2026-09-10)** — model imports now
   return and print bounded stage timings, process CPU/peak working-set
   measurements, source/product byte counts, texture binding/cook counts, and
   staging-write amplification. The Debug Sponza run completed at the user-
-  observed 1,509.4 seconds; RelWithDebInfo and repeat-cache evidence remain
-  open before AT1.0 acceptance. → [AT1 plan](asset/.plan/AT1.md),
+  observed 1,509.4 seconds. The available baseline evidence is accepted for
+  AT1.0; detailed evidence remains in the journal. → [AT1 plan](asset/.plan/AT1.md),
   [AT1.0 journal](../.spec/journal/2026-09-09-assettool-at1-0.md)
 
 - **AssetTool AT1.1 import amplification removal (2026-09-09)** — fresh
@@ -561,9 +566,8 @@
   Vulkan/OpenGL compressed uploads, and reports per-format backend capability.
   Portable RGBA products remain available. Material V2 now publishes portable
   and BC alternatives, and Runtime selects exactly one supported profile before
-  Asset dependency loading. The implementation slice is landed, but AP1.2's
-  exit measurement and final visual acceptance remain open; BC7/ASTC and
-  Sponza closure measurement also remain open. →
+  Asset dependency loading. The Sponza compressed closure and Vulkan/OpenGL
+  validation are accepted; BC7/ASTC remain future work. →
   [AP1 plan](asset/.plan/AP1.md),
   [AP1.2 journal](../.spec/journal/2026-09-09-asset-ap1-0.md#ap12-gpu-native-texture-compression)
 
@@ -571,10 +575,10 @@
   now quantizes positions, octahedrally encodes normal/tangent data, stores
   half UVs and bitangent handedness, uses 16-bit indices when possible, and
   reorders/removes vertices by first use. Runtime decodes into the existing
-  CPU mesh ABI; V1/V2 products remain readable. Initial Sponza validation
-  reported approximately 45% smaller products and faster decode, but review
-  found a V3 serialization correctness gap for positions outside model bounds;
-  AP1.3 remains pending fix and revalidation. →
+  CPU mesh ABI; V1/V2 products remain readable. After the bounds-serialization
+  fix, the three Sponza products are V3, approximately 45% smaller, decode
+  faster, and have no reported Vulkan/OpenGL visual regression. AP1.3 is
+  accepted. →
   [AP1 plan](asset/.plan/AP1.md),
   [AP1 journal](../.spec/journal/2026-09-09-asset-ap1-0.md#ap13-acceptance)
 

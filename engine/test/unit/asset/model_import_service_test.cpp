@@ -204,7 +204,7 @@ namespace
     }
 }
 
-TEST(ModelImportServiceTest, PublishesProductsAndRepeatsAsVerifiedCacheHit)
+TEST(ModelImportServiceTest, PublishesProductsAndRepeatsAsFastCacheHit)
 {
     ImportFixture fixture;
     ModelImportService service;
@@ -229,7 +229,16 @@ TEST(ModelImportServiceTest, PublishesProductsAndRepeatsAsVerifiedCacheHit)
     EXPECT_TRUE(second.metrics.cache_hit);
     EXPECT_EQ(second.metrics.cache_hit_count, 1u);
     EXPECT_EQ(second.metrics.product_count, expected_product_count);
-    EXPECT_GT(second.metrics.product_bytes_read, 0u);
+    EXPECT_EQ(second.metrics.cache_probe_dependency_count, 2u);
+    EXPECT_EQ(second.metrics.cache_probe_product_metadata_count, expected_product_count);
+    EXPECT_EQ(second.metrics.source_bytes_read, 0u);
+    EXPECT_EQ(second.metrics.product_bytes_read, 0u);
+    EXPECT_EQ(second.metrics.stage_seconds[static_cast<std::size_t>(
+                  kpengine::asset::ModelImportMetricStage::SourceDecode)], 0.0);
+    EXPECT_EQ(second.metrics.stage_seconds[static_cast<std::size_t>(
+                  kpengine::asset::ModelImportMetricStage::TextureCook)], 0.0);
+    EXPECT_EQ(second.metrics.stage_seconds[static_cast<std::size_t>(
+                  kpengine::asset::ModelImportMetricStage::ProductValidate)], 0.0);
 
     ModelArchiveDatabase archive{fixture.Root() / ".archive" / "archive.sqlite3"};
     const auto snapshot = archive.FindSource("models/triangle.obj");
@@ -673,6 +682,16 @@ TEST(ModelImportServiceTest, RebuildsMissingProductAndRejectsImmutableCollision)
     file.write(&first_byte, 1);
     file.close();
 
+    {
+        ModelArchiveDatabase archive{fixture.Root() / ".archive" / "archive.sqlite3"};
+        EXPECT_THROW(archive.IntegrityCheck(), kpengine::asset::ModelArchiveError);
+    }
+
+    // Force the source package to change without changing the decoded model,
+    // so the immutable-product collision path remains covered separately from
+    // the fast unchanged-source probe.
+    fixture.Write("models/triangle.obj",
+                  ReadText(fixture.Root() / "models/triangle.obj") + "# package change\n");
     EXPECT_EQ(CatchImportError([&] { (void)service.Import(fixture.Request()); }),
               ModelImportErrorCode::ProductCollision);
 

@@ -83,6 +83,13 @@ bytes_written: 57796422
   retry passed.
 - RelWithDebInfo Sponza cold, warm-filesystem, and no-op result metrics were
   not collected after the user requested that the long run not be awaited.
-  The existing archive did not contain a valid Sponza cache, so a probe would
-  have fallen back to a full import. AT1.1 should preserve this telemetry and
-  repeat the complete Debug/RelWithDebInfo matrix before comparing speedups.
+The existing archive did not contain a valid Sponza cache, so a probe would
+have fallen back to a full import. AT1.1 should preserve this telemetry and
+repeat the complete Debug/RelWithDebInfo matrix before comparing speedups.
+
+## Closure decision — 2026-09-10
+
+The user accepted AT1.0 as complete based on the landed attribution telemetry
+and the available baseline evidence, including the supplied 1,509.4-second
+Debug observation. The uncollected long-run matrix is not an AT1.0 blocker;
+later AT1 stages use their own controlled measurements.
