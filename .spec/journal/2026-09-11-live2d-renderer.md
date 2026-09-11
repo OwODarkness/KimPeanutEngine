@@ -23,6 +23,11 @@ through the generic Render submission path.
   explicitly disable blending, preventing state leakage into the PBR path.
 - Vulkan sampler creation now applies the common mipmap mode, and file-backed
   images declare transfer-destination usage before upload.
+- Vulkan validation exposed that the Live2D draw-data uniform was declared
+  vertex-only even though all Live2D fragment shaders also read it. The
+  descriptor stage mask now includes vertex and fragment stages. This removed
+  the Vulkan validation error and fixed the corrupted sampled-texture output;
+  the Hiyori capture is now visually correct on both backends.
 
 ## Validation
 
@@ -31,12 +36,13 @@ through the generic Render submission path.
 - `Live2DMaskAtlasPlannerTest`: 4/4 passed.
 - OpenGL `level/live2d_test.level` runtime capture: Hiyori rendered correctly
   with transparent character background.
-- Vulkan runtime capture: model geometry is submitted, but sampled texture
-  colors remain corrupted; this is an open backend investigation, not claimed
-  as a passing cross-backend result.
+- Vulkan runtime capture: Hiyori renders correctly after the descriptor-stage
+  fix; the validation log is clean for the Live2D pipeline.
+- OpenGL runtime capture after the fix: Hiyori remains correct.
+- `GraphicsSmoke` (6 frames/API): passed.
 
 ## Remaining risk
 
 The renderer is a concrete preview path, not yet the final render-graph-based
-viewer architecture. Vulkan texture sampling parity and the complete L2D4.5
+viewer architecture. Pose/animation application and the complete L2D4.5
 lifetime/resize/cross-backend hardening matrix remain open.

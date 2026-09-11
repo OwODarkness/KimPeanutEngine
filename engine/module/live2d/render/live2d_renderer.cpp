@@ -173,7 +173,10 @@ namespace kpengine::live2d
             TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB,
             graphics::RenderTargetLoadOp::Clear,
             graphics::RenderTargetStoreOp::Store,
-            {0.015f, 0.015f, 0.02f, 0.0f}}}};
+            // The preview is presented directly as an ImGui image. Keep the
+            // dark preview backdrop opaque; otherwise the RGB render is valid
+            // but ImGui composites the entire image away because alpha is 0.
+            {0.015f, 0.015f, 0.02f, 1.0f}}}};
         proxy_.output_target = backend.CreateRenderTarget(output_desc);
         graphics::RenderTargetDesc mask_desc{};
         mask_desc.width = kLive2DMaskAtlasWidth;
@@ -229,13 +232,15 @@ namespace kpengine::live2d
             {1u, kUvBinding, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, 0u}}};
         const std::array<graphics::DescriptorBindingDesc, 2> color_descriptors{{
             {kConstantsBinding, 1u, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-             ShaderStage::SHADER_STAGE_VERTEX},
+             static_cast<ShaderStage>(static_cast<uint32_t>(ShaderStage::SHADER_STAGE_VERTEX) |
+                                      static_cast<uint32_t>(ShaderStage::SHADER_STAGE_FRAGMENT))},
             {kTextureBinding, 1u,
              graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT}}};
         const std::array<graphics::DescriptorBindingDesc, 3> masked_descriptors{{
             {kConstantsBinding, 1u, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-             ShaderStage::SHADER_STAGE_VERTEX},
+             static_cast<ShaderStage>(static_cast<uint32_t>(ShaderStage::SHADER_STAGE_VERTEX) |
+                                      static_cast<uint32_t>(ShaderStage::SHADER_STAGE_FRAGMENT))},
             {kTextureBinding, 1u,
              graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT},
@@ -244,7 +249,8 @@ namespace kpengine::live2d
              ShaderStage::SHADER_STAGE_FRAGMENT}}};
         const std::array<graphics::DescriptorBindingDesc, 2> mask_descriptors{{
             {kConstantsBinding, 1u, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-             ShaderStage::SHADER_STAGE_VERTEX},
+             static_cast<ShaderStage>(static_cast<uint32_t>(ShaderStage::SHADER_STAGE_VERTEX) |
+                                      static_cast<uint32_t>(ShaderStage::SHADER_STAGE_FRAGMENT))},
             {kTextureBinding, 1u,
              graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT}}};

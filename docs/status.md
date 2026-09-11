@@ -36,10 +36,10 @@
   extension submission, Live2D capture, and the minimal camera-only
   `level/live2d_test.level` fixture. `config/live2d.json` now selects an
   offline native `.live2d` product; runtime no longer imports Hiyori source or
-  writes a temporary product closure. Hiyori renders correctly through the
-  configured OpenGL path. OpenGL now applies pipeline blend state explicitly;
-  Vulkan file textures declare transfer-destination usage, but Vulkan Hiyori
-  capture still has sampled-texture corruption under investigation. →
+  writes a temporary product closure. Hiyori now renders correctly through
+  both configured OpenGL and Vulkan paths. OpenGL now applies pipeline blend
+  state explicitly; the Live2D Vulkan uniform binding exposes the fragment
+  stage as required by the shader interface. →
   [renderer journal](../.spec/journal/2026-09-11-live2d-renderer.md)
 
 - **Live2D L2D4.2 SDK-free model extraction (2026-09-10)** — added retained,
