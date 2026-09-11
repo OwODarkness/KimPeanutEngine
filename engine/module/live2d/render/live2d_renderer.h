@@ -2,6 +2,7 @@
 #define KPENGINE_LIVE2D_RENDERER_H
 
 #include <array>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <vector>
@@ -52,7 +53,9 @@ namespace kpengine::live2d
                     float delta_time,
                     std::string &diagnostic);
         // Recreates only the viewer-owned color target. The backend's
-        // presentation/swapchain resize remains its own responsibility.
+        // presentation/swapchain resize remains its own responsibility. The
+        // replacement is transactional: on failure the previously valid target
+        // is left in place and the renderer stays usable.
         bool ResizeOutput(uint32_t width, uint32_t height,
                           std::string &diagnostic);
         void SetPresentationTarget(bool enabled) noexcept
@@ -73,6 +76,18 @@ namespace kpengine::live2d
             return proxy_.output_target;
         }
         graphics::RenderTargetView GetOutputView() const;
+        // Counts the GPU handles this renderer currently owns. Zero is the
+        // shutdown contract; it is computed from the live handle table so it
+        // cannot drift from the actual ownership set.
+        std::uint32_t GetLiveGpuHandleCount() const noexcept;
+        const Live2DRenderCounters &GetLastCounters() const noexcept
+        {
+            return last_counters_;
+        }
+        std::uint64_t GetLastFrameSequence() const noexcept
+        {
+            return last_frame_sequence_;
+        }
         void Cleanup() noexcept;
 
     private:
@@ -83,6 +98,8 @@ namespace kpengine::live2d
             bool masked, bool mask_source, bool culling,
             Live2DBlendMode blend_mode, std::string &diagnostic);
         void DestroyPipelines() noexcept;
+        void DestroyGeometryAndTextures() noexcept;
+        void DestroyRenderTargets() noexcept;
 
         Live2DSystem *system_ = nullptr;
         asset::AssetID model_asset_{};
@@ -96,6 +113,9 @@ namespace kpengine::live2d
             TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         std::vector<graphics::PipelineHandle> pipelines_;
         std::vector<graphics::TextureHandle> textures_;
+        Live2DRenderCounters last_counters_{};
+        std::uint64_t last_frame_sequence_ = 0u;
+        bool has_last_frame_sequence_ = false;
         bool initialized_ = false;
         bool presentation_target_requested_ = false;
         std::array<float, 4> background_color_{0.1f, 0.1f, 0.1f, 1.0f};

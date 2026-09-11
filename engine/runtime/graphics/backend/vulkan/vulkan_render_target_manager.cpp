@@ -225,8 +225,7 @@ namespace kpengine::graphics
         const uint32_t index = handles_.Get(handle);
         return index < targets_.size() && !targets_[index].color_attachments.empty() &&
                targets_[index].color_attachments[0].IsValid() &&
-               targets_[index].desc.color_attachments[0].format ==
-                   TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+               IsRgba8TextureFormat(targets_[index].desc.color_attachments[0].format);
     }
 
     bool VulkanRenderTargetManager::GetReadbackSource(RenderTargetHandle handle,
@@ -235,8 +234,7 @@ namespace kpengine::graphics
         out_source = {};
         const uint32_t index = handles_.Get(handle);
         if (index >= targets_.size() || targets_[index].color_attachments.empty() ||
-            targets_[index].desc.color_attachments[0].format !=
-                TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB)
+            !IsRgba8TextureFormat(targets_[index].desc.color_attachments[0].format))
         {
             return false;
         }

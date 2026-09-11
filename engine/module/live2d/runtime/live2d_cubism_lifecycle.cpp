@@ -203,7 +203,12 @@ namespace kpengine::live2d
             return false;
         }
 
-        auto option = MakeFrameworkOption();
+        // CubismFramework::StartUp() keeps the address of this option and reads
+        // it back through GetLoggingLevel() on every later SDK log call,
+        // including the one at the end of Dispose(). A stack local dangles the
+        // moment Initialize() returns, so the option needs static lifetime --
+        // same reason GetAllocator() is static.
+        static const auto option = MakeFrameworkOption();
         if (!Live2D::Cubism::Framework::CubismFramework::IsStarted())
         {
             if (!Live2D::Cubism::Framework::CubismFramework::StartUp(

@@ -4,6 +4,33 @@
 
 **Current release: v1.1.0.**
 
+- **Live2D L2D4.5 submission hardening and cross-backend parity (2026-09-11)**
+  — split submission execution from frame services behind a new
+  `RenderSubmissionFrame` seam, so the executor is testable without a graphics
+  backend and every failure path now fails before publishing work
+  (structurally invalid work rejected up front, exhaustion records zero passes,
+  a rejected bind or target begin closes the active target and flags
+  `partial_output`). `Live2DRenderer` resizes transactionally and rejects
+  snapshots whose revision, topology, or frame sequence does not match its
+  proxy. The two backends now derive the sRGB transfer from the attachment
+  format instead of a shader-side `#if`: the Vulkan-only encode was removed,
+  the product target is `RGBA8_SRGB` on both APIs, OpenGL's clear enables
+  `GL_FRAMEBUFFER_SRGB`, and readback gates on "is 8-bit RGBA" rather than
+  SRGB-only, which had made the Vulkan product target unreadable. Normal blend
+  now publishes its own coverage (`a = src.a + dst.a*(1-src.a)`) so a
+  transparent-clear capture shows blend coverage. New `--capture-view`,
+  `--capture-alpha`, and `--exit-after-capture` launch options plus
+  [tools/compare_capture_regions.py](../tools/compare_capture_regions.py)
+  compare the two backends per region: all four regions (non-edge opaque,
+  partial alpha, transparent background, filtered edge) are inside the frozen
+  L2D4.0 tolerances, with the transparent background matching at exactly 0.
+  `--exit-after-capture` made the shutdown path reachable, which is how a
+  dangling Cubism framework-option pointer was found and fixed — the four
+  viewer runs now exit 0 having reached `CubismFramework::Dispose() is
+  complete.` Focused suites 63/63; full run 508/509 with one pre-existing
+  archive-content failure. →
+  [L2D4.5 journal](../.spec/journal/2026-09-11-live2d-l2d4-5.md)
+
 - **D5 Vulkan/OpenGL silhouette gate (2026-09-10)** — corrected the smoke
   comparator to flood-fill border-connected background before measuring model
   topology. Dark shadowed pixels are no longer misclassified as missing

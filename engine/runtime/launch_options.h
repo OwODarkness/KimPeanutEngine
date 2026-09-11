@@ -13,6 +13,16 @@
 
 namespace kpengine::runtime
 {
+    // Which surface a standalone host's startup capture reads back. The
+    // presentation view includes the host's own UI, so it is not a
+    // cross-backend comparable image; the product view is the host's own
+    // output target, which is.
+    enum class StartupCaptureView : uint8_t
+    {
+        Presentation,
+        Product,
+    };
+
     struct RuntimeLaunchOptions
     {
         ApplicationMode application_mode = ApplicationMode::Scene3D;
@@ -23,6 +33,15 @@ namespace kpengine::runtime
         // viewer consumes this as a Live2D-target capture; Scene3D keeps its
         // existing command-driven screenshot flow.
         std::optional<std::string> startup_capture_override;
+        StartupCaptureView startup_capture_view = StartupCaptureView::Presentation;
+        // Whether a standalone host clears its captured target opaquely. A
+        // transparent clear is what makes the product's own alpha and blend
+        // coverage observable in the exported image.
+        bool startup_capture_transparent_clear = false;
+        // Whether a standalone host shuts down once its startup capture
+        // resolves. Without this the viewer runs until it is killed, so the
+        // shutdown path (and its leaked-handle evidence) never executes.
+        bool startup_exit_after_capture = false;
     };
 
     struct RuntimeLaunchOptionsParseResult

@@ -129,9 +129,10 @@ namespace kpengine::graphics
 
     void OpenglPipeline::Bind() const
     {
-        // Keep the existing OpenGL presentation contract. The default
-        // framebuffer is created as an sRGB-capable target by the window
-        // backend, and Live2D presentation relies on this conversion.
+        // The default framebuffer is created as an sRGB-capable target by the
+        // window backend, so an sRGB attachment's stored value is the encoded
+        // shader output. Vulkan's render pass applies the same conversion from
+        // the attachment format alone.
         glEnable(GL_FRAMEBUFFER_SRGB);
         glUseProgram(shader_program_);
 

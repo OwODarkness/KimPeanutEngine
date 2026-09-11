@@ -152,6 +152,24 @@ viewport and likewise maps the enum directly. Render-target readback is
 top-left row order on both APIs, with OpenGL normalizing its native bottom-up
 rows before publishing `CapturedImage`.
 
+**Format-derived transfer semantics (L2D4.5, 2026-09-11).** Two predicates in
+[`core/base/graphics_type.h`](../../engine/runtime/core/base/graphics_type.h)
+let the backends agree on where the sRGB transfer function is applied:
+
+- `IsSrgbTextureFormat` — whether the format encodes/decodes on access. On
+  Vulkan this is free: a render-pass clear and a pipeline store both derive the
+  conversion from the attachment format. OpenGL needs state — the pipeline bind
+  enables `GL_FRAMEBUFFER_SRGB` for an sRGB attachment, and the target's clear
+  path must enable it too, because `EndRenderTarget` leaves it disabled. Without
+  that, the same clear color stores different bytes per API, which a readback
+  surfaces as a gamma difference confined to untouched pixels.
+- `IsRgba8TextureFormat` — whether a format stores 8-bit RGBA in the byte order
+  the common readback seam's CPU image expects. `RGBA8_UNORM` and `RGBA8_SRGB`
+  differ only in how samples are *interpreted*, not in storage, so both copy
+  out verbatim; `BGRA8` does not. The readback gate is this predicate, not an
+  SRGB-only check — a copy path is format-agnostic, so refusing a non-SRGB
+  target withheld an operation the backend could perform.
+
 ### Shader input — `data::ShaderData` in `PipelineDesc` (Phase 0 landed 2026-08-15)
 
 `PipelineDesc`'s shader members are `data::ShaderData*` directly — the resource pipeline's baked artifact *is* the RHI's input, no wrapper. Each backend reads the field its own API needs: Vulkan `byte_code` (SPIR-V), OpenGL `source` (preprocessed GLSL). The old `graphics::Shader` abstraction (`GetCode()`/`GetCodeSize()`, path-backed `OpenglShader`/`VulkanShader`, then the `ResourceShader` wrapper) is **retired** — its `api`-based dispatch was redundant because each backend *is* its own API.
@@ -198,6 +216,26 @@ accepts writes only between `BeginFrame()` and `EndFrame()`; the backend selects
 the slot after its fence is safe. `GeometryView` binds separate vertex streams
 and an explicitly typed UInt16/UInt32 index buffer without exposing native
 objects. `BindMesh` remains the PBR/static-mesh path.
+
+**Buffer and geometry-view contract (L2D4.5, 2026-09-11).** `BufferDesc` carries
+the role (`Vertex`/`Index`), the update mode, and the capacity in bytes, so a
+handle identifies a *typed, bounded* allocation rather than an opaque pointer.
+The shared gate is
+[`common/buffer_types.cpp`](../../engine/runtime/graphics/backend/common/buffer_types.cpp):
+
+- `ValidateBufferDesc` — extent and capacity bounds for a creation request;
+- `ValidateGeometryView` — the stream contract for a draw.
+
+`ValidateGeometryView` takes the pipeline's `VertexBindingDesc` list and a
+`BufferDescLookup` (a `std::function<std::optional<BufferDesc>(BufferHandle)>`
+the backend supplies from its buffer manager). It requires exactly one vertex
+stream per pipeline binding with no duplicates and no extras, a valid index
+handle with a valid element type, an offset within the buffer's capacity, an
+index offset aligned to the element size, and a role that matches the stream
+kind. Nothing native crosses the boundary — the recorder validates against
+descriptors, never against `VkBuffer`/`GLuint`. `CommandRecorder::BindGeometry`
+returns `bool` for the same reason `BindPipeline` does: a rejected bind is a
+caller error the render module reports, not a silent no-op.
 
 The `window_` test seam is gone (Phase 5, 2026-08-16): `Initialize` takes the native window handle (`WindowHandle` = `void*`) as an explicit parameter — the backends cast it back to `GLFWwindow*` internally, so the common interface never sees GLFW. The dead public `CameraData camera_data` member was removed with it. The `ShaderManager shader_manager_` member was **deleted 2026-08-15** — shader caching belongs to the render module / resource pipeline.
 

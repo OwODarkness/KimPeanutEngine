@@ -30,16 +30,8 @@ void main()
     vec3 transformed = texture_color.rgb * draw_data.multiply_color.rgb;
     transformed += draw_data.screen_color.rgb -
                    transformed * draw_data.screen_color.rgb;
-#if KP_GRAPHICS_API_VULKAN
-    // Vulkan uses an UNORM presentation image in this viewer. Encode here to
-    // match the existing OpenGL sRGB-capable default framebuffer.
-    {
-        vec3 linear = max(transformed, vec3(0.0));
-        transformed = mix(linear * 12.92,
-                          1.055 * pow(linear, vec3(1.0 / 2.4)) - 0.055,
-                          step(vec3(0.0031308), linear));
-    }
-#endif
+    // The live2d sampler decodes sRGB textures to linear, and the render target
+    // re-encodes on store; encoding here too would double-apply the transfer.
     float alpha = texture_color.a * clamp(draw_data.opacity, 0.0, 1.0) *
                   clamp(coverage, 0.0, 1.0);
     outColor = vec4(transformed * alpha, alpha);

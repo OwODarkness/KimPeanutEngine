@@ -75,6 +75,14 @@ namespace kpengine::live2d
         bool window_initialized_ = false;
         bool backend_initialized_ = false;
         bool system_initialized_ = false;
+        // Set while the last output-target resize failed; the host keeps using
+        // the previous target and only reports the transition once.
+        bool output_resize_failed_ = false;
+        unsigned shutdown_leaked_handles_ = 0u;
+        // Set once the startup capture resolves, so --exit-after-capture can
+        // reach the shutdown path instead of the process being killed.
+        bool capture_settled_ = false;
+        bool exit_after_capture_ = false;
     };
 }
 

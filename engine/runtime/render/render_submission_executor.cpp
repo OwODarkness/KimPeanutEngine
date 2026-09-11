@@ -1,7 +1,6 @@
 #include "render_submission_executor.h"
 
 #include <cstring>
-#include "frame_context.h"
 
 namespace kpengine::render
 {
@@ -13,8 +12,8 @@ namespace kpengine::render
         };
     }
 
-    RenderSubmissionExecutionResult RenderSubmissionExecutor::Execute(
-        const RenderSubmission &submission, FrameContext &frame,
+    RenderSubmissionExecutionResult RenderSubmissionExecutor::ExecuteOn(
+        const RenderSubmission &submission, RenderSubmissionFrame &frame,
         graphics::CommandRecorder &recorder)
     {
         RenderSubmissionExecutionResult result{};
@@ -83,7 +82,7 @@ namespace kpengine::render
         for (const SubmissionBufferWrite &write : submission.buffer_writes)
         {
             if (!frame.WriteFrameBuffer(write.destination, write.offset,
-                                         write.bytes.data(), write.bytes.size()))
+                                        write.bytes.data(), write.bytes.size()))
             {
                 result.diagnostic = "render submission buffer write failed";
                 return result;
@@ -102,6 +101,7 @@ namespace kpengine::render
             if (!began)
             {
                 result.diagnostic = "render submission render target begin failed";
+                result.partial_output = result.pass_count != 0u;
                 return result;
             }
             bool pass_succeeded = true;
@@ -133,10 +133,16 @@ namespace kpengine::render
                                      draw.vertex_offset, 0u);
                 ++result.draw_count;
             }
+            // Every pass that began is closed, including one that rejected a
+            // command, so the recorder never leaves a target open.
             recorder.EndRenderTarget();
             ++result.pass_count;
             if (!pass_succeeded)
             {
+                // The frame now holds a closed but incomplete result. The
+                // caller decides whether to present it; this executor never
+                // does.
+                result.partial_output = true;
                 return result;
             }
         }

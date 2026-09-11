@@ -52,6 +52,20 @@ target_link_libraries(RenderSubmissionContractTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
 gtest_discover_tests(RenderSubmissionContractTest)
 
+# Compiles the executor without FrameContext so submission execution can be
+# driven by a fake frame allocator and a rejecting command recorder.
+add_executable(RenderSubmissionExecutionTest
+    render_submission_execution_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_submission.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_submission_executor.cpp)
+target_include_directories(RenderSubmissionExecutionTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+    ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend)
+target_link_libraries(RenderSubmissionExecutionTest PRIVATE KP::GoogleTest)
+include(GoogleTest)
+gtest_discover_tests(RenderSubmissionExecutionTest)
+
 target_include_directories(RenderPassScheduleTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
     ${CMAKE_SOURCE_DIR}/engine/runtime/core

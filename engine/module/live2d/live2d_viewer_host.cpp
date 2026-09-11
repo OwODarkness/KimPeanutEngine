@@ -128,14 +128,21 @@ namespace kpengine::live2d
             const std::array<float, 4> window_background_color =
                 ReadWindowBackgroundColor(GetSettingsPath());
             renderer_->SetBackgroundColor(window_background_color);
+            // The configured color is display-space; the output target is sRGB
+            // on both backends, so the clear must be linear there. Hardware
+            // re-encodes on store, leaving the configured value on screen.
             std::array<float, 4> output_clear_color = window_background_color;
-            if (engine.GetGraphicsAPI() == GraphicsAPIType::GRAPHICS_API_OPENGL)
+            for (std::size_t channel = 0u; channel < 3u; ++channel)
             {
-                for (std::size_t channel = 0u; channel < 3u; ++channel)
-                {
-                    output_clear_color[channel] =
-                        DisplayToLinear(output_clear_color[channel]);
-                }
+                output_clear_color[channel] =
+                    DisplayToLinear(output_clear_color[channel]);
+            }
+            if (engine.GetStartupCaptureTransparentClear())
+            {
+                // Validation runs need the product's own alpha and blend
+                // coverage to survive into the exported image instead of being
+                // composited onto an opaque backdrop.
+                output_clear_color[3] = 0.0f;
             }
             renderer_->SetOutputClearColor(output_clear_color);
             if (!renderer_->Initialize(*backend_, window_info.width, window_info.height,
@@ -187,12 +194,17 @@ namespace kpengine::live2d
 
             if (engine.GetStartupCaptureOverride().has_value())
             {
+                exit_after_capture_ = engine.GetStartupExitAfterCapture();
                 runtime::ScreenshotRequest request{};
-                // The standalone viewer presents directly to the swapchain;
-                // capture the presentation boundary so the exported image is
-                // the image visible in the viewer, not the retained clear-only
-                // offscreen target.
-                request.capture.view = render::CaptureView::EngineWindow;
+                // The standalone viewer presents directly to the swapchain, so
+                // the default capture reads the presentation boundary. The
+                // product view reads the viewer's own output target instead,
+                // which is what makes two backends comparable: it carries no
+                // host UI.
+                request.capture.view =
+                    engine.GetStartupCaptureView() == runtime::StartupCaptureView::Product
+                        ? render::CaptureView::Live2D
+                        : render::CaptureView::EngineWindow;
                 request.output_path = *engine.GetStartupCaptureOverride();
                 screenshot_service_->RequestScreenshot(
                     std::move(request),
@@ -200,9 +212,23 @@ namespace kpengine::live2d
                     {
                         if (result.IsSuccess())
                         {
+                            // The capture is only interpretable next to the
+                            // revision it came from, so publish both together.
+                            const Live2DRenderCounters &counters =
+                                renderer_->GetLastCounters();
                             KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
-                                   "Startup capture exported to %s",
-                                   result.output_path.c_str());
+                                   "Startup capture exported to %s "
+                                   "(frame_sequence %llu, draws %u, "
+                                   "mask_sources %u, mask_contexts %u, "
+                                   "position_upload_bytes %llu)",
+                                   result.output_path.c_str(),
+                                   static_cast<unsigned long long>(
+                                       renderer_->GetLastFrameSequence()),
+                                   counters.submitted_draw_count,
+                                   counters.submitted_mask_source_draw_count,
+                                   counters.active_mask_context_count,
+                                   static_cast<unsigned long long>(
+                                       counters.position_upload_bytes));
                         }
                         else
                         {
@@ -210,6 +236,7 @@ namespace kpengine::live2d
                                    "Startup capture failed: %s",
                                    result.diagnostic.c_str());
                         }
+                        capture_settled_ = true;
                     });
             }
             return true;
@@ -268,10 +295,29 @@ namespace kpengine::live2d
             backend_->EndFrame();
             return true;
         }
+        // The resize runs outside the frame's active bracket, before any Live2D
+        // work is recorded, so the old target is only released after the
+        // renderer's own idle wait.
         if (!renderer_->ResizeOutput(extent.width, extent.height, diagnostic))
         {
-            backend_->EndFrame();
-            return false;
+            if (!renderer_->GetOutputView().IsValid())
+            {
+                // Nothing valid to render into, so this frame cannot proceed.
+                backend_->EndFrame();
+                return false;
+            }
+            if (!output_resize_failed_)
+            {
+                output_resize_failed_ = true;
+                KP_LOG("Live2DViewer", LOG_LEVEL_WARNING,
+                       "Live2D output resize failed; keeping the last valid target (%s)",
+                       diagnostic.c_str());
+            }
+            diagnostic.clear();
+        }
+        else
+        {
+            output_resize_failed_ = false;
         }
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         if (recorder == nullptr)
@@ -376,6 +422,14 @@ namespace kpengine::live2d
 
     bool Live2DViewerHost::ShouldClose() const noexcept
     {
+        // A resolved capture is a completed validation run, so the host may
+        // stop on its own. A failed capture also stops: the run has nothing
+        // left to produce, and exiting is what makes the shutdown path -- and
+        // its leaked-handle accounting -- observable.
+        if (exit_after_capture_ && capture_settled_)
+        {
+            return true;
+        }
         return window_ != nullptr && window_->ShouldClose();
     }
 
@@ -455,6 +509,11 @@ namespace kpengine::live2d
                             recorder.resource_binding_bind_emitted));
             ImGui::Text("Descriptor updates %llu",
                         static_cast<unsigned long long>(counters.descriptor_updates));
+            ImGui::Text("Module GPU handles %u",
+                        renderer_ != nullptr ? renderer_->GetLiveGpuHandleCount() : 0u);
+            ImGui::Text("Frame sequence %llu",
+                        static_cast<unsigned long long>(
+                            renderer_ != nullptr ? renderer_->GetLastFrameSequence() : 0u));
             ImGui::Separator();
             ImGui::TextDisabled("ImGui");
             ImGui::Text("Build %.2f ms", viewer_ui_->ui->GetLastImGuiBuildTimeMs());
@@ -480,6 +539,26 @@ namespace kpengine::live2d
         }
         screenshot_service_.reset();
         render_capture_service_.reset();
+        if (renderer_)
+        {
+            // Release every module GPU handle explicitly, in reverse creation
+            // order, and record the residue so a leak is visible instead of
+            // silently surviving to process exit.
+            renderer_->Cleanup();
+            shutdown_leaked_handles_ = renderer_->GetLiveGpuHandleCount();
+            if (shutdown_leaked_handles_ != 0u)
+            {
+                try
+                {
+                    KP_LOG("Live2DViewer", LOG_LEVEL_WARNING,
+                           "Live2D shutdown released with %u module GPU handles still live",
+                           shutdown_leaked_handles_);
+                }
+                catch (...)
+                {
+                }
+            }
+        }
         renderer_.reset();
         for (const std::unique_ptr<render::FrameContext> &frame : frame_contexts_)
         {

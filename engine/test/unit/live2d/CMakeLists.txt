@@ -30,6 +30,7 @@ gtest_discover_tests(Live2DModelDataContractTest)
 
 add_executable(Live2DRenderPlannerTest
     live2d_render_planner_test.cpp
+    live2d_submission_hardening_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_mask_planner.cpp
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_render_planner.cpp
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_render_contract.cpp

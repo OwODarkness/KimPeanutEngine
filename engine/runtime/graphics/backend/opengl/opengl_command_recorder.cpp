@@ -89,6 +89,15 @@ namespace kpengine::graphics
             glDrawBuffers(color_count, draw_buffers.data());
             glReadBuffer(GL_COLOR_ATTACHMENT0);
         }
+        // A Vulkan render-pass clear applies the attachment format's sRGB
+        // encode; OpenGL only does so with GL_FRAMEBUFFER_SRGB enabled, which
+        // the previous target's EndRenderTarget left off. Without this the two
+        // backends store different bytes for the same clear color.
+        if (color_count != 0u &&
+            IsSrgbTextureFormat(resource.desc.color_attachments[0].format))
+        {
+            glEnable(GL_FRAMEBUFFER_SRGB);
+        }
         for (uint32_t i = 0; i < color_count; ++i)
         {
             if (resource.desc.color_attachments[i].load_op == RenderTargetLoadOp::Clear)

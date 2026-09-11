@@ -21,6 +21,7 @@ render_world/scene_draw_list_builder.cpp
 frame_context.cpp
 render_submission.cpp
 render_submission_executor.cpp
+render_submission_frame_context.cpp
 render_pass.cpp
 render_target.cpp
 renderer_frame_targets.cpp

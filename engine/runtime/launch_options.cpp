@@ -64,6 +64,9 @@ namespace kpengine::runtime
             bool has_mode = false;
             bool has_startup_level = false;
             bool has_startup_capture = false;
+            bool has_capture_view = false;
+            bool has_capture_alpha = false;
+            bool has_exit_after_capture = false;
 
             for (std::size_t index = 0; index < arguments.size(); ++index)
             {
@@ -178,6 +181,71 @@ namespace kpengine::runtime
                     result.options.startup_capture_override = std::string{arguments[++index]};
                     has_startup_capture = true;
                 }
+                else if (argument == "--capture-view")
+                {
+                    if (has_capture_view)
+                    {
+                        return Failure("duplicate option '--capture-view'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--capture-view requires window or live2d");
+                    }
+
+                    const std::string_view value = arguments[++index];
+                    if (value == "window")
+                    {
+                        result.options.startup_capture_view =
+                            StartupCaptureView::Presentation;
+                    }
+                    else if (value == "live2d")
+                    {
+                        result.options.startup_capture_view = StartupCaptureView::Product;
+                    }
+                    else
+                    {
+                        return Failure("--capture-view requires window or live2d (got '" +
+                                       std::string{value} + "')");
+                    }
+                    has_capture_view = true;
+                }
+                else if (argument == "--capture-alpha")
+                {
+                    if (has_capture_alpha)
+                    {
+                        return Failure("duplicate option '--capture-alpha'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--capture-alpha requires opaque or transparent");
+                    }
+
+                    const std::string_view value = arguments[++index];
+                    if (value == "opaque")
+                    {
+                        result.options.startup_capture_transparent_clear = false;
+                    }
+                    else if (value == "transparent")
+                    {
+                        result.options.startup_capture_transparent_clear = true;
+                    }
+                    else
+                    {
+                        return Failure(
+                            "--capture-alpha requires opaque or transparent (got '" +
+                            std::string{value} + "')");
+                    }
+                    has_capture_alpha = true;
+                }
+                else if (argument == "--exit-after-capture")
+                {
+                    if (has_exit_after_capture)
+                    {
+                        return Failure("duplicate option '--exit-after-capture'");
+                    }
+                    result.options.startup_exit_after_capture = true;
+                    has_exit_after_capture = true;
+                }
                 else
                 {
                     return Failure("unknown option '" + std::string{argument} + "'");
@@ -194,10 +262,38 @@ namespace kpengine::runtime
                 {
                     return Failure("--agent-port is not available in live2d-viewer mode");
                 }
+                if (has_capture_view && !has_startup_capture)
+                {
+                    return Failure("--capture-view requires --capture");
+                }
+                if (has_capture_alpha && !has_startup_capture)
+                {
+                    return Failure("--capture-alpha requires --capture");
+                }
+                if (has_exit_after_capture && !has_startup_capture)
+                {
+                    return Failure("--exit-after-capture requires --capture");
+                }
             }
-            else if (result.options.startup_capture_override.has_value())
+            else
             {
-                return Failure("--capture is only valid in live2d-viewer mode");
+                if (result.options.startup_capture_override.has_value())
+                {
+                    return Failure("--capture is only valid in live2d-viewer mode");
+                }
+                if (has_capture_view)
+                {
+                    return Failure("--capture-view is only valid in live2d-viewer mode");
+                }
+                if (has_capture_alpha)
+                {
+                    return Failure("--capture-alpha is only valid in live2d-viewer mode");
+                }
+                if (has_exit_after_capture)
+                {
+                    return Failure(
+                        "--exit-after-capture is only valid in live2d-viewer mode");
+                }
             }
 
             result.succeeded = true;

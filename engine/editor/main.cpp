@@ -56,6 +56,11 @@ int main(int argc, char **argv)
     if (launch_options.options.startup_capture_override.has_value())
     {
         engine.SetStartupCaptureOverride(*launch_options.options.startup_capture_override);
+        engine.SetStartupCaptureView(launch_options.options.startup_capture_view);
+        engine.SetStartupCaptureTransparentClear(
+            launch_options.options.startup_capture_transparent_clear);
+        engine.SetStartupExitAfterCapture(
+            launch_options.options.startup_exit_after_capture);
     }
 
     // Boot failure (e.g. missing config/bootstrap.json) surfaces here before the

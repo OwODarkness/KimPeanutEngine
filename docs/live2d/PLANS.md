@@ -218,7 +218,7 @@ directory, keeping the product's dependency paths valid without reaching into
   -> mutable Live2DModelInstance (Cubism model and parameters)
   -> Live2DRenderPlanner calculates semantic draw/mask plan
   -> Live2DRenderSubmission wraps generic ordered RenderSubmission work
-  -> generic RenderSubmissionExecutor + FrameContext
+  -> generic RenderSubmissionExecutor + RenderSubmissionFrame
   -> Graphics CommandRecorder
   -> OpenGL or Vulkan backend
 ```
@@ -232,7 +232,7 @@ Ownership is intentionally split by semantic, resource, and frame lifetime:
 | `Live2DRenderResourceSet` | Live2D render service/composition | Shared pipeline variants and sampler; outlives every proxy/submission. |
 | `Live2DRenderProxy` | Live2D render caller | Model-specific GPU handles/static ranges; retired only after submitted work is safe. |
 | `Live2DRenderSubmission` | Frame producer until execution returns | Owns Live2D diagnostics and nested generic work; no SDK pointers. |
-| `RenderSubmissionExecutor` | Generic Render frame path | Borrows submission/resources, allocates `FrameContext` data, records common commands. |
+| `RenderSubmissionExecutor` | Generic Render frame path | Borrows submission/resources and a `RenderSubmissionFrame` (production: one active `FrameContext`), allocates frame-local uniform/binding/upload data, records common commands. Fails before publishing: exhaustion records zero passes, a rejected bind or target begin closes the active target and flags `partial_output`. |
 
 Multiple instances may share one asset and texture dependencies but never share
 mutable Cubism model parameters. Asset dependency edges protect Texture assets
@@ -288,8 +288,17 @@ and blend equations must be verified against the official R5 sample output.
 
 ## Dedicated viewer boundary
 
-`KimPeanutLive2DViewer` is a separate executable, not a mode selected by
-uncommenting `main.cpp`. It accepts at least:
+**As landed (MODE1.3/1.4, 2026-09-11):** the viewer is not a separate
+executable. It is `--mode live2d-viewer` on the main `KimPeanutEngine`
+executable, behind Runtime's `ApplicationMode`/`IApplicationHost` provider
+registry, with `Live2DViewerHost` owning the window, backend, system, instance,
+and renderer. The flags below are kept as the original design intent;
+`--graphics-api` landed as specified, and the asset comes from
+`config/live2d.json` rather than `--asset`. Capture landed as `--capture`
+plus `--capture-view window|live2d` and `--capture-alpha opaque|transparent`.
+
+The original design was a separate executable `KimPeanutLive2DViewer`, not a
+mode selected by uncommenting `main.cpp`. It accepts at least:
 
 ```text
 --asset <path-to-native.live2d>

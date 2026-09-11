@@ -1,6 +1,5 @@
 #include "editor/log/editor_log_component.h"
 
-#include <cassert>
 #include <imgui.h>
 #include <vector>
 #include "runtime/core/log/log_system.h"
@@ -16,11 +15,14 @@ namespace kpengine::editor
     void EditorLogComponent::RenderContent()
     {
         EditorWindowComponent::RenderContent();
-        assert(log_system_ != nullptr);
 
-        // Snapshot under the logger's mutex — never iterate the live vector while a
-        // writer thread pushes/clears it (the render thread and writers race).
-        const std::vector<program::LogEntry> logs = log_system_->GetLogSnapshot();
+        // LogSystem is a stateless facade over the process-global logger, so a
+        // null one (hosts that never initialize scene services) still has real
+        // logs to show. Snapshot under the logger's mutex — never iterate the
+        // live vector while a writer thread pushes/clears it.
+        const std::vector<program::LogEntry> logs =
+            log_system_ != nullptr ? log_system_->GetLogSnapshot()
+                                   : program::Logger::GetLogger().GetSnapshot();
 
         if (ImGui::Checkbox("Follow latest", &follow_latest_) && follow_latest_)
         {

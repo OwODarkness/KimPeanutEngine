@@ -11,6 +11,7 @@
 #include "graphics/backend/common/render_backend.h"
 #include "render/light/light_gpu_data.h"
 #include "render/material/material_system.h"
+#include "render/render_submission_frame.h"
 
 namespace kpengine::render
 {
@@ -23,16 +24,6 @@ namespace kpengine::render
         uint64_t frame_number = 0;
         float elapsed_seconds = 0.0f;
         float delta_seconds = 0.0f;
-    };
-
-    struct UniformAllocation
-    {
-        graphics::BufferHandle buffer;
-        size_t offset = 0;
-        size_t range = 0;
-        void *mapped = nullptr;
-
-        bool IsValid() const { return buffer.IsValid() && mapped != nullptr && range != 0; }
     };
 
     struct FrameContextProfileCounters
@@ -89,26 +80,26 @@ namespace kpengine::render
     // RenderSystem owns one logical context per backend frame slot. The backend
     // remains responsible for fences and deciding when that slot is safe to
     // recycle; this type will own only the render-layer transient allocations.
-    class FrameContext
+    class FrameContext : public RenderSubmissionFrame
     {
     public:
         uint32_t GetFrameIndex() const { return frame_index_; }
         const FrameGlobals &GetGlobals() const { return globals_; }
-        bool IsActive() const { return active_; }
+        bool IsActive() const override { return active_; }
         size_t GetUniformCapacity() const { return uniform_capacity_; }
         size_t GetUniformUsed() const { return uniform_cursor_; }
         graphics::Extent2D GetRenderExtent() const { return render_extent_; }
 
-        UniformAllocation AllocateUniform(size_t size);
+        UniformAllocation AllocateUniform(size_t size) override;
         UniformAllocation UpdateStableUniform(uint64_t key, const void *data, size_t size);
         FrameResourceBinding CreateOrGetStableBindingSet(
             uint64_t key, graphics::PipelineHandle pipeline,
             const std::vector<graphics::ResourceBinding> &bindings);
         graphics::DescriptorSetHandle AllocateResourceBindingSet(
             graphics::PipelineHandle pipeline,
-            const graphics::ResourceBindingSetDesc &desc);
+            const graphics::ResourceBindingSetDesc &desc) override;
         bool WriteFrameBuffer(graphics::BufferHandle buffer, std::size_t offset,
-                              const void *data, std::size_t size);
+                              const void *data, std::size_t size) override;
         FrameLightingBinding CreateLightingBinding(const LightGpuFrameData &lighting_data);
         FrameMaterialBinding CreateMaterialBinding(
             const MaterialSystem &materials, const RenderResourceResolver &resolver,

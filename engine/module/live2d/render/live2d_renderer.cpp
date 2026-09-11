@@ -61,6 +61,11 @@ namespace kpengine::live2d
         {
             graphics::BlendAttachmentState blend{};
             blend.blend_enabled = true;
+            // Additive and multiplicative accumulate destination alpha, so the
+            // normal mode is the only one that publishes its own coverage.
+            // Deriving it as NormalizeLive2DBlend does (a = src.a + dst.a *
+            // (1 - src.a)) keeps the exported coverage usable when the product
+            // is captured over a transparent clear.
             blend.src_alpha_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ZERO;
             blend.dst_alpha_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
             switch (mode)
@@ -68,6 +73,9 @@ namespace kpengine::live2d
             case Live2DBlendMode::Normal:
                 blend.src_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
                 blend.dst_color_blend_factor =
+                    graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+                blend.src_alpha_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
+                blend.dst_alpha_blend_factor =
                     graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
                 break;
             case Live2DBlendMode::Additive:
@@ -141,9 +149,12 @@ namespace kpengine::live2d
         Cleanup();
         backend_ = &backend;
         proxy_.output_to_presentation = presentation_target_requested_;
+        // The model textures are sRGB, so the shader works in linear space and
+        // the target's format owns the transfer function. An UNORM target would
+        // store linear bytes and read back visibly darker than an sRGB one.
         output_color_format_ = presentation_target_requested_
                                    ? backend.GetPresentationColorFormat()
-                                   : TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM;
+                                   : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         if (system_ == nullptr || !model_asset_.IsValid())
         {
             diagnostic = "Live2D renderer has no model asset";
@@ -223,17 +234,9 @@ namespace kpengine::live2d
             return true;
         }
 
-        // The host calls this at the beginning of a frame, before recording
-        // any Live2D work. Waiting here gives readback and previously submitted
-        // draws a safe lifetime boundary before the target is replaced.
-        backend_->WaitIdle();
-        if (proxy_.output_target.IsValid())
-        {
-            backend_->DestroyRenderTarget(proxy_.output_target);
-            proxy_.output_target = {};
-        }
-        output_view_ = {};
-
+        // Build the replacement first. A failed create must leave the previous
+        // target and view untouched so the caller can keep recording into the
+        // last good result instead of losing its output.
         graphics::RenderTargetDesc output_desc{};
         output_desc.width = width;
         output_desc.height = height;
@@ -245,17 +248,32 @@ namespace kpengine::live2d
         // the output is presented or exported as an image.
         output_attachment.clear_color = output_clear_color_;
         output_desc.color_attachments = {{output_attachment}};
-        proxy_.output_target = backend_->CreateRenderTarget(output_desc);
-        output_view_ = backend_->GetRenderTargetView(proxy_.output_target);
-        if (!proxy_.output_target.IsValid() || !output_view_.IsValid())
+        const graphics::RenderTargetHandle replacement =
+            backend_->CreateRenderTarget(output_desc);
+        if (!replacement.IsValid())
         {
-            diagnostic = "Live2D renderer could not resize preview render target";
-            proxy_.output_target = {};
-            output_view_ = {};
-            proxy_.output_width = 0u;
-            proxy_.output_height = 0u;
+            diagnostic = "Live2D renderer could not create the replacement render target";
             return false;
         }
+        const graphics::RenderTargetView replacement_view =
+            backend_->GetRenderTargetView(replacement);
+        if (!replacement_view.IsValid())
+        {
+            backend_->DestroyRenderTarget(replacement);
+            diagnostic = "Live2D renderer could not resolve the replacement render target view";
+            return false;
+        }
+
+        // The host calls this at the beginning of a frame, before recording any
+        // Live2D work, so the wait only has to cover readback and previously
+        // submitted draws that still reference the old target.
+        backend_->WaitIdle();
+        if (proxy_.output_target.IsValid())
+        {
+            backend_->DestroyRenderTarget(proxy_.output_target);
+        }
+        proxy_.output_target = replacement;
+        output_view_ = replacement_view;
         proxy_.output_width = width;
         proxy_.output_height = height;
         return true;
@@ -483,6 +501,15 @@ namespace kpengine::live2d
         {
             return false;
         }
+        // Extraction increments the sequence, so a repeated or out-of-order
+        // snapshot means the caller reused stale state.
+        if (has_last_frame_sequence_ &&
+            snapshot.frame_sequence <= last_frame_sequence_)
+        {
+            diagnostic =
+                "Live2D snapshot frame sequence repeated or moved backwards";
+            return false;
+        }
         Live2DRenderPlanOptions options{};
         options.model_transform = FitTransform(snapshot, proxy_.output_width,
                                                proxy_.output_height);
@@ -508,15 +535,45 @@ namespace kpengine::live2d
             render::RenderSubmissionExecutor::Execute(submission, frame_context, recorder);
         if (!execution.succeeded)
         {
-            diagnostic = execution.diagnostic;
+            // A partial result is already closed but incomplete; the host must
+            // not present or capture it.
+            diagnostic = execution.partial_output
+                             ? execution.diagnostic +
+                                   " (frame holds a partial Live2D output)"
+                             : execution.diagnostic;
             return false;
         }
+        last_frame_sequence_ = snapshot.frame_sequence;
+        has_last_frame_sequence_ = true;
+        last_counters_ = plan.submission.counters;
         return true;
     }
 
     graphics::RenderTargetView Live2DRenderer::GetOutputView() const
     {
         return output_view_;
+    }
+
+    std::uint32_t Live2DRenderer::GetLiveGpuHandleCount() const noexcept
+    {
+        std::uint32_t count = 0u;
+        for (const graphics::PipelineHandle handle : pipelines_)
+        {
+            count += handle.IsValid() ? 1u : 0u;
+        }
+        for (const graphics::TextureHandle handle : textures_)
+        {
+            count += handle.IsValid() ? 1u : 0u;
+        }
+        for (const graphics::BufferHandle handle :
+             {proxy_.position_buffer, proxy_.uv_buffer, proxy_.index_buffer})
+        {
+            count += handle.IsValid() ? 1u : 0u;
+        }
+        count += resources_.sampler.IsValid() ? 1u : 0u;
+        count += proxy_.mask_atlas_target.IsValid() ? 1u : 0u;
+        count += proxy_.output_target.IsValid() ? 1u : 0u;
+        return count;
     }
 
     void Live2DRenderer::DestroyPipelines() noexcept
@@ -537,44 +594,76 @@ namespace kpengine::live2d
         resources_ = {};
     }
 
-    void Live2DRenderer::Cleanup() noexcept
+    void Live2DRenderer::DestroyGeometryAndTextures() noexcept
+    {
+        if (backend_ == nullptr)
+        {
+            textures_.clear();
+            proxy_.position_buffer = {};
+            proxy_.uv_buffer = {};
+            proxy_.index_buffer = {};
+            return;
+        }
+        for (const graphics::TextureHandle texture : textures_)
+        {
+            if (texture.IsValid())
+            {
+                backend_->DestroyTexture(texture);
+            }
+        }
+        textures_.clear();
+        for (const graphics::BufferHandle buffer :
+             {proxy_.position_buffer, proxy_.uv_buffer, proxy_.index_buffer})
+        {
+            if (buffer.IsValid())
+            {
+                backend_->DestroyBufferResource(buffer);
+            }
+        }
+        proxy_.position_buffer = {};
+        proxy_.uv_buffer = {};
+        proxy_.index_buffer = {};
+        proxy_.textures.clear();
+    }
+
+    void Live2DRenderer::DestroyRenderTargets() noexcept
     {
         if (backend_ != nullptr)
         {
-            if (resources_.sampler.IsValid())
+            if (proxy_.output_target.IsValid())
             {
-                backend_->DestroySampler(resources_.sampler);
-                resources_.sampler = {};
-            }
-            DestroyPipelines();
-            for (const graphics::TextureHandle texture : textures_)
-            {
-                if (texture.IsValid())
-                {
-                    backend_->DestroyTexture(texture);
-                }
-            }
-            textures_.clear();
-            for (const graphics::BufferHandle buffer :
-                 {proxy_.position_buffer, proxy_.uv_buffer, proxy_.index_buffer})
-            {
-                if (buffer.IsValid())
-                {
-                    backend_->DestroyBufferResource(buffer);
-                }
+                backend_->DestroyRenderTarget(proxy_.output_target);
             }
             if (proxy_.mask_atlas_target.IsValid())
             {
                 backend_->DestroyRenderTarget(proxy_.mask_atlas_target);
             }
-            if (proxy_.output_target.IsValid())
-            {
-                backend_->DestroyRenderTarget(proxy_.output_target);
-            }
         }
+        proxy_.output_target = {};
+        proxy_.mask_atlas_target = {};
+        proxy_.mask_atlas_texture = {};
+        proxy_.output_width = 0u;
+        proxy_.output_height = 0u;
+        output_view_ = {};
+    }
+
+    void Live2DRenderer::Cleanup() noexcept
+    {
+        // Release in reverse creation order: geometry/textures, then the
+        // sampler and pipelines that consume them, then the render targets.
+        DestroyGeometryAndTextures();
+        if (backend_ != nullptr && resources_.sampler.IsValid())
+        {
+            backend_->DestroySampler(resources_.sampler);
+        }
+        resources_.sampler = {};
+        DestroyPipelines();
+        DestroyRenderTargets();
         proxy_ = {};
         static_data_ = {};
-        output_view_ = {};
+        last_counters_ = {};
+        last_frame_sequence_ = 0u;
+        has_last_frame_sequence_ = false;
         instance_.reset();
         backend_ = nullptr;
         initialized_ = false;

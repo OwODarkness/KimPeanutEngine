@@ -16,6 +16,7 @@
 #include "base/type.h"
 #include "command/command_local_transport.h"
 #include "host/application_host.h"
+#include "launch_options.h"
 #include "runtime_startup.h"
 #include "stats/performance_stats_command_provider.h"
 
@@ -72,6 +73,30 @@ namespace kpengine
             GraphicsAPIType GetGraphicsAPI() const noexcept { return graphics_api_type_; }
             void SetStartupLevelOverride(std::string authored_or_normalized_path);
             void SetStartupCaptureOverride(std::string output_path);
+            void SetStartupCaptureView(StartupCaptureView view) noexcept
+            {
+                startup_capture_view_ = view;
+            }
+            StartupCaptureView GetStartupCaptureView() const noexcept
+            {
+                return startup_capture_view_;
+            }
+            void SetStartupCaptureTransparentClear(bool enabled) noexcept
+            {
+                startup_capture_transparent_clear_ = enabled;
+            }
+            bool GetStartupCaptureTransparentClear() const noexcept
+            {
+                return startup_capture_transparent_clear_;
+            }
+            void SetStartupExitAfterCapture(bool enabled) noexcept
+            {
+                startup_exit_after_capture_ = enabled;
+            }
+            bool GetStartupExitAfterCapture() const noexcept
+            {
+                return startup_exit_after_capture_;
+            }
             const std::optional<std::string> &GetStartupCaptureOverride() const noexcept
             {
                 return startup_capture_override_;
@@ -200,6 +225,9 @@ namespace kpengine
             // parser-normalized Asset-root-relative path before Initialize().
             std::optional<std::string> startup_level_override_;
             std::optional<std::string> startup_capture_override_;
+            StartupCaptureView startup_capture_view_ = StartupCaptureView::Presentation;
+            bool startup_capture_transparent_clear_ = false;
+            bool startup_exit_after_capture_ = false;
             std::optional<asset::AssetLoadSession> startup_asset_session_;
             StartupCoordinator startup_coordinator_;
 

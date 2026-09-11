@@ -26,16 +26,23 @@
   deterministic `.live2d` root and native Texture dependencies beside the
   requested output, and reject immutable product collisions without exposing a
   partial root.
-- [ ] **L2D4 — Live2D planning and generic Render submission**
-  ([concrete plan](.plan/L2D4.md)): execute six gated subtasks—
+- [x] **L2D4 — Live2D planning and generic Render submission**
+  ([concrete plan](.plan/L2D4.md)): six gated subtasks—
   [x] [contract freeze](.plan/L2D4.0.md) ([journal](../../.spec/journal/2026-09-09-live2d-l2d4-0.md)),
-  [common streaming geometry](.plan/L2D4.1.md),
-  [SDK-free extraction](.plan/L2D4.2.md),
-  [generic submission and unmasked planning](.plan/L2D4.3.md),
-  [packed masks as generic passes](.plan/L2D4.4.md), and
-  [cross-backend hardening](.plan/L2D4.5.md). L2D4 ends with an offscreen
-  result produced through a semantic-free Render executor; the window,
-  presentation, and final capture workflow remain L2D5.
+  [x] [common streaming geometry](.plan/L2D4.1.md) ([journal](../../.spec/journal/2026-09-10-live2d-l2d4-1-rhi-fixes.md)),
+  [x] [SDK-free extraction](.plan/L2D4.2.md) ([journal](../../.spec/journal/2026-09-10-live2d-l2d4-2.md)),
+  [x] [generic submission and unmasked planning](.plan/L2D4.3.md) ([journal](../../.spec/journal/2026-09-10-live2d-l2d4-3.md)),
+  [x] [packed masks as generic passes](.plan/L2D4.4.md) ([journal](../../.spec/journal/2026-09-11-live2d-l2d4-4.md)), and
+  [x] [cross-backend hardening](.plan/L2D4.5.md) ([journal](../../.spec/journal/2026-09-11-live2d-l2d4-5.md)).
+  L2D4 ends with an offscreen result produced through a semantic-free Render
+  executor; both backends now agree inside the frozen tolerances on the
+  cross-backend capture gate, so the window, presentation, and final capture
+  workflow move to L2D5. Three L2D4.5 residuals are carried into L2D5: target
+  resize is the one hardening-matrix scenario with **no evidence at all** (no
+  test calls `Live2DRenderer::ResizeOutput` and no run resized the target, so
+  its transactional claim rests on code reading); shutdown handle accounting
+  exits cleanly four times over but is not asserted by a test; and
+  `CaptureView::Live2D` still names a module inside the generic capture enum.
 - [ ] **L2D5 — dedicated viewer and V1 evidence:** add
   `KimPeanutLive2DViewer`, resize and capture support, a legally usable fixture,
   official-reference comparison, cross-backend screenshots, and clean shutdown
@@ -64,11 +71,27 @@
   Graphics contain no Live2D include, semantic enum, pass ID, or dispatch branch.
 - [ ] One representative clipped model renders with correct order, opacity,
   normal/add/multiply blending, masks, canvas transform, and transparent
-  background on OpenGL and Vulkan.
+  background on OpenGL and Vulkan. *Cross-backend gate green (2026-09-11):*
+  the configured clipped Hiyori product renders on both APIs and every compared
+  region — non-edge opaque, partial alpha, transparent background, filtered
+  edge — is inside the frozen tolerances, with two mask contexts active. The
+  comparison does not yet assert that all three blend modes appear in the
+  fixture, so additive/multiplicative coverage is not separately proven.
 - [ ] The dedicated viewer resizes, captures a stable frame, and exits without
   Graphics validation errors, leaked Cubism objects, or live GPU handles.
+  *Partially evidenced (2026-09-11):* both backends capture a stable offscreen
+  frame, export it with no validation-error line, and with
+  `--exit-after-capture` shut down on their own — exit 0, log reaching
+  `CubismFramework::Dispose() is complete.`, and no live-handle warning. Resize
+  remains **unevidenced**: no test calls `Live2DRenderer::ResizeOutput` and no
+  run resizes the target, so that half of the item is unproven, not merely
+  unit-tested.
 - [ ] Visual evidence is compared against the official R5 renderer with
   documented tolerances; compilation alone is not accepted.
+  *Blocked:* the licensed external fixture has no built official sample
+  executable, so no official-reference image exists to compare against.
+  Cross-backend agreement (OpenGL vs Vulkan) is not a substitute for this and
+  is not recorded as one.
 
 ## Post-V1 roadmap
 

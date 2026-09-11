@@ -89,6 +89,116 @@ TEST(RuntimeLaunchOptionsTest, ParsesViewerCaptureAndRejectsSceneOnlyOptions)
     EXPECT_NE(scene_capture.diagnostic.find("--capture"), std::string::npos);
 }
 
+TEST(RuntimeLaunchOptionsTest, ParsesCaptureViewAndDefaultsToPresentation)
+{
+    const auto defaulted = Parse(
+        {"--capture", "save/screenshots/validation/hiyori.png",
+         "--mode", "live2d-viewer"});
+    ASSERT_TRUE(defaulted) << defaulted.diagnostic;
+    EXPECT_EQ(defaulted.options.startup_capture_view,
+              kpengine::runtime::StartupCaptureView::Presentation);
+
+    const auto product = Parse({"--capture", "save/screenshots/validation/hiyori.png",
+                                "--capture-view", "live2d", "--mode", "live2d-viewer"});
+    ASSERT_TRUE(product) << product.diagnostic;
+    EXPECT_EQ(product.options.startup_capture_view,
+              kpengine::runtime::StartupCaptureView::Product);
+
+    const auto presentation = Parse(
+        {"--capture", "save/screenshots/validation/hiyori.png",
+         "--capture-view", "window", "--mode", "live2d-viewer"});
+    ASSERT_TRUE(presentation) << presentation.diagnostic;
+    EXPECT_EQ(presentation.options.startup_capture_view,
+              kpengine::runtime::StartupCaptureView::Presentation);
+
+    const auto invalid_value =
+        Parse({"--capture", "save/screenshots/validation/hiyori.png",
+               "--capture-view", "offscreen", "--mode", "live2d-viewer"});
+    EXPECT_FALSE(invalid_value);
+    EXPECT_NE(invalid_value.diagnostic.find("--capture-view"), std::string::npos);
+
+    const auto without_capture =
+        Parse({"--capture-view", "live2d", "--mode", "live2d-viewer"});
+    EXPECT_FALSE(without_capture);
+    EXPECT_NE(without_capture.diagnostic.find("--capture-view"), std::string::npos);
+
+    const auto scene_view =
+        Parse({"--mode", "scene3d", "--capture-view", "live2d"});
+    EXPECT_FALSE(scene_view);
+    EXPECT_NE(scene_view.diagnostic.find("--capture-view"), std::string::npos);
+}
+
+TEST(RuntimeLaunchOptionsTest, ParsesCaptureAlphaAndDefaultsToOpaqueClear)
+{
+    const auto defaulted = Parse(
+        {"--capture", "save/screenshots/validation/hiyori.png",
+         "--mode", "live2d-viewer"});
+    ASSERT_TRUE(defaulted) << defaulted.diagnostic;
+    EXPECT_FALSE(defaulted.options.startup_capture_transparent_clear);
+
+    const auto transparent =
+        Parse({"--capture", "save/screenshots/validation/hiyori.png",
+               "--capture-alpha", "transparent", "--mode", "live2d-viewer"});
+    ASSERT_TRUE(transparent) << transparent.diagnostic;
+    EXPECT_TRUE(transparent.options.startup_capture_transparent_clear);
+
+    const auto opaque = Parse({"--capture", "save/screenshots/validation/hiyori.png",
+                               "--capture-alpha", "opaque", "--mode",
+                               "live2d-viewer"});
+    ASSERT_TRUE(opaque) << opaque.diagnostic;
+    EXPECT_FALSE(opaque.options.startup_capture_transparent_clear);
+
+    const auto invalid_value =
+        Parse({"--capture", "save/screenshots/validation/hiyori.png",
+               "--capture-alpha", "premultiplied", "--mode", "live2d-viewer"});
+    EXPECT_FALSE(invalid_value);
+    EXPECT_NE(invalid_value.diagnostic.find("--capture-alpha"), std::string::npos);
+
+    const auto without_capture =
+        Parse({"--capture-alpha", "transparent", "--mode", "live2d-viewer"});
+    EXPECT_FALSE(without_capture);
+    EXPECT_NE(without_capture.diagnostic.find("--capture-alpha"), std::string::npos);
+
+    const auto scene_alpha = Parse({"--mode", "scene3d", "--capture-alpha",
+                                    "transparent"});
+    EXPECT_FALSE(scene_alpha);
+    EXPECT_NE(scene_alpha.diagnostic.find("--capture-alpha"), std::string::npos);
+}
+
+TEST(RuntimeLaunchOptionsTest, ParsesExitAfterCaptureAndRequiresCapture)
+{
+    const auto defaulted = Parse(
+        {"--capture", "save/screenshots/validation/hiyori.png",
+         "--mode", "live2d-viewer"});
+    ASSERT_TRUE(defaulted) << defaulted.diagnostic;
+    EXPECT_FALSE(defaulted.options.startup_exit_after_capture);
+
+    const auto enabled =
+        Parse({"--capture", "save/screenshots/validation/hiyori.png",
+               "--exit-after-capture", "--mode", "live2d-viewer"});
+    ASSERT_TRUE(enabled) << enabled.diagnostic;
+    EXPECT_TRUE(enabled.options.startup_exit_after_capture);
+
+    const auto without_capture =
+        Parse({"--exit-after-capture", "--mode", "live2d-viewer"});
+    EXPECT_FALSE(without_capture);
+    EXPECT_NE(without_capture.diagnostic.find("--exit-after-capture"),
+              std::string::npos);
+
+    const auto scene_mode = Parse({"--mode", "scene3d", "--exit-after-capture"});
+    EXPECT_FALSE(scene_mode);
+    EXPECT_NE(scene_mode.diagnostic.find("--exit-after-capture"),
+              std::string::npos);
+
+    const auto duplicated =
+        Parse({"--capture", "save/screenshots/validation/hiyori.png",
+               "--exit-after-capture", "--exit-after-capture",
+               "--mode", "live2d-viewer"});
+    EXPECT_FALSE(duplicated);
+    EXPECT_NE(duplicated.diagnostic.find("--exit-after-capture"),
+              std::string::npos);
+}
+
 TEST(RuntimeLaunchOptionsTest, RejectsUnknownOptions)
 {
     const auto result = Parse({"--startup-leevl", "level/pbr_showcase.level"});
