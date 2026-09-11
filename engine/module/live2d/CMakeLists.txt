@@ -61,7 +61,9 @@ set_property(TARGET Live2DProduct PROPERTY
 
 add_library(Live2DRender STATIC
     render/live2d_render_contract.cpp
-    render/live2d_render_planner.cpp)
+    render/live2d_mask_planner.cpp
+    render/live2d_render_planner.cpp
+    render/live2d_renderer.cpp)
 target_include_directories(Live2DRender PUBLIC
     "${CMAKE_SOURCE_DIR}/engine/runtime"
     "${CMAKE_SOURCE_DIR}/engine/runtime/core"
@@ -125,10 +127,11 @@ target_link_libraries(Live2D INTERFACE Live2DRuntime Live2DProduct
     Live2DAssetRuntime Live2DRegistration Live2DRender)
 
 add_library(Live2DModule STATIC
+    live2d_settings.cpp
     live2d_module.cpp)
 target_include_directories(Live2DModule PUBLIC
     "${CMAKE_SOURCE_DIR}/engine")
-target_link_libraries(Live2DModule PUBLIC Live2D)
+target_link_libraries(Live2DModule PUBLIC Live2D PRIVATE Live2DImport KP::NlohmannJson)
 set_property(TARGET Live2DModule PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
 

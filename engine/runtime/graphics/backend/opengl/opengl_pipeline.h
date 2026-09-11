@@ -24,6 +24,8 @@ namespace kpengine::graphics
         GLenum cull_mode_;
         GLenum front_face_mode_;
 
+        BlendAttachmentState blend_attachment_state_;
+
         bool depth_bias_enabled_;
         float depth_bias_constant = 0.f;
         float depth_bias_slope = 0.f;

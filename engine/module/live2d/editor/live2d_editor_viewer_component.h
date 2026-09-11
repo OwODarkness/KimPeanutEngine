@@ -3,6 +3,16 @@
 
 #include "editor/ui/component/editor_window_component.h"
 
+namespace kpengine::editor
+{
+    class IEditorImguiRenderer;
+}
+
+namespace kpengine::render
+{
+    class RenderSystem;
+}
+
 namespace kpengine::live2d::editor
 {
     // Temporary editor preview surface. The Cubism-backed model/render proxy
@@ -11,9 +21,14 @@ namespace kpengine::live2d::editor
         : public kpengine::editor::EditorWindowComponent
     {
     public:
-        Live2DEditorViewerComponent();
+        Live2DEditorViewerComponent(kpengine::render::RenderSystem *render_system,
+                                    kpengine::editor::IEditorImguiRenderer *imgui_renderer);
 
         void RenderContent() override;
+
+    private:
+        kpengine::render::RenderSystem *render_system_ = nullptr;
+        kpengine::editor::IEditorImguiRenderer *imgui_renderer_ = nullptr;
     };
 }
 

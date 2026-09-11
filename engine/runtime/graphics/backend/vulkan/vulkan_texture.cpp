@@ -30,7 +30,12 @@ namespace kpengine::graphics
         image_create_info.sType = VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO;
         image_create_info.format = ConvertToVulkanTextureFormat(settings.format);
         image_create_info.imageType = ConvertToVulkanImageType(settings.type);
-        image_create_info.usage = ConvertToVulkanTextureUsage(settings.usage);
+        TextureUsage image_usage = settings.usage;
+        if (!data.pixels.empty())
+        {
+            image_usage = image_usage | TextureUsage::TEXTURE_USAGE_TRANSFER_DST;
+        }
+        image_create_info.usage = ConvertToVulkanTextureUsage(image_usage);
         image_create_info.mipLevels = settings.mip_levels;
         image_create_info.extent.width = data.width;
         image_create_info.extent.height = data.height;

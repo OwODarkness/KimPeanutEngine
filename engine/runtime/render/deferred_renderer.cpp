@@ -607,7 +607,11 @@ namespace kpengine::render
         scene_camera_ = input.camera;
         const std::optional<CaptureView> active_capture_view =
             input.pending_capture.has_value() ? input.pending_capture : input.debug_view;
-        active_pending_capture_ = active_capture_view;
+        const bool is_deferred_capture =
+            active_capture_view.has_value() &&
+            active_capture_view.value() != CaptureView::SceneColor &&
+            active_capture_view.value() != CaptureView::Live2D;
+        active_pending_capture_ = is_deferred_capture ? active_capture_view : std::nullopt;
         UpdateEnvironment(input);
         const auto shadow_stamp_fit_started = std::chrono::steady_clock::now();
         active_directional_shadow_ = ScheduleDirectionalShadow(input.lights,
@@ -629,8 +633,7 @@ namespace kpengine::render
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
         active_pass_frame_.emplace(
-            *pass_sequence_, active_capture_view.has_value() &&
-                                 active_capture_view.value() != CaptureView::SceneColor);
+            *pass_sequence_, is_deferred_capture);
         const bool cursor_started = active_pass_frame_->ExecuteRenderer(
             [this, &input](FixedRenderPassId id) { return ExecutePass(id, input.lights); });
         result.normal_recording_completed =

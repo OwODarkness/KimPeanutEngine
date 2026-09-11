@@ -26,15 +26,16 @@
   deterministic `.live2d` root and native Texture dependencies beside the
   requested output, and reject immutable product collisions without exposing a
   partial root.
-- [ ] **L2D4 — model snapshot and common renderer**
+- [ ] **L2D4 — Live2D planning and generic Render submission**
   ([concrete plan](.plan/L2D4.md)): execute six gated subtasks—
   [x] [contract freeze](.plan/L2D4.0.md) ([journal](../../.spec/journal/2026-09-09-live2d-l2d4-0.md)),
   [common streaming geometry](.plan/L2D4.1.md),
   [SDK-free extraction](.plan/L2D4.2.md),
-  [unmasked rendering](.plan/L2D4.3.md),
-  [packed clipping](.plan/L2D4.4.md), and
+  [generic submission and unmasked planning](.plan/L2D4.3.md),
+  [packed masks as generic passes](.plan/L2D4.4.md), and
   [cross-backend hardening](.plan/L2D4.5.md). L2D4 ends with an offscreen
-  renderer; the window, presentation, and final capture workflow remain L2D5.
+  result produced through a semantic-free Render executor; the window,
+  presentation, and final capture workflow remain L2D5.
 - [ ] **L2D5 — dedicated viewer and V1 evidence:** add
   `KimPeanutLive2DViewer`, resize and capture support, a legally usable fixture,
   official-reference comparison, cross-backend screenshots, and clean shutdown
@@ -59,6 +60,8 @@
   partial root.
 - [ ] One native `.live2d` asset can create at least two independent model
   instances that share immutable data and textures but not parameter state.
+- [ ] Live2D emits an ordered generic `render::RenderSubmission`; Render and
+  Graphics contain no Live2D include, semantic enum, pass ID, or dispatch branch.
 - [ ] One representative clipped model renders with correct order, opacity,
   normal/add/multiply blending, masks, canvas transform, and transparent
   background on OpenGL and Vulkan.
@@ -97,5 +100,6 @@
   terms before checking it into the repository.
 - [x] L2D4 V1 rejects Cubism 5.3 offscreen/blend groups during static model
   extraction before GPU publication; support requires a later planned stage.
-- [ ] Freeze texture alpha/color-space handling from an official R5 reference
-  capture before shader implementation; this is the L2D4.0 exit gate.
+- [x] Freeze texture alpha/color-space and PMA equations from the pinned R5
+  source in L2D4.0. Official image comparison remains an L2D5 evidence gate
+  because the licensed external fixture has no built official sample executable.

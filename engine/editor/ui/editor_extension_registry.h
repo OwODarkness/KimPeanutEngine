@@ -6,12 +6,19 @@
 #include <mutex>
 #include <vector>
 
+namespace kpengine::render
+{
+    class RenderSystem;
+}
+
 namespace kpengine::editor
 {
     class EditorUIComponent;
+    class IEditorImguiRenderer;
 
     using EditorWorkspaceComponentFactory =
-        std::function<std::unique_ptr<EditorUIComponent>()>;
+        std::function<std::unique_ptr<EditorUIComponent>(
+            kpengine::render::RenderSystem *, IEditorImguiRenderer *)>;
 
     class EditorExtensionRegistry final
     {

@@ -24,6 +24,7 @@ namespace kpengine::render
         PointShadowDepth,
         PointShadowVisibility,
         SelectionMask,
+        Live2D,
         EngineWindow,
     };
 

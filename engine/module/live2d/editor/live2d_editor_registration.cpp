@@ -11,9 +11,11 @@ namespace kpengine::live2d::editor
         kpengine::editor::EditorExtensionRegistry &registry)
     {
         registry.RegisterWorkspaceComponentFactory(
-            []
+            [](kpengine::render::RenderSystem *render_system,
+               kpengine::editor::IEditorImguiRenderer *imgui_renderer)
             {
-                return std::make_unique<Live2DEditorViewerComponent>();
+                return std::make_unique<Live2DEditorViewerComponent>(
+                    render_system, imgui_renderer);
             });
     }
 }

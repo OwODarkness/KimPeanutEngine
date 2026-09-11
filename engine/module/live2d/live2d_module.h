@@ -4,6 +4,7 @@
 #include "module/engine_module.h"
 #include "module/live2d/runtime/live2d_system.h"
 #include "module/live2d/runtime/live2d_registration.h"
+#include "module/live2d/render/live2d_renderer.h"
 
 namespace kpengine::live2d
 {
@@ -26,6 +27,8 @@ namespace kpengine::live2d
     private:
         kpengine::runtime::Engine *engine_ = nullptr;
         Live2DSystem system_;
+        std::unique_ptr<Live2DRenderer> renderer_;
+        asset::AssetID model_asset_{};
         bool registration_succeeded_ = false;
         std::string registration_diagnostic_;
     };

@@ -30,6 +30,7 @@ gtest_discover_tests(Live2DModelDataContractTest)
 
 add_executable(Live2DRenderPlannerTest
     live2d_render_planner_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_mask_planner.cpp
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_render_planner.cpp
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_render_contract.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_submission.cpp
@@ -45,10 +46,25 @@ target_link_libraries(Live2DRenderPlannerTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
 gtest_discover_tests(Live2DRenderPlannerTest)
 
+add_executable(Live2DMaskPlannerTest
+    live2d_mask_planner_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_mask_planner.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_model_data.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_render_contract.cpp)
+target_include_directories(Live2DMaskPlannerTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime)
+target_link_libraries(Live2DMaskPlannerTest PRIVATE KP::GoogleTest)
+include(GoogleTest)
+gtest_discover_tests(Live2DMaskPlannerTest)
+
 if(KPENGINE_ENABLE_LIVE2D)
     add_executable(Live2DCoreTest
         live2d_core_test.cpp
-        live2d_asset_test.cpp)
+        live2d_asset_test.cpp
+        live2d_settings_test.cpp
+        ${CMAKE_SOURCE_DIR}/engine/module/live2d/live2d_settings.cpp)
 
     target_include_directories(Live2DCoreTest PRIVATE
         "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}"
@@ -60,6 +76,7 @@ if(KPENGINE_ENABLE_LIVE2D)
         Live2DRuntime
         Live2DCubismFrameworkRuntime
         Live2D::CubismCore
+        KP::NlohmannJson
         KP::GoogleTest)
 
     string(REPLACE "\\" "/" _kpengine_live2d_moc_path

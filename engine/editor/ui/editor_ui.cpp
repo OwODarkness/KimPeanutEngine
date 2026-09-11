@@ -245,7 +245,8 @@ namespace kpengine::editor
         for (const auto &factory :
              GetEditorExtensionRegistry().SnapshotWorkspaceComponentFactories())
         {
-            if (std::unique_ptr<EditorUIComponent> component = factory())
+            if (std::unique_ptr<EditorUIComponent> component =
+                    factory(init_info_.render_system, renderer_.get()))
             {
                 components_.push_back(std::move(component));
             }

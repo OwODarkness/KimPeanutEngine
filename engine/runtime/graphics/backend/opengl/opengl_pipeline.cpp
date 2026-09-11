@@ -102,6 +102,7 @@ namespace kpengine::graphics
         depth_bias_slope = desc.raster_state.depth_bias_slope;
 
         line_width_ = desc.raster_state.line_width;
+        blend_attachment_state_ = desc.blend_attachment_state;
 
         descriptor_binding_descs_ = desc.descriptor_binding_descs;
 
@@ -187,6 +188,33 @@ namespace kpengine::graphics
         }
 
         glLineWidth(line_width_);
+
+        if (blend_attachment_state_.blend_enabled)
+        {
+            glEnable(GL_BLEND);
+            glBlendEquationSeparate(
+                ConvertToOpenglBlendOp(blend_attachment_state_.color_blend_op),
+                ConvertToOpenglBlendOp(blend_attachment_state_.alpha_blend_op));
+            glBlendFuncSeparate(
+                ConvertToOpenglBlendFactor(
+                    blend_attachment_state_.src_color_blend_factor),
+                ConvertToOpenglBlendFactor(
+                    blend_attachment_state_.dst_color_blend_factor),
+                ConvertToOpenglBlendFactor(
+                    blend_attachment_state_.src_alpha_blend_factor),
+                ConvertToOpenglBlendFactor(
+                    blend_attachment_state_.dst_alpha_blend_factor));
+        }
+        else
+        {
+            glDisable(GL_BLEND);
+        }
+
+        const uint8_t color_write_mask = blend_attachment_state_.color_write_mask;
+        glColorMask((color_write_mask & 0x1u) != 0u,
+                    (color_write_mask & 0x2u) != 0u,
+                    (color_write_mask & 0x4u) != 0u,
+                    (color_write_mask & 0x8u) != 0u);
     }
 
     void OpenglPipeline::Destroy()

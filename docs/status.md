@@ -1,6 +1,6 @@
 # Project Status
 
-**Snapshot: 2026-09-10.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-11.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
 **Current release: v1.1.0.**
 
@@ -20,6 +20,27 @@
   before publication until L2D4.4. Focused submission/planner tests and the
   existing Live2D, Render, and schedule tests pass. →
   [L2D4.3 journal](../.spec/journal/2026-09-10-live2d-l2d4-3.md)
+
+- **Live2D L2D4.4 packed mask planning and generic pass emission (2026-09-11)**
+  — added an SDK-free packed RGBA mask-atlas planner with deterministic
+  context sharing, active-consumer bounds, 5% expansion, 36-slot assignment,
+  and model-to-mask/sample matrices. Live2D now compiles clipping into an
+  ordinary mask-source pass followed by the existing color pass; unmasked
+  drawables continue using the L2D4.3 pipelines. Focused CPU/planner and
+  generic executor tests pass. Native Live2D shader/resource creation and
+  backend readback remain the next integration gate. →
+  [L2D4.4 journal](../.spec/journal/2026-09-11-live2d-l2d4-4.md)
+
+- **Live2D concrete renderer preview (2026-09-11)** — added renderer-owned
+  shader/pipeline/resource creation, packed-mask target setup, generic Render
+  extension submission, Live2D capture, and the minimal camera-only
+  `level/live2d_test.level` fixture. `config/live2d.json` now selects an
+  offline native `.live2d` product; runtime no longer imports Hiyori source or
+  writes a temporary product closure. Hiyori renders correctly through the
+  configured OpenGL path. OpenGL now applies pipeline blend state explicitly;
+  Vulkan file textures declare transfer-destination usage, but Vulkan Hiyori
+  capture still has sampled-texture corruption under investigation. →
+  [renderer journal](../.spec/journal/2026-09-11-live2d-renderer.md)
 
 - **Live2D L2D4.2 SDK-free model extraction (2026-09-10)** — added retained,
   ordered Texture payloads, value-only static topology and frame snapshots,

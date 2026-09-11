@@ -104,19 +104,48 @@ namespace kpengine::live2d
         EXPECT_FLOAT_EQ(constants.multiply_color.r, 0.5f);
     }
 
-    TEST(Live2DRenderPlannerTest, RejectsMaskedDrawablesBeforePublication)
+    TEST(Live2DRenderPlannerTest, EmitsMaskedDrawablesAsTwoGenericPasses)
     {
         Live2DStaticModelData data = MakeStaticData();
         data.drawables[0].mask_context_index = 0u;
         data.drawables[0].mask_source_drawable_indices = {1u};
         data.mask_contexts.push_back({{1u}});
         data.feature_report.active_mask_context_count = 1u;
-        const Live2DRenderPlanResult result = Live2DRenderPlanner::Plan(
-            MakeResources(), MakeProxy(data), data, MakeFrame(data));
+        Live2DRenderProxy proxy = MakeProxy(data);
+        proxy.mask_atlas_target = {6u, 0u};
+        proxy.mask_atlas_texture = {7u, 0u};
+        Live2DRenderResourceSet resources = MakeResources();
+        resources.mask_culled = {17u, 0u};
+        resources.mask_unculled = {18u, 0u};
+        resources.masked_normal_culled = {19u, 0u};
+        resources.masked_normal_unculled = {20u, 0u};
+        resources.masked_additive_culled = {21u, 0u};
+        resources.masked_additive_unculled = {22u, 0u};
+        resources.masked_multiplicative_culled = {23u, 0u};
+        resources.masked_multiplicative_unculled = {24u, 0u};
 
-        EXPECT_FALSE(result.succeeded);
-        EXPECT_NE(result.diagnostic.find("L2D4.4"), std::string::npos);
-        EXPECT_TRUE(result.submission.work.passes.empty());
+        Live2DFrameSnapshot frame = MakeFrame(data);
+        frame.drawables[0].inverted_mask = true;
+        const Live2DRenderPlanResult result = Live2DRenderPlanner::Plan(
+            resources, proxy, data, frame);
+
+        ASSERT_TRUE(result.succeeded) << result.diagnostic;
+        ASSERT_EQ(result.submission.work.passes.size(), 2u);
+        ASSERT_EQ(result.submission.work.passes[0].draws.size(), 1u);
+        ASSERT_EQ(result.submission.work.passes[1].draws.size(), 2u);
+        EXPECT_EQ(result.submission.work.passes[0].target.id, 6u);
+        EXPECT_EQ(result.submission.work.passes[1].target.id, 4u);
+        EXPECT_EQ(result.submission.work.passes[0].draws[0].scissor->width, 85u);
+        EXPECT_EQ(result.submission.work.passes[1].draws[1].textures.size(), 2u);
+        EXPECT_EQ(result.submission.counters.submitted_mask_source_draw_count, 1u);
+        Live2DMaskedDrawConstants constants{};
+        ASSERT_EQ(result.submission.work.passes[1].draws[1].uniforms.front().bytes.size(),
+                  sizeof(constants));
+        std::memcpy(&constants,
+                    result.submission.work.passes[1].draws[1].uniforms.front().bytes.data(),
+                    sizeof(constants));
+        EXPECT_EQ(constants.channel, 0u);
+        EXPECT_EQ(constants.inverted, 1u);
     }
 
     TEST(Live2DRenderPlannerTest, RejectsMissingSelectedPipeline)

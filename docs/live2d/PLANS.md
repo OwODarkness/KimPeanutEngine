@@ -4,7 +4,7 @@
 an optional Live2D module. Current work is tracked in [TODO.md](TODO.md), the
 SDK design is in [`.plan/L2D1.md`](.plan/L2D1.md), the generic Asset migration
 is owned by [AX1](../asset/.plan/AX1.md), Live2D's Asset handoff is staged in
-[`.plan/L2D2.md`](.plan/L2D2.md), the common renderer is staged in
+[`.plan/L2D2.md`](.plan/L2D2.md), Live2D planning and generic submission are staged in
 [`.plan/L2D4.md`](.plan/L2D4.md), and the complete V1 execution contract is in
 [`.spec/specs/live2d-v1-rendering.md`](../../.spec/specs/live2d-v1-rendering.md).
 
@@ -217,19 +217,23 @@ directory, keeping the product's dependency paths valid without reaching into
   -> AssetManager registration/cache/reference graph
   -> Live2DSystem::CreateInstance(asset id)
   -> mutable Live2DModelInstance (Cubism model and parameters)
-  -> Live2DRenderer extracts sorted drawables for the current frame
-  -> frame-safe streaming geometry + texture/mask bindings
+  -> Live2DRenderPlanner calculates semantic draw/mask plan
+  -> Live2DRenderSubmission wraps generic ordered RenderSubmission work
+  -> generic RenderSubmissionExecutor + FrameContext
   -> Graphics CommandRecorder
   -> OpenGL or Vulkan backend
 ```
 
-Ownership is intentionally three-tiered:
+Ownership is intentionally split by semantic, resource, and frame lifetime:
 
 | Object | Owner | Lifetime and mutation |
 | --- | --- | --- |
 | `Live2DModelAsset` | Asset cache/shared payload | Immutable; may outlive its Asset wrapper through `shared_ptr`. |
 | `Live2DModelInstance` | `Live2DSystem` caller/instance pool | Mutable per character; owns Cubism parameter/model evaluation state. |
-| `Live2DRenderProxy` | `Live2DRenderer` | GPU handles and per-frame draw metadata; retired only after submitted work is safe. |
+| `Live2DRenderResourceSet` | Live2D render service/composition | Shared pipeline variants and sampler; outlives every proxy/submission. |
+| `Live2DRenderProxy` | Live2D render caller | Model-specific GPU handles/static ranges; retired only after submitted work is safe. |
+| `Live2DRenderSubmission` | Frame producer until execution returns | Owns Live2D diagnostics and nested generic work; no SDK pointers. |
+| `RenderSubmissionExecutor` | Generic Render frame path | Borrows submission/resources, allocates `FrameContext` data, records common commands. |
 
 Multiple instances may share one asset and texture dependencies but never share
 mutable Cubism model parameters. Asset dependency edges protect Texture assets
@@ -243,8 +247,8 @@ Framework, and finally releases Core/module state.
 
 ## V1 render architecture
 
-The custom renderer reads the current Core/Framework drawable data rather than
-calling an official native renderer. It must support the features required for
+The Live2D planner reads the current Core/Framework drawable data rather than
+calling an official native renderer. It owns the features required to describe
 a correct still frame:
 
 - drawable visibility and render-order sorting;
@@ -256,13 +260,22 @@ a correct still frame:
 - explicit rejection of an unsupported required Cubism 5.3/R5 offscreen
   drawing feature rather than silent corruption.
 
-The common Graphics addition is specified by [L2D4](.plan/L2D4.md): generic
+The common Graphics and Render additions are specified by
+[L2D4](.plan/L2D4.md): generic
 immutable/per-frame buffers plus an explicit multi-stream geometry view, not
 public `MapVkBuffer`/`glBufferSubData` hooks. Static UV/index data is uploaded
 once. One common per-frame position handle owns backend frame-slot storage and
 is written only after `BeginFrame` selects a safe slot. Indexed ranges and
 base-vertex offsets let one concatenated model buffer serve all drawables while
 the existing static `MeshHandle` path remains compatible.
+
+Above that primitive, Live2D compiles its semantic plan into an already ordered,
+value-only `render::RenderSubmission`. Generic Render validates it, allocates
+frame-local uniform/binding data, and records it through `CommandRecorder`.
+Render sees only uploads, targets, geometry, pipeline handles, resources,
+viewport/scissor, and indexed draws. It has no Cubism drawable, parameter,
+expression, mask-context, or feature-policy concept. Per-pixel texture/color/
+mask work remains in the GPU shaders.
 
 V1 uses correctness-oriented pipeline variants for mask, normal, additive, and
 multiplicative draws. Pipeline-switch elimination, bindless batching, CPU-
@@ -376,6 +389,13 @@ Graphics capabilities.
   details upward and makes tests/tooling depend on platform headers.
 - **Create/destroy meshes every frame:** violates efficient and safe GPU
   lifetime expectations; deformed vertices need frame-safe streaming storage.
+- **Let a Live2D renderer record `CommandRecorder` directly:** couples semantic
+  planning to frame allocation/execution and leaves no reusable submission seam.
+  Live2D instead emits ordered generic work that Render executes without
+  knowing its source.
+- **Add Live2D cases to `RenderSystem` or the fixed deferred pass enum:** makes
+  generic Render know an optional module and expands the scene renderer for a
+  standalone consumer. Main-engine scheduling remains later L2D10 work.
 - **Implement emotion, body language, or TTS coupling during V1:** those are
   behavior-policy systems above a verified model-instance and rendering base.
 - **Import Sakura's render graph or I/O stack:** those designs solve Sakura's

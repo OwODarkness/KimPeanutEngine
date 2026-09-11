@@ -10,6 +10,7 @@
 #include "graphics/backend/common/api.h"
 #include "graphics/backend/common/command_recorder.h"
 #include "render/render_submission.h"
+#include "live2d_mask_planner.h"
 #include "runtime/live2d_model_data.h"
 
 namespace kpengine::live2d
@@ -29,10 +30,21 @@ namespace kpengine::live2d
         graphics::PipelineHandle additive_unculled;
         graphics::PipelineHandle multiplicative_culled;
         graphics::PipelineHandle multiplicative_unculled;
+        graphics::PipelineHandle masked_normal_culled;
+        graphics::PipelineHandle masked_normal_unculled;
+        graphics::PipelineHandle masked_additive_culled;
+        graphics::PipelineHandle masked_additive_unculled;
+        graphics::PipelineHandle masked_multiplicative_culled;
+        graphics::PipelineHandle masked_multiplicative_unculled;
+        graphics::PipelineHandle mask_culled;
+        graphics::PipelineHandle mask_unculled;
         graphics::SamplerHandle sampler;
 
         graphics::PipelineHandle PipelineFor(Live2DBlendMode blend_mode,
                                               bool culling) const noexcept;
+        graphics::PipelineHandle MaskedPipelineFor(Live2DBlendMode blend_mode,
+                                                   bool culling) const noexcept;
+        graphics::PipelineHandle MaskPipelineFor(bool culling) const noexcept;
     };
 
     // The proxy is a render-owned immutable resource description. GPU handles
@@ -51,6 +63,8 @@ namespace kpengine::live2d
         graphics::BufferHandle uv_buffer;
         graphics::BufferHandle index_buffer;
         graphics::RenderTargetHandle output_target;
+        graphics::RenderTargetHandle mask_atlas_target;
+        graphics::TextureHandle mask_atlas_texture;
         std::vector<graphics::TextureHandle> textures;
         Live2DStaticModelData static_data;
         std::uint32_t output_width = 0u;
@@ -76,7 +90,26 @@ namespace kpengine::live2d
         Live2DColor multiply_color{1.0f, 1.0f, 1.0f, 1.0f};
         Live2DColor screen_color{};
         float opacity = 1.0f;
-        std::array<float, 3> padding{};
+        // GLSL std140 gives the vec3 padding a full 16-byte slot. Keep the
+        // following matrix aligned to the same boundary in the CPU payload.
+        std::array<float, 4> padding{};
+    };
+
+    struct Live2DMaskSourceConstants final
+    {
+        std::array<float, 16> model_to_mask{};
+        std::uint32_t channel = 0u;
+        float opacity = 1.0f;
+        std::array<float, 2> padding{};
+    };
+
+    struct Live2DMaskedDrawConstants final
+    {
+        Live2DDrawConstants drawable{};
+        std::array<float, 16> model_to_atlas_sample{};
+        std::uint32_t channel = 0u;
+        std::uint32_t inverted = 0u;
+        std::array<std::uint32_t, 2> padding{};
     };
 
     struct Live2DRenderCounters final
@@ -84,6 +117,8 @@ namespace kpengine::live2d
         std::uint32_t submitted_draw_count = 0u;
         std::uint32_t skipped_invisible_count = 0u;
         std::uint32_t skipped_empty_count = 0u;
+        std::uint32_t submitted_mask_source_draw_count = 0u;
+        std::uint32_t active_mask_context_count = 0u;
         std::size_t position_upload_bytes = 0u;
     };
 
@@ -91,6 +126,7 @@ namespace kpengine::live2d
     {
         render::RenderSubmission work;
         Live2DRenderFeatureReport features{};
+        Live2DMaskAtlasPlan mask_plan{};
         Live2DRenderCounters counters{};
         std::uint64_t topology_revision = 0u;
         std::uint64_t frame_sequence = 0u;

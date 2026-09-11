@@ -1,6 +1,7 @@
 # Live2D V1 Rendering
 
-- Status: active implementation; L2D1–L2D3 landed, L2D4 planned
+- Status: active implementation; L2D1–L2D3 and L2D4.0–L2D4.4 landed, with a
+  concrete OpenGL preview renderer
 - Owner: unassigned
 - Parent TODO: [Live2D Module Roadmap](../../docs/live2d/TODO.md)
 - Architecture: [Live2D Module Plans](../../docs/live2d/PLANS.md)
@@ -21,12 +22,13 @@ instance, Render, and GPU ownership boundaries for later character behavior.
   through `KimPeanutAssetTool import-live2d`.
 - `Live2DModelInstance` already owns independent mutable Cubism model state;
   it does not yet expose an SDK-free render snapshot or retain Texture payloads.
-- Graphics supports static indexed mesh drawing, textures, bindings, blend
-  state, scissor/viewport, and offscreen targets, but not generic frame-safe
-  streaming geometry.
-- Render has a fixed schedule and API-neutral backend but no Cubism-backed
-  Live2D renderer or viewer composition; the editor still has the temporary
-  placeholder preview panel.
+- L2D4.0 froze CPU-visible color, alpha, mask, ordering, and unsupported-feature
+  contracts; official image comparison remains deferred to L2D5 evidence.
+- Graphics supports the generic frame-safe geometry, texture, binding, blend,
+  scissor/viewport, and offscreen-target path used by the concrete renderer.
+- Render now accepts a renderer-owned extension and Live2D supplies an
+  offscreen Hiyori preview/capture path selected by `config/live2d.json`.
+  The validation level is camera-only; Vulkan visual parity remains open.
 - Cubism Core remains an external proprietary SDK input and is not committed.
 
 ## Scope and non-goals
@@ -63,6 +65,10 @@ Out of scope:
 - Shared Asset payload is immutable; per-character Cubism state is not shared.
 - GPU objects and synchronization remain owned by Graphics/RHI.
 - Common contracts expose no native OpenGL/Vulkan or proprietary Core types.
+- Live2D owns Cubism semantic planning and emits an ordered generic Render
+  submission; generic Render contains no Live2D dependency or semantic branch.
+- GPU shaders own per-pixel texture/color/mask calculations; CPU planning does
+  not precompute final pixels.
 - Core/Framework initialize once and outlive every model instance/render proxy.
 - Unsupported required Cubism features fail visibly rather than render
   approximately without a diagnostic.
@@ -73,7 +79,7 @@ Out of scope:
 2. [AX1 — Asset extensibility](../../docs/asset/.plan/AX1.md), then
    [L2D2 — Live2D Asset integration](../../docs/live2d/.plan/L2D2.md).
 3. L2D3 — native Live2D product, importer, and runtime loader (landed).
-4. [L2D4 — model snapshot and common RHI renderer](../../docs/live2d/.plan/L2D4.md).
+4. [L2D4 — Live2D planning and generic Render submission](../../docs/live2d/.plan/L2D4.md).
 5. L2D5 — dedicated viewer and V1 validation evidence.
 
 Each stage remains independently buildable. Asset migration lands before the
@@ -110,8 +116,10 @@ Expected evidence includes:
 .\tools\kp.ps1 test Asset
 .\tools\kp.ps1 build GraphicsContractTest
 .\tools\kp.ps1 test GraphicsContractTest
+.\tools\kp.ps1 build RenderPassScheduleTest
+.\tools\kp.ps1 test RenderPassScheduleTest
 .\tools\kp.ps1 smoke
-cmake --build build --config Debug --target Live2DUnitTest
+cmake --build build --config Debug --target Live2DCoreTest
 ctest --test-dir build -C Debug -R Live2D
 cmake --build build --config Debug --target KimPeanutLive2DViewer
 cmake --build build --config Debug
@@ -130,8 +138,9 @@ licensed model fixture is unavailable.
 - The current model-specific archive database is not yet a generic product
   repository; V1 must choose explicit output or generalize that boundary
   without a Live2D-to-model-import dependency.
-- Correct alpha, blend, masking, and Cubism 5.3 offscreen behavior need an
-  official-reference capture before shader contracts are frozen.
+- Alpha, blend, masking, and Cubism 5.3 rejection rules are frozen by L2D4.0
+  from pinned R5 source. Official-image comparison remains an L2D5 evidence
+  gate because the external fixture has no built official sample executable.
 - Dynamic geometry requires a new common RHI contract and backend lifecycle
   tests; a quick native-API hook is not acceptable.
 - The current viewer presentation seam is Editor-oriented. V1 may use a

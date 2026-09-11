@@ -67,7 +67,20 @@ settings. Do not put the SDK path in a tracked preset or source file.
 matches the engine's default MSVC runtime. Use `MT` only when the whole build
 and the matching SDK Core library are intentionally configured for `/MT`.
 
-Cubism-backed rendering is not included in the current editor preview.
+The runtime preview is selected by `config/live2d.json`, not by a level:
+
+```json
+{
+  "version": 1,
+  "enabled": true,
+  "preview_asset": "live2d/hiyori_pro/hiyori.live2d"
+}
+```
+
+`Live2DModule` loads that native `.live2d` product through AssetManager and
+the dedicated Live2D Viewer or `live2d` capture view presents its offscreen
+output. The level used for fast validation is only a camera host; runtime does
+not import `.model3.json` files or write temporary products.
 
 ## Run the Live2D tests
 
@@ -111,6 +124,10 @@ Re-running the same command is safe: existing products must have identical
 bytes or the import fails with an immutable product collision. `--archive-root`
 is optional and, when provided, must name the `.archive` directory beside the
 requested `.live2d` output.
+
+The repository preview configuration expects the Hiyori product at
+`asset/live2d/hiyori_pro/hiyori.live2d`; generate it once with the same command
+using that output path and its adjacent `.archive` directory.
 
 ## Native `.live2d` product format
 

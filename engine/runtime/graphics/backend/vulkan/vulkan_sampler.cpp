@@ -15,6 +15,7 @@ namespace kpengine::graphics{
         sampler_create_info.addressModeW = ConvertToVulkanAddressMode(settings.address_mode_w);
         sampler_create_info.magFilter = ConvertToVulkanFilter(settings.mag_filter);
         sampler_create_info.minFilter = ConvertToVulkanFilter(settings.min_filter);
+        sampler_create_info.mipmapMode = ConvertToVulkanMipmapMode(settings.mipmap_mode);
         sampler_create_info.anisotropyEnable = settings.enable_anisotropy;
         sampler_create_info.maxAnisotropy = settings.max_anisotropy;
         sampler_create_info.mipLodBias = settings.mip_lod_bias;
