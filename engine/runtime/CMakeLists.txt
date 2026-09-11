@@ -19,6 +19,7 @@ add_subdirectory(stats)
 
 add_library(RuntimeLib STATIC
     engine.cpp
+    host/application_host.cpp
     launch_options.cpp
     runtime_global_context.cpp
     runtime_startup.cpp

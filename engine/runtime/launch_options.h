@@ -9,11 +9,13 @@
 
 #include "base/type.h"
 #include "command/command_local_transport.h"
+#include "host/application_host.h"
 
 namespace kpengine::runtime
 {
     struct RuntimeLaunchOptions
     {
+        ApplicationMode application_mode = ApplicationMode::Scene3D;
         GraphicsAPIType graphics_api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         command::LocalCommandTransportConfig command_transport_config{};
         std::optional<std::string> startup_level_override;

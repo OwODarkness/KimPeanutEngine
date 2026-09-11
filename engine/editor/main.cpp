@@ -45,6 +45,7 @@ int main(int argc, char **argv)
     }
 
     Engine engine;
+    engine.SetApplicationMode(launch_options.options.application_mode);
     kpengine::module::RegisterModules(engine);
     engine.SetCommandTransportConfig(launch_options.options.command_transport_config);
     engine.SetGraphicsAPI(launch_options.options.graphics_api_type);

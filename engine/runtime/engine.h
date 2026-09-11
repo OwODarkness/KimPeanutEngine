@@ -15,6 +15,7 @@
 
 #include "base/type.h"
 #include "command/command_local_transport.h"
+#include "host/application_host.h"
 #include "runtime_startup.h"
 #include "stats/performance_stats_command_provider.h"
 
@@ -62,6 +63,11 @@ namespace kpengine
             void Clear();
             void Run();
             void SetCommandTransportConfig(command::LocalCommandTransportConfig config);
+            void SetApplicationMode(ApplicationMode mode);
+            ApplicationMode GetApplicationMode() const noexcept { return application_mode_; }
+            bool RegisterApplicationHostProvider(ApplicationMode mode,
+                                                 ApplicationHostFactory factory,
+                                                 std::string &diagnostic);
             void SetGraphicsAPI(GraphicsAPIType api_type);
             void SetStartupLevelOverride(std::string authored_or_normalized_path);
             StartupSnapshot GetStartupSnapshot() const;
@@ -191,6 +197,9 @@ namespace kpengine
             command::LocalCommandTransportConfig command_transport_config_{};
             std::unique_ptr<command::CommandLocalTransport> command_transport_;
             PerformanceStatsCommandRegistrationResult performance_stats_commands_{};
+
+            ApplicationMode application_mode_ = ApplicationMode::Scene3D;
+            ApplicationHostRegistry application_host_registry_{};
 
             std::vector<std::unique_ptr<module::EngineModule>> modules_;
             std::size_t initialized_module_count_ = 0;

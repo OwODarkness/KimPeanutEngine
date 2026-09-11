@@ -106,6 +106,30 @@ namespace kpengine
             command_transport_config_ = std::move(config);
         }
 
+        void Engine::SetApplicationMode(const ApplicationMode mode)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "application mode must be set before Engine::Initialize");
+            }
+            application_mode_ = mode;
+        }
+
+        bool Engine::RegisterApplicationHostProvider(
+            const ApplicationMode mode,
+            ApplicationHostFactory factory,
+            std::string &diagnostic)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                diagnostic =
+                    "application host providers must be registered before Engine::Initialize";
+                return false;
+            }
+            return application_host_registry_.Register(mode, std::move(factory), diagnostic);
+        }
+
         void Engine::SetGraphicsAPI(GraphicsAPIType api_type)
         {
             if (api_type != GraphicsAPIType::GRAPHICS_API_UNKNOW)
@@ -151,6 +175,15 @@ namespace kpengine
                 throw std::runtime_error("Engine is already initialized");
             }
             KP_LOG("EngineLog", LOG_LEVEL_INFO, "Engine initializing...");
+            KP_LOG("EngineLog", LOG_LEVEL_INFO, "Application mode: %s",
+                   ApplicationModeName(application_mode_));
+            if (application_mode_ != ApplicationMode::Scene3D &&
+                !application_host_registry_.Contains(application_mode_))
+            {
+                throw std::runtime_error(
+                    std::string("application mode '") + ApplicationModeName(application_mode_) +
+                    "' has no registered host provider");
+            }
             initialization_started_ = true;
             shutdown_requested_.store(false);
             startup_coordinator_.Begin();

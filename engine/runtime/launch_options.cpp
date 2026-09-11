@@ -61,12 +61,34 @@ namespace kpengine::runtime
             RuntimeLaunchOptionsParseResult result{};
             bool has_agent_port = false;
             bool has_graphics_api = false;
+            bool has_mode = false;
             bool has_startup_level = false;
 
             for (std::size_t index = 0; index < arguments.size(); ++index)
             {
                 const std::string_view argument = arguments[index];
-                if (argument == "--agent-port")
+                if (argument == "--mode")
+                {
+                    if (has_mode)
+                    {
+                        return Failure("duplicate option '--mode'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--mode requires scene3d or live2d-viewer");
+                    }
+
+                    const std::string_view value = arguments[++index];
+                    const std::optional<ApplicationMode> mode = ParseApplicationMode(value);
+                    if (!mode.has_value())
+                    {
+                        return Failure("--mode requires scene3d or live2d-viewer (got '" +
+                                       std::string{value} + "')");
+                    }
+                    result.options.application_mode = *mode;
+                    has_mode = true;
+                }
+                else if (argument == "--agent-port")
                 {
                     if (has_agent_port)
                     {

@@ -1,10 +1,12 @@
 #include <initializer_list>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
 
 #include <gtest/gtest.h>
 
+#include "engine.h"
 #include "launch_options.h"
 
 namespace
@@ -34,6 +36,8 @@ TEST(RuntimeLaunchOptionsTest, DefaultsPreserveExistingLaunchBehavior)
     const auto result = Parse({});
 
     ASSERT_TRUE(result) << result.diagnostic;
+    EXPECT_EQ(result.options.application_mode,
+              kpengine::runtime::ApplicationMode::Scene3D);
     EXPECT_EQ(result.options.graphics_api_type,
               kpengine::GraphicsAPIType::GRAPHICS_API_UNKNOW);
     EXPECT_FALSE(result.options.command_transport_config.enabled);
@@ -43,9 +47,12 @@ TEST(RuntimeLaunchOptionsTest, DefaultsPreserveExistingLaunchBehavior)
 TEST(RuntimeLaunchOptionsTest, ParsesOptionsInAnyOrderAndNormalizesLevel)
 {
     const auto result = Parse({"--startup-level", "level\\.\\point_shadow_validation.level",
-                               "--agent-port", "37373", "--graphics-api", "vulkan"});
+                               "--agent-port", "37373", "--graphics-api", "vulkan",
+                               "--mode", "live2d-viewer"});
 
     ASSERT_TRUE(result) << result.diagnostic;
+    EXPECT_EQ(result.options.application_mode,
+              kpengine::runtime::ApplicationMode::Live2DViewer);
     EXPECT_EQ(result.options.graphics_api_type,
               kpengine::GraphicsAPIType::GRAPHICS_API_VULKAN);
     ASSERT_TRUE(result.options.command_transport_config.enabled);
@@ -71,6 +78,8 @@ TEST(RuntimeLaunchOptionsTest, RejectsMissingAndInvalidValues)
         {"--agent-port", "37373x"},
         {"--graphics-api"},
         {"--graphics-api", "metal"},
+        {"--mode"},
+        {"--mode", "editor"},
         {"--startup-level"},
         {"--startup-level", "level/pbr_showcase.json"},
     };
@@ -107,6 +116,48 @@ TEST(RuntimeLaunchOptionsTest, RejectsDuplicateOptions)
 {
     EXPECT_FALSE(Parse({"--agent-port", "37373", "--agent-port", "37374"}));
     EXPECT_FALSE(Parse({"--graphics-api", "vulkan", "--graphics-api", "opengl"}));
+    EXPECT_FALSE(Parse({"--mode", "scene3d", "--mode", "live2d-viewer"}));
     EXPECT_FALSE(Parse({"--startup-level", "level/pbr_showcase.level",
                         "--startup-level", "level/point_shadow_validation.level"}));
+}
+
+namespace
+{
+    class TestApplicationHost final : public kpengine::runtime::IApplicationHost
+    {
+    public:
+        const char *Name() const noexcept override { return "test"; }
+        bool Initialize(kpengine::runtime::Engine &, std::string &) override { return true; }
+        bool Tick(float, std::string &) override { return true; }
+        bool RecordFrame(std::string &) override { return true; }
+        void Shutdown() noexcept override {}
+    };
+}
+
+TEST(ApplicationHostRegistryTest, RegistersAndCreatesOneProviderPerMode)
+{
+    kpengine::runtime::ApplicationHostRegistry registry;
+    std::string diagnostic;
+    const bool registered = registry.Register(
+        kpengine::runtime::ApplicationMode::Live2DViewer,
+        [](kpengine::runtime::Engine &) {
+            return std::make_unique<TestApplicationHost>();
+        },
+        diagnostic);
+
+    ASSERT_TRUE(registered) << diagnostic;
+    EXPECT_TRUE(registry.Contains(kpengine::runtime::ApplicationMode::Live2DViewer));
+    EXPECT_FALSE(registry.Contains(kpengine::runtime::ApplicationMode::Scene3D));
+    kpengine::runtime::Engine engine;
+    const std::unique_ptr<kpengine::runtime::IApplicationHost> host = registry.Create(
+        kpengine::runtime::ApplicationMode::Live2DViewer, engine, diagnostic);
+    ASSERT_NE(host, nullptr) << diagnostic;
+    EXPECT_STREQ(host->Name(), "test");
+    EXPECT_FALSE(registry.Register(
+        kpengine::runtime::ApplicationMode::Live2DViewer,
+        [](kpengine::runtime::Engine &) {
+            return std::make_unique<TestApplicationHost>();
+        },
+        diagnostic));
+    EXPECT_NE(diagnostic.find("already registered"), std::string::npos);
 }

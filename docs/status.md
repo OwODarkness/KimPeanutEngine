@@ -42,6 +42,14 @@
   stage as required by the shader interface. →
   [renderer journal](../.spec/journal/2026-09-11-live2d-renderer.md)
 
+- **Engine MODE1.1 host composition seam (2026-09-11)** — Runtime now owns a
+  neutral `ApplicationMode`/`IApplicationHost` contract and provider registry.
+  The application parses `--mode scene3d|live2d-viewer`, keeps `scene3d` as
+  the default, and rejects viewer mode until a concrete provider is registered.
+  No Live2D dependency was added to Runtime and the existing scene/PBR startup
+  path is unchanged. → [engine host plans](engine/PLANS.md),
+  [MODE1.1 journal](../.spec/journal/2026-09-11-engine-mode1-1.md)
+
 - **Live2D L2D4.2 SDK-free model extraction (2026-09-10)** — added retained,
   ordered Texture payloads, value-only static topology and frame snapshots,
   canonical mask-source contexts, topology revisions, finite/range validation,
@@ -1240,6 +1248,10 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
+- **Engine host modes — MODE1.2/1.3** — extract the existing scene startup
+  into `3DSceneHost`, then register a standalone `Live2DViewerHost` without
+  constructing the scene stack in viewer mode. → [engine host plans](engine/PLANS.md),
+  [MODE1 design](engine/.plan/MODE1.md)
 - **Runtime Reflection RF4 — World Outliner and Actor Inspector (implementation
   landed; smoke pending)** — the shared render-thread `ActorEditorModel`, World
   Outliner, Actor Inspector, RF2 widget policy, and RF3 value-only edit feedback
