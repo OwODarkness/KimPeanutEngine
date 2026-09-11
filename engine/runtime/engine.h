@@ -71,6 +71,11 @@ namespace kpengine
             void SetGraphicsAPI(GraphicsAPIType api_type);
             GraphicsAPIType GetGraphicsAPI() const noexcept { return graphics_api_type_; }
             void SetStartupLevelOverride(std::string authored_or_normalized_path);
+            void SetStartupCaptureOverride(std::string output_path);
+            const std::optional<std::string> &GetStartupCaptureOverride() const noexcept
+            {
+                return startup_capture_override_;
+            }
             StartupSnapshot GetStartupSnapshot() const;
 
             struct FrameLoopMetrics
@@ -194,6 +199,7 @@ namespace kpengine
             // Immutable for one Engine lifetime. The entry point supplies the
             // parser-normalized Asset-root-relative path before Initialize().
             std::optional<std::string> startup_level_override_;
+            std::optional<std::string> startup_capture_override_;
             std::optional<asset::AssetLoadSession> startup_asset_session_;
             StartupCoordinator startup_coordinator_;
 

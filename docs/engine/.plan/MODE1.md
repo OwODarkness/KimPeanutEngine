@@ -1,6 +1,6 @@
 # MODE1 — 3DSceneHost and Live2DViewerHost
 
-- Status: MODE1.3 landed 2026-09-11
+- Status: MODE1.4 landed 2026-09-11
 - Owner: Engine composition / Runtime / Render / Live2D
 - Parent plan: [Engine Host Mode Plans](../PLANS.md)
 - Roadmap: [Engine Host Mode Roadmap](../TODO.md)
@@ -173,11 +173,30 @@ mask target but sends its final drawable pass directly to the viewer window.
 The old `Live2DModule` scene-extension path remains compiled as a migration
 fallback, but MODE1.3 no longer registers it from the application composition.
 
-### MODE1.4 — mode validation
+### MODE1.4 — mode validation (landed 2026-09-11)
 
-Add OpenGL/Vulkan startup and capture checks for both modes. Assert in logs or
-test seams that viewer mode never initializes `DeferredRenderer` and scene mode
-never registers a Live2D renderer.
+Launch parsing now rejects `--startup-level` and `--agent-port` in
+`live2d-viewer` mode, and rejects the viewer-only `--capture` option in
+`scene3d` mode. `--capture save/screenshots/validation/*.png` requests one
+standalone viewer capture without creating the scene command registry.
+
+`Live2DViewerHost` owns that capture request and completes it at the
+presentation boundary: before OpenGL buffer swap and after Vulkan present. The
+existing API-neutral readback/export service remains reusable for future
+offscreen viewer targets. The renderer recreates only its feature-owned output
+target when the backend extent changes; swapchain recreation remains a backend
+responsibility.
+
+`RuntimeContext::AreSceneServicesInitialized()` and the viewer startup guard
+provide the negative construction seam. Scene host initialization asserts that
+its scene services exist; viewer startup fails if they were constructed.
+
+Validated with `RuntimeLaunchOptionsTest` (7/7), a RelWithDebInfo engine build,
+and standalone Hiyori captures on both OpenGL and Vulkan. OpenGL keeps the
+existing sRGB default-framebuffer path; Vulkan applies the equivalent encoding
+in the Live2D shader through `KP_GRAPHICS_API_VULKAN`. The viewer framing is
+1.25x wider horizontally, while the deferred/PBR scene path remains unchanged
+and was not made dependent on the viewer capture service.
 
 ### MODE1.5 — remove temporary coupling
 

@@ -63,8 +63,18 @@
   asset, and renderer without constructing `RenderWorld`, `DeferredRenderer`,
   level state, or editor UI. Generic render submissions can now target the
   backend-owned presentation attachment; OpenGL viewer startup and first-frame
-  smoke pass. Vulkan capture/resize validation remains MODE1.4. →
+  smoke pass. Vulkan startup/capture evidence was completed in MODE1.4. →
   [MODE1.3 journal](../.spec/journal/2026-09-11-engine-mode1-3.md)
+
+- **Engine MODE1.4 startup validation and viewer capture (2026-09-11)** — launch
+  parsing now rejects scene-only options in `live2d-viewer` mode and supports a
+  viewer-only one-shot `--capture` path. The standalone host captures the
+  presented Hiyori image at the correct OpenGL/Vulkan presentation boundary,
+  resizes its feature-owned target with the backend extent, and asserts that
+  Scene3D services remain absent. OpenGL and Vulkan captures use aligned
+  presentation color encoding, show the widened Hiyori framing, and remain
+  isolated from the deferred/PBR scene path. →
+  [MODE1.4 journal](../.spec/journal/2026-09-11-engine-mode1-4.md)
 
 - **Live2D L2D4.2 SDK-free model extraction (2026-09-10)** — added retained,
   ordered Texture payloads, value-only static topology and frame snapshots,

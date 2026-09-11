@@ -40,6 +40,10 @@ namespace kpengine::live2d
                     graphics::CommandRecorder &recorder,
                     float delta_time,
                     std::string &diagnostic) override;
+        // Recreates only the viewer-owned color target. The backend's
+        // presentation/swapchain resize remains its own responsibility.
+        bool ResizeOutput(uint32_t width, uint32_t height,
+                          std::string &diagnostic);
         void SetPresentationTarget(bool enabled) noexcept
         {
             presentation_target_requested_ = enabled;

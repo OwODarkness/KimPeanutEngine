@@ -129,6 +129,9 @@ namespace kpengine::graphics
 
     void OpenglPipeline::Bind() const
     {
+        // Keep the existing OpenGL presentation contract. The default
+        // framebuffer is created as an sRGB-capable target by the window
+        // backend, and Live2D presentation relies on this conversion.
         glEnable(GL_FRAMEBUFFER_SRGB);
         glUseProgram(shader_program_);
 

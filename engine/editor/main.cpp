@@ -53,6 +53,10 @@ int main(int argc, char **argv)
     {
         engine.SetStartupLevelOverride(*launch_options.options.startup_level_override);
     }
+    if (launch_options.options.startup_capture_override.has_value())
+    {
+        engine.SetStartupCaptureOverride(*launch_options.options.startup_capture_override);
+    }
 
     // Boot failure (e.g. missing config/bootstrap.json) surfaces here before the
     // logger is guaranteed to flush, so report it to stderr directly and exit

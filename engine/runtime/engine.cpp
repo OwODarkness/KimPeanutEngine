@@ -169,6 +169,21 @@ namespace kpengine
             startup_level_override_ = std::move(normalized_path);
         }
 
+        void Engine::SetStartupCaptureOverride(std::string output_path)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "startup capture override must be set before Engine::Initialize");
+            }
+            if (application_mode_ != ApplicationMode::Live2DViewer)
+            {
+                throw std::runtime_error(
+                    "startup capture override is only valid in live2d-viewer mode");
+            }
+            startup_capture_override_ = std::move(output_path);
+        }
+
         StartupSnapshot Engine::GetStartupSnapshot() const
         {
             return startup_coordinator_.GetSnapshot();
@@ -1242,6 +1257,16 @@ namespace kpengine
                     {
                         application_host_->ShutdownRenderThread();
                     }
+                    signal_start(false, diagnostic.c_str());
+                    shutdown_requested_.store(true, std::memory_order_release);
+                    EndStartupAccess();
+                    return;
+                }
+                if (global_runtime_context.AreSceneServicesInitialized())
+                {
+                    diagnostic =
+                        "Live2D viewer host initialized Scene3D services unexpectedly";
+                    application_host_->ShutdownRenderThread();
                     signal_start(false, diagnostic.c_str());
                     shutdown_requested_.store(true, std::memory_order_release);
                     EndStartupAccess();

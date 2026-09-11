@@ -43,17 +43,18 @@ TEST(RuntimeLaunchOptionsTest, DefaultsPreserveExistingLaunchBehavior)
               kpengine::GraphicsAPIType::GRAPHICS_API_UNKNOW);
     EXPECT_FALSE(result.options.command_transport_config.enabled);
     EXPECT_FALSE(result.options.startup_level_override.has_value());
+    EXPECT_FALSE(result.options.startup_capture_override.has_value());
 }
 
 TEST(RuntimeLaunchOptionsTest, ParsesOptionsInAnyOrderAndNormalizesLevel)
 {
     const auto result = Parse({"--startup-level", "level\\.\\point_shadow_validation.level",
                                "--agent-port", "37373", "--graphics-api", "vulkan",
-                               "--mode", "live2d-viewer"});
+                               "--mode", "scene3d"});
 
     ASSERT_TRUE(result) << result.diagnostic;
     EXPECT_EQ(result.options.application_mode,
-              kpengine::runtime::ApplicationMode::Live2DViewer);
+              kpengine::runtime::ApplicationMode::Scene3D);
     EXPECT_EQ(result.options.graphics_api_type,
               kpengine::GraphicsAPIType::GRAPHICS_API_VULKAN);
     ASSERT_TRUE(result.options.command_transport_config.enabled);
@@ -61,6 +62,31 @@ TEST(RuntimeLaunchOptionsTest, ParsesOptionsInAnyOrderAndNormalizesLevel)
     ASSERT_TRUE(result.options.startup_level_override.has_value());
     EXPECT_EQ(*result.options.startup_level_override,
               "level/point_shadow_validation.level");
+}
+
+TEST(RuntimeLaunchOptionsTest, ParsesViewerCaptureAndRejectsSceneOnlyOptions)
+{
+    const auto result = Parse({"--capture", "save/screenshots/validation/hiyori.png",
+                               "--graphics-api", "vulkan", "--mode", "live2d-viewer"});
+
+    ASSERT_TRUE(result) << result.diagnostic;
+    ASSERT_TRUE(result.options.startup_capture_override.has_value());
+    EXPECT_EQ(*result.options.startup_capture_override,
+              "save/screenshots/validation/hiyori.png");
+
+    const auto startup_level = Parse({"--mode", "live2d-viewer", "--startup-level",
+                                      "level/pbr_showcase.level"});
+    EXPECT_FALSE(startup_level);
+    EXPECT_NE(startup_level.diagnostic.find("--startup-level"), std::string::npos);
+
+    const auto agent_port = Parse({"--agent-port", "37373", "--mode", "live2d-viewer"});
+    EXPECT_FALSE(agent_port);
+    EXPECT_NE(agent_port.diagnostic.find("--agent-port"), std::string::npos);
+
+    const auto scene_capture = Parse({"--mode", "scene3d", "--capture",
+                                      "save/screenshots/validation/scene.png"});
+    EXPECT_FALSE(scene_capture);
+    EXPECT_NE(scene_capture.diagnostic.find("--capture"), std::string::npos);
 }
 
 TEST(RuntimeLaunchOptionsTest, RejectsUnknownOptions)

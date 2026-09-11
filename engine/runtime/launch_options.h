@@ -19,6 +19,10 @@ namespace kpengine::runtime
         GraphicsAPIType graphics_api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         command::LocalCommandTransportConfig command_transport_config{};
         std::optional<std::string> startup_level_override;
+        // Optional one-shot capture used by standalone hosts. The Live2D
+        // viewer consumes this as a Live2D-target capture; Scene3D keeps its
+        // existing command-driven screenshot flow.
+        std::optional<std::string> startup_capture_override;
     };
 
     struct RuntimeLaunchOptionsParseResult

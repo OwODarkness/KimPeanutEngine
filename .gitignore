@@ -55,6 +55,15 @@ deprecated/
 !/asset/shader/deferred_lighting.shader
 !/asset/shader/deferred_lighting.frag
 !/asset/shader/pbr_gbuffer.vert
+!/asset/shader/live2d_color.shader
+!/asset/shader/live2d_color.vert
+!/asset/shader/live2d_color.frag
+!/asset/shader/live2d_mask.shader
+!/asset/shader/live2d_mask.vert
+!/asset/shader/live2d_mask.frag
+!/asset/shader/live2d_masked.shader
+!/asset/shader/live2d_masked.vert
+!/asset/shader/live2d_masked.frag
 !/asset/shader/pbr_gbuffer.frag
 !/asset/shader/pbr_gbuffer.shader
 !/asset/shader/gbuffer_debug_view.vert

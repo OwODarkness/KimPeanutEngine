@@ -27,6 +27,7 @@ namespace kpengine::live2d
         constexpr uint32_t kConstantsBinding = 0u;
         constexpr uint32_t kTextureBinding = 1u;
         constexpr uint32_t kMaskAtlasBinding = 2u;
+        constexpr float kViewerCharacterWidthScale = 1.25f;
 
         asset::ShaderProgramResource *LoadProgram(
             resource::ResourcePipeline &pipeline, const char *file,
@@ -114,10 +115,11 @@ namespace kpengine::live2d
                                  static_cast<float>(height);
             const float scale = std::min(1.75f / extent_y,
                                          1.75f * aspect / extent_x);
-            return {scale, 0.0f, 0.0f, 0.0f,
+            return {scale * kViewerCharacterWidthScale, 0.0f, 0.0f, 0.0f,
                     0.0f, scale, 0.0f, 0.0f,
                     0.0f, 0.0f, 1.0f, 0.0f,
-                    -center_x * scale, -center_y * scale, 0.0f, 1.0f};
+                    -center_x * scale * kViewerCharacterWidthScale,
+                    -center_y * scale, 0.0f, 1.0f};
         }
     }
 
@@ -136,8 +138,6 @@ namespace kpengine::live2d
                                     const uint32_t width, const uint32_t height,
                                     std::string &diagnostic)
     {
-        (void)width;
-        (void)height;
         Cleanup();
         backend_ = &backend;
         proxy_.output_to_presentation = presentation_target_requested_;
@@ -170,18 +170,6 @@ namespace kpengine::live2d
             return false;
         }
 
-        graphics::RenderTargetDesc output_desc{};
-        output_desc.width = kPreviewWidth;
-        output_desc.height = kPreviewHeight;
-        output_desc.color_attachments = {{graphics::RenderTargetColorAttachment{
-            output_color_format_,
-            graphics::RenderTargetLoadOp::Clear,
-            graphics::RenderTargetStoreOp::Store,
-            // The preview is presented directly as an ImGui image. Keep the
-            // dark preview backdrop opaque; otherwise the RGB render is valid
-            // but ImGui composites the entire image away because alpha is 0.
-            {0.015f, 0.015f, 0.02f, 1.0f}}}};
-        proxy_.output_target = backend.CreateRenderTarget(output_desc);
         graphics::RenderTargetDesc mask_desc{};
         mask_desc.width = kLive2DMaskAtlasWidth;
         mask_desc.height = kLive2DMaskAtlasHeight;
@@ -192,16 +180,18 @@ namespace kpengine::live2d
             {1.0f, 1.0f, 1.0f, 1.0f}}}};
         proxy_.mask_atlas_target = backend.CreateRenderTarget(mask_desc);
         proxy_.mask_atlas_texture = backend.GetRenderTargetColor(proxy_.mask_atlas_target);
-        output_view_ = backend.GetRenderTargetView(proxy_.output_target);
-        if (!proxy_.output_target.IsValid() || !proxy_.mask_atlas_target.IsValid() ||
-            !proxy_.mask_atlas_texture.IsValid() || !output_view_.IsValid())
+        if (!proxy_.mask_atlas_target.IsValid() || !proxy_.mask_atlas_texture.IsValid())
         {
             diagnostic = "Live2D renderer could not create preview render targets";
             Cleanup();
             return false;
         }
-        proxy_.output_width = kPreviewWidth;
-        proxy_.output_height = kPreviewHeight;
+        if (!ResizeOutput(width == 0u ? kPreviewWidth : width,
+                          height == 0u ? kPreviewHeight : height, diagnostic))
+        {
+            Cleanup();
+            return false;
+        }
 
         if (!CreateShadersAndPipelines(diagnostic) ||
             !CreateGeometryAndTextures(diagnostic))
@@ -210,6 +200,63 @@ namespace kpengine::live2d
             return false;
         }
         initialized_ = true;
+        return true;
+    }
+
+    bool Live2DRenderer::ResizeOutput(const uint32_t width, const uint32_t height,
+                                      std::string &diagnostic)
+    {
+        diagnostic.clear();
+        if (backend_ == nullptr)
+        {
+            diagnostic = "Live2D renderer has no graphics backend";
+            return false;
+        }
+        if (width == 0u || height == 0u)
+        {
+            diagnostic = "Live2D output extent must be non-zero";
+            return false;
+        }
+        if (proxy_.output_target.IsValid() && proxy_.output_width == width &&
+            proxy_.output_height == height)
+        {
+            return true;
+        }
+
+        // The host calls this at the beginning of a frame, before recording
+        // any Live2D work. Waiting here gives readback and previously submitted
+        // draws a safe lifetime boundary before the target is replaced.
+        backend_->WaitIdle();
+        if (proxy_.output_target.IsValid())
+        {
+            backend_->DestroyRenderTarget(proxy_.output_target);
+            proxy_.output_target = {};
+        }
+        output_view_ = {};
+
+        graphics::RenderTargetDesc output_desc{};
+        output_desc.width = width;
+        output_desc.height = height;
+        output_desc.color_attachments = {{graphics::RenderTargetColorAttachment{
+            output_color_format_,
+            graphics::RenderTargetLoadOp::Clear,
+            graphics::RenderTargetStoreOp::Store,
+            // Keep the viewer backdrop opaque so the result remains visible
+            // when the output is presented or exported as an image.
+            {0.015f, 0.015f, 0.02f, 1.0f}}}};
+        proxy_.output_target = backend_->CreateRenderTarget(output_desc);
+        output_view_ = backend_->GetRenderTargetView(proxy_.output_target);
+        if (!proxy_.output_target.IsValid() || !output_view_.IsValid())
+        {
+            diagnostic = "Live2D renderer could not resize preview render target";
+            proxy_.output_target = {};
+            output_view_ = {};
+            proxy_.output_width = 0u;
+            proxy_.output_height = 0u;
+            return false;
+        }
+        proxy_.output_width = width;
+        proxy_.output_height = height;
         return true;
     }
 

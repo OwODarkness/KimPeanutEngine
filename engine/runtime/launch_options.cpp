@@ -63,6 +63,7 @@ namespace kpengine::runtime
             bool has_graphics_api = false;
             bool has_mode = false;
             bool has_startup_level = false;
+            bool has_startup_capture = false;
 
             for (std::size_t index = 0; index < arguments.size(); ++index)
             {
@@ -162,10 +163,41 @@ namespace kpengine::runtime
                     result.options.startup_level_override = std::move(normalized);
                     has_startup_level = true;
                 }
+                else if (argument == "--capture")
+                {
+                    if (has_startup_capture)
+                    {
+                        return Failure("duplicate option '--capture'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure(
+                            "--capture requires a relative save/screenshots/validation/*.png path");
+                    }
+
+                    result.options.startup_capture_override = std::string{arguments[++index]};
+                    has_startup_capture = true;
+                }
                 else
                 {
                     return Failure("unknown option '" + std::string{argument} + "'");
                 }
+            }
+
+            if (result.options.application_mode == ApplicationMode::Live2DViewer)
+            {
+                if (result.options.startup_level_override.has_value())
+                {
+                    return Failure("--startup-level is only valid in scene3d mode");
+                }
+                if (result.options.command_transport_config.enabled)
+                {
+                    return Failure("--agent-port is not available in live2d-viewer mode");
+                }
+            }
+            else if (result.options.startup_capture_override.has_value())
+            {
+                return Failure("--capture is only valid in live2d-viewer mode");
             }
 
             result.succeeded = true;

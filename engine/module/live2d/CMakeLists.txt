@@ -132,7 +132,7 @@ add_library(Live2DModule STATIC
     live2d_viewer_host.cpp)
 target_include_directories(Live2DModule PUBLIC
     "${CMAKE_SOURCE_DIR}/engine")
-target_link_libraries(Live2DModule PUBLIC Live2D PRIVATE Live2DImport KP::NlohmannJson)
+target_link_libraries(Live2DModule PUBLIC Live2D PRIVATE Live2DImport RuntimeScreenshot KP::NlohmannJson)
 set_property(TARGET Live2DModule PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
 

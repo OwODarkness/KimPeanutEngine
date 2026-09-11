@@ -82,6 +82,10 @@ namespace kpengine
             // hosts deliberately leave this uncalled so they do not construct
             // RenderWorld, GameplayWorld, or the scene window stack.
             void InitializeSceneServices();
+            bool AreSceneServicesInitialized() const noexcept
+            {
+                return render_system_ != nullptr;
+            }
             // Called by Engine after the render startup handshake, on the game thread.
             // This is the Runtime-owned boundary for initial World composition.
             struct StartupResult

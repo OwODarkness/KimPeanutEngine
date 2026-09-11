@@ -7,19 +7,34 @@
 #include "config/path.h"
 #include "engine.h"
 #include "graphics/backend/common/render_backend.h"
+#include "log/logger.h"
 #include "live2d_settings.h"
 #include "module/live2d/render/live2d_renderer.h"
 #include "module/live2d/runtime/live2d_model_resource.h"
+#include "render/render_capture_service_internal.h"
+#include "screenshot/runtime_screenshot_service.h"
+#include "runtime_global_context.h"
 #include "window/window_system.h"
 
 namespace kpengine::live2d
 {
+    Live2DViewerHost::~Live2DViewerHost()
+    {
+        Shutdown();
+    }
+
     bool Live2DViewerHost::Initialize(runtime::Engine &engine, std::string &diagnostic)
     {
         diagnostic.clear();
         if (engine.GetApplicationMode() != runtime::ApplicationMode::Live2DViewer)
         {
             diagnostic = "Live2D viewer host can only initialize in live2d-viewer mode";
+            return false;
+        }
+        if (runtime::global_runtime_context.AreSceneServicesInitialized())
+        {
+            diagnostic =
+                "Live2D viewer cannot initialize while Scene3D services are present";
             return false;
         }
 
@@ -93,6 +108,48 @@ namespace kpengine::live2d
                 return false;
             }
             render_initialized_ = true;
+
+            render_capture_service_ = std::make_unique<render::RenderCaptureService>(
+                backend_->GetRenderTargetReadback(),
+                [this](render::CaptureView view)
+                {
+                    if (view == render::CaptureView::Live2D && renderer_)
+                    {
+                        return renderer_->GetOutputTarget();
+                    }
+                    return graphics::RenderTargetHandle{};
+                },
+                [this] { return frame_number_; });
+            screenshot_service_ = std::make_unique<runtime::RuntimeScreenshotService>(
+                *render_capture_service_);
+
+            if (engine.GetStartupCaptureOverride().has_value())
+            {
+                runtime::ScreenshotRequest request{};
+                // The standalone viewer presents directly to the swapchain;
+                // capture the presentation boundary so the exported image is
+                // the image visible in the viewer, not the retained clear-only
+                // offscreen target.
+                request.capture.view = render::CaptureView::EngineWindow;
+                request.output_path = *engine.GetStartupCaptureOverride();
+                screenshot_service_->RequestScreenshot(
+                    std::move(request),
+                    [this](runtime::ScreenshotResult result)
+                    {
+                        if (result.IsSuccess())
+                        {
+                            KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
+                                   "Startup capture exported to %s",
+                                   result.output_path.c_str());
+                        }
+                        else
+                        {
+                            KP_LOG("Live2DViewer", LOG_LEVEL_ERROR,
+                                   "Startup capture failed: %s",
+                                   result.diagnostic.c_str());
+                        }
+                    });
+            }
             return true;
         }
         catch (const std::exception &error)
@@ -135,30 +192,95 @@ namespace kpengine::live2d
         }
 
         backend_->BeginFrame();
-        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        if (recorder == nullptr)
-        {
-            return true;
-        }
         const uint32_t frame_index = backend_->GetCurrentFrameIndex() %
                                      static_cast<uint32_t>(frame_contexts_.size());
         render::FrameContext &frame = *frame_contexts_[frame_index];
         const graphics::Extent2D extent = backend_->GetRenderExtent();
+        if (extent.width == 0u || extent.height == 0u)
+        {
+            backend_->EndFrame();
+            return true;
+        }
+        if (!renderer_->ResizeOutput(extent.width, extent.height, diagnostic))
+        {
+            backend_->EndFrame();
+            return false;
+        }
+        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        if (recorder == nullptr)
+        {
+            backend_->EndFrame();
+            return true;
+        }
         elapsed_seconds_ += 1.0f / 120.0f;
         frame.Begin(frame_index, {frame_number_++, elapsed_seconds_, 1.0f / 120.0f}, extent);
         if (!renderer_->Record(frame, *recorder, 1.0f / 120.0f, diagnostic))
         {
+            if (render_capture_service_ && render_capture_service_->HasPendingCapture())
+            {
+                render_capture_service_->RejectPendingCapture(
+                    "Live2D renderer failed before capture readback was queued");
+            }
             frame.End();
             backend_->EndFrame();
             return false;
+        }
+        if (render_capture_service_)
+        {
+            render_capture_service_->EnqueuePendingReadback();
         }
         frame.End();
         backend_->EndFrame();
         if (engine_->GetGraphicsAPI() == GraphicsAPIType::GRAPHICS_API_OPENGL)
         {
+            CompleteWindowCapture();
             window_->SwapBuffers();
         }
+        else
+        {
+            CompleteWindowCapture();
+        }
         return true;
+    }
+
+    void Live2DViewerHost::CompleteWindowCapture() noexcept
+    {
+        if (!render_capture_service_ || !render_capture_service_->HasPendingWindowCapture())
+        {
+            return;
+        }
+
+        try
+        {
+            WindowCaptureResult capture = window_->CaptureWindow();
+            render::CaptureResult result{};
+            if (!capture.IsSuccess())
+            {
+                result.status = render::CaptureResultStatus::Unavailable;
+                result.diagnostic = std::move(capture.diagnostic);
+            }
+            else
+            {
+                result.status = render::CaptureResultStatus::Captured;
+                result.image.width = capture.width;
+                result.image.height = capture.height;
+                result.image.rgba8_pixels = std::move(capture.rgba8_pixels);
+            }
+            render_capture_service_->CompletePendingWindowCapture(std::move(result));
+        }
+        catch (const std::exception &error)
+        {
+            render_capture_service_->CompletePendingWindowCapture(
+                {render::CaptureResultStatus::Failed, {},
+                 std::string{"Live2D viewer window capture threw an exception: "} +
+                     error.what()});
+        }
+        catch (...)
+        {
+            render_capture_service_->CompletePendingWindowCapture(
+                {render::CaptureResultStatus::Failed, {},
+                 "Live2D viewer window capture threw an unknown exception"});
+        }
     }
 
     bool Live2DViewerHost::ShouldClose() const noexcept
@@ -172,6 +294,8 @@ namespace kpengine::live2d
         {
             backend_->WaitIdle();
         }
+        screenshot_service_.reset();
+        render_capture_service_.reset();
         renderer_.reset();
         for (const std::unique_ptr<render::FrameContext> &frame : frame_contexts_)
         {

@@ -15,6 +15,11 @@ namespace kpengine::runtime
         }
 
         global_runtime_context.InitializeSceneServices();
+        if (!global_runtime_context.AreSceneServicesInitialized())
+        {
+            diagnostic = "3DSceneHost failed to initialize scene services";
+            return false;
+        }
         initialized_.store(true, std::memory_order_release);
         return true;
     }
