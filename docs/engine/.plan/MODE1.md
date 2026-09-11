@@ -1,6 +1,6 @@
 # MODE1 — 3DSceneHost and Live2DViewerHost
 
-- Status: proposed
+- Status: MODE1.3 landed 2026-09-11
 - Owner: Engine composition / Runtime / Render / Live2D
 - Parent plan: [Engine Host Mode Plans](../PLANS.md)
 - Roadmap: [Engine Host Mode Roadmap](../TODO.md)
@@ -145,18 +145,33 @@ scene startup path is otherwise unchanged. A concrete shared `EngineServices`
 view is intentionally deferred because the existing RuntimeContext still owns
 the scene-specific lifecycle; extracting it belongs with MODE1.2/1.3.
 
-### MODE1.2 — scene host
+### MODE1.2 — scene host (landed 2026-09-11)
 
-Move current `RuntimeContext`/`RenderSystem` startup coordination behind
-`3DSceneHost` without changing `DeferredRenderer` internals. Keep the editor
-presentation adapter explicit and reject viewer-only services from this host.
+Added the Runtime-owned `Scene3DHost` lifecycle shell and made the application
+module composition mode-aware. `Engine` creates and drives the built-in scene
+host for `scene3d`; the existing `RuntimeContext`/`RenderSystem` startup,
+Gameplay tick, deferred/PBR recording, and editor presentation remain the
+compatibility implementation behind that shell.
+
+`ModuleBootstrap` now registers `Live2DModule` and its viewer editor
+extension only for `live2d-viewer`. Therefore the normal scene host cannot
+register a Live2D render extension or draw the Live2D viewer. The full
+mechanical extraction of `RuntimeContext` ownership is intentionally deferred
+until the shared services needed by MODE1.3 are concrete.
 
 ### MODE1.3 — viewer host
 
-Create `Live2DViewerHost` around the existing concrete Live2D renderer. Reuse
-the API-neutral frame/Graphics services, but provide viewer-owned presentation
-and capture. Initially the existing generic submission executor may remain the
-recording implementation.
+`Live2DViewerHost` now owns the standalone viewer window, backend, frame
+contexts, Cubism system, configured model, and concrete Live2D renderer. Viewer
+startup is performed on the render thread and never initializes the lazy scene
+services, `RenderWorld`, `DeferredRenderer`, level, or editor UI.
+
+The generic submission executor now supports an explicit presentation pass.
+OpenGL records that pass to the default framebuffer; Vulkan records it through
+the backend-owned swapchain presentation bridge. Live2D keeps its offscreen
+mask target but sends its final drawable pass directly to the viewer window.
+The old `Live2DModule` scene-extension path remains compiled as a migration
+fallback, but MODE1.3 no longer registers it from the application composition.
 
 ### MODE1.4 — mode validation
 
@@ -176,8 +191,8 @@ host ownership explicit.
   selection.
 - Scene-mode runtime smoke: existing `GraphicsSmoke`, Render tests, and editor
   startup path.
-- Viewer-mode runtime smoke: Hiyori capture on OpenGL and Vulkan, resize,
-  capture, and clean shutdown.
+- Viewer-mode runtime smoke: Hiyori startup and first-frame presentation on
+  OpenGL; Vulkan capture/resize coverage remains MODE1.4 validation work.
 - Negative viewer assertion: no `DeferredRenderer` or `RenderWorld`
   construction is observed.
 - Negative scene assertion: no Live2D renderer registration occurs.

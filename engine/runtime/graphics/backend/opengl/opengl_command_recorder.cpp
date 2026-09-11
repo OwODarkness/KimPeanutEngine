@@ -43,7 +43,8 @@ namespace kpengine::graphics
 
     bool OpenglCommandRecorder::BeginRenderTarget(RenderTargetHandle target)
     {
-        if (active_render_target_.IsValid() || !services_.render_target_handles ||
+        if (active_render_target_.IsValid() || presentation_active_ ||
+            !services_.render_target_handles ||
             !services_.render_targets || !services_.render_target_framebuffers)
         {
             draws_suppressed_ = true;
@@ -112,8 +113,37 @@ namespace kpengine::graphics
         return true;
     }
 
+    bool OpenglCommandRecorder::BeginPresentation()
+    {
+        if (active_render_target_.IsValid() || presentation_active_ ||
+            services_.presentation_width <= 0 || services_.presentation_height <= 0)
+        {
+            draws_suppressed_ = true;
+            return false;
+        }
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        glViewport(0, 0, services_.presentation_width, services_.presentation_height);
+        glScissor(0, 0, services_.presentation_width, services_.presentation_height);
+        glDrawBuffer(GL_BACK);
+        const std::array<float, 4> clear_color{0.015f, 0.015f, 0.02f, 1.0f};
+        glClearBufferfv(GL_COLOR, 0, clear_color.data());
+        presentation_active_ = true;
+        draws_suppressed_ = false;
+        ResetStateCache();
+        return true;
+    }
+
     void OpenglCommandRecorder::EndRenderTarget()
     {
+        if (presentation_active_)
+        {
+            glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            glDisable(GL_FRAMEBUFFER_SRGB);
+            presentation_active_ = false;
+            draws_suppressed_ = false;
+            ResetStateCache();
+            return;
+        }
         if (!active_render_target_.IsValid())
         {
             return;

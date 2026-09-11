@@ -32,6 +32,11 @@ namespace kpengine::runtime
         virtual bool Initialize(Engine &engine, std::string &diagnostic) = 0;
         virtual bool Tick(float delta_time, std::string &diagnostic) = 0;
         virtual bool RecordFrame(std::string &diagnostic) = 0;
+        virtual bool ShouldClose() const noexcept { return false; }
+        // GPU/window teardown runs on the render thread. The default host has
+        // no render-thread-only resources; Shutdown remains the final owner
+        // teardown called after the Engine joins that thread.
+        virtual void ShutdownRenderThread() noexcept {}
         virtual void Shutdown() noexcept = 0;
     };
 

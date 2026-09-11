@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_GRAPHICS_OPENGL_COMMAND_RECORDER_H
 
 #include <algorithm>
+#include <array>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -71,11 +72,14 @@ namespace kpengine::graphics
             std::function<std::optional<BufferDesc>(BufferHandle)> get_geometry_buffer_desc;
             std::function<GLuint(BufferHandle)> get_geometry_buffer;
             std::function<void()> flush_dirty_uniform_buffers;
+            int presentation_width = 0;
+            int presentation_height = 0;
         };
 
         explicit OpenglCommandRecorder(Services services);
 
         bool BeginRenderTarget(RenderTargetHandle target) override;
+        bool BeginPresentation() override;
         void EndRenderTarget() override;
         bool BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
@@ -115,6 +119,7 @@ namespace kpengine::graphics
         // match the active render target; recording stays pass-scoped instead of
         // submitting a pipeline-state mismatch to the driver.
         bool draws_suppressed_ = false;
+        bool presentation_active_ = false;
         CommandRecorderProfileCounters profile_counters_{};
     };
 }

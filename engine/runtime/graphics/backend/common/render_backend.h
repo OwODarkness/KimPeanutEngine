@@ -156,6 +156,12 @@ namespace kpengine::graphics
         virtual uint32_t GetFramesInFlight() const = 0;
         virtual size_t GetUniformBufferAlignment() const = 0;
         virtual Extent2D GetRenderExtent() const = 0;
+        // Format used by the backend-owned window presentation attachment.
+        // Offscreen Render targets keep their own explicit formats.
+        virtual TextureFormat GetPresentationColorFormat() const
+        {
+            return TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM;
+        }
         // Optional backend telemetry. A value is a percentage in [0, 100];
         // nullopt means that this backend cannot provide GPU utilization.
         virtual std::optional<float> GetGpuUsagePercent() const { return std::nullopt; }

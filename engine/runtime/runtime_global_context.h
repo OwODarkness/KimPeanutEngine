@@ -78,6 +78,10 @@ namespace kpengine
             };
             using ShutdownProgressCallback =
                 std::function<void(const ShutdownProgress &)>;
+            // Creates the traditional scene services. Standalone application
+            // hosts deliberately leave this uncalled so they do not construct
+            // RenderWorld, GameplayWorld, or the scene window stack.
+            void InitializeSceneServices();
             // Called by Engine after the render startup handshake, on the game thread.
             // This is the Runtime-owned boundary for initial World composition.
             struct StartupResult
@@ -155,6 +159,7 @@ namespace kpengine
             std::shared_ptr<const render::PreparedRenderAssetCatalog> prepared_render_assets_;
 
         private:
+            void EnsureSceneServices();
             void ProcessScenePickRequests();
 
             std::atomic<bool> scene_camera_control_captured_{false};

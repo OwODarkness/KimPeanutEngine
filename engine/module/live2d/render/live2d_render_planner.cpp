@@ -109,7 +109,8 @@ namespace kpengine::live2d
             return result;
         }
         if (!proxy.position_buffer.IsValid() || !proxy.uv_buffer.IsValid() ||
-            !proxy.index_buffer.IsValid() || !proxy.output_target.IsValid() ||
+            !proxy.index_buffer.IsValid() ||
+            (!proxy.output_target.IsValid() && !proxy.output_to_presentation) ||
             !resources.sampler.IsValid())
         {
             result.diagnostic = "Live2D render proxy has an invalid resource handle";
@@ -269,7 +270,9 @@ namespace kpengine::live2d
         }
 
         render::SubmissionPass pass{};
-        pass.target = proxy.output_target;
+        pass.presentation = proxy.output_to_presentation;
+        pass.target = proxy.output_to_presentation ? graphics::RenderTargetHandle{}
+                                                    : proxy.output_target;
         for (const std::uint32_t drawable_index : order)
         {
             const Live2DDrawableStatic &drawable = static_data.drawables[drawable_index];

@@ -50,6 +50,22 @@
   path is unchanged. → [engine host plans](engine/PLANS.md),
   [MODE1.1 journal](../.spec/journal/2026-09-11-engine-mode1-1.md)
 
+- **Engine MODE1.2 scene-host isolation (2026-09-11)** — added the built-in
+  Runtime `Scene3DHost` lifecycle shell and made module composition mode-aware.
+  The original `scene3d` Gameplay/RenderWorld/DeferredRenderer/editor path is
+  still the active implementation, while Live2D module, viewer panel, and
+  render extension registration are excluded from scene mode. Vulkan/OpenGL
+  `GraphicsSmoke` remains passing. → [MODE1.2 journal](../.spec/journal/2026-09-11-engine-mode1-2.md)
+
+- **Engine MODE1.3 standalone Live2D viewer (2026-09-11)** — added lazy scene
+  service construction and a Live2D-module-owned `Live2DViewerHost`. Viewer
+  mode owns its GLFW window, RHI backend, frame contexts, Cubism system, Hiyori
+  asset, and renderer without constructing `RenderWorld`, `DeferredRenderer`,
+  level state, or editor UI. Generic render submissions can now target the
+  backend-owned presentation attachment; OpenGL viewer startup and first-frame
+  smoke pass. Vulkan capture/resize validation remains MODE1.4. →
+  [MODE1.3 journal](../.spec/journal/2026-09-11-engine-mode1-3.md)
+
 - **Live2D L2D4.2 SDK-free model extraction (2026-09-10)** — added retained,
   ordered Texture payloads, value-only static topology and frame snapshots,
   canonical mask-source contexts, topology revisions, finite/range validation,
@@ -1248,10 +1264,9 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-- **Engine host modes — MODE1.2/1.3** — extract the existing scene startup
-  into `3DSceneHost`, then register a standalone `Live2DViewerHost` without
-  constructing the scene stack in viewer mode. → [engine host plans](engine/PLANS.md),
-  [MODE1 design](engine/.plan/MODE1.md)
+- **Engine host modes — MODE1.3** — register a standalone
+  `Live2DViewerHost` without constructing the scene stack in viewer mode.
+  → [engine host plans](engine/PLANS.md), [MODE1 design](engine/.plan/MODE1.md)
 - **Runtime Reflection RF4 — World Outliner and Actor Inspector (implementation
   landed; smoke pending)** — the shared render-thread `ActorEditorModel`, World
   Outliner, Actor Inspector, RF2 widget policy, and RF3 value-only edit feedback

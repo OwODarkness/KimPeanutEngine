@@ -136,7 +136,8 @@ namespace kpengine::graphics
                                             [this](BufferHandle handle) {
                                                 return GetGeometryBuffer(handle);
                                             },
-                                            [this]() { UploadDirtyUniformBuffers(); }});
+                                            [this]() { UploadDirtyUniformBuffers(); },
+                                            width_, height_});
         frame_active_ = true;
     }
     void OpenglBackend::EndFrame()

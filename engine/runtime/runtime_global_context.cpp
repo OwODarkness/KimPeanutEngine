@@ -40,28 +40,43 @@ namespace kpengine
         RuntimeContext global_runtime_context;
 
         RuntimeContext::RuntimeContext() :
-        window_system_(WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW)),
-        render_system_(std::make_unique<render::RenderSystem>()),
-        command_registry_(std::make_unique<command::CommandRegistry>()),
-        reflection_system_(std::make_unique<reflection::ReflectionSystem>()),
-        gameplay_world_(std::make_unique<gameplay::GameplayWorld>(
-            render_system_->GetRenderableSourceSink(), render_system_->GetLightSourceSink(),
-            render_system_->GetCameraSourceSink())),
-        level_instance_(std::make_unique<LevelInstance>(asset::AssetManager::GetInstance(),
-                                                        *gameplay_world_,
-                                                        LevelActorFactorySet{},
-                                                        render_system_->GetEnvironmentSourceSink())),
-        log_system_(std::make_unique<LogSystem>()),
-        input_system_(std::make_unique<input::InputSystem>()),
-        lua_vm_(std::make_unique<::kpengine::script::lua::LuaVM>()),
-        memory_sampler_(MemoryStatsSampler::CreateMemoryStatsSampler(PlatformType::PLATFORM_WINDOWS)),
         graphics_api_type_(GraphicsAPIType::GRAPHICS_API_VULKAN)
         {
-            
+        }
+
+        void RuntimeContext::InitializeSceneServices()
+        {
+            if (render_system_ != nullptr)
+            {
+                return;
+            }
+
+            window_system_ = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
+            render_system_ = std::make_unique<render::RenderSystem>();
+            command_registry_ = std::make_unique<command::CommandRegistry>();
+            reflection_system_ = std::make_unique<reflection::ReflectionSystem>();
+            gameplay_world_ = std::make_unique<gameplay::GameplayWorld>(
+                render_system_->GetRenderableSourceSink(),
+                render_system_->GetLightSourceSink(),
+                render_system_->GetCameraSourceSink());
+            level_instance_ = std::make_unique<LevelInstance>(
+                asset::AssetManager::GetInstance(), *gameplay_world_, LevelActorFactorySet{},
+                render_system_->GetEnvironmentSourceSink());
+            log_system_ = std::make_unique<LogSystem>();
+            input_system_ = std::make_unique<input::InputSystem>();
+            lua_vm_ = std::make_unique<::kpengine::script::lua::LuaVM>();
+            memory_sampler_ = MemoryStatsSampler::CreateMemoryStatsSampler(
+                PlatformType::PLATFORM_WINDOWS);
+        }
+
+        void RuntimeContext::EnsureSceneServices()
+        {
+            InitializeSceneServices();
         }
 
         void RuntimeContext::Initialize()
         {
+            EnsureSceneServices();
             const StartupResult reflection = InitializeReflection();
             if (!reflection)
             {
@@ -77,6 +92,7 @@ namespace kpengine
 
         RuntimeContext::StartupResult RuntimeContext::InitializeReflection()
         {
+            EnsureSceneServices();
             if (!reflection_system_)
             {
                 reflection_system_ = std::make_unique<reflection::ReflectionSystem>();
@@ -122,6 +138,7 @@ namespace kpengine
 
         void RuntimeContext::InitializePresentation()
         {
+            EnsureSceneServices();
             WindowCreateInfo window_create_info{};
             window_create_info.width = 1920;
             window_create_info.height = 1080;
@@ -181,6 +198,7 @@ namespace kpengine
 
         RuntimeContext::StartupResult RuntimeContext::PromoteRenderAssets()
         {
+            EnsureSceneServices();
             if (!prepared_render_assets_)
             {
                 return {false, "Render asset catalog must be prepared before scene promotion"};
@@ -214,6 +232,7 @@ namespace kpengine
 
         RuntimeContext::StartupResult RuntimeContext::PrepareRenderAssets()
         {
+            EnsureSceneServices();
             if (!startup_level_asset_.IsValid() ||
                 startup_level_asset_.type != asset::AssetType::KPAT_Level)
             {
@@ -237,6 +256,7 @@ namespace kpengine
 
         RuntimeContext::StartupResult RuntimeContext::FinalizeGameStartup()
         {
+            EnsureSceneServices();
             // The VM is initialized while the render thread owns startup, but
             // Engine calls this method on the game thread. Bind Lua commands here
             // so every Lua -> native command invocation shares the game lane.

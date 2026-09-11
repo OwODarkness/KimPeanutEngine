@@ -177,7 +177,7 @@ namespace kpengine::graphics
         command_recorder_->Begin(frame_context_->GetCurrentSceneCommandBuffer(), *pipeline_manager_,
                                  *descriptor_set_manager_, *buffer_manager_, *mesh_manager_,
                                  *render_target_manager_, bindless_texture_table_.get(),
-                                 frame_context_->GetCurrentFrameIndex());
+                                 frame_context_->GetCurrentFrameIndex(), editor_bridge_.get());
         const uint32_t frame_index = frame_context_->GetCurrentFrameIndex();
         command_recorder_->SetGeometryBufferResolvers(
             [this, frame_index](BufferHandle handle) {
@@ -810,6 +810,11 @@ namespace kpengine::graphics
     {
         const VkExtent2D extent = swapchain_->GetExtent();
         return {extent.width, extent.height};
+    }
+
+    TextureFormat VulkanBackend::GetPresentationColorFormat() const
+    {
+        return ConvertFromVulkanTextureFormat(swapchain_->GetImageFormat());
     }
 
     void VulkanBackend::WaitIdle()

@@ -63,6 +63,7 @@ namespace kpengine::live2d
         graphics::BufferHandle uv_buffer;
         graphics::BufferHandle index_buffer;
         graphics::RenderTargetHandle output_target;
+        bool output_to_presentation = false;
         graphics::RenderTargetHandle mask_atlas_target;
         graphics::TextureHandle mask_atlas_texture;
         std::vector<graphics::TextureHandle> textures;

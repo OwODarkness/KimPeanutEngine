@@ -69,6 +69,7 @@ namespace kpengine
                                                  ApplicationHostFactory factory,
                                                  std::string &diagnostic);
             void SetGraphicsAPI(GraphicsAPIType api_type);
+            GraphicsAPIType GetGraphicsAPI() const noexcept { return graphics_api_type_; }
             void SetStartupLevelOverride(std::string authored_or_normalized_path);
             StartupSnapshot GetStartupSnapshot() const;
 
@@ -105,6 +106,7 @@ namespace kpengine
             enum class StartupDecision : uint8_t;
             void GameTick();
             void RenderThreadFunc();
+            void RenderViewerThreadFunc();
             void RenderTick();
             bool RenderLoadingTick();
             void PublishStartupDecision(StartupDecision decision) noexcept;
@@ -115,6 +117,7 @@ namespace kpengine
             void InitializeModules();
             void TickModules(float delta_time) noexcept;
             void ShutdownModules() noexcept;
+            void ShutdownApplicationHost() noexcept;
             float CalculateDeltaTime();
             void CalculateFPS(float delta_time);
 
@@ -199,7 +202,9 @@ namespace kpengine
             PerformanceStatsCommandRegistrationResult performance_stats_commands_{};
 
             ApplicationMode application_mode_ = ApplicationMode::Scene3D;
+            GraphicsAPIType graphics_api_type_ = GraphicsAPIType::GRAPHICS_API_VULKAN;
             ApplicationHostRegistry application_host_registry_{};
+            std::unique_ptr<IApplicationHost> application_host_;
 
             std::vector<std::unique_ptr<module::EngineModule>> modules_;
             std::size_t initialized_module_count_ = 0;

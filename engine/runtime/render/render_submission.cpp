@@ -116,9 +116,12 @@ namespace kpengine::render
 
         for (const SubmissionPass &pass : submission.passes)
         {
-            if (!pass.target.IsValid())
+            if ((!pass.target.IsValid() && !pass.presentation) ||
+                (pass.presentation && pass.target.IsValid()))
             {
-                result.diagnostic = "render submission contains an invalid render target";
+                result.diagnostic = pass.presentation
+                                        ? "presentation pass must not carry an offscreen target"
+                                        : "render submission contains an invalid render target";
                 return result;
             }
             for (const SubmissionDraw &draw : pass.draws)

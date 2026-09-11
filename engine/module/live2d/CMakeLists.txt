@@ -128,7 +128,8 @@ target_link_libraries(Live2D INTERFACE Live2DRuntime Live2DProduct
 
 add_library(Live2DModule STATIC
     live2d_settings.cpp
-    live2d_module.cpp)
+    live2d_module.cpp
+    live2d_viewer_host.cpp)
 target_include_directories(Live2DModule PUBLIC
     "${CMAKE_SOURCE_DIR}/engine")
 target_link_libraries(Live2DModule PUBLIC Live2D PRIVATE Live2DImport KP::NlohmannJson)

@@ -16,6 +16,7 @@
 #include "vulkan_mesh.h"
 #include "vulkan_pipeline_manager.h"
 #include "vulkan_render_target_manager.h"
+#include "vulkan_editor_bridge.h"
 
 namespace kpengine::graphics
 {
@@ -41,7 +42,8 @@ namespace kpengine::graphics
         VulkanDescriptorSetManager &descriptor_set_manager,
         VulkanBufferManager &buffer_manager, MeshManager &mesh_manager,
         VulkanRenderTargetManager &render_target_manager,
-        VulkanBindlessTextureTable *bindless_table, uint32_t frame_index)
+        VulkanBindlessTextureTable *bindless_table, uint32_t frame_index,
+        VulkanEditorBridge *presentation_bridge)
     {
         command_buffer_ = command_buffer;
         pipeline_manager_ = &pipeline_manager;
@@ -51,6 +53,8 @@ namespace kpengine::graphics
         render_target_manager_ = &render_target_manager;
         bindless_table_ = bindless_table;
         frame_index_ = frame_index;
+        presentation_bridge_ = presentation_bridge;
+        presentation_active_ = false;
         active_target_ = {};
         draws_suppressed_ = false;
         ResetStateCache();
@@ -60,7 +64,7 @@ namespace kpengine::graphics
     bool VulkanCommandRecorder::BeginRenderTarget(RenderTargetHandle target)
     {
         if (command_buffer_ == VK_NULL_HANDLE || !render_target_manager_ ||
-            active_target_.IsValid())
+            active_target_.IsValid() || presentation_active_)
         {
             draws_suppressed_ = true;
             return false;
@@ -77,8 +81,34 @@ namespace kpengine::graphics
         return true;
     }
 
+    bool VulkanCommandRecorder::BeginPresentation()
+    {
+        if (command_buffer_ == VK_NULL_HANDLE || active_target_.IsValid() ||
+            presentation_active_ || presentation_bridge_ == nullptr ||
+            !presentation_bridge_->BeginPresentation())
+        {
+            draws_suppressed_ = true;
+            return false;
+        }
+        presentation_active_ = true;
+        draws_suppressed_ = false;
+        ResetStateCache();
+        return true;
+    }
+
     void VulkanCommandRecorder::EndRenderTarget()
     {
+        if (presentation_active_)
+        {
+            if (presentation_bridge_ != nullptr)
+            {
+                presentation_bridge_->EndPresentation();
+            }
+            presentation_active_ = false;
+            draws_suppressed_ = false;
+            ResetStateCache();
+            return;
+        }
         if (command_buffer_ != VK_NULL_HANDLE)
         {
             render_target_manager_->EndRendering(command_buffer_);

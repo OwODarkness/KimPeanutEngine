@@ -107,6 +107,7 @@ namespace
         explicit FakeCommandRecorder(FakeBackend &backend) : backend_(backend) {}
 
         bool BeginRenderTarget(graphics::RenderTargetHandle target) override;
+        bool BeginPresentation() override { return true; }
         void EndRenderTarget() override;
         bool BindPipeline(graphics::PipelineHandle) override { return true; }
         void BindMesh(graphics::MeshHandle) override {}

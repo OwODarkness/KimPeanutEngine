@@ -76,6 +76,7 @@ namespace kpengine::graphics
         uint32_t GetFramesInFlight() const override;
         size_t GetUniformBufferAlignment() const override;
         Extent2D GetRenderExtent() const override;
+        TextureFormat GetPresentationColorFormat() const override;
         void WaitIdle() override;
         virtual void Cleanup() override;
 

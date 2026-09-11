@@ -6,6 +6,8 @@
 #include <vector>
 
 #include "asset/asset.h"
+#include "graphics/backend/common/texture.h"
+#include "graphics/backend/common/enum.h"
 #include "render/render_extension.h"
 #include "live2d_render_planner.h"
 
@@ -38,6 +40,11 @@ namespace kpengine::live2d
                     graphics::CommandRecorder &recorder,
                     float delta_time,
                     std::string &diagnostic) override;
+        void SetPresentationTarget(bool enabled) noexcept
+        {
+            presentation_target_requested_ = enabled;
+            proxy_.output_to_presentation = enabled;
+        }
         graphics::RenderTargetHandle GetOutputTarget() const override
         {
             return proxy_.output_target;
@@ -62,9 +69,12 @@ namespace kpengine::live2d
         Live2DRenderProxy proxy_;
         Live2DStaticModelData static_data_;
         graphics::RenderTargetView output_view_{};
+        TextureFormat output_color_format_ =
+            TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         std::vector<graphics::PipelineHandle> pipelines_;
         std::vector<graphics::TextureHandle> textures_;
         bool initialized_ = false;
+        bool presentation_target_requested_ = false;
     };
 }
 

@@ -34,6 +34,31 @@ namespace kpengine::graphics
         frame_active_ = false;
     }
 
+    bool VulkanEditorBridge::BeginPresentation()
+    {
+        if (!frame_active_ || current_image_index_ >= image_layouts_.size())
+        {
+            return false;
+        }
+        const VkCommandBuffer command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
+        TransitionToColorAttachment(command_buffer);
+        const VkExtent2D extent = swapchain_->GetExtent();
+        const VkRect2D scissor{{0, 0}, {extent.width, extent.height}};
+        vkCmdSetScissor(command_buffer, 0, 1, &scissor);
+        return true;
+    }
+
+    void VulkanEditorBridge::EndPresentation()
+    {
+        if (!frame_active_ || current_image_index_ >= image_layouts_.size())
+        {
+            return;
+        }
+        const VkCommandBuffer command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
+        vkCmdEndRendering(command_buffer);
+        TransitionToPresent(command_buffer);
+    }
+
     bool VulkanEditorBridge::Record(const std::function<void(VkCommandBuffer)> &record_draw_data)
     {
         if (!frame_active_ || !record_draw_data)
@@ -42,20 +67,21 @@ namespace kpengine::graphics
         }
 
         const VkCommandBuffer command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
-        TransitionToColorAttachment(command_buffer);
+        if (!BeginPresentation())
+        {
+            return false;
+        }
         try
         {
             record_draw_data(command_buffer);
         }
         catch (...)
         {
-            vkCmdEndRendering(command_buffer);
-            TransitionToPresent(command_buffer);
+            EndPresentation();
             frame_active_ = false;
             throw;
         }
-        vkCmdEndRendering(command_buffer);
-        TransitionToPresent(command_buffer);
+        EndPresentation();
         frame_active_ = false;
         return true;
     }

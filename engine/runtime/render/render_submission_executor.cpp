@@ -94,7 +94,9 @@ namespace kpengine::render
         for (std::size_t pass_index = 0u; pass_index < submission.passes.size(); ++pass_index)
         {
             const SubmissionPass &pass = submission.passes[pass_index];
-            if (!recorder.BeginRenderTarget(pass.target))
+            const bool began = pass.presentation ? recorder.BeginPresentation()
+                                                 : recorder.BeginRenderTarget(pass.target);
+            if (!began)
             {
                 result.diagnostic = "render submission render target begin failed";
                 return result;

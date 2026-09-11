@@ -7,6 +7,7 @@
 #include <gtest/gtest.h>
 
 #include "engine.h"
+#include "host/scene_3d_host.h"
 #include "launch_options.h"
 
 namespace
@@ -160,4 +161,29 @@ TEST(ApplicationHostRegistryTest, RegistersAndCreatesOneProviderPerMode)
         },
         diagnostic));
     EXPECT_NE(diagnostic.find("already registered"), std::string::npos);
+}
+
+TEST(Scene3DHostTest, OwnsOnlySceneModeLifecycle)
+{
+    kpengine::runtime::Engine engine;
+    kpengine::runtime::Scene3DHost host;
+    std::string diagnostic;
+
+    EXPECT_TRUE(host.Initialize(engine, diagnostic)) << diagnostic;
+    EXPECT_TRUE(host.Tick(1.0f / 60.0f, diagnostic)) << diagnostic;
+    EXPECT_TRUE(host.RecordFrame(diagnostic)) << diagnostic;
+    host.Shutdown();
+    EXPECT_FALSE(host.RecordFrame(diagnostic));
+    EXPECT_EQ(diagnostic, "3DSceneHost is not initialized");
+}
+
+TEST(Scene3DHostTest, RejectsViewerMode)
+{
+    kpengine::runtime::Engine engine;
+    engine.SetApplicationMode(kpengine::runtime::ApplicationMode::Live2DViewer);
+    kpengine::runtime::Scene3DHost host;
+    std::string diagnostic;
+
+    EXPECT_FALSE(host.Initialize(engine, diagnostic));
+    EXPECT_EQ(diagnostic, "3DSceneHost can only initialize in scene3d mode");
 }

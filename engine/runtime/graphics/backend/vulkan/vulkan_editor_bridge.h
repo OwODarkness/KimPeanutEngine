@@ -41,6 +41,8 @@ namespace kpengine::graphics
         VulkanEditorBridgeInfo GetInfo() const;
         void BeginFrame(uint32_t image_index);
         void EndFrame();
+        bool BeginPresentation();
+        void EndPresentation();
         bool Record(const std::function<void(VkCommandBuffer)> &record_draw_data);
         void EnsurePresentLayout(VkCommandBuffer command_buffer, uint32_t image_index);
         void OnSwapchainRecreated();

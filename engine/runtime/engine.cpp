@@ -17,6 +17,7 @@
 #include "gameplay/world/gameplay_world.h"
 #include "editor/editor.h"
 #include "module/engine_module.h"
+#include "host/scene_3d_host.h"
 
 // [reconstruction] The legacy render/world systems are still being reconstructed;
 // the editor is back (minimal — a single ImGui window). The render module remains
@@ -67,6 +68,14 @@ namespace kpengine
 
         Engine::Engine() : editor_(std::make_unique<editor::Editor>())
         {
+            std::string diagnostic;
+            if (!application_host_registry_.Register(
+                    ApplicationMode::Scene3D,
+                    [](Engine &) { return std::make_unique<Scene3DHost>(); },
+                    diagnostic))
+            {
+                throw std::logic_error("Could not register built-in 3D scene host: " + diagnostic);
+            }
         }
 
         Engine::~Engine()
@@ -81,6 +90,7 @@ namespace kpengine
                 command_transport_.reset();
             }
             performance_stats_commands_ = {};
+            ShutdownApplicationHost();
             ShutdownModules();
             editor_.reset();
         }
@@ -134,6 +144,7 @@ namespace kpengine
         {
             if (api_type != GraphicsAPIType::GRAPHICS_API_UNKNOW)
             {
+                graphics_api_type_ = api_type;
                 global_runtime_context.graphics_api_type_ = api_type;
             }
         }
@@ -184,6 +195,20 @@ namespace kpengine
                     std::string("application mode '") + ApplicationModeName(application_mode_) +
                     "' has no registered host provider");
             }
+            std::string host_diagnostic;
+            application_host_ = application_host_registry_.Create(
+                application_mode_, *this, host_diagnostic);
+            if (!application_host_)
+            {
+                throw std::runtime_error("Application host creation failed: " + host_diagnostic);
+            }
+            if (application_mode_ == ApplicationMode::Scene3D &&
+                !application_host_->Initialize(*this, host_diagnostic))
+            {
+                application_host_.reset();
+                throw std::runtime_error("Application host initialization failed: " +
+                                         host_diagnostic);
+            }
             initialization_started_ = true;
             shutdown_requested_.store(false);
             startup_coordinator_.Begin();
@@ -192,6 +217,37 @@ namespace kpengine
             auto startup_guard = ScopeGuard{[this]() noexcept { AbortStartupTransaction(); }};
 
             InitializeModules();
+
+            if (application_mode_ == ApplicationMode::Live2DViewer)
+            {
+                global_runtime_context.game_thread_id_ = std::this_thread::get_id();
+                {
+                    std::lock_guard<std::mutex> lock(render_start_mutex_);
+                    is_render_thread_loaded_ = false;
+                    render_start_succeeded_ = false;
+                    render_start_diagnostic_.clear();
+                }
+                startup_access_barrier_.Begin();
+                render_thread_ = std::thread(&Engine::RenderThreadFunc, this);
+                std::unique_lock<std::mutex> lock(render_start_mutex_);
+                render_start_cv_.wait(lock, [this] { return is_render_thread_loaded_; });
+                if (!render_start_succeeded_)
+                {
+                    const std::string diagnostic = render_start_diagnostic_;
+                    lock.unlock();
+                    if (render_thread_.joinable())
+                    {
+                        render_thread_.join();
+                    }
+                    throw std::runtime_error("Live2D viewer startup failed: " + diagnostic);
+                }
+                startup_coordinator_.SetReady();
+                EndStartupAccess();
+                KP_LOG("EngineLog", LOG_LEVEL_INFO,
+                       "Live2D viewer initialize successfully");
+                startup_guard.Dismiss();
+                return;
+            }
 
             // Editor setup (pointers into the runtime context, no GPU state) is safe
             // on the main thread; its ImGui UI is built on the render thread by
@@ -545,6 +601,7 @@ namespace kpengine
                 }
                 editor_attached_ = false;
             }
+            ShutdownApplicationHost();
             ShutdownModules();
         }
 
@@ -616,8 +673,12 @@ namespace kpengine
             // Runs after the render thread joined, so the editor's ImGui state was
             // already shut down on that thread (CloseUI); this only clears the
             // editor-side context.
-            editor_->Clear();
-            editor_attached_ = false;
+            if (editor_attached_ && editor_)
+            {
+                editor_->Clear();
+                editor_attached_ = false;
+            }
+            ShutdownApplicationHost();
             ShutdownModules();
 
             // RuntimeContext::Clear() is terminal: it releases the global
@@ -661,19 +722,33 @@ namespace kpengine
             const double target_frame_time = 1.0 / target_fps;
             auto frame_start = clock::now();
 
-            if (command_transport_)
+            if (application_mode_ == ApplicationMode::Scene3D && command_transport_)
             {
                 command_transport_->PumpGameThread();
             }
 
-            if (global_runtime_context.command_registry_)
+            if (application_mode_ == ApplicationMode::Scene3D &&
+                global_runtime_context.command_registry_)
             {
                 global_runtime_context.command_registry_->PumpGameThread();
             }
 
-            if (global_runtime_context.gameplay_world_)
+            if (application_mode_ == ApplicationMode::Scene3D &&
+                global_runtime_context.gameplay_world_)
             {
                 global_runtime_context.TickGameplay(1.0f / target_fps);
+            }
+
+            if (application_host_ != nullptr)
+            {
+                std::string diagnostic;
+                if (!application_host_->Tick(1.0f / target_fps, diagnostic))
+                {
+                    KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                           "Application host '%s' tick failed: %s",
+                           application_host_->Name(), diagnostic.c_str());
+                    shutdown_requested_.store(true, std::memory_order_release);
+                }
             }
 
             TickModules(1.0f / static_cast<float>(target_fps));
@@ -757,8 +832,31 @@ namespace kpengine
             }
         }
 
+        void Engine::ShutdownApplicationHost() noexcept
+        {
+            if (application_host_ == nullptr)
+            {
+                return;
+            }
+            try
+            {
+                application_host_->Shutdown();
+            }
+            catch (...)
+            {
+                KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                       "Application host shutdown raised an exception");
+            }
+            application_host_.reset();
+        }
+
         void Engine::RenderThreadFunc()
         {
+            if (application_mode_ == ApplicationMode::Live2DViewer)
+            {
+                RenderViewerThreadFunc();
+                return;
+            }
             // [thread model] The render thread owns the window + GPU context: it creates
             // them here (context.Initialize builds the window on this thread), then
             // presents every frame.
@@ -1115,6 +1213,101 @@ namespace kpengine
             }
         }
 
+        void Engine::RenderViewerThreadFunc()
+        {
+            bool start_signaled = false;
+            const auto signal_start = [this, &start_signaled](bool succeeded,
+                                                               const char *diagnostic) noexcept
+            {
+                if (start_signaled)
+                {
+                    return;
+                }
+                {
+                    std::lock_guard<std::mutex> lock(render_start_mutex_);
+                    render_start_succeeded_ = succeeded;
+                    render_start_diagnostic_ = diagnostic != nullptr ? diagnostic : "";
+                    is_render_thread_loaded_ = true;
+                    start_signaled = true;
+                }
+                render_start_cv_.notify_all();
+            };
+
+            try
+            {
+                std::string diagnostic;
+                if (!application_host_ || !application_host_->Initialize(*this, diagnostic))
+                {
+                    if (application_host_)
+                    {
+                        application_host_->ShutdownRenderThread();
+                    }
+                    signal_start(false, diagnostic.c_str());
+                    shutdown_requested_.store(true, std::memory_order_release);
+                    EndStartupAccess();
+                    return;
+                }
+                global_runtime_context.render_thread_id_ = std::this_thread::get_id();
+                startup_coordinator_.SetPhase(StartupPhase::PresentationReady,
+                                              "Live2D viewer presentation ready");
+                signal_start(true, "");
+
+                while (!shutdown_requested_.load(std::memory_order_acquire))
+                {
+                    {
+                        std::unique_lock<std::mutex> lock(game_ready_mutex_);
+                        game_ready_cv_.wait(lock, [this]
+                                            {
+                                                return is_game_thread_loaded_ ||
+                                                       shutdown_requested_.load(
+                                                           std::memory_order_acquire);
+                                            });
+                        is_game_thread_loaded_ = false;
+                    }
+                    if (shutdown_requested_.load(std::memory_order_acquire))
+                    {
+                        break;
+                    }
+                    if (!application_host_->RecordFrame(diagnostic))
+                    {
+                        KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                               "Live2D viewer frame failed: %s", diagnostic.c_str());
+                        shutdown_requested_.store(true, std::memory_order_release);
+                        break;
+                    }
+                    if (application_host_->ShouldClose())
+                    {
+                        shutdown_requested_.store(true, std::memory_order_release);
+                        break;
+                    }
+                }
+                WaitForStartupAccessToEnd();
+                application_host_->ShutdownRenderThread();
+            }
+            catch (const std::exception &error)
+            {
+                signal_start(false, error.what());
+                KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                       "Live2D viewer render thread failed: %s", error.what());
+                shutdown_requested_.store(true, std::memory_order_release);
+                EndStartupAccess();
+                if (application_host_)
+                {
+                    application_host_->ShutdownRenderThread();
+                }
+            }
+            catch (...)
+            {
+                signal_start(false, "unknown Live2D viewer render thread exception");
+                shutdown_requested_.store(true, std::memory_order_release);
+                EndStartupAccess();
+                if (application_host_)
+                {
+                    application_host_->ShutdownRenderThread();
+                }
+            }
+        }
+
         void Engine::RenderTick()
         {
             using clock = std::chrono::steady_clock;
@@ -1170,6 +1363,16 @@ namespace kpengine
                 throw std::runtime_error(
                     "Render frame begin failed: " +
                     global_runtime_context.render_system_->GetLastDiagnostic());
+            }
+
+            if (application_host_ != nullptr)
+            {
+                std::string diagnostic;
+                if (!application_host_->RecordFrame(diagnostic))
+                {
+                    throw std::runtime_error("Application host frame recording failed: " +
+                                             diagnostic);
+                }
             }
 
             // Polling must precede ImGui frame construction. RenderSystem owns the

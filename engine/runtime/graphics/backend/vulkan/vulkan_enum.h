@@ -26,6 +26,8 @@ namespace kpengine::graphics
             return VK_FORMAT_R8G8B8A8_UNORM;
         case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
             return VK_FORMAT_R8G8B8A8_SRGB;
+        case TextureFormat::TEXTURE_FORMAT_BGRA8_UNORM:
+            return VK_FORMAT_B8G8R8A8_UNORM;
         case TextureFormat::TEXTURE_FORMAT_RGBA16F:
             return VK_FORMAT_R16G16B16A16_SFLOAT;
         case TextureFormat::TEXTURE_FORMAT_BC4_UNORM:
@@ -66,6 +68,8 @@ inline TextureFormat ConvertFromVulkanTextureFormat(VkFormat format)
         return TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM;
     case VK_FORMAT_R8G8B8A8_SRGB:
         return TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+    case VK_FORMAT_B8G8R8A8_UNORM:
+        return TextureFormat::TEXTURE_FORMAT_BGRA8_UNORM;
     case VK_FORMAT_R16G16B16A16_SFLOAT:
         return TextureFormat::TEXTURE_FORMAT_RGBA16F;
     case VK_FORMAT_BC4_UNORM_BLOCK:

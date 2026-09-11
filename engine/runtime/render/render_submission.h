@@ -51,6 +51,10 @@ namespace kpengine::render
     struct SubmissionPass final
     {
         graphics::RenderTargetHandle target;
+        // A presentation pass targets the backend-owned swapchain instead of
+        // a Render-owned offscreen target. `target` remains unused for this
+        // pass and may be invalid.
+        bool presentation = false;
         std::vector<SubmissionDraw> draws;
     };
 

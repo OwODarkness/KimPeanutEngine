@@ -140,6 +140,10 @@ namespace kpengine::live2d
         (void)height;
         Cleanup();
         backend_ = &backend;
+        proxy_.output_to_presentation = presentation_target_requested_;
+        output_color_format_ = presentation_target_requested_
+                                   ? backend.GetPresentationColorFormat()
+                                   : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         if (system_ == nullptr || !model_asset_.IsValid())
         {
             diagnostic = "Live2D renderer has no model asset";
@@ -170,7 +174,7 @@ namespace kpengine::live2d
         output_desc.width = kPreviewWidth;
         output_desc.height = kPreviewHeight;
         output_desc.color_attachments = {{graphics::RenderTargetColorAttachment{
-            TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB,
+            output_color_format_,
             graphics::RenderTargetLoadOp::Clear,
             graphics::RenderTargetStoreOp::Store,
             // The preview is presented directly as an ImGui image. Keep the
@@ -273,7 +277,7 @@ namespace kpengine::live2d
             desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
             desc.color_attachment_formats = {mask_source
                                                   ? TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM
-                                                  : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
+                                                  : output_color_format_};
             if (mask_source)
             {
                 desc.blend_attachment_state.blend_enabled = true;
