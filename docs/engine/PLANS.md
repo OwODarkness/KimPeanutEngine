@@ -53,7 +53,7 @@ engine/runtime/render/        Render
   traditional scene renderer and RenderWorld policy
   no Live2D dependency
 
-engine/module/live2d/         Live2DModule / Live2DRender
+engine/module/live2d/         Live2D feature target / Live2DRender
   Cubism runtime, asset integration, reusable Live2D rendering,
   live2d_viewer_host.*        optional Live2D viewer host
 
@@ -68,7 +68,7 @@ direction is therefore:
 ```text
 Application startup → host registry / mode selection
 RuntimeLib      → 3DSceneHost / Render / Gameplay / Graphics
-Live2DModule    → Live2DViewerHost / Live2DRender → Render
+Live2D feature  → Live2DViewerHost / Live2DRender → Render
 Render          -/→ Live2D
 ```
 
@@ -154,20 +154,13 @@ The startup mode and an editor asset session are different concepts:
 This keeps the tiny engine simple now without preventing Unreal-like asset
 editors later.
 
-## Migration rule for the current implementation
+## Migration result
 
-The current `IRenderExtension` registration is a temporary validation seam.
-During migration:
-
-1. Keep it working for the existing Live2D capture while the new host is
-   introduced.
-2. Add explicit host selection at the application composition root.
-3. Move Live2D initialization, ticking, recording, presentation, and cleanup
-   behind `Live2DViewerHost`.
-4. Make `RenderSystem` owned by `3DSceneHost` and remove its Live2D extension
-   dependency.
-5. Retain only shared API-neutral frame and Graphics contracts between the two
-   hosts.
+The former `IRenderExtension` registration was a temporary validation seam.
+MODE1.5 removed it after the standalone host gained initialization, ticking,
+recording, presentation, capture, and cleanup ownership. `RenderSystem` now
+contains no Live2D registration or feature branch. Only the API-neutral frame,
+Graphics, and RenderSubmission contracts are shared between the hosts.
 
 The migration must not modify DeferredRenderer pass policy to accommodate
 Live2D.

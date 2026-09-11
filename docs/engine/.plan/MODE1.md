@@ -1,6 +1,6 @@
 # MODE1 — 3DSceneHost and Live2DViewerHost
 
-- Status: MODE1.4 landed 2026-09-11
+- Status: MODE1.5 landed 2026-09-11
 - Owner: Engine composition / Runtime / Render / Live2D
 - Parent plan: [Engine Host Mode Plans](../PLANS.md)
 - Roadmap: [Engine Host Mode Roadmap](../TODO.md)
@@ -14,19 +14,19 @@ run without scene-world or scene-editor construction.
 
 ## Current state
 
-The current application composition registers `Live2DModule` globally. The
-module creates `Live2DRenderer`, registers it as an `IRenderExtension`, and
-`RenderSystem` initializes and records it after `DeferredRenderer`. This is
-useful for the first cross-backend pixel validation, but it means Live2D is
-currently hosted by the traditional scene renderer.
+The application composition now selects a host by mode. The standalone
+viewer owns `Live2DRenderer` directly; the traditional scene renderer owns
+only deferred/PBR scene work. The temporary extension seam used for the first
+cross-backend pixel validation has been removed.
 
 Relevant current seams:
 
-- `engine/module/live2d/live2d_module.cpp` registers the renderer with the
-  global `RenderSystem`.
-- `engine/runtime/render/render_system.cpp` owns `DeferredRenderer` and calls
-  the optional extension during the scene frame.
-- `engine/runtime/render/render_extension.h` is the temporary generic seam.
+- `engine/module/live2d/live2d_viewer_host.cpp` owns the viewer backend,
+  frame contexts, renderer, presentation, and capture.
+- `engine/runtime/render/render_system.cpp` owns only the scene lifecycle and
+  deferred/PBR recording.
+- `render::RenderSubmission` and its executor remain the shared API-neutral
+  submission seam for feature renderers.
 
 ## Scope
 
@@ -153,11 +153,11 @@ host for `scene3d`; the existing `RuntimeContext`/`RenderSystem` startup,
 Gameplay tick, deferred/PBR recording, and editor presentation remain the
 compatibility implementation behind that shell.
 
-`ModuleBootstrap` now registers `Live2DModule` and its viewer editor
-extension only for `live2d-viewer`. Therefore the normal scene host cannot
-register a Live2D render extension or draw the Live2D viewer. The full
-mechanical extraction of `RuntimeContext` ownership is intentionally deferred
-until the shared services needed by MODE1.3 are concrete.
+`ModuleBootstrap` now registers the `Live2DViewerHost` provider only for
+`live2d-viewer`. Therefore the normal scene host cannot register a Live2D
+renderer or draw the Live2D viewer. The full mechanical extraction of
+`RuntimeContext` ownership is intentionally deferred until the shared
+services needed by a second host are concrete.
 
 ### MODE1.3 — viewer host
 
@@ -170,8 +170,8 @@ The generic submission executor now supports an explicit presentation pass.
 OpenGL records that pass to the default framebuffer; Vulkan records it through
 the backend-owned swapchain presentation bridge. Live2D keeps its offscreen
 mask target but sends its final drawable pass directly to the viewer window.
-The old `Live2DModule` scene-extension path remains compiled as a migration
-fallback, but MODE1.3 no longer registers it from the application composition.
+The viewer does not use the scene `RenderSystem`; it calls the reusable Live2D
+renderer and generic submission executor directly.
 
 ### MODE1.4 — mode validation (landed 2026-09-11)
 
@@ -200,9 +200,16 @@ and was not made dependent on the viewer capture service.
 
 ### MODE1.5 — remove temporary coupling
 
-Retire `IRenderExtension` registration from the scene path. Keep the generic
-submission and future RenderGraph interfaces reusable by both hosts, but make
-host ownership explicit.
+Removed the temporary `IRenderExtension` contract and all corresponding
+registration, initialization, frame-recording, output-view, and cleanup code
+from `RenderSystem`. Removed the obsolete `Live2DModule` scene lifecycle and
+the unused scene-editor Live2D preview registration. `Live2DRenderer` remains
+under `Live2DRender`, but is now a concrete renderer owned directly by
+`Live2DViewerHost`.
+
+The change preserves the generic `RenderSubmission`/executor path and does not
+change `DeferredRenderer` pass policy, PBR materials, scene capture, or the
+OpenGL/Vulkan backend contracts.
 
 ## Validation plan
 

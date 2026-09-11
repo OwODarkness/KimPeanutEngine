@@ -34,14 +34,14 @@ namespace kpengine::graphics
         frame_active_ = false;
     }
 
-    bool VulkanEditorBridge::BeginPresentation()
+    bool VulkanEditorBridge::BeginPresentation(const std::array<float, 4> *clear_color)
     {
         if (!frame_active_ || current_image_index_ >= image_layouts_.size())
         {
             return false;
         }
         const VkCommandBuffer command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
-        TransitionToColorAttachment(command_buffer);
+        TransitionToColorAttachment(command_buffer, clear_color);
         const VkExtent2D extent = swapchain_->GetExtent();
         const VkRect2D scissor{{0, 0}, {extent.width, extent.height}};
         vkCmdSetScissor(command_buffer, 0, 1, &scissor);
@@ -116,7 +116,8 @@ namespace kpengine::graphics
         vkDeviceWaitIdle(device_->GetLogicalDevice());
     }
 
-    void VulkanEditorBridge::TransitionToColorAttachment(VkCommandBuffer command_buffer)
+    void VulkanEditorBridge::TransitionToColorAttachment(
+        VkCommandBuffer command_buffer, const std::array<float, 4> *clear_color)
     {
         const VkImageLayout old_layout = image_layouts_[current_image_index_];
         frame_context_->TransitionImageLayout(
@@ -126,8 +127,12 @@ namespace kpengine::graphics
             old_layout == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
             VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
 
+        const std::array<float, 4> default_clear_color{0.1f, 0.1f, 0.1f, 1.0f};
+        const std::array<float, 4> &resolved_clear_color =
+            clear_color != nullptr ? *clear_color : default_clear_color;
         VkClearValue clear_value{};
-        clear_value.color = {{0.1f, 0.1f, 0.1f, 1.0f}};
+        clear_value.color = {{resolved_clear_color[0], resolved_clear_color[1],
+                              resolved_clear_color[2], resolved_clear_color[3]}};
         VkRenderingAttachmentInfo color_attachment{};
         color_attachment.sType = VK_STRUCTURE_TYPE_RENDERING_ATTACHMENT_INFO;
         color_attachment.imageView = swapchain_->GetImageView(current_image_index_);

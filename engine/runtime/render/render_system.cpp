@@ -68,25 +68,6 @@ namespace kpengine::render
         return scene_result;
     }
 
-    bool RenderSystem::RegisterRenderExtension(IRenderExtension *extension)
-    {
-        if (extension == nullptr || render_extension_ != nullptr ||
-            lifecycle_state_ != RenderSystemLifecycleState::Uninitialized)
-        {
-            return false;
-        }
-        render_extension_ = extension;
-        return true;
-    }
-
-    void RenderSystem::UnregisterRenderExtension(IRenderExtension *extension)
-    {
-        if (render_extension_ == extension)
-        {
-            render_extension_ = nullptr;
-        }
-    }
-
     RenderSystemInitResult RenderSystem::InitializePresentation(
         const RenderSystemInitInfo &info)
     {
@@ -187,23 +168,10 @@ namespace kpengine::render
             {
                 throw std::runtime_error(renderer_result.diagnostic);
             }
-            if (render_extension_ != nullptr &&
-                !render_extension_->Initialize(*backend_, extent.width, extent.height,
-                                               last_diagnostic_))
-            {
-                throw std::runtime_error(
-                    std::string("Render extension '") +
-                    render_extension_->GetName() + "' initialization failed: " +
-                    last_diagnostic_);
-            }
             render_capture_service_ = std::make_unique<RenderCaptureService>(
                 backend_->GetRenderTargetReadback(),
                 [this](CaptureView view)
                 {
-                    if (view == CaptureView::Live2D && render_extension_ != nullptr)
-                    {
-                        return render_extension_->GetOutputTarget();
-                    }
                     return deferred_renderer_ ? deferred_renderer_->GetCaptureTarget(view)
                                                : graphics::RenderTargetHandle{};
                 },
@@ -329,26 +297,9 @@ namespace kpengine::render
                 profile_.gpu_frame_number = frame_number_;
             }
         }
-        bool extension_recorded = false;
-        if (render_extension_ != nullptr && backend_->GetCommandRecorder() != nullptr)
-        {
-            std::string extension_diagnostic;
-            extension_recorded = render_extension_->Record(
-                *active_frame_context_, *backend_->GetCommandRecorder(),
-                delta_time, extension_diagnostic);
-            if (!extension_recorded && !extension_diagnostic.empty())
-            {
-                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "Render extension '%s' failed: %s",
-                       render_extension_->GetName(), extension_diagnostic.c_str());
-            }
-        }
         if (scene_input->pending_capture.has_value())
         {
-            const bool live2d_capture_ready =
-                scene_input->pending_capture.value() == CaptureView::Live2D &&
-                extension_recorded;
-            if (!result.capture_target_ready && !live2d_capture_ready)
+            if (!result.capture_target_ready)
             {
                 render_capture_service_->RejectPendingCapture(
                     "Render could not record the requested capture-view conversion pass");
@@ -606,17 +557,6 @@ namespace kpengine::render
                                    : graphics::RenderTargetView{};
     }
 
-    graphics::RenderTargetView RenderSystem::GetRenderExtensionOutputView(
-        const char *name) const
-    {
-        if (render_extension_ == nullptr || name == nullptr ||
-            std::string{name} != render_extension_->GetName())
-        {
-            return {};
-        }
-        return render_extension_->GetOutputView();
-    }
-
     std::optional<spatial::Ray> RenderSystem::BuildSceneRay(
         float ndc_x, float ndc_y, float viewport_aspect) const
     {
@@ -791,10 +731,6 @@ namespace kpengine::render
             {
                 readback->DrainPendingReadbacks("Render system scene teardown");
             }
-        }
-        if (render_extension_ != nullptr && backend_ && backend_initialized_)
-        {
-            render_extension_->Cleanup();
         }
         render_capture_service_.reset();
         if (deferred_renderer_)

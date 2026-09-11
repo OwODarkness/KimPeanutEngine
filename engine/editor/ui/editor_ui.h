@@ -4,9 +4,11 @@
 #include <vector>
 #include <memory>
 #include <functional>
+#include <optional>
 #include "base/type.h"
 #include "editor/settings/editor_settings.h"
 #include "graphics/backend/common/editor_presentation_bridge.h"
+#include "graphics/backend/common/render_target.h"
 #include "runtime/runtime_startup.h"
 
 namespace kpengine
@@ -48,6 +50,7 @@ namespace kpengine
 }
 
 struct ImFont;
+struct ImVec2;
 
 namespace kpengine::editor
 {
@@ -80,6 +83,9 @@ namespace kpengine::editor
         std::function<std::unique_ptr<IEditorImguiRenderer>(GraphicsAPIType)>
             renderer_factory;
         std::function<std::unique_ptr<IEditorImguiWSI>()> wsi_factory;
+        // Standalone hosts may use the editor's ImGui presentation backend
+        // without adopting the scene editor's color policy.
+        std::optional<LogColor> background_color_override;
     };
 
     class EditorUI
@@ -89,6 +95,8 @@ namespace kpengine::editor
         ~EditorUI();
 
         void Initialize(const EditorUIInitInfo &init_info);
+        void InitializeViewer(const EditorUIInitInfo &init_info,
+                              std::function<void()> viewer_content);
         void InitializePresentation(const EditorUIInitInfo &init_info);
         void SetActorInspectionServices(
             const reflection::IReflectionCatalog *reflection_catalog,
@@ -101,6 +109,7 @@ namespace kpengine::editor
         void Close();
         void BeginDraw();
         void EndDraw();
+        void DrawRenderTarget(const graphics::RenderTargetView &view, const ImVec2 &size);
 
         double GetLastRenderTimeMs() const noexcept { return last_render_time_ms_; }
         double GetLastImGuiBuildTimeMs() const noexcept
@@ -153,7 +162,9 @@ namespace kpengine::editor
         bool wsi_initialized_ = false;
         bool workspace_promoted_ = false;
         bool closing_ = false;
+        bool viewer_mode_ = false;
         EditorUIInitInfo init_info_{};
+        std::function<void()> viewer_content_;
         LogLevelColorTable log_colors_;
         ImFont *code_font_ = nullptr;
         double last_render_time_ms_ = 0.0;

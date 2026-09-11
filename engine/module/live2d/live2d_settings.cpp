@@ -14,6 +14,8 @@ namespace kpengine::live2d
     namespace
     {
         constexpr int kLive2DSettingsVersion = 1;
+        constexpr std::array<float, 4> kDefaultApplicationBackgroundColor{
+            0.1f, 0.1f, 0.1f, 1.0f};
 
         std::string ReadText(const std::string &path)
         {
@@ -33,7 +35,7 @@ namespace kpengine::live2d
         const nlohmann::json source = nlohmann::json::parse(ReadText(path));
         const auto fail = [&path](const char *reason) -> void
         {
-            KP_LOG("Live2DModule", LOG_LEVEL_ERROR, "%s: %s", path.c_str(), reason);
+            KP_LOG("Live2D", LOG_LEVEL_ERROR, "%s: %s", path.c_str(), reason);
             throw std::runtime_error("live2d settings: " + path + ": " + reason);
         };
 
@@ -86,5 +88,38 @@ namespace kpengine::live2d
         }
         settings.preview_asset = std::move(normalized);
         return settings;
+    }
+
+    std::array<float, 4> ReadWindowBackgroundColor(const std::string &path)
+    {
+        try
+        {
+            const nlohmann::json source = nlohmann::json::parse(ReadText(path));
+            if (!source.is_object() || !source.contains("window_background_color") ||
+                !source["window_background_color"].is_array() ||
+                source["window_background_color"].size() != 4u)
+            {
+                throw std::runtime_error(
+                    "window_background_color must be an array of four numbers");
+            }
+
+            std::array<float, 4> color{};
+            for (std::size_t index = 0u; index < color.size(); ++index)
+            {
+                if (!source["window_background_color"][index].is_number())
+                {
+                    throw std::runtime_error(
+                        "window_background_color must be an array of four numbers");
+                }
+                color[index] = source["window_background_color"][index].get<float>();
+            }
+            return color;
+        }
+        catch (const std::exception &error)
+        {
+            KP_LOG("Live2D", LOG_LEVEL_WARNING,
+                   "Using default viewer background: %s", error.what());
+            return kDefaultApplicationBackgroundColor;
+        }
     }
 }

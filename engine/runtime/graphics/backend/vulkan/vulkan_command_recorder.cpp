@@ -81,11 +81,11 @@ namespace kpengine::graphics
         return true;
     }
 
-    bool VulkanCommandRecorder::BeginPresentation()
+    bool VulkanCommandRecorder::BeginPresentation(const std::array<float, 4> *clear_color)
     {
         if (command_buffer_ == VK_NULL_HANDLE || active_target_.IsValid() ||
             presentation_active_ || presentation_bridge_ == nullptr ||
-            !presentation_bridge_->BeginPresentation())
+            !presentation_bridge_->BeginPresentation(clear_color))
         {
             draws_suppressed_ = true;
             return false;

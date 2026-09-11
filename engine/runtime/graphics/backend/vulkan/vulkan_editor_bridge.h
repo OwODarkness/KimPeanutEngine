@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_VULKAN_EDITOR_BRIDGE_H
 #define KPENGINE_RUNTIME_GRAPHICS_VULKAN_EDITOR_BRIDGE_H
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <vector>
@@ -41,7 +42,7 @@ namespace kpengine::graphics
         VulkanEditorBridgeInfo GetInfo() const;
         void BeginFrame(uint32_t image_index);
         void EndFrame();
-        bool BeginPresentation();
+        bool BeginPresentation(const std::array<float, 4> *clear_color = nullptr);
         void EndPresentation();
         bool Record(const std::function<void(VkCommandBuffer)> &record_draw_data);
         void EnsurePresentLayout(VkCommandBuffer command_buffer, uint32_t image_index);
@@ -49,7 +50,8 @@ namespace kpengine::graphics
         void WaitIdle() const;
 
     private:
-        void TransitionToColorAttachment(VkCommandBuffer command_buffer);
+        void TransitionToColorAttachment(VkCommandBuffer command_buffer,
+                                         const std::array<float, 4> *clear_color);
         void TransitionToPresent(VkCommandBuffer command_buffer);
 
         VulkanDevice *device_ = nullptr;

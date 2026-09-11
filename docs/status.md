@@ -33,7 +33,7 @@
 
 - **Live2D concrete renderer preview (2026-09-11)** — added renderer-owned
   shader/pipeline/resource creation, packed-mask target setup, generic Render
-  extension submission, Live2D capture, and the minimal camera-only
+  submission, Live2D capture, and the minimal camera-only
   `level/live2d_test.level` fixture. `config/live2d.json` now selects an
   offline native `.live2d` product; runtime no longer imports Hiyori source or
   writes a temporary product closure. Hiyori now renders correctly through
@@ -75,6 +75,25 @@
   presentation color encoding, show the widened Hiyori framing, and remain
   isolated from the deferred/PBR scene path. →
   [MODE1.4 journal](../.spec/journal/2026-09-11-engine-mode1-4.md)
+
+- **Engine MODE1.5 extension retirement (2026-09-11)** — removed the temporary
+  `IRenderExtension` registration seam from `RenderSystem` and deleted the
+  obsolete scene-side Live2D module/editor preview path. `Live2DViewerHost`
+  now owns `Live2DRenderer` directly. The standalone viewer now reads its
+  presentation backdrop from `config/settings.json`'s separate
+  `window_background_color` setting and submits that color through the
+  API-neutral presentation contract; the generic RenderSubmission executor
+  and deferred/PBR scene path remain unchanged. →
+  [MODE1.5 journal](../.spec/journal/2026-09-11-engine-mode1-5.md)
+
+- **Live2D standalone ImGui viewer shell (2026-09-11)** — the dedicated viewer
+  now presents Hiyori through an ImGui-style workspace with a central Live2D
+  panel, OutputLog, and a Live2D/backend performance profiler. Live2D renders
+  into an offscreen target before ImGui composition; scene services and the
+  deferred/PBR editor path remain excluded. OpenGL and Vulkan captures show the
+  same configured viewer backdrop. →
+  [Live2D module guide](live2d/README.md),
+  [MODE1.5 journal](../.spec/journal/2026-09-11-engine-mode1-5.md)
 
 - **Live2D L2D4.2 SDK-free model extraction (2026-09-10)** — added retained,
   ordered Texture payloads, value-only static topology and frame snapshots,
@@ -1274,8 +1293,10 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-- **Engine host modes — MODE1.3** — register a standalone
-  `Live2DViewerHost` without constructing the scene stack in viewer mode.
+- **Engine host modes — post-MODE1 follow-up** — extract shared
+  `EngineServices` only when a second host or an in-editor preview session
+  provides a concrete consumer. MODE1.1–MODE1.5 now establish the two
+  mutually exclusive process-level hosts without changing deferred/PBR policy.
   → [engine host plans](engine/PLANS.md), [MODE1 design](engine/.plan/MODE1.md)
 - **Runtime Reflection RF4 — World Outliner and Actor Inspector (implementation
   landed; smoke pending)** — the shared render-thread `ActorEditorModel`, World

@@ -16,6 +16,11 @@
 
 namespace kpengine
 {
+    namespace editor
+    {
+        class EditorUI;
+        class EditorLogComponent;
+    }
     namespace runtime
     {
         class Engine;
@@ -24,6 +29,8 @@ namespace kpengine
 
 namespace kpengine::live2d
 {
+    struct Live2DViewerUiState;
+
     // Standalone Live2D composition. It owns the viewer window, RHI backend,
     // frame contexts, Cubism service, and renderer; it does not construct or
     // depend on RuntimeContext/RenderWorld/DeferredRenderer.
@@ -41,6 +48,8 @@ namespace kpengine::live2d
         void Shutdown() noexcept override;
 
     private:
+        void RenderViewerUI();
+        void RenderProfilerWindow();
         void CompleteWindowCapture() noexcept;
         void CleanupGpu() noexcept;
 
@@ -50,11 +59,18 @@ namespace kpengine::live2d
         std::vector<std::unique_ptr<render::FrameContext>> frame_contexts_;
         Live2DSystem system_;
         std::unique_ptr<Live2DRenderer> renderer_;
+        // shared_ptr keeps the private UI state incomplete in this public host
+        // header; ownership remains exclusive to this host.
+        std::shared_ptr<Live2DViewerUiState> viewer_ui_;
         std::unique_ptr<render::RenderCaptureService> render_capture_service_;
         std::unique_ptr<runtime::RuntimeScreenshotService> screenshot_service_;
         asset::AssetID model_asset_{};
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;
+        double game_tick_work_ms_ = 0.0;
+        double render_work_ms_ = 0.0;
+        double imgui_work_ms_ = 0.0;
+        double frame_total_ms_ = 0.0;
         bool render_initialized_ = false;
         bool window_initialized_ = false;
         bool backend_initialized_ = false;

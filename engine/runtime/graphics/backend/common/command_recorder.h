@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_COMMAND_RECORDER_H
 #define KPENGINE_RUNTIME_GRAPHICS_COMMAND_RECORDER_H
 
+#include <array>
 #include <cstdint>
 
 #include "api.h"
@@ -38,7 +39,10 @@ namespace kpengine::graphics
         // Begins an offscreen render pass. The target must be ended before
         // beginning another target or ending the frame.
         virtual bool BeginRenderTarget(RenderTargetHandle target) = 0;
-        virtual bool BeginPresentation() = 0;
+        // A null color preserves the backend's presentation default. A
+        // supplied color is authored in display-space and is used for the
+        // presentation attachment clear.
+        virtual bool BeginPresentation(const std::array<float, 4> *clear_color = nullptr) = 0;
         virtual void EndRenderTarget() = 0;
         virtual bool BindPipeline(PipelineHandle pipeline) = 0;
         virtual void BindMesh(MeshHandle mesh) = 0;

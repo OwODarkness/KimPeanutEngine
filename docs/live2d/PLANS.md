@@ -115,14 +115,13 @@ Live2DImport   -> Live2DProduct + AssetImport/ImageIO/JSON + Cubism validation
 Live2DRuntime  -> Live2DProduct + AssetRuntime + Cubism Core/Framework
 Live2DRender   -> Live2DRuntime + Render/Graphics common contracts
 Live2D         -> INTERFACE aggregate, analogous to Module/TTS composition
-Live2DModule   -> EngineModule lifecycle; owns Live2DSystem and Cubism lifetime
-Live2DEditor   -> Live2D + generic Editor extension registry; module bootstrap invokes registration
+Live2DModule   -> CMake composition target for the standalone viewer host
 Live2DViewer   -> Live2D + Window + viewer-only presentation adapter
 ```
 
-The application is the composition root for statically linked modules. Its
-bootstrap function creates each enabled `EngineModule` and transfers ownership
-to `Engine`; `Engine` schedules initialization, game-thread ticks, and
+The application is the composition root for statically linked features. Its
+bootstrap function registers the viewer host provider for `live2d-viewer`;
+`Engine` schedules initialization, game-thread ticks, and
 reverse-order shutdown. A module owns its runtime system and may separately
 register editor extensions through the generic editor registry. This is the
 migration seam for a future dynamic module loader: the engine lifecycle does

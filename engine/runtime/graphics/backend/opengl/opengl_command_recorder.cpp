@@ -113,7 +113,7 @@ namespace kpengine::graphics
         return true;
     }
 
-    bool OpenglCommandRecorder::BeginPresentation()
+    bool OpenglCommandRecorder::BeginPresentation(const std::array<float, 4> *clear_color)
     {
         if (active_render_target_.IsValid() || presentation_active_ ||
             services_.presentation_width <= 0 || services_.presentation_height <= 0)
@@ -125,8 +125,9 @@ namespace kpengine::graphics
         glViewport(0, 0, services_.presentation_width, services_.presentation_height);
         glScissor(0, 0, services_.presentation_width, services_.presentation_height);
         glDrawBuffer(GL_BACK);
-        const std::array<float, 4> clear_color{0.015f, 0.015f, 0.02f, 1.0f};
-        glClearBufferfv(GL_COLOR, 0, clear_color.data());
+        const std::array<float, 4> default_clear_color{0.015f, 0.015f, 0.02f, 1.0f};
+        glClearBufferfv(GL_COLOR, 0,
+                        (clear_color != nullptr ? clear_color : &default_clear_color)->data());
         presentation_active_ = true;
         draws_suppressed_ = false;
         ResetStateCache();

@@ -77,10 +77,30 @@ The runtime preview is selected by `config/live2d.json`, not by a level:
 }
 ```
 
-`Live2DModule` loads that native `.live2d` product through AssetManager and
-the dedicated Live2D Viewer or `live2d` capture view presents its offscreen
-output. The level used for fast validation is only a camera host; runtime does
-not import `.model3.json` files or write temporary products.
+The standalone `Live2DViewerHost` loads that native `.live2d` product through
+AssetManager and presents it in the dedicated Live2D Viewer. Live2D is no
+longer registered into the scene `RenderSystem`; the level used for historical
+fast validation is not part of the viewer path, and runtime does not import
+`.model3.json` files or write temporary products.
+
+The viewer presentation backdrop comes from the shared
+`config/settings.json` `window_background_color` array. This is intentionally
+separate from the editor/ImGui `background_color`. The window value is passed through
+the API-neutral presentation submission contract, so OpenGL and Vulkan clear
+their presentation attachments with the same configured color. If the shared
+settings file is unavailable or malformed, the viewer falls back to the
+historical Vulkan gray clear.
+
+The standalone viewer uses the existing ImGui presentation infrastructure as a
+viewer shell, not as the scene editor. Its central `Live2D Viewer` panel
+displays the renderer-owned offscreen target, while the right side contains
+`OutputLog` and `Performance Profiler` panels. The host does not construct
+`Scene3DHost`, `RenderWorld`, `DeferredRenderer`, or scene editor components.
+The Live2D target uses an API-neutral `RGBA8_UNORM` intermediate; OpenGL
+converts the configured display-space clear to linear before rendering into it,
+while Vulkan keeps the configured value in its shader output path. This keeps
+the ImGui-composited result visually aligned without changing the deferred/PBR
+scene pipeline.
 
 ## Run the Live2D tests
 

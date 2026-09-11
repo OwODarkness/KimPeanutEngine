@@ -13,7 +13,7 @@ if(KPENGINE_ENABLE_LIVE2D)
     add_subdirectory(live2d)
     target_compile_definitions(ModuleBootstrap PRIVATE
         KPENGINE_ENABLE_LIVE2D=1)
-    target_link_libraries(ModuleBootstrap PRIVATE Live2DModule Live2DEditor)
+    target_link_libraries(ModuleBootstrap PRIVATE Live2DModule)
     target_link_libraries(Module INTERFACE Live2D)
 else()
     target_compile_definitions(ModuleBootstrap PRIVATE

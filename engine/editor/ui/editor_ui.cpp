@@ -52,6 +52,16 @@ namespace kpengine::editor
         }
     }
 
+    void EditorUI::InitializeViewer(const EditorUIInitInfo &init_info,
+                                    std::function<void()> viewer_content)
+    {
+        InitializePresentation(init_info);
+        viewer_content_ = std::move(viewer_content);
+        viewer_mode_ = true;
+        workspace_promoted_ = true;
+        loading_components_.clear();
+    }
+
     void EditorUI::InitializePresentation(const EditorUIInitInfo &init_info)
     {
         if (imgui_context_created_ || renderer_ || wsi_ || !components_.empty())
@@ -80,7 +90,9 @@ namespace kpengine::editor
                        "editor settings unavailable (%s), using defaults", e.what());
             }
             log_colors_ = settings.log_colors;
-            renderer_->SetBackgroundColor(settings.background_color);
+            renderer_->SetBackgroundColor(init_info.background_color_override.has_value()
+                                              ? *init_info.background_color_override
+                                              : settings.background_color);
 
             ImGuiIO &io = ImGui::GetIO();
             io.ConfigWindowsMoveFromTitleBarOnly = true;
@@ -459,6 +471,8 @@ namespace kpengine::editor
         last_render_time_ms_ = 0.0;
         last_imgui_build_time_ms_ = 0.0;
         last_imgui_submit_time_ms_ = 0.0;
+        viewer_mode_ = false;
+        viewer_content_ = {};
         screenshot_service_.reset();
         if (wsi_ && wsi_init_attempted_)
         {
@@ -490,6 +504,17 @@ namespace kpengine::editor
 
     void EditorUI::EndDraw()
     {
+    }
+
+    void EditorUI::DrawRenderTarget(const graphics::RenderTargetView &view,
+                                    const ImVec2 &size)
+    {
+        if (renderer_ == nullptr || !view.IsValid())
+        {
+            ImGui::TextDisabled("Live2D render target unavailable");
+            return;
+        }
+        renderer_->DrawSceneImage(renderer_->GetTextureID(view), size);
     }
 
     bool EditorUI::Render()
@@ -543,11 +568,18 @@ namespace kpengine::editor
                 }
             }
         }
-        const auto &active_components = workspace_promoted_ && !closing_ ? components_
-                                                                         : loading_components_;
-        for (const auto &component : active_components)
+        if (viewer_mode_ && !closing_ && viewer_content_)
         {
-            component->Render();
+            viewer_content_();
+        }
+        else
+        {
+            const auto &active_components = workspace_promoted_ && !closing_ ? components_
+                                                                             : loading_components_;
+            for (const auto &component : active_components)
+            {
+                component->Render();
+            }
         }
         ImGui::Render();
         const auto imgui_build_finished = std::chrono::steady_clock::now();

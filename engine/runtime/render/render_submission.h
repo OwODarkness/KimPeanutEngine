@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_RENDER_SUBMISSION_H
 #define KPENGINE_RUNTIME_RENDER_SUBMISSION_H
 
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <optional>
@@ -55,6 +56,9 @@ namespace kpengine::render
         // a Render-owned offscreen target. `target` remains unused for this
         // pass and may be invalid.
         bool presentation = false;
+        // Optional display-space clear for a presentation pass. Offscreen
+        // targets continue to use their attachment descriptor clear value.
+        std::optional<std::array<float, 4>> clear_color;
         std::vector<SubmissionDraw> draws;
     };
 

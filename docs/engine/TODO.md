@@ -1,6 +1,6 @@
 # Engine Host Mode Roadmap
 
-**Status: MODE1.4 landed.** Detailed ownership and migration rules are in
+**Status: MODE1.5 landed.** Detailed ownership and migration rules are in
 [MODE1](.plan/MODE1.md). This roadmap covers only the first two hosts.
 
 - [x] **MODE1.1 — host contracts:** define `ApplicationMode`, the neutral
@@ -21,19 +21,20 @@
   launch policy for `scene3d` and `live2d-viewer`, reject incompatible
   scene-only options in viewer mode, and provide a standalone one-shot viewer
   capture path. → [MODE1.4 journal](../../.spec/journal/2026-09-11-engine-mode1-4.md)
-- [ ] **MODE1.5 — extension retirement:** remove Live2D registration from the
-  scene `RenderSystem` after viewer-mode capture and shutdown evidence passes.
+- [x] **MODE1.5 — extension retirement:** remove the temporary Live2D
+  registration seam from the scene `RenderSystem`; the standalone viewer now
+  owns the renderer directly. → [MODE1.5 journal](../../.spec/journal/2026-09-11-engine-mode1-5.md)
 
 ## Acceptance ledger
 
-- [ ] Scene mode produces the existing deferred/PBR output and existing
+- [x] Scene mode produces the existing deferred/PBR output and existing
   gameplay/editor smoke remains valid.
-- [ ] Viewer mode creates no `RenderWorld`, `DeferredRenderer`, level scene,
+- [x] Viewer mode creates no `RenderWorld`, `DeferredRenderer`, level scene,
   scene viewport, outliner, inspector, or scene gizmo.
 - [x] Viewer mode renders Hiyori on OpenGL and Vulkan, supports resize/capture,
   and shuts down without live GPU or Cubism objects. OpenGL and Vulkan startup
   capture evidence is landed in MODE1.4.
-- [ ] `RenderSystem` has no Live2D include, semantic, or registration branch
+- [x] `RenderSystem` has no Live2D include, semantic, or registration branch
   after MODE1.5.
-- [ ] Shared services remain API-neutral and no host depends on backend-native
+- [x] Shared services remain API-neutral and no host depends on backend-native
   types.

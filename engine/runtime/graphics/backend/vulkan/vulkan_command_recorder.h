@@ -31,7 +31,7 @@ namespace kpengine::graphics
                    VulkanEditorBridge *presentation_bridge);
 
         bool BeginRenderTarget(RenderTargetHandle target) override;
-        bool BeginPresentation() override;
+        bool BeginPresentation(const std::array<float, 4> *clear_color = nullptr) override;
         void EndRenderTarget() override;
         bool BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;

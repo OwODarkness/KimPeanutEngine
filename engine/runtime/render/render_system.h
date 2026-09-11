@@ -22,7 +22,6 @@
 #include "prepared_render_asset_catalog.h"
 #include "render_scene_coordinator.h"
 #include "render_profile.h"
-#include "render_extension.h"
 
 namespace kpengine::graphics
 {
@@ -87,10 +86,6 @@ namespace kpengine::render
         RenderSystemInitResult InitializePresentation(const RenderSystemInitInfo &info);
         RenderSystemInitResult PromoteToScene(
             std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
-        // Optional modules register before RenderSystem initialization. The
-        // pointer is borrowed until UnregisterRenderExtension is called.
-        bool RegisterRenderExtension(IRenderExtension *extension);
-        void UnregisterRenderExtension(IRenderExtension *extension);
         // Safe to call repeatedly; the first call retires all owned state.
         void Shutdown();
 
@@ -116,8 +111,6 @@ namespace kpengine::render
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
 
         graphics::RenderTargetView GetSceneRenderTargetView() const;
-        graphics::RenderTargetView GetRenderExtensionOutputView(
-            const char *name) const;
         std::optional<spatial::Ray> BuildSceneRay(float ndc_x, float ndc_y,
                                                   float viewport_aspect) const;
         // Tooling projection helper. The returned coordinates are NDC and the
@@ -174,7 +167,6 @@ namespace kpengine::render
         std::unique_ptr<MaterialSystem> material_system_;
         std::unique_ptr<RenderResourceResolver> resource_resolver_;
         std::unique_ptr<DeferredRenderer> deferred_renderer_;
-        IRenderExtension *render_extension_ = nullptr;
         std::vector<FrameContext> frame_contexts_;
         RenderSceneCoordinator scene_coordinator_;
         std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets_;

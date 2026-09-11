@@ -143,7 +143,7 @@ namespace kpengine::live2d
         proxy_.output_to_presentation = presentation_target_requested_;
         output_color_format_ = presentation_target_requested_
                                    ? backend.GetPresentationColorFormat()
-                                   : TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+                                   : TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM;
         if (system_ == nullptr || !model_asset_.IsValid())
         {
             diagnostic = "Live2D renderer has no model asset";
@@ -237,13 +237,14 @@ namespace kpengine::live2d
         graphics::RenderTargetDesc output_desc{};
         output_desc.width = width;
         output_desc.height = height;
-        output_desc.color_attachments = {{graphics::RenderTargetColorAttachment{
-            output_color_format_,
-            graphics::RenderTargetLoadOp::Clear,
-            graphics::RenderTargetStoreOp::Store,
-            // Keep the viewer backdrop opaque so the result remains visible
-            // when the output is presented or exported as an image.
-            {0.015f, 0.015f, 0.02f, 1.0f}}}};
+        graphics::RenderTargetColorAttachment output_attachment{};
+        output_attachment.format = output_color_format_;
+        output_attachment.load_op = graphics::RenderTargetLoadOp::Clear;
+        output_attachment.store_op = graphics::RenderTargetStoreOp::Store;
+        // Keep the viewer backdrop opaque so the result remains visible when
+        // the output is presented or exported as an image.
+        output_attachment.clear_color = output_clear_color_;
+        output_desc.color_attachments = {{output_attachment}};
         proxy_.output_target = backend_->CreateRenderTarget(output_desc);
         output_view_ = backend_->GetRenderTargetView(proxy_.output_target);
         if (!proxy_.output_target.IsValid() || !output_view_.IsValid())
@@ -495,9 +496,16 @@ namespace kpengine::live2d
             diagnostic = plan.diagnostic;
             return false;
         }
+        render::RenderSubmission submission = plan.submission.work;
+        for (render::SubmissionPass &pass : submission.passes)
+        {
+            if (pass.presentation)
+            {
+                pass.clear_color = background_color_;
+            }
+        }
         const render::RenderSubmissionExecutionResult execution =
-            render::RenderSubmissionExecutor::Execute(plan.submission.work,
-                                                      frame_context, recorder);
+            render::RenderSubmissionExecutor::Execute(submission, frame_context, recorder);
         if (!execution.succeeded)
         {
             diagnostic = execution.diagnostic;

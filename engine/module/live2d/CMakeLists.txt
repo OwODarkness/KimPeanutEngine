@@ -128,21 +128,12 @@ target_link_libraries(Live2D INTERFACE Live2DRuntime Live2DProduct
 
 add_library(Live2DModule STATIC
     live2d_settings.cpp
-    live2d_module.cpp
     live2d_viewer_host.cpp)
 target_include_directories(Live2DModule PUBLIC
     "${CMAKE_SOURCE_DIR}/engine")
-target_link_libraries(Live2DModule PUBLIC Live2D PRIVATE Live2DImport RuntimeScreenshot KP::NlohmannJson)
+target_link_libraries(Live2DModule PUBLIC Live2D
+    PRIVATE Live2DImport RuntimeScreenshot EditorUILib KP::ImGui KP::NlohmannJson)
 set_property(TARGET Live2DModule PROPERTY
-    MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
-
-add_library(Live2DEditor STATIC
-    editor/live2d_editor_viewer_component.cpp
-    editor/live2d_editor_registration.cpp)
-target_include_directories(Live2DEditor PUBLIC
-    "${CMAKE_SOURCE_DIR}/engine")
-target_link_libraries(Live2DEditor PRIVATE EditorUILib Live2D KP::ImGui)
-set_property(TARGET Live2DEditor PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
 
 set(KPENGINE_LIVE2D_MOC_PATH
