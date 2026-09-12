@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <array>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
@@ -69,6 +70,193 @@ TEST(Live2DAssetTest, ImportsCheckedInModel3PackageDeterministically)
     std::filesystem::remove_all(request.archive_root.parent_path(), cleanup_after_test);
 }
 
+// L2D6.0 characterization harness.
+//
+// The checked-in Hiyori package has no Expressions, no per-motion FadeInTime /
+// FadeOutTime overrides and no Sound references, so it cannot exercise the V1
+// product's animation representation at all. This test builds the fixture the
+// L2D6.0 investigation requires -- two motion groups, model3 fade overrides,
+// two named expressions and one optional sound reference -- copies the real
+// .moc3 and textures next to it, and drives the *real* importer so the loss is
+// observed rather than inferred from reading the code.
+//
+// It is intentionally a characterization of V1's limitations, not a behavioural
+// contract. L2D6.1 replaces it with V2 round-trip coverage.
+namespace
+{
+    std::filesystem::path MakeCharacterizationRoot()
+    {
+        return std::filesystem::temp_directory_path() / "kpengine_live2d_v1_char_root";
+    }
+
+    void WriteFile(const std::filesystem::path &path, const std::string &contents)
+    {
+        std::filesystem::create_directories(path.parent_path());
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(file.is_open()) << path.generic_string();
+        file.write(contents.data(), static_cast<std::streamsize>(contents.size()));
+        ASSERT_TRUE(file.good()) << path.generic_string();
+    }
+
+    void CopyFile(const std::filesystem::path &from, const std::filesystem::path &to)
+    {
+        std::filesystem::create_directories(to.parent_path());
+        std::filesystem::copy_file(from, to,
+                                   std::filesystem::copy_options::overwrite_existing);
+    }
+
+    // Two motion groups, per-motion model3 fade overrides on two of the three
+    // entries, two named expressions and one optional sound reference -- the
+    // fixture L2D6.0 asks for. Groups exercises the parameter-target import.
+    const char *kMotionAndExpressionModel3 = R"({
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "probe.moc3",
+    "Textures": ["probe.2048/texture_00.png"],
+    "Motions": {
+      "Alpha": [
+        { "File": "motion/alpha_00.motion3.json", "FadeInTime": 0.25,
+          "FadeOutTime": 0.75, "Sound": "sound/alpha_00.wav" },
+        { "File": "motion/alpha_01.motion3.json" }
+      ],
+      "Beta": [
+        { "File": "motion/beta_00.motion3.json", "FadeInTime": 2.0 }
+      ]
+    },
+    "Expressions": [
+      { "Name": "Shy", "File": "expressions/shy.exp3.json" },
+      { "Name": "Angry", "File": "expressions/angry.exp3.json" }
+    ]
+  },
+  "Groups": [
+    { "Target": "Parameter", "Name": "LipSync", "Ids": ["ParamMouthOpenY"] },
+    { "Target": "Parameter", "Name": "EyeBlink", "Ids": ["ParamEyeLOpen", "ParamEyeROpen"] }
+  ]
+})";
+
+    // Identical except that the Expressions array is removed, so the two
+    // inventories differ only by the expression references. Both runs now
+    // import; the difference is which chunks the product carries.
+    const char *kMotionOnlyModel3 = R"({
+  "Version": 3,
+  "FileReferences": {
+    "Moc": "probe.moc3",
+    "Textures": ["probe.2048/texture_00.png"],
+    "Motions": {
+      "Alpha": [
+        { "File": "motion/alpha_00.motion3.json", "FadeInTime": 0.25,
+          "FadeOutTime": 0.75, "Sound": "sound/alpha_00.wav" },
+        { "File": "motion/alpha_01.motion3.json" }
+      ],
+      "Beta": [
+        { "File": "motion/beta_00.motion3.json", "FadeInTime": 2.0 }
+      ]
+    }
+  },
+  "Groups": [
+    { "Target": "Parameter", "Name": "LipSync", "Ids": ["ParamMouthOpenY"] },
+    { "Target": "Parameter", "Name": "EyeBlink", "Ids": ["ParamEyeLOpen", "ParamEyeROpen"] }
+  ]
+})";
+
+    const char *kMinimalMotion3 = R"({"Version": 3,
+  "Meta": { "Duration": 1.0, "Loop": false, "CurveCount": 0, "Fps": 30.0,
+            "TotalSegmentCount": 0, "TotalPointCount": 0, "UserDataCount": 0,
+            "TotalUserDataSize": 0 },
+  "Curves": [] })";
+}
+
+TEST(Live2DAssetTest, CharacterizesV1AnimationMetadataLoss)
+{
+    const std::filesystem::path root = MakeCharacterizationRoot();
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(root, cleanup_error);
+
+    const std::filesystem::path model_dir = root / "live2d" / "probe";
+    std::filesystem::create_directories(model_dir);
+
+    // Real binary payloads are required: the importer reads and cooks the MOC
+    // and the textures before it ever reaches the animation references.
+    const std::filesystem::path hiyori =
+        kpengine::project_root / "asset" / "live2d" / "hiyori_pro" / "runtime";
+    CopyFile(hiyori / "hiyori_pro_t11.moc3", model_dir / "probe.moc3");
+    CopyFile(hiyori / "hiyori_pro_t11.2048" / "texture_00.png",
+             model_dir / "probe.2048" / "texture_00.png");
+
+    WriteFile(model_dir / "motion" / "alpha_00.motion3.json", kMinimalMotion3);
+    WriteFile(model_dir / "motion" / "alpha_01.motion3.json", kMinimalMotion3);
+    WriteFile(model_dir / "motion" / "beta_00.motion3.json", kMinimalMotion3);
+    WriteFile(model_dir / "expressions" / "shy.exp3.json",
+              R"({"Type":"Live2D Expression","FadeInTime":0.5,"Parameters":[]})");
+    WriteFile(model_dir / "expressions" / "angry.exp3.json",
+              R"({"Type":"Live2D Expression","FadeInTime":0.5,"Parameters":[]})");
+    WriteFile(model_dir / "sound" / "alpha_00.wav", "RIFFprobe");
+
+    kpengine::asset::ImportProviderRegistry registry;
+    std::string diagnostic;
+    ASSERT_TRUE(kpengine::live2d::RegisterLive2DImporters(registry, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(registry.Seal(diagnostic)) << diagnostic;
+
+    const auto execute = [&](const char *model3,
+                             std::string &run_diagnostic) -> std::shared_ptr<
+        kpengine::asset::TypedImportProduct<
+            kpengine::live2d::Live2DImportProduct,
+            kpengine::asset::ImportProviderKind::Custom>>
+    {
+        WriteFile(model_dir / "probe.model3.json", model3);
+        kpengine::asset::ImportProviderRequest request{};
+        request.asset_root = root;
+        request.archive_root = root / ".archive";
+        request.source_path = "live2d/probe/probe.model3.json";
+        const auto result = registry.Execute(request, {}, run_diagnostic);
+        run_diagnostic = result.diagnostic;
+        if (result.product == nullptr)
+        {
+            return nullptr;
+        }
+        return std::dynamic_pointer_cast<
+            kpengine::asset::TypedImportProduct<
+                kpengine::live2d::Live2DImportProduct,
+                kpengine::asset::ImportProviderKind::Custom>>(result.product);
+    };
+
+    const auto inventory = [](const char *label,
+                              const std::shared_ptr<kpengine::asset::TypedImportProduct<
+                                  kpengine::live2d::Live2DImportProduct,
+                                  kpengine::asset::ImportProviderKind::Custom>> &product,
+                              const std::string &run_diagnostic)
+    {
+        std::printf("[v1-char] %s: imported=%d diagnostic='%s'\n", label,
+                    product != nullptr ? 1 : 0, run_diagnostic.c_str());
+        if (product == nullptr)
+        {
+            return;
+        }
+        std::printf("[v1-char] %s: moc=%zu textures=%zu chunks=%zu\n", label,
+                    product->value.product.moc_bytes.size(),
+                    product->value.product.textures.size(),
+                    product->value.product.optional_chunks.size());
+        for (const kpengine::live2d::Live2DOptionalChunk &chunk :
+             product->value.product.optional_chunks)
+        {
+            std::printf("[v1-char] %s:   '%s' (%zu bytes)\n", label,
+                        chunk.name.c_str(), chunk.bytes.size());
+        }
+    };
+
+    std::string first_diagnostic;
+    const auto with_expressions = execute(kMotionAndExpressionModel3, first_diagnostic);
+    inventory("with-expressions", with_expressions, first_diagnostic);
+
+    std::string second_diagnostic;
+    const auto motion_only = execute(kMotionOnlyModel3, second_diagnostic);
+    inventory("motion-only", motion_only, second_diagnostic);
+
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+}
+
 TEST(Live2DAssetTest, RejectsSourcePathEscapeAndGenericJson)
 {
     kpengine::asset::ImportProviderRegistry registry;
@@ -89,6 +277,150 @@ TEST(Live2DAssetTest, RejectsSourcePathEscapeAndGenericJson)
     diagnostic.clear();
     request.source_path = "live2d/hiyori_pro/runtime/not-a-model.json";
     EXPECT_EQ(registry.Resolve(request.source_path, {}, diagnostic), nullptr);
+}
+
+// A model3 that ships Expressions used to fail to import outright: the walk
+// treated every string under FileReferences as a file reference, so the
+// entry's "Name" -- a display name -- was resolved as a path beside the model
+// and reported as missing. Names are data, not paths, so an entry must
+// contribute its File (and optional Sound) and nothing else.
+TEST(Live2DAssetTest, ResolvesExpressionEntriesByFileNotByName)
+{
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / "kpengine_live2d_expression_root";
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(root, cleanup_error);
+
+    const std::filesystem::path model_dir = root / "live2d" / "probe";
+    std::filesystem::create_directories(model_dir);
+
+    const std::filesystem::path hiyori =
+        kpengine::project_root / "asset" / "live2d" / "hiyori_pro" / "runtime";
+    CopyFile(hiyori / "hiyori_pro_t11.moc3", model_dir / "probe.moc3");
+    CopyFile(hiyori / "hiyori_pro_t11.2048" / "texture_00.png",
+             model_dir / "probe.2048" / "texture_00.png");
+    // No file is named after the expression, so an importer that resolves the
+    // display name fails here rather than importing the wrong bytes.
+    WriteFile(model_dir / "expressions" / "shy.exp3.json",
+              R"({"Type":"Live2D Expression","FadeInTime":0.5,"Parameters":[]})");
+
+    kpengine::asset::ImportProviderRegistry registry;
+    std::string diagnostic;
+    ASSERT_TRUE(kpengine::live2d::RegisterLive2DImporters(registry, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(registry.Seal(diagnostic)) << diagnostic;
+
+    WriteFile(model_dir / "probe.model3.json",
+              R"({"Version":3,
+  "FileReferences": {
+    "Moc": "probe.moc3",
+    "Textures": ["probe.2048/texture_00.png"],
+    "Expressions": [
+      { "Name": "Shy", "File": "expressions/shy.exp3.json" }
+    ]
+  }})");
+
+    kpengine::asset::ImportProviderRequest request{};
+    request.asset_root = root;
+    request.archive_root = root / ".archive";
+    request.source_path = "live2d/probe/probe.model3.json";
+
+    const auto result = registry.Execute(request, {}, diagnostic);
+    ASSERT_NE(result.product, nullptr) << result.diagnostic;
+    const auto product = std::dynamic_pointer_cast<
+        kpengine::asset::TypedImportProduct<
+            kpengine::live2d::Live2DImportProduct,
+            kpengine::asset::ImportProviderKind::Custom>>(result.product);
+    ASSERT_NE(product, nullptr);
+
+    std::vector<std::string> roles;
+    for (const kpengine::live2d::Live2DOptionalChunk &chunk :
+         product->value.product.optional_chunks)
+    {
+        roles.push_back(chunk.name);
+    }
+    // Exactly one chunk, named for the reference position and not for the
+    // expression. A "Name"-derived chunk would appear here as
+    // 'Expressions/0/Name'.
+    EXPECT_EQ(roles, (std::vector<std::string>{"Expressions/0/File"}));
+
+    std::error_code cleanup_after_test;
+    std::filesystem::remove_all(root, cleanup_after_test);
+}
+
+// V1 acceptance names the missing-.moc3 and invalid-Moc rejections explicitly.
+// Both were implemented but evidenced only by reading the source, so each case
+// below drives the real importer and asserts that branch's own diagnostic
+// rather than accepting any failure.
+TEST(Live2DAssetTest, RejectsMissingAndInvalidMocReferences)
+{
+    const std::filesystem::path root =
+        std::filesystem::temp_directory_path() / "kpengine_live2d_moc_reject_root";
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(root, cleanup_error);
+
+    const std::filesystem::path model_dir = root / "live2d" / "probe";
+    std::filesystem::create_directories(model_dir);
+
+    // Real, non-empty payloads, so every case below fails on the Moc reference
+    // and nothing earlier.
+    const std::filesystem::path hiyori =
+        kpengine::project_root / "asset" / "live2d" / "hiyori_pro" / "runtime";
+    CopyFile(hiyori / "hiyori_pro_t11.moc3", model_dir / "probe.moc3");
+    CopyFile(hiyori / "hiyori_pro_t11.2048" / "texture_00.png",
+             model_dir / "probe.2048" / "texture_00.png");
+    // Exists and is readable, but is not a .moc3: the extension check is what
+    // must reject it, not a failed read.
+    WriteFile(model_dir / "probe_not_moc.png", "not a moc");
+
+    kpengine::asset::ImportProviderRegistry registry;
+    std::string diagnostic;
+    ASSERT_TRUE(kpengine::live2d::RegisterLive2DImporters(registry, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(registry.Seal(diagnostic)) << diagnostic;
+
+    struct RejectionCase final
+    {
+        const char *name;
+        const char *model3;
+        const char *expected_diagnostic;
+    };
+
+    const std::array<RejectionCase, 4> cases{{
+        {"moc_key_absent",
+         R"({"Version":3,"FileReferences":{"Textures":["probe.2048/texture_00.png"]}})",
+         "lacks Moc or ordered Textures"},
+        {"textures_empty",
+         R"({"Version":3,"FileReferences":{"Moc":"probe.moc3","Textures":[]}})",
+         "lacks Moc or ordered Textures"},
+        {"moc_is_not_a_moc3",
+         R"({"Version":3,"FileReferences":{"Moc":"probe_not_moc.png",)"
+         R"("Textures":["probe.2048/texture_00.png"]}})",
+         "has an invalid Moc reference"},
+        {"moc_absent_on_disk",
+         R"({"Version":3,"FileReferences":{"Moc":"absent.moc3",)"
+         R"("Textures":["probe.2048/texture_00.png"]}})",
+         "missing or too large"},
+    }};
+
+    for (const RejectionCase &test_case : cases)
+    {
+        SCOPED_TRACE(test_case.name);
+        WriteFile(model_dir / "probe.model3.json", test_case.model3);
+
+        kpengine::asset::ImportProviderRequest request{};
+        request.asset_root = root;
+        request.archive_root = root / ".archive";
+        request.source_path = "live2d/probe/probe.model3.json";
+        const auto result = registry.Execute(request, {}, diagnostic);
+        EXPECT_EQ(result.product, nullptr) << result.diagnostic;
+        EXPECT_NE(result.diagnostic.find(test_case.expected_diagnostic),
+                  std::string::npos)
+            << result.diagnostic;
+    }
+
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
 }
 
 TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)

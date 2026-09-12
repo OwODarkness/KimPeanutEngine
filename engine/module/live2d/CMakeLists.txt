@@ -127,6 +127,7 @@ target_link_libraries(Live2D INTERFACE Live2DRuntime Live2DProduct
     Live2DAssetRuntime Live2DRegistration Live2DRender)
 
 add_library(Live2DModule STATIC
+    live2d_model_report_command.cpp
     live2d_settings.cpp
     live2d_viewer_host.cpp)
 target_include_directories(Live2DModule PUBLIC

@@ -101,6 +101,42 @@ namespace kpengine::live2d
         return ClampColor(result);
     }
 
+    graphics::BlendAttachmentState BuildLive2DBlendState(
+        const Live2DBlendMode mode) noexcept
+    {
+        graphics::BlendAttachmentState blend{};
+        blend.blend_enabled = true;
+        // Additive and multiplicative accumulate destination alpha, so the
+        // normal mode is the only one that publishes its own coverage. Its
+        // factors are the hardware form of CompositeLive2DColor's Normal branch
+        // (a = src.a + dst.a * (1 - src.a)); without them a capture over a
+        // transparent clear keeps the clear alpha on every pixel and the
+        // product's blend coverage is unobservable in the exported image.
+        blend.src_alpha_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ZERO;
+        blend.dst_alpha_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
+        switch (mode)
+        {
+        case Live2DBlendMode::Normal:
+            blend.src_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
+            blend.dst_color_blend_factor =
+                graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            blend.src_alpha_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
+            blend.dst_alpha_blend_factor =
+                graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            break;
+        case Live2DBlendMode::Additive:
+            blend.src_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
+            blend.dst_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
+            break;
+        case Live2DBlendMode::Multiplicative:
+            blend.src_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_DST_COLOR;
+            blend.dst_color_blend_factor =
+                graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
+            break;
+        }
+        return blend;
+    }
+
     float ResolveLive2DMaskCoverage(const float stored_mask_sample,
                                     const bool inverted) noexcept
     {
@@ -126,6 +162,12 @@ namespace kpengine::live2d
                invalid_index_count == 0u && unknown_blend_mode_count == 0u &&
                !topology_changed &&
                active_mask_context_count <= kLive2DMaxActiveMaskContexts;
+    }
+
+    bool Live2DRenderFeatureReport::CoversAllBlendModes() const noexcept
+    {
+        return normal_drawable_count > 0u && additive_drawable_count > 0u &&
+               multiplicative_drawable_count > 0u;
     }
 
     Live2DRenderFeatureValidation ValidateLive2DRenderFeatureReport(

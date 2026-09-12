@@ -70,7 +70,10 @@ namespace kpengine::runtime
             if (view == "point_shadow_depth") return render::CaptureView::PointShadowDepth;
             if (view == "point_shadow_visibility") return render::CaptureView::PointShadowVisibility;
             if (view == "selection_mask") return render::CaptureView::SelectionMask;
-            if (view == "live2d") return render::CaptureView::Live2D;
+            // "live2d" stays the launch-time spelling recorded in the Live2D
+            // validation workflow; the capture value itself names the role.
+            if (view == "host_output") return render::CaptureView::HostOutput;
+            if (view == "live2d") return render::CaptureView::HostOutput;
             if (view == "engine_window") return render::CaptureView::EngineWindow;
             return render::CaptureView::SceneColor;
         }
@@ -101,6 +104,7 @@ namespace kpengine::runtime
                                             "shadow_visibility", "spot_shadow_depth",
                                             "spot_shadow_visibility", "point_shadow_depth",
                                             "point_shadow_visibility", "selection_mask",
+                                            "host_output",
                                             "live2d",
                                             "engine_window"}}}},
             [screenshot_service = std::move(screenshot_service)](

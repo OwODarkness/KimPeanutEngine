@@ -7,7 +7,8 @@ add_executable(Live2DRenderContractTest
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/render/live2d_render_contract.cpp)
 
 target_include_directories(Live2DRenderContractTest PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render)
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render
+    ${CMAKE_SOURCE_DIR}/engine/runtime)
 
 target_link_libraries(Live2DRenderContractTest PRIVATE KP::GoogleTest)
 
@@ -21,7 +22,8 @@ add_executable(Live2DModelDataContractTest
 
 target_include_directories(Live2DModelDataContractTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime
-    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render)
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/render
+    ${CMAKE_SOURCE_DIR}/engine/runtime)
 
 target_link_libraries(Live2DModelDataContractTest PRIVATE KP::GoogleTest)
 
@@ -55,7 +57,8 @@ add_executable(Live2DMaskPlannerTest
 target_include_directories(Live2DMaskPlannerTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/module/live2d
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/render
-    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime)
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime)
 target_link_libraries(Live2DMaskPlannerTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
 gtest_discover_tests(Live2DMaskPlannerTest)
@@ -65,12 +68,20 @@ if(KPENGINE_ENABLE_LIVE2D)
         live2d_core_test.cpp
         live2d_asset_test.cpp
         live2d_settings_test.cpp
+        live2d_renderer_test.cpp
         ${CMAKE_SOURCE_DIR}/engine/module/live2d/live2d_settings.cpp)
 
     target_include_directories(Live2DCoreTest PRIVATE
+        "${CMAKE_SOURCE_DIR}/engine/module/live2d"
+        "${CMAKE_SOURCE_DIR}/engine/module/live2d/render"
+        "${CMAKE_SOURCE_DIR}/engine/runtime"
+        "${CMAKE_SOURCE_DIR}/engine/runtime/core"
+        "${CMAKE_SOURCE_DIR}/engine/test"
         "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}"
         "${KPENGINE_CUBISM_CORE_INCLUDE_DIR}")
 
+    # Live2DRender brings Render, so the renderer test can drive
+    # Live2DRenderer::Initialize against the shared backend test double.
     target_link_libraries(Live2DCoreTest PRIVATE
         Live2D
         Live2DImport

@@ -97,3 +97,18 @@ add_custom_command(TARGET RuntimeLaunchOptionsTest POST_BUILD
 
 include(GoogleTest)
 gtest_discover_tests(RuntimeLaunchOptionsTest)
+
+add_executable(WindowCommandProviderTest
+    window_command_provider_test.cpp
+)
+
+target_include_directories(WindowCommandProviderTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+)
+
+target_link_libraries(WindowCommandProviderTest PRIVATE
+    RuntimeWindowCommand KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(WindowCommandProviderTest)

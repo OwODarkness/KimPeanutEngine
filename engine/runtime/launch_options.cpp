@@ -1,8 +1,11 @@
 #include "launch_options.h"
 
+#include <algorithm>
+#include <cctype>
 #include <charconv>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "asset/utility.h"
 
@@ -44,6 +47,57 @@ namespace kpengine::runtime
             return true;
         }
 
+        // Extents are written as WIDTHxHEIGHT in validation notes. Both
+        // components must be non-zero and bounded so a typo cannot ask a host
+        // to allocate an unbounded render target.
+        constexpr uint32_t kMaximumResizeExtent = 16384u;
+
+        bool ParseExtentComponent(const std::string_view value, uint32_t &component)
+        {
+            if (value.empty())
+            {
+                return false;
+            }
+
+            unsigned int parsed = 0;
+            const auto parsed_result = std::from_chars(
+                value.data(), value.data() + value.size(), parsed, 10);
+            if (parsed_result.ec != std::errc{} ||
+                parsed_result.ptr != value.data() + value.size())
+            {
+                return false;
+            }
+            component = static_cast<uint32_t>(parsed);
+            return true;
+        }
+
+        bool ParseResizeExtent(const std::string_view value, RuntimeResizeRequest &resize)
+        {
+            const std::size_t separator = value.find('x');
+            if (separator == std::string_view::npos || separator == 0u ||
+                separator + 1u >= value.size())
+            {
+                return false;
+            }
+
+            uint32_t width = 0;
+            uint32_t height = 0;
+            if (!ParseExtentComponent(value.substr(0u, separator), width) ||
+                !ParseExtentComponent(value.substr(separator + 1u), height))
+            {
+                return false;
+            }
+            if (width == 0u || height == 0u || width > kMaximumResizeExtent ||
+                height > kMaximumResizeExtent)
+            {
+                return false;
+            }
+
+            resize.width = width;
+            resize.height = height;
+            return true;
+        }
+
         bool ParseStartupLevel(std::string_view value, std::string &normalized)
         {
             const std::string authored_path{value};
@@ -53,6 +107,71 @@ namespace kpengine::runtime
                 return false;
             }
             return normalized != "level" && normalized.rfind("level/", 0) == 0;
+        }
+
+        // A Live2D product is not one of the AssetType extensions, so the
+        // generic normalizer cannot classify it. Apply the same containment
+        // rules here -- no NUL, no absolute or drive-rooted path, no escaping
+        // segment -- and then require the product's own suffix.
+        constexpr std::string_view kLive2DProductSuffix = ".live2d";
+
+        bool ParseLive2DModel(const std::string_view value, std::string &normalized)
+        {
+            const std::string authored{value};
+            if (authored.empty() || authored.find('\0') != std::string::npos)
+            {
+                return false;
+            }
+
+            std::string portable = authored;
+            std::replace(portable.begin(), portable.end(), '\\', '/');
+            if (portable.front() == '/' ||
+                (portable.size() >= 2u &&
+                 std::isalpha(static_cast<unsigned char>(portable.front())) != 0 &&
+                 portable[1] == ':'))
+            {
+                return false;
+            }
+
+            std::vector<std::string> segments;
+            std::size_t begin = 0;
+            while (begin <= portable.size())
+            {
+                const std::size_t end = portable.find('/', begin);
+                const std::string segment = portable.substr(
+                    begin, end == std::string::npos ? std::string::npos : end - begin);
+                if (segment == "..")
+                {
+                    return false;
+                }
+                if (!segment.empty() && segment != ".")
+                {
+                    if (segment.find(':') != std::string::npos)
+                    {
+                        return false;
+                    }
+                    segments.push_back(segment);
+                }
+                if (end == std::string::npos)
+                {
+                    break;
+                }
+                begin = end + 1u;
+            }
+
+            if (segments.empty())
+            {
+                return false;
+            }
+            normalized = segments.front();
+            for (std::size_t index = 1u; index < segments.size(); ++index)
+            {
+                normalized += "/" + segments[index];
+            }
+            return normalized.size() > kLive2DProductSuffix.size() &&
+                   normalized.compare(normalized.size() - kLive2DProductSuffix.size(),
+                                      kLive2DProductSuffix.size(),
+                                      kLive2DProductSuffix) == 0;
         }
 
         RuntimeLaunchOptionsParseResult ParseArguments(
@@ -67,6 +186,8 @@ namespace kpengine::runtime
             bool has_capture_view = false;
             bool has_capture_alpha = false;
             bool has_exit_after_capture = false;
+            bool has_resize = false;
+            bool has_live2d_model = false;
 
             for (std::size_t index = 0; index < arguments.size(); ++index)
             {
@@ -112,6 +233,12 @@ namespace kpengine::runtime
                     }
                     result.options.command_transport_config.enabled = true;
                     result.options.command_transport_config.port = port;
+                    // Opting into the agent port is what authorizes the mutating
+                    // commands reachable through it; without this the transport
+                    // grants no capabilities and every MutatesState command is
+                    // denied. Read-only commands ignore the extra capability.
+                    result.options.command_transport_config.capabilities =
+                        command::CommandCapability::Mutating;
                     has_agent_port = true;
                 }
                 else if (argument == "--graphics-api")
@@ -165,6 +292,29 @@ namespace kpengine::runtime
                     }
                     result.options.startup_level_override = std::move(normalized);
                     has_startup_level = true;
+                }
+                else if (argument == "--live2d-model")
+                {
+                    if (has_live2d_model)
+                    {
+                        return Failure("duplicate option '--live2d-model'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure(
+                            "--live2d-model requires an Asset-root-relative *.live2d path");
+                    }
+
+                    std::string normalized;
+                    const std::string_view value = arguments[++index];
+                    if (!ParseLive2DModel(value, normalized))
+                    {
+                        return Failure(
+                            "--live2d-model requires an Asset-root-relative *.live2d path (got '" +
+                            std::string{value} + "')");
+                    }
+                    result.options.live2d_model_override = std::move(normalized);
+                    has_live2d_model = true;
                 }
                 else if (argument == "--capture")
                 {
@@ -246,6 +396,29 @@ namespace kpengine::runtime
                     result.options.startup_exit_after_capture = true;
                     has_exit_after_capture = true;
                 }
+                else if (argument == "--resize")
+                {
+                    if (has_resize)
+                    {
+                        return Failure("duplicate option '--resize'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--resize requires WIDTHxHEIGHT");
+                    }
+
+                    const std::string_view value = arguments[++index];
+                    RuntimeResizeRequest resize{};
+                    if (!ParseResizeExtent(value, resize))
+                    {
+                        return Failure(
+                            "--resize requires WIDTHxHEIGHT with both values from 1 to " +
+                            std::to_string(kMaximumResizeExtent) + " (got '" +
+                            std::string{value} + "')");
+                    }
+                    result.options.startup_resize = resize;
+                    has_resize = true;
+                }
                 else
                 {
                     return Failure("unknown option '" + std::string{argument} + "'");
@@ -257,10 +430,6 @@ namespace kpengine::runtime
                 if (result.options.startup_level_override.has_value())
                 {
                     return Failure("--startup-level is only valid in scene3d mode");
-                }
-                if (result.options.command_transport_config.enabled)
-                {
-                    return Failure("--agent-port is not available in live2d-viewer mode");
                 }
                 if (has_capture_view && !has_startup_capture)
                 {
@@ -293,6 +462,15 @@ namespace kpengine::runtime
                 {
                     return Failure(
                         "--exit-after-capture is only valid in live2d-viewer mode");
+                }
+                if (has_resize)
+                {
+                    return Failure("--resize is only valid in live2d-viewer mode");
+                }
+                if (has_live2d_model)
+                {
+                    return Failure(
+                        "--live2d-model is only valid in live2d-viewer mode");
                 }
             }
 

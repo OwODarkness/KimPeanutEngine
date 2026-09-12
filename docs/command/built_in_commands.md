@@ -9,9 +9,11 @@ below are stable built-ins today.
 | `commands.list` | List registered command names. | [`commands.list`](#commandslist) |
 | `help` | Show help for one command or list names. | [`help`](#help) |
 | `capture.screenshot` | Capture a live final or diagnostic render view and export a PNG. | [`capture.screenshot`](#capturescreenshot) |
+| `window.resize` | Resize the active window's client area. | [`window.resize`](#windowresize) |
 | `gpu-stats` | Return the latest completed-frame GPU statistics. | [`gpu-stats`](#gpu-stats-cpu-stats-and-stats) |
 | `cpu-stats` | Return the latest completed-frame CPU and frame-loop statistics. | [`cpu-stats`](#gpu-stats-cpu-stats-and-stats) |
 | `stats` | Return the latest completed-frame CPU and GPU statistics. | [`stats`](#gpu-stats-cpu-stats-and-stats) |
+| `live2d.model_report` | Report the loaded Live2D product and its blend distribution. Present only in Live2D viewer mode. | [`live2d.model_report`](#live2dmodel_report) |
 
 ## `commands.list`
 
@@ -88,6 +90,73 @@ plane, normals are remapped from `[-1,1]` to `[0,1]`, shadow visibility is
 white for visible and black for occluded, and `spot_shadow_depth` visualizes
 the sampled D32 spotlight map; `point_shadow_depth` visualizes the fixed
 3×2 point-shadow depth atlas.
+
+## `window.resize`
+
+Resizes the active window's client area. Available in every host mode, including
+the standalone Live2D viewer, where the window belongs to the host rather than
+to Runtime's shared window system; the host resolves its own window for the
+command.
+
+| Property | Value |
+|---|---|
+| Provider | `RuntimeWindow` |
+| Execution lane | Game |
+| Capability | `MutatesState` |
+| Allowed callers | Editor console, Agent, Lua, tests, C++ callers |
+| `width` | Required unsigned integer, 1 to 16384. |
+| `height` | Required unsigned integer, 1 to 16384. |
+| Result | `success` with `data.width`, `data.height`, `data.recorded_width`, `data.recorded_height`, and `data.applied`; otherwise `InvalidArguments` or `Failed`. |
+
+The command **records** the request and reports `data.applied` as `false`,
+because it runs on the Game lane and a real window may only be touched on the
+window thread. The request is applied at that thread's next frame boundary, and
+`data.recorded_width`/`data.recorded_height` are what the window system now
+holds. Callers that need the new extent to have landed must observe the window
+afterwards rather than treat `success` as "already resized".
+
+Because it mutates engine state, the Agent transport only accepts it when the
+engine was launched with `--agent-port`; see
+[agent transport](agent_transport.md).
+
+```json
+{"op":"execute","command":"window.resize","arguments":{"width":1024,"height":768}}
+```
+
+## `live2d.model_report`
+
+Reports the Live2D product the active host has loaded and the blend-mode
+distribution authored inside it. Registered by the Live2D viewer host through
+`IApplicationHost::RegisterHostCommands`, so it exists **only in Live2D viewer
+mode**; in Scene3D mode it is absent from `commands.list`.
+
+| Property | Value |
+|---|---|
+| Provider | `Live2DRuntime` |
+| Execution lane | Game |
+| Allowed callers | Agent, Lua, Editor console, tests, C++ callers |
+| Arguments | None |
+| Result | `success` with `data.model` and the six blend fields below; otherwise `Failed` when no product is loaded. |
+
+| `data` field | Meaning |
+|---|---|
+| `model` | Asset-root-relative path of the product actually loaded. |
+| `drawable_count` | Total drawables in the loaded model. |
+| `normal_drawable_count` | Drawables authored with normal blend. |
+| `additive_drawable_count` | Drawables authored with additive blend. |
+| `multiplicative_drawable_count` | Drawables authored with multiplicative blend. |
+| `unknown_blend_mode_count` | Drawables whose authored blend mode is not one of the three. |
+| `covers_all_blend_modes` | True only when all three modes have at least one drawable. |
+
+Blend mode is authored inside the `.moc3` and cannot be recovered from a
+capture, so this command is how blend-coverage claims are asserted rather than
+inferred from an image. `data.model` names the product that was actually loaded
+so a run that silently fell back to the configured fixture cannot read as
+evidence about a different one.
+
+```json
+{"op":"execute","command":"live2d.model_report"}
+```
 
 ## `gpu-stats`, `cpu-stats`, and `stats`
 

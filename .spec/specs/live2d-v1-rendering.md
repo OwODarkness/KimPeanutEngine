@@ -1,7 +1,12 @@
 # Live2D V1 Rendering
 
-- Status: active implementation; L2D1–L2D3 and L2D4.0–L2D4.4 landed, with a
-  concrete OpenGL preview renderer
+- Status: active implementation; L2D1–L2D3 and L2D4.0–L2D4.5 landed, with a
+  dedicated standalone viewer and a correct preview renderer on both backends.
+  V1 acceptance is **not yet met**: 7 of the 11 items check out (two of those
+  with a named gap), and the open four need a Render-side enum removal,
+  blend-mode coverage, resize evidence, and the official-reference comparison.
+  See the [V1 acceptance audit](../../docs/live2d/TODO.md#v1-acceptance)
+  (2026-09-12).
 - Owner: unassigned
 - Parent TODO: [Live2D Module Roadmap](../../docs/live2d/TODO.md)
 - Architecture: [Live2D Module Plans](../../docs/live2d/PLANS.md)
@@ -89,19 +94,55 @@ viewer is the final integration consumer, not the owner of module logic.
 ## Acceptance criteria
 
 - [ ] All [V1 acceptance items](../../docs/live2d/TODO.md#v1-acceptance) pass.
-- [ ] The exact SDK, Framework commit, Core package, runtime binary mode, and
+  **Open (2026-09-12):** 7 of 11 pass. Items 9–11 lack evidence; item 8 is
+  blocked by `CaptureView::Live2D`, a Live2D semantic value inside Render's own
+  capture enum — see the audit on that list.
+- [x] The exact SDK, Framework commit, Core package, runtime binary mode, and
   applicable licenses are recorded in the implementation journal.
-- [ ] The Asset-owned polymorphic payload/type/loader migration preserves
+  *Verified (2026-09-12):* the SDK is distributed as a release archive rather
+  than a git checkout, so identity is recorded as version `5-r.5`, the
+  `cubism-info.yml` Core package hashes, and the `Framework/CHANGELOG.md`
+  release date (`2026-04-02`) ([L2D4.0 journal](../journal/2026-09-09-live2d-l2d4-0.md));
+  runtime mode is MSVC 143 static `MD`/`MDd`, Debug validated against
+  `Live2DCubismCore_MDd.lib`, with the root, Core, and Framework license files
+  recorded ([L2D1 journal](../journal/2026-09-08-live2d-l2d1.md)).
+- [x] The Asset-owned polymorphic payload/type/loader migration preserves
   existing built-in type values, packed IDs, routing, payload access, and
   asset tests.
+  *Verified (2026-09-12):* the Asset and AssetImport trees contain zero Live2D
+  references and the full asset suite passes.
 - [ ] Import/product tests prove deterministic bytes and transactional root
   publication under malformed/missing/path-escape failures.
-- [ ] Multiple instances from one asset have isolated parameter state.
+  *Partly verified (2026-09-12):* deterministic bytes
+  (`ImportsCheckedInModel3PackageDeterministically`), path escape, non-model
+  JSON, unsupported features, and a corrupted product with no partial root are
+  all asserted. **The missing-`.moc3` path is implemented but untested**, so
+  "missing" is not evidenced.
+- [x] Multiple instances from one asset have isolated parameter state.
+  *Verified (2026-09-12):* `Live2DCoreTest.CreatesIndependentModelsFromOneMoc`
+  passes (direct `--gtest_filter` run, not skipped) and
+  `live2d_asset_test.cpp:225-230` asserts one instance's parameter change while
+  the other is unchanged.
 - [ ] Streaming geometry is frame-slot safe on Vulkan and does not leak stale
   OpenGL state.
+  *Partly verified (2026-09-12):* the contract is unit-covered
+  (`BufferContract.ValidatesStreamingBufferRules`,
+  `BufferContract.ValidationReportsUnwrittenSlotsAndMayPropagateLookupErrors`)
+  and the L2D4.1 corrections landed. The runtime half is the `GraphicsSmoke`
+  sequence recorded as passing both backends in
+  [docs/status.md](../../docs/status.md), which is a runtime executable rather
+  than a `ctest` case and was **not re-run during this audit**.
 - [ ] Official-reference, OpenGL, and Vulkan captures agree within documented
   alpha/color/edge tolerances for a representative model with clipping.
+  **Open:** OpenGL and Vulkan agree region-by-region inside the frozen L2D4.0
+  tolerances, but no official-reference capture exists — the licensed external
+  fixture has no built sample executable. Two of the three required captures is
+  not this criterion.
 - [ ] Resize and shutdown paths have runtime evidence, not compilation only.
+  **Open:** shutdown has runtime evidence (four viewer runs exit 0 reaching
+  `CubismFramework::Dispose() is complete.` with no live-handle warning). Resize
+  has neither runtime evidence nor a test — no test calls
+  `Live2DRenderer::ResizeOutput` and no run resizes the target.
 
 ## Validation plan
 

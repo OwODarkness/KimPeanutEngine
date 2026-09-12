@@ -57,40 +57,6 @@ namespace kpengine::live2d
             return shader && shader->data ? shader->data.get() : nullptr;
         }
 
-        graphics::BlendAttachmentState BlendFor(const Live2DBlendMode mode)
-        {
-            graphics::BlendAttachmentState blend{};
-            blend.blend_enabled = true;
-            // Additive and multiplicative accumulate destination alpha, so the
-            // normal mode is the only one that publishes its own coverage.
-            // Deriving it as NormalizeLive2DBlend does (a = src.a + dst.a *
-            // (1 - src.a)) keeps the exported coverage usable when the product
-            // is captured over a transparent clear.
-            blend.src_alpha_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ZERO;
-            blend.dst_alpha_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
-            switch (mode)
-            {
-            case Live2DBlendMode::Normal:
-                blend.src_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
-                blend.dst_color_blend_factor =
-                    graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                blend.src_alpha_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
-                blend.dst_alpha_blend_factor =
-                    graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                break;
-            case Live2DBlendMode::Additive:
-                blend.src_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
-                blend.dst_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_ONE;
-                break;
-            case Live2DBlendMode::Multiplicative:
-                blend.src_color_blend_factor = graphics::BlendFactor::BLEND_FACTOR_DST_COLOR;
-                blend.dst_color_blend_factor =
-                    graphics::BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA;
-                break;
-            }
-            return blend;
-        }
-
         std::array<float, 16> FitTransform(const Live2DFrameSnapshot &snapshot,
                                             const uint32_t width,
                                             const uint32_t height)
@@ -358,7 +324,7 @@ namespace kpengine::live2d
             }
             else
             {
-                desc.blend_attachment_state = BlendFor(blend_mode);
+                desc.blend_attachment_state = BuildLive2DBlendState(blend_mode);
             }
             if (masked_pipeline)
             {

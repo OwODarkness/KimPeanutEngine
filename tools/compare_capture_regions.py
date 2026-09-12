@@ -8,6 +8,17 @@ come from the frozen L2D4.0 contract passed on the command line.
 Usage:
     python tools/compare_capture_regions.py A.png B.png --tolerance 0.0078431 \
         --edge-tolerance 0.0156863
+
+There is deliberately no blend-mode region. L2D5.3 asked for one, but a
+drawable's blend mode is authored inside the .moc3 and the capture carries only
+the composited RGBA, so no per-pixel function of the image can recover which
+drawable wrote a pixel or under which blend it was written. The regions above
+are all derived from alpha topology, which is why they can be derived at all.
+Blend-mode coverage is asserted instead from the engine's own model data with
+the `live2d.model_report` Runtime command, which reports the loaded product's
+normal/additive/multiplicative drawable counts on both backends; comparing
+captures can confirm that both backends agree, but it can never establish which
+blend modes the fixture exercises.
 """
 
 import argparse

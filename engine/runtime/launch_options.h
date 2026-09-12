@@ -23,16 +23,36 @@ namespace kpengine::runtime
         Product,
     };
 
+    // A standalone host's requested window extent. Width and height are both
+    // non-zero and bounded; the host rejects anything else while parsing.
+    struct RuntimeResizeRequest
+    {
+        uint32_t width = 0;
+        uint32_t height = 0;
+    };
+
     struct RuntimeLaunchOptions
     {
         ApplicationMode application_mode = ApplicationMode::Scene3D;
         GraphicsAPIType graphics_api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         command::LocalCommandTransportConfig command_transport_config{};
         std::optional<std::string> startup_level_override;
+        // Optional Live2D product the viewer loads instead of the one named by
+        // config/live2d.json. The tracked config has to stay on the fixture that
+        // is always present, so a licensed model that exists only in a local,
+        // git-ignored tree is selected for a run rather than committed to.
+        std::optional<std::string> live2d_model_override;
         // Optional one-shot capture used by standalone hosts. The Live2D
-        // viewer consumes this as a Live2D-target capture; Scene3D keeps its
+        // viewer consumes this as a host-output capture; Scene3D keeps its
         // existing command-driven screenshot flow.
         std::optional<std::string> startup_capture_override;
+        // Optional one-shot window resize for a standalone host. The host
+        // records its first frames at its authored extent and then resizes, so
+        // the renderer's output-resize path actually executes instead of only
+        // being re-entered at an unchanged extent. Without this the path cannot
+        // be exercised at all, which is the same reason --exit-after-capture
+        // exists.
+        std::optional<RuntimeResizeRequest> startup_resize;
         StartupCaptureView startup_capture_view = StartupCaptureView::Presentation;
         // Whether a standalone host clears its captured target opaquely. A
         // transparent clear is what makes the product's own alpha and blend

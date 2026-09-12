@@ -138,6 +138,17 @@ namespace kpengine::live2d
             return true;
         }
 
+        // A leaf entry under FileReferences -- a motion or an expression -- names
+        // its file under "File" and carries its remaining members as metadata.
+        // The expression member "Name" is a display name, so walking every string
+        // of the object resolved it as a path and made a model that ships
+        // expressions fail to import.
+        bool IsFileEntry(const Json &value)
+        {
+            return value.is_object() && value.contains("File") &&
+                   value["File"].is_string();
+        }
+
         bool AddReferenceValue(const std::filesystem::path &root,
                                const std::filesystem::path &source_directory,
                                const std::string &role,
@@ -164,8 +175,17 @@ namespace kpengine::live2d
             }
             else if (value.is_object())
             {
+                // Inside a leaf entry only "File" and "Sound" are references;
+                // the remaining members are metadata and are not paths. Above a
+                // leaf entry every member is either a reference or a container
+                // of references, so the walk stays generic.
+                const bool file_entry = IsFileEntry(value);
                 for (const auto &[key, child] : value.items())
                 {
+                    if (file_entry && key != "File" && key != "Sound")
+                    {
+                        continue;
+                    }
                     if (!AddReferenceValue(root, source_directory, role + "/" + key, child,
                                            resource, diagnostic))
                     {

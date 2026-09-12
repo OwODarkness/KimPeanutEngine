@@ -15,6 +15,7 @@
 #include "engine.h"
 #include "graphics/backend/common/render_backend.h"
 #include "log/logger.h"
+#include "live2d_model_report_command.h"
 #include "live2d_settings.h"
 #include "module/live2d/render/live2d_renderer.h"
 #include "module/live2d/runtime/live2d_model_resource.h"
@@ -27,6 +28,10 @@ namespace kpengine::live2d
 {
     namespace
     {
+        // Upper bound on how long a --capture waits for its --resize to reach
+        // the output target before capturing at whatever extent is current.
+        constexpr uint32_t kResizeWaitFrameBudget = 240u;
+
         float DisplayToLinear(const float value)
         {
             return value <= 0.04045f
@@ -72,7 +77,14 @@ namespace kpengine::live2d
                 return false;
             }
 
-            const std::string model_path = GetAssetDirectory() + settings.preview_asset;
+            // --live2d-model selects a locally provisioned product for this run;
+            // the tracked config keeps naming the fixture that is always present.
+            const std::string &preview_asset =
+                engine.GetLive2DModelOverride().has_value()
+                    ? *engine.GetLive2DModelOverride()
+                    : settings.preview_asset;
+            const std::string model_path = GetAssetDirectory() + preview_asset;
+            loaded_model_path_ = preview_asset;
             model_asset_ = asset::AssetManager::GetInstance().LoadSync(model_path);
             if (!model_asset_.IsValid() || model_asset_.type != kLive2DModelAssetType)
             {
@@ -182,7 +194,7 @@ namespace kpengine::live2d
                 backend_->GetRenderTargetReadback(),
                 [this](render::CaptureView view)
                 {
-                    if (view == render::CaptureView::Live2D && renderer_)
+                    if (view == render::CaptureView::HostOutput && renderer_)
                     {
                         return renderer_->GetOutputTarget();
                     }
@@ -192,52 +204,16 @@ namespace kpengine::live2d
             screenshot_service_ = std::make_unique<runtime::RuntimeScreenshotService>(
                 *render_capture_service_);
 
-            if (engine.GetStartupCaptureOverride().has_value())
+            if (engine.GetStartupResize().has_value())
             {
-                exit_after_capture_ = engine.GetStartupExitAfterCapture();
-                runtime::ScreenshotRequest request{};
-                // The standalone viewer presents directly to the swapchain, so
-                // the default capture reads the presentation boundary. The
-                // product view reads the viewer's own output target instead,
-                // which is what makes two backends comparable: it carries no
-                // host UI.
-                request.capture.view =
-                    engine.GetStartupCaptureView() == runtime::StartupCaptureView::Product
-                        ? render::CaptureView::Live2D
-                        : render::CaptureView::EngineWindow;
-                request.output_path = *engine.GetStartupCaptureOverride();
-                screenshot_service_->RequestScreenshot(
-                    std::move(request),
-                    [this](runtime::ScreenshotResult result)
-                    {
-                        if (result.IsSuccess())
-                        {
-                            // The capture is only interpretable next to the
-                            // revision it came from, so publish both together.
-                            const Live2DRenderCounters &counters =
-                                renderer_->GetLastCounters();
-                            KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
-                                   "Startup capture exported to %s "
-                                   "(frame_sequence %llu, draws %u, "
-                                   "mask_sources %u, mask_contexts %u, "
-                                   "position_upload_bytes %llu)",
-                                   result.output_path.c_str(),
-                                   static_cast<unsigned long long>(
-                                       renderer_->GetLastFrameSequence()),
-                                   counters.submitted_draw_count,
-                                   counters.submitted_mask_source_draw_count,
-                                   counters.active_mask_context_count,
-                                   static_cast<unsigned long long>(
-                                       counters.position_upload_bytes));
-                        }
-                        else
-                        {
-                            KP_LOG("Live2DViewer", LOG_LEVEL_ERROR,
-                                   "Startup capture failed: %s",
-                                   result.diagnostic.c_str());
-                        }
-                        capture_settled_ = true;
-                    });
+                // Defer the capture: it must read the post-resize target, so the
+                // exported image's dimensions are themselves the evidence that
+                // the resize executed.
+                pending_resize_ = engine.GetStartupResize();
+            }
+            else
+            {
+                RequestStartupCapture();
             }
             return true;
         }
@@ -269,6 +245,87 @@ namespace kpengine::live2d
         return true;
     }
 
+    void Live2DViewerHost::ApplyPendingResize()
+    {
+        if (!pending_resize_.has_value() || window_ == nullptr)
+        {
+            return;
+        }
+
+        // One shot: a validation run resizes exactly once, so the frame the
+        // startup capture reads is downstream of a single extent transition.
+        const runtime::RuntimeResizeRequest resize = *pending_resize_;
+        pending_resize_.reset();
+        applied_resize_ = resize;
+        // A backend may apply a window resize lazily -- Vulkan defers it to a
+        // frame boundary -- so requesting the capture here would export the
+        // pre-resize image. Wait until the output target reports the requested
+        // extent instead.
+        capture_waits_for_resize_ =
+            engine_ != nullptr && engine_->GetStartupCaptureOverride().has_value();
+
+        // A real window resize, not just a recorded extent: a Vulkan backend
+        // recreates its surface from what the platform granted, so a size the
+        // window system only cached would leave the swapchain at the old extent.
+        window_->RequestWindowSize(static_cast<int>(resize.width),
+                                   static_cast<int>(resize.height));
+
+        if (backend_ != nullptr)
+        {
+            const graphics::Extent2D extent = backend_->GetRenderExtent();
+            KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
+                   "Live2D viewer resize to %ux%u requested; backend reports %ux%u",
+                   resize.width, resize.height, extent.width, extent.height);
+        }
+    }
+
+    void Live2DViewerHost::RequestStartupCapture()
+    {
+        if (engine_ == nullptr || screenshot_service_ == nullptr ||
+            !engine_->GetStartupCaptureOverride().has_value())
+        {
+            return;
+        }
+
+        exit_after_capture_ = engine_->GetStartupExitAfterCapture();
+        runtime::ScreenshotRequest request{};
+        // The standalone viewer presents directly to the swapchain, so the
+        // default capture reads the presentation boundary. The product view
+        // reads the viewer's own output target instead, which is what makes two
+        // backends comparable: it carries no host UI.
+        request.capture.view =
+            engine_->GetStartupCaptureView() == runtime::StartupCaptureView::Product
+                ? render::CaptureView::HostOutput
+                : render::CaptureView::EngineWindow;
+        request.output_path = *engine_->GetStartupCaptureOverride();
+        screenshot_service_->RequestScreenshot(
+            std::move(request),
+            [this](runtime::ScreenshotResult result)
+            {
+                if (result.IsSuccess())
+                {
+                    // The capture is only interpretable next to the revision it
+                    // came from, so publish both together.
+                    const Live2DRenderCounters &counters = renderer_->GetLastCounters();
+                    KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
+                           "Startup capture exported to %s (frame_sequence %llu, draws %u, "
+                           "mask_sources %u, mask_contexts %u, position_upload_bytes %llu)",
+                           result.output_path.c_str(),
+                           static_cast<unsigned long long>(renderer_->GetLastFrameSequence()),
+                           counters.submitted_draw_count,
+                           counters.submitted_mask_source_draw_count,
+                           counters.active_mask_context_count,
+                           static_cast<unsigned long long>(counters.position_upload_bytes));
+                }
+                else
+                {
+                    KP_LOG("Live2DViewer", LOG_LEVEL_ERROR,
+                           "Startup capture failed: %s", result.diagnostic.c_str());
+                }
+                capture_settled_ = true;
+            });
+    }
+
     bool Live2DViewerHost::RecordFrame(std::string &diagnostic)
     {
         diagnostic.clear();
@@ -283,6 +340,40 @@ namespace kpengine::live2d
         if (window_->ShouldClose())
         {
             return true;
+        }
+
+        // A validation run records its first frame at the authored extent and
+        // then resizes once, so the renderer's output-resize path executes
+        // against a genuinely different target instead of only being re-entered
+        // at an unchanged extent. Both the dispatch and the deferred capture
+        // request run outside the frame bracket.
+        if (pending_resize_.has_value() && frame_number_ > 0u)
+        {
+            ApplyPendingResize();
+        }
+        if (capture_waits_for_resize_)
+        {
+            // Gated on the renderer's own output view, not on the backend's
+            // reported extent: the view is what the capture actually reads.
+            const graphics::RenderTargetView output = renderer_->GetOutputView();
+            const bool at_requested_extent =
+                output.IsValid() && output.width == applied_resize_.width &&
+                output.height == applied_resize_.height;
+            ++resize_wait_frames_;
+            if (at_requested_extent ||
+                resize_wait_frames_ > kResizeWaitFrameBudget)
+            {
+                if (!at_requested_extent)
+                {
+                    KP_LOG("Live2DViewer", LOG_LEVEL_WARNING,
+                           "Live2D viewer resize to %ux%u never reached the output "
+                           "target within %u frames; capturing at the current extent",
+                           applied_resize_.width, applied_resize_.height,
+                           resize_wait_frames_);
+                }
+                capture_waits_for_resize_ = false;
+                RequestStartupCapture();
+            }
         }
 
         backend_->BeginFrame();
@@ -431,6 +522,38 @@ namespace kpengine::live2d
             return true;
         }
         return window_ != nullptr && window_->ShouldClose();
+    }
+
+    WindowSystem *Live2DViewerHost::GetHostWindow() noexcept
+    {
+        return window_.get();
+    }
+
+    bool Live2DViewerHost::RegisterHostCommands(
+        runtime::command::CommandRegistry &registry, std::string &diagnostic)
+    {
+        runtime::command::CommandRegistrationResult registration =
+            RegisterLive2DModelReportCommand(
+                registry,
+                [this](Live2DModelReport &report)
+                {
+                    if (renderer_ == nullptr)
+                    {
+                        return false;
+                    }
+                    report.model_path = loaded_model_path_;
+                    report.features = renderer_->GetFeatureReport();
+                    return true;
+                });
+        if (!registration.IsSuccess())
+        {
+            diagnostic = registration.diagnostic;
+            return false;
+        }
+        // Holding the token is what keeps the entry installed; the registry
+        // releases it when this host is destroyed.
+        command_registration_ = std::move(registration.registration);
+        return true;
     }
 
     void Live2DViewerHost::RenderViewerUI()

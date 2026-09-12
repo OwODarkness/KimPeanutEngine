@@ -77,7 +77,11 @@ function Get-ChangedFiles {
 
 function Add-UniqueValue {
     param(
-        [Parameter(Mandatory = $true)][System.Collections.ArrayList]$List,
+        # PowerShell refuses to bind an empty collection to a mandatory
+        # collection parameter, and every accumulator here starts empty, so
+        # without this the first Add-UniqueValue call of any plan throws and
+        # `kp.ps1 validate` never reaches a build.
+        [Parameter(Mandatory = $true)][AllowEmptyCollection()][System.Collections.ArrayList]$List,
         [Parameter(Mandatory = $true)][string]$Value
     )
     if (-not $List.Contains($Value)) {
@@ -131,6 +135,26 @@ function Get-ValidationPlan {
             Add-UniqueValue $areas "tts"
             Add-UniqueValue $targets "TTSExample"
         }
+        # Live2D owns test executables that compile the contract, mask planner,
+        # and render planner directly, so a Live2D edit is validated by those
+        # plus the Cubism-linked core test rather than by a full build. The
+        # owning directories are module/live2d and test/unit/live2d; the latter
+        # matches no other rule and would otherwise fall through to the
+        # unknown-area branch below, which forces a full build.
+        if ($path -match '^engine\\module\\live2d\\' -or $path -match '^engine\\test\\unit\\live2d\\') {
+            Add-UniqueValue $areas "live2d"
+            foreach ($live2dTest in @("Live2DRenderContractTest", "Live2DModelDataContractTest",
+                    "Live2DRenderPlannerTest", "Live2DMaskPlannerTest", "Live2DCoreTest")) {
+                Add-UniqueValue $targets $live2dTest
+            }
+            # One regex over the Live2D suite names, not one per executable. A
+            # test executable is named for one of the suites it contains --
+            # Live2DMaskPlannerTest also defines Live2DMaskAtlasPlannerTest, and
+            # Live2DCoreTest also defines Live2DAssetTest, Live2DRendererTest,
+            # and Live2DSettingsFixture -- so `-R <target>` silently skips the
+            # rest of that binary's tests. `Live2D` matches all 52.
+            Add-UniqueValue $tests "Live2D"
+        }
         if ($path -match '^engine\\runtime\\graphics\\') {
             Add-UniqueValue $areas "graphics"
             Add-UniqueValue $targets "GraphicsContractTest"
@@ -165,7 +189,7 @@ function Get-ValidationPlan {
         if ($path -match '^engine\\example\\tts\\') {
             Add-UniqueValue $targets "TTSExample"
         }
-        if ($path -match '^engine\\module\\' -and $path -notmatch '^engine\\module\\tts\\') {
+        if ($path -match '^engine\\module\\' -and $path -notmatch '^engine\\module\\(tts|live2d)\\') {
             Add-UniqueValue $areas "module"
             $fullBuild = $true
         }

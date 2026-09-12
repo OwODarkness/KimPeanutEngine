@@ -72,6 +72,13 @@ namespace kpengine
             void SetGraphicsAPI(GraphicsAPIType api_type);
             GraphicsAPIType GetGraphicsAPI() const noexcept { return graphics_api_type_; }
             void SetStartupLevelOverride(std::string authored_or_normalized_path);
+            // Selects the Live2D product a standalone viewer loads for this run.
+            // Empty leaves the host on the product named by config/live2d.json.
+            void SetLive2DModelOverride(std::string asset_relative_path);
+            const std::optional<std::string> &GetLive2DModelOverride() const noexcept
+            {
+                return live2d_model_override_;
+            }
             void SetStartupCaptureOverride(std::string output_path);
             void SetStartupCaptureView(StartupCaptureView view) noexcept
             {
@@ -100,6 +107,16 @@ namespace kpengine
             const std::optional<std::string> &GetStartupCaptureOverride() const noexcept
             {
                 return startup_capture_override_;
+            }
+            // One-shot standalone-host resize requested at launch. The host
+            // applies it after its first recorded frame.
+            const std::optional<RuntimeResizeRequest> &GetStartupResize() const noexcept
+            {
+                return startup_resize_;
+            }
+            void SetStartupResize(RuntimeResizeRequest resize) noexcept
+            {
+                startup_resize_ = resize;
             }
             StartupSnapshot GetStartupSnapshot() const;
 
@@ -148,6 +165,13 @@ namespace kpengine
             void TickModules(float delta_time) noexcept;
             void ShutdownModules() noexcept;
             void ShutdownApplicationHost() noexcept;
+            // Starts the local command transport when --agent-port asked for it.
+            // Shared by both modes because a standalone host serves commands too.
+            void StartCommandTransport();
+            // Applies a resize a Runtime command queued from the game thread. The
+            // window lives on the render thread, so it is applied here, at the
+            // frame boundary, rather than in the command handler.
+            void ApplyQueuedWindowResize() noexcept;
             float CalculateDeltaTime();
             void CalculateFPS(float delta_time);
 
@@ -225,6 +249,8 @@ namespace kpengine
             // parser-normalized Asset-root-relative path before Initialize().
             std::optional<std::string> startup_level_override_;
             std::optional<std::string> startup_capture_override_;
+            std::optional<std::string> live2d_model_override_;
+            std::optional<RuntimeResizeRequest> startup_resize_;
             StartupCaptureView startup_capture_view_ = StartupCaptureView::Presentation;
             bool startup_capture_transparent_clear_ = false;
             bool startup_exit_after_capture_ = false;

@@ -607,10 +607,11 @@ namespace kpengine::render
         scene_camera_ = input.camera;
         const std::optional<CaptureView> active_capture_view =
             input.pending_capture.has_value() ? input.pending_capture : input.debug_view;
+        // Only a view this renderer converts itself is recorded here. A
+        // host-resolved view is satisfied by the host's own target instead.
         const bool is_deferred_capture =
             active_capture_view.has_value() &&
-            active_capture_view.value() != CaptureView::SceneColor &&
-            active_capture_view.value() != CaptureView::Live2D;
+            RequiresCaptureViewConversionPass(active_capture_view.value());
         active_pending_capture_ = is_deferred_capture ? active_capture_view : std::nullopt;
         UpdateEnvironment(input);
         const auto shadow_stamp_fit_started = std::chrono::steady_clock::now();

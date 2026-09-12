@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <cstdint>
+#include <iterator>
 #include <optional>
 #include <utility>
 
@@ -13,6 +15,7 @@ namespace
     using kpengine::render::CaptureView;
     using kpengine::render::CapturedImage;
     using kpengine::render::RenderCaptureService;
+    using kpengine::render::RequiresCaptureViewConversionPass;
 
     class FakeReadback final : public kpengine::graphics::IRenderTargetReadback
     {
@@ -234,4 +237,69 @@ TEST(RenderCaptureServiceTest, CancelsPendingCaptureOnDestruction)
     EXPECT_EQ(callback_count, 1);
     EXPECT_EQ(result.status, CaptureResultStatus::Cancelled);
     EXPECT_FALSE(result.diagnostic.empty());
+}
+
+// A host-resolved view is satisfied by whoever owns the capture service, never
+// by the deferred renderer's conversion pass. Classifying one as a conversion
+// view would make the deferred renderer record a pass for a target it does not
+// own, so the split is pinned for every value rather than left to a negative
+// test that a new view could silently fall through.
+TEST(RenderCaptureServiceTest, ClassifiesEveryCaptureViewExplicitly)
+{
+    struct Expectation
+    {
+        CaptureView view;
+        bool needs_conversion_pass;
+    };
+    const Expectation expectations[] = {
+        {CaptureView::SceneColor, false},
+        {CaptureView::LinearDepth, true},
+        {CaptureView::WorldNormal, true},
+        {CaptureView::BaseColor, true},
+        {CaptureView::MaterialParams, true},
+        {CaptureView::ShadowVisibility, true},
+        {CaptureView::SpotShadowDepth, true},
+        {CaptureView::SpotShadowVisibility, true},
+        {CaptureView::PointShadowDepth, true},
+        {CaptureView::PointShadowVisibility, true},
+        {CaptureView::SelectionMask, true},
+        {CaptureView::HostOutput, false},
+        {CaptureView::EngineWindow, false},
+    };
+
+    for (const Expectation &expectation : expectations)
+    {
+        EXPECT_EQ(RequiresCaptureViewConversionPass(expectation.view),
+                  expectation.needs_conversion_pass)
+            << "view value " << static_cast<int>(expectation.view);
+    }
+
+    // Pins the dense range so inserting a view forces an explicit decision
+    // above. Appending past EngineWindow is not detectable here, because
+    // nothing exposes the enumerator count.
+    EXPECT_EQ(static_cast<std::uint8_t>(CaptureView::EngineWindow),
+              std::size(expectations) - 1u);
+}
+
+TEST(RenderCaptureServiceTest, ResolvesHostOutputThroughTheCaptureTargetResolver)
+{
+    FakeReadback readback;
+    CaptureView resolved_view = CaptureView::SceneColor;
+    RenderCaptureService service{
+        &readback,
+        [&resolved_view](CaptureView requested)
+        {
+            resolved_view = requested;
+            return kpengine::graphics::RenderTargetHandle{4, 1};
+        },
+        [] { return 3U; }};
+
+    EXPECT_TRUE(service.RequestCapture(
+        {CaptureView::HostOutput}, [](CaptureResult) {}));
+    EXPECT_TRUE(service.EnqueuePendingReadback());
+    EXPECT_EQ(resolved_view, CaptureView::HostOutput);
+    ASSERT_TRUE(readback.request.has_value());
+    EXPECT_EQ(readback.request->target,
+              (kpengine::graphics::RenderTargetHandle{4, 1}));
+    EXPECT_FALSE(RequiresCaptureViewConversionPass(CaptureView::HostOutput));
 }

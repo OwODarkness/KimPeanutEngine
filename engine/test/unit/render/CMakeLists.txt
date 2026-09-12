@@ -93,6 +93,7 @@ target_include_directories(RenderSystemTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
     ${CMAKE_SOURCE_DIR}/engine/runtime/core
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend
+    ${CMAKE_SOURCE_DIR}/engine/test  # support/fake_render_backend.h
 )
 
 target_link_libraries(RenderSystemTest PRIVATE Render KP::GoogleTest)

@@ -308,6 +308,19 @@ namespace kpengine
         return mouse_captured_;
     }
 
+    void GLFW_WindowSystem::RequestWindowSize(int width, int height)
+    {
+        if (window_ == nullptr || width <= 0 || height <= 0)
+        {
+            return;
+        }
+        // The framebuffer-size callback reports the size the window actually
+        // received and dispatches the event, so this must not dispatch one too:
+        // a Vulkan backend recreates its surface from the platform's extent, and
+        // a synthesized event would describe a size the window does not have.
+        glfwSetWindowSize(window_, width, height);
+    }
+
 
     void GLFW_WindowSystem::Cleanup()
     {

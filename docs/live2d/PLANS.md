@@ -4,8 +4,9 @@
 an optional Live2D module. Current work is tracked in [TODO.md](TODO.md), the
 SDK design is in [`.plan/L2D1.md`](.plan/L2D1.md), the generic Asset migration
 is owned by [AX1](../asset/.plan/AX1.md), Live2D's Asset handoff is staged in
-[`.plan/L2D2.md`](.plan/L2D2.md), Live2D planning and generic submission are staged in
-[`.plan/L2D4.md`](.plan/L2D4.md), and the complete V1 execution contract is in
+[`.plan/L2D2.md`](.plan/L2D2.md), Live2D planning and generic submission are
+staged in [`.plan/L2D4.md`](.plan/L2D4.md), authored playback is staged in
+[`.plan/L2D6.md`](.plan/L2D6.md), and the complete V1 execution contract is in
 [`.spec/specs/live2d-v1-rendering.md`](../../.spec/specs/live2d-v1-rendering.md).
 
 ## Outcome
@@ -296,6 +297,17 @@ and renderer. The flags below are kept as the original design intent;
 `--graphics-api` landed as specified, and the asset comes from
 `config/live2d.json` rather than `--asset`. Capture landed as `--capture`
 plus `--capture-view window|live2d` and `--capture-alpha opaque|transparent`.
+Shutdown landed as `--exit-after-capture`, the output extent as
+`--resize <width>x<height>` (L2D5.2), and the loaded product as
+`--live2d-model <asset-relative .live2d path>` (L2D5.3).
+
+`--live2d-model` exists because `config/live2d.json` is tracked and must keep
+naming the fixture that is always present, while a model that exists only in a
+local, git-ignored `asset/` tree has to be selectable for a single run without
+being committed to. It is viewer-mode only and accepts a normalized,
+asset-root-relative path ending in `.live2d`; absolute paths, drive-rooted
+paths, `..` segments, `:` segments, and non-product suffixes are rejected at
+parse time. The tracked config is unchanged by a run that uses it.
 
 The original design was a separate executable `KimPeanutLive2DViewer`, not a
 mode selected by uncommenting `main.cpp`. It accepts at least:

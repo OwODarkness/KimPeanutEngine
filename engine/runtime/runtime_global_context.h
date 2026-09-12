@@ -82,9 +82,35 @@ namespace kpengine
             // hosts deliberately leave this uncalled so they do not construct
             // RenderWorld, GameplayWorld, or the scene window stack.
             void InitializeSceneServices();
+            // Creates only the command registry and the commands that need no
+            // scene services. A standalone host that owns its own window and
+            // backend calls this so it can still serve Runtime commands, without
+            // pulling in RenderWorld, GameplayWorld, or the scene window stack;
+            // AreSceneServicesInitialized stays false, which is what keeps that
+            // boundary checkable.
+            void InitializeCommandServices();
             bool AreSceneServicesInitialized() const noexcept
             {
                 return render_system_ != nullptr;
+            }
+            // Installed by Engine so a command can reach the window of the host
+            // that is actually presenting -- a standalone host owns its window
+            // rather than Runtime's shared one. Resolved per call because a host
+            // may create its window on the render thread after Engine::Initialize.
+            // When unset, or when the active host owns no window, commands fall
+            // back to window_system_.
+            void SetHostWindowResolver(std::function<WindowSystem *()> resolver)
+            {
+                host_window_resolver_ = std::move(resolver);
+            }
+            // Installed by Engine and called once from InitializeCommandServices,
+            // before the agent transport starts, so the host's own providers are
+            // registered against a registry that is not yet serving.
+            using HostCommandRegistrar =
+                std::function<bool(command::CommandRegistry &, std::string &)>;
+            void SetHostCommandRegistrar(HostCommandRegistrar registrar)
+            {
+                host_command_registrar_ = std::move(registrar);
             }
             // Called by Engine after the render startup handshake, on the game thread.
             // This is the Runtime-owned boundary for initial World composition.
@@ -136,6 +162,7 @@ namespace kpengine
             std::unique_ptr<command::CommandRegistry> command_registry_;
             std::shared_ptr<RuntimeScreenshotService> screenshot_service_;
             command::CommandRegistration screenshot_command_registration_;
+            command::CommandRegistration window_command_registration_;
             std::unique_ptr<reflection::ReflectionSystem> reflection_system_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
             std::unique_ptr<gameplay::GameplayEditorBridge> gameplay_editor_bridge_;
@@ -172,6 +199,8 @@ namespace kpengine
             std::deque<spatial::Ray> pending_scene_picks_;
             std::deque<ScenePickResult> completed_scene_picks_;
             StartupControllerSetupOverride startup_controller_setup_override_;
+            std::function<WindowSystem *()> host_window_resolver_;
+            HostCommandRegistrar host_command_registrar_;
 
         };
 

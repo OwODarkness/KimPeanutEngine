@@ -18,6 +18,7 @@ namespace kpengine
         bool ShouldClose() const override;
         void SetMouseCapture(bool captured) override;
         bool IsMouseCaptured() const override;
+        void RequestWindowSize(int width, int height) override;
         void Cleanup() override;
         ~GLFW_WindowSystem();
 

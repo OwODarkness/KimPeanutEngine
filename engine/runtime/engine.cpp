@@ -169,6 +169,21 @@ namespace kpengine
             startup_level_override_ = std::move(normalized_path);
         }
 
+        void Engine::SetLive2DModelOverride(std::string asset_relative_path)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "Live2D model override must be set before Engine::Initialize");
+            }
+            if (application_mode_ != ApplicationMode::Live2DViewer)
+            {
+                throw std::runtime_error(
+                    "Live2D model override is only valid in live2d-viewer mode");
+            }
+            live2d_model_override_ = std::move(asset_relative_path);
+        }
+
         void Engine::SetStartupCaptureOverride(std::string output_path)
         {
             if (initialization_started_ || render_thread_.joinable() || cleared_)
@@ -217,6 +232,24 @@ namespace kpengine
             {
                 throw std::runtime_error("Application host creation failed: " + host_diagnostic);
             }
+            // Installed before command services exist so the registration already
+            // has it: a standalone host owns its window, and that window is
+            // created on the render thread, so this must stay a per-call lookup.
+            global_runtime_context.SetHostWindowResolver(
+                [this]() -> WindowSystem *
+                {
+                    return application_host_ != nullptr ? application_host_->GetHostWindow()
+                                                        : nullptr;
+                });
+            // Same reason: the host owns state Runtime cannot name, so it
+            // contributes its own command providers when the registry appears.
+            global_runtime_context.SetHostCommandRegistrar(
+                [this](command::CommandRegistry &registry, std::string &diagnostic)
+                {
+                    return application_host_ != nullptr
+                               ? application_host_->RegisterHostCommands(registry, diagnostic)
+                               : true;
+                });
             if (application_mode_ == ApplicationMode::Scene3D &&
                 !application_host_->Initialize(*this, host_diagnostic))
             {
@@ -236,6 +269,13 @@ namespace kpengine
             if (application_mode_ == ApplicationMode::Live2DViewer)
             {
                 global_runtime_context.game_thread_id_ = std::this_thread::get_id();
+                // The viewer serves Runtime commands without scene services: it
+                // owns its own window and backend, so only the registry is
+                // created here and AreSceneServicesInitialized stays false.
+                // Started before the render thread so the port is already
+                // listening by the time the first frame is produced.
+                global_runtime_context.InitializeCommandServices();
+                StartCommandTransport();
                 {
                     std::lock_guard<std::mutex> lock(render_start_mutex_);
                     is_render_thread_loaded_ = false;
@@ -502,33 +542,7 @@ namespace kpengine
             // Commit. Once Commit is visible, the render thread may begin
             // teardown independently, so no further RuntimeContext access is
             // allowed on this thread during Initialize().
-            if (command_transport_config_.enabled)
-            {
-                command::CommandRegistry *registry = global_runtime_context.GetCommandRegistry();
-                if (registry == nullptr)
-                {
-                    KP_LOG("EngineLog", LOG_LEVEL_ERROR,
-                           "Local command transport was requested, but Runtime has no command registry");
-                }
-                else
-                {
-                    command_transport_ = std::make_unique<command::CommandLocalTransport>(
-                        *registry, command_transport_config_);
-                    std::string diagnostic;
-                    if (!command_transport_->Start(diagnostic))
-                    {
-                        KP_LOG("EngineLog", LOG_LEVEL_ERROR,
-                               "Local command transport did not start: %s", diagnostic.c_str());
-                        command_transport_.reset();
-                    }
-                    else
-                    {
-                        KP_LOG("EngineLog", LOG_LEVEL_INFO,
-                               "Local command transport listening on 127.0.0.1:%u",
-                               command_transport_->BoundPort());
-                    }
-                }
-            }
+            StartCommandTransport();
 
             PublishStartupDecision(StartupDecision::Commit);
             {
@@ -731,19 +745,66 @@ namespace kpengine
             performance_stats_commands_ = {};
         }
 
+        void Engine::StartCommandTransport()
+        {
+            if (!command_transport_config_.enabled)
+            {
+                return;
+            }
+            command::CommandRegistry *registry = global_runtime_context.GetCommandRegistry();
+            if (registry == nullptr)
+            {
+                KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                       "Local command transport was requested, but Runtime has no command registry");
+                return;
+            }
+            command_transport_ = std::make_unique<command::CommandLocalTransport>(
+                *registry, command_transport_config_);
+            std::string diagnostic;
+            if (!command_transport_->Start(diagnostic))
+            {
+                KP_LOG("EngineLog", LOG_LEVEL_ERROR,
+                       "Local command transport did not start: %s", diagnostic.c_str());
+                command_transport_.reset();
+                return;
+            }
+            KP_LOG("EngineLog", LOG_LEVEL_INFO,
+                   "Local command transport listening on 127.0.0.1:%u",
+                   command_transport_->BoundPort());
+        }
+
+        void Engine::ApplyQueuedWindowResize() noexcept
+        {
+            // Same resolution order the window command uses, so a resize queued
+            // by the command lands on the window that is actually presenting.
+            WindowSystem *window = application_host_ != nullptr
+                                       ? application_host_->GetHostWindow()
+                                       : nullptr;
+            if (window == nullptr)
+            {
+                window = global_runtime_context.window_system_.get();
+            }
+            if (window != nullptr)
+            {
+                window->ApplyQueuedWindowSizeRequest();
+            }
+        }
+
         void Engine::GameTick()
         {
             using clock = std::chrono::steady_clock;
             const double target_frame_time = 1.0 / target_fps;
             auto frame_start = clock::now();
 
-            if (application_mode_ == ApplicationMode::Scene3D && command_transport_)
+            // Pumped in every mode: a standalone host has its own registry and
+            // transport so it can serve Runtime commands without scene services.
+            // Both are only non-null when --agent-port asked for the transport.
+            if (command_transport_)
             {
                 command_transport_->PumpGameThread();
             }
 
-            if (application_mode_ == ApplicationMode::Scene3D &&
-                global_runtime_context.command_registry_)
+            if (global_runtime_context.command_registry_)
             {
                 global_runtime_context.command_registry_->PumpGameThread();
             }
@@ -1293,6 +1354,10 @@ namespace kpengine
                     {
                         break;
                     }
+                    // A resize queued by a Runtime command is applied here: the
+                    // window belongs to the render thread, and this is its frame
+                    // boundary, outside any frame bracket.
+                    ApplyQueuedWindowResize();
                     if (!application_host_->RecordFrame(diagnostic))
                     {
                         KP_LOG("EngineLog", LOG_LEVEL_ERROR,
@@ -1393,6 +1458,9 @@ namespace kpengine
             if (application_host_ != nullptr)
             {
                 std::string diagnostic;
+                // See the viewer path: a command-queued resize is applied on the
+                // render thread at the frame boundary.
+                ApplyQueuedWindowResize();
                 if (!application_host_->RecordFrame(diagnostic))
                 {
                     throw std::runtime_error("Application host frame recording failed: " +

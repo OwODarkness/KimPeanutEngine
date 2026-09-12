@@ -62,6 +62,14 @@ int main(int argc, char **argv)
         engine.SetStartupExitAfterCapture(
             launch_options.options.startup_exit_after_capture);
     }
+    if (launch_options.options.startup_resize.has_value())
+    {
+        engine.SetStartupResize(*launch_options.options.startup_resize);
+    }
+    if (launch_options.options.live2d_model_override.has_value())
+    {
+        engine.SetLive2DModelOverride(*launch_options.options.live2d_model_override);
+    }
 
     // Boot failure (e.g. missing config/bootstrap.json) surfaces here before the
     // logger is guaranteed to flush, so report it to stderr directly and exit

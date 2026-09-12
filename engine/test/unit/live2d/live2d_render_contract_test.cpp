@@ -76,6 +76,70 @@ namespace kpengine::live2d
         }
     }
 
+    // Freezes the hardware blend state per mode. This is the GPU form of the
+    // equations above, and the two must agree: the pre-fix state used (ZERO,
+    // ONE) alpha factors for every mode, so a capture over a transparent clear
+    // kept the clear alpha on every pixel and the product's blend coverage was
+    // invisible in the exported image. The equation test above could not catch
+    // that, because CompositeLive2DColor is a separate function that stayed
+    // correct.
+    TEST(Live2DRenderContractTest, FreezesHardwareBlendStatePerMode)
+    {
+        using graphics::BlendAttachmentState;
+        using graphics::BlendFactor;
+
+        struct BlendStateCase final
+        {
+            const char *name;
+            Live2DBlendMode mode;
+            BlendFactor src_color;
+            BlendFactor dst_color;
+            BlendFactor src_alpha;
+            BlendFactor dst_alpha;
+        };
+
+        const std::array<BlendStateCase, 3> cases{{
+            {"normal", Live2DBlendMode::Normal, BlendFactor::BLEND_FACTOR_ONE,
+             BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+             BlendFactor::BLEND_FACTOR_ONE,
+             BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA},
+            {"additive", Live2DBlendMode::Additive, BlendFactor::BLEND_FACTOR_ONE,
+             BlendFactor::BLEND_FACTOR_ONE, BlendFactor::BLEND_FACTOR_ZERO,
+             BlendFactor::BLEND_FACTOR_ONE},
+            {"multiplicative", Live2DBlendMode::Multiplicative,
+             BlendFactor::BLEND_FACTOR_DST_COLOR,
+             BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA,
+             BlendFactor::BLEND_FACTOR_ZERO, BlendFactor::BLEND_FACTOR_ONE},
+        }};
+
+        for (const BlendStateCase &test_case : cases)
+        {
+            SCOPED_TRACE(test_case.name);
+            const BlendAttachmentState blend =
+                BuildLive2DBlendState(test_case.mode);
+            EXPECT_TRUE(blend.blend_enabled);
+            EXPECT_EQ(blend.color_blend_op, graphics::BlendOp::BLEND_OP_ADD);
+            EXPECT_EQ(blend.alpha_blend_op, graphics::BlendOp::BLEND_OP_ADD);
+            EXPECT_EQ(blend.src_color_blend_factor, test_case.src_color);
+            EXPECT_EQ(blend.dst_color_blend_factor, test_case.dst_color);
+            EXPECT_EQ(blend.src_alpha_blend_factor, test_case.src_alpha);
+            EXPECT_EQ(blend.dst_alpha_blend_factor, test_case.dst_alpha);
+        }
+
+        // The normal mode is the only one that publishes its own coverage, so
+        // its alpha factors are the ones a transparent-clear export depends on.
+        // Asserting the equation and the factors together keeps the two from
+        // drifting apart again without either side noticing:
+        // a = 0.5 + 0.3 * (1 - 0.5).
+        const Live2DColor composited = CompositeLive2DColor(
+            {0.0f, 0.0f, 0.0f, 0.5f}, {0.0f, 0.0f, 0.0f, 0.3f},
+            Live2DBlendMode::Normal);
+        EXPECT_NEAR(composited.a, 0.65f, kLive2DRenderCpuTolerance);
+        EXPECT_EQ(BuildLive2DBlendState(Live2DBlendMode::Normal)
+                      .dst_alpha_blend_factor,
+                  BlendFactor::BLEND_FACTOR_ONE_MINUS_SRC_ALPHA);
+    }
+
     TEST(Live2DRenderContractTest, ResolvesOrdinaryAndInvertedMasks)
     {
         EXPECT_FLOAT_EQ(0.75f, ResolveLive2DMaskCoverage(0.25f, false));
@@ -105,6 +169,58 @@ namespace kpengine::live2d
         EXPECT_TRUE(validation.supported);
         EXPECT_TRUE(validation.issues.empty());
         EXPECT_TRUE(validation.diagnostic.empty());
+    }
+
+    // V1 item 9 claims the clipped model exercises all three blend modes. The
+    // claim is read from the model's own blend buckets, so a model that authors
+    // only Normal drawables must not report coverage even though it renders.
+    TEST(Live2DRenderContractTest, ReportsBlendCoverageOnlyWhenEveryModeIsAuthored)
+    {
+        Live2DRenderFeatureReport covered{};
+        covered.drawable_count = 10u;
+        covered.normal_drawable_count = 8u;
+        covered.additive_drawable_count = 1u;
+        covered.multiplicative_drawable_count = 1u;
+        EXPECT_TRUE(covered.CoversAllBlendModes());
+
+        // All-Normal models, which is the Hiyori regression fixture.
+        Live2DRenderFeatureReport normal_only{};
+        normal_only.drawable_count = 134u;
+        normal_only.normal_drawable_count = 134u;
+        EXPECT_FALSE(normal_only.CoversAllBlendModes());
+
+        // A model with one of each absent mode still fails: coverage is an
+        // all-of claim, not a count-of-distinct-modes claim.
+        Live2DRenderFeatureReport no_additive{};
+        no_additive.drawable_count = 10u;
+        no_additive.normal_drawable_count = 9u;
+        no_additive.multiplicative_drawable_count = 1u;
+        EXPECT_FALSE(no_additive.CoversAllBlendModes());
+
+        Live2DRenderFeatureReport no_multiplicative{};
+        no_multiplicative.drawable_count = 10u;
+        no_multiplicative.normal_drawable_count = 9u;
+        no_multiplicative.additive_drawable_count = 1u;
+        EXPECT_FALSE(no_multiplicative.CoversAllBlendModes());
+
+        // An unmapped blend is counted as unknown, not as coverage.
+        Live2DRenderFeatureReport unknown_heavy{};
+        unknown_heavy.drawable_count = 3u;
+        unknown_heavy.normal_drawable_count = 2u;
+        unknown_heavy.unknown_blend_mode_count = 1u;
+        EXPECT_FALSE(unknown_heavy.CoversAllBlendModes());
+    }
+
+    TEST(Live2DRenderContractTest, DefaultsBlendCountsToZeroForAnOlderReport)
+    {
+        // The blend counts are appended fields, so a report that omits them --
+        // every caller that predates them -- reads as uncovered rather than as
+        // spuriously covered.
+        const Live2DRenderFeatureReport report{
+            12u, 0u, 0u, 0u, 0u, kLive2DMaxActiveMaskContexts, false};
+        EXPECT_FALSE(report.CoversAllBlendModes());
+        EXPECT_EQ(report.additive_drawable_count, 0u);
+        EXPECT_EQ(report.multiplicative_drawable_count, 0u);
     }
 
     TEST(Live2DRenderContractTest, ReportsEachUnsupportedFeatureWithStableName)

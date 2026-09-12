@@ -5,6 +5,8 @@
 #include <string>
 #include <vector>
 
+#include "graphics/backend/common/state_types.h"
+
 namespace kpengine::live2d
 {
     // L2D4.0 freezes a single packed RGBA mask atlas for V1. The official
@@ -54,6 +56,15 @@ namespace kpengine::live2d
                                      Live2DColor destination,
                                      Live2DBlendMode mode) noexcept;
 
+    // The hardware blend state each mode maps to. It lives beside
+    // CompositeLive2DColor because the two must agree: the alpha factors are
+    // the GPU form of the Normal equation above, and a divergence between them
+    // is what left a transparent-clear capture with no coverage at all. Keeping
+    // the translation here, rather than in the renderer, is what lets it be
+    // asserted without constructing a backend.
+    graphics::BlendAttachmentState BuildLive2DBlendState(
+        Live2DBlendMode mode) noexcept;
+
     // The packed atlas stores the inverse mask: it is cleared to one and the
     // mask pass multiplies that channel by (1 - source alpha). The sampled
     // value is therefore converted back to drawable coverage here.
@@ -86,8 +97,20 @@ namespace kpengine::live2d
         std::uint32_t unknown_blend_mode_count = 0u;
         std::uint32_t active_mask_context_count = 0u;
         bool topology_changed = false;
+        // Blend mode is authored data inside the .moc3 and is not derivable
+        // from a capture, so coverage has to be reported from the model rather
+        // than inferred from rendered pixels or a draw count. Appended after
+        // the fields above so existing aggregate initializations stay valid.
+        std::uint32_t normal_drawable_count = 0u;
+        std::uint32_t additive_drawable_count = 0u;
+        std::uint32_t multiplicative_drawable_count = 0u;
 
         bool IsSupported() const noexcept;
+
+        // True when the model authors at least one drawable of each blend mode,
+        // which is what a blend-coverage claim requires. Unknown blends are not
+        // coverage: a model whose blend modes failed to map has none.
+        bool CoversAllBlendModes() const noexcept;
     };
 
     struct Live2DRenderFeatureValidation final

@@ -268,11 +268,28 @@ namespace kpengine::live2d
                     }
                 }
 
-                Live2DBlendMode ignored_mode = Live2DBlendMode::Normal;
+                // Counted per mode so a blend-coverage claim can be derived from
+                // the loaded model. An unmapped mode is not coverage.
+                Live2DBlendMode blend_mode = Live2DBlendMode::Normal;
                 if (!MapBlendMode(model.GetDrawableBlendModeType(drawable_index),
-                                  ignored_mode))
+                                  blend_mode))
                 {
                     data.feature_report.unknown_blend_mode_count++;
+                }
+                else
+                {
+                    switch (blend_mode)
+                    {
+                    case Live2DBlendMode::Normal:
+                        data.feature_report.normal_drawable_count++;
+                        break;
+                    case Live2DBlendMode::Additive:
+                        data.feature_report.additive_drawable_count++;
+                        break;
+                    case Live2DBlendMode::Multiplicative:
+                        data.feature_report.multiplicative_drawable_count++;
+                        break;
+                    }
                 }
                 data.drawables.push_back(std::move(drawable));
                 HashValue(topology_hash, vertex_count_u32);

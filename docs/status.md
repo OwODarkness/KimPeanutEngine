@@ -1,8 +1,43 @@
 # Project Status
 
-**Snapshot: 2026-09-11.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
+**Snapshot: 2026-09-12.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
 **Current release: v1.1.0.**
+
+- **Runtime window resize command (2026-09-12)** — new `window.resize`
+  Runtime command taking `width`/`height` (1–16384) and resizing the active
+  window's client area. It works in **every** host mode including the
+  standalone Live2D viewer, which resolves its own window through the
+  `IApplicationHost` window resolver because the viewer owns its window rather
+  than using Runtime's shared window system. This supersedes L2D5's frozen
+  contract #2, which had refused `--agent-port` in viewer mode. The command is
+  `MutatesState`, so the Agent transport only accepts it when `--agent-port` is
+  passed; the parser grants `CommandCapability::Mutating` in that case. It
+  *records* the request and reports `data.applied = false`, because it runs on
+  the Game lane and the window is applied on the window thread at its next
+  frame boundary — `success` does not mean "already resized". Verified by unit
+  tests and by both backends observed through `--agent-port` in viewer mode. →
+  [`window.resize`](command/built_in_commands.md#windowresize)
+
+- **Live2D L2D5.3 fixture, blend coverage, and reference disposition
+  (2026-09-12)** — closed V1 acceptance item 9 from fixture data: the SDK's
+  Mao (262 drawables, 239 normal / 15 additive / 8 multiplicative) is asserted
+  through a new read-only `live2d.model_report` Runtime command contributed by
+  the viewer host, identical on OpenGL and Vulkan, with a Hiyori negative
+  control proving the report discriminates rather than always answering true.
+  L2D4's fixture exercises no additive or multiplicative drawable at all, so
+  the item-9 claim previously had no fixture behind it. Added a `--live2d-model`
+  launch option so a locally provisioned fixture can be selected for a run
+  without editing tracked config, and fixed V1 importer defect #1 from the
+  L2D6.0 characterization (an expression's display `Name` was resolved as a
+  file path), which had made any model shipping expressions unimportable.
+  Item 11 is recorded as an **accepted limitation**: the official sample needs
+  GLEW 2.2.0, which the SDK does not ship and this environment cannot fetch
+  (GitHub unreachable; GLEW absent from the machine). `tools/kp.ps1` gained a
+  Live2D rule, and a pre-existing crash in that script — an empty collection
+  bound to a mandatory parameter, which made `validate` fail for *every* file
+  before reaching a build — was fixed. →
+  [L2D5.3 journal](../.spec/journal/2026-09-12-live2d-l2d5-3.md)
 
 - **Live2D L2D4.5 submission hardening and cross-backend parity (2026-09-11)**
   — split submission execution from frame services behind a new
@@ -1427,6 +1462,22 @@
 
 ## Known broken / known issues
 
+- **Live2D models with many clipping masks diverge across backends** — the SDK's
+  Mao (14 mask contexts, 40 mask sources) renders deterministically differently
+  on OpenGL and Vulkan: ~0.40% of pixels differ, always RGB-only at full alpha,
+  confined to the face and one hand, with identical geometry and an identical
+  submitted draw set (`draws 150, mask_sources 40, mask_contexts 14`) on both.
+  Both backends are individually reproducible and the difference is independent
+  of frame number and extent, so it is a real backend divergence rather than a
+  measurement artifact. Which side is correct is unknown — that is exactly what
+  the missing official reference would answer. Hiyori (2 mask contexts, 2 mask
+  sources) is unaffected and still matches byte-for-byte. Leading unconfirmed
+  hypothesis: multi-context mask-atlas rendering, since the planner assigns
+  `slot / 9` to an atlas channel and Hiyori only ever touches channel 0 while
+  Mao spans channels 0 and 1. No GPU-side cross-backend mask test exists; the
+  Live2D tests that run in CI are SDK-free CPU contract tests. Until this is
+  resolved Mao cannot serve as a cross-backend fixture. →
+  [L2D5.3 journal §6](../.spec/journal/2026-09-12-live2d-l2d5-3.md)
 - **Concrete scene recording remains Vulkan-only** — `RenderSystem` now owns the common backend/pipeline lifecycle, but `RenderScene` still uses raw Vulkan commands. Phase 3 replaces that seam with common recording commands.
 - **`main.cpp` selects examples by uncommenting** — most examples block (windows, `while(1)`); running the binary from an agent shell will hang.
 

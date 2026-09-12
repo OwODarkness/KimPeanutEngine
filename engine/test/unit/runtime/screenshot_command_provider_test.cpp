@@ -199,6 +199,34 @@ namespace kpengine::runtime
         EXPECT_EQ(capture_service.last_request.view, render::CaptureView::EngineWindow);
     }
 
+    // "live2d" is the launch-time spelling recorded in the Live2D validation
+    // workflow; "host_output" is the canonical one. Both must resolve to the
+    // same host-resolved capture value.
+    TEST(ScreenshotCommandProviderTest, MapsHostOutputViewNamesToTheHostCaptureView)
+    {
+        for (const char *const view : {"host_output", "live2d"})
+        {
+            FakeCaptureService capture_service;
+            auto screenshot_service =
+                std::make_shared<RuntimeScreenshotService>(capture_service);
+            command::CommandRegistry registry;
+            const command::CommandRegistrationResult registration =
+                RegisterScreenshotCommands(registry, screenshot_service);
+            ASSERT_TRUE(registration.IsSuccess());
+
+            const auto pending = registry.Execute(
+                {"capture.screenshot", {{"view", std::string{view}}}},
+                {command::CommandOrigin::Test, command::CommandThread::Immediate},
+                [](const command::CommandResult &) {});
+            ASSERT_EQ(pending.status, command::CommandStatus::Pending)
+                << view << ": " << pending.message;
+            ASSERT_EQ(registry.PumpGameThread(), 1U) << view;
+            EXPECT_EQ(capture_service.last_request.view,
+                      render::CaptureView::HostOutput)
+                << view;
+        }
+    }
+
     TEST(ScreenshotCommandProviderTest, PreservesServiceOwnedInvalidPathDiagnostic)
     {
         FakeCaptureService capture_service;

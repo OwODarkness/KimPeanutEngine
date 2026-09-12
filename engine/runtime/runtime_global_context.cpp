@@ -6,6 +6,7 @@
 #include "screenshot/runtime_screenshot_service.h"
 #include "screenshot/screenshot_command_provider.h"
 #include "window/window_system.h"
+#include "window/window_command_provider.h"
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
 #include "render_asset_preparer.h"
@@ -53,7 +54,7 @@ namespace kpengine
 
             window_system_ = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
             render_system_ = std::make_unique<render::RenderSystem>();
-            command_registry_ = std::make_unique<command::CommandRegistry>();
+            InitializeCommandServices();
             reflection_system_ = std::make_unique<reflection::ReflectionSystem>();
             gameplay_world_ = std::make_unique<gameplay::GameplayWorld>(
                 render_system_->GetRenderableSourceSink(),
@@ -72,6 +73,58 @@ namespace kpengine
         void RuntimeContext::EnsureSceneServices()
         {
             InitializeSceneServices();
+        }
+
+        void RuntimeContext::InitializeCommandServices()
+        {
+            if (command_registry_ != nullptr)
+            {
+                return;
+            }
+            command_registry_ = std::make_unique<command::CommandRegistry>();
+
+            // Resolved per dispatch: a standalone host creates its window on the
+            // render thread, so the host answer is null until that thread has
+            // run, and Runtime's shared window is the Scene3D answer.
+            const auto resolver = [this]() -> WindowSystem *
+            {
+                if (host_window_resolver_)
+                {
+                    if (WindowSystem *host_window = host_window_resolver_())
+                    {
+                        return host_window;
+                    }
+                }
+                return window_system_.get();
+            };
+
+            command::CommandRegistrationResult registration =
+                RegisterWindowCommands(*command_registry_, resolver);
+            if (!registration.IsSuccess())
+            {
+                KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                       "Could not register window commands: %s",
+                       registration.diagnostic.c_str());
+            }
+            else
+            {
+                window_command_registration_ = std::move(registration.registration);
+            }
+
+            // The host's own providers are registered here rather than by the
+            // host itself: the registry is created before the agent transport
+            // starts, and a host that registered later would be writing to a
+            // registry that is already answering list/execute on another thread.
+            if (host_command_registrar_)
+            {
+                std::string host_diagnostic;
+                if (!host_command_registrar_(*command_registry_, host_diagnostic))
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not register host commands: %s",
+                           host_diagnostic.c_str());
+                }
+            }
         }
 
         void RuntimeContext::Initialize()

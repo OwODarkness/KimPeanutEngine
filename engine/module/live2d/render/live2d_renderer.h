@@ -84,6 +84,14 @@ namespace kpengine::live2d
         {
             return last_counters_;
         }
+        // The loaded model's authored feature counts. Blend mode is authored in
+        // the .moc3 and cannot be recovered from a capture, so a blend-coverage
+        // claim has to be read from here rather than inferred from an image.
+        // Written once during Initialize and only read afterwards.
+        const Live2DRenderFeatureReport &GetFeatureReport() const noexcept
+        {
+            return static_data_.feature_report;
+        }
         std::uint64_t GetLastFrameSequence() const noexcept
         {
             return last_frame_sequence_;

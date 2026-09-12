@@ -3,10 +3,13 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
+#include "command/command_registry.h"
 #include "host/application_host.h"
+#include "launch_options.h"
 #include "render/frame_context.h"
 #include "render/render_capture_service_internal.h"
 #include "module/live2d/render/live2d_renderer.h"
@@ -44,6 +47,14 @@ namespace kpengine::live2d
         bool Tick(float delta_time, std::string &diagnostic) override;
         bool RecordFrame(std::string &diagnostic) override;
         bool ShouldClose() const noexcept override;
+        // The viewer owns its window; Runtime's shared window system is unused
+        // in this mode, so a Runtime command must resolve the window through here.
+        WindowSystem *GetHostWindow() noexcept override;
+        // Contributes live2d.model_report. The renderer, and with it the loaded
+        // product, is created on the render thread after this registration, so
+        // the provider resolves both per dispatch.
+        bool RegisterHostCommands(runtime::command::CommandRegistry &registry,
+                                  std::string &diagnostic) override;
         void ShutdownRenderThread() noexcept override;
         void Shutdown() noexcept override;
 
@@ -52,6 +63,12 @@ namespace kpengine::live2d
         void RenderProfilerWindow();
         void CompleteWindowCapture() noexcept;
         void CleanupGpu() noexcept;
+        // Applies --resize once, outside a frame bracket and before the startup
+        // capture is requested, so the exported image reflects the new extent.
+        void ApplyPendingResize();
+        // Queues the one-shot startup capture named by --capture. Called either
+        // during Initialize (no resize pending) or after the resize is applied.
+        void RequestStartupCapture();
 
         runtime::Engine *engine_ = nullptr;
         std::unique_ptr<WindowSystem> window_;
@@ -65,6 +82,22 @@ namespace kpengine::live2d
         std::unique_ptr<render::RenderCaptureService> render_capture_service_;
         std::unique_ptr<runtime::RuntimeScreenshotService> screenshot_service_;
         asset::AssetID model_asset_{};
+        // Asset-root-relative spelling of the product actually loaded, so a
+        // report names its own fixture rather than echoing what was requested.
+        std::string loaded_model_path_;
+        // Keeps the host's command registration alive; the registry releases the
+        // entry when this token is destroyed.
+        runtime::command::CommandRegistration command_registration_;
+        // Pending --resize extent. Applied after the first recorded frame; the
+        // startup capture is requested only once the output target carries the
+        // new extent, so the exported image's dimensions are the evidence.
+        std::optional<runtime::RuntimeResizeRequest> pending_resize_;
+        runtime::RuntimeResizeRequest applied_resize_{};
+        // Set while the startup capture is waiting for a resize to reach the
+        // output target. Bounded by kResizeWaitFrameBudget so a resize that
+        // never lands cannot leave the run waiting forever.
+        bool capture_waits_for_resize_ = false;
+        uint32_t resize_wait_frames_ = 0u;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;
         double game_tick_work_ms_ = 0.0;
