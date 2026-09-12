@@ -1,7 +1,10 @@
 #include "live2d_model_instance.h"
 
+#include <cmath>
 #include <exception>
 #include <limits>
+#include <new>
+#include <stdexcept>
 #include <set>
 #include <string_view>
 #include <type_traits>
@@ -15,8 +18,11 @@
 #include "Motion/CubismExpressionMotionManager.hpp"
 #include "Motion/CubismMotion.hpp"
 #include "Motion/CubismMotionManager.hpp"
+#include "Motion/CubismMotionQueueEntry.hpp"
+#include "Motion/CubismMotionQueueManager.hpp"
 #include "Type/csmVector.hpp"
 #include "Model/CubismModel.hpp"
+#include "Effect/CubismPose.hpp"
 #include "live2d_cubism_lifecycle.h"
 #include "live2d_model_resource.h"
 
@@ -43,6 +49,7 @@ namespace kpengine::live2d
         using Live2D::Cubism::Framework::CubismMotionManager;
         using Live2D::Cubism::Framework::CubismMoc;
         using Live2D::Cubism::Framework::CubismModel;
+        using Live2D::Cubism::Framework::CubismPose;
 
         using Live2D::Cubism::Core::csmAlphaBlendType_Over;
         using Live2D::Cubism::Core::csmColorBlendType_Add;
@@ -109,6 +116,17 @@ namespace kpengine::live2d
                 if (motion != nullptr)
                 {
                     ACubismMotion::Delete(motion);
+                }
+            }
+        };
+
+        struct CubismPoseDeleter final
+        {
+            void operator()(CubismPose *pose) const noexcept
+            {
+                if (pose != nullptr)
+                {
+                    CubismPose::Delete(pose);
                 }
             }
         };
@@ -387,6 +405,13 @@ namespace kpengine::live2d
     {
         using MotionPtr =
             std::unique_ptr<ACubismMotion, CubismMotionDeleter>;
+        using PosePtr = std::unique_ptr<CubismPose, CubismPoseDeleter>;
+        using QueueHandle =
+            Live2D::Cubism::Framework::CubismMotionQueueEntryHandle;
+
+        static constexpr std::size_t kMaxMotionEntries = 16u;
+        static constexpr std::size_t kMaxExpressionEntries = 4u;
+        static constexpr std::size_t kMaxPendingEvents = 64u;
 
         struct MotionClip final
         {
@@ -401,23 +426,59 @@ namespace kpengine::live2d
             MotionPtr expression;
         };
 
+        enum class MotionState
+        {
+            Playing,
+            Interrupting,
+            Cancelling
+        };
+
+        struct MotionPlayback final
+        {
+            Live2DMotionKey key;
+            Live2DPlaybackToken token{};
+            QueueHandle handle{};
+            MotionState state = MotionState::Playing;
+        };
+
         std::optional<CubismModelInstanceLease> lease;
         CubismMoc *moc{};
         CubismModel *model{};
+        PosePtr pose;
         Live2DStaticModelData static_data{};
         std::vector<MotionClip> motion_clips;
         std::vector<ExpressionClip> expression_clips;
         std::unique_ptr<CubismExpressionMotionManager> expression_manager;
         std::unique_ptr<CubismMotionManager> motion_manager;
+        std::vector<MotionPlayback> motion_playbacks;
+        std::vector<float> pending_parameter_values;
+        std::vector<bool> pending_parameter_dirty;
+        std::vector<Live2DPlaybackEvent> pending_events;
+        std::vector<Live2DPlaybackEvent> callback_events;
         std::uint64_t instance_serial = 0u;
+        std::uint64_t next_token_sequence = 1u;
         std::uint64_t frame_sequence = 0u;
+        float playback_time_seconds = 0.0f;
+        bool expression_active = false;
+        bool expression_clearing = false;
+        bool callback_overflow = false;
+        std::string current_expression;
 
         ~Impl() noexcept
         {
+            if (motion_manager != nullptr)
+            {
+                motion_manager->StopAllMotions();
+            }
+            if (expression_manager != nullptr)
+            {
+                expression_manager->StopAllMotions();
+            }
             motion_manager.reset();
             expression_manager.reset();
             expression_clips.clear();
             motion_clips.clear();
+            pose.reset();
             if (model != nullptr && moc != nullptr)
             {
                 moc->DeleteModel(model);
@@ -436,7 +497,86 @@ namespace kpengine::live2d
             return lease.has_value() && lease->IsValid() && moc != nullptr &&
                    model != nullptr;
         }
+
+        bool HasPlayback() const noexcept
+        {
+            return !motion_playbacks.empty() || expression_active ||
+                   !pending_events.empty() ||
+                   (expression_manager != nullptr &&
+                    expression_manager->GetCubismMotionQueueEntries()->GetSize() != 0u);
+        }
+
+        static void CaptureMotionEvent(
+            const Live2D::Cubism::Framework::CubismMotionQueueManager *,
+            const Live2D::Cubism::Framework::csmString &, void *) noexcept;
     };
+
+    void Live2DModelInstance::Impl::CaptureMotionEvent(
+        const Live2D::Cubism::Framework::CubismMotionQueueManager *,
+        const Live2D::Cubism::Framework::csmString &value,
+        void *custom_data) noexcept
+    {
+        auto *impl = static_cast<Live2DModelInstance::Impl *>(custom_data);
+        if (impl == nullptr ||
+            impl->callback_events.size() >= Impl::kMaxPendingEvents)
+        {
+            if (impl != nullptr)
+            {
+                impl->callback_overflow = true;
+            }
+            return;
+        }
+        try
+        {
+            Live2DPlaybackEvent event{};
+            event.kind = Live2DPlaybackEventKind::MotionUserEvent;
+            event.value.assign(value.GetRawString());
+            impl->callback_events.push_back(std::move(event));
+        }
+        catch (...)
+        {
+            impl->callback_overflow = true;
+        }
+    }
+    namespace
+    {
+        bool TokensEqual(const Live2DPlaybackToken &left,
+                         const Live2DPlaybackToken &right) noexcept
+        {
+            return left.instance_serial == right.instance_serial &&
+                   left.sequence == right.sequence;
+        }
+
+        bool IsValidToken(const Live2DPlaybackToken &token) noexcept
+        {
+            return token.instance_serial != 0u && token.sequence != 0u;
+        }
+
+        bool AppendPlaybackEvent(std::vector<Live2DPlaybackEvent> &events,
+                                 const Live2DPlaybackEventKind kind,
+                                 const Live2DPlaybackToken token,
+                                 const std::string_view value) noexcept
+        {
+            try
+            {
+                Live2DPlaybackEvent event{};
+                event.kind = kind;
+                event.token = token;
+                if (!value.empty())
+                {
+                    event.value.assign(value.data(), value.size());
+                }
+                events.push_back(std::move(event));
+                return true;
+            }
+            catch (...)
+            {
+                return false;
+            }
+        }
+
+
+    }
 
     Live2DModelInstance::Live2DModelInstance(
         std::shared_ptr<const Live2DModelResource> resource,
@@ -497,6 +637,29 @@ namespace kpengine::live2d
             return nullptr;
         }
 
+        const Live2DProductData &product = resource->Product();
+        for (const Live2DOptionalChunk &chunk : product.optional_chunks)
+        {
+            if (chunk.name != "Pose")
+            {
+                continue;
+            }
+            if (chunk.bytes.empty() ||
+                chunk.bytes.size() >
+                    static_cast<std::size_t>(std::numeric_limits<csmSizeInt>::max()))
+            {
+                return nullptr;
+            }
+            impl->pose.reset(CubismPose::Create(
+                reinterpret_cast<const csmByte *>(chunk.bytes.data()),
+                static_cast<csmSizeInt>(chunk.bytes.size())));
+            if (impl->pose == nullptr)
+            {
+                return nullptr;
+            }
+            break;
+        }
+
         std::string diagnostic;
         if (!BuildStaticModelData(*impl->model, texture_dependencies.size(),
                                   impl->static_data, diagnostic))
@@ -505,6 +668,30 @@ namespace kpengine::live2d
         }
         if (!BuildClipLibrary(*resource, *impl, diagnostic))
         {
+            return nullptr;
+        }
+        try
+        {
+            const std::size_t parameter_count =
+                static_cast<std::size_t>(impl->model->GetParameterCount());
+            impl->pending_parameter_values.assign(parameter_count, 0.0f);
+            impl->pending_parameter_dirty.assign(parameter_count, false);
+            impl->motion_playbacks.reserve(Impl::kMaxMotionEntries);
+            impl->pending_events.reserve(Impl::kMaxPendingEvents);
+            impl->callback_events.reserve(Impl::kMaxPendingEvents);
+            impl->motion_manager->SetEventCallback(&Impl::CaptureMotionEvent, impl.get());
+            impl->expression_manager->SetEventCallback(&Impl::CaptureMotionEvent, impl.get());
+            if (impl->pose != nullptr)
+            {
+                impl->pose->UpdateParameters(impl->model, 0.0f);
+            }
+            impl->model->Update();
+            impl->model->SaveParameters();
+        }
+        catch (const std::exception &error)
+        {
+            diagnostic = std::string("Live2D playback state initialization failed: ") +
+                         error.what();
             return nullptr;
         }
 
@@ -715,24 +902,423 @@ namespace kpengine::live2d
     bool Live2DModelInstance::SetParameterValue(const std::size_t index,
                                                 const float value) noexcept
     {
-        if (!IsValid() || !IsIndexRepresentable(index) ||
+        if (!IsValid() || !std::isfinite(value) || !IsIndexRepresentable(index) ||
             index >= ParameterCount())
         {
             return false;
         }
         impl_->model->SetParameterValue(static_cast<csmInt32>(index),
                                          static_cast<csmFloat32>(value));
+        impl_->pending_parameter_values[index] = value;
+        impl_->pending_parameter_dirty[index] = true;
         return true;
     }
 
     bool Live2DModelInstance::Update() noexcept
     {
-        if (!IsValid())
+        if (!IsValid() || impl_->HasPlayback())
         {
             return false;
         }
+        if (impl_->pose != nullptr)
+        {
+            impl_->pose->UpdateParameters(impl_->model, 0.0f);
+        }
         impl_->model->Update();
         return true;
+    }
+
+    bool Live2DModelInstance::PlayMotion(
+        const Live2DMotionKey &key, const std::int32_t priority,
+        const Live2DMotionStartMode mode, Live2DPlaybackToken &token,
+        std::string &diagnostic)
+    {
+        diagnostic.clear();
+        token = {};
+        if (!IsValid())
+        {
+            diagnostic = "Live2D model instance is invalid";
+            return false;
+        }
+        if (priority <= 0)
+        {
+            diagnostic = "Live2D motion priority must be positive";
+            return false;
+        }
+        const Impl::MotionClip *clip = nullptr;
+        for (const Impl::MotionClip &candidate : impl_->motion_clips)
+        {
+            if (candidate.group == key.group && candidate.index == key.index)
+            {
+                clip = &candidate;
+                break;
+            }
+        }
+        if (clip == nullptr)
+        {
+            diagnostic = "Live2D motion key was not found";
+            return false;
+        }
+        if (impl_->motion_playbacks.size() >= Impl::kMaxMotionEntries ||
+            impl_->pending_events.size() + impl_->motion_playbacks.size() + 1u >
+                Impl::kMaxPendingEvents)
+        {
+            diagnostic = "Live2D motion transition or event capacity is exhausted";
+            return false;
+        }
+        const csmInt32 current_priority =
+            impl_->motion_manager->GetCurrentPriority();
+        const csmInt32 reserved_priority =
+            impl_->motion_manager->GetReservePriority();
+        if (mode == Live2DMotionStartMode::RespectPriority &&
+            (priority <= current_priority || priority <= reserved_priority))
+        {
+            diagnostic = "Live2D motion priority was rejected";
+            return false;
+        }
+        if (impl_->next_token_sequence == 0u)
+        {
+            diagnostic = "Live2D motion token sequence is exhausted";
+            return false;
+        }
+
+        const Live2DPlaybackToken new_token{impl_->instance_serial,
+                                             impl_->next_token_sequence};
+        const auto handle = impl_->motion_manager->StartMotionPriority(
+            clip->motion.get(), false, static_cast<csmInt32>(priority));
+        if (handle == Live2D::Cubism::Framework::
+                         InvalidMotionQueueEntryHandleValue)
+        {
+            diagnostic = "Live2D SDK rejected the motion start";
+            return false;
+        }
+        for (Impl::MotionPlayback &playback : impl_->motion_playbacks)
+        {
+            playback.state = Impl::MotionState::Interrupting;
+        }
+        impl_->motion_playbacks.push_back({key, new_token, handle,
+                                            Impl::MotionState::Playing});
+        if (impl_->next_token_sequence == std::numeric_limits<std::uint64_t>::max())
+        {
+            impl_->next_token_sequence = 0u;
+        }
+        else
+        {
+            ++impl_->next_token_sequence;
+        }
+        token = new_token;
+        return true;
+    }
+
+    bool Live2DModelInstance::StopMotion(const Live2DPlaybackToken token,
+                                          const Live2DStopMode mode,
+                                          std::string &diagnostic)
+    {
+        diagnostic.clear();
+        if (!IsValid() || !IsValidToken(token) ||
+            token.instance_serial != impl_->instance_serial)
+        {
+            diagnostic = "Live2D motion token is invalid or belongs to another instance";
+            return false;
+        }
+        std::size_t selected = impl_->motion_playbacks.size();
+        for (std::size_t index = 0u; index < impl_->motion_playbacks.size(); ++index)
+        {
+            if (TokensEqual(impl_->motion_playbacks[index].token, token))
+            {
+                selected = index;
+                break;
+            }
+        }
+        if (selected == impl_->motion_playbacks.size())
+        {
+            diagnostic = "Live2D motion token is stale or already terminal";
+            return false;
+        }
+        if (mode == Live2DStopMode::AuthoredFadeOut)
+        {
+            auto *entry = impl_->motion_manager->GetCubismMotionQueueEntry(
+                impl_->motion_playbacks[selected].handle);
+            if (entry == nullptr)
+            {
+                diagnostic = "Live2D motion token no longer has an SDK queue entry";
+                return false;
+            }
+            entry->StartFadeout(
+                entry->GetCubismMotion()->GetFadeOutTime(),
+                impl_->playback_time_seconds);
+            impl_->motion_playbacks[selected].state = Impl::MotionState::Cancelling;
+            return true;
+        }
+
+        if (impl_->pending_events.size() + impl_->motion_playbacks.size() >
+            Impl::kMaxPendingEvents)
+        {
+            diagnostic = "Live2D pending playback event capacity is exhausted";
+            return false;
+        }
+        std::unique_ptr<CubismMotionManager> replacement;
+        try
+        {
+            replacement = std::make_unique<CubismMotionManager>();
+            replacement->SetEventCallback(&Impl::CaptureMotionEvent, impl_.get());
+            for (const Impl::MotionPlayback &playback : impl_->motion_playbacks)
+            {
+                if (!AppendPlaybackEvent(impl_->pending_events,
+                                         Live2DPlaybackEventKind::MotionCancelled,
+                                         playback.token, {}))
+                {
+                    diagnostic = "Live2D pending playback event storage failed";
+                    return false;
+                }
+            }
+        }
+        catch (const std::exception &error)
+        {
+            diagnostic = std::string("Live2D immediate stop preparation failed: ") +
+                         error.what();
+            return false;
+        }
+        impl_->motion_manager->StopAllMotions();
+        impl_->motion_manager = std::move(replacement);
+        impl_->motion_playbacks.clear();
+        return true;
+    }
+
+    void Live2DModelInstance::StopAllMotions(const Live2DStopMode mode) noexcept
+    {
+        if (!IsValid())
+        {
+            return;
+        }
+        if (mode == Live2DStopMode::AuthoredFadeOut)
+        {
+            for (Impl::MotionPlayback &playback : impl_->motion_playbacks)
+            {
+                auto *entry = impl_->motion_manager->GetCubismMotionQueueEntry(
+                    playback.handle);
+                if (entry != nullptr)
+                {
+                    entry->StartFadeout(
+                        entry->GetCubismMotion()->GetFadeOutTime(),
+                        impl_->playback_time_seconds);
+                    playback.state = Impl::MotionState::Cancelling;
+                }
+            }
+            return;
+        }
+        for (const Impl::MotionPlayback &playback : impl_->motion_playbacks)
+        {
+            AppendPlaybackEvent(impl_->pending_events,
+                                Live2DPlaybackEventKind::MotionCancelled,
+                                playback.token, {});
+        }
+        auto *replacement = new (std::nothrow) CubismMotionManager();
+        if (replacement != nullptr)
+        {
+            replacement->SetEventCallback(&Impl::CaptureMotionEvent, impl_.get());
+            impl_->motion_manager->StopAllMotions();
+            impl_->motion_manager.reset(replacement);
+        }
+        else
+        {
+            impl_->motion_manager->StopAllMotions();
+        }
+        impl_->motion_playbacks.clear();
+    }
+
+    bool Live2DModelInstance::SetExpression(const std::string_view name,
+                                             std::string &diagnostic)
+    {
+        diagnostic.clear();
+        if (!IsValid())
+        {
+            diagnostic = "Live2D model instance is invalid";
+            return false;
+        }
+        const Impl::ExpressionClip *clip = nullptr;
+        for (const Impl::ExpressionClip &candidate : impl_->expression_clips)
+        {
+            if (candidate.name == name)
+            {
+                clip = &candidate;
+                break;
+            }
+        }
+        if (clip == nullptr)
+        {
+            diagnostic = "Live2D expression name was not found";
+            return false;
+        }
+        if (impl_->expression_manager->GetCubismMotionQueueEntries()->GetSize() >=
+            Impl::kMaxExpressionEntries)
+        {
+            diagnostic = "Live2D expression transition capacity is exhausted";
+            return false;
+        }
+        const auto handle = impl_->expression_manager->StartMotion(
+            clip->expression.get(), false);
+        if (handle == Live2D::Cubism::Framework::
+                         InvalidMotionQueueEntryHandleValue)
+        {
+            diagnostic = "Live2D SDK rejected the expression start";
+            return false;
+        }
+        impl_->expression_active = true;
+        impl_->expression_clearing = false;
+        impl_->current_expression.assign(name.data(), name.size());
+        return true;
+    }
+
+    bool Live2DModelInstance::ClearExpression(const Live2DStopMode mode,
+                                              std::string &diagnostic)
+    {
+        diagnostic.clear();
+        if (!IsValid())
+        {
+            diagnostic = "Live2D model instance is invalid";
+            return false;
+        }
+        auto *entries = impl_->expression_manager->GetCubismMotionQueueEntries();
+        if (mode == Live2DStopMode::Immediate)
+        {
+            impl_->expression_manager->StopAllMotions();
+            impl_->expression_active = false;
+            impl_->expression_clearing = false;
+            impl_->current_expression.clear();
+            return true;
+        }
+        for (csmUint32 index = 0u; index < entries->GetSize(); ++index)
+        {
+            if (entries->At(index) != nullptr)
+            {
+                entries->At(index)->StartFadeout(
+                    entries->At(index)->GetCubismMotion()->GetFadeOutTime(),
+                    impl_->playback_time_seconds);
+            }
+        }
+        impl_->expression_clearing = true;
+        impl_->current_expression.clear();
+        return true;
+    }
+
+    bool Live2DModelInstance::AdvancePlayback(
+        const float delta_seconds, Live2DPlaybackUpdateResult &result,
+        std::string &diagnostic)
+    {
+        diagnostic.clear();
+        result = {};
+        if (!IsValid())
+        {
+            diagnostic = "Live2D model instance is invalid";
+            return false;
+        }
+        if (!std::isfinite(delta_seconds) || delta_seconds < 0.0f ||
+            delta_seconds > std::numeric_limits<float>::max() -
+                                impl_->playback_time_seconds)
+        {
+            diagnostic = "Live2D playback delta must be finite and non-negative";
+            return false;
+        }
+
+        std::vector<Live2DPlaybackEvent> events = std::move(impl_->pending_events);
+        impl_->pending_events.clear();
+        impl_->callback_events.clear();
+        try
+        {
+            impl_->model->LoadParameters();
+            for (std::size_t index = 0u;
+                 index < impl_->pending_parameter_dirty.size(); ++index)
+            {
+                if (impl_->pending_parameter_dirty[index])
+                {
+                    impl_->model->SetParameterValue(
+                        static_cast<csmInt32>(index),
+                        static_cast<csmFloat32>(impl_->pending_parameter_values[index]));
+                }
+            }
+            impl_->playback_time_seconds += delta_seconds;
+            const bool motion_updated = impl_->motion_manager->UpdateMotion(
+                impl_->model, static_cast<csmFloat32>(delta_seconds));
+            impl_->model->SaveParameters();
+            if (impl_->expression_active ||
+                impl_->expression_manager->GetCubismMotionQueueEntries()->GetSize() != 0u)
+            {
+                impl_->expression_manager->UpdateMotion(
+                    impl_->model, static_cast<csmFloat32>(delta_seconds));
+            }
+            if (impl_->pose != nullptr)
+            {
+                impl_->pose->UpdateParameters(
+                    impl_->model, static_cast<csmFloat32>(delta_seconds));
+            }
+            impl_->model->Update();
+
+            for (Live2DPlaybackEvent &event : impl_->callback_events)
+            {
+                if (events.size() >= Impl::kMaxPendingEvents)
+                {
+                    throw std::runtime_error("playback event storage failed");
+                }
+                events.push_back(std::move(event));
+            }
+            impl_->callback_events.clear();
+            auto *entries = impl_->motion_manager->GetCubismMotionQueueEntries();
+            for (std::size_t index = 0u; index < impl_->motion_playbacks.size();)
+            {
+                bool present = false;
+                for (csmUint32 entry_index = 0u; entry_index < entries->GetSize();
+                     ++entry_index)
+                {
+                    if (entries->At(entry_index) != nullptr &&
+                        static_cast<void *>(entries->At(entry_index)) ==
+                            impl_->motion_playbacks[index].handle)
+                    {
+                        present = true;
+                        break;
+                    }
+                }
+                if (present)
+                {
+                    ++index;
+                    continue;
+                }
+                const Impl::MotionPlayback &playback = impl_->motion_playbacks[index];
+                const Live2DPlaybackEventKind kind =
+                    playback.state == Impl::MotionState::Playing
+                        ? Live2DPlaybackEventKind::MotionCompleted
+                        : playback.state == Impl::MotionState::Interrupting
+                              ? Live2DPlaybackEventKind::MotionInterrupted
+                              : Live2DPlaybackEventKind::MotionCancelled;
+                if (!AppendPlaybackEvent(events, kind, playback.token, {}))
+                {
+                    throw std::runtime_error("playback event storage failed");
+                }
+                impl_->motion_playbacks.erase(
+                    impl_->motion_playbacks.begin() + static_cast<std::ptrdiff_t>(index));
+            }
+
+            if (impl_->expression_clearing &&
+                impl_->expression_manager->GetCubismMotionQueueEntries()->GetSize() == 0u)
+            {
+                impl_->expression_active = false;
+                impl_->expression_clearing = false;
+            }
+            for (std::size_t index = 0u; index < impl_->pending_parameter_dirty.size();
+                 ++index)
+            {
+                impl_->pending_parameter_dirty[index] = false;
+            }
+            result.events = std::move(events);
+            result.motion_parameters_updated = motion_updated;
+            return true;
+        }
+        catch (const std::exception &error)
+        {
+            impl_->pending_events = std::move(events);
+            diagnostic = std::string("Live2D playback update failed: ") + error.what();
+            return false;
+        }
     }
 
     const std::vector<std::shared_ptr<const asset::TextureResource>> &

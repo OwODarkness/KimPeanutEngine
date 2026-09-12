@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "asset/asset.h"
@@ -48,6 +49,10 @@ namespace kpengine::live2d
         bool Initialize(graphics::RenderBackend &backend,
                         uint32_t width, uint32_t height,
                         std::string &diagnostic);
+        // Viewer policy selects a motion; the renderer owns only forwarding it
+        // to the instance and advancing it during frame recording.
+        bool StartPreviewMotion(std::string_view group, uint32_t index,
+                                int32_t priority, std::string &diagnostic);
         bool Record(render::FrameContext &frame_context,
                     graphics::CommandRecorder &recorder,
                     float delta_time,
@@ -125,6 +130,11 @@ namespace kpengine::live2d
         std::uint64_t last_frame_sequence_ = 0u;
         bool has_last_frame_sequence_ = false;
         bool initialized_ = false;
+        bool preview_motion_enabled_ = false;
+        std::string preview_motion_group_;
+        uint32_t preview_motion_index_ = 0u;
+        int32_t preview_motion_priority_ = 1;
+
         bool presentation_target_requested_ = false;
         std::array<float, 4> background_color_{0.1f, 0.1f, 0.1f, 1.0f};
         std::array<float, 4> output_clear_color_{0.1f, 0.1f, 0.1f, 1.0f};

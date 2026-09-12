@@ -22,6 +22,45 @@ namespace kpengine::live2d
         std::uint32_t index = 0u;
     };
 
+    struct Live2DPlaybackToken final
+    {
+        std::uint64_t instance_serial = 0u;
+        std::uint64_t sequence = 0u;
+    };
+
+    enum class Live2DMotionStartMode
+    {
+        RespectPriority,
+        Force
+    };
+
+    enum class Live2DStopMode
+    {
+        AuthoredFadeOut,
+        Immediate
+    };
+
+    enum class Live2DPlaybackEventKind
+    {
+        MotionCompleted,
+        MotionInterrupted,
+        MotionCancelled,
+        MotionUserEvent
+    };
+
+    struct Live2DPlaybackEvent final
+    {
+        Live2DPlaybackEventKind kind = Live2DPlaybackEventKind::MotionUserEvent;
+        Live2DPlaybackToken token{};
+        std::string value;
+    };
+
+    struct Live2DPlaybackUpdateResult final
+    {
+        std::vector<Live2DPlaybackEvent> events;
+        bool motion_parameters_updated = false;
+    };
+
     // A per-owner mutable Cubism model built from one immutable Asset payload.
     // Cubism headers stay private to the implementation so the module's public
     // contract does not expose SDK allocation or framework types.
@@ -51,6 +90,19 @@ namespace kpengine::live2d
         bool GetParameterValue(std::size_t index, float &value) const noexcept;
         bool SetParameterValue(std::size_t index, float value) noexcept;
         bool Update() noexcept;
+
+        bool PlayMotion(const Live2DMotionKey &key, std::int32_t priority,
+                        Live2DMotionStartMode mode,
+                        Live2DPlaybackToken &token,
+                        std::string &diagnostic);
+        bool StopMotion(Live2DPlaybackToken token, Live2DStopMode mode,
+                        std::string &diagnostic);
+        void StopAllMotions(Live2DStopMode mode) noexcept;
+        bool SetExpression(std::string_view name, std::string &diagnostic);
+        bool ClearExpression(Live2DStopMode mode, std::string &diagnostic);
+        bool AdvancePlayback(float delta_seconds,
+                             Live2DPlaybackUpdateResult &result,
+                             std::string &diagnostic);
 
         const std::vector<std::shared_ptr<const asset::TextureResource>> &
         TextureDependencies() const noexcept;

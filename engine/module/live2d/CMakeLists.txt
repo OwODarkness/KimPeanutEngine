@@ -17,6 +17,7 @@ set(_kpengine_live2d_framework_sources
     "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}/Model/CubismMoc.cpp"
     "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}/Model/CubismModel.cpp"
     "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}/Model/CubismModelMultiplyAndScreenColor.cpp"
+    "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}/Effect/CubismPose.cpp"
     "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}/Motion/ACubismMotion.cpp"
     "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}/Motion/CubismExpressionMotion.cpp"
     "${KPENGINE_CUBISM_FRAMEWORK_SOURCE_DIR}/Motion/CubismExpressionMotionManager.cpp"

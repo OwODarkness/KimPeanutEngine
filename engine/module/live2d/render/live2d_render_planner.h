@@ -91,8 +91,9 @@ namespace kpengine::live2d
         Live2DColor multiply_color{1.0f, 1.0f, 1.0f, 1.0f};
         Live2DColor screen_color{};
         float opacity = 1.0f;
-        // GLSL std140 gives the vec3 padding a full 16-byte slot. Keep the
-        // following matrix aligned to the same boundary in the CPU payload.
+        // GLSL std140 aligns the following vec3 to 16 bytes. The explicit gap
+        // keeps both the standalone and masked blocks byte-compatible.
+        std::array<float, 3> std140_alignment{};
         std::array<float, 4> padding{};
     };
 
@@ -113,6 +114,9 @@ namespace kpengine::live2d
         std::array<std::uint32_t, 2> padding{};
     };
 
+    static_assert(offsetof(Live2DDrawConstants, padding) == 112u);
+    static_assert(sizeof(Live2DDrawConstants) == 128u);
+    static_assert(offsetof(Live2DMaskedDrawConstants, model_to_atlas_sample) == 128u);
     struct Live2DRenderCounters final
     {
         std::uint32_t submitted_draw_count = 0u;

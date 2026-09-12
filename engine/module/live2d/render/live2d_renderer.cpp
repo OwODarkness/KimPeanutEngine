@@ -446,21 +446,73 @@ namespace kpengine::live2d
         return true;
     }
 
+    bool Live2DRenderer::StartPreviewMotion(const std::string_view group,
+                                            const std::uint32_t index,
+                                            const std::int32_t priority,
+                                            std::string &diagnostic)
+    {
+        diagnostic.clear();
+        if (!initialized_ || instance_ == nullptr)
+        {
+            diagnostic = "Live2D renderer is not initialized";
+            return false;
+        }
+        if (priority <= 0)
+        {
+            diagnostic = "Live2D preview motion priority must be positive";
+            return false;
+        }
+        Live2DPlaybackToken token{};
+        if (!instance_->PlayMotion(
+                {std::string(group), index}, priority,
+                Live2DMotionStartMode::Force, token, diagnostic))
+        {
+            return false;
+        }
+        Live2DPlaybackUpdateResult startup_playback;
+        if (!instance_->AdvancePlayback(0.0f, startup_playback, diagnostic))
+        {
+            return false;
+        }
+        preview_motion_group_.assign(group.data(), group.size());
+        preview_motion_index_ = index;
+        preview_motion_priority_ = priority;
+        preview_motion_enabled_ = true;
+        return true;
+    }
     bool Live2DRenderer::Record(render::FrameContext &frame_context,
                                 graphics::CommandRecorder &recorder,
                                 const float delta_time,
                                 std::string &diagnostic)
     {
-        (void)delta_time;
         if (!initialized_ || !instance_)
         {
             diagnostic = "Live2D renderer is not initialized";
             return false;
         }
-        if (!instance_->Update())
+        Live2DPlaybackUpdateResult playback_result;
+        if (!instance_->AdvancePlayback(delta_time, playback_result, diagnostic))
         {
-            diagnostic = "Live2D model update failed";
             return false;
+        }
+        if (preview_motion_enabled_)
+        {
+            for (const Live2DPlaybackEvent &event : playback_result.events)
+            {
+                if (event.kind != Live2DPlaybackEventKind::MotionCompleted)
+                {
+                    continue;
+                }
+                Live2DPlaybackToken restarted_token{};
+                if (!instance_->PlayMotion(
+                        {preview_motion_group_, preview_motion_index_},
+                        preview_motion_priority_, Live2DMotionStartMode::Force,
+                        restarted_token, diagnostic))
+                {
+                    return false;
+                }
+                break;
+            }
         }
         Live2DFrameSnapshot snapshot;
         if (!instance_->ExtractFrameSnapshot(snapshot, diagnostic))
@@ -630,6 +682,10 @@ namespace kpengine::live2d
         last_counters_ = {};
         last_frame_sequence_ = 0u;
         has_last_frame_sequence_ = false;
+        preview_motion_enabled_ = false;
+        preview_motion_group_.clear();
+        preview_motion_index_ = 0u;
+        preview_motion_priority_ = 1;
         instance_.reset();
         backend_ = nullptr;
         initialized_ = false;

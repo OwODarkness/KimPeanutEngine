@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <filesystem>
@@ -564,6 +565,14 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     ASSERT_NE(resource, nullptr);
     EXPECT_EQ(resource->Product().textures.size(), 2u);
     EXPECT_EQ(resource->Product().motions.size(), 10u);
+    const auto pose_chunk = std::find_if(
+        resource->Product().optional_chunks.begin(),
+        resource->Product().optional_chunks.end(),
+        [](const kpengine::live2d::Live2DOptionalChunk &chunk)
+        {
+            return chunk.name == "Pose" && !chunk.bytes.empty();
+        });
+    ASSERT_NE(pose_chunk, resource->Product().optional_chunks.end());
     EXPECT_EQ(manager.GetAsset(id)->GetDependencies().size(), 2u);
 
     kpengine::live2d::Live2DSystem system;
@@ -622,6 +631,13 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     EXPECT_EQ(second_frame.frame_sequence, 1u);
     EXPECT_EQ(first_frame.positions.size(), second_frame.positions.size());
     ASSERT_EQ(first_frame.positions.size(), static_data.uvs.size());
+    const std::size_t hidden_pose_drawables = std::count_if(
+        first_frame.drawables.begin(), first_frame.drawables.end(),
+        [](const kpengine::live2d::Live2DDrawableState &state)
+        {
+            return state.opacity <= 0.0f;
+        });
+    EXPECT_GT(hidden_pose_drawables, 0u);
     for (std::size_t vertex = 0u; vertex < first_frame.positions.size(); ++vertex)
     {
         EXPECT_FLOAT_EQ(first_frame.positions[vertex].x,
@@ -666,6 +682,60 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     ASSERT_TRUE(second_instance->GetParameterValue(0, second_after));
     EXPECT_FLOAT_EQ(first_after, changed_value);
     EXPECT_FLOAT_EQ(second_after, second_before);
+
+    kpengine::live2d::Live2DPlaybackToken playback_token{};
+    std::string playback_diagnostic;
+    ASSERT_TRUE(second_instance->PlayMotion(
+        {"Idle", 0u}, 1, kpengine::live2d::Live2DMotionStartMode::Force,
+        playback_token, playback_diagnostic))
+        << playback_diagnostic;
+    EXPECT_EQ(playback_token.instance_serial, second_instance->InstanceSerial());
+    kpengine::live2d::Live2DPlaybackUpdateResult playback_result;
+    ASSERT_TRUE(second_instance->AdvancePlayback(0.0f, playback_result,
+                                                 playback_diagnostic))
+        << playback_diagnostic;
+    std::vector<float> motion_parameters_before;
+    motion_parameters_before.reserve(second_instance->ParameterCount());
+    for (std::size_t parameter = 0u;
+         parameter < second_instance->ParameterCount(); ++parameter)
+    {
+        float value = 0.0f;
+        ASSERT_TRUE(second_instance->GetParameterValue(parameter, value));
+        motion_parameters_before.push_back(value);
+    }
+    ASSERT_TRUE(second_instance->AdvancePlayback(0.5f, playback_result,
+                                                 playback_diagnostic))
+        << playback_diagnostic;
+    bool motion_changed_parameter = false;
+    for (std::size_t parameter = 0u;
+         parameter < motion_parameters_before.size(); ++parameter)
+    {
+        float value = 0.0f;
+        ASSERT_TRUE(second_instance->GetParameterValue(parameter, value));
+        if (value != motion_parameters_before[parameter])
+        {
+            motion_changed_parameter = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(motion_changed_parameter);
+    ASSERT_TRUE(second_instance->AdvancePlayback(0.0f, playback_result,
+                                                 playback_diagnostic))
+        << playback_diagnostic;
+    EXPECT_TRUE(playback_result.events.empty());
+    ASSERT_TRUE(second_instance->AdvancePlayback(100.0f, playback_result,
+                                                 playback_diagnostic))
+        << playback_diagnostic;
+    ASSERT_EQ(playback_result.events.size(), 1u);
+    EXPECT_EQ(playback_result.events[0].kind,
+              kpengine::live2d::Live2DPlaybackEventKind::MotionCompleted);
+    EXPECT_EQ(playback_result.events[0].token.instance_serial,
+              playback_token.instance_serial);
+    EXPECT_EQ(playback_result.events[0].token.sequence, playback_token.sequence);
+    EXPECT_FALSE(second_instance->StopMotion(
+        playback_token, kpengine::live2d::Live2DStopMode::Immediate,
+        playback_diagnostic));
+    EXPECT_TRUE(second_instance->Update());
 
     manager.UnRegisterAsset(id);
     EXPECT_EQ(manager.GetLiveAssetCount(kpengine::live2d::kLive2DModelAssetType), 0u);

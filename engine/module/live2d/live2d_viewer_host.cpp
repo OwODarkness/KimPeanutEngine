@@ -164,6 +164,17 @@ namespace kpengine::live2d
             }
             render_initialized_ = true;
 
+            // Viewer policy starts the configured product's authored Idle clip. Other products
+            // can remain static until a viewer command selects a valid motion.
+            std::string preview_motion_diagnostic;
+            if (!renderer_->StartPreviewMotion("Idle", 0u, 1,
+                                               preview_motion_diagnostic))
+            {
+                KP_LOG("Live2DViewer", LOG_LEVEL_WARNING,
+                       "Live2D preview motion unavailable; keeping static pose (%s)",
+                       preview_motion_diagnostic.c_str());
+            }
+
             editor::EditorSettings editor_settings{};
             editor_settings.log_colors = editor::DefaultLogColors();
             try

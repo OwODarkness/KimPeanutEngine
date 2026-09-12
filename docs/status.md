@@ -1,5 +1,15 @@
 # Project Status
 
+- **Live2D L2D6.3 playback transaction baseline (2026-09-12)** — added the SDK-free
+  motion/expression control surface, instance-local opaque playback tokens, bounded
+  event adaptation, direct-write checkpointing, and the caller-driven
+  `Load → motion → Save → expression → model update` transaction. The standalone
+  Live2D viewer now starts Hiyori `Idle/0`, advances it every frame, and restarts
+  the clip after completion; Hiyori playback also proves token-associated
+  completion, stale-token rejection, and a runtime parameter change. The full
+  numeric/fade/event hardening gate remains open. →
+  [L2D6.3 journal](../.spec/journal/2026-09-12-live2d-l2d6-3.md),
+  [L2D6.3 plan](live2d/.plan/L2D6.3.md)
 - **Live2D L2D6.2 instance-local clip library (2026-09-12)** — runtime instance
   construction now parses Product V2 motions and expressions with pinned Cubism
   consistency checking, applies authored fades and EyeBlink/LipSync IDs, owns
@@ -13,7 +23,6 @@
   retaining V1 read compatibility. The importer validates referenced JSON,
   extensions, names, IDs, bounds, and asset-root containment before publishing
   native textures; provider metadata is version 2. → [L2D6.1 plan](live2d/.plan/L2D6.1.md)
-
 
 **Snapshot: 2026-09-12.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
@@ -53,6 +62,13 @@
   bound to a mandatory parameter, which made `validate` fail for *every* file
   before reaching a build — was fixed. →
   [L2D5.3 journal](../.spec/journal/2026-09-12-live2d-l2d5-3.md)
+
+- **Live2D L2D5.4 V1 closeout and L2D6 handoff (2026-09-12)** — items 8–10
+  pass; official R5 comparison is an accepted limitation because GLEW 2.2.0 is
+  unavailable. The landed viewer is the live2d-viewer IApplicationHost mode of
+  KimPeanutEngine.exe; the L2D6 entry gate is checked and product/lifetime/
+  submission boundaries are unchanged. →
+  [L2D5.4 plan](live2d/.plan/L2D5.4.md)
 
 - **Live2D L2D4.5 submission hardening and cross-backend parity (2026-09-11)**
   — split submission execution from frame services behind a new
