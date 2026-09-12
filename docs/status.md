@@ -1,4 +1,12 @@
 # Project Status
+
+- **Live2D L2D6.2 instance-local clip library (2026-09-12)** — runtime instance
+  construction now parses Product V2 motions and expressions with pinned Cubism
+  consistency checking, applies authored fades and EyeBlink/LipSync IDs, owns
+  managers/clips per instance, and assigns non-reused instance serials. Public
+  lookup remains SDK-free; playback/update semantics stay in L2D6.3. →
+  [L2D6.2 plan](live2d/.plan/L2D6.2.md)
+
 - **Live2D L2D6.1 typed animation product/import (2026-09-12)** — Product V2
   now preserves authored motion groups/indexes, optional fade overrides, opaque
   motion sound bytes, expression names/bytes, and parameter-target groups while

@@ -1,5 +1,7 @@
 #include "live2d_system.h"
 
+#include <limits>
+#include <optional>
 #include <utility>
 
 #include "asset/asset_manager.h"
@@ -33,6 +35,24 @@ namespace kpengine::live2d
     bool Live2DSystem::IsInitialized() const noexcept
     {
         return cubism_.IsInitialized();
+    }
+
+    std::optional<std::uint64_t> Live2DSystem::AllocateInstanceSerial() noexcept
+    {
+        if (next_instance_serial_ == 0u)
+        {
+            return std::nullopt;
+        }
+        const std::uint64_t serial = next_instance_serial_;
+        if (serial == std::numeric_limits<std::uint64_t>::max())
+        {
+            next_instance_serial_ = 0u;
+        }
+        else
+        {
+            ++next_instance_serial_;
+        }
+        return serial;
     }
 
     std::unique_ptr<Live2DModelInstance> Live2DSystem::CreateInstance(
@@ -81,8 +101,14 @@ namespace kpengine::live2d
             textures.push_back(std::shared_ptr<const asset::TextureResource>(
                 std::move(texture)));
         }
+        const std::optional<std::uint64_t> instance_serial =
+            AllocateInstanceSerial();
+        if (!instance_serial.has_value())
+        {
+            return nullptr;
+        }
         return Live2DModelInstance::Create(
             std::shared_ptr<const Live2DModelResource>(std::move(resource)),
-            std::move(textures), cubism_);
+            std::move(textures), *instance_serial, cubism_);
     }
 }

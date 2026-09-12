@@ -1,7 +1,9 @@
 #ifndef KPENGINE_LIVE2D_SYSTEM_H
 #define KPENGINE_LIVE2D_SYSTEM_H
 
+#include <cstdint>
 #include <memory>
+#include <optional>
 
 #include "asset/asset.h"
 #include "live2d_cubism_lifecycle.h"
@@ -15,6 +17,10 @@ namespace kpengine::live2d
     {
     public:
         Live2DSystem() = default;
+        explicit Live2DSystem(std::uint64_t first_instance_serial) noexcept
+            : next_instance_serial_(first_instance_serial)
+        {
+        }
         ~Live2DSystem() noexcept;
 
         Live2DSystem(const Live2DSystem&) = delete;
@@ -31,7 +37,10 @@ namespace kpengine::live2d
         const CubismLifecycle& Cubism() const noexcept { return cubism_; }
 
     private:
+        std::optional<std::uint64_t> AllocateInstanceSerial() noexcept;
+
         CubismLifecycle cubism_;
+        std::uint64_t next_instance_serial_ = 1u;
     };
 }
 

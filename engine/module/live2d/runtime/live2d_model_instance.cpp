@@ -2,10 +2,20 @@
 
 #include <exception>
 #include <limits>
+#include <set>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
 #include "Model/CubismMoc.hpp"
+#include "CubismFramework.hpp"
+#include "Id/CubismIdManager.hpp"
+#include "Motion/ACubismMotion.hpp"
+#include "Motion/CubismExpressionMotion.hpp"
+#include "Motion/CubismExpressionMotionManager.hpp"
+#include "Motion/CubismMotion.hpp"
+#include "Motion/CubismMotionManager.hpp"
+#include "Type/csmVector.hpp"
 #include "Model/CubismModel.hpp"
 #include "live2d_cubism_lifecycle.h"
 #include "live2d_model_resource.h"
@@ -21,8 +31,16 @@ namespace kpengine::live2d
         using Live2D::Cubism::Framework::csmFloat32;
         using Live2D::Cubism::Framework::csmInt32;
         using Live2D::Cubism::Framework::csmSizeInt;
+        using Live2D::Cubism::Framework::csmVector;
         using Live2D::Cubism::Framework::csmUint32;
         using Live2D::Cubism::Framework::csmUint16;
+        using Live2D::Cubism::Framework::ACubismMotion;
+        using Live2D::Cubism::Framework::CubismExpressionMotion;
+        using Live2D::Cubism::Framework::CubismExpressionMotionManager;
+        using Live2D::Cubism::Framework::CubismFramework;
+        using Live2D::Cubism::Framework::CubismIdHandle;
+        using Live2D::Cubism::Framework::CubismMotion;
+        using Live2D::Cubism::Framework::CubismMotionManager;
         using Live2D::Cubism::Framework::CubismMoc;
         using Live2D::Cubism::Framework::CubismModel;
 
@@ -82,6 +100,55 @@ namespace kpengine::live2d
         {
             static_assert(std::is_trivially_copyable_v<T>);
             HashBytes(hash, &value, sizeof(T));
+        }
+
+        struct CubismMotionDeleter final
+        {
+            void operator()(ACubismMotion *motion) const noexcept
+            {
+                if (motion != nullptr)
+                {
+                    ACubismMotion::Delete(motion);
+                }
+            }
+        };
+
+        bool IsSdkFloatTime(const double value) noexcept
+        {
+            return std::isfinite(value) && value >= 0.0 &&
+                   value <= static_cast<double>(
+                                 std::numeric_limits<csmFloat32>::max());
+        }
+
+        bool BuildEffectIds(const Live2DProductData &product,
+                            const std::string_view group_name,
+                            csmVector<CubismIdHandle> &ids,
+                            std::string &diagnostic)
+        {
+            auto *id_manager = CubismFramework::GetIdManager();
+            if (id_manager == nullptr)
+            {
+                diagnostic = "Live2D Cubism ID manager is unavailable";
+                return false;
+            }
+            for (const Live2DParameterGroup &group : product.parameter_groups)
+            {
+                if (group.target != "Parameter" || group.name != group_name)
+                {
+                    continue;
+                }
+                for (const std::string &id : group.ids)
+                {
+                    const CubismIdHandle handle = id_manager->GetId(id.c_str());
+                    if (handle == nullptr)
+                    {
+                        diagnostic = "Live2D parameter group ID could not be resolved: " + id;
+                        return false;
+                    }
+                    ids.PushBack(handle);
+                }
+            }
+            return true;
         }
 
         bool BuildStaticModelData(const CubismModel &model,
@@ -318,14 +385,39 @@ namespace kpengine::live2d
 
     struct Live2DModelInstance::Impl final
     {
+        using MotionPtr =
+            std::unique_ptr<ACubismMotion, CubismMotionDeleter>;
+
+        struct MotionClip final
+        {
+            std::string group;
+            std::uint32_t index = 0u;
+            MotionPtr motion;
+        };
+
+        struct ExpressionClip final
+        {
+            std::string name;
+            MotionPtr expression;
+        };
+
         std::optional<CubismModelInstanceLease> lease;
         CubismMoc *moc{};
         CubismModel *model{};
         Live2DStaticModelData static_data{};
+        std::vector<MotionClip> motion_clips;
+        std::vector<ExpressionClip> expression_clips;
+        std::unique_ptr<CubismExpressionMotionManager> expression_manager;
+        std::unique_ptr<CubismMotionManager> motion_manager;
+        std::uint64_t instance_serial = 0u;
         std::uint64_t frame_sequence = 0u;
 
         ~Impl() noexcept
         {
+            motion_manager.reset();
+            expression_manager.reset();
+            expression_clips.clear();
+            motion_clips.clear();
             if (model != nullptr && moc != nullptr)
             {
                 moc->DeleteModel(model);
@@ -369,9 +461,11 @@ namespace kpengine::live2d
         std::shared_ptr<const Live2DModelResource> resource,
         std::vector<std::shared_ptr<const asset::TextureResource>>
             texture_dependencies,
+        const std::uint64_t instance_serial,
         CubismLifecycle &lifecycle)
     {
-        if (resource == nullptr || !lifecycle.IsInitialized() ||
+        if (resource == nullptr || instance_serial == 0u ||
+            !lifecycle.IsInitialized() ||
             resource->Product().moc_bytes.empty() ||
             texture_dependencies.size() != resource->Product().textures.size())
         {
@@ -387,6 +481,7 @@ namespace kpengine::live2d
 
         auto impl = std::make_unique<Impl>();
         impl->lease = std::move(lease);
+        impl->instance_serial = instance_serial;
         const std::vector<std::byte> &moc_bytes = resource->Product().moc_bytes;
         impl->moc = CubismMoc::Create(
             reinterpret_cast<const csmByte *>(moc_bytes.data()),
@@ -408,6 +503,10 @@ namespace kpengine::live2d
         {
             return nullptr;
         }
+        if (!BuildClipLibrary(*resource, *impl, diagnostic))
+        {
+            return nullptr;
+        }
 
         return std::unique_ptr<Live2DModelInstance>(new Live2DModelInstance(
             std::move(resource), std::move(texture_dependencies),
@@ -417,6 +516,159 @@ namespace kpengine::live2d
     bool Live2DModelInstance::IsValid() const noexcept
     {
         return resource_ != nullptr && impl_ != nullptr && impl_->IsValid();
+    }
+
+    std::uint64_t Live2DModelInstance::InstanceSerial() const noexcept
+    {
+        return IsValid() ? impl_->instance_serial : 0u;
+    }
+
+    std::size_t Live2DModelInstance::MotionCount() const noexcept
+    {
+        return IsValid() ? impl_->motion_clips.size() : 0u;
+    }
+
+    bool Live2DModelInstance::HasMotion(const Live2DMotionKey &key) const noexcept
+    {
+        if (!IsValid())
+        {
+            return false;
+        }
+        for (const Impl::MotionClip &clip : impl_->motion_clips)
+        {
+            if (clip.group == key.group && clip.index == key.index)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    std::size_t Live2DModelInstance::ExpressionCount() const noexcept
+    {
+        return IsValid() ? impl_->expression_clips.size() : 0u;
+    }
+
+    bool Live2DModelInstance::HasExpression(const std::string_view name) const noexcept
+    {
+        if (!IsValid())
+        {
+            return false;
+        }
+        for (const Impl::ExpressionClip &clip : impl_->expression_clips)
+        {
+            if (clip.name == name)
+            {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    bool Live2DModelInstance::BuildClipLibrary(
+        const Live2DModelResource &resource,
+        Impl &impl,
+        std::string &diagnostic)
+    {
+        diagnostic.clear();
+        const Live2DProductData &product = resource.Product();
+        std::set<std::pair<std::string, std::uint32_t>> motion_keys;
+        std::set<std::string> expression_names;
+        csmVector<CubismIdHandle> eye_blink_ids;
+        csmVector<CubismIdHandle> lip_sync_ids;
+        if (!BuildEffectIds(product, "EyeBlink", eye_blink_ids, diagnostic) ||
+            !BuildEffectIds(product, "LipSync", lip_sync_ids, diagnostic))
+        {
+            return false;
+        }
+
+        try
+        {
+            impl.motion_clips.reserve(product.motions.size());
+            for (const Live2DAuthoredMotion &definition : product.motions)
+            {
+                if (definition.group.empty() ||
+                    !motion_keys.insert({definition.group, definition.index}).second ||
+                    definition.motion_bytes.empty() ||
+                    definition.motion_bytes.size() >
+                        static_cast<std::size_t>(
+                            std::numeric_limits<csmSizeInt>::max()) ||
+                    (definition.has_fade_in &&
+                     !IsSdkFloatTime(definition.fade_in_time)) ||
+                    (definition.has_fade_out &&
+                     !IsSdkFloatTime(definition.fade_out_time)))
+                {
+                    diagnostic = "Live2D instance contains an invalid motion definition";
+                    return false;
+                }
+                const csmByte *bytes =
+                    reinterpret_cast<const csmByte *>(definition.motion_bytes.data());
+                CubismMotion *motion = CubismMotion::Create(
+                    bytes, static_cast<csmSizeInt>(definition.motion_bytes.size()),
+                    nullptr, nullptr, true);
+                if (motion == nullptr)
+                {
+                    diagnostic = "Live2D motion consistency validation failed for " +
+                                 definition.group + "/" +
+                                 std::to_string(definition.index);
+                    return false;
+                }
+                Impl::MotionPtr owned_motion(motion);
+                if (definition.has_fade_in)
+                {
+                    motion->SetFadeInTime(
+                        static_cast<csmFloat32>(definition.fade_in_time));
+                }
+                if (definition.has_fade_out)
+                {
+                    motion->SetFadeOutTime(
+                        static_cast<csmFloat32>(definition.fade_out_time));
+                }
+                motion->SetEffectIds(eye_blink_ids, lip_sync_ids);
+                impl.motion_clips.push_back(
+                    {definition.group, definition.index, std::move(owned_motion)});
+            }
+
+            impl.expression_clips.reserve(product.expressions.size());
+            for (const Live2DAuthoredExpression &definition : product.expressions)
+            {
+                if (definition.name.empty() ||
+                    !expression_names.insert(definition.name).second ||
+                    definition.expression_bytes.empty() ||
+                    definition.expression_bytes.size() >
+                        static_cast<std::size_t>(
+                            std::numeric_limits<csmSizeInt>::max()))
+                {
+                    diagnostic = "Live2D instance contains an invalid expression definition";
+                    return false;
+                }
+                const csmByte *bytes =
+                    reinterpret_cast<const csmByte *>(
+                        definition.expression_bytes.data());
+                CubismExpressionMotion *expression =
+                    CubismExpressionMotion::Create(
+                        bytes,
+                        static_cast<csmSizeInt>(definition.expression_bytes.size()));
+                if (expression == nullptr)
+                {
+                    diagnostic = "Live2D expression parsing failed for " + definition.name;
+                    return false;
+                }
+                impl.expression_clips.push_back(
+                    {definition.name, Impl::MotionPtr(expression)});
+            }
+
+            impl.expression_manager =
+                std::make_unique<CubismExpressionMotionManager>();
+            impl.motion_manager = std::make_unique<CubismMotionManager>();
+        }
+        catch (const std::exception &error)
+        {
+            diagnostic = std::string("Live2D clip library construction failed: ") +
+                         error.what();
+            return false;
+        }
+        return true;
     }
 
     const Live2DModelResource &Live2DModelInstance::Resource() const noexcept

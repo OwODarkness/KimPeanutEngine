@@ -2,8 +2,10 @@
 #define KPENGINE_LIVE2D_MODEL_INSTANCE_H
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "asset/texture.h"
@@ -13,6 +15,12 @@ namespace kpengine::live2d
 {
     class CubismLifecycle;
     class Live2DModelResource;
+
+    struct Live2DMotionKey final
+    {
+        std::string group;
+        std::uint32_t index = 0u;
+    };
 
     // A per-owner mutable Cubism model built from one immutable Asset payload.
     // Cubism headers stay private to the implementation so the module's public
@@ -30,6 +38,12 @@ namespace kpengine::live2d
 
         bool IsValid() const noexcept;
         const Live2DModelResource &Resource() const noexcept;
+        std::uint64_t InstanceSerial() const noexcept;
+
+        std::size_t MotionCount() const noexcept;
+        bool HasMotion(const Live2DMotionKey &key) const noexcept;
+        std::size_t ExpressionCount() const noexcept;
+        bool HasExpression(std::string_view name) const noexcept;
 
         std::size_t ParameterCount() const noexcept;
         bool GetParameterRange(std::size_t index, float &minimum,
@@ -57,7 +71,12 @@ namespace kpengine::live2d
             std::shared_ptr<const Live2DModelResource> resource,
             std::vector<std::shared_ptr<const asset::TextureResource>>
                 texture_dependencies,
+            std::uint64_t instance_serial,
             CubismLifecycle &lifecycle);
+
+        static bool BuildClipLibrary(const Live2DModelResource &resource,
+                                      Impl &impl,
+                                      std::string &diagnostic);
 
         std::shared_ptr<const Live2DModelResource> resource_;
         std::vector<std::shared_ptr<const asset::TextureResource>>

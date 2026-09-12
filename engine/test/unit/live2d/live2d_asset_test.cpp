@@ -563,6 +563,7 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     const auto resource = manager.GetResource<kpengine::live2d::Live2DModelResource>(id);
     ASSERT_NE(resource, nullptr);
     EXPECT_EQ(resource->Product().textures.size(), 2u);
+    EXPECT_EQ(resource->Product().motions.size(), 10u);
     EXPECT_EQ(manager.GetAsset(id)->GetDependencies().size(), 2u);
 
     kpengine::live2d::Live2DSystem system;
@@ -574,6 +575,15 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     ASSERT_TRUE(first_instance->IsValid());
     ASSERT_TRUE(second_instance->IsValid());
     EXPECT_EQ(&first_instance->Resource(), &second_instance->Resource());
+    EXPECT_NE(first_instance->InstanceSerial(), 0u);
+    EXPECT_NE(first_instance->InstanceSerial(), second_instance->InstanceSerial());
+    EXPECT_EQ(first_instance->MotionCount(), 10u);
+    EXPECT_EQ(second_instance->MotionCount(), 10u);
+    EXPECT_TRUE(first_instance->HasMotion({"Idle", 0u}));
+    EXPECT_TRUE(second_instance->HasMotion({"Tap@Body", 0u}));
+    EXPECT_FALSE(first_instance->HasMotion({"idle", 0u}));
+    EXPECT_EQ(first_instance->ExpressionCount(), 0u);
+    EXPECT_FALSE(first_instance->HasExpression("Shy"));
     ASSERT_EQ(first_instance->TextureDependencies().size(), 2u);
     ASSERT_EQ(second_instance->TextureDependencies().size(), 2u);
     EXPECT_EQ(first_instance->TextureDependencies()[0].get(),
