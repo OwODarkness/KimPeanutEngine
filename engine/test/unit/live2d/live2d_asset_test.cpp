@@ -719,6 +719,29 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
         }
     }
     EXPECT_TRUE(motion_changed_parameter);
+
+    // Invalid time must be rejected before the Cubism clock or model changes.
+    std::vector<float> values_before_invalid_delta;
+    values_before_invalid_delta.reserve(second_instance->ParameterCount());
+    for (std::size_t parameter = 0u;
+         parameter < second_instance->ParameterCount(); ++parameter)
+    {
+        float value = 0.0f;
+        ASSERT_TRUE(second_instance->GetParameterValue(parameter, value));
+        values_before_invalid_delta.push_back(value);
+    }
+    EXPECT_FALSE(second_instance->AdvancePlayback(-0.25f, playback_result,
+                                                  playback_diagnostic));
+    EXPECT_NE(playback_diagnostic.find("finite and non-negative"),
+              std::string::npos);
+    for (std::size_t parameter = 0u;
+         parameter < values_before_invalid_delta.size(); ++parameter)
+    {
+        float value = 0.0f;
+        ASSERT_TRUE(second_instance->GetParameterValue(parameter, value));
+        EXPECT_FLOAT_EQ(value, values_before_invalid_delta[parameter]);
+    }
+
     ASSERT_TRUE(second_instance->AdvancePlayback(0.0f, playback_result,
                                                  playback_diagnostic))
         << playback_diagnostic;
@@ -736,6 +759,35 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
         playback_token, kpengine::live2d::Live2DStopMode::Immediate,
         playback_diagnostic));
     EXPECT_TRUE(second_instance->Update());
+
+    // Immediate cancellation is token-local even while a replacement is
+    // fading in. The old implementation replaced the whole SDK manager here.
+    kpengine::live2d::Live2DPlaybackToken first_cancel_token{};
+    kpengine::live2d::Live2DPlaybackToken second_cancel_token{};
+    ASSERT_TRUE(second_instance->PlayMotion(
+        {"Idle", 0u}, 1, kpengine::live2d::Live2DMotionStartMode::Force,
+        first_cancel_token, playback_diagnostic))
+        << playback_diagnostic;
+    ASSERT_TRUE(second_instance->PlayMotion(
+        {"Tap@Body", 0u}, 2, kpengine::live2d::Live2DMotionStartMode::Force,
+        second_cancel_token, playback_diagnostic))
+        << playback_diagnostic;
+    ASSERT_TRUE(second_instance->StopMotion(
+        first_cancel_token, kpengine::live2d::Live2DStopMode::Immediate,
+        playback_diagnostic))
+        << playback_diagnostic;
+    ASSERT_TRUE(second_instance->StopMotion(
+        second_cancel_token, kpengine::live2d::Live2DStopMode::Immediate,
+        playback_diagnostic))
+        << playback_diagnostic;
+    ASSERT_TRUE(second_instance->AdvancePlayback(0.0f, playback_result,
+                                                 playback_diagnostic))
+        << playback_diagnostic;
+    ASSERT_EQ(playback_result.events.size(), 2u);
+    EXPECT_EQ(playback_result.events[0].kind,
+              kpengine::live2d::Live2DPlaybackEventKind::MotionCancelled);
+    EXPECT_EQ(playback_result.events[1].kind,
+              kpengine::live2d::Live2DPlaybackEventKind::MotionCancelled);
 
     manager.UnRegisterAsset(id);
     EXPECT_EQ(manager.GetLiveAssetCount(kpengine::live2d::kLive2DModelAssetType), 0u);

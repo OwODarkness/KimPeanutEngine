@@ -1,5 +1,14 @@
 # Project Status
 
+- **Live2D L2D6.4 playback hardening baseline (2026-09-12)** — named the
+  instance-local playback phases and L2D7 late-update insertion point, made
+  immediate cancellation token-local, rejected invalid deltas before Cubism
+  mutation, and added bounded event-storage checks. Focused Live2D tests pass
+  19/19; OpenGL and Vulkan viewer smoke both submit 111 draws and shut down
+  through `CubismFramework::Dispose()`. The complete synthetic priority/fade/
+  expression matrix, SDK-off evidence, and full-duration viewer completion
+  capture remain open. → [L2D6.4 journal](../.spec/journal/2026-09-12-live2d-l2d6-4.md),
+  [L2D6.4 plan](live2d/.plan/L2D6.4.md)
 - **Live2D L2D6.3 playback transaction baseline (2026-09-12)** — added the SDK-free
   motion/expression control surface, instance-local opaque playback tokens, bounded
   event adaptation, direct-write checkpointing, and the caller-driven
