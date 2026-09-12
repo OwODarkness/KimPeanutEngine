@@ -1,4 +1,11 @@
 # Project Status
+- **Live2D L2D6.1 typed animation product/import (2026-09-12)** — Product V2
+  now preserves authored motion groups/indexes, optional fade overrides, opaque
+  motion sound bytes, expression names/bytes, and parameter-target groups while
+  retaining V1 read compatibility. The importer validates referenced JSON,
+  extensions, names, IDs, bounds, and asset-root containment before publishing
+  native textures; provider metadata is version 2. → [L2D6.1 plan](live2d/.plan/L2D6.1.md)
+
 
 **Snapshot: 2026-09-12.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 

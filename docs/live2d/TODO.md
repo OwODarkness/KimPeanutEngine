@@ -188,7 +188,7 @@
   ordered subtasks—
   [x] [contract freeze](.plan/L2D6.0.md)
   ([journal](../../.spec/journal/2026-09-12-live2d-l2d6-0.md)),
-  [ ] [typed product/import](.plan/L2D6.1.md),
+  [x] [typed product/import](.plan/L2D6.1.md) ([journal](../../.spec/journal/2026-09-12-live2d-l2d6-1.md)),
   [ ] [instance-local clip library](.plan/L2D6.2.md),
   [ ] [deterministic playback transaction](.plan/L2D6.3.md), and
   [ ] [hardening/L2D7 handoff](.plan/L2D6.4.md). L2D6 exposes named motion groups,

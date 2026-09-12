@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <filesystem>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,32 @@ namespace kpengine::live2d
         std::vector<std::byte> bytes;
     };
 
+    struct Live2DAuthoredMotion
+    {
+        std::string group;
+        std::uint32_t index = 0;
+        bool has_fade_in = false;
+        double fade_in_time = 0.0;
+        bool has_fade_out = false;
+        double fade_out_time = 0.0;
+        std::vector<std::byte> motion_bytes;
+        bool has_sound = false;
+        std::vector<std::byte> sound_bytes;
+    };
+
+    struct Live2DAuthoredExpression
+    {
+        std::string name;
+        std::vector<std::byte> expression_bytes;
+    };
+
+    struct Live2DParameterGroup
+    {
+        std::string target;
+        std::string name;
+        std::vector<std::string> ids;
+    };
+
     // Database-free native product data shared by the offline importer and
     // the runtime Asset adapter.
     struct Live2DProductData
@@ -29,12 +56,13 @@ namespace kpengine::live2d
         std::vector<std::byte> moc_bytes;
         std::vector<Live2DTextureDependency> textures;
         std::vector<Live2DOptionalChunk> optional_chunks;
+        std::vector<Live2DAuthoredMotion> motions;
+        std::vector<Live2DAuthoredExpression> expressions;
+        std::vector<Live2DParameterGroup> parameter_groups;
     };
 
-    // The first native product is intentionally small and self-describing:
-    // fixed-width little-endian fields, exact MOC bytes, ordered texture
-    // paths, and named optional source chunks. L2D3 may extend it only by
-    // adding a new product version.
+    // Product V1 keeps the original layout. Product V2 adds typed authored
+    // animation sections after the V1 header fields and remains V1-readable.
     bool SerializeLive2DProduct(const Live2DProductData &product,
                                 std::vector<std::byte> &bytes,
                                 std::string &diagnostic);

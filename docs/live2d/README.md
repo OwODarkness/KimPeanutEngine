@@ -228,13 +228,13 @@ are UTF-8-like byte strings with no NUL terminator; paths use `/` separators.
 | Order | Field | Meaning |
 | --- | --- | --- |
 | 1 | `magic[8]` | ASCII `KPL2DPRD` |
-| 2 | `product_version` | Current value: `1` |
+| 2 | `product_version` | 1 for the original layout; 2 adds typed motion, expression, and parameter-group sections |
 | 3 | `model3_version` | Authored Cubism model schema version; current value: `3` |
 | 4 | `texture_count` | Number of ordered native Texture references |
 | 5 | `optional_chunk_count` | Number of named optional source chunks |
 | 6 | `moc_bytes` | Length-prefixed embedded `.moc3` bytes |
 | 7 | `textures[]` | Length-prefixed dependency path for each atlas |
-| 8 | `optional_chunks[]` | Each entry contains a length-prefixed name and byte blob |
+| 8 | `optional_chunks[]` | V1-compatible named source chunks; V2 leaves authored motions and expressions in typed sections |
 
 Conceptually, a decoded product looks like this:
 
@@ -254,7 +254,7 @@ Live2DProductData {
 }
 ```
 
-The shared runtime payload contains immutable product data only. It does not
+Product V2 keeps the V1 header/layout readable and appends three counts after optional_chunk_count: motions, expressions, and parameter groups. Motion records preserve group/index identity, fade-presence bits, exact motion JSON bytes, and optional sound bytes; expression records preserve authored names and exact expression JSON bytes; parameter groups preserve target/name/ID order. The importer validates this source closure before publishing native Texture products. The shared runtime payload contains immutable product data only. It does not
 contain GPU objects, Cubism model instances, parameter state, motion state,
 deformed vertices, or frame-local mask data. The current codec limits the
 complete product to 512 MiB, each individual blob/string to 1 MiB, and each

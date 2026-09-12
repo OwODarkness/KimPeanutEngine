@@ -166,6 +166,105 @@ namespace
   "Curves": [] })";
 }
 
+TEST(Live2DProductTest, V1AndV2RoundTrip)
+{
+    kpengine::live2d::Live2DProductData v1{};
+    v1.product_version = 1;
+    v1.moc_bytes = {std::byte{0x01}};
+    v1.textures = {{".archive/textures/a.texture"}};
+    v1.optional_chunks = {{"Physics", {std::byte{0x02}}}};
+
+    std::vector<std::byte> v1_bytes;
+    std::string diagnostic;
+    ASSERT_TRUE(kpengine::live2d::SerializeLive2DProduct(v1, v1_bytes, diagnostic))
+        << diagnostic;
+    kpengine::live2d::Live2DProductData parsed_v1{};
+    ASSERT_TRUE(kpengine::live2d::ParseLive2DProduct(v1_bytes, parsed_v1, diagnostic))
+        << diagnostic;
+    EXPECT_EQ(parsed_v1.product_version, 1u);
+    EXPECT_TRUE(parsed_v1.motions.empty());
+
+    kpengine::live2d::Live2DProductData v2 = v1;
+    v2.product_version = 2;
+    v2.motions = {{"Idle", 0, true, 0.25, true, 0.75,
+                    {std::byte{0x03}}, true, {std::byte{0x04}}}};
+    v2.expressions = {{"Shy", {std::byte{0x05}}}};
+    v2.parameter_groups = {{"Parameter", "EyeBlink", {"ParamEyeLOpen", "ParamEyeROpen"}}};
+
+    std::vector<std::byte> first;
+    ASSERT_TRUE(kpengine::live2d::SerializeLive2DProduct(v2, first, diagnostic))
+        << diagnostic;
+    kpengine::live2d::Live2DProductData parsed_v2{};
+    ASSERT_TRUE(kpengine::live2d::ParseLive2DProduct(first, parsed_v2, diagnostic))
+        << diagnostic;
+    std::vector<std::byte> second;
+    ASSERT_TRUE(kpengine::live2d::SerializeLive2DProduct(parsed_v2, second, diagnostic))
+        << diagnostic;
+    EXPECT_EQ(first, second);
+    EXPECT_EQ(parsed_v2.motions.size(), 1u);
+    EXPECT_EQ(parsed_v2.motions[0].group, "Idle");
+    EXPECT_TRUE(parsed_v2.motions[0].has_sound);
+    EXPECT_EQ(parsed_v2.expressions[0].name, "Shy");
+    ASSERT_EQ(parsed_v2.parameter_groups.size(), 1u);
+    EXPECT_EQ(parsed_v2.parameter_groups[0].ids.size(), 2u);
+}
+
+TEST(Live2DAssetTest, ImportsTypedAnimationProductV2)
+{
+    const std::filesystem::path root = MakeCharacterizationRoot();
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(root, cleanup_error);
+
+    const std::filesystem::path model_dir = root / "live2d" / "probe";
+    std::filesystem::create_directories(model_dir);
+    const std::filesystem::path hiyori =
+        kpengine::project_root / "asset" / "live2d" / "hiyori_pro" / "runtime";
+    CopyFile(hiyori / "hiyori_pro_t11.moc3", model_dir / "probe.moc3");
+    CopyFile(hiyori / "hiyori_pro_t11.2048" / "texture_00.png",
+             model_dir / "probe.2048" / "texture_00.png");
+    WriteFile(model_dir / "motion" / "alpha_00.motion3.json", kMinimalMotion3);
+    WriteFile(model_dir / "motion" / "alpha_01.motion3.json", kMinimalMotion3);
+    WriteFile(model_dir / "motion" / "beta_00.motion3.json", kMinimalMotion3);
+    WriteFile(model_dir / "expressions" / "shy.exp3.json",
+              R"({"Type":"Live2D Expression","Parameters":[]})");
+    WriteFile(model_dir / "expressions" / "angry.exp3.json",
+              R"({"Type":"Live2D Expression","Parameters":[]})");
+    WriteFile(model_dir / "sound" / "alpha_00.wav", "RIFFprobe");
+    WriteFile(model_dir / "probe.model3.json", kMotionAndExpressionModel3);
+
+    kpengine::asset::ImportProviderRegistry registry;
+    std::string diagnostic;
+    ASSERT_TRUE(kpengine::live2d::RegisterLive2DImporters(registry, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(registry.Seal(diagnostic)) << diagnostic;
+    kpengine::asset::ImportProviderRequest request{};
+    request.asset_root = root;
+    request.archive_root = root / ".archive";
+    request.source_path = "live2d/probe/probe.model3.json";
+
+    const auto result = registry.Execute(request, {}, diagnostic);
+    ASSERT_NE(result.product, nullptr) << result.diagnostic;
+    const auto product = std::dynamic_pointer_cast<
+        kpengine::asset::TypedImportProduct<
+            kpengine::live2d::Live2DImportProduct,
+            kpengine::asset::ImportProviderKind::Custom>>(result.product);
+    ASSERT_NE(product, nullptr);
+    EXPECT_EQ(product->value.product.product_version, 2u);
+    ASSERT_EQ(product->value.product.motions.size(), 3u);
+    EXPECT_EQ(product->value.product.motions[0].group, "Alpha");
+    EXPECT_TRUE(product->value.product.motions[0].has_fade_in);
+    EXPECT_TRUE(product->value.product.motions[0].has_sound);
+    EXPECT_FALSE(product->value.product.motions[1].has_fade_in);
+    ASSERT_EQ(product->value.product.expressions.size(), 2u);
+    EXPECT_EQ(product->value.product.expressions[0].name, "Shy");
+    ASSERT_EQ(product->value.product.parameter_groups.size(), 2u);
+    EXPECT_EQ(product->value.product.parameter_groups[0].name, "LipSync");
+    EXPECT_TRUE(product->value.product.optional_chunks.empty());
+
+    std::error_code error;
+    std::filesystem::remove_all(root, error);
+}
+
 TEST(Live2DAssetTest, CharacterizesV1AnimationMetadataLoss)
 {
     const std::filesystem::path root = MakeCharacterizationRoot();
@@ -333,16 +432,13 @@ TEST(Live2DAssetTest, ResolvesExpressionEntriesByFileNotByName)
             kpengine::asset::ImportProviderKind::Custom>>(result.product);
     ASSERT_NE(product, nullptr);
 
-    std::vector<std::string> roles;
-    for (const kpengine::live2d::Live2DOptionalChunk &chunk :
-         product->value.product.optional_chunks)
-    {
-        roles.push_back(chunk.name);
-    }
+    EXPECT_EQ(product->value.product.product_version, 2u);
+    EXPECT_EQ(product->value.product.expressions.size(), 1u);
+    EXPECT_EQ(product->value.product.expressions[0].name, "Shy");
+    EXPECT_TRUE(product->value.product.optional_chunks.empty());
     // Exactly one chunk, named for the reference position and not for the
     // expression. A "Name"-derived chunk would appear here as
     // 'Expressions/0/Name'.
-    EXPECT_EQ(roles, (std::vector<std::string>{"Expressions/0/File"}));
 
     std::error_code cleanup_after_test;
     std::filesystem::remove_all(root, cleanup_after_test);
