@@ -27,6 +27,7 @@ namespace kpengine::live2d
         constexpr uint32_t kConstantsBinding = 0u;
         constexpr uint32_t kTextureBinding = 1u;
         constexpr uint32_t kMaskAtlasBinding = 2u;
+        constexpr float kViewerCharacterFill = 0.80f;
         constexpr float kViewerCharacterWidthScale = 1.25f;
 
         asset::ShaderProgramResource *LoadProgram(
@@ -57,7 +58,8 @@ namespace kpengine::live2d
             return shader && shader->data ? shader->data.get() : nullptr;
         }
 
-        std::array<float, 16> FitTransform(const Live2DFrameSnapshot &snapshot,
+        std::array<float, 16> FitTransform(const Live2DStaticModelData &static_data,
+                                            const Live2DFrameSnapshot &snapshot,
                                             const uint32_t width,
                                             const uint32_t height)
         {
@@ -66,13 +68,36 @@ namespace kpengine::live2d
             Live2DVector2 maximum{std::numeric_limits<float>::lowest(),
                                   std::numeric_limits<float>::lowest()};
             bool has_position = false;
-            for (const Live2DVector2 position : snapshot.positions)
+            const std::size_t drawable_count = std::min(
+                static_data.drawables.size(), snapshot.drawables.size());
+            for (std::size_t drawable_index = 0u;
+                 drawable_index < drawable_count; ++drawable_index)
             {
-                minimum.x = std::min(minimum.x, position.x);
-                minimum.y = std::min(minimum.y, position.y);
-                maximum.x = std::max(maximum.x, position.x);
-                maximum.y = std::max(maximum.y, position.y);
-                has_position = true;
+                const Live2DDrawableState &state =
+                    snapshot.drawables[drawable_index];
+                const Live2DDrawableStatic &drawable =
+                    static_data.drawables[drawable_index];
+                if (!state.visible || state.opacity <= 0.0f)
+                {
+                    continue;
+                }
+                const std::size_t first_vertex = drawable.vertex_offset;
+                const std::size_t vertex_count = drawable.vertex_count;
+                if (first_vertex > snapshot.positions.size() ||
+                    vertex_count > snapshot.positions.size() - first_vertex)
+                {
+                    continue;
+                }
+                for (std::size_t vertex = 0u; vertex < vertex_count; ++vertex)
+                {
+                    const Live2DVector2 position =
+                        snapshot.positions[first_vertex + vertex];
+                    minimum.x = std::min(minimum.x, position.x);
+                    minimum.y = std::min(minimum.y, position.y);
+                    maximum.x = std::max(maximum.x, position.x);
+                    maximum.y = std::max(maximum.y, position.y);
+                    has_position = true;
+                }
             }
             if (!has_position)
             {
@@ -87,8 +112,11 @@ namespace kpengine::live2d
             const float extent_y = std::max(maximum.y - minimum.y, 1.0e-4f);
             const float aspect = static_cast<float>(width) /
                                  static_cast<float>(height);
-            const float scale = std::min(1.75f / extent_y,
-                                         1.75f * aspect / extent_x);
+            const float max_ndc_extent = 2.0f * kViewerCharacterFill;
+            const float scale = std::min(
+                max_ndc_extent / extent_y,
+                max_ndc_extent * aspect /
+                    (extent_x * kViewerCharacterWidthScale));
             return {scale * kViewerCharacterWidthScale, 0.0f, 0.0f, 0.0f,
                     0.0f, scale, 0.0f, 0.0f,
                     0.0f, 0.0f, 1.0f, 0.0f,
@@ -529,8 +557,8 @@ namespace kpengine::live2d
             return false;
         }
         Live2DRenderPlanOptions options{};
-        options.model_transform = FitTransform(snapshot, proxy_.output_width,
-                                               proxy_.output_height);
+        options.model_transform = FitTransform(
+            static_data_, snapshot, proxy_.output_width, proxy_.output_height);
         options.viewport = {0.0f, 0.0f,
                             static_cast<float>(proxy_.output_width),
                             static_cast<float>(proxy_.output_height), 0.0f, 1.0f};
