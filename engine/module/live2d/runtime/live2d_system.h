@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 
 #include "asset/asset.h"
 #include "live2d_cubism_lifecycle.h"
@@ -33,6 +34,13 @@ namespace kpengine::live2d
         bool IsInitialized() const noexcept;
         std::unique_ptr<Live2DModelInstance> CreateInstance(
             const asset::AssetID &asset_id);
+        std::unique_ptr<Live2DModelInstance> CreateInstance(
+            const asset::AssetID &asset_id,
+            const Live2DSecondaryBehaviorConfig &behavior_config);
+        std::unique_ptr<Live2DModelInstance> CreateInstance(
+            const asset::AssetID &asset_id,
+            const Live2DSecondaryBehaviorConfig &behavior_config,
+            std::string &diagnostic);
         CubismLifecycle& Cubism() noexcept { return cubism_; }
         const CubismLifecycle& Cubism() const noexcept { return cubism_; }
 

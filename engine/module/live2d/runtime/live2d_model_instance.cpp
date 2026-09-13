@@ -1,5 +1,6 @@
 #include "live2d_model_instance.h"
 
+#include <algorithm>
 #include <cmath>
 #include <exception>
 #include <limits>
@@ -22,7 +23,11 @@
 #include "Motion/CubismMotionQueueManager.hpp"
 #include "Type/csmVector.hpp"
 #include "Model/CubismModel.hpp"
+#include "Effect/CubismBreath.hpp"
+#include "Effect/CubismLook.hpp"
 #include "Effect/CubismPose.hpp"
+#include "Math/CubismTargetPoint.hpp"
+#include "Physics/CubismPhysics.hpp"
 #include "live2d_cubism_lifecycle.h"
 #include "live2d_model_resource.h"
 
@@ -49,7 +54,11 @@ namespace kpengine::live2d
         using Live2D::Cubism::Framework::CubismMotionManager;
         using Live2D::Cubism::Framework::CubismMoc;
         using Live2D::Cubism::Framework::CubismModel;
+        using Live2D::Cubism::Framework::CubismBreath;
+        using Live2D::Cubism::Framework::CubismLook;
+        using Live2D::Cubism::Framework::CubismPhysics;
         using Live2D::Cubism::Framework::CubismPose;
+        using Live2D::Cubism::Framework::CubismTargetPoint;
 
         using Live2D::Cubism::Core::csmAlphaBlendType_Over;
         using Live2D::Cubism::Core::csmColorBlendType_Add;
@@ -131,6 +140,69 @@ namespace kpengine::live2d
             }
         };
 
+        struct CubismBreathDeleter final
+        {
+            void operator()(CubismBreath *breath) const noexcept
+            {
+                if (breath != nullptr)
+                {
+                    CubismBreath::Delete(breath);
+                }
+            }
+        };
+
+        struct CubismLookDeleter final
+        {
+            void operator()(CubismLook *look) const noexcept
+            {
+                if (look != nullptr)
+                {
+                    CubismLook::Delete(look);
+                }
+            }
+        };
+
+        struct CubismPhysicsDeleter final
+        {
+            void operator()(CubismPhysics *physics) const noexcept
+            {
+                if (physics != nullptr)
+                {
+                    CubismPhysics::Delete(physics);
+                }
+            }
+        };
+
+        struct DeterministicBlinkState final
+        {
+            enum class Phase
+            {
+                First,
+                Interval,
+                Closing,
+                Closed,
+                Opening
+            };
+
+            Phase phase = Phase::First;
+            std::uint64_t random_state = 1u;
+            float user_time_seconds = 0.0f;
+            float next_blink_time_seconds = 0.0f;
+            float phase_start_time_seconds = 0.0f;
+
+            float NextUnit() noexcept
+            {
+                random_state = random_state * 6364136223846793005ull + 1442695040888963407ull;
+                const std::uint32_t value = static_cast<std::uint32_t>(random_state >> 32u);
+                return static_cast<float>(value) / 4294967295.0f;
+            }
+
+            float NextBlinkTime(const float interval_seconds) noexcept
+            {
+                return user_time_seconds +
+                       (NextUnit() * (2.0f * interval_seconds - 1.0f));
+            }
+        };
         bool IsSdkFloatTime(const double value) noexcept
         {
             return std::isfinite(value) && value >= 0.0 &&
@@ -138,6 +210,64 @@ namespace kpengine::live2d
                                  std::numeric_limits<csmFloat32>::max());
         }
 
+        bool ValidateSecondaryBehaviorConfig(
+            const Live2DSecondaryBehaviorConfig &config,
+            std::string &diagnostic) noexcept
+        {
+            const Live2DBlinkSettings &blink = config.blink;
+            if (!std::isfinite(blink.interval_seconds) ||
+                !std::isfinite(blink.closing_seconds) ||
+                !std::isfinite(blink.closed_seconds) ||
+                !std::isfinite(blink.opening_seconds) ||
+                blink.interval_seconds <= 0.0f || blink.closing_seconds <= 0.0f ||
+                blink.closed_seconds <= 0.0f || blink.opening_seconds <= 0.0f)
+            {
+                diagnostic = "Live2D blink settings must be finite and positive";
+                return false;
+            }
+            return true;
+        }
+
+        bool ValidateFrameInput(const Live2DFrameInput &input,
+                                const float playback_time_seconds,
+                                std::string &diagnostic) noexcept
+        {
+            if (!std::isfinite(input.delta_seconds) || input.delta_seconds < 0.0f ||
+                input.delta_seconds > std::numeric_limits<float>::max() -
+                                          playback_time_seconds ||
+                !std::isfinite(input.gaze_target.x) ||
+                !std::isfinite(input.gaze_target.y) ||
+                !std::isfinite(input.gravity.x) || !std::isfinite(input.gravity.y) ||
+                !std::isfinite(input.wind.x) || !std::isfinite(input.wind.y))
+            {
+                diagnostic = "Live2D frame delta and vectors must be finite and non-negative";
+                return false;
+            }
+            if (input.gaze_target.x < -1.0f || input.gaze_target.x > 1.0f ||
+                input.gaze_target.y < -1.0f || input.gaze_target.y > 1.0f)
+            {
+                diagnostic = "Live2D gaze target must be within [-1, 1]";
+                return false;
+            }
+            return true;
+        }
+        bool HasModelParameter(CubismModel &model,
+                               const CubismIdHandle id) noexcept
+        {
+            if (id == nullptr)
+            {
+                return false;
+            }
+            const csmInt32 parameter_count = model.GetParameterCount();
+            for (csmInt32 index = 0; index < parameter_count; ++index)
+            {
+                if (model.GetParameterId(static_cast<csmUint32>(index)) == id)
+                {
+                    return true;
+                }
+            }
+            return false;
+        }
         bool BuildEffectIds(const Live2DProductData &product,
                             const std::string_view group_name,
                             csmVector<CubismIdHandle> &ids,
@@ -406,6 +536,9 @@ namespace kpengine::live2d
         using MotionPtr =
             std::unique_ptr<ACubismMotion, CubismMotionDeleter>;
         using PosePtr = std::unique_ptr<CubismPose, CubismPoseDeleter>;
+        using BreathPtr = std::unique_ptr<CubismBreath, CubismBreathDeleter>;
+        using LookPtr = std::unique_ptr<CubismLook, CubismLookDeleter>;
+        using PhysicsPtr = std::unique_ptr<CubismPhysics, CubismPhysicsDeleter>;
         using QueueHandle =
             Live2D::Cubism::Framework::CubismMotionQueueEntryHandle;
 
@@ -445,6 +578,13 @@ namespace kpengine::live2d
         CubismMoc *moc{};
         CubismModel *model{};
         PosePtr pose;
+        BreathPtr breath;
+        LookPtr look;
+        std::unique_ptr<CubismTargetPoint> target_point;
+        PhysicsPtr physics;
+        Live2DSecondaryBehaviorConfig behavior_config{};
+        csmVector<CubismIdHandle> eye_blink_ids;
+        DeterministicBlinkState blink;
         Live2DStaticModelData static_data{};
         std::vector<MotionClip> motion_clips;
         std::vector<ExpressionClip> expression_clips;
@@ -458,6 +598,7 @@ namespace kpengine::live2d
         std::uint64_t instance_serial = 0u;
         std::uint64_t next_token_sequence = 1u;
         std::uint64_t frame_sequence = 0u;
+        std::uint64_t update_sequence = 0u;
         float playback_time_seconds = 0.0f;
         bool expression_active = false;
         bool expression_clearing = false;
@@ -478,6 +619,10 @@ namespace kpengine::live2d
             expression_manager.reset();
             expression_clips.clear();
             motion_clips.clear();
+            physics.reset();
+            target_point.reset();
+            look.reset();
+            breath.reset();
             pose.reset();
             if (model != nullptr && moc != nullptr)
             {
@@ -536,10 +681,72 @@ namespace kpengine::live2d
             model->SaveParameters();
         }
 
-        void ApplyPreExpressionContributors(const float delta_seconds) noexcept
+        void ApplyPreExpressionContributors(const float delta_seconds,
+                                             const bool motion_updated,
+                                             std::uint32_t &behavior_mask) noexcept
         {
-            static_cast<void>(delta_seconds);
-            // L2D7 automatic blink runs here, before expression evaluation.
+            if (!behavior_config.blink.enabled || motion_updated ||
+                eye_blink_ids.GetSize() == 0u)
+            {
+                return;
+            }
+
+            blink.user_time_seconds += delta_seconds;
+            float parameter_value = 1.0f;
+            switch (blink.phase)
+            {
+            case DeterministicBlinkState::Phase::Closing:
+                parameter_value = 1.0f -
+                                  ((blink.user_time_seconds -
+                                    blink.phase_start_time_seconds) /
+                                   behavior_config.blink.closing_seconds);
+                if (parameter_value <= 0.0f)
+                {
+                    parameter_value = 0.0f;
+                    blink.phase = DeterministicBlinkState::Phase::Closed;
+                    blink.phase_start_time_seconds = blink.user_time_seconds;
+                }
+                break;
+            case DeterministicBlinkState::Phase::Closed:
+                parameter_value = 0.0f;
+                if (blink.user_time_seconds - blink.phase_start_time_seconds >=
+                    behavior_config.blink.closed_seconds)
+                {
+                    blink.phase = DeterministicBlinkState::Phase::Opening;
+                    blink.phase_start_time_seconds = blink.user_time_seconds;
+                }
+                break;
+            case DeterministicBlinkState::Phase::Opening:
+                parameter_value =
+                    (blink.user_time_seconds - blink.phase_start_time_seconds) /
+                    behavior_config.blink.opening_seconds;
+                if (parameter_value >= 1.0f)
+                {
+                    parameter_value = 1.0f;
+                    blink.phase = DeterministicBlinkState::Phase::Interval;
+                    blink.next_blink_time_seconds =
+                        blink.NextBlinkTime(behavior_config.blink.interval_seconds);
+                }
+                break;
+            case DeterministicBlinkState::Phase::Interval:
+                if (blink.user_time_seconds >= blink.next_blink_time_seconds)
+                {
+                    blink.phase = DeterministicBlinkState::Phase::Closing;
+                    blink.phase_start_time_seconds = blink.user_time_seconds;
+                }
+                break;
+            case DeterministicBlinkState::Phase::First:
+                blink.phase = DeterministicBlinkState::Phase::Interval;
+                blink.next_blink_time_seconds =
+                    blink.NextBlinkTime(behavior_config.blink.interval_seconds);
+                break;
+            }
+            parameter_value = std::clamp(parameter_value, 0.0f, 1.0f);
+            for (csmUint32 index = 0u; index < eye_blink_ids.GetSize(); ++index)
+            {
+                model->SetParameterValue(eye_blink_ids[index], parameter_value);
+            }
+            behavior_mask |= kLive2DBehaviorBlink;
         }
 
         void UpdateExpressionContribution(const float delta_seconds) noexcept
@@ -552,12 +759,35 @@ namespace kpengine::live2d
             }
         }
 
-        void ApplyPostExpressionContributors(const float delta_seconds) noexcept
+        void ApplyPostExpressionContributors(const Live2DFrameInput &input,
+                                              const float delta_seconds,
+                                              std::uint32_t &behavior_mask) noexcept
         {
-            if (pose != nullptr)
+            if (look != nullptr && target_point != nullptr)
             {
-                pose->UpdateParameters(
-                    model, static_cast<csmFloat32>(delta_seconds));
+                target_point->Set(input.gaze_target.x, input.gaze_target.y);
+                target_point->Update(static_cast<csmFloat32>(delta_seconds));
+                look->UpdateParameters(model, target_point->GetX(), target_point->GetY());
+                behavior_mask |= kLive2DBehaviorGaze;
+            }
+            if (breath != nullptr)
+            {
+                breath->UpdateParameters(model, static_cast<csmFloat32>(delta_seconds));
+                behavior_mask |= kLive2DBehaviorBreath;
+            }
+            if (physics != nullptr)
+            {
+                CubismPhysics::Options options{};
+                options.Gravity = {input.gravity.x, input.gravity.y};
+                options.Wind = {input.wind.x, input.wind.y};
+                physics->SetOptions(options);
+                physics->Evaluate(model, static_cast<csmFloat32>(delta_seconds));
+                behavior_mask |= kLive2DBehaviorPhysics;
+            }
+            if (behavior_config.pose_enabled && pose != nullptr)
+            {
+                pose->UpdateParameters(model, static_cast<csmFloat32>(delta_seconds));
+                behavior_mask |= kLive2DBehaviorPose;
             }
         }
 
@@ -662,13 +892,21 @@ namespace kpengine::live2d
         std::vector<std::shared_ptr<const asset::TextureResource>>
             texture_dependencies,
         const std::uint64_t instance_serial,
-        CubismLifecycle &lifecycle)
+        const Live2DSecondaryBehaviorConfig &behavior_config,
+        CubismLifecycle &lifecycle,
+        std::string &diagnostic)
     {
+        diagnostic.clear();
+        if (!ValidateSecondaryBehaviorConfig(behavior_config, diagnostic))
+        {
+            return nullptr;
+        }
         if (resource == nullptr || instance_serial == 0u ||
             !lifecycle.IsInitialized() ||
             resource->Product().moc_bytes.empty() ||
             texture_dependencies.size() != resource->Product().textures.size())
         {
+            diagnostic = "Live2D model instance creation arguments are invalid";
             return nullptr;
         }
 
@@ -715,7 +953,7 @@ namespace kpengine::live2d
                 }
             }
         }
-        if (pose_bytes != nullptr)
+        if (behavior_config.pose_enabled && pose_bytes != nullptr)
         {
             if (pose_bytes->size() >
                 static_cast<std::size_t>(std::numeric_limits<csmSizeInt>::max()))
@@ -731,13 +969,16 @@ namespace kpengine::live2d
             }
         }
 
-        std::string diagnostic;
         if (!BuildStaticModelData(*impl->model, texture_dependencies.size(),
                                   impl->static_data, diagnostic))
         {
             return nullptr;
         }
         if (!BuildClipLibrary(*resource, *impl, diagnostic))
+        {
+            return nullptr;
+        }
+        if (!BuildSecondaryBehavior(*resource, behavior_config, *impl, diagnostic))
         {
             return nullptr;
         }
@@ -752,7 +993,7 @@ namespace kpengine::live2d
             impl->callback_events.reserve(Impl::kMaxPendingEvents);
             impl->motion_manager->SetEventCallback(&Impl::CaptureMotionEvent, impl.get());
             impl->expression_manager->SetEventCallback(&Impl::CaptureMotionEvent, impl.get());
-            if (impl->pose != nullptr)
+            if (behavior_config.pose_enabled && impl->pose != nullptr)
             {
                 impl->pose->UpdateParameters(impl->model, 0.0f);
             }
@@ -839,7 +1080,23 @@ namespace kpengine::live2d
         {
             return false;
         }
-
+        for (csmUint32 index = 0u; index < eye_blink_ids.GetSize(); ++index)
+        {
+            if (!HasModelParameter(*impl.model, eye_blink_ids[index]))
+            {
+                diagnostic = "Live2D EyeBlink references a missing model parameter";
+                return false;
+            }
+            impl.eye_blink_ids.PushBack(eye_blink_ids[index]);
+        }
+        for (csmUint32 index = 0u; index < lip_sync_ids.GetSize(); ++index)
+        {
+            if (!HasModelParameter(*impl.model, lip_sync_ids[index]))
+            {
+                diagnostic = "Live2D LipSync references a missing model parameter";
+                return false;
+            }
+        }
         try
         {
             impl.motion_clips.reserve(product.motions.size());
@@ -929,6 +1186,124 @@ namespace kpengine::live2d
         return true;
     }
 
+    bool Live2DModelInstance::BuildSecondaryBehavior(
+        const Live2DModelResource &resource,
+        const Live2DSecondaryBehaviorConfig &config,
+        Impl &impl,
+        std::string &diagnostic)
+    {
+        diagnostic.clear();
+        impl.behavior_config = config;
+        impl.blink.random_state = config.blink.seed == 0u ? 1u : config.blink.seed;
+
+        try
+        {
+            const Live2DProductData &product = resource.Product();
+            if (config.physics_enabled && product.product_version >= 3u &&
+                !product.secondary_behavior.physics_bytes.empty())
+            {
+                const std::vector<std::byte> &bytes =
+                    product.secondary_behavior.physics_bytes;
+                if (bytes.size() >
+                    static_cast<std::size_t>(std::numeric_limits<csmSizeInt>::max()))
+                {
+                    diagnostic = "Live2D physics data exceeds the Cubism size limit";
+                    return false;
+                }
+                impl.physics.reset(CubismPhysics::Create(
+                    reinterpret_cast<const csmByte *>(bytes.data()),
+                    static_cast<csmSizeInt>(bytes.size())));
+                if (impl.physics == nullptr)
+                {
+                    diagnostic = "Live2D physics data could not be parsed";
+                    return false;
+                }
+            }
+
+            if (!config.breath_enabled && !config.gaze_enabled)
+            {
+                return true;
+            }
+            auto *id_manager = CubismFramework::GetIdManager();
+            if (id_manager == nullptr)
+            {
+                diagnostic = "Live2D Cubism ID manager is unavailable";
+                return false;
+            }
+
+            if (config.breath_enabled)
+            {
+                Impl::BreathPtr breath(CubismBreath::Create());
+                if (breath == nullptr)
+                {
+                    diagnostic = "Live2D breath controller could not be created";
+                    return false;
+                }
+                csmVector<CubismBreath::BreathParameterData> parameters;
+                const auto add_parameter = [&](const char *id_text,
+                                               const float offset,
+                                               const float peak,
+                                               const float cycle,
+                                               const float weight) {
+                    const CubismIdHandle id = id_manager->GetId(id_text);
+                    if (HasModelParameter(*impl.model, id))
+                    {
+                        parameters.PushBack({id, offset, peak, cycle, weight});
+                    }
+                };
+                add_parameter("ParamAngleX", 0.0f, 15.0f, 6.5345f, 0.5f);
+                add_parameter("ParamAngleY", 0.0f, 8.0f, 3.5345f, 0.5f);
+                add_parameter("ParamAngleZ", 0.0f, 10.0f, 5.5345f, 0.5f);
+                add_parameter("ParamBodyAngleX", 0.0f, 4.0f, 15.5345f, 0.5f);
+                add_parameter("ParamBreath", 0.5f, 0.5f, 3.2345f, 0.5f);
+                if (parameters.GetSize() != 0u)
+                {
+                    breath->SetParameters(parameters);
+                    impl.breath = std::move(breath);
+                }
+            }
+
+            if (config.gaze_enabled)
+            {
+                Impl::LookPtr look(CubismLook::Create());
+                if (look == nullptr)
+                {
+                    diagnostic = "Live2D gaze controller could not be created";
+                    return false;
+                }
+                csmVector<CubismLook::LookParameterData> parameters;
+                const auto add_parameter = [&](const char *id_text,
+                                               const float factor_x,
+                                               const float factor_y,
+                                               const float factor_xy) {
+                    const CubismIdHandle id = id_manager->GetId(id_text);
+                    if (HasModelParameter(*impl.model, id))
+                    {
+                        parameters.PushBack({id, factor_x, factor_y, factor_xy});
+                    }
+                };
+                add_parameter("ParamAngleX", 30.0f, 0.0f, 0.0f);
+                add_parameter("ParamAngleY", 0.0f, 30.0f, 0.0f);
+                add_parameter("ParamAngleZ", 0.0f, 0.0f, -30.0f);
+                add_parameter("ParamBodyAngleX", 10.0f, 0.0f, 0.0f);
+                add_parameter("ParamEyeBallX", 1.0f, 0.0f, 0.0f);
+                add_parameter("ParamEyeBallY", 0.0f, 1.0f, 0.0f);
+                if (parameters.GetSize() != 0u)
+                {
+                    look->SetParameters(parameters);
+                    impl.look = std::move(look);
+                    impl.target_point = std::make_unique<CubismTargetPoint>();
+                }
+            }
+        }
+        catch (const std::exception &error)
+        {
+            diagnostic = std::string("Live2D secondary behavior construction failed: ") +
+                         error.what();
+            return false;
+        }
+        return true;
+    }
     const Live2DModelResource &Live2DModelInstance::Resource() const noexcept
     {
         return *resource_;
@@ -991,14 +1366,11 @@ namespace kpengine::live2d
         {
             return false;
         }
-        if (impl_->pose != nullptr)
-        {
-            impl_->pose->UpdateParameters(impl_->model, 0.0f);
-        }
-        impl_->model->Update();
-        return true;
+        Live2DFrameInput input{};
+        Live2DFrameUpdateResult result{};
+        std::string diagnostic;
+        return AdvanceFrame(input, result, diagnostic);
     }
-
     bool Live2DModelInstance::PlayMotion(
         const Live2DMotionKey &key, const std::int32_t priority,
         const Live2DMotionStartMode mode, Live2DPlaybackToken &token,
@@ -1260,8 +1632,8 @@ namespace kpengine::live2d
         return true;
     }
 
-    bool Live2DModelInstance::AdvancePlayback(
-        const float delta_seconds, Live2DPlaybackUpdateResult &result,
+    bool Live2DModelInstance::AdvanceFrame(
+        const Live2DFrameInput &input, Live2DFrameUpdateResult &result,
         std::string &diagnostic)
     {
         diagnostic.clear();
@@ -1271,18 +1643,17 @@ namespace kpengine::live2d
             diagnostic = "Live2D model instance is invalid";
             return false;
         }
-        if (!std::isfinite(delta_seconds) || delta_seconds < 0.0f ||
-            delta_seconds > std::numeric_limits<float>::max() -
-                                impl_->playback_time_seconds)
+        if (!ValidateFrameInput(input, impl_->playback_time_seconds, diagnostic))
         {
-            diagnostic = "Live2D playback delta must be finite and non-negative";
             return false;
         }
+        const float delta_seconds = input.delta_seconds;
 
         std::vector<Live2DPlaybackEvent> events = std::move(impl_->pending_events);
         impl_->pending_events.clear();
         impl_->callback_events.clear();
         impl_->callback_overflow = false;
+        std::uint32_t behavior_mask = 0u;
         try
         {
             // These vectors are reserved at instance creation. Keep the event
@@ -1303,14 +1674,19 @@ namespace kpengine::live2d
                 throw std::runtime_error("playback event storage failed");
             }
             impl_->SavePrimaryCheckpoint();
-            impl_->ApplyPreExpressionContributors(delta_seconds);
+            impl_->ApplyPreExpressionContributors(delta_seconds, motion_updated, behavior_mask);
             impl_->UpdateExpressionContribution(delta_seconds);
             if (impl_->callback_overflow)
             {
                 throw std::runtime_error("playback event storage failed");
             }
-            impl_->ApplyPostExpressionContributors(delta_seconds);
+            impl_->ApplyPostExpressionContributors(input, delta_seconds, behavior_mask);
             impl_->UpdateModel();
+            if (impl_->update_sequence == std::numeric_limits<std::uint64_t>::max())
+            {
+                throw std::runtime_error("Live2D update sequence is exhausted");
+            }
+            ++impl_->update_sequence;
 
             for (Live2DPlaybackEvent &event : impl_->callback_events)
             {
@@ -1367,18 +1743,35 @@ namespace kpengine::live2d
             {
                 impl_->pending_parameter_dirty[index] = false;
             }
-            result.events = std::move(events);
-            result.motion_parameters_updated = motion_updated;
+            result.playback.events = std::move(events);
+            result.playback.motion_parameters_updated = motion_updated;
+            result.update_sequence = impl_->update_sequence;
+            result.applied_behavior_mask = behavior_mask;
             return true;
         }
         catch (const std::exception &error)
         {
             impl_->pending_events = std::move(events);
-            diagnostic = std::string("Live2D playback update failed: ") + error.what();
+            diagnostic = std::string("Live2D frame update failed: ") + error.what();
             return false;
         }
     }
 
+    bool Live2DModelInstance::AdvancePlayback(
+        const float delta_seconds, Live2DPlaybackUpdateResult &result,
+        std::string &diagnostic)
+    {
+        Live2DFrameInput input{};
+        input.delta_seconds = delta_seconds;
+        Live2DFrameUpdateResult frame_result{};
+        if (!AdvanceFrame(input, frame_result, diagnostic))
+        {
+            result = {};
+            return false;
+        }
+        result = std::move(frame_result.playback);
+        return true;
+    }
     const std::vector<std::shared_ptr<const asset::TextureResource>> &
     Live2DModelInstance::TextureDependencies() const noexcept
     {

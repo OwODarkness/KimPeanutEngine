@@ -58,9 +58,27 @@ namespace kpengine::live2d
     std::unique_ptr<Live2DModelInstance> Live2DSystem::CreateInstance(
         const asset::AssetID &asset_id)
     {
+        return CreateInstance(asset_id, Live2DSecondaryBehaviorConfig{});
+    }
+
+    std::unique_ptr<Live2DModelInstance> Live2DSystem::CreateInstance(
+        const asset::AssetID &asset_id,
+        const Live2DSecondaryBehaviorConfig &behavior_config)
+    {
+        std::string diagnostic;
+        return CreateInstance(asset_id, behavior_config, diagnostic);
+    }
+
+    std::unique_ptr<Live2DModelInstance> Live2DSystem::CreateInstance(
+        const asset::AssetID &asset_id,
+        const Live2DSecondaryBehaviorConfig &behavior_config,
+        std::string &diagnostic)
+    {
+        diagnostic.clear();
         if (!cubism_.IsInitialized() || !asset_id.IsValid() ||
             asset_id.type != kLive2DModelAssetType)
         {
+            diagnostic = "Live2D system or asset ID is invalid";
             return nullptr;
         }
 
@@ -68,19 +86,21 @@ namespace kpengine::live2d
         asset::Asset *asset = manager.GetAsset(asset_id);
         if (asset == nullptr)
         {
+            diagnostic = "Live2D asset was not found";
             return nullptr;
         }
         const std::shared_ptr<Live2DModelResource> resource =
             asset->GetResource<Live2DModelResource>();
         if (resource == nullptr)
         {
+            diagnostic = "Live2D asset resource is unavailable";
             return nullptr;
         }
 
-        const std::vector<asset::AssetID> dependencies =
-            asset->GetDependencies();
+        const std::vector<asset::AssetID> dependencies = asset->GetDependencies();
         if (dependencies.size() != resource->Product().textures.size())
         {
+            diagnostic = "Live2D texture dependency count does not match the product";
             return nullptr;
         }
         std::vector<std::shared_ptr<const asset::TextureResource>> textures;
@@ -90,12 +110,14 @@ namespace kpengine::live2d
             if (!dependency.IsValid() ||
                 dependency.type != asset::AssetType::KPAT_Texture)
             {
+                diagnostic = "Live2D texture dependency is invalid";
                 return nullptr;
             }
             const std::shared_ptr<asset::TextureResource> texture =
                 manager.GetResource<asset::TextureResource>(dependency);
             if (texture == nullptr || texture->data == nullptr)
             {
+                diagnostic = "Live2D texture dependency resource is unavailable";
                 return nullptr;
             }
             textures.push_back(std::shared_ptr<const asset::TextureResource>(
@@ -105,10 +127,12 @@ namespace kpengine::live2d
             AllocateInstanceSerial();
         if (!instance_serial.has_value())
         {
+            diagnostic = "Live2D instance serial space is exhausted";
             return nullptr;
         }
         return Live2DModelInstance::Create(
             std::shared_ptr<const Live2DModelResource>(std::move(resource)),
-            std::move(textures), *instance_serial, cubism_);
+            std::move(textures), *instance_serial, behavior_config, cubism_,
+            diagnostic);
     }
 }

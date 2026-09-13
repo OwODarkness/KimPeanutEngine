@@ -61,6 +61,45 @@ namespace kpengine::live2d
         bool motion_parameters_updated = false;
     };
 
+    struct Live2DBlinkSettings final
+    {
+        bool enabled = false;
+        std::uint64_t seed = 1u;
+        float interval_seconds = 4.0f;
+        float closing_seconds = 0.1f;
+        float closed_seconds = 0.05f;
+        float opening_seconds = 0.15f;
+    };
+
+    struct Live2DSecondaryBehaviorConfig final
+    {
+        Live2DBlinkSettings blink;
+        bool gaze_enabled = false;
+        bool breath_enabled = false;
+        bool physics_enabled = true;
+        bool pose_enabled = true;
+    };
+
+    struct Live2DFrameInput final
+    {
+        float delta_seconds = 0.0f;
+        Live2DVector2 gaze_target{};
+        Live2DVector2 gravity{0.0f, -1.0f};
+        Live2DVector2 wind{};
+    };
+
+    inline constexpr std::uint32_t kLive2DBehaviorBlink = 1u << 0u;
+    inline constexpr std::uint32_t kLive2DBehaviorGaze = 1u << 1u;
+    inline constexpr std::uint32_t kLive2DBehaviorBreath = 1u << 2u;
+    inline constexpr std::uint32_t kLive2DBehaviorPhysics = 1u << 3u;
+    inline constexpr std::uint32_t kLive2DBehaviorPose = 1u << 4u;
+
+    struct Live2DFrameUpdateResult final
+    {
+        Live2DPlaybackUpdateResult playback;
+        std::uint64_t update_sequence = 0u;
+        std::uint32_t applied_behavior_mask = 0u;
+    };
     // A per-owner mutable Cubism model built from one immutable Asset payload.
     // Cubism headers stay private to the implementation so the module's public
     // contract does not expose SDK allocation or framework types.
@@ -103,6 +142,9 @@ namespace kpengine::live2d
         bool AdvancePlayback(float delta_seconds,
                              Live2DPlaybackUpdateResult &result,
                              std::string &diagnostic);
+        bool AdvanceFrame(const Live2DFrameInput &input,
+                          Live2DFrameUpdateResult &result,
+                          std::string &diagnostic);
 
         const std::vector<std::shared_ptr<const asset::TextureResource>> &
         TextureDependencies() const noexcept;
@@ -124,11 +166,18 @@ namespace kpengine::live2d
             std::vector<std::shared_ptr<const asset::TextureResource>>
                 texture_dependencies,
             std::uint64_t instance_serial,
-            CubismLifecycle &lifecycle);
+            const Live2DSecondaryBehaviorConfig &behavior_config,
+            CubismLifecycle &lifecycle,
+            std::string &diagnostic);
 
         static bool BuildClipLibrary(const Live2DModelResource &resource,
                                       Impl &impl,
                                       std::string &diagnostic);
+
+        static bool BuildSecondaryBehavior(const Live2DModelResource &resource,
+                                            const Live2DSecondaryBehaviorConfig &config,
+                                            Impl &impl,
+                                            std::string &diagnostic);
 
         std::shared_ptr<const Live2DModelResource> resource_;
         std::vector<std::shared_ptr<const asset::TextureResource>>

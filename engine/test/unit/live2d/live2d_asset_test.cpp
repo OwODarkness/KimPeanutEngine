@@ -814,6 +814,53 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     EXPECT_EQ(playback_result.events[1].kind,
               kpengine::live2d::Live2DPlaybackEventKind::MotionCancelled);
 
+    kpengine::live2d::Live2DSecondaryBehaviorConfig behavior_config{};
+    behavior_config.blink.enabled = true;
+    behavior_config.blink.seed = 42u;
+    behavior_config.gaze_enabled = true;
+    behavior_config.breath_enabled = true;
+    behavior_config.physics_enabled = true;
+    behavior_config.pose_enabled = true;
+    std::string behavior_diagnostic;
+    auto behavior_first = system.CreateInstance(id, behavior_config,
+                                                behavior_diagnostic);
+    ASSERT_NE(behavior_first, nullptr) << behavior_diagnostic;
+    auto behavior_second = system.CreateInstance(id, behavior_config,
+                                                 behavior_diagnostic);
+    ASSERT_NE(behavior_second, nullptr) << behavior_diagnostic;
+
+    kpengine::live2d::Live2DFrameInput frame_input{};
+    frame_input.delta_seconds = 1.0f / 60.0f;
+    frame_input.gaze_target = {0.35f, -0.2f};
+    frame_input.gravity = {0.0f, -1.0f};
+    frame_input.wind = {0.1f, 0.0f};
+    kpengine::live2d::Live2DFrameUpdateResult behavior_first_result;
+    kpengine::live2d::Live2DFrameUpdateResult behavior_second_result;
+    ASSERT_TRUE(behavior_first->AdvanceFrame(frame_input, behavior_first_result,
+                                             behavior_diagnostic))
+        << behavior_diagnostic;
+    ASSERT_TRUE(behavior_second->AdvanceFrame(frame_input, behavior_second_result,
+                                              behavior_diagnostic))
+        << behavior_diagnostic;
+    EXPECT_EQ(behavior_first_result.update_sequence, 1u);
+    EXPECT_EQ(behavior_second_result.update_sequence, 1u);
+    EXPECT_EQ(behavior_first_result.applied_behavior_mask,
+              behavior_second_result.applied_behavior_mask);
+    EXPECT_NE(behavior_first_result.applied_behavior_mask &
+                  kpengine::live2d::kLive2DBehaviorBlink,
+              0u);
+    EXPECT_NE(behavior_first_result.applied_behavior_mask &
+                  kpengine::live2d::kLive2DBehaviorPhysics,
+              0u);
+    EXPECT_NE(behavior_first_result.applied_behavior_mask &
+                  kpengine::live2d::kLive2DBehaviorPose,
+              0u);
+
+    frame_input.gaze_target.x = 2.0f;
+    EXPECT_FALSE(behavior_first->AdvanceFrame(frame_input, behavior_first_result,
+                                              behavior_diagnostic));
+    EXPECT_NE(behavior_diagnostic.find("within [-1, 1]"), std::string::npos);
+    EXPECT_EQ(behavior_first_result.update_sequence, 0u);
     manager.UnRegisterAsset(id);
     EXPECT_EQ(manager.GetLiveAssetCount(kpengine::live2d::kLive2DModelAssetType), 0u);
     EXPECT_TRUE(first_instance->IsValid());
@@ -823,6 +870,8 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
         << extraction_diagnostic;
     EXPECT_EQ(second_frame.frame_sequence, 2u);
 
+    behavior_second.reset();
+    behavior_first.reset();
     second_instance.reset();
     first_instance.reset();
     system.Shutdown();
