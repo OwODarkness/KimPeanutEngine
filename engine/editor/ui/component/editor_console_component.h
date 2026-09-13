@@ -7,7 +7,7 @@
 #include <string>
 #include <vector>
 
-#include "editor/ui/component/editor_ui_component.h"
+#include "editor/ui/component/editor_window_component.h"
 #include "runtime/command/command_registry.h"
 #include "runtime/input/input_system.h"
 
@@ -15,14 +15,21 @@ struct ImFont;
 
 namespace kpengine::editor
 {
-    class EditorConsoleComponent final : public EditorUIComponent
+    // A window component so the tool row can host it as a tab: the row supplies
+    // Begin()/End() and owns visibility, and this class only draws its body.
+    class EditorConsoleComponent final : public EditorWindowComponent
     {
     public:
         EditorConsoleComponent(runtime::command::CommandRegistry *registry,
                                input::InputSystem *input_system, ImFont *code_font = nullptr);
         ~EditorConsoleComponent() override;
 
-        void Render() override;
+        // Per-frame upkeep without drawing. The tool row calls this for a console
+        // whose tab is closed, so deferred results are still drained while hidden —
+        // which the old Render() did unconditionally at its top.
+        void Pump();
+
+        void RenderContent() override;
 
     private:
         struct ConsoleState;
@@ -41,7 +48,6 @@ namespace kpengine::editor
         input::InputSystem::KeyListenerHandle key_listener_handle_ = 0;
         std::shared_ptr<ConsoleState> state_;
 
-        bool is_open_ = false;
         bool focus_input_ = false;
         int history_cursor_ = -1;
         std::array<char, 1024> input_buffer_{};

@@ -26,8 +26,10 @@ namespace kpengine::editor{
                 {
                     for (MenuItem &menu_item : menu.items)
                     {
+                        const bool checked =
+                            menu_item.is_selected ? menu_item.is_selected() : false;
                         if (ImGui::MenuItem(menu_item.title.c_str(), menu_item.short_cut.c_str(),
-                                            false, menu_item.enabled) && menu_item.on_click)
+                                            checked, menu_item.enabled) && menu_item.on_click)
                         {
                             menu_item.on_click();
                         }

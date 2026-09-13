@@ -27,11 +27,13 @@
 - [ ] **[AB1.2 — Implement the Asset Browser](.plan/AB1.2.md).**
 
   - [ ] Add one Editor-owned model consuming only snapshots.
-  - [ ] Add a movable/resizable panel with navigation, readable rows, and a status footer.
+  - [ ] Register the browser as a tab in the Editor tool row (ED1) with navigation,
+    readable rows, and a status footer. Movability comes from the row's isolate, not
+    from the browser owning window geometry.
   - [ ] Draw cross-backend file/folder/type icons beside readable Name and Type text.
   - [ ] Show State, Size, and full paths for archive, loaded, and runtime-only nodes.
   - [ ] Add case-insensitive search, type/state filters, deterministic sorting, selection, and explicit refresh.
-  - [ ] Add **View > Asset Browser** with a live checkmark synchronized with title-bar close.
+  - [ ] Add **View > Asset Browser** to the existing View menu, with a live checkmark synchronized with the tab close.
   - [ ] Publish the selected stable key through the AB1.3 open-root callback seam;
     do not render an inert action before the viewer is bound.
   - [ ] Test search, filters, sorting, selection preservation, and refresh.

@@ -24,6 +24,12 @@
 |---|---|
 | [`deprecated/vulkan_backend.h/.cpp`](../../engine/runtime/graphics/backend/vulkan/deprecated/vulkan_backend.h) | The pre-Phase-1 fused backend, archived 2026-08-15. **Not in the build** — `Graphics/CMakeLists.txt` compiles the `VulkanDevice`-based reconstruction. Kept as the source reference for the rewrite; the line numbers in [vulkanbackend.md](graphics/vulkanbackend.md) point here. |
 
+## Compiled but never constructed
+
+| File | Problem |
+|---|---|
+| [`editor/ui/component/editor_container_component.h/.cpp`](../../engine/editor/ui/component/editor_container_component.cpp) | In the build (listed in `ui/component/CMakeLists.txt`) but constructed nowhere — no `make_unique`, no `AddComponent` call site, no test. Its `Render()` loops `for (int i = 0; i < items.size() - 1; i++)`, and `items.size()` is `size_t`, so an empty container underflows to `SIZE_MAX` and indexes out of bounds: a latent crash for whoever wires it up first. It is also a horizontal `SameLine` row container, not a tab host, so `ED1` built [`editor_tool_row_component`](../../engine/editor/ui/component/editor_tool_row_component.cpp) instead. Left unrepaired per the rules above; delete it in a dedicated cleanup rather than as a side effect of another change. |
+
 ## Commented-out cruft (live files)
 
 - [`vulkan_pipeline_manager.cpp:31-45`](../../engine/runtime/graphics/backend/vulkan/vulkan_pipeline_manager.cpp#L31-L45) — the correct asset-loading path is sitting there as a comment. Do it for real; delete the comment.

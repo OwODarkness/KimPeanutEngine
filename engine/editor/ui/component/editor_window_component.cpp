@@ -11,43 +11,74 @@ namespace kpengine::editor
 
     void EditorWindowComponent::Render()
     {
-        if (is_open_)
+        if (!IsVisible())
         {
-            ImGuiViewport *viewport = ImGui::GetMainViewport();
-            const ImVec2 pos(viewport->WorkPos.x + config_.pos_x_ratio * viewport->WorkSize.x,
-                             viewport->WorkPos.y + config_.pos_y_ratio * viewport->WorkSize.y);
-            const ImVec2 size(config_.width_ratio * viewport->WorkSize.x,
-                              config_.height_ratio * viewport->WorkSize.y);
-
-            // Locked: pin to the viewport every frame; unlocked: set once, let the user move.
-            const ImGuiCond cond = locked_ ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
-            ImGui::SetNextWindowPos(pos, cond);
-            ImGui::SetNextWindowSize(size, cond);
-
-            ImGuiWindowFlags flags = 0;
-            if (locked_)
-            {
-                flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
-            }
-            flags |= config_.extra_flags;
-
-            // ImGui renders the native title before Begin() returns. Use the
-            // previous frame's focus state so only the title receives the
-            // focus accent; the content keeps the normal theme text color.
-            if (focused_last_frame_)
-            {
-                ImGui::PushStyleColor(ImGuiCol_Text, kFocusedTitleText);
-            }
-            ImGui::Begin(title_.c_str(), &is_open_, flags);
-            if (focused_last_frame_)
-            {
-                ImGui::PopStyleColor();
-            }
-            RenderWindowChrome();
-            RenderContent();
-            focused_last_frame_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
-            ImGui::End();
+            return;
         }
+
+        ImGuiViewport *viewport = ImGui::GetMainViewport();
+        const ImVec2 pos(viewport->WorkPos.x + config_.pos_x_ratio * viewport->WorkSize.x,
+                         viewport->WorkPos.y + config_.pos_y_ratio * viewport->WorkSize.y);
+        const ImVec2 size(config_.width_ratio * viewport->WorkSize.x,
+                          config_.height_ratio * viewport->WorkSize.y);
+
+        // Locked: pin to the viewport every frame; unlocked: set once, let the user move.
+        const ImGuiCond cond = locked_ ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+        ImGui::SetNextWindowPos(pos, cond);
+        ImGui::SetNextWindowSize(size, cond);
+
+        ImGuiWindowFlags flags = 0;
+        if (locked_)
+        {
+            flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
+        }
+        flags |= config_.extra_flags;
+
+        // ImGui renders the native title before Begin() returns. Use the
+        // previous frame's focus state so only the title receives the
+        // focus accent; the content keeps the normal theme text color.
+        if (focused_last_frame_)
+        {
+            ImGui::PushStyleColor(ImGuiCol_Text, kFocusedTitleText);
+        }
+        // Write the close click into a local, never into is_open_: latching there
+        // would make closing terminal, because the window would stop being
+        // submitted and nothing could reopen it.
+        bool open = true;
+        ImGui::Begin(title_.c_str(), HasCloseButton() ? &open : nullptr, flags);
+        if (focused_last_frame_)
+        {
+            ImGui::PopStyleColor();
+        }
+        if (HasCloseButton())
+        {
+            RenderWindowChrome();
+        }
+        RenderContent();
+        focused_last_frame_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        ImGui::End();
+
+        if (!open)
+        {
+            if (visibility_ != nullptr)
+            {
+                visibility_->SetOpen(false);
+            }
+            else
+            {
+                is_open_ = false;
+            }
+        }
+    }
+
+    void EditorWindowComponent::SetVisibility(EditorWindowVisibility *visibility) noexcept
+    {
+        visibility_ = visibility;
+    }
+
+    bool EditorWindowComponent::IsVisible() const noexcept
+    {
+        return visibility_ != nullptr ? visibility_->IsOpen() : is_open_;
     }
 
     void EditorWindowComponent::RenderWindowChrome()

@@ -18,6 +18,7 @@
 #include "editor/ui/component/editor_debug_viewer_component.h"
 #include "editor/ui/component/editor_gpu_profiler_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
+#include "editor/ui/component/editor_tool_row_component.h"
 #include "editor/ui/component/editor_viewport_component.h"
 #include "editor/ui/editor_extension_registry.h"
 #include "editor/log/editor_log_component.h"
@@ -180,13 +181,34 @@ namespace kpengine::editor
         std::vector<Menu> menus;
         menus.push_back(Menu{"File"});
         menus.push_back(Menu{"Edit"});
+
+        // View toggles are bound by stable id and resolved at render time, so the
+        // menu can be built before the tool row registers its panels. Each item
+        // queries the same visibility the tab close button writes.
+        Menu view_menu{"View"};
+        view_menu.items.push_back(MenuItem{
+            "Log",
+            {},
+            true,
+            [this] { tool_row_model_.ToggleOpenById(kToolRowLogId); },
+            [this] { return tool_row_model_.IsOpenById(kToolRowLogId); },
+        });
+        view_menu.items.push_back(MenuItem{
+            "Console",
+            {},
+            true,
+            [this] { tool_row_model_.ToggleOpenById(kToolRowConsoleId); },
+            [this] { return tool_row_model_.IsOpenById(kToolRowConsoleId); },
+        });
+        menus.push_back(std::move(view_menu));
+
         Menu tool_menu{"Tool"};
         tool_menu.items.push_back(MenuItem{
             "Capture Screenshot",
             {},
-            false,
             screenshot_service_ != nullptr,
             [this] { TriggerScreenshot(); },
+            {},
         });
         menus.push_back(std::move(tool_menu));
         menus.push_back(Menu{"Help"});
@@ -302,17 +324,68 @@ namespace kpengine::editor
             init_info_.camera_control_sink));
     }
 
-    void EditorUI::BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors)
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildLogPanel(
+        LogSystem *log_system, const LogLevelColorTable &log_colors)
     {
-        // Keep the log beside the profiler in the lower tool row and leave the
-        // profile bar its own bottom row. Long diagnostic lines remain reachable
-        // through the horizontal scrollbar.
+        // Geometry belongs to the tool row while the log is docked; this config only
+        // describes the panel if it is ever given its own window.
         EditorWindowConfig log_config;
         log_config.width_ratio = 0.8f;
         log_config.height_ratio = 0.26f;
         log_config.pos_y_ratio = 0.7f;
         log_config.extra_flags = ImGuiWindowFlags_HorizontalScrollbar;
-        components_.push_back(std::make_unique<EditorLogComponent>(log_system, log_colors, log_config));
+        return std::make_unique<EditorLogComponent>(log_system, log_colors, log_config);
+    }
+
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildConsolePanel(
+        runtime::command::CommandRegistry *command_registry,
+        input::InputSystem *input_system, ImFont *code_font)
+    {
+        return std::make_unique<EditorConsoleComponent>(command_registry, input_system,
+                                                        code_font);
+    }
+
+    void EditorUI::BuildToolRow(LogSystem *log_system, const LogLevelColorTable &log_colors,
+                                runtime::command::CommandRegistry *command_registry,
+                                input::InputSystem *input_system, ImFont *code_font)
+    {
+        // A stale model would make the row inherit visibility and dock state from
+        // a tree that has already been torn down.
+        tool_row_model_.Clear();
+
+        // The shared bottom band the log used to occupy alone: x 0..0.8, y 0.7..0.96.
+        // The horizontal scrollbar moves here with it, since the log no longer owns
+        // a window and long diagnostic lines must stay reachable.
+        EditorWindowConfig row_config;
+        row_config.width_ratio = 0.8f;
+        row_config.height_ratio = 0.26f;
+        row_config.pos_y_ratio = 0.7f;
+        // NoCollapse: a container that hosts every tool tab must not fold itself
+        // into a title bar, which would hide the whole strip.
+        row_config.extra_flags =
+            ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoCollapse;
+
+        auto row = std::make_unique<EditorToolRowComponent>(tool_row_model_, row_config);
+        row->AddPanel(kToolRowLogId, "Log", BuildLogPanel(log_system, log_colors),
+                      /*open=*/true);
+
+        // The console keeps its historical "closed until asked for" state.
+        EditorWindowComponent *const console =
+            row->AddPanel(kToolRowConsoleId, "Console",
+                          BuildConsolePanel(command_registry, input_system, code_font),
+                          /*open=*/false);
+        if (console != nullptr)
+        {
+            // A closed tab is not rendered, so the row must still pump the console
+            // or deferred command results would be stranded until it reopens.
+            row->SetPanelPump(kToolRowConsoleId,
+                              [console]
+                              {
+                                  static_cast<EditorConsoleComponent *>(console)->Pump();
+                              });
+        }
+
+        components_.push_back(std::move(row));
     }
 
     void EditorUI::BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
@@ -395,11 +468,13 @@ namespace kpengine::editor
             BuildCameraSettingsWindow(init_info_.camera_control_sink);
             BuildRegisteredWorkspaceExtensions();
             BuildDebugViewerWindow(init_info_.render_system);
-            BuildLogWindow(init_info_.log_system, log_colors_);
             BuildProfileBar(init_info_.engine, init_info_.memory_sampler,
                             init_info_.render_system);
             BuildGpuProfilerWindow(init_info_.engine, init_info_.render_system, this);
-            BuildConsole(init_info_.command_registry, init_info_.input_system, code_font_);
+            // The log and console now share one tabbed band instead of stacking
+            // separate windows on the same pixels.
+            BuildToolRow(init_info_.log_system, log_colors_, init_info_.command_registry,
+                         init_info_.input_system, code_font_);
             workspace_promoted_ = true;
             loading_components_.clear();
         }
@@ -446,13 +521,6 @@ namespace kpengine::editor
     bool EditorUI::RenderLoading()
     {
         return RenderActiveTree();
-    }
-
-    void EditorUI::BuildConsole(runtime::command::CommandRegistry *command_registry,
-                                input::InputSystem *input_system, ImFont *code_font)
-    {
-        components_.push_back(std::make_unique<EditorConsoleComponent>(
-            command_registry, input_system, code_font));
     }
 
     void EditorUI::Close()

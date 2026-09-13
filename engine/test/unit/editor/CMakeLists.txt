@@ -41,3 +41,22 @@ target_link_libraries(ActorEditorModelUnitTest PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(ActorEditorModelUnitTest)
+
+# The tool-row model is ImGui-free by design, so this target links no ImGui and
+# compiles the model source directly. If it ever starts pulling imgui.h, the
+# layering has been broken and this build will say so.
+add_executable(EditorToolRowModelUnitTest
+    editor_tool_row_model_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_tool_row_model.cpp
+)
+
+target_include_directories(EditorToolRowModelUnitTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine
+)
+
+target_link_libraries(EditorToolRowModelUnitTest PRIVATE
+    KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(EditorToolRowModelUnitTest)

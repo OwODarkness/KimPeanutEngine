@@ -7,13 +7,17 @@
 
 ## Objective
 
-Publish the AB1.1 provider through Runtime composition and add a readable,
-movable Asset Browser to the Editor. The browser presents archive, loaded, and
+Publish the AB1.1 provider through Runtime composition and add a readable Asset
+Browser panel to the Editor's tool row. The browser presents archive, loaded, and
 runtime-only catalog nodes without loading assets or retaining Runtime objects.
 
-AB1.2 is complete when **View > Asset Browser** and the title-bar close button
-control one window state, explicit refresh replaces one immutable snapshot, and
+AB1.2 is complete when **View > Asset Browser** and the tab close button control
+one visibility state, explicit refresh replaces one immutable snapshot, and
 search/filter/sort/selection behavior is covered by headless model tests.
+
+"Movable" is satisfied by the tool row's detach: the browser tab can be isolated into
+a standalone window and re-docked, per [ED1](../../../editor/.plan/ED1.md). The browser
+does not own window geometry of its own.
 
 ## Design question
 
@@ -80,7 +84,9 @@ needed by Runtime composition.
 
 ## Reactive window and menu state
 
-Add a small Editor-only value type:
+Already landed by [ED1](../../../editor/.plan/ED1.md); do not re-add. The type is
+`editor/ui/component/editor_window_visibility.h` (header-only, ImGui-free), and the
+queried `is_selected` binding and the View menu both exist:
 
 ```cpp
 class EditorWindowVisibility
@@ -111,10 +117,18 @@ callbacks are render-thread-only and borrow `EditorUI` state whose lifetime
 outlasts the menu component. AB1.2 adds a **View** menu without changing File,
 Edit, Tool, or Help command semantics.
 
-The Asset Browser starts closed to preserve the current non-docked workspace.
-Its first-use geometry is unlocked and centered over the lower workspace:
-`x=0.18, y=0.52, width=0.64, height=0.40`. Opening it never changes other
-window geometry.
+The Asset Browser is a **tab in the Editor tool row**, added by
+[ED1](../../../editor/.plan/ED1.md), not a floating window with its own geometry. It
+registers as a third tool-row entry beside Log and Console, so it inherits the row's
+band, its close button, its drag-to-isolate behavior, and its shared
+`EditorWindowVisibility`: **View > Asset Browser** and the tab's close X are one state,
+and the row's rendering decides visibility, so AB1.2 must not add its own window
+geometry or its own open/closed flag.
+
+The browser starts **closed**, so the default workspace shows only the Log tab. That
+satisfies this stage's original intent — the current workspace is unchanged on startup —
+without occupying pixels no window owns. Opening it selects its tab and does not change
+any other panel's geometry.
 
 ## Editor model contract
 
@@ -239,8 +253,9 @@ the callback receives the stable key and cannot load the asset.
 | `engine/runtime/runtime_global_context.h/.cpp` | Own/publish the concrete catalog provider with teardown ordering. |
 | `engine/runtime/CMakeLists.txt` | Add the private AssetRuntime dependency required by provider composition if not already explicit. |
 | `engine/editor/editor.cpp` | Pass the source at the workspace commit barrier. |
-| `engine/editor/ui/editor_ui.h/.cpp` | Own view/model state and build the browser plus View menu. |
-| `engine/editor/ui/component/editor_window_component.h/.cpp` | Add optional external visibility binding. |
+| `engine/editor/ui/editor_ui.h/.cpp` | Own view/model state and register the browser panel with the tool row; add its item to the View menu ED1 created. |
+| `engine/editor/ui/component/editor_tool_row_component.h/.cpp` | No change expected: `AddPanel` already takes a panel, title, and initial visibility. |
+| `engine/editor/ui/component/editor_window_component.h/.cpp` | No change: ED1 already added the visibility binding and the non-latching close. |
 | `engine/editor/ui/component/editor_menubar_component.h/.cpp` | Query live menu check state. |
 | `engine/editor/asset/asset_browser_model.h/.cpp` | Add pure snapshot/query/selection projection. |
 | `engine/editor/asset/editor_asset_browser_component.h/.cpp` | Add the ImGui browser panel and primitive icons. |
@@ -291,7 +306,8 @@ the callback receives the stable key and cannot load the asset.
   in both Table and Compact Tiles modes.
 - [ ] Search, navigation, filters, sorting, and stable-key selection match the
   deterministic rules above.
-- [ ] **View > Asset Browser** and the title close button share live state.
+- [ ] **View > Asset Browser** and the tab close button share live state, both routed
+  through the tool row's `EditorWindowVisibility`.
 - [ ] The browser performs no asset load, mutation, filesystem enumeration, or
   direct database access.
 - [ ] The AB1.3 open-root callback exists but no dead reference-viewer UI ships.

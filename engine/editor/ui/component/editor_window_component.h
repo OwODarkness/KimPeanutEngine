@@ -5,6 +5,7 @@
 #include <string>
 #include <memory>
 #include "editor/ui/component/editor_ui_component.h"
+#include "editor/ui/component/editor_window_visibility.h"
 
 
 namespace kpengine{
@@ -33,6 +34,17 @@ namespace kpengine{
             void SetLocked(bool locked);
             bool IsLocked() const;
 
+            // Optional borrowed open/closed state. When bound, a host (the tool row)
+            // owns visibility and the title-bar close is written through to it instead
+            // of latching this window closed forever. Null keeps the standalone
+            // behaviour. Not owned: the borrower must outlive this component.
+            void SetVisibility(EditorWindowVisibility *visibility) noexcept;
+            bool IsVisible() const noexcept;
+
+            // False suppresses the title-bar close button and the chrome that goes
+            // with it, so a container host cannot be closed by its own title bar.
+            virtual bool HasCloseButton() const { return true; }
+
         protected:
             void RenderWindowChrome();
             std::string title_;
@@ -41,6 +53,7 @@ namespace kpengine{
             bool is_open_ = true;
             bool locked_;
             bool focused_last_frame_ = false;
+            EditorWindowVisibility *visibility_ = nullptr;  // borrowed, not owned
         public:
             int width_{};
             int height_{};

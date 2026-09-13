@@ -146,7 +146,8 @@ namespace kpengine::editor
     EditorConsoleComponent::EditorConsoleComponent(runtime::command::CommandRegistry *registry,
                                                    input::InputSystem *input_system,
                                                    ImFont *code_font)
-        : registry_(registry), input_system_(input_system), code_font_(code_font),
+        : EditorWindowComponent("Console", EditorWindowConfig{}), registry_(registry),
+          input_system_(input_system), code_font_(code_font),
           state_(std::make_shared<ConsoleState>())
     {
         if (input_system_)
@@ -169,83 +170,88 @@ namespace kpengine::editor
     {
         if (event.key == GLFW_KEY_GRAVE_ACCENT && event.action == GLFW_PRESS)
         {
-            is_open_ = !is_open_;
+            // The tab strip and the View menu read this same value, so the hotkey
+            // cannot get out of sync with either of them.
+            if (visibility_ != nullptr)
+            {
+                visibility_->Toggle();
+            }
             completion_candidates_.clear();
-            if (is_open_)
+            if (IsVisible())
             {
                 focus_input_ = true;
             }
         }
     }
 
-    void EditorConsoleComponent::Render()
+    void EditorConsoleComponent::Pump()
+    {
+        // Deferred results arrive on the command thread; drain them whether or not
+        // the console is on screen this frame.
+        DrainCompletions();
+    }
+
+    void EditorConsoleComponent::RenderContent()
     {
         DrainCompletions();
-        if (!is_open_)
+
+        if (code_font_)
         {
-            return;
+            ImGui::PushFont(code_font_);
         }
 
-        ImGui::SetNextWindowPos(ImVec2(24.0f, 48.0f), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(720.0f, 320.0f), ImGuiCond_FirstUseEver);
-        if (ImGui::Begin("Command Console", &is_open_))
+        // EndChild must be called for every BeginChild regardless of its return
+        // value: ImGui pushes the child onto a window stack either way, and an
+        // early-out here leaves that stack mismatched.
+        ImGui::BeginChild("##command_output", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing()),
+                          true);
+        for (const std::string &line : output_)
         {
-            if (code_font_)
-            {
-                ImGui::PushFont(code_font_);
-            }
-            if (ImGui::BeginChild("##command_output", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing()),
-                                  true))
-            {
-                for (const std::string &line : output_)
-                {
-                    ImGui::TextUnformatted(line.c_str());
-                }
-                ImGui::EndChild();
-            }
-
-            if (focus_input_)
-            {
-                ImGui::SetKeyboardFocusHere();
-                focus_input_ = false;
-            }
-            const ImGuiInputTextFlags flags =
-                ImGuiInputTextFlags_EnterReturnsTrue |
-                ImGuiInputTextFlags_CallbackCompletion |
-                ImGuiInputTextFlags_CallbackHistory |
-                ImGuiInputTextFlags_CallbackEdit;
-            if (ImGui::InputText("##command_input", input_buffer_.data(), input_buffer_.size(),
-                                 flags, &EditorConsoleComponent::InputCallback, this))
-            {
-                Submit();
-            }
-
-            const std::string current_input(input_buffer_.data());
-            const std::string inline_suggestion =
-                FindInlineCommandSuggestion(registry_, current_input);
-            DrawInlineCommandSuggestion(current_input, inline_suggestion);
-
-            if (!completion_candidates_.empty())
-            {
-                ImGui::BeginChild("##command_completion", ImVec2(0.0f, 72.0f), true);
-                for (const std::string &candidate : completion_candidates_)
-                {
-                    if (ImGui::Selectable(candidate.c_str()))
-                    {
-                        ReplaceCurrentToken(candidate);
-                        completion_candidates_.clear();
-                        focus_input_ = true;
-                        break;
-                    }
-                }
-                ImGui::EndChild();
-            }
-            if (code_font_)
-            {
-                ImGui::PopFont();
-            }
+            ImGui::TextUnformatted(line.c_str());
         }
-        ImGui::End();
+        ImGui::EndChild();
+
+        if (focus_input_)
+        {
+            ImGui::SetKeyboardFocusHere();
+            focus_input_ = false;
+        }
+        const ImGuiInputTextFlags flags =
+            ImGuiInputTextFlags_EnterReturnsTrue |
+            ImGuiInputTextFlags_CallbackCompletion |
+            ImGuiInputTextFlags_CallbackHistory |
+            ImGuiInputTextFlags_CallbackEdit;
+        if (ImGui::InputText("##command_input", input_buffer_.data(), input_buffer_.size(),
+                             flags, &EditorConsoleComponent::InputCallback, this))
+        {
+            Submit();
+        }
+
+        const std::string current_input(input_buffer_.data());
+        const std::string inline_suggestion =
+            FindInlineCommandSuggestion(registry_, current_input);
+        DrawInlineCommandSuggestion(current_input, inline_suggestion);
+
+        if (!completion_candidates_.empty())
+        {
+            ImGui::BeginChild("##command_completion", ImVec2(0.0f, 72.0f), true);
+            for (const std::string &candidate : completion_candidates_)
+            {
+                if (ImGui::Selectable(candidate.c_str()))
+                {
+                    ReplaceCurrentToken(candidate);
+                    completion_candidates_.clear();
+                    focus_input_ = true;
+                    break;
+                }
+            }
+            ImGui::EndChild();
+        }
+
+        if (code_font_)
+        {
+            ImGui::PopFont();
+        }
     }
 
     int EditorConsoleComponent::InputCallback(ImGuiInputTextCallbackData *data)

@@ -7,6 +7,7 @@
 #include <optional>
 #include "base/type.h"
 #include "editor/settings/editor_settings.h"
+#include "editor/ui/component/editor_tool_row_model.h"
 #include "graphics/backend/common/editor_presentation_bridge.h"
 #include "graphics/backend/common/render_target.h"
 #include "runtime/runtime_startup.h"
@@ -58,6 +59,7 @@ namespace kpengine::editor
     class IEditorImguiRenderer;
     class IEditorImguiWSI;
     class EditorUIComponent;
+    class EditorWindowComponent;  // factory return type only; keeps imgui.h out of here
     class ActorEditorModel;
 
     // Parameter bundle for EditorUI::Initialize, so the signature doesn't grow with each
@@ -139,11 +141,20 @@ namespace kpengine::editor
         void BuildGpuProfilerWindow(runtime::Engine *engine,
                                     render::RenderSystem *render_system,
                                     const EditorUI *editor_ui);
-        void BuildLogWindow(LogSystem *log_system, const LogLevelColorTable &log_colors);
+        // Panel factories: these return an unowned-by-EditorUI window component
+        // which the tool row then takes ownership of, so no build step has to hold
+        // a pointer into the component tree.
+        std::unique_ptr<EditorWindowComponent> BuildLogPanel(
+            LogSystem *log_system, const LogLevelColorTable &log_colors);
+        std::unique_ptr<EditorWindowComponent> BuildConsolePanel(
+            runtime::command::CommandRegistry *command_registry,
+            input::InputSystem *input_system, ImFont *code_font);
+        // The shared bottom band hosting the log and console panels as tabs.
+        void BuildToolRow(LogSystem *log_system, const LogLevelColorTable &log_colors,
+                          runtime::command::CommandRegistry *command_registry,
+                          input::InputSystem *input_system, ImFont *code_font);
         void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                              render::RenderSystem *render_system);
-        void BuildConsole(runtime::command::CommandRegistry *command_registry,
-                          input::InputSystem *input_system, ImFont *code_font);
         void BuildActorTools();
         void BuildLoadingTree();
         void BuildStartupProfilerWindow();
@@ -178,6 +189,11 @@ namespace kpengine::editor
         // Declared before the component tree so components are destroyed first;
         // all of them borrow this model and the injected Runtime interfaces.
         std::unique_ptr<ActorEditorModel> actor_model_;
+
+        // Tab order, visibility, and dock state for the tool row. Declared before
+        // components_ for the same reason, and owned here rather than by the row so
+        // the View menu can bind by id before the row is built.
+        EditorToolRowModel tool_row_model_;
 
         std::vector<std::unique_ptr<EditorUIComponent>> components_;
         std::vector<std::unique_ptr<EditorUIComponent>> loading_components_;

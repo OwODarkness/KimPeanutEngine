@@ -19,11 +19,13 @@ namespace kpengine::editor
 
         std::string title;
         std::string short_cut;
-        bool selected = false;
         bool enabled = true;
-        // Command binding: invoked once when the item is activated. `selected`
-        // stays a display flag (command items do not toggle a checkmark).
+        // Command binding: invoked once when the item is activated.
         std::function<void()> on_click;
+        // Live checkmark binding, queried every frame so the menu cannot drift out
+        // of sync with the state it reflects (a tab close, a panel's own X). Empty
+        // renders unchecked.
+        std::function<bool()> is_selected;
     };
 
     struct Menu

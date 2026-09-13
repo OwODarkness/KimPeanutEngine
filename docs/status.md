@@ -1,5 +1,21 @@
 # Project Status
 
+- **Editor ED1 tabbed tool row (2026-09-13)** — the Editor's bottom band is now one
+  tabbed row instead of overlapping windows. The Log and Console are hosted as tabs
+  with close buttons; a tab can be isolated into a standalone window and re-docked
+  from its context menu; a new **View** menu shares one visibility state with the tab
+  strip. Three latent defects were fixed on the way: closing a panel window was
+  terminal (ImGui's close flag latched `is_open_` forever, so nothing could reopen a
+  panel), `MenuItem::selected` was never read, and the Console skipped `EndChild` when
+  a child region was clipped. The Console also drained deferred command results while
+  hidden, which the row preserves through a pump hook for panels it does not draw. The
+  new ImGui-free model is covered by 20 headless tests; editor tests pass 44/44 and the
+  full suite 623/624 with one pre-existing unrelated fixture failure. Vulkan and OpenGL
+  smoke captures show the row, the View menu, and the hosted Log tab. Interactive tab
+  switching, isolate, and drag preview could not be scripted — the command transport
+  has no input injection — and remain unverified by a live frame. ED2 (layout model)
+  and ED3 (magnetic placement) are proposed. → [ED1 journal](../.spec/journal/2026-09-13-editor-tool-row.md),
+  [ED1 plan](editor/.plan/ED1.md), [Editor TODO](editor/TODO.md)
 - **Asset Browser AB1.1 catalog snapshot provider (2026-09-13)** — added
   `ModelArchiveDatabase::ReadCatalog()` as one strict read-only enumeration
   transaction, a pure `detail/asset_catalog_builder` that joins that inventory
