@@ -96,6 +96,9 @@ viewer shell, not as the scene editor. Its central `Live2D Viewer` panel
 displays the renderer-owned offscreen target, while the right side contains
 `OutputLog` and `Performance Profiler` panels. The host does not construct
 `Scene3DHost`, `RenderWorld`, `DeferredRenderer`, or scene editor components.
+The planned interactive runtime diagnostics are specified in
+[L2D7.5 — Live2D Runtime Debug Tools](.plan/L2D7.5.md); they remain viewer-side
+adapters over the SDK-free runtime contracts.
 The Live2D product target is `RGBA8_SRGB` on both APIs. Live2D model textures
 are sRGB, so the shaders work in linear space and the attachment format owns the
 transfer function — neither backend's shaders encode. The host converts the
@@ -107,17 +110,17 @@ identically on both backends without changing the deferred/PBR scene pipeline.
 
 The standalone viewer renders into its own offscreen target, so a capture of
 that target is a comparable image — it carries no host UI. Ask for it with
-`--capture-view live2d`, and use `--capture-alpha transparent` to clear the
+`--capture-view host_output`, and use `--capture-alpha transparent` to clear the
 target transparently so the product's own alpha and blend coverage survive into
 the exported file:
 
 ```powershell
 build/engine/editor/Debug/KimPeanutEngine.exe --mode live2d-viewer `
   --graphics-api opengl  --capture save/screenshots/validation/product-gl.png `
-  --capture-view live2d
+  --capture-view host_output
 build/engine/editor/Debug/KimPeanutEngine.exe --mode live2d-viewer `
   --graphics-api vulkan  --capture save/screenshots/validation/product-vk.png `
-  --capture-view live2d
+  --capture-view host_output
 python tools/compare_capture_regions.py `
   save/screenshots/validation/product-gl.png `
   save/screenshots/validation/product-vk.png
@@ -129,7 +132,7 @@ capture resolves, instead of running until it is killed:
 ```powershell
 build/engine/editor/Debug/KimPeanutEngine.exe --mode live2d-viewer `
   --graphics-api opengl  --capture save/screenshots/validation/product-gl.png `
-  --capture-view live2d --exit-after-capture
+  --capture-view host_output --exit-after-capture
 ```
 
 That flag is also what makes the shutdown path observable: without it the
@@ -138,7 +141,7 @@ and its `Module GPU handles` leak count never execute. With it, the run ends
 with a clean exit and the viewer logs a warning only if handles are still live.
 
 `--capture-view`, `--capture-alpha`, and `--exit-after-capture` all require
-`--capture` and are rejected outside `live2d-viewer` mode. The comparator
+`--capture` and are rejected outside `live2d-viewer` mode. The historical capture-view live2d spelling remains an alias for host_output. The comparator
 reports sha256, dimensions, and per-region statistics against the frozen L2D4.0
 tolerances (2/255 for ordinary pixels, 4/255 for filtered edges), splitting
 non-edge opaque, partial alpha, transparent background, and filtered edge so a

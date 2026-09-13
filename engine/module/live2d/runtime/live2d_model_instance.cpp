@@ -593,6 +593,7 @@ namespace kpengine::live2d
         std::unique_ptr<CubismExpressionMotionManager> expression_manager;
         std::unique_ptr<CubismMotionManager> motion_manager;
         std::vector<MotionPlayback> motion_playbacks;
+        std::vector<float> initial_parameter_values;
         std::vector<float> pending_parameter_values;
         std::vector<bool> pending_parameter_dirty;
         std::vector<Live2DPlaybackEvent> pending_events;
@@ -988,8 +989,14 @@ namespace kpengine::live2d
         {
             const std::size_t parameter_count =
                 static_cast<std::size_t>(impl->model->GetParameterCount());
+            impl->initial_parameter_values.resize(parameter_count);
             impl->pending_parameter_values.assign(parameter_count, 0.0f);
             impl->pending_parameter_dirty.assign(parameter_count, false);
+            for (std::size_t index = 0u; index < parameter_count; ++index)
+            {
+                impl->initial_parameter_values[index] =
+                    impl->model->GetParameterValue(static_cast<csmInt32>(index));
+            }
             impl->motion_playbacks.reserve(Impl::kMaxMotionEntries);
             impl->pending_events.reserve(Impl::kMaxPendingEvents);
             impl->callback_events.reserve(Impl::kMaxPendingEvents);
@@ -1017,6 +1024,11 @@ namespace kpengine::live2d
     bool Live2DModelInstance::IsValid() const noexcept
     {
         return resource_ != nullptr && impl_ != nullptr && impl_->IsValid();
+    }
+
+    Live2DBehaviorCapabilities Live2DModelInstance::Capabilities() const noexcept
+    {
+        return IsValid() ? resource_->Capabilities() : Live2DBehaviorCapabilities{};
     }
 
     std::uint64_t Live2DModelInstance::InstanceSerial() const noexcept
@@ -1391,6 +1403,22 @@ namespace kpengine::live2d
                                          static_cast<csmFloat32>(value));
         impl_->pending_parameter_values[index] = value;
         impl_->pending_parameter_dirty[index] = true;
+        return true;
+    }
+
+    bool Live2DModelInstance::ResetParameters() noexcept
+    {
+        if (!IsValid() || impl_->initial_parameter_values.size() != ParameterCount())
+        {
+            return false;
+        }
+        for (std::size_t index = 0u; index < impl_->initial_parameter_values.size(); ++index)
+        {
+            const float value = impl_->initial_parameter_values[index];
+            impl_->model->SetParameterValue(static_cast<csmInt32>(index), value);
+            impl_->pending_parameter_values[index] = value;
+            impl_->pending_parameter_dirty[index] = true;
+        }
         return true;
     }
 

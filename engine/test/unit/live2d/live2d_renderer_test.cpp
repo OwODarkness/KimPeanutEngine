@@ -26,6 +26,7 @@ namespace
     using kpengine::graphics::RenderBackend;
     using kpengine::graphics::RenderTargetHandle;
     using kpengine::graphics::RenderTargetView;
+    using kpengine::live2d::Live2DFrameInput;
     using kpengine::live2d::Live2DRenderer;
     using kpengine::live2d::Live2DSystem;
     using kpengine::test::BackendProbe;
@@ -367,6 +368,44 @@ namespace
     // and every Cubism model instance lease, and the framework then accepts
     // shutdown. The backend ledger is compared against its own create counts so
     // a handle the renderer merely forgot to clear cannot pass.
+    TEST_F(Live2DRendererTest, PausedRecordPreservesUpdateSequenceUntilStep)
+    {
+        RendererHarness harness(system_, model_asset_);
+        harness.backend.Initialize({});
+        ASSERT_TRUE(harness.renderer.Initialize(harness.backend, kInitialWidth,
+                                                kInitialHeight,
+                                                harness.diagnostic))
+            << harness.diagnostic;
+        harness.frame.Initialize(harness.backend, kUniformCapacity);
+        ASSERT_TRUE(harness.RecordFrame()) << harness.diagnostic;
+        const std::uint64_t before_pause = harness.renderer.GetLastUpdateSequence();
+        ASSERT_GT(before_pause, 0u);
+
+        Live2DFrameInput input{};
+        input.delta_seconds = 1.0f / 60.0f;
+        auto record_controlled = [&](const bool advance)
+        {
+            CommandRecorder *const recorder = harness.backend.GetCommandRecorder();
+            if (recorder == nullptr)
+            {
+                harness.diagnostic = "fake backend exposed no command recorder";
+                return false;
+            }
+            harness.frame.Begin(0u, {harness.frame_number, 0.0f, 1.0f / 60.0f},
+                                harness.backend.GetRenderExtent());
+            const bool recorded = harness.renderer.Record(
+                harness.frame, *recorder, 1.0f / 60.0f, input, advance, false,
+                harness.diagnostic);
+            harness.frame.End();
+            ++harness.frame_number;
+            return recorded;
+        };
+
+        ASSERT_TRUE(record_controlled(false)) << harness.diagnostic;
+        EXPECT_EQ(harness.renderer.GetLastUpdateSequence(), before_pause);
+        ASSERT_TRUE(record_controlled(true)) << harness.diagnostic;
+        EXPECT_GT(harness.renderer.GetLastUpdateSequence(), before_pause);
+    }
     TEST_F(Live2DRendererTest, CleanupReleasesEveryHandleAndModelInstance)
     {
         RendererHarness harness(system_, model_asset_);

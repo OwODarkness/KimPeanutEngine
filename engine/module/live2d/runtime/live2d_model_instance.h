@@ -15,6 +15,7 @@ namespace kpengine::live2d
 {
     class CubismLifecycle;
     class Live2DModelResource;
+    struct Live2DBehaviorCapabilities;
 
     struct Live2DMotionKey final
     {
@@ -121,6 +122,7 @@ namespace kpengine::live2d
 
         bool IsValid() const noexcept;
         const Live2DModelResource &Resource() const noexcept;
+        Live2DBehaviorCapabilities Capabilities() const noexcept;
         std::uint64_t InstanceSerial() const noexcept;
 
         std::size_t MotionCount() const noexcept;
@@ -133,6 +135,7 @@ namespace kpengine::live2d
                                float &maximum) const noexcept;
         bool GetParameterValue(std::size_t index, float &value) const noexcept;
         bool SetParameterValue(std::size_t index, float value) noexcept;
+        bool ResetParameters() noexcept;
         bool Update() noexcept;
 
         bool PlayMotion(const Live2DMotionKey &key, std::int32_t priority,

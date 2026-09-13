@@ -126,8 +126,7 @@ imgui.ini
 # is for compiler objects; these are source fixtures for Asset tests.
 !engine/test/unit/asset/fixtures/mi1_1/**/*.obj
 
-# Logs
-logs/
+# Runtime logs are generated below save/.
 *.log
 
 # Common generated tool/runtime directories

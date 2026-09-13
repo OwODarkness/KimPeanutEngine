@@ -6,7 +6,9 @@ SDK design is in [`.plan/L2D1.md`](.plan/L2D1.md), the generic Asset migration
 is owned by [AX1](../asset/.plan/AX1.md), Live2D's Asset handoff is staged in
 [`.plan/L2D2.md`](.plan/L2D2.md), Live2D planning and generic submission are
 staged in [`.plan/L2D4.md`](.plan/L2D4.md), authored playback is staged in
-[`.plan/L2D6.md`](.plan/L2D6.md), and the complete V1 execution contract is in
+[`.plan/L2D6.md`](.plan/L2D6.md), secondary model behavior is staged in
+[`.plan/L2D7.md`](.plan/L2D7.md), with viewer debug tools staged in
+[`.plan/L2D7.5.md`](.plan/L2D7.5.md), and the complete V1 execution contract is in
 [`.spec/specs/live2d-v1-rendering.md`](../../.spec/specs/live2d-v1-rendering.md).
 
 ## Outcome
@@ -296,7 +298,7 @@ registry, with `Live2DViewerHost` owning the window, backend, system, instance,
 and renderer. The flags below are kept as the original design intent;
 `--graphics-api` landed as specified, and the asset comes from
 `config/live2d.json` rather than `--asset`. Capture landed as `--capture`
-plus `--capture-view window|live2d` and `--capture-alpha opaque|transparent`.
+plus `--capture-view window|host_output` and `--capture-alpha opaque|transparent`.
 Shutdown landed as `--exit-after-capture`, the output extent as
 `--resize <width>x<height>` (L2D5.2), and the loaded product as
 `--live2d-model <asset-relative .live2d path>` (L2D5.3).
@@ -309,13 +311,13 @@ asset-root-relative path ending in `.live2d`; absolute paths, drive-rooted
 paths, `..` segments, `:` segments, and non-product suffixes are rejected at
 parse time. The tracked config is unchanged by a run that uses it.
 
-The original design was a separate executable `KimPeanutLive2DViewer`, not a
-mode selected by uncommenting `main.cpp`. It accepts at least:
+The original design proposed a separate executable; the landed design supersedes it with the live2d-viewer application mode on KimPeanutEngine.exe. It accepts at least:
+The original command contract used --live2d-model, --graphics-api, and --resize.
 
 ```text
---asset <path-to-native.live2d>
+--live2d-model <asset-relative-path-to-native.live2d>
 --graphics-api opengl|vulkan
---width <pixels> --height <pixels>
+--resize <width>x<height>
 ```
 
 The viewer owns one window, one Graphics backend, one Live2D system, one model
@@ -426,7 +428,9 @@ Graphics capabilities.
 After the viewer/render baseline is correct, later work can add:
 
 1. motion and expression assets plus deterministic playback APIs;
-2. physics, pose, eye blink, gaze, hit areas, and user-data support;
+2. [physics, pose, deterministic eye blink, breath, gaze, hit areas, and
+   user-data support](.plan/L2D7.md) through one instance-owned update
+   transaction;
 3. emotion/body-language policy that selects and blends authored behaviors;
 4. audio amplitude/phoneme-driven lip-sync and optional TTS integration;
 5. Gameplay components, Editor inspectors, hot reimport, packaging, and scene

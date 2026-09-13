@@ -136,7 +136,7 @@ mode**; in Scene3D mode it is absent from `commands.list`.
 | Execution lane | Game |
 | Allowed callers | Agent, Lua, Editor console, tests, C++ callers |
 | Arguments | None |
-| Result | `success` with `data.model` and the six blend fields below; otherwise `Failed` when no product is loaded. |
+| Result | `success` with `data.model` plus blend, capability, and lifecycle fields below; otherwise `Failed` when no product is loaded. |
 
 | `data` field | Meaning |
 |---|---|
@@ -147,6 +147,15 @@ mode**; in Scene3D mode it is absent from `commands.list`.
 | `multiplicative_drawable_count` | Drawables authored with multiplicative blend. |
 | `unknown_blend_mode_count` | Drawables whose authored blend mode is not one of the three. |
 | `covers_all_blend_modes` | True only when all three modes have at least one drawable. |
+| `has_typed_playback` | Product contains typed playback data (Product V2+). |
+| `has_secondary_behavior` | Product contains Product V3 secondary behavior metadata. |
+| `has_physics` | Product contains physics behavior bytes. |
+| `has_pose` | Product contains pose behavior bytes. |
+| `has_hit_areas` | Product contains immutable hit-area metadata. |
+| `has_user_data` | Product contains immutable user-data metadata. |
+| `requires_reimport_for_secondary_behavior` | True when the loaded product must be reimported to provide Product V3 behavior. |
+| `behavior_mask` | Behavior stages applied by the last completed frame. |
+| `update_sequence` | Monotonic completed-frame sequence for the loaded instance. |
 
 Blend mode is authored inside the `.moc3` and cannot be recovered from a
 capture, so this command is how blend-coverage claims are asserted rather than

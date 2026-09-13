@@ -4,6 +4,12 @@
 stage plans. Current work belongs in [TODO.md](TODO.md). Detailed landed
 behavior remains in [asset_module.md](asset_module.md).
 
+## Asset Browser architecture
+
+[Asset Browser Plans](asset-browser/PLANS.md) defines the proposed read-only
+archive/live inventory and dependency/referencer viewer. Its acceptance
+roadmap is [Asset Browser TODO](asset-browser/TODO.md).
+
 ## Loading-progress architecture
 
 The feature crosses three owners without creating a shared mutable loading

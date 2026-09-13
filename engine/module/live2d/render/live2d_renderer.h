@@ -12,6 +12,8 @@
 #include "graphics/backend/common/texture.h"
 #include "graphics/backend/common/enum.h"
 #include "live2d_render_planner.h"
+#include "runtime/live2d_model_instance.h"
+#include "runtime/live2d_model_resource.h"
 
 namespace kpengine::asset
 {
@@ -33,6 +35,7 @@ namespace kpengine::live2d
 {
     class Live2DModelInstance;
     class Live2DSystem;
+    struct Live2DFrameInput;
 
     // First concrete Live2D renderer. It owns only Live2D GPU resources and
     // records a separate preview target through the generic submission API.
@@ -49,14 +52,22 @@ namespace kpengine::live2d
         bool Initialize(graphics::RenderBackend &backend,
                         uint32_t width, uint32_t height,
                         std::string &diagnostic);
-        // Viewer policy selects a motion; the renderer owns only forwarding it
-        // to the instance and advancing it during frame recording.
+        // Viewer policy selects a motion and value-only frame input; the renderer
+        // forwards both to the instance during frame recording.
         bool StartPreviewMotion(std::string_view group, uint32_t index,
                                 int32_t priority, std::string &diagnostic);
         bool Record(render::FrameContext &frame_context,
                     graphics::CommandRecorder &recorder,
                     float delta_time,
                     std::string &diagnostic);
+        bool Record(render::FrameContext &frame_context,
+                    graphics::CommandRecorder &recorder,
+                    float delta_time,
+                    const Live2DFrameInput &frame_input,
+                    bool advance_frame,
+                    bool reset_parameters,
+                    std::string &diagnostic);
+        bool ResetParameters() noexcept;
         // Recreates only the viewer-owned color target. The backend's
         // presentation/swapchain resize remains its own responsibility. The
         // replacement is transactional: on failure the previously valid target
@@ -93,6 +104,11 @@ namespace kpengine::live2d
         // the .moc3 and cannot be recovered from a capture, so a blend-coverage
         // claim has to be read from here rather than inferred from an image.
         // Written once during Initialize and only read afterwards.
+        Live2DBehaviorCapabilities GetBehaviorCapabilities() const noexcept;
+        std::uint32_t GetLastBehaviorMask() const noexcept
+        {
+            return last_behavior_mask_;
+        }
         const Live2DRenderFeatureReport &GetFeatureReport() const noexcept
         {
             return static_data_.feature_report;
@@ -100,6 +116,14 @@ namespace kpengine::live2d
         std::uint64_t GetLastFrameSequence() const noexcept
         {
             return last_frame_sequence_;
+        }
+        std::uint64_t GetLastUpdateSequence() const noexcept
+        {
+            return last_update_sequence_;
+        }
+        std::size_t GetParameterCount() const noexcept
+        {
+            return instance_ != nullptr ? instance_->ParameterCount() : 0u;
         }
         void Cleanup() noexcept;
 
@@ -128,7 +152,9 @@ namespace kpengine::live2d
         std::vector<graphics::TextureHandle> textures_;
         Live2DRenderCounters last_counters_{};
         std::uint64_t last_frame_sequence_ = 0u;
+        std::uint64_t last_update_sequence_ = 0u;
         bool has_last_frame_sequence_ = false;
+        std::uint32_t last_behavior_mask_ = 0u;
         bool initialized_ = false;
         bool preview_motion_enabled_ = false;
         std::string preview_motion_group_;

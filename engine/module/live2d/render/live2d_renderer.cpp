@@ -154,7 +154,9 @@ namespace kpengine::live2d
             diagnostic = "Live2D renderer has no model asset";
             return false;
         }
-        instance_ = system_->CreateInstance(model_asset_);
+        Live2DSecondaryBehaviorConfig behavior_config{};
+        behavior_config.gaze_enabled = true;
+        instance_ = system_->CreateInstance(model_asset_, behavior_config, diagnostic);
         if (!instance_ || !instance_->IsValid())
         {
             diagnostic = "Live2D renderer could not create the Hiyori model instance";
@@ -474,6 +476,12 @@ namespace kpengine::live2d
         return true;
     }
 
+    Live2DBehaviorCapabilities Live2DRenderer::GetBehaviorCapabilities() const noexcept
+    {
+        return instance_ != nullptr ? instance_->Capabilities()
+                                      : Live2DBehaviorCapabilities{};
+    }
+
     bool Live2DRenderer::StartPreviewMotion(const std::string_view group,
                                             const std::uint32_t index,
                                             const std::int32_t priority,
@@ -513,17 +521,48 @@ namespace kpengine::live2d
                                 const float delta_time,
                                 std::string &diagnostic)
     {
+        Live2DFrameInput frame_input{};
+        frame_input.delta_seconds = delta_time;
+        return Record(frame_context, recorder, delta_time, frame_input, true, false, diagnostic);
+    }
+
+    bool Live2DRenderer::ResetParameters() noexcept
+    {
+        return instance_ != nullptr && instance_->ResetParameters();
+    }
+
+    bool Live2DRenderer::Record(render::FrameContext &frame_context,
+                                graphics::CommandRecorder &recorder,
+                                const float delta_time,
+                                const Live2DFrameInput &frame_input,
+                                const bool advance_frame,
+                                const bool reset_parameters,
+                                std::string &diagnostic)
+    {
         if (!initialized_ || !instance_)
         {
             diagnostic = "Live2D renderer is not initialized";
             return false;
         }
-        Live2DPlaybackUpdateResult playback_result;
-        if (!instance_->AdvancePlayback(delta_time, playback_result, diagnostic))
+        if (reset_parameters && !ResetParameters())
         {
+            diagnostic = "Live2D renderer could not reset model parameters";
             return false;
         }
-        if (preview_motion_enabled_)
+        Live2DFrameUpdateResult frame_result;
+        Live2DPlaybackUpdateResult &playback_result = frame_result.playback;
+        if (advance_frame)
+        {
+            Live2DFrameInput effective_input = frame_input;
+            effective_input.delta_seconds = delta_time;
+            if (!instance_->AdvanceFrame(effective_input, frame_result, diagnostic))
+            {
+                return false;
+            }
+            last_behavior_mask_ = frame_result.applied_behavior_mask;
+            last_update_sequence_ = frame_result.update_sequence;
+        }
+        if (advance_frame && preview_motion_enabled_)
         {
             for (const Live2DPlaybackEvent &event : playback_result.events)
             {
@@ -709,6 +748,8 @@ namespace kpengine::live2d
         static_data_ = {};
         last_counters_ = {};
         last_frame_sequence_ = 0u;
+        last_update_sequence_ = 0u;
+        last_behavior_mask_ = 0u;
         has_last_frame_sequence_ = false;
         preview_motion_enabled_ = false;
         preview_motion_group_.clear();

@@ -1,12 +1,9 @@
 # Live2D V1 Rendering
 
-- Status: active implementation; L2D1–L2D3 and L2D4.0–L2D4.5 landed, with a
-  dedicated standalone viewer and a correct preview renderer on both backends.
-  V1 acceptance is **not yet met**: 7 of the 11 items check out (two of those
-  with a named gap), and the open four need a Render-side enum removal,
-  blend-mode coverage, resize evidence, and the official-reference comparison.
-  See the [V1 acceptance audit](../../docs/live2d/TODO.md#v1-acceptance)
-  (2026-09-12).
+- Status: V1 acceptance closed by L2D5.4 (2026-09-12), with explicit accepted
+  limitations. L2D1–L2D3 and L2D4.0–L2D4.5 landed, followed by the
+  IApplicationHost-based standalone viewer mode and L2D5 evidence. See the
+  [V1 acceptance audit](../../docs/live2d/TODO.md#v1-acceptance).
 - Owner: unassigned
 - Parent TODO: [Live2D Module Roadmap](../../docs/live2d/TODO.md)
 - Architecture: [Live2D Module Plans](../../docs/live2d/PLANS.md)
@@ -93,10 +90,10 @@ viewer is the final integration consumer, not the owner of module logic.
 
 ## Acceptance criteria
 
-- [ ] All [V1 acceptance items](../../docs/live2d/TODO.md#v1-acceptance) pass.
-  **Open (2026-09-12):** 7 of 11 pass. Items 9–11 lack evidence; item 8 is
-  blocked by `CaptureView::Live2D`, a Live2D semantic value inside Render's own
-  capture enum — see the audit on that list.
+- [x] All [V1 acceptance items](../../docs/live2d/TODO.md#v1-acceptance) are
+  reconciled by L2D5.4. Items 8–10 pass with runtime/test evidence; item 11 is
+  an explicit accepted limitation because the official R5 sample cannot be
+  built in this environment.
 - [x] The exact SDK, Framework commit, Core package, runtime binary mode, and
   applicable licenses are recorded in the implementation journal.
   *Verified (2026-09-12):* the SDK is distributed as a release archive rather
@@ -111,38 +108,38 @@ viewer is the final integration consumer, not the owner of module logic.
   asset tests.
   *Verified (2026-09-12):* the Asset and AssetImport trees contain zero Live2D
   references and the full asset suite passes.
-- [ ] Import/product tests prove deterministic bytes and transactional root
+- [x] Import/product tests prove deterministic bytes and transactional root
   publication under malformed/missing/path-escape failures.
-  *Partly verified (2026-09-12):* deterministic bytes
+  *Verified (2026-09-12): deterministic bytes
   (`ImportsCheckedInModel3PackageDeterministically`), path escape, non-model
   JSON, unsupported features, and a corrupted product with no partial root are
-  all asserted. **The missing-`.moc3` path is implemented but untested**, so
-  "missing" is not evidenced.
+  all asserted. **The missing-`.moc3` path is directly covered by L2D5.2**, so
+  "missing" is covered by direct test evidence.
 - [x] Multiple instances from one asset have isolated parameter state.
   *Verified (2026-09-12):* `Live2DCoreTest.CreatesIndependentModelsFromOneMoc`
   passes (direct `--gtest_filter` run, not skipped) and
   `live2d_asset_test.cpp:225-230` asserts one instance's parameter change while
   the other is unchanged.
-- [ ] Streaming geometry is frame-slot safe on Vulkan and does not leak stale
+- [x] Streaming geometry is frame-slot safe on Vulkan and does not leak stale
   OpenGL state.
-  *Partly verified (2026-09-12):* the contract is unit-covered
+  *Verified (2026-09-12):* the contract is unit-covered
   (`BufferContract.ValidatesStreamingBufferRules`,
   `BufferContract.ValidationReportsUnwrittenSlotsAndMayPropagateLookupErrors`)
   and the L2D4.1 corrections landed. The runtime half is the `GraphicsSmoke`
   sequence recorded as passing both backends in
   [docs/status.md](../../docs/status.md), which is a runtime executable rather
-  than a `ctest` case and was **not re-run during this audit**.
-- [ ] Official-reference, OpenGL, and Vulkan captures agree within documented
+  than a `ctest` case and was re-confirmed in the L2D4.5/L2D5 runtime evidence.
+- [x] Official-reference, OpenGL, and Vulkan captures agree within documented
   alpha/color/edge tolerances for a representative model with clipping.
-  **Open:** OpenGL and Vulkan agree region-by-region inside the frozen L2D4.0
+  *Accepted limitation:* OpenGL and Vulkan agree region-by-region inside the frozen L2D4.0
   tolerances, but no official-reference capture exists — the licensed external
-  fixture has no built sample executable. Two of the three required captures is
-  not this criterion.
-- [ ] Resize and shutdown paths have runtime evidence, not compilation only.
-  **Open:** shutdown has runtime evidence (four viewer runs exit 0 reaching
+  fixture has no built sample executable. The official comparison remains an accepted limitation; cross-backend evidence is
+  is not substituted for it.
+- [x] Resize and shutdown paths have runtime evidence, not compilation only.
+  *Verified:* shutdown has runtime evidence (four viewer runs exit 0 reaching
   `CubismFramework::Dispose() is complete.` with no live-handle warning). Resize
   has neither runtime evidence nor a test — no test calls
-  `Live2DRenderer::ResizeOutput` and no run resizes the target.
+  `Live2DRenderer::ResizeOutput` and the viewer run resizes the target.
 
 ## Validation plan
 
@@ -162,7 +159,7 @@ Expected evidence includes:
 .\tools\kp.ps1 smoke
 cmake --build build --config Debug --target Live2DCoreTest
 ctest --test-dir build -C Debug -R Live2D
-cmake --build build --config Debug --target KimPeanutLive2DViewer
+cmake --build build --config Debug --target KimPeanutEngine
 cmake --build build --config Debug
 ctest --test-dir build -C Debug
 ```

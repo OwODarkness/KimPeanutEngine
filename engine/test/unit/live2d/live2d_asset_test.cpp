@@ -184,6 +184,12 @@ TEST(Live2DProductTest, V1AndV2RoundTrip)
         << diagnostic;
     EXPECT_EQ(parsed_v1.product_version, 1u);
     EXPECT_TRUE(parsed_v1.motions.empty());
+    const kpengine::live2d::Live2DModelResource v1_resource(
+        std::make_shared<const kpengine::live2d::Live2DProductData>(parsed_v1));
+    const auto v1_capabilities = v1_resource.Capabilities();
+    EXPECT_FALSE(v1_capabilities.has_typed_playback);
+    EXPECT_FALSE(v1_capabilities.has_secondary_behavior);
+    EXPECT_TRUE(v1_capabilities.requires_reimport_for_secondary_behavior);
 
     kpengine::live2d::Live2DProductData v2 = v1;
     v2.product_version = 2;
@@ -208,6 +214,12 @@ TEST(Live2DProductTest, V1AndV2RoundTrip)
     EXPECT_EQ(parsed_v2.expressions[0].name, "Shy");
     ASSERT_EQ(parsed_v2.parameter_groups.size(), 1u);
     EXPECT_EQ(parsed_v2.parameter_groups[0].ids.size(), 2u);
+    const kpengine::live2d::Live2DModelResource v2_resource(
+        std::make_shared<const kpengine::live2d::Live2DProductData>(parsed_v2));
+    const auto v2_capabilities = v2_resource.Capabilities();
+    EXPECT_TRUE(v2_capabilities.has_typed_playback);
+    EXPECT_FALSE(v2_capabilities.has_secondary_behavior);
+    EXPECT_TRUE(v2_capabilities.requires_reimport_for_secondary_behavior);
 
     kpengine::live2d::Live2DProductData v3 = v2;
     v3.product_version = 3;
@@ -234,6 +246,16 @@ TEST(Live2DProductTest, V1AndV2RoundTrip)
     EXPECT_EQ(parsed_v3.secondary_behavior.hit_areas[0].name, "Body");
     ASSERT_EQ(parsed_v3.secondary_behavior.user_data.size(), 1u);
     EXPECT_EQ(parsed_v3.secondary_behavior.user_data[0].value, "body");
+    const kpengine::live2d::Live2DModelResource v3_resource(
+        std::make_shared<const kpengine::live2d::Live2DProductData>(parsed_v3));
+    const auto v3_capabilities = v3_resource.Capabilities();
+    EXPECT_TRUE(v3_capabilities.has_typed_playback);
+    EXPECT_TRUE(v3_capabilities.has_secondary_behavior);
+    EXPECT_TRUE(v3_capabilities.has_physics);
+    EXPECT_TRUE(v3_capabilities.has_pose);
+    EXPECT_TRUE(v3_capabilities.has_hit_areas);
+    EXPECT_TRUE(v3_capabilities.has_user_data);
+    EXPECT_FALSE(v3_capabilities.requires_reimport_for_secondary_behavior);
 }
 
 TEST(Live2DAssetTest, ImportsTypedAnimationProductV2)

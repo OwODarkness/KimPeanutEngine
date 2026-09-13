@@ -52,7 +52,17 @@ namespace kpengine::live2d
                           features.multiplicative_drawable_count)},
                      {"unknown_blend_mode_count",
                       static_cast<std::uint64_t>(features.unknown_blend_mode_count)},
-                     {"covers_all_blend_modes", features.CoversAllBlendModes()}}};
+                     {"covers_all_blend_modes", features.CoversAllBlendModes()},
+                     {"has_typed_playback", report.capabilities.has_typed_playback},
+                     {"has_secondary_behavior", report.capabilities.has_secondary_behavior},
+                     {"has_physics", report.capabilities.has_physics},
+                     {"has_pose", report.capabilities.has_pose},
+                     {"has_hit_areas", report.capabilities.has_hit_areas},
+                     {"has_user_data", report.capabilities.has_user_data},
+                     {"requires_reimport_for_secondary_behavior",
+                      report.capabilities.requires_reimport_for_secondary_behavior},
+                     {"behavior_mask", static_cast<std::uint64_t>(report.behavior_mask)},
+                     {"update_sequence", report.update_sequence}}};
             },
             runtime::command::CommandThread::Game};
 

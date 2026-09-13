@@ -16,6 +16,16 @@ namespace kpengine::live2d
     inline constexpr asset::AssetType kLive2DModelAssetType =
         static_cast<asset::AssetType>(kLive2DModelAssetTypeValue);
 
+    struct Live2DBehaviorCapabilities final
+    {
+        bool has_typed_playback = false;
+        bool has_secondary_behavior = false;
+        bool has_physics = false;
+        bool has_pose = false;
+        bool has_hit_areas = false;
+        bool has_user_data = false;
+        bool requires_reimport_for_secondary_behavior = false;
+    };
     // Immutable data shared by all instances of one imported model. Cubism
     // model objects, parameter values, and frame-local drawable data belong to
     // Live2DSystem and are deliberately absent here.
@@ -28,6 +38,24 @@ namespace kpengine::live2d
         }
 
         const Live2DProductData &Product() const noexcept { return *product_; }
+        Live2DBehaviorCapabilities Capabilities() const noexcept
+        {
+            const Live2DProductData &product = Product();
+            Live2DBehaviorCapabilities capabilities{};
+            capabilities.has_typed_playback = product.product_version >= 2u;
+            capabilities.has_secondary_behavior = product.product_version >= 3u;
+            capabilities.has_physics = capabilities.has_secondary_behavior &&
+                                       !product.secondary_behavior.physics_bytes.empty();
+            capabilities.has_pose = capabilities.has_secondary_behavior &&
+                                    !product.secondary_behavior.pose_bytes.empty();
+            capabilities.has_hit_areas = capabilities.has_secondary_behavior &&
+                                         !product.secondary_behavior.hit_areas.empty();
+            capabilities.has_user_data = capabilities.has_secondary_behavior &&
+                                         !product.secondary_behavior.user_data.empty();
+            capabilities.requires_reimport_for_secondary_behavior =
+                !capabilities.has_secondary_behavior;
+            return capabilities;
+        }
         // Product V3 metadata is immutable and shared by every instance.
         const std::vector<Live2DUserDataEntry> &UserData() const noexcept
         {

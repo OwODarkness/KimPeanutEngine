@@ -60,7 +60,11 @@ namespace kpengine::live2d
 
     private:
         void RenderViewerUI();
+        void RenderControlPanel();
         void RenderProfilerWindow();
+        void RenderDebugControls();
+        Live2DFrameInput BuildFrameInput(float delta_time);
+        void HandleCursorEvent(const CursorEvent &event) noexcept;
         void CompleteWindowCapture() noexcept;
         void CleanupGpu() noexcept;
         // Applies --resize once, outside a frame bracket and before the startup
@@ -116,6 +120,23 @@ namespace kpengine::live2d
         // reach the shutdown path instead of the process being killed.
         bool capture_settled_ = false;
         bool exit_after_capture_ = false;
+        enum class GazeMode : std::uint8_t
+        {
+            Neutral,
+            FollowMouse,
+            FixedTarget
+        };
+        GazeMode gaze_mode_ = GazeMode::Neutral;
+        Live2DVector2 fixed_gaze_target_{};
+        Live2DVector2 cursor_position_{};
+        Live2DVector2 viewer_image_min_{};
+        Live2DVector2 viewer_image_size_{};
+        Live2DVector2 last_gaze_target_{};
+        bool cursor_position_valid_ = false;
+        bool viewer_image_valid_ = false;
+        bool paused_ = false;
+        bool step_requested_ = false;
+        bool reset_parameters_requested_ = false;
     };
 }
 

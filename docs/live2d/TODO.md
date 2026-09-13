@@ -38,12 +38,12 @@
   executor; both backends now agree inside the frozen tolerances on the
   cross-backend capture gate, so the window, presentation, and final capture
   workflow move to L2D5. Three L2D4.5 residuals are carried into L2D5: target
-  resize is the one hardening-matrix scenario with **no evidence at all** (no
+  resize was the hardening-matrix scenario with no evidence before L2D5.2 (no
   test calls `Live2DRenderer::ResizeOutput` and no run resized the target, so
   its transactional claim rests on code reading); shutdown handle accounting
-  exits cleanly four times over but is not asserted by a test; and
+  exits cleanly four times over and shutdown accounting is now asserted; and
   `CaptureView::Live2D` still names a module inside the generic capture enum.
-- [ ] **L2D5 — dedicated viewer and V1 evidence**
+- [x] **L2D5 — dedicated viewer and V1 evidence**
   ([concrete plan](.plan/L2D5.md)): execute five ordered subtasks—
   [x] [evidence contract freeze](.plan/L2D5.0.md)
   ([journal](../../.spec/journal/2026-09-12-live2d-l2d5-0.md)),
@@ -53,7 +53,7 @@
   ([journal](../../.spec/journal/2026-09-12-live2d-l2d5-2.md)),
   [x] [fixture, blend coverage, and reference disposition](.plan/L2D5.3.md)
   ([journal](../../.spec/journal/2026-09-12-live2d-l2d5-3.md)), and
-  [ ] [closeout and L2D6 handoff](.plan/L2D5.4.md). The standalone viewer itself
+  [x] [closeout and L2D6 handoff](.plan/L2D5.4.md). The standalone viewer itself
   landed early as an `IApplicationHost` host mode of `KimPeanutEngine.exe`
   (commits `6219e50`, `d8e9187`), **not** as the separate
   `KimPeanutLive2DViewer` binary this item originally named; the plan text is
@@ -141,14 +141,14 @@
   ([L2D5.2 journal](../../.spec/journal/2026-09-12-live2d-l2d5-2.md)).
   **Residual:** the `"live2d"` CLI string survives deliberately in generic
   runtime tooling as a launch-time alias for `host_output`.
-- [ ] One representative clipped model renders with correct order, opacity,
+- [x] One representative clipped model renders with correct order, opacity,
   normal/add/multiply blending, masks, canvas transform, and transparent
   background on OpenGL and Vulkan. *Cross-backend gate green (2026-09-11):*
   the configured clipped Hiyori product renders on both APIs and every compared
   region — non-edge opaque, partial alpha, transparent background, filtered
   edge — is inside the frozen tolerances, with two mask contexts active. The
-  comparison does not yet assert that all three blend modes appear in the
-  fixture, so additive/multiplicative coverage is not separately proven.
+  L2D5.3 model reports prove Mao contains 239 normal, 15 additive, and 8
+  multiplicative drawables on both backends.
 - [x] The dedicated viewer resizes, captures a stable frame, and exits without
   Graphics validation errors, leaked Cubism objects, or live GPU handles.
   *Verified (2026-09-12):*
@@ -173,12 +173,12 @@
   `max_abs` 3, on internal clip/mask boundaries the comparator's edge mask cannot
   classify). Item 10's own criterion is met; pixel agreement at the resized
   extent is L2D5.3's to disposition.
-- [ ] Visual evidence is compared against the official R5 renderer with
+- [x] Visual evidence is compared against the official R5 renderer with
   documented tolerances; compilation alone is not accepted.
-  *Blocked:* the licensed external fixture has no built official sample
-  executable, so no official-reference image exists to compare against.
-  Cross-backend agreement (OpenGL vs Vulkan) is not a substitute for this and
-  is not recorded as one.
+  *Accepted limitation (2026-09-12):* the official sample cannot be built
+  because GLEW 2.2.0 is unavailable, so no official-reference image exists.
+  Cross-backend agreement is explicitly not substituted for this claim; the
+  residual risk and unblocking step are recorded in the L2D5.3 journal.
 
 ## Post-V1 roadmap
 
@@ -198,16 +198,33 @@
   demonstrated that V1 cannot import any `model3.json` containing `Expressions`
   and silently discards numeric fade overrides, so V1 playback must require
   reimport rather than reading `optional_chunks`. L2D6.0's own gate is closed.
-  Two of the three items that blocked the parent plan's L2D5 entry gate are now
-  cleared — `CaptureView::Live2D` was retired by L2D5.1 and resize plus shutdown
-  now have runtime evidence from L2D5.2 — so only the official-reference
-  comparison remains blocked, along with L2D5.3's fixture and blend coverage and
-  L2D5.2's recorded tolerance miss at the resized extent. That reconciliation
-  must happen before L2D6.4.
-- [ ] **L2D7 — secondary model behavior:** physics, pose, eye blink, breath,
-  gaze, user data, hit areas, and deterministic update ordering.
-- [ ] **L2D8 — emotion and body-language policy:** map application-level intent
-  to authored motion/expression combinations through a data-driven controller.
+  L2D5.4 reconciled the V1 ledger and checked the L2D6 entry gate. The official
+  reference remains an accepted limitation, and the Hiyori resized residual
+  plus Mao mask-channel divergence remain named follow-up risks; the product,
+  instance-lifetime, and generic submission boundaries are unchanged.
+- [ ] **L2D7 — secondary model behavior**
+  ([concrete plan](.plan/L2D7.md)): execute five ordered subtasks—
+  [ ] **L2D7.0** reconcile the L2D6 phase seam and freeze Product V3, public
+  values, deterministic blink, coordinate-space, and update-order contracts;
+  [ ] **L2D7.1** add typed physics/pose/user-data/hit-area Product V3 import
+  while retaining explicit V1/V2 compatibility;
+  [ ] **L2D7.2** add instance-local controllers and the one canonical
+  `AdvanceFrame` transaction;
+  [x] **L2D7.3** expose immutable user-data queries and current-geometry
+  model-local hit tests; and
+  [x] **L2D7.4** close lifecycle, deterministic replay, viewer evidence, and
+  L2D8/L2D9 handoff;
+  [x] **L2D7.5** add standalone viewer runtime debug tools, including gaze
+  following, fixed-target input, pause/step, and copied behavior diagnostics.
+  L2D7 starts only after L2D6.4 is accepted. Its first gate
+  must correct the current single post-expression insertion seam because R5
+  orders automatic blink before expression evaluation.
+- [ ] **L2D8 — emotion/body-language policy and state-machine observability:**
+  map application-level intent to authored motion/expression combinations through
+  a data-driven controller. The runtime must expose a stable SDK-free state
+  snapshot and transition record that debug tooling and the agent can read; the
+  Live2D viewer visualizes the same state graph, current node, active clips,
+  transitions, and reasons without coupling runtime code to UI.
 - [ ] **L2D9 — speech integration:** lip-sync inputs and optional TTS/audio
   coupling through narrow interfaces; Live2D does not depend on a specific TTS
   provider.
@@ -217,6 +234,57 @@
 - [ ] **L2D11 — measured performance:** profile first, then consider async
   streaming, shared mask atlases, bindless batching, update-rate decoupling, or
   Sakura-style CPU-visible VRAM paths.
+
+## L2D7 acceptance
+
+- [ ] L2D6.4 is accepted and its internal transaction exposes named phases that
+  can place automatic blink before expression without changing public playback
+  tokens, priorities, fades, completion, or value-owned event behavior.
+- [ ] Product V3 deterministically preserves L2D6 animation data plus optional
+  physics/pose bytes, ordered unique hit areas, and ordered immutable user-data
+  entries under the existing field, collection, and product bounds.
+- [ ] Product V1 remains render-only and Product V2 remains playback-capable;
+  both report secondary behavior as unavailable/reimport-required without
+  inferring semantics from `optional_chunks`.
+- [ ] The importer validates the complete behavior source closure before root
+  publication; malformed JSON, missing files, duplicate names, invalid IDs,
+  path escape, and size/count overflow expose no partial root or instance.
+- [ ] Public configuration, frame-input, result, capability, user-data, and
+  hit-area headers contain no Cubism, OpenGL, Vulkan, AssetManager, Render,
+  Graphics, Editor, Audio, or TTS type.
+- [ ] Mutable physics, pose, blink, breath, gaze, RNG, playback, parameter, and
+  part-opacity state is owned independently by each `Live2DModelInstance`; two
+  instances share immutable payloads only.
+- [ ] One tested transaction performs `LoadParameters -> base writes -> motion
+  -> SaveParameters -> blink -> expression -> gaze -> breath -> physics ->
+  reserved lip-sync slot -> pose -> CubismModel::Update` exactly once and then
+  publishes events/results.
+- [ ] Identical Product V3 data, configuration seed, delta sequence, gaze,
+  gravity, and wind reproduce equivalent parameter, part-opacity, drawable,
+  event, and hit-test results without global RNG or wall-clock input.
+- [ ] Negative/NaN/infinite delta and non-finite/out-of-range frame input fail
+  before changing any controller, playback, parameter, opacity, sequence, or
+  event state; zero delta remains a valid inert advance.
+- [ ] Automatic blink uses only the authored `EyeBlink` parameter group and is
+  suppressed under the pinned R5 motion-updated rule; breath and gaze apply
+  only to resolved configured parameters and report missing channels.
+- [ ] Authored physics consumes the same caller delta plus explicit gravity and
+  wind, pose evaluates last, absent optional files are valid no-ops, and
+  malformed Framework inputs fail staged instance creation atomically.
+- [x] L2D7.5 viewer tools drive only SDK-free runtime inputs and copied
+  snapshots; `Follow Mouse` visibly changes gaze while Runtime remains free of
+  ImGui, window, DPI, and input-device dependencies.
+- [ ] User data remains immutable and ordered; hit testing resolves authored
+  drawable IDs once and tests finite model-local points against inclusive
+  bounds of current deformed geometry without GPU readback or window policy.
+- [ ] A locally licensed Product V3 fixture completes one deterministic scripted
+  viewer sequence on OpenGL and Vulkan, produces matching SDK-free behavior
+  reports, captures through the existing host-output path, and shuts down with
+  no Graphics validation error, live module GPU handle, controller, or Cubism
+  model lease.
+- [ ] SDK-off configuration/build and the full build/test suite pass; the final
+  dependency audit finds no L2D7 semantic branch in Asset, Render, Graphics,
+  Editor, Audio, or TTS.
 
 ## L2D4 planning decisions and remaining gates
 

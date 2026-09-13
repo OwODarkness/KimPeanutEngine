@@ -109,6 +109,10 @@ namespace kpengine::live2d
                 return false;
             }
             window_initialized_ = true;
+            window_->cursor_event_dispatcher_.Bind([this](const CursorEvent &event)
+            {
+                HandleCursorEvent(event);
+            });
 
             backend_ = graphics::RenderBackend::CreateGraphicsBackEnd(engine.GetGraphicsAPI());
             if (!backend_)
@@ -319,14 +323,17 @@ namespace kpengine::live2d
                     // came from, so publish both together.
                     const Live2DRenderCounters &counters = renderer_->GetLastCounters();
                     KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
-                           "Startup capture exported to %s (frame_sequence %llu, draws %u, "
-                           "mask_sources %u, mask_contexts %u, position_upload_bytes %llu)",
+                           "Startup capture exported to %s (frame_sequence %llu, behavior_mask %u, draws %u, "
+                           "mask_sources %u, mask_contexts %u, position_upload_bytes %llu, typed_playback %d, secondary_behavior %d)",
                            result.output_path.c_str(),
                            static_cast<unsigned long long>(renderer_->GetLastFrameSequence()),
+                           renderer_->GetLastBehaviorMask(),
                            counters.submitted_draw_count,
                            counters.submitted_mask_source_draw_count,
                            counters.active_mask_context_count,
-                           static_cast<unsigned long long>(counters.position_upload_bytes));
+                           static_cast<unsigned long long>(counters.position_upload_bytes),
+                           renderer_->GetBehaviorCapabilities().has_typed_playback ? 1 : 0,
+                           renderer_->GetBehaviorCapabilities().has_secondary_behavior ? 1 : 0);
                 }
                 else
                 {
@@ -427,10 +434,20 @@ namespace kpengine::live2d
             backend_->EndFrame();
             return true;
         }
-        elapsed_seconds_ += 1.0f / 120.0f;
-        frame.Begin(frame_index, {frame_number_++, elapsed_seconds_, 1.0f / 120.0f}, extent);
+        constexpr float kViewerDeltaSeconds = 1.0f / 120.0f;
+        const bool advance_frame = !paused_ || step_requested_;
+        const Live2DFrameInput frame_input = BuildFrameInput(kViewerDeltaSeconds);
+        const bool reset_parameters = reset_parameters_requested_;
+        step_requested_ = false;
+        reset_parameters_requested_ = false;
+        if (advance_frame)
+        {
+            elapsed_seconds_ += kViewerDeltaSeconds;
+        }
+        frame.Begin(frame_index, {frame_number_++, elapsed_seconds_, kViewerDeltaSeconds}, extent);
         const auto render_started = std::chrono::steady_clock::now();
-        if (!renderer_->Record(frame, *recorder, 1.0f / 120.0f, diagnostic))
+        if (!renderer_->Record(frame, *recorder, kViewerDeltaSeconds, frame_input,
+                                      advance_frame, reset_parameters, diagnostic))
         {
             if (render_capture_service_ && render_capture_service_->HasPendingCapture())
             {
@@ -554,6 +571,9 @@ namespace kpengine::live2d
                     }
                     report.model_path = loaded_model_path_;
                     report.features = renderer_->GetFeatureReport();
+                    report.capabilities = renderer_->GetBehaviorCapabilities();
+                    report.behavior_mask = renderer_->GetLastBehaviorMask();
+                    report.update_sequence = renderer_->GetLastFrameSequence();
                     return true;
                 });
         if (!registration.IsSuccess())
@@ -578,6 +598,7 @@ namespace kpengine::live2d
         constexpr ImGuiWindowFlags kViewerFlags =
             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
             ImGuiWindowFlags_NoCollapse;
+        viewer_image_valid_ = false;
         if (ImGui::Begin("Live2D Viewer", nullptr, kViewerFlags))
         {
             const ImVec2 available = ImGui::GetContentRegionAvail();
@@ -588,6 +609,10 @@ namespace kpengine::live2d
             const ImVec2 cursor = ImGui::GetCursorPos();
             ImGui::SetCursorPos(ImVec2(cursor.x + (available.x - image_size.x) * 0.5f,
                                        cursor.y + (available.y - image_size.y) * 0.5f));
+            const ImVec2 image_min = ImGui::GetCursorScreenPos();
+            viewer_image_min_ = {image_min.x, image_min.y};
+            viewer_image_size_ = {image_size.x, image_size.y};
+            viewer_image_valid_ = image_size.x > 0.0f && image_size.y > 0.0f;
             viewer_ui_->ui->DrawRenderTarget(renderer_->GetOutputView(), image_size);
         }
         ImGui::End();
@@ -596,23 +621,211 @@ namespace kpengine::live2d
         {
             viewer_ui_->log->Render();
         }
+        RenderControlPanel();
         RenderProfilerWindow();
     }
 
+    void Live2DViewerHost::HandleCursorEvent(const CursorEvent &event) noexcept
+    {
+        if (!std::isfinite(event.xpos) || !std::isfinite(event.ypos))
+        {
+            cursor_position_valid_ = false;
+            return;
+        }
+        cursor_position_ = {static_cast<float>(event.xpos),
+                            static_cast<float>(event.ypos)};
+        cursor_position_valid_ = true;
+    }
+
+    Live2DFrameInput Live2DViewerHost::BuildFrameInput(const float delta_time)
+    {
+        Live2DFrameInput input{};
+        input.delta_seconds = delta_time;
+        Live2DVector2 target{};
+        if (gaze_mode_ == GazeMode::FixedTarget)
+        {
+            target.x = std::clamp(fixed_gaze_target_.x, -1.0f, 1.0f);
+            target.y = std::clamp(fixed_gaze_target_.y, -1.0f, 1.0f);
+        }
+        else if (gaze_mode_ == GazeMode::FollowMouse && cursor_position_valid_ &&
+                 viewer_image_valid_ && viewer_image_size_.x > 0.0f &&
+                 viewer_image_size_.y > 0.0f)
+        {
+            const float normalized_x =
+                (cursor_position_.x - viewer_image_min_.x) / viewer_image_size_.x;
+            const float normalized_y =
+                (cursor_position_.y - viewer_image_min_.y) / viewer_image_size_.y;
+            target.x = std::clamp(normalized_x * 2.0f - 1.0f, -1.0f, 1.0f);
+            target.y = std::clamp(1.0f - normalized_y * 2.0f, -1.0f, 1.0f);
+        }
+        input.gaze_target = target;
+        last_gaze_target_ = target;
+        return input;
+    }
+
+    void Live2DViewerHost::RenderControlPanel()
+    {
+        ImGuiViewport *const viewport = ImGui::GetMainViewport();
+        const ImVec2 panel_pos(viewport->WorkPos.x + viewport->WorkSize.x * 0.70f,
+                               viewport->WorkPos.y);
+        const ImVec2 panel_size(viewport->WorkSize.x * 0.30f,
+                                viewport->WorkSize.y * 0.43f);
+        ImGui::SetNextWindowPos(panel_pos, ImGuiCond_Always);
+        ImGui::SetNextWindowSize(panel_size, ImGuiCond_Always);
+        constexpr ImGuiWindowFlags kPanelFlags =
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+
+        if (ImGui::Begin("Live2D Control Deck", nullptr, kPanelFlags))
+        {
+            ImGui::TextDisabled("RUNTIME DEBUG");
+            ImGui::Separator();
+            RenderDebugControls();
+        }
+        ImGui::End();
+
+    }
+
+    void Live2DViewerHost::RenderDebugControls()
+    {
+        static constexpr const char *kGazeLabels[] = {
+            "Neutral", "Follow Mouse", "Fixed Target"};
+        static constexpr const char *kBehaviorLabels[] = {
+            "Blink", "Gaze", "Breath", "Physics", "Pose"};
+        static constexpr std::uint32_t kBehaviorBits[] = {
+            kLive2DBehaviorBlink, kLive2DBehaviorGaze, kLive2DBehaviorBreath,
+            kLive2DBehaviorPhysics, kLive2DBehaviorPose};
+        constexpr std::size_t kBehaviorCount = sizeof(kBehaviorLabels) / sizeof(kBehaviorLabels[0]);
+
+        if (ImGui::BeginTabBar("##live2d_control_tabs"))
+        {
+            if (ImGui::BeginTabItem("Gaze"))
+            {
+                ImGui::Text("GAZE TARGETING");
+                ImGui::TextDisabled("The runtime smooths this target before applying it.");
+                int gaze_mode = static_cast<int>(gaze_mode_);
+                gaze_mode = std::clamp(gaze_mode, 0, 2);
+                if (ImGui::BeginCombo("Mode", kGazeLabels[gaze_mode]))
+                {
+                    for (int index = 0; index < 3; ++index)
+                    {
+                        const bool selected = gaze_mode == index;
+                        if (ImGui::Selectable(kGazeLabels[index], selected))
+                        {
+                            gaze_mode_ = static_cast<GazeMode>(index);
+                        }
+                        if (selected)
+                        {
+                            ImGui::SetItemDefaultFocus();
+                        }
+                    }
+                    ImGui::EndCombo();
+                }
+                if (gaze_mode_ == GazeMode::FixedTarget)
+                {
+                    float target[2] = {fixed_gaze_target_.x, fixed_gaze_target_.y};
+                    if (ImGui::SliderFloat2("Fixed target", target, -1.0f, 1.0f))
+                    {
+                        fixed_gaze_target_ = {target[0], target[1]};
+                    }
+                }
+                ImGui::Separator();
+                ImGui::TextDisabled("CURRENT TARGET");
+                ImGui::Text("(%+.2f, %+.2f)", last_gaze_target_.x, last_gaze_target_.y);
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Playback"))
+            {
+                ImGui::Text("PLAYBACK CONTROL");
+                ImGui::TextDisabled("Freeze authored motion while inspecting a pose.");
+                if (paused_)
+                {
+                    if (ImGui::Button("RESUME", ImVec2(-1.0f, 0.0f)))
+                    {
+                        paused_ = false;
+                        step_requested_ = false;
+                    }
+                }
+                else if (ImGui::Button("PAUSE", ImVec2(-1.0f, 0.0f)))
+                {
+                    paused_ = true;
+                }
+                if (ImGui::Button("STEP ONE FRAME", ImVec2(-1.0f, 0.0f)))
+                {
+                    paused_ = true;
+                    step_requested_ = true;
+                }
+                if (ImGui::Button("RESET PARAMETERS", ImVec2(-1.0f, 0.0f)))
+                {
+                    reset_parameters_requested_ = true;
+                }
+                ImGui::Separator();
+                ImGui::Text("State: %s", paused_ ? "PAUSED" : "PLAYING");
+                ImGui::EndTabItem();
+            }
+
+            if (ImGui::BeginTabItem("Telemetry"))
+            {
+                ImGui::Text("RUNTIME TELEMETRY");
+                if (renderer_ == nullptr)
+                {
+                    ImGui::TextDisabled("Live2D runtime is not ready");
+                }
+                else
+                {
+                    const Live2DBehaviorCapabilities capabilities =
+                        renderer_->GetBehaviorCapabilities();
+                    const Live2DRenderFeatureReport &features = renderer_->GetFeatureReport();
+                    const std::uint32_t behavior_mask = renderer_->GetLastBehaviorMask();
+                    ImGui::Text("Update sequence  %llu",
+                                static_cast<unsigned long long>(renderer_->GetLastUpdateSequence()));
+                    ImGui::Text("Snapshot sequence %llu",
+                                static_cast<unsigned long long>(renderer_->GetLastFrameSequence()));
+                    ImGui::Text("Parameters  %llu   Drawables  %u",
+                                static_cast<unsigned long long>(renderer_->GetParameterCount()),
+                                features.drawable_count);
+                    ImGui::Separator();
+                    ImGui::TextDisabled("ACTIVE BEHAVIORS");
+                    for (std::size_t index = 0; index < kBehaviorCount; ++index)
+                    {
+                        const bool active = (behavior_mask & kBehaviorBits[index]) != 0u;
+                        ImGui::Text(active ? "[ ON ]  %s" : "[ -- ]  %s",
+                                   kBehaviorLabels[index]);
+                        if ((index % 2u) == 0u && index + 1u < kBehaviorCount)
+                        {
+                            ImGui::SameLine(150.0f);
+                        }
+                    }
+                    ImGui::Separator();
+                    ImGui::Text("Hit areas  %s", capabilities.has_hit_areas ? "available" : "none");
+                    ImGui::Text("User data   %s", capabilities.has_user_data ? "available" : "none");
+                    ImGui::Text("Secondary   %s",
+                                capabilities.has_secondary_behavior ? "available" : "reimport required");
+                    ImGui::Text("Behavior mask  0x%08X", static_cast<unsigned>(behavior_mask));
+                }
+                ImGui::EndTabItem();
+            }
+            ImGui::EndTabBar();
+        }
+    }
     void Live2DViewerHost::RenderProfilerWindow()
     {
         ImGuiViewport *const viewport = ImGui::GetMainViewport();
         const ImVec2 profiler_pos(viewport->WorkPos.x + viewport->WorkSize.x * 0.70f,
-                                  viewport->WorkPos.y);
+                                  viewport->WorkPos.y + viewport->WorkSize.y * 0.44f);
         const ImVec2 profiler_size(viewport->WorkSize.x * 0.30f,
-                                   viewport->WorkSize.y * 0.75f);
+                                   viewport->WorkSize.y * 0.31f);
         ImGui::SetNextWindowPos(profiler_pos, ImGuiCond_Always);
         ImGui::SetNextWindowSize(profiler_size, ImGuiCond_Always);
         constexpr ImGuiWindowFlags kProfilerFlags =
             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoCollapse;
+            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+
         if (ImGui::Begin("Performance Profiler", nullptr, kProfilerFlags))
         {
+            ImGui::TextDisabled("GPU submission and frame timing");
+            ImGui::Separator();
             const graphics::BackendProfileCounters counters =
                 backend_ != nullptr ? backend_->GetBackendProfileCounters()
                                     : graphics::BackendProfileCounters{};
@@ -655,6 +868,7 @@ namespace kpengine::live2d
             ImGui::Text("Total %.2f ms", viewer_ui_->ui->GetLastRenderTimeMs());
         }
         ImGui::End();
+
     }
 
     void Live2DViewerHost::CleanupGpu() noexcept

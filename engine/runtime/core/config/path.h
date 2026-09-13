@@ -60,7 +60,7 @@ namespace kpengine
 
     inline std::string GetLogDirectory()
     {
-        return ComposePath(project_root, "logs/");
+        return ComposePath(project_root, "save/logs/");
     }
 }
 

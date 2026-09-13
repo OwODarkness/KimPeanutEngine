@@ -7,6 +7,7 @@
 
 #include "command/command_registry.h"
 #include "render/live2d_render_contract.h"
+#include "runtime/live2d_model_resource.h"
 
 namespace kpengine::live2d
 {
@@ -18,6 +19,9 @@ namespace kpengine::live2d
     {
         std::string model_path;
         Live2DRenderFeatureReport features{};
+        Live2DBehaviorCapabilities capabilities{};
+        std::uint32_t behavior_mask = 0u;
+        std::uint64_t update_sequence = 0u;
     };
 
     // Resolves the model the active host has loaded, or nullopt when no host
