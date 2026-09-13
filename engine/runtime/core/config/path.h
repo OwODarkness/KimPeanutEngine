@@ -62,6 +62,20 @@ namespace kpengine
     {
         return ComposePath(project_root, "save/logs/");
     }
+
+    // Generated, git-ignored runtime output. Distinct from config/, which is checked in
+    // and authored: anything the engine writes at runtime belongs under save/.
+    inline std::string GetSaveDirectory()
+    {
+        return ComposePath(project_root, "save/");
+    }
+
+    // Editor layout preferences. Their own file rather than config/settings.json, which
+    // is checked in and read by two independent parsers.
+    inline std::string GetEditorLayoutPath()
+    {
+        return ComposePath(project_root, "save/editor_layout.json");
+    }
 }
 
 #endif // KPENGINE_PLATFORM_PATH_H

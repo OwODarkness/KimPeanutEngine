@@ -342,8 +342,8 @@ namespace kpengine::editor
     EditorGpuProfilerComponent::EditorGpuProfilerComponent(runtime::Engine *engine,
                                                            render::RenderSystem *render_system,
                                                            const EditorUI *editor_ui)
-        : EditorWindowComponent("Performance Profiler", EditorWindowConfig{0.8f, 0.70f, 0.2f,
-                                                                              0.34f, true}),
+        : EditorWindowComponent("Performance Profiler",
+                               SlotConfig(EditorLayoutSlot::GpuProfiler)),
           engine_(engine),
           render_system_(render_system),
           editor_ui_(editor_ui)

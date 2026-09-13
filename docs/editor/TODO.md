@@ -1,6 +1,6 @@
 # Editor TODO
 
-**Status: ED1 implemented.** Landed editor design is in [editor_module.md](editor_module.md). ED2–ED3 remain proposed. Parent work remains in the root [status ledger](../status.md).
+**Status: ED1–ED2 implemented.** Landed editor design is in [editor_module.md](editor_module.md). ED3 remains proposed. Parent work remains in the root [status ledger](../status.md).
 
 ## ED — Editor shell and layout
 
@@ -17,12 +17,13 @@
   - [x] Add the **View** menu.
   - [x] Cover the model with headless tests.
 
-- [ ] **ED2 — Editor layout model.**
+- [x] **[ED2 — Editor layout model](.plan/ED2.md).** → [journal](../../.spec/journal/2026-09-13-editor-layout.md)
 
-  - [ ] Introduce explicit regions and a splitter tree so panel geometry stops being a hardcoded ratio in each component.
-  - [ ] Reflow siblings when one region is resized.
-  - [ ] Add a resizable splitter for the tool row.
-  - [ ] Persist layout state rather than relying on `imgui.ini` geometry alone.
+  - [x] Introduce explicit regions and a splitter tree so panel geometry stops being a hardcoded ratio in each component.
+  - [x] Reflow siblings when one region is resized.
+  - [x] Add a resizable splitter for the tool row.
+  - [x] Persist layout state rather than relying on `imgui.ini` geometry alone.
+  - [x] Keep every geometry decision in an ImGui-free model so tiling, reflow, and clamping are unit-tested.
 
 - [ ] **ED3 — Magnetic placement.**
 
@@ -34,6 +35,14 @@
 
 - Tab reordering and tab-strip overflow scrolling (the hand-rolled strip has neither).
 - Detached windows currently lose the base window chrome (lock toggle, focus accent).
-- `EditorWindowComponent::width_/height_/pos_x/pos_y` are refreshed only inside the base
-  `RenderContent()`, so a panel hosted by the tool row leaves them stale. Constrains which
-  panels can be hosted until ED2 gives every panel its geometry from the layout model.
+- The **loading tree** still places itself with ratios: `EditorLoadingComponent` is a
+  centred fixed-size card and `EditorStartupProfilerComponent` is the one unlocked window
+  left. The two overlap today (the profiler covers part of the card). ED2 left them alone
+  as out of scope; unifying them onto a layout instance is a later stage.
+- The Live2D viewer host builds an `EditorLogComponent` outside `EditorUI`, so that panel
+  keeps the ratio path. Nothing outside `engine/editor` was changed to accommodate ED2.
+- Splitter handles sit on the seam with no gutter, so a click within ~3 px of a seam
+  reaches the handle rather than the panel beneath it. Chosen over gutters, which would
+  change every panel's rect.
+- No layout editor UI: regions are fixed by the table in `EditorLayoutModel`, and the user
+  can resize seams but not add, remove, or move a region. That is ED3's magnetic placement.

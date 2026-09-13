@@ -578,8 +578,7 @@ namespace kpengine::editor
     EditorActorInspectorComponent::EditorActorInspectorComponent(
         ActorEditorModel &model, WindowSystem *window_system, input::InputSystem *input_system,
         runtime::ISceneCameraControlSink *camera_control_sink)
-        : EditorWindowComponent("Actor Inspector", EditorWindowConfig{0.0f, 0.28f, 0.22f, 0.42f,
-                                                                        true}),
+        : EditorWindowComponent("Actor Inspector", SlotConfig(EditorLayoutSlot::ActorInspector)),
           model_(model), window_system_(window_system), input_system_(input_system),
           camera_control_sink_(camera_control_sink)
     {

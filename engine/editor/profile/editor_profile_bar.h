@@ -18,8 +18,17 @@ namespace kpengine::editor
 
         void Render() override;
 
+        // The bar occupies the bottom strip of the layout. Its height is content-derived
+        // (font height plus window padding), which is why the layout's root split is a
+        // fixed-pixel split rather than a fraction.
+        static float MeasurePreferredHeightPx() noexcept;
+
+        std::optional<EditorLayoutSlot> GetLayoutSlot() const noexcept override;
+        void ApplyLayout(std::optional<EditorRect> rect) noexcept override;
+
     private:
         std::vector<std::unique_ptr<EditorMetric>> metrics_;
+        std::optional<EditorRect> layout_rect_;
     };
 }
 

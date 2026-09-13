@@ -60,3 +60,27 @@ target_link_libraries(EditorToolRowModelUnitTest PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(EditorToolRowModelUnitTest)
+
+# The layout model is ImGui-free by design, so this target links no ImGui and compiles
+# the model source directly. If it ever starts pulling imgui.h, the layering has been
+# broken and this build will say so.
+add_executable(EditorLayoutModelUnitTest
+    editor_layout_model_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_layout_model.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/settings/editor_layout_settings.cpp
+)
+
+target_include_directories(EditorLayoutModelUnitTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine
+)
+
+# NlohmannJson is header-only and is needed only by the persistence round-trip; it pulls
+# in no ImGui. The settings parser deliberately does not log, so no Log lib is needed and
+# the caller owns the diagnostic it returns.
+target_link_libraries(EditorLayoutModelUnitTest PRIVATE
+    KP::GoogleTest
+    KP::NlohmannJson
+)
+
+include(GoogleTest)
+gtest_discover_tests(EditorLayoutModelUnitTest)

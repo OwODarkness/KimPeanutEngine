@@ -8,8 +8,7 @@ namespace kpengine::editor
 {
     EditorCameraSettingsComponent::EditorCameraSettingsComponent(
         runtime::ISceneCameraControlSink *camera_control_sink)
-        : EditorWindowComponent("Camera Settings", EditorWindowConfig{0.8f, 0.0f, 0.2f,
-                                                                        0.35f, true}),
+        : EditorWindowComponent("Camera Settings", SlotConfig(EditorLayoutSlot::CameraSettings)),
           camera_control_sink_(camera_control_sink)
     {
     }

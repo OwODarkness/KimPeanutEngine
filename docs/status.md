@@ -1,5 +1,24 @@
 # Project Status
 
+- **Editor ED2 layout model (2026-09-13)** — panel geometry now comes from one layout
+  model: named regions in a declarative splitter tree, resolved to rectangles once per
+  frame, with draggable seams and persistence to `save/editor_layout.json`. Panels declare
+  a slot and carry no geometry literal; `imgui.ini` no longer holds workspace geometry at
+  all (verified: with the file deleted the workspace renders identically). Two pre-existing
+  bugs were fixed as a consequence — the GPU Profiler overflowed the work area by 4% and
+  drew over the Profile bar, and the tool row's band disagreed with the bar by a gap or an
+  overlap depending on window height — because both were three hardcoded ratios describing
+  one edge. All the arithmetic is ImGui-free and tested, including a tiling assertion
+  swept over six window sizes that would catch either regression. 31 new tests pass; the
+  full suite is 654/655 with one pre-existing unrelated fixture failure. Both backends
+  smoke-captured, and the resize path is verified through the transport by writing a layout
+  and relaunching. A follow-up defect was also closed: closing a panel was still terminal
+  for the six region panels and two self-placing windows, because ED1's fix only re-routed
+  the close for windows with a bound visibility. `HasCloseButton()` now defaults to false on
+  the rule that a close button is a promise the window comes back; nothing in the editor
+  overrides it, and tool-row tabs are the closable surface. ED3 (magnetic placement) remains
+  open. → [ED2 journal](../.spec/journal/2026-09-13-editor-layout.md),
+  [ED2 plan](editor/.plan/ED2.md), [Editor TODO](editor/TODO.md)
 - **Editor ED1 tabbed tool row (2026-09-13)** — the Editor's bottom band is now one
   tabbed row instead of overlapping windows. The Log and Console are hosted as tabs
   with close buttons; a tab can be isolated into a standalone window and re-docked

@@ -162,6 +162,23 @@ conditional `EndChild`. Both were in the ImGui event/layout glue that the model 
 cannot reach — which is the strongest argument for the ED2 layout work giving this surface
 real test coverage, or for a scripted panel-state hook.
 
+## Correction (2026-09-13, found during ED2)
+
+**This journal claimed more than it delivered.** It says the terminal-close defect was
+fixed by writing the close click into a local `bool` and routing it out. That is true only
+for windows with a **bound** `EditorWindowVisibility`, and `SetVisibility` is called from
+one place — the tool row's `AddPanel`. For every other window the write-out falls through to
+`is_open_ = false`, which latches exactly as before.
+
+So after ED1 the six region panels (Viewport, World Outliner, Actor Inspector, Camera
+Settings, Debug Viewer, GPU Profiler) could still be closed permanently, as could the
+loading-tree Startup Profiler and the Live2D viewer's log panel. ED1's evidence did not
+distinguish bound from unbound windows, so the claim was stated too broadly.
+
+ED2 closed it properly by inverting `HasCloseButton()` to default false, on the rule that a
+close button is only honest where something can restore the window. See the correction in
+[the ED2 journal](2026-09-13-editor-layout.md) for the full account.
+
 ## Remaining risks and unverified areas
 
 - The ImGui event glue (click, drag, popup, menu) has no automated coverage; only the model

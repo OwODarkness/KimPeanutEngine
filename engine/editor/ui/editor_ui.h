@@ -7,6 +7,8 @@
 #include <optional>
 #include "base/type.h"
 #include "editor/settings/editor_settings.h"
+#include "editor/ui/component/editor_layout_model.h"
+#include "editor/ui/component/editor_splitter_handles.h"
 #include "editor/ui/component/editor_tool_row_model.h"
 #include "graphics/backend/common/editor_presentation_bridge.h"
 #include "graphics/backend/common/render_target.h"
@@ -159,6 +161,13 @@ namespace kpengine::editor
         void BuildLoadingTree();
         void BuildStartupProfilerWindow();
         bool RenderActiveTree();
+
+        // Resolves the layout against this frame's work area and pushes a rect into every
+        // component that declares a slot. Called from the workspace branch only, so the
+        // loading tree keeps placing itself.
+        void ApplyLayoutToTree();
+        void LoadLayoutState();
+        void SaveLayoutState();
         // Binds the Tool > Capture Screenshot command to the runtime export path.
         void TriggerScreenshot();
 
@@ -194,6 +203,12 @@ namespace kpengine::editor
         // components_ for the same reason, and owned here rather than by the row so
         // the View menu can bind by id before the row is built.
         EditorToolRowModel tool_row_model_;
+
+        // Panel geometry, owned here because EditorUI is what resolves it and pushes a
+        // rect into each component before the tree renders. ImGui-free: all of its
+        // arithmetic is unit-tested and none of it needs a frame.
+        EditorLayoutModel layout_;
+        EditorSplitterHandles splitter_handles_;
 
         std::vector<std::unique_ptr<EditorUIComponent>> components_;
         std::vector<std::unique_ptr<EditorUIComponent>> loading_components_;

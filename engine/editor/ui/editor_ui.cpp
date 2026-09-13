@@ -22,6 +22,7 @@
 #include "editor/ui/component/editor_viewport_component.h"
 #include "editor/ui/editor_extension_registry.h"
 #include "editor/log/editor_log_component.h"
+#include "editor/settings/editor_layout_settings.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/profile/editor_builtin_metrics.h"
 #include "editor/profile/editor_profile_bar.h"
@@ -248,10 +249,7 @@ namespace kpengine::editor
         runtime::ISceneSelectionSink *scene_selection_sink,
         ActorEditorModel *actor_model)
     {
-        EditorWindowConfig config;
-        config.pos_x_ratio = 0.22f;
-        config.width_ratio = 0.58f;
-        config.height_ratio = 0.7f;
+        EditorWindowConfig config = SlotConfig(EditorLayoutSlot::Viewport);
         std::unique_ptr<EditorWindowComponent> window_component =
             std::make_unique<EditorWindowComponent>("Viewport", config);
         window_component->AddComponent(std::make_shared<EditorViewportComponent>(
@@ -353,17 +351,11 @@ namespace kpengine::editor
         // a tree that has already been torn down.
         tool_row_model_.Clear();
 
-        // The shared bottom band the log used to occupy alone: x 0..0.8, y 0.7..0.96.
-        // The horizontal scrollbar moves here with it, since the log no longer owns
-        // a window and long diagnostic lines must stay reachable.
-        EditorWindowConfig row_config;
-        row_config.width_ratio = 0.8f;
-        row_config.height_ratio = 0.26f;
-        row_config.pos_y_ratio = 0.7f;
-        // NoCollapse: a container that hosts every tool tab must not fold itself
-        // into a title bar, which would hide the whole strip.
-        row_config.extra_flags =
-            ImGuiWindowFlags_HorizontalScrollbar | ImGuiWindowFlags_NoCollapse;
+        // The shared bottom band, placed by the layout. The horizontal scrollbar travels
+        // with it, since the log no longer owns a window and long diagnostic lines must
+        // stay reachable.
+        EditorWindowConfig row_config = SlotConfig(EditorLayoutSlot::ToolRow,
+                                                   ImGuiWindowFlags_HorizontalScrollbar);
 
         auto row = std::make_unique<EditorToolRowComponent>(tool_row_model_, row_config);
         row->AddPanel(kToolRowLogId, "Log", BuildLogPanel(log_system, log_colors),
@@ -458,6 +450,9 @@ namespace kpengine::editor
         }
         try
         {
+            // Before building, so the first frame already uses the saved layout.
+            LoadLayoutState();
+
             // Scene-dependent tools are deliberately created only after Runtime
             // promotes the prepared catalog to the render thread.
             BuildMenuBar(init_info_.render_system);
@@ -483,6 +478,7 @@ namespace kpengine::editor
             components_.clear();
             actor_model_.reset();
             screenshot_service_.reset();
+            layout_.ResetToDefault();
             throw;
         }
     }
@@ -531,6 +527,8 @@ namespace kpengine::editor
         components_.clear();
         loading_components_.clear();
         actor_model_.reset();
+        // The panel rects described a tree that no longer exists.
+        layout_.ResetToDefault();
         workspace_promoted_ = false;
         closing_ = false;
         init_info_ = {};
@@ -604,6 +602,70 @@ namespace kpengine::editor
             init_info_.startup_snapshot_source, init_info_.memory_sampler));
     }
 
+    void EditorUI::ApplyLayoutToTree()
+    {
+        const ImGuiViewport *const viewport = ImGui::GetMainViewport();
+        const EditorRect work_area{viewport->WorkPos.x, viewport->WorkPos.y,
+                                   viewport->WorkSize.x, viewport->WorkSize.y};
+
+        // The status bar's height is content-derived, so its measurement is pushed before
+        // resolving rather than living in the model as a constant.
+        layout_.SetFixedExtentPixels(EditorSplitterId::StatusBar,
+                                     EditorProfileBarComponent::MeasurePreferredHeightPx());
+        layout_.Resolve(work_area);
+
+        for (const std::unique_ptr<EditorUIComponent> &component : components_)
+        {
+            if (component == nullptr)
+            {
+                continue;
+            }
+            const std::optional<EditorLayoutSlot> slot = component->GetLayoutSlot();
+            if (!slot.has_value())
+            {
+                continue;  // places itself: the menu bar, and anything not yet slotted
+            }
+            // An empty rect for a hidden region would collapse the panel, so a slot the
+            // layout could not resolve pushes nullopt and the panel keeps its own
+            // geometry rather than vanishing.
+            if (layout_.HasSlot(*slot))
+            {
+                component->ApplyLayout(layout_.RectOf(*slot));
+            }
+            else
+            {
+                component->ApplyLayout(std::nullopt);
+            }
+        }
+    }
+
+    void EditorUI::LoadLayoutState()
+    {
+        // Defaults first, so a partial or absent file leaves the rest of the layout alone.
+        layout_.ResetToDefault();
+
+        std::string diagnostic;
+        const EditorLayoutState state = ReadEditorLayoutState(GetEditorLayoutPath(), &diagnostic);
+        if (!diagnostic.empty())
+        {
+            KP_LOG("LogEditorUI", LOG_LEVEL_WARNING, "editor layout: %s", diagnostic.c_str());
+        }
+        ApplyLayoutState(state, layout_);
+    }
+
+    void EditorUI::SaveLayoutState()
+    {
+        try
+        {
+            WriteEditorLayoutState(GetEditorLayoutPath(), CaptureLayoutState(layout_));
+        }
+        catch (const std::exception &e)
+        {
+            // A layout preference that cannot be saved must not take the editor down.
+            KP_LOG("LogEditorUI", LOG_LEVEL_WARNING, "editor layout not saved (%s)", e.what());
+        }
+    }
+
     bool EditorUI::RenderActiveTree()
     {
         if (!imgui_context_created_ || !renderer_ || !wsi_)
@@ -640,11 +702,26 @@ namespace kpengine::editor
         {
             viewer_content_();
         }
+        else if (workspace_promoted_ && !closing_)
+        {
+            // Resolve and push geometry before drawing, then draw the seams on top
+            // afterwards. The layout pass runs only for the workspace tree: the loading
+            // tree and the injected viewer keep placing themselves.
+            ApplyLayoutToTree();
+            for (const auto &component : components_)
+            {
+                component->Render();
+            }
+            splitter_handles_.Render(layout_);
+            if (splitter_handles_.ConsumeDragJustEnded())
+            {
+                // Persist on release, not per frame.
+                SaveLayoutState();
+            }
+        }
         else
         {
-            const auto &active_components = workspace_promoted_ && !closing_ ? components_
-                                                                             : loading_components_;
-            for (const auto &component : active_components)
+            for (const auto &component : loading_components_)
             {
                 component->Render();
             }

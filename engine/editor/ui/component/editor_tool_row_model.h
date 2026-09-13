@@ -8,6 +8,7 @@
 #include <string_view>
 #include <vector>
 
+#include "editor/ui/component/editor_layout_rect.h"
 #include "editor/ui/component/editor_window_visibility.h"
 
 // This header must stay ImGui-free. The tool row's tab, visibility, and
@@ -22,14 +23,8 @@ namespace kpengine::editor
     inline constexpr const char *kToolRowLogId = "log";
     inline constexpr const char *kToolRowConsoleId = "console";
 
-    // Minimal screen-space rectangle, so drop resolution stays ImGui-free.
-    struct EditorRect
-    {
-        float x = 0.0f;
-        float y = 0.0f;
-        float width = 0.0f;
-        float height = 0.0f;
-    };
+    // EditorRect lives in editor_layout_rect.h, shared with the layout model so the
+    // editor has one screen-space rectangle type rather than two.
 
     enum class EditorToolDropTarget
     {

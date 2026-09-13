@@ -44,11 +44,6 @@ namespace kpengine::editor
     protected:
         void RenderContent() override;
 
-    public:
-        // The row is a container, not a panel: its own title bar must not be able
-        // to close it, and it needs no lock toggle.
-        bool HasCloseButton() const override { return false; }
-
     private:
         void RenderTabStrip();
         void RenderDetachedWindows(const std::vector<std::size_t> &detached);

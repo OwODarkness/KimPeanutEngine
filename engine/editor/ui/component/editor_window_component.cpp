@@ -16,23 +16,46 @@ namespace kpengine::editor
             return;
         }
 
-        ImGuiViewport *viewport = ImGui::GetMainViewport();
-        const ImVec2 pos(viewport->WorkPos.x + config_.pos_x_ratio * viewport->WorkSize.x,
-                         viewport->WorkPos.y + config_.pos_y_ratio * viewport->WorkSize.y);
-        const ImVec2 size(config_.width_ratio * viewport->WorkSize.x,
-                          config_.height_ratio * viewport->WorkSize.y);
+        const bool slotted = layout_rect_.has_value();
 
-        // Locked: pin to the viewport every frame; unlocked: set once, let the user move.
-        const ImGuiCond cond = locked_ ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+        ImVec2 pos;
+        ImVec2 size;
+        ImGuiCond cond = ImGuiCond_FirstUseEver;
+        if (slotted)
+        {
+            // The layout owns this window, so its rect is re-pushed every frame. Snap the
+            // edges rather than the width, so two neighbours agree on the pixel of the
+            // edge they share instead of leaving a one-pixel background seam.
+            const EditorRect snapped = SnapEdgesToPixels(*layout_rect_);
+            pos = ImVec2(snapped.x, snapped.y);
+            size = ImVec2(snapped.width, snapped.height);
+            cond = ImGuiCond_Always;
+        }
+        else
+        {
+            const ImGuiViewport *const viewport = ImGui::GetMainViewport();
+            pos = ImVec2(viewport->WorkPos.x + config_.pos_x_ratio * viewport->WorkSize.x,
+                         viewport->WorkPos.y + config_.pos_y_ratio * viewport->WorkSize.y);
+            size = ImVec2(config_.width_ratio * viewport->WorkSize.x,
+                          config_.height_ratio * viewport->WorkSize.y);
+            // Locked: pin to the viewport every frame; unlocked: set once, let the user move.
+            cond = locked_ ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
+        }
         ImGui::SetNextWindowPos(pos, cond);
         ImGui::SetNextWindowSize(size, cond);
 
-        ImGuiWindowFlags flags = 0;
-        if (locked_)
+        ImGuiWindowFlags flags = config_.extra_flags;
+        if (slotted || locked_)
         {
             flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
         }
-        flags |= config_.extra_flags;
+        if (slotted)
+        {
+            // A region panel must not be able to collapse itself out of its region, and a
+            // rect re-pushed every frame would otherwise be written to imgui.ini on every
+            // frame of a splitter drag.
+            flags |= ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
+        }
 
         // ImGui renders the native title before Begin() returns. Use the
         // previous frame's focus state so only the title receives the
@@ -50,9 +73,12 @@ namespace kpengine::editor
         {
             ImGui::PopStyleColor();
         }
-        if (HasCloseButton())
+        // The focus accent belongs to every window with a title bar; the padlock only to
+        // a window that places itself.
+        RenderFocusAccent();
+        if (!slotted)
         {
-            RenderWindowChrome();
+            RenderLockToggle();
         }
         RenderContent();
         focused_last_frame_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
@@ -71,6 +97,16 @@ namespace kpengine::editor
         }
     }
 
+    std::optional<EditorLayoutSlot> EditorWindowComponent::GetLayoutSlot() const noexcept
+    {
+        return config_.slot;
+    }
+
+    void EditorWindowComponent::ApplyLayout(std::optional<EditorRect> rect) noexcept
+    {
+        layout_rect_ = rect;
+    }
+
     void EditorWindowComponent::SetVisibility(EditorWindowVisibility *visibility) noexcept
     {
         visibility_ = visibility;
@@ -81,10 +117,31 @@ namespace kpengine::editor
         return visibility_ != nullptr ? visibility_->IsOpen() : is_open_;
     }
 
-    void EditorWindowComponent::RenderWindowChrome()
+    void EditorWindowComponent::RenderFocusAccent()
     {
         // Begin() clips drawing and culls items to the content area (below the title
         // bar), so the chrome here would be invisible. Push a clip over the bar instead.
+        const ImVec2 win_pos = ImGui::GetWindowPos();
+        const float title_h = ImGui::GetFrameHeight();
+        const ImVec2 clip_max(win_pos.x + ImGui::GetWindowWidth(), win_pos.y + title_h);
+        ImGui::PushClipRect(win_pos, clip_max, false);
+
+        const ImVec2 content_cursor = ImGui::GetCursorScreenPos();
+        const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
+        const ImU32 focus_color =
+            ImGui::GetColorU32(focused ? ImGuiCol_NavHighlight : ImGuiCol_Border);
+        ImGui::GetWindowDrawList()->AddRectFilled(
+            ImVec2(win_pos.x, win_pos.y),
+            ImVec2(win_pos.x + ImGui::GetWindowWidth(), win_pos.y + 2.0f), focus_color);
+
+        ImGui::PopClipRect();
+        ImGui::SetCursorScreenPos(content_cursor);
+    }
+
+    void EditorWindowComponent::RenderLockToggle()
+    {
+        // Only for a window that places itself: for a layout-placed one the rect belongs
+        // to the layout, so "unlock to move freely" would have nothing to unlock.
         const ImVec2 win_pos = ImGui::GetWindowPos();
         const float title_h = ImGui::GetFrameHeight();
         const ImVec2 clip_max(win_pos.x + ImGui::GetWindowWidth(), win_pos.y + title_h);
@@ -110,13 +167,6 @@ namespace kpengine::editor
 
         // Padlock: filled body when locked, hollow body + lifted shackle when unlocked.
         ImDrawList *draw = ImGui::GetWindowDrawList();
-        const bool focused = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
-        const ImU32 focus_color = ImGui::GetColorU32(
-            focused ? ImGuiCol_NavHighlight : ImGuiCol_Border);
-        draw->AddRectFilled(
-            ImVec2(win_pos.x, win_pos.y),
-            ImVec2(win_pos.x + ImGui::GetWindowWidth(), win_pos.y + 2.0f),
-            focus_color);
         const ImU32 col = ImGui::GetColorU32(ImGuiCol_Text);
         const ImVec2 c(btn_pos.x + btn_size.x * 0.5f, btn_pos.y + btn_size.y * 0.58f);
         const float r = btn_size.x * 0.30f;
@@ -135,11 +185,6 @@ namespace kpengine::editor
 
     void EditorWindowComponent::RenderContent()
     {
-        pos_x = ImGui::GetWindowPos().x;
-        pos_y = ImGui::GetWindowPos().y;
-        width_ = (int)ImGui::GetContentRegionAvail().x;
-        height_ = (int)ImGui::GetContentRegionAvail().y;
-
         for (int i = 0; i < components_.size(); i++)
         {
             components_[i]->Render();
@@ -149,16 +194,6 @@ namespace kpengine::editor
     void EditorWindowComponent::AddComponent(std::shared_ptr<EditorUIComponent> component)
     {
         components_.push_back(component);
-    }
-
-    void EditorWindowComponent::SetLocked(bool locked)
-    {
-        locked_ = locked;
-    }
-
-    bool EditorWindowComponent::IsLocked() const
-    {
-        return locked_;
     }
 
     EditorWindowComponent::~EditorWindowComponent() = default;
