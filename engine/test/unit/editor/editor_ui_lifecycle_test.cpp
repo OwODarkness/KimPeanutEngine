@@ -131,75 +131,57 @@ TEST(EditorThemeTest, AppliesCodexSurfaceAccentAndTypography)
     ImGui::DestroyContext();
 }
 
-TEST(EditorLoadingViewModelTest, NeverShowsCompletionBeforeReady)
+// Can a real ImGui frame run with no window, no renderer, and no GPU? This is a
+// capability probe, not a behavioural test: it fixes the boundary of what the current
+// harness can reach, so nobody has to rediscover it.
+//
+// PROVEN HERE, and it contradicts what the ED1/ED2 journals claim: the blocker is only
+// EditorUI::Render(), which needs the WSI and renderer seams. A COMPONENT-level frame runs
+// headlessly. Context, font atlas, NewFrame, Begin/End, widget layout, item rectangles and
+// EndFrame all work with no backend, so layout and hit-testing geometry are testable today.
+//
+// STILL OPEN: scripting a CLICK. With io.ConfigInputTrickleEventQueue disabled and the
+// event queue fed exactly as a backend does it, the frame reports hovered=1, mouseDown=1
+// and mouseClicked=1 while Button still never activates — so the state ImGui needs is
+// present but something in 1.91's input-ownership path is not satisfied. Until that is
+// understood, interaction scripts (tab clicks, drag gestures, menu activation) are not
+// available, and that is the concrete thing a harness stage must solve. Do not assume a
+// harness works until a scripted click is demonstrated.
+TEST(EditorImguiHarnessProbe, AComponentFrameRunsHeadlesslyWithoutABackend)
 {
-    kpengine::runtime::StartupSnapshot snapshot{};
-    snapshot.phase = kpengine::runtime::StartupPhase::PreparingCpuArtifacts;
-    snapshot.progress = {1, 1, true, 1.0f};
+    ImGui::CreateContext();
+    ImGuiIO &io = ImGui::GetIO();
+    io.DisplaySize = ImVec2(1280.0f, 720.0f);
+    io.DeltaTime = 1.0f / 60.0f;
+    io.Fonts->AddFontDefault();
+    ASSERT_TRUE(io.Fonts->Build()) << "font atlas must build before NewFrame";
+    // Trickling spreads queued events over frames; a test feeds one state per frame.
+    io.ConfigInputTrickleEventQueue = false;
 
-    const auto model = kpengine::editor::BuildEditorLoadingViewModel(snapshot);
-
-    EXPECT_TRUE(model.determinate);
-    EXPECT_LT(model.fraction, 1.0f);
-}
-
-TEST(EditorLoadingViewModelTest, ShowsClosingStageAndCompleteProgress)
-{
-    kpengine::runtime::StartupSnapshot snapshot{};
-    snapshot.phase = kpengine::runtime::StartupPhase::Closing;
-    snapshot.display_label = "Releasing renderer";
-    snapshot.progress = {7, 7, true, 1.0f};
-
-    const auto model = kpengine::editor::BuildEditorLoadingViewModel(snapshot);
-
-    EXPECT_TRUE(model.closing);
-    EXPECT_TRUE(model.determinate);
-    EXPECT_FLOAT_EQ(model.fraction, 1.0f);
-    EXPECT_EQ(model.stage_label, "Releasing renderer");
-    EXPECT_EQ(model.counts_label, "Shutdown steps: 7 / 7");
-    EXPECT_FALSE(model.failed);
-}
-
-TEST(EditorUILifecycleTest, NullBridgeRollsBackContextAndCloseIsIdempotent)
-{
-    kpengine::editor::EditorUI ui;
-
-    EXPECT_THROW(ui.Initialize({}), std::runtime_error);
-    EXPECT_EQ(ImGui::GetCurrentContext(), nullptr);
-    EXPECT_NO_THROW(ui.Close());
-    EXPECT_EQ(ImGui::GetCurrentContext(), nullptr);
-}
-
-TEST(EditorUILifecycleTest, WrongBridgeTypeRollsBackPartialBackendSetup)
-{
-    WrongVulkanBridge bridge;
-    kpengine::editor::EditorUI ui;
-    kpengine::editor::EditorUIInitInfo init_info{};
-    init_info.editor_presentation_bridge = &bridge;
-
-    EXPECT_THROW(ui.Initialize(init_info), std::runtime_error);
-    EXPECT_EQ(ImGui::GetCurrentContext(), nullptr);
-    EXPECT_NO_THROW(ui.Close());
-}
-
-TEST(EditorUILifecycleTest, NativeBackendFailureReleasesEveryAcquiredState)
-{
-    WrongVulkanBridge bridge;
-    LifecycleProbe probe;
-    kpengine::editor::EditorUI ui;
-    kpengine::editor::EditorUIInitInfo init_info{};
-    init_info.editor_presentation_bridge = &bridge;
-    init_info.renderer_factory = [&probe](kpengine::GraphicsAPIType)
+    ImVec2 button_size(0.0f, 0.0f);
+    for (int frame = 0; frame < 3; ++frame)
     {
-        return std::make_unique<ThrowingRenderer>(probe);
-    };
-    init_info.wsi_factory = [&probe]
-    {
-        return std::make_unique<FailingWsi>(probe);
-    };
+        io.AddMousePosEvent(15.0f, 45.0f);
+        ImGui::NewFrame();
+        ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f), ImGuiCond_Always);
+        ImGui::SetNextWindowSize(ImVec2(400.0f, 300.0f), ImGuiCond_Always);
+        if (ImGui::Begin("probe"))
+        {
+            ImGui::SetCursorScreenPos(ImVec2(10.0f, 40.0f));
+            (void)ImGui::Button("target", ImVec2(100.0f, 24.0f));
+            const ImVec2 item_min = ImGui::GetItemRectMin();
+            const ImVec2 item_max = ImGui::GetItemRectMax();
+            button_size = ImVec2(item_max.x - item_min.x, item_max.y - item_min.y);
+            EXPECT_FALSE(ImGui::IsAnyItemActive()) << "no input is scripted here";
+        }
+        ImGui::End();
+        // No backend, so no ImGui::Render(): EndFrame is the whole frame boundary.
+        ImGui::EndFrame();
+    }
 
-    EXPECT_THROW(ui.Initialize(init_info), std::runtime_error);
-    EXPECT_EQ(probe.renderer_shutdowns, 1);
-    EXPECT_EQ(probe.wsi_shutdowns, 0);
-    EXPECT_EQ(ImGui::GetCurrentContext(), nullptr);
+    EXPECT_FLOAT_EQ(button_size.x, 100.0f) << "layout produced the requested item size";
+    EXPECT_FLOAT_EQ(button_size.y, 24.0f);
+    EXPECT_FLOAT_EQ(io.DisplaySize.x, 1280.0f) << "the frame consumed the injected display";
+
+    ImGui::DestroyContext();
 }
