@@ -6,10 +6,6 @@ namespace kpengine::editor
 {
     namespace
     {
-        // Isolated tabs stay in the strip, dimmed, so the View checkmark always has
-        // a visible entry to map to and a closed floating window leaves a way back.
-        constexpr ImVec4 kIsolatedTabText(0.62f, 0.62f, 0.62f, 1.0f);
-
         // Drag threshold separating "click to switch" from "drag to isolate". The
         // ImGui default, so a click never resolves as a drag.
         constexpr float kDragThreshold = 6.0f;
@@ -124,21 +120,10 @@ namespace kpengine::editor
         const float close_w = ImGui::GetFrameHeight();
         const float tab_h = ImGui::GetFrameHeight();
 
-        // Collect the tabs that will actually be drawn first. Emitting SameLine
-        // after every entry would leave a dangling one whenever a later entry is
-        // closed, and the panel body's BeginChild would then be laid out beside the
-        // strip instead of below it — so the row's shape would depend on how many
-        // tabs happened to be open.
-        std::vector<std::size_t> drawn;
-        drawn.reserve(count);
-        for (std::size_t index = 0; index < count; ++index)
-        {
-            const EditorToolRowEntry *const entry = model_.GetEntry(index);
-            if (entry != nullptr && entry->visibility.IsOpen())
-            {
-                drawn.push_back(index);
-            }
-        }
+        // The strip's membership rule lives in the model so it is testable: open AND
+        // docked. Collecting it up front also avoids the dangling SameLine that made the
+        // row's shape depend on how many tabs happened to be open.
+        const std::vector<std::size_t> drawn = model_.GetStripIndices();
 
         for (std::size_t slot = 0; slot < drawn.size(); ++slot)
         {
@@ -149,7 +134,6 @@ namespace kpengine::editor
                 continue;
             }
             const bool is_active = active.has_value() && *active == index;
-            const bool isolated = !entry->docked;
 
             ImGui::PushID(static_cast<int>(index));
             const float text_w = ImGui::CalcTextSize(entry->title.c_str()).x;
@@ -164,12 +148,6 @@ namespace kpengine::editor
                                       ImGui::GetStyleColorVec4(ImGuiCol_ButtonActive));
                 pushed += 2;
             }
-            if (isolated)
-            {
-                ImGui::PushStyleColor(ImGuiCol_Text, kIsolatedTabText);
-                ++pushed;
-            }
-
             const bool clicked = ImGui::Button(entry->title.c_str(), tab_size);
 
             // Grab every item query before drawing or opening a popup, both of which
@@ -188,11 +166,6 @@ namespace kpengine::editor
             {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_Hand);
             }
-            if (hovered && isolated)
-            {
-                ImGui::SetTooltip("Isolated - right-click to dock");
-            }
-
             DrawCloseGlyph(ImGui::GetWindowDrawList(),
                            ImVec2(tab_max.x - close_w * 0.5f, tab_min.y + tab_h * 0.5f),
                            tab_h * 0.16f, ImGui::GetColorU32(ImGuiCol_Text));
@@ -324,7 +297,19 @@ namespace kpengine::editor
                 ImGuiCond_FirstUseEver);
 
             bool open = true;
-            ImGui::Begin(entry->title.c_str(), &open);
+            // A menu bar rather than only a context menu: an isolated panel is absent from
+            // the strip, so this window carries the sole visible way back and a
+            // right-click would be the only route to it. The bar takes its own row and
+            // does not disturb the panel's content layout.
+            ImGui::Begin(entry->title.c_str(), &open, ImGuiWindowFlags_MenuBar);
+            if (ImGui::BeginMenuBar())
+            {
+                if (ImGui::MenuItem("Dock to tool row"))
+                {
+                    model_.SetDocked(index, true);
+                }
+                ImGui::EndMenuBar();
+            }
             panels_[index]->RenderContent();
             if (ImGui::BeginPopupContextWindow("##tool_row_dock"))
             {

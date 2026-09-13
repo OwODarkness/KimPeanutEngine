@@ -187,18 +187,41 @@ namespace kpengine::editor
         // menu can be built before the tool row registers its panels. Each item
         // queries the same visibility the tab close button writes.
         Menu view_menu{"View"};
+        // Checking a panel Docks it as well as showing it. Toggling visibility alone would
+        // leave an isolated panel floating, so the menu could never bring one back to the
+        // row and the panel would look impossible to recover.
         view_menu.items.push_back(MenuItem{
             "Log",
             {},
             true,
-            [this] { tool_row_model_.ToggleOpenById(kToolRowLogId); },
+            [this]
+            {
+                if (tool_row_model_.IsOpenById(kToolRowLogId))
+                {
+                    tool_row_model_.SetOpenById(kToolRowLogId, false);
+                }
+                else
+                {
+                    tool_row_model_.ShowInRowById(kToolRowLogId);
+                }
+            },
             [this] { return tool_row_model_.IsOpenById(kToolRowLogId); },
         });
         view_menu.items.push_back(MenuItem{
             "Console",
             {},
             true,
-            [this] { tool_row_model_.ToggleOpenById(kToolRowConsoleId); },
+            [this]
+            {
+                if (tool_row_model_.IsOpenById(kToolRowConsoleId))
+                {
+                    tool_row_model_.SetOpenById(kToolRowConsoleId, false);
+                }
+                else
+                {
+                    tool_row_model_.ShowInRowById(kToolRowConsoleId);
+                }
+            },
             [this] { return tool_row_model_.IsOpenById(kToolRowConsoleId); },
         });
         menus.push_back(std::move(view_menu));

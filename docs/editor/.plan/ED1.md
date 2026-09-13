@@ -57,8 +57,13 @@ drag-drop payload.
 
 - The active entry is always unset or **open and docked**. Every model mutator ends in
   `ReconcileActiveIndex()`, so no caller can violate it.
-- Entry count never changes from a visibility or dock change. An isolated tab stays in the
-  strip so the View checkmark always has an entry to map to.
+- Entry count never changes from a visibility or dock change. **The strip is exactly the
+  open AND docked entries**, so an isolated panel is represented only by its own window. It
+  originally also drew a dimmed tab, which left two surfaces claiming to be the same panel;
+  that is superseded (see the journal's Correction 3).
+- **"Show this panel" means "put it in the row".** `ShowInRowById` docks as well as opens,
+  because toggling visibility alone cannot dock an isolated panel — it is already visible,
+  so a visibility-only View menu leaves it floating and the panel looks unrecoverable.
 - One bool per panel. The tab close, the detached window's X, the View item, and the
   Console's `~` key all read and write the same `EditorWindowVisibility`.
 - The row owns its panels. They never enter `EditorUI::components_`, so nothing renders

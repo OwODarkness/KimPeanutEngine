@@ -77,6 +77,18 @@ namespace kpengine::editor
 
         bool IsOpenById(std::string_view id) const noexcept;
         void ToggleOpenById(std::string_view id);
+        void SetOpenById(std::string_view id, bool open);
+
+        // Makes an entry visible IN THE ROW, docking it if it was isolated. "Show this
+        // panel" has to mean "put it back in the row": toggling visibility alone leaves an
+        // isolated panel floating, so a View menu built on visibility can never dock one
+        // and the panel looks impossible to bring back.
+        bool ShowInRowById(std::string_view id);
+
+        // The tabs the strip draws: open AND docked, in entry order. An isolated entry is
+        // deliberately absent — it is on screen as its own window, and drawing it in the
+        // strip as well would leave two surfaces claiming to be the same panel.
+        std::vector<std::size_t> GetStripIndices() const;
 
         bool IsDocked(std::size_t index) const noexcept;
         void SetDocked(std::size_t index, bool docked);

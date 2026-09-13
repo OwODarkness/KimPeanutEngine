@@ -134,6 +134,43 @@ namespace kpengine::editor
         }
     }
 
+    void EditorToolRowModel::SetOpenById(std::string_view id, bool open)
+    {
+        const std::optional<std::size_t> index = IndexOf(id);
+        if (index.has_value())
+        {
+            SetOpen(*index, open);
+        }
+    }
+
+    bool EditorToolRowModel::ShowInRowById(std::string_view id)
+    {
+        const std::optional<std::size_t> index = IndexOf(id);
+        if (!index.has_value())
+        {
+            return false;
+        }
+        // Open first, then dock: SetDocked only promotes an ALREADY-OPEN entry to active,
+        // so docking first would leave a closed entry docked but not shown.
+        SetOpen(*index, true);
+        SetDocked(*index, true);
+        return true;
+    }
+
+    std::vector<std::size_t> EditorToolRowModel::GetStripIndices() const
+    {
+        std::vector<std::size_t> strip;
+        for (std::size_t index = 0; index < entries_.size(); ++index)
+        {
+            const EditorToolRowEntry &entry = entries_[index];
+            if (entry.visibility.IsOpen() && entry.docked)
+            {
+                strip.push_back(index);
+            }
+        }
+        return strip;
+    }
+
     bool EditorToolRowModel::IsDocked(std::size_t index) const noexcept
     {
         const EditorToolRowEntry *const entry = GetEntry(index);

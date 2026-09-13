@@ -216,3 +216,80 @@ Profiler a 320x90 window — short enough to clip the 240 px child fully:
 
 - the unfixed build asserted with the reported message and the process died;
 - the fixed build, identical input, ran clean.
+
+## Correction 3 (2026-09-13, after ED2 shipped)
+
+**Reported:** dragging the Log out left its tab in the row, and the panel could not be
+moved back.
+
+Two causes, one a decision of mine that was wrong and one a real logic bug.
+
+**The left-behind tab was deliberate and is now reversed.** This journal says "an isolated
+tab stays in the strip, dimmed", on the reasoning that the View checkmark needed an entry to
+map to. That reasoning was wrong: it left two surfaces claiming to be the same panel, and
+the dimming read as a state the user could act on rather than as an explanation. The strip
+is now exactly the **open AND docked** entries, so an isolated panel is represented only by
+its own window.
+
+**The real bug: the View menu could never dock anything.** Its items called
+`ToggleOpenById`, which flips *visibility*. An isolated panel is already open — it is
+floating — so the first click closed it and the second reopened it still floating. The only
+code that ever set `docked = true` was the two right-click context menus. So a panel dragged
+out was, in practice, impossible to return: exactly what was reported.
+
+Fixed by making "show this panel" mean "put it back in the row":
+
+```cpp
+// Makes an entry visible IN THE ROW, docking it if it was isolated.
+bool ShowInRowById(std::string_view id);
+```
+
+The View item now docks on check. `ShowInRow` opens *then* docks, because `SetDocked` only
+promotes an already-open entry to active — docking first would leave a closed entry docked
+but not drawn.
+
+**Both rules moved into the tested model**, which is the ED1 lesson applied again: the
+strip's membership rule was living in the ImGui component, where nothing could test it.
+`GetStripIndices()` and `ShowInRowById` are now model API with four new cases covering
+"an isolated entry leaves the strip entirely", "ShowInRow docks and selects it", "ShowInRow
+reopens a closed panel and docks it", and unknown-id inertness. The component keeps only
+drawing and hit-testing.
+
+**Discoverability.** With the tab gone, the floating window carries the only visible way
+back, so a right-click alone was too hidden: it now has a **menu bar** with "Dock to tool
+row", alongside the context menu. The dead dimming colour and its tooltip were deleted
+rather than left unreachable.
+
+**Verified** with `ED2-vulkan-isolated-log.png`, captured by temporarily starting the Log
+isolated (the transport cannot start a drag). It shows the strip containing only
+`[Console]` — no leftover Log tab — and the floating Log window with its menu bar. The
+temporary override was reverted and rebuilt; the shipped code starts the Log docked.
+
+Still unverified by machine: the drag gesture itself, and clicking the menus. The state
+machine they drive is now covered; the glue remains smoke-only.
+
+## Remaining risks and unverified areas
+
+- The ImGui event glue (click, drag, popup, menu) has no automated coverage; only the model
+  logic beneath it does. A regression there would be caught by smoke, not by tests.
+- Keyboard-nav focus is stale for one frame when a focused window stops being submitted.
+  Not observed in either smoke run; the fix if it appears is `ImGui::SetWindowFocus(nullptr)`
+  on the visibility flip.
+- Detached windows drop the base window chrome (lock toggle, focus accent), because the
+  base's ratio geometry cannot express an arbitrary dragged position.
+- `EditorWindowComponent::width_/height_/pos_x/pos_y` are refreshed only inside the base
+  `RenderContent()`, so a panel hosted by the row leaves them stale. Log and Console do not
+  read them; this constrains which panels can be hosted until ED2.
+
+## Remaining work
+
+AB1.2 now hangs the Asset Browser on this row instead of adding a fourth floating window,
+and its plan was amended accordingly. ED2 introduces the region/splitter layout model and
+reflow, which is the prerequisite
+for ED3's full magnetic placement — ED1's two-destination drop preview is that mechanism
+with a two-entry destination table.
+
+Two loose ends worth a follow-up: `EditorContainerComponent` is compiled but never
+constructed and its `Render()` underflows on an empty container; it was left unrepaired per
+the dead-code rule and noted in `docs/dead_code.md`. And the tab strip has no reordering or
+overflow scrolling, so a future panel count beyond the row width would clip.

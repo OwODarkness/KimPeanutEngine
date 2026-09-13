@@ -242,8 +242,8 @@ TEST(EditorToolRowModelTest, OutOfRangeIndicesAreSafe)
 
 TEST(EditorToolRowModelTest, VisibilityAndDockChangesNeverRemoveAnEntry)
 {
-    // An isolated tab stays in the strip, so the View checkmark always has an
-    // entry to map to and a closed floating window leaves a visible way back.
+    // Dock state is never destructive: an entry can leave the strip and come back, but it
+    // is never removed, so the View menu always has something to act on.
     EditorToolRowModel model;
     model.AddEntry("a", "A", true);
     model.AddEntry("b", "B", true);
@@ -257,6 +257,72 @@ TEST(EditorToolRowModelTest, VisibilityAndDockChangesNeverRemoveAnEntry)
     model.SetDocked(0, false);
 
     EXPECT_EQ(model.GetEntryCount(), 3u);
+}
+
+TEST(EditorToolRowModelTest, AnIsolatedEntryLeavesTheStripEntirely)
+{
+    // The reported bug: an isolated panel kept drawing a dimmed tab, so two surfaces
+    // claimed to be the same panel. The strip is now exactly the open, docked entries.
+    EditorToolRowModel model;
+    model.AddEntry("log", "Log", true);
+    model.AddEntry("console", "Console", true);
+    EXPECT_EQ(model.GetStripIndices(), (std::vector<std::size_t>{0u, 1u}));
+
+    model.SetDocked(0, false);
+
+    EXPECT_EQ(model.GetStripIndices(), (std::vector<std::size_t>{1u}))
+        << "an isolated panel must not draw a tab";
+    EXPECT_EQ(model.GetDetachedIndices(), (std::vector<std::size_t>{0u}))
+        << "it is on screen as its own window instead";
+    EXPECT_TRUE(model.IsOpen(0)) << "isolating is not hiding";
+}
+
+TEST(EditorToolRowModelTest, ShowInRowDocksAnIsolatedPanelAndMakesItActive)
+{
+    // The other reported bug: View > Log could not bring an isolated panel back, because
+    // toggling visibility left it floating.
+    EditorToolRowModel model;
+    model.AddEntry("log", "Log", true);
+    model.AddEntry("console", "Console", true);
+    model.SetDocked(0, false);
+    ASSERT_EQ(model.GetActiveIndex(), std::optional<std::size_t>{1u});
+
+    EXPECT_TRUE(model.ShowInRowById("log"));
+
+    EXPECT_TRUE(model.IsDocked(0));
+    EXPECT_TRUE(model.IsOpen(0));
+    EXPECT_EQ(model.GetActiveIndex(), std::optional<std::size_t>{0u})
+        << "showing a panel should select it, not silently dock it behind another tab";
+    EXPECT_TRUE(model.GetDetachedIndices().empty());
+    EXPECT_EQ(model.GetStripIndices(), (std::vector<std::size_t>{0u, 1u}));
+}
+
+TEST(EditorToolRowModelTest, ShowInRowReopensAClosedPanelAndDocksIt)
+{
+    // Both flags have to be set: SetDocked only promotes an already-open entry, so docking
+    // before opening would leave the panel docked but not drawn.
+    EditorToolRowModel model;
+    model.AddEntry("log", "Log", true);
+    model.SetOpen(0, false);
+    model.SetDocked(0, false);
+    ASSERT_FALSE(model.IsOpen(0));
+
+    EXPECT_TRUE(model.ShowInRowById("log"));
+
+    EXPECT_TRUE(model.IsOpen(0));
+    EXPECT_TRUE(model.IsDocked(0));
+    EXPECT_EQ(model.GetActiveIndex(), std::optional<std::size_t>{0u});
+    EXPECT_EQ(model.GetStripIndices(), (std::vector<std::size_t>{0u}));
+}
+
+TEST(EditorToolRowModelTest, ShowInRowIsInertForAnUnknownId)
+{
+    EditorToolRowModel model;
+    model.AddEntry("log", "Log", true);
+
+    EXPECT_FALSE(model.ShowInRowById("nope"));
+    EXPECT_EQ(model.GetEntryCount(), 1u);
+    EXPECT_EQ(model.GetStripIndices(), (std::vector<std::size_t>{0u}));
 }
 
 TEST(EditorToolRowModelTest, ActiveIsAlwaysOpenAndDocked)
