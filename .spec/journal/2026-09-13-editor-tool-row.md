@@ -45,7 +45,8 @@ Two latent bugs were fixed while rewriting the affected lines: the Console's two
 - **Active-tab reconciliation.** When the active tab is closed or isolated, the search runs
   forward from the changed index and then backward, one step at a time, so closing the last
   tab selects its adjacent neighbour rather than the leftmost entry.
-- **An isolated tab stays in the strip, dimmed.** Removing it would leave the View
+- **An isolated tab stays in the strip, dimmed.** **[Reversed — see Correction 3.]** It no
+  longer stays: the strip is exactly the open *and docked* entries. Removing it would leave the View
   checkmark with nothing to map to and a closed floating window with no visible way back.
 - **The row owns its panels.** They never enter `EditorUI::components_`, so nothing renders
   them twice, and `BeginClosing`, `Close`, and the promotion rollback all stay correct with
@@ -179,28 +180,39 @@ ED2 closed it properly by inverting `HasCloseButton()` to default false, on the 
 close button is only honest where something can restore the window. See the correction in
 [the ED2 journal](2026-09-13-editor-layout.md) for the full account.
 
-## Remaining risks and unverified areas
+## Correction 2 (2026-09-13, after ED2 shipped)
 
-- The ImGui event glue (click, drag, popup, menu) has no automated coverage; only the model
-  logic beneath it does. A regression there would be caught by smoke, not by tests.
-- Keyboard-nav focus is stale for one frame when a focused window stops being submitted.
-  Not observed in either smoke run; the fix if it appears is `ImGui::SetWindowFocus(nullptr)`
-  on the visibility flip.
-- Detached windows drop the base window chrome (lock toggle, focus accent), because the
-  base's ratio geometry cannot express an arbitrary dragged position.
-- `EditorWindowComponent::width_/height_/pos_x/pos_y` are refreshed only inside the base
-  `RenderContent()`, so a panel hosted by the row leaves them stale. Log and Console do not
-  read them; this constrains which panels can be hosted until ED2.
+**Reported:** an assertion took the application down during startup —
+`Assertion failed: (g.WithinEndChild) && "Must call EndChild() and not End()!"`.
 
-## Remaining work
+**Cause:** the same `BeginChild`/`EndChild` defect this journal fixed twice, in a third file
+that was never checked. `editor_startup_profiler_component.cpp:330` had
 
-AB1.2 now hangs the Asset Browser on this row instead of adding a fourth floating window,
-and its plan was amended accordingly. ED2 introduces the region/splitter layout model and
-reflow, which is the prerequisite
-for ED3's full magnetic placement — ED1's two-destination drop preview is that mechanism
-with a two-entry destination table.
+```cpp
+if (ImGui::BeginChild("##StartupProfileCompleted", ImVec2(0.0f, 240.0f), true))
+{
+    ...
+    ImGui::EndChild();   // skipped when BeginChild returns false
+}
+```
 
-Two loose ends worth a follow-up: `EditorContainerComponent` is compiled but never
-constructed and its `Render()` underflows on an empty container; it was left unrepaired per
-the dead-code rule and noted in `docs/dead_code.md`. And the tab strip has no reordering or
-overflow scrolling, so a future panel count beyond the row width would clip.
+`BeginChild` returns false when the child is fully clipped — reachable whenever that window
+is short enough — and then `EndChild` is skipped and ImGui asserts. The file was last
+touched by `5e3226d`, so this predates both ED1 and ED2.
+
+ED1 fixed the two console sites and stopped, without grepping for the pattern. A sweep now
+shows six `BeginChild` sites in the engine: three were correct from the start (viewport,
+debug viewer, tool row), two were fixed in ED1, and this one was still live.
+
+**Why the pattern recurs, and what the comment now says.** `EndChild` must be called for
+every `BeginChild` regardless of its return value, while `EndTable` and `EndPopup` MUST be
+guarded by theirs. The startup profiler has a child immediately above a table, so the
+correct-looking local convention is the wrong one, and making the two "consistent" would
+reintroduce the crash. Both the console and the profiler now carry a comment stating the
+rule and the contrast.
+
+**Reproduced and verified,** rather than reasoned about. With `imgui.ini` giving the Startup
+Profiler a 320x90 window — short enough to clip the 240 px child fully:
+
+- the unfixed build asserted with the reported message and the process died;
+- the fixed build, identical input, ran clean.

@@ -327,8 +327,15 @@ namespace kpengine::editor
                     return left->completion_index < right->completion_index;
                 });
 
-            if (ImGui::BeginChild("##StartupProfileCompleted", ImVec2(0.0f, 240.0f),
-                                  true))
+            // EndChild is called for EVERY BeginChild, whatever it returns, and the call
+            // is deliberately not used as an if-condition. ImGui pushes the child onto its
+            // window stack either way, so guarding EndChild skips it whenever the child is
+            // fully clipped and then asserts "Must call EndChild() and not End()!".
+            //
+            // Note the opposite rule in the table right below: EndTable MUST be guarded by
+            // BeginTable's return value. The two conventions sit adjacent here, which is
+            // why this bug keeps reappearing -- do not "make them consistent".
+            ImGui::BeginChild("##StartupProfileCompleted", ImVec2(0.0f, 240.0f), true);
             {
                 if (ImGui::BeginTable("##StartupProfileCompletedTable", 6,
                                       ImGuiTableFlags_BordersInnerV |
@@ -380,8 +387,8 @@ namespace kpengine::editor
                     }
                     ImGui::EndTable();
                 }
-                ImGui::EndChild();
             }
+            ImGui::EndChild();
         }
     }
 }

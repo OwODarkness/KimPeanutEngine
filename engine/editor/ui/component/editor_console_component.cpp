@@ -200,9 +200,12 @@ namespace kpengine::editor
             ImGui::PushFont(code_font_);
         }
 
-        // EndChild must be called for every BeginChild regardless of its return
-        // value: ImGui pushes the child onto a window stack either way, and an
-        // early-out here leaves that stack mismatched.
+        // EndChild must be called for every BeginChild regardless of its return value:
+        // ImGui pushes the child onto a window stack either way, so guarding it with this
+        // call's result skips EndChild whenever the child is clipped, which asserts.
+        //
+        // The opposite holds for EndTable and EndPopup, which MUST be guarded by their
+        // Begin's return value. The two conventions look like an inconsistency and are not.
         ImGui::BeginChild("##command_output", ImVec2(0.0f, -ImGui::GetFrameHeightWithSpacing()),
                           true);
         for (const std::string &line : output_)
