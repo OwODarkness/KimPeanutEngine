@@ -1,6 +1,6 @@
 #version 450
 
-layout(binding = 0) uniform Live2DMaskedData
+layout(std140, binding = 0) uniform Live2DMaskedData
 {
     mat4 model_transform;
     vec4 multiply_color;

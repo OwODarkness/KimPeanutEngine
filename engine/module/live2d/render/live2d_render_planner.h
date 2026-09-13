@@ -117,6 +117,10 @@ namespace kpengine::live2d
     static_assert(offsetof(Live2DDrawConstants, padding) == 112u);
     static_assert(sizeof(Live2DDrawConstants) == 128u);
     static_assert(offsetof(Live2DMaskedDrawConstants, model_to_atlas_sample) == 128u);
+    static_assert(offsetof(Live2DMaskSourceConstants, padding) == 72u);
+    static_assert(sizeof(Live2DMaskSourceConstants) == 80u);
+    static_assert(offsetof(Live2DMaskedDrawConstants, channel) == 192u);
+    static_assert(sizeof(Live2DMaskedDrawConstants) == 208u);
     struct Live2DRenderCounters final
     {
         std::uint32_t submitted_draw_count = 0u;

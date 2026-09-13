@@ -1,6 +1,6 @@
 #version 450
 
-layout(binding = 0) uniform Live2DMaskData
+layout(std140, binding = 0) uniform Live2DMaskData
 {
     mat4 model_to_mask;
     uint channel;

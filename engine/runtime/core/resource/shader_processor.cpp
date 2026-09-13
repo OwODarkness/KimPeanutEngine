@@ -108,6 +108,11 @@ namespace kpengine::resource
             context.defines = shader->desc.defines;
             AddBindlessTextureTableDefines(context.defines);
             AddTargetApiDefine(context.defines, api_);
+            // Live2D mask UVs use a top-left atlas convention; OpenGL samples V from the opposite origin.
+            if (api_ == GraphicsAPIType::GRAPHICS_API_OPENGL)
+            {
+                context.defines.emplace_back("KPENGINE_LIVE2D_OPENGL");
+            }
 
             const std::string stage_str = std::string(magic_enum::enum_name(shader->desc.stage));
             const uint64_t hash = GenerateShaderHash(context.source, stage_str, shader->desc.entry, context.defines);

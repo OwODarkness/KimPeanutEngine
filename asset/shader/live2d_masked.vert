@@ -1,6 +1,6 @@
 #version 450
 
-layout(binding = 0) uniform Live2DMaskedData
+layout(std140, binding = 0) uniform Live2DMaskedData
 {
     mat4 model_transform;
     vec4 multiply_color;
@@ -24,4 +24,7 @@ void main()
     fragUV = inUV;
     maskUV = (draw_data.model_to_atlas_sample *
               vec4(inPosition, 0.0, 1.0)).xy;
+#ifdef KPENGINE_LIVE2D_OPENGL
+    maskUV.y = 1.0 - maskUV.y;
+#endif
 }
