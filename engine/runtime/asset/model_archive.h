@@ -86,6 +86,30 @@ namespace kpengine::asset
         std::vector<MaterialOverrideRecord> material_overrides;
     };
 
+    // Read model for whole-archive enumeration. SourceArchiveSnapshot probes one
+    // imported source and cannot see global products that no source links, so the
+    // catalog provider needs this separate shape.
+    struct ArchiveCatalogSource
+    {
+        SourceRecord source;
+        std::vector<SourceDependencyRecord> dependencies;
+        std::vector<SourceProductRecord> source_products;
+        std::vector<MaterialOverrideRecord> material_overrides;
+    };
+
+    struct ModelArchiveCatalogSnapshot
+    {
+        std::vector<ArchiveCatalogSource> sources;
+        std::vector<ProductRecord> products;
+    };
+
+    struct ModelArchiveCatalogReadLimits
+    {
+        std::size_t max_sources{100'000};
+        std::size_t max_products{250'000};
+        std::size_t max_related_records{1'000'000};
+    };
+
     enum class ArchiveProbeStatus : std::uint8_t
     {
         SourceNotFound,
@@ -142,6 +166,14 @@ namespace kpengine::asset
             std::string_view logical_path);
         std::optional<std::filesystem::path> ResolveModelProductPath(
             std::string_view logical_path);
+
+        // Enumerates every source and every product in one deferred read
+        // transaction, including products no source links. Non-mutating in
+        // either open mode and byte-verified product content is not read. Rows
+        // over `limits`, or a database whose stored rows are inconsistent, fail
+        // rather than returning a silently truncated catalog.
+        ModelArchiveCatalogSnapshot ReadCatalog(
+            const ModelArchiveCatalogReadLimits &limits = {});
 
         // Product bytes must already be staged under ArchiveRoot(). The
         // operation verifies them before the short metadata transaction.

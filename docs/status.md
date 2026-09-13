@@ -1,5 +1,30 @@
 # Project Status
 
+- **Asset Browser AB1.1 catalog snapshot provider (2026-09-13)** — added
+  `ModelArchiveDatabase::ReadCatalog()` as one strict read-only enumeration
+  transaction, a pure `detail/asset_catalog_builder` that joins that inventory
+  with a bounded copy of live `AssetManager` state, and
+  `AssetCatalogSnapshotProvider` implementing `IAssetCatalogSnapshotSource` in
+  two disjoint phases so no Asset lock outlives capture. `AssetManager` gained
+  only a friend declaration; no public enumeration API was added. Archive
+  failure, limits, failed sources, and missing endpoints all yield valid
+  `Partial` snapshots. The new tests found and fixed a builder defect that
+  silently dropped every live record. Focused tests pass: archive 14/14,
+  builder 25/25, provider 8/8; the asset-domain sweep is 276/277, the single
+  failure a pre-existing missing-fixture case. AB1.2–AB1.4 remain open. →
+  [AB1.1 journal](../.spec/journal/2026-09-13-asset-catalog-provider.md),
+  [AB1.1 plan](asset/asset-browser/.plan/AB1.1.md)
+- **Asset Browser AB1.0 catalog contract (2026-09-13)** — added the value-only
+  `AssetCatalogSnapshot` graph, the `IAssetCatalogSnapshotSource` provider
+  boundary, four frozen `asset-catalog-v1/` stable-key builders,
+  `CanonicalizeAssetCatalogSnapshot`, `ValidateAssetCatalogSnapshot`, and a
+  Sponza-shaped fixture with a shared texture, an unresolved reference, and a
+  deliberate cycle. The contract carries no payload, cache, database, or lock
+  reference and adds no archive enumeration, manager capture, or UI. Asset tests
+  pass 85/85; the 21 new catalog tests cover golden keys, dense-ID remapping,
+  order independence, availability/coverage combinations, and partial failure.
+  AB1.2–AB1.4 remain open. → [AB1.0 journal](../.spec/journal/2026-09-13-asset-catalog-contract.md),
+  [AB1.0 plan](asset/asset-browser/.plan/AB1.0.md)
 - **Live2D L2D7.2 instance behavior baseline (2026-09-13)** — added SDK-free secondary behavior configuration and canonical `AdvanceFrame` updates for deterministic blink, caller-driven gaze, breath, optional Product V3 physics, and pose. The legacy `AdvancePlayback` API remains a compatibility wrapper, invalid frame input is rejected before mutation, and the existing renderer/deferred pipeline is untouched. Focused and full Live2D tests pass (52/52). → [L2D7.2 journal](../.spec/journal/2026-09-13-live2d-l2d7-2.md), [L2D7 plan](live2d/.plan/L2D7.md)
 - **Live2D L2D7.1 Product V3 import baseline (2026-09-13)** — added typed immutable physics/pose bytes, ordered hit areas, and user-data values with bounded backward-compatible serialization; model3 import now validates and retains the complete behavior closure before publishing the native product. Product V1/V2 remain readable, and runtime pose loading accepts both the new typed field and the legacy compatibility path. OpenGL/Vulkan viewer smoke and focused Live2D tests pass. → [L2D7.1 journal](../.spec/journal/2026-09-13-live2d-l2d7-1.md), [L2D7 plan](live2d/.plan/L2D7.md)
 - **Live2D L2D7.0 phase reconciliation baseline (2026-09-13)** — split the

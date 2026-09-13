@@ -1,6 +1,6 @@
 # AB1.0 — Asset Catalog Contract and Fixture
 
-- Status: proposed
+- Status: implemented (2026-09-13)
 - Parent design: [Asset Browser Plans](../PLANS.md)
 - Roadmap: [Asset Browser TODO](../TODO.md)
 - Parent Asset architecture: [Asset Module Plans](../../PLANS.md)
@@ -318,15 +318,22 @@ Tests deliberately do not instantiate `AssetManager`, SQLite, ImGui, or a graphi
 
 ## Acceptance criteria
 
-- [ ] The public contract and helper implementation compile in `AssetRuntime`.
-- [ ] Stable-key namespaces and golden values are documented and tested.
-- [ ] Dense IDs, canonical order, remapping, relation semantics, and partial-failure rules are tested.
-- [ ] Dependency coverage and multi-source provenance are explicit and tested.
-- [ ] The reusable fixture contains Level, archive-backed Model/Materials/Textures, runtime-only Mesh, shared Texture, archive-only Texture, missing reference, and cycle.
-- [ ] Custom type names come from captured descriptor metadata rather than a central enum switch.
-- [ ] The contract exposes no payload, cache, database, filesystem, Editor, Render, or Graphics object.
-- [ ] No archive enumeration, manager snapshot, or UI implementation leaks into AB1.0.
-- [ ] Focused Asset tests and `git diff --check` pass.
+- [x] The public contract and helper implementation compile in `AssetRuntime`.
+- [x] Stable-key namespaces and golden values are documented and tested.
+- [x] Dense IDs, canonical order, remapping, relation semantics, and partial-failure rules are tested.
+- [x] Dependency coverage and multi-source provenance are explicit and tested.
+- [x] The reusable fixture contains Level, archive-backed Model/Materials/Textures, runtime-only Mesh, shared Texture, archive-only Texture, missing reference, and cycle.
+- [x] Custom type names come from captured descriptor metadata rather than a central enum switch.
+- [x] The contract exposes no payload, cache, database, filesystem, Editor, Render, or Graphics object.
+- [x] No archive enumeration, manager snapshot, or UI implementation leaks into AB1.0.
+- [x] Focused Asset tests and `git diff --check` pass.
+
+Implementation chose one clarification the plan left open: an
+`archive_product_type` is present exactly when availability is `ArchiveOnly` or
+`LoadedArchiveProduct`, and a `Missing` node carries no product metadata or
+runtime ID. `LoadedArchiveProduct` keeps `content_hash` optional so a partial
+snapshot captured while the archive is unreadable can still publish the live
+graph. See [the journal](../../../../.spec/journal/2026-09-13-asset-catalog-contract.md).
 
 ## Validation commands
 

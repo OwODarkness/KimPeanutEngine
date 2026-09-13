@@ -1,6 +1,7 @@
 # AB1.1 — Asset Catalog Snapshot Provider
 
-- Status: proposed
+- Status: implemented (2026-09-13)
+- Implementation record: [journal](../../../../.spec/journal/2026-09-13-asset-catalog-provider.md)
 - Prerequisite: [AB1.0 — Catalog contract and fixture](AB1.0.md)
 - Parent design: [Asset Browser Plans](../PLANS.md)
 - Roadmap: [Asset Browser TODO](../TODO.md)
@@ -314,6 +315,25 @@ No external code executes while `state_mutex_` is held. No lock is nested with t
 
 AB1.1 does not edit RuntimeContext, Engine, Editor, archive schema, import code, product codecs, or checked-in assets.
 
+### Decisions taken during implementation
+
+These extend the plan text and are binding on AB1.2/AB1.3:
+
+- **Overflow is asymmetric.** The node limit drops the live portion and keeps
+  the archive portion, because the archive half is the stable inventory. If the
+  archive snapshot alone exceeds the limit, no archive portion is published.
+- **Diagnostics have a required bucket.** Archive failure, capture-limit, and
+  assembly-failure entries are never truncated; optional entries fill the rest
+  with one slot reserved so a truncated set can still say it was truncated.
+- **Only the first live record per product path merges.** Duplicates produce one
+  node and one diagnostic.
+- **A self-owned child is dropped with a diagnostic**, not treated as a fatal
+  snapshot error.
+- **Owner alias selection is order-independent**: the lexicographically smallest
+  source display name among the sources importing one root Model.
+- **Two path spellings are never compared**: `product_path` is archive-root
+  relative; `logical_path` is project-relative with no `.archive/` segment.
+
 ## Implementation sequence
 
 1. Amend AB1.0 coverage, provenance, diagnostic codes, validation, and fixture expectations; rerun its contract tests.
@@ -365,16 +385,16 @@ AB1.1 does not edit RuntimeContext, Engine, Editor, archive schema, import code,
 
 ## Acceptance criteria
 
-- [ ] `ReadCatalog()` enumerates all products, including unlinked Texture rows, in one read transaction and never verifies product bytes.
-- [ ] The provider uses a configurable read-only database path and 50 ms default busy timeout.
-- [ ] Live capture holds only `state_mutex_`, copies one coherent live epoch, and invokes no external code while locked.
-- [ ] Archive/live product identity merges correctly; custom/runtime-only nodes stay generic.
-- [ ] Owned children are not duplicated as Dependency edges.
-- [ ] Archive-only dependency coverage is explicitly Unknown.
-- [ ] Missing endpoints, failed sources, archive failures, and limits yield valid Partial snapshots with bounded diagnostics.
-- [ ] Every published snapshot passes AB1.0 canonical validation and contains no pointer or retained lock.
-- [ ] No load/import/archive mutation, Runtime/Editor integration, schema change, or payload parsing is added.
-- [ ] Focused archive, catalog, concurrency, and existing Asset tests pass.
+- [x] `ReadCatalog()` enumerates all products, including unlinked Texture rows, in one read transaction and never verifies product bytes.
+- [x] The provider uses a configurable read-only database path and 50 ms default busy timeout.
+- [x] Live capture holds only `state_mutex_`, copies one coherent live epoch, and invokes no external code while locked.
+- [x] Archive/live product identity merges correctly; custom/runtime-only nodes stay generic.
+- [x] Owned children are not duplicated as Dependency edges.
+- [x] Archive-only dependency coverage is explicitly Unknown.
+- [x] Missing endpoints, failed sources, archive failures, and limits yield valid Partial snapshots with bounded diagnostics.
+- [x] Every published snapshot passes AB1.0 canonical validation and contains no pointer or retained lock.
+- [x] No load/import/archive mutation, Runtime/Editor integration, schema change, or payload parsing is added.
+- [x] Focused archive, catalog, concurrency, and existing Asset tests pass.
 
 ## Validation commands
 

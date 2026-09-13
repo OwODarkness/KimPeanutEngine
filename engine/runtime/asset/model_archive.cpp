@@ -1140,6 +1140,430 @@ namespace kpengine::asset
                                 "logical model source has no Model product");
     }
 
+    namespace
+    {
+        // Stored rows are only trustworthy after the schema already accepted
+        // them. Catalogue reads re-check the invariants that a corrupt or
+        // hand-edited database can still violate.
+        std::size_t CatalogRowCount(database::Statement &statement, const char *table)
+        {
+            if (statement.Step() != database::StatementStep::Row)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        std::string("archive ") + table +
+                                            " count query returned no row");
+            }
+            const std::int64_t count = statement.ColumnInt64(0);
+            if (count < 0)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        std::string("archive ") + table +
+                                            " has a negative row count");
+            }
+            return static_cast<std::size_t>(count);
+        }
+
+        void AddCatalogRowCount(std::size_t &total, std::size_t count)
+        {
+            if (count > std::numeric_limits<std::size_t>::max() - total)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "archive related-record count overflows");
+            }
+            total += count;
+        }
+
+        ArchiveProductType CatalogProductType(std::int64_t value)
+        {
+            switch (value)
+            {
+            case static_cast<std::int64_t>(ArchiveProductType::Model):
+                return ArchiveProductType::Model;
+            case static_cast<std::int64_t>(ArchiveProductType::Material):
+                return ArchiveProductType::Material;
+            case static_cast<std::int64_t>(ArchiveProductType::Texture):
+                return ArchiveProductType::Texture;
+            default:
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "archive row has an unknown product type");
+            }
+        }
+
+        std::uint64_t CatalogByteSize(std::int64_t value)
+        {
+            if (value < 0)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "archive row has a negative byte size");
+            }
+            return static_cast<std::uint64_t>(value);
+        }
+
+        std::uint32_t CatalogSchemaVersion(std::int64_t value)
+        {
+            if (value < 0)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "archive row has a negative schema version");
+            }
+            return static_cast<std::uint32_t>(value);
+        }
+
+        std::int32_t CatalogSlot(std::int64_t value)
+        {
+            if (value < std::numeric_limits<std::int32_t>::min() ||
+                value > std::numeric_limits<std::int32_t>::max())
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "archive row has an out-of-range slot");
+            }
+            return static_cast<std::int32_t>(value);
+        }
+
+        // Rows are ordered by source path, so a group lookup is re-done only
+        // when the path advances. A null result means the row points at a
+        // source that does not exist: a broken link, not a row to skip.
+        const ArchiveCatalogSource *FindCatalogSource(
+            const ModelArchiveCatalogSnapshot &catalog, std::string_view normalized_path)
+        {
+            const auto found = std::lower_bound(
+                catalog.sources.begin(), catalog.sources.end(), normalized_path,
+                [](const ArchiveCatalogSource &entry, std::string_view value)
+                { return entry.source.normalized_path < value; });
+            if (found == catalog.sources.end() ||
+                found->source.normalized_path != normalized_path)
+            {
+                return nullptr;
+            }
+            return &*found;
+        }
+
+        bool CatalogHasProduct(const std::vector<ProductRecord> &products,
+                               ArchiveProductType type, const ContentHash &content_hash)
+        {
+            const auto found = std::lower_bound(
+                products.begin(), products.end(), content_hash,
+                [type](const ProductRecord &entry, const ContentHash &value)
+                {
+                    if (entry.asset_type != type)
+                    {
+                        return static_cast<std::uint8_t>(entry.asset_type) <
+                               static_cast<std::uint8_t>(type);
+                    }
+                    return entry.content_hash < value;
+                });
+            return found != products.end() && found->asset_type == type &&
+                   found->content_hash == content_hash;
+        }
+    }
+
+    ModelArchiveCatalogSnapshot ModelArchiveDatabase::ReadCatalog(
+        const ModelArchiveCatalogReadLimits &limits)
+    {
+        return CatchDatabaseErrors([&]() -> ModelArchiveCatalogSnapshot
+        {
+            // One deferred transaction keeps every ordered query on a single
+            // archive epoch, so a concurrent writer commits wholly before or
+            // wholly after this read.
+            database::Transaction transaction{*impl_->database};
+
+            const auto count_rows = [&](const char *table)
+            {
+                auto statement = impl_->database->Prepare(
+                    std::string("SELECT COUNT(*) FROM ") + table + ";");
+                return CatalogRowCount(statement, table);
+            };
+
+            const std::size_t source_count = count_rows("sources");
+            const std::size_t product_count = count_rows("products");
+            std::size_t related_count = count_rows("source_dependencies");
+            AddCatalogRowCount(related_count, count_rows("source_products"));
+            AddCatalogRowCount(related_count, count_rows("material_overrides"));
+
+            if (source_count > limits.max_sources)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
+                                        "archive holds " + std::to_string(source_count) +
+                                            " sources, over the configured limit of " +
+                                            std::to_string(limits.max_sources));
+            }
+            if (product_count > limits.max_products)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
+                                        "archive holds " + std::to_string(product_count) +
+                                            " products, over the configured limit of " +
+                                            std::to_string(limits.max_products));
+            }
+            if (related_count > limits.max_related_records)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidArgument,
+                                        "archive holds " + std::to_string(related_count) +
+                                            " related records, over the configured limit of " +
+                                            std::to_string(limits.max_related_records));
+            }
+
+            ModelArchiveCatalogSnapshot catalog;
+            catalog.sources.reserve(source_count);
+            catalog.products.reserve(product_count);
+
+            auto source_statement = impl_->database->Prepare(
+                "SELECT id, normalized_path, path_hash, display_name, package_hash, "
+                "importer_id, importer_version, settings_hash, native_model_version, "
+                "status, diagnostic FROM sources ORDER BY normalized_path;");
+            while (source_statement.Step() == database::StatementStep::Row)
+            {
+                ArchiveCatalogSource entry;
+                entry.source.id = source_statement.ColumnInt64(0);
+                entry.source.normalized_path = source_statement.ColumnText(1);
+                entry.source.path_hash = FromBlob(source_statement.ColumnBlob(2));
+                entry.source.display_name = source_statement.ColumnText(3);
+                entry.source.package_hash = FromBlob(source_statement.ColumnBlob(4));
+                entry.source.importer_id = source_statement.ColumnText(5);
+                entry.source.importer_version =
+                    static_cast<std::uint32_t>(source_statement.ColumnInt64(6));
+                entry.source.settings_hash = FromBlob(source_statement.ColumnBlob(7));
+                entry.source.native_model_version =
+                    static_cast<std::uint32_t>(source_statement.ColumnInt64(8));
+                const std::int64_t status = source_statement.ColumnInt64(9);
+                if (status != static_cast<std::int64_t>(SourceImportStatus::Failed) &&
+                    status != static_cast<std::int64_t>(SourceImportStatus::Ready))
+                {
+                    throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                            "archive source has an unknown import status");
+                }
+                entry.source.status = static_cast<SourceImportStatus>(status);
+                entry.source.diagnostic = source_statement.ColumnText(10);
+                if (NormalizeArchiveRelativePath(entry.source.normalized_path) !=
+                    entry.source.normalized_path)
+                {
+                    throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                            "archive source path is not canonical");
+                }
+                catalog.sources.push_back(std::move(entry));
+            }
+            if (catalog.sources.size() != source_count)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "archive source count changed during the catalog read");
+            }
+
+            auto product_statement = impl_->database->Prepare(
+                "SELECT content_hash, asset_type, relative_path, byte_size, schema_version "
+                "FROM products ORDER BY asset_type, content_hash;");
+            while (product_statement.Step() == database::StatementStep::Row)
+            {
+                ProductRecord product;
+                product.content_hash = FromBlob(product_statement.ColumnBlob(0));
+                product.asset_type = CatalogProductType(product_statement.ColumnInt64(1));
+                product.relative_path = product_statement.ColumnText(2);
+                product.byte_size = CatalogByteSize(product_statement.ColumnInt64(3));
+                product.schema_version = CatalogSchemaVersion(product_statement.ColumnInt64(4));
+                if (!catalog.products.empty())
+                {
+                    const ProductRecord &previous = catalog.products.back();
+                    const bool ordered =
+                        previous.asset_type == product.asset_type
+                            ? previous.content_hash < product.content_hash
+                            : static_cast<std::uint8_t>(previous.asset_type) <
+                                  static_cast<std::uint8_t>(product.asset_type);
+                    if (!ordered)
+                    {
+                        throw ModelArchiveError(
+                            ModelArchiveErrorCode::InvalidDatabase,
+                            "archive product identities are duplicated or not ordered");
+                    }
+                }
+                try
+                {
+                    ValidateHashPath(product);
+                }
+                catch (const ModelArchiveError &error)
+                {
+                    throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                            std::string("archive product metadata is invalid: ") +
+                                                error.what());
+                }
+                catalog.products.push_back(std::move(product));
+            }
+            if (catalog.products.size() != product_count)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
+                                        "archive product count changed during the catalog read");
+            }
+
+            {
+                auto statement = impl_->database->Prepare(
+                    "SELECT s.normalized_path, d.normalized_path, d.content_hash "
+                    "FROM source_dependencies d LEFT JOIN sources s ON s.id = d.source_id "
+                    "ORDER BY s.normalized_path, d.normalized_path;");
+                const ArchiveCatalogSource *current = nullptr;
+                std::string current_path;
+                while (statement.Step() == database::StatementStep::Row)
+                {
+                    if (statement.ColumnIsNull(0))
+                    {
+                        throw ModelArchiveError(
+                            ModelArchiveErrorCode::InvalidDatabase,
+                            "archive source dependency links to a missing source");
+                    }
+                    const std::string source_path = statement.ColumnText(0);
+                    if (current == nullptr || source_path != current_path)
+                    {
+                        current_path = source_path;
+                        current = FindCatalogSource(catalog, source_path);
+                        if (current == nullptr)
+                        {
+                            throw ModelArchiveError(
+                                ModelArchiveErrorCode::InvalidDatabase,
+                                "archive source dependency belongs to an unknown source: " +
+                                    source_path);
+                        }
+                    }
+                    const auto index = static_cast<std::size_t>(current - catalog.sources.data());
+                    catalog.sources[index].dependencies.push_back(
+                        {statement.ColumnText(1), FromBlob(statement.ColumnBlob(2)), 0, 0});
+                }
+            }
+
+            if (impl_->dependency_metadata_available)
+            {
+                auto statement = impl_->database->Prepare(
+                    "SELECT s.normalized_path, m.normalized_path, m.byte_size, m.last_write_time "
+                    "FROM source_dependency_metadata m LEFT JOIN sources s ON s.id = m.source_id "
+                    "ORDER BY s.normalized_path, m.normalized_path;");
+                const ArchiveCatalogSource *current = nullptr;
+                std::string current_path;
+                while (statement.Step() == database::StatementStep::Row)
+                {
+                    if (statement.ColumnIsNull(0))
+                    {
+                        throw ModelArchiveError(
+                            ModelArchiveErrorCode::InvalidDatabase,
+                            "archive dependency metadata links to a missing source");
+                    }
+                    const std::string source_path = statement.ColumnText(0);
+                    if (current == nullptr || source_path != current_path)
+                    {
+                        current_path = source_path;
+                        current = FindCatalogSource(catalog, source_path);
+                        if (current == nullptr)
+                        {
+                            throw ModelArchiveError(
+                                ModelArchiveErrorCode::InvalidDatabase,
+                                "archive dependency metadata belongs to an unknown source: " +
+                                    source_path);
+                        }
+                    }
+                    const auto index = static_cast<std::size_t>(current - catalog.sources.data());
+                    const std::string dependency_path = statement.ColumnText(1);
+                    const std::uint64_t byte_size = CatalogByteSize(statement.ColumnInt64(2));
+                    const std::int64_t last_write_time = statement.ColumnInt64(3);
+                    const std::vector<SourceDependencyRecord> &dependencies =
+                        catalog.sources[index].dependencies;
+                    const auto dependency = std::lower_bound(
+                        dependencies.begin(), dependencies.end(), dependency_path,
+                        [](const SourceDependencyRecord &entry, const std::string &value)
+                        { return entry.normalized_path < value; });
+                    if (dependency == dependencies.end() ||
+                        dependency->normalized_path != dependency_path)
+                    {
+                        throw ModelArchiveError(
+                            ModelArchiveErrorCode::InvalidDatabase,
+                            "archive dependency metadata has no matching dependency row");
+                    }
+                    const auto offset =
+                        static_cast<std::size_t>(dependency - dependencies.begin());
+                    catalog.sources[index].dependencies[offset].byte_size = byte_size;
+                    catalog.sources[index].dependencies[offset].last_write_time = last_write_time;
+                }
+            }
+
+            {
+                auto statement = impl_->database->Prepare(
+                    "SELECT s.normalized_path, sp.content_hash, sp.asset_type, sp.role, sp.slot, "
+                    "sp.display_name FROM source_products sp "
+                    "LEFT JOIN sources s ON s.id = sp.source_id "
+                    "ORDER BY s.normalized_path, sp.role, sp.slot;");
+                const ArchiveCatalogSource *current = nullptr;
+                std::string current_path;
+                while (statement.Step() == database::StatementStep::Row)
+                {
+                    if (statement.ColumnIsNull(0))
+                    {
+                        throw ModelArchiveError(
+                            ModelArchiveErrorCode::InvalidDatabase,
+                            "archive source product links to a missing source");
+                    }
+                    const std::string source_path = statement.ColumnText(0);
+                    if (current == nullptr || source_path != current_path)
+                    {
+                        current_path = source_path;
+                        current = FindCatalogSource(catalog, source_path);
+                        if (current == nullptr)
+                        {
+                            throw ModelArchiveError(
+                                ModelArchiveErrorCode::InvalidDatabase,
+                                "archive source product belongs to an unknown source: " +
+                                    source_path);
+                        }
+                    }
+                    SourceProductRecord source_product;
+                    source_product.content_hash = FromBlob(statement.ColumnBlob(1));
+                    source_product.asset_type = CatalogProductType(statement.ColumnInt64(2));
+                    source_product.role = CatalogSlot(statement.ColumnInt64(3));
+                    source_product.slot = CatalogSlot(statement.ColumnInt64(4));
+                    source_product.display_name = statement.ColumnText(5);
+                    if (!CatalogHasProduct(catalog.products, source_product.asset_type,
+                                           source_product.content_hash))
+                    {
+                        throw ModelArchiveError(
+                            ModelArchiveErrorCode::InvalidDatabase,
+                            "archive source product references an unknown product");
+                    }
+                    const auto index = static_cast<std::size_t>(current - catalog.sources.data());
+                    catalog.sources[index].source_products.push_back(std::move(source_product));
+                }
+            }
+
+            {
+                auto statement = impl_->database->Prepare(
+                    "SELECT s.normalized_path, o.slot, o.authored_path FROM material_overrides o "
+                    "LEFT JOIN sources s ON s.id = o.source_id "
+                    "ORDER BY s.normalized_path, o.slot;");
+                const ArchiveCatalogSource *current = nullptr;
+                std::string current_path;
+                while (statement.Step() == database::StatementStep::Row)
+                {
+                    if (statement.ColumnIsNull(0))
+                    {
+                        throw ModelArchiveError(
+                            ModelArchiveErrorCode::InvalidDatabase,
+                            "archive material override links to a missing source");
+                    }
+                    const std::string source_path = statement.ColumnText(0);
+                    if (current == nullptr || source_path != current_path)
+                    {
+                        current_path = source_path;
+                        current = FindCatalogSource(catalog, source_path);
+                        if (current == nullptr)
+                        {
+                            throw ModelArchiveError(
+                                ModelArchiveErrorCode::InvalidDatabase,
+                                "archive material override belongs to an unknown source: " +
+                                    source_path);
+                        }
+                    }
+                    const auto index = static_cast<std::size_t>(current - catalog.sources.data());
+                    catalog.sources[index].material_overrides.push_back(
+                        {CatalogSlot(statement.ColumnInt64(1)), statement.ColumnText(2)});
+                }
+            }
+
+            transaction.Commit();
+            return catalog;
+        });
+    }
+
     void ModelArchiveDatabase::VerifyProductFile(const ProductRecord &product) const
     {
         ValidateHashPath(product);

@@ -34,6 +34,8 @@ namespace kpengine::asset{
         std::unordered_map<std::string, AssetID> path_index;
     };
 
+    class AssetCatalogSnapshotProvider;
+
     class AssetManager{
     public:
         static AssetManager& GetInstance(){return instance_;}
@@ -125,7 +127,11 @@ namespace kpengine::asset{
 
         std::recursive_mutex state_mutex_;  // guards caches_ and path_index
         std::mutex load_mutex_;             // serializes shared loader access
-        
+
+        // Grants the catalog provider the bounded live-copy phase only. No
+        // general cache-enumeration API is exposed, so manager storage policy
+        // stays private.
+        friend class AssetCatalogSnapshotProvider;
     };
 }
 

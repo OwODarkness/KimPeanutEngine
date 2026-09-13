@@ -51,6 +51,9 @@ option(KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT
 # documented in docs/asset/.plan/MI1.7.md and MI1.8's packaging/visual evidence.
 
 add_library(AssetRuntime STATIC
+    asset_catalog.cpp
+    asset_catalog_snapshot_provider.cpp
+    detail/asset_catalog_builder.cpp
     asset_manager.cpp
     asset_type_registry.cpp
     asset_load_observation.cpp

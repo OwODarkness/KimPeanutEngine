@@ -1,15 +1,19 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <cstdint>
 #include <fstream>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "database/database.h"
 #include "asset/model_archive.h"
 
 namespace
 {
+    using kpengine::asset::ArchiveCatalogSource;
     using kpengine::asset::ArchiveProbeStatus;
     using kpengine::asset::ArchiveProductType;
     using kpengine::asset::ContentHash;
@@ -17,6 +21,8 @@ namespace
     using kpengine::asset::HashSourcePackage;
     using kpengine::asset::ImportKeyInput;
     using kpengine::asset::MaterialOverrideRecord;
+    using kpengine::asset::ModelArchiveCatalogReadLimits;
+    using kpengine::asset::ModelArchiveCatalogSnapshot;
     using kpengine::asset::ModelArchiveDatabase;
     using kpengine::asset::ModelArchiveError;
     using kpengine::asset::ModelArchiveErrorCode;
@@ -153,6 +159,405 @@ namespace
         return {source.normalized_path, source.package_hash, source.importer_id,
                 source.importer_version, source.settings_hash, source.native_model_version};
     }
+
+    std::vector<std::byte> ToBlob(const ContentHash &hash)
+    {
+        std::vector<std::byte> blob;
+        blob.reserve(hash.bytes.size());
+        for (const std::uint8_t value : hash.bytes)
+        {
+            blob.push_back(static_cast<std::byte>(value));
+        }
+        return blob;
+    }
+
+    ProductRecord CatalogProduct(ArchiveProductType type, std::string_view contents,
+                                 std::string_view texture_extension = {})
+    {
+        ProductRecord product;
+        product.content_hash = Sha256(contents);
+        product.asset_type = type;
+        product.relative_path =
+            ProductRelativePath(type, product.content_hash, texture_extension);
+        product.byte_size = contents.size();
+        product.schema_version = 1;
+        return product;
+    }
+
+    // Writes one source with its products and links, mirroring what the
+    // importer publishes.
+    void PublishCatalogSource(ModelArchiveDatabase &archive, std::string_view source_path,
+                              std::string_view display_name,
+                              const std::vector<std::pair<ProductRecord, std::vector<std::byte>>>
+                                  &products,
+                              const std::vector<SourceProductRecord> &links,
+                              SourceImportStatus status = SourceImportStatus::Ready,
+                              std::string diagnostic = {})
+    {
+        SourceRecord source;
+        source.normalized_path = std::string(source_path);
+        source.path_hash = Sha256(source.normalized_path);
+        source.display_name = std::string(display_name);
+        source.importer_id = "assimp";
+        source.importer_version = 1;
+        source.settings_hash = Sha256("settings-v1");
+        source.native_model_version = 1;
+        source.status = status;
+        source.diagnostic = std::move(diagnostic);
+
+        const std::vector<SourceDependencyRecord> dependencies{
+            {source.normalized_path, Sha256(source.normalized_path)}};
+        source.package_hash =
+            HashSourcePackage({{dependencies.front().normalized_path,
+                                dependencies.front().content_hash}});
+
+        std::vector<ProductRecord> records;
+        records.reserve(products.size());
+        for (const auto &[product, bytes] : products)
+        {
+            WriteBytes(archive.ArchiveRoot() / product.relative_path, bytes);
+            records.push_back(product);
+        }
+        archive.ReplaceSource(source, dependencies, records, links, {});
+    }
+
+    std::vector<SourceProductRecord> Link(ArchiveProductType type, const ProductRecord &product,
+                                          std::int32_t role, std::int32_t slot,
+                                          std::string display_name)
+    {
+        return {{product.content_hash, type, role, slot, std::move(display_name)}};
+    }
+
+    std::string CatalogKeyOf(const ModelArchiveCatalogSnapshot &catalog, std::size_t index)
+    {
+        const ProductRecord &product = catalog.products[index];
+        return std::to_string(static_cast<unsigned>(product.asset_type)) + "/" +
+               product.content_hash.ToHex();
+    }
+}
+
+TEST(ModelArchiveCatalogTest, EmptyReadOnlyArchiveReturnsEmptyOrderedValues)
+{
+    TemporaryArchive temporary;
+    {
+        ModelArchiveDatabase initialized{temporary.DatabasePath()};
+    }
+    ModelArchiveDatabase archive{temporary.DatabasePath(), 2500,
+                                 kpengine::asset::ModelArchiveOpenMode::ReadOnly};
+    const ModelArchiveCatalogSnapshot catalog = archive.ReadCatalog();
+    EXPECT_TRUE(catalog.sources.empty());
+    EXPECT_TRUE(catalog.products.empty());
+}
+
+TEST(ModelArchiveCatalogTest, EnumeratesGlobalProductsOrderedByTypeThenHash)
+{
+    TemporaryArchive temporary;
+    ModelArchiveDatabase archive{temporary.DatabasePath()};
+
+    const ProductRecord model = CatalogProduct(ArchiveProductType::Model, "model-bytes");
+    const ProductRecord material = CatalogProduct(ArchiveProductType::Material, "material-bytes");
+    // A Texture row with no source link is still part of the catalog.
+    const ProductRecord texture =
+        CatalogProduct(ArchiveProductType::Texture, "texture-bytes", "texture");
+
+    PublishCatalogSource(archive, "models/b.obj", "B",
+                         {{model, Bytes("model-bytes")}},
+                         Link(ArchiveProductType::Model, model, 0, -1, "B model"));
+    PublishCatalogSource(archive, "models/a.obj", "A",
+                         {{material, Bytes("material-bytes")}, {texture, Bytes("texture-bytes")}},
+                         Link(ArchiveProductType::Material, material, 1, 0, "A material"));
+    // The texture is published by a product-row-only source and keeps no link.
+    PublishCatalogSource(archive, "models/c.obj", "C",
+                         {{CatalogProduct(ArchiveProductType::Model, "model-c"),
+                           Bytes("model-c")}},
+                         {});
+
+    const ModelArchiveCatalogSnapshot catalog = archive.ReadCatalog();
+    ASSERT_EQ(catalog.sources.size(), 3u);
+    EXPECT_EQ(catalog.sources[0].source.normalized_path, "models/a.obj");
+    EXPECT_EQ(catalog.sources[1].source.normalized_path, "models/b.obj");
+    EXPECT_EQ(catalog.sources[2].source.normalized_path, "models/c.obj");
+
+    ASSERT_EQ(catalog.products.size(), 4u);
+    for (std::size_t index = 1; index < catalog.products.size(); ++index)
+    {
+        const ProductRecord &previous = catalog.products[index - 1];
+        const ProductRecord &current = catalog.products[index];
+        const bool ordered =
+            previous.asset_type == current.asset_type
+                ? previous.content_hash < current.content_hash
+                : static_cast<std::uint8_t>(previous.asset_type) <
+                      static_cast<std::uint8_t>(current.asset_type);
+        EXPECT_TRUE(ordered) << "product ordering broke at index " << index;
+    }
+
+    const auto found_texture = std::find_if(
+        catalog.products.begin(), catalog.products.end(),
+        [](const ProductRecord &product)
+        { return product.asset_type == ArchiveProductType::Texture; });
+    ASSERT_NE(found_texture, catalog.products.end());
+    EXPECT_EQ(found_texture->content_hash, texture.content_hash);
+
+    // Dependency metadata stays attached to its own source.
+    ASSERT_EQ(catalog.sources[0].dependencies.size(), 1u);
+    EXPECT_EQ(catalog.sources[0].dependencies.front().normalized_path, "models/a.obj");
+    EXPECT_EQ(catalog.sources[0].dependencies.front().content_hash, Sha256("models/a.obj"));
+    EXPECT_EQ(catalog.sources[0].source_products.size(), 1u);
+    EXPECT_TRUE(catalog.sources[2].source_products.empty());
+}
+
+TEST(ModelArchiveCatalogTest, SharesOneProductAcrossSourcesAndPreservesFailedStatus)
+{
+    TemporaryArchive temporary;
+    ModelArchiveDatabase archive{temporary.DatabasePath()};
+    const ProductRecord shared = CatalogProduct(ArchiveProductType::Model, "shared-model");
+
+    PublishCatalogSource(archive, "models/a.obj", "A",
+                         {{shared, Bytes("shared-model")}},
+                         Link(ArchiveProductType::Model, shared, 0, -1, "Shared model"));
+    PublishCatalogSource(archive, "models/b.obj", "B",
+                         {{shared, Bytes("shared-model")}},
+                         Link(ArchiveProductType::Model, shared, 0, -1, "Shared model again"),
+                         SourceImportStatus::Failed, "assimp rejected the file");
+
+    const ModelArchiveCatalogSnapshot catalog = archive.ReadCatalog();
+    ASSERT_EQ(catalog.products.size(), 1u);
+    ASSERT_EQ(catalog.sources.size(), 2u);
+    EXPECT_EQ(catalog.sources[0].source_products.front().display_name, "Shared model");
+    EXPECT_EQ(catalog.sources[1].source_products.front().display_name, "Shared model again");
+    EXPECT_EQ(catalog.sources[1].source.status, SourceImportStatus::Failed);
+    EXPECT_EQ(catalog.sources[1].source.diagnostic, "assimp rejected the file");
+
+    ModelArchiveDatabase read_only{temporary.DatabasePath(), 2500,
+                                   kpengine::asset::ModelArchiveOpenMode::ReadOnly};
+    const ModelArchiveCatalogSnapshot read_only_catalog = read_only.ReadCatalog();
+    EXPECT_EQ(CatalogKeyOf(read_only_catalog, 0), CatalogKeyOf(catalog, 0));
+    EXPECT_EQ(read_only_catalog.sources[1].source.diagnostic, "assimp rejected the file");
+}
+
+TEST(ModelArchiveCatalogTest, EnforcesConfiguredReadLimits)
+{
+    TemporaryArchive temporary;
+    ModelArchiveDatabase archive{temporary.DatabasePath()};
+    const ProductRecord model = CatalogProduct(ArchiveProductType::Model, "model-bytes");
+    PublishCatalogSource(archive, "models/a.obj", "A", {{model, Bytes("model-bytes")}},
+                         Link(ArchiveProductType::Model, model, 0, -1, "A model"));
+
+    kpengine::asset::ModelArchiveCatalogReadLimits limits;
+    limits.max_products = 0;
+    EXPECT_EQ(CatchArchiveError([&] { (void)archive.ReadCatalog(limits); }),
+              ModelArchiveErrorCode::InvalidArgument);
+
+    limits = {};
+    limits.max_sources = 0;
+    EXPECT_EQ(CatchArchiveError([&] { (void)archive.ReadCatalog(limits); }),
+              ModelArchiveErrorCode::InvalidArgument);
+
+    limits = {};
+    limits.max_related_records = 0;
+    EXPECT_EQ(CatchArchiveError([&] { (void)archive.ReadCatalog(limits); }),
+              ModelArchiveErrorCode::InvalidArgument);
+
+    EXPECT_EQ(archive.ReadCatalog().products.size(), 1u);
+}
+
+TEST(ModelArchiveCatalogTest, AbsentDependencyMetadataKeepsZeroMetricsAndPresentMetadataMerges)
+{
+    TemporaryArchive temporary;
+    ModelArchiveDatabase archive{temporary.DatabasePath()};
+    const ProductRecord model = CatalogProduct(ArchiveProductType::Model, "model-bytes");
+    PublishCatalogSource(archive, "models/a.obj", "A", {{model, Bytes("model-bytes")}},
+                         Link(ArchiveProductType::Model, model, 0, -1, "A model"));
+
+    // An archive written before the optional metadata table existed carries no
+    // row for a dependency. The dependency must still be reported, with zero
+    // metrics rather than a dropped row or a synthesized value.
+    Database raw{temporary.DatabasePath().string()};
+    raw.Execute("DELETE FROM source_dependency_metadata;");
+
+    const ModelArchiveCatalogSnapshot absent = archive.ReadCatalog();
+    ASSERT_EQ(absent.sources.size(), 1u);
+    ASSERT_EQ(absent.sources.front().dependencies.size(), 1u);
+    const SourceDependencyRecord &plain = absent.sources.front().dependencies.front();
+    EXPECT_EQ(plain.normalized_path, "models/a.obj");
+    EXPECT_EQ(plain.content_hash, Sha256("models/a.obj"));
+    EXPECT_EQ(plain.byte_size, 0u);
+    EXPECT_EQ(plain.last_write_time, 0);
+
+    // A present row merges into that same record without changing its identity.
+    std::int64_t source_id = 0;
+    {
+        auto query = raw.Prepare("SELECT id FROM sources WHERE normalized_path = ?;");
+        query.Bind(1, std::string("models/a.obj"));
+        ASSERT_EQ(query.Step(), kpengine::database::StatementStep::Row);
+        source_id = query.ColumnInt64(0);
+    }
+    {
+        auto statement = raw.Prepare(
+            "INSERT INTO source_dependency_metadata(source_id, normalized_path, byte_size, "
+            "last_write_time) VALUES (?, ?, ?, ?);");
+        statement.Bind(1, source_id);
+        statement.Bind(2, std::string("models/a.obj"));
+        statement.Bind(3, static_cast<std::int64_t>(4096));
+        statement.Bind(4, static_cast<std::int64_t>(1700000000));
+        EXPECT_EQ(statement.Step(), kpengine::database::StatementStep::Done);
+    }
+
+    const ModelArchiveCatalogSnapshot present = archive.ReadCatalog();
+    ASSERT_EQ(present.sources.size(), 1u);
+    ASSERT_EQ(present.sources.front().dependencies.size(), 1u);
+    const SourceDependencyRecord &enriched = present.sources.front().dependencies.front();
+    EXPECT_EQ(enriched.normalized_path, plain.normalized_path);
+    EXPECT_EQ(enriched.content_hash, plain.content_hash);
+    EXPECT_EQ(enriched.byte_size, 4096u);
+    EXPECT_EQ(enriched.last_write_time, 1700000000);
+}
+
+TEST(ModelArchiveCatalogTest, ReadOnlyAndReadWriteReadsYieldIdenticalCatalogValues)
+{
+    TemporaryArchive temporary;
+    const ProductRecord shared = CatalogProduct(ArchiveProductType::Model, "shared-model");
+    const ProductRecord material = CatalogProduct(ArchiveProductType::Material, "material-bytes");
+    const ProductRecord texture =
+        CatalogProduct(ArchiveProductType::Texture, "texture-bytes", "texture");
+    {
+        ModelArchiveDatabase archive{temporary.DatabasePath()};
+        PublishCatalogSource(archive, "models/b.obj", "B",
+                             {{shared, Bytes("shared-model")},
+                              {material, Bytes("material-bytes")}},
+                             Link(ArchiveProductType::Material, material, 1, 0, "B material"));
+        PublishCatalogSource(archive, "models/a.obj", "A", {{shared, Bytes("shared-model")}},
+                             Link(ArchiveProductType::Model, shared, 0, -1, "Shared model"),
+                             SourceImportStatus::Failed, "import failed");
+        // A product row with no link keeps the products-only path in view.
+        PublishCatalogSource(archive, "models/c.obj", "C",
+                             {{texture, Bytes("texture-bytes")}}, {});
+    }
+
+    ModelArchiveDatabase read_write{temporary.DatabasePath()};
+    ModelArchiveDatabase read_only{temporary.DatabasePath(), 2500,
+                                   kpengine::asset::ModelArchiveOpenMode::ReadOnly};
+    const ModelArchiveCatalogSnapshot from_write = read_write.ReadCatalog();
+    const ModelArchiveCatalogSnapshot from_read = read_only.ReadCatalog();
+
+    ASSERT_EQ(from_write.products.size(), from_read.products.size());
+    for (std::size_t index = 0; index < from_write.products.size(); ++index)
+    {
+        EXPECT_EQ(CatalogKeyOf(from_write, index), CatalogKeyOf(from_read, index));
+        const ProductRecord &left = from_write.products[index];
+        const ProductRecord &right = from_read.products[index];
+        EXPECT_EQ(left.relative_path, right.relative_path);
+        EXPECT_EQ(left.byte_size, right.byte_size);
+        EXPECT_EQ(left.schema_version, right.schema_version);
+    }
+
+    ASSERT_EQ(from_write.sources.size(), from_read.sources.size());
+    for (std::size_t index = 0; index < from_write.sources.size(); ++index)
+    {
+        const ArchiveCatalogSource &left = from_write.sources[index];
+        const ArchiveCatalogSource &right = from_read.sources[index];
+        EXPECT_EQ(left.source.normalized_path, right.source.normalized_path);
+        EXPECT_EQ(left.source.display_name, right.source.display_name);
+        EXPECT_EQ(left.source.package_hash, right.source.package_hash);
+        EXPECT_EQ(left.source.status, right.source.status);
+        EXPECT_EQ(left.source.diagnostic, right.source.diagnostic);
+        ASSERT_EQ(left.dependencies.size(), right.dependencies.size());
+        for (std::size_t link = 0; link < left.dependencies.size(); ++link)
+        {
+            EXPECT_EQ(left.dependencies[link].normalized_path,
+                      right.dependencies[link].normalized_path);
+            EXPECT_EQ(left.dependencies[link].content_hash, right.dependencies[link].content_hash);
+        }
+        ASSERT_EQ(left.source_products.size(), right.source_products.size());
+        for (std::size_t link = 0; link < left.source_products.size(); ++link)
+        {
+            EXPECT_EQ(left.source_products[link].content_hash,
+                      right.source_products[link].content_hash);
+            EXPECT_EQ(left.source_products[link].asset_type,
+                      right.source_products[link].asset_type);
+            EXPECT_EQ(left.source_products[link].role, right.source_products[link].role);
+            EXPECT_EQ(left.source_products[link].slot, right.source_products[link].slot);
+            EXPECT_EQ(left.source_products[link].display_name,
+                      right.source_products[link].display_name);
+        }
+    }
+}
+
+TEST(ModelArchiveCatalogTest, RejectsCorruptRowsAndBrokenLinks)
+{
+    TemporaryArchive temporary;
+    ModelArchiveDatabase archive{temporary.DatabasePath()};
+    const ProductRecord model = CatalogProduct(ArchiveProductType::Model, "model-bytes");
+    PublishCatalogSource(archive, "models/a.obj", "A", {{model, Bytes("model-bytes")}},
+                         Link(ArchiveProductType::Model, model, 0, -1, "A model"));
+
+    Database raw{temporary.DatabasePath().string()};
+    raw.Execute("PRAGMA foreign_keys=OFF;");
+
+    // An unknown product type is not a row the reader may skip.
+    {
+        auto statement = raw.Prepare(
+            "INSERT INTO products(content_hash, asset_type, relative_path, byte_size, "
+            "schema_version) VALUES (?, 99, 'models/unknown.model', 1, 1);");
+        statement.Bind(1, ToBlob(Sha256("unknown-product")));
+        EXPECT_EQ(statement.Step(), kpengine::database::StatementStep::Done);
+    }
+    EXPECT_EQ(CatchArchiveError([&] { (void)archive.ReadCatalog(); }),
+              ModelArchiveErrorCode::InvalidDatabase);
+    raw.Execute("DELETE FROM products WHERE asset_type=99;");
+    EXPECT_NO_THROW(archive.ReadCatalog());
+
+    // A negative byte size is corrupt, not zero.
+    raw.Execute("UPDATE products SET byte_size=-1;");
+    EXPECT_EQ(CatchArchiveError([&] { (void)archive.ReadCatalog(); }),
+              ModelArchiveErrorCode::InvalidDatabase);
+    raw.Execute("UPDATE products SET byte_size=11;");
+    EXPECT_NO_THROW(archive.ReadCatalog());
+
+    // An orphan link is reported instead of being silently joined away.
+    {
+        auto statement = raw.Prepare(
+            "INSERT INTO source_products(source_id, content_hash, asset_type, role, slot, "
+            "display_name) VALUES (999, ?, 1, 0, -1, 'Orphan');");
+        statement.Bind(1, ToBlob(model.content_hash));
+        EXPECT_EQ(statement.Step(), kpengine::database::StatementStep::Done);
+    }
+    EXPECT_EQ(CatchArchiveError([&] { (void)archive.ReadCatalog(); }),
+              ModelArchiveErrorCode::InvalidDatabase);
+}
+
+TEST(ModelArchiveCatalogTest, ReadsOneCommittedEpochAcrossAConcurrentWriter)
+{
+    TemporaryArchive temporary;
+    ModelArchiveDatabase archive{temporary.DatabasePath()};
+    const ProductRecord model = CatalogProduct(ArchiveProductType::Model, "model-bytes");
+    PublishCatalogSource(archive, "models/a.obj", "A", {{model, Bytes("model-bytes")}},
+                         Link(ArchiveProductType::Model, model, 0, -1, "A model"));
+
+    ModelArchiveDatabase reader{temporary.DatabasePath(), 50,
+                                kpengine::asset::ModelArchiveOpenMode::ReadOnly};
+    ASSERT_EQ(reader.ReadCatalog().products.size(), 1u);
+
+    const ProductRecord pending = CatalogProduct(ArchiveProductType::Material, "pending-bytes");
+    Database writer{temporary.DatabasePath().string()};
+    writer.Execute("BEGIN IMMEDIATE;");
+    {
+        auto statement = writer.Prepare(
+            "INSERT INTO products(content_hash, asset_type, relative_path, byte_size, "
+            "schema_version) VALUES (?, 2, ?, 12, 1);");
+        statement.Bind(1, ToBlob(pending.content_hash));
+        statement.Bind(2, pending.relative_path);
+        EXPECT_EQ(statement.Step(), kpengine::database::StatementStep::Done);
+    }
+
+    // The uncommitted row is invisible: the read sees one whole epoch.
+    const ModelArchiveCatalogSnapshot before = reader.ReadCatalog();
+    EXPECT_EQ(before.products.size(), 1u);
+
+    writer.Execute("COMMIT;");
+    const ModelArchiveCatalogSnapshot after = reader.ReadCatalog();
+    ASSERT_EQ(after.products.size(), 2u);
+    EXPECT_EQ(after.products.back().content_hash, pending.content_hash);
 }
 
 TEST(ModelArchiveHashTest, ProducesStableVectorsAndCanonicalPaths)

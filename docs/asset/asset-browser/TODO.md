@@ -1,28 +1,28 @@
 # Asset Browser TODO
 
-**Status: proposed.** Architecture is in [PLANS.md](PLANS.md). No implementation is claimed. Parent work remains in [Asset Module TODO](../TODO.md).
+**Status: AB1.0–AB1.1 implemented.** Architecture is in [PLANS.md](PLANS.md). AB1.2–AB1.4 remain proposed. Parent work remains in [Asset Module TODO](../TODO.md).
 
 ## AB1 — Read-only Asset Browser and Reference Viewer
 
-- [ ] **[AB1.0 — Freeze the catalog and interaction contract](.plan/AB1.0.md).**
+- [x] **[AB1.0 — Freeze the catalog and interaction contract](.plan/AB1.0.md).** → [journal](../../../.spec/journal/2026-09-13-asset-catalog-contract.md)
 
-  - [ ] Define snapshot-local node identity separately from runtime `AssetID`.
-  - [ ] Define kind, readable type/name, residency, dependency coverage,
+  - [x] Define snapshot-local node identity separately from runtime `AssetID`.
+  - [x] Define kind, readable type/name, residency, dependency coverage,
     provenance, paths, product metadata, one ordered edge table, and diagnostics.
-  - [ ] Define readable registered-custom-type names and fallback icons without central enum cases.
-  - [ ] Add a synthetic Level -> Model -> Material -> Texture fixture with a shared Texture, unresolved edge, and cycle.
-  - [ ] Freeze deterministic ordering and traversal depth/node limits.
+  - [x] Define readable registered-custom-type names without central enum cases. Fallback icons remain AB1.2 Editor presentation.
+  - [x] Add a synthetic Level -> Model -> Material -> Texture fixture with a shared Texture, unresolved edge, and cycle.
+  - [x] Freeze deterministic node/edge/diagnostic ordering. Traversal depth and emitted-row limits belong to the AB1.3 bounded projection and are frozen there.
 
-- [ ] **[AB1.1 — Publish the Asset-owned immutable catalog](.plan/AB1.1.md).**
+- [x] **[AB1.1 — Publish the Asset-owned immutable catalog](.plan/AB1.1.md).** → [journal](../../../.spec/journal/2026-09-13-asset-catalog-provider.md)
 
-  - [ ] Add deterministic strict read-only archive enumeration.
-  - [ ] Copy live AssetManager metadata and edges under the state lock, then release it before graph assembly.
-  - [ ] Join archive/live nodes by canonical product identity and retain readable aliases without duplicating products.
-  - [ ] Keep one canonical forward edge table and prove that its reverse
+  - [x] Add deterministic strict read-only archive enumeration.
+  - [x] Copy live AssetManager metadata and edges under the state lock, then release it before graph assembly.
+  - [x] Join archive/live nodes by canonical product identity and retain readable aliases without duplicating products.
+  - [x] Keep one canonical forward edge table and prove that its reverse
     projection produces the expected referencers.
-  - [ ] Preserve live nodes and publish a diagnostic when archive access fails.
-  - [ ] Prove no payload pointer, `Asset*`, cache reference, database handle, or retained Asset lock crosses the boundary.
-  - [ ] Test ordering, joins, aliases, reverse edges, partial failure, concurrent read/unload, and custom types.
+  - [x] Preserve live nodes and publish a diagnostic when archive access fails.
+  - [x] Prove no payload pointer, `Asset*`, cache reference, database handle, or retained Asset lock crosses the boundary.
+  - [x] Test ordering, joins, aliases, reverse edges, partial failure, concurrent read/unload, and custom types.
 
 - [ ] **[AB1.2 — Implement the Asset Browser](.plan/AB1.2.md).**
 
