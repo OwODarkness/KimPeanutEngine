@@ -140,6 +140,7 @@ namespace kpengine::editor
         {
             rect = EditorRect{};
         }
+
     }
 
     void EditorLayoutModel::ResolveNode(int node_index, const EditorRect &rect)
@@ -271,6 +272,39 @@ namespace kpengine::editor
     {
         const std::size_t index = static_cast<std::size_t>(slot);
         return index < kEditorLayoutSlotCount && !rects_[index].IsEmpty();
+    }
+
+    bool EditorLayoutModel::IsDock(EditorLayoutSlot slot) noexcept
+    {
+        const std::size_t index = static_cast<std::size_t>(slot);
+        return index < kEditorLayoutSlotCount && slot != EditorLayoutSlot::ProfileBar;
+    }
+
+    EditorLayoutSlot EditorLayoutModel::HitTestDock(float x, float y) const noexcept
+    {
+        // Half-open on the far edges, unlike EditorRect::Contains. Docks TILE the work
+        // area, so an inclusive test would make every shared edge belong to two docks
+        // and hand the answer to whichever happens to sit earlier in the enum. A
+        // partition needs [min, max), which gives every point exactly one dock.
+        //
+        // The consequence is that a point on the outermost right or bottom edge of the
+        // work area belongs to no dock and falls through to a float, which is the same
+        // answer as dropping just outside the window.
+        for (std::size_t index = 0; index < kEditorLayoutSlotCount; ++index)
+        {
+            const auto slot = static_cast<EditorLayoutSlot>(index);
+            if (!IsDock(slot) || !HasSlot(slot))
+            {
+                continue;
+            }
+            const EditorRect &rect = rects_[index];
+            if (x >= rect.x && x < rect.x + rect.width && y >= rect.y &&
+                y < rect.y + rect.height)
+            {
+                return slot;
+            }
+        }
+        return EditorLayoutSlot::Count;
     }
 
     int EditorLayoutModel::FindSplitterNode(EditorSplitterId id) const noexcept
@@ -435,5 +469,45 @@ namespace kpengine::editor
             }
         }
         return EditorSplitterId::None;
+    }
+
+    const char *EditorLayoutModel::RegionKey(EditorLayoutSlot slot) noexcept
+    {
+        switch (slot)
+        {
+        case EditorLayoutSlot::WorldOutliner:
+            return "world_outliner";
+        case EditorLayoutSlot::ActorInspector:
+            return "actor_inspector";
+        case EditorLayoutSlot::Viewport:
+            return "viewport";
+        case EditorLayoutSlot::ToolRow:
+            return "tool_row";
+        case EditorLayoutSlot::CameraSettings:
+            return "camera_settings";
+        case EditorLayoutSlot::DebugViewer:
+            return "debug_viewer";
+        case EditorLayoutSlot::GpuProfiler:
+            return "gpu_profiler";
+        case EditorLayoutSlot::ProfileBar:
+            return "profile_bar";
+        case EditorLayoutSlot::Count:
+            break;
+        }
+        return "";
+    }
+
+    EditorLayoutSlot EditorLayoutModel::RegionFromKey(std::string_view key) noexcept
+    {
+        for (std::size_t index = 0; index < kEditorLayoutSlotCount; ++index)
+        {
+            const auto slot = static_cast<EditorLayoutSlot>(index);
+            const char *const candidate = RegionKey(slot);
+            if (candidate != nullptr && candidate[0] != '\0' && key == candidate)
+            {
+                return slot;
+            }
+        }
+        return EditorLayoutSlot::Count;
     }
 }

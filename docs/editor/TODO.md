@@ -1,6 +1,6 @@
 # Editor TODO
 
-**Status: ED1–ED2 implemented.** Landed editor design is in [editor_module.md](editor_module.md). ED3 remains proposed. Parent work remains in the root [status ledger](../status.md).
+**Status: ED1–ED3 implemented.** Landed editor design is in [editor_module.md](editor_module.md). Parent work remains in the root [status ledger](../status.md).
 
 ## ED — Editor shell and layout
 
@@ -25,11 +25,13 @@
   - [x] Persist layout state rather than relying on `imgui.ini` geometry alone.
   - [x] Keep every geometry decision in an ImGui-free model so tiling, reflow, and clamping are unit-tested.
 
-- [ ] **ED3 — Magnetic placement.**
+- [x] **[ED3 — Magnetic placement](.plan/ED3.md).** → [journal](../../.spec/journal/2026-09-13-editor-magnetic-placement.md)
 
-  - [ ] Drag any movable panel across the workspace with a ghost preview of the target region.
-  - [ ] Snap on drop into the resolved region.
-  - [ ] Host GPU Profiler and Debug Viewer as tool-row panels.
+  - [x] Drag a tool-row panel across the workspace with a ghost preview of the target region.
+  - [x] Snap on drop into the resolved region, leaving the strip.
+  - [x] Host the GPU Profiler and Debug Viewer as tool-row panels, freeing their two regions.
+  - [x] Persist placements, with version 1 layout files still readable.
+  - [x] Cover region identity, placeability, and the whole drop rule with headless tests.
 
 ## Deferred follow-up
 
@@ -44,5 +46,10 @@
 - Splitter handles sit on the seam with no gutter, so a click within ~3 px of a seam
   reaches the handle rather than the panel beneath it. Chosen over gutters, which would
   change every panel's rect.
-- No layout editor UI: regions are fixed by the table in `EditorLayoutModel`, and the user
-  can resize seams but not add, remove, or move a region. That is ED3's magnetic placement.
+- **A drop never displaces a panel**, so the only destinations are the regions with no
+  permanent occupant — the two the Debug Viewer and Performance Profiler left in ED3. A drop
+  onto an occupied region floats the panel instead. Displacing, or better *splitting*, an
+  occupied region needs the layout tree to grow at runtime and regions to be identified
+  dynamically; that is a later stage, and it is what would remove the need for free space.
+- No layout editor UI beyond placement: the set of regions is still fixed by the table in
+  `EditorLayoutModel`, and a region's placeability is declared there rather than derived.

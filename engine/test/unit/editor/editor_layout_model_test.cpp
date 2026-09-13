@@ -10,15 +10,21 @@
 
 #include "editor/settings/editor_layout_settings.h"
 #include "editor/ui/component/editor_layout_model.h"
+#include "editor/ui/component/editor_tool_row_model.h"
 
 // The layout model is ImGui-free by design, so this target links no ImGui and compiles
 // the model source directly. Tiling, reflow, and splitter clamping are the arithmetic
 // that ED2 exists to make testable; the tiling assertions here are precisely what would
 // have caught the GPU Profiler overflowing the work area in the old ratio layout.
+//
+// ED3 adds region identity and placeability here, and the placement half of the
+// persisted file, which is what makes a magnetic drop survive a relaunch.
 namespace
 {
     using kpengine::editor::ApplyLayoutState;
+    using kpengine::editor::ApplyPlacementState;
     using kpengine::editor::CaptureLayoutState;
+    using kpengine::editor::CapturePlacementState;
     using kpengine::editor::ClampFirstExtent;
     using kpengine::editor::EditorLayoutAxis;
     using kpengine::editor::EditorLayoutModel;
@@ -26,8 +32,14 @@ namespace
     using kpengine::editor::EditorLayoutState;
     using kpengine::editor::EditorRect;
     using kpengine::editor::EditorSplitterId;
+    using kpengine::editor::EditorToolRowEntry;
+    using kpengine::editor::EditorToolRowModel;
     using kpengine::editor::kEditorLayoutSlotCount;
     using kpengine::editor::kEditorSplitterCount;
+    using kpengine::editor::EditorPlacementRecord;
+    using kpengine::editor::kToolRowGpuProfilerId;
+    using kpengine::editor::kToolRowViewportId;
+    using kpengine::editor::kToolRowLogId;
     using kpengine::editor::ReadEditorLayoutState;
     using kpengine::editor::SnapEdgesToPixels;
     using kpengine::editor::WriteEditorLayoutState;
@@ -742,4 +754,362 @@ TEST(EditorLayoutPersistenceTest, WritingCreatesTheParentDirectoryAndLeavesNoTem
     }
 
     std::filesystem::remove_all(directory, ignored);
+}
+
+// ED3: regions are addressable, and two of them are free slots a tool-row panel can be
+// pinned into. That is the whole mechanism magnetic placement needs — a destination set
+// and a rectangle to snap to.
+
+TEST(EditorDockRegionTest, EveryRegionIsADockExceptTheStatusBar)
+{
+    // Declared rather than derived: the status bar is a metrics strip, not somewhere a
+    // window goes. This replaced ED3's hardcoded pair of "free" regions, which existed only
+    // because a drop could not displace a panel — docks take an arrival as another tab, so
+    // there is no free space to compute.
+    for (std::size_t index = 0; index < kEditorLayoutSlotCount; ++index)
+    {
+        const auto slot = static_cast<EditorLayoutSlot>(index);
+        const bool expected = slot != EditorLayoutSlot::ProfileBar;
+        EXPECT_EQ(EditorLayoutModel::IsDock(slot), expected)
+            << "region " << index << " dock status is wrong";
+    }
+
+    EXPECT_FALSE(EditorLayoutModel::IsDock(EditorLayoutSlot::Count))
+        << "Count is not a region at all";
+}
+
+TEST(EditorRegionTest, EveryRegionHasAStableKeyThatRoundTrips)
+{
+    // Persisted placements are keyed by these, never by index: a panel moving between docks
+    // must not reattach a saved placement to a different region.
+    for (std::size_t index = 0; index < kEditorLayoutSlotCount; ++index)
+    {
+        const auto slot = static_cast<EditorLayoutSlot>(index);
+        const char *const key = EditorLayoutModel::RegionKey(slot);
+
+        ASSERT_NE(key, nullptr) << "region " << index << " has no key";
+        EXPECT_GT(std::string_view{key}.size(), 0u) << "region " << index << " has an empty key";
+        EXPECT_EQ(EditorLayoutModel::RegionFromKey(key), slot)
+            << "key '" << key << "' did not round-trip";
+    }
+
+    EXPECT_EQ(EditorLayoutModel::RegionKey(EditorLayoutSlot::Count), std::string_view{});
+    EXPECT_EQ(EditorLayoutModel::RegionFromKey("no_such_region"), EditorLayoutSlot::Count);
+    EXPECT_EQ(EditorLayoutModel::RegionFromKey(""), EditorLayoutSlot::Count);
+}
+
+TEST(EditorDockRegionTest, HitTestFindsTheDockContainingAPoint)
+{
+    EditorLayoutModel model;
+    model.Resolve(WorkArea());
+
+    for (std::size_t index = 0; index < kEditorLayoutSlotCount; ++index)
+    {
+        const auto slot = static_cast<EditorLayoutSlot>(index);
+        const EditorRect &rect = model.RectOf(slot);
+        const float cx = rect.x + rect.width * 0.5f;
+        const float cy = rect.y + rect.height * 0.5f;
+
+        // The status bar is not a dock, so a point inside it answers Count.
+        const EditorLayoutSlot expected =
+            EditorLayoutModel::IsDock(slot) ? slot : EditorLayoutSlot::Count;
+        EXPECT_EQ(model.HitTestDock(cx, cy), expected)
+            << "region " << index << " hit test disagrees with dock status";
+    }
+}
+
+TEST(EditorDockRegionTest, AnUnresolvedLayoutHasNoDockHits)
+{
+    // Resolve was never called. Every rectangle is zero-extent, so nothing is on screen and
+    // nothing may accept a drop — including a point at the origin, which is exactly where an
+    // empty rect sits.
+    const EditorLayoutModel model;
+
+    EXPECT_EQ(model.HitTestDock(0.0f, 0.0f), EditorLayoutSlot::Count);
+    EXPECT_EQ(model.HitTestDock(-100.0f, -100.0f), EditorLayoutSlot::Count);
+    EXPECT_FALSE(model.HasSlot(EditorLayoutSlot::GpuProfiler));
+}
+
+TEST(EditorDockRegionTest, AResolvedDockIsAHitAndADegenerateOneIsNot)
+{
+    EditorLayoutModel model;
+    model.Resolve(WorkArea());
+
+    const EditorRect &dock = model.RectOf(EditorLayoutSlot::GpuProfiler);
+    ASSERT_FALSE(dock.IsEmpty());
+
+    EXPECT_EQ(model.HitTestDock(dock.x, dock.y), EditorLayoutSlot::GpuProfiler)
+        << "the min edge belongs to the dock";
+    EXPECT_EQ(model.HitTestDock(dock.x + dock.width * 0.5f, dock.y + dock.height * 0.5f),
+              EditorLayoutSlot::GpuProfiler);
+
+    // A degenerate work area resolves every dock empty, so nothing is a destination.
+    model.Resolve(EditorRect{0.0f, 0.0f, 0.0f, 0.0f});
+    EXPECT_EQ(model.HitTestDock(0.0f, 0.0f), EditorLayoutSlot::Count);
+}
+
+TEST(EditorLayoutPersistenceTest, PlacementsRoundTripThroughAFile)
+{
+    EditorToolRowModel row;
+    row.AddEntry(kToolRowLogId, "Log", true, EditorLayoutSlot::ToolRow);
+    row.AddEntry(kToolRowViewportId, "Viewport", true, EditorLayoutSlot::Viewport);
+    ASSERT_TRUE(row.MoveToDockById(kToolRowLogId, EditorLayoutSlot::Viewport));
+    row.SetLockedById(kToolRowViewportId, true);
+
+    EditorLayoutState written = CaptureLayoutState(EditorLayoutModel{});
+    CapturePlacementState(row, written);
+    // EVERY panel is recorded: with docks, "which dock" is the whole placement, and a panel
+    // in the default dock has one too.
+    ASSERT_EQ(written.placements.size(), 2u);
+
+    const std::string path = TemporaryLayoutPath();
+    ASSERT_NO_THROW(WriteEditorLayoutState(path, written));
+
+    // Applied to a model with the same panels registered, the arrangement is restored.
+    EditorToolRowModel restored;
+    restored.AddEntry(kToolRowLogId, "Log", true, EditorLayoutSlot::ToolRow);
+    restored.AddEntry(kToolRowViewportId, "Viewport", true, EditorLayoutSlot::Viewport);
+
+    std::string diagnostic;
+    ApplyPlacementState(ReadEditorLayoutState(path), restored, &diagnostic);
+
+    EXPECT_TRUE(diagnostic.empty()) << diagnostic;
+    EXPECT_EQ(restored.GetDockMembers(EditorLayoutSlot::Viewport).size(), 2u)
+        << "both panels came back into the one dock";
+    EXPECT_TRUE(restored.GetDockMembers(EditorLayoutSlot::ToolRow).empty());
+    EXPECT_TRUE(restored.IsLockedById(kToolRowViewportId)) << "the container lock round-tripped too";
+    EXPECT_TRUE(restored.IsLockedById(kToolRowLogId))
+        << "every tab in the restored container shares its lock";
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+TEST(EditorLayoutPersistenceTest, AVersionOneFileIsStillRead)
+{
+    // Version 1 is known, it simply has no placements. Rejecting it would throw away the
+    // user's saved split sizes on upgrade and gain nothing.
+    const std::string path = TemporaryLayoutPath();
+    WriteText(path, R"({"version": 1, "splits": {"tool_row": {"amount": 0.4}}})");
+
+    std::string diagnostic;
+    const EditorLayoutState state = ReadEditorLayoutState(path, &diagnostic);
+
+    EXPECT_TRUE(diagnostic.empty()) << diagnostic;
+    EXPECT_FLOAT_EQ(state.fractions[static_cast<std::size_t>(EditorSplitterId::ToolRow)], 0.4f);
+    EXPECT_TRUE(state.placements.empty());
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+TEST(EditorLayoutPersistenceTest, APartlyBrokenFileStillYieldsItsOtherHalf)
+{
+    // The two halves are independent: a bad split must not cost the user a placement,
+    // and vice versa.
+    const std::string path = TemporaryLayoutPath();
+    WriteText(path, R"({"version": 2,
+                        "splits": {"tool_row": {"amount": 0.4}, "camera": {"amount": "x"}},
+                        "placements": {"gpu_profiler": "log"}})");
+
+    std::string diagnostic;
+    const EditorLayoutState state = ReadEditorLayoutState(path, &diagnostic);
+
+    EXPECT_NE(diagnostic.find("camera"), std::string::npos);
+    EXPECT_FLOAT_EQ(state.fractions[static_cast<std::size_t>(EditorSplitterId::ToolRow)], 0.4f);
+    ASSERT_EQ(state.placements.size(), 1u)
+        << "the good split and the good placement both survive a bad sibling";
+
+    // And the other way round: a malformed placements object keeps the splits.
+    WriteText(path, R"({"version": 2, "splits": {"tool_row": {"amount": 0.4}},
+                        "placements": []})");
+    std::string second_diagnostic;
+    const EditorLayoutState second = ReadEditorLayoutState(path, &second_diagnostic);
+    EXPECT_NE(second_diagnostic.find("placements"), std::string::npos);
+    EXPECT_FLOAT_EQ(second.fractions[static_cast<std::size_t>(EditorSplitterId::ToolRow)], 0.4f);
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+TEST(EditorLayoutPersistenceTest, PlacementFailuresAreReportedNotApplied)
+{
+    // Every one of these is reachable from a hand-edited file, and none of them may take
+    // the editor down or half-apply.
+    const std::string path = TemporaryLayoutPath();
+    WriteText(path, R"({"version": 3,
+                        "placements": {
+                          "no_such_panel": {"dock": "viewport"},
+                          "log": {"dock": "no_such_dock"},
+                          "viewport": {"dock": "gpu_profiler"},
+                          "console": {"dock": "actor_inspector"}
+                        }})");
+
+    std::string read_diagnostic;
+    const EditorLayoutState state = ReadEditorLayoutState(path, &read_diagnostic);
+    EXPECT_NE(read_diagnostic.find("no_such_dock"), std::string::npos);
+    // The unknown dock is dropped by the reader; the other three survive to be validated
+    // against the registered panels.
+    EXPECT_EQ(state.placements.size(), 3u);
+
+    EditorToolRowModel row;
+    row.AddEntry(kToolRowLogId, "Log", true, EditorLayoutSlot::ToolRow);
+    row.AddEntry(kToolRowViewportId, "Viewport", true, EditorLayoutSlot::Viewport);
+
+    std::string diagnostic;
+    ASSERT_NO_THROW(ApplyPlacementState(state, row, &diagnostic));
+
+    EXPECT_NE(diagnostic.find("no_such_panel"), std::string::npos)
+        << "a panel this build does not have is reported";
+    EXPECT_EQ(row.GetDockById(kToolRowLogId),
+              std::optional<EditorLayoutSlot>{EditorLayoutSlot::ToolRow})
+        << "the bad record changed nothing";
+    EXPECT_EQ(row.GetDockById(kToolRowViewportId),
+              std::optional<EditorLayoutSlot>{EditorLayoutSlot::GpuProfiler})
+        << "the valid records are the ones that applied";
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+TEST(EditorLayoutPersistenceTest, FloatingIsAPlacementAndSurvivesTheRoundTrip)
+{
+    // Skipping a floating panel would silently return it to its default dock on the next
+    // launch, which reads as the editor undoing an arrangement by itself.
+    EditorToolRowModel row;
+    row.AddEntry(kToolRowLogId, "Log", true, EditorLayoutSlot::ToolRow);
+    ASSERT_TRUE(row.FloatPanel(0));
+
+    EditorLayoutState written = CaptureLayoutState(EditorLayoutModel{});
+    CapturePlacementState(row, written);
+    ASSERT_EQ(written.placements.size(), 1u);
+    EXPECT_TRUE(written.placements[0].dock_key.empty()) << "no dock means floating";
+
+    const std::string path = TemporaryLayoutPath();
+    ASSERT_NO_THROW(WriteEditorLayoutState(path, written));
+
+    EditorToolRowModel restored;
+    restored.AddEntry(kToolRowLogId, "Log", true, EditorLayoutSlot::ToolRow);
+    ASSERT_TRUE(restored.GetDock(0).has_value());
+
+    std::string diagnostic;
+    ApplyPlacementState(ReadEditorLayoutState(path), restored, &diagnostic);
+
+    EXPECT_TRUE(diagnostic.empty()) << diagnostic;
+    EXPECT_FALSE(restored.GetDock(0).has_value());
+    EXPECT_EQ(restored.GetFloatingIndices(), (std::vector<std::size_t>{0u}));
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+TEST(EditorLayoutPersistenceTest, AVersionTwoFileIsConvertedRatherThanDropped)
+{
+    // Version 2 keyed placements by DOCK and stored a bare panel id. A dock cannot be named
+    // by one panel now that it holds several, so the shape changed — but refusing to read
+    // v2 would discard an arrangement saved by the previous build for no reason.
+    const std::string path = TemporaryLayoutPath();
+    WriteText(path, R"({"version": 2, "splits": {}, "placements": {"viewport": "log"}})");
+
+    std::string diagnostic;
+    const EditorLayoutState state = ReadEditorLayoutState(path, &diagnostic);
+
+    EXPECT_TRUE(diagnostic.empty()) << diagnostic;
+    ASSERT_EQ(state.placements.size(), 1u);
+    EXPECT_EQ(state.placements[0].panel_id, kToolRowLogId);
+    EXPECT_EQ(state.placements[0].dock_key, "viewport");
+    EXPECT_FALSE(state.placements[0].locked) << "v2 had no lock, so nothing is locked";
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+TEST(EditorLayoutPersistenceTest, APlacementWithoutALockReadsAsUnlocked)
+{
+    // A version 3 file written before the lock existed, or hand-edited without it.
+    const std::string path = TemporaryLayoutPath();
+    WriteText(path, R"({"version": 3, "placements": {"log": {"dock": "viewport"}}})");
+
+    std::string diagnostic;
+    const EditorLayoutState state = ReadEditorLayoutState(path, &diagnostic);
+
+    EXPECT_TRUE(diagnostic.empty()) << diagnostic;
+    ASSERT_EQ(state.placements.size(), 1u);
+    EXPECT_FALSE(state.placements[0].locked);
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+TEST(EditorLayoutPersistenceTest, ApplyingALockDoesNotBlockTheMoveItArrivesWith)
+{
+    // The lock gates dragging, and ApplyPlacementState moves through the same API. Applying
+    // the lock first would make a locked panel impossible to restore.
+    EditorToolRowModel row;
+    row.AddEntry(kToolRowLogId, "Log", true, EditorLayoutSlot::ToolRow);
+
+    EditorLayoutState state;
+    state.placements.push_back(EditorPlacementRecord{kToolRowLogId, "viewport", true});
+
+    std::string diagnostic;
+    ApplyPlacementState(state, row, &diagnostic);
+
+    EXPECT_TRUE(diagnostic.empty()) << diagnostic;
+    EXPECT_EQ(row.GetDock(0), std::optional<EditorLayoutSlot>{EditorLayoutSlot::Viewport});
+    EXPECT_TRUE(row.IsLocked(0));
+}
+
+TEST(EditorLayoutPersistenceTest, TwoPanelsInOneDockAreBothRecorded)
+{
+    // A dock holds several panels, so the file must be able to say so. Keying by dock — as
+    // ED3's format did — could not have expressed this at all.
+    EditorToolRowModel row;
+    row.AddEntry(kToolRowLogId, "Log", true, EditorLayoutSlot::ToolRow);
+    row.AddEntry(kToolRowViewportId, "Viewport", true, EditorLayoutSlot::Viewport);
+    ASSERT_TRUE(row.MoveToDockById(kToolRowLogId, EditorLayoutSlot::Viewport));
+    ASSERT_TRUE(row.MoveToDockById(kToolRowViewportId, EditorLayoutSlot::Viewport));
+
+    EditorLayoutState state = CaptureLayoutState(EditorLayoutModel{});
+    CapturePlacementState(row, state);
+
+    ASSERT_EQ(state.placements.size(), 2u);
+    EXPECT_EQ(state.placements[0].dock_key, "viewport");
+    EXPECT_EQ(state.placements[1].dock_key, "viewport");
+    EXPECT_NE(state.placements[0].panel_id, state.placements[1].panel_id)
+        << "two panels in one dock must stay distinguishable";
+}
+
+TEST(EditorLayoutPersistenceTest, AVersionBeyondThisBuildIsStillRejectedWholesale)
+{
+    const std::string path = TemporaryLayoutPath();
+    WriteText(path, R"({"version": 4, "splits": {"tool_row": {"amount": 0.4}},
+                        "placements": {"log": {"dock": "viewport"}}})");
+
+    std::string diagnostic;
+    const EditorLayoutState state = ReadEditorLayoutState(path, &diagnostic);
+
+    EXPECT_FALSE(diagnostic.empty());
+    EXPECT_LT(state.fractions[static_cast<std::size_t>(EditorSplitterId::ToolRow)], 0.0f);
+    EXPECT_TRUE(state.placements.empty()) << "no half-applying a format we do not know";
+
+    std::error_code ignored;
+    std::filesystem::remove(path, ignored);
+}
+
+TEST(EditorLayoutPersistenceTest, CaptureRecordsEveryPanelWhateverItsVisibility)
+{
+    // Visibility is not part of a placement, so a closed panel still has one. Skipping it
+    // would move a panel the user had closed back to its default dock on relaunch.
+    EditorToolRowModel row;
+    row.AddEntry(kToolRowLogId, "Log", false, EditorLayoutSlot::ToolRow);
+
+    EditorLayoutState state = CaptureLayoutState(EditorLayoutModel{});
+    CapturePlacementState(row, state);
+    ASSERT_EQ(state.placements.size(), 1u);
+    EXPECT_EQ(state.placements[0].panel_id, kToolRowLogId);
+    EXPECT_EQ(state.placements[0].dock_key, "tool_row");
+
+    // Capture replaces rather than appends, so calling it twice cannot duplicate a record.
+    CapturePlacementState(row, state);
+    EXPECT_EQ(state.placements.size(), 1u);
 }

@@ -5,7 +5,9 @@
 #include <memory>
 #include <functional>
 #include <optional>
+#include <cstdint>
 #include "base/type.h"
+#include "editor/settings/editor_layout_settings.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/ui/component/editor_layout_model.h"
 #include "editor/ui/component/editor_splitter_handles.h"
@@ -131,33 +133,32 @@ namespace kpengine::editor
         // orchestration list instead of one long build routine.
         void CreateImguiBackends(const EditorUIInitInfo &init_info);
         void BuildMenuBar(render::RenderSystem *render_system);
-        void BuildCameraSettingsWindow(runtime::ISceneCameraControlSink *camera_control_sink);
-        void BuildViewportWindow(render::RenderSystem *render_system,
-                                 WindowSystem *window_system,
-                                 input::InputSystem *input_system,
-                                 runtime::ISceneCameraControlSink *camera_control_sink,
-                                 runtime::ISceneSelectionSink *scene_selection_sink,
-                                 ActorEditorModel *actor_model);
         void BuildRegisteredWorkspaceExtensions();
-        void BuildDebugViewerWindow(render::RenderSystem *render_system);
-        void BuildGpuProfilerWindow(runtime::Engine *engine,
-                                    render::RenderSystem *render_system,
-                                    const EditorUI *editor_ui);
-        // Panel factories: these return an unowned-by-EditorUI window component
-        // which the tool row then takes ownership of, so no build step has to hold
-        // a pointer into the component tree.
+        // Panel factories: these return a component that EditorUI does not own, so the
+        // dock host can take it. No build step holds a pointer into the component tree.
+        std::unique_ptr<EditorWindowComponent> BuildViewportPanel();
+        std::unique_ptr<EditorWindowComponent> BuildCameraSettingsPanel();
+        std::unique_ptr<EditorWindowComponent> BuildWorldOutlinerPanel();
+        std::unique_ptr<EditorWindowComponent> BuildActorInspectorPanel();
         std::unique_ptr<EditorWindowComponent> BuildLogPanel(
             LogSystem *log_system, const LogLevelColorTable &log_colors);
         std::unique_ptr<EditorWindowComponent> BuildConsolePanel(
             runtime::command::CommandRegistry *command_registry,
             input::InputSystem *input_system, ImFont *code_font);
-        // The shared bottom band hosting the log and console panels as tabs.
+        std::unique_ptr<EditorWindowComponent> BuildDebugViewerPanel();
+        std::unique_ptr<EditorWindowComponent> BuildGpuProfilerPanel();
+        // The dock host: it owns every workspace panel and draws one window per dock.
+        // Also applies the persisted placements, which is why it runs late — a placement
+        // names a panel that has to be registered first.
         void BuildToolRow(LogSystem *log_system, const LogLevelColorTable &log_colors,
                           runtime::command::CommandRegistry *command_registry,
-                          input::InputSystem *input_system, ImFont *code_font);
+                          input::InputSystem *input_system, ImFont *code_font,
+                          bool actor_tools_available);
         void BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                              render::RenderSystem *render_system);
-        void BuildActorTools();
+        // Creates the actor model the outliner and inspector borrow. False when Runtime
+        // has not published the reflection bridge, in which case neither is built.
+        bool BuildActorTools();
         void BuildLoadingTree();
         void BuildStartupProfilerWindow();
         bool RenderActiveTree();
@@ -199,9 +200,9 @@ namespace kpengine::editor
         // all of them borrow this model and the injected Runtime interfaces.
         std::unique_ptr<ActorEditorModel> actor_model_;
 
-        // Tab order, visibility, and dock state for the tool row. Declared before
-        // components_ for the same reason, and owned here rather than by the row so
-        // the View menu can bind by id before the row is built.
+        // Every workspace panel's placement, visibility, and lock. Declared before
+        // components_ for the same reason, and owned here rather than by the host so the
+        // View menu and the layout file can bind by id without reaching into the tree.
         EditorToolRowModel tool_row_model_;
 
         // Panel geometry, owned here because EditorUI is what resolves it and pushes a
@@ -209,6 +210,15 @@ namespace kpengine::editor
         // arithmetic is unit-tested and none of it needs a frame.
         EditorLayoutModel layout_;
         EditorSplitterHandles splitter_handles_;
+
+        // The layout file as read at promotion. Held because its placements name tool-row
+        // panels that do not exist until BuildToolRow runs, so they are applied after it
+        // rather than inside LoadLayoutState.
+        EditorLayoutState loaded_layout_state_;
+        // The placement revision already persisted, so a placement change writes the file
+        // once instead of every frame. Seeded after promotion, when the loaded file has
+        // been applied and must not be written straight back.
+        std::uint64_t saved_placement_revision_ = 0;
 
         std::vector<std::unique_ptr<EditorUIComponent>> components_;
         std::vector<std::unique_ptr<EditorUIComponent>> loading_components_;

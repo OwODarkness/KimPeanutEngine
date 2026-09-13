@@ -2,7 +2,6 @@
 #include "editor/ui/editor_theme.h"
 
 #include <chrono>
-#include <cstdio>
 #include <imgui.h>
 #include <optional>
 #include <stdexcept>
@@ -183,47 +182,46 @@ namespace kpengine::editor
         menus.push_back(Menu{"File"});
         menus.push_back(Menu{"Edit"});
 
-        // View toggles are bound by stable id and resolved at render time, so the
-        // menu can be built before the tool row registers its panels. Each item
-        // queries the same visibility the tab close button writes.
+        // One item per registered tool-row panel, built from the row rather than written
+        // out by hand. Hardcoding the two original ids is exactly how this menu drifted:
+        // the Debug Viewer and Performance Profiler became tabs with no View entry, and a
+        // CLOSED one then had nothing that could reopen it — the terminal-state bug ED1
+        // and ED2 each hit. Iterating the row cannot drift. It is also why this builder
+        // now runs after BuildToolRow; the main menu bar is its own ImGui window, so its
+        // position in components_ does not affect where it draws.
+        //
+        // Checking a panel Docks it as well as showing it, which is what makes one call
+        // undo isolate AND pin. Toggling visibility alone would leave an isolated panel
+        // floating and a pinned one pinned, so the menu could never bring either back.
         Menu view_menu{"View"};
-        // Checking a panel Docks it as well as showing it. Toggling visibility alone would
-        // leave an isolated panel floating, so the menu could never bring one back to the
-        // row and the panel would look impossible to recover.
-        view_menu.items.push_back(MenuItem{
-            "Log",
-            {},
-            true,
-            [this]
+        for (std::size_t index = 0; index < tool_row_model_.GetEntryCount(); ++index)
+        {
+            const EditorToolRowEntry *const entry = tool_row_model_.GetEntry(index);
+            if (entry == nullptr)
             {
-                if (tool_row_model_.IsOpenById(kToolRowLogId))
+                continue;
+            }
+            // The id is captured by value: it must not borrow from an entry, so that a
+            // later model edit cannot leave the menu holding a dangling reference.
+            const std::string id = entry->id;
+            view_menu.items.push_back(MenuItem{
+                entry->title,
+                {},
+                true,
+                [this, id]
                 {
-                    tool_row_model_.SetOpenById(kToolRowLogId, false);
-                }
-                else
-                {
-                    tool_row_model_.ShowInRowById(kToolRowLogId);
-                }
-            },
-            [this] { return tool_row_model_.IsOpenById(kToolRowLogId); },
-        });
-        view_menu.items.push_back(MenuItem{
-            "Console",
-            {},
-            true,
-            [this]
-            {
-                if (tool_row_model_.IsOpenById(kToolRowConsoleId))
-                {
-                    tool_row_model_.SetOpenById(kToolRowConsoleId, false);
-                }
-                else
-                {
-                    tool_row_model_.ShowInRowById(kToolRowConsoleId);
-                }
-            },
-            [this] { return tool_row_model_.IsOpenById(kToolRowConsoleId); },
-        });
+                    if (tool_row_model_.IsOpenById(id))
+                    {
+                        tool_row_model_.SetOpenById(id, false);
+                    }
+                    else
+                    {
+                        tool_row_model_.ShowInRowById(id);
+                    }
+                },
+                [this, id] { return tool_row_model_.IsOpenById(id); },
+            });
+        }
         menus.push_back(std::move(view_menu));
 
         Menu tool_menu{"Tool"};
@@ -265,34 +263,34 @@ namespace kpengine::editor
             });
     }
 
-    void EditorUI::BuildViewportWindow(
-        render::RenderSystem *render_system, WindowSystem *window_system,
-        input::InputSystem *input_system,
-        runtime::ISceneCameraControlSink *camera_control_sink,
-        runtime::ISceneSelectionSink *scene_selection_sink,
-        ActorEditorModel *actor_model)
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildViewportPanel()
     {
-        EditorWindowConfig config = SlotConfig(EditorLayoutSlot::Viewport);
-        std::unique_ptr<EditorWindowComponent> window_component =
-            std::make_unique<EditorWindowComponent>("Viewport", config);
+        // No layout slot: this panel is hosted by the dock host, which owns its rectangle.
+        // A slot here would put it in the per-frame layout pass as well and draw it twice.
+        auto window_component = std::make_unique<EditorWindowComponent>(
+            "Viewport", EditorWindowConfig{});
         window_component->AddComponent(std::make_shared<EditorViewportComponent>(
-            render_system, renderer_.get(), window_system, input_system, camera_control_sink,
-            scene_selection_sink, actor_model));
-
-        components_.push_back(std::move(window_component));
+            init_info_.render_system, renderer_.get(), init_info_.window_system,
+            init_info_.input_system, init_info_.camera_control_sink,
+            init_info_.scene_selection_sink, actor_model_.get()));
+        return window_component;
     }
 
-    void EditorUI::BuildCameraSettingsWindow(
-        runtime::ISceneCameraControlSink *camera_control_sink)
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildCameraSettingsPanel()
     {
-        components_.push_back(
-            std::make_unique<EditorCameraSettingsComponent>(camera_control_sink));
+        return std::make_unique<EditorCameraSettingsComponent>(init_info_.camera_control_sink);
     }
 
-    void EditorUI::BuildDebugViewerWindow(render::RenderSystem *render_system)
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildWorldOutlinerPanel()
     {
-        components_.push_back(std::make_unique<EditorDebugViewerComponent>(
-            render_system, renderer_.get()));
+        return std::make_unique<EditorWorldOutlinerComponent>(*actor_model_);
+    }
+
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildActorInspectorPanel()
+    {
+        return std::make_unique<EditorActorInspectorComponent>(
+            *actor_model_, init_info_.window_system, init_info_.input_system,
+            init_info_.camera_control_sink);
     }
 
     void EditorUI::BuildRegisteredWorkspaceExtensions()
@@ -303,20 +301,17 @@ namespace kpengine::editor
             if (std::unique_ptr<EditorUIComponent> component =
                     factory(init_info_.render_system, renderer_.get()))
             {
+                // Deliberately left top-level and self-placing. The factory returns the
+                // base class and carries no id or title, and a dock entry needs both, so
+                // adopting one would mean guessing an identity for it from its window
+                // title. Nothing registers an extension today; when something does, the
+                // factory is what should grow the id and title, not this loop.
                 components_.push_back(std::move(component));
             }
         }
     }
 
-    void EditorUI::BuildGpuProfilerWindow(runtime::Engine *engine,
-                                          render::RenderSystem *render_system,
-                                          const EditorUI *editor_ui)
-    {
-        components_.push_back(
-            std::make_unique<EditorGpuProfilerComponent>(engine, render_system, editor_ui));
-    }
-
-    void EditorUI::BuildActorTools()
+    bool EditorUI::BuildActorTools()
     {
         const bool any_dependency = init_info_.reflection_catalog != nullptr ||
                                      init_info_.actor_snapshot_source != nullptr ||
@@ -328,7 +323,7 @@ namespace kpengine::editor
         {
             KP_LOG("LogEditorUI", LOG_LEVEL_WARNING,
                    "actor inspection unavailable: Runtime reflection bridge is not published");
-            return;
+            return false;
         }
         if (!all_dependencies)
         {
@@ -339,10 +334,7 @@ namespace kpengine::editor
         actor_model_ = std::make_unique<ActorEditorModel>(
             init_info_.reflection_catalog, init_info_.actor_snapshot_source,
             init_info_.actor_edit_sink);
-        components_.push_back(std::make_unique<EditorWorldOutlinerComponent>(*actor_model_));
-        components_.push_back(std::make_unique<EditorActorInspectorComponent>(
-            *actor_model_, init_info_.window_system, init_info_.input_system,
-            init_info_.camera_control_sink));
+        return true;
     }
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildLogPanel(
@@ -366,21 +358,59 @@ namespace kpengine::editor
                                                         code_font);
     }
 
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildDebugViewerPanel()
+    {
+        return std::make_unique<EditorDebugViewerComponent>(init_info_.render_system,
+                                                            renderer_.get());
+    }
+
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildGpuProfilerPanel()
+    {
+        return std::make_unique<EditorGpuProfilerComponent>(
+            init_info_.engine, init_info_.render_system, this);
+    }
+
     void EditorUI::BuildToolRow(LogSystem *log_system, const LogLevelColorTable &log_colors,
                                 runtime::command::CommandRegistry *command_registry,
-                                input::InputSystem *input_system, ImFont *code_font)
+                                input::InputSystem *input_system, ImFont *code_font,
+                                bool actor_tools_available)
     {
-        // A stale model would make the row inherit visibility and dock state from
-        // a tree that has already been torn down.
+        // A stale model would make the host inherit visibility and placement from a tree
+        // that has already been torn down.
         tool_row_model_.Clear();
 
-        // The shared bottom band, placed by the layout. The horizontal scrollbar travels
-        // with it, since the log no longer owns a window and long diagnostic lines must
-        // stay reachable.
-        EditorWindowConfig row_config = SlotConfig(EditorLayoutSlot::ToolRow,
-                                                   ImGuiWindowFlags_HorizontalScrollbar);
+        EditorWindowConfig row_config;
+        row_config.width_ratio = 0.8f;
+        row_config.height_ratio = 0.26f;
+        row_config.pos_y_ratio = 0.7f;
+        row_config.extra_flags = ImGuiWindowFlags_HorizontalScrollbar;
 
         auto row = std::make_unique<EditorToolRowComponent>(tool_row_model_, row_config);
+        // The host draws every dock window, so it needs the resolved rectangles. Borrowed:
+        // layout_ outlives the component vector, because members are destroyed in reverse
+        // declaration order.
+        row->SetLayoutModel(&layout_);
+        // The host is the only component that needs the layout, and it is inside components_.
+
+        // The workspace skeleton. Each panel declares the dock it starts in, which is
+        // where it has always been; from here on where it lives is data, not code.
+        row->AddPanel(kToolRowViewportId, "Viewport", BuildViewportPanel(),
+                      /*open=*/true, EditorLayoutSlot::Viewport);
+        if (actor_tools_available)
+        {
+            row->AddPanel(kToolRowWorldOutlinerId, "World Outliner", BuildWorldOutlinerPanel(),
+                          /*open=*/true, EditorLayoutSlot::WorldOutliner);
+            row->AddPanel(kToolRowActorInspectorId, "Actor Inspector",
+                          BuildActorInspectorPanel(),
+                          /*open=*/true, EditorLayoutSlot::ActorInspector);
+        }
+        row->AddPanel(kToolRowCameraSettingsId, "Camera Settings", BuildCameraSettingsPanel(),
+                      /*open=*/true, EditorLayoutSlot::CameraSettings);
+        row->AddPanel(kToolRowDebugViewerId, "Debug Viewer", BuildDebugViewerPanel(),
+                      /*open=*/true, EditorLayoutSlot::DebugViewer);
+        row->AddPanel(kToolRowGpuProfilerId, "Performance Profiler", BuildGpuProfilerPanel(),
+                      /*open=*/true, EditorLayoutSlot::GpuProfiler);
+
         row->AddPanel(kToolRowLogId, "Log", BuildLogPanel(log_system, log_colors),
                       /*open=*/true);
 
@@ -391,13 +421,22 @@ namespace kpengine::editor
                           /*open=*/false);
         if (console != nullptr)
         {
-            // A closed tab is not rendered, so the row must still pump the console
-            // or deferred command results would be stranded until it reopens.
+            // A closed panel is not rendered, so the host must still pump the console or
+            // deferred command results would be stranded until it reopens.
             row->SetPanelPump(kToolRowConsoleId,
                               [console]
                               {
                                   static_cast<EditorConsoleComponent *>(console)->Pump();
                               });
+        }
+
+        // Last, because a placement names a panel id that has to be registered first.
+        std::string placement_diagnostic;
+        ApplyPlacementState(loaded_layout_state_, tool_row_model_, &placement_diagnostic);
+        if (!placement_diagnostic.empty())
+        {
+            KP_LOG("LogEditorUI", LOG_LEVEL_WARNING, "editor layout: %s",
+                   placement_diagnostic.c_str());
         }
 
         components_.push_back(std::move(row));
@@ -478,23 +517,25 @@ namespace kpengine::editor
 
             // Scene-dependent tools are deliberately created only after Runtime
             // promotes the prepared catalog to the render thread.
-            BuildMenuBar(init_info_.render_system);
-            BuildActorTools();
-            BuildViewportWindow(init_info_.render_system, init_info_.window_system,
-                                init_info_.input_system, init_info_.camera_control_sink,
-                                init_info_.scene_selection_sink, actor_model_.get());
-            BuildCameraSettingsWindow(init_info_.camera_control_sink);
+            const bool actor_tools_available = BuildActorTools();
             BuildRegisteredWorkspaceExtensions();
-            BuildDebugViewerWindow(init_info_.render_system);
             BuildProfileBar(init_info_.engine, init_info_.memory_sampler,
                             init_info_.render_system);
-            BuildGpuProfilerWindow(init_info_.engine, init_info_.render_system, this);
-            // The log and console now share one tabbed band instead of stacking
-            // separate windows on the same pixels.
+            // Every workspace panel is one of the host's entries. That is what makes
+            // moving one between docks an assignment rather than a change of owner.
             BuildToolRow(init_info_.log_system, log_colors_, init_info_.command_registry,
-                         init_info_.input_system, code_font_);
+                         init_info_.input_system, code_font_, actor_tools_available);
+            // AFTER the host: the View menu is generated from the registered panels, so
+            // building it first would produce an empty menu. Its own ImGui window, so
+            // running last changes nothing about where it draws.
+            BuildMenuBar(init_info_.render_system);
             workspace_promoted_ = true;
             loading_components_.clear();
+
+            // The loaded placements were applied while building the row, so this frame's
+            // arrangement is the baseline. Without seeding it, the first render would see
+            // a revision it has never saved and write the file straight back.
+            saved_placement_revision_ = tool_row_model_.GetPlacementRevision();
         }
         catch (...)
         {
@@ -502,6 +543,7 @@ namespace kpengine::editor
             actor_model_.reset();
             screenshot_service_.reset();
             layout_.ResetToDefault();
+            loaded_layout_state_ = EditorLayoutState{};
             throw;
         }
     }
@@ -666,21 +708,28 @@ namespace kpengine::editor
     {
         // Defaults first, so a partial or absent file leaves the rest of the layout alone.
         layout_.ResetToDefault();
+        loaded_layout_state_ = EditorLayoutState{};
 
         std::string diagnostic;
-        const EditorLayoutState state = ReadEditorLayoutState(GetEditorLayoutPath(), &diagnostic);
+        loaded_layout_state_ =
+            ReadEditorLayoutState(GetEditorLayoutPath(), &diagnostic);
         if (!diagnostic.empty())
         {
             KP_LOG("LogEditorUI", LOG_LEVEL_WARNING, "editor layout: %s", diagnostic.c_str());
         }
-        ApplyLayoutState(state, layout_);
+        ApplyLayoutState(loaded_layout_state_, layout_);
+        // The placements are NOT applied here: they name tool-row panels that do not
+        // exist yet. BuildToolRow applies them once every panel is registered.
     }
 
     void EditorUI::SaveLayoutState()
     {
         try
         {
-            WriteEditorLayoutState(GetEditorLayoutPath(), CaptureLayoutState(layout_));
+            EditorLayoutState state = CaptureLayoutState(layout_);
+            CapturePlacementState(tool_row_model_, state);
+            WriteEditorLayoutState(GetEditorLayoutPath(), state);
+            saved_placement_revision_ = tool_row_model_.GetPlacementRevision();
         }
         catch (const std::exception &e)
         {
@@ -736,9 +785,11 @@ namespace kpengine::editor
                 component->Render();
             }
             splitter_handles_.Render(layout_);
-            if (splitter_handles_.ConsumeDragJustEnded())
+            // Persist on release, not per frame. The placement latch lives in the model,
+            // which outlives the row, so nothing here holds a component pointer.
+            if (splitter_handles_.ConsumeDragJustEnded() ||
+                tool_row_model_.GetPlacementRevision() != saved_placement_revision_)
             {
-                // Persist on release, not per frame.
                 SaveLayoutState();
             }
         }

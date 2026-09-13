@@ -45,9 +45,13 @@ gtest_discover_tests(ActorEditorModelUnitTest)
 # The tool-row model is ImGui-free by design, so this target links no ImGui and
 # compiles the model source directly. If it ever starts pulling imgui.h, the
 # layering has been broken and this build will say so.
+#
+# The layout model is compiled in as well because the placement drop rule asks it which
+# region is under the cursor. Also ImGui-free, so the layering check still holds.
 add_executable(EditorToolRowModelUnitTest
     editor_tool_row_model_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_tool_row_model.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_layout_model.cpp
 )
 
 target_include_directories(EditorToolRowModelUnitTest PRIVATE
@@ -64,9 +68,13 @@ gtest_discover_tests(EditorToolRowModelUnitTest)
 # The layout model is ImGui-free by design, so this target links no ImGui and compiles
 # the model source directly. If it ever starts pulling imgui.h, the layering has been
 # broken and this build will say so.
+#
+# The tool-row model is compiled in as well because it is what the persisted placements
+# are applied to. Also ImGui-free, so the layering check still holds.
 add_executable(EditorLayoutModelUnitTest
     editor_layout_model_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_layout_model.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_tool_row_model.cpp
     ${CMAKE_SOURCE_DIR}/engine/editor/settings/editor_layout_settings.cpp
 )
 

@@ -1,5 +1,26 @@
 # Project Status
 
+- **Editor ED3 magnetic placement (2026-09-13)** — a tool-row panel can now be dragged across
+  the workspace, previewed against a dashed free region, and released there to pin it: it
+  leaves the strip and is drawn inside that region's rectangle, with "Dock to tool row" and
+  the **View** menu bringing it back. Placements persist to `save/editor_layout.json` under a
+  new `placements` map, with version 1 files still read. The destinations are created by the
+  TODO's third bullet — the Debug Viewer and Performance Profiler became tool-row panels, so
+  their two regions are now free — and **a drop never displaces a panel**, which is what kept
+  the stage from having to move panel ownership between the row and the component tree. Every
+  rule is a pure tested function; the destination set, the region hit test (half-open, so
+  tiling regions do not fight over their seams), and the whole drop rule are covered. Three
+  defects were fixed during validation: invisible drop targets (a 1 px dashed outline at half
+  alpha read as a rendering hole); a release over nowhere that never cleared the drag, which
+  left the next click resolving a drop the user had not started; and a **View menu hardcoded to
+  the two original panels**, which left the two new tabs with no entry and a closed one
+  unrecoverable — the menu is now generated from the row, so a new panel cannot be forgotten.
+  The placement path is
+  verified through the command transport by writing the layout file and relaunching, which is
+  the evidence ED1 could not produce. Editor tests 43/43 in both model targets; the full suite
+  is 685/686, the one failure a pre-existing unrelated fixture. Both backends smoke-captured.
+  → [ED3 journal](../.spec/journal/2026-09-13-editor-magnetic-placement.md),
+  [ED3 plan](editor/.plan/ED3.md), [Editor TODO](editor/TODO.md)
 - **Editor ED2 layout model (2026-09-13)** — panel geometry now comes from one layout
   model: named regions in a declarative splitter tree, resolved to rectangles once per
   frame, with draggable seams and persistence to `save/editor_layout.json`. Panels declare
@@ -16,8 +37,7 @@
   for the six region panels and two self-placing windows, because ED1's fix only re-routed
   the close for windows with a bound visibility. `HasCloseButton()` now defaults to false on
   the rule that a close button is a promise the window comes back; nothing in the editor
-  overrides it, and tool-row tabs are the closable surface. ED3 (magnetic placement) remains
-  open. → [ED2 journal](../.spec/journal/2026-09-13-editor-layout.md),
+  overrides it, and tool-row tabs are the closable surface. → [ED2 journal](../.spec/journal/2026-09-13-editor-layout.md),
   [ED2 plan](editor/.plan/ED2.md), [Editor TODO](editor/TODO.md)
 - **Editor ED1 tabbed tool row (2026-09-13)** — the Editor's bottom band is now one
   tabbed row instead of overlapping windows. The Log and Console are hosted as tabs
@@ -32,8 +52,8 @@
   full suite 623/624 with one pre-existing unrelated fixture failure. Vulkan and OpenGL
   smoke captures show the row, the View menu, and the hosted Log tab. Interactive tab
   switching, isolate, and drag preview could not be scripted — the command transport
-  has no input injection — and remain unverified by a live frame. ED2 (layout model)
-  and ED3 (magnetic placement) are proposed. → [ED1 journal](../.spec/journal/2026-09-13-editor-tool-row.md),
+  has no input injection — and remain unverified by a live frame. ED2 and ED3 have since
+  landed. → [ED1 journal](../.spec/journal/2026-09-13-editor-tool-row.md),
   [ED1 plan](editor/.plan/ED1.md), [Editor TODO](editor/TODO.md)
 - **Asset Browser AB1.1 catalog snapshot provider (2026-09-13)** — added
   `ModelArchiveDatabase::ReadCatalog()` as one strict read-only enumeration

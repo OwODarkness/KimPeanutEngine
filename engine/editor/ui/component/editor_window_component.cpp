@@ -16,45 +16,23 @@ namespace kpengine::editor
             return;
         }
 
-        const bool slotted = layout_rect_.has_value();
-
-        ImVec2 pos;
-        ImVec2 size;
-        ImGuiCond cond = ImGuiCond_FirstUseEver;
-        if (slotted)
-        {
-            // The layout owns this window, so its rect is re-pushed every frame. Snap the
-            // edges rather than the width, so two neighbours agree on the pixel of the
-            // edge they share instead of leaving a one-pixel background seam.
-            const EditorRect snapped = SnapEdgesToPixels(*layout_rect_);
-            pos = ImVec2(snapped.x, snapped.y);
-            size = ImVec2(snapped.width, snapped.height);
-            cond = ImGuiCond_Always;
-        }
-        else
-        {
-            const ImGuiViewport *const viewport = ImGui::GetMainViewport();
-            pos = ImVec2(viewport->WorkPos.x + config_.pos_x_ratio * viewport->WorkSize.x,
+        // A window that places itself. A panel hosted by the dock host is drawn by the
+        // host instead, inside a window the host owns, so its own geometry never applies —
+        // which is why there is no longer a second, layout-driven branch here.
+        const ImGuiViewport *const viewport = ImGui::GetMainViewport();
+        const ImVec2 pos(viewport->WorkPos.x + config_.pos_x_ratio * viewport->WorkSize.x,
                          viewport->WorkPos.y + config_.pos_y_ratio * viewport->WorkSize.y);
-            size = ImVec2(config_.width_ratio * viewport->WorkSize.x,
+        const ImVec2 size(config_.width_ratio * viewport->WorkSize.x,
                           config_.height_ratio * viewport->WorkSize.y);
-            // Locked: pin to the viewport every frame; unlocked: set once, let the user move.
-            cond = locked_ ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
-        }
+        // Locked: pin to the viewport every frame; unlocked: set once, let the user move.
+        const ImGuiCond cond = locked_ ? ImGuiCond_Always : ImGuiCond_FirstUseEver;
         ImGui::SetNextWindowPos(pos, cond);
         ImGui::SetNextWindowSize(size, cond);
 
         ImGuiWindowFlags flags = config_.extra_flags;
-        if (slotted || locked_)
+        if (locked_)
         {
             flags |= ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize;
-        }
-        if (slotted)
-        {
-            // A region panel must not be able to collapse itself out of its region, and a
-            // rect re-pushed every frame would otherwise be written to imgui.ini on every
-            // frame of a splitter drag.
-            flags |= ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
         }
 
         // ImGui renders the native title before Begin() returns. Use the
@@ -73,12 +51,13 @@ namespace kpengine::editor
         {
             ImGui::PopStyleColor();
         }
-        // The focus accent belongs to every window with a title bar; the padlock only to
-        // a window that places itself.
         RenderFocusAccent();
-        if (!slotted)
+        // Here the padlock still means "pin to my own geometry": this window places
+        // itself, so unlocking it is what lets the user move it. A hosted panel's padlock
+        // means something else — see the placement model's `locked`.
+        if (RenderLockButton(locked_))
         {
-            RenderLockToggle();
+            locked_ = !locked_;
         }
         RenderContent();
         focused_last_frame_ = ImGui::IsWindowFocused(ImGuiFocusedFlags_RootAndChildWindows);
@@ -95,16 +74,6 @@ namespace kpengine::editor
                 is_open_ = false;
             }
         }
-    }
-
-    std::optional<EditorLayoutSlot> EditorWindowComponent::GetLayoutSlot() const noexcept
-    {
-        return config_.slot;
-    }
-
-    void EditorWindowComponent::ApplyLayout(std::optional<EditorRect> rect) noexcept
-    {
-        layout_rect_ = rect;
     }
 
     void EditorWindowComponent::SetVisibility(EditorWindowVisibility *visibility) noexcept
@@ -138,10 +107,13 @@ namespace kpengine::editor
         ImGui::SetCursorScreenPos(content_cursor);
     }
 
-    void EditorWindowComponent::RenderLockToggle()
+    bool EditorWindowComponent::RenderLockButton(bool locked)
     {
-        // Only for a window that places itself: for a layout-placed one the rect belongs
-        // to the layout, so "unlock to move freely" would have nothing to unlock.
+        // Draws and hit-tests the padlock in the title bar, and reports a click. The flag
+        // belongs to the CALLER: this window keeps its own, and the dock host keeps its
+        // panels' locks in the placement model, so one drawing serves both without either
+        // having to own the other's state.
+        bool clicked = false;
         const ImVec2 win_pos = ImGui::GetWindowPos();
         const float title_h = ImGui::GetFrameHeight();
         const ImVec2 clip_max(win_pos.x + ImGui::GetWindowWidth(), win_pos.y + title_h);
@@ -156,13 +128,10 @@ namespace kpengine::editor
         const ImVec2 btn_pos(win_pos.x + ImGui::GetWindowWidth() - pad_r - button_sz,
                              win_pos.y + style.FramePadding.y);
         ImGui::SetCursorScreenPos(btn_pos);
-        if (ImGui::Button("##lock", btn_size))
-        {
-            locked_ = !locked_;
-        }
+        clicked = ImGui::Button("##lock", btn_size);
         if (ImGui::IsItemHovered())
         {
-            ImGui::SetTooltip("%s", locked_ ? "Unlock (move/resize)" : "Lock (pin to viewport)");
+            ImGui::SetTooltip("%s", locked ? "Unlock (drag to a dock)" : "Lock (cannot be dragged)");
         }
 
         // Padlock: filled body when locked, hollow body + lifted shackle when unlocked.
@@ -170,17 +139,18 @@ namespace kpengine::editor
         const ImU32 col = ImGui::GetColorU32(ImGuiCol_Text);
         const ImVec2 c(btn_pos.x + btn_size.x * 0.5f, btn_pos.y + btn_size.y * 0.58f);
         const float r = btn_size.x * 0.30f;
-        const float shackle_y = c.y - r * (locked_ ? 0.95f : 1.4f);
+        const float shackle_y = c.y - r * (locked ? 0.95f : 1.4f);
         draw->AddCircle(ImVec2(c.x, shackle_y), r * 0.55f, col, 0, 2.0f);
         const ImVec2 body_min(c.x - r, c.y - r * 0.6f);
         const ImVec2 body_max(c.x + r, c.y + r);
-        if (locked_)
+        if (locked)
             draw->AddRectFilled(body_min, body_max, col, r * 0.5f);
         else
             draw->AddRect(body_min, body_max, col, r * 0.5f, 0, 2.0f);
 
         ImGui::PopClipRect();
         ImGui::SetCursorScreenPos(content_cursor);
+        return clicked;
     }
 
     void EditorWindowComponent::RenderContent()

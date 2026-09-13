@@ -13,7 +13,10 @@
 
 namespace kpengine::editor
 {
-    // One leaf per panel. A leaf is what a component binds to.
+    // A named REGION, not a panel. Most regions have one permanent occupant with the same
+    // name, which is why the two spellings match, but the identity is the area: a region
+    // with no permanent occupant is a free slot a tool-row panel can be pinned into, and
+    // it keeps its name whether or not anything is in it. See IsRegionPlaceable.
     enum class EditorLayoutSlot : std::uint8_t
     {
         WorldOutliner,
@@ -130,9 +133,28 @@ namespace kpengine::editor
         // theme metrics rather than from a ratio.
         void SetFixedExtentPixels(EditorSplitterId id, float pixels);
 
+        // True when this region is a DOCK: somewhere a panel can live beside other panels,
+        // as one tab of many. Every region is one except the status bar, which is a metrics
+        // strip rather than a place a window goes, and Count, which is not a region.
+        //
+        // This used to be a hardcoded list of the two regions with no permanent occupant,
+        // because ED3's drops could not displace a panel and so needed free space. Docks
+        // hold several panels and a drop joins them, so there is no free space to compute.
+        static bool IsDock(EditorLayoutSlot slot) noexcept;
+
+        // The dock containing the point, or Count. Half-open on the far edges, because
+        // docks tile: an inclusive test would give every shared seam to whichever sits
+        // earlier in the enum.
+        EditorLayoutSlot HitTestDock(float x, float y) const noexcept;
+
         // Stable string keys, so a persisted layout survives node reordering.
         static const char *SplitterKey(EditorSplitterId id) noexcept;
         static EditorSplitterId SplitterFromKey(std::string_view key) noexcept;
+
+        // The same contract for regions: a persisted placement must reattach to the
+        // region, not to whatever leaf happens to hold that index next.
+        static const char *RegionKey(EditorLayoutSlot slot) noexcept;
+        static EditorLayoutSlot RegionFromKey(std::string_view key) noexcept;
 
     private:
         void ResolveNode(int node_index, const EditorRect &rect);

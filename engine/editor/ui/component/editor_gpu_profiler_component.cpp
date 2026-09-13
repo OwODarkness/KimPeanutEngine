@@ -342,8 +342,10 @@ namespace kpengine::editor
     EditorGpuProfilerComponent::EditorGpuProfilerComponent(runtime::Engine *engine,
                                                            render::RenderSystem *render_system,
                                                            const EditorUI *editor_ui)
-        : EditorWindowComponent("Performance Profiler",
-                               SlotConfig(EditorLayoutSlot::GpuProfiler)),
+        // No layout slot: this panel is hosted by the tool row, which draws its body
+        // inside the row's own window. A slot here would put it in the per-frame layout
+        // pass as well and render it twice.
+        : EditorWindowComponent("Performance Profiler", EditorWindowConfig{}),
           engine_(engine),
           render_system_(render_system),
           editor_ui_(editor_ui)

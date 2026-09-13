@@ -69,7 +69,10 @@ namespace kpengine::editor
 {
     EditorDebugViewerComponent::EditorDebugViewerComponent(
         render::RenderSystem *render_system, IEditorImguiRenderer *imgui_renderer)
-        : EditorWindowComponent("Debug Viewer", SlotConfig(EditorLayoutSlot::DebugViewer)),
+        // No layout slot: this panel is hosted by the tool row, which draws its body
+        // inside the row's own window. A slot here would put it in the per-frame layout
+        // pass as well and render it twice.
+        : EditorWindowComponent("Debug Viewer", EditorWindowConfig{}),
           render_system_(render_system), imgui_renderer_(imgui_renderer)
     {
         if (render_system_ != nullptr)

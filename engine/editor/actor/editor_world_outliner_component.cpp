@@ -5,7 +5,7 @@
 namespace kpengine::editor
 {
     EditorWorldOutlinerComponent::EditorWorldOutlinerComponent(ActorEditorModel &model)
-        : EditorWindowComponent("World Outliner", SlotConfig(EditorLayoutSlot::WorldOutliner)),
+        : EditorWindowComponent("World Outliner", EditorWindowConfig{}),
           model_(model)
     {
     }

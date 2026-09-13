@@ -36,24 +36,39 @@ namespace kpengine::editor
         // it a pump.
         EditorWindowComponent *AddPanel(std::string id, std::string title,
                                         std::unique_ptr<EditorWindowComponent> panel,
-                                        bool open = true, bool docked = true);
+                                        bool open = true,
+                                        EditorLayoutSlot dock = EditorLayoutSlot::ToolRow);
         void SetPanelPump(std::string_view id, PanelPump pump);
+
+        // Borrowed, and must outlive this component: EditorUI declares its layout model
+        // before the component vector, so the components are destroyed first. Every dock
+        // window's rectangle comes from it. Null is supported and draws nothing.
+        void SetLayoutModel(const EditorLayoutModel *layout) noexcept { layout_ = layout; }
 
         void Render() override;
 
-    protected:
-        void RenderContent() override;
-
     private:
-        void RenderTabStrip();
-        void RenderDetachedWindows(const std::vector<std::size_t> &detached);
+        bool IsDrawnThisFrame(std::size_t index) const noexcept;
+
+        // One row container per occupied dock. A container with one panel still uses the same
+        // chrome as a multi-panel dock; adding another panel therefore becomes a tab.
+        void RenderDock(EditorLayoutSlot dock);
+        // A panel standing alone as a floating window.
+        void RenderPanelWindow(std::size_t index, const EditorRect &rect, bool pinned,
+                               int extra_flags);
+        void RenderFloatingPanels();
+        void RenderTabStrip(EditorLayoutSlot dock, const std::vector<std::size_t> &members);
+        // Marks dock destinations during a drag (and empty docks while idle). Drawn before the drag preview
+        // so the ghost lands on top of the targets rather than under them.
+        void RenderPlacementTargets();
         void RenderDragPreview();
 
         EditorToolRowModel &model_;
+        const EditorLayoutModel *layout_ = nullptr;  // borrowed
         std::vector<std::unique_ptr<EditorWindowComponent>> panels_;  // parallel to entries
         std::vector<PanelPump> pumps_;                                // parallel to entries
         EditorRect row_rect_{};
-        int drag_index_ = -1;     // tab being dragged, -1 when idle
+        int drag_index_ = -1;     // panel being dragged, -1 when idle
         int context_index_ = -1;  // tab whose context menu is open
     };
 }
