@@ -536,6 +536,12 @@ namespace kpengine::live2d
             model->SaveParameters();
         }
 
+        void ApplyPreExpressionContributors(const float delta_seconds) noexcept
+        {
+            static_cast<void>(delta_seconds);
+            // L2D7 automatic blink runs here, before expression evaluation.
+        }
+
         void UpdateExpressionContribution(const float delta_seconds) noexcept
         {
             if (expression_active ||
@@ -546,8 +552,7 @@ namespace kpengine::live2d
             }
         }
 
-        // L2D7 inserts ordered secondary contributors in this late-update slot.
-        void ApplyLateUpdateContributors(const float delta_seconds) noexcept
+        void ApplyPostExpressionContributors(const float delta_seconds) noexcept
         {
             if (pose != nullptr)
             {
@@ -693,26 +698,37 @@ namespace kpengine::live2d
         }
 
         const Live2DProductData &product = resource->Product();
-        for (const Live2DOptionalChunk &chunk : product.optional_chunks)
+        const std::vector<std::byte> *pose_bytes = nullptr;
+        if (product.product_version >= 3u &&
+            !product.secondary_behavior.pose_bytes.empty())
         {
-            if (chunk.name != "Pose")
+            pose_bytes = &product.secondary_behavior.pose_bytes;
+        }
+        else
+        {
+            for (const Live2DOptionalChunk &chunk : product.optional_chunks)
             {
-                continue;
+                if (chunk.name == "Pose" && !chunk.bytes.empty())
+                {
+                    pose_bytes = &chunk.bytes;
+                    break;
+                }
             }
-            if (chunk.bytes.empty() ||
-                chunk.bytes.size() >
-                    static_cast<std::size_t>(std::numeric_limits<csmSizeInt>::max()))
+        }
+        if (pose_bytes != nullptr)
+        {
+            if (pose_bytes->size() >
+                static_cast<std::size_t>(std::numeric_limits<csmSizeInt>::max()))
             {
                 return nullptr;
             }
             impl->pose.reset(CubismPose::Create(
-                reinterpret_cast<const csmByte *>(chunk.bytes.data()),
-                static_cast<csmSizeInt>(chunk.bytes.size())));
+                reinterpret_cast<const csmByte *>(pose_bytes->data()),
+                static_cast<csmSizeInt>(pose_bytes->size())));
             if (impl->pose == nullptr)
             {
                 return nullptr;
             }
-            break;
         }
 
         std::string diagnostic;
@@ -1275,7 +1291,8 @@ namespace kpengine::live2d
             impl_->callback_events.reserve(Impl::kMaxPendingEvents);
             // Canonical transaction:
             // Load -> direct/base writes -> primary motion -> Save ->
-            // expression -> late contributors -> model update.
+            // pre-expression contributors -> expression -> post-expression
+            // contributors -> model update.
             impl_->LoadParameterCheckpoint();
             impl_->ApplyPendingParameterWrites();
             impl_->playback_time_seconds += delta_seconds;
@@ -1286,12 +1303,13 @@ namespace kpengine::live2d
                 throw std::runtime_error("playback event storage failed");
             }
             impl_->SavePrimaryCheckpoint();
+            impl_->ApplyPreExpressionContributors(delta_seconds);
             impl_->UpdateExpressionContribution(delta_seconds);
             if (impl_->callback_overflow)
             {
                 throw std::runtime_error("playback event storage failed");
             }
-            impl_->ApplyLateUpdateContributors(delta_seconds);
+            impl_->ApplyPostExpressionContributors(delta_seconds);
             impl_->UpdateModel();
 
             for (Live2DPlaybackEvent &event : impl_->callback_events)

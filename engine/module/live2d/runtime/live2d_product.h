@@ -47,6 +47,27 @@ namespace kpengine::live2d
         std::vector<std::string> ids;
     };
 
+    struct Live2DHitAreaDefinition
+    {
+        std::string name;
+        std::string drawable_id;
+    };
+
+    struct Live2DUserDataEntry
+    {
+        std::string target_type;
+        std::string target_id;
+        std::string value;
+    };
+
+    struct Live2DSecondaryBehaviorData
+    {
+        std::vector<std::byte> physics_bytes;
+        std::vector<std::byte> pose_bytes;
+        std::vector<Live2DHitAreaDefinition> hit_areas;
+        std::vector<Live2DUserDataEntry> user_data;
+    };
+
     // Database-free native product data shared by the offline importer and
     // the runtime Asset adapter.
     struct Live2DProductData
@@ -59,10 +80,11 @@ namespace kpengine::live2d
         std::vector<Live2DAuthoredMotion> motions;
         std::vector<Live2DAuthoredExpression> expressions;
         std::vector<Live2DParameterGroup> parameter_groups;
+        Live2DSecondaryBehaviorData secondary_behavior;
     };
 
-    // Product V1 keeps the original layout. Product V2 adds typed authored
-    // animation sections after the V1 header fields and remains V1-readable.
+    // Product V1/V2 remain readable; Product V3 appends typed secondary
+    // behavior data after the existing animation sections.
     bool SerializeLive2DProduct(const Live2DProductData &product,
                                 std::vector<std::byte> &bytes,
                                 std::string &diagnostic);

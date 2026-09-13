@@ -443,6 +443,170 @@ namespace kpengine::live2d
             return true;
         }
 
+        bool ReadTypedBehaviorReference(const std::filesystem::path &root,
+                                        const std::filesystem::path &source_directory,
+                                        const Json &references,
+                                        const char *key,
+                                        const std::string_view suffix,
+                                        std::vector<std::byte> &bytes,
+                                        std::string &diagnostic)
+        {
+            if (!references.contains(key))
+            {
+                return true;
+            }
+            if (!references[key].is_string())
+            {
+                diagnostic = std::string("Live2D ") + key + " must be a string";
+                return false;
+            }
+            std::filesystem::path resolved;
+            std::string relative;
+            if (!ResolveSourcePath(root, source_directory,
+                                   references[key].get<std::string>(), resolved,
+                                   relative, diagnostic) ||
+                !HasSuffix(Lowercase(resolved.filename().generic_string()), suffix) ||
+                !ReadBytes(resolved, bytes, diagnostic))
+            {
+                if (diagnostic.empty())
+                {
+                    diagnostic = std::string("Live2D ") + key + " reference is invalid";
+                }
+                return false;
+            }
+            Json behavior_json;
+            if (!ReadJson(resolved, behavior_json, diagnostic) ||
+                !behavior_json.is_object())
+            {
+                if (diagnostic.empty())
+                {
+                    diagnostic = std::string("Live2D ") + key + " JSON must be an object";
+                }
+                return false;
+            }
+            return true;
+        }
+
+        bool BuildSecondaryBehaviorData(const std::filesystem::path &root,
+                                        const std::filesystem::path &source_directory,
+                                        const Json &document,
+                                        Live2DProductData &resource,
+                                        std::string &diagnostic)
+        {
+            const Json &references = document["FileReferences"];
+            if (!ReadTypedBehaviorReference(
+                    root, source_directory, references, "Physics", ".physics3.json",
+                    resource.secondary_behavior.physics_bytes, diagnostic) ||
+                !ReadTypedBehaviorReference(
+                    root, source_directory, references, "Pose", ".pose3.json",
+                    resource.secondary_behavior.pose_bytes, diagnostic))
+            {
+                return false;
+            }
+
+            if (document.contains("HitAreas"))
+            {
+                if (!document["HitAreas"].is_array() ||
+                    document["HitAreas"].size() > 4096u)
+                {
+                    diagnostic = "Live2D HitAreas must be a bounded array";
+                    return false;
+                }
+                std::set<std::string> names;
+                for (const Json &entry : document["HitAreas"])
+                {
+                    if (!entry.is_object() || !entry.contains("Id") ||
+                        !entry["Id"].is_string() || !entry.contains("Name") ||
+                        !entry["Name"].is_string())
+                    {
+                        diagnostic = "Live2D hit area requires Id and Name strings";
+                        return false;
+                    }
+                    Live2DHitAreaDefinition hit_area{};
+                    hit_area.drawable_id = entry["Id"].get<std::string>();
+                    hit_area.name = entry["Name"].get<std::string>();
+                    if (hit_area.name.empty() || hit_area.drawable_id.empty() ||
+                        hit_area.name.find(static_cast<char>(0)) != std::string::npos ||
+                        hit_area.drawable_id.find(static_cast<char>(0)) != std::string::npos ||
+                        !names.insert(hit_area.name).second)
+                    {
+                        diagnostic = "Live2D hit area names must be unique and non-empty";
+                        return false;
+                    }
+                    resource.secondary_behavior.hit_areas.push_back(std::move(hit_area));
+                }
+            }
+
+            if (references.contains("UserData"))
+            {
+                if (!references["UserData"].is_string())
+                {
+                    diagnostic = "Live2D UserData must be a string";
+                    return false;
+                }
+                std::filesystem::path resolved;
+                std::string relative;
+                if (!ResolveSourcePath(root, source_directory,
+                                       references["UserData"].get<std::string>(), resolved,
+                                       relative, diagnostic) ||
+                    !HasSuffix(Lowercase(resolved.filename().generic_string()),
+                               ".userdata3.json"))
+                {
+                    if (diagnostic.empty())
+                    {
+                        diagnostic = "Live2D UserData reference is invalid";
+                    }
+                    return false;
+                }
+                Json user_data_json;
+                if (!ReadJson(resolved, user_data_json, diagnostic) ||
+                    !user_data_json.is_object() ||
+                    !user_data_json.contains("UserData") ||
+                    !user_data_json["UserData"].is_array() ||
+                    user_data_json["UserData"].size() > 4096u)
+                {
+                    if (diagnostic.empty())
+                    {
+                        diagnostic = "Live2D UserData JSON is invalid";
+                    }
+                    return false;
+                }
+                for (const Json &entry : user_data_json["UserData"])
+                {
+                    if (!entry.is_object() || !entry.contains("Target") ||
+                        !entry["Target"].is_string() || !entry.contains("Id") ||
+                        !entry["Id"].is_string() || !entry.contains("Value") ||
+                        !entry["Value"].is_string())
+                    {
+                        diagnostic = "Live2D UserData entry requires Target, Id, and Value strings";
+                        return false;
+                    }
+                    Live2DUserDataEntry user_data{};
+                    user_data.target_type = entry["Target"].get<std::string>();
+                    user_data.target_id = entry["Id"].get<std::string>();
+                    user_data.value = entry["Value"].get<std::string>();
+                    if (user_data.target_type.empty() || user_data.target_id.empty() ||
+                        user_data.target_type.find(static_cast<char>(0)) != std::string::npos ||
+                        user_data.target_id.find(static_cast<char>(0)) != std::string::npos ||
+                        user_data.value.find(static_cast<char>(0)) != std::string::npos)
+                    {
+                        diagnostic = "Live2D UserData contains an invalid string";
+                        return false;
+                    }
+                    resource.secondary_behavior.user_data.push_back(std::move(user_data));
+                }
+            }
+
+            if (!resource.secondary_behavior.physics_bytes.empty() ||
+                !resource.secondary_behavior.pose_bytes.empty() ||
+                !resource.secondary_behavior.hit_areas.empty() ||
+                !resource.secondary_behavior.user_data.empty())
+            {
+                resource.product_version = 3;
+            }
+            return true;
+        }
+
         bool BuildResource(const asset::ImportProviderRequest &request,
                            Live2DProductData &resource,
                            std::vector<asset::CookedTexture> &cooked_textures,
@@ -558,7 +722,9 @@ namespace kpengine::live2d
                 }
             }
 
-            if (!BuildTypedAnimationData(root, source.parent_path(), document, resource, diagnostic))
+            if (!BuildTypedAnimationData(root, source.parent_path(), document, resource, diagnostic) ||
+                !BuildSecondaryBehaviorData(root, source.parent_path(), document, resource,
+                                            diagnostic))
             {
                 return false;
             }
@@ -566,7 +732,8 @@ namespace kpengine::live2d
             for (const auto &[key, value] : references.items())
             {
                 if (key == "Moc" || key == "Textures" || key == "Motions" ||
-                    key == "Expressions")
+                    key == "Expressions" || key == "Physics" || key == "Pose" ||
+                    key == "UserData")
                 {
                     continue;
                 }
@@ -585,7 +752,7 @@ namespace kpengine::live2d
     {
         asset::ImportProviderDescriptor descriptor{};
         descriptor.id = "live2d";
-        descriptor.version = 2;
+        descriptor.version = 3;
         descriptor.kind = asset::ImportProviderKind::Custom;
         descriptor.source_suffixes = {"model3.json"};
         descriptor.callback = [](const asset::ImportProviderRequest &request)

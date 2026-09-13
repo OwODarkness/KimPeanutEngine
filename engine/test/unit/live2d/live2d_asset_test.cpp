@@ -208,6 +208,32 @@ TEST(Live2DProductTest, V1AndV2RoundTrip)
     EXPECT_EQ(parsed_v2.expressions[0].name, "Shy");
     ASSERT_EQ(parsed_v2.parameter_groups.size(), 1u);
     EXPECT_EQ(parsed_v2.parameter_groups[0].ids.size(), 2u);
+
+    kpengine::live2d::Live2DProductData v3 = v2;
+    v3.product_version = 3;
+    v3.secondary_behavior.physics_bytes = {std::byte{0x06}};
+    v3.secondary_behavior.pose_bytes = {std::byte{0x07}};
+    v3.secondary_behavior.hit_areas = {{"Body", "DrawableBody"}};
+    v3.secondary_behavior.user_data = {{"ArtMesh", "DrawableBody", "body"}};
+
+    std::vector<std::byte> v3_bytes;
+    ASSERT_TRUE(kpengine::live2d::SerializeLive2DProduct(v3, v3_bytes, diagnostic))
+        << diagnostic;
+    kpengine::live2d::Live2DProductData parsed_v3{};
+    ASSERT_TRUE(kpengine::live2d::ParseLive2DProduct(v3_bytes, parsed_v3, diagnostic))
+        << diagnostic;
+    std::vector<std::byte> v3_round_trip;
+    ASSERT_TRUE(kpengine::live2d::SerializeLive2DProduct(parsed_v3, v3_round_trip,
+                                                          diagnostic))
+        << diagnostic;
+    EXPECT_EQ(v3_bytes, v3_round_trip);
+    EXPECT_EQ(parsed_v3.product_version, 3u);
+    EXPECT_EQ(parsed_v3.secondary_behavior.physics_bytes, v3.secondary_behavior.physics_bytes);
+    EXPECT_EQ(parsed_v3.secondary_behavior.pose_bytes, v3.secondary_behavior.pose_bytes);
+    ASSERT_EQ(parsed_v3.secondary_behavior.hit_areas.size(), 1u);
+    EXPECT_EQ(parsed_v3.secondary_behavior.hit_areas[0].name, "Body");
+    ASSERT_EQ(parsed_v3.secondary_behavior.user_data.size(), 1u);
+    EXPECT_EQ(parsed_v3.secondary_behavior.user_data[0].value, "body");
 }
 
 TEST(Live2DAssetTest, ImportsTypedAnimationProductV2)
@@ -563,16 +589,15 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     EXPECT_EQ(id.type, kpengine::live2d::kLive2DModelAssetType);
     const auto resource = manager.GetResource<kpengine::live2d::Live2DModelResource>(id);
     ASSERT_NE(resource, nullptr);
+    EXPECT_EQ(resource->Product().product_version, 3u);
     EXPECT_EQ(resource->Product().textures.size(), 2u);
     EXPECT_EQ(resource->Product().motions.size(), 10u);
-    const auto pose_chunk = std::find_if(
-        resource->Product().optional_chunks.begin(),
-        resource->Product().optional_chunks.end(),
-        [](const kpengine::live2d::Live2DOptionalChunk &chunk)
-        {
-            return chunk.name == "Pose" && !chunk.bytes.empty();
-        });
-    ASSERT_NE(pose_chunk, resource->Product().optional_chunks.end());
+    EXPECT_FALSE(resource->Product().secondary_behavior.physics_bytes.empty());
+    EXPECT_FALSE(resource->Product().secondary_behavior.pose_bytes.empty());
+    ASSERT_EQ(resource->Product().secondary_behavior.hit_areas.size(), 1u);
+    EXPECT_EQ(resource->Product().secondary_behavior.hit_areas[0].name, "Body");
+    EXPECT_EQ(resource->Product().optional_chunks.size(), 1u);
+    EXPECT_EQ(resource->Product().optional_chunks[0].name, "DisplayInfo");
     EXPECT_EQ(manager.GetAsset(id)->GetDependencies().size(), 2u);
 
     kpengine::live2d::Live2DSystem system;

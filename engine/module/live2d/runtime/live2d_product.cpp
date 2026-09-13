@@ -17,6 +17,7 @@ namespace kpengine::live2d
             {'K', 'P', 'L', '2', 'D', 'P', 'R', 'D'};
         constexpr std::uint32_t kV1ProductVersion = 1;
         constexpr std::uint32_t kV2ProductVersion = 2;
+        constexpr std::uint32_t kV3ProductVersion = 3;
         constexpr std::uint32_t kMaxCollectionCount = 4096;
         constexpr std::uint32_t kMaxFieldBytes = 1024u * 1024u;
         constexpr std::uint64_t kMaxProductBytes = 512ull * 1024ull * 1024ull;
@@ -106,9 +107,9 @@ namespace kpengine::live2d
         }
 
         bool AppendString(std::vector<std::byte> &bytes, const std::string &value,
-                          std::string &diagnostic)
+                          std::string &diagnostic, const bool allow_empty = false)
         {
-            if (value.empty() || value.size() > kMaxFieldBytes ||
+            if ((!allow_empty && value.empty()) || value.size() > kMaxFieldBytes ||
                 value.find('\0') != std::string::npos)
             {
                 diagnostic = "Live2D product contains an invalid string field";
@@ -140,10 +141,12 @@ namespace kpengine::live2d
         }
 
         bool ReadString(const std::vector<std::byte> &bytes, std::size_t &offset,
-                        std::string &value, std::string &diagnostic)
+                        std::string &value, std::string &diagnostic,
+                        const bool allow_empty = false)
         {
             std::vector<std::byte> encoded;
-            if (!ReadBlob(bytes, offset, encoded, diagnostic) || encoded.empty())
+            if (!ReadBlob(bytes, offset, encoded, diagnostic) ||
+                (!allow_empty && encoded.empty()))
             {
                 if (diagnostic.empty())
                 {
@@ -181,13 +184,24 @@ namespace kpengine::live2d
                               std::string &diagnostic)
         {
             if ((resource.product_version != kV1ProductVersion &&
-                 resource.product_version != kV2ProductVersion) ||
+                 resource.product_version != kV2ProductVersion &&
+                 resource.product_version != kV3ProductVersion) ||
                 resource.model3_version == 0 || resource.moc_bytes.empty() ||
                 resource.moc_bytes.size() > kMaxFieldBytes ||
                 resource.textures.empty() || resource.textures.size() > kMaxCollectionCount ||
                 resource.optional_chunks.size() > kMaxCollectionCount)
             {
                 diagnostic = "Live2D product has an unsupported version or missing required data";
+                return false;
+            }
+
+            if (resource.product_version < kV3ProductVersion &&
+                (!resource.secondary_behavior.physics_bytes.empty() ||
+                 !resource.secondary_behavior.pose_bytes.empty() ||
+                 !resource.secondary_behavior.hit_areas.empty() ||
+                 !resource.secondary_behavior.user_data.empty()))
+            {
+                diagnostic = "Live2D Product V3 behavior requires Product V3";
                 return false;
             }
 
@@ -289,6 +303,43 @@ namespace kpengine::live2d
                     }
                 }
             }
+
+            if (resource.secondary_behavior.physics_bytes.size() > kMaxFieldBytes ||
+                resource.secondary_behavior.pose_bytes.size() > kMaxFieldBytes ||
+                resource.secondary_behavior.hit_areas.size() > kMaxCollectionCount ||
+                resource.secondary_behavior.user_data.size() > kMaxCollectionCount)
+            {
+                diagnostic = "Live2D Product V3 behavior exceeds the collection or field limit";
+                return false;
+            }
+            std::set<std::string> hit_area_names;
+            for (const Live2DHitAreaDefinition &hit_area :
+                 resource.secondary_behavior.hit_areas)
+            {
+                if (hit_area.name.empty() || hit_area.name.size() > kMaxFieldBytes ||
+                    hit_area.name.find('\0') != std::string::npos ||
+                    hit_area.drawable_id.empty() ||
+                    hit_area.drawable_id.size() > kMaxFieldBytes ||
+                    hit_area.drawable_id.find('\0') != std::string::npos ||
+                    !hit_area_names.insert(hit_area.name).second)
+                {
+                    diagnostic = "Live2D Product V3 contains an invalid hit area";
+                    return false;
+                }
+            }
+            for (const Live2DUserDataEntry &entry : resource.secondary_behavior.user_data)
+            {
+                if (entry.target_type.empty() || entry.target_type.size() > kMaxFieldBytes ||
+                    entry.target_type.find('\0') != std::string::npos ||
+                    entry.target_id.empty() || entry.target_id.size() > kMaxFieldBytes ||
+                    entry.target_id.find('\0') != std::string::npos ||
+                    entry.value.size() > kMaxFieldBytes ||
+                    entry.value.find('\0') != std::string::npos)
+                {
+                    diagnostic = "Live2D Product V3 contains invalid user data";
+                    return false;
+                }
+            }
             return true;
         }
     }
@@ -313,11 +364,18 @@ namespace kpengine::live2d
         AppendU32(bytes, resource.model3_version);
         AppendU32(bytes, static_cast<std::uint32_t>(resource.textures.size()));
         AppendU32(bytes, static_cast<std::uint32_t>(resource.optional_chunks.size()));
-        if (resource.product_version == kV2ProductVersion)
+        if (resource.product_version >= kV2ProductVersion)
         {
             AppendU32(bytes, static_cast<std::uint32_t>(resource.motions.size()));
             AppendU32(bytes, static_cast<std::uint32_t>(resource.expressions.size()));
             AppendU32(bytes, static_cast<std::uint32_t>(resource.parameter_groups.size()));
+        }
+        if (resource.product_version == kV3ProductVersion)
+        {
+            AppendU32(bytes, static_cast<std::uint32_t>(
+                                 resource.secondary_behavior.hit_areas.size()));
+            AppendU32(bytes, static_cast<std::uint32_t>(
+                                 resource.secondary_behavior.user_data.size()));
         }
         if (!AppendBlob(bytes, resource.moc_bytes, diagnostic))
         {
@@ -390,6 +448,32 @@ namespace kpengine::live2d
                 }
             }
         }
+        if (resource.product_version == kV3ProductVersion)
+        {
+            if (!AppendBlob(bytes, resource.secondary_behavior.physics_bytes, diagnostic) ||
+                !AppendBlob(bytes, resource.secondary_behavior.pose_bytes, diagnostic))
+            {
+                return false;
+            }
+            for (const Live2DHitAreaDefinition &hit_area :
+                 resource.secondary_behavior.hit_areas)
+            {
+                if (!AppendString(bytes, hit_area.name, diagnostic) ||
+                    !AppendString(bytes, hit_area.drawable_id, diagnostic))
+                {
+                    return false;
+                }
+            }
+            for (const Live2DUserDataEntry &entry : resource.secondary_behavior.user_data)
+            {
+                if (!AppendString(bytes, entry.target_type, diagnostic) ||
+                    !AppendString(bytes, entry.target_id, diagnostic) ||
+                    !AppendString(bytes, entry.value, diagnostic, true))
+                {
+                    return false;
+                }
+            }
+        }
         return true;
     }
 
@@ -419,17 +503,20 @@ namespace kpengine::live2d
         std::uint32_t motion_count = 0;
         std::uint32_t expression_count = 0;
         std::uint32_t parameter_group_count = 0;
+        std::uint32_t hit_area_count = 0;
+        std::uint32_t user_data_count = 0;
         if (!ReadU32(bytes, offset, resource.product_version) ||
             !ReadU32(bytes, offset, resource.model3_version) ||
             !ReadU32(bytes, offset, texture_count) ||
             !ReadU32(bytes, offset, chunk_count) ||
             (resource.product_version != kV1ProductVersion &&
-             resource.product_version != kV2ProductVersion))
+             resource.product_version != kV2ProductVersion &&
+             resource.product_version != kV3ProductVersion))
         {
             diagnostic = "Live2D product header is invalid";
             return false;
         }
-        if (resource.product_version == kV2ProductVersion &&
+        if (resource.product_version >= kV2ProductVersion &&
             (!ReadU32(bytes, offset, motion_count) ||
              !ReadU32(bytes, offset, expression_count) ||
              !ReadU32(bytes, offset, parameter_group_count)))
@@ -437,11 +524,20 @@ namespace kpengine::live2d
             diagnostic = "Live2D Product V2 header is truncated";
             return false;
         }
+        if (resource.product_version == kV3ProductVersion &&
+            (!ReadU32(bytes, offset, hit_area_count) ||
+             !ReadU32(bytes, offset, user_data_count)))
+        {
+            diagnostic = "Live2D Product V3 header is truncated";
+            return false;
+        }
         if (texture_count == 0 || texture_count > kMaxCollectionCount ||
             chunk_count > kMaxCollectionCount ||
             motion_count > kMaxCollectionCount ||
             expression_count > kMaxCollectionCount ||
             parameter_group_count > kMaxCollectionCount ||
+            hit_area_count > kMaxCollectionCount ||
+            user_data_count > kMaxCollectionCount ||
             !ReadBlob(bytes, offset, resource.moc_bytes, diagnostic))
         {
             if (diagnostic.empty())
@@ -535,6 +631,36 @@ namespace kpengine::live2d
             {
                 if (!ReadString(bytes, offset, id, diagnostic))
                 {
+                    return false;
+                }
+            }
+        }
+
+        if (resource.product_version == kV3ProductVersion)
+        {
+            if (!ReadBlob(bytes, offset, resource.secondary_behavior.physics_bytes, diagnostic) ||
+                !ReadBlob(bytes, offset, resource.secondary_behavior.pose_bytes, diagnostic))
+            {
+                return false;
+            }
+            resource.secondary_behavior.hit_areas.resize(hit_area_count);
+            for (Live2DHitAreaDefinition &hit_area : resource.secondary_behavior.hit_areas)
+            {
+                if (!ReadString(bytes, offset, hit_area.name, diagnostic) ||
+                    !ReadString(bytes, offset, hit_area.drawable_id, diagnostic))
+                {
+                    diagnostic = "Live2D Product V3 hit area is invalid";
+                    return false;
+                }
+            }
+            resource.secondary_behavior.user_data.resize(user_data_count);
+            for (Live2DUserDataEntry &entry : resource.secondary_behavior.user_data)
+            {
+                if (!ReadString(bytes, offset, entry.target_type, diagnostic) ||
+                    !ReadString(bytes, offset, entry.target_id, diagnostic) ||
+                    !ReadString(bytes, offset, entry.value, diagnostic, true))
+                {
+                    diagnostic = "Live2D Product V3 user data is invalid";
                     return false;
                 }
             }

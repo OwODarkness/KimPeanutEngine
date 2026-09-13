@@ -1,5 +1,13 @@
 # Project Status
 
+- **Live2D L2D7.1 Product V3 import baseline (2026-09-13)** — added typed immutable physics/pose bytes, ordered hit areas, and user-data values with bounded backward-compatible serialization; model3 import now validates and retains the complete behavior closure before publishing the native product. Product V1/V2 remain readable, and runtime pose loading accepts both the new typed field and the legacy compatibility path. OpenGL/Vulkan viewer smoke and focused Live2D tests pass. → [L2D7.1 journal](../.spec/journal/2026-09-13-live2d-l2d7-1.md), [L2D7 plan](live2d/.plan/L2D7.md)
+- **Live2D L2D7.0 phase reconciliation baseline (2026-09-13)** — split the
+  L2D6 playback transaction into explicit pre-expression and post-expression
+  contributor phases so future deterministic blink can execute before
+  expression, while pose remains after expression and before the single Core
+  update. Public playback behavior and module boundaries are unchanged; Product
+  V3 and secondary controllers remain in L2D7.1–L2D7.4. → [L2D7.0 journal](../.spec/journal/2026-09-13-live2d-l2d7-0.md),
+  [L2D7 plan](live2d/.plan/L2D7.md)
 - **Live2D L2D6.4 playback hardening baseline (2026-09-12)** — named the
   instance-local playback phases and L2D7 late-update insertion point, made
   immediate cancellation token-local, rejected invalid deltas before Cubism
