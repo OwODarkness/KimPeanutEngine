@@ -7,6 +7,7 @@
 #include <deque>
 #include <mutex>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -69,6 +70,70 @@ namespace kpengine::editor
             data->BufTextLen = static_cast<int>(length);
             data->CursorPos = data->BufTextLen;
             data->SelectionStart = data->SelectionEnd = data->CursorPos;
+            data->BufDirty = true;
+        }
+
+        std::string ReplaceCurrentTokenText(std::string_view text,
+                                             const std::string &candidate)
+        {
+            std::string result(text);
+            const size_t separator = result.find_last_of(" 	");
+            const size_t token_start = separator == std::string::npos ? 0 : separator + 1;
+            result.replace(token_start, std::string::npos, candidate);
+            return result;
+        }
+
+        bool IsCommandNameInput(std::string_view text)
+        {
+            return text.find_first_of(" \t\r\n") == std::string_view::npos;
+        }
+
+        std::string FindInlineCommandSuggestion(runtime::command::CommandRegistry *registry,
+                                                 std::string_view input)
+        {
+            if (registry == nullptr || !IsCommandNameInput(input))
+            {
+                return {};
+            }
+
+            for (const std::string &candidate : registry->CompleteCommandNames(input))
+            {
+                if (candidate.size() > input.size() &&
+                    candidate.compare(0, input.size(), input) == 0)
+                {
+                    return candidate.substr(input.size());
+                }
+            }
+            return {};
+        }
+
+        void DrawInlineCommandSuggestion(std::string_view typed, std::string_view suffix)
+        {
+            if (suffix.empty())
+            {
+                return;
+            }
+
+            const ImGuiStyle &style = ImGui::GetStyle();
+            ImVec4 color = style.Colors[ImGuiCol_Text];
+            color.x *= 0.55f;
+            color.y *= 0.55f;
+            color.z *= 0.55f;
+            color.w *= 0.70f;
+
+            const ImVec2 item_min = ImGui::GetItemRectMin();
+            const ImVec2 item_max = ImGui::GetItemRectMax();
+            const float text_x = item_min.x + style.FramePadding.x +
+                                 ImGui::CalcTextSize(std::string(typed).c_str()).x;
+            const float text_y = item_min.y + style.FramePadding.y;
+            // Draw after InputText on the foreground list so the ghost cannot be
+            // covered by the input widget's own draw commands.
+            ImDrawList *const draw_list = ImGui::GetForegroundDrawList();
+            draw_list->PushClipRect(item_min, item_max, true);
+            draw_list->AddText(ImVec2(text_x, text_y),
+                               ImGui::ColorConvertFloat4ToU32(color), suffix.data(),
+                               suffix.data() + suffix.size());
+            draw_list->PopClipRect();
         }
     }
 
@@ -155,6 +220,11 @@ namespace kpengine::editor
                 Submit();
             }
 
+            const std::string current_input(input_buffer_.data());
+            const std::string inline_suggestion =
+                FindInlineCommandSuggestion(registry_, current_input);
+            DrawInlineCommandSuggestion(current_input, inline_suggestion);
+
             if (!completion_candidates_.empty())
             {
                 ImGui::BeginChild("##command_completion", ImVec2(0.0f, 72.0f), true);
@@ -188,13 +258,24 @@ namespace kpengine::editor
 
         if (data->EventFlag == ImGuiInputTextFlags_CallbackCompletion)
         {
-            console->completion_candidates_ = runtime::command::CommandParser::Complete(
-                std::string_view(data->Buf, static_cast<size_t>(data->BufTextLen)),
-                console->registry_ ? console->registry_->List()
-                                   : std::vector<runtime::command::CommandDesc>{});
+            const std::string_view input(data->Buf, static_cast<size_t>(data->BufTextLen));
+            if (console->registry_ && IsCommandNameInput(input))
+            {
+                console->completion_candidates_ = console->registry_->CompleteCommandNames(input);
+            }
+            else
+            {
+                console->completion_candidates_ = runtime::command::CommandParser::Complete(
+                    input,
+                    console->registry_ ? console->registry_->List()
+                                       : std::vector<runtime::command::CommandDesc>{});
+            }
             if (console->completion_candidates_.size() == 1)
             {
-                console->ReplaceCurrentToken(console->completion_candidates_.front());
+                const std::string completed = ReplaceCurrentTokenText(
+                    std::string_view(data->Buf, static_cast<size_t>(data->BufTextLen)),
+                    console->completion_candidates_.front());
+                SetBuffer(data, completed);
                 console->completion_candidates_.clear();
             }
         }

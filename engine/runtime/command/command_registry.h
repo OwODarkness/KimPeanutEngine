@@ -75,6 +75,9 @@ namespace kpengine::runtime::command
 
         std::optional<CommandDesc> Find(const std::string &name) const;
         std::vector<CommandDesc> List() const;
+        std::vector<std::string> CompleteCommandNames(
+            std::string_view prefix,
+            std::size_t max_results = std::numeric_limits<std::size_t>::max()) const;
         CommandResult Execute(const CommandCall &call, const CommandContext &context,
                               CommandCompletionHandler completion = {}) const;
         CommandResult ExecuteText(std::string_view text, const CommandContext &context,

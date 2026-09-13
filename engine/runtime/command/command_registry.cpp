@@ -1,5 +1,6 @@
 #include "command/command_registry.h"
 #include "command/command_parser.h"
+#include "containers/trie.h"
 
 #include <algorithm>
 #include <deque>
@@ -38,6 +39,7 @@ namespace kpengine::runtime::command
 
         mutable std::mutex mutex;
         std::unordered_map<std::string, std::shared_ptr<Entry>> entries;
+        containers::Trie<uint64_t> command_names;
         std::deque<uint64_t> game_queue;
         std::map<uint64_t, Request> requests;
         uint64_t next_registration_id = 1;
@@ -52,6 +54,7 @@ namespace kpengine::runtime::command
                 iterator->second->registration_id == registration_id)
             {
                 entries.erase(iterator);
+                command_names.Erase(name);
             }
         }
     };
@@ -178,6 +181,7 @@ namespace kpengine::runtime::command
                                                  "Command registry has shut down", 0, {}};
                  }},
                 0}));
+        state->command_names.Insert("commands.list", 0);
         state->entries.emplace(
             "help",
             std::make_shared<State::Entry>(State::Entry{
@@ -194,6 +198,7 @@ namespace kpengine::runtime::command
                                                  "Command registry has shut down", 0, {}};
                  }},
                 0}));
+        state->command_names.Insert("help", 0);
     }
 
     CommandRegistration::~CommandRegistration()
@@ -271,6 +276,7 @@ namespace kpengine::runtime::command
             state->entries.emplace(
                 name, std::make_shared<State::Entry>(
                           State::Entry{std::move(descriptor), registration_id}));
+            state->command_names.Insert(name, registration_id);
         }
 
         const std::weak_ptr<State> weak_state = state;
@@ -311,6 +317,27 @@ namespace kpengine::runtime::command
         return descriptors;
     }
 
+    std::vector<std::string> CommandRegistry::CompleteCommandNames(
+        std::string_view prefix, const std::size_t max_results) const
+    {
+        const std::shared_ptr<State> state = state_;
+        std::vector<std::string> names;
+        if (max_results == 0)
+        {
+            return names;
+        }
+
+        std::scoped_lock lock(state->mutex);
+        names.reserve(std::min(max_results, state->command_names.Size()));
+        state->command_names.VisitPrefix(prefix,
+                                          [&names, max_results](std::string_view name,
+                                                                const uint64_t &)
+                                          {
+                                              names.emplace_back(name);
+                                              return names.size() < max_results;
+                                          });
+        return names;
+    }
     CommandResult CommandRegistry::ExecuteResolved(const std::shared_ptr<State> &state,
                                                    CommandDesc descriptor,
                                                    const uint64_t registration_id,
@@ -585,6 +612,7 @@ namespace kpengine::runtime::command
             std::scoped_lock lock(state->mutex);
             state->shutdown = true;
             state->entries.clear();
+            state->command_names.Clear();
             state->game_queue.clear();
             for (auto &request : state->requests)
             {
