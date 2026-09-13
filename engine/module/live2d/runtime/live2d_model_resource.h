@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <string_view>
 #include <utility>
 #include "asset/asset_payload.h"
 #include "live2d_product.h"
@@ -27,6 +28,30 @@ namespace kpengine::live2d
         }
 
         const Live2DProductData &Product() const noexcept { return *product_; }
+        // Product V3 metadata is immutable and shared by every instance.
+        const std::vector<Live2DUserDataEntry> &UserData() const noexcept
+        {
+            return product_->secondary_behavior.user_data;
+        }
+
+        const std::vector<Live2DHitAreaDefinition> &HitAreas() const noexcept
+        {
+            return product_->secondary_behavior.hit_areas;
+        }
+
+        const Live2DUserDataEntry *FindUserData(
+            const std::string_view target_type,
+            const std::string_view target_id) const noexcept
+        {
+            for (const Live2DUserDataEntry &entry : UserData())
+            {
+                if (entry.target_type == target_type && entry.target_id == target_id)
+                {
+                    return &entry;
+                }
+            }
+            return nullptr;
+        }
 
         asset::AssetType GetAssetType() const noexcept override
         {

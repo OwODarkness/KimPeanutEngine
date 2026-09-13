@@ -100,6 +100,11 @@ namespace kpengine::live2d
         std::uint64_t update_sequence = 0u;
         std::uint32_t applied_behavior_mask = 0u;
     };
+    struct Live2DHitAreaQueryResult final
+    {
+        std::vector<std::string> hit_area_names;
+    };
+
     // A per-owner mutable Cubism model built from one immutable Asset payload.
     // Cubism headers stay private to the implementation so the module's public
     // contract does not expose SDK allocation or framework types.
@@ -145,6 +150,14 @@ namespace kpengine::live2d
         bool AdvanceFrame(const Live2DFrameInput &input,
                           Live2DFrameUpdateResult &result,
                           std::string &diagnostic);
+
+        // Queries current deformed geometry in model-local coordinates.
+        bool HitTest(Live2DVector2 point, Live2DHitAreaQueryResult &result,
+                     std::string &diagnostic) const;
+        bool HitTest(std::string_view hit_area_name, Live2DVector2 point,
+                     bool &hit, std::string &diagnostic) const;
+        bool HitTest(std::string_view hit_area_name,
+                     Live2DVector2 point) const;
 
         const std::vector<std::shared_ptr<const asset::TextureResource>> &
         TextureDependencies() const noexcept;

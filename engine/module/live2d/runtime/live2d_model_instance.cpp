@@ -588,6 +588,8 @@ namespace kpengine::live2d
         Live2DStaticModelData static_data{};
         std::vector<MotionClip> motion_clips;
         std::vector<ExpressionClip> expression_clips;
+        std::vector<csmInt32> hit_area_drawable_indices;
+
         std::unique_ptr<CubismExpressionMotionManager> expression_manager;
         std::unique_ptr<CubismMotionManager> motion_manager;
         std::vector<MotionPlayback> motion_playbacks;
@@ -1195,6 +1197,38 @@ namespace kpengine::live2d
         diagnostic.clear();
         impl.behavior_config = config;
         impl.blink.random_state = config.blink.seed == 0u ? 1u : config.blink.seed;
+        // Resolve authored hit areas once while the model is staged. The
+        // resolved indices remain instance-local and avoid runtime ID lookup.
+        const Live2DProductData &staged_product = resource.Product();
+        impl.hit_area_drawable_indices.clear();
+        impl.hit_area_drawable_indices.reserve(staged_product.secondary_behavior.hit_areas.size());
+        if (staged_product.product_version >= 3u &&
+            !staged_product.secondary_behavior.hit_areas.empty())
+        {
+            auto *id_manager = CubismFramework::GetIdManager();
+            if (id_manager == nullptr)
+            {
+                diagnostic = "Live2D Cubism ID manager is unavailable";
+                return false;
+            }
+            for (const Live2DHitAreaDefinition &area :
+                 staged_product.secondary_behavior.hit_areas)
+            {
+                const CubismIdHandle drawable_id =
+                    id_manager->GetId(area.drawable_id.c_str());
+                const csmInt32 drawable_index =
+                    impl.model->GetDrawableIndex(drawable_id);
+                if (drawable_index < 0)
+                {
+                    diagnostic =
+                        "Live2D hit area drawable ID is not present in the model: " +
+                        area.drawable_id;
+                    return false;
+                }
+                impl.hit_area_drawable_indices.push_back(drawable_index);
+            }
+        }
+
 
         try
         {
@@ -1757,6 +1791,173 @@ namespace kpengine::live2d
         }
     }
 
+    bool Live2DModelInstance::HitTest(
+        const Live2DVector2 point, Live2DHitAreaQueryResult &result,
+        std::string &diagnostic) const
+    {
+        diagnostic.clear();
+        result = {};
+        if (!IsValid())
+        {
+            diagnostic = "Live2D model instance is invalid";
+            return false;
+        }
+        if (!std::isfinite(point.x) || !std::isfinite(point.y))
+        {
+            diagnostic = "Live2D hit-test point must be finite";
+            return false;
+        }
+        const auto &areas = resource_->HitAreas();
+        if (areas.size() != impl_->hit_area_drawable_indices.size())
+        {
+            diagnostic = "Live2D hit-area resolution is incomplete";
+            return false;
+        }
+        try
+        {
+            for (std::size_t area_index = 0u; area_index < areas.size(); ++area_index)
+            {
+                const csmInt32 drawable_index =
+                    impl_->hit_area_drawable_indices[area_index];
+                const csmInt32 vertex_count =
+                    impl_->model->GetDrawableVertexCount(drawable_index);
+                const csmFloat32 *vertices =
+                    impl_->model->GetDrawableVertices(drawable_index);
+                if (vertex_count <= 0 || vertices == nullptr)
+                {
+                    diagnostic = "Live2D hit area has no geometry: " + areas[area_index].name;
+                    result = {};
+                    return false;
+                }
+                float left = vertices[0u];
+                float right = vertices[0u];
+                float top = vertices[1u];
+                float bottom = vertices[1u];
+                if (!std::isfinite(left) || !std::isfinite(right) ||
+                    !std::isfinite(top) || !std::isfinite(bottom))
+                {
+                    diagnostic = "Live2D hit area geometry is non-finite: " + areas[area_index].name;
+                    result = {};
+                    return false;
+                }
+                for (csmInt32 vertex = 1; vertex < vertex_count; ++vertex)
+                {
+                    const float x = vertices[vertex * 2];
+                    const float y = vertices[vertex * 2 + 1];
+                    if (!std::isfinite(x) || !std::isfinite(y))
+                    {
+                        diagnostic = "Live2D hit area geometry is non-finite: " + areas[area_index].name;
+                        result = {};
+                        return false;
+                    }
+                    left = std::min(left, x);
+                    right = std::max(right, x);
+                    top = std::min(top, y);
+                    bottom = std::max(bottom, y);
+                }
+                if (std::isfinite(left) && std::isfinite(right) &&
+                    std::isfinite(top) && std::isfinite(bottom) &&
+                    left <= point.x && point.x <= right &&
+                    top <= point.y && point.y <= bottom)
+                {
+                    result.hit_area_names.push_back(areas[area_index].name);
+                }
+            }
+            return true;
+        }
+        catch (const std::exception &error)
+        {
+            result = {};
+            diagnostic = std::string("Live2D hit-test failed: ") + error.what();
+            return false;
+        }
+    }
+
+    bool Live2DModelInstance::HitTest(
+        const std::string_view hit_area_name, const Live2DVector2 point,
+        bool &hit, std::string &diagnostic) const
+    {
+        diagnostic.clear();
+        hit = false;
+        if (!IsValid())
+        {
+            diagnostic = "Live2D model instance is invalid";
+            return false;
+        }
+        if (!std::isfinite(point.x) || !std::isfinite(point.y))
+        {
+            diagnostic = "Live2D hit-test point must be finite";
+            return false;
+        }
+        const auto &areas = resource_->HitAreas();
+        if (areas.size() != impl_->hit_area_drawable_indices.size())
+        {
+            diagnostic = "Live2D hit-area resolution is incomplete";
+            return false;
+        }
+        const auto area = std::find_if(
+            areas.begin(), areas.end(),
+            [hit_area_name](const Live2DHitAreaDefinition &definition) {
+                return definition.name == hit_area_name;
+            });
+        if (area == areas.end())
+        {
+            diagnostic = "Live2D hit area is unknown: " +
+                         std::string(hit_area_name);
+            return false;
+        }
+        const std::size_t area_index =
+            static_cast<std::size_t>(std::distance(areas.begin(), area));
+        const csmInt32 drawable_index =
+            impl_->hit_area_drawable_indices[area_index];
+        const csmInt32 vertex_count =
+            impl_->model->GetDrawableVertexCount(drawable_index);
+        const csmFloat32 *vertices =
+            impl_->model->GetDrawableVertices(drawable_index);
+        if (vertex_count <= 0 || vertices == nullptr)
+        {
+            diagnostic = "Live2D hit area has no geometry: " +
+                         std::string(hit_area_name);
+            return false;
+        }
+        float left = vertices[0u];
+        float right = vertices[0u];
+        float top = vertices[1u];
+        float bottom = vertices[1u];
+        for (csmInt32 vertex = 1; vertex < vertex_count; ++vertex)
+        {
+            const float x = vertices[vertex * 2];
+            const float y = vertices[vertex * 2 + 1];
+            if (!std::isfinite(x) || !std::isfinite(y))
+            {
+                diagnostic = "Live2D hit area geometry is non-finite: " +
+                             std::string(hit_area_name);
+                return false;
+            }
+            left = std::min(left, x);
+            right = std::max(right, x);
+            top = std::min(top, y);
+            bottom = std::max(bottom, y);
+        }
+        if (!std::isfinite(left) || !std::isfinite(right) ||
+            !std::isfinite(top) || !std::isfinite(bottom))
+        {
+            diagnostic = "Live2D hit area geometry is non-finite: " +
+                         std::string(hit_area_name);
+            return false;
+        }
+        hit = left <= point.x && point.x <= right &&
+              top <= point.y && point.y <= bottom;
+        return true;
+    }
+
+    bool Live2DModelInstance::HitTest(
+        const std::string_view hit_area_name, const Live2DVector2 point) const
+    {
+        bool hit = false;
+        std::string diagnostic;
+        return HitTest(hit_area_name, point, hit, diagnostic) && hit;
+    }
     bool Live2DModelInstance::AdvancePlayback(
         const float delta_seconds, Live2DPlaybackUpdateResult &result,
         std::string &diagnostic)
