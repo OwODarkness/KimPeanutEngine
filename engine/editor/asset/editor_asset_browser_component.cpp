@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -330,6 +331,37 @@ namespace kpengine::editor
             }
         }
 
+        void DrawMappedAssetIcon(
+            ImDrawList *draw,
+            const std::unordered_map<std::string, std::vector<std::uint32_t>> &icon_pixels,
+            const AssetBrowserRow &row, const ImVec2 &min, const ImVec2 &max)
+        {
+            const AssetIconKind icon_kind = IconKind(row.type_name);
+            auto icon = icon_pixels.find(FoldIconType(row.type_name));
+            if (icon == icon_pixels.end() && !row.logical_path.empty())
+            {
+                const std::size_t slash = row.logical_path.find('/');
+                const std::string path_type = row.logical_path.substr(0, slash);
+                icon = icon_pixels.find(FoldIconType(path_type));
+            }
+            if (icon == icon_pixels.end())
+            {
+                const std::string built_in_type = BuiltInIconType(row.type_name);
+                if (!built_in_type.empty())
+                {
+                    icon = icon_pixels.find(built_in_type);
+                }
+            }
+            if (icon == icon_pixels.end())
+            {
+                DrawAssetIcon(draw, icon_kind, min, max, TypeBadgeColor(row.type_name));
+            }
+            else
+            {
+                DrawRasterIcon(draw, icon->second, min, max, TypeBadgeColor(row.type_name));
+            }
+        }
+
         std::string PrefixedAssetName(const AssetBrowserRow &row)
         {
             std::string base = row.display_name;
@@ -456,6 +488,19 @@ namespace kpengine::editor
                 return "Missing References";
             }
             return "All Assets";
+        }
+
+        std::string TypeFilterLabel(const std::vector<std::string> &included_types)
+        {
+            if (included_types.empty())
+            {
+                return "All Types";
+            }
+            if (included_types.size() == 1)
+            {
+                return included_types.front();
+            }
+            return std::to_string(included_types.size()) + " Types";
         }
     }
 
@@ -592,7 +637,7 @@ namespace kpengine::editor
 
     void EditorAssetBrowserComponent::RenderToolbar()
     {
-        const AssetBrowserQuery &query = model_.Query();
+        const AssetBrowserQuery query = model_.Query();
 
         ImGui::SetNextItemWidth(200.0f);
         if (ImGui::BeginCombo("##location", LocationLabel(query.location)))
@@ -604,6 +649,40 @@ namespace kpengine::editor
                 if (ImGui::Selectable(LocationLabel(candidate), candidate == query.location))
                 {
                     model_.SetLocation(candidate);
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::SameLine();
+        const std::string type_filter_label = TypeFilterLabel(query.included_type_names);
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::BeginCombo("##types", type_filter_label.c_str()))
+        {
+            std::vector<std::string> included_types = query.included_type_names;
+            if (ImGui::Selectable("All Types", included_types.empty(),
+                                  ImGuiSelectableFlags_DontClosePopups))
+            {
+                included_types.clear();
+                model_.SetTypeFilter(included_types);
+            }
+            for (const std::string &type_name : model_.TypeNames())
+            {
+                const auto found =
+                    std::find(included_types.begin(), included_types.end(), type_name);
+                const bool selected = found != included_types.end();
+                if (ImGui::Selectable(type_name.c_str(), selected,
+                                      ImGuiSelectableFlags_DontClosePopups))
+                {
+                    if (selected)
+                    {
+                        included_types.erase(found);
+                    }
+                    else
+                    {
+                        included_types.push_back(type_name);
+                    }
+                    model_.SetTypeFilter(included_types);
                 }
             }
             ImGui::EndCombo();
@@ -655,18 +734,19 @@ namespace kpengine::editor
     void EditorAssetBrowserComponent::RenderFolderList()
     {
         ImGui::TextDisabled("Imported Content");
-        if (ImGui::Selectable("All Assets", selected_folder_.empty()))
+        const std::string logical_prefix = model_.Query().logical_prefix;
+        if (ImGui::Selectable("All Assets", logical_prefix.empty()))
         {
-            selected_folder_.clear();
+            model_.SetLogicalPrefix({});
         }
         for (const AssetBrowserFolder &folder : model_.Folders())
         {
             ImGui::PushID(folder.path.c_str());
             const std::string label = "    " + DisplayFolderPath(folder.path) + "  (" +
                                       std::to_string(folder.count) + ")";
-            if (ImGui::Selectable(label.c_str(), selected_folder_ == folder.path))
+            if (ImGui::Selectable(label.c_str(), logical_prefix == folder.path))
             {
-                selected_folder_ = folder.path;
+                model_.SetLogicalPrefix(folder.path);
             }
             const ImVec2 item_min = ImGui::GetItemRectMin();
             DrawFolderGlyph(ImGui::GetWindowDrawList(), ImVec2(item_min.x + 4.0f, item_min.y + 4.0f),
@@ -725,12 +805,12 @@ namespace kpengine::editor
             {
                 const AssetBrowserRow &row = rows[static_cast<std::size_t>(index)];
                 ImGui::TableNextRow();
-                ImGui::PushID(static_cast<int>(index));
+                ImGui::PushID(row.stable_key.c_str());
 
                 ImGui::TableSetColumnIndex(0);
                 // A selectable spanning the row carries the click, and its label is the
                 // readable name — the badge beside it is decoration, never the only signal.
-                const std::string display_name = PrefixedAssetName(row);
+                const std::string display_name = "    " + PrefixedAssetName(row);
                 const bool selected = row.stable_key == model_.SelectedKey();
                 if (ImGui::Selectable(display_name.c_str(), selected,
                                       ImGuiSelectableFlags_SpanAllColumns |
@@ -743,10 +823,9 @@ namespace kpengine::editor
                     }
                 }
                 const ImVec2 badge_min = ImGui::GetItemRectMin();
-                DrawDocumentGlyph(ImGui::GetWindowDrawList(),
-                                  ImVec2(badge_min.x - 14.0f, badge_min.y + 2.0f),
-                                  ImVec2(badge_min.x - 4.0f, badge_min.y + 14.0f),
-                                  TypeBadgeColor(row.type_name));
+                DrawMappedAssetIcon(ImGui::GetWindowDrawList(), icon_pixels_, row,
+                                    ImVec2(badge_min.x + 2.0f, badge_min.y + 2.0f),
+                                    ImVec2(badge_min.x + 18.0f, badge_min.y + 18.0f));
 
                 ImGui::TableSetColumnIndex(1);
                 ImGui::TextUnformatted(row.type_name.c_str());
@@ -807,32 +886,7 @@ namespace kpengine::editor
                                           min.y + 8.0f);
                     const ImVec2 icon_max(icon_min.x + kTileIconSize,
                                           icon_min.y + kTileIconSize);
-                    const AssetIconKind icon_kind = IconKind(row.type_name);
-                    auto icon = icon_pixels_.find(FoldIconType(row.type_name));
-                    if (icon == icon_pixels_.end() && !row.logical_path.empty())
-                    {
-                        const std::size_t slash = row.logical_path.find('/');
-                        const std::string path_type = row.logical_path.substr(0, slash);
-                        icon = icon_pixels_.find(FoldIconType(path_type));
-                    }
-                    if (icon == icon_pixels_.end())
-                    {
-                        const std::string built_in_type = BuiltInIconType(row.type_name);
-                        if (!built_in_type.empty())
-                        {
-                            icon = icon_pixels_.find(built_in_type);
-                        }
-                    }
-                    if (icon == icon_pixels_.end())
-                    {
-                        DrawAssetIcon(draw, icon_kind, icon_min, icon_max,
-                                      TypeBadgeColor(row.type_name));
-                    }
-                    else
-                    {
-                        DrawRasterIcon(draw, icon->second, icon_min, icon_max,
-                                       TypeBadgeColor(row.type_name));
-                    }
+                    DrawMappedAssetIcon(draw, icon_pixels_, row, icon_min, icon_max);
 
                     const std::string name =
                         ElideLabel(PrefixedAssetName(row), kTileWidth - 12.0f);

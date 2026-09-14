@@ -482,24 +482,6 @@ namespace kpengine::editor
                 continue;
             }
 
-            if (!folded_prefix.empty())
-            {
-                // A component boundary, not a raw prefix: "material/bric" must not select
-                // "material/brick", or the folder tree would file siblings under each
-                // other. A folder is either the node's own path or a proper ancestor of it.
-                const std::string folded_path =
-                    FoldAscii(NormalizeContentPath(node.logical_path));
-                const bool is_self = folded_path == folded_prefix;
-                const bool is_under =
-                    folded_path.size() > folded_prefix.size() &&
-                    folded_path.compare(0, folded_prefix.size(), folded_prefix) == 0 &&
-                    folded_path[folded_prefix.size()] == '/';
-                if (!is_self && !is_under)
-                {
-                    continue;
-                }
-            }
-
             if (!terms.empty())
             {
                 // One haystack per node. Aliases and provenance paths are included because
@@ -545,6 +527,44 @@ namespace kpengine::editor
                 }
             }
 
+            // Folder navigation remains available while a folder is selected. Counts still
+            // honor search/type/location filters, but the navigation prefix itself only
+            // filters asset rows; otherwise selecting "model" would hide every other folder.
+            const std::string folder = ContentFolder(node.logical_path);
+            if (!folder.empty())
+            {
+                const auto it = std::find_if(
+                    folders_.begin(), folders_.end(),
+                    [&folder](const AssetBrowserFolder &candidate)
+                    { return candidate.path == folder; });
+                if (it == folders_.end())
+                {
+                    folders_.push_back(AssetBrowserFolder{folder, 1});
+                }
+                else
+                {
+                    ++it->count;
+                }
+            }
+
+            if (!folded_prefix.empty())
+            {
+                // A component boundary, not a raw prefix: "material/bric" must not select
+                // "material/brick", or the folder tree would file siblings under each
+                // other. A folder is either the node's own path or a proper ancestor of it.
+                const std::string folded_path =
+                    FoldAscii(NormalizeContentPath(node.logical_path));
+                const bool is_self = folded_path == folded_prefix;
+                const bool is_under =
+                    folded_path.size() > folded_prefix.size() &&
+                    folded_path.compare(0, folded_prefix.size(), folded_prefix) == 0 &&
+                    folded_path[folded_prefix.size()] == '/';
+                if (!is_self && !is_under)
+                {
+                    continue;
+                }
+            }
+
             AssetBrowserRow row;
             row.stable_key = node.stable_key;
             row.display_name = node.display_name;
@@ -564,24 +584,6 @@ namespace kpengine::editor
             row_bytes.push_back(node.byte_size);
             sort_keys.push_back(SortKeys{FoldAscii(row.display_name), FoldAscii(row.type_name),
                                          FoldAscii(row.logical_path)});
-
-            // The browser exposes only the four top-level content categories.
-            const std::string folder = ContentFolder(row.logical_path);
-            if (!folder.empty())
-            {
-                const auto it = std::find_if(
-                    folders_.begin(), folders_.end(),
-                    [&folder](const AssetBrowserFolder &candidate)
-                    { return candidate.path == folder; });
-                if (it == folders_.end())
-                {
-                    folders_.push_back(AssetBrowserFolder{folder, 1});
-                }
-                else
-                {
-                    ++it->count;
-                }
-            }
 
             rows_.push_back(std::move(row));
         }

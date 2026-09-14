@@ -382,6 +382,24 @@ TEST(AssetBrowserModelTest, TheLogicalPrefixSelectsAWholeSubtreeByComponent)
     EXPECT_EQ(NamesOf(model), (std::vector<std::string>{"Sponza"}));
 }
 
+TEST(AssetBrowserModelTest, SelectingAFolderKeepsSiblingFoldersAvailable)
+{
+    FakeSource source = MixedSource();
+    AssetBrowserModel model;
+    model.SetSource(&source);
+    ASSERT_TRUE(model.Refresh());
+
+    model.SetLogicalPrefix("model");
+    EXPECT_EQ(NamesOf(model), (std::vector<std::string>{"Sponza"}));
+
+    std::vector<std::string> folders;
+    for (const auto &folder : model.Folders())
+    {
+        folders.push_back(folder.path);
+    }
+    EXPECT_EQ(folders, (std::vector<std::string>{"material", "model", "texture"}));
+}
+
 TEST(AssetBrowserModelTest, FoldersDeriveFromTheFilteredRowsWithCounts)
 {
     FakeSource source = MixedSource();

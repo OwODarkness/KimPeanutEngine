@@ -20,7 +20,7 @@ namespace kpengine::editor
     // between docks.
     //
     // Catalog and filtering decisions live in AssetBrowserModel. This class owns only
-    // presentation state such as icon pixels, folder highlighting, and ImGui drawing.
+    // presentation state such as icon pixels, splitter width, and ImGui drawing.
     class EditorAssetBrowserComponent final : public EditorWindowComponent
     {
     public:
@@ -46,8 +46,6 @@ namespace kpengine::editor
         AssetBrowserModel &model_;
         OpenReferences open_references_;
         float folder_width_{168.0f};
-        // Folder highlighting is view state; selecting a folder must not change the asset projection.
-        std::string selected_folder_;
         std::unordered_map<std::string, std::vector<std::uint32_t>> icon_pixels_{};
         bool initial_refresh_attempted_{false};
         // Persistent because ImGui edits a buffer in place; the model holds the canonical
