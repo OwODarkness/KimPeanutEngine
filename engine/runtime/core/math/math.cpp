@@ -1,3 +1,4 @@
+#define KPENGINE_MATRIX4_IMPLEMENTATION
 #include "vector2.h"
 #include "vector3.h"
 #include "vector4.h"
@@ -6,6 +7,7 @@
 #include "transform.h"
 #include "matrix3.h"
 #include "matrix4.h"
+#undef KPENGINE_MATRIX4_IMPLEMENTATION
 
 
 

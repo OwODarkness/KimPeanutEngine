@@ -516,34 +516,38 @@ template <typename T, typename U>
     template <typename T>
     Matrix4<T> Matrix4<T>::MakeOrthProjMatrix(T left, T right, T bottom, T top, T near, T far)
     {
-        Matrix4 res = Matrix4::Identity();
-        res[0][0] = T(2) / (right - left);
-        res[0][3] = (left + right) / (left - right);
-        res[1][1] = T(2) / (top - bottom);
-        res[1][3] = (bottom + top) / (bottom - top);
-        res[2][2] = T(2) / (near - far);
-        res[2][3] = -(far + near) / (far - near);
-        return res;
+        const T width = right - left;
+        const T height = top - bottom;
+        const T depth = far - near;
+        Matrix4<T> result = Matrix4<T>::Zero();
+        result.data_[0][0] = T(2) / width;
+        result.data_[0][3] = -(right + left) / width;
+        result.data_[1][1] = T(2) / height;
+        result.data_[1][3] = -(top + bottom) / height;
+        result.data_[2][2] = -T(2) / depth;
+        result.data_[2][3] = -(far + near) / depth;
+        result.data_[3][3] = T(1);
+        return result;
     }
     template <typename T>
     Matrix4<T> Matrix4<T>::MakePerProjMatrix(T fov, T aspect, T near, T far)
     {
-        Matrix4 res = Matrix4::Zero();
-        T half_radian = T(0.5 * fov);
-        T top = std::tan(half_radian) * near;
-        T bottom = -top;
-        T right = aspect * top;
-        T left = -right;
-        res[0][0] = 2 * near / (right - left);
-        res[0][2] = (left + right) / (left - right);
+        const T half_radian = T(0.5 * fov);
+        const T top = std::tan(half_radian) * near;
+        const T bottom = -top;
+        const T right = aspect * top;
+        const T left = -right;
+        Matrix4<T> result = Matrix4<T>::Zero();
+        result.data_[0][0] = T(2) * near / (right - left);
+        result.data_[0][2] = (left + right) / (left - right);
         // Keep projection math in the engine's y-up clip-space convention.
         // Backends own any framebuffer-origin normalization in their viewport
         // translation; baking Vulkan's Y flip here also flips OpenGL culling.
-        res[1][1] = 2 * near / (top - bottom);
-        res[1][2] = (bottom + top) / (bottom - top);
-        res[2][2] = (far + near) / (near - far);
-        res[2][3] = 2 * far * near / (near - far);
-        res[3][2] = -1;
-        return res;
+        result.data_[1][1] = T(2) * near / (top - bottom);
+        result.data_[1][2] = (bottom + top) / (bottom - top);
+        result.data_[2][2] = (far + near) / (near - far);
+        result.data_[2][3] = T(2) * far * near / (near - far);
+        result.data_[3][2] = -T(1);
+        return result;
     }
 }

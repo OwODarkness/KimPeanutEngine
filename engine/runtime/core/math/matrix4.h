@@ -88,7 +88,11 @@ namespace kpengine::math
         std::array<std::array<T, 4>, 4> data_;
     };
 
+    extern template class Matrix4<float>;
+    extern template class Matrix4<double>;
     
 } // namespace kpengine::math
+#if defined(KPENGINE_MATRIX4_IMPLEMENTATION)
 #include "matrix4.tpp"
+#endif
 #endif
