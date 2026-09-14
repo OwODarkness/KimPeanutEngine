@@ -7,6 +7,7 @@
 #include <optional>
 #include <cstdint>
 #include "base/type.h"
+#include "editor/asset/asset_browser_model.h"
 #include "editor/settings/editor_layout_settings.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/ui/component/editor_layout_model.h"
@@ -52,6 +53,12 @@ namespace kpengine
         class IGameplayEditorSnapshotSource;
         class IGameplayEditorEditSink;
     }
+    namespace asset
+    {
+        // The Asset-owned catalog boundary. Only this interface crosses into the Editor;
+        // the provider that implements it stays Runtime's business.
+        class IAssetCatalogSnapshotSource;
+    }
 }
 
 struct ImFont;
@@ -85,6 +92,9 @@ namespace kpengine::editor
         const reflection::IReflectionCatalog *reflection_catalog = nullptr;
         gameplay::IGameplayEditorSnapshotSource *actor_snapshot_source = nullptr;
         gameplay::IGameplayEditorEditSink *actor_edit_sink = nullptr;
+        // Null is supported and expected in lifecycle tests: the browser it feeds is then
+        // disabled rather than absent, so nothing has to null-check a panel.
+        asset::IAssetCatalogSnapshotSource *asset_catalog_source = nullptr;
         std::function<runtime::StartupSnapshot()> startup_snapshot_source;
         std::function<std::unique_ptr<IEditorImguiRenderer>(GraphicsAPIType)>
             renderer_factory;
@@ -108,6 +118,10 @@ namespace kpengine::editor
             const reflection::IReflectionCatalog *reflection_catalog,
             gameplay::IGameplayEditorSnapshotSource *actor_snapshot_source,
             gameplay::IGameplayEditorEditSink *actor_edit_sink);
+        // Pre-promotion setter, alongside SetActorInspectionServices: both hand over
+        // borrowed Runtime interfaces the render thread must have before it builds the
+        // workspace tools, and both must be called before PromoteToWorkspace().
+        void SetAssetCatalogSnapshotSource(asset::IAssetCatalogSnapshotSource *source);
         void PromoteToWorkspace();
         void BeginClosing();
         bool RenderLoading();
@@ -147,6 +161,9 @@ namespace kpengine::editor
             input::InputSystem *input_system, ImFont *code_font);
         std::unique_ptr<EditorWindowComponent> BuildDebugViewerPanel();
         std::unique_ptr<EditorWindowComponent> BuildGpuProfilerPanel();
+        // The browser is a dock panel like any other; it owns no window geometry, so its
+        // movability comes from being dragged between docks.
+        std::unique_ptr<EditorWindowComponent> BuildAssetBrowserPanel();
         // The dock host: it owns every workspace panel and draws one window per dock.
         // Also applies the persisted placements, which is why it runs late — a placement
         // names a panel that has to be registered first.
@@ -204,6 +221,11 @@ namespace kpengine::editor
         // components_ for the same reason, and owned here rather than by the host so the
         // View menu and the layout file can bind by id without reaching into the tree.
         EditorToolRowModel tool_row_model_;
+
+        // The Asset Browser's state. Declared before components_ for the same reason as the
+        // models above: the panel borrows it, so the panel must be destroyed first. It
+        // borrows the injected catalog source, which Runtime owns and outlives this object.
+        AssetBrowserModel asset_browser_model_;
 
         // Panel geometry, owned here because EditorUI is what resolves it and pushes a
         // rect into each component before the tree renders. ImGui-free: all of its

@@ -1,5 +1,6 @@
 #include "runtime_global_context.h"
 #include "asset/asset_manager.h"
+#include "asset/asset_catalog_snapshot_provider.h"
 #include "asset/level.h"
 #include "config/path.h"
 #include "level/level_instance.h"
@@ -63,6 +64,13 @@ namespace kpengine
             level_instance_ = std::make_unique<LevelInstance>(
                 asset::AssetManager::GetInstance(), *gameplay_world_, LevelActorFactorySet{},
                 render_system_->GetEnvironmentSourceSink());
+            // The Asset-owned catalog boundary the Editor's browser reads through. Its
+            // config is left empty on purpose: the provider already resolves an empty
+            // database path to <asset>/.archive/archive.sqlite3 and derives the archive
+            // root from it, so naming a path here could only get that wrong. Constructing
+            // it opens nothing — the first CaptureAssetCatalog() is what reads.
+            asset_catalog_provider_ = std::make_unique<asset::AssetCatalogSnapshotProvider>(
+                asset::AssetManager::GetInstance(), asset::AssetCatalogProviderConfig{});
             log_system_ = std::make_unique<LogSystem>();
             input_system_ = std::make_unique<input::InputSystem>();
             lua_vm_ = std::make_unique<::kpengine::script::lua::LuaVM>();
@@ -542,6 +550,9 @@ namespace kpengine
             }
             report_progress(1, "Releasing level");
             level_instance_.reset();
+            // With the level: both are consumers of Asset state, and releasing the copy
+            // that describes that state before anything unloads is the safe order.
+            asset_catalog_provider_.reset();
             gameplay_world_.reset();
             report_progress(2, "Stopping reflection and scripting");
             if (reflection_system_)
@@ -598,6 +609,13 @@ namespace kpengine
         gameplay::IGameplayEditorEditSink *RuntimeContext::GetGameplayEditorEditSink() noexcept
         {
             return gameplay_editor_bridge_.get();
+        }
+
+        asset::IAssetCatalogSnapshotSource *RuntimeContext::GetAssetCatalogSnapshotSource() noexcept
+        {
+            // The concrete provider never appears in this signature, so an Editor header
+            // including this one still cannot see or name it.
+            return asset_catalog_provider_.get();
         }
 
     }

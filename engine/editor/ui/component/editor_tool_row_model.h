@@ -36,6 +36,7 @@ namespace kpengine::editor
     inline constexpr const char *kToolRowGpuProfilerId = "gpu_profiler";
     inline constexpr const char *kToolRowLogId = "log";
     inline constexpr const char *kToolRowConsoleId = "console";
+    inline constexpr const char *kToolRowAssetBrowserId = "asset_browser";
 
     // EditorRect lives in editor_layout_rect.h, shared with the layout model so the
     // editor has one screen-space rectangle type rather than two.

@@ -16,6 +16,7 @@
 #include "editor/ui/component/editor_console_component.h"
 #include "editor/ui/component/editor_debug_viewer_component.h"
 #include "editor/ui/component/editor_gpu_profiler_component.h"
+#include "editor/asset/editor_asset_browser_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
 #include "editor/ui/component/editor_tool_row_component.h"
 #include "editor/ui/component/editor_viewport_component.h"
@@ -370,6 +371,19 @@ namespace kpengine::editor
             init_info_.engine, init_info_.render_system, this);
     }
 
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildAssetBrowserPanel()
+    {
+        // The source is borrowed, and SetAssetCatalogSnapshotSource records it on init_info_
+        // before promotion. A null source is a supported state: the browser then renders as
+        // unavailable rather than not existing.
+        asset_browser_model_.SetSource(init_info_.asset_catalog_source);
+        // The one capture that is not user-requested, and the plan's only other permitted
+        // one. It is synchronous and opens the archive, so it happens once, here, rather
+        // than on any frame.
+        (void)asset_browser_model_.Refresh();
+        return std::make_unique<EditorAssetBrowserComponent>(asset_browser_model_);
+    }
+
     void EditorUI::BuildToolRow(LogSystem *log_system, const LogLevelColorTable &log_colors,
                                 runtime::command::CommandRegistry *command_registry,
                                 input::InputSystem *input_system, ImFont *code_font,
@@ -410,6 +424,11 @@ namespace kpengine::editor
                       /*open=*/true, EditorLayoutSlot::DebugViewer);
         row->AddPanel(kToolRowGpuProfilerId, "Performance Profiler", BuildGpuProfilerPanel(),
                       /*open=*/true, EditorLayoutSlot::GpuProfiler);
+
+        // Closed until asked for, so the default workspace is unchanged: the strip shows
+        // the Log alone and View > Asset Browser opens the browser into this dock.
+        row->AddPanel(kToolRowAssetBrowserId, "Asset Browser", BuildAssetBrowserPanel(),
+                      /*open=*/false);
 
         row->AddPanel(kToolRowLogId, "Log", BuildLogPanel(log_system, log_colors),
                       /*open=*/true);
@@ -518,6 +537,11 @@ namespace kpengine::editor
             // Scene-dependent tools are deliberately created only after Runtime
             // promotes the prepared catalog to the render thread.
             const bool actor_tools_available = BuildActorTools();
+            if (init_info_.asset_catalog_source == nullptr)
+            {
+                KP_LOG("LogEditorUI", LOG_LEVEL_WARNING,
+                       "asset browser unavailable: the asset catalog source is not published");
+            }
             BuildRegisteredWorkspaceExtensions();
             BuildProfileBar(init_info_.engine, init_info_.memory_sampler,
                             init_info_.render_system);
@@ -577,6 +601,19 @@ namespace kpengine::editor
         init_info_.reflection_catalog = reflection_catalog;
         init_info_.actor_snapshot_source = actor_snapshot_source;
         init_info_.actor_edit_sink = actor_edit_sink;
+    }
+
+    void EditorUI::SetAssetCatalogSnapshotSource(asset::IAssetCatalogSnapshotSource *source)
+    {
+        // Same barrier as the actor services, and for the same reason: the browser reads
+        // this once while the workspace is being built, so a late change could only mean
+        // some panels were built against a different source than others.
+        if (workspace_promoted_)
+        {
+            throw std::runtime_error(
+                "the asset catalog source cannot change after workspace promotion");
+        }
+        init_info_.asset_catalog_source = source;
     }
 
     bool EditorUI::RenderLoading()

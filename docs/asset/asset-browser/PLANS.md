@@ -106,6 +106,7 @@ Menu checkmarks and title-bar close buttons share one visibility state; the menu
 - **[AB1.2a — Imported content metadata and catalog boundary](.plan/AB1.2a.md):**
   freeze content, metadata identity/reference rules, internal shader
   visibility, and import/startup isolation before the browser UI.
+- **[AB1.2b — Visual tile presentation](.plan/AB1.2b.md):** make the Editor browser icon-first by default with clipped tiles, readable labels, and content-folder navigation; table mode remains available.
 - **[AB1.2 — Asset Browser window and Editor composition](.plan/AB1.2.md):**
   consume the imported-content snapshot through Runtime, add the snapshot-only
   Editor model, readable Table/Tiles UI, explicit refresh, and reactive View

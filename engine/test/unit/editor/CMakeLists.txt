@@ -92,3 +92,25 @@ target_link_libraries(EditorLayoutModelUnitTest PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(EditorLayoutModelUnitTest)
+
+# The asset browser model is ImGui-free AND Asset-library-free by design: it compiles its
+# own source and links only KP::GoogleTest, so a dependency on either — or a call into
+# Asset's validator — is a build error rather than a review finding. It includes the frozen
+# catalog contract for its value types, which is why engine/runtime is on the include path.
+add_executable(AssetBrowserModelUnitTest
+    asset_browser_model_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/asset/asset_browser_model.cpp
+)
+
+target_include_directories(AssetBrowserModelUnitTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+)
+
+target_link_libraries(AssetBrowserModelUnitTest PRIVATE
+    KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(AssetBrowserModelUnitTest)

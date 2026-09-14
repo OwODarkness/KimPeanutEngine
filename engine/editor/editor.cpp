@@ -86,6 +86,10 @@ namespace kpengine::editor
                 runtime::global_runtime_context.GetReflectionCatalog(),
                 runtime::global_runtime_context.GetGameplayEditorSnapshotSource(),
                 runtime::global_runtime_context.GetGameplayEditorEditSink());
+            // Borrowed for the lifetime of the built workspace and never owned here: the
+            // provider is Runtime's, and the Editor only reads snapshots through it.
+            editor_ui_->SetAssetCatalogSnapshotSource(
+                runtime::global_runtime_context.GetAssetCatalogSnapshotSource());
             editor_ui_->PromoteToWorkspace();
         }
     }

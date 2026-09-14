@@ -42,6 +42,14 @@ namespace kpengine::reflection
     class ReflectionSystem;
 }
 
+namespace kpengine::asset
+{
+    // Only the boundary is visible here. The concrete provider is Runtime's business, and
+    // the Editor sees it as this interface alone.
+    class IAssetCatalogSnapshotSource;
+    class AssetCatalogSnapshotProvider;
+}
+
 namespace kpengine::runtime::script
 {
     class LuaCommandBridge;
@@ -143,6 +151,12 @@ namespace kpengine
             const reflection::IReflectionCatalog *GetReflectionCatalog() const noexcept;
             gameplay::IGameplayEditorSnapshotSource *GetGameplayEditorSnapshotSource() noexcept;
             gameplay::IGameplayEditorEditSink *GetGameplayEditorEditSink() noexcept;
+
+            // The Asset-owned catalog boundary, borrowed by the Editor for its browser.
+            // Null when scene services do not exist, which is a state the Editor has to
+            // handle rather than assume away. Constructing the provider neither opens the
+            // database nor reads anything: only CaptureAssetCatalog() does.
+            asset::IAssetCatalogSnapshotSource *GetAssetCatalogSnapshotSource() noexcept;
             void SetStartupLevel(asset::AssetID level_asset) { startup_level_asset_ = level_asset; }
             void SetSceneCameraControlCaptured(bool captured) override;
             float GetSceneCameraMoveSpeed() const noexcept override;
@@ -169,6 +183,10 @@ namespace kpengine
             // Owns the committed startup level. Its destructor must unload
             // level-created Actors before GameplayWorld and RenderSystem.
             std::unique_ptr<LevelInstance> level_instance_;
+            // Borrows the process-lifetime AssetManager, so it can be released at any
+            // point in Clear without racing Asset teardown; it is released with the level,
+            // before anything that could unload what a capture described.
+            std::unique_ptr<asset::AssetCatalogSnapshotProvider> asset_catalog_provider_;
             std::unique_ptr<LogSystem> log_system_;
             std::unique_ptr<input::InputSystem> input_system_;
 

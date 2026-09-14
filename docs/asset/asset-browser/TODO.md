@@ -1,6 +1,6 @@
 # Asset Browser TODO
 
-**Status: AB1.0–AB1.1 implemented.** [AB1.2a](.plan/AB1.2a.md) freezes the imported-content boundary before AB1.2 UI work. Architecture is in [PLANS.md](PLANS.md). AB1.2–AB1.4 remain proposed. Parent work remains in [Asset Module TODO](../TODO.md).
+**Status: AB1.0–AB1.2a implemented; AB1.2b active.** [AB1.2b](.plan/AB1.2b.md) completes the icon-first visual browser milestone. Architecture is in [PLANS.md](PLANS.md). AB1.3–AB1.4 remain proposed. Parent work remains in [Asset Module TODO](../TODO.md).
 
 ## AB1 — Read-only Asset Browser and Reference Viewer
 
@@ -30,6 +30,8 @@
     Define content as the browser root, generated metadata records,
     ContentID references, product-hash details, internal shader visibility,
     and the import/startup isolation gates before changing the UI projection.
+
+  - [ ] **Visual substage: [AB1.2b — Visual Tile Presentation](.plan/AB1.2b.md).**
 
   - [ ] Add one Editor-owned model consuming only imported-content snapshots.
   - [ ] Register the browser as a tab in the Editor tool row (ED1) with navigation,

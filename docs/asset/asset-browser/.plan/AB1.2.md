@@ -1,6 +1,6 @@
 # AB1.2 — Asset Browser Window and Editor Composition
 
-- Status: proposed
+- Status: in progress; visual work tracked in [AB1.2b](AB1.2b.md)
 - Parent design: [Asset Browser Plans](../PLANS.md)
 - Roadmap: [Asset Browser TODO](../TODO.md)
 - Prerequisites: [AB1.0 catalog contract](AB1.0.md), [AB1.1 snapshot provider](AB1.1.md), [AB1.2a imported content boundary](AB1.2a.md)
@@ -276,7 +276,7 @@ the callback receives the stable key and cannot load the asset.
 3. Implement `AssetBrowserModel` refresh replacement, stable-key selection, and
    pure projections.
 4. Add category/folder navigation, search, filters, sorting, and formatting.
-5. Add the table/tile component, primitive icons, details pane, and status row.
+5. Implement [AB1.2b](AB1.2b.md): icon-first tiles, clipped grid rows, and content-folder navigation; retain the dense table presentation.
 6. Wire **View > Asset Browser**, initial explicit capture, and the unbound
    reference-open callback seam.
 7. Review destruction order and verify no per-frame capture or Asset mutation.
