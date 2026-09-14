@@ -456,6 +456,37 @@ TEST(TextureImportTest, NativeTextureCanCommitFromATailMip)
                  kpengine::asset::NativeTextureError);
 }
 
+TEST(TextureImportTest, NativeTextureRangeDecodeUsesOnlyResidentPayload)
+{
+    kpengine::asset::ImportedTexture source{};
+    source.image = MakeImage();
+    source.settings.semantic = kpengine::data::TextureSemantic::Color;
+    source.settings.max_dimension = 2;
+    const kpengine::asset::CookedTexture cooked =
+        kpengine::asset::TextureCooker{}.Cook(source);
+    const kpengine::asset::NativeTextureProduct full =
+        kpengine::asset::DeserializeNativeTexture(cooked.bytes);
+
+    const std::size_t directory_end = kpengine::asset::kNativeTextureHeaderSize +
+                                      kpengine::asset::kNativeTextureMipEntrySize *
+                                          full.data.GetMipLevelCount();
+    const std::size_t payload_offset = directory_end + full.data.pixels.size();
+    const kpengine::asset::NativeTextureProduct range =
+        kpengine::asset::DeserializeNativeTextureRange(
+            std::span<const std::byte>{cooked.bytes.data(), directory_end},
+            cooked.bytes.size(), 1,
+            std::span<const std::byte>{cooked.bytes.data() + payload_offset,
+                                       cooked.bytes.size() - payload_offset},
+            payload_offset);
+
+    EXPECT_EQ(range.data.first_resident_mip, 1u);
+    EXPECT_EQ(range.data.width, full.data.mip_subresources.front().width);
+    EXPECT_EQ(range.data.height, full.data.mip_subresources.front().height);
+    EXPECT_EQ(range.data.pixels, full.data.mip_subresources.front().pixels);
+    EXPECT_EQ(range.integrity_digest, full.integrity_digest);
+    EXPECT_EQ(range.product_hash, kpengine::asset::ContentHash{});
+}
+
 TEST(TextureImportTest, CooksSemanticBlockFormatsWithValidatedMipSizes)
 {
     kpengine::asset::ImportedTexture source{};

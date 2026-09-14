@@ -145,9 +145,10 @@ belongs in the corresponding `.spec/journal/` entry.
     ordinary-root in-flight loads, explicit loader concurrency policy, bounded
     loader slots, and independent dependency scheduling. AP1.5b now provides
     low-mip scene commit, bounded background full-texture decode, observable
-    promotion through Render, and deferred GPU texture retirement. Range-aware
-    reads, in-place subresource upload, and measured scene residency remain
-    open.
+    promotion through Render, and deferred GPU texture retirement. AP1.5c now
+    reads only the initial resident range and defers complete verification to
+    the background task. In-place subresource upload and measured scene
+    residency remain open.
   - [ ] **AP1.6 — Integration gate:** reach initial packaged Sponza scene commit
     within 5 seconds in RelWithDebInfo on the reference laptop and record full
     tests, Vulkan/OpenGL captures, latency, bytes, memory, and final-residency

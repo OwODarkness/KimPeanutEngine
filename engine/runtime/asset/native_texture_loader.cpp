@@ -4,6 +4,7 @@
 #include <magic_enum/magic_enum.hpp>
 #include <semaphore>
 #include <future>
+#include <limits>
 #include <utility>
 
 #include "asset_product.h"
@@ -26,22 +27,43 @@ namespace kpengine::asset
 
     namespace
     {
-        std::vector<std::byte> ReadProduct(const std::filesystem::path &path)
+        std::uintmax_t ProductSize(const std::filesystem::path &path)
         {
-            std::ifstream file(path, std::ios::binary | std::ios::ate);
+            std::error_code size_error;
+            const std::uintmax_t product_size = std::filesystem::file_size(path, size_error);
+            if (size_error || product_size > kNativeTextureMaxBytes)
+            {
+                throw NativeTextureError(NativeTextureErrorCode::Overflow,
+                                         "native texture product size is invalid");
+            }
+            return product_size;
+        }
+
+        std::vector<std::byte> ReadProductRange(const std::filesystem::path &path,
+                                                std::uint64_t offset,
+                                                std::uint64_t size)
+        {
+            const std::uintmax_t product_size = ProductSize(path);
+            if (offset > product_size || size > product_size - offset ||
+                size > std::numeric_limits<std::size_t>::max())
+            {
+                throw NativeTextureError(NativeTextureErrorCode::Overflow,
+                                         "native texture product range is invalid");
+            }
+
+            std::ifstream file(path, std::ios::binary);
             if (!file.is_open())
             {
                 throw NativeTextureError(NativeTextureErrorCode::InvalidArgument,
                                          "failed to open native texture product");
             }
-            const std::streampos end = file.tellg();
-            if (end < 0 || static_cast<std::uintmax_t>(end) > kNativeTextureMaxBytes)
+            file.seekg(static_cast<std::streamoff>(offset), std::ios::beg);
+            if (!file)
             {
-                throw NativeTextureError(NativeTextureErrorCode::Overflow,
-                                         "native texture product size is invalid");
+                throw NativeTextureError(NativeTextureErrorCode::InvalidArgument,
+                                         "failed to seek native texture product");
             }
-            std::vector<std::byte> bytes(static_cast<std::size_t>(end));
-            file.seekg(0, std::ios::beg);
+            std::vector<std::byte> bytes(static_cast<std::size_t>(size));
             if (!bytes.empty())
             {
                 file.read(reinterpret_cast<char *>(bytes.data()),
@@ -55,17 +77,64 @@ namespace kpengine::asset
             return bytes;
         }
 
-        std::uint32_t ReadMipCount(std::span<const std::byte> bytes)
+        std::uint32_t ReadU32(std::span<const std::byte> bytes, std::size_t offset)
         {
-            if (bytes.size() < kNativeTextureHeaderSize)
+            return static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
+                   (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[offset + 1])) << 8U) |
+                   (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[offset + 2])) << 16U) |
+                   (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[offset + 3])) << 24U);
+        }
+
+        std::uint64_t ReadU64(std::span<const std::byte> bytes, std::size_t offset)
+        {
+            std::uint64_t value = 0;
+            for (std::size_t shift = 0; shift < 64; shift += 8)
             {
-                throw NativeTextureError(NativeTextureErrorCode::Truncated,
-                                         "native texture header is truncated");
+                value |= static_cast<std::uint64_t>(
+                             std::to_integer<std::uint8_t>(bytes[offset + shift / 8]))
+                         << shift;
             }
-            return static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[32])) |
-                   (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[33])) << 8U) |
-                   (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[34])) << 16U) |
-                   (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[35])) << 24U);
+            return value;
+        }
+
+        struct NativeTextureDirectory
+        {
+            std::vector<std::byte> bytes;
+            std::uint64_t total_size{};
+            std::uint32_t mip_count{};
+        };
+
+        NativeTextureDirectory ReadNativeTextureDirectory(const std::filesystem::path &path)
+        {
+            const std::vector<std::byte> header =
+                ReadProductRange(path, 0, kNativeTextureHeaderSize);
+            const std::uint64_t total_size = ReadU64(header, 16);
+            const std::uint32_t mip_count = ReadU32(header, 32);
+            if (mip_count == 0 || mip_count > kNativeTextureMaxMipLevels)
+            {
+                throw NativeTextureError(NativeTextureErrorCode::InvalidDirectory,
+                                         "native texture mip count is invalid");
+            }
+            const std::uint64_t directory_size =
+                static_cast<std::uint64_t>(mip_count) * kNativeTextureMipEntrySize;
+            if (directory_size > std::numeric_limits<std::uint64_t>::max() -
+                                      kNativeTextureHeaderSize)
+            {
+                throw NativeTextureError(NativeTextureErrorCode::Overflow,
+                                         "native texture directory size overflows");
+            }
+            const std::uint64_t directory_end = kNativeTextureHeaderSize + directory_size;
+            if (directory_end > total_size)
+            {
+                throw NativeTextureError(NativeTextureErrorCode::InvalidDirectory,
+                                         "native texture directory is outside the product");
+            }
+            if (ProductSize(path) != total_size)
+            {
+                throw NativeTextureError(NativeTextureErrorCode::InvalidDirectory,
+                                         "native texture file size does not match its header");
+            }
+            return {ReadProductRange(path, 0, directory_end), total_size, mip_count};
         }
 
         std::filesystem::path ResolveVerificationRoot(
@@ -91,7 +160,8 @@ namespace kpengine::asset
                                            const std::filesystem::path &product_root,
                                            std::uint32_t first_mip_level)
         {
-            const std::vector<std::byte> bytes = ReadProduct(product_path);
+            const std::vector<std::byte> bytes = ReadProductRange(
+                product_path, 0, ProductSize(product_path));
             const auto hashes = Sha256WithZeroedRange(bytes, kNativeTextureDigestOffset,
                                                       kNativeTextureDigestSize);
             if (!hashes)
@@ -109,6 +179,30 @@ namespace kpengine::asset
                                          "invalid native texture archive product: " + diagnostic);
             }
             return DeserializeNativeTexture(bytes, &*hashes, first_mip_level);
+        }
+
+        NativeTextureProduct ReadInitialAndDecode(const std::filesystem::path &product_path,
+                                                  std::uint32_t first_mip_level)
+        {
+            const NativeTextureDirectory directory = ReadNativeTextureDirectory(product_path);
+            const std::size_t entry_offset = kNativeTextureHeaderSize +
+                                              static_cast<std::size_t>(first_mip_level) *
+                                                  kNativeTextureMipEntrySize;
+            if (entry_offset + kNativeTextureMipEntrySize > directory.bytes.size())
+            {
+                throw NativeTextureError(NativeTextureErrorCode::InvalidDirectory,
+                                         "native texture resident mip entry is invalid");
+            }
+            const std::uint64_t payload_offset = ReadU64(directory.bytes, entry_offset + 12);
+            if (payload_offset > directory.total_size)
+            {
+                throw NativeTextureError(NativeTextureErrorCode::InvalidDirectory,
+                                         "native texture resident payload offset is invalid");
+            }
+            const std::vector<std::byte> payload = ReadProductRange(
+                product_path, payload_offset, directory.total_size - payload_offset);
+            return DeserializeNativeTextureRange(directory.bytes, directory.total_size,
+                                                 first_mip_level, payload, payload_offset);
         }
 
         std::shared_ptr<const TextureData> LoadFullResolutionData(
@@ -136,39 +230,21 @@ namespace kpengine::asset
         try
         {
             const std::filesystem::path product_path{path};
-            const std::vector<std::byte> bytes = ReadProduct(product_path);
-            const auto hashes = Sha256WithZeroedRange(bytes, kNativeTextureDigestOffset,
-                                                      kNativeTextureDigestSize);
-            if (!hashes)
-            {
-                throw NativeTextureError(NativeTextureErrorCode::Truncated,
-                                         "native texture digest is truncated");
-            }
-            std::string diagnostic;
-            if (!VerifyArchiveProduct(product_path, ArchiveProductType::Texture, bytes,
-                                       diagnostic,
-                                       ResolveVerificationRoot(product_path, product_root_),
-                                       hashes->content_hash))
-            {
-                throw NativeTextureError(NativeTextureErrorCode::IntegrityMismatch,
-                                         "invalid native texture archive product: " + diagnostic);
-            }
-            const std::uint32_t mip_count = ReadMipCount(bytes);
+            const NativeTextureDirectory directory = ReadNativeTextureDirectory(product_path);
+            const std::uint32_t mip_count = directory.mip_count;
             const std::uint32_t requested_levels =
                 initial_mip_level_count_.load(std::memory_order_acquire);
             const std::uint32_t format_value =
-                static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[36])) |
-                (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[37])) << 8U) |
-                (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[38])) << 16U) |
-                (static_cast<std::uint32_t>(std::to_integer<std::uint8_t>(bytes[39])) << 24U);
+                ReadU32(directory.bytes, 36);
             const std::uint32_t first_mip_level = format_value !=
                                                           static_cast<std::uint32_t>(TextureFormat::TEXTURE_FORMAT_RGBA16F) &&
-                                                      requested_levels != 0 &&
+                                                       requested_levels != 0 &&
                                                           requested_levels < mip_count
                                                       ? mip_count - requested_levels
                                                       : 0;
-            NativeTextureProduct product =
-                DeserializeNativeTexture(bytes, &*hashes, first_mip_level);
+            NativeTextureProduct product = first_mip_level == 0
+                                               ? ReadAndDecode(product_path, product_root_, 0)
+                                               : ReadInitialAndDecode(product_path, first_mip_level);
             auto texture = std::make_shared<TextureResource>();
             texture->channel_count = 4;
             *texture->data = std::move(product.data);

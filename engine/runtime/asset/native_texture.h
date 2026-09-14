@@ -65,6 +65,16 @@ namespace kpengine::asset
         const ContentHashPair *verified_hashes = nullptr,
         std::uint32_t first_mip_level = 0);
 
+    // Validates the header and complete mip directory, then decodes only the
+    // supplied contiguous payload range. The full product digest is checked
+    // by the background full-resolution read, not by this range operation.
+    NativeTextureProduct DeserializeNativeTextureRange(
+        std::span<const std::byte> header_and_directory,
+        std::uint64_t total_size,
+        std::uint32_t first_mip_level,
+        std::span<const std::byte> payload,
+        std::uint64_t payload_offset);
+
     // Validates only the bounded container structure and integrity digest.
     // Unlike DeserializeNativeTexture, this never allocates mip payloads.
     void ValidateNativeTextureProductStructure(

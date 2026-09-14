@@ -367,9 +367,9 @@ contiguous priority reads.
 AP1.4 package mounting is deferred until the engine has a publish/shipping
 consumer. AP1.5 starts on the loose development products. The first slice is
 the scheduling baseline below; it preserves the current complete-mip render
-contract while the cross-module residency work remains AP1.5b.
+contract while the cross-module residency work lands through AP1.5c.
 
-- [AP1.5a implementation notes](AP1.5.md)
+- [AP1.5a/AP1.5c implementation notes](AP1.5.md)
 
 - Introduce shared in-flight work keyed by canonical product identity.
 - Add per-loader concurrency policy and a bounded worker budget.

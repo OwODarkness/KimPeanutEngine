@@ -1,6 +1,6 @@
 # Project Status
 
-- **Asset AP1.5b low-mip residency slice (2026-09-14)** — AP1.4
+- **Asset AP1.5c range-aware residency reads (2026-09-14)** — AP1.4
   package/TOC work is explicitly deferred until the engine has a
   publish/shipping consumer. On the current loose `.archive` development path,
   Asset type descriptors now declare loader concurrency; built-in stateless
@@ -12,10 +12,12 @@
   inputs stay complete. The Asset regression set remains green at 139/139;
   the texture import suite is green at 11/11 including tail-mip commit, and
   the checked-in `level/performance_profile.level` remains the runtime
-  validation fixture. Range-aware file reads and in-place GPU mip upload remain
+  validation fixture. Initial texture reads now fetch only the header,
+  directory, and resident tail; complete hash/archive verification remains in
+  the lazy background full-resolution task. In-place GPU mip upload remains
   open. →
   [AP1.5 plan](asset/.plan/AP1.5.md),
-  [AP1.5b journal](../.spec/journal/2026-09-14-asset-ap1-5b.md)
+  [AP1.5c journal](../.spec/journal/2026-09-14-asset-ap1-5b.md)
 
 - **C++20 module migration pass (2026-09-14)** — Core hash/cache/database/texture
   inputs, Asset product readers, Render snapshots/light data, Graphics buffer

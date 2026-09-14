@@ -1,6 +1,7 @@
-# AP1.5a — Loose-product scheduling baseline
+# AP1.5 — Loose-product scheduling and residency
 
-- Status: AP1.5b initial residency slice landed; bounded streaming follow-up remains
+- Status: AP1.5c range-aware initial texture reads landed; bounded streaming
+  follow-up remains
 - Parent: [AP1 — Startup Asset Loading Performance](AP1.md)
 - Roadmap: [Asset Module TODO](../TODO.md#startup-performance-roadmap)
 
@@ -42,6 +43,23 @@ the editor startup path; direct loaders, tools, and tests retain full loading
 until they opt in. The native container schema and AssetID identity do not
 change.
 
-Remaining AP1.5 work is range-aware file I/O (the current loose loader still
-hashes and reads the complete product), true GPU subresource upload for
-in-place promotion, and a measured scene-level residency budget.
+## AP1.5c range-aware initial reads
+
+The editor/development loader trusts the bounded native texture header and mip
+directory long enough to publish the requested resident tail. It reads only
+the header/directory and one contiguous payload range beginning at the first
+resident mip; it does not hash or allocate the complete product on the Asset
+startup path. The existing lazy full-resolution task remains the background
+verification path: it reads the complete immutable product, verifies its
+digest and content-addressed archive location, and only then promotes the full
+CPU view for Render.
+
+This is intentionally an optimistic development-time policy. A malformed
+header/directory or resident range still fails synchronously, while corruption
+outside the resident range is reported by the background verification. A
+future package/TOC or per-chunk-hash path may make that verification trusted
+without rereading the complete loose product, but it is not required for the
+current editor workflow.
+
+Remaining AP1.5 work is true GPU subresource upload for in-place promotion and
+a measured scene-level residency budget.
