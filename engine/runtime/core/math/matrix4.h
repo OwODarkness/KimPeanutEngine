@@ -5,26 +5,24 @@
 #include <cassert>
 #include <cstddef>
 #include <algorithm>
+#include <concepts>
 #include <span>
 #include <stdexcept>
-#include <type_traits>
 #include <initializer_list>
 
 
 namespace kpengine::math
 {
-    template<typename T> class Matrix3;
-    template<typename T> class Matrix4;
-    template<typename T> class Vector3;
-    template<typename T> class Vector4;
-    template<typename T> class Rotator;
-    template<typename T> class Transform;
+    template<std::floating_point T> class Matrix3;
+    template<std::floating_point T> class Matrix4;
+    template<std::floating_point T> class Vector3;
+    template<std::floating_point T> class Vector4;
+    template<std::floating_point T> class Rotator;
+    template<std::floating_point T> class Transform;
 
-    template <typename T>
+    template <std::floating_point T>
     class Matrix4
     {
-        static_assert(std::is_floating_point_v<T>, "T must be floating point");
-
     public:
         Matrix4();
         Matrix4(const Matrix4 &m);
@@ -73,13 +71,13 @@ namespace kpengine::math
         Matrix4 operator*(const Matrix4 &mat) const;
 
         Vector4<T> operator*(const Vector4<T> &v) const;
-        template <typename U, typename V>
+        template <typename U, std::floating_point V>
         friend Matrix4<V> operator+(U scalar, const Matrix4<V> &mat);
 
-        template <typename U, typename V>
+        template <typename U, std::floating_point V>
         friend Matrix4<V> operator-(U scalar, const Matrix4<V> &mat);
 
-        template <typename U, typename V>
+        template <typename U, std::floating_point V>
         friend Matrix4<V> operator*(U scalar, const Matrix4<V> &mat);
 
         Matrix4 Transpose() const;

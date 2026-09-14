@@ -3,7 +3,7 @@
 #include "math.h"
 namespace kpengine::math
 {
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T>::Matrix3()
     {
         const T k_zero = T(0);
@@ -12,12 +12,12 @@ namespace kpengine::math
         data_[2] = {k_zero, k_zero, k_zero};
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T>::Matrix3(const Matrix3 &m) : data_(m.data_)
     {
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T>::Matrix3(const T (&arr)[3][3])
     {
         std::copy(arr[0], arr[0] + 3, data_[0].begin());
@@ -25,7 +25,7 @@ namespace kpengine::math
         std::copy(arr[2], arr[2] + 3, data_[2].begin());
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T>::Matrix3(const T (&arr)[9])
     {
         std::copy(arr, arr + 3, data_[0].begin());
@@ -33,7 +33,7 @@ namespace kpengine::math
         std::copy(arr + 6, arr + 9, data_[2].begin());
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T>::Matrix3(std::initializer_list<T> list)
     {
         if (list.size() != 9)
@@ -46,7 +46,7 @@ namespace kpengine::math
         std::copy(list.begin() + 6, list.end(), data_[2].begin());
     }
 
-    template <typename T>
+    template <std::floating_point T>
     bool Matrix3<T>::operator==(const Matrix3 &mat) const
     {
         for (size_t i = 0; i < 3; i++)
@@ -62,13 +62,13 @@ namespace kpengine::math
         return true;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     bool Matrix3<T>::operator!=(const Matrix3 &mat) const
     {
         return !this->operator==(mat);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::operator+(T scalar) const
     {
         Matrix3 res;
@@ -82,7 +82,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::operator-(T scalar) const
     {
         Matrix3 res;
@@ -96,7 +96,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::operator*(T scalar) const
     {
         Matrix3 res;
@@ -110,7 +110,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::operator/(T scalar) const
     {
         assert(scalar != T(0));
@@ -126,7 +126,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::operator+(const Matrix3 &mat) const
     {
         Matrix3 res;
@@ -140,7 +140,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::operator-(const Matrix3 &mat) const
     {
         Matrix3 res;
@@ -154,7 +154,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::operator-() const
     {
         Matrix3 res;
@@ -168,7 +168,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::operator*(const Matrix3 &mat) const
     {
         Matrix3 res;
@@ -187,7 +187,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T> Matrix3<T>::operator*(const Vector3<T> &v) const
     {
         Vector3<T> res;
@@ -198,7 +198,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> &Matrix3<T>::operator+=(T scalar)
     {
         for (size_t i = 0; i < 3; i++)
@@ -211,7 +211,7 @@ namespace kpengine::math
         return *this;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> &Matrix3<T>::operator-=(T scalar)
     {
         for (size_t i = 0; i < 3; i++)
@@ -226,7 +226,7 @@ namespace kpengine::math
 
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> &Matrix3<T>::operator*=(T scalar)
     {
         for (size_t i = 0; i < 3; i++)
@@ -241,7 +241,7 @@ namespace kpengine::math
 
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> &Matrix3<T>::operator/=(T scalar)
     {
         assert(scalar != T(0));
@@ -259,7 +259,7 @@ namespace kpengine::math
     }
 
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> &Matrix3<T>::operator+=(const Matrix3<T>& mat)
     {
         for (size_t i = 0; i < 3; i++)
@@ -274,7 +274,7 @@ namespace kpengine::math
     }
 
     
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> &Matrix3<T>::operator-=(const Matrix3& mat)
     {
         for (size_t i = 0; i < 3; i++)
@@ -288,7 +288,7 @@ namespace kpengine::math
     }
 
 
-    template <typename T, typename U>
+    template <typename T, std::floating_point U>
     Matrix3<U> operator+(T scalar, const Matrix3<U> &mat)
     {
         Matrix3<U> res;
@@ -303,7 +303,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T, typename U>
+    template <typename T, std::floating_point U>
     Matrix3<U> operator-(T scalar, const Matrix3<U> &mat)
     {
         Matrix3<U> res;
@@ -318,7 +318,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T, typename U>
+    template <typename T, std::floating_point U>
     Matrix3<U> operator*(T scalar, const Matrix3<U> &mat)
     {
         Matrix3<U> res;
@@ -333,7 +333,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::Transpose() const
     {
         Matrix3 res;
@@ -347,7 +347,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     T Matrix3<T>::Determinant() const
     {
         T coff_00 = data_[0][0] * (data_[1][1] * data_[2][2] - data_[1][2] * data_[2][1]);
@@ -356,7 +356,7 @@ namespace kpengine::math
         return coff_00 + coff_01 + coff_02;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::Adjoint() const
     {
         return Matrix3({data_[1][1] * data_[2][2] - data_[1][2] * data_[2][1],
@@ -372,7 +372,7 @@ namespace kpengine::math
                         data_[0][0] * data_[1][1] - data_[0][1] * data_[1][0]});
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::Inverse() const
     {
         T det = Determinant();
@@ -383,7 +383,7 @@ namespace kpengine::math
         return Adjoint() / det;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::Identity()
     {
         return Matrix3{
@@ -392,7 +392,7 @@ namespace kpengine::math
             0, 0, T(1)};
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix3<T>::Zero()
     {
         return Matrix3{

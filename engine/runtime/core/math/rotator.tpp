@@ -6,20 +6,20 @@
 namespace kpengine::math
 {
 
-    template <typename T>
+    template <std::floating_point T>
     Rotator<T>::Rotator() : pitch_(0), yaw_(0), roll_(0) {}
 
-    template <typename T>
+    template <std::floating_point T>
     Rotator<T>::Rotator(T pitch, T yaw, T roll) : pitch_(pitch), yaw_(yaw), roll_(roll)
     {
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Rotator<T>::Rotator(const Rotator &rhs) : pitch_(rhs.pitch_), yaw_(rhs.yaw_), roll_(rhs.roll_)
     {
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T> Rotator<T>::ToQuat() const
     {
         T half_pitch = DegreeToRadian(pitch_) * T(0.5);
@@ -38,7 +38,7 @@ namespace kpengine::math
         return Quaternion<T>(w, x, y, z);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T> Rotator<T>::RotateVector(const Vector3<T> &v) const
     {
         Quaternion<T> quat = this->ToQuat();

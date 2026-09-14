@@ -2,28 +2,28 @@
 #include <cmath>
 namespace kpengine::math
 {
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T>::Vector3() : x_{}, y_{}, z_{} {}
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T>::Vector3(T value) : x_(value), y_(value), z_(value) {}
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T>::Vector3(T x, T y, T z) : x_(x), y_(y), z_(z) {}
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T>::Vector3(std::span<const T, 3> values)
         : x_(values[0]), y_(values[1]), z_(values[2]) {}
 
-    template <typename T>
+    template <std::floating_point T>
     T Vector3<T>::SquareLength() const { return x_ * x_ + y_ * y_ + z_ * z_; }
-    template <typename T>
+    template <std::floating_point T>
     T Vector3<T>::Norm() const { return std::sqrt(SquareLength()); }
 
-    template <typename T>
+    template <std::floating_point T>
     T Vector3<T>::DotProduct(const Vector3 &v) const
     {
         return x_ * v.x_ + y_ * v.y_ + z_ * v.z_;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T> Vector3<T>::CrossProduct(const Vector3 &v) const
     {
         return Vector3(
@@ -32,13 +32,13 @@ namespace kpengine::math
             x_ * v.y_ - y_ * v.x_);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T> Vector3<T>::Reflect(const Vector3 &Normal) const
     {
         return this->operator-(2 * this->DotProduct(Normal) * Normal);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     void Vector3<T>::Normalize()
     {
         T length = Norm();
@@ -52,7 +52,7 @@ namespace kpengine::math
         z_ *= coff;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     void Vector3<T>::SafetyNormalize()
     {
         double length = Norm();
@@ -67,7 +67,7 @@ namespace kpengine::math
         z_ *= coff;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T> Vector3<T>::GetSafetyNormalize() const
     {
         double length = Norm();

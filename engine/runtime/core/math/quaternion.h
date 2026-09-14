@@ -1,22 +1,21 @@
 #ifndef KPENGINE_RUNTIME_MATH_QUATERNION_H
 #define KPENGINE_RUNTIME_MATH_QUATERNION_H
 
+#include <concepts>
 #include <cmath>
 
 #include "math.h"
 
 namespace kpengine::math
 {
-    template <typename T>
+    template <std::floating_point T>
     class Rotator;
-    template <typename T>
+    template <std::floating_point T>
     class Vector3;
 
-    template <typename T>
+    template <std::floating_point T>
     class Quaternion
     {
-        static_assert(std::is_floating_point_v<T>, "T must be floating point");
-
     public:
         Quaternion();
         Quaternion(T w, T x, T y, T z);

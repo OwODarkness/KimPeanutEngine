@@ -1,17 +1,16 @@
 #ifndef KPENGINE_RUNTIME_MATH_ROTATOR_H
 #define KPENGINE_RUNTIME_MATH_ROTATOR_H
 
+#include <concepts>
 
 namespace kpengine::math
 {
-    template<typename T>class Vector3;
-    template<typename T>class Quaternion;
+    template<std::floating_point T>class Vector3;
+    template<std::floating_point T>class Quaternion;
 
-    template <typename T>
+    template <std::floating_point T>
     class Rotator
     {
-        static_assert(std::is_floating_point_v<T>, "T must be floating point");
-
     public:
         Rotator();
         Rotator(T pitch, T yaw, T roll) ;

@@ -3,17 +3,14 @@
 
 #include <cstddef>
 #include <cassert>
+#include <concepts>
 #include <span>
-#include <type_traits> 
 namespace kpengine::math
 {
 
-    template <typename T>
+    template <std::floating_point T>
     class Vector2
     {
-
-        static_assert(std::is_floating_point_v<T>, "T must be floating point");
-
     public:
         Vector2();
         explicit Vector2(T value);
@@ -106,35 +103,35 @@ namespace kpengine::math
             return *this;
         }
 
-        template <typename U>
+        template <std::floating_point U>
         friend Vector2<U> operator+(U scalar, const Vector2<U> &v);
 
-        template <typename U, typename V>
+        template <typename U, std::floating_point V>
         friend Vector2<U> operator+(U scalar, const Vector2<U> &v);
 
-        template <typename U>
+        template <std::floating_point U>
         friend Vector2<U> operator-(U scalar, const Vector2<U> &v);
 
-        template <typename U, typename V>
+        template <typename U, std::floating_point V>
         friend Vector2<U> operator-(U scalar, const Vector2<U> &v);
 
-        template <typename U>
+        template <std::floating_point U>
         friend Vector2<U> operator*(U scalar, const Vector2<U> &v);
 
-        template <typename U, typename V>
+        template <typename U, std::floating_point V>
         friend Vector2<U> operator*(U scalar, const Vector2<U> &v);
 
     public:
         T x_, y_;
     };
 
-    template <typename T>
+    template <std::floating_point T>
     Vector2<T> operator+(T scalar, const Vector2<T> &v)
     {
         return Vector2<T>(scalar + v.x_, scalar + v.y_);
     }
 
-    template <typename T, typename U>
+    template <typename T, std::floating_point U>
     Vector2<U> operator+(T scalar, const Vector2<U> &v)
     {
         U scalar_u = static_cast<U>(scalar);
@@ -143,13 +140,13 @@ namespace kpengine::math
             scalar_u + v.y_);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector2<T> operator-(T scalar, const Vector2<T> &v)
     {
         return Vector2<T>(scalar - v.x_, scalar - v.y_);
     }
 
-    template <typename T, typename U>
+    template <typename T, std::floating_point U>
     Vector2<U> operator-(T scalar, const Vector2<U> &v)
     {
         U scalar_u = static_cast<U>(scalar);
@@ -158,13 +155,13 @@ namespace kpengine::math
             scalar_u - v.y_);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector2<T> operator*(T scalar, const Vector2<T> &v)
     {
         return Vector2<T>(scalar * v.x_, scalar * v.y_);
     }
 
-    template <typename T, typename U>
+    template <typename T, std::floating_point U>
     Vector2<U> operator*(T scalar, const Vector2<U> &v)
     {
         U scalar_u = static_cast<U>(scalar);

@@ -8,7 +8,7 @@
 
 namespace kpengine::math
 {
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T>::Matrix4()
     {
         const T k_zero = T(0);
@@ -18,12 +18,12 @@ namespace kpengine::math
         }
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T>::Matrix4(const Matrix4 &m) : data_(m.data_)
     {
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T>::Matrix4(const T (&arr)[4][4])
     {
         for (size_t i = 0; i < 4; ++i)
@@ -32,7 +32,7 @@ namespace kpengine::math
         }
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T>::Matrix4(const Matrix3<T> &m)
     {
         for (size_t i = 0; i < 3; i++)
@@ -45,7 +45,7 @@ namespace kpengine::math
         data_[3][3] = T(1);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T>::Matrix4(std::initializer_list<T> list)
     {
         if (list.size() != 16)
@@ -61,7 +61,7 @@ namespace kpengine::math
         }
     }
 
-    template <typename T>
+    template <std::floating_point T>
     bool Matrix4<T>::operator==(const Matrix4 &mat) const
     {
         for (size_t i = 0; i < 4; i++)
@@ -77,13 +77,13 @@ namespace kpengine::math
         return true;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     bool Matrix4<T>::operator!=(const Matrix4 &mat) const
     {
         return !(*this == mat);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::operator+(T scalar) const
     {
         Matrix4 res;
@@ -97,7 +97,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::operator-(T scalar) const
     {
         Matrix4 res;
@@ -111,7 +111,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::operator*(T scalar) const
     {
         Matrix4 res;
@@ -125,13 +125,13 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::operator/(T scalar) const
     {
         return *this * (T(1) / scalar);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::operator+(const Matrix4 &mat) const
     {
         Matrix4 res;
@@ -145,7 +145,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::operator-(const Matrix4 &mat) const
     {
         Matrix4 res;
@@ -159,7 +159,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::operator-() const
     {
         Matrix4 res;
@@ -173,7 +173,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::operator*(const Matrix4 &mat) const
     {
         Matrix4 res;
@@ -191,7 +191,7 @@ namespace kpengine::math
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector4<T> Matrix4<T>::operator*(const Vector4<T> &v) const
     {
         Vector4<T> res;
@@ -201,7 +201,7 @@ namespace kpengine::math
         }
         return res;
     }
-template <typename T, typename U>
+template <typename T, std::floating_point U>
     Matrix4<U> operator+(T scalar, const Matrix4<U> &mat)
     {
         Matrix4<U> res;
@@ -216,7 +216,7 @@ template <typename T, typename U>
         return res;
     }
 
-    template <typename T, typename U>
+    template <typename T, std::floating_point U>
     Matrix4<U> operator-(T scalar, const Matrix4<U> &mat)
     {
         Matrix4<U> res;
@@ -231,7 +231,7 @@ template <typename T, typename U>
         return res;
     }
 
-    template <typename T, typename U>
+    template <typename T, std::floating_point U>
     Matrix4<U> operator*(T scalar, const Matrix4<U> &mat)
     {
         Matrix4<U> res;
@@ -246,7 +246,7 @@ template <typename T, typename U>
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::Transpose() const
     {
         Matrix4 res;
@@ -259,14 +259,14 @@ template <typename T, typename U>
         }
         return res;
     }
-    template <typename T>
+    template <std::floating_point T>
     T Matrix4<T>::GetMinor(size_t r0, size_t r1, size_t r2, size_t c0, size_t c1, size_t c2) const
     {
         return data_[r0][c0] * (data_[r1][c1] * data_[r2][c2] - data_[r1][c2] * data_[r2][c1]) +
                data_[r0][c1] * (data_[r1][c2] * data_[r2][c0] - data_[r1][c0] * data_[r2][c2]) +
                data_[r0][c2] * (data_[r1][c0] * data_[r2][c1] - data_[r1][c1] * data_[r2][c0]);
     }
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix4<T>::GetSubMatrix(size_t row_index, size_t col_index) const
     {
         Matrix3<T> res;
@@ -293,7 +293,7 @@ template <typename T, typename U>
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix3<T> Matrix4<T>::GetMatrix3() const
     {
         Matrix3<T> res;
@@ -307,7 +307,7 @@ template <typename T, typename U>
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     T Matrix4<T>::Determinant() const
     {
         return data_[0][0] * GetMinor(1, 2, 3, 1, 2, 3) -
@@ -316,7 +316,7 @@ template <typename T, typename U>
                data_[0][3] * GetMinor(0, 1, 2, 1, 2, 3);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::Adjoint() const
     {
         return Matrix4({GetMinor(1, 2, 3, 1, 2, 3),
@@ -340,7 +340,7 @@ template <typename T, typename U>
                         GetMinor(0, 1, 2, 0, 1, 2)});
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::Inverse() const
     {
         T det = Determinant();
@@ -352,7 +352,7 @@ template <typename T, typename U>
         return coff * Adjoint();
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::Identity()
     {
         return Matrix4{
@@ -361,7 +361,7 @@ template <typename T, typename U>
             0, 0, T(1), 0,
             0, 0, 0, T(1)};
     }
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::Zero()
     {
         return Matrix4{
@@ -370,7 +370,7 @@ template <typename T, typename U>
             0, 0, 0, 0,
             0, 0, 0, 0};
     }
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::MakeRotationMatrixOld(const Rotator<T> &rotator)
     {
         Matrix4 mat_roll = Matrix4::Identity();
@@ -404,7 +404,7 @@ template <typename T, typename U>
     }
 
     // TODO: Gimbal Lock
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::MakeRotationMatrix(const Rotator<T> &rotator)
     {
         Quaternion<T> quat = rotator.ToQuat();
@@ -467,7 +467,7 @@ template <typename T, typename U>
 
         return mat;
     }
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::MakeScaleMatrix(const Vector3<T> &scale)
     {
         Matrix4 res = Matrix4::Identity();
@@ -477,7 +477,7 @@ template <typename T, typename U>
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::MakeTranslationMatrix(const Vector3<T> &translate)
     {
         Matrix4 res = Matrix4::Identity();
@@ -487,14 +487,14 @@ template <typename T, typename U>
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::MakeTransformMatrix(const Transform<T> &transfrom)
     {
         return MakeTranslationMatrix(transfrom.position_) *
                MakeRotationMatrix(transfrom.rotator_) *
                MakeScaleMatrix(transfrom.scale_);
     }
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::MakeCameraMatrix(const Vector3<T> &eye_pos, const Vector3<T> &gaze_dir, const Vector3<T> &up)
     {
         Vector3<T> w = -(gaze_dir).GetSafetyNormalize();
@@ -519,7 +519,7 @@ template <typename T, typename U>
         return res;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::MakeOrthProjMatrix(T left, T right, T bottom, T top, T near, T far)
     {
         const T width = right - left;
@@ -535,7 +535,7 @@ template <typename T, typename U>
         result.data_[3][3] = T(1);
         return result;
     }
-    template <typename T>
+    template <std::floating_point T>
     Matrix4<T> Matrix4<T>::MakePerProjMatrix(T fov, T aspect, T near, T far)
     {
         const T half_radian = T(0.5 * fov);

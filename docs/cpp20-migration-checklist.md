@@ -64,6 +64,8 @@ Live2D probe.
   queue ownership remain unchanged.
 - [x] Math scalar helpers use `std::floating_point` constraints and `constexpr`
   arithmetic where the standard library permits it.
+  - [x] Vector, matrix, quaternion, rotator, and transform templates use
+    `std::floating_point` constraints instead of class-body type assertions.
   - [x] Vector inputs and matrix rows provide fixed-extent `std::span` boundaries;
     legacy vector raw-data constructors and `Data()` access were removed because
     they could not express or guarantee a valid fixed-size view.
@@ -72,8 +74,8 @@ Live2D probe.
 - [x] Vector component indexing no longer relies on pointer arithmetic across
   separate data members.
 - [x] Matrix initializer lists validate their exact element count.
-- [-] `AssetImport` still triggers an MSVC 14.34 internal compiler error while
-  instantiating `Matrix4::MakeOrthProjMatrix`; standalone Math validation passes.
+- [x] `AssetImport` compiles with the constrained math templates and the
+  centralized Matrix4 implementation unit; standalone Math validation passes.
 - [x] Convert the core MurmurHash byte API to `std::span<const std::byte>`;
   return its fixed two-word digest by value without changing hash composition.
 - [x] Convert synchronous texture mip source pixels and database BLOB binding

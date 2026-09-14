@@ -7,18 +7,18 @@
 namespace kpengine::math
 {
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T>::Quaternion() : w_(1), x_(0), y_(0), z_(0) {}
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T>::Quaternion(T w, T x, T y, T z) : w_(w), x_(x), y_(y), z_(z)
     {
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T>::Quaternion(const Quaternion &rhs) : w_(rhs.w_), x_(rhs.x_), y_(rhs.y_), z_(rhs.z_) {}
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T> Quaternion<T>::operator*(const Quaternion &rhs) const
     {
         return {
@@ -28,7 +28,7 @@ namespace kpengine::math
             w_ * rhs.z_ + x_ * rhs.y_ - y_ * rhs.x_ + z_ * rhs.w_};
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T> &Quaternion<T>::operator=(const Quaternion &rhs)
     {
         w_ = rhs.w_;
@@ -38,7 +38,7 @@ namespace kpengine::math
         return *this;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     void Quaternion<T>::Normalize()
     {
         T len = std::sqrt(w_ * w_ + x_ * x_ + y_ * y_ + z_ * z_);
@@ -51,7 +51,7 @@ namespace kpengine::math
         z_ *= coff;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T> Quaternion<T>::GetNormalizedQuat() const
     {
         T len = std::sqrt(w_ * w_ + x_ * x_ + y_ * y_ + z_ * z_);
@@ -64,13 +64,13 @@ namespace kpengine::math
         return Quaternion(w_ * coff, x_ * coff, y_ * coff, z_ * coff);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T> Quaternion<T>::GetNormailizedQuat() const
     {
         return GetNormalizedQuat();
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Rotator<T> Quaternion<T>::ToRotator() const
     {
         T sin_roll = T(2) * (w_ * z_ + x_ * y_);
@@ -88,13 +88,13 @@ namespace kpengine::math
         return Rotator<T>(pitch, yaw, roll);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T> Quaternion<T>::Conjugate() const
     {
         return {w_, -x_, -y_, -z_};
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T> Quaternion<T>::RotateVector(const Vector3<T> &v) const
     {
         Quaternion<T> v_quat{T(0), v.x_, v.y_, v.z_};
@@ -102,7 +102,7 @@ namespace kpengine::math
         return Vector3<T>(res_quat.x_, res_quat.y_, res_quat.z_);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Quaternion<T> Quaternion<T>::FromAxisAngle(const Vector3<T> &axis, T angle)
     {
         T half_angle = angle * T(0.5);

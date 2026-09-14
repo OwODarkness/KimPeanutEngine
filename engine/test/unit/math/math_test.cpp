@@ -2,6 +2,7 @@
 
 #include <array>
 #include <cmath>
+#include <concepts>
 #include <span>
 #include <stdexcept>
 
@@ -9,6 +10,14 @@
 
 namespace
 {
+    template <typename T>
+    concept Matrix4Specialization = requires
+    {
+        typename kpengine::math::Matrix4<T>;
+    };
+
+    static_assert(Matrix4Specialization<float>);
+    static_assert(!Matrix4Specialization<int>);
     static_assert(kpengine::math::Lerp(0.0f, 10.0f, 0.25f) == 2.5f);
     static_assert(kpengine::math::DegreeToRadian(180.0) == kpengine::math::Math_PI_DOUBLE);
 

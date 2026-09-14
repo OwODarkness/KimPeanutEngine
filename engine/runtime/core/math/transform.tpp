@@ -5,16 +5,16 @@
 
 namespace kpengine::math
 {
-    template <typename T>
+    template <std::floating_point T>
     Transform<T>::Transform() : position_(Vector3<T>()), rotator_(Rotator<T>()), scale_(Vector3<T>(1.f)) {}
 
-    template <typename T>
+    template <std::floating_point T>
     Transform<T>::Transform(const Vector3<T> &position, const Rotator<T> &rotator, const Vector3<T> &scale) : position_(position), rotator_(rotator), scale_(scale) {}
 
-    template <typename T>
+    template <std::floating_point T>
     Transform<T>::Transform(const Transform<T> &transform) : position_(transform.position_), rotator_(transform.rotator_), scale_(transform.scale_) {}
 
-    template <typename T>
+    template <std::floating_point T>
     Transform<T> Transform<T>::operator*(const Transform &rhs) const
     {
         Transform res;

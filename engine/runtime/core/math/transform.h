@@ -1,20 +1,19 @@
 #ifndef KPENGINE_RUNTIME_MATH_TRANSFORM_H
 #define KPENGINE_RUNTIME_MATH_TRANSFORM_H
 
+#include <concepts>
 
 namespace kpengine::math
 {
 
-    template <typename T>
+    template <std::floating_point T>
     class Rotator;
-    template <typename T>
+    template <std::floating_point T>
     class Vector3;
 
-    template <typename T>
+    template <std::floating_point T>
     class Transform
     {
-        static_assert(std::is_floating_point_v<T>, "T must be floating point");
-
     public:
         Transform();
         Transform(const Vector3<T> &position, const Rotator<T> &rotator, const Vector3<T> &scale);

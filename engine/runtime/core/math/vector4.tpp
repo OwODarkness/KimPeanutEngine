@@ -3,49 +3,49 @@
 
 namespace kpengine::math
 {
-    template <typename T>
+    template <std::floating_point T>
     Vector4<T>::Vector4() : x_{}, y_{}, z_{}, w_{} {}
 
-    template <typename T>
+    template <std::floating_point T>
     Vector4<T>::Vector4(T value) : x_(value), y_(value), z_(value), w_(value)
     {
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector4<T>::Vector4(T x, T y, T z, T w) : x_(x), y_(y), z_(z), w_(w)
     {
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector4<T>::Vector4(const Vector3<T> &v, T w) : x_(v.x_), y_(v.y_), z_(v.z_), w_(w)
     {
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector4<T>::Vector4(std::span<const T, 4> values)
         : x_(values[0]), y_(values[1]), z_(values[2]), w_(values[3])
     {
     }
 
-    template <typename T>
+    template <std::floating_point T>
     T Vector4<T>::SquareLength() const
     {
         return x_ * x_ + y_ * y_ + z_ * z_ + w_ * w_;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     T Vector4<T>::Norm() const
     {
         return std::sqrt(SquareLength());
     }
 
-    template <typename T>
+    template <std::floating_point T>
     T Vector4<T>::DotProduct(const Vector4 &v) const
     {
         return x_ * v.x_ + y_ * v.y_ + z_ * v.z_ + w_ * v.w_;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     void Vector4<T>::Normalize()
     {
         T length = Norm();
@@ -60,13 +60,13 @@ namespace kpengine::math
         w_ *= coeff;
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector3<T> Vector4<T>::MakeVector3() const
     {
         return Vector3<T>(x_, y_, z_);
     }
 
-    template <typename T>
+    template <std::floating_point T>
     Vector4<T>::operator Vector3<T>() const
     {
         return Vector3<T>(x_, y_, z_);

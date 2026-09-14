@@ -6,20 +6,18 @@
 #include <cstddef>
 #include <algorithm>
 #include <initializer_list>
+#include <concepts>
 #include <span>
 #include <stdexcept>
-#include <type_traits>
 namespace kpengine::math{
 
-    template<typename T> class Vector3;
+    template<std::floating_point T> class Vector3;
     extern template class Vector3<float>;
     extern template class Vector3<double>;
 
 
-    template<typename T>
+    template<std::floating_point T>
     class Matrix3{
-        static_assert(std::is_floating_point_v<T>, "T must be floating point");
-
     public:
         Matrix3();
         Matrix3(const Matrix3& m);
@@ -71,13 +69,13 @@ namespace kpengine::math{
 
         
 
-        template<typename U, typename V>
+        template<typename U, std::floating_point V>
         friend Matrix3<V> operator+(U scalar, const Matrix3<V>& mat);
 
-        template<typename U, typename V>
+        template<typename U, std::floating_point V>
         friend Matrix3<V> operator-(U scalar, const Matrix3<V>& mat);
 
-        template<typename U, typename V>
+        template<typename U, std::floating_point V>
         friend Matrix3<V> operator*(U scalar, const Matrix3<V>& mat);
 
         Matrix3 Transpose() const;
