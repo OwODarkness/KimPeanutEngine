@@ -711,3 +711,108 @@ TEST(LinearBVHTest, ClearResetsToEmptyStateAndRebuildSucceeds)
         }
     }
 }
+
+namespace
+{
+    // A conservative region test in the shape a frustum caller supplies: it
+    // rejects a box only when the whole box is on the far side of the plane, so
+    // rejecting a node implies rejecting everything inside it. QueryFiltered's
+    // contract is exactly this, and this test is what holds it.
+    struct HalfSpace
+    {
+        Vector3f normal{1.0f, 0.0f, 0.0f};
+        float offset = 0.0f;
+
+        bool operator()(const AABB &bounds) const
+        {
+            const Vector3f positive_vertex{
+                normal.x_ >= 0.0f ? bounds.max_.x_ : bounds.min_.x_,
+                normal.y_ >= 0.0f ? bounds.max_.y_ : bounds.min_.y_,
+                normal.z_ >= 0.0f ? bounds.max_.z_ : bounds.min_.z_,
+            };
+            return normal.DotProduct(positive_vertex) >= offset;
+        }
+    };
+}
+
+TEST(LinearBVHTest, QueryFilteredMatchesBruteForceForAConservativePredicate)
+{
+    std::mt19937 random = MakeRandom();
+    const std::vector<AABB> boxes = MakeRandomBoxes(random, 500);
+    LinearBVH bvh;
+    ASSERT_TRUE(bvh.Build(boxes));
+
+    std::uniform_real_distribution<float> component(-1.0f, 1.0f);
+    std::uniform_real_distribution<float> offset(-25.0f, 25.0f);
+    for (int i = 0; i < 60; ++i)
+    {
+        HalfSpace region;
+        region.normal = Vector3f{component(random), component(random), component(random)}
+                            .GetSafetyNormalize();
+        region.offset = offset(random);
+
+        std::vector<uint32_t> actual;
+        bvh.QueryFiltered(region, actual);
+        std::sort(actual.begin(), actual.end());
+
+        // The same predicate applied to every box is the definition of the
+        // answer; pruning is only allowed to skip work, never results.
+        std::vector<uint32_t> expected;
+        for (std::size_t index = 0; index < boxes.size(); ++index)
+        {
+            if (region(boxes[index]))
+            {
+                expected.push_back(static_cast<uint32_t>(index));
+            }
+        }
+
+        EXPECT_EQ(actual, expected);
+    }
+}
+
+TEST(LinearBVHTest, QueryFilteredHandlesTheExtremePredicates)
+{
+    std::mt19937 random = MakeRandom();
+    const std::vector<AABB> boxes = MakeRandomBoxes(random, 200);
+    LinearBVH bvh;
+    ASSERT_TRUE(bvh.Build(boxes));
+
+    // Accepting nothing must prune at the root, not walk the tree.
+    std::vector<uint32_t> rejects_all;
+    bvh.QueryFiltered([](const AABB &) { return false; }, rejects_all);
+    EXPECT_TRUE(rejects_all.empty());
+
+    // Accepting everything must report every primitive, exactly once each.
+    std::vector<uint32_t> accepts_all;
+    bvh.QueryFiltered([](const AABB &) { return true; }, accepts_all);
+    std::sort(accepts_all.begin(), accepts_all.end());
+    ASSERT_EQ(accepts_all.size(), boxes.size());
+    for (std::size_t index = 0; index < accepts_all.size(); ++index)
+    {
+        EXPECT_EQ(accepts_all[index], index);
+    }
+}
+
+TEST(LinearBVHTest, QueryFilteredOnAnEmptyTreeReportsNothing)
+{
+    const LinearBVH bvh;
+    std::vector<uint32_t> hits;
+
+    bvh.QueryFiltered([](const AABB &) { return true; }, hits);
+    EXPECT_TRUE(hits.empty());
+}
+
+TEST(LinearBVHTest, QueryFilteredAppendsToTheOutput)
+{
+    std::mt19937 random = MakeRandom();
+    const std::vector<AABB> boxes = MakeRandomBoxes(random, 50);
+    LinearBVH bvh;
+    ASSERT_TRUE(bvh.Build(boxes));
+
+    std::vector<uint32_t> hits{7u, 8u};
+    bvh.QueryFiltered([](const AABB &) { return true; }, hits);
+
+    ASSERT_EQ(hits.size(), boxes.size() + 2);
+    EXPECT_EQ(hits[0], 7u);
+    EXPECT_EQ(hits[1], 8u);
+}

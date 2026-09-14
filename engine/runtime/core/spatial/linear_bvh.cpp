@@ -482,39 +482,10 @@ namespace kpengine::spatial
 
     void LinearBVH::QueryOverlap(const AABB &query, std::vector<uint32_t> &out) const
     {
-        if (nodes_.empty() || !query.IsValid())
+        if (!query.IsValid())
         {
             return;
         }
-
-        std::array<uint32_t, kTraversalStackCapacity> stack{};
-        std::size_t stack_size = 0;
-        stack[stack_size++] = 0;
-
-        while (stack_size > 0)
-        {
-            const LinearBVHNode &node = nodes_[stack[--stack_size]];
-            if (!Overlaps(node.bounds, query))
-            {
-                continue;
-            }
-
-            if (node.IsLeaf())
-            {
-                for (uint32_t k = 0; k < node.count; ++k)
-                {
-                    const uint32_t primitive = order_[node.first + k];
-                    if (Overlaps(primitive_bounds_[primitive], query))
-                    {
-                        out.push_back(primitive);
-                    }
-                }
-                continue;
-            }
-
-            assert(stack_size + 2 <= kTraversalStackCapacity);
-            stack[stack_size++] = node.first;
-            stack[stack_size++] = node.right;
-        }
+        QueryFiltered([&query](const AABB &bounds) { return Overlaps(bounds, query); }, out);
     }
 }
