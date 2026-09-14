@@ -18,12 +18,12 @@
   overload of `BuildVisibleSections` are **dead in production** and called only
   by unit tests, and the cost is per-section rather than per-proxy — sponza is
   one proxy with 405 primitives, so little can be rejected once its aggregate
-  bounds touch the frustum. What landed instead is `LinearBVH::QueryFiltered`,
-  the general predicate form of `QueryOverlap`, tested against brute force
-  including the conservative-predicate contract; it has no render consumer yet.
-  `scene_visibility.cpp` is unchanged and render culling is byte-identical to
-  before. Full suite 755/756, the one failure the pre-existing
-  `LevelLoaderTest` fixture. →
+  bounds touch the frustum. A predicate-query entry point was added for the
+  frustum case and then removed once that case was declined, because ray tracing
+  would use `IntersectRay`/`IntersectRayAll` and nothing else called it; the
+  public API is back to exactly what has a consumer. `scene_visibility.cpp` is
+  unchanged and render culling is byte-identical to before. Full suite 751/752,
+  the one failure the pre-existing `LevelLoaderTest` fixture. →
   [spatial-bvh spec](../.spec/specs/spatial-bvh.md)
 
 - **Spatial BVH structure (2026-09-14)** — the engine's first spatial

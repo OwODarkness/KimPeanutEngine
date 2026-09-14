@@ -182,24 +182,6 @@ namespace kpengine::spatial
         // primitive lives in exactly one leaf, so entries are unique.
         void QueryOverlap(const AABB &query, std::vector<uint32_t> &out) const;
 
-        // Appends every primitive whose stored box satisfies `accept`, and is the
-        // general form of QueryOverlap: a caller that needs a region test this
-        // module has no vocabulary for -- a frustum, a light volume -- supplies it
-        // here instead of teaching spatial about it.
-        //
-        // `accept` runs on node bounds to prune a whole subtree and on primitive
-        // bounds to decide the result, so it must be a pure function of one AABB,
-        // and conservative: rejecting a node must imply rejecting everything
-        // inside it. Order is unspecified, and entries are unique because each
-        // primitive lives in exactly one leaf.
-        //
-        // Note `accept` sees the repaired boxes, not the caller's originals. A
-        // primitive with malformed input is indexed at a repaired position, so a
-        // caller that must keep such primitives visible has to consult
-        // DegeneratePrimitives and include those itself.
-        template <typename Accept>
-        void QueryFiltered(Accept &&accept, std::vector<uint32_t> &out) const;
-
     private:
         // One pending entry per level of the current path, so the depth cap bounds
         // this. Queries therefore never allocate.
@@ -220,45 +202,6 @@ namespace kpengine::spatial
         AABB bounds_{};
         uint32_t max_depth_ = kLinearBVHMaxDepth;
     };
-
-    template <typename Accept>
-    void LinearBVH::QueryFiltered(Accept &&accept, std::vector<uint32_t> &out) const
-    {
-        if (nodes_.empty())
-        {
-            return;
-        }
-
-        std::array<uint32_t, kTraversalStackCapacity> stack{};
-        std::size_t stack_size = 0;
-        stack[stack_size++] = 0;
-
-        while (stack_size > 0)
-        {
-            const LinearBVHNode &node = nodes_[stack[--stack_size]];
-            if (!accept(node.bounds))
-            {
-                continue;
-            }
-
-            if (node.IsLeaf())
-            {
-                for (uint32_t k = 0; k < node.count; ++k)
-                {
-                    const uint32_t primitive = order_[node.first + k];
-                    if (accept(primitive_bounds_[primitive]))
-                    {
-                        out.push_back(primitive);
-                    }
-                }
-                continue;
-            }
-
-            assert(stack_size + 2 <= kTraversalStackCapacity);
-            stack[stack_size++] = node.first;
-            stack[stack_size++] = node.right;
-        }
-    }
 
     template <typename Visitor>
     void LinearBVH::IntersectRayAll(const Ray &ray, float max_distance, Visitor &&visitor) const

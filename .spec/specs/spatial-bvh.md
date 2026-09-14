@@ -97,9 +97,11 @@ Explicit non-goals:
 Measured, then not wired. The measurement is the reason, so it is recorded here
 rather than left as a decision without evidence.
 
-`LinearBVH::QueryFiltered` was added for this stage and is kept: it is the
-general form of `QueryOverlap` and is what any future region query (a frustum, a
-light volume) will need. It currently has **no consumer in the render path**.
+`LinearBVH::QueryFiltered` was added for this stage and then **removed again**:
+with the frustum use case declined it had no consumer at all, and a general
+region-query entry point nothing calls is speculative surface. Ray tracing would
+use `IntersectRay`/`IntersectRayAll`, not this. `QueryOverlap` keeps its own
+traversal. The API is back to exactly what has a use.
 
 Stage 2 as originally proposed assumed a proxy-count threshold above which a BVH
 would win. Two measurements over synthetic packets matching the real
