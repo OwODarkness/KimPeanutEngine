@@ -1,5 +1,30 @@
 # Project Status
 
+- **Spatial BVH structure (2026-09-14)** — the engine's first spatial
+  acceleration structure landed in `runtime/core/spatial/linear_bvh.h`/`.cpp` as a
+  `LinearBVH` over `spatial::AABB` primitives, with no Render or Gameplay consumer
+  yet. `LinearBVH` is not a template, so the implementation is in the `.cpp` and
+  the `Spatial` target moved from INTERFACE to STATIC — the module's first
+  source file. It indexes primitives by their position in the caller's array
+  and stores only an index permutation, so `RenderWorld` keeps its `MeshProxy`
+  array and Gameplay keeps its actors; the type stays `Math`-only and free of
+  render policy, with `QueryOverlap` taking an `AABB` rather than a frustum. The
+  build is binned SAH on the widest centroid axis with an equal-count fallback,
+  which is what makes coincident-centroid input terminate rather than recurse
+  forever, and `max_depth` is a hard cap so query stacks are fixed-size and
+  allocate nothing. Malformed boxes are repaired rather than dropped — a swapped
+  min/max pair is recovered exactly by swapping — with the affected indices
+  reported so a caller can apply its own visibility policy. Note that
+  `AABB::ExpandToInclude` silently ignores a NaN corner, which is why bounds are
+  sanitized before they enter the tree. 25 new cases pass, the core being
+  property tests against brute-force scans using the existing
+  `IntersectRayAABB`. Wiring into `SceneVisibility` and `PickActor` is stage 2,
+  deliberately separated so the structure is proven first; the two linear scans
+  it replaces are O(n) today. Full Debug builds clean and the suite is 751/752,
+  the one failure the pre-existing `LevelLoaderTest` fixture whose checked-in
+  level references a model missing from the loose archive. →
+  [spatial-bvh spec](../.spec/specs/spatial-bvh.md)
+
 - **Asset AP1.5c range-aware residency reads (2026-09-14)** — AP1.4
   package/TOC work is explicitly deferred until the engine has a
   publish/shipping consumer. On the current loose `.archive` development path,
