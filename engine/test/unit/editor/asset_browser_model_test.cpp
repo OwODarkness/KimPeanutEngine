@@ -31,6 +31,7 @@ namespace
     using kpengine::asset::IAssetCatalogSnapshotSource;
     using kpengine::editor::AssetBrowserLocation;
     using kpengine::editor::AssetBrowserModel;
+    using kpengine::editor::AssetBrowserRow;
     using kpengine::editor::AssetBrowserPresentation;
     using kpengine::editor::AssetBrowserSortColumn;
     using kpengine::editor::FoldAscii;
@@ -407,6 +408,47 @@ TEST(AssetBrowserModelTest, FoldersDeriveFromTheFilteredRowsWithCounts)
     }
     EXPECT_EQ(paths, (std::vector<std::string>{"material=1", "texture=1"}))
         << "the model folder dropped out with its only row";
+}
+
+TEST(AssetBrowserModelTest, FoldersOnlyExposeTopLevelContentCategories)
+{
+    FakeSource source = MixedSource();
+    source.next.nodes.push_back(Node(
+        "k/absolute", "DeepModel", "Model", AssetCatalogAvailability::ArchiveOnly, 1,
+        "D:/C++Project/KimPeanutEngine/content/model/nested/deep"));
+    source.next.nodes.push_back(Node(
+        "k/level", "TestLevel", "Level", AssetCatalogAvailability::RuntimeOnly, 1,
+        "content/level/validation"));
+    source.next.nodes.push_back(Node(
+        "k/archive", "InternalProduct", "Model", AssetCatalogAvailability::ArchiveOnly, 1,
+        "content/.archive/models/hash"));
+    source.next.nodes.push_back(Node(
+        "k/shader", "InternalShader", "Shader", AssetCatalogAvailability::ArchiveOnly, 1,
+        "content/shader/pbr"));
+    source.next.nodes.push_back(Node(
+        "k/other", "OtherFolder", "Material", AssetCatalogAvailability::ArchiveOnly, 1,
+        "content/other/nested"));
+
+    AssetBrowserModel model;
+    model.SetSource(&source);
+    ASSERT_TRUE(model.Refresh());
+
+    std::vector<std::string> paths;
+    for (const auto &folder : model.Folders())
+    {
+        paths.push_back(folder.path + "=" + std::to_string(folder.count));
+    }
+    EXPECT_EQ(paths, (std::vector<std::string>{"level=1", "material=1", "model=2", "texture=1"}));
+    EXPECT_EQ(std::count_if(model.Rows().begin(), model.Rows().end(),
+                               [](const AssetBrowserRow &row)
+                               { return row.stable_key == "k/shader"; }), 0);
+    EXPECT_EQ(std::find(model.TypeNames().begin(), model.TypeNames().end(), "Shader"),
+              model.TypeNames().end());
+    const auto deep = std::find_if(model.Rows().begin(), model.Rows().end(),
+                                   [](const AssetBrowserRow &row)
+                                   { return row.display_name == "DeepModel"; });
+    ASSERT_NE(deep, model.Rows().end());
+    EXPECT_EQ(deep->logical_path, "model/nested/deep");
 }
 
 TEST(AssetBrowserModelTest, SortingIsDeterministicInBothDirectionsWithStableTieBreakers)

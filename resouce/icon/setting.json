@@ -1,0 +1,9 @@
+{
+  "icons": {
+    "document": "icon-file.png",
+    "level": "icon-file.png",
+    "material": "icon-material.png",
+    "model": "icon-model.png",
+    "texture": "icon-texture.png"
+  }
+}

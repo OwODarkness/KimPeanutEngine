@@ -6,8 +6,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
+#include <fstream>
+
+#include <nlohmann/json.hpp>
 
 #include "config/path.h"
+#include "image_io/image_io.h"
 
 namespace kpengine::editor
 {
@@ -17,7 +21,7 @@ namespace kpengine::editor
         constexpr float kContentColumnMinWidth = 220.0f;
         constexpr float kFolderSplitterWidth = 6.0f;
         constexpr float kTileWidth = 144.0f;
-        constexpr float kTileHeight = 128.0f;
+        constexpr float kTileHeight = 84.0f;
         constexpr float kTileIconSize = 48.0f;
         // ASCII, not the em dash the plan asks for: AddFontFromFileTTF is called with no
         // glyph ranges, so the atlas holds U+0020..U+00FF only and U+2014 draws as "?".
@@ -132,6 +136,243 @@ namespace kpengine::editor
             }
         }
 
+        constexpr std::size_t kIconRasterSize = 32;
+
+        const char *IconFileName(AssetIconKind kind)
+        {
+            switch (kind)
+            {
+            case AssetIconKind::Model:
+                return "icon-model.png";
+            case AssetIconKind::Material:
+                return "icon-material.png";
+            case AssetIconKind::Texture:
+                return "icon-texture.png";
+            case AssetIconKind::Level:
+            case AssetIconKind::Document:
+                return "icon-file.png";
+            }
+            return "icon-file.png";
+        }
+
+        using IconFileNameMap = std::unordered_map<std::string, std::string>;
+
+        std::string FoldIconType(std::string_view type_name)
+        {
+            std::string folded;
+            folded.reserve(type_name.size());
+            for (const char c : type_name)
+            {
+                folded.push_back(c >= 'A' && c <= 'Z'
+                                     ? static_cast<char>(c - 'A' + 'a')
+                                     : c);
+            }
+            return folded;
+        }
+
+        std::string BuiltInIconType(std::string_view type_name)
+        {
+            const std::string folded = FoldIconType(type_name);
+            for (const std::string_view candidate : {std::string_view{"model"},
+                                                       std::string_view{"material"},
+                                                       std::string_view{"texture"},
+                                                       std::string_view{"level"}})
+            {
+                if (folded.find(candidate) != std::string::npos)
+                {
+                    return std::string{candidate};
+                }
+            }
+            return {};
+        }
+        IconFileNameMap DefaultIconFileNames()
+        {
+            return {{"document", IconFileName(AssetIconKind::Document)},
+                    {"model", IconFileName(AssetIconKind::Model)},
+                    {"material", IconFileName(AssetIconKind::Material)},
+                    {"texture", IconFileName(AssetIconKind::Texture)},
+                    {"level", IconFileName(AssetIconKind::Level)}};
+        }
+        bool IsSafeIconFileName(std::string_view file_name)
+        {
+            const std::filesystem::path path{std::string{file_name}};
+            return !file_name.empty() && !path.is_absolute() && path.parent_path().empty();
+        }
+        std::filesystem::path FindIconPath(const char *file_name)
+        {
+            for (const std::string_view directory : {std::string_view{"resource/icon"},
+                                                       std::string_view{"resouce/icon"}})
+            {
+                const std::filesystem::path candidate = project_root / directory / file_name;
+                std::error_code error;
+                if (std::filesystem::is_regular_file(candidate, error) && !error)
+                {
+                    return candidate;
+                }
+            }
+            return {};
+        }
+
+        void LoadIconSettings(IconFileNameMap &file_names)
+        {
+            std::filesystem::path settings_path = FindIconPath("setting.json");
+            if (settings_path.empty())
+            {
+                settings_path = FindIconPath("settings.json");
+            }
+            if (settings_path.empty())
+            {
+                return;
+            }
+
+            std::ifstream file(settings_path, std::ios::binary);
+            if (!file.is_open())
+            {
+                return;
+            }
+
+            try
+            {
+                const nlohmann::json root = nlohmann::json::parse(file);
+                const nlohmann::json *icons = &root;
+                const auto nested_icons = root.find("icons");
+                if (nested_icons != root.end())
+                {
+                    if (!nested_icons->is_object())
+                    {
+                        return;
+                    }
+                    icons = &*nested_icons;
+                }
+                if (!icons->is_object())
+                {
+                    return;
+                }
+                for (const auto &[type_name, icon_node] : icons->items())
+                {
+                    const std::string folded_type = FoldIconType(type_name);
+                    if (folded_type.empty() || !icon_node.is_string())
+                    {
+                        continue;
+                    }
+                    const std::string file_name = icon_node.get<std::string>();
+                    if (IsSafeIconFileName(file_name))
+                    {
+                        file_names[folded_type] = file_name;
+                    }
+                }
+            }
+            catch (const std::exception &)
+            {
+                // Optional presentation settings fall back to the built-in icon names.
+            }
+        }
+        std::vector<std::uint32_t> DecodeIcon(const std::filesystem::path &path)
+        {
+            const image_io::ImageDecodeResult decoded =
+                image_io::DecodeImageFile(path.generic_string());
+            if (!decoded.result.success ||
+                decoded.image.format != image_io::ImagePixelFormat::Rgba8 ||
+                !decoded.image.IsValid())
+            {
+                return {};
+            }
+
+            std::vector<std::uint32_t> pixels(kIconRasterSize * kIconRasterSize);
+            for (std::size_t y = 0; y < kIconRasterSize; ++y)
+            {
+                const std::size_t source_y =
+                    (kIconRasterSize - 1 - y) * decoded.image.height / kIconRasterSize;
+                for (std::size_t x = 0; x < kIconRasterSize; ++x)
+                {
+                    const std::size_t source_x = x * decoded.image.width / kIconRasterSize;
+                    const std::size_t source_offset =
+                        (source_y * decoded.image.width + source_x) * 4;
+                    const std::uint8_t red = decoded.image.pixels[source_offset];
+                    const std::uint8_t green = decoded.image.pixels[source_offset + 1];
+                    const std::uint8_t blue = decoded.image.pixels[source_offset + 2];
+                    const std::uint8_t alpha = decoded.image.pixels[source_offset + 3];
+                    pixels[y * kIconRasterSize + x] = IM_COL32(red, green, blue, alpha);
+                }
+            }
+            return pixels;
+        }
+
+        void DrawRasterIcon(ImDrawList *draw, const std::vector<std::uint32_t> &pixels,
+                            const ImVec2 &min, const ImVec2 &max, ImU32 tint)
+        {
+            if (pixels.size() != kIconRasterSize * kIconRasterSize)
+            {
+                return;
+            }
+            const float cell_width = (max.x - min.x) / static_cast<float>(kIconRasterSize);
+            const float cell_height = (max.y - min.y) / static_cast<float>(kIconRasterSize);
+            for (std::size_t y = 0; y < kIconRasterSize; ++y)
+            {
+                for (std::size_t x = 0; x < kIconRasterSize; ++x)
+                {
+                    const ImU32 source = pixels[y * kIconRasterSize + x];
+                    const ImU32 source_alpha = (source >> 24u) & 0xffu;
+                    if (source_alpha == 0u)
+                    {
+                        continue;
+                    }
+                    // The supplied icons are black alpha masks; tint them for the dark editor.
+                    const ImU32 tint_alpha = (tint >> 24u) & 0xffu;
+                    const ImU32 alpha = source_alpha * tint_alpha / 255u;
+                    const ImU32 color = (tint & 0x00ffffffu) | (alpha << 24u);
+                    const ImVec2 cell_min(min.x + static_cast<float>(x) * cell_width,
+                                          min.y + static_cast<float>(y) * cell_height);
+                    const ImVec2 cell_max(min.x + static_cast<float>(x + 1) * cell_width,
+                                          min.y + static_cast<float>(y + 1) * cell_height);
+                    draw->AddRectFilled(cell_min, cell_max, color);
+                }
+            }
+        }
+
+        std::string PrefixedAssetName(const AssetBrowserRow &row)
+        {
+            std::string base = row.display_name;
+            if (base.empty() && !row.logical_path.empty())
+            {
+                base = std::filesystem::path(row.logical_path).filename().string();
+            }
+            if (base.empty())
+            {
+                base = "Asset";
+            }
+
+            std::string folded_type;
+            folded_type.reserve(row.type_name.size());
+            for (const char c : row.type_name)
+            {
+                folded_type.push_back(c >= 'A' && c <= 'Z'
+                                          ? static_cast<char>(c - 'A' + 'a')
+                                          : c);
+            }
+            std::string prefix;
+            if (folded_type == "material")
+            {
+                prefix = "Mat_";
+            }
+            else if (folded_type == "texture")
+            {
+                prefix = "Tex_";
+            }
+            else if (folded_type == "model")
+            {
+                prefix = "Model_";
+            }
+            else if (folded_type == "level")
+            {
+                prefix = "Level_";
+            }
+            if (!prefix.empty() && base.rfind(prefix, 0) != 0)
+            {
+                base.insert(0, prefix);
+            }
+            return base;
+        }
         std::string ElideLabel(std::string_view label, float max_width)
         {
             std::string result{label};
@@ -223,12 +464,32 @@ namespace kpengine::editor
         // other panel it hosts.
         : EditorWindowComponent("Asset Browser", EditorWindowConfig{}), model_(model)
     {
+        LoadIconImages();
         const std::string &search = model_.Query().search;
         const std::size_t copied = std::min(search.size(), search_.size() - 1);
         std::copy_n(search.begin(), copied, search_.begin());
         search_[copied] = '\0';
     }
 
+    void EditorAssetBrowserComponent::LoadIconImages()
+    {
+        icon_pixels_.clear();
+        IconFileNameMap file_names = DefaultIconFileNames();
+        LoadIconSettings(file_names);
+        for (const auto &[type_name, file_name] : file_names)
+        {
+            const std::filesystem::path path = FindIconPath(file_name.c_str());
+            if (path.empty())
+            {
+                continue;
+            }
+            std::vector<std::uint32_t> pixels = DecodeIcon(path);
+            if (!pixels.empty())
+            {
+                icon_pixels_[type_name] = std::move(pixels);
+            }
+        }
+    }
     void EditorAssetBrowserComponent::SetOpenReferences(OpenReferences open_references)
     {
         open_references_ = std::move(open_references);
@@ -236,6 +497,23 @@ namespace kpengine::editor
 
     void EditorAssetBrowserComponent::RenderContent()
     {
+        if (!initial_refresh_attempted_)
+        {
+            initial_refresh_attempted_ = true;
+            // Logical-prefix filtering belonged to the old folder-navigation behavior.
+            // Clear any stale state so opening this panel always starts with all assets.
+            if (!model_.Query().logical_prefix.empty())
+            {
+                model_.SetLogicalPrefix({});
+            }
+            if (model_.IsSourceAvailable() &&
+                (!model_.HasSnapshot() || model_.NodeCount() == 0))
+            {
+                // Promotion can precede the first completed catalog publication. Retry once
+                // when the user actually opens this panel, not on every frame.
+                (void)model_.Refresh();
+            }
+        }
         if (!model_.IsSourceAvailable() && !model_.HasSnapshot())
         {
             RenderUnavailable();
@@ -275,9 +553,15 @@ namespace kpengine::editor
             {
                 ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
             }
+
+            // Keep the asset child on the same row as the folder pane. Without this
+            // explicit continuation, ImGui starts the next child on a new line at the
+            // bottom of the folder child, leaving only a clipped sliver interactive.
+            ImGui::SameLine(0.0f, 0.0f);
         }
 
-        ImGui::BeginChild("##asset_rows", ImVec2(0.0f, -56.0f), false);
+        const float content_width = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+        ImGui::BeginChild("##asset_rows", ImVec2(content_width, -56.0f), false);
         if (model_.Presentation() == AssetBrowserPresentation::Table)
         {
             RenderTable();
@@ -353,6 +637,7 @@ namespace kpengine::editor
             // Explicit, never automatic: this is the only place besides promotion that
             // captures, and a capture opens the archive.
             (void)model_.Refresh();
+            LoadIconImages();
         }
 
         // Rendered only once AB1.3 has bound the callback. An inert control would promise
@@ -370,20 +655,18 @@ namespace kpengine::editor
     void EditorAssetBrowserComponent::RenderFolderList()
     {
         ImGui::TextDisabled("Imported Content");
-        const AssetBrowserQuery &query = model_.Query();
-        if (ImGui::Selectable("All Assets", query.logical_prefix.empty()))
+        if (ImGui::Selectable("All Assets", selected_folder_.empty()))
         {
-            model_.SetLogicalPrefix({});
+            selected_folder_.clear();
         }
         for (const AssetBrowserFolder &folder : model_.Folders())
         {
             ImGui::PushID(folder.path.c_str());
             const std::string label = "    " + DisplayFolderPath(folder.path) + "  (" +
                                       std::to_string(folder.count) + ")";
-            if (ImGui::Selectable(label.c_str(), query.logical_prefix == folder.path))
+            if (ImGui::Selectable(label.c_str(), selected_folder_ == folder.path))
             {
-                model_.SetLogicalPrefix(query.logical_prefix == folder.path ? std::string{}
-                                                                            : folder.path);
+                selected_folder_ = folder.path;
             }
             const ImVec2 item_min = ImGui::GetItemRectMin();
             DrawFolderGlyph(ImGui::GetWindowDrawList(), ImVec2(item_min.x + 4.0f, item_min.y + 4.0f),
@@ -447,8 +730,9 @@ namespace kpengine::editor
                 ImGui::TableSetColumnIndex(0);
                 // A selectable spanning the row carries the click, and its label is the
                 // readable name — the badge beside it is decoration, never the only signal.
+                const std::string display_name = PrefixedAssetName(row);
                 const bool selected = row.stable_key == model_.SelectedKey();
-                if (ImGui::Selectable(row.display_name.c_str(), selected,
+                if (ImGui::Selectable(display_name.c_str(), selected,
                                       ImGuiSelectableFlags_SpanAllColumns |
                                           ImGuiSelectableFlags_AllowDoubleClick))
                 {
@@ -523,24 +807,39 @@ namespace kpengine::editor
                                           min.y + 8.0f);
                     const ImVec2 icon_max(icon_min.x + kTileIconSize,
                                           icon_min.y + kTileIconSize);
-                    DrawAssetIcon(draw, IconKind(row.type_name), icon_min, icon_max,
-                                  TypeBadgeColor(row.type_name));
+                    const AssetIconKind icon_kind = IconKind(row.type_name);
+                    auto icon = icon_pixels_.find(FoldIconType(row.type_name));
+                    if (icon == icon_pixels_.end() && !row.logical_path.empty())
+                    {
+                        const std::size_t slash = row.logical_path.find('/');
+                        const std::string path_type = row.logical_path.substr(0, slash);
+                        icon = icon_pixels_.find(FoldIconType(path_type));
+                    }
+                    if (icon == icon_pixels_.end())
+                    {
+                        const std::string built_in_type = BuiltInIconType(row.type_name);
+                        if (!built_in_type.empty())
+                        {
+                            icon = icon_pixels_.find(built_in_type);
+                        }
+                    }
+                    if (icon == icon_pixels_.end())
+                    {
+                        DrawAssetIcon(draw, icon_kind, icon_min, icon_max,
+                                      TypeBadgeColor(row.type_name));
+                    }
+                    else
+                    {
+                        DrawRasterIcon(draw, icon->second, icon_min, icon_max,
+                                       TypeBadgeColor(row.type_name));
+                    }
 
-                    const std::string name = ElideLabel(row.display_name, kTileWidth - 12.0f);
+                    const std::string name =
+                        ElideLabel(PrefixedAssetName(row), kTileWidth - 12.0f);
                     const float name_width = ImGui::CalcTextSize(name.c_str()).x;
                     draw->AddText(ImVec2(min.x + (kTileWidth - name_width) * 0.5f,
                                          min.y + 62.0f),
                                   ImGui::GetColorU32(ImGuiCol_Text), name.c_str());
-                    const std::string type = ElideLabel(row.type_name, kTileWidth - 12.0f);
-                    const float type_width = ImGui::CalcTextSize(type.c_str()).x;
-                    draw->AddText(ImVec2(min.x + (kTileWidth - type_width) * 0.5f,
-                                         min.y + 80.0f),
-                                  ImGui::GetColorU32(ImGuiCol_TextDisabled), type.c_str());
-                    const std::string state = row.state_label + "  " + row.size_label;
-                    const float state_width = ImGui::CalcTextSize(state.c_str()).x;
-                    draw->AddText(ImVec2(min.x + (kTileWidth - state_width) * 0.5f,
-                                         min.y + 98.0f),
-                                  ImGui::GetColorU32(ImGuiCol_TextDisabled), state.c_str());
                     draw->PopClipRect();
                     ImGui::PopID();
                 }
@@ -558,7 +857,8 @@ namespace kpengine::editor
         }
 
         const AssetBrowserDetails details = model_.SelectedDetails();
-        ImGui::Text("%s  -  %s  -  %s", row->display_name.c_str(), row->type_name.c_str(),
+        const std::string display_name = PrefixedAssetName(*row);
+        ImGui::Text("%s  -  %s  -  %s", display_name.c_str(), row->type_name.c_str(),
                     row->state_label.c_str());
         if (!row->logical_path.empty())
         {

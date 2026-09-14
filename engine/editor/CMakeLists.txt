@@ -35,4 +35,4 @@ target_compile_definitions(EditorUILib PRIVATE
 )
 
 target_link_libraries(EditorLib PRIVATE RuntimeLib EditorUILib)
-target_link_libraries(EditorUILib PRIVATE RuntimeLib RuntimeCommand Input KP::ImGui KP::Glfw KP::Glad KP::Vulkan KP::NlohmannJson)
+target_link_libraries(EditorUILib PRIVATE RuntimeLib RuntimeCommand Input ImageIO KP::ImGui KP::Glfw KP::Glad KP::Vulkan KP::NlohmannJson)

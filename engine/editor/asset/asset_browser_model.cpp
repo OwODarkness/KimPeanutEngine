@@ -53,26 +53,58 @@ namespace kpengine::editor
             return text.size() >= prefix.size() && text.compare(0, prefix.size(), prefix) == 0;
         }
 
-        // Every ancestor prefix of a logical path, so "a/b/c" contributes "a" and "a/b".
-        // Component-based rather than a substring search, so "a/bc" is not counted under
-        // "a/b".
-        void CollectFolderPrefixes(std::string_view logical_path,
-                                   std::vector<std::string> &out)
+        std::string NormalizeContentPath(std::string_view logical_path)
         {
-            out.clear();
-            std::size_t start = 0;
-            while (true)
+            std::string portable{logical_path};
+            std::replace(portable.begin(), portable.end(), '\\', '/');
+            for (const std::string_view root : {std::string_view{"/content/"},
+                                                std::string_view{"/asset/"}})
             {
-                const std::size_t slash = logical_path.find('/', start);
-                if (slash == std::string_view::npos || slash == start)
+                const std::size_t marker = portable.find(root);
+                if (marker != std::string::npos)
                 {
-                    return;
+                    return portable.substr(marker + root.size());
                 }
-                out.emplace_back(logical_path.substr(0, slash));
-                start = slash + 1;
             }
+            for (const std::string_view root : {std::string_view{"content/"},
+                                                std::string_view{"asset/"}})
+            {
+                if (portable.rfind(root, 0) == 0)
+                {
+                    return portable.substr(root.size());
+                }
+            }
+            return portable;
         }
 
+        std::string ContentFolder(std::string_view logical_path)
+        {
+            const std::string normalized = NormalizeContentPath(logical_path);
+            const std::size_t slash = normalized.find('/');
+            const std::string folder = normalized.substr(0, slash);
+            for (const std::string_view allowed : {std::string_view{"level"},
+                                                   std::string_view{"material"},
+                                                   std::string_view{"model"},
+                                                   std::string_view{"texture"}})
+            {
+                if (FoldAscii(folder) == allowed)
+                {
+                    return folder;
+                }
+            }
+            return {};
+        }
+
+        bool IsShaderNode(const asset::AssetCatalogNode &node)
+        {
+            if (FoldAscii(node.type_name) == "shader")
+            {
+                return true;
+            }
+            const std::string path = NormalizeContentPath(node.logical_path);
+            const std::size_t slash = path.find('/');
+            return FoldAscii(path.substr(0, slash)) == "shader";
+        }
         bool ContainsAnyType(const std::vector<std::string> &included,
                             const std::string &type_name)
         {
@@ -390,7 +422,7 @@ namespace kpengine::editor
         // control that lists them cannot empty itself as it is used.
         for (const asset::AssetCatalogNode &node : snapshot_.nodes)
         {
-            if (node.type_name.empty())
+            if (IsShaderNode(node) || node.type_name.empty())
             {
                 continue;
             }
@@ -411,11 +443,15 @@ namespace kpengine::editor
             std::string path;
         };
 
-        std::vector<std::string> prefixes;
         std::vector<SortKeys> sort_keys;    // parallel to rows_
         std::vector<std::size_t> row_bytes;  // parallel to rows_, for the size comparison
         for (const asset::AssetCatalogNode &node : snapshot_.nodes)
         {
+            if (IsShaderNode(node))
+            {
+                continue;
+            }
+
             switch (query_.location)
             {
             case AssetBrowserLocation::ArchiveProducts:
@@ -451,7 +487,8 @@ namespace kpengine::editor
                 // A component boundary, not a raw prefix: "material/bric" must not select
                 // "material/brick", or the folder tree would file siblings under each
                 // other. A folder is either the node's own path or a proper ancestor of it.
-                const std::string folded_path = FoldAscii(node.logical_path);
+                const std::string folded_path =
+                    FoldAscii(NormalizeContentPath(node.logical_path));
                 const bool is_self = folded_path == folded_prefix;
                 const bool is_under =
                     folded_path.size() > folded_prefix.size() &&
@@ -472,7 +509,7 @@ namespace kpengine::editor
                 haystack += '\n';
                 haystack += FoldAscii(node.type_name);
                 haystack += '\n';
-                haystack += FoldAscii(node.logical_path);
+                haystack += FoldAscii(NormalizeContentPath(node.logical_path));
                 haystack += '\n';
                 haystack += FoldAscii(node.product_path);
                 for (const std::string &alias : node.aliases)
@@ -512,7 +549,7 @@ namespace kpengine::editor
             row.stable_key = node.stable_key;
             row.display_name = node.display_name;
             row.type_name = node.type_name;
-            row.logical_path = node.logical_path;
+            row.logical_path = NormalizeContentPath(node.logical_path);
             row.product_path = node.product_path;
             row.state_label = std::string{StateLabel(node.availability)};
             row.availability = node.availability;
@@ -528,25 +565,21 @@ namespace kpengine::editor
             sort_keys.push_back(SortKeys{FoldAscii(row.display_name), FoldAscii(row.type_name),
                                          FoldAscii(row.logical_path)});
 
-            // Folder counts come from the rows that survived filtering, which is what makes
-            // them agree with what the user is looking at.
-            if (!node.logical_path.empty())
+            // The browser exposes only the four top-level content categories.
+            const std::string folder = ContentFolder(row.logical_path);
+            if (!folder.empty())
             {
-                CollectFolderPrefixes(node.logical_path, prefixes);
-                for (const std::string &prefix : prefixes)
+                const auto it = std::find_if(
+                    folders_.begin(), folders_.end(),
+                    [&folder](const AssetBrowserFolder &candidate)
+                    { return candidate.path == folder; });
+                if (it == folders_.end())
                 {
-                    const auto it = std::find_if(
-                        folders_.begin(), folders_.end(),
-                        [&prefix](const AssetBrowserFolder &folder)
-                        { return folder.path == prefix; });
-                    if (it == folders_.end())
-                    {
-                        folders_.push_back(AssetBrowserFolder{prefix, 1});
-                    }
-                    else
-                    {
-                        ++it->count;
-                    }
+                    folders_.push_back(AssetBrowserFolder{folder, 1});
+                }
+                else
+                {
+                    ++it->count;
                 }
             }
 
