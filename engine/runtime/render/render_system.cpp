@@ -226,6 +226,10 @@ namespace kpengine::render
                 .count();
         const auto backend_begin_started = std::chrono::steady_clock::now();
         backend_->BeginFrame();
+        if (scene_ready)
+        {
+            resource_resolver_->CollectRetiredTextures();
+        }
         const double backend_begin_ms =
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - backend_begin_started)

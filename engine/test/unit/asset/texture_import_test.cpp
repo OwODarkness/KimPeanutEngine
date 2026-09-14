@@ -435,6 +435,27 @@ TEST(TextureImportTest, ImportAndCookAreIndependentAndRoundTripNativeMips)
     std::filesystem::remove(root, error);
 }
 
+TEST(TextureImportTest, NativeTextureCanCommitFromATailMip)
+{
+    kpengine::asset::ImportedTexture source{};
+    source.image = MakeImage();
+    source.settings.semantic = kpengine::data::TextureSemantic::Color;
+    source.settings.max_dimension = 2;
+    const kpengine::asset::CookedTexture cooked =
+        kpengine::asset::TextureCooker{}.Cook(source);
+
+    const kpengine::asset::NativeTextureProduct tail =
+        kpengine::asset::DeserializeNativeTexture(cooked.bytes, nullptr, 1);
+    EXPECT_EQ(tail.data.first_resident_mip, 1u);
+    EXPECT_EQ(tail.data.width, 1u);
+    EXPECT_EQ(tail.data.height, 1u);
+    EXPECT_EQ(tail.data.GetMipLevelCount(), 1u);
+    EXPECT_EQ(tail.data.GetTotalByteCount(),
+              kpengine::data::GetTextureMipByteCount(1u, 1u, tail.data.format));
+    EXPECT_THROW(kpengine::asset::DeserializeNativeTexture(cooked.bytes, nullptr, 2),
+                 kpengine::asset::NativeTextureError);
+}
+
 TEST(TextureImportTest, CooksSemanticBlockFormatsWithValidatedMipSizes)
 {
     kpengine::asset::ImportedTexture source{};

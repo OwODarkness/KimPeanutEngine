@@ -5,6 +5,8 @@
 #include <mutex>
 #include <future>
 #include <optional>
+#include <semaphore>
+#include <thread>
 #include <unordered_map>
 #include "asset.h"
 #include "asset_load_observation.h"
@@ -49,6 +51,9 @@ namespace kpengine::asset{
         // Selects the one material texture product declared to Asset loaders
         // before startup dependency resolution. The default is portable.
         void SetTextureVariantProfile(TextureVariantProfile profile);
+        // Limits the startup texture view to the tail of the native mip chain.
+        // Zero preserves full-resolution loading for tools and tests.
+        void SetInitialTextureMipLevelCount(std::uint32_t mip_level_count);
         std::future<AssetID> LoadAsync(const std::string& path);
         std::future<AssetID> LoadAsync(const std::string& path,
                                        AssetLoadSession session);
@@ -126,7 +131,17 @@ namespace kpengine::asset{
         std::unordered_map<AssetType, AssetCache> caches_;
 
         std::recursive_mutex state_mutex_;  // guards caches_ and path_index
-        std::mutex load_mutex_;             // serializes shared loader access
+        std::mutex load_mutex_;             // serializes non-reentrant loaders
+        static constexpr std::ptrdiff_t kParallelLoaderSlots = 4;
+        std::counting_semaphore<kParallelLoaderSlots> parallel_loader_slots_{
+            kParallelLoaderSlots};
+
+        struct InFlightLoad
+        {
+            std::shared_future<AssetID> result;
+        };
+        std::mutex in_flight_mutex_;
+        std::unordered_map<std::string, InFlightLoad> in_flight_loads_;
 
         // Grants the catalog provider the bounded live-copy phase only. No
         // general cache-enumeration API is exposed, so manager storage policy

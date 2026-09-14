@@ -33,6 +33,9 @@ namespace kpengine::data
         uint32_t array_layers = 1;
         TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         TextureSemantic semantic = TextureSemantic::Generic;
+        // Transient residency metadata. Native products always serialize the
+        // full chain; a streamed view may begin at a later mip level.
+        uint32_t first_resident_mip = 0;
         // Level zero remains in pixels for compatibility with existing CPU
         // consumers. mip_subresources contains levels one through N in order.
         std::vector<uint8_t> pixels;

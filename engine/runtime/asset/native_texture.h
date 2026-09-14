@@ -62,7 +62,8 @@ namespace kpengine::asset
     // Validates the directory and digest before allocating any mip payload.
     NativeTextureProduct DeserializeNativeTexture(
         std::span<const std::byte> bytes,
-        const ContentHashPair *verified_hashes = nullptr);
+        const ContentHashPair *verified_hashes = nullptr,
+        std::uint32_t first_mip_level = 0);
 
     // Validates only the bounded container structure and integrity digest.
     // Unlike DeserializeNativeTexture, this never allocates mip payloads.

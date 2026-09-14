@@ -31,7 +31,8 @@ namespace kpengine::render
             throw std::runtime_error("Render scene coordinator is not bound");
         }
 
-        material_system_->RefreshResources();
+        const bool texture_residency_changed = resource_resolver_->PollTextureResidency();
+        material_system_->RefreshResources(texture_residency_changed);
         renderable_sources_.Drain(
             render_world_,
             [this](const PrimitiveRenderableSourceDesc &source)

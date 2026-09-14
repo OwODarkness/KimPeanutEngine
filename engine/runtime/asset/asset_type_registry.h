@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_ASSET_ASSET_TYPE_REGISTRY_H
 #define KPENGINE_RUNTIME_ASSET_ASSET_TYPE_REGISTRY_H
 
+#include <cstdint>
 #include <functional>
 #include <string>
 #include <string_view>
@@ -14,12 +15,20 @@ namespace kpengine::asset
     using AssetLoaderCallback =
         std::function<bool(const std::string &path, AssetRegisterInfo &info)>;
 
+    enum class AssetLoaderConcurrency : uint8_t
+    {
+        Serialized,
+        Parallel,
+    };
+
     struct AssetTypeDescriptor
     {
         AssetType type = AssetType::Undefined;
         std::string name;
         std::vector<std::string> extensions;
         AssetLoaderCallback loader;
+        // Custom loaders remain serialized unless they explicitly opt in.
+        AssetLoaderConcurrency concurrency = AssetLoaderConcurrency::Serialized;
     };
 
     class AssetTypeRegistry final

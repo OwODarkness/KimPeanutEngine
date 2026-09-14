@@ -510,30 +510,41 @@ namespace kpengine::asset
 
     bool AssetManager::RegisterBuiltInAssetTypes(std::string &diagnostic)
     {
-        const auto register_type = [this, &diagnostic](AssetType type, const char *name,
-                                                        std::vector<std::string> extensions)
+        const auto register_type = [this, &diagnostic](
+                                       AssetType type, const char *name,
+                                       std::vector<std::string> extensions,
+                                       AssetLoaderConcurrency concurrency)
         {
             AssetTypeDescriptor descriptor{};
             descriptor.type = type;
             descriptor.name = name;
             descriptor.extensions = std::move(extensions);
+            descriptor.concurrency = concurrency;
             descriptor.loader = [this, type](const std::string &path, AssetRegisterInfo &info)
             { return LoadBuiltInAsset(path, type, info); };
             return RegisterAssetType(std::move(descriptor), diagnostic);
         };
 
         return register_type(AssetType::KPAT_Model, "KPAT_Model",
-                             {"model", "obj", "fbx", "gltf", "glb"}) &&
-               register_type(AssetType::KPAT_Mesh, "KPAT_Mesh", {}) &&
+                             {"model", "obj", "fbx", "gltf", "glb"},
+                             AssetLoaderConcurrency::Serialized) &&
+               register_type(AssetType::KPAT_Mesh, "KPAT_Mesh", {},
+                             AssetLoaderConcurrency::Serialized) &&
                register_type(AssetType::KPAT_Texture, "KPAT_Texture",
-                             {"texture", "png", "jpg", "jpeg", "tga", "hdr"}) &&
+                             {"texture", "png", "jpg", "jpeg", "tga", "hdr"},
+                             AssetLoaderConcurrency::Parallel) &&
                register_type(AssetType::KPAT_Audio, "KPAT_Audio",
-                             {"wav", "mp3", "flac", "ogg"}) &&
+                             {"wav", "mp3", "flac", "ogg"},
+                             AssetLoaderConcurrency::Serialized) &&
                register_type(AssetType::KPAT_Shader, "KPAT_Shader",
-                             {"vert", "vs", "frag", "fs", "geom", "gs", "comp", "cs", "spv"}) &&
-               register_type(AssetType::KPAT_ShaderProgram, "KPAT_ShaderProgram", {"shader"}) &&
-               register_type(AssetType::KPAT_Material, "KPAT_Material", {"material"}) &&
-               register_type(AssetType::KPAT_Level, "KPAT_Level", {"level"});
+                             {"vert", "vs", "frag", "fs", "geom", "gs", "comp", "cs", "spv"},
+                             AssetLoaderConcurrency::Parallel) &&
+               register_type(AssetType::KPAT_ShaderProgram, "KPAT_ShaderProgram", {"shader"},
+                             AssetLoaderConcurrency::Parallel) &&
+               register_type(AssetType::KPAT_Material, "KPAT_Material", {"material"},
+                             AssetLoaderConcurrency::Parallel) &&
+               register_type(AssetType::KPAT_Level, "KPAT_Level", {"level"},
+                             AssetLoaderConcurrency::Parallel);
     }
 
     AssetType AssetManager::ResolveAssetType(std::string_view extension,
@@ -556,7 +567,51 @@ namespace kpengine::asset
 
     AssetID AssetManager::LoadSync(const std::string &path)
     {
-        return LoadSyncInternal(path, nullptr, std::nullopt, std::nullopt);
+        // Share ordinary root requests before entering the loader pipeline.
+        // Session loads intentionally stay on the observation path so each
+        // caller retains its own operation record.
+        const std::string key = Key(path);
+        std::shared_ptr<std::promise<AssetID>> promise;
+        std::shared_future<AssetID> existing;
+        {
+            std::lock_guard<std::mutex> lock(in_flight_mutex_);
+            const auto found = in_flight_loads_.find(key);
+            if (found != in_flight_loads_.end())
+            {
+                existing = found->second.result;
+            }
+            else
+            {
+                promise = std::make_shared<std::promise<AssetID>>();
+                in_flight_loads_.emplace(key,
+                                         InFlightLoad{promise->get_future().share()});
+            }
+        }
+        if (existing.valid())
+        {
+            return existing.get();
+        }
+
+        try
+        {
+            const AssetID result =
+                LoadSyncInternal(path, nullptr, std::nullopt, std::nullopt);
+            promise->set_value(result);
+            {
+                std::lock_guard<std::mutex> lock(in_flight_mutex_);
+                in_flight_loads_.erase(key);
+            }
+            return result;
+        }
+        catch (...)
+        {
+            promise->set_exception(std::current_exception());
+            {
+                std::lock_guard<std::mutex> lock(in_flight_mutex_);
+                in_flight_loads_.erase(key);
+            }
+            throw;
+        }
     }
 
     AssetLoadSession AssetManager::BeginLoadObservation()
@@ -569,6 +624,12 @@ namespace kpengine::asset
     {
         std::lock_guard<std::mutex> lock(load_mutex_);
         material_loader_->SetTextureVariantProfile(profile);
+    }
+
+    void AssetManager::SetInitialTextureMipLevelCount(std::uint32_t mip_level_count)
+    {
+        std::lock_guard<std::mutex> lock(load_mutex_);
+        native_texture_loader_->SetInitialMipLevelCount(mip_level_count);
     }
 
     AssetID AssetManager::LoadSync(
@@ -696,7 +757,20 @@ namespace kpengine::asset
             observation.SetSizeCost(size_cost);
         }
 
-        // Disk I/O + parse under the loader lock: the loaders are shared instances.
+        AssetLoaderConcurrency loader_concurrency =
+            AssetLoaderConcurrency::Serialized;
+        {
+            std::lock_guard<std::recursive_mutex> lock(state_mutex_);
+            if (const AssetTypeDescriptor *descriptor =
+                    type_registry_.FindByType(type))
+            {
+                loader_concurrency = descriptor->concurrency;
+            }
+        }
+
+        // Disk I/O + parse under an explicit loader policy. Shared stateless
+        // product readers use bounded slots; legacy/custom readers use the
+        // serialized mutex unless they opt in through their descriptor.
         AssetRegisterInfo register_info{};
         if (observation.IsActive())
         {
@@ -709,19 +783,35 @@ namespace kpengine::asset
         std::chrono::steady_clock::time_point source_load_started{};
         std::chrono::steady_clock::time_point source_load_finished{};
         bool loaded = false;
+        bool parallel_slot_acquired = false;
 
-        // Publish the source phase before taking the loader lock. The loader
-        // call must stay serialized, while observation publication must not
-        // occur under that lock.
+        // Publish the source phase before taking the loader gate. Observation
+        // publication must not occur while a shared loader gate is held.
         if (observation.IsActive())
         {
             observation.SetPhase(AssetLoadPhase::LoadSource);
         }
         try
         {
-            std::unique_lock<std::mutex> lock(load_mutex_, std::defer_lock);
-            while (!lock.try_lock())
+            std::unique_lock<std::mutex> serialized_lock(load_mutex_,
+                                                         std::defer_lock);
+            while (true)
             {
+                if (loader_concurrency == AssetLoaderConcurrency::Parallel)
+                {
+                    parallel_slot_acquired = parallel_loader_slots_.try_acquire();
+                }
+                else
+                {
+                    if (serialized_lock.try_lock())
+                    {
+                        break;
+                    }
+                }
+                if (parallel_slot_acquired || serialized_lock.owns_lock())
+                {
+                    break;
+                }
                 if (cancelled(AssetLoadPhase::WaitingForLoader))
                 {
                     return AssetID();
@@ -738,9 +828,19 @@ namespace kpengine::asset
             source_load_finished = observation.IsActive()
                                        ? std::chrono::steady_clock::now()
                                        : std::chrono::steady_clock::time_point{};
+            if (parallel_slot_acquired)
+            {
+                parallel_loader_slots_.release();
+                parallel_slot_acquired = false;
+            }
         }
         catch (...)
         {
+            if (parallel_slot_acquired)
+            {
+                parallel_loader_slots_.release();
+                parallel_slot_acquired = false;
+            }
             if (observation.IsActive())
             {
                 source_load_finished = std::chrono::steady_clock::now();
@@ -834,21 +934,51 @@ namespace kpengine::asset
             std::vector<AssetID> resolved_dependencies = std::move(register_info.dependencies);
             resolved_dependencies.reserve(resolved_dependencies.size() +
                                            register_info.dependency_requests.size());
-            for (const AssetRegisterInfo::DependencyRequest &request : register_info.dependency_requests)
+            std::vector<std::future<AssetID>> dependency_futures;
+            dependency_futures.reserve(register_info.dependency_requests.size());
+            const std::optional<AssetLoadOperationID> dependency_parent =
+                observation.IsActive()
+                    ? std::optional<AssetLoadOperationID>(observation.ID())
+                    : std::nullopt;
+            for (const AssetRegisterInfo::DependencyRequest &request :
+                 register_info.dependency_requests)
             {
                 if (cancelled(AssetLoadPhase::ResolveDependencies))
                 {
                     return AssetID();
                 }
+                try
+                {
+                    const std::string dependency_path = request.path;
+                    dependency_futures.emplace_back(std::async(
+                        std::launch::async,
+                        [this, dependency_path, observation_state, dependency_parent]()
+                        {
+                            return LoadSyncInternal(dependency_path, observation_state,
+                                                     dependency_parent, std::nullopt);
+                        }));
+                }
+                catch (...)
+                {
+                    if (observation.IsActive())
+                    {
+                        observation.Fail(MakeDiagnostic(
+                            observation.ID(), display_path,
+                            AssetLoadPhase::ResolveDependencies,
+                            "dependency scheduling threw an exception"));
+                    }
+                    throw;
+                }
+            }
+
+            for (size_t index = 0; index < dependency_futures.size(); ++index)
+            {
+                const AssetRegisterInfo::DependencyRequest &request =
+                    register_info.dependency_requests[index];
                 AssetID dependency;
                 try
                 {
-                    dependency = LoadSyncInternal(
-                        request.path, observation_state,
-                        observation.IsActive()
-                            ? std::optional<AssetLoadOperationID>(observation.ID())
-                            : std::nullopt,
-                        std::nullopt);
+                    dependency = dependency_futures[index].get();
                 }
                 catch (...)
                 {
@@ -989,8 +1119,8 @@ namespace kpengine::asset
 
     std::future<AssetID> AssetManager::LoadAsync(const std::string &path)
     {
-        // Same pipeline as LoadSync, offloaded to a worker thread. Loads serialize
-        // on load_mutex_, so concurrent calls never race the shared loaders.
+        // Same pipeline as LoadSync, offloaded to a worker thread. Ordinary
+        // concurrent roots share the in-flight result in LoadSync.
         // Note: destroying this future without get()/wait() blocks until the load
         // finishes (std::async semantics).
         return std::async(std::launch::async, [this, path]()

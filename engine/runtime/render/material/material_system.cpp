@@ -11,7 +11,7 @@ namespace kpengine::render
         RefreshResources();
     }
 
-    void MaterialSystem::RefreshResources()
+    void MaterialSystem::RefreshResources(bool force_ready)
     {
         for (auto &[id, record] : templates_)
         {
@@ -23,7 +23,9 @@ namespace kpengine::render
         for (auto &[id, record] : instances_)
         {
             const auto template_it = templates_.find(template_handles_.Get(record.template_handle));
-            if (template_it != templates_.end() && record.resolution.state == MaterialResourceState::Pending)
+            if (template_it != templates_.end() &&
+                (record.resolution.state == MaterialResourceState::Pending ||
+                 (force_ready && record.resolution.state == MaterialResourceState::Ready)))
             {
                 ResolveInstance(record.handle, template_it->second, record);
             }

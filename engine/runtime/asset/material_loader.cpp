@@ -445,7 +445,8 @@ namespace kpengine::asset
                 const std::string &authored_texture =
                     std::get<std::string>(parameter.value);
                 const bool use_block_compressed_profile =
-                    texture_variant_profile_ == TextureVariantProfile::BlockCompressed &&
+                    texture_variant_profile_.load(std::memory_order_acquire) ==
+                        TextureVariantProfile::BlockCompressed &&
                     !parameter.block_compressed_path.empty();
                 const std::string &selected_texture = use_block_compressed_profile
                                                            ? parameter.block_compressed_path

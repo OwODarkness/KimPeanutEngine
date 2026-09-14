@@ -34,6 +34,10 @@ namespace
         kpengine::asset::kFirstCustomAssetTypeValue + 0x23u);
     constexpr AssetType kConcurrentType = static_cast<AssetType>(
         kpengine::asset::kFirstCustomAssetTypeValue + 0x24u);
+    constexpr AssetType kParallelChildType = static_cast<AssetType>(
+        kpengine::asset::kFirstCustomAssetTypeValue + 0x25u);
+    constexpr AssetType kParallelParentType = static_cast<AssetType>(
+        kpengine::asset::kFirstCustomAssetTypeValue + 0x26u);
 
     struct RegistryPayload final : IAssetPayload
     {
@@ -69,13 +73,16 @@ namespace
         AssetType type,
         const char *name,
         const char *extension,
-        kpengine::asset::AssetLoaderCallback loader)
+        kpengine::asset::AssetLoaderCallback loader,
+        kpengine::asset::AssetLoaderConcurrency concurrency =
+            kpengine::asset::AssetLoaderConcurrency::Serialized)
     {
         AssetTypeDescriptor descriptor{};
         descriptor.type = type;
         descriptor.name = name;
         descriptor.extensions = {extension};
         descriptor.loader = std::move(loader);
+        descriptor.concurrency = concurrency;
         return descriptor;
     }
 
@@ -87,6 +94,7 @@ namespace
             AssetManager &manager = AssetManager::GetInstance();
             std::string diagnostic;
             concurrent_state_ = std::make_shared<ConcurrentLoaderState>();
+            parallel_state_ = std::make_shared<ConcurrentLoaderState>();
 
             ASSERT_TRUE(manager.RegisterAssetType(
                 MakeDescriptor(
@@ -165,13 +173,56 @@ namespace
                     }),
                 diagnostic))
                 << diagnostic;
+
+            ASSERT_TRUE(manager.RegisterAssetType(
+                MakeDescriptor(
+                    kParallelChildType, "AX1_4_ParallelChild", "ax14parallelchild",
+                    [state = parallel_state_](const std::string &path,
+                                               AssetRegisterInfo &info)
+                    {
+                        const int active =
+                            state->active.fetch_add(1, std::memory_order_relaxed) + 1;
+                        UpdateMaximum(state->maximum_active, active);
+                        state->calls.fetch_add(1, std::memory_order_relaxed);
+                        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                        state->active.fetch_sub(1, std::memory_order_relaxed);
+
+                        info.path = path;
+                        info.name = "AX1_4_ParallelChildPayload";
+                        info.type = kParallelChildType;
+                        info.resource = std::make_shared<RegistryPayload>(kParallelChildType);
+                        return true;
+                    },
+                    kpengine::asset::AssetLoaderConcurrency::Parallel),
+                diagnostic))
+                << diagnostic;
+
+            ASSERT_TRUE(manager.RegisterAssetType(
+                MakeDescriptor(
+                    kParallelParentType, "AX1_4_ParallelParent", "ax14parallelparent",
+                    [](const std::string &path, AssetRegisterInfo &info)
+                    {
+                        info.path = path;
+                        info.name = "AX1_4_ParallelParentPayload";
+                        info.type = kParallelParentType;
+                        info.resource = std::make_shared<RegistryPayload>(kParallelParentType);
+                        info.dependency_requests = {
+                            {"ax14_parallel_child_a.ax14parallelchild", kParallelChildType},
+                            {"ax14_parallel_child_b.ax14parallelchild", kParallelChildType}};
+                        return true;
+                    }),
+                diagnostic))
+                << diagnostic;
         }
 
         static std::shared_ptr<ConcurrentLoaderState> concurrent_state_;
+        static std::shared_ptr<ConcurrentLoaderState> parallel_state_;
     };
 
     std::shared_ptr<ConcurrentLoaderState>
-        AssetExtensionHardeningTest::concurrent_state_;
+    AssetExtensionHardeningTest::concurrent_state_;
+    std::shared_ptr<ConcurrentLoaderState>
+        AssetExtensionHardeningTest::parallel_state_;
 }
 
 TEST_F(AssetExtensionHardeningTest, ValidExternalTypeLoadsAndUnloads)
@@ -234,9 +285,26 @@ TEST_F(AssetExtensionHardeningTest, ConcurrentLoadsShareOneIdentityAndSerializeL
     EXPECT_EQ(second_id, first_id);
     EXPECT_EQ(manager.GetLiveAssetCount(kConcurrentType), 1u);
     EXPECT_EQ(concurrent_state_->maximum_active.load(), 1);
-    EXPECT_GE(concurrent_state_->calls.load(), 1);
+    EXPECT_EQ(concurrent_state_->calls.load(), 1);
 
     manager.UnRegisterAsset(first_id);
+}
+
+TEST_F(AssetExtensionHardeningTest, IndependentDependenciesUseBoundedParallelPolicy)
+{
+    AssetManager &manager = AssetManager::GetInstance();
+    const AssetID parent = manager.LoadSync("ax14_parallel_root.ax14parallelparent");
+
+    ASSERT_TRUE(parent.IsValid());
+    EXPECT_EQ(parallel_state_->calls.load(), 2);
+    EXPECT_EQ(parallel_state_->maximum_active.load(), 2);
+
+    const std::vector<AssetID> children = manager.GetAsset(parent)->GetDependencies();
+    manager.UnRegisterAsset(parent);
+    for (const AssetID child : children)
+    {
+        manager.UnRegisterAsset(child);
+    }
 }
 
 TEST_F(AssetExtensionHardeningTest, AsyncObservationUsesRegisteredCustomType)

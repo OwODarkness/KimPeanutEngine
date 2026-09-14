@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_ASSET_MATERIAL_LOADER_H
 #define KPENGINE_RUNTIME_ASSET_MATERIAL_LOADER_H
 
+#include <atomic>
 #include <string>
 
 #include "asset.h"
@@ -13,13 +14,14 @@ namespace kpengine::asset
     public:
         void SetTextureVariantProfile(TextureVariantProfile profile) noexcept
         {
-            texture_variant_profile_ = profile;
+            texture_variant_profile_.store(profile, std::memory_order_release);
         }
 
         bool Load(const std::string &path, AssetRegisterInfo &info);
 
     private:
-        TextureVariantProfile texture_variant_profile_ = TextureVariantProfile::Portable;
+        std::atomic<TextureVariantProfile> texture_variant_profile_ =
+            TextureVariantProfile::Portable;
     };
 }
 

@@ -203,7 +203,7 @@ namespace kpengine::render
     {
     public:
         void SetResourceResolver(IMaterialResourceResolver *resolver);
-        void RefreshResources();
+        void RefreshResources(bool force_ready = false);
         MaterialTemplateHandle CreateTemplate(const MaterialTemplateDesc &desc);
         bool DestroyTemplate(MaterialTemplateHandle handle);
         const MaterialTemplateDesc *FindTemplate(MaterialTemplateHandle handle) const;

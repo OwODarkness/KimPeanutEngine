@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -22,6 +23,7 @@
 namespace kpengine::asset
 {
     struct ShaderProgramResource;
+    struct TextureResource;
 }
 
 namespace kpengine::data
@@ -53,11 +55,12 @@ namespace kpengine::render
         asset::AssetID asset_id{};
         TextureFormat format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
         TextureCacheVariant variant = TextureCacheVariant::Source;
+        uint32_t first_resident_mip = 0;
 
         bool operator==(const TextureCacheKey &other) const noexcept
         {
             return asset_id == other.asset_id && format == other.format &&
-                   variant == other.variant;
+                   variant == other.variant && first_resident_mip == other.first_resident_mip;
         }
     };
 
@@ -70,7 +73,8 @@ namespace kpengine::render
                 static_cast<uint8_t>(key.format));
             const std::size_t variant_hash = std::hash<uint8_t>{}(
                 static_cast<uint8_t>(key.variant));
-            return asset_hash ^ (format_hash << 1) ^ (variant_hash << 3);
+            const std::size_t mip_hash = std::hash<uint32_t>{}(key.first_resident_mip);
+            return asset_hash ^ (format_hash << 1) ^ (variant_hash << 3) ^ (mip_hash << 5);
         }
     };
 
@@ -120,6 +124,8 @@ namespace kpengine::render
             MaterialInstanceHandle handle) const;
         bool UsesBindlessTextures(MaterialInstanceHandle handle) const;
         RenderProfileTextureMetrics GetTextureMetrics() const;
+        bool PollTextureResidency();
+        void CollectRetiredTextures();
         void Cleanup();
 
     private:
@@ -142,12 +148,24 @@ namespace kpengine::render
             mesh_sections_;
         std::unordered_map<TextureCacheKey, graphics::TextureHandle, TextureCacheKeyHash>
             texture_cache_;
+        std::unordered_map<TextureCacheKey, uint64_t, TextureCacheKeyHash>
+            texture_cache_bytes_;
         std::unordered_map<uint64_t, graphics::SamplerHandle> material_sampler_cache_;
         std::unordered_map<MaterialTemplateHandle,
                            std::unordered_map<MaterialPass, graphics::PipelineHandle>>
             material_pipelines_;
         std::unordered_map<MaterialInstanceHandle, ResolvedMaterialTextureBindings>
             material_texture_bindings_;
+        std::unordered_map<uint64_t, std::weak_ptr<const asset::TextureResource>>
+            tracked_texture_resources_;
+        std::unordered_map<uint64_t, uint32_t> active_texture_mips_;
+        struct RetiredTexture
+        {
+            graphics::TextureHandle handle;
+            uint64_t bytes = 0;
+            uint32_t frames_remaining = 0;
+        };
+        std::vector<RetiredTexture> retired_textures_;
         graphics::SamplerHandle default_sampler_handle_;
         uint64_t resident_texture_bytes_ = 0;
     };

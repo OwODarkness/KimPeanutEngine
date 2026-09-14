@@ -406,6 +406,10 @@ namespace kpengine
                     ? asset::TextureVariantProfile::BlockCompressed
                     : asset::TextureVariantProfile::Portable;
             asset_manager.SetTextureVariantProfile(texture_profile);
+            // AP1.5b commits a small tail-mip view first; the native loader
+            // continues the full-resolution read in a bounded background task.
+            constexpr std::uint32_t kInitialTextureMipLevels = 6;
+            asset_manager.SetInitialTextureMipLevelCount(kInitialTextureMipLevels);
             const auto asset_loading_started = std::chrono::steady_clock::now();
             try
             {

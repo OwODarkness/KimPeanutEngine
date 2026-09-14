@@ -1,5 +1,6 @@
 #include "render_resource_resolver.h"
 
+#include <algorithm>
 #include <cstddef>
 
 #include "asset/shader.h"
@@ -136,7 +137,7 @@ namespace kpengine::render
             }
             format = data.format;
         }
-        const TextureCacheKey key{asset_id, format, variant};
+        const TextureCacheKey key{asset_id, format, variant, data.first_resident_mip};
         const auto existing = texture_cache_.find(key);
         graphics::TextureHandle texture;
         if (existing != texture_cache_.end())
@@ -150,8 +151,27 @@ namespace kpengine::render
             texture = backend_->CreateTexture(data, settings);
             if (texture.IsValid())
             {
+                for (auto it = texture_cache_.begin(); it != texture_cache_.end();)
+                {
+                    const TextureCacheKey &old_key = it->first;
+                    if (old_key.asset_id == asset_id && old_key.format == format &&
+                        old_key.variant == variant &&
+                        old_key.first_resident_mip > key.first_resident_mip)
+                    {
+                        retired_textures_.push_back({
+                            it->second,
+                            texture_cache_bytes_[old_key],
+                            std::max(1U, backend_->GetFramesInFlight())});
+                        texture_cache_bytes_.erase(old_key);
+                        it = texture_cache_.erase(it);
+                        continue;
+                    }
+                    ++it;
+                }
                 texture_cache_.emplace(key, texture);
-                resident_texture_bytes_ += data.GetTotalByteCount();
+                const uint64_t bytes = static_cast<uint64_t>(data.GetTotalByteCount());
+                texture_cache_bytes_.emplace(key, bytes);
+                resident_texture_bytes_ += bytes;
             }
         }
         if (!texture.IsValid())
@@ -247,8 +267,16 @@ namespace kpengine::render
             {
                 return {MaterialResourceState::Pending, "material texture asset is not loaded"};
             }
+            tracked_texture_resources_[selected_texture_asset.Pack()] = texture;
+            std::shared_ptr<const data::TextureData> resolved_data = texture->data;
+            if (const auto full_resolution = texture->TryGetFullResolutionData())
+            {
+                resolved_data = full_resolution;
+            }
+            active_texture_mips_[selected_texture_asset.Pack()] =
+                resolved_data->first_resident_mip;
             const TextureBinding binding =
-                GetOrCreateTextureBinding(selected_texture_asset, *texture->data,
+                GetOrCreateTextureBinding(selected_texture_asset, *resolved_data,
                                           texture_value->color_space, &texture_value->sampler);
             if (!binding.texture.IsValid() || !binding.sampler.IsValid())
             {
@@ -346,6 +374,52 @@ namespace kpengine::render
         return metrics;
     }
 
+    bool RenderResourceResolver::PollTextureResidency()
+    {
+        bool changed = false;
+        for (const auto &[packed_id, weak_texture] : tracked_texture_resources_)
+        {
+            const auto texture = weak_texture.lock();
+            if (!texture)
+            {
+                continue;
+            }
+            const auto full_resolution = texture->TryGetFullResolutionData();
+            const auto active = active_texture_mips_.find(packed_id);
+            if (full_resolution && active != active_texture_mips_.end() &&
+                full_resolution->first_resident_mip < active->second)
+            {
+                changed = true;
+            }
+        }
+        return changed;
+    }
+
+    void RenderResourceResolver::CollectRetiredTextures()
+    {
+        if (!backend_)
+        {
+            return;
+        }
+        for (auto it = retired_textures_.begin(); it != retired_textures_.end();)
+        {
+            if (it->frames_remaining > 0)
+            {
+                --it->frames_remaining;
+            }
+            if (it->frames_remaining != 0)
+            {
+                ++it;
+                continue;
+            }
+            backend_->DestroyTexture(it->handle);
+            resident_texture_bytes_ = resident_texture_bytes_ >= it->bytes
+                                          ? resident_texture_bytes_ - it->bytes
+                                          : 0;
+            it = retired_textures_.erase(it);
+        }
+    }
+
     void RenderResourceResolver::Cleanup()
     {
         if (!backend_)
@@ -378,6 +452,12 @@ namespace kpengine::render
             backend_->DestroyTexture(handle);
         }
         texture_cache_.clear();
+        texture_cache_bytes_.clear();
+        for (const RetiredTexture &retired : retired_textures_)
+        {
+            backend_->DestroyTexture(retired.handle);
+        }
+        retired_textures_.clear();
         resident_texture_bytes_ = 0;
         if (default_sampler_handle_.IsValid())
         {
@@ -400,6 +480,8 @@ namespace kpengine::render
         prepared_assets_ = nullptr;
         material_pipelines_.clear();
         material_texture_bindings_.clear();
+        tracked_texture_resources_.clear();
+        active_texture_mips_.clear();
     }
 
     bool RenderResourceResolver::BuildDefaultPipelineDesc(const asset::ShaderProgramResource &program,

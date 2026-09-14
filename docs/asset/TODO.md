@@ -137,12 +137,17 @@ belongs in the corresponding `.spec/journal/` entry.
     validation are complete. The serialization correctness fix is covered by
     regression tests; the three current products are V3, approximately 45%
     smaller, decode faster, and have no reported visual regression.
-  - [ ] **AP1.4 — Asset package:** build and mount a read-only dependency-closure
-    package whose TOC preserves product identity, shared Texture deduplication,
-    corruption bounds, and priority-ordered byte ranges.
-  - [ ] **AP1.5 — Scheduling and mip readiness:** add shared in-flight loads,
-    explicit loader concurrency policy, a bounded memory budget, low-mip scene
-    commit, and observable background high-mip streaming.
+  - [ ] **[AP1.4 — Asset package](.plan/AP1.4.md) (deferred until publish/shipping):** build and mount a
+    read-only dependency-closure package whose TOC preserves product identity,
+    shared Texture deduplication, corruption bounds, and priority-ordered byte
+    ranges.
+  - [ ] **AP1.5 — Scheduling and mip readiness:** AP1.5a provides shared
+    ordinary-root in-flight loads, explicit loader concurrency policy, bounded
+    loader slots, and independent dependency scheduling. AP1.5b now provides
+    low-mip scene commit, bounded background full-texture decode, observable
+    promotion through Render, and deferred GPU texture retirement. Range-aware
+    reads, in-place subresource upload, and measured scene residency remain
+    open.
   - [ ] **AP1.6 — Integration gate:** reach initial packaged Sponza scene commit
     within 5 seconds in RelWithDebInfo on the reference laptop and record full
     tests, Vulkan/OpenGL captures, latency, bytes, memory, and final-residency

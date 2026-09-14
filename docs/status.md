@@ -1,5 +1,22 @@
 # Project Status
 
+- **Asset AP1.5b low-mip residency slice (2026-09-14)** — AP1.4
+  package/TOC work is explicitly deferred until the engine has a
+  publish/shipping consumer. On the current loose `.archive` development path,
+  Asset type descriptors now declare loader concurrency; built-in stateless
+  readers use four bounded loader slots, legacy/custom readers remain
+  serialized by default, independent dependency branches load concurrently,
+  and ordinary concurrent root requests share an in-flight result. Native
+  textures can commit a six-level tail view, finish a bounded background full
+  read, and promote Render bindings with deferred GPU retirement; RGBA16F IBL
+  inputs stay complete. The Asset regression set remains green at 139/139;
+  the texture import suite is green at 11/11 including tail-mip commit, and
+  the checked-in `level/performance_profile.level` remains the runtime
+  validation fixture. Range-aware file reads and in-place GPU mip upload remain
+  open. →
+  [AP1.5 plan](asset/.plan/AP1.5.md),
+  [AP1.5b journal](../.spec/journal/2026-09-14-asset-ap1-5b.md)
+
 - **C++20 module migration pass (2026-09-14)** — Core hash/cache/database/texture
   inputs, Asset product readers, Render snapshots/light data, Graphics buffer
   upload boundaries, Gameplay editor snapshots, and image-I/O memory inputs now

@@ -289,7 +289,8 @@ namespace kpengine::asset
     }
 
     NativeTextureProduct DeserializeNativeTexture(std::span<const std::byte> bytes,
-                                                  const ContentHashPair *verified_hashes)
+                                                  const ContentHashPair *verified_hashes,
+                                                  std::uint32_t first_mip_level)
     {
         if (bytes.size() > kNativeTextureMaxBytes || bytes.size() < kNativeTextureHeaderSize)
         {
@@ -323,6 +324,8 @@ namespace kpengine::asset
         if (features != kNativeTextureFeatures) Fail(NativeTextureErrorCode::UnsupportedFeatures, "native texture features are unsupported");
         if (total_size != bytes.size() || mip_count == 0 || mip_count > kNativeTextureMaxMipLevels)
             Fail(NativeTextureErrorCode::InvalidDirectory, "native texture total size or mip count is invalid");
+        if (first_mip_level >= mip_count)
+            Fail(NativeTextureErrorCode::InvalidArgument, "native texture initial mip level is invalid");
         const std::size_t directory_size = static_cast<std::size_t>(mip_count) * kNativeTextureMipEntrySize;
         std::size_t directory_end = 0;
         if (!CheckedAdd(kNativeTextureHeaderSize, directory_size, directory_end) || directory_end > bytes.size())
@@ -370,8 +373,15 @@ namespace kpengine::asset
                 Fail(NativeTextureErrorCode::InvalidDirectory, "native texture mip directory is invalid");
             if (!CheckedAdd(expected_offset, static_cast<std::size_t>(payload_size), expected_offset))
                 Fail(NativeTextureErrorCode::Overflow, "native texture mip payload overflows");
-            if (index == 0)
+            if (index < first_mip_level)
             {
+                continue;
+            }
+            if (index == first_mip_level)
+            {
+                data.width = level_width;
+                data.height = level_height;
+                data.first_resident_mip = first_mip_level;
                 data.pixels.resize(static_cast<std::size_t>(payload_size));
                 CopyPayload(bytes, static_cast<std::size_t>(payload_offset), data.pixels);
             }
