@@ -92,16 +92,67 @@ Explicit non-goals:
 - [x] `SpatialUnitTest` with 25 cases, the core being property tests against
   brute-force scans.
 
-### Stage 2 — render and gameplay wiring (proposed)
+### Stage 2 — render culling wiring (investigated 2026-09-14, declined)
 
-- [ ] Replace the linear scans in `SceneVisibility::BuildVisibleProxies` and
-  `BuildVisibleSections` with BVH traversal, keeping the existing
-  "malformed bounds remain visible" policy by consulting
-  `LinearBVH::DegeneratePrimitives()` for the primitives the tree cannot place.
-- [ ] Back `GameplayWorld::PickActor` with `IntersectRay`.
-- [ ] Decide the rebuild cadence against `RenderWorld::Snapshot()`, which is
-  already immutable per frame; `Refit` is the cheaper option when the proxy set
-  is stable and only transforms moved.
+Measured, then not wired. The measurement is the reason, so it is recorded here
+rather than left as a decision without evidence.
+
+`LinearBVH::QueryFiltered` was added for this stage and is kept: it is the
+general form of `QueryOverlap` and is what any future region query (a frustum, a
+light volume) will need. It currently has **no consumer in the render path**.
+
+Stage 2 as originally proposed assumed a proxy-count threshold above which a BVH
+would win. Two measurements over synthetic packets matching the real
+`VisibleMeshSection` stride (Debug, this machine) show there is no such
+threshold:
+
+| packets | linear scan | gather | build | query | build+query | ratio |
+|---|---|---|---|---|---|---|
+| 738 (sponza) | 29.5 us | 22.2 | 1629.8 | 44.4 | 1674 | 56.7x |
+| 2048 | 84.6 | 63.8 | 4754.9 | 104.0 | 4859 | 57.4x |
+| 8192 | 338.9 | 251.6 | 21352 | 354.9 | 21707 | 64.1x |
+| 32768 | 1357 | 1024 | 93585 | 1345 | 94930 | 69.9x |
+
+A per-call build is 57-70x the linear scan and the ratio *worsens* with scale,
+because the SAH build costs about 2.2 us per packet against the scan's 0.04 us.
+
+Nor does a free tree fix it. Traversal alone, 8192 packets, as the frustum
+shrinks:
+
+| surviving | linear | query | ratio |
+|---|---|---|---|
+| 31.9% | 358 us | 387 us | 1.08x (worse) |
+| 5.1% | 327 | 78.0 | 0.24x |
+| 1.0% | 294 | 21.4 | 0.07x |
+| 0.1% | 266 | 8.8 | 0.03x |
+
+Traversal wins only below roughly 10% survival, because at high survival it does
+*more* plane tests than the flat scan: it tests the frustum at every node and
+every primitive, plus stack traffic. Sponza's G-buffer survival is 285/738 =
+39%, so a cached tree would still lose there.
+
+Scale of the stakes: sponza's entire G-buffer filter is 29.5 us/frame, about
+0.18% of a 16.6 ms frame. The measured `section_packet_build_cpu_ms` is 2.87 -
+over 100x larger - and it lives in `BuildSectionCandidates`, which the BVH
+cannot help because that pass deliberately takes no frustum (the shadow
+schedulers need every potential caster).
+
+Revisit only if a scene appears with low survival at high count, and then with
+the cached-tree design below, not a per-call build.
+
+- [x] ~~Replace the linear scans in `SceneVisibility::BuildVisibleProxies` and
+  `BuildVisibleSections` with BVH traversal~~ - `BuildVisibleProxies` and the
+  `MeshProxy` overload of `BuildVisibleSections` turned out to be **dead in
+  production** (only unit tests call them), so accelerating them would have
+  accelerated nothing. The live path is `BuildSectionCandidates` ->
+  `FilterVisibleSections`, and it is not a win per the measurements above.
+- [ ] Back `GameplayWorld::PickActor` with `IntersectRay`. Still open, and the
+  one place a single-query structure has an obvious shape to win: picking is one
+  ray against N actors, not N queries against a rebuild.
+- [ ] If revisited: a persistent, content-stamped tree shared across the G-buffer
+  filter and every per-light shadow filter in `DeferredRenderer`, keyed on the
+  proxy set rather than rebuilt per call. This is the only formulation that
+  reaches the low-survival regime where traversal wins.
 - [ ] Validate through the runtime command registry with a checked-in startup
   fixture, not by compilation alone.
 

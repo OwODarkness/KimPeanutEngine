@@ -1,5 +1,31 @@
 # Project Status
 
+- **Spatial BVH stage 2 declined on measurement (2026-09-14)** — wiring
+  `LinearBVH` into render-world culling was measured and then **not** shipped,
+  because the measurement says it would be a slowdown rather than a speedup.
+  A per-call build costs 57–70× the linear scan it would replace at every tested
+  size (738 packets, sponza's scale, through 32768) and the ratio *worsens* with
+  scale, so no threshold exists that makes it a win — the plan that assumed one
+  was wrong. Traversal alone only beats a flat scan below roughly 10% survival
+  (30× faster at 0.1%), and at sponza's 39% G-buffer survival it is 1.08×
+  *slower*, because it then tests the frustum at every node and every primitive
+  while the flat scan rejects on the first plane. The stakes are also small:
+  sponza's entire G-buffer filter is 29.5 µs/frame, 0.18% of a 16.6 ms frame,
+  while the measured 2.87 ms `section_packet_build_cpu_ms` sits in
+  `BuildSectionCandidates`, which deliberately takes no frustum (the shadow
+  schedulers need every caster) and so cannot be helped by a BVH at all. Two
+  further findings reshaped the stage: `BuildVisibleProxies` and the `MeshProxy`
+  overload of `BuildVisibleSections` are **dead in production** and called only
+  by unit tests, and the cost is per-section rather than per-proxy — sponza is
+  one proxy with 405 primitives, so little can be rejected once its aggregate
+  bounds touch the frustum. What landed instead is `LinearBVH::QueryFiltered`,
+  the general predicate form of `QueryOverlap`, tested against brute force
+  including the conservative-predicate contract; it has no render consumer yet.
+  `scene_visibility.cpp` is unchanged and render culling is byte-identical to
+  before. Full suite 755/756, the one failure the pre-existing
+  `LevelLoaderTest` fixture. →
+  [spatial-bvh spec](../.spec/specs/spatial-bvh.md)
+
 - **Spatial BVH structure (2026-09-14)** — the engine's first spatial
   acceleration structure landed in `runtime/core/spatial/linear_bvh.h`/`.cpp` as a
   `LinearBVH` over `spatial::AABB` primitives, with no Render or Gameplay consumer
