@@ -268,6 +268,7 @@ namespace kpengine::render
                 return {MaterialResourceState::Pending, "material texture asset is not loaded"};
             }
             tracked_texture_resources_[selected_texture_asset.Pack()] = texture;
+            texture->StartFullResolutionLoad();
             std::shared_ptr<const data::TextureData> resolved_data = texture->data;
             if (const auto full_resolution = texture->TryGetFullResolutionData())
             {

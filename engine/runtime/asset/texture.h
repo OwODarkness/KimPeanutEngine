@@ -3,8 +3,10 @@
 
 
 #include <chrono>
+#include <functional>
 #include <future>
 #include <memory>
+#include <mutex>
 #include "asset_payload.h"
 #include "data/texture.h"
 
@@ -15,22 +17,41 @@ namespace kpengine::asset{
     struct TextureResource final : IAssetPayload{
         std::shared_ptr<TextureData> data;
         uint32_t channel_count;
-        // The initial view is immutable after Asset publication. The future
-        // owns the optional full-resolution replacement without coupling
-        // Asset to Graphics or Render.
-        std::shared_future<std::shared_ptr<const TextureData>> full_resolution_data;
+        // The initial view is immutable after Asset publication. The loader
+        // starts only after Render has committed the initial scene view.
+        void SetFullResolutionLoader(
+            std::function<std::shared_ptr<const TextureData>()> loader)
+        {
+            std::lock_guard<std::mutex> lock(residency_mutex_);
+            full_resolution_loader_ = std::move(loader);
+        }
+
+        void StartFullResolutionLoad() const
+        {
+            std::lock_guard<std::mutex> lock(residency_mutex_);
+            if (!full_resolution_data_.valid() && full_resolution_loader_)
+            {
+                full_resolution_data_ = std::async(
+                    std::launch::async, std::move(full_resolution_loader_)).share();
+            }
+        }
 
         std::shared_ptr<const TextureData> TryGetFullResolutionData() const
         {
-            if (!full_resolution_data.valid() ||
-                full_resolution_data.wait_for(std::chrono::milliseconds{0}) !=
+            std::shared_future<std::shared_ptr<const TextureData>> result;
+            {
+                std::lock_guard<std::mutex> lock(residency_mutex_);
+                result = full_resolution_data_;
+            }
+            if (!result.valid() ||
+                result.wait_for(std::chrono::milliseconds{0}) !=
                     std::future_status::ready)
             {
                 return {};
             }
             try
             {
-                return full_resolution_data.get();
+                return result.get();
             }
             catch (...)
             {
@@ -39,6 +60,13 @@ namespace kpengine::asset{
         }
 
         TextureResource():data(std::make_shared<TextureData>()){}
+
+    private:
+        mutable std::mutex residency_mutex_;
+        mutable std::shared_future<std::shared_ptr<const TextureData>>
+            full_resolution_data_;
+        mutable std::function<std::shared_ptr<const TextureData>()>
+            full_resolution_loader_;
 
         AssetType GetAssetType() const noexcept override
         {

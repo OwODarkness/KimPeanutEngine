@@ -29,7 +29,9 @@ contract.
 
 Native texture products remain complete, hash-verified loose files. The Asset
 loader can now publish a tail-mip view for startup while retaining a bounded
-background full-resolution read (two concurrent full-texture decodes). Render
+background full-resolution read (two concurrent full-texture decodes). The
+background loader is lazy: Render starts it only after the initial scene view
+has committed, so its disk I/O cannot extend the Asset startup phase. Render
 tracks those futures, re-resolves material bindings when a full view is ready,
 and retires the previous GPU texture after the backend's frames-in-flight
 grace period. RGBA16F environment textures intentionally stay full-resolution

@@ -174,10 +174,9 @@ namespace kpengine::asset
             *texture->data = std::move(product.data);
             if (first_mip_level != 0)
             {
-                texture->full_resolution_data = std::async(
-                    std::launch::async, [product_path, product_root = product_root_]()
-                    { return LoadFullResolutionData(product_path, product_root); })
-                                                    .share();
+                texture->SetFullResolutionLoader(
+                    [product_path, product_root = product_root_]()
+                    { return LoadFullResolutionData(product_path, product_root); });
             }
             info.type = AssetType::KPAT_Texture;
             info.path = path;
