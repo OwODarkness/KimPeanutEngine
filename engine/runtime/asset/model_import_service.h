@@ -11,6 +11,7 @@
 #include <string_view>
 #include <vector>
 
+#include "content_metadata.h"
 #include "model_archive.h"
 #include "texture_importer.h"
 
@@ -166,6 +167,8 @@ namespace kpengine::asset
         ModelImportSettings settings{};
         ModelImportProgressCallback progress_callback;
         ModelImportExecutionPolicy execution{};
+        // Optional project-level logical content root. Empty derives it from asset_root.
+        std::filesystem::path content_root;
     };
 
     struct ModelImportResult
@@ -177,6 +180,8 @@ namespace kpengine::asset
         std::filesystem::path model_path;
         std::vector<ContentHash> material_hashes;
         std::vector<ContentHash> texture_hashes;
+        ContentID content_id;
+        std::filesystem::path metadata_path;
         ModelImportMetrics metrics{};
     };
 

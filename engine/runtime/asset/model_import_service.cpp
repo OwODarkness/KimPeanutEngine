@@ -27,6 +27,7 @@
 #endif
 
 #include "assimp_model_decoder.h"
+#include "content_metadata.h"
 #include "native_material.h"
 #include "native_model.h"
 #include "native_texture.h"
@@ -192,6 +193,144 @@ namespace kpengine::asset
             }
         }
 
+        std::filesystem::path DefaultContentRoot(const std::filesystem::path &asset_root)
+        {
+            return asset_root.filename() == "asset" ? asset_root.parent_path() / "content"
+                                                       : asset_root / "content";
+        }
+
+        std::string LogicalSourceKey(const std::string &source_relative_path)
+        {
+            std::filesystem::path key{source_relative_path};
+            key.replace_extension();
+            return key.generic_string();
+        }
+
+        std::string ContentPath(const char *type_name, const std::string &source_key,
+                                std::size_t ordinal = std::numeric_limits<std::size_t>::max())
+        {
+            std::string result = std::string{type_name} + "/" + source_key;
+            if (ordinal != std::numeric_limits<std::size_t>::max())
+            {
+                result += "/" + std::to_string(ordinal);
+            }
+            return result;
+        }
+
+        ContentProduct ProductMetadata(ArchiveProductType type, const ContentHash &hash)
+        {
+            return {type, hash};
+        }
+
+        std::optional<ContentHash> ProductHashFromPortablePath(const std::string &portable_path)
+        {
+            const std::string filename = std::filesystem::path{portable_path}.stem().string();
+            return ContentHash::FromHex(filename);
+        }
+
+        void WriteImportedContentMetadata(
+            const std::filesystem::path &content_root, const std::string &source_relative_path,
+            const ImportedModelDocument &document, const NativeMaterialCookPlan &cook_plan,
+            const std::vector<NativeTextureCookResult> &texture_results,
+            const NativeMaterialConversionResult &converted_materials,
+            const ContentHash &model_hash, const std::vector<ContentHash> &material_hashes)
+        {
+            const std::string source_key = LogicalSourceKey(source_relative_path);
+            const ContentID model_id = MakeContentID("model", source_relative_path);
+            std::vector<ContentID> material_ids;
+            material_ids.reserve(converted_materials.materials.size());
+            for (std::size_t index = 0; index < converted_materials.materials.size(); ++index)
+            {
+                material_ids.push_back(MakeContentID(
+                    "material", source_relative_path + ":" + std::to_string(index)));
+            }
+
+            std::vector<ContentID> texture_ids;
+            texture_ids.reserve(cook_plan.texture_jobs.size());
+            for (std::size_t ordinal = 0; ordinal < cook_plan.texture_jobs.size(); ++ordinal)
+            {
+                texture_ids.push_back(MakeContentID(
+                    "texture", source_relative_path + ":" + std::to_string(ordinal)));
+            }
+
+            ContentMetadata model;
+            model.id = model_id;
+            model.type_name = "model";
+            model.name = std::filesystem::path{source_relative_path}.stem().string();
+            model.content_path = ContentPath("model", source_key);
+            model.source_path = source_relative_path;
+            model.products.push_back(ProductMetadata(ArchiveProductType::Model, model_hash));
+            for (const ContentID &material_id : material_ids)
+            {
+                model.references.push_back({"material", material_id});
+            }
+
+            std::vector<ContentMetadata> records;
+            records.reserve(1 + material_ids.size() + texture_ids.size());
+            records.push_back(std::move(model));
+
+            for (std::size_t index = 0; index < material_ids.size(); ++index)
+            {
+                ContentMetadata material;
+                material.id = material_ids[index];
+                material.type_name = "material";
+                material.name = converted_materials.materials[index].display_name.empty()
+                                    ? "Material_" + std::to_string(index)
+                                    : converted_materials.materials[index].display_name;
+                material.content_path = ContentPath("material", source_key, index);
+                material.source_path = source_relative_path;
+                material.products.push_back(ProductMetadata(ArchiveProductType::Material,
+                                                             material_hashes[index]));
+                for (const NativeMaterialTextureBindingPlan &binding :
+                     cook_plan.materials[index].texture_bindings)
+                {
+                    if (binding.job_ordinal < texture_ids.size())
+                    {
+                        material.references.push_back({binding.name, texture_ids[binding.job_ordinal]});
+                    }
+                }
+                records.push_back(std::move(material));
+            }
+
+            for (std::size_t ordinal = 0; ordinal < texture_ids.size(); ++ordinal)
+            {
+                const NativeTextureCookResult &texture = texture_results[ordinal];
+                ContentMetadata image;
+                image.id = texture_ids[ordinal];
+                image.type_name = "texture";
+                const std::size_t image_index = cook_plan.texture_jobs[ordinal].image_index;
+                image.name = image_index < document.images.size()
+                                 ? std::filesystem::path{document.images[image_index].path}.stem().string()
+                                 : "Texture_" + std::to_string(ordinal);
+                image.content_path = ContentPath("texture", source_key, ordinal);
+                if (image_index < document.images.size())
+                {
+                    image.source_path = document.images[image_index].path;
+                }
+                if (const auto hash = ProductHashFromPortablePath(texture.portable_path))
+                {
+                    image.products.push_back(ProductMetadata(ArchiveProductType::Texture, *hash));
+                }
+                if (const auto hash = ProductHashFromPortablePath(texture.block_compressed_path))
+                {
+                    if (image.products.empty() || image.products.front().hash != *hash)
+                    {
+                        image.products.push_back(ProductMetadata(ArchiveProductType::Texture, *hash));
+                    }
+                }
+                records.push_back(std::move(image));
+            }
+
+            for (const ContentMetadata &record : records)
+            {
+                std::string diagnostic;
+                if (!WriteContentMetadata(content_root, record, &diagnostic))
+                {
+                    Fail(ModelImportErrorCode::PublicationFailed,
+                         "failed to write content metadata: " + diagnostic);
+                }
+            }
+        }
         std::vector<std::byte> ReadBytes(const std::filesystem::path &path,
                                          std::uint64_t *bytes_read = nullptr)
         {
@@ -1454,8 +1593,10 @@ namespace kpengine::asset
         const std::filesystem::path asset_root = AbsoluteNormalized(request.asset_root);
         const std::filesystem::path source_path = ResolveSourcePath(request, asset_root);
         const std::string source_relative_path = AssetRelativePath(asset_root, source_path);
+        const std::filesystem::path content_root =
+            request.content_root.empty() ? DefaultContentRoot(asset_root) : AbsoluteNormalized(request.content_root);
         const std::filesystem::path archive_root =
-            request.archive_root.empty() ? asset_root / ".archive" : AbsoluteNormalized(request.archive_root);
+            request.archive_root.empty() ? content_root / ".archive" : AbsoluteNormalized(request.archive_root);
         const ContentHash settings_hash = SettingsHash(request.settings);
 
         std::shared_ptr<std::mutex> source_mutex;
@@ -1491,6 +1632,8 @@ namespace kpengine::asset
             }
             if (hit.has_value())
             {
+                hit->content_id = MakeContentID("model", source_relative_path);
+                hit->metadata_path = MetadataPath(content_root, ContentPath("model", LogicalSourceKey(source_relative_path)));
                 FinalizeMetrics(hit->metrics, import_started, process_started);
                 ReportProgress(request, ModelImportProgressStage::Complete,
                                "cache hit; native products are up to date");
@@ -1753,6 +1896,9 @@ namespace kpengine::asset
                  error.what());
         }
 
+        WriteImportedContentMetadata(content_root, source_relative_path, document, cook_plan,
+                                     texture_results, converted_materials, model_hash, material_hashes);
+
         ModelImportResult result;
         result.status = ModelImportStatus::Imported;
         result.normalized_source_path = source_relative_path;
@@ -1761,6 +1907,8 @@ namespace kpengine::asset
         result.model_path = archive_root / ProductRelativePath(ArchiveProductType::Model, model_hash);
         result.material_hashes = std::move(material_hashes);
         result.texture_hashes = std::move(texture_hashes);
+        result.content_id = MakeContentID("model", source_relative_path);
+        result.metadata_path = MetadataPath(content_root, ContentPath("model", LogicalSourceKey(source_relative_path)));
         result.metrics = metrics;
         result.metrics.source_image_count = document.images.size();
         result.metrics.product_count = products.size();

@@ -481,9 +481,9 @@ namespace kpengine::asset
                                    : model_loader_(nullptr),
 #endif
                                    native_model_loader_(std::make_unique<NativeModelLoader>(
-                                       std::filesystem::path(GetAssetDirectory()) / ".archive")),
+                                       std::filesystem::path(GetRuntimeArchiveDirectory()))),
                                    native_texture_loader_(std::make_unique<NativeTextureLoader>(
-                                       std::filesystem::path(GetAssetDirectory()) / ".archive")),
+                                       std::filesystem::path(GetRuntimeArchiveDirectory()))),
                                    shader_program_loader_(std::make_unique<ShaderProgramLoader>()),
                                    audio_loader_(std::make_unique<MiniAudio_AudioLoader>()),
                                    material_loader_(std::make_unique<MaterialLoader>()),

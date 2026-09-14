@@ -195,3 +195,13 @@ add_custom_command(TARGET AssetExtensionHardeningTest POST_BUILD
 
 include(GoogleTest)
 gtest_discover_tests(AssetExtensionHardeningTest)
+
+add_executable(
+    ContentMetadataTest
+    content_metadata_test.cpp
+)
+
+target_link_libraries(ContentMetadataTest PRIVATE AssetContent Config KP::GoogleTest)
+
+include(GoogleTest)
+gtest_discover_tests(ContentMetadataTest)

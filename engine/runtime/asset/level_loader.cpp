@@ -499,7 +499,7 @@ namespace kpengine::asset
                         {
                             model_archive_ = std::make_unique<ModelArchiveDatabase>(
                                 (archive_root_.empty()
-                                     ? std::filesystem::path(GetAssetDirectory()) / ".archive"
+                                     ? std::filesystem::path(GetRuntimeArchiveDirectory())
                                      : archive_root_) /
                                     "archive.sqlite3",
                                 2500, ModelArchiveOpenMode::ReadOnly);

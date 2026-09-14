@@ -130,7 +130,10 @@ namespace
                                       const std::filesystem::path &asset_root)
     {
         const std::string value = Option(command, "archive-root");
-        return value.empty() ? asset_root / ".archive" : std::filesystem::path{value};
+        return value.empty() ? (asset_root.filename() == "asset"
+                                     ? asset_root.parent_path() / "content" / ".archive"
+                                     : asset_root / "content" / ".archive")
+                         : std::filesystem::path{value};
     }
 
     std::uint32_t Slot(const CommandLine &command)

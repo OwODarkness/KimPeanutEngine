@@ -32,7 +32,7 @@ namespace kpengine::asset
 
     struct AssetCatalogProviderConfig
     {
-        // Empty selects <GetAssetDirectory()>/.archive/archive.sqlite3.
+        // Empty selects the content archive, with the legacy asset archive as fallback.
         std::filesystem::path database_path;
         std::int32_t busy_timeout_ms{50};
         AssetCatalogCaptureLimits limits;

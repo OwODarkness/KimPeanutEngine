@@ -3,13 +3,14 @@
 - Status: proposed
 - Parent design: [Asset Browser Plans](../PLANS.md)
 - Roadmap: [Asset Browser TODO](../TODO.md)
-- Prerequisites: [AB1.0 catalog contract](AB1.0.md), [AB1.1 snapshot provider](AB1.1.md)
+- Prerequisites: [AB1.0 catalog contract](AB1.0.md), [AB1.1 snapshot provider](AB1.1.md), [AB1.2a imported content boundary](AB1.2a.md)
 
 ## Objective
 
-Publish the AB1.1 provider through Runtime composition and add a readable Asset
-Browser panel to the Editor's tool row. The browser presents archive, loaded, and
-runtime-only catalog nodes without loading assets or retaining Runtime objects.
+Consume the AB1.2a imported-content snapshot through Runtime composition and add
+a readable Asset Browser panel to the Editor's tool row. The browser presents
+successfully imported logical content records without displaying raw sources,
+hash-named archive products, shaders, or runtime-only objects.
 
 AB1.2 is complete when **View > Asset Browser** and the tab close button control
 one visibility state, explicit refresh replaces one immutable snapshot, and
@@ -32,7 +33,7 @@ AB1.2 owns:
 - Runtime ownership and publication of `AssetCatalogSnapshotProvider`;
 - one Editor-owned `AssetBrowserModel` that holds the current snapshot by value;
 - reactive View-menu/window visibility state;
-- archive/path navigation, table and compact-tile presentations;
+- imported-content/path navigation, table and compact-tile presentations;
 - readable primitive icons, search, filters, sorting, selection, details, status,
   and explicit refresh;
 - a callback seam for AB1.3 to open a selected asset as a reference root.
@@ -177,22 +178,22 @@ model never retries automatically.
 
 ## Navigation and projection rules
 
-The left navigation is a catalog projection, not a filesystem browser:
+The left navigation is an imported-content projection, not a raw filesystem or
+archive-product browser:
 
 ```text
-All Assets
-Archive Products
-  <logical-path folders when available>
-Runtime Only
-Missing References
+Imported Content
+  <content-path folders>
+Problems
+  stale / failed / missing-product records
 ```
 
-- `Archive Products` contains ArchiveOnly and LoadedArchiveProduct nodes.
-- Logical folders derive only from normalized `logical_path` components.
-- Nodes without a logical path appear directly in the selected category; their
-  product path remains visible in details.
-- No directory enumeration, file existence check, or source-file traversal is
-  allowed.
+- Imported Content contains only metadata records with a successfully published product closure.
+- Problems contains stale, failed, missing-product, and orphaned metadata.
+- Folders derive from normalized content-relative metadata paths.
+- Raw source files, archive products, runtime-only objects, and internal shaders
+  do not become normal rows.
+- Product hashes and source paths remain available in details.
 - Folder counts are derived from the current filtered snapshot and sort by
   bytewise display path.
 
@@ -266,7 +267,9 @@ the callback receives the stable key and cannot load the asset.
 
 ## Implementation sequence
 
-1. Publish the provider from RuntimeContext and pass only its interface into
+0. Complete [AB1.2a](AB1.2a.md), including metadata publication, ContentRegistry
+   validation, and the import/startup isolation tests.
+1. Publish the content provider from RuntimeContext and pass only its interface into
    Editor startup.
 2. Add queried menu selection and external window visibility with regression
    tests for existing command/window behavior.

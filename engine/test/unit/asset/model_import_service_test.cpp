@@ -14,6 +14,7 @@
 #include <thread>
 #include <vector>
 
+#include "asset/content_metadata.h"
 #include "asset/model_archive.h"
 #include "asset/material_promotion.h"
 #include "asset/model_import_service.h"
@@ -212,6 +213,10 @@ TEST(ModelImportServiceTest, PublishesProductsAndRepeatsAsFastCacheHit)
     ASSERT_EQ(first.status, ModelImportStatus::Imported);
     ASSERT_FALSE(first.model_hash.ToHex().empty());
     ASSERT_TRUE(std::filesystem::is_regular_file(first.model_path));
+    ASSERT_TRUE(std::filesystem::is_regular_file(first.metadata_path));
+    const auto content_snapshot = kpengine::asset::ContentRegistry(fixture.Root() / "content").Capture();
+    EXPECT_EQ(content_snapshot.diagnostics.size(), 0u);
+    EXPECT_GE(content_snapshot.records.size(), 1u);
     ASSERT_GE(first.material_hashes.size(), 1u);
     EXPECT_GT(first.metrics.total_seconds, 0.0);
     EXPECT_GT(first.metrics.stage_seconds[static_cast<std::size_t>(

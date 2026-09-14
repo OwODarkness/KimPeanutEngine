@@ -21,6 +21,16 @@ target_include_directories(AssetArchive PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
 target_link_libraries(AssetArchive PUBLIC AssetProduct Database PRIVATE Log)
+# Database-free logical content metadata. Capture is explicit and editor-owned.
+add_library(AssetContent STATIC
+    content_metadata.cpp
+)
+target_include_directories(AssetContent PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../..
+)
+target_link_libraries(AssetContent PUBLIC AssetProduct PRIVATE KP::NlohmannJson)
+
 
 add_library(AssetNative STATIC
     native_model.cpp
@@ -74,7 +84,7 @@ target_include_directories(AssetRuntime PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
-target_link_libraries(AssetRuntime PUBLIC Data Base AssetNative
+target_link_libraries(AssetRuntime PUBLIC Data Base AssetNative AssetContent
     PRIVATE Config ImageIO Log KP::MagicEnum KP::NlohmannJson KP::Miniaudio)
 target_link_libraries(AssetRuntime PRIVATE AssetArchive)
 if(KPENGINE_ENABLE_FOREIGN_MODEL_COMPAT)
@@ -105,7 +115,7 @@ target_include_directories(AssetImport PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
-target_link_libraries(AssetImport PUBLIC AssetImportRegistry AssetArchive AssetNative Data Base
+target_link_libraries(AssetImport PUBLIC AssetImportRegistry AssetArchive AssetNative AssetContent Data Base
     PRIVATE Config ImageIO Log KP::NlohmannJson KP::Assimp AssetForeignDecode KP::Rgbcx)
 if(WIN32)
     target_link_libraries(AssetImport PRIVATE Psapi)

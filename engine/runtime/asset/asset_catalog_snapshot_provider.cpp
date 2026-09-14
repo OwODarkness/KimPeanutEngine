@@ -132,7 +132,7 @@ namespace kpengine::asset
 
         const std::filesystem::path database_path =
             config_.database_path.empty()
-                ? input.asset_root / ".archive" / "archive.sqlite3"
+                ? std::filesystem::path(GetRuntimeArchiveDirectory()) / "archive.sqlite3"
                 : config_.database_path;
         input.archive_root = database_path.parent_path();
 

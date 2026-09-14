@@ -7,8 +7,10 @@ belongs in the corresponding `.spec/journal/` entry.
 ## Asset Browser roadmap
 
 - [ ] **AB1 — Read-only Asset Browser and Reference Viewer** — publish an
-  immutable Asset-owned catalog and expose readable Browser plus Tree/Text
-  reference windows through the Editor View menu. See
+  immutable Asset-owned imported-content catalog and expose readable Browser
+  plus Tree/Text reference windows through the Editor View menu. The
+  content metadata boundary is defined by AB1.2a before browser UI work.
+  See
   [Asset Browser Plans](asset-browser/PLANS.md) and
   [Asset Browser TODO](asset-browser/TODO.md).
 

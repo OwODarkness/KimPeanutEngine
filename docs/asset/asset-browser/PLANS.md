@@ -1,12 +1,12 @@
 # Asset Browser Plans
 
-**Status: proposed.** This document defines the Editor Asset Browser and Asset Reference Viewer. Work is tracked in [TODO.md](TODO.md); parent architecture remains in [Asset Module Plans](../PLANS.md).
+**Status: proposed.** This document defines the Editor Asset Browser and Asset Reference Viewer. The imported-content boundary is frozen first by [AB1.2a](.plan/AB1.2a.md). Work is tracked in [TODO.md](TODO.md); parent architecture remains in [Asset Module Plans](../PLANS.md).
 
 ## Goal
 
 Provide a readable Unreal/Unity-style view of assets already known to the engine:
 
-- **Asset Browser:** searchable archive and live-asset inventory.
+- **Asset Browser:** searchable imported-content inventory backed by readable metadata.
 - **Asset Reference Viewer:** Dependencies and Referencers in Tree or Text mode.
 
 ```text
@@ -22,8 +22,8 @@ Both windows appear under View. **Open References** selects the browser row as t
 ## Ownership
 
 ```text
-Archive database + AssetManager
-  -> Asset-owned immutable AssetCatalogSnapshot
+Raw source + import publication + archive database + AssetManager
+  -> Asset-owned ContentRegistry and immutable ContentCatalogSnapshot
       -> Editor-owned AssetBrowserModel
           -> Browser + Reference Viewer
 ```
@@ -103,9 +103,13 @@ Menu checkmarks and title-bar close buttons share one visibility state; the menu
 - **[AB1.1 — Asset catalog snapshot provider](.plan/AB1.1.md):** implement
   transactional archive enumeration, bounded live graph capture, joins,
   diagnostics, and headless concurrency tests.
+- **[AB1.2a — Imported content metadata and catalog boundary](.plan/AB1.2a.md):**
+  freeze content, metadata identity/reference rules, internal shader
+  visibility, and import/startup isolation before the browser UI.
 - **[AB1.2 — Asset Browser window and Editor composition](.plan/AB1.2.md):**
-  publish the provider through Runtime, add the snapshot-only Editor model,
-  readable Table/Tiles UI, explicit refresh, and reactive View binding.
+  consume the imported-content snapshot through Runtime, add the snapshot-only
+  Editor model, readable Table/Tiles UI, explicit refresh, and reactive View
+  binding. Product nodes remain details/diagnostics, not default rows.
 - **[AB1.3 — Asset Reference Viewer](.plan/AB1.3.md):** derive both graph
   directions, add bounded Tree/Text projections, copy, and browser navigation.
 - **[AB1.4 — Hardening and dual-backend acceptance](.plan/AB1.4.md):** validate

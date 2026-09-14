@@ -23,6 +23,32 @@ namespace kpengine
         return ComposePath(project_root, "asset/");
     }
 
+    inline std::string GetContentDirectory()
+    {
+        return ComposePath(project_root, "content/");
+    }
+
+    inline std::string GetContentArchiveDirectory()
+    {
+        return ComposePath(project_root, "content/.archive/");
+    }
+
+    inline std::string GetContentShaderDirectory()
+    {
+        return ComposePath(project_root, "content/shader/");
+    }
+
+    inline std::string GetRuntimeArchiveDirectory()
+    {
+        const std::filesystem::path content_archive = project_root / "content/.archive";
+        std::error_code error;
+        if (std::filesystem::is_regular_file(content_archive / "archive.sqlite3", error) && !error)
+        {
+            return content_archive.generic_string();
+        }
+        return (project_root / "asset/.archive").generic_string();
+    }
+
     inline std::string GetBootstrapPath()
     {
         return ComposePath(project_root, "config/bootstrap.json");
