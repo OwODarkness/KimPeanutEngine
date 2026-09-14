@@ -14,6 +14,7 @@
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <tuple>
 
 #include <nlohmann/json.hpp>
@@ -808,7 +809,7 @@ namespace kpengine::asset
         return result;
     }
 
-    void ValidateNativeMaterialProduct(const std::vector<std::byte> &bytes)
+    void ValidateNativeMaterialProduct(std::span<const std::byte> bytes)
     {
         try
         {

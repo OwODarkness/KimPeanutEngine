@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cassert>
+#include <span>
 #include <type_traits> 
 namespace kpengine::math
 {
@@ -17,21 +18,18 @@ namespace kpengine::math
         Vector2();
         explicit Vector2(T value);
         Vector2(T x, T y);
-        explicit Vector2(const T arr[2]);
+        explicit Vector2(std::span<const T, 2> values);
         T operator[](size_t index) const
         {
             assert(index < 2);
-            return *(&this->x_ + index);
+            return index == 0 ? x_ : y_;
         }
 
         T &operator[](size_t index)
         {
             assert(index < 2);
-            return *(&this->x_ + index);
+            return index == 0 ? x_ : y_;
         }
-
-        T *Data() { return &x_; }
-        const T *Data() const { return &x_; }
 
         T SquareLength() const;
         T Norm() const;

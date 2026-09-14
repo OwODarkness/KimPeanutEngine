@@ -445,13 +445,13 @@ namespace kpengine::asset
         return HashBytes(reinterpret_cast<const std::uint8_t *>(value.data()), value.size());
     }
 
-    ContentHash Sha256(const std::vector<std::byte> &value)
+    ContentHash Sha256(std::span<const std::byte> value)
     {
         return HashBytes(reinterpret_cast<const std::uint8_t *>(value.data()), value.size());
     }
 
     std::optional<ContentHashPair> Sha256WithZeroedRange(
-        const std::vector<std::byte> &value, std::size_t zero_offset, std::size_t zero_size)
+        std::span<const std::byte> value, std::size_t zero_offset, std::size_t zero_size)
     {
         if (zero_offset > value.size() || zero_size > value.size() - zero_offset)
         {
@@ -523,7 +523,7 @@ namespace kpengine::asset
     {
     bool VerifyArchiveProductInternal(const std::filesystem::path &path,
                                       ArchiveProductType type,
-                                      const std::vector<std::byte> &bytes,
+                                      std::span<const std::byte> bytes,
                                       std::string &diagnostic,
                                       const std::filesystem::path &product_root,
                                       const ContentHash *precomputed_content_hash)
@@ -619,7 +619,7 @@ namespace kpengine::asset
 
     bool VerifyArchiveProduct(const std::filesystem::path &path,
                               ArchiveProductType type,
-                              const std::vector<std::byte> &bytes,
+                              std::span<const std::byte> bytes,
                               std::string &diagnostic,
                               const std::filesystem::path &product_root)
     {
@@ -628,7 +628,7 @@ namespace kpengine::asset
 
     bool VerifyArchiveProduct(const std::filesystem::path &path,
                               ArchiveProductType type,
-                              const std::vector<std::byte> &bytes,
+                              std::span<const std::byte> bytes,
                               std::string &diagnostic,
                               const std::filesystem::path &product_root,
                               const ContentHash &content_hash)

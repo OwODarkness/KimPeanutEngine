@@ -5,6 +5,7 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <span>
 #include <string>
 
 namespace kpengine::data
@@ -136,7 +137,7 @@ namespace kpengine::data
 
         TextureMipSubresource DownsampleRgba8(
             uint32_t source_width, uint32_t source_height,
-            const std::vector<uint8_t> &source, TextureFormat format,
+            std::span<const uint8_t> source, TextureFormat format,
             TextureSemantic semantic)
         {
             const uint32_t width = std::max(1U, source_width / 2U);
@@ -219,7 +220,7 @@ namespace kpengine::data
 
         TextureMipSubresource DownsampleRgba16F(
             uint32_t source_width, uint32_t source_height,
-            const std::vector<uint8_t> &source, TextureSemantic semantic)
+            std::span<const uint8_t> source, TextureSemantic semantic)
         {
             const uint32_t width = std::max(1U, source_width / 2U);
             const uint32_t height = std::max(1U, source_height / 2U);
@@ -417,7 +418,7 @@ namespace kpengine::data
         uint32_t current_height = texture.height;
         std::vector<uint8_t> current_pixels = std::move(texture.pixels);
         auto downsample = [&](uint32_t width, uint32_t height,
-                              const std::vector<uint8_t> &pixels)
+                              std::span<const uint8_t> pixels)
         {
             return bytes_per_pixel == 4
                        ? DownsampleRgba8(width, height, pixels, texture.format, semantic)

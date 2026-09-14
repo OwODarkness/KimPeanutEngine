@@ -72,7 +72,7 @@ namespace kpengine::render
     }
 
     LightGpuFrameData BuildLightGpuFrameData(
-        const std::vector<Light> &lights,
+        std::span<const Light> lights,
         const ResolvedLightShadowBindings &resolved_shadows)
     {
         LightGpuFrameData result{};
@@ -111,7 +111,7 @@ namespace kpengine::render
     }
 
     LightGpuFrameData BuildLightGpuFrameData(
-        const std::vector<Light> &lights,
+        std::span<const Light> lights,
         const std::optional<ResolvedLightShadowBinding> &resolved_shadow)
     {
         ResolvedLightShadowBindings bindings;

@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cassert>
+#include <span>
 #include <type_traits> 
 namespace kpengine::math
 {
@@ -15,7 +16,7 @@ namespace kpengine::math
         Vector3();
         explicit Vector3(T value);
         Vector3(T x, T y, T z);
-        explicit Vector3(const T arr[3]);
+        explicit Vector3(std::span<const T, 3> values);
 
         T DotProduct(const Vector3 &v) const;
         Vector3 CrossProduct(const Vector3 &v) const;
@@ -27,20 +28,17 @@ namespace kpengine::math
         const T operator[](size_t index) const
         {
             assert(index < 3);
-            return *(&this->x_ + index);
+            return index == 0 ? x_ : (index == 1 ? y_ : z_);
         }
 
         T &operator[](size_t index)
         {
             assert(index < 3);
-            return *(&this->x_ + index);
+            return index == 0 ? x_ : (index == 1 ? y_ : z_);
         }
 
         bool operator==(const Vector3 &v) const { return x_ == v.x_ && y_ == v.y_ && z_ == v.z_; }
         bool operator!=(const Vector3 &v) const { return x_ != v.x_ || y_ != v.y_ || z_ != v.z_; }
-
-        T *Data() { return &x_; }
-        const T *Data() const { return &x_; }
 
         T SquareLength() const;
         T Norm() const;

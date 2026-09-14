@@ -68,10 +68,10 @@ namespace kpengine::graphics
         IEditorPresentationBridge *GetEditorPresentationBridge() override;
         BufferHandle CreateUniformBuffer(uint32_t size) override;
         void *MapUniformBuffer(BufferHandle handle, size_t size) override;
-        BufferHandle CreateBuffer(const BufferDesc &desc, const void *initial_data,
-                                  size_t initial_size) override;
-        bool WriteFrameBuffer(BufferHandle buffer, size_t offset, const void *data,
-                              size_t size) override;
+        BufferHandle CreateBuffer(const BufferDesc &desc,
+                                  std::span<const std::byte> initial_data) override;
+        bool WriteFrameBuffer(BufferHandle buffer, size_t offset,
+                              std::span<const std::byte> data) override;
         uint32_t GetCurrentFrameIndex() const override;
         uint32_t GetFramesInFlight() const override;
         size_t GetUniformBufferAlignment() const override;
@@ -80,8 +80,8 @@ namespace kpengine::graphics
         void WaitIdle() override;
         virtual void Cleanup() override;
 
-        BufferHandle CreateVertexBuffer(const void *data, size_t size) override;
-        BufferHandle CreateIndexBuffer(const void *data, size_t size) override;
+        BufferHandle CreateVertexBuffer(std::span<const std::byte> data) override;
+        BufferHandle CreateIndexBuffer(std::span<const std::byte> data) override;
         bool DestroyBufferResource(BufferHandle handle) override;
 
     private:

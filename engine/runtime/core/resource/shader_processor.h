@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <span>
 #include <unordered_set>
 #include <vector>
 #include "asset/shader.h"
@@ -30,7 +31,7 @@ namespace kpengine::resource{
         ~ShaderProcessor();
         void Initialize(GraphicsAPIType api_type);
         void Process(ShaderCache* cache,
-                     const std::vector<std::shared_ptr<asset::ShaderResource>>& assets,
+                     std::span<const std::shared_ptr<asset::ShaderResource>> assets,
                      ShaderProcessObserver observer = nullptr);
         // Distinct shader references (content hash — the ShaderCache key) that
         // finished processing this run. Reference-based: a stage shared across

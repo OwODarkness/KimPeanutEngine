@@ -72,7 +72,7 @@ namespace kpengine::resource
     }
 
     void ShaderProcessor::Process(ShaderCache *cache,
-                                  const std::vector<std::shared_ptr<asset::ShaderResource>> &assets,
+                                  std::span<const std::shared_ptr<asset::ShaderResource>> assets,
                                   ShaderProcessObserver observer)
     {
         if (!cache)

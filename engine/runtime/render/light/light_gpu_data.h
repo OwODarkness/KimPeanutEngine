@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <type_traits>
 #include <vector>
 
@@ -122,11 +123,11 @@ namespace kpengine::render
     bool IsLightGpuFrameHeaderCompatible(const LightGpuFrameHeader &header);
     std::optional<LightGpuData> EncodeLightGpuData(const LightDesc &light);
     LightGpuFrameData BuildLightGpuFrameData(
-        const std::vector<Light> &lights,
+        std::span<const Light> lights,
         const ResolvedLightShadowBindings &resolved_shadows);
 
     LightGpuFrameData BuildLightGpuFrameData(
-        const std::vector<Light> &lights,
+        std::span<const Light> lights,
         const std::optional<ResolvedLightShadowBinding> &resolved_shadow = std::nullopt);
 }
 

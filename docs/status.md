@@ -1,5 +1,24 @@
 # Project Status
 
+- **C++20 module migration pass (2026-09-14)** — Core hash/cache/database/texture
+  inputs, Asset product readers, Render snapshots/light data, Graphics buffer
+  upload boundaries, Gameplay editor snapshots, and image-I/O memory inputs now
+  use bounded spans or C++20 atomic shared-pointer specialization where the
+  synchronous ownership contract permits it. Queued data remains owning and
+  serialized formats are unchanged. Focused module tests pass; full Debug is
+  still blocked by the pre-existing MSVC 14.34 `AssetImport` C1001 at
+  `matrix4.tpp:533`, and the full CTest inventory has one known fixture failure
+  plus unbuilt blocked/optional test executables. → [C++20 checklist](cpp20-migration-checklist.md)
+
+- **Runtime core math C++20 pass (2026-09-14)** — scalar interpolation and
+  angle conversion helpers are constrained with `std::floating_point` and are
+  `constexpr`; vectors accept fixed-extent `std::span` inputs, matrices expose
+  bounded row views, and invalid matrix initializer sizes are rejected. Vector
+  indexing no longer crosses unrelated members with pointer arithmetic, and
+  zero-quaternion normalization now returns identity. Focused Math tests pass;
+  legacy vector raw-data APIs are removed, and `AssetImport` still exposes a pre-existing MSVC 14.34 internal compiler error
+  in `Matrix4::MakeOrthProjMatrix`. → [C++20 checklist](cpp20-migration-checklist.md)
+
 - **Editor ED3 magnetic placement (2026-09-13)** — a tool-row panel can now be dragged across
   the workspace, previewed against a dashed free region, and released there to pin it: it
   leaves the strip and is drawn inside that region's rectangle, with "Dock to tool row" and
@@ -124,7 +143,7 @@
 
 **Snapshot: 2026-09-12.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
-**Current release: v1.1.0.**
+**Current release: v1.2.0.**
 
 - **Runtime window resize command (2026-09-12)** — new `window.resize`
   Runtime command taking `width`/`height` (1–16384) and resizing the active

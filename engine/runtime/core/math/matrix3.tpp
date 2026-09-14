@@ -26,7 +26,7 @@ namespace kpengine::math
     }
 
     template <typename T>
-    Matrix3<T>::Matrix3(T (&arr)[9])
+    Matrix3<T>::Matrix3(const T (&arr)[9])
     {
         std::copy(arr, arr + 3, data_[0].begin());
         std::copy(arr + 3, arr + 6, data_[1].begin());
@@ -36,6 +36,11 @@ namespace kpengine::math
     template <typename T>
     Matrix3<T>::Matrix3(std::initializer_list<T> list)
     {
+        if (list.size() != 9)
+        {
+            throw std::invalid_argument("Matrix3 requires exactly 9 values");
+        }
+
         std::copy(list.begin(), list.begin() + 3, data_[0].begin());
         std::copy(list.begin() + 3, list.begin() + 6, data_[1].begin());
         std::copy(list.begin() + 6, list.end(), data_[2].begin());

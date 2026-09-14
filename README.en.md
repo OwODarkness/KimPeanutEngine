@@ -1,5 +1,7 @@
 # KimPeanut Engine
 
+**Engine version: 1.2.0**
+
 <p align="center">
   <img src="./config/icon.png" alt="KimPeanut Engine icon" width="96" height="96">
 </p>
@@ -63,7 +65,7 @@ The main path is `Asset → Resource → Render → RHI`.
 
 | Area | Choice |
 | --- | --- |
-| Language standard | C++17 |
+| Language standard | C++20 |
 | Build system | CMake |
 | Toolchain/platform | MSVC / Visual Studio 2022; Windows-first validation |
 | Graphics backends | Vulkan and OpenGL |

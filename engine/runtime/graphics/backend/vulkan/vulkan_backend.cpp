@@ -345,14 +345,16 @@ namespace kpengine::graphics
         device_->Destroy();
     }
 
-    BufferHandle VulkanBackend::CreateVertexBuffer(const void *data, size_t size)
+    BufferHandle VulkanBackend::CreateVertexBuffer(const std::span<const std::byte> data)
     {
-        return CreateBuffer(data, size, VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        return CreateBuffer(data.data(), data.size(),
+                            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     }
 
-    BufferHandle VulkanBackend::CreateIndexBuffer(const void *data, size_t size)
+    BufferHandle VulkanBackend::CreateIndexBuffer(const std::span<const std::byte> data)
     {
-        return CreateBuffer(data, size, VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        return CreateBuffer(data.data(), data.size(),
+                            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
     }
 
     void VulkanBackend::FramebufferResizeCallback(const ResizeEvent &event)
@@ -632,10 +634,10 @@ namespace kpengine::graphics
         return dst_handle;
     }
 
-    BufferHandle VulkanBackend::CreateBuffer(const BufferDesc &desc, const void *initial_data,
-                                             const size_t initial_size)
+    BufferHandle VulkanBackend::CreateBuffer(
+        const BufferDesc &desc, const std::span<const std::byte> initial_data)
     {
-        if (!ValidateBufferDesc(desc, initial_data, initial_size))
+        if (!ValidateBufferDesc(desc, initial_data))
         {
             return {};
         }
@@ -668,9 +670,9 @@ namespace kpengine::graphics
                         ? VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM
                         : VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
                 resource->native_buffers.push_back(native);
-                if (desc.update_mode == BufferUpdateMode::Immutable && initial_size != 0)
+                if (desc.update_mode == BufferUpdateMode::Immutable && !initial_data.empty())
                 {
-                    upload_context_->UploadBuffer(native, initial_size, initial_data);
+                    upload_context_->UploadBuffer(native, initial_data.size(), initial_data.data());
                 }
             }
         }
@@ -690,13 +692,13 @@ namespace kpengine::graphics
     }
 
     bool VulkanBackend::WriteFrameBuffer(BufferHandle buffer, const size_t offset,
-                                         const void *data, const size_t size)
+                                         const std::span<const std::byte> data)
     {
         const auto it = geometry_buffers_.find(buffer);
         if (!frame_active_ || it == geometry_buffers_.end() ||
             it->second->desc.update_mode != BufferUpdateMode::PerFrame ||
-            (size != 0 && data == nullptr) || offset > it->second->desc.capacity_bytes ||
-            size > it->second->desc.capacity_bytes - offset)
+            data.empty() || offset > it->second->desc.capacity_bytes ||
+            data.size() > it->second->desc.capacity_bytes - offset)
         {
             return false;
         }
@@ -708,9 +710,10 @@ namespace kpengine::graphics
         const BufferHandle native = it->second->native_buffers[frame_index];
         try
         {
-            if (size != 0)
+            if (!data.empty())
             {
-                buffer_manager_->UploadData(native, static_cast<VkDeviceSize>(size), data,
+                buffer_manager_->UploadData(native, static_cast<VkDeviceSize>(data.size()),
+                                             data.data(),
                                              static_cast<VkDeviceSize>(offset));
                 it->second->written_slots[frame_index] = true;
             }

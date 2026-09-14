@@ -3,6 +3,7 @@
 
 #include "base/type.h"
 #include <string>
+#include <span>
 #include <vector>
 #include <unordered_map>
 #include <cstdint>
@@ -11,7 +12,7 @@ namespace kpengine::resource{
     public:
         void Initialize(GraphicsAPIType api_type);
         bool Has(uint64_t hash) const;
-        void Save( uint64_t hash, const std::vector<uint8_t>& binary);
+        void Save(uint64_t hash, std::span<const uint8_t> binary);
         const std::vector<uint8_t>& Load(uint64_t hash);
     private:
         std::string GetPath(uint64_t) const;

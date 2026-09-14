@@ -4,10 +4,15 @@
 #include <cstddef>
 #include <cassert>
 #include <cmath>
+#include <span>
+#include <type_traits>
 
 
 namespace kpengine::math
 {
+    template <typename T>
+    class Vector3;
+
     extern template class Vector3<float>;
 
     template <typename T>
@@ -21,11 +26,11 @@ namespace kpengine::math
         explicit Vector4(T value);
         Vector4(T x, T y, T z, T w);
         Vector4(const Vector3<T> &v, T w);
-        explicit Vector4(const T arr[4]);
+        explicit Vector4(std::span<const T, 4> values);
 
         T SquareLength() const;
         T Norm() const;
-        T DotProduct(const Vector4 &v);
+        T DotProduct(const Vector4 &v) const;
         void Normalize();
 
         Vector3<T> MakeVector3() const;
@@ -34,29 +39,26 @@ namespace kpengine::math
 
         T operator[](size_t index) const
         {
-            assert(index >= 0 && index < 4);
-            return *(&x_ + index);
+            assert(index < 4);
+            return index == 0 ? x_ : (index == 1 ? y_ : (index == 2 ? z_ : w_));
         }
 
         T &operator[](size_t index)
         {
-            assert(index >= 0 && index < 4);
-            return *(&x_ + index);
+            assert(index < 4);
+            return index == 0 ? x_ : (index == 1 ? y_ : (index == 2 ? z_ : w_));
         }
-
-        T *Data() { return &x_; }
-        const T *Data() const { return &x_; }
 
         bool operator==(const Vector4 &v) const { return x_ == v.x_ && y_ == v.y_ && z_ == v.z_ && w_ == v.w_; }
         bool operator!=(const Vector4 &v) const { return !(*this == v); }
 
-        Vector4 operator+(const Vector4 &v) noexcept { return Vector4(x_ + v.x_, y_ + v.y_, z_ + v.z_, w_ + v.w_); }
-        Vector4 operator-(const Vector4 &v) noexcept { return Vector4(x_ - v.x_, y_ - v.y_, z_ - v.z_, w_ - v.w_); }
-        Vector4 operator*(const Vector4 &v) noexcept { return Vector4(x_ * v.x_, y_ * v.y_, z_ * v.z_, w_ * v.w_); }
+        Vector4 operator+(const Vector4 &v) const noexcept { return Vector4(x_ + v.x_, y_ + v.y_, z_ + v.z_, w_ + v.w_); }
+        Vector4 operator-(const Vector4 &v) const noexcept { return Vector4(x_ - v.x_, y_ - v.y_, z_ - v.z_, w_ - v.w_); }
+        Vector4 operator*(const Vector4 &v) const noexcept { return Vector4(x_ * v.x_, y_ * v.y_, z_ * v.z_, w_ * v.w_); }
 
-        Vector4 operator+(T scalar) noexcept { return Vector4(x_ + scalar, y_ + scalar, z_ + scalar, w_ + scalar); }
-        Vector4 operator-(T scalar) noexcept { return Vector4(x_ - scalar, y_ - scalar, z_ - scalar, w_ - scalar); }
-        Vector4 operator*(T scalar) noexcept { return Vector4(x_ * scalar, y_ * scalar, z_ * scalar, w_ * scalar); }
+        Vector4 operator+(T scalar) const noexcept { return Vector4(x_ + scalar, y_ + scalar, z_ + scalar, w_ + scalar); }
+        Vector4 operator-(T scalar) const noexcept { return Vector4(x_ - scalar, y_ - scalar, z_ - scalar, w_ - scalar); }
+        Vector4 operator*(T scalar) const noexcept { return Vector4(x_ * scalar, y_ * scalar, z_ * scalar, w_ * scalar); }
         Vector4 operator/(T scalar)
         {
             assert(scalar != T(0));

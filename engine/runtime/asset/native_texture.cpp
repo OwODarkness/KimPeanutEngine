@@ -78,7 +78,7 @@ namespace kpengine::asset
             }
         }
 
-        void CopyPayload(const std::vector<std::byte> &bytes, std::size_t offset,
+        void CopyPayload(std::span<const std::byte> bytes, std::size_t offset,
                          std::vector<std::uint8_t> &payload)
         {
             if (offset > bytes.size() || payload.size() > bytes.size() - offset)
@@ -104,13 +104,13 @@ namespace kpengine::asset
             }
         }
 
-        std::uint16_t ReadU16(const std::vector<std::byte> &bytes, std::size_t offset)
+        std::uint16_t ReadU16(std::span<const std::byte> bytes, std::size_t offset)
         {
             return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
                    static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset + 1])) << 8;
         }
 
-        std::uint32_t ReadU32(const std::vector<std::byte> &bytes, std::size_t offset)
+        std::uint32_t ReadU32(std::span<const std::byte> bytes, std::size_t offset)
         {
             std::uint32_t value = 0;
             for (std::size_t shift = 0; shift < 32; shift += 8)
@@ -122,7 +122,7 @@ namespace kpengine::asset
             return value;
         }
 
-        std::uint64_t ReadU64(const std::vector<std::byte> &bytes, std::size_t offset)
+        std::uint64_t ReadU64(std::span<const std::byte> bytes, std::size_t offset)
         {
             std::uint64_t value = 0;
             for (std::size_t shift = 0; shift < 64; shift += 8)
@@ -134,7 +134,7 @@ namespace kpengine::asset
             return value;
         }
 
-        ContentHash ReadHash(const std::vector<std::byte> &bytes, std::size_t offset)
+        ContentHash ReadHash(std::span<const std::byte> bytes, std::size_t offset)
         {
             ContentHash result{};
             for (std::size_t index = 0; index < result.bytes.size(); ++index)
@@ -288,7 +288,7 @@ namespace kpengine::asset
         return bytes;
     }
 
-    NativeTextureProduct DeserializeNativeTexture(const std::vector<std::byte> &bytes,
+    NativeTextureProduct DeserializeNativeTexture(std::span<const std::byte> bytes,
                                                   const ContentHashPair *verified_hashes)
     {
         if (bytes.size() > kNativeTextureMaxBytes || bytes.size() < kNativeTextureHeaderSize)
@@ -389,7 +389,7 @@ namespace kpengine::asset
         return {std::move(data), stored_digest, hashes.content_hash};
     }
 
-    void ValidateNativeTextureProductStructure(const std::vector<std::byte> &bytes,
+    void ValidateNativeTextureProductStructure(std::span<const std::byte> bytes,
                                                const ContentHashPair *verified_hashes)
     {
         if (bytes.size() > kNativeTextureMaxBytes || bytes.size() < kNativeTextureHeaderSize)
@@ -479,7 +479,7 @@ namespace kpengine::asset
                  "native texture has trailing payload bytes");
     }
 
-    ContentHash ComputeNativeTextureProductHash(const std::vector<std::byte> &bytes)
+    ContentHash ComputeNativeTextureProductHash(std::span<const std::byte> bytes)
     {
         return Sha256(bytes);
     }

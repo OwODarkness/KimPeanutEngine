@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <fstream>
 #include <iterator>
+#include <span>
 #include <system_error>
 #include <utility>
 #include <vector>
@@ -128,7 +129,7 @@ namespace kpengine::asset
         }
 
         std::vector<std::byte> RebaseMaterialBytes(
-            const std::vector<std::byte> &bytes,
+            std::span<const std::byte> bytes,
             const std::filesystem::path &source_directory,
             const std::filesystem::path &target_directory,
             const std::filesystem::path &asset_root)

@@ -42,14 +42,16 @@ namespace kpengine::resource{
         return ref;
     }
 
-    void ShaderCache::Save( uint64_t hash, const std::vector<uint8_t>& binary)
+    void ShaderCache::Save(uint64_t hash, std::span<const uint8_t> binary)
     {
-        memory_cache_[hash] = binary;
+        auto &cached_binary = memory_cache_[hash];
+        cached_binary.assign(binary.begin(), binary.end());
 
         std::filesystem::create_directories(directory_);
         std::string file_path = GetPath(hash);
         std::ofstream file(file_path, std::ios::binary);
-        file.write(reinterpret_cast<const char*>(binary.data()), binary.size() * sizeof(uint8_t));
+        file.write(reinterpret_cast<const char *>(binary.data()),
+                   static_cast<std::streamsize>(binary.size()));
     }
 
     std::string ShaderCache::GetPath(uint64_t hash) const

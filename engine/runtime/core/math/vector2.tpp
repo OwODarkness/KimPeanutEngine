@@ -9,7 +9,7 @@ namespace kpengine::math
     template <typename T>
     Vector2<T>::Vector2(T x, T y) : x_(x), y_(y) {}
     template <typename T>
-    Vector2<T>::Vector2(const T arr[2]) : x_(arr[0]), y_(arr[1]) {}
+    Vector2<T>::Vector2(std::span<const T, 2> values) : x_(values[0]), y_(values[1]) {}
 
     template <typename T>
     T Vector2<T>::SquareLength() const

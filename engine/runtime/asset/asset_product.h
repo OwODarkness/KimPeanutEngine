@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <stdexcept>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -68,7 +69,7 @@ namespace kpengine::asset
     };
 
     ContentHash Sha256(std::string_view value);
-    ContentHash Sha256(const std::vector<std::byte> &value);
+    ContentHash Sha256(std::span<const std::byte> value);
     ContentHash Sha256File(const std::filesystem::path &path);
 
     struct ContentHashPair
@@ -80,7 +81,7 @@ namespace kpengine::asset
     // Computes the full-content hash and a hash with one in-memory range
     // treated as zeroes without allocating a second product-sized buffer.
     std::optional<ContentHashPair> Sha256WithZeroedRange(
-        const std::vector<std::byte> &value, std::size_t zero_offset,
+        std::span<const std::byte> value, std::size_t zero_offset,
         std::size_t zero_size);
 
     // Returns a portable, lower-case Asset-relative path. Absolute paths and
@@ -120,7 +121,7 @@ namespace kpengine::asset
     // .archive root are authoring/fixture paths and are intentionally exempt.
     bool VerifyArchiveProduct(const std::filesystem::path &path,
                               ArchiveProductType type,
-                              const std::vector<std::byte> &bytes,
+                              std::span<const std::byte> bytes,
                               std::string &diagnostic,
                               const std::filesystem::path &product_root = {});
 
@@ -129,7 +130,7 @@ namespace kpengine::asset
     // redundant full-product hash.
     bool VerifyArchiveProduct(const std::filesystem::path &path,
                               ArchiveProductType type,
-                              const std::vector<std::byte> &bytes,
+                              std::span<const std::byte> bytes,
                               std::string &diagnostic,
                               const std::filesystem::path &product_root,
                               const ContentHash &content_hash);

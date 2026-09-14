@@ -141,7 +141,7 @@ This module follows Unreal-style names because they express the intended game
 authoring model. It does not adopt Unreal's reflection, UObject, garbage
 collection, networking, editor, or broad gameplay-framework scope.
 
-The repository now vendors EnTT 3.16.0 as an isolated C++17 dependency for
+The repository now vendors EnTT 3.16.0 as an isolated C++20 dependency for
 future reflection/ECS experiments. The current Gameplay module remains the
 hand-written Actor/component runtime; EnTT is not part of its ownership or
 serialization path yet.

@@ -341,22 +341,22 @@ namespace kpengine::graphics
         }
     }
 
-    BufferHandle OpenglBackend::CreateVertexBuffer(const void *data, size_t size)
+    BufferHandle OpenglBackend::CreateVertexBuffer(const std::span<const std::byte> data)
     {
         GLuint vbo{};
         glGenBuffers(1, &vbo);
         glBindBuffer(GL_ARRAY_BUFFER, vbo);
-        glBufferData(GL_ARRAY_BUFFER, size, data, GL_STATIC_DRAW);
+        glBufferData(GL_ARRAY_BUFFER, data.size(), data.data(), GL_STATIC_DRAW);
 
         return {vbo, 0};
     }
 
-    BufferHandle OpenglBackend::CreateIndexBuffer(const void *data, size_t size)
+    BufferHandle OpenglBackend::CreateIndexBuffer(const std::span<const std::byte> data)
     {
         GLuint ebo{};
         glGenBuffers(1, &ebo);
         glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, size, data, GL_STATIC_DRAW);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, data.size(), data.data(), GL_STATIC_DRAW);
 
         return {ebo, 0};
     }
@@ -383,10 +383,10 @@ namespace kpengine::graphics
         return true;
     }
 
-    BufferHandle OpenglBackend::CreateBuffer(const BufferDesc &desc, const void *initial_data,
-                                             const size_t initial_size)
+    BufferHandle OpenglBackend::CreateBuffer(
+        const BufferDesc &desc, const std::span<const std::byte> initial_data)
     {
-        if (!ValidateBufferDesc(desc, initial_data, initial_size))
+        if (!ValidateBufferDesc(desc, initial_data))
         {
             return {};
         }
@@ -404,9 +404,10 @@ namespace kpengine::graphics
         const GLenum usage = desc.update_mode == BufferUpdateMode::PerFrame
                                  ? GL_DYNAMIC_DRAW : GL_STATIC_DRAW;
         glBufferData(target, static_cast<GLsizeiptr>(desc.capacity_bytes), nullptr, usage);
-        if (initial_size != 0)
+        if (!initial_data.empty())
         {
-            glBufferSubData(target, 0, static_cast<GLsizeiptr>(initial_size), initial_data);
+            glBufferSubData(target, 0, static_cast<GLsizeiptr>(initial_data.size()),
+                            initial_data.data());
         }
         resource->written_slots.assign(1, desc.update_mode == BufferUpdateMode::Immutable);
 
@@ -417,22 +418,23 @@ namespace kpengine::graphics
     }
 
     bool OpenglBackend::WriteFrameBuffer(BufferHandle buffer, const size_t offset,
-                                         const void *data, const size_t size)
+                                         const std::span<const std::byte> data)
     {
         const auto it = geometry_buffers_.find(buffer);
         if (!frame_active_ || it == geometry_buffers_.end() ||
             it->second->desc.update_mode != BufferUpdateMode::PerFrame ||
-            (size != 0 && data == nullptr) || offset > it->second->desc.capacity_bytes ||
-            size > it->second->desc.capacity_bytes - offset)
+            data.empty() || offset > it->second->desc.capacity_bytes ||
+            data.size() > it->second->desc.capacity_bytes - offset)
         {
             return false;
         }
         const GLenum target = it->second->desc.role == BufferRole::Index
                                   ? GL_ELEMENT_ARRAY_BUFFER : GL_ARRAY_BUFFER;
         glBindBuffer(target, it->second->native);
-        if (size != 0)
+        if (!data.empty())
         {
-            glBufferSubData(target, static_cast<GLintptr>(offset), static_cast<GLsizeiptr>(size), data);
+            glBufferSubData(target, static_cast<GLintptr>(offset),
+                            static_cast<GLsizeiptr>(data.size()), data.data());
             it->second->written_slots[0] = true;
         }
         return true;

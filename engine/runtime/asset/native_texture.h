@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -60,16 +61,16 @@ namespace kpengine::asset
 
     // Validates the directory and digest before allocating any mip payload.
     NativeTextureProduct DeserializeNativeTexture(
-        const std::vector<std::byte> &bytes,
+        std::span<const std::byte> bytes,
         const ContentHashPair *verified_hashes = nullptr);
 
     // Validates only the bounded container structure and integrity digest.
     // Unlike DeserializeNativeTexture, this never allocates mip payloads.
     void ValidateNativeTextureProductStructure(
-        const std::vector<std::byte> &bytes,
+        std::span<const std::byte> bytes,
         const ContentHashPair *verified_hashes = nullptr);
 
-    ContentHash ComputeNativeTextureProductHash(const std::vector<std::byte> &bytes);
+    ContentHash ComputeNativeTextureProductHash(std::span<const std::byte> bytes);
 }
 
 #endif

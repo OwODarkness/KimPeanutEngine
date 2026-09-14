@@ -28,7 +28,7 @@ namespace kpengine{
             bool locked = true;
             int extra_flags = 0;
 
-            // APPENDED deliberately. C++17 has no designated initializers and the
+            // APPENDED deliberately. These construction sites use positional
             // construction sites outside EditorUI (the Live2D viewer's log panel and the
             // startup profiler) initialize this struct positionally, so a new member may
             // only go after the existing ones.

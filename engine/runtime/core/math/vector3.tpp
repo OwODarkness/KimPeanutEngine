@@ -9,7 +9,8 @@ namespace kpengine::math
     template <typename T>
     Vector3<T>::Vector3(T x, T y, T z) : x_(x), y_(y), z_(z) {}
     template <typename T>
-    Vector3<T>::Vector3(const T arr[3]) : x_(arr[0]), y_(arr[1]), z_(arr[2]) {}
+    Vector3<T>::Vector3(std::span<const T, 3> values)
+        : x_(values[0]), y_(values[1]), z_(values[2]) {}
 
     template <typename T>
     T Vector3<T>::SquareLength() const { return x_ * x_ + y_ * y_ + z_ * z_; }

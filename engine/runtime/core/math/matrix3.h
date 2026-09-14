@@ -2,11 +2,16 @@
 #define KPENGINE_RUNTIME_MATH_MATRIX3_H
 
 #include <array>
+#include <cassert>
 #include <cstddef>
 #include <algorithm>
+#include <initializer_list>
+#include <span>
 #include <stdexcept>
+#include <type_traits>
 namespace kpengine::math{
 
+    template<typename T> class Vector3;
     extern template class Vector3<float>;
     extern template class Vector3<double>;
 
@@ -19,16 +24,28 @@ namespace kpengine::math{
         Matrix3();
         Matrix3(const Matrix3& m);
         explicit Matrix3(const T (&arr)[3][3]);
-        Matrix3(T (&arr)[9]);
+        Matrix3(const T (&arr)[9]);
         Matrix3(std::initializer_list<T> list);
 
-        T* operator[](size_t row_index) {
-            assert(row_index >=0 && row_index < 3 );
-            return data_[row_index].data();
+        std::span<T, 3> operator[](size_t row_index) {
+            assert(row_index < 3);
+            return data_[row_index];
         }
-        const T* operator[](size_t row_index) const {
-            assert(row_index >=0 && row_index < 3 );
-            return data_[row_index].data();
+        std::span<const T, 3> operator[](size_t row_index) const {
+            assert(row_index < 3);
+            return data_[row_index];
+        }
+
+        std::span<T, 3> Row(size_t row_index) noexcept
+        {
+            assert(row_index < 3);
+            return data_[row_index];
+        }
+
+        std::span<const T, 3> Row(size_t row_index) const noexcept
+        {
+            assert(row_index < 3);
+            return data_[row_index];
         }
 
         bool operator==(const Matrix3& mat) const;

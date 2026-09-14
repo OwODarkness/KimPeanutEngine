@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <functional>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -74,8 +75,7 @@ namespace kpengine::graphics{
     using BufferDescLookup = std::function<std::optional<BufferDesc>(BufferHandle)>;
 
     bool ValidateBufferDesc(const BufferDesc &desc,
-                            const void *initial_data,
-                            std::size_t initial_size,
+                            std::span<const std::byte> initial_data,
                             std::string *error = nullptr);
 
     bool ValidateGeometryView(const GeometryView &geometry,

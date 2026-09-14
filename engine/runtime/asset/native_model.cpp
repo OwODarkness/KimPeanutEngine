@@ -132,13 +132,13 @@ namespace kpengine::asset
             }
         }
 
-        std::uint16_t ReadU16(const std::vector<std::byte> &bytes, std::size_t offset)
+        std::uint16_t ReadU16(std::span<const std::byte> bytes, std::size_t offset)
         {
             return static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset])) |
                    static_cast<std::uint16_t>(std::to_integer<std::uint8_t>(bytes[offset + 1])) << 8;
         }
 
-        std::int16_t ReadI16(const std::vector<std::byte> &bytes, std::size_t offset)
+        std::int16_t ReadI16(std::span<const std::byte> bytes, std::size_t offset)
         {
             const std::uint16_t raw = ReadU16(bytes, offset);
             std::int16_t value = 0;
@@ -146,7 +146,7 @@ namespace kpengine::asset
             return value;
         }
 
-        std::uint32_t ReadU32(const std::vector<std::byte> &bytes, std::size_t offset)
+        std::uint32_t ReadU32(std::span<const std::byte> bytes, std::size_t offset)
         {
             std::uint32_t value = 0;
             for (std::size_t shift = 0; shift < 32; shift += 8)
@@ -156,7 +156,7 @@ namespace kpengine::asset
             return value;
         }
 
-        std::uint64_t ReadU64(const std::vector<std::byte> &bytes, std::size_t offset)
+        std::uint64_t ReadU64(std::span<const std::byte> bytes, std::size_t offset)
         {
             std::uint64_t value = 0;
             for (std::size_t shift = 0; shift < 64; shift += 8)
@@ -166,7 +166,7 @@ namespace kpengine::asset
             return value;
         }
 
-        float ReadFloat(const std::vector<std::byte> &bytes, std::size_t offset)
+        float ReadFloat(std::span<const std::byte> bytes, std::size_t offset)
         {
             const std::uint32_t bits = ReadU32(bytes, offset);
             float value = 0.0f;
@@ -174,7 +174,7 @@ namespace kpengine::asset
             return value;
         }
 
-        ContentHash ReadHash(const std::vector<std::byte> &bytes, std::size_t offset)
+        ContentHash ReadHash(std::span<const std::byte> bytes, std::size_t offset)
         {
             ContentHash hash{};
             for (std::size_t index = 0; index < hash.bytes.size(); ++index)
@@ -638,7 +638,7 @@ namespace kpengine::asset
             return static_cast<std::size_t>(chunk.offset);
         }
 
-        void RequireChunk(const std::vector<std::byte> &bytes, const Chunk &chunk,
+        void RequireChunk(std::span<const std::byte> bytes, const Chunk &chunk,
                           std::size_t expected_size, std::uint32_t expected_count,
                           std::uint32_t expected_element_size)
         {
@@ -780,7 +780,7 @@ namespace kpengine::asset
         return bytes;
     }
 
-    NativeModelProduct DeserializeNativeModel(const std::vector<std::byte> &bytes,
+    NativeModelProduct DeserializeNativeModel(std::span<const std::byte> bytes,
                                               const ContentHashPair *verified_hashes)
     {
         Require(bytes.size() <= kNativeModelMaxBytes, NativeModelErrorCode::Overflow,
@@ -1040,7 +1040,7 @@ namespace kpengine::asset
         return product;
     }
 
-    void ValidateNativeModelProductStructure(const std::vector<std::byte> &bytes,
+    void ValidateNativeModelProductStructure(std::span<const std::byte> bytes,
                                              const ContentHashPair *verified_hashes)
     {
         Require(bytes.size() <= kNativeModelMaxBytes, NativeModelErrorCode::Overflow,
@@ -1173,7 +1173,7 @@ namespace kpengine::asset
         }
     }
 
-    ContentHash ComputeNativeModelProductHash(const std::vector<std::byte> &bytes)
+    ContentHash ComputeNativeModelProductHash(std::span<const std::byte> bytes)
     {
         return Sha256(bytes);
     }

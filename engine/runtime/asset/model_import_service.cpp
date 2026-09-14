@@ -14,6 +14,7 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <span>
 #include <system_error>
 #include <thread>
 #include <utility>
@@ -362,7 +363,7 @@ namespace kpengine::asset
             return bytes;
         }
 
-        void WriteBytes(const std::filesystem::path &path, const std::vector<std::byte> &bytes,
+        void WriteBytes(const std::filesystem::path &path, std::span<const std::byte> bytes,
                         ModelImportMetrics *metrics = nullptr)
         {
             std::error_code error;
@@ -1317,7 +1318,7 @@ namespace kpengine::asset
 
         StagedProduct StageProductBytes(const std::filesystem::path &operation_root,
                                         ProductRecord record,
-                                        const std::vector<std::byte> &bytes,
+                                        std::span<const std::byte> bytes,
                                         ModelImportMetrics &metrics)
         {
             const std::filesystem::path staged_path = operation_root / record.relative_path;

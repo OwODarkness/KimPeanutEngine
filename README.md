@@ -1,5 +1,7 @@
 # KimPeanut Engine
 
+**引擎版本：1.2.0**
+
 <p align="center">
   <img src="./config/icon.png" alt="KimPeanut Engine icon" width="96" height="96">
 </p>
@@ -22,7 +24,7 @@
 
 ## 项目简介
 
-KimPeanut Engine（KP Engine）是一个基于 **C++17** 开发的实验性 3D 游戏引擎，目标是通过从零实现现代渲染与资源系统，探索游戏引擎底层架构与图形 API 的设计。
+KimPeanut Engine（KP Engine）是一个基于 **C++20** 开发的实验性 3D 游戏引擎，目标是通过从零实现现代渲染与资源系统，探索游戏引擎底层架构与图形 API 的设计。
 
 引擎目前支持 **Vulkan** 与 **OpenGL** 两种渲染后端，并通过自定义 **RHI（Rendering Hardware Interface）** 隔离上层渲染逻辑与具体图形 API。项目同时包含资源导入与 Cook、GPU 资源管理、渲染管线以及基础引擎框架，并持续向编辑器、工具链和游戏运行时能力扩展。
 

@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_RENDER_RENDER_SYSTEM_H
 #define KPENGINE_RUNTIME_RENDER_RENDER_SYSTEM_H
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
@@ -182,7 +183,7 @@ namespace kpengine::render
         RenderSystemLifecycleState frame_return_state_ =
             RenderSystemLifecycleState::Uninitialized;
         RenderProfileSnapshot profile_;
-        std::shared_ptr<const RenderSystemMetrics> published_metrics_;
+        std::atomic<std::shared_ptr<const RenderSystemMetrics>> published_metrics_;
         RenderProfileWindow profile_window_{GetSponzaProfileScenario().warmup_frames,
                                             GetSponzaProfileScenario().sample_frames};
         std::chrono::steady_clock::time_point profile_frame_start_{};

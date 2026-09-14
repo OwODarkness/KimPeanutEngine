@@ -3,6 +3,7 @@
 
 #include <memory>
 #include <optional>
+#include <span>
 #include <string>
 #include <vector>
 #include "base/base.h"
@@ -138,10 +139,9 @@ namespace kpengine::graphics
         virtual BufferHandle CreateUniformBuffer(uint32_t size) = 0;
         virtual void *MapUniformBuffer(BufferHandle handle, size_t size) = 0;
         virtual BufferHandle CreateBuffer(const BufferDesc &desc,
-                                          const void *initial_data,
-                                          size_t initial_size) = 0;
+                                          std::span<const std::byte> initial_data) = 0;
         virtual bool WriteFrameBuffer(BufferHandle buffer, size_t offset,
-                                      const void *data, size_t size) = 0;
+                                      std::span<const std::byte> data) = 0;
         // Render marks CPU writes so a backend with a staged mapped-buffer
         // implementation can upload only the ranges consumed by the frame.
         // Persistently mapped backends do not need to do anything here.
@@ -173,8 +173,8 @@ namespace kpengine::graphics
 
     public:
         // bytes
-        virtual BufferHandle CreateVertexBuffer(const void *data, size_t size) = 0;
-        virtual BufferHandle CreateIndexBuffer(const void *data, size_t size) = 0;
+        virtual BufferHandle CreateVertexBuffer(std::span<const std::byte> data) = 0;
+        virtual BufferHandle CreateIndexBuffer(std::span<const std::byte> data) = 0;
         virtual bool DestroyBufferResource(BufferHandle) = 0;
 
     protected:

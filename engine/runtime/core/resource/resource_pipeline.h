@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <vector>
 #include "base/type.h"
 #include "asset/asset_manager.h"
@@ -22,7 +23,7 @@ namespace kpengine::resource{
         void Initialize(const ResourcePipelineContext& context);
         // Fire-and-forget progress reporting for a slow compile (ShaderProcessor's
         // observer). nullptr keeps the call silent — the pipeline runs identically.
-        void ProcessShader(const std::vector<asset::ShaderPtr>& shaders,
+        void ProcessShader(std::span<const asset::ShaderPtr> shaders,
                            ShaderProcessObserver observer = nullptr);
         std::optional<EnvironmentIblData> ProcessEnvironmentIbl(
             const data::TextureData &source,

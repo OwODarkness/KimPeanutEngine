@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -65,10 +66,10 @@ namespace kpengine::image_io
     // convention. The caller owns file identity, caching, and GPU format policy.
     ImageDecodeResult DecodeImageFile(const std::string &path);
 
-    ImageDecodeResult DecodeImageMemory(const std::vector<std::byte> &encoded);
+    ImageDecodeResult DecodeImageMemory(std::span<const std::byte> encoded);
 
     ImageMetadataResult ProbeImageFile(const std::string &path);
-    ImageMetadataResult ProbeImageMemory(const std::vector<std::byte> &encoded);
+    ImageMetadataResult ProbeImageMemory(std::span<const std::byte> encoded);
 
     // Writes a tightly packed RGBA8 image as a lossless PNG. Path selection and
     // directory creation remain caller policy.

@@ -129,7 +129,7 @@ namespace kpengine::gameplay
     std::shared_ptr<const GameplayEditorSnapshot>
     GameplayEditorBridge::GetLatestSnapshot() const
     {
-        return std::atomic_load_explicit(&latest_snapshot_, std::memory_order_acquire);
+        return latest_snapshot_.load(std::memory_order_acquire);
     }
 
     std::vector<PropertyEditResult> GameplayEditorBridge::ConsumeEditResults()
@@ -281,8 +281,8 @@ namespace kpengine::gameplay
             std::lock_guard<std::mutex> lock(mutex_);
             if (state_ == State::Running)
             {
-                std::atomic_store_explicit(&latest_snapshot_, std::move(immutable_snapshot),
-                                           std::memory_order_release);
+                latest_snapshot_.store(std::move(immutable_snapshot),
+                                       std::memory_order_release);
             }
             building_snapshot_ = false;
             processing_condition_.notify_all();
@@ -311,9 +311,8 @@ namespace kpengine::gameplay
             edit_results_.push_back(std::move(result));
             pending_edits_.pop_front();
         }
-        std::atomic_store_explicit(&latest_snapshot_,
-                                   std::shared_ptr<const GameplayEditorSnapshot>{},
-                                   std::memory_order_release);
+        latest_snapshot_.store(std::shared_ptr<const GameplayEditorSnapshot>{},
+                               std::memory_order_release);
         state_ = State::Stopped;
         processing_condition_.notify_all();
     }

@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_SUBMISSION_FRAME_H
 
 #include <cstddef>
+#include <span>
 
 #include "graphics/backend/common/api.h"
 #include "graphics/backend/common/resource_binding.h"
@@ -33,8 +34,8 @@ namespace kpengine::render
             graphics::PipelineHandle pipeline,
             const graphics::ResourceBindingSetDesc &desc) = 0;
         virtual bool WriteFrameBuffer(graphics::BufferHandle buffer,
-                                      std::size_t offset, const void *data,
-                                      std::size_t size) = 0;
+                                      std::size_t offset,
+                                      std::span<const std::byte> data) = 0;
     };
 }
 

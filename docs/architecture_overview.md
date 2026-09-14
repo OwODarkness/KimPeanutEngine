@@ -74,4 +74,6 @@ engine/test/unit            GoogleTest unit and contract tests
 - Keep implementation abstractions tied to a concrete consumer and data flow.
 
 Module-specific architecture and current work live beside each module. The
-[project status](status.md) summarizes the current implementation state.
+[project status](status.md) summarizes the current implementation state. The
+[C++20 migration checklist](cpp20-migration-checklist.md) tracks the staged
+language-mode migration across modules.

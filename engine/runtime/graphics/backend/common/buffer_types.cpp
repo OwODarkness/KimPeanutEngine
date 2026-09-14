@@ -36,8 +36,9 @@ namespace kpengine::graphics
         }
     }
 
-    bool ValidateBufferDesc(const BufferDesc &desc, const void *initial_data,
-                            const std::size_t initial_size, std::string *error)
+    bool ValidateBufferDesc(const BufferDesc &desc,
+                            const std::span<const std::byte> initial_data,
+                            std::string *error)
     {
         if (!IsValidBufferRole(desc.role))
         {
@@ -54,18 +55,13 @@ namespace kpengine::graphics
             SetError(error, "buffer capacity must be non-zero");
             return false;
         }
-        if (initial_size != 0 && initial_data == nullptr)
-        {
-            SetError(error, "non-zero initial size requires initial data");
-            return false;
-        }
-        if (initial_size > desc.capacity_bytes)
+        if (initial_data.size() > desc.capacity_bytes)
         {
             SetError(error, "initial data exceeds buffer capacity");
             return false;
         }
         if (desc.update_mode == BufferUpdateMode::PerFrame &&
-            (initial_data != nullptr || initial_size != 0))
+            !initial_data.empty())
         {
             SetError(error, "per-frame buffers cannot have initial data");
             return false;

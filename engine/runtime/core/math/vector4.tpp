@@ -22,7 +22,8 @@ namespace kpengine::math
     }
 
     template <typename T>
-    Vector4<T>::Vector4(const T arr[4]) : x_(arr[0]), y_(arr[1]), z_(arr[2]), w_(arr[3])
+    Vector4<T>::Vector4(std::span<const T, 4> values)
+        : x_(values[0]), y_(values[1]), z_(values[2]), w_(values[3])
     {
     }
 
@@ -39,7 +40,7 @@ namespace kpengine::math
     }
 
     template <typename T>
-    T Vector4<T>::DotProduct(const Vector4 &v)
+    T Vector4<T>::DotProduct(const Vector4 &v) const
     {
         return x_ * v.x_ + y_ * v.y_ + z_ * v.z_ + w_ * v.w_;
     }

@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_GAMEPLAY_EDITOR_BRIDGE_GAMEPLAY_EDITOR_BRIDGE_H
 #define KPENGINE_RUNTIME_GAMEPLAY_EDITOR_BRIDGE_GAMEPLAY_EDITOR_BRIDGE_H
 
+#include <atomic>
 #include <condition_variable>
 #include <cstddef>
 #include <cstdint>
@@ -104,7 +105,7 @@ namespace kpengine::gameplay
         std::size_t outstanding_edits_ = 0;
         bool processing_edit_ = false;
         bool building_snapshot_ = false;
-        std::shared_ptr<const GameplayEditorSnapshot> latest_snapshot_;
+        std::atomic<std::shared_ptr<const GameplayEditorSnapshot>> latest_snapshot_;
     };
 }
 

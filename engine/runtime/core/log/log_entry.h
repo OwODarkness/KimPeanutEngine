@@ -3,6 +3,7 @@
 
 #include <string>
 #include <chrono>
+#include <string_view>
 
 namespace kpengine::program
 {

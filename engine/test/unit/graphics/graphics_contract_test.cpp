@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include <optional>
+#include <array>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -211,16 +212,16 @@ TEST(BufferContract, ValidatesStreamingBufferRules)
 {
     using namespace kpengine::graphics;
     const BufferDesc immutable{BufferRole::Vertex, BufferUpdateMode::Immutable, 32};
-    const uint8_t initial[4] = {};
-    EXPECT_TRUE(ValidateBufferDesc(immutable, initial, sizeof(initial)));
-    EXPECT_FALSE(ValidateBufferDesc(immutable, nullptr, sizeof(initial)));
-    EXPECT_FALSE(ValidateBufferDesc(immutable, initial, 64));
+    const std::array<std::byte, 4> initial{};
+    const std::array<std::byte, 64> oversized{};
+    EXPECT_TRUE(ValidateBufferDesc(immutable, initial));
+    EXPECT_FALSE(ValidateBufferDesc(immutable, oversized));
 
     const BufferDesc per_frame{BufferRole::Vertex, BufferUpdateMode::PerFrame, 32};
-    EXPECT_TRUE(ValidateBufferDesc(per_frame, nullptr, 0));
-    EXPECT_FALSE(ValidateBufferDesc(per_frame, initial, sizeof(initial)));
+    EXPECT_TRUE(ValidateBufferDesc(per_frame, {}));
+    EXPECT_FALSE(ValidateBufferDesc(per_frame, initial));
     EXPECT_FALSE(ValidateBufferDesc({BufferRole::Vertex, BufferUpdateMode::Immutable, 0},
-                                    nullptr, 0));
+                                    {}));
 }
 
 TEST(BufferContract, ValidatesTwoStreamsIndexTypeAndOffsets)

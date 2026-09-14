@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <stdexcept>
+#include <span>
 #include <string>
 #include <system_error>
 #include <unordered_set>
@@ -332,15 +333,15 @@ namespace kpengine::example
             const graphics::BufferHandle streaming_positions = rhi->CreateBuffer(
                 {graphics::BufferRole::Vertex, graphics::BufferUpdateMode::PerFrame,
                  sizeof(float) * 15},
-                nullptr, 0);
+                {});
             const graphics::BufferHandle streaming_uv_buffer = rhi->CreateBuffer(
                 {graphics::BufferRole::Vertex, graphics::BufferUpdateMode::Immutable,
                  sizeof(streaming_uvs) + sizeof(float)},
-                streaming_uvs.data(), sizeof(streaming_uvs));
+                std::as_bytes(std::span{streaming_uvs}));
             const graphics::BufferHandle streaming_index_buffer = rhi->CreateBuffer(
                 {graphics::BufferRole::Index, graphics::BufferUpdateMode::Immutable,
                  sizeof(streaming_indices)},
-                streaming_indices.data(), sizeof(streaming_indices));
+                std::as_bytes(std::span{streaming_indices}));
             if (!streaming_positions.IsValid() || !streaming_uv_buffer.IsValid() ||
                 !streaming_index_buffer.IsValid())
             {
@@ -676,8 +677,8 @@ namespace kpengine::example
                                     "unwritten streaming geometry buffer was bindable");
                             }
                             if (!rhi->WriteFrameBuffer(streaming_positions, 0,
-                                                       streaming_positions_data.data(),
-                                                       sizeof(streaming_positions_data)) ||
+                                                       std::as_bytes(std::span{
+                                                           streaming_positions_data})) ||
                                 !recorder->BindGeometry(streaming_geometry) ||
                                 !recorder->BindResourceBindings(streaming_pipeline,
                                                                  streaming_bindings))

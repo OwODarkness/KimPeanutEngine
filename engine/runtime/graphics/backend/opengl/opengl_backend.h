@@ -70,10 +70,10 @@ namespace kpengine::graphics
         }
         BufferHandle CreateUniformBuffer(uint32_t size) override;
         void *MapUniformBuffer(BufferHandle handle, size_t size) override;
-        BufferHandle CreateBuffer(const BufferDesc &desc, const void *initial_data,
-                                  size_t initial_size) override;
-        bool WriteFrameBuffer(BufferHandle buffer, size_t offset, const void *data,
-                              size_t size) override;
+        BufferHandle CreateBuffer(const BufferDesc &desc,
+                                  std::span<const std::byte> initial_data) override;
+        bool WriteFrameBuffer(BufferHandle buffer, size_t offset,
+                              std::span<const std::byte> data) override;
         void MarkUniformBufferRangeWritten(BufferHandle handle, size_t offset,
                                             size_t size) override;
         uint32_t GetCurrentFrameIndex() const override { return 0; }
@@ -83,8 +83,8 @@ namespace kpengine::graphics
         void WaitIdle() override;
         virtual void Cleanup() override;
     public:
-        BufferHandle CreateVertexBuffer(const void* data, size_t size) override;
-        BufferHandle CreateIndexBuffer(const void* data, size_t size) override;
+        BufferHandle CreateVertexBuffer(std::span<const std::byte> data) override;
+        BufferHandle CreateIndexBuffer(std::span<const std::byte> data) override;
         bool DestroyBufferResource(BufferHandle handle) override;
 
     private:

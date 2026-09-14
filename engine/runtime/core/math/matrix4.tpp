@@ -37,8 +37,9 @@ namespace kpengine::math
     {
         for (size_t i = 0; i < 3; i++)
         {
-            std::copy(m[i], m[i] + 3, data_[i].begin());
-            data_[i][3] = 0;
+            const std::span<const T, 3> source_row = m.Row(i);
+            std::copy(source_row.begin(), source_row.end(), data_[i].begin());
+            data_[i][3] = T(0);
         }
         data_[3].fill(0);
         data_[3][3] = T(1);
@@ -47,6 +48,11 @@ namespace kpengine::math
     template <typename T>
     Matrix4<T>::Matrix4(std::initializer_list<T> list)
     {
+        if (list.size() != 16)
+        {
+            throw std::invalid_argument("Matrix4 requires exactly 16 values");
+        }
+
         auto it = list.begin();
         for (size_t i = 0; i < 4; ++i)
         {

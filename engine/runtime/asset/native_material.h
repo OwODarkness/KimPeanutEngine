@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <filesystem>
 #include <functional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -150,7 +151,7 @@ namespace kpengine::asset
 
     // Validates canonical material product bytes without opening the runtime
     // AssetManager or requiring a product file on disk.
-    void ValidateNativeMaterialProduct(const std::vector<std::byte> &bytes);
+    void ValidateNativeMaterialProduct(std::span<const std::byte> bytes);
 }
 
 #endif

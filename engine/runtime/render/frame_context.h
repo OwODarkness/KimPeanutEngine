@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <chrono>
 #include <cstring>
+#include <span>
 #include <unordered_map>
 #include <vector>
 
@@ -99,7 +100,7 @@ namespace kpengine::render
             graphics::PipelineHandle pipeline,
             const graphics::ResourceBindingSetDesc &desc) override;
         bool WriteFrameBuffer(graphics::BufferHandle buffer, std::size_t offset,
-                              const void *data, std::size_t size) override;
+                              std::span<const std::byte> data) override;
         FrameLightingBinding CreateLightingBinding(const LightGpuFrameData &lighting_data);
         FrameMaterialBinding CreateMaterialBinding(
             const MaterialSystem &materials, const RenderResourceResolver &resolver,

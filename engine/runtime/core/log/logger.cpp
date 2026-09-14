@@ -55,6 +55,12 @@ namespace kpengine::program
         }
     }
 
+    void Logger::Log(std::string_view log_name, LogLevel level, int line,
+                     std::string_view file, std::string_view message)
+    {
+        WriteLog(log_name, level, message, line, file);
+    }
+
     bool Logger::CreateLogFile()
     {
 
@@ -141,15 +147,16 @@ namespace kpengine::program
         for (size_t i = last_flushed_index_; i < logs_.size(); ++i)
         {
             std::string s = FetchStringFromLog(logs_[i]);
-            file_ << s << std::endl;
+            file_ << s << '\n';
         }
         last_flushed_index_ = logs_.size();
         file_.flush();
     }
 
-    void Logger::WriteLog(const std::string &name, LogLevel level, const std::string msg, int line, const std::string &file)
+    void Logger::WriteLog(std::string_view name, LogLevel level, std::string_view message,
+                          int line, std::string_view file)
     {
-        LogEntry log(name, level, msg, line, file);
+        LogEntry log(name, level, message, line, file);
 
         std::lock_guard<std::mutex> lock(log_mutex);
         if (logs_.size() > max_buf_size)
@@ -175,14 +182,25 @@ namespace kpengine::program
         errno_t err = localtime_s(&local_time, &time);
         std::stringstream oss;
         oss << std::put_time(&local_time, "%Y-%m-%d %H:%M:%S");
-        std::string log_string =
-            "[" + oss.str() + "] " +
-            std::string(log.name) +
-            ": " + "[" +
-            std::string(magic_enum::enum_name(log.level)) + "] " + log.message;
+        const std::string timestamp_string = oss.str();
+        const auto level_name = magic_enum::enum_name(log.level);
+        std::string log_string;
+        log_string.reserve(timestamp_string.size() + log.name.size() + level_name.size() +
+                           log.message.size() + log.file.size() + 32);
+        log_string.push_back('[');
+        log_string.append(timestamp_string);
+        log_string.append("] ");
+        log_string.append(log.name);
+        log_string.append(": [");
+        log_string.append(level_name.data(), level_name.size());
+        log_string.append("] ");
+        log_string.append(log.message);
         if (log.level == LogLevel::Warning || log.level == LogLevel::Error || log.level == LogLevel::Fatal)
         {
-            log_string = log_string + " from file: " + log.file + " line: " + std::to_string(log.line);
+            log_string.append(" from file: ");
+            log_string.append(log.file);
+            log_string.append(" line: ");
+            log_string.append(std::to_string(log.line));
         }
         return log_string;
     }

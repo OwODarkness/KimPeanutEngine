@@ -26,6 +26,8 @@ namespace kpengine::math
         Quaternion &operator=(const Quaternion &rhs);
 
         void Normalize();
+        Quaternion GetNormalizedQuat() const;
+        // Compatibility spelling retained for existing callers.
         Quaternion GetNormailizedQuat() const;
         Rotator<T> ToRotator() const;
         Quaternion Conjugate() const;

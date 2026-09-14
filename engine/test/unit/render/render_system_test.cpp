@@ -46,7 +46,7 @@ namespace
         buffer_desc.update_mode = graphics::BufferUpdateMode::PerFrame;
         buffer_desc.capacity_bytes = 64u;
         const graphics::BufferHandle position_buffer =
-            backend.CreateBuffer(buffer_desc, nullptr, 0u);
+            backend.CreateBuffer(buffer_desc, {});
         const graphics::RenderTargetDesc target_desc{
             64u, 64u, 1u, {graphics::RenderTargetColorAttachment{}}, std::nullopt};
         const graphics::RenderTargetHandle target = backend.CreateRenderTarget(target_desc);

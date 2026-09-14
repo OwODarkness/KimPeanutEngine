@@ -2,6 +2,8 @@
 #include "opengl_context.h"
 #include "opengl_backend.h"
 #include "log/logger.h"
+
+#include <span>
 namespace kpengine::graphics
 {
     MeshResource OpenglMesh::GetMeshHandle() const
@@ -19,11 +21,11 @@ namespace kpengine::graphics
         OpenglContext* opengl_context = static_cast<OpenglContext*>(context.native);
         OpenglBackend* backend = opengl_context->backend;
 
-        size_t vertex_size = data.vertices.size() * sizeof(Vertex);
-        BufferHandle vertex_buffer_handle = backend->CreateVertexBuffer(data.vertices.data(), vertex_size);
+        BufferHandle vertex_buffer_handle = backend->CreateVertexBuffer(
+            std::as_bytes(std::span{data.vertices}));
 
-        size_t index_size = data.indices.size() * sizeof(uint32_t);
-        BufferHandle index_buffer_handle = backend->CreateIndexBuffer(data.indices.data(), index_size);
+        BufferHandle index_buffer_handle = backend->CreateIndexBuffer(
+            std::as_bytes(std::span{data.indices}));
 
         resource_.vbo = vertex_buffer_handle.id;
         resource_.ebo = index_buffer_handle.id;

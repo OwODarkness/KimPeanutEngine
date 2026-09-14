@@ -44,7 +44,7 @@ or audit that dependency confidently. Do not infer a version from a filename.
 
 ## Current build notes
 
-- The engine baseline is C++17.
+- The engine baseline is C++20.
 - The checked-in binary packages are MSVC x64 artifacts (`vc143`, MSVC CRT,
   and MSVC-generated `.lib` files). The supported Windows configuration is
   therefore the Visual Studio 17 2022 generator, for example

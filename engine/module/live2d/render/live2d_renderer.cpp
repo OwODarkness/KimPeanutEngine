@@ -4,6 +4,7 @@
 #include <array>
 #include <cstring>
 #include <limits>
+#include <span>
 
 #include "asset/asset_manager.h"
 #include "asset/shader_program.h"
@@ -427,15 +428,15 @@ namespace kpengine::live2d
     {
         proxy_.position_buffer = backend_->CreateBuffer(
             {graphics::BufferRole::Vertex, graphics::BufferUpdateMode::PerFrame,
-             static_data_.uvs.size() * sizeof(Live2DVector2)}, nullptr, 0u);
+             static_data_.uvs.size() * sizeof(Live2DVector2)}, {});
         proxy_.uv_buffer = backend_->CreateBuffer(
             {graphics::BufferRole::Vertex, graphics::BufferUpdateMode::Immutable,
              static_data_.uvs.size() * sizeof(Live2DVector2)},
-            static_data_.uvs.data(), static_data_.uvs.size() * sizeof(Live2DVector2));
+            std::as_bytes(std::span{static_data_.uvs}));
         proxy_.index_buffer = backend_->CreateBuffer(
             {graphics::BufferRole::Index, graphics::BufferUpdateMode::Immutable,
              static_data_.indices.size() * sizeof(std::uint16_t)},
-            static_data_.indices.data(), static_data_.indices.size() * sizeof(std::uint16_t));
+            std::as_bytes(std::span{static_data_.indices}));
         if (!proxy_.position_buffer.IsValid() || !proxy_.uv_buffer.IsValid() ||
             !proxy_.index_buffer.IsValid())
         {

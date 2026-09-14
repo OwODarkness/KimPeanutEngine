@@ -286,14 +286,14 @@ namespace kpengine::render
     }
 
     bool FrameContext::WriteFrameBuffer(const graphics::BufferHandle buffer,
-                                        const std::size_t offset, const void *data,
-                                        const std::size_t size)
+                                        const std::size_t offset,
+                                        const std::span<const std::byte> data)
     {
-        if (!active_ || !backend_ || !buffer.IsValid() || !data || size == 0u)
+        if (!active_ || !backend_ || !buffer.IsValid() || data.empty())
         {
             return false;
         }
-        return backend_->WriteFrameBuffer(buffer, offset, data, size);
+        return backend_->WriteFrameBuffer(buffer, offset, data);
     }
 
     FrameLightingBinding FrameContext::CreateLightingBinding(const LightGpuFrameData &lighting_data)

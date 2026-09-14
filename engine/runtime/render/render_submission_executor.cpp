@@ -82,7 +82,7 @@ namespace kpengine::render
         for (const SubmissionBufferWrite &write : submission.buffer_writes)
         {
             if (!frame.WriteFrameBuffer(write.destination, write.offset,
-                                        write.bytes.data(), write.bytes.size()))
+                                        write.bytes))
             {
                 result.diagnostic = "render submission buffer write failed";
                 return result;

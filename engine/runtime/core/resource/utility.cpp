@@ -4,6 +4,7 @@
 #include <sstream>
 #include <algorithm>
 #include <cstring>
+#include <utility>
 
 namespace kpengine::resource
 {
@@ -52,10 +53,12 @@ namespace kpengine::resource
         return buffer;
     }
 
-    void MurmurHash3_x64_128(const void *key, const int len, uint32_t seed, uint64_t out[2])
+    MurmurHash128 MurmurHash3_x64_128(
+        std::span<const std::byte> key, std::uint32_t seed)
     {
-        const uint8_t *data = (const uint8_t *)key;
-        const int nblocks = len / 16;
+        const std::byte *data = key.data();
+        const size_t length = key.size();
+        const size_t nblocks = length / 16;
 
         uint64_t h1 = seed;
         uint64_t h2 = seed;
@@ -63,11 +66,12 @@ namespace kpengine::resource
         const uint64_t c1 = 0x87c37b91114253d5ULL;
         const uint64_t c2 = 0x4cf5ad432745937fULL;
 
-        const uint64_t *blocks = (const uint64_t *)(data);
-        for (int i = 0; i < nblocks; i++)
+        for (size_t i = 0; i < nblocks; i++)
         {
-            uint64_t k1 = blocks[i * 2 + 0];
-            uint64_t k2 = blocks[i * 2 + 1];
+            uint64_t k1{};
+            uint64_t k2{};
+            std::memcpy(&k1, data + i * 16, sizeof(k1));
+            std::memcpy(&k2, data + i * 16 + sizeof(k1), sizeof(k2));
 
             k1 *= c1;
             k1 = (k1 << 31) | (k1 >> (64 - 31));
@@ -87,54 +91,68 @@ namespace kpengine::resource
         }
 
         // tail
-        const uint8_t *tail = (const uint8_t *)(data + nblocks * 16);
+        const auto tail = key.subspan(nblocks * 16);
         uint64_t k1 = 0;
         uint64_t k2 = 0;
 
-        switch (len & 15)
+        switch (length & 15)
         {
         case 15:
-            k2 ^= ((uint64_t)tail[14]) << 48;
+            k2 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[14]))) << 48;
+            [[fallthrough]];
         case 14:
-            k2 ^= ((uint64_t)tail[13]) << 40;
+            k2 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[13]))) << 40;
+            [[fallthrough]];
         case 13:
-            k2 ^= ((uint64_t)tail[12]) << 32;
+            k2 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[12]))) << 32;
+            [[fallthrough]];
         case 12:
-            k2 ^= ((uint64_t)tail[11]) << 24;
+            k2 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[11]))) << 24;
+            [[fallthrough]];
         case 11:
-            k2 ^= ((uint64_t)tail[10]) << 16;
+            k2 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[10]))) << 16;
+            [[fallthrough]];
         case 10:
-            k2 ^= ((uint64_t)tail[9]) << 8;
+            k2 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[9]))) << 8;
+            [[fallthrough]];
         case 9:
-            k2 ^= ((uint64_t)tail[8]) << 0;
+            k2 ^= static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[8]));
             k2 *= c2;
             k2 = (k2 << 33) | (k2 >> (64 - 33));
             k2 *= c1;
             h2 ^= k2;
+            [[fallthrough]];
         case 8:
-            k1 ^= ((uint64_t)tail[7]) << 56;
+            k1 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[7]))) << 56;
+            [[fallthrough]];
         case 7:
-            k1 ^= ((uint64_t)tail[6]) << 48;
+            k1 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[6]))) << 48;
+            [[fallthrough]];
         case 6:
-            k1 ^= ((uint64_t)tail[5]) << 40;
+            k1 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[5]))) << 40;
+            [[fallthrough]];
         case 5:
-            k1 ^= ((uint64_t)tail[4]) << 32;
+            k1 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[4]))) << 32;
+            [[fallthrough]];
         case 4:
-            k1 ^= ((uint64_t)tail[3]) << 24;
+            k1 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[3]))) << 24;
+            [[fallthrough]];
         case 3:
-            k1 ^= ((uint64_t)tail[2]) << 16;
+            k1 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[2]))) << 16;
+            [[fallthrough]];
         case 2:
-            k1 ^= ((uint64_t)tail[1]) << 8;
+            k1 ^= (static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[1]))) << 8;
+            [[fallthrough]];
         case 1:
-            k1 ^= ((uint64_t)tail[0]) << 0;
+            k1 ^= static_cast<uint64_t>(std::to_integer<std::uint8_t>(tail[0]));
             k1 *= c1;
             k1 = (k1 << 31) | (k1 >> (64 - 31));
             k1 *= c2;
             h1 ^= k1;
         };
 
-        h1 ^= len;
-        h2 ^= len;
+        h1 ^= static_cast<uint64_t>(length);
+        h2 ^= static_cast<uint64_t>(length);
         h1 += h2;
         h2 += h1;
 
@@ -153,14 +171,13 @@ namespace kpengine::resource
         h1 += h2;
         h2 += h1;
 
-        out[0] = h1;
-        out[1] = h2;
+        return {h1, h2};
     }
 
     uint64_t GenerateShaderHash(
-        const std::string &content,
-        const std::string &stage,
-        const std::string &entry,
+        std::string_view content,
+        std::string_view stage,
+        std::string_view entry,
         std::vector<std::string> macro_defines)
     {
         std::sort(macro_defines.begin(), macro_defines.end());
@@ -181,8 +198,9 @@ namespace kpengine::resource
         input += '|';
         input += content;
 
-        uint64_t out[2];
-        MurmurHash3_x64_128(input.data(), (int)input.size(), 0, out);
+        const auto input_bytes = std::as_bytes(
+            std::span<const char>{input.data(), input.size()});
+        const MurmurHash128 out = MurmurHash3_x64_128(input_bytes, 0);
 
         return out[0];
     }

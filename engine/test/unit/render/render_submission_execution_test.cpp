@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <vector>
 
 #include "render/render_submission_executor.h"
@@ -63,10 +64,9 @@ namespace kpengine::render
             }
 
             bool WriteFrameBuffer(graphics::BufferHandle buffer, std::size_t,
-                                  const void *data, std::size_t size) override
+                                  std::span<const std::byte> data) override
             {
-                if (fail_buffer_writes_ || !buffer.IsValid() || data == nullptr ||
-                    size == 0u)
+                if (fail_buffer_writes_ || !buffer.IsValid() || data.empty())
                 {
                     return false;
                 }

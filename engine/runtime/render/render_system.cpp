@@ -616,7 +616,7 @@ namespace kpengine::render
     RenderSystem::RenderSystemMetrics RenderSystem::GetPublishedMetrics() const
     {
         const std::shared_ptr<const RenderSystemMetrics> metrics =
-            std::atomic_load_explicit(&published_metrics_, std::memory_order_acquire);
+            published_metrics_.load(std::memory_order_acquire);
         return metrics != nullptr ? *metrics : RenderSystemMetrics{};
     }
 
@@ -631,8 +631,7 @@ namespace kpengine::render
         metrics->gpu_usage_percent = backend_ ? backend_->GetGpuUsagePercent() : std::nullopt;
         metrics->profile = profile_;
         std::shared_ptr<const RenderSystemMetrics> published = std::move(metrics);
-        std::atomic_store_explicit(&published_metrics_, std::move(published),
-                                   std::memory_order_release);
+        published_metrics_.store(std::move(published), std::memory_order_release);
     }
 
     graphics::IEditorPresentationBridge *RenderSystem::GetEditorPresentationBridge()

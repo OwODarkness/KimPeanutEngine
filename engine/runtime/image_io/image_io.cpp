@@ -55,7 +55,7 @@ namespace kpengine::image_io
         return GetDefaultImageCodec().DecodeFile(path);
     }
 
-    ImageDecodeResult DecodeImageMemory(const std::vector<std::byte> &encoded)
+    ImageDecodeResult DecodeImageMemory(const std::span<const std::byte> encoded)
     {
         if (encoded.empty())
         {
@@ -73,7 +73,7 @@ namespace kpengine::image_io
         return GetDefaultImageCodec().ProbeFile(path);
     }
 
-    ImageMetadataResult ProbeImageMemory(const std::vector<std::byte> &encoded)
+    ImageMetadataResult ProbeImageMemory(const std::span<const std::byte> encoded)
     {
         if (encoded.empty())
         {

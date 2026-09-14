@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
+#include <span>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -52,7 +53,7 @@ namespace kpengine::database
         void Bind(int parameter_index, int64_t value);
         void Bind(int parameter_index, double value);
         void Bind(int parameter_index, std::string_view value);
-        void Bind(int parameter_index, const std::vector<std::byte> &value);
+        void Bind(int parameter_index, std::span<const std::byte> value);
 
         StatementStep Step();
         void Reset();

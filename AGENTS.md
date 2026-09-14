@@ -4,7 +4,7 @@ This is the shared project contract for Codex, Claude Code, and other coding age
 
 ## Project map
 
-KimPeanutEngine is a C++17 engine focused on rendering and infrastructure:
+KimPeanutEngine is a C++20 engine focused on rendering and infrastructure:
 
 ```text
 Editor → Runtime → Asset / Resource → Render → Graphics RHI → OpenGL / Vulkan

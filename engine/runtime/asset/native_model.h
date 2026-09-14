@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -109,16 +110,16 @@ namespace kpengine::asset
 
     // Validates the complete product before allocating payload vectors.
     NativeModelProduct DeserializeNativeModel(
-        const std::vector<std::byte> &bytes,
+        std::span<const std::byte> bytes,
         const ContentHashPair *verified_hashes = nullptr);
 
     // Validates only the bounded container structure and integrity digest.
     // Unlike DeserializeNativeModel, this never allocates decoded payloads.
     void ValidateNativeModelProductStructure(
-        const std::vector<std::byte> &bytes,
+        std::span<const std::byte> bytes,
         const ContentHashPair *verified_hashes = nullptr);
 
-    ContentHash ComputeNativeModelProductHash(const std::vector<std::byte> &bytes);
+    ContentHash ComputeNativeModelProductHash(std::span<const std::byte> bytes);
 }
 
 #endif

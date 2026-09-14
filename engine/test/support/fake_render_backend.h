@@ -15,6 +15,7 @@
 #include <array>
 #include <memory>
 #include <stdexcept>
+#include <span>
 #include <string>
 #include <unordered_map>
 #include <utility>
@@ -348,13 +349,14 @@ namespace kpengine::test
             return storage.data();
         }
 
-        graphics::BufferHandle CreateBuffer(const graphics::BufferDesc &, const void *,
-                                            size_t) override
+        graphics::BufferHandle CreateBuffer(const graphics::BufferDesc &,
+                                            std::span<const std::byte>) override
         {
             return MakeHandle<graphics::BufferHandle>();
         }
 
-        bool WriteFrameBuffer(graphics::BufferHandle, size_t, const void *, size_t) override
+        bool WriteFrameBuffer(graphics::BufferHandle, size_t,
+                              std::span<const std::byte>) override
         {
             return true;
         }
@@ -376,12 +378,12 @@ namespace kpengine::test
             probe_->events.push_back("backend_cleanup");
         }
 
-        graphics::BufferHandle CreateVertexBuffer(const void *, size_t) override
+        graphics::BufferHandle CreateVertexBuffer(std::span<const std::byte>) override
         {
             return MakeHandle<graphics::BufferHandle>();
         }
 
-        graphics::BufferHandle CreateIndexBuffer(const void *, size_t) override
+        graphics::BufferHandle CreateIndexBuffer(std::span<const std::byte>) override
         {
             return MakeHandle<graphics::BufferHandle>();
         }

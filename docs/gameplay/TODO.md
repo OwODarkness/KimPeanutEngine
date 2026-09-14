@@ -24,7 +24,7 @@ current Actor/component runtime to it prematurely.
   `third_party/entt/`; exclude the upstream repository metadata, build tree,
   tests, and tools.
 - [x] Expose the upstream-style `EnTT::EnTT` header-only CMake target with a
-  target-local C++20 requirement; keep the engine baseline at C++17.
+  C++20 requirement; the engine baseline is C++20.
 - [x] Add a focused compile/test seam covering one registry operation and one
   reflected property read.
 - [ ] Register Gameplay state through the engine-owned Reflection module after

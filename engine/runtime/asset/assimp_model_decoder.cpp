@@ -10,6 +10,7 @@
 #include <limits>
 #include <memory>
 #include <sstream>
+#include <span>
 #include <string_view>
 #include <unordered_map>
 
@@ -216,7 +217,7 @@ namespace kpengine::asset
         }
 
         void AddEmbeddedDependency(ImportedModelDocument &document, std::string path,
-                                   const std::vector<std::byte> &bytes)
+                                   std::span<const std::byte> bytes)
         {
             const auto existing = std::find_if(
                 document.source_dependencies.begin(), document.source_dependencies.end(),
@@ -228,7 +229,8 @@ namespace kpengine::asset
             if (existing == document.source_dependencies.end())
             {
                 document.source_dependencies.push_back(
-                    {ImportedDependencyKind::EmbeddedData, std::move(path), {}, bytes});
+                    {ImportedDependencyKind::EmbeddedData, std::move(path), {},
+                     std::vector<std::byte>{bytes.begin(), bytes.end()}});
             }
         }
 

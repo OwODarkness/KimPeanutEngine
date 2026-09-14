@@ -136,7 +136,7 @@ namespace kpengine::database
                     "bind text");
     }
 
-    void Statement::Bind(int parameter_index, const std::vector<std::byte> &value)
+    void Statement::Bind(int parameter_index, std::span<const std::byte> value)
     {
         const int byte_count = CheckedByteCount(value.size());
         CheckResult(GetDatabase(impl_->handle),

@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RESOURCE_SHADERC_UTIL_H
 
 #include <shaderc/shaderc.hpp>
+#include <span>
 #include <string>
 #include <vector>
 #include "base/graphics_type.h"
@@ -28,7 +29,8 @@ namespace kpengine::resource
 
     // Lay the per-shader macros ("NAME" or "NAME VALUE") onto shared options, so
     // the same options object can be copied per compile without leaking macros.
-    inline void AddMacroDefinitions(shaderc::CompileOptions &options, const std::vector<std::string> &defines)
+    inline void AddMacroDefinitions(
+        shaderc::CompileOptions &options, std::span<const std::string> defines)
     {
         for (const auto &define : defines)
         {
