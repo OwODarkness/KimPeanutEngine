@@ -108,3 +108,17 @@ if(KPENGINE_ENABLE_LIVE2D)
     include(GoogleTest)
     gtest_discover_tests(Live2DCoreTest)
 endif()
+
+# The bubble's geometry, which is pure CPU: the shape a shader evaluates, with
+# no device, no shader, and no Cubism framework.
+add_executable(Live2DBubbleLayoutTest
+    bubble_layout_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/bubble/bubble_layout.cpp)
+
+target_include_directories(Live2DBubbleLayoutTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/bubble)
+
+target_link_libraries(Live2DBubbleLayoutTest PRIVATE KP::GoogleTest)
+
+include(GoogleTest)
+gtest_discover_tests(Live2DBubbleLayoutTest)

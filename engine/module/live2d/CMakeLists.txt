@@ -136,6 +136,16 @@ target_link_libraries(Live2DRegistration PUBLIC Live2DProduct Live2DAssetRuntime
 set_property(TARGET Live2DRegistration PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
 
+# The speech bubble drawn over the model. It is CPU-only so far -- the geometry
+# a shader evaluates -- and is deliberately its own target rather than part of
+# Live2DRender, so the geometry stays testable with no device and no shader.
+add_library(Live2DBubble STATIC
+    bubble/bubble_layout.cpp)
+target_include_directories(Live2DBubble PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/bubble")
+set_property(TARGET Live2DBubble PROPERTY
+    MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
+
 add_library(Live2D INTERFACE)
 target_link_libraries(Live2D INTERFACE Live2DRuntime Live2DProduct
     Live2DAssetRuntime Live2DRegistration Live2DRender)
