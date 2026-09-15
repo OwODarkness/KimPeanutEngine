@@ -62,3 +62,19 @@ target_link_libraries(PanelRendererTest PRIVATE PanelRender Panel KP::GoogleTest
 copy_runtime_dependencies(PanelRendererTest)
 
 gtest_discover_tests(PanelRendererTest)
+
+# The command contract: what the provider accepts, rejects, and reports. It
+# compiles the provider directly and links only the command lane, so it needs no
+# host, no window, and no device.
+add_executable(PanelCommandProviderTest
+    panel_command_provider_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/panel/panel_command_provider.cpp)
+
+target_include_directories(PanelCommandProviderTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/panel
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core)
+
+target_link_libraries(PanelCommandProviderTest PRIVATE RuntimeCommand KP::GoogleTest)
+
+gtest_discover_tests(PanelCommandProviderTest)

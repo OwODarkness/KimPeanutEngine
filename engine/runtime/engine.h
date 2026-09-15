@@ -106,6 +106,24 @@ namespace kpengine
             {
                 return panel_text_;
             }
+            // Optional dot colour the panel starts with, as a "#RRGGBB" literal
+            // in display space.
+            void SetPanelDotColor(std::string color);
+            const std::optional<std::string> &GetPanelDotColor() const noexcept
+            {
+                return panel_dot_color_;
+            }
+            // The ramp's far colour, as a "#RRGGBB" literal.
+            void SetPanelAccentColor(std::string color);
+            const std::optional<std::string> &GetPanelAccentColor() const noexcept
+            {
+                return panel_accent_color_;
+            }
+            // How far the ramp runs toward the accent colour, 0 to 1. Zero is
+            // off, which is also the default, so unset and off are the same state
+            // and this needs no optional.
+            void SetPanelGradient(float amount);
+            float GetPanelGradient() const noexcept { return panel_gradient_; }
             void SetStartupCaptureOverride(std::string output_path);
             void SetStartupCaptureView(StartupCaptureView view) noexcept
             {
@@ -279,6 +297,9 @@ namespace kpengine
             std::optional<std::string> live2d_model_override_;
             std::optional<std::string> panel_glyph_product_;
             std::optional<std::string> panel_text_;
+            std::optional<std::string> panel_dot_color_;
+            std::optional<std::string> panel_accent_color_;
+            float panel_gradient_ = 0.0f;
             std::optional<RuntimeResizeRequest> startup_resize_;
             StartupCaptureView startup_capture_view_ = StartupCaptureView::Presentation;
             bool startup_capture_transparent_clear_ = false;

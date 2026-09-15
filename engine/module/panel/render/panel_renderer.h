@@ -1,6 +1,7 @@
 #ifndef KPENGINE_MODULE_PANEL_RENDERER_H
 #define KPENGINE_MODULE_PANEL_RENDERER_H
 
+#include <array>
 #include <cstdint>
 #include <string>
 
@@ -76,6 +77,9 @@ namespace kpengine::panel
         std::uint32_t GetOutputWidth() const noexcept { return output_width_; }
         std::uint32_t GetOutputHeight() const noexcept { return output_height_; }
         bool HasDotMask() const noexcept { return dot_mask_.IsValid(); }
+        // Lit extent of the current mask, normalized, as min_x/min_y/max_x/max_y.
+        // The whole panel until a mask is uploaded, and for a blank one.
+        const std::array<float, 4> &GetInkBounds() const noexcept { return ink_bounds_; }
 
         // Counts the GPU handles this renderer currently owns. Zero is the
         // shutdown contract, computed from the live handle set so it cannot
@@ -104,6 +108,10 @@ namespace kpengine::panel
         graphics::TextureHandle dot_mask_{};
         graphics::RenderTargetHandle output_target_{};
         graphics::RenderTargetView output_view_{};
+        // Lit extent of the current mask, normalized. Measured where the mask is
+        // measured, because the ramp spans what is drawn and only the mask knows
+        // what that is.
+        std::array<float, 4> ink_bounds_{0.0f, 0.0f, 1.0f, 1.0f};
         std::uint32_t output_width_ = 0u;
         std::uint32_t output_height_ = 0u;
         TextureFormat output_color_format_ = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;

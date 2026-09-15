@@ -1,5 +1,6 @@
 #include "panel_renderer.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <span>
@@ -220,6 +221,28 @@ namespace kpengine::panel
             }
         }
 
+        // The lit extent is measured separately rather than in the same pass:
+        // the scan is the dot matrix's own, and a second copy of it here is a
+        // second thing to get wrong about inclusivity.
+        const DotBounds bounds = LitBounds(matrix);
+        if (!bounds.empty)
+        {
+            // The maximum is exclusive, so a single lit dot still spans one dot
+            // rather than collapsing to a zero-width extent.
+            ink_bounds_ = {static_cast<float>(bounds.left) / static_cast<float>(matrix.Width()),
+                           static_cast<float>(bounds.top) / static_cast<float>(matrix.Height()),
+                           static_cast<float>(bounds.right + 1u) /
+                               static_cast<float>(matrix.Width()),
+                           static_cast<float>(bounds.bottom + 1u) /
+                               static_cast<float>(matrix.Height())};
+        }
+        else
+        {
+            // A blank panel has no extent to ramp across, so it keeps the whole
+            // panel and draws nothing either way.
+            ink_bounds_ = {0.0f, 0.0f, 1.0f, 1.0f};
+        }
+
         graphics::TextureSettings settings{};
         settings.format = TextureFormat::TEXTURE_FORMAT_R8_UNORM;
         settings.mip_levels = 1u;
@@ -256,6 +279,7 @@ namespace kpengine::panel
         proxy.output_width = output_width_;
         proxy.output_height = output_height_;
         proxy.index_count = kPanelQuadIndexCount;
+        proxy.ink_bounds = ink_bounds_;
         return proxy;
     }
 

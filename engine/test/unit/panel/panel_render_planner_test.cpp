@@ -88,10 +88,14 @@ namespace kpengine::panel
         EXPECT_TRUE(draw.textures.front().sampler.IsValid());
     }
 
-    TEST(PanelRenderPlannerTest, CarriesTheRequestedColorsInTheConstantBlock)
+    TEST(PanelRenderPlannerTest, LinearisesTheRequestedColorsForAnSrgbTarget)
     {
+        // A caller picks a display-space colour and the shader writes linear,
+        // because the target is sRGB and the hardware encodes on store. The
+        // expected values are the canonical sRGB curve rather than a second copy
+        // of the formula, so changing the curve has to change this test.
         PanelRenderPlanOptions options;
-        options.dot_color = {0.25f, 0.5f, 0.75f, 1.0f};
+        options.dot_color = {0.25f, 0.5f, 0.75f, 0.25f};
         options.background_color = {0.0f, 0.0f, 0.0f, 1.0f};
 
         const PanelRenderPlanResult plan =
@@ -104,9 +108,14 @@ namespace kpengine::panel
 
         PanelDrawConstants read_back{};
         std::memcpy(&read_back, bytes.data(), sizeof(read_back));
-        EXPECT_FLOAT_EQ(read_back.dot_color[0], 0.25f);
-        EXPECT_FLOAT_EQ(read_back.dot_color[2], 0.75f);
+        EXPECT_NEAR(read_back.dot_color[0], 0.050876f, 1.0e-5f);
+        EXPECT_NEAR(read_back.dot_color[1], 0.214041f, 1.0e-5f);
+        EXPECT_NEAR(read_back.dot_color[2], 0.522522f, 1.0e-5f);
+        // White and black are fixed points of the curve, which is why the
+        // default look is unchanged by the conversion.
         EXPECT_FLOAT_EQ(read_back.background_color[0], 0.0f);
+        // Alpha is coverage rather than colour, so it is carried through.
+        EXPECT_FLOAT_EQ(read_back.dot_color[3], 0.25f);
     }
 
     TEST(PanelRenderPlannerTest, CarriesTheDotGapAndLeavesTheReservedLanesZero)
@@ -149,6 +158,80 @@ namespace kpengine::panel
         EXPECT_FLOAT_EQ(read_back.params[0], kPanelDefaultDotGap);
         EXPECT_GT(kPanelDefaultDotGap, 0.0f);
         EXPECT_LT(kPanelDefaultDotGap, 0.5f);
+    }
+
+    TEST(PanelRenderPlannerTest, CarriesTheInkBoundsSoTheRampSpansTheContent)
+    {
+        // The ramp normalizes within the lit extent. A ramp across the whole
+        // panel was measured to move the colour only from (255,106,0) to
+        // (239,133,105) across a short line of text -- effectively invisible.
+        PanelRenderProxy proxy = MakeValidProxy();
+        proxy.ink_bounds = {0.1f, 0.2f, 0.6f, 0.9f};
+
+        const PanelRenderPlanResult plan = PanelRenderPlanner::Plan(proxy);
+        ASSERT_TRUE(plan.succeeded) << plan.diagnostic;
+
+        const std::vector<std::byte> &bytes =
+            plan.work.passes.front().draws.front().uniforms.front().bytes;
+        ASSERT_EQ(bytes.size(), sizeof(PanelDrawConstants));
+
+        PanelDrawConstants read_back{};
+        std::memcpy(&read_back, bytes.data(), sizeof(read_back));
+        EXPECT_FLOAT_EQ(read_back.ink_bounds[0], 0.1f);
+        EXPECT_FLOAT_EQ(read_back.ink_bounds[1], 0.2f);
+        EXPECT_FLOAT_EQ(read_back.ink_bounds[2], 0.6f);
+        EXPECT_FLOAT_EQ(read_back.ink_bounds[3], 0.9f);
+    }
+
+    TEST(PanelRenderPlannerTest, CarriesTheRampAndItsTime)
+    {
+        PanelRenderPlanOptions options;
+        options.accent_color = {0.0f, 1.0f, 1.0f, 1.0f};
+        options.gradient_amount = 0.75f;
+        options.gradient_axis = PanelGradientAxis::Mirrored;
+        options.elapsed_seconds = 2.5f;
+        options.cycles_per_second = 0.5f;
+
+        const PanelRenderPlanResult plan =
+            PanelRenderPlanner::Plan(MakeValidProxy(), options);
+        ASSERT_TRUE(plan.succeeded) << plan.diagnostic;
+
+        const std::vector<std::byte> &bytes =
+            plan.work.passes.front().draws.front().uniforms.front().bytes;
+        PanelDrawConstants read_back{};
+        std::memcpy(&read_back, bytes.data(), sizeof(read_back));
+
+        EXPECT_FLOAT_EQ(read_back.params[1], 0.75f);
+        EXPECT_FLOAT_EQ(read_back.params[2],
+                        static_cast<float>(PanelGradientAxis::Mirrored));
+        EXPECT_FLOAT_EQ(read_back.motion[0], 2.5f);
+        EXPECT_FLOAT_EQ(read_back.motion[1], 0.5f);
+        // Blue is a fixed point of the display-to-linear curve, so it survives
+        // the conversion unchanged and is the one channel this can assert
+        // exactly.
+        EXPECT_FLOAT_EQ(read_back.accent_color[2], 1.0f);
+    }
+
+    TEST(PanelRenderPlannerTest, LeavesTheRampOffByDefault)
+    {
+        // An unset ramp has to change nothing, or the default look would differ
+        // from the one the earlier capture gates were taken against.
+        const PanelRenderPlanResult plan =
+            PanelRenderPlanner::Plan(MakeValidProxy());
+        ASSERT_TRUE(plan.succeeded) << plan.diagnostic;
+
+        const std::vector<std::byte> &bytes =
+            plan.work.passes.front().draws.front().uniforms.front().bytes;
+        PanelDrawConstants read_back{};
+        std::memcpy(&read_back, bytes.data(), sizeof(read_back));
+
+        EXPECT_FLOAT_EQ(read_back.params[1], 0.0f);
+        EXPECT_FLOAT_EQ(read_back.motion[0], 0.0f);
+        EXPECT_FLOAT_EQ(read_back.motion[1], 0.0f);
+        // The whole panel, which is what a caller that has not measured the
+        // content should get.
+        EXPECT_FLOAT_EQ(read_back.ink_bounds[0], 0.0f);
+        EXPECT_FLOAT_EQ(read_back.ink_bounds[2], 1.0f);
     }
 
     TEST(PanelRenderPlannerTest, CoversTheWholeOutputWithTheViewport)

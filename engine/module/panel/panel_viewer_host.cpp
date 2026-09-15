@@ -101,6 +101,32 @@ namespace kpengine::panel
             {
                 panel_.SetText(0u, *engine.GetPanelText());
             }
+            if (engine.GetPanelDotColor().has_value())
+            {
+                // Parsed with the same function the command uses, so the launch
+                // option and panel.set_appearance accept exactly the spellings
+                // panel.report produces.
+                std::array<float, 4> color{};
+                if (!ParsePanelColor(*engine.GetPanelDotColor(), color))
+                {
+                    diagnostic = "panel dot colour must be a \"#RRGGBB\" literal";
+                    return false;
+                }
+                appearance_.dot_color = color;
+            }
+            if (engine.GetPanelAccentColor().has_value())
+            {
+                std::array<float, 4> accent{};
+                if (!ParsePanelColor(*engine.GetPanelAccentColor(), accent))
+                {
+                    diagnostic = "panel accent colour must be a \"#RRGGBB\" literal";
+                    return false;
+                }
+                appearance_.accent_color = accent;
+            }
+            // Zero is the default and means "no ramp", so this is applied
+            // unconditionally rather than only when a flag was passed.
+            appearance_.gradient_amount = engine.GetPanelGradient();
 
             window_ = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
             if (!window_)
@@ -253,6 +279,75 @@ namespace kpengine::panel
                                    static_cast<int>(resize.height));
     }
 
+    void PanelViewerHost::ApplyPendingContent()
+    {
+        PendingContent pending;
+        {
+            std::lock_guard<std::mutex> lock(content_mutex_);
+            pending.text = std::move(pending_content_.text);
+            pending.appearance = pending_content_.appearance;
+            pending_content_ = {};
+        }
+
+        if (pending.text.has_value())
+        {
+            panel_.SetText(0u, *pending.text);
+        }
+
+        if (pending.appearance.has_value())
+        {
+            const PanelAppearanceUpdate &update = *pending.appearance;
+            // Only the fields the command set are applied, so a command can
+            // change the gap without restating the colours.
+            if (update.has_dot_gap)
+            {
+                appearance_.dot_gap = update.dot_gap;
+            }
+            if (update.has_dot_color)
+            {
+                appearance_.dot_color = update.dot_color;
+            }
+            if (update.has_background_color)
+            {
+                appearance_.background_color = update.background_color;
+            }
+            if (update.has_accent_color)
+            {
+                appearance_.accent_color = update.accent_color;
+            }
+            if (update.has_gradient_amount)
+            {
+                appearance_.gradient_amount = update.gradient_amount;
+            }
+            if (update.has_gradient_axis)
+            {
+                appearance_.gradient_axis =
+                    static_cast<PanelGradientAxis>(update.gradient_axis);
+            }
+            if (update.has_cycles_per_second)
+            {
+                appearance_.cycles_per_second = update.cycles_per_second;
+            }
+        }
+    }
+
+    void PanelViewerHost::PublishAppliedState()
+    {
+        AppliedState state;
+        state.appearance = appearance_;
+        state.lit_dots = mask_uploaded_ ? CountLitDots(uploaded_mask_) : 0u;
+        for (const char32_t codepoint : panel_.CodepointsAt(0u))
+        {
+            // Reported as decoded codepoints rather than as text: the command
+            // payload is key/value and has to stay transportable.
+            state.text += std::to_string(static_cast<std::uint32_t>(codepoint));
+            state.text += " ";
+        }
+
+        std::lock_guard<std::mutex> lock(content_mutex_);
+        applied_state_ = std::move(state);
+    }
+
     bool PanelViewerHost::RecordFrame(std::string &diagnostic)
     {
         diagnostic.clear();
@@ -270,6 +365,19 @@ namespace kpengine::panel
         }
 
         ApplyPendingResize();
+
+        // Applied and uploaded before the frame bracket, because the upload waits
+        // for the device and that must not happen between BeginFrame and EndFrame.
+        // Before this existed, a command could change the text and the panel
+        // simply never re-uploaded: the change was accepted and never drawn.
+        ApplyPendingContent();
+        std::string upload_diagnostic;
+        if (!RefreshDotMask(upload_diagnostic))
+        {
+            diagnostic = upload_diagnostic;
+            return false;
+        }
+        PublishAppliedState();
 
         graphics::RenderBackend &backend = *backend_;
         backend.BeginFrame();
@@ -293,9 +401,14 @@ namespace kpengine::panel
             return false;
         }
 
+        // Time is supplied to the planner rather than read from a clock there, so
+        // planning stays a pure function of its inputs and a still ramp is
+        // exactly reproducible.
+        appearance_.elapsed_seconds = elapsed_seconds_;
+
         const render::FrameGlobals globals{frame_number_, elapsed_seconds_, 1.0f / 60.0f};
         frame.Begin(static_cast<std::uint32_t>(slot), globals, extent);
-        if (!renderer_->Record(frame, *recorder, PanelRenderPlanOptions{}, diagnostic))
+        if (!renderer_->Record(frame, *recorder, appearance_, diagnostic))
         {
             frame.End();
             backend.EndFrame();
@@ -423,9 +536,8 @@ namespace kpengine::panel
     bool PanelViewerHost::RegisterHostCommands(
         runtime::command::CommandRegistry &registry, std::string &diagnostic)
     {
-        PanelCommandRegistrationResult registration = RegisterPanelCommands(
-            registry,
-            [this](PanelRuntimeReport &report)
+        PanelCommandResolvers resolvers;
+        resolvers.report = [this](PanelRuntimeReport &report)
             {
                 if (renderer_ == nullptr || !glyphs_loaded_)
                 {
@@ -439,32 +551,59 @@ namespace kpengine::panel
                 report.rows = panel_.Rows();
                 report.dot_width = PanelDotWidth(panel_.Columns());
                 report.dot_height = PanelDotHeight(panel_.Rows());
-                report.lit_dots = mask_uploaded_ ? CountLitDots(uploaded_mask_) : 0u;
                 report.has_dot_mask = renderer_->HasDotMask();
                 report.live_gpu_handles = renderer_->GetLiveGpuHandleCount();
-                report.text = std::string{};
-                for (const char32_t codepoint : panel_.CodepointsAt(0u))
+
+                // The state the render thread published, not the live panel: this
+                // resolver runs on the game thread, and reading a std::string the
+                // render thread may be rebuilding is a race.
+                AppliedState applied;
                 {
-                    // Reported as decoded codepoints rather than as text: the
-                    // command payload is key/value and must stay transportable.
-                    report.text += std::to_string(static_cast<std::uint32_t>(codepoint));
-                    report.text += " ";
+                    std::lock_guard<std::mutex> lock(content_mutex_);
+                    applied = applied_state_;
                 }
+                report.lit_dots = applied.lit_dots;
+                report.text = applied.text;
+                // Reported alongside the product for the same reason: a capture
+                // shows pixels and cannot say which gap, colour, or ramp made
+                // them.
+                report.dot_gap = applied.appearance.dot_gap;
+                report.dot_color = FormatPanelColor(applied.appearance.dot_color);
+                report.background_color =
+                    FormatPanelColor(applied.appearance.background_color);
+                report.accent_color = FormatPanelColor(applied.appearance.accent_color);
+                report.gradient_amount = applied.appearance.gradient_amount;
+                report.gradient_axis = FormatPanelGradientAxis(
+                    static_cast<std::uint32_t>(applied.appearance.gradient_axis));
+                report.cycles_per_second = applied.appearance.cycles_per_second;
                 return true;
-            },
-            [this](std::string_view text, std::string &set_text_diagnostic)
+            };
+        resolvers.set_text = [this](std::string_view text, std::string &set_text_diagnostic)
             {
                 if (!glyphs_loaded_)
                 {
                     set_text_diagnostic = "no glyph product is loaded";
                     return false;
                 }
-                panel_.SetText(0u, text);
-                // The upload is deferred to the next recorded frame, which owns
-                // the device. A command runs on the game thread and must not
-                // touch GPU resources.
+                // Recorded, not applied: this runs on the game thread and the
+                // panel is read by the render thread, which applies it before its
+                // next frame and owns the device upload.
+                std::lock_guard<std::mutex> lock(content_mutex_);
+                pending_content_.text = std::string{text};
                 return true;
-            });
+            };
+        resolvers.set_appearance = [this](const PanelAppearanceUpdate &update, std::string &)
+        {
+            // Recorded rather than applied, for the same reason as set_text.
+            // Nothing here fails; the command provider rejects unusable values
+            // before they reach this point.
+            std::lock_guard<std::mutex> lock(content_mutex_);
+            pending_content_.appearance = update;
+            return true;
+        };
+
+        PanelCommandRegistrationResult registration =
+            RegisterPanelCommands(registry, std::move(resolvers));
         if (!registration.succeeded)
         {
             diagnostic = registration.diagnostic;

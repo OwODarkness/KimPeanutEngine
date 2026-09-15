@@ -136,6 +136,37 @@ namespace
         EXPECT_GT(probe->wait_idle_count, waits_after_first);
     }
 
+    TEST_F(PanelRendererTest, MeasuresTheLitExtentForTheColourRamp)
+    {
+        const DotMatrix pattern = MakePattern();
+        ASSERT_TRUE(renderer.UploadPanel(pattern, diagnostic)) << diagnostic;
+
+        // The pattern is two halfwidth characters at the left of a 32x16 dot
+        // panel, so the extent must cover them and stop short of the panel edge.
+        // A ramp across the whole panel was measured to move the colour almost
+        // not at all across a short line.
+        const std::array<float, 4> &bounds = renderer.GetInkBounds();
+        EXPECT_FLOAT_EQ(bounds[0], 0.0f);
+        EXPECT_GT(bounds[2], 0.0f);
+        EXPECT_LT(bounds[2], 1.0f) << "the ramp spans the whole panel, not the text";
+        EXPECT_LT(bounds[1], bounds[3]);
+        EXPECT_LE(bounds[3], 1.0f);
+    }
+
+    TEST_F(PanelRendererTest, ABlankPanelKeepsTheWholePanelAsItsExtent)
+    {
+        // A blank panel has no extent to ramp across, so it must keep a sane one
+        // rather than an inverted or zero-width one.
+        const DotMatrix blank{32u, 16u};
+        ASSERT_TRUE(renderer.UploadPanel(blank, diagnostic)) << diagnostic;
+
+        const std::array<float, 4> &bounds = renderer.GetInkBounds();
+        EXPECT_FLOAT_EQ(bounds[0], 0.0f);
+        EXPECT_FLOAT_EQ(bounds[1], 0.0f);
+        EXPECT_FLOAT_EQ(bounds[2], 1.0f);
+        EXPECT_FLOAT_EQ(bounds[3], 1.0f);
+    }
+
     TEST_F(PanelRendererTest, ResizeOutputIsTransactional)
     {
         const auto initial_target = renderer.GetOutputTarget();

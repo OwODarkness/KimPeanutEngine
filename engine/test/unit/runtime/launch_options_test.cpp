@@ -411,6 +411,76 @@ TEST(RuntimeLaunchOptionsTest, ParsesPanelTextAndRejectsAnEmptyValue)
     EXPECT_NE(in_scene.diagnostic.find("--panel-text"), std::string::npos);
 }
 
+TEST(RuntimeLaunchOptionsTest, ParsesPanelDotColorAndRejectsANonLiteral)
+{
+    const auto named = Parse({"--mode", "panel-viewer", "--panel-dot-color", "#FFB000"});
+    ASSERT_TRUE(named) << named.diagnostic;
+    ASSERT_TRUE(named.options.panel_dot_color.has_value());
+    EXPECT_EQ(*named.options.panel_dot_color, "#FFB000");
+
+    // Lower case is a valid literal too; the parser accepts both cases.
+    EXPECT_TRUE(Parse({"--mode", "panel-viewer", "--panel-dot-color", "#ffb000"}));
+
+    const std::vector<std::string> invalid{"", "FFB000", "#FFF", "#GGGGGG",
+                                           "#FFB0000", "0xFFB000"};
+    for (const std::string &value : invalid)
+    {
+        const auto parsed =
+            Parse({"--mode", "panel-viewer", "--panel-dot-color", value});
+        EXPECT_FALSE(parsed) << "accepted '" << value << "'";
+        EXPECT_NE(parsed.diagnostic.find("--panel-dot-color"), std::string::npos);
+    }
+
+    const auto in_scene = Parse({"--mode", "scene3d", "--panel-dot-color", "#FFB000"});
+    EXPECT_FALSE(in_scene);
+    EXPECT_NE(in_scene.diagnostic.find("--panel-dot-color"), std::string::npos);
+
+    const auto duplicated = Parse({"--mode", "panel-viewer", "--panel-dot-color",
+                                   "#FFB000", "--panel-dot-color", "#00E5FF"});
+    EXPECT_FALSE(duplicated);
+    EXPECT_NE(duplicated.diagnostic.find("--panel-dot-color"), std::string::npos);
+}
+
+TEST(RuntimeLaunchOptionsTest, ParsesThePanelRampAndKeepsItSeparateFromTheColour)
+{
+    const auto named = Parse({"--mode", "panel-viewer", "--panel-accent-color",
+                              "#00E5FF", "--panel-gradient", "0.75"});
+    ASSERT_TRUE(named) << named.diagnostic;
+    ASSERT_TRUE(named.options.panel_accent_color.has_value());
+    EXPECT_EQ(*named.options.panel_accent_color, "#00E5FF");
+    ASSERT_TRUE(named.options.panel_gradient.has_value());
+    EXPECT_FLOAT_EQ(*named.options.panel_gradient, 0.75f);
+
+    // Setting only the accent must not switch the ramp on: zero is off, and an
+    // implicit "accent implies ramp" would make the default look depend on which
+    // flag happened to be passed.
+    const auto accent_only =
+        Parse({"--mode", "panel-viewer", "--panel-accent-color", "#00E5FF"});
+    ASSERT_TRUE(accent_only) << accent_only.diagnostic;
+    EXPECT_FALSE(accent_only.options.panel_gradient.has_value());
+
+    // The bounds are inclusive of both ends.
+    EXPECT_TRUE(Parse({"--mode", "panel-viewer", "--panel-gradient", "0"}));
+    EXPECT_TRUE(Parse({"--mode", "panel-viewer", "--panel-gradient", "1"}));
+
+    const std::vector<std::string> bad_gradient{"", "-0.1", "1.5", "0.5x", "half"};
+    for (const std::string &value : bad_gradient)
+    {
+        const auto parsed = Parse({"--mode", "panel-viewer", "--panel-gradient", value});
+        EXPECT_FALSE(parsed) << "accepted '" << value << "'";
+        EXPECT_NE(parsed.diagnostic.find("--panel-gradient"), std::string::npos);
+    }
+
+    const auto bad_color =
+        Parse({"--mode", "panel-viewer", "--panel-accent-color", "blue"});
+    EXPECT_FALSE(bad_color);
+    EXPECT_NE(bad_color.diagnostic.find("--panel-accent-color"), std::string::npos);
+
+    // Both are panel-only, like the rest of the appearance surface.
+    EXPECT_FALSE(Parse({"--mode", "scene3d", "--panel-gradient", "0.5"}));
+    EXPECT_FALSE(Parse({"--mode", "live2d-viewer", "--panel-accent-color", "#00E5FF"}));
+}
+
 TEST(RuntimeLaunchOptionsTest, AcceptsCaptureOptionsInPanelViewerMode)
 {
     // The capture, resize, and exit options belong to whichever standalone host

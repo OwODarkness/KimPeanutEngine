@@ -87,12 +87,23 @@ is a scene-integration problem rather than a panel problem.
 
 ## Open decisions
 
-- **Appearance is a uniform, not yet a command.** The dot gap and the colours are
-  parameters of `PanelRenderPlanOptions`, so they are tunable in code, but
-  nothing sets them at run time. A `panel.set_appearance` command — gap now, and
-  shape and colour later — is the next step if the look wants iterating without a
-  rebuild. The gap is already clamped by the shader, so an out-of-range value
-  degrades rather than corrupting the panel.
+- **No on-demand capture in viewer mode.** `capture.screenshot` belongs to the
+  Scene3D command path, so a standalone viewer can only capture at startup. That
+  is why `--panel-text` and `--panel-dot-color` exist: without them a capture run
+  cannot show anything but the defaults. Registering a host-resolved
+  `capture.screenshot` for viewer modes — the way `window.resize` already resolves
+  its window through the host — would remove the need for those options and let a
+  run export an image after changing something at run time.
+- **The viewer window shows nothing.** The panel draws to its own offscreen
+  target and nothing presents it, so `--mode panel-viewer` opens a window that
+  stays blank. That is fine for a capture run and wrong for a viewer; it needs a
+  presentation pass over the panel target.
+- **Per-character colour is still absent.** Colour is one ramp across the whole
+  panel. Per-character colour needs both a character-resolution plane and the
+  `Placement` model, since halfwidth characters do not align to cells.
+- **The ramp has no repeat count.** One cosine spans the lit extent, so a long
+  line shows one band and a short one shows a full ramp. A `repeats` parameter
+  would let a line band several times without needing per-character colour.
 - **Dot shape is fixed to a square.** The bezel is a rectangular margin, so the
   shape is square by construction. Rounded and circular elements were considered
   and declined for now: both need a distance or corner term rather than a

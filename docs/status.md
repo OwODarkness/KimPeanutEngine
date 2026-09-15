@@ -40,8 +40,33 @@
   count and survives any zoom. It needed a second change to be visible at all:
   the render target is now sized to the **panel** rather than to the window,
   because at the original two pixels per dot even a correct bezel is sub-pixel.
-  Five adjacent dots went from one fused slab to five distinct cubes. Full suite
-  858/859, the one failure the pre-existing `LevelLoaderTest` fixture. →
+  Five adjacent dots went from one fused slab to five distinct cubes. The panel's
+  look is now settable rather than compiled in: `panel.set_appearance` changes the
+  dot gap and both colours, applying only the fields a caller sets and rejecting a
+  value the shader would clamp, so a success never means something other than what
+  was asked. Colours turned out to need a colour space — the target is sRGB and
+  the hardware *encodes on store*, so a hex literal has to be linearised before it
+  reaches the shader or it comes out lighter than requested. The planner does that
+  conversion, which is why callers speak the display space a person picks in, and
+  a capture taken with `#FFB000` decodes to exactly `(255, 176, 0)`. Two gaps were
+  found while proving it and are recorded rather than fixed: **the viewer has no
+  on-demand capture** — `capture.screenshot` belongs to the Scene3D command path,
+  so a standalone viewer can only capture at startup, which is the whole reason
+  `--panel-text` and `--panel-dot-color` exist — and **the viewer window shows
+  nothing**, because the panel draws to its own offscreen target and nothing
+  presents it. The panel can also run a colour ramp from the dot colour to an
+  accent colour, optionally animating — no new data, just fragment arithmetic — and
+  its **span had to be the lit extent rather than the panel**: measured, a ramp
+  across the panel moved the colour only from `(255,106,0)` to `(239,133,105)`
+  across a short line, because the text occupied a twelfth of the width. Spanning
+  the measured extent, the same text ramps to `(42,227,252)` at its centre. Writing
+  that exposed **two defects shipped in the previous commit and found by neither
+  of its test suites**: the appearance commands assigned render-thread state from
+  the game thread — a data race, now queued and applied by the frame loop the way
+  `window.resize` already worked — and `RefreshDotMask` was only called at
+  startup, so `panel.set_text` changed the panel and **never re-uploaded it**.
+  Both lived in the host, which had no test; that is the gap worth remembering.
+  Full suite 878/879, the one failure the pre-existing `LevelLoaderTest` fixture. →
   [P2 plan](panel/.plan/P2.md) · [PLANS](panel/PLANS.md) · [journal](../.spec/journal/2026-09-15-panel-p2.md)
 
 - **Spatial BVH stage 2 declined on measurement (2026-09-14)** — wiring

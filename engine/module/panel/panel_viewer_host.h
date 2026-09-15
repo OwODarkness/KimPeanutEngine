@@ -3,6 +3,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -78,6 +79,38 @@ namespace kpengine::panel
         bool mask_uploaded_ = false;
         bool glyphs_loaded_ = false;
         std::string loaded_glyph_product_;
+        // The panel's whole look, because it has no per-character colour yet.
+        // Held here rather than in the renderer: it is a property of what the
+        // viewer is asked to show, not of the GPU resources that show it.
+        PanelRenderPlanOptions appearance_{};
+
+        // Commands dispatch on the game thread while the panel, the appearance,
+        // and the dot mask are all read by the render thread. A command therefore
+        // records intent and the render thread applies it, the way the window
+        // resize command queues and the window thread applies. Without this a
+        // command assigning a std::string the render thread is reading is a data
+        // race, not merely a staleness.
+        struct PendingContent final
+        {
+            std::optional<std::string> text;
+            std::optional<PanelAppearanceUpdate> appearance;
+        };
+        // What the render thread last actually rendered, published for the report
+        // so a command never reads render-thread state directly.
+        struct AppliedState final
+        {
+            std::string text;
+            PanelRenderPlanOptions appearance{};
+            std::uint32_t lit_dots = 0u;
+        };
+
+        void ApplyPendingContent();
+        void PublishAppliedState();
+        // Guards pending_content_ and applied_state_. Held only across a swap or a
+        // small copy, never across a draw.
+        std::mutex content_mutex_;
+        PendingContent pending_content_;
+        AppliedState applied_state_;
 
         std::unique_ptr<render::RenderCaptureService> render_capture_service_;
         std::unique_ptr<runtime::RuntimeScreenshotService> screenshot_service_;

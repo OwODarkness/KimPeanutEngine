@@ -174,6 +174,57 @@ Two properties of that choice matter:
   zero — packed as a vec4 rather than a bare float so std140 cannot introduce a
   padding member the two sides disagree about.
 
+### Appearance is a parameter, and a colour has a space
+
+The dot gap and the two colours are parameters of `PanelRenderPlanOptions`, and
+they are reachable three ways: in code, through the `panel.set_appearance`
+command, and — for a capture run — through `--panel-dot-color`. The launch option
+exists because a standalone viewer has **no on-demand capture command**; its only
+capture is at startup, so anything the image should show has to be set before
+then. That is the same reason `--panel-text` exists.
+
+`panel.set_appearance` applies **only the fields the caller set**, so the gap can
+change without restating the colours. A value the shader would clamp is rejected
+rather than reported as applied: `dot_gap` is checked against the shader's own
+limit, so success never means something other than what was asked. Colours are
+`#RRGGBB` literals, and one parse function serves both the command and the launch
+option, so the spellings `panel.report` produces are exactly the ones accepted.
+
+**Colours are display space; the shader works in linear.** The panel's target is
+sRGB and the hardware *encodes on store*, so a colour picked as a hex literal has
+to be linearised before it reaches the shader or it comes out lighter than
+requested. The planner does that conversion, which means callers — and the
+command, and the launch option — all speak the display space a person picks in.
+White and black are fixed points of the curve, which is why the default look is
+unaffected. This is verified end to end rather than argued: a capture taken with
+`--panel-dot-color "#FFB000"` decodes to a lit dot of exactly `(255, 176, 0)`.
+
+One papercut worth knowing: the command's `dot_gap` is declared `Float`, and a
+schema `Float` requires a JSON *double*. Writing `{"dot_gap": 0}` is refused
+because the transport types a literal by its value; write `0.0`.
+
+### The colour ramp spans the content, not the panel
+
+`panel.set_appearance` can also run a colour ramp from `dot_color` to
+`accent_color`, horizontally, vertically, or outward from the middle, optionally
+animating. It needs no new data — a few parameters and some arithmetic in the
+fragment shader. The ramp is a cosine rather than a linear interpolation, so it
+loops without a seam when it animates and returns to the first colour at both
+ends of its span.
+
+**It spans the lit extent, not the panel.** The first implementation normalised
+across the panel, and measuring the result made the flaw plain: for `OvO 中文` on
+a 512-dot-wide panel the text occupies the left twelfth, so the colour moved only
+from `(255, 106, 0)` to `(239, 133, 105)` across the whole line — a gradient that
+is effectively invisible over the thing it is meant to colour. The extent is
+therefore measured where the mask is measured, in `PanelRenderer::UploadPanel`,
+and travels on the proxy beside the mask handle, because it describes the mask
+rather than the appearance. With it, the same text ramps from `(254, 107, 18)`
+through `(42, 227, 252)` at its centre and back to `(255, 106, 2)`.
+
+A blank panel has no extent, so it keeps the whole panel rather than an inverted
+or zero-width one, and the shader guards the division.
+
 ### Enough pixels per dot
 
 A bezel is invisible if a dot is two pixels wide, which is what the first

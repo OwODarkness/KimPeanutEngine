@@ -50,6 +50,17 @@ namespace kpengine::runtime
         // capture run can show something with no Authoring step; the panel's own
         // commands change it at run time.
         std::optional<std::string> panel_text;
+        // Optional dot colour the panel starts with, as "#RRGGBB". It exists for
+        // the same reason --panel-text does: a standalone viewer has no
+        // on-demand capture command, so its only capture is at startup and the
+        // look has to be known before then.
+        std::optional<std::string> panel_dot_color;
+        // The ramp's far colour and how far it runs, for the same reason: a
+        // capture run has to be able to show the look it was asked for. The
+        // amount is separate from the colour so that setting one does not
+        // silently switch the ramp on.
+        std::optional<std::string> panel_accent_color;
+        std::optional<float> panel_gradient;
         // Optional one-shot capture used by standalone hosts. The Live2D
         // viewer consumes this as a host-output capture; Scene3D keeps its
         // existing command-driven screenshot flow.

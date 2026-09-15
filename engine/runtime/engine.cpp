@@ -214,6 +214,55 @@ namespace kpengine
             panel_text_ = std::move(text);
         }
 
+        void Engine::SetPanelDotColor(std::string color)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "Panel dot colour must be set before Engine::Initialize");
+            }
+            if (application_mode_ != ApplicationMode::PanelViewer)
+            {
+                throw std::runtime_error(
+                    "Panel dot colour is only valid in panel-viewer mode");
+            }
+            panel_dot_color_ = std::move(color);
+        }
+
+        void Engine::SetPanelAccentColor(std::string color)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "Panel accent colour must be set before Engine::Initialize");
+            }
+            if (application_mode_ != ApplicationMode::PanelViewer)
+            {
+                throw std::runtime_error(
+                    "Panel accent colour is only valid in panel-viewer mode");
+            }
+            panel_accent_color_ = std::move(color);
+        }
+
+        void Engine::SetPanelGradient(const float amount)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "Panel gradient must be set before Engine::Initialize");
+            }
+            if (application_mode_ != ApplicationMode::PanelViewer)
+            {
+                throw std::runtime_error(
+                    "Panel gradient is only valid in panel-viewer mode");
+            }
+            if (amount < 0.0f || amount > 1.0f)
+            {
+                throw std::out_of_range("Panel gradient must be between 0 and 1");
+            }
+            panel_gradient_ = amount;
+        }
+
         void Engine::SetStartupCaptureOverride(std::string output_path)
         {
             if (initialization_started_ || render_thread_.joinable() || cleared_)

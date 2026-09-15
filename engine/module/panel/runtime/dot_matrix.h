@@ -35,6 +35,25 @@ namespace kpengine::panel
         return dot_column % kDotsPerByte == 0u;
     }
 
+    class DotMatrix;
+
+    // The bounding box of a matrix's lit dots, in dots and inclusive of both
+    // ends. It exists because two consumers need the same answer for different
+    // reasons -- a bubble sizes itself to the text it must hold, and the renderer
+    // spans its colour ramp across what was drawn -- and a second copy of this
+    // scan would be a second thing to get wrong.
+    struct DotBounds final
+    {
+        std::uint32_t left = 0u;
+        std::uint32_t top = 0u;
+        std::uint32_t right = 0u;
+        std::uint32_t bottom = 0u;
+        // True for a blank matrix, where the coordinates mean nothing.
+        bool empty = true;
+    };
+
+    DotBounds LitBounds(const DotMatrix &matrix) noexcept;
+
     // A flat, row-major dot buffer. Characters are placements into this buffer
     // rather than storage units: a halfwidth glyph advances 8 dots while
     // occupying 16 columns of glyph storage, so character boundaries never

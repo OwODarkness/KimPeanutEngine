@@ -1,5 +1,7 @@
 #include "panel_render_planner.h"
 
+#include <array>
+#include <cmath>
 #include <cstddef>
 #include <utility>
 #include <vector>
@@ -12,6 +14,30 @@ namespace kpengine::panel
         {
             const auto *begin = reinterpret_cast<const std::byte *>(&constants);
             return std::vector<std::byte>(begin, begin + sizeof(constants));
+        }
+
+        // The output target is sRGB, so the hardware encodes whatever the shader
+        // writes. A colour picked in display space therefore has to be
+        // linearised before it reaches the shader, or it comes out lighter than
+        // requested. White and black are fixed points, which is why the default
+        // look is unaffected by this.
+        //
+        // This is the third copy of this arithmetic in the engine: the Live2D
+        // viewer and Core's mip filtering each carry one. Promoting it into a
+        // shared Core header is the right fix and is deliberately not done here,
+        // so this change's blast radius stays inside the panel.
+        float DisplayToLinear(const float value) noexcept
+        {
+            return value <= 0.04045f ? value / 12.92f
+                                     : std::pow((value + 0.055f) / 1.055f, 2.4f);
+        }
+
+        // Alpha is coverage rather than colour, so it is carried through
+        // unconverted.
+        std::array<float, 4> DisplayColorToLinear(const std::array<float, 4> &color)
+        {
+            return {DisplayToLinear(color[0]), DisplayToLinear(color[1]),
+                    DisplayToLinear(color[2]), color[3]};
         }
     }
 
@@ -50,9 +76,15 @@ namespace kpengine::panel
         }
 
         PanelDrawConstants constants{};
-        constants.dot_color = options.dot_color;
-        constants.background_color = options.background_color;
+        constants.dot_color = DisplayColorToLinear(options.dot_color);
+        constants.background_color = DisplayColorToLinear(options.background_color);
+        constants.accent_color = DisplayColorToLinear(options.accent_color);
         constants.params[0] = options.dot_gap;
+        constants.params[1] = options.gradient_amount;
+        constants.params[2] = static_cast<float>(options.gradient_axis);
+        constants.motion[0] = options.elapsed_seconds;
+        constants.motion[1] = options.cycles_per_second;
+        constants.ink_bounds = proxy.ink_bounds;
 
         render::SubmissionDraw draw{};
         draw.pipeline = proxy.pipeline;

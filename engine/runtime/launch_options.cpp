@@ -183,6 +183,45 @@ namespace kpengine::runtime
             return ParseAssetRelativeProduct(value, ".kppnlgl", normalized);
         }
 
+        // Strict: the whole token has to be a number, so `0.5x` fails here rather
+        // than being silently read as `0.5`.
+        bool ParseFloat(const std::string_view value, double &out)
+        {
+            if (value.empty())
+            {
+                return false;
+            }
+            double parsed = 0.0;
+            const auto result =
+                std::from_chars(value.data(), value.data() + value.size(), parsed);
+            if (result.ec != std::errc{} || result.ptr != value.data() + value.size())
+            {
+                return false;
+            }
+            out = parsed;
+            return true;
+        }
+
+        // A panel colour is a "#RRGGBB" literal. Checked here so a typo fails at
+        // launch with a clear message instead of at the first drawn frame.
+        bool IsPanelColorLiteral(const std::string_view value)
+        {
+            if (value.size() != 7u || value.front() != '#')
+            {
+                return false;
+            }
+            for (std::size_t index = 1u; index < value.size(); ++index)
+            {
+                const char digit = value[index];
+                if (!((digit >= '0' && digit <= '9') || (digit >= 'a' && digit <= 'f') ||
+                      (digit >= 'A' && digit <= 'F')))
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
         RuntimeLaunchOptionsParseResult ParseArguments(
             const std::vector<std::string_view> &arguments)
         {
@@ -199,6 +238,9 @@ namespace kpengine::runtime
             bool has_live2d_model = false;
             bool has_panel_product = false;
             bool has_panel_text = false;
+            bool has_panel_dot_color = false;
+            bool has_panel_accent_color = false;
+            bool has_panel_gradient = false;
 
             for (std::size_t index = 0; index < arguments.size(); ++index)
             {
@@ -369,6 +411,69 @@ namespace kpengine::runtime
                     result.options.panel_text = std::move(text);
                     has_panel_text = true;
                 }
+                else if (argument == "--panel-dot-color")
+                {
+                    if (has_panel_dot_color)
+                    {
+                        return Failure("duplicate option '--panel-dot-color'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--panel-dot-color requires a \"#RRGGBB\" value");
+                    }
+
+                    std::string color{arguments[++index]};
+                    if (!IsPanelColorLiteral(color))
+                    {
+                        return Failure("--panel-dot-color requires a \"#RRGGBB\" value (got '" +
+                                       color + "')");
+                    }
+                    result.options.panel_dot_color = std::move(color);
+                    has_panel_dot_color = true;
+                }
+                else if (argument == "--panel-accent-color")
+                {
+                    if (has_panel_accent_color)
+                    {
+                        return Failure("duplicate option '--panel-accent-color'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--panel-accent-color requires a \"#RRGGBB\" value");
+                    }
+
+                    std::string color{arguments[++index]};
+                    if (!IsPanelColorLiteral(color))
+                    {
+                        return Failure(
+                            "--panel-accent-color requires a \"#RRGGBB\" value (got '" +
+                            color + "')");
+                    }
+                    result.options.panel_accent_color = std::move(color);
+                    has_panel_accent_color = true;
+                }
+                else if (argument == "--panel-gradient")
+                {
+                    if (has_panel_gradient)
+                    {
+                        return Failure("duplicate option '--panel-gradient'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--panel-gradient requires a value between 0 and 1");
+                    }
+
+                    double parsed = 0.0;
+                    if (!ParseFloat(arguments[++index], parsed) || parsed < 0.0 ||
+                        parsed > 1.0)
+                    {
+                        return Failure("--panel-gradient requires a value between 0 and 1 "
+                                       "(got '" +
+                                       std::string{arguments[index]} + "')");
+                    }
+                    result.options.panel_gradient = static_cast<float>(parsed);
+                    has_panel_gradient = true;
+                }
                 else if (argument == "--capture")
                 {
                     if (has_startup_capture)
@@ -517,6 +622,20 @@ namespace kpengine::runtime
                 {
                     return Failure("--panel-text is only valid in panel-viewer mode");
                 }
+                if (has_panel_dot_color && !panel_viewer)
+                {
+                    return Failure(
+                        "--panel-dot-color is only valid in panel-viewer mode");
+                }
+                if (has_panel_accent_color && !panel_viewer)
+                {
+                    return Failure(
+                        "--panel-accent-color is only valid in panel-viewer mode");
+                }
+                if (has_panel_gradient && !panel_viewer)
+                {
+                    return Failure("--panel-gradient is only valid in panel-viewer mode");
+                }
             }
             else
             {
@@ -554,6 +673,20 @@ namespace kpengine::runtime
                 if (has_panel_text)
                 {
                     return Failure("--panel-text is only valid in panel-viewer mode");
+                }
+                if (has_panel_dot_color)
+                {
+                    return Failure(
+                        "--panel-dot-color is only valid in panel-viewer mode");
+                }
+                if (has_panel_accent_color)
+                {
+                    return Failure(
+                        "--panel-accent-color is only valid in panel-viewer mode");
+                }
+                if (has_panel_gradient)
+                {
+                    return Failure("--panel-gradient is only valid in panel-viewer mode");
                 }
             }
 

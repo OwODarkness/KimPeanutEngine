@@ -24,16 +24,35 @@ namespace kpengine::panel
         std::uint32_t output_width = 0u;
         std::uint32_t output_height = 0u;
         std::uint32_t index_count = 0u;
+        // Lit extent in normalized panel coordinates, as min_x/min_y/max_x/max_y.
+        // It describes the mask, so it belongs with the mask handle rather than
+        // with the appearance: the ramp spans what is drawn, and only the mask
+        // knows what that is.
+        std::array<float, 4> ink_bounds{0.0f, 0.0f, 1.0f, 1.0f};
     };
 
+    // Colours are in display space (sRGB), because that is what a caller picks
+    // and what a hex literal means. The planner linearises them, because the
+    // output target is sRGB and the hardware encodes on store.
     struct PanelRenderPlanOptions final
     {
         std::array<float, 4> dot_color{1.0f, 1.0f, 1.0f, 1.0f};
         std::array<float, 4> background_color{0.0f, 0.0f, 0.0f, 1.0f};
+        // The far end of the colour ramp, unused while gradient_amount is zero.
+        std::array<float, 4> accent_color{1.0f, 1.0f, 1.0f, 1.0f};
         // Fraction of a dot left dark on every side. A parameter rather than a
         // constant because the look is a look: it is clamped by the shader, so
         // an out-of-range value degrades rather than corrupting the panel.
         float dot_gap = kPanelDefaultDotGap;
+        // How far the ramp runs toward the accent colour: 0 keeps a flat dot
+        // colour and is the default, so an unset gradient changes nothing.
+        float gradient_amount = 0.0f;
+        PanelGradientAxis gradient_axis = PanelGradientAxis::Horizontal;
+        // Elapsed seconds and cycles per second. A zero rate is a still ramp.
+        // Time is supplied by the caller rather than read from a clock here, so
+        // planning stays a pure function of its inputs.
+        float elapsed_seconds = 0.0f;
+        float cycles_per_second = 0.0f;
     };
 
     struct PanelRenderPlanResult final

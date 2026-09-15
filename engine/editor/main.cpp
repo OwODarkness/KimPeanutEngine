@@ -78,6 +78,18 @@ int main(int argc, char **argv)
     {
         engine.SetPanelText(*launch_options.options.panel_text);
     }
+    if (launch_options.options.panel_dot_color.has_value())
+    {
+        engine.SetPanelDotColor(*launch_options.options.panel_dot_color);
+    }
+    if (launch_options.options.panel_accent_color.has_value())
+    {
+        engine.SetPanelAccentColor(*launch_options.options.panel_accent_color);
+    }
+    if (launch_options.options.panel_gradient.has_value())
+    {
+        engine.SetPanelGradient(*launch_options.options.panel_gradient);
+    }
 
     // Boot failure (e.g. missing config/bootstrap.json) surfaces here before the
     // logger is guaranteed to flush, so report it to stderr directly and exit

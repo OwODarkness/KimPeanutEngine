@@ -93,6 +93,31 @@ namespace kpengine::panel
         }
     }
 
+    DotBounds LitBounds(const DotMatrix &matrix) noexcept
+    {
+        DotBounds bounds;
+        for (std::uint32_t row = 0u; row < matrix.Height(); ++row)
+        {
+            for (std::uint32_t column = 0u; column < matrix.Width(); ++column)
+            {
+                if (!matrix.TestDot(column, row))
+                {
+                    continue;
+                }
+                if (bounds.empty)
+                {
+                    bounds = {column, row, column, row, false};
+                    continue;
+                }
+                bounds.left = std::min(bounds.left, column);
+                bounds.top = std::min(bounds.top, row);
+                bounds.right = std::max(bounds.right, column);
+                bounds.bottom = std::max(bounds.bottom, row);
+            }
+        }
+        return bounds;
+    }
+
     bool DotMatrix::operator==(const DotMatrix &other) const noexcept
     {
         return width_ == other.width_ && height_ == other.height_ &&
