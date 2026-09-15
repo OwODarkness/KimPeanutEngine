@@ -27,9 +27,11 @@ namespace kpengine::panel
         constexpr std::uint32_t kViewerWidth = 1024u;
         constexpr std::uint32_t kViewerHeight = 512u;
         constexpr std::uint32_t kUniformCapacity = 4u * 1024u * 1024u;
-        // Bounds the wait for a backend that defers its resize to a frame
-        // boundary, so a resize that never lands cannot stall the run.
-        constexpr std::uint32_t kResizeWaitFrameBudget = 240u;
+        // Screen pixels per panel dot. This is the panel's own resolution, not
+        // the window's: a dot needs several pixels before its bezel is anything
+        // but a slightly dimmer pixel, and the bezel is what makes the panel read
+        // as a matrix of elements rather than a low-resolution image.
+        constexpr std::uint32_t kPixelsPerDot = 8u;
 
         std::uint32_t CountLitDots(const DotMatrix &matrix)
         {
@@ -139,7 +141,15 @@ namespace kpengine::panel
             }
 
             renderer_ = std::make_unique<PanelRenderer>();
-            if (!renderer_->Initialize(*backend_, kViewerWidth, kViewerHeight, diagnostic))
+            // The render target is sized to the panel, not to the window. A
+            // display device has its own resolution; tracking the window would
+            // make the dot size a function of how large the window happens to be,
+            // and would have nothing to say when the panel is placed in a scene.
+            const std::uint32_t target_width =
+                PanelDotWidth(panel_.Columns()) * kPixelsPerDot;
+            const std::uint32_t target_height =
+                PanelDotHeight(panel_.Rows()) * kPixelsPerDot;
+            if (!renderer_->Initialize(*backend_, target_width, target_height, diagnostic))
             {
                 return false;
             }
@@ -164,17 +174,14 @@ namespace kpengine::panel
             screenshot_service_ = std::make_unique<runtime::RuntimeScreenshotService>(
                 *render_capture_service_);
 
+            // --resize still moves the window, but the panel's target no longer
+            // follows the window, so the capture is not deferred on it: there is
+            // no post-resize target for the image to wait for.
             if (engine.GetStartupResize().has_value())
             {
-                // Defer the capture so it reads the post-resize target; the
-                // exported image's dimensions are then themselves the evidence
-                // that the resize executed.
                 pending_resize_ = engine.GetStartupResize();
             }
-            else
-            {
-                RequestStartupCapture();
-            }
+            RequestStartupCapture();
             return true;
         }
         catch (const std::exception &error)
@@ -238,14 +245,10 @@ namespace kpengine::panel
 
         const runtime::RuntimeResizeRequest resize = *pending_resize_;
         pending_resize_.reset();
-        applied_resize_ = resize;
-        // A Vulkan backend applies a resize at a frame boundary, so the capture
-        // is requested only once the output target reports the requested extent.
-        capture_waits_for_resize_ =
-            engine_ != nullptr && engine_->GetStartupCaptureOverride().has_value();
 
         // A real window resize, not only a recorded extent: a Vulkan backend
-        // recreates its surface from what the platform granted.
+        // recreates its surface from what the platform granted. The panel's own
+        // render target is unaffected, because it is sized to the panel.
         window_->RequestWindowSize(static_cast<int>(resize.width),
                                    static_cast<int>(resize.height));
     }
@@ -280,41 +283,6 @@ namespace kpengine::panel
         {
             backend.EndFrame();
             return true;
-        }
-
-        // Outside the frame bracket: the replacement must not be created while a
-        // target is active.
-        std::string resize_diagnostic;
-        if (!renderer_->ResizeOutput(extent.width, extent.height, resize_diagnostic))
-        {
-            if (!output_resize_failed_)
-            {
-                output_resize_failed_ = true;
-                KP_LOG("PanelViewer", LOG_LEVEL_WARNING,
-                       "panel output resize failed; keeping the previous target (%s)",
-                       resize_diagnostic.c_str());
-            }
-        }
-        else
-        {
-            output_resize_failed_ = false;
-        }
-
-        if (capture_waits_for_resize_)
-        {
-            if (renderer_->GetOutputWidth() == applied_resize_.width &&
-                renderer_->GetOutputHeight() == applied_resize_.height)
-            {
-                capture_waits_for_resize_ = false;
-                RequestStartupCapture();
-            }
-            else if (++resize_wait_frames_ > kResizeWaitFrameBudget)
-            {
-                KP_LOG("PanelViewer", LOG_LEVEL_WARNING,
-                       "panel output never reached the requested extent; capturing anyway");
-                capture_waits_for_resize_ = false;
-                RequestStartupCapture();
-            }
         }
 
         graphics::CommandRecorder *const recorder = backend.GetCommandRecorder();

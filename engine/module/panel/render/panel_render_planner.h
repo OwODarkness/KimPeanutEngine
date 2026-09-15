@@ -30,6 +30,10 @@ namespace kpengine::panel
     {
         std::array<float, 4> dot_color{1.0f, 1.0f, 1.0f, 1.0f};
         std::array<float, 4> background_color{0.0f, 0.0f, 0.0f, 1.0f};
+        // Fraction of a dot left dark on every side. A parameter rather than a
+        // constant because the look is a look: it is clamped by the shader, so
+        // an out-of-range value degrades rather than corrupting the panel.
+        float dot_gap = kPanelDefaultDotGap;
     };
 
     struct PanelRenderPlanResult final

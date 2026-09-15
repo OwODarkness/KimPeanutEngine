@@ -84,16 +84,12 @@ namespace kpengine::panel
         std::vector<runtime::command::CommandRegistration> command_registrations_;
 
         std::optional<runtime::RuntimeResizeRequest> pending_resize_;
-        runtime::RuntimeResizeRequest applied_resize_{};
-        bool capture_waits_for_resize_ = false;
-        std::uint32_t resize_wait_frames_ = 0u;
         std::uint64_t frame_number_ = 0u;
         float elapsed_seconds_ = 0.0f;
 
         bool render_initialized_ = false;
         bool window_initialized_ = false;
         bool backend_initialized_ = false;
-        bool output_resize_failed_ = false;
         bool capture_settled_ = false;
         bool exit_after_capture_ = false;
         std::uint32_t shutdown_leaked_handles_ = 0u;

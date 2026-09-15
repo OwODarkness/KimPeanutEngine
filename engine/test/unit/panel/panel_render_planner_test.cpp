@@ -109,6 +109,48 @@ namespace kpengine::panel
         EXPECT_FLOAT_EQ(read_back.background_color[0], 0.0f);
     }
 
+    TEST(PanelRenderPlannerTest, CarriesTheDotGapAndLeavesTheReservedLanesZero)
+    {
+        PanelRenderPlanOptions options;
+        options.dot_gap = 0.3f;
+
+        const PanelRenderPlanResult plan =
+            PanelRenderPlanner::Plan(MakeValidProxy(), options);
+        ASSERT_TRUE(plan.succeeded) << plan.diagnostic;
+
+        const std::vector<std::byte> &bytes =
+            plan.work.passes.front().draws.front().uniforms.front().bytes;
+        ASSERT_EQ(bytes.size(), sizeof(PanelDrawConstants));
+
+        PanelDrawConstants read_back{};
+        std::memcpy(&read_back, bytes.data(), sizeof(read_back));
+        EXPECT_FLOAT_EQ(read_back.params[0], 0.3f);
+        // The reserved lanes must be written rather than left indeterminate: the
+        // shader reads the whole vec4, and the producer's struct may be built on
+        // a stack frame that held anything.
+        EXPECT_FLOAT_EQ(read_back.params[1], 0.0f);
+        EXPECT_FLOAT_EQ(read_back.params[2], 0.0f);
+        EXPECT_FLOAT_EQ(read_back.params[3], 0.0f);
+    }
+
+    TEST(PanelRenderPlannerTest, DefaultsToAVisibleDotGap)
+    {
+        // Without a gap, adjacent lit dots merge into solid runs and the panel
+        // stops reading as a matrix of elements.
+        const PanelRenderPlanResult plan =
+            PanelRenderPlanner::Plan(MakeValidProxy());
+        ASSERT_TRUE(plan.succeeded) << plan.diagnostic;
+
+        const std::vector<std::byte> &bytes =
+            plan.work.passes.front().draws.front().uniforms.front().bytes;
+        PanelDrawConstants read_back{};
+        std::memcpy(&read_back, bytes.data(), sizeof(read_back));
+
+        EXPECT_FLOAT_EQ(read_back.params[0], kPanelDefaultDotGap);
+        EXPECT_GT(kPanelDefaultDotGap, 0.0f);
+        EXPECT_LT(kPanelDefaultDotGap, 0.5f);
+    }
+
     TEST(PanelRenderPlannerTest, CoversTheWholeOutputWithTheViewport)
     {
         const PanelRenderPlanResult plan =

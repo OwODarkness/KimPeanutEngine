@@ -52,6 +52,7 @@ namespace kpengine::panel
         PanelDrawConstants constants{};
         constants.dot_color = options.dot_color;
         constants.background_color = options.background_color;
+        constants.params[0] = options.dot_gap;
 
         render::SubmissionDraw draw{};
         draw.pipeline = proxy.pipeline;

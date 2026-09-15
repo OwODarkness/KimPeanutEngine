@@ -29,8 +29,19 @@
   so the mode was named once as `IsStandaloneViewerMode` instead of adding a third
   entry to each list. The panel's `OriginAt` places one run per row; two
   independent runs on one row, per-character colour, effects, and world-space
-  placement are all deferred with their reasons recorded. Full suite 856/857, the
-  one failure the pre-existing `LevelLoaderTest` fixture. →
+  placement are all deferred with their reasons recorded. **The first capture was
+  correct and did not look like a display**: five lit dots in a row fused into one
+  solid bar, so the panel read as a low-resolution image rather than a matrix of
+  elements. The fix is a bezel, and it is a *display* concern rather than a data
+  one — the representation keeps one bit per dot and knows nothing about gaps,
+  because a gap stored as content would have to be carried by every glyph, effect,
+  and test. The fragment shader now leaves a dark margin inside each dot, taken
+  from `fract` in dot space so the gap is a fraction of a dot rather than a pixel
+  count and survives any zoom. It needed a second change to be visible at all:
+  the render target is now sized to the **panel** rather than to the window,
+  because at the original two pixels per dot even a correct bezel is sub-pixel.
+  Five adjacent dots went from one fused slab to five distinct cubes. Full suite
+  858/859, the one failure the pre-existing `LevelLoaderTest` fixture. →
   [P2 plan](panel/.plan/P2.md) · [PLANS](panel/PLANS.md) · [journal](../.spec/journal/2026-09-15-panel-p2.md)
 
 - **Spatial BVH stage 2 declined on measurement (2026-09-14)** — wiring

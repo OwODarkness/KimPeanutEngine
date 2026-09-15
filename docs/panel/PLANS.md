@@ -149,10 +149,46 @@ contract permits indexed, **non-instanced** draws only
 ([L2D4.3](../live2d/.plan/L2D4.3.md)), so a quad per character cell is out of
 contract.
 
-The dot-to-pixel expansion is then free. The mask is one texel per dot, the
-sampler is NEAREST, and drawing the quad larger than the mask *is* the chunky LED
-look — no per-dot arithmetic and no geometry per dot. A full 512x256 panel is
-128 KB as `R8_UNORM`, uploaded only when the content changes.
+### The bezel is what makes it a matrix
+
+Drawing the quad larger than the mask gives crisp blocks, but blocks alone are
+not enough: **adjacent lit dots merge**. Five lit dots in a row rendered as one
+solid bar, because the shader mixed the dot colour in wherever the mask was lit,
+leaving no space between neighbours. The panel read as a low-resolution image
+rather than as a display.
+
+The fix is the **bezel**, and it is entirely a display concern — the
+representation does not know gaps exist, and should not, or the gap would become
+content that every glyph, effect, and test would have to carry. The fragment
+shader takes the position *within* the current dot from `fract(uv * dotCount)`
+and leaves a margin dark on every side. With it, the same five dots render as
+five distinct cubes.
+
+Two properties of that choice matter:
+
+- **The gap is a fraction of a dot, not a pixel count**, so the bezel is
+  resolution independent. The panel reads the same at any size or viewing
+  distance, which is what a scene-placed panel will need.
+- **It is a uniform**, not a constant, because the look is a look. `PanelDrawConstants`
+  carries it in a `params` vec4 whose other lanes are reserved and must stay
+  zero — packed as a vec4 rather than a bare float so std140 cannot introduce a
+  padding member the two sides disagree about.
+
+### Enough pixels per dot
+
+A bezel is invisible if a dot is two pixels wide, which is what the first
+capture was: a 1024x512 target for a 512x256 dot grid. A dot needs several pixels
+before its gap is anything but a slightly dimmer pixel.
+
+So **the render target is sized to the panel, not to the window**: panel dot
+extent times a pixels-per-dot constant. A display device has its own resolution,
+and tracking the window would make the dot size a function of how large the
+window happens to be — and would have nothing to say when the panel is placed in
+a scene. `--resize` still moves the window; it no longer changes what is
+captured, so the panel host does not defer its capture on a resize.
+
+A full 512x256 panel is 128 KB as `R8_UNORM`, uploaded only when the content
+changes, and 4096x2048 at the current eight pixels per dot.
 
 Geometry is static, unlike Live2D: four clip-space positions in one immutable
 vertex buffer, six `UInt16` indices in another, and nothing uploaded per frame.

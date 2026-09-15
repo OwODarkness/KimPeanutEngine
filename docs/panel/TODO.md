@@ -87,6 +87,18 @@ is a scene-integration problem rather than a panel problem.
 
 ## Open decisions
 
+- **Appearance is a uniform, not yet a command.** The dot gap and the colours are
+  parameters of `PanelRenderPlanOptions`, so they are tunable in code, but
+  nothing sets them at run time. A `panel.set_appearance` command — gap now, and
+  shape and colour later — is the next step if the look wants iterating without a
+  rebuild. The gap is already clamped by the shader, so an out-of-range value
+  degrades rather than corrupting the panel.
+- **Dot shape is fixed to a square.** The bezel is a rectangular margin, so the
+  shape is square by construction. Rounded and circular elements were considered
+  and declined for now: both need a distance or corner term rather than a
+  rectangle test, and at eight pixels per dot a circle starts to look like a
+  rounded square anyway. The parameter block has three reserved lanes if that
+  changes.
 - **Panel extent.** `kPanelColumns` and `kPanelRows` are 32x16. Nothing depends
   on them being fixed, but nothing has needed otherwise either.
 - **`--capture-view` spelling.** The parser accepts `live2d` for the product
