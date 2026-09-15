@@ -2,6 +2,10 @@ add_library(Module INTERFACE)
 add_subdirectory(tts)
 target_link_libraries(Module INTERFACE TTS)
 
+# Panel is not registered as an EngineModule: its representation stage is data
+# with no runtime lifecycle yet, so it is only a library the tests consume.
+add_subdirectory(panel)
+
 add_library(ModuleBootstrap STATIC
     module_bootstrap.cpp)
 target_include_directories(ModuleBootstrap PUBLIC

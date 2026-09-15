@@ -23,6 +23,13 @@
 #include "live2d_import.h"
 #endif
 
+#if defined(KPENGINE_ASSET_TOOL_HAS_PANEL)
+#include "ascii_preview.h"
+#include "panel.h"
+#include "panel_glyph_import.h"
+#include "utf8.h"
+#endif
+
 namespace
 {
     struct CommandLine final
@@ -43,6 +50,11 @@ namespace
 #if defined(KPENGINE_ASSET_TOOL_HAS_LIVE2D)
             << "  import-live2d --source <asset-relative-path> --output <product-path> "
                "[--asset-root <path>] [--archive-root <path>]\n"
+#endif
+#if defined(KPENGINE_ASSET_TOOL_HAS_PANEL)
+            << "  import-glyphs --font <path> --output <product-path> "
+               "[--range <first-last>] [--face <index>] [--pixel-height <n>] "
+               "[--baseline <row>] [--threshold <0-255>] [--preview <text>]\n"
 #endif
             << "  cook-texture --source <asset-relative-path> [--semantic <generic|color|normal|packed|opacity>] "
                "[--compression <portable|bc>] [--bc-encoder <reference|rgbcx>] "
@@ -642,6 +654,130 @@ namespace
     }
 #endif
 
+#if defined(KPENGINE_ASSET_TOOL_HAS_PANEL)
+    // ASCII through CJK Ext-A, which is the range the panel is expected to
+    // display. Gaps inside it bake blank rather than shrinking the product.
+    constexpr std::uint32_t kDefaultGlyphFirstCodepoint = 0x20u;
+    constexpr std::uint32_t kDefaultGlyphLastCodepoint = 0x9FFFu;
+
+    std::uint32_t ParseCodepoint(const std::string &text)
+    {
+        std::size_t consumed = 0u;
+        unsigned long parsed = 0ul;
+        try
+        {
+            parsed = std::stoul(text, &consumed, 0);
+        }
+        catch (const std::exception &)
+        {
+            throw std::invalid_argument("invalid codepoint: " + text);
+        }
+        if (consumed != text.size() || parsed > 0x10FFFFul)
+        {
+            throw std::invalid_argument("invalid codepoint: " + text);
+        }
+        return static_cast<std::uint32_t>(parsed);
+    }
+
+    void ApplyGlyphRange(const std::string &text,
+                         kpengine::panel::GlyphBakeRequest &request)
+    {
+        if (text.empty())
+        {
+            request.first_codepoint = kDefaultGlyphFirstCodepoint;
+            request.last_codepoint = kDefaultGlyphLastCodepoint;
+            return;
+        }
+        const std::size_t dash = text.find('-');
+        if (dash == std::string::npos)
+        {
+            request.first_codepoint = ParseCodepoint(text);
+            request.last_codepoint = request.first_codepoint;
+            return;
+        }
+        request.first_codepoint = ParseCodepoint(text.substr(0u, dash));
+        request.last_codepoint = ParseCodepoint(text.substr(dash + 1u));
+    }
+
+    // The only way to inspect a baked glyph before the render stage exists. The
+    // panel is sized to the text so the art stays readable in a terminal.
+    void PrintGlyphPreview(const std::string &text,
+                           const kpengine::panel::GlyphSet &glyphs)
+    {
+        std::uint32_t dots = 0u;
+        for (const char32_t codepoint : kpengine::panel::DecodeUtf8(text))
+        {
+            dots += glyphs.Find(static_cast<std::uint32_t>(codepoint)).advance;
+        }
+
+        const std::uint32_t columns =
+            dots == 0u ? 1u
+                       : (dots + kpengine::panel::kGlyphColumns - 1u) /
+                             kpengine::panel::kGlyphColumns;
+        kpengine::panel::Panel panel{columns, 1u};
+        panel.SetText(0u, text);
+
+        std::cout << kpengine::panel::ToAsciiArt(panel.Rebuild(glyphs));
+    }
+
+    int RunGlyphImport(const CommandLine &command)
+    {
+        kpengine::panel::GlyphBakeRequest request{};
+        request.font_path = Option(command, "font", true);
+        const std::filesystem::path output = Option(command, "output", true);
+
+        ApplyGlyphRange(Option(command, "range"), request);
+
+        const std::string face = Option(command, "face");
+        if (!face.empty())
+        {
+            request.face_index = ParseCodepoint(face);
+        }
+        const std::string pixel_height = Option(command, "pixel-height");
+        if (!pixel_height.empty())
+        {
+            request.pixel_height = ParseCodepoint(pixel_height);
+        }
+        const std::string baseline = Option(command, "baseline");
+        if (!baseline.empty())
+        {
+            request.baseline_row = static_cast<std::int32_t>(ParseCodepoint(baseline));
+        }
+        const std::string threshold = Option(command, "threshold");
+        if (!threshold.empty())
+        {
+            const std::uint32_t value = ParseCodepoint(threshold);
+            if (value > 255u)
+            {
+                throw std::invalid_argument("--threshold must be in 0..255");
+            }
+            request.coverage_threshold = static_cast<std::uint8_t>(value);
+        }
+
+        const kpengine::panel::GlyphBakeResult result =
+            kpengine::panel::BakeGlyphProduct(request);
+        kpengine::panel::WritePanelGlyphProduct(result.product, output);
+
+        std::cout << "import-glyphs: " << result.product.glyphs.size()
+                  << " glyphs [" << request.first_codepoint << ".."
+                  << request.last_codepoint << "] from '" << request.font_path.string()
+                  << "' face " << request.face_index << "\n"
+                  << "  baseline row " << result.baseline_row << "\n"
+                  << "  glyphs with ink clipped by the cell: "
+                  << result.clipped_glyphs << "\n"
+                  << "  halfwidth glyphs clipped to 8 dots: "
+                  << result.clipped_halfwidth_glyphs << "\n"
+                  << "  wrote " << output.string() << "\n";
+
+        const std::string preview = Option(command, "preview");
+        if (!preview.empty())
+        {
+            PrintGlyphPreview(preview, kpengine::panel::ToGlyphSet(result.product));
+        }
+        return 0;
+    }
+#endif
+
     int Run(const CommandLine &command)
     {
         if (command.command == "help" || command.command == "--help")
@@ -656,6 +792,13 @@ namespace
         if (command.command == "import-live2d")
         {
             return RunLive2DImport(command, asset_root);
+        }
+#endif
+
+#if defined(KPENGINE_ASSET_TOOL_HAS_PANEL)
+        if (command.command == "import-glyphs")
+        {
+            return RunGlyphImport(command);
         }
 #endif
 
