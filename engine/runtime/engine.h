@@ -66,6 +66,17 @@ namespace kpengine
             void SetCommandTransportConfig(command::LocalCommandTransportConfig config);
             void SetApplicationMode(ApplicationMode mode);
             ApplicationMode GetApplicationMode() const noexcept { return application_mode_; }
+            // True for the hosts that own their own window and backend and run
+            // their own render thread, as opposed to the scene host that Runtime
+            // presents around. Every mode-conditional startup branch means this,
+            // so it is named once instead of enumerated per mode -- a new viewer
+            // mode that missed one of those lists would compile and then fail at
+            // run time.
+            bool IsStandaloneViewerMode() const noexcept
+            {
+                return application_mode_ == ApplicationMode::Live2DViewer ||
+                       application_mode_ == ApplicationMode::PanelViewer;
+            }
             bool RegisterApplicationHostProvider(ApplicationMode mode,
                                                  ApplicationHostFactory factory,
                                                  std::string &diagnostic);
@@ -78,6 +89,22 @@ namespace kpengine
             const std::optional<std::string> &GetLive2DModelOverride() const noexcept
             {
                 return live2d_model_override_;
+            }
+            // Selects the baked glyph product the panel viewer loads. It is
+            // Asset-root-relative like the Live2D override, because a product
+            // derived from a licensed face belongs in the git-ignored asset tree
+            // rather than in a tracked config.
+            void SetPanelGlyphProduct(std::string asset_relative_path);
+            const std::optional<std::string> &GetPanelGlyphProduct() const noexcept
+            {
+                return panel_glyph_product_;
+            }
+            // Optional text the panel shows on its first row, so a capture run
+            // has something to display with no authoring step.
+            void SetPanelText(std::string text);
+            const std::optional<std::string> &GetPanelText() const noexcept
+            {
+                return panel_text_;
             }
             void SetStartupCaptureOverride(std::string output_path);
             void SetStartupCaptureView(StartupCaptureView view) noexcept
@@ -250,6 +277,8 @@ namespace kpengine
             std::optional<std::string> startup_level_override_;
             std::optional<std::string> startup_capture_override_;
             std::optional<std::string> live2d_model_override_;
+            std::optional<std::string> panel_glyph_product_;
+            std::optional<std::string> panel_text_;
             std::optional<RuntimeResizeRequest> startup_resize_;
             StartupCaptureView startup_capture_view_ = StartupCaptureView::Presentation;
             bool startup_capture_transparent_clear_ = false;

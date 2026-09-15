@@ -338,6 +338,131 @@ TEST(RuntimeLaunchOptionsTest, RejectsUnsafeOrNonProductLive2DModelPaths)
     EXPECT_NE(missing.diagnostic.find("--live2d-model"), std::string::npos);
 }
 
+TEST(RuntimeLaunchOptionsTest, ParsesPanelGlyphProductAndRestrictsItToPanelViewerMode)
+{
+    const auto defaulted = Parse({"--mode", "panel-viewer"});
+    ASSERT_TRUE(defaulted) << defaulted.diagnostic;
+    EXPECT_FALSE(defaulted.options.panel_glyph_product.has_value());
+    EXPECT_FALSE(defaulted.options.panel_text.has_value());
+
+    const auto named = Parse({"--mode", "panel-viewer", "--panel-glyph-product",
+                              "panel/glyphs-16.kppnlgl"});
+    ASSERT_TRUE(named) << named.diagnostic;
+    ASSERT_TRUE(named.options.panel_glyph_product.has_value());
+    EXPECT_EQ(*named.options.panel_glyph_product, "panel/glyphs-16.kppnlgl");
+
+    // The panel product reuses the Live2D product's containment rules, so the
+    // same escaping and separator cases normalize identically.
+    const auto windows_separators =
+        Parse({"--panel-glyph-product", R"(panel\.\glyphs-16.kppnlgl)", "--mode",
+               "panel-viewer"});
+    ASSERT_TRUE(windows_separators) << windows_separators.diagnostic;
+    ASSERT_TRUE(windows_separators.options.panel_glyph_product.has_value());
+    EXPECT_EQ(*windows_separators.options.panel_glyph_product,
+              "panel/glyphs-16.kppnlgl");
+
+    // Each viewer's own content option is exclusive to it: neither host may
+    // silently accept the other's product and then load something unexpected.
+    const auto in_scene =
+        Parse({"--mode", "scene3d", "--panel-glyph-product", "panel/glyphs-16.kppnlgl"});
+    EXPECT_FALSE(in_scene);
+    EXPECT_NE(in_scene.diagnostic.find("--panel-glyph-product"), std::string::npos);
+
+    const auto in_live2d = Parse({"--mode", "live2d-viewer", "--panel-glyph-product",
+                                  "panel/glyphs-16.kppnlgl"});
+    EXPECT_FALSE(in_live2d);
+    EXPECT_NE(in_live2d.diagnostic.find("--panel-glyph-product"), std::string::npos);
+
+    const auto live2d_in_panel =
+        Parse({"--mode", "panel-viewer", "--live2d-model", "live2d/mao/mao.live2d"});
+    EXPECT_FALSE(live2d_in_panel);
+    EXPECT_NE(live2d_in_panel.diagnostic.find("--live2d-model"), std::string::npos);
+}
+
+TEST(RuntimeLaunchOptionsTest, RejectsUnsafeOrNonProductPanelGlyphPaths)
+{
+    const std::vector<std::string> invalid{
+        "", "panel/glyphs", "panel/glyphs.kppnlgl.png", "../panel/glyphs.kppnlgl",
+        "/panel/glyphs.kppnlgl", R"(C:\panel\glyphs.kppnlgl)", "panel/../glyphs.kppnlgl"};
+
+    for (const std::string &value : invalid)
+    {
+        const auto parsed =
+            Parse({"--mode", "panel-viewer", "--panel-glyph-product", value});
+        EXPECT_FALSE(parsed) << "accepted '" << value << "'";
+        EXPECT_NE(parsed.diagnostic.find("--panel-glyph-product"), std::string::npos);
+    }
+}
+
+TEST(RuntimeLaunchOptionsTest, ParsesPanelTextAndRejectsAnEmptyValue)
+{
+    const auto named =
+        Parse({"--mode", "panel-viewer", "--panel-text", "OvO"});
+    ASSERT_TRUE(named) << named.diagnostic;
+    ASSERT_TRUE(named.options.panel_text.has_value());
+    EXPECT_EQ(*named.options.panel_text, "OvO");
+
+    const auto empty = Parse({"--mode", "panel-viewer", "--panel-text", ""});
+    EXPECT_FALSE(empty);
+    EXPECT_NE(empty.diagnostic.find("--panel-text"), std::string::npos);
+
+    const auto in_scene = Parse({"--mode", "scene3d", "--panel-text", "OvO"});
+    EXPECT_FALSE(in_scene);
+    EXPECT_NE(in_scene.diagnostic.find("--panel-text"), std::string::npos);
+}
+
+TEST(RuntimeLaunchOptionsTest, AcceptsCaptureOptionsInPanelViewerMode)
+{
+    // The capture, resize, and exit options belong to whichever standalone host
+    // is running, so a panel run must be able to export a comparable image.
+    const auto parsed =
+        Parse({"--mode", "panel-viewer", "--capture", "out.png", "--capture-view",
+               "live2d", "--exit-after-capture", "--resize", "1024x512"});
+    ASSERT_TRUE(parsed) << parsed.diagnostic;
+    EXPECT_TRUE(parsed.options.startup_capture_override.has_value());
+    EXPECT_EQ(parsed.options.startup_capture_view,
+              kpengine::runtime::StartupCaptureView::Product);
+    EXPECT_TRUE(parsed.options.startup_exit_after_capture);
+    ASSERT_TRUE(parsed.options.startup_resize.has_value());
+    EXPECT_EQ(parsed.options.startup_resize->width, 1024u);
+
+    // The capture-view dependency rules still hold in this mode.
+    const auto view_without_capture =
+        Parse({"--mode", "panel-viewer", "--capture-view", "live2d"});
+    EXPECT_FALSE(view_without_capture);
+    EXPECT_NE(view_without_capture.diagnostic.find("--capture-view"),
+              std::string::npos);
+
+    // Scene3D still owns the level option and still refuses capture options.
+    const auto level_in_panel =
+        Parse({"--mode", "panel-viewer", "--startup-level", "level/a.level"});
+    EXPECT_FALSE(level_in_panel);
+    EXPECT_NE(level_in_panel.diagnostic.find("--startup-level"), std::string::npos);
+
+    const auto capture_in_scene =
+        Parse({"--mode", "scene3d", "--capture", "out.png"});
+    EXPECT_FALSE(capture_in_scene);
+    EXPECT_NE(capture_in_scene.diagnostic.find("--capture"), std::string::npos);
+}
+
+TEST(RuntimeLaunchOptionsTest, NamesAndParsesThePanelViewerMode)
+{
+    namespace rt = kpengine::runtime;
+
+    EXPECT_STREQ(rt::ApplicationModeName(rt::ApplicationMode::PanelViewer),
+                 "panel-viewer");
+    const auto parsed = rt::ParseApplicationMode("panel-viewer");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(*parsed, rt::ApplicationMode::PanelViewer);
+
+    // The three modes are distinct, so a host cannot be registered under another
+    // one's index.
+    EXPECT_NE(rt::ApplicationModeName(rt::ApplicationMode::Scene3D),
+              rt::ApplicationModeName(rt::ApplicationMode::PanelViewer));
+    EXPECT_NE(rt::ApplicationModeName(rt::ApplicationMode::Live2DViewer),
+              rt::ApplicationModeName(rt::ApplicationMode::PanelViewer));
+}
+
 TEST(RuntimeLaunchOptionsTest, RejectsUnknownOptions)
 {
     const auto result = Parse({"--startup-leevl", "level/pbr_showcase.level"});

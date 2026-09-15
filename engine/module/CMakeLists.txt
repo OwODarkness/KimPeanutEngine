@@ -23,3 +23,8 @@ else()
     target_compile_definitions(ModuleBootstrap PRIVATE
         KPENGINE_ENABLE_LIVE2D=0)
 endif()
+
+# The bootstrap registers the panel viewer host, so it links the panel module
+# directly rather than through the Module interface: the panel is not an
+# EngineModule and has no module lifecycle to run.
+target_link_libraries(ModuleBootstrap PRIVATE PanelModule)

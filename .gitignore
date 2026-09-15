@@ -75,6 +75,9 @@ deprecated/
 !/asset/shader/capture_view.shader
 !/asset/shader/directionalshadow_mapping_depth.vert
 !/asset/shader/directionalshadow_mapping_depth.frag
+!/asset/shader/panel_dots.shader
+!/asset/shader/panel_dots.vert
+!/asset/shader/panel_dots.frag
 !/asset/material/
 /asset/material/*
 !/asset/material/error.material

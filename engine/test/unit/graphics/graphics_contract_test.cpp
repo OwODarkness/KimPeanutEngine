@@ -2,8 +2,10 @@
 
 #include <optional>
 #include <array>
+#include <cstdint>
 #include <stdexcept>
 #include <unordered_map>
+#include <vector>
 
 #include "base/handle.h"
 #include "common/bindless_texture.h"
@@ -101,6 +103,61 @@ TEST(TextureFormatContract, DefinesBlockSizedMipPayloadsAndBackendMappings)
     EXPECT_EQ(kpengine::graphics::ConvertToVulkanTextureFormat(
                   TextureFormat::TEXTURE_FORMAT_BC5_UNORM),
               VK_FORMAT_BC5_UNORM_BLOCK);
+}
+
+TEST(TextureFormatContract, SizesSingleChannelR8Payloads)
+{
+    // A single-channel mask is one byte per element. R8 previously fell through
+    // to zero bytes per pixel, which made the validator demand empty pixels and
+    // so rejected every R8 texture that carried a payload.
+    EXPECT_EQ(kpengine::data::GetTextureMipByteCount(
+                  8, 4, TextureFormat::TEXTURE_FORMAT_R8_UNORM),
+              32u);
+    EXPECT_EQ(kpengine::data::GetTextureMipByteCount(
+                  8, 4, TextureFormat::TEXTURE_FORMAT_R8_SRGB),
+              32u);
+    EXPECT_EQ(kpengine::data::GetTextureMipByteCount(
+                  0, 4, TextureFormat::TEXTURE_FORMAT_R8_UNORM),
+              0u);
+
+    kpengine::data::TextureData payload{};
+    payload.width = 8;
+    payload.height = 4;
+    payload.format = TextureFormat::TEXTURE_FORMAT_R8_UNORM;
+    payload.pixels.assign(32u, 0xFFu);
+    EXPECT_TRUE(kpengine::data::IsTextureMipChainValid(payload));
+
+    payload.pixels.pop_back();
+    EXPECT_FALSE(kpengine::data::IsTextureMipChainValid(payload));
+}
+
+TEST(TextureFormatContract, ValidatesAnR8MipChainAgainstTheNewStride)
+{
+    kpengine::data::TextureData chained{};
+    chained.width = 4;
+    chained.height = 4;
+    chained.format = TextureFormat::TEXTURE_FORMAT_R8_UNORM;
+    chained.pixels.assign(16u, 1u);
+    chained.mip_subresources.push_back(
+        kpengine::data::TextureMipSubresource{2u, 2u, std::vector<uint8_t>(4u, 1u)});
+    EXPECT_TRUE(kpengine::data::IsTextureMipChainValid(chained));
+
+    chained.mip_subresources.front().pixels.assign(5u, 1u);
+    EXPECT_FALSE(kpengine::data::IsTextureMipChainValid(chained));
+}
+
+TEST(TextureFormatContract, LeavesAllocationOnlyR8ToTheTextureManagerGuard)
+{
+    // A render target supplies dimensions without a CPU payload. That case is
+    // accepted by TextureManager::CreateTexture before this validation runs, so
+    // the validator itself must keep rejecting an empty R8 payload -- it is not
+    // the thing that makes allocation-only textures legal.
+    kpengine::data::TextureData allocation_only{};
+    allocation_only.width = 8;
+    allocation_only.height = 4;
+    allocation_only.format = TextureFormat::TEXTURE_FORMAT_R8_UNORM;
+
+    EXPECT_FALSE(kpengine::data::IsTextureMipChainValid(allocation_only));
 }
 
 TEST(RenderTargetReadbackContract, ValidatesOwnedRgba8Output)

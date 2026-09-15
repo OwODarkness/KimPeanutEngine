@@ -18,12 +18,20 @@ namespace kpengine::data
         {
             switch (format)
             {
+            case TextureFormat::TEXTURE_FORMAT_R8_UNORM:
+            case TextureFormat::TEXTURE_FORMAT_R8_SRGB:
+                return 1;
             case TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM:
             case TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB:
                 return 4;
             case TextureFormat::TEXTURE_FORMAT_RGBA16F:
                 return 8;
             default:
+                // Deliberately not exhaustive. Every other format is either
+                // block compressed (see BlockByteCount) or has no CPU payload
+                // path, so it is accepted only as an allocation-only texture
+                // whose pixels are empty. Returning 0 is what makes
+                // IsTextureMipChainValid demand that.
                 return 0;
             }
         }

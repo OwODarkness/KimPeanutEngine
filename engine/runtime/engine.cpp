@@ -184,6 +184,36 @@ namespace kpengine
             live2d_model_override_ = std::move(asset_relative_path);
         }
 
+        void Engine::SetPanelGlyphProduct(std::string asset_relative_path)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "Panel glyph product must be set before Engine::Initialize");
+            }
+            if (application_mode_ != ApplicationMode::PanelViewer)
+            {
+                throw std::runtime_error(
+                    "Panel glyph product is only valid in panel-viewer mode");
+            }
+            panel_glyph_product_ = std::move(asset_relative_path);
+        }
+
+        void Engine::SetPanelText(std::string text)
+        {
+            if (initialization_started_ || render_thread_.joinable() || cleared_)
+            {
+                throw std::runtime_error(
+                    "Panel text must be set before Engine::Initialize");
+            }
+            if (application_mode_ != ApplicationMode::PanelViewer)
+            {
+                throw std::runtime_error(
+                    "Panel text is only valid in panel-viewer mode");
+            }
+            panel_text_ = std::move(text);
+        }
+
         void Engine::SetStartupCaptureOverride(std::string output_path)
         {
             if (initialization_started_ || render_thread_.joinable() || cleared_)
@@ -191,10 +221,13 @@ namespace kpengine
                 throw std::runtime_error(
                     "startup capture override must be set before Engine::Initialize");
             }
-            if (application_mode_ != ApplicationMode::Live2DViewer)
+            // The startup capture belongs to whichever standalone host is
+            // running, not to Live2D, so both viewer modes accept it.
+            if (application_mode_ != ApplicationMode::Live2DViewer &&
+                application_mode_ != ApplicationMode::PanelViewer)
             {
                 throw std::runtime_error(
-                    "startup capture override is only valid in live2d-viewer mode");
+                    "startup capture override is only valid in a viewer mode");
             }
             startup_capture_override_ = std::move(output_path);
         }
@@ -266,7 +299,7 @@ namespace kpengine
 
             InitializeModules();
 
-            if (application_mode_ == ApplicationMode::Live2DViewer)
+            if (IsStandaloneViewerMode())
             {
                 global_runtime_context.game_thread_id_ = std::this_thread::get_id();
                 // The viewer serves Runtime commands without scene services: it
@@ -932,7 +965,7 @@ namespace kpengine
 
         void Engine::RenderThreadFunc()
         {
-            if (application_mode_ == ApplicationMode::Live2DViewer)
+            if (IsStandaloneViewerMode())
             {
                 RenderViewerThreadFunc();
                 return;

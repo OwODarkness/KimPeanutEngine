@@ -70,6 +70,14 @@ int main(int argc, char **argv)
     {
         engine.SetLive2DModelOverride(*launch_options.options.live2d_model_override);
     }
+    if (launch_options.options.panel_glyph_product.has_value())
+    {
+        engine.SetPanelGlyphProduct(*launch_options.options.panel_glyph_product);
+    }
+    if (launch_options.options.panel_text.has_value())
+    {
+        engine.SetPanelText(*launch_options.options.panel_text);
+    }
 
     // Boot failure (e.g. missing config/bootstrap.json) surfaces here before the
     // logger is guaranteed to flush, so report it to stderr directly and exit

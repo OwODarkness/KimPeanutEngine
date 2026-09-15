@@ -109,13 +109,13 @@ namespace kpengine::runtime
             return normalized != "level" && normalized.rfind("level/", 0) == 0;
         }
 
-        // A Live2D product is not one of the AssetType extensions, so the
+        // An imported product is not one of the AssetType extensions, so the
         // generic normalizer cannot classify it. Apply the same containment
         // rules here -- no NUL, no absolute or drive-rooted path, no escaping
         // segment -- and then require the product's own suffix.
-        constexpr std::string_view kLive2DProductSuffix = ".live2d";
-
-        bool ParseLive2DModel(const std::string_view value, std::string &normalized)
+        bool ParseAssetRelativeProduct(const std::string_view value,
+                                       const std::string_view suffix,
+                                       std::string &normalized)
         {
             const std::string authored{value};
             if (authored.empty() || authored.find('\0') != std::string::npos)
@@ -168,10 +168,19 @@ namespace kpengine::runtime
             {
                 normalized += "/" + segments[index];
             }
-            return normalized.size() > kLive2DProductSuffix.size() &&
-                   normalized.compare(normalized.size() - kLive2DProductSuffix.size(),
-                                      kLive2DProductSuffix.size(),
-                                      kLive2DProductSuffix) == 0;
+            return normalized.size() > suffix.size() &&
+                   normalized.compare(normalized.size() - suffix.size(), suffix.size(),
+                                      suffix) == 0;
+        }
+
+        bool ParseLive2DModel(const std::string_view value, std::string &normalized)
+        {
+            return ParseAssetRelativeProduct(value, ".live2d", normalized);
+        }
+
+        bool ParsePanelGlyphProduct(const std::string_view value, std::string &normalized)
+        {
+            return ParseAssetRelativeProduct(value, ".kppnlgl", normalized);
         }
 
         RuntimeLaunchOptionsParseResult ParseArguments(
@@ -188,6 +197,8 @@ namespace kpengine::runtime
             bool has_exit_after_capture = false;
             bool has_resize = false;
             bool has_live2d_model = false;
+            bool has_panel_product = false;
+            bool has_panel_text = false;
 
             for (std::size_t index = 0; index < arguments.size(); ++index)
             {
@@ -316,6 +327,48 @@ namespace kpengine::runtime
                     result.options.live2d_model_override = std::move(normalized);
                     has_live2d_model = true;
                 }
+                else if (argument == "--panel-glyph-product")
+                {
+                    if (has_panel_product)
+                    {
+                        return Failure("duplicate option '--panel-glyph-product'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--panel-glyph-product requires an "
+                                       "Asset-root-relative *.kppnlgl path");
+                    }
+
+                    std::string normalized;
+                    const std::string_view value = arguments[++index];
+                    if (!ParsePanelGlyphProduct(value, normalized))
+                    {
+                        return Failure("--panel-glyph-product requires an "
+                                       "Asset-root-relative *.kppnlgl path (got '" +
+                                       std::string{value} + "')");
+                    }
+                    result.options.panel_glyph_product = std::move(normalized);
+                    has_panel_product = true;
+                }
+                else if (argument == "--panel-text")
+                {
+                    if (has_panel_text)
+                    {
+                        return Failure("duplicate option '--panel-text'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--panel-text requires a value");
+                    }
+
+                    std::string text{arguments[++index]};
+                    if (text.empty() || text.find('\0') != std::string::npos)
+                    {
+                        return Failure("--panel-text requires non-empty UTF-8 text");
+                    }
+                    result.options.panel_text = std::move(text);
+                    has_panel_text = true;
+                }
                 else if (argument == "--capture")
                 {
                     if (has_startup_capture)
@@ -425,7 +478,14 @@ namespace kpengine::runtime
                 }
             }
 
-            if (result.options.application_mode == ApplicationMode::Live2DViewer)
+            const ApplicationMode mode = result.options.application_mode;
+            const bool live2d_viewer = mode == ApplicationMode::Live2DViewer;
+            const bool panel_viewer = mode == ApplicationMode::PanelViewer;
+
+            // The capture, resize, and exit options are owned by whichever
+            // standalone host is running, not by Live2D. Only the options that
+            // name one host's own content are exclusive to it.
+            if (live2d_viewer || panel_viewer)
             {
                 if (result.options.startup_level_override.has_value())
                 {
@@ -443,34 +503,57 @@ namespace kpengine::runtime
                 {
                     return Failure("--exit-after-capture requires --capture");
                 }
+                if (has_live2d_model && !live2d_viewer)
+                {
+                    return Failure(
+                        "--live2d-model is only valid in live2d-viewer mode");
+                }
+                if (has_panel_product && !panel_viewer)
+                {
+                    return Failure("--panel-glyph-product is only valid in "
+                                   "panel-viewer mode");
+                }
+                if (has_panel_text && !panel_viewer)
+                {
+                    return Failure("--panel-text is only valid in panel-viewer mode");
+                }
             }
             else
             {
                 if (result.options.startup_capture_override.has_value())
                 {
-                    return Failure("--capture is only valid in live2d-viewer mode");
+                    return Failure("--capture is only valid in a viewer mode");
                 }
                 if (has_capture_view)
                 {
-                    return Failure("--capture-view is only valid in live2d-viewer mode");
+                    return Failure("--capture-view is only valid in a viewer mode");
                 }
                 if (has_capture_alpha)
                 {
-                    return Failure("--capture-alpha is only valid in live2d-viewer mode");
+                    return Failure("--capture-alpha is only valid in a viewer mode");
                 }
                 if (has_exit_after_capture)
                 {
                     return Failure(
-                        "--exit-after-capture is only valid in live2d-viewer mode");
+                        "--exit-after-capture is only valid in a viewer mode");
                 }
                 if (has_resize)
                 {
-                    return Failure("--resize is only valid in live2d-viewer mode");
+                    return Failure("--resize is only valid in a viewer mode");
                 }
                 if (has_live2d_model)
                 {
                     return Failure(
                         "--live2d-model is only valid in live2d-viewer mode");
+                }
+                if (has_panel_product)
+                {
+                    return Failure("--panel-glyph-product is only valid in "
+                                   "panel-viewer mode");
+                }
+                if (has_panel_text)
+                {
+                    return Failure("--panel-text is only valid in panel-viewer mode");
                 }
             }
 

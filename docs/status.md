@@ -1,5 +1,38 @@
 # Project Status
 
+- **Panel renders and captures on both backends (2026-09-15)** — the panel module
+  became visible. P0 gave it a dot-matrix representation and P1 gave it real
+  glyphs baked from a TrueType face, but nothing drew them; P2 adds an offscreen
+  render path, a standalone `panel-viewer` host, and a PNG capture, so content
+  now reaches an image. The panel draws as **one quad sampling a dot-mask
+  texture**, which is not only the simplest option but the only one in contract:
+  the generic submission permits indexed, non-instanced draws only, so a quad per
+  character cell is unavailable. That turns out to be a gift — the mask is one
+  texel per dot and the sampler is NEAREST, so drawing the quad larger than the
+  mask *is* the chunky LED look, with no per-dot arithmetic. Geometry is static
+  (four clip-space positions, six indices, nothing uploaded per frame) because
+  the content lives in the texture, and a content change recreates the mask
+  rather than updating it, since the backend exposes no in-place upload; the
+  previous handle is released only after `WaitIdle`. **OpenGL and Vulkan captures
+  of identical content are byte-identical** for both `OvO` and `OvO 中文` — a
+  stronger result than Live2D ever produced, and expected here: a flat colour with
+  NEAREST sampling leaves the backends nothing to disagree about. Decoding a
+  capture back to its dot grid confirms the two `O`s identical, the `v` distinct,
+  and the text upright rather than mirrored. Three supporting changes are worth
+  recording. `BytesPerPixel` in Core now sizes `R8_UNORM`, without which a
+  single-channel payload is rejected outright; the allocation-only path is
+  unaffected because `TextureManager` checks it before validation, and a test
+  pins that boundary. The panel got **its own application mode** rather than being
+  loaded by the Live2D viewer, because that would make one module depend on the
+  other — and its first run crashed on exactly the hazard that creates: `Engine`
+  enumerated `Live2DViewer` as the standalone viewer in three separate branches,
+  so the mode was named once as `IsStandaloneViewerMode` instead of adding a third
+  entry to each list. The panel's `OriginAt` places one run per row; two
+  independent runs on one row, per-character colour, effects, and world-space
+  placement are all deferred with their reasons recorded. Full suite 856/857, the
+  one failure the pre-existing `LevelLoaderTest` fixture. →
+  [P2 plan](panel/.plan/P2.md) · [PLANS](panel/PLANS.md) · [journal](../.spec/journal/2026-09-15-panel-p2.md)
+
 - **Spatial BVH stage 2 declined on measurement (2026-09-14)** — wiring
   `LinearBVH` into render-world culling was measured and then **not** shipped,
   because the measurement says it would be a slowdown rather than a speedup.

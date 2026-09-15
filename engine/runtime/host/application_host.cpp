@@ -9,7 +9,7 @@ namespace kpengine::runtime
     {
         constexpr std::size_t InvalidModeIndex() noexcept
         {
-            return 2;
+            return 3;
         }
     }
 
@@ -21,6 +21,8 @@ namespace kpengine::runtime
             return "scene3d";
         case ApplicationMode::Live2DViewer:
             return "live2d-viewer";
+        case ApplicationMode::PanelViewer:
+            return "panel-viewer";
         }
         return "unknown";
     }
@@ -36,6 +38,10 @@ namespace kpengine::runtime
         {
             return ApplicationMode::Live2DViewer;
         }
+        if (value == "panel-viewer")
+        {
+            return ApplicationMode::PanelViewer;
+        }
         return std::nullopt;
     }
 
@@ -47,6 +53,8 @@ namespace kpengine::runtime
             return 0;
         case ApplicationMode::Live2DViewer:
             return 1;
+        case ApplicationMode::PanelViewer:
+            return 2;
         }
         return InvalidModeIndex();
     }

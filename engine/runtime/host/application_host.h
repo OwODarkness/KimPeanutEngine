@@ -28,6 +28,7 @@ namespace kpengine::runtime
     {
         Scene3D,
         Live2DViewer,
+        PanelViewer,
     };
 
     const char *ApplicationModeName(ApplicationMode mode) noexcept;
@@ -92,7 +93,7 @@ namespace kpengine::runtime
                                                   std::string &diagnostic) const;
 
     private:
-        static constexpr std::size_t kModeCount = 2;
+        static constexpr std::size_t kModeCount = 3;
 
         static std::size_t ModeIndex(ApplicationMode mode) noexcept;
 

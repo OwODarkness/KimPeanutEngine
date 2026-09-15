@@ -1,5 +1,6 @@
 #include "module/module_bootstrap.h"
 
+#include "module/panel/panel_viewer_host.h"
 #include "runtime/engine.h"
 
 #if KPENGINE_ENABLE_LIVE2D
@@ -38,5 +39,20 @@ namespace kpengine::module
 #else
         (void)engine;
 #endif
+
+        if (engine.GetApplicationMode() == runtime::ApplicationMode::PanelViewer)
+        {
+            std::string diagnostic;
+            if (!engine.RegisterApplicationHostProvider(
+                    runtime::ApplicationMode::PanelViewer,
+                    [](runtime::Engine &) {
+                        return std::make_unique<kpengine::panel::PanelViewerHost>();
+                    },
+                    diagnostic))
+            {
+                throw std::runtime_error("Panel viewer host registration failed: " +
+                                         diagnostic);
+            }
+        }
     }
 }

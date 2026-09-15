@@ -42,6 +42,14 @@ namespace kpengine::runtime
         // is always present, so a licensed model that exists only in a local,
         // git-ignored tree is selected for a run rather than committed to.
         std::optional<std::string> live2d_model_override;
+        // Optional baked panel glyph product (KPPNLGLY) the panel viewer loads.
+        // Like --live2d-model it is Asset-root-relative, so the product lives in
+        // the git-ignored asset tree rather than in a tracked config.
+        std::optional<std::string> panel_glyph_product;
+        // Optional text the panel displays on its first row. It exists so a
+        // capture run can show something with no Authoring step; the panel's own
+        // commands change it at run time.
+        std::optional<std::string> panel_text;
         // Optional one-shot capture used by standalone hosts. The Live2D
         // viewer consumes this as a host-output capture; Scene3D keeps its
         // existing command-driven screenshot flow.

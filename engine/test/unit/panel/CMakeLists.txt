@@ -22,3 +22,43 @@ endif()
 
 include(GoogleTest)
 gtest_discover_tests(PanelUnitTest)
+
+# CPU-only render contract test. It compiles the planner and the generic
+# submission together and links neither Render nor a backend, so it runs
+# everywhere and cannot be affected by device state.
+add_executable(PanelRenderPlannerTest
+    panel_render_planner_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/panel/render/panel_render_planner.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_submission.cpp)
+
+target_include_directories(PanelRenderPlannerTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/panel/render
+    ${CMAKE_SOURCE_DIR}/engine/module/panel/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+    ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend)
+
+target_link_libraries(PanelRenderPlannerTest PRIVATE KP::GoogleTest)
+
+gtest_discover_tests(PanelRenderPlannerTest)
+
+# The renderer against the shared backend test double: no device, no window, and
+# no Cubism, so the texture-swap and handle-lifetime rules are assertable in CI.
+add_executable(PanelRendererTest
+    panel_renderer_test.cpp)
+
+target_include_directories(PanelRendererTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/panel/runtime
+    ${CMAKE_SOURCE_DIR}/engine/test
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+    ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend)
+
+target_link_libraries(PanelRendererTest PRIVATE PanelRender Panel KP::GoogleTest)
+
+# Linking Render pulls the asset importer, which ships as a runtime DLL. Without
+# this the executable cannot start at all, and gtest discovery reports a
+# discovery failure rather than a build error.
+copy_runtime_dependencies(PanelRendererTest)
+
+gtest_discover_tests(PanelRendererTest)
