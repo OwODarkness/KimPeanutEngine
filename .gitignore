@@ -143,4 +143,8 @@ coverage/
 # Generated render captures and visual-validation artifacts
 save/
 
+# Legacy log root. Logs live below save/logs/ since 8ed3974; a binary built
+# before that change writes here instead, and must not be committed.
+logs/
+
 .VSCodeCounter/
