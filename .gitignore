@@ -78,6 +78,9 @@ deprecated/
 !/asset/shader/panel_dots.shader
 !/asset/shader/panel_dots.vert
 !/asset/shader/panel_dots.frag
+!/asset/shader/bubble.shader
+!/asset/shader/bubble.vert
+!/asset/shader/bubble.frag
 !/asset/material/
 /asset/material/*
 !/asset/material/error.material

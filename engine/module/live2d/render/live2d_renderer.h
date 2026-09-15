@@ -67,6 +67,20 @@ namespace kpengine::live2d
                     bool advance_frame,
                     bool reset_parameters,
                     std::string &diagnostic);
+        // Extra draws appended to the model's pass, after the model's own so that
+        // they paint over it. They join that pass rather than getting one of
+        // their own because both backends re-apply the target's clear on every
+        // pass begin, so a second pass into the same target would erase the
+        // model. The caller supplies generic draws, so this renderer learns
+        // nothing about what they are.
+        bool Record(render::FrameContext &frame_context,
+                    graphics::CommandRecorder &recorder,
+                    float delta_time,
+                    const Live2DFrameInput &frame_input,
+                    bool advance_frame,
+                    bool reset_parameters,
+                    const std::vector<render::SubmissionDraw> &extra_draws,
+                    std::string &diagnostic);
         bool ResetParameters() noexcept;
         // Recreates only the viewer-owned color target. The backend's
         // presentation/swapchain resize remains its own responsibility. The
@@ -91,7 +105,25 @@ namespace kpengine::live2d
         {
             return proxy_.output_target;
         }
+        // Where the fitted model sits in the output, normalized so that the whole
+        // output is one by one with y downward. It exists so a caller can aim
+        // something at the model -- a speech bubble's tail, for one -- without
+        // knowing anything about Live2D: nothing crosses this boundary but
+        // numbers. Updated on every successful Record, and invalid until then.
+        struct ModelBounds final
+        {
+            float min_x = 0.0f;
+            float min_y = 0.0f;
+            float max_x = 1.0f;
+            float max_y = 1.0f;
+            bool valid = false;
+        };
+        ModelBounds GetModelBounds() const noexcept { return model_bounds_; }
         graphics::RenderTargetView GetOutputView() const;
+        // The format of the target this renderer draws into. A pipeline baking
+        // its attachment format needs it, and asking is better than a caller
+        // assuming the viewer's choice and being wrong when it changes.
+        TextureFormat GetOutputColorFormat() const noexcept { return output_color_format_; }
         // Counts the GPU handles this renderer currently owns. Zero is the
         // shutdown contract; it is computed from the live handle table so it
         // cannot drift from the actual ownership set.
@@ -151,6 +183,7 @@ namespace kpengine::live2d
         std::vector<graphics::PipelineHandle> pipelines_;
         std::vector<graphics::TextureHandle> textures_;
         Live2DRenderCounters last_counters_{};
+        ModelBounds model_bounds_{};
         std::uint64_t last_frame_sequence_ = 0u;
         std::uint64_t last_update_sequence_ = 0u;
         bool has_last_frame_sequence_ = false;

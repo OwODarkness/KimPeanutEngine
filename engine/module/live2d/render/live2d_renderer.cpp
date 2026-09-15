@@ -59,11 +59,26 @@ namespace kpengine::live2d
             return shader && shader->data ? shader->data.get() : nullptr;
         }
 
-        std::array<float, 16> FitTransform(const Live2DStaticModelData &static_data,
-                                            const Live2DFrameSnapshot &snapshot,
-                                            const uint32_t width,
-                                            const uint32_t height)
+        // The fitted placement and the bounds it was fitted from. The bounds ride
+        // along because a caller that needs to aim at the model needs them, and
+        // recomputing the scan to find them would be a second traversal of the
+        // same drawables that could disagree with this one.
+        struct FittedModel final
         {
+            std::array<float, 16> transform{};
+            float minimum_x = 0.0f;
+            float minimum_y = 0.0f;
+            float maximum_x = 0.0f;
+            float maximum_y = 0.0f;
+            bool has_bounds = false;
+        };
+
+        FittedModel FitTransform(const Live2DStaticModelData &static_data,
+                                 const Live2DFrameSnapshot &snapshot,
+                                 const uint32_t width,
+                                 const uint32_t height)
+        {
+            FittedModel fitted;
             Live2DVector2 minimum{std::numeric_limits<float>::max(),
                                   std::numeric_limits<float>::max()};
             Live2DVector2 maximum{std::numeric_limits<float>::lowest(),
@@ -102,10 +117,11 @@ namespace kpengine::live2d
             }
             if (!has_position)
             {
-                return {1.0f, 0.0f, 0.0f, 0.0f,
-                        0.0f, 1.0f, 0.0f, 0.0f,
-                        0.0f, 0.0f, 1.0f, 0.0f,
-                        0.0f, 0.0f, 0.0f, 1.0f};
+                fitted.transform = {1.0f, 0.0f, 0.0f, 0.0f,
+                                    0.0f, 1.0f, 0.0f, 0.0f,
+                                    0.0f, 0.0f, 1.0f, 0.0f,
+                                    0.0f, 0.0f, 0.0f, 1.0f};
+                return fitted;
             }
             const float center_x = (minimum.x + maximum.x) * 0.5f;
             const float center_y = (minimum.y + maximum.y) * 0.5f;
@@ -118,11 +134,55 @@ namespace kpengine::live2d
                 max_ndc_extent / extent_y,
                 max_ndc_extent * aspect /
                     (extent_x * kViewerCharacterWidthScale));
-            return {scale * kViewerCharacterWidthScale, 0.0f, 0.0f, 0.0f,
-                    0.0f, scale, 0.0f, 0.0f,
-                    0.0f, 0.0f, 1.0f, 0.0f,
-                    -center_x * scale * kViewerCharacterWidthScale,
-                    -center_y * scale, 0.0f, 1.0f};
+            fitted.transform = {scale * kViewerCharacterWidthScale, 0.0f, 0.0f, 0.0f,
+                                0.0f, scale, 0.0f, 0.0f,
+                                0.0f, 0.0f, 1.0f, 0.0f,
+                                -center_x * scale * kViewerCharacterWidthScale,
+                                -center_y * scale, 0.0f, 1.0f};
+            // Carried out alongside the transform because the bounds are what the
+            // fit was computed from, and a caller aiming at the model needs them
+            // rather than the matrix.
+            fitted.minimum_x = minimum.x;
+            fitted.minimum_y = minimum.y;
+            fitted.maximum_x = maximum.x;
+            fitted.maximum_y = maximum.y;
+            fitted.has_bounds = true;
+            return fitted;
+        }
+
+        // The model's fitted bounds in the output, normalized with y downward.
+        // The transform is a scale and a translation, so the corners can be
+        // mapped directly and there is no need to invert it.
+        void ResolveModelBounds(const FittedModel &fitted, Live2DRenderer::ModelBounds &out)
+        {
+            out = Live2DRenderer::ModelBounds{};
+            if (!fitted.has_bounds)
+            {
+                return;
+            }
+            const float scale_x = fitted.transform[0];
+            const float scale_y = fitted.transform[5];
+            const float translate_x = fitted.transform[12];
+            const float translate_y = fitted.transform[13];
+
+            const auto to_normalized_y = [&](const float model_y)
+            {
+                return (1.0f - ((model_y * scale_y) + translate_y)) * 0.5f;
+            };
+            const auto to_normalized_x = [&](const float model_x)
+            {
+                return (((model_x * scale_x) + translate_x) + 1.0f) * 0.5f;
+            };
+
+            const float first_x = to_normalized_x(fitted.minimum_x);
+            const float second_x = to_normalized_x(fitted.maximum_x);
+            const float first_y = to_normalized_y(fitted.minimum_y);
+            const float second_y = to_normalized_y(fitted.maximum_y);
+            out.min_x = std::min(first_x, second_x);
+            out.max_x = std::max(first_x, second_x);
+            out.min_y = std::min(first_y, second_y);
+            out.max_y = std::max(first_y, second_y);
+            out.valid = true;
         }
     }
 
@@ -540,6 +600,20 @@ namespace kpengine::live2d
                                 const bool reset_parameters,
                                 std::string &diagnostic)
     {
+        const std::vector<render::SubmissionDraw> no_extra_draws;
+        return Record(frame_context, recorder, delta_time, frame_input, advance_frame,
+                      reset_parameters, no_extra_draws, diagnostic);
+    }
+
+    bool Live2DRenderer::Record(render::FrameContext &frame_context,
+                                graphics::CommandRecorder &recorder,
+                                const float delta_time,
+                                const Live2DFrameInput &frame_input,
+                                const bool advance_frame,
+                                const bool reset_parameters,
+                                const std::vector<render::SubmissionDraw> &extra_draws,
+                                std::string &diagnostic)
+    {
         if (!initialized_ || !instance_)
         {
             diagnostic = "Live2D renderer is not initialized";
@@ -597,8 +671,13 @@ namespace kpengine::live2d
             return false;
         }
         Live2DRenderPlanOptions options{};
-        options.model_transform = FitTransform(
+        const FittedModel fitted = FitTransform(
             static_data_, snapshot, proxy_.output_width, proxy_.output_height);
+        options.model_transform = fitted.transform;
+        // Published before the plan runs, so a caller reading it during the same
+        // frame sees the placement this frame is drawn with rather than the last
+        // one's.
+        ResolveModelBounds(fitted, model_bounds_);
         options.viewport = {0.0f, 0.0f,
                             static_cast<float>(proxy_.output_width),
                             static_cast<float>(proxy_.output_height), 0.0f, 1.0f};
@@ -616,6 +695,17 @@ namespace kpengine::live2d
             {
                 pass.clear_color = background_color_;
             }
+        }
+
+        // Appended to the model's pass, which the planner always pushes last, so
+        // the extra draws are recorded inside the same target bracket and paint
+        // after the model. A pass of their own would re-apply the target's clear
+        // and leave an image containing only them.
+        if (!extra_draws.empty() && !submission.passes.empty())
+        {
+            render::SubmissionPass &model_pass = submission.passes.back();
+            model_pass.draws.insert(model_pass.draws.end(), extra_draws.begin(),
+                                    extra_draws.end());
         }
         const render::RenderSubmissionExecutionResult execution =
             render::RenderSubmissionExecutor::Execute(submission, frame_context, recorder);

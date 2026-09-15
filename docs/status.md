@@ -1,5 +1,37 @@
 # Project Status
 
+- **Live2D speech bubble (2026-09-15)** — the character can now say something. A
+  manga-style bubble hangs beside the model, hugs its text, carries a tail aimed
+  at it, pops in when the text is set, and appears in the same image as the model.
+  It lives in the Live2D module because a speech bubble is a
+  character-presentation element, and it **consumes the panel module** for its
+  text — a character system using a display, not a display knowing about
+  characters. Three findings shaped it. **A second render pass erases the model**:
+  both backends re-apply the target's `load_op` clear on every pass begin, so the
+  bubble's draws are appended to the model's own pass rather than given one of
+  their own — a naive second pass validates cleanly, renders, and leaves an image
+  containing only the bubble, which is a failure that looks like success.
+  **The bubble is drawn, but its content is a display**: the outline is a signed
+  distance field rather than a pattern of dots, because a bubble should read as
+  drawn, while the interior is a cell-and-bezel grid so its background reads as a
+  matrix too — three colours, and a grid whose pitch comes from the text's own dot
+  count so characters land inside cells rather than across them. Because the shape
+  provides transparency natively, the mask stays one bit per dot and the dot
+  matrix's stamping and alignment invariant are untouched. **Placement is a matrix,
+  not a viewport**: OpenGL and Vulkan measure a viewport's `y` from opposite ends,
+  so a sub-rect placed that way would be mirrored between them; the pop-in rides
+  the same matrix, so the shape is always drawn finished and the transform does the
+  growing. Three defects were found in the host, which has no test — a data race, a
+  mask that was never re-uploaded, and a shutdown crash that **also destroyed its
+  own log**, because the logger flushes at shutdown and the crash prevented it. Two
+  reported findings were false alarms and both were mine: a cross-backend
+  divergence that was a comparison against a stale capture (the capture service
+  suffixes rather than overwrites), and an aspect bug that was a diagnostic firing
+  on frame one. Same-code captures differ by **131 channel samples of 2,764,800,
+  maximum 1/255** — blend rounding, not a divergence. Full suite 914/915, the one
+  failure the pre-existing `LevelLoaderTest` fixture. →
+  [L2D8 plan](live2d/.plan/L2D8.md) · [PLANS](live2d/PLANS.md) · [journal](../.spec/journal/2026-09-15-live2d-l2d8.md)
+
 - **Panel renders and captures on both backends (2026-09-15)** — the panel module
   became visible. P0 gave it a dot-matrix representation and P1 gave it real
   glyphs baked from a TrueType face, but nothing drew them; P2 adds an offscreen

@@ -1,10 +1,11 @@
 #include "panel_render_planner.h"
 
 #include <array>
-#include <cmath>
 #include <cstddef>
 #include <utility>
 #include <vector>
+
+#include "base/color.h"
 
 namespace kpengine::panel
 {
@@ -22,22 +23,12 @@ namespace kpengine::panel
         // requested. White and black are fixed points, which is why the default
         // look is unaffected by this.
         //
-        // This is the third copy of this arithmetic in the engine: the Live2D
-        // viewer and Core's mip filtering each carry one. Promoting it into a
-        // shared Core header is the right fix and is deliberately not done here,
-        // so this change's blast radius stays inside the panel.
-        float DisplayToLinear(const float value) noexcept
-        {
-            return value <= 0.04045f ? value / 12.92f
-                                     : std::pow((value + 0.055f) / 1.055f, 2.4f);
-        }
-
         // Alpha is coverage rather than colour, so it is carried through
         // unconverted.
         std::array<float, 4> DisplayColorToLinear(const std::array<float, 4> &color)
         {
-            return {DisplayToLinear(color[0]), DisplayToLinear(color[1]),
-                    DisplayToLinear(color[2]), color[3]};
+            return {SrgbToLinear(color[0]), SrgbToLinear(color[1]),
+                    SrgbToLinear(color[2]), color[3]};
         }
     }
 

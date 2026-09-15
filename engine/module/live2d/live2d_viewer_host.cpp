@@ -8,6 +8,7 @@
 #include <imgui.h>
 
 #include "asset/asset_manager.h"
+#include "base/color.h"
 #include "config/path.h"
 #include "editor/log/editor_log_component.h"
 #include "editor/settings/editor_settings.h"
@@ -19,6 +20,7 @@
 #include "live2d_settings.h"
 #include "module/live2d/render/live2d_renderer.h"
 #include "module/live2d/runtime/live2d_model_resource.h"
+#include "panel_glyph_product.h"
 #include "render/render_capture_service_internal.h"
 #include "screenshot/runtime_screenshot_service.h"
 #include "runtime_global_context.h"
@@ -32,12 +34,6 @@ namespace kpengine::live2d
         // the output target before capturing at whatever extent is current.
         constexpr uint32_t kResizeWaitFrameBudget = 240u;
 
-        float DisplayToLinear(const float value)
-        {
-            return value <= 0.04045f
-                       ? value / 12.92f
-                       : std::pow((value + 0.055f) / 1.055f, 2.4f);
-        }
     }
 
     struct Live2DViewerUiState final
@@ -151,7 +147,7 @@ namespace kpengine::live2d
             for (std::size_t channel = 0u; channel < 3u; ++channel)
             {
                 output_clear_color[channel] =
-                    DisplayToLinear(output_clear_color[channel]);
+                    SrgbToLinear(output_clear_color[channel]);
             }
             if (engine.GetStartupCaptureTransparentClear())
             {
@@ -177,6 +173,69 @@ namespace kpengine::live2d
                 KP_LOG("Live2DViewer", LOG_LEVEL_WARNING,
                        "Live2D preview motion unavailable; keeping static pose (%s)",
                        preview_motion_diagnostic.c_str());
+            }
+
+            // The speech bubble, when both of its inputs were given. Without them
+            // the viewer is exactly what it was, which is what keeps this from
+            // changing every existing capture.
+            if (engine.GetPanelText().has_value() &&
+                engine.GetPanelGlyphProduct().has_value())
+            {
+                const std::string product_path =
+                    GetAssetDirectory() + *engine.GetPanelGlyphProduct();
+                panel::PanelGlyphProduct product;
+                try
+                {
+                    product = panel::ReadPanelGlyphProduct(product_path);
+                }
+                catch (const std::exception &error)
+                {
+                    diagnostic = std::string("bubble glyph product could not be read: ") +
+                                 error.what();
+                    return false;
+                }
+                bubble_glyphs_ = panel::ToGlyphSet(std::move(product));
+                bubble_panel_.SetText(0u, *engine.GetPanelText());
+                bubble_ink_ = bubble_panel_.Rebuild(bubble_glyphs_);
+
+                bubble_ = std::make_unique<BubbleRenderer>();
+                // The pipeline's attachment format has to be the one the model's
+                // pass draws into, so it is asked for rather than assumed.
+                if (!bubble_->Initialize(*backend_, renderer_->GetOutputColorFormat(),
+                                         diagnostic))
+                {
+                    return false;
+                }
+                if (!bubble_->UploadText(bubble_ink_, diagnostic))
+                {
+                    return false;
+                }
+
+                // Manga is dark on light, the opposite of a lit display: the
+                // panel's own defaults would give a glowing bubble with dark
+                // text, which is the wrong reading entirely.
+                bubble_appearance_.fill_color = {1.0f, 1.0f, 1.0f, 1.0f};
+                bubble_appearance_.outline_color = {0.09f, 0.09f, 0.11f, 1.0f};
+                bubble_appearance_.dot_color = {0.09f, 0.09f, 0.11f, 1.0f};
+                // The paper's cells are visible against the bezel, so every dot
+                // reads as an element whether or not it is lit. A flat white
+                // field would make this ink on a page rather than a display.
+                bubble_appearance_.bezel_color = {0.74f, 0.76f, 0.82f, 1.0f};
+                bubble_appearance_.dot_gap = 0.20f;
+
+                // Off to one side and clear of the character, rather than
+                // centred at the top where it sits on the head and hides the
+                // face -- the one thing the viewer exists to show. Upper left,
+                // where a manga bubble sits when it is leading into a panel. A
+                // bubble is also smaller than it first looks: it is sized to its
+                // text, so a short line wants a short bubble.
+                bubble_placement_.center_x = 0.26f;
+                bubble_placement_.center_y = 0.16f;
+                bubble_placement_.height_fraction = 0.15f;
+                bubble_pop_ = 0.0f;
+                bubble_enabled_ = true;
+                KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
+                       "speech bubble enabled from %s", product_path.c_str());
             }
 
             editor::EditorSettings editor_settings{};
@@ -228,7 +287,13 @@ namespace kpengine::live2d
             }
             else
             {
-                RequestStartupCapture();
+                // A bubble has to be given the chance to finish popping in before
+                // the image is taken, or the capture records a moment in the
+                // middle of an animation nobody asked to see.
+                capture_waits_for_bubble_ =
+                    bubble_enabled_ &&
+                    engine.GetStartupCaptureOverride().has_value();
+                RequestCaptureWhenSettled();
             }
             return true;
         }
@@ -344,6 +409,117 @@ namespace kpengine::live2d
             });
     }
 
+    bool Live2DViewerHost::AdvanceBubblePop(const float delta_time)
+    {
+        // Short enough to read as a pop rather than as a transition, and long
+        // enough that a capture taken at the first frame would catch it partway.
+        constexpr float kPopSeconds = 0.18f;
+        if (bubble_pop_ < 1.0f)
+        {
+            bubble_pop_ += delta_time / kPopSeconds;
+            if (bubble_pop_ > 1.0f)
+            {
+                bubble_pop_ = 1.0f;
+            }
+        }
+        return bubble_pop_ >= 1.0f;
+    }
+
+    void Live2DViewerHost::RequestCaptureWhenSettled()
+    {
+        if (capture_waits_for_resize_ || capture_waits_for_bubble_)
+        {
+            return;
+        }
+        RequestStartupCapture();
+    }
+
+    void Live2DViewerHost::BuildBubbleDraws(const graphics::Extent2D &extent,
+                                            std::vector<render::SubmissionDraw> &out)
+    {
+        if (!bubble_enabled_ || !bubble_ || !renderer_)
+        {
+            return;
+        }
+
+        // Sized to what the panel actually drew rather than to the text's nominal
+        // size, so a bubble around "I" is small and one around a sentence is not.
+        const panel::DotBounds bounds = panel::LitBounds(bubble_ink_);
+        if (bounds.empty)
+        {
+            return;
+        }
+
+        BubbleLayoutRequest request;
+        request.text_width = bounds.right - bounds.left + 1u;
+        request.text_height = bounds.bottom - bounds.top + 1u;
+        // The tail points at the model, which is the one thing the bubble needs
+        // to know about it. It arrives as a direction and not as a Live2D type:
+        // the renderer publishes where the model was fitted, in the same
+        // normalized space the placement is expressed in.
+        const Live2DRenderer::ModelBounds model = renderer_->GetModelBounds();
+        if (model.valid)
+        {
+            const float model_center_x = (model.min_x + model.max_x) * 0.5f;
+            const float model_center_y = (model.min_y + model.max_y) * 0.5f;
+            request.tail = BubbleTailFromDirection(
+                model_center_x - bubble_placement_.center_x,
+                model_center_y - bubble_placement_.center_y);
+        }
+        else
+        {
+            request.tail = BubbleTail::Down;
+        }
+
+        BubbleLayout layout;
+        if (!BuildBubbleLayout(request, layout))
+        {
+            return;
+        }
+
+        bubble_placement_.progress = bubble_pop_;
+        // Logged once per run: what the bubble's size and place were decided
+        // from. A cross-backend difference in the bubble and not the model can
+        // only come from one of these, so they are worth having in the record.
+        if (!bubble_placement_logged_)
+        {
+            bubble_placement_logged_ = true;
+            KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
+                   "bubble placement: progress %.4f target_aspect %.4f center %.3f,%.3f "
+                   "height_fraction %.3f quad %.4fx%.4f aspect %.4f text %ux%u dots",
+                   bubble_pop_, bubble_placement_.target_aspect,
+                   bubble_placement_.center_x, bubble_placement_.center_y,
+                   bubble_placement_.height_fraction, layout.quad_width,
+                   layout.quad_height, layout.Aspect(), request.text_width,
+                   request.text_height);
+        }
+        // The frame's own extent, which is what the model's target is resized to
+        // and therefore what the bubble is drawn into. Reading the output view
+        // instead gave a square reading on the first frame, and a wrong aspect
+        // does not fail here -- it stretches the bubble by the ratio, which is
+        // how it came out a third too wide.
+        const std::uint32_t width = extent.width;
+        const std::uint32_t height = extent.height;
+        if (width == 0u || height == 0u)
+        {
+            return;
+        }
+        bubble_placement_.target_aspect =
+            static_cast<float>(width) / static_cast<float>(height);
+
+        graphics::Viewport viewport{};
+        viewport.width = static_cast<float>(width);
+        viewport.height = static_cast<float>(height);
+
+        std::string bubble_diagnostic;
+        if (!bubble_->BuildDraws(layout, bubble_placement_, bubble_appearance_, viewport,
+                                 out, bubble_diagnostic))
+        {
+            KP_LOG("Live2DViewer", LOG_LEVEL_WARNING, "bubble draw skipped: %s",
+                   bubble_diagnostic.c_str());
+        }
+    }
+
     bool Live2DViewerHost::RecordFrame(std::string &diagnostic)
     {
         diagnostic.clear();
@@ -390,7 +566,7 @@ namespace kpengine::live2d
                            resize_wait_frames_);
                 }
                 capture_waits_for_resize_ = false;
-                RequestStartupCapture();
+                RequestCaptureWhenSettled();
             }
         }
 
@@ -435,6 +611,18 @@ namespace kpengine::live2d
             return true;
         }
         constexpr float kViewerDeltaSeconds = 1.0f / 120.0f;
+        // The pop-in is advanced by the frame, not by the shape, so the bubble's
+        // animation is a property of the viewer's clock rather than of its
+        // geometry.
+        if (bubble_enabled_)
+        {
+            const bool settled = AdvanceBubblePop(kViewerDeltaSeconds);
+            if (settled && capture_waits_for_bubble_)
+            {
+                capture_waits_for_bubble_ = false;
+                RequestCaptureWhenSettled();
+            }
+        }
         const bool advance_frame = !paused_ || step_requested_;
         const Live2DFrameInput frame_input = BuildFrameInput(kViewerDeltaSeconds);
         const bool reset_parameters = reset_parameters_requested_;
@@ -446,8 +634,13 @@ namespace kpengine::live2d
         }
         frame.Begin(frame_index, {frame_number_++, elapsed_seconds_, kViewerDeltaSeconds}, extent);
         const auto render_started = std::chrono::steady_clock::now();
+        // The bubble's draws join the model's pass. A pass of its own would
+        // re-apply the target's clear and leave an image containing only the
+        // bubble -- which validates, renders, and is the wrong picture.
+        std::vector<render::SubmissionDraw> bubble_draws;
+        BuildBubbleDraws(extent, bubble_draws);
         if (!renderer_->Record(frame, *recorder, kViewerDeltaSeconds, frame_input,
-                                      advance_frame, reset_parameters, diagnostic))
+                               advance_frame, reset_parameters, bubble_draws, diagnostic))
         {
             if (render_capture_service_ && render_capture_service_->HasPendingCapture())
             {
@@ -908,6 +1101,16 @@ namespace kpengine::live2d
             }
         }
         renderer_.reset();
+        if (bubble_)
+        {
+            // Released here and not by the destructor, because its handles belong
+            // to the backend this function is about to destroy. A bubble left to
+            // tear down later calls WaitIdle on a dangling backend, which is a
+            // segfault at exit rather than a leak report.
+            bubble_->Cleanup();
+            shutdown_leaked_handles_ += bubble_->GetLiveGpuHandleCount();
+            bubble_.reset();
+        }
         for (const std::unique_ptr<render::FrameContext> &frame : frame_contexts_)
         {
             if (frame)

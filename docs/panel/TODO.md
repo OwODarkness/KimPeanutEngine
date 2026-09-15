@@ -12,7 +12,7 @@ ledger; execution evidence belongs in [`.spec/journal/`](../../.spec/journal/).
 | P1 | Glyph product and bake: `KPPNLGLY`, `import-glyphs` | landed |
 | [P2](.plan/P2.md) | Offscreen render and cross-backend capture | landed |
 | P3 | Placement model, effects, pattern commands | proposed |
-| P4 | World-space placement of the panel in a scene | proposed |
+| P4 | ~~World-space placement~~ — superseded by L2D8 (see below) | declined |
 
 ## P0 — representation
 
@@ -78,12 +78,34 @@ Not yet designed. The open questions, recorded so they are not rediscovered:
 - **Colour.** Per-character colour needs both a character-resolution plane and
   the `Placement` model. Per-panel colour is already a uniform.
 
-## P4 — world placement
+## P4 — world placement: superseded
 
-The panel currently renders offscreen and is captured, deliberately. Placing it
-as a floating screen in a scene needs a camera and a transform, neither of which
-the panel has. This is the "floating screen" the module exists to become, and it
-is a scene-integration problem rather than a panel problem.
+This asked for the panel as a floating screen in a 3D scene. It was investigated
+and declined on evidence:
+
+- **Scene3D is the wrong home.** The Live2D-to-Scene3D isolation is deliberate and
+  test-enforced (`docs/engine/.plan/MODE1.md`), and a scene-side Live2D preview was
+  removed on purpose. Putting the model in the scene image would re-introduce a
+  coupling that was deleted.
+- **An unlit material is currently invisible in Scene3D**, and a flat quad would
+  also need a G-buffer-compatible shader against a four-attachment layout plus a
+  quad mesh asset that does not exist.
+
+What was actually wanted was a **speech bubble for the character**, which is
+[L2D8](../live2d/.plan/L2D8.md) and landed in the Live2D module — consuming this
+module for its text. See [live2d/TODO.md](../live2d/TODO.md).
+
+The panel's own offscreen-and-capture mode remains what it is.
+
+## Open question left by L2D8
+
+[L2D8](../live2d/.plan/L2D8.md) found that the panel cannot be captured on demand
+in a viewer: `capture.screenshot` belongs to the Scene3D command path, so a
+standalone viewer captures only at startup. That is why `--panel-text`,
+`--panel-dot-color`, `--panel-accent-color`, and `--panel-gradient` exist — a
+capture run has no other way to set what the image should show. Registering a
+host-resolved `capture.screenshot` for viewer modes, the way `window.resize`
+already resolves its window through the host, would remove the need for all four.
 
 ## Open decisions
 

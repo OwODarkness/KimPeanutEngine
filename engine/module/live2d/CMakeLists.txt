@@ -140,9 +140,17 @@ set_property(TARGET Live2DRegistration PROPERTY
 # a shader evaluates -- and is deliberately its own target rather than part of
 # Live2DRender, so the geometry stays testable with no device and no shader.
 add_library(Live2DBubble STATIC
-    bubble/bubble_layout.cpp)
+    bubble/bubble_layout.cpp
+    bubble/bubble_render_contract.cpp
+    bubble/bubble_renderer.cpp)
 target_include_directories(Live2DBubble PUBLIC
+    "${CMAKE_SOURCE_DIR}/engine/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime/core"
     "${CMAKE_CURRENT_SOURCE_DIR}/bubble")
+# Render for the submission types the draws are built into, and Panel for the dot
+# matrix the text arrives as. The direction is the natural one -- a character
+# system using a display -- and the panel stays unaware of this module.
+target_link_libraries(Live2DBubble PUBLIC Render Panel)
 set_property(TARGET Live2DBubble PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
 
@@ -156,7 +164,7 @@ add_library(Live2DModule STATIC
     live2d_viewer_host.cpp)
 target_include_directories(Live2DModule PUBLIC
     "${CMAKE_SOURCE_DIR}/engine")
-target_link_libraries(Live2DModule PUBLIC Live2D
+target_link_libraries(Live2DModule PUBLIC Live2D Live2DBubble
     PRIVATE Live2DImport RuntimeScreenshot EditorUILib KP::ImGui KP::NlohmannJson)
 set_property(TARGET Live2DModule PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")

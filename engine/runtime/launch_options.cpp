@@ -613,15 +613,11 @@ namespace kpengine::runtime
                     return Failure(
                         "--live2d-model is only valid in live2d-viewer mode");
                 }
-                if (has_panel_product && !panel_viewer)
-                {
-                    return Failure("--panel-glyph-product is only valid in "
-                                   "panel-viewer mode");
-                }
-                if (has_panel_text && !panel_viewer)
-                {
-                    return Failure("--panel-text is only valid in panel-viewer mode");
-                }
+                // The glyph product and the text are the panel's content, and the
+                // Live2D viewer's speech bubble is a panel consumer, so both
+                // viewer modes accept them. The panel's own look stays exclusive
+                // below: a bubble has its own appearance, so a panel colour here
+                // would be a mistake rather than a convenience.
                 if (has_panel_dot_color && !panel_viewer)
                 {
                     return Failure(

@@ -122,3 +122,41 @@ target_link_libraries(Live2DBubbleLayoutTest PRIVATE KP::GoogleTest)
 
 include(GoogleTest)
 gtest_discover_tests(Live2DBubbleLayoutTest)
+
+# The bubble's placement and constant packing. Also pure CPU: the pop-in and the
+# aspect correction are arithmetic, and the only thing a device would add is the
+# shader that consumes the result.
+add_executable(Live2DBubbleRenderContractTest
+    bubble_render_contract_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/bubble/bubble_layout.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/bubble/bubble_render_contract.cpp)
+
+target_include_directories(Live2DBubbleRenderContractTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/bubble
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core)
+
+target_link_libraries(Live2DBubbleRenderContractTest PRIVATE KP::GoogleTest)
+
+include(GoogleTest)
+gtest_discover_tests(Live2DBubbleRenderContractTest)
+
+# The bubble renderer against the shared backend test double: no device, no
+# Cubism, so the text swap and the handle lifetime are assertable in CI.
+add_executable(Live2DBubbleRendererTest
+    bubble_renderer_test.cpp)
+
+target_include_directories(Live2DBubbleRendererTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/bubble
+    ${CMAKE_SOURCE_DIR}/engine/module/panel/runtime
+    ${CMAKE_SOURCE_DIR}/engine/test
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+    ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend)
+
+target_link_libraries(Live2DBubbleRendererTest PRIVATE Live2DBubble Panel
+    KP::GoogleTest)
+
+copy_runtime_dependencies(Live2DBubbleRendererTest)
+
+include(GoogleTest)
+gtest_discover_tests(Live2DBubbleRendererTest)

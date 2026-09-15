@@ -12,7 +12,10 @@
 #include "launch_options.h"
 #include "render/frame_context.h"
 #include "render/render_capture_service_internal.h"
+#include "bubble_renderer.h"
+#include "glyph_cell.h"
 #include "module/live2d/render/live2d_renderer.h"
+#include "panel.h"
 #include "runtime/live2d_system.h"
 #include "screenshot/runtime_screenshot_service.h"
 #include "window/window_system.h"
@@ -70,6 +73,18 @@ namespace kpengine::live2d
         // Applies --resize once, outside a frame bracket and before the startup
         // capture is requested, so the exported image reflects the new extent.
         void ApplyPendingResize();
+        // Builds the bubble's draws for this frame, or leaves them empty when
+        // there is no bubble. The tail is aimed at the model through the fitted
+        // bounds the renderer publishes, so nothing Live2D-specific crosses into
+        // the bubble but a direction.
+        void BuildBubbleDraws(const graphics::Extent2D &extent,
+                              std::vector<render::SubmissionDraw> &out);
+        // Requests the startup capture once nothing is still moving: a resize may
+        // be waiting for the target and a bubble for its pop-in, and either alone
+        // would make the exported image a picture of a moment in between.
+        void RequestCaptureWhenSettled();
+        // Advances the pop-in and reports whether it has finished.
+        bool AdvanceBubblePop(float delta_time);
         // Queues the one-shot startup capture named by --capture. Called either
         // during Initialize (no resize pending) or after the resize is applied.
         void RequestStartupCapture();
@@ -80,6 +95,27 @@ namespace kpengine::live2d
         std::vector<std::unique_ptr<render::FrameContext>> frame_contexts_;
         Live2DSystem system_;
         std::unique_ptr<Live2DRenderer> renderer_;
+
+        // The speech bubble, when one is asked for. It is a panel consumer: the
+        // text is a panel's content, and the bubble is the shape around it. None
+        // of this exists unless --panel-text and --panel-glyph-product were both
+        // given, so the viewer without a bubble is byte-for-byte what it was.
+        std::unique_ptr<BubbleRenderer> bubble_;
+        panel::GlyphSet bubble_glyphs_{0u, {}};
+        panel::Panel bubble_panel_{};
+        // The text as dots, built once and kept: the bubble is sized to it and
+        // the texture is uploaded from it, and rebuilding the same matrix every
+        // frame would be work for an answer that does not change.
+        panel::DotMatrix bubble_ink_{0u, 0u};
+        // The bubble's own appearance, which is not the panel's: manga is dark on
+        // light, the opposite of a lit display.
+        BubbleAppearance bubble_appearance_{};
+        BubblePlacement bubble_placement_{};
+        bool bubble_enabled_ = false;
+        bool bubble_placement_logged_ = false;
+        // The pop-in, from nothing to finished. Driven here rather than by the
+        // renderer so the animation is a property of the frame, not of the shape.
+        float bubble_pop_ = 1.0f;
         // shared_ptr keeps the private UI state incomplete in this public host
         // header; ownership remains exclusive to this host.
         std::shared_ptr<Live2DViewerUiState> viewer_ui_;
@@ -101,6 +137,10 @@ namespace kpengine::live2d
         // output target. Bounded by kResizeWaitFrameBudget so a resize that
         // never lands cannot leave the run waiting forever.
         bool capture_waits_for_resize_ = false;
+        // Set while a startup capture is waiting for the bubble's pop-in to
+        // finish. A capture taken mid-pop records a bubble that is still growing,
+        // which is a true image of a moment nobody asked for.
+        bool capture_waits_for_bubble_ = false;
         uint32_t resize_wait_frames_ = 0u;
         uint64_t frame_number_ = 0;
         float elapsed_seconds_ = 0.0f;

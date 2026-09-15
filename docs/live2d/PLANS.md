@@ -423,6 +423,50 @@ Graphics capabilities.
 - **Import Sakura's render graph or I/O stack:** those designs solve Sakura's
   scale and architecture, not the current KimPeanutEngine prerequisite.
 
+## Speech bubble overlay
+
+A manga-style speech bubble belongs to the character: it is positioned relative to
+the model, points at it, and is shown in the model's image. It therefore lives
+beside the character system, and the dependency direction is the natural one — a
+character system using a display, not a display knowing about characters. The
+bubble **consumes the panel module** for its text and nothing consumes the bubble.
+
+**The bubble is drawn; its content is a display.** The outline is a signed
+distance field — a rounded body unioned with a tapering tail — rather than a
+pattern of dots, because a bubble should read as drawn. Only the content inside it
+reads as a matrix: every dot is a cell, lit or not, with a bezel between them, so
+the background is digital too. That takes three colours, the paper, the lit dot and
+the gap, and a grid whose pitch comes from the text's own dot count so characters
+land inside cells rather than across them.
+
+Because the fragment shape provides transparency natively, the mask stays one bit
+per dot: there is no need to distinguish *paper* from *transparent* per dot, and
+the dot matrix's stamping, merge modes, and byte-alignment invariant are untouched.
+
+**The tail is a chain of eight circles** along a quadratic Bezier with tapering
+radii. A chain leaves the body along its edge and comes to a point, which is what
+makes a tail read as drawn rather than extruded, and the shader evaluates it with
+the same distance function it uses for the body.
+
+**The tail aims at the model, and only numbers cross.** `Live2DRenderer` publishes
+where the model was fitted, in the same normalized space the placement is expressed
+in; the host turns that into a direction and hands the bubble a direction, not a
+Live2D type.
+
+**Appended to the model's pass, never a pass of its own.** Both backends re-apply
+the target's `load_op` clear on every pass begin, so a second pass into the same
+target erases the model — which validates cleanly and yields an image containing
+only the bubble. `Live2DRenderer::Record` accepts generic extra draws and appends
+them to the pass the planner pushes last; nothing about the bubble crosses in.
+
+**Placement is a matrix, not a viewport.** OpenGL measures a viewport's `y` from
+the bottom and Vulkan from the top, agreeing only for a full-extent viewport at
+`y == 0`. A sub-rect placed by viewport would be vertically mirrored across
+backends. The pop-in rides the same matrix, so the shape is always drawn finished
+and the transform does the growing, keeping its proportions exact at every frame.
+
+Stage design: [.plan/L2D8.md](.plan/L2D8.md).
+
 ## Long-term stages after V1
 
 After the viewer/render baseline is correct, later work can add:

@@ -191,10 +191,13 @@ namespace kpengine
                 throw std::runtime_error(
                     "Panel glyph product must be set before Engine::Initialize");
             }
-            if (application_mode_ != ApplicationMode::PanelViewer)
+            // Both viewer modes accept it: the panel renders it, and the Live2D
+            // viewer's speech bubble uses it as its text.
+            if (application_mode_ != ApplicationMode::PanelViewer &&
+                application_mode_ != ApplicationMode::Live2DViewer)
             {
                 throw std::runtime_error(
-                    "Panel glyph product is only valid in panel-viewer mode");
+                    "Panel glyph product is only valid in a viewer mode");
             }
             panel_glyph_product_ = std::move(asset_relative_path);
         }
@@ -206,10 +209,12 @@ namespace kpengine
                 throw std::runtime_error(
                     "Panel text must be set before Engine::Initialize");
             }
-            if (application_mode_ != ApplicationMode::PanelViewer)
+            // Both viewer modes accept it, for the same reason the glyph product
+            // does: a bubble's content is a panel's content.
+            if (application_mode_ != ApplicationMode::PanelViewer &&
+                application_mode_ != ApplicationMode::Live2DViewer)
             {
-                throw std::runtime_error(
-                    "Panel text is only valid in panel-viewer mode");
+                throw std::runtime_error("Panel text is only valid in a viewer mode");
             }
             panel_text_ = std::move(text);
         }

@@ -286,6 +286,23 @@
   dependency audit finds no L2D7 semantic branch in Asset, Render, Graphics,
   Editor, Audio, or TTS.
 
+## L2D8 — speech bubble overlay
+
+- [x] **L2D8 — a manga speech bubble for the character** ([plan](.plan/L2D8.md)):
+  a bubble that hugs its text, carries a tail aimed at the model's fitted bounds,
+  pops in when its text is set, and appears in the same image as the model. Its
+  outline is a signed distance field rather than a dot pattern, and its interior is
+  a cell-and-bezel grid so its background reads as a display too. The bubble
+  consumes the panel module for its text; nothing consumes the bubble.
+  → [L2D8 journal](../../.spec/journal/2026-09-15-live2d-l2d8.md)
+- [ ] Attach the bubble to a point on the model rather than a fixed 2D position;
+  this needs hit areas, which is the L2D7 surface.
+- [ ] Make the bubble's appearance settable at run time, as the panel's already is.
+- [ ] **Test the viewer host's frame loop.** Three defects in this feature lived in
+  the host, which has no test: a data race, a mask that was never re-uploaded, and
+  a shutdown crash that also destroyed its own log. The fake-backend renderer test
+  cannot see cleanup ordering, which is what the third one was.
+
 ## L2D4 planning decisions and remaining gates
 
 - [x] Live2D owns registered custom type value `0x1000`; Asset contains no

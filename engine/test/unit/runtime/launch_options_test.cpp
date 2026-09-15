@@ -368,10 +368,20 @@ TEST(RuntimeLaunchOptionsTest, ParsesPanelGlyphProductAndRestrictsItToPanelViewe
     EXPECT_FALSE(in_scene);
     EXPECT_NE(in_scene.diagnostic.find("--panel-glyph-product"), std::string::npos);
 
+    // Both viewer modes accept the content options, because the Live2D viewer's
+    // speech bubble is a panel consumer and its text is the panel's text.
     const auto in_live2d = Parse({"--mode", "live2d-viewer", "--panel-glyph-product",
-                                  "panel/glyphs-16.kppnlgl"});
-    EXPECT_FALSE(in_live2d);
-    EXPECT_NE(in_live2d.diagnostic.find("--panel-glyph-product"), std::string::npos);
+                                  "panel/glyphs-16.kppnlgl", "--panel-text", "OvO"});
+    ASSERT_TRUE(in_live2d) << in_live2d.diagnostic;
+    EXPECT_TRUE(in_live2d.options.panel_glyph_product.has_value());
+    EXPECT_TRUE(in_live2d.options.panel_text.has_value());
+
+    // The panel's own look stays exclusive: a bubble has its own appearance, so
+    // a panel colour in this mode would be a mistake rather than a convenience.
+    const auto look_in_live2d =
+        Parse({"--mode", "live2d-viewer", "--panel-dot-color", "#FFB000"});
+    EXPECT_FALSE(look_in_live2d);
+    EXPECT_NE(look_in_live2d.diagnostic.find("--panel-dot-color"), std::string::npos);
 
     const auto live2d_in_panel =
         Parse({"--mode", "panel-viewer", "--live2d-model", "live2d/mao/mao.live2d"});
