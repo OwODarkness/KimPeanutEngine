@@ -199,4 +199,100 @@ namespace kpengine::panel
         EXPECT_TRUE(panel.CodepointsAt(0u).empty());
         ExpectRowsClear(matrix, 0u, PanelDotHeight(2u) - 1u);
     }
+
+    TEST(PanelTest, SetTextAtPlacesTheRowAtTheGivenColumn)
+    {
+        Panel panel(4u, 1u); // 64 dots, so column 3 starts at dot 24
+        panel.SetTextAt(0u, 3u, kFirstUtf8);
+
+        ASSERT_EQ(panel.OriginAt(0u), 3u);
+        const DotMatrix matrix = panel.Rebuild(TwoFullwidthGlyphs());
+
+        ExpectRegionClear(matrix, 0u, 23u, 0u, kGlyphRows - 1u);
+        ExpectRegionSet(matrix, 24u, 39u, 0u, kGlyphRows - 1u);
+        ExpectRegionClear(matrix, 40u, 63u, 0u, kGlyphRows - 1u);
+    }
+
+    TEST(PanelTest, ColumnZeroIsTheSameAsTheUnalignedSetText)
+    {
+        Panel at_origin(2u, 1u);
+        at_origin.SetTextAt(0u, 0u, kFirstAndSecondUtf8);
+
+        Panel plain(2u, 1u);
+        plain.SetText(0u, kFirstAndSecondUtf8);
+
+        EXPECT_EQ(at_origin.Rebuild(TwoFullwidthGlyphs()),
+                  plain.Rebuild(TwoFullwidthGlyphs()));
+        EXPECT_EQ(at_origin.OriginAt(0u), 0u);
+    }
+
+    TEST(PanelTest, AnOriginNearTheRightEdgeClipsInsteadOfWrapping)
+    {
+        Panel panel(2u, 2u);
+        panel.SetTextAt(0u, 1u, kFirstAndSecondUtf8);
+
+        const DotMatrix matrix = panel.Rebuild(TwoFullwidthGlyphs());
+
+        // The first character fits at dot 8; the second would end at dot 40.
+        ExpectRegionClear(matrix, 0u, 7u, 0u, kGlyphRows - 1u);
+        ExpectRegionSet(matrix, 8u, 23u, 0u, kGlyphRows - 1u);
+        ExpectRegionClear(matrix, 24u, 31u, 0u, kGlyphRows - 1u);
+        // Clipped, not wrapped onto the row below.
+        ExpectRowsClear(matrix, kGlyphRows, PanelDotHeight(2u) - 1u);
+    }
+
+    TEST(PanelTest, AnOriginPastTheRightEdgeDrawsNothing)
+    {
+        const GlyphSet glyphs = TwoFullwidthGlyphs();
+
+        // A 32-dot row holds four halfwidth steps, so column 4 is the first
+        // that cannot fit a character and column 5 is past the edge entirely.
+        Panel at_edge(2u, 1u);
+        at_edge.SetTextAt(0u, 4u, kFirstUtf8);
+        ExpectRowsClear(at_edge.Rebuild(glyphs), 0u, kGlyphRows - 1u);
+
+        Panel past_edge(2u, 1u);
+        past_edge.SetTextAt(0u, 5u, kFirstUtf8);
+        ExpectRowsClear(past_edge.Rebuild(glyphs), 0u, kGlyphRows - 1u);
+    }
+
+    TEST(PanelTest, AnAbsurdOriginCannotOverflowTheCursor)
+    {
+        // The origin is compared against the panel width before it is scaled,
+        // so the largest representable value is rejected rather than wrapped.
+        Panel panel(2u, 1u);
+        panel.SetTextAt(0u, 0xFFFFFFFFu, kFirstUtf8);
+
+        ExpectRowsClear(panel.Rebuild(TwoFullwidthGlyphs()), 0u, kGlyphRows - 1u);
+        EXPECT_EQ(panel.OriginAt(0u), 0xFFFFFFFFu);
+    }
+
+    TEST(PanelTest, OriginIsReportedAndResetByClear)
+    {
+        Panel panel(2u, 1u);
+        EXPECT_EQ(panel.OriginAt(0u), 0u);
+
+        panel.SetTextAt(0u, 2u, kFirstUtf8);
+        EXPECT_EQ(panel.OriginAt(0u), 2u);
+        EXPECT_EQ(panel.OriginAt(7u), 0u); // outside the panel
+
+        // Clearing the panel empties the content, so a stale origin would be
+        // the only state left behind.
+        panel.Clear();
+        EXPECT_EQ(panel.OriginAt(0u), 0u);
+    }
+
+    TEST(PanelTest, AnOriginCentresThreeHalfwidthCharacters)
+    {
+        // 64 dots with 24 dots of text leaves 40, so the centred origin is
+        // 20 dots -- which rounds to 2 whole halfwidth steps.
+        Panel panel(4u, 1u);
+        panel.SetTextAt(0u, 2u, "ABC");
+
+        const DotMatrix matrix = panel.Rebuild(ThreeHalfwidthGlyphs());
+
+        ExpectRegionClear(matrix, 0u, 15u, 0u, kGlyphRows - 1u);
+        ExpectRegionSet(matrix, 16u, 39u, 0u, kGlyphRows - 1u);
+        ExpectRegionClear(matrix, 40u, 63u, 0u, kGlyphRows - 1u);
+    }
 }

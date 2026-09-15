@@ -38,10 +38,25 @@ namespace kpengine::panel
 
         void Clear() noexcept;
 
-        // Replaces one row. Content wider than the panel is clipped at the
-        // right edge rather than wrapped, so an overflowing string cannot
-        // overwrite the row beneath it. A row outside the panel is ignored.
+        // Replaces one row, laid out from the left edge.
         void SetText(std::uint32_t row, std::string_view utf8);
+
+        // Replaces one row, laid out from `column` so a caller can centre or
+        // indent without a second content model.
+        //
+        // `column` is measured in halfwidth steps -- one 8-dot character -- and
+        // not in dots. The unit is fixed by the byte-alignment invariant: a
+        // stamp at a dot offset that is not a multiple of 8 is ignored, so
+        // taking raw dots here would let a caller silently draw nothing. Every
+        // value of this unit is therefore representable.
+        //
+        // An origin past the panel edge draws nothing rather than wrapping onto
+        // the row below. A row outside the panel is ignored.
+        void SetTextAt(std::uint32_t row, std::uint32_t column,
+                       std::string_view utf8);
+
+        // The column SetTextAt was given, in halfwidth steps.
+        std::uint32_t OriginAt(std::uint32_t row) const noexcept;
 
         // The row's decoded codepoints; empty for a row outside the panel.
         const std::u32string &CodepointsAt(std::uint32_t row) const noexcept;
@@ -51,9 +66,15 @@ namespace kpengine::panel
         DotMatrix Rebuild(const GlyphSet &glyphs) const;
 
     private:
+        struct Line final
+        {
+            std::u32string codepoints;
+            std::uint32_t origin = 0u;
+        };
+
         std::uint32_t columns_ = 0u;
         std::uint32_t rows_ = 0u;
-        std::vector<std::u32string> lines_;
+        std::vector<Line> lines_;
     };
 }
 
