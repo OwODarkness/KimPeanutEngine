@@ -1,6 +1,6 @@
 # Asset Browser TODO
 
-**Status: AB1.0–AB1.2a implemented; AB1.2b active.** [AB1.2b](.plan/AB1.2b.md) completes the icon-first visual browser milestone. Architecture is in [PLANS.md](PLANS.md). AB1.3–AB1.4 remain proposed. Parent work remains in [Asset Module TODO](../TODO.md).
+**Status: AB1.0–AB1.2b implemented; AB1.2 active.** [AB1.2b](.plan/AB1.2b.md) completes the icon-first visual browser milestone. Architecture is in [PLANS.md](PLANS.md). AB1.3–AB1.4 remain proposed. Parent work remains in [Asset Module TODO](../TODO.md).
 
 ## AB1 — Read-only Asset Browser and Reference Viewer
 
@@ -26,12 +26,12 @@
 
 - [ ] **[AB1.2 — Implement the Asset Browser](.plan/AB1.2.md).**
 
-  - [ ] **Prerequisite: [AB1.2a — Imported Content Metadata and Catalog Boundary](.plan/AB1.2a.md).**
+  - [x] **Prerequisite: [AB1.2a — Imported Content Metadata and Catalog Boundary](.plan/AB1.2a.md).** → [journal](../../../.spec/journal/2026-09-16-asset-ab1-2a.md)
     Define content as the browser root, generated metadata records,
     ContentID references, product-hash details, internal shader visibility,
     and the import/startup isolation gates before changing the UI projection.
 
-  - [ ] **Visual substage: [AB1.2b — Visual Tile Presentation](.plan/AB1.2b.md).**
+  - [x] **Visual substage: [AB1.2b — Visual Tile Presentation](.plan/AB1.2b.md).** → [journal](../../../.spec/journal/2026-09-16-asset-ab1-2b.md)
 
   - [ ] Add one Editor-owned model consuming only imported-content snapshots.
   - [ ] Register the browser as a tab in the Editor tool row (ED1) with navigation,

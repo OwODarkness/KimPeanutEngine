@@ -135,6 +135,26 @@ TEST(AssetBrowserModelTest, ANullSourceIsAnUnavailableStateNotACrash)
     EXPECT_TRUE(model.Diagnostic().empty());
 }
 
+TEST(AssetBrowserModelTest, OpensInCompactTilesWithoutChangingTheCatalogProjection)
+{
+    FakeSource source = MixedSource();
+    AssetBrowserModel model;
+    model.SetSource(&source);
+    ASSERT_TRUE(model.Refresh());
+
+    EXPECT_EQ(model.Presentation(), AssetBrowserPresentation::CompactTiles);
+    const std::vector<std::string> before = NamesOf(model);
+
+    model.SetPresentation(AssetBrowserPresentation::Table);
+    EXPECT_EQ(model.Presentation(), AssetBrowserPresentation::Table);
+    EXPECT_EQ(NamesOf(model), before);
+
+    model.SetPresentation(AssetBrowserPresentation::CompactTiles);
+    EXPECT_EQ(model.Presentation(), AssetBrowserPresentation::CompactTiles);
+    EXPECT_EQ(NamesOf(model), before);
+    EXPECT_EQ(source.calls, 1);
+}
+
 TEST(AssetBrowserModelTest, RefreshCapturesOnceAndAFrameDoesNotCaptureAtAll)
 {
     // The plan's rule: a refresh happens at promotion or on request, and never because a

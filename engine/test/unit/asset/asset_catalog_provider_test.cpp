@@ -18,6 +18,7 @@
 #include "asset/asset_manager.h"
 #include "asset/asset_payload.h"
 #include "asset/common.h"
+#include "asset/content_metadata.h"
 #include "asset/mesh.h"
 #include "asset/utility.h"
 #include "config/path.h"
@@ -36,10 +37,12 @@ namespace
     using kpengine::asset::AssetCatalogSnapshotProvider;
     using kpengine::asset::AssetCatalogSnapshotStatus;
     using kpengine::asset::AssetID;
+    using kpengine::asset::ArchiveProductType;
     using kpengine::asset::AssetManager;
     using kpengine::asset::AssetRegisterInfo;
     using kpengine::asset::AssetType;
     using kpengine::asset::AssetTypeDescriptor;
+    using kpengine::asset::ContentHash;
     using kpengine::asset::IAssetCatalogSnapshotSource;
     using kpengine::asset::MeshResource;
 
@@ -92,6 +95,8 @@ namespace
         {
             return root_ / ".archive" / "archive.sqlite3";
         }
+
+        const std::filesystem::path &Root() const noexcept { return root_; }
 
     private:
         std::filesystem::path root_;
@@ -226,6 +231,79 @@ namespace
 
         ExpectValidSnapshot(snapshot);
         EXPECT_GT(snapshot.revision, 0u);
+    }
+
+    TEST(AssetCatalogProviderTest, MetadataProjectionReplacesTheLegacyProductGraph)
+    {
+        TemporaryArchive archive;
+        const std::filesystem::path content_root = archive.Root() / "content";
+        const std::filesystem::path content_archive = content_root / ".archive";
+        const ContentHash product_hash = kpengine::asset::Sha256("content model");
+        const std::filesystem::path product_path =
+            content_archive / kpengine::asset::ProductRelativePath(
+                                  kpengine::asset::ArchiveProductType::Model, product_hash);
+        std::error_code error;
+        std::filesystem::create_directories(product_path.parent_path(), error);
+        ASSERT_FALSE(error) << error.message();
+        {
+            std::ofstream product(product_path, std::ios::binary);
+            ASSERT_TRUE(product.is_open());
+            product << "content model";
+        }
+
+        kpengine::asset::ContentMetadata metadata;
+        metadata.id = kpengine::asset::ContentID("content-model-id");
+        metadata.asset_type = AssetType::KPAT_Model;
+        metadata.type_name = "model";
+        metadata.name = "Model_Content";
+        metadata.content_path = "model/content";
+        metadata.products.push_back({ArchiveProductType::Model, product_hash});
+        std::string metadata_diagnostic;
+        ASSERT_TRUE(kpengine::asset::WriteContentMetadata(
+            content_root, metadata, &metadata_diagnostic))
+            << metadata_diagnostic;
+
+        AssetCatalogProviderConfig config;
+        config.content_root = content_root;
+        AssetCatalogSnapshotProvider provider(AssetManager::GetInstance(), config);
+
+        const AssetCatalogSnapshot snapshot = provider.CaptureAssetCatalog();
+        ExpectValidSnapshot(snapshot);
+        ASSERT_EQ(snapshot.nodes.size(), 1u);
+        EXPECT_EQ(snapshot.nodes.front().content_id, "content-model-id");
+        EXPECT_EQ(snapshot.nodes.front().stable_key,
+                  kpengine::asset::MakeContentCatalogKey("content-model-id"));
+        EXPECT_EQ(snapshot.nodes.front().display_name, "Model_Content");
+        EXPECT_EQ(snapshot.nodes.front().logical_path, "model/content");
+        EXPECT_EQ(snapshot.nodes.front().content_hash, product_hash);
+        EXPECT_TRUE(snapshot.edges.empty());
+    }
+
+    TEST(AssetCatalogProviderTest, ExistingEmptyContentRootSuppressesLegacyRows)
+    {
+        ASSERT_TRUE(EnsureProbeType());
+
+        TemporaryArchive archive;
+        const std::filesystem::path content_root = archive.Root() / "content";
+        std::error_code error;
+        std::filesystem::create_directories(content_root, error);
+        ASSERT_FALSE(error) << error.message();
+
+        const AssetID probe = AssetManager::GetInstance().LoadSync(ProbeFilePath());
+        ASSERT_TRUE(probe.IsValid());
+
+        AssetCatalogProviderConfig config;
+        config.database_path = archive.DatabasePath();
+        config.content_root = content_root;
+        AssetCatalogSnapshotProvider provider(AssetManager::GetInstance(), config);
+
+        const AssetCatalogSnapshot snapshot = provider.CaptureAssetCatalog();
+        ExpectValidSnapshot(snapshot);
+        EXPECT_TRUE(snapshot.nodes.empty());
+        EXPECT_TRUE(snapshot.edges.empty());
+        EXPECT_EQ(snapshot.status, AssetCatalogSnapshotStatus::Complete);
+
+        AssetManager::GetInstance().UnRegisterAsset(probe);
     }
 
     TEST(AssetCatalogProviderTest, LiveAssetsAreCopiedWithoutPayloadDataCrossingTheContract)

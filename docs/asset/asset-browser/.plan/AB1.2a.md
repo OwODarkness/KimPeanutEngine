@@ -1,6 +1,6 @@
 # AB1.2a — Imported Content Metadata and Catalog Boundary
 
-- Status: proposed prerequisite for [AB1.2 Asset Browser](AB1.2.md)
+- Status: implemented prerequisite for [AB1.2 Asset Browser](AB1.2.md)
 - Parent design: [Asset Browser Plans](../PLANS.md)
 - Roadmap: [Asset Browser TODO](../TODO.md)
 - Prerequisite: [AB1.1 Asset catalog snapshot provider](AB1.1.md)
@@ -40,8 +40,11 @@ through the raw `asset/` tree and does not expose `.archive/`. Existing raw
 directories remain valid during migration; moving them is outside this stage.
 
 The content directory is isolated from raw Asset input and is the browser's
-only namespace. Metadata is generated and Asset-owned. Shader source is
-user-facing content storage but has an internal browser-visibility policy.
+only namespace once it exists. Metadata is generated and Asset-owned. Shader
+source is user-facing content storage but has an internal browser-visibility
+policy. During migration, projects without a content directory retain the
+AB1.1 archive/live projection; creating the content directory switches the
+provider to the content namespace, including the empty-content case.
 The content/.archive directory is generated compiler/archive data and must be
 ignored by source control and excluded from every content enumeration. The
 current asset/shader/cache compiler-cache path is legacy; moving it to
@@ -184,6 +187,20 @@ records can remain attached as details and as an internal graph layer.
    and product-hash changes.
 6. Only after this stage passes, revise AB1.2's Editor model and component to
    browse `content/` as a folder tree.
+
+## Implemented boundary
+
+`ContentRegistry::Capture()` is explicit and read-only. The provider builds a
+value-only content snapshot from visible, ready metadata records, validates
+the archive product closure by file existence, carries persistent ContentIDs
+and product hashes into catalog nodes, and turns unresolved ContentID
+references into validated diagnostic leaves. Internal records and shader
+records are filtered before publication. No Runtime startup path constructs or
+captures this registry.
+
+The provider keeps the AB1.1 projection only for projects that do not yet have
+a `content/` directory. This preserves existing checkouts during migration;
+the authoritative content mode never falls back to raw archive/live rows.
 
 ## Acceptance criteria
 

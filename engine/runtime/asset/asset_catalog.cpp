@@ -636,6 +636,14 @@ namespace kpengine::asset
         return key;
     }
 
+    std::string MakeContentCatalogKey(std::string_view content_id)
+    {
+        std::string key(kAssetCatalogKeyPrefix);
+        key += "content/";
+        key += content_id;
+        return key;
+    }
+
     std::string MakeRuntimePathCatalogKey(AssetType type,
                                           std::string_view canonical_path_key)
     {

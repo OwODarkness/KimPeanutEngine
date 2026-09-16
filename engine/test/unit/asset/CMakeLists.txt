@@ -205,3 +205,19 @@ target_link_libraries(ContentMetadataTest PRIVATE AssetContent Config KP::Google
 
 include(GoogleTest)
 gtest_discover_tests(ContentMetadataTest)
+
+add_executable(
+    ContentCatalogBuilderTest
+    content_catalog_builder_test.cpp
+)
+
+target_link_libraries(ContentCatalogBuilderTest PRIVATE AssetRuntime Config KP::GoogleTest)
+
+add_custom_command(TARGET ContentCatalogBuilderTest POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        ${CMAKE_SOURCE_DIR}/third_party/assimp/bin/assimp-vc143-mt.dll
+        $<TARGET_FILE_DIR:ContentCatalogBuilderTest>
+)
+
+include(GoogleTest)
+gtest_discover_tests(ContentCatalogBuilderTest)

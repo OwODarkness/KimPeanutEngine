@@ -6,8 +6,10 @@
 #include <utility>
 
 #include "asset/detail/asset_catalog_builder.h"
+#include "asset/detail/content_catalog_builder.h"
 #include "asset_manager.h"
 #include "config/path.h"
+#include "content_metadata.h"
 
 namespace kpengine::asset
 {
@@ -130,11 +132,30 @@ namespace kpengine::asset
         input.limits.max_diagnostics = config_.limits.max_diagnostics;
         input.asset_root = std::filesystem::path(GetAssetDirectory());
 
+        const std::filesystem::path content_root =
+            config_.content_root.empty() ? std::filesystem::path(GetContentDirectory())
+                                         : config_.content_root;
+        const ContentRegistrySnapshot content = ContentRegistry(content_root).Capture();
+
         const std::filesystem::path database_path =
             config_.database_path.empty()
-                ? std::filesystem::path(GetRuntimeArchiveDirectory()) / "archive.sqlite3"
+                ? (content.content_root_exists
+                       ? content_root / ".archive" / "archive.sqlite3"
+                       : std::filesystem::path(GetRuntimeArchiveDirectory()) / "archive.sqlite3")
                 : config_.database_path;
         input.archive_root = database_path.parent_path();
+
+        if (content.content_root_exists)
+        {
+            detail::ContentCatalogBuildInput content_input;
+            content_input.revision = revision;
+            content_input.archive_root = input.archive_root;
+            content_input.registry = &content;
+            content_input.limits.max_nodes = config_.limits.max_nodes;
+            content_input.limits.max_edges = config_.limits.max_edges;
+            content_input.limits.max_diagnostics = config_.limits.max_diagnostics;
+            return detail::BuildContentAssetCatalog(content_input);
+        }
 
         // Phase 1: one read-only connection and one read transaction, taken
         // without any Asset lock and closed before the live copy begins.

@@ -36,6 +36,9 @@ namespace kpengine::asset
         std::filesystem::path database_path;
         std::int32_t busy_timeout_ms{50};
         AssetCatalogCaptureLimits limits;
+        // Empty selects <project>/content. The directory is inspected only when
+        // CaptureAssetCatalog() is called, never while RuntimeContext starts.
+        std::filesystem::path content_root;
     };
 
     // Asset-owned implementation of the catalog provider boundary. It borrows

@@ -1,11 +1,12 @@
 #pragma once
 
 #include "asset_product.h"
+#include "common.h"
 
 #include <filesystem>
 #include <string>
-#include <vector>
 #include <utility>
+#include <vector>
 
 namespace kpengine::asset
 {
@@ -72,6 +73,10 @@ struct ContentMetadata
 {
     int schema_version = 1;
     ContentID id;
+    // The readable name is authoritative in the content namespace. This numeric
+    // value lets the catalog preserve registered/custom Asset types without
+    // interpreting the user-facing string as identity.
+    AssetType asset_type = AssetType::Undefined;
     std::string type_name;
     std::string name;
     // A project-relative path without the .kpmeta suffix.
@@ -98,6 +103,8 @@ struct ContentRegistrySnapshot
 {
     std::vector<ContentMetadata> records;
     std::vector<std::string> diagnostics;
+    bool content_root_exists = false;
+    bool has_metadata_files = false;
 };
 
 class ContentRegistry

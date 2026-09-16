@@ -105,6 +105,9 @@ namespace kpengine::asset
         // Registered descriptor name, so custom types need no central switch.
         std::string type_name;
         std::string display_name;
+        // Persistent logical identity when this row came from imported content.
+        // Empty for legacy archive/live rows and runtime-only objects.
+        std::string content_id;
         std::string logical_path;
         std::string product_path;
         AssetCatalogAvailability availability{AssetCatalogAvailability::RuntimeOnly};
@@ -212,11 +215,13 @@ namespace kpengine::asset
     // tests; decimal fields never carry leading zeroes.
     //
     //   asset-catalog-v1/product/<type-decimal>/<lowercase-hash>
+    //   asset-catalog-v1/content/<persistent-content-id>
     //   asset-catalog-v1/path/<type-decimal>/<canonical-path-key>
     //   asset-catalog-v1/runtime/<packed-id-as-16-lowercase-hex>
     //   asset-catalog-v1/missing/<sha256-owner-key>/<relation>/<ordinal>/<type>
     std::string MakeArchiveProductCatalogKey(ArchiveProductType type,
                                              const ContentHash &hash);
+    std::string MakeContentCatalogKey(std::string_view content_id);
     std::string MakeRuntimePathCatalogKey(AssetType type,
                                           std::string_view canonical_path_key);
     std::string MakeRuntimeIdentityCatalogKey(AssetID id);

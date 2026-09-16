@@ -28,6 +28,7 @@ add_library(AssetContent STATIC
 target_include_directories(AssetContent PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/..
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
+    ${CMAKE_CURRENT_SOURCE_DIR}/../core
 )
 target_link_libraries(AssetContent PUBLIC AssetProduct PRIVATE KP::NlohmannJson)
 
@@ -64,6 +65,7 @@ add_library(AssetRuntime STATIC
     asset_catalog.cpp
     asset_catalog_snapshot_provider.cpp
     detail/asset_catalog_builder.cpp
+    detail/content_catalog_builder.cpp
     asset_manager.cpp
     asset_type_registry.cpp
     asset_load_observation.cpp

@@ -1,6 +1,6 @@
 # AB1.2b — Asset Browser Visual Tile Presentation
 
-- Status: active
+- Status: implemented
 - Parent design: [Asset Browser Plans](../PLANS.md)
 - Roadmap: [Asset Browser TODO](../TODO.md)
 - Prerequisite: [AB1.2 — Asset Browser Window and Editor Composition](AB1.2.md)
@@ -10,8 +10,9 @@
 
 Make the Asset Browser a recognizable visual Editor tool rather than a text
 list. The default presentation is an icon-first tile grid showing imported
-logical assets with readable names, type labels, and state labels. Table mode
-remains available for dense inspection and diagnostics.
+logical assets with readable names. Table mode and the details pane remain
+available for type, state, size, path, and diagnostics; the tile surface stays
+compact as requested by the editor workflow.
 
 AB1.2b completes the first usable visual browser milestone. It does not add
 thumbnails, asset mutation, drag/drop into other tools, or reference traversal.
@@ -33,9 +34,10 @@ handle for this stage.
 Each tile contains, in order:
 
 1. a centered 40–56 px primitive icon or type badge;
-2. a readable, clipped display name;
-3. readable type text;
-4. state text and size when known.
+2. a readable, clipped display name.
+
+Type, state, size, and path are intentionally kept out of the tile surface and
+remain available in Table mode and the selected-details pane.
 
 The tile is selectable as one stable-key item. Selected state is visible from
 the tile background/border and is never conveyed by color alone. Folder items
@@ -79,22 +81,23 @@ AB1.2b must not make an internal product visible merely because it has an icon.
   contract level; use ImDrawList primitives only in the ImGui translation.
 - Make Compact Tiles the initial presentation while retaining the Table toggle.
 - Show derived content folders for the normal imported-content projection.
-- Add pure helper tests for icon-kind mapping or stable presentation defaults
-  only if the helper becomes separate from the ImGui component.
+- Add a model regression test for the stable Compact Tiles default and ensure
+  switching presentation does not recapture or rebuild the catalog.
 - Add Editor startup visual evidence after the tile grid is wired to the test
   level; Sponza is not required for this stage.
 
 ## Acceptance criteria
 
-- [ ] Opening Asset Browser shows icon-first tiles by default.
-- [ ] Every visible asset tile has an icon, readable name, type, and state.
-- [ ] Model/material/texture/level and unknown custom types have deterministic
+- [x] Opening Asset Browser shows icon-first tiles by default.
+- [x] Every visible asset tile has an icon and readable name; type/state/size
+  remain available in Table mode and details.
+- [x] Model/material/texture/level and unknown custom types have deterministic
   primitive fallback icons without Asset or Runtime changes.
-- [ ] Folder navigation is visible for the imported-content projection.
-- [ ] Tile rows are clipped and selection follows the existing stable-key model.
-- [ ] Table mode, search, filters, refresh, menu visibility, and docking remain
+- [x] Folder navigation is visible for the imported-content projection.
+- [x] Tile rows are clipped and selection follows the existing stable-key model.
+- [x] Table mode, search, filters, refresh, menu visibility, and docking remain
   functional.
-- [ ] No thumbnails, asset loading, importing, mutation, or direct SQLite/Asset
+- [x] No thumbnails, asset loading, importing, mutation, or direct SQLite/Asset
   access is introduced.
 
 ## Validation

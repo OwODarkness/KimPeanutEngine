@@ -86,6 +86,7 @@ Json ToJson(const ContentMetadata& metadata)
     return {
         {"schema_version", metadata.schema_version},
         {"id", metadata.id.ToString()},
+        {"asset_type", static_cast<std::uint16_t>(metadata.asset_type)},
         {"type", metadata.type_name},
         {"name", metadata.name},
         {"content_path", metadata.content_path},
@@ -103,6 +104,8 @@ bool FromJson(const Json& json, ContentMetadata& metadata, std::string* diagnost
     {
         metadata.schema_version = json.value("schema_version", 1);
         metadata.id = ContentID(json.at("id").get<std::string>());
+        metadata.asset_type = static_cast<AssetType>(
+            json.value("asset_type", static_cast<std::uint16_t>(AssetType::Undefined)));
         metadata.type_name = json.at("type").get<std::string>();
         metadata.name = json.at("name").get<std::string>();
         metadata.content_path = json.at("content_path").get<std::string>();
@@ -254,7 +257,13 @@ ContentRegistrySnapshot ContentRegistry::Capture() const
 {
     ContentRegistrySnapshot snapshot;
     std::error_code error;
-    if (!std::filesystem::exists(content_root_, error)) return snapshot;
+    snapshot.content_root_exists = std::filesystem::exists(content_root_, error);
+    if (error)
+    {
+        snapshot.diagnostics.push_back(content_root_.string() + ": " + error.message());
+        return snapshot;
+    }
+    if (!snapshot.content_root_exists) return snapshot;
 
     std::filesystem::recursive_directory_iterator iterator(content_root_, error);
     const std::filesystem::recursive_directory_iterator end;
@@ -267,17 +276,42 @@ ContentRegistrySnapshot ContentRegistry::Capture() const
         }
         else if (!error && iterator->is_regular_file(error) && current.extension() == ".kpmeta")
         {
+            snapshot.has_metadata_files = true;
             ContentMetadata metadata;
             std::string diagnostic;
-            if (ReadContentMetadata(current, metadata, &diagnostic)) snapshot.records.push_back(std::move(metadata));
-            else snapshot.diagnostics.push_back(current.string() + ": " + diagnostic);
+            if (ReadContentMetadata(current, metadata, &diagnostic))
+            {
+                snapshot.records.push_back(std::move(metadata));
+            }
+            else
+            {
+                snapshot.diagnostics.push_back(current.string() + ": " + diagnostic);
+            }
         }
         iterator.increment(error);
     }
 
-    std::sort(snapshot.records.begin(), snapshot.records.end(), [](const ContentMetadata& lhs, const ContentMetadata& rhs) {
-        return lhs.content_path < rhs.content_path;
-    });
+    std::sort(snapshot.records.begin(), snapshot.records.end(),
+              [](const ContentMetadata &lhs, const ContentMetadata &rhs)
+              {
+                  if (lhs.content_path != rhs.content_path)
+                  {
+                      return lhs.content_path < rhs.content_path;
+                  }
+                  return lhs.id < rhs.id;
+              });
+    for (std::size_t index = 0; index < snapshot.records.size(); ++index)
+    {
+        const ContentMetadata &record = snapshot.records[index];
+        if (index > 0 && snapshot.records[index - 1].content_path == record.content_path)
+        {
+            snapshot.diagnostics.push_back("duplicate content path: " + record.content_path);
+        }
+        if (index > 0 && snapshot.records[index - 1].id == record.id)
+        {
+            snapshot.diagnostics.push_back("duplicate ContentID: " + record.id.ToString());
+        }
+    }
     if (error) snapshot.diagnostics.push_back(content_root_.string() + ": " + error.message());
     return snapshot;
 }
