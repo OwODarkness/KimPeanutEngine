@@ -65,6 +65,23 @@ target_link_libraries(EditorToolRowModelUnitTest PRIVATE
 include(GoogleTest)
 gtest_discover_tests(EditorToolRowModelUnitTest)
 
+add_executable(EditorPanelCommandProviderUnitTest
+    editor_panel_command_provider_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/ui/editor_panel_command_provider.cpp
+)
+
+target_include_directories(EditorPanelCommandProviderUnitTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine
+)
+
+target_link_libraries(EditorPanelCommandProviderUnitTest PRIVATE
+    RuntimeCommand
+    KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(EditorPanelCommandProviderUnitTest)
+
 # The layout model is ImGui-free by design, so this target links no ImGui and compiles
 # the model source directly. If it ever starts pulling imgui.h, the layering has been
 # broken and this build will say so.

@@ -77,6 +77,7 @@ namespace kpengine::editor
         {
             active.reset();
         }
+        focus_request_.reset();
     }
 
     std::size_t EditorToolRowModel::GetEntryCount() const noexcept
@@ -132,6 +133,10 @@ namespace kpengine::editor
             return;
         }
         entry->visibility.SetOpen(open);
+        if (!open && focus_request_.has_value() && *focus_request_ == index)
+        {
+            focus_request_.reset();
+        }
         ReconcileActive();
     }
 
@@ -167,6 +172,66 @@ namespace kpengine::editor
         {
             SetOpen(*index, open);
         }
+    }
+
+    bool EditorToolRowModel::ShowById(std::string_view id)
+    {
+        const std::optional<std::size_t> index = IndexOf(id);
+        if (!index.has_value())
+        {
+            return false;
+        }
+
+        EditorToolRowEntry *const entry = GetEntryMutable(*index);
+        if (entry == nullptr)
+        {
+            return false;
+        }
+        entry->visibility.SetOpen(true);
+        if (entry->dock.has_value())
+        {
+            active_[static_cast<std::size_t>(*entry->dock)] = *index;
+        }
+        else
+        {
+            focus_request_ = *index;
+        }
+        ReconcileActive();
+        return true;
+    }
+
+    bool EditorToolRowModel::FocusById(std::string_view id)
+    {
+        const std::optional<std::size_t> index = IndexOf(id);
+        if (!index.has_value() || !IsOpen(*index))
+        {
+            return false;
+        }
+
+        EditorToolRowEntry *const entry = GetEntryMutable(*index);
+        if (entry == nullptr)
+        {
+            return false;
+        }
+        if (entry->dock.has_value())
+        {
+            active_[static_cast<std::size_t>(*entry->dock)] = *index;
+        }
+        else
+        {
+            focus_request_ = *index;
+        }
+        return true;
+    }
+
+    bool EditorToolRowModel::ConsumeFocusRequest(std::size_t index) noexcept
+    {
+        if (!focus_request_.has_value() || *focus_request_ != index)
+        {
+            return false;
+        }
+        focus_request_.reset();
+        return true;
     }
 
     bool EditorToolRowModel::ShowInRowById(std::string_view id)
@@ -377,6 +442,7 @@ namespace kpengine::editor
             entry->dock != std::optional<EditorLayoutSlot>{dock} || !entry->visibility.IsOpen();
         entry->visibility.SetOpen(true);
         entry->dock = dock;
+        focus_request_.reset();
         if (changed)
         {
             BumpPlacementRevision();

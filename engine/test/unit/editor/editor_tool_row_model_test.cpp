@@ -454,6 +454,41 @@ TEST(EditorToolRowModelTest, ShowInRowIsInertForAnUnknownId)
     EXPECT_EQ(model.GetEntryCount(), 1u);
 }
 
+TEST(EditorToolRowModelTest, ShowOpensAndActivatesAtTheCurrentDock)
+{
+    EditorToolRowModel model;
+    model.AddEntry(kToolRowLogId, "Log", true, EditorLayoutSlot::Viewport);
+    model.AddEntry(kToolRowConsoleId, "Console", false, EditorLayoutSlot::Viewport);
+
+    EXPECT_TRUE(model.ShowById(kToolRowConsoleId));
+    EXPECT_TRUE(model.IsOpenById(kToolRowConsoleId));
+    EXPECT_EQ(model.GetDockById(kToolRowConsoleId),
+              std::optional<EditorLayoutSlot>{EditorLayoutSlot::Viewport});
+    EXPECT_EQ(model.GetActiveInDock(EditorLayoutSlot::Viewport),
+              std::optional<std::size_t>{1u});
+}
+
+TEST(EditorToolRowModelTest, FocusRequestsTheFloatingWindowWithoutMovingIt)
+{
+    EditorToolRowModel model;
+    model.AddEntry(kToolRowLogId, "Log", true, EditorLayoutSlot::ToolRow);
+    ASSERT_TRUE(model.FloatPanel(0));
+
+    EXPECT_TRUE(model.FocusById(kToolRowLogId));
+    EXPECT_TRUE(model.ConsumeFocusRequest(0));
+    EXPECT_FALSE(model.ConsumeFocusRequest(0));
+    EXPECT_EQ(model.GetDockById(kToolRowLogId), std::nullopt);
+}
+
+TEST(EditorToolRowModelTest, FocusDoesNotOpenAClosedPanel)
+{
+    EditorToolRowModel model;
+    model.AddEntry(kToolRowLogId, "Log", false, EditorLayoutSlot::ToolRow);
+
+    EXPECT_FALSE(model.FocusById(kToolRowLogId));
+    EXPECT_FALSE(model.ConsumeFocusRequest(0));
+}
+
 TEST(EditorLockTest, DockLockBelongsToTheRowContainerNotToOneTab)
 {
     EditorToolRowModel model;

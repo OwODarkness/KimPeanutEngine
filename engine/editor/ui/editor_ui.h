@@ -1,11 +1,14 @@
 #ifndef KPENGINE_EDITOR_UI_H
 #define KPENGINE_EDITOR_UI_H
 
+#include <deque>
+#include <mutex>
 #include <vector>
 #include <memory>
 #include <functional>
 #include <optional>
 #include <cstdint>
+#include <string_view>
 #include "base/type.h"
 #include "editor/asset/asset_browser_model.h"
 #include "editor/settings/editor_layout_settings.h"
@@ -13,6 +16,7 @@
 #include "editor/ui/component/editor_layout_model.h"
 #include "editor/ui/component/editor_splitter_handles.h"
 #include "editor/ui/component/editor_tool_row_model.h"
+#include "editor/ui/editor_panel_command_provider.h"
 #include "graphics/backend/common/editor_presentation_bridge.h"
 #include "graphics/backend/common/render_target.h"
 #include "runtime/runtime_startup.h"
@@ -188,6 +192,10 @@ namespace kpengine::editor
         void SaveLayoutState();
         // Binds the Tool > Capture Screenshot command to the runtime export path.
         void TriggerScreenshot();
+        void RegisterPanelCommands();
+        bool EnqueuePanelCommand(EditorPanelCommandRequest request);
+        void DrainPanelCommands();
+        void FailQueuedPanelCommands(std::string_view diagnostic);
 
         // The UI is decoupled from any graphics API: the WSI feeds ImGui window
         // events, the renderer draws ImGui with the active backend (GL/Vulkan).
@@ -212,6 +220,12 @@ namespace kpengine::editor
         // Runtime export path for the render-capture command. Borrowed service,
         // built from the render system's capture service when the UI initializes.
         std::unique_ptr<runtime::RuntimeScreenshotService> screenshot_service_;
+
+        // Commands arrive on the Runtime game thread, but panel placement and ImGui focus
+        // belong to the render thread. Requests remain value-only until the next UI frame.
+        std::vector<runtime::command::CommandRegistration> panel_command_registrations_;
+        std::mutex panel_command_mutex_;
+        std::deque<EditorPanelCommandRequest> panel_command_requests_;
 
         // Declared before the component tree so components are destroyed first;
         // all of them borrow this model and the injected Runtime interfaces.

@@ -14,6 +14,9 @@ below are stable built-ins today.
 | `cpu-stats` | Return the latest completed-frame CPU and frame-loop statistics. | [`cpu-stats`](#gpu-stats-cpu-stats-and-stats) |
 | `stats` | Return the latest completed-frame CPU and GPU statistics. | [`stats`](#gpu-stats-cpu-stats-and-stats) |
 | `live2d.model_report` | Report the loaded Live2D product and its blend distribution. Present only in Live2D viewer mode. | [`live2d.model_report`](#live2dmodel_report) |
+| `editor.panel.list` | List editor panels and their current placement. | [`editor.panel.list`](#editorpanellist) |
+| `editor.panel.show` | Open and activate an editor panel. | [`editor.panel.show`](#editorpanelshow) |
+| `editor.panel.focus` | Activate an already-open editor panel. | [`editor.panel.focus`](#editorpanelfocus) |
 
 ## `commands.list`
 
@@ -165,6 +168,70 @@ evidence about a different one.
 
 ```json
 {"op":"execute","command":"live2d.model_report"}
+```
+
+## `editor.panel.list`
+
+Lists the logical Editor tool-row panels and their current presentation state.
+The command is available after the Editor workspace has been promoted.
+
+| Property | Value |
+|---|---|
+| Provider | `EditorPanel` |
+| Execution lane | Game, then Editor render frame |
+| Allowed callers | Agent, Lua, Editor console, tests, C++ callers |
+| Arguments | None |
+| Result | `success`; `message` contains one deterministic state line per panel and `data.count` contains the number of panels. |
+
+Each state line reports the stable `id`, user-facing title, open state, logical
+dock or `floating`, active state, and effective lock state. The command reads
+the Editor model on its render-thread boundary; it does not inspect ImGui
+windows directly.
+
+```json
+{"op":"execute","command":"editor.panel.list"}
+```
+
+## `editor.panel.show`
+
+Opens and activates a panel at its current location. A panel that is already
+open remains in its current dock; a closed floating panel is opened and focused
+on the next Editor frame.
+
+| Property | Value |
+|---|---|
+| Provider | `EditorPanel` |
+| Execution lane | Game, then Editor render frame |
+| Capability | `MutatesState` |
+| Allowed callers | Agent, tests, C++ callers |
+| `id` | Required stable panel ID, for example `asset_browser` or `console`. |
+| Result | `success` with the panel's effective placement and lock state, or `not_found`/`failed`. |
+
+Locking does not block this command. The lock only gates drag and dock changes.
+When using the Agent transport, launch with `--agent-port`, which grants the
+mutating capability required by this command.
+
+```json
+{"op":"execute","command":"editor.panel.show","arguments":{"id":"asset_browser"}}
+```
+
+## `editor.panel.focus`
+
+Activates an already-open panel without changing its visibility or placement.
+For a docked panel this selects its tab; for a floating panel it requests native
+ImGui window focus on the next Editor frame.
+
+| Property | Value |
+|---|---|
+| Provider | `EditorPanel` |
+| Execution lane | Game, then Editor render frame |
+| Capability | `MutatesState` |
+| Allowed callers | Agent, tests, C++ callers |
+| `id` | Required stable panel ID. |
+| Result | `success` when the panel is open, otherwise `failed`. |
+
+```json
+{"op":"execute","command":"editor.panel.focus","arguments":{"id":"asset_browser"}}
 ```
 
 ## `gpu-stats`, `cpu-stats`, and `stats`

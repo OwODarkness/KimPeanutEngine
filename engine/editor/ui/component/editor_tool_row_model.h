@@ -125,6 +125,13 @@ namespace kpengine::editor
         void ToggleOpenById(std::string_view id);
         void SetOpenById(std::string_view id, bool open);
 
+        // Opens a panel at its current location and selects it. A floating panel also
+        // records a one-frame focus request for the ImGui translation.
+        bool ShowById(std::string_view id);
+        // Selects or focuses an already-open panel without changing its visibility or dock.
+        bool FocusById(std::string_view id);
+        bool ConsumeFocusRequest(std::size_t index) noexcept;
+
         // Makes a panel visible IN THE BOTTOM STRIP, docking it there if it was floating or
         // in another dock. "Show this panel" has to mean "put it back in the row": toggling
         // visibility alone leaves a floating panel floating, so a View menu built on
@@ -203,6 +210,7 @@ namespace kpengine::editor
         // One active member per dock. An entry can only be in one dock, so at most one of
         // these can name any given index.
         std::array<std::optional<std::size_t>, kEditorLayoutSlotCount> active_{};
+        std::optional<std::size_t> focus_request_;
         std::uint64_t placement_revision_ = 0;
     };
 

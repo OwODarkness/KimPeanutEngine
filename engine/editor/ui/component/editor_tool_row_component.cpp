@@ -232,6 +232,10 @@ namespace kpengine::editor
         // get a close button: the View menu lists every entry, so a closed one comes back.
         bool open = true;
         ImGui::Begin(entry->title.c_str(), &open, flags);
+        if (model_.ConsumeFocusRequest(index))
+        {
+            ImGui::SetWindowFocus();
+        }
 
         // The title bar is this panel's drag handle. A locked panel has none: the padlock
         // gates starting a drag and nothing else, which is why it cannot disagree with the

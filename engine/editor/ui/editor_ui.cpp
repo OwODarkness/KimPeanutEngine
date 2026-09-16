@@ -4,6 +4,7 @@
 #include <chrono>
 #include <imgui.h>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include "config/path.h"
 #include "editor/platform/editor_imgui_glfw_wsi.h"
@@ -38,6 +39,65 @@
 
 namespace kpengine::editor
 {
+    namespace
+    {
+        constexpr std::size_t kMaximumQueuedPanelCommands = 64u;
+
+        std::string PanelLocation(const EditorToolRowEntry &entry)
+        {
+            return entry.dock.has_value() ?
+                       std::string{EditorLayoutModel::RegionKey(*entry.dock)} :
+                       std::string{"floating"};
+        }
+
+        bool IsActivePanel(const EditorToolRowModel &model, std::size_t index,
+                           const EditorToolRowEntry &entry)
+        {
+            const std::optional<std::size_t> active =
+                entry.dock.has_value() ? model.GetActiveInDock(*entry.dock) : std::nullopt;
+            return active.has_value() && *active == index;
+        }
+
+        std::string FormatPanelState(const EditorToolRowModel &model, std::size_t index)
+        {
+            const EditorToolRowEntry *const entry = model.GetEntry(index);
+            if (entry == nullptr)
+            {
+                return "<invalid panel>";
+            }
+
+            std::ostringstream output;
+            output << "id=" << entry->id << " title=\"" << entry->title << "\""
+                   << " open=" << (entry->visibility.IsOpen() ? "true" : "false")
+                   << " location=" << PanelLocation(*entry)
+                   << " active=" << (IsActivePanel(model, index, *entry) ? "true" : "false")
+                   << " locked=" << (model.IsLocked(index) ? "true" : "false");
+            return output.str();
+        }
+
+        runtime::command::CommandResult PanelResult(
+            const EditorToolRowModel &model, std::size_t index, std::string message,
+            std::uint64_t request_id)
+        {
+            const EditorToolRowEntry *const entry = model.GetEntry(index);
+            if (entry == nullptr)
+            {
+                return {runtime::command::CommandStatus::Failed,
+                        "Editor panel disappeared while applying the command", request_id, {}};
+            }
+            return {runtime::command::CommandStatus::Success,
+                    std::move(message),
+                    request_id,
+                    {{"id", entry->id},
+                     {"title", entry->title},
+                     {"open", entry->visibility.IsOpen()},
+                     {"active", IsActivePanel(model, index, *entry)},
+                     {"floating", !entry->dock.has_value()},
+                     {"locked", model.IsLocked(index)},
+                     {"location", PanelLocation(*entry)}}};
+        }
+    }
+
     EditorUI::EditorUI() = default;
 
     void EditorUI::Initialize(const EditorUIInitInfo &init_info)
@@ -261,7 +321,138 @@ namespace kpengine::editor
                     KP_LOG("LogEditorUI", LOG_LEVEL_WARNING, "Screenshot failed: %s",
                            result.diagnostic.c_str());
                 }
+        });
+    }
+
+    void EditorUI::RegisterPanelCommands()
+    {
+        if (init_info_.command_registry == nullptr || !panel_command_registrations_.empty())
+        {
+            return;
+        }
+
+        EditorPanelCommandRegistrationResult registration = RegisterEditorPanelCommands(
+            *init_info_.command_registry,
+            [this](EditorPanelCommandRequest request)
+            {
+                return EnqueuePanelCommand(std::move(request));
             });
+        if (!registration.succeeded)
+        {
+            KP_LOG("LogEditorUI", LOG_LEVEL_WARNING,
+                   "editor panel commands unavailable: %s", registration.diagnostic.c_str());
+            return;
+        }
+        panel_command_registrations_ = std::move(registration.registrations);
+    }
+
+    bool EditorUI::EnqueuePanelCommand(EditorPanelCommandRequest request)
+    {
+        if (!request.completion)
+        {
+            return false;
+        }
+        std::scoped_lock lock(panel_command_mutex_);
+        if (panel_command_requests_.size() >= kMaximumQueuedPanelCommands)
+        {
+            return false;
+        }
+        panel_command_requests_.push_back(std::move(request));
+        return true;
+    }
+
+    void EditorUI::DrainPanelCommands()
+    {
+        std::deque<EditorPanelCommandRequest> requests;
+        {
+            std::scoped_lock lock(panel_command_mutex_);
+            requests.swap(panel_command_requests_);
+        }
+
+        for (EditorPanelCommandRequest &request : requests)
+        {
+            runtime::command::CommandResult result;
+            if (!workspace_promoted_)
+            {
+                result = {runtime::command::CommandStatus::Failed,
+                          "Editor workspace is not available", 0, {}};
+            }
+            else if (request.kind == EditorPanelCommandKind::List)
+            {
+                std::ostringstream message;
+                for (std::size_t index = 0; index < tool_row_model_.GetEntryCount(); ++index)
+                {
+                    if (index != 0)
+                    {
+                        message << '\n';
+                    }
+                    message << FormatPanelState(tool_row_model_, index);
+                }
+                result = {runtime::command::CommandStatus::Success,
+                          message.str(), 0,
+                          {{"count", static_cast<std::uint64_t>(
+                                         tool_row_model_.GetEntryCount())}}};
+            }
+            else
+            {
+                const std::optional<std::size_t> index = tool_row_model_.IndexOf(request.id);
+                if (!index.has_value())
+                {
+                    result = {runtime::command::CommandStatus::NotFound,
+                              "Unknown editor panel: " + request.id, 0, {}};
+                }
+                else if (request.kind == EditorPanelCommandKind::Show)
+                {
+                    if (!tool_row_model_.ShowById(request.id))
+                    {
+                        result = {runtime::command::CommandStatus::Failed,
+                                  "Could not show editor panel: " + request.id, 0, {}};
+                    }
+                    else
+                    {
+                        result = PanelResult(tool_row_model_, *index,
+                                             "Editor panel shown", 0);
+                    }
+                }
+                else if (!tool_row_model_.FocusById(request.id))
+                {
+                    result = {runtime::command::CommandStatus::Failed,
+                              "Editor panel is not open: " + request.id, 0, {}};
+                }
+                else
+                {
+                    result = PanelResult(tool_row_model_, *index,
+                                         "Editor panel focused", 0);
+                }
+            }
+
+            runtime::command::CommandCompletionSink completion =
+                std::move(request.completion);
+            if (completion)
+            {
+                completion(std::move(result));
+            }
+        }
+    }
+
+    void EditorUI::FailQueuedPanelCommands(std::string_view diagnostic)
+    {
+        std::deque<EditorPanelCommandRequest> requests;
+        {
+            std::scoped_lock lock(panel_command_mutex_);
+            requests.swap(panel_command_requests_);
+        }
+
+        for (EditorPanelCommandRequest &request : requests)
+        {
+            runtime::command::CommandCompletionSink completion =
+                std::move(request.completion);
+            if (completion)
+            {
+                completion({runtime::command::CommandStatus::Failed,
+                            std::string{diagnostic}, 0, {}});
+            }
+        }
     }
 
     std::unique_ptr<EditorWindowComponent> EditorUI::BuildViewportPanel()
@@ -459,6 +650,7 @@ namespace kpengine::editor
         }
 
         components_.push_back(std::move(row));
+        RegisterPanelCommands();
     }
 
     void EditorUI::BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
@@ -578,6 +770,8 @@ namespace kpengine::editor
         {
             return;
         }
+        FailQueuedPanelCommands("Editor UI is closing");
+        panel_command_registrations_.clear();
         // Workspace components borrow Runtime services (the console, log, actor
         // tools, and screenshot bridge). Destroy them before RuntimeContext starts
         // releasing those services, while retaining the loading components and
@@ -626,6 +820,8 @@ namespace kpengine::editor
         // Destroy the console before RuntimeContext tears down InputSystem or
         // the command registry. Its listener and deferred result sink are then
         // detached while both services are still alive.
+        FailQueuedPanelCommands("Editor UI is closed");
+        panel_command_registrations_.clear();
         components_.clear();
         loading_components_.clear();
         actor_model_.reset();
@@ -781,6 +977,7 @@ namespace kpengine::editor
         {
             return false;
         }
+        DrainPanelCommands();
         const auto render_started = std::chrono::steady_clock::now();
         BeginDraw();
         if (workspace_promoted_ && actor_model_)
