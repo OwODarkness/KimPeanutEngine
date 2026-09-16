@@ -18,6 +18,7 @@
 #include "editor/ui/component/editor_debug_viewer_component.h"
 #include "editor/ui/component/editor_gpu_profiler_component.h"
 #include "editor/asset/editor_asset_browser_component.h"
+#include "editor/asset/editor_asset_reference_component.h"
 #include "editor/ui/component/editor_menubar_component.h"
 #include "editor/ui/component/editor_tool_row_component.h"
 #include "editor/ui/component/editor_viewport_component.h"
@@ -96,9 +97,26 @@ namespace kpengine::editor
                      {"locked", model.IsLocked(index)},
                      {"location", PanelLocation(*entry)}}};
         }
+
+        runtime::command::CommandResult ReferenceViewerResult(
+            bool open, std::string message, std::uint64_t request_id)
+        {
+            return {runtime::command::CommandStatus::Success,
+                    std::move(message),
+                    request_id,
+                    {{"id", kEditorAssetReferenceViewerId},
+                     {"title", "Asset Reference Viewer"},
+                     {"open", open},
+                     {"active", open},
+                     {"floating", true},
+                     {"locked", false},
+                     {"location", "floating"}}};
+        }
     }
 
-    EditorUI::EditorUI() = default;
+    EditorUI::EditorUI() : asset_reference_model_(asset_browser_model_)
+    {
+    }
 
     void EditorUI::Initialize(const EditorUIInitInfo &init_info)
     {
@@ -283,6 +301,23 @@ namespace kpengine::editor
                 [this, id] { return tool_row_model_.IsOpenById(id); },
             });
         }
+        view_menu.items.push_back(MenuItem{
+            "Asset Reference Viewer",
+            {},
+            true,
+            [this]
+            {
+                if (asset_reference_visibility_.IsOpen())
+                {
+                    asset_reference_visibility_.SetOpen(false);
+                }
+                else
+                {
+                    OpenAssetReferenceViewer();
+                }
+            },
+            [this] { return asset_reference_visibility_.IsOpen(); },
+        });
         menus.push_back(std::move(view_menu));
 
         Menu tool_menu{"Tool"};
@@ -322,6 +357,42 @@ namespace kpengine::editor
                            result.diagnostic.c_str());
                 }
         });
+    }
+
+    void EditorUI::OpenAssetReferenceViewer()
+    {
+        if (asset_reference_model_.RootKey().empty())
+        {
+            // Resolve the runtime-owned level through the captured snapshot. A live asset
+            // can be merged into an archive product, so constructing a runtime key directly
+            // would miss the canonical product node and lose its dependency edges.
+            const asset::AssetCatalogSnapshot *const snapshot = asset_browser_model_.Snapshot();
+            if (active_level_asset_pack_.has_value() && snapshot != nullptr)
+            {
+                for (const asset::AssetCatalogNode &node : snapshot->nodes)
+                {
+                    if (node.packed_runtime_asset_id.has_value() &&
+                        *node.packed_runtime_asset_id == *active_level_asset_pack_ &&
+                        node.type == asset::AssetType::KPAT_Level)
+                    {
+                        asset_reference_model_.SetRoot(node.stable_key);
+                        break;
+                    }
+                }
+            }
+
+            // Keep an explicit browser selection useful in test/editor states where no
+            // active level has been published. Do not silently select an unrelated material.
+            if (asset_reference_model_.RootKey().empty())
+            {
+                if (const AssetBrowserRow *const selected = asset_browser_model_.SelectedRow();
+                    selected != nullptr)
+                {
+                    asset_reference_model_.SetRoot(selected->stable_key);
+                }
+            }
+        }
+        asset_reference_visibility_.SetOpen(true);
     }
 
     void EditorUI::RegisterPanelCommands()
@@ -388,10 +459,37 @@ namespace kpengine::editor
                     }
                     message << FormatPanelState(tool_row_model_, index);
                 }
+                if (tool_row_model_.GetEntryCount() != 0)
+                {
+                    message << '\n';
+                }
+                message << "id=" << kEditorAssetReferenceViewerId
+                        << " title=\"Asset Reference Viewer\""
+                        << " open=" << (asset_reference_visibility_.IsOpen() ? "true" : "false")
+                        << " location=floating active="
+                        << (asset_reference_visibility_.IsOpen() ? "true" : "false")
+                        << " locked=false";
                 result = {runtime::command::CommandStatus::Success,
                           message.str(), 0,
                           {{"count", static_cast<std::uint64_t>(
-                                         tool_row_model_.GetEntryCount())}}};
+                                         tool_row_model_.GetEntryCount() + 1u)}}};
+            }
+            else if (request.id == kEditorAssetReferenceViewerId)
+            {
+                if (request.kind == EditorPanelCommandKind::Show)
+                {
+                    OpenAssetReferenceViewer();
+                    result = ReferenceViewerResult(true, "Editor panel shown", 0);
+                }
+                else if (!asset_reference_visibility_.IsOpen())
+                {
+                    result = {runtime::command::CommandStatus::Failed,
+                              "Editor panel is not open: " + request.id, 0, {}};
+                }
+                else
+                {
+                    result = ReferenceViewerResult(true, "Editor panel focused", 0);
+                }
             }
             else
             {
@@ -572,7 +670,36 @@ namespace kpengine::editor
         // one. It is synchronous and opens the archive, so it happens once, here, rather
         // than on any frame.
         (void)asset_browser_model_.Refresh();
-        return std::make_unique<EditorAssetBrowserComponent>(asset_browser_model_);
+        auto panel = std::make_unique<EditorAssetBrowserComponent>(asset_browser_model_);
+        panel->SetOpenReferences(
+            [this](std::string_view stable_key)
+            {
+                asset_reference_model_.SetRoot(std::string{stable_key});
+                OpenAssetReferenceViewer();
+            });
+        return panel;
+    }
+
+    std::unique_ptr<EditorWindowComponent> EditorUI::BuildAssetReferencePanel()
+    {
+        EditorWindowConfig config;
+        config.pos_x_ratio = 0.24f;
+        config.pos_y_ratio = 0.14f;
+        config.width_ratio = 0.56f;
+        config.height_ratio = 0.68f;
+        config.locked = false;
+        config.extra_flags = ImGuiWindowFlags_HorizontalScrollbar;
+
+        auto panel = std::make_unique<EditorAssetReferenceComponent>(
+            asset_reference_model_, config);
+        panel->SetVisibility(&asset_reference_visibility_);
+        panel->SetLocateInBrowser(
+            [this](std::string_view stable_key)
+            {
+                asset_browser_model_.Select(stable_key);
+                (void)tool_row_model_.ShowInRowById(kToolRowAssetBrowserId);
+            });
+        return panel;
     }
 
     void EditorUI::BuildToolRow(LogSystem *log_system, const LogLevelColorTable &log_colors,
@@ -742,9 +869,9 @@ namespace kpengine::editor
             BuildToolRow(init_info_.log_system, log_colors_, init_info_.command_registry,
                          init_info_.input_system, code_font_, actor_tools_available);
             // AFTER the host: the View menu is generated from the registered panels, so
-            // building it first would produce an empty menu. Its own ImGui window, so
-            // running last changes nothing about where it draws.
+            // building it first would produce an empty menu.
             BuildMenuBar(init_info_.render_system);
+            asset_reference_panel_ = BuildAssetReferencePanel();
             workspace_promoted_ = true;
             loading_components_.clear();
 
@@ -755,6 +882,7 @@ namespace kpengine::editor
         }
         catch (...)
         {
+            asset_reference_panel_.reset();
             components_.clear();
             actor_model_.reset();
             screenshot_service_.reset();
@@ -777,6 +905,8 @@ namespace kpengine::editor
         // releasing those services, while retaining the loading components and
         // ImGui backend for the visible closing stages.
         components_.clear();
+        asset_reference_panel_.reset();
+        asset_reference_visibility_.SetOpen(false);
         actor_model_.reset();
         screenshot_service_.reset();
         closing_ = true;
@@ -810,6 +940,13 @@ namespace kpengine::editor
         init_info_.asset_catalog_source = source;
     }
 
+    void EditorUI::SetActiveLevelAsset(asset::AssetID level_asset) noexcept
+    {
+        active_level_asset_pack_ = level_asset.IsValid()
+                                        ? std::optional<std::uint64_t>{level_asset.Pack()}
+                                        : std::nullopt;
+    }
+
     bool EditorUI::RenderLoading()
     {
         return RenderActiveTree();
@@ -823,6 +960,10 @@ namespace kpengine::editor
         FailQueuedPanelCommands("Editor UI is closed");
         panel_command_registrations_.clear();
         components_.clear();
+        asset_reference_panel_.reset();
+        asset_reference_visibility_.SetOpen(false);
+        asset_reference_model_.Reset();
+        active_level_asset_pack_.reset();
         loading_components_.clear();
         actor_model_.reset();
         // The panel rects described a tree that no longer exists.
@@ -1018,7 +1159,17 @@ namespace kpengine::editor
             {
                 component->Render();
             }
-            splitter_handles_.Render(layout_);
+            // Render the floating viewer before the splitter pass so the splitter can
+            // exclude its actual ImGui bounds from the foreground seam.
+            if (asset_reference_panel_ != nullptr)
+            {
+                asset_reference_panel_->Render();
+            }
+            const std::optional<EditorRect> reference_occlusion =
+                asset_reference_panel_ != nullptr && asset_reference_panel_->IsVisible()
+                    ? std::optional<EditorRect>{asset_reference_panel_->LastScreenRect()}
+                    : std::nullopt;
+            splitter_handles_.Render(layout_, reference_occlusion);
             // Persist on release, not per frame. The placement latch lives in the model,
             // which outlives the row, so nothing here holds a component pointer.
             if (splitter_handles_.ConsumeDragJustEnded() ||

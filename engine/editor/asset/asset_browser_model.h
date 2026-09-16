@@ -115,6 +115,12 @@ namespace kpengine::editor
         std::size_t NodeCount() const noexcept { return node_count_; }
         std::size_t WarningCount() const noexcept { return warning_count_; }
         bool SnapshotWasPartial() const noexcept { return partial_; }
+        // Borrowed immutable view for Editor-side projections such as AB1.3. The
+        // reference viewer copies what it needs and never retains this pointer.
+        const asset::AssetCatalogSnapshot *Snapshot() const noexcept
+        {
+            return has_snapshot_ ? &snapshot_ : nullptr;
+        }
 
         // The Editor's own message about the last refresh, or about the source being
         // absent. Empty when the last refresh succeeded. Never Asset's diagnostics, which

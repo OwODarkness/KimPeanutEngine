@@ -47,6 +47,9 @@ namespace kpengine::editor
         // submitted and nothing could reopen it.
         bool open = true;
         ImGui::Begin(title_.c_str(), HasCloseButton() ? &open : nullptr, flags);
+        const ImVec2 actual_pos = ImGui::GetWindowPos();
+        last_screen_rect_ = EditorRect{actual_pos.x, actual_pos.y, ImGui::GetWindowWidth(),
+                                       ImGui::GetWindowHeight()};
         if (focused_last_frame_)
         {
             ImGui::PopStyleColor();

@@ -1,6 +1,6 @@
 # AB1.3 — Asset Reference Viewer
 
-- Status: proposed
+- Status: implemented; AB1.4 is next
 - Parent design: [Asset Browser Plans](../PLANS.md)
 - Roadmap: [Asset Browser TODO](../TODO.md)
 - Prerequisites: [AB1.0 catalog contract](AB1.0.md), [AB1.2 browser integration](AB1.2.md)
@@ -12,9 +12,26 @@ it. One selected catalog node is rendered in either an expandable Tree or a
 deterministic Text view, with explicit handling for shared nodes, cycles,
 missing references, unknown coverage, and traversal limits.
 
-AB1.3 is complete when selecting Sponza in the browser can open a readable
-Level → Model → Material → Texture closure without loading anything, and the
-same copied graph can be inverted to answer Referencers.
+AB1.3 is complete when selecting an imported level or model in the browser can
+open a readable Level → Model → Material → Texture closure without loading
+anything, and the same copied graph can be inverted to answer Referencers.
+
+## Implemented shape
+
+The reference viewer is an Editor-owned, standalone window. Its model copies
+only node labels, availability, stable keys, and edge identity from the browser's
+immutable snapshot. It builds deterministic forward/reverse indexes, flattens a
+bounded depth-first tree, and generates the Text export from the same facts.
+
+The UI uses a horizontal connected-card tree: the root occupies the left
+column and descendants occupy depth columns to the right. Parent-centered
+vertical placement and elbow connectors expose the hierarchy while each
+occurrence retains a readable type/name, state dot, relation/annotation line,
+and expand affordance. It supports
+Dependencies/Referencers, Tree/Text, Expand All, Collapse All, Copy, root details,
+double-click rerooting, and Locate in Browser. The viewer is closed by default,
+has a reactive close state, and is also addressable as the debug panel id
+`asset_reference_viewer`.
 
 ## Scope boundary
 
@@ -155,11 +172,9 @@ contract as AB1.2. It starts closed and uses unlocked first-use geometry
 | Root: Level  level/sponza.level             [Locate in Browser]      |
 | [Dependencies|Referencers] [Tree|Text] [Expand All] [Collapse] [Copy]|
 |----------------------------------------------------------------------|
-| v Level  sponza.level                         Loaded                  |
-|   v Model  Sponza                             Loaded                  |
-|     v Material  bricks                        Loaded                  |
-|       - Texture  bricks_albedo                Archive · unknown       |
-|       ↳ Texture  shared_mask                  Shared                  |
+| v Level  sponza.level      ─┬─ v Model Sponza                       |
+|                             ├─ v Material bricks                    |
+|                             └─ ↳ Texture shared_mask                 |
 |----------------------------------------------------------------------|
 | product path / provenance / relation / diagnostic details            |
 +----------------------------------------------------------------------+
@@ -226,16 +241,16 @@ file changes belong to AB1.3.
 
 ## Acceptance criteria
 
-- [ ] Both Dependencies and Referencers derive from the AB1.0 forward edge table.
-- [ ] Tree and Text modes show the same facts with readable labels and state.
-- [ ] Shared, cycle, missing, unknown-coverage, runtime-only, archive-only, and
+- [x] Both Dependencies and Referencers derive from the AB1.0 forward edge table.
+- [x] Tree and Text modes show the same facts with readable labels and state.
+- [x] Shared, cycle, missing, unknown-coverage, runtime-only, archive-only, and
   truncation cases are explicit.
-- [ ] Traversal cannot exceed depth 32 or 4096 emitted rows.
-- [ ] Text export is deterministic and copied verbatim.
-- [ ] Browser double-click opens the selected stable key as the viewer root
+- [x] Traversal cannot exceed depth 32 or 4096 emitted rows.
+- [x] Text export is deterministic and copied verbatim.
+- [x] Browser double-click opens the selected stable key as the viewer root
   without loading it.
-- [ ] View-menu and title-close state stay synchronized.
-- [ ] Focused reference-model and existing Editor tests pass.
+- [x] View-menu and title-close state stay synchronized.
+- [x] Focused reference-model and existing Editor tests pass.
 
 ## Validation commands
 
@@ -247,5 +262,6 @@ file changes belong to AB1.3.
 git diff --check
 ```
 
-Run an active-backend Editor smoke with `level/sponza.level` to confirm browser
-navigation opens the viewer. AB1.4 owns the dual-backend evidence gate.
+Run an active-backend Editor smoke with the test-level fixture to confirm the
+viewer window opens through the Runtime command path. AB1.4 owns the checked-in
+Sponza closure and dual-backend evidence gate.

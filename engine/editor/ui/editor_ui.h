@@ -11,6 +11,7 @@
 #include <string_view>
 #include "base/type.h"
 #include "editor/asset/asset_browser_model.h"
+#include "editor/asset/asset_reference_view_model.h"
 #include "editor/settings/editor_layout_settings.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/ui/component/editor_layout_model.h"
@@ -71,6 +72,9 @@ struct ImVec2;
 namespace kpengine::editor
 {
 
+    inline constexpr const char *kEditorAssetReferenceViewerId =
+        "asset_reference_viewer";
+
     class IEditorImguiRenderer;
     class IEditorImguiWSI;
     class EditorUIComponent;
@@ -126,6 +130,9 @@ namespace kpengine::editor
         // borrowed Runtime interfaces the render thread must have before it builds the
         // workspace tools, and both must be called before PromoteToWorkspace().
         void SetAssetCatalogSnapshotSource(asset::IAssetCatalogSnapshotSource *source);
+        // Runtime supplies the currently loaded level identity at the promotion barrier;
+        // the Editor resolves it to a catalog stable key after the snapshot is captured.
+        void SetActiveLevelAsset(asset::AssetID level_asset) noexcept;
         void PromoteToWorkspace();
         void BeginClosing();
         bool RenderLoading();
@@ -168,6 +175,7 @@ namespace kpengine::editor
         // The browser is a dock panel like any other; it owns no window geometry, so its
         // movability comes from being dragged between docks.
         std::unique_ptr<EditorWindowComponent> BuildAssetBrowserPanel();
+        std::unique_ptr<EditorWindowComponent> BuildAssetReferencePanel();
         // The dock host: it owns every workspace panel and draws one window per dock.
         // Also applies the persisted placements, which is why it runs late — a placement
         // names a panel that has to be registered first.
@@ -192,6 +200,7 @@ namespace kpengine::editor
         void SaveLayoutState();
         // Binds the Tool > Capture Screenshot command to the runtime export path.
         void TriggerScreenshot();
+        void OpenAssetReferenceViewer();
         void RegisterPanelCommands();
         bool EnqueuePanelCommand(EditorPanelCommandRequest request);
         void DrainPanelCommands();
@@ -240,6 +249,9 @@ namespace kpengine::editor
         // models above: the panel borrows it, so the panel must be destroyed first. It
         // borrows the injected catalog source, which Runtime owns and outlives this object.
         AssetBrowserModel asset_browser_model_;
+        AssetReferenceViewModel asset_reference_model_;
+        EditorWindowVisibility asset_reference_visibility_{false};
+        std::optional<std::uint64_t> active_level_asset_pack_;
 
         // Panel geometry, owned here because EditorUI is what resolves it and pushes a
         // rect into each component before the tree renders. ImGui-free: all of its
@@ -256,6 +268,9 @@ namespace kpengine::editor
         // been applied and must not be written straight back.
         std::uint64_t saved_placement_revision_ = 0;
 
+        // This is a true floating window, not a dock member. It renders after the
+        // splitter foreground pass so dock seams cannot cover its content or border.
+        std::unique_ptr<EditorWindowComponent> asset_reference_panel_;
         std::vector<std::unique_ptr<EditorUIComponent>> components_;
         std::vector<std::unique_ptr<EditorUIComponent>> loading_components_;
     };

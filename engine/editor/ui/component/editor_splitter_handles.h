@@ -1,6 +1,8 @@
 #ifndef KPENGINE_EDITOR_SPLITTER_HANDLES_H
 #define KPENGINE_EDITOR_SPLITTER_HANDLES_H
 
+#include <optional>
+
 #include "editor/ui/component/editor_layout_model.h"
 
 namespace kpengine::editor
@@ -20,7 +22,8 @@ namespace kpengine::editor
     {
     public:
         // Called once per frame, after the workspace panels have rendered.
-        void Render(EditorLayoutModel &model);
+        void Render(EditorLayoutModel &model,
+                    const std::optional<EditorRect> &occlusion = std::nullopt);
 
         // True while a seam is being dragged, so the caller can persist on release
         // instead of writing the layout file every frame.

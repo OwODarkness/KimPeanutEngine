@@ -90,6 +90,8 @@ namespace kpengine::editor
             // provider is Runtime's, and the Editor only reads snapshots through it.
             editor_ui_->SetAssetCatalogSnapshotSource(
                 runtime::global_runtime_context.GetAssetCatalogSnapshotSource());
+            editor_ui_->SetActiveLevelAsset(
+                runtime::global_runtime_context.GetStartupLevelAsset());
             editor_ui_->PromoteToWorkspace();
         }
     }

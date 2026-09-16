@@ -1,6 +1,6 @@
 # Asset Browser TODO
 
-**Status: AB1.0–AB1.2b implemented; AB1.2 active.** [AB1.2b](.plan/AB1.2b.md) completes the icon-first visual browser milestone. Architecture is in [PLANS.md](PLANS.md). AB1.3–AB1.4 remain proposed. Parent work remains in [Asset Module TODO](../TODO.md).
+**Status: AB1.0–AB1.3 implemented; AB1.4 next.** [AB1.3](.plan/AB1.3.md) closes the read-only reference viewer milestone. Architecture is in [PLANS.md](PLANS.md). AB1.4 remains proposed. Parent work remains in [Asset Module TODO](../TODO.md).
 
 ## AB1 — Read-only Asset Browser and Reference Viewer
 
@@ -43,21 +43,22 @@
   - [ ] Add **View > Asset Browser** to the existing View menu, with a live checkmark synchronized with the tab close.
   - [ ] Publish the selected stable key through the AB1.3 open-root callback seam;
     do not render an inert action before the viewer is bound.
-  - [ ] Test search, filters, sorting, selection preservation, and refresh.
+  - [x] Test search, filters, sorting, selection preservation, and refresh.
 
-- [ ] **[AB1.3 — Implement the Asset Reference Viewer](.plan/AB1.3.md).**
+- [x] **[AB1.3 — Implement the Asset Reference Viewer](.plan/AB1.3.md).** → [journal](../../../.spec/journal/2026-09-16-asset-ab1-3.md)
 
-  - [ ] Add **View > Asset Reference Viewer** with synchronized visibility.
-  - [ ] Support Dependencies and Referencers directions.
-  - [ ] Support Tree and Text modes in one window.
-  - [ ] Preserve ordered, readable Level -> Model -> Material -> Texture labels for the checked-in Sponza closure.
-  - [ ] Mark shared, cyclic, unresolved, archive-only, and runtime-only nodes.
-  - [ ] Bound traversal and render a clear truncation row.
-  - [ ] Add expand/collapse, selection, path/details footer, and text copy.
-  - [ ] Bind browser double-click and **Open References** to the selected root
+  - [x] Add **View > Asset Reference Viewer** with synchronized visibility.
+  - [x] Support Dependencies and Referencers directions.
+  - [x] Support Tree and Text modes in one window.
+  - [x] Preserve ordered, readable Level -> Model -> Material -> Texture labels in
+    the synthetic graph contract; checked-in Sponza closure validation remains AB1.4.
+  - [x] Mark shared, cyclic, unresolved, archive-only, and runtime-only nodes.
+  - [x] Bound traversal and render a clear truncation row.
+  - [x] Add expand/collapse, selection, path/details footer, and text copy.
+  - [x] Bind browser double-click and **Open References** to the selected root
     without loading it.
-  - [ ] Ensure direction/mode changes never mutate or load Asset state.
-  - [ ] Test traversal, cycles, sharing, missing targets, inversion, bounds, and deterministic text export.
+  - [x] Ensure direction/mode changes never mutate or load Asset state.
+  - [x] Test traversal, cycles, sharing, missing targets, inversion, bounds, and deterministic text export.
 
 - [ ] **[AB1.4 — Integrate and validate both Editor backends](.plan/AB1.4.md).**
 

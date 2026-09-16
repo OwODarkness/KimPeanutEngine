@@ -61,6 +61,10 @@ namespace kpengine{
             // panel is closed and reopened from its tab or the View menu.
             virtual bool HasCloseButton() const { return false; }
 
+            // Screen-space bounds from the most recent Render call. This is an
+            // observation for overlay arbitration, not window ownership or layout state.
+            const EditorRect &LastScreenRect() const noexcept { return last_screen_rect_; }
+
         protected:
             // The title-bar focus accent: a 2 px strip, NavHighlight when focused.
             void RenderFocusAccent();
@@ -78,6 +82,7 @@ namespace kpengine{
             bool locked_;
             bool focused_last_frame_ = false;
             EditorWindowVisibility *visibility_ = nullptr;  // borrowed, not owned
+            EditorRect last_screen_rect_{};
         };
     }
 }

@@ -131,3 +131,25 @@ target_link_libraries(AssetBrowserModelUnitTest PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(AssetBrowserModelUnitTest)
+
+# The reference view model is a pure Editor projection. It links the browser model
+# only to provide the immutable snapshot source and keeps all traversal independent
+# of ImGui and the Asset runtime.
+add_executable(AssetReferenceViewModelUnitTest
+    asset_reference_view_model_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/asset/asset_browser_model.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/asset/asset_reference_view_model.cpp
+)
+
+target_include_directories(AssetReferenceViewModelUnitTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core
+)
+
+target_link_libraries(AssetReferenceViewModelUnitTest PRIVATE
+    KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(AssetReferenceViewModelUnitTest)
