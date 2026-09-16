@@ -16,6 +16,13 @@ PRIVATE
     Log
 )
 
+# lua53.lib is a prebuilt /MT artifact, while engine consumers use /MD or
+# /MDd. Suppress only its embedded LIBCMT directive at this integration edge;
+# do not change the runtime-library choice for the rest of the engine.
+if(MSVC)
+    target_link_options(ScriptLua INTERFACE "/NODEFAULTLIB:LIBCMT")
+endif()
+
 # sol2 builds without runtime type checks unless told otherwise.
 target_compile_definitions(ScriptLua PUBLIC
     SOL_ALL_SAFETIES_ON

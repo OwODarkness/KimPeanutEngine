@@ -24,7 +24,7 @@
   - [x] Prove no payload pointer, `Asset*`, cache reference, database handle, or retained Asset lock crosses the boundary.
   - [x] Test ordering, joins, aliases, reverse edges, partial failure, concurrent read/unload, and custom types.
 
-- [ ] **[AB1.2 — Implement the Asset Browser](.plan/AB1.2.md).**
+- [x] **[AB1.2 — Implement the Asset Browser](.plan/AB1.2.md).** → [closeout journal](../../../.spec/journal/2026-09-16-asset-ab1-2-closeout.md)
 
   - [x] **Prerequisite: [AB1.2a — Imported Content Metadata and Catalog Boundary](.plan/AB1.2a.md).** → [journal](../../../.spec/journal/2026-09-16-asset-ab1-2a.md)
     Define content as the browser root, generated metadata records,
@@ -33,15 +33,15 @@
 
   - [x] **Visual substage: [AB1.2b — Visual Tile Presentation](.plan/AB1.2b.md).** → [journal](../../../.spec/journal/2026-09-16-asset-ab1-2b.md)
 
-  - [ ] Add one Editor-owned model consuming only imported-content snapshots.
-  - [ ] Register the browser as a tab in the Editor tool row (ED1) with navigation,
+  - [x] Add one Editor-owned model consuming only imported-content snapshots.
+  - [x] Register the browser as a tab in the Editor tool row (ED1) with navigation,
     readable rows, and a status footer. Movability comes from the row's isolate, not
     from the browser owning window geometry.
-  - [ ] Draw cross-backend file/folder/type icons beside readable Name and Type text.
-  - [ ] Show State, Size, and full paths for archive, loaded, and runtime-only nodes.
-  - [ ] Add case-insensitive search, type/state filters, deterministic sorting, selection, and explicit refresh.
-  - [ ] Add **View > Asset Browser** to the existing View menu, with a live checkmark synchronized with the tab close.
-  - [ ] Publish the selected stable key through the AB1.3 open-root callback seam;
+  - [x] Draw cross-backend file/folder/type icons beside readable names; expose
+    Type, State, Size, and full paths in Table mode and details.
+  - [x] Add case-insensitive search, type/state filters, deterministic sorting, selection, and explicit refresh.
+  - [x] Add **View > Asset Browser** to the existing View menu, with a live checkmark synchronized with the tab close.
+  - [x] Publish the selected stable key through the AB1.3 open-root callback seam;
     do not render an inert action before the viewer is bound.
   - [x] Test search, filters, sorting, selection preservation, and refresh.
 

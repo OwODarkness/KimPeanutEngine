@@ -3,9 +3,13 @@
 - **Live2D semantic behavior contract (2026-09-16)** — L2D8.0 defines a
   versioned, SDK-free emotion/body-language vocabulary and validates authored
   motion/expression bindings against Product V2/V3 data. L2D8.1 now resolves
-  intent deterministically into authored behavior references; observability
-  remains planned for L2D8.2. → [L2D8 plan](live2d/.plan/L2D8.md) ·
-  [journal](../.spec/journal/2026-09-16-live2d-l2d8-1.md)
+  intent deterministically into authored behavior references. L2D8.2 now
+  publishes copied snapshots, terminal results, and bounded transition history.
+  L2D8.3 adds deterministic fallback/transition/interruption/recovery replay,
+  a copied viewer state graph, and command-report evidence on OpenGL and Vulkan.
+  →
+  [L2D8 plan](live2d/.plan/L2D8.md) ·
+  [journal](../.spec/journal/2026-09-16-live2d-l2d8-3.md)
 
 - **Live2D speech bubble (2026-09-15)** — the character can now say something. A
   manga-style bubble hangs beside the model, hugs its text, carries a tail aimed
@@ -266,6 +270,27 @@
   failure a pre-existing missing-fixture case. AB1.2–AB1.4 remain open. →
   [AB1.1 journal](../.spec/journal/2026-09-13-asset-catalog-provider.md),
   [AB1.1 plan](asset/asset-browser/.plan/AB1.1.md)
+- **Asset Browser AB1.2 read-only browser (2026-09-16)** — completed the
+  imported-content metadata boundary, immutable Editor snapshot model, icon-first
+  tile/table presentation, search/filter/sort/selection behavior, explicit refresh,
+  synchronized View-menu/tab visibility, and the unbound AB1.3 reference callback
+  seam. Validation used the test-level Editor fixture rather than Sponza; focused
+  Asset and Editor tests passed, and the Vulkan startup smoke opened and listed the
+  browser through the Runtime command path. AB1.3 reference traversal and AB1.4
+  dual-backend integration remain open. → [AB1.2 closeout journal](../.spec/journal/2026-09-16-asset-ab1-2-closeout.md),
+  [AB1.2 plan](asset/asset-browser/.plan/AB1.2.md)
+- **Asset Browser AB1.3 reference viewer (2026-09-16)** — added the Editor-only
+  forward/reverse adjacency projection, bounded dependency tree, deterministic
+  Text export, shared/cycle/missing/unknown/truncation rows, and the requested
+  horizontal connected-card tree presentation. Browser root opening, View-menu visibility, Copy,
+  rerooting, and Locate in Browser remain read-only. Direct opening now roots at
+  Runtime's currently loaded level identity, resolved through the immutable
+  catalog snapshot, while an explicit browser selection remains authoritative.
+  Focused reference-model tests pass 8/8, and a test-level Vulkan smoke showed
+  the loaded level dependency tree through the panel command path. AB1.4 still
+  owns checked-in Sponza and dual-backend evidence.
+  → [AB1.3 journal](../.spec/journal/2026-09-16-asset-ab1-3.md),
+  [AB1.3 plan](asset/asset-browser/.plan/AB1.3.md)
 - **Asset Browser AB1.0 catalog contract (2026-09-13)** — added the value-only
   `AssetCatalogSnapshot` graph, the `IAssetCatalogSnapshotSource` provider
   boundary, four frozen `asset-catalog-v1/` stable-key builders,
@@ -278,6 +303,7 @@
   AB1.2–AB1.4 remain open. → [AB1.0 journal](../.spec/journal/2026-09-13-asset-catalog-contract.md),
   [AB1.0 plan](asset/asset-browser/.plan/AB1.0.md)
 - **Live2D L2D7.2 instance behavior baseline (2026-09-13)** — added SDK-free secondary behavior configuration and canonical `AdvanceFrame` updates for deterministic blink, caller-driven gaze, breath, optional Product V3 physics, and pose. The legacy `AdvancePlayback` API remains a compatibility wrapper, invalid frame input is rejected before mutation, and the existing renderer/deferred pipeline is untouched. Focused and full Live2D tests pass (52/52). → [L2D7.2 journal](../.spec/journal/2026-09-13-live2d-l2d7-2.md), [L2D7 plan](live2d/.plan/L2D7.md)
+- **Live2D L2D7 secondary behavior closeout (2026-09-16)** — L2D7.0–L2D7.5 are implemented: Product V3 behavior closure, instance-local secondary controllers, immutable user-data/hit queries, lifecycle/capability reporting, and viewer debug controls. The Live2D suite passes 56/56, SDK-off build passes, and existing OpenGL/Vulkan Product V3/control-deck captures show clean shutdown. Repository-wide ctest reached 935/936; the single failure is the unrelated LevelLoader fixture missing `model/rock1-bl/rock2` from the checked-in archive. → [L2D7 closeout journal](../.spec/journal/2026-09-16-live2d-l2d7-closeout.md), [L2D7 plan](live2d/.plan/L2D7.md)
 - **Live2D L2D7.1 Product V3 import baseline (2026-09-13)** — added typed immutable physics/pose bytes, ordered hit areas, and user-data values with bounded backward-compatible serialization; model3 import now validates and retains the complete behavior closure before publishing the native product. Product V1/V2 remain readable, and runtime pose loading accepts both the new typed field and the legacy compatibility path. OpenGL/Vulkan viewer smoke and focused Live2D tests pass. → [L2D7.1 journal](../.spec/journal/2026-09-13-live2d-l2d7-1.md), [L2D7 plan](live2d/.plan/L2D7.md)
 - **Live2D L2D7.0 phase reconciliation baseline (2026-09-13)** — split the
   L2D6 playback transaction into explicit pre-expression and post-expression

@@ -63,6 +63,11 @@ public policy while the coordinator owns scene preparation.
   preparation behind one stable coordinator, replace the raw Editor graphics
   context with a typed presentation bridge, narrow target/metrics access, and
   close R1 with cross-backend evidence.
+- [R2 — adaptive render spatial index](.plan/R2.md) — one renderer-facing
+  `RenderSpatialIndex` boundary with `Flat` / `Bvh` / `Auto` strategies and
+  workload instrumentation, so where visibility culling happens and what
+  structure backs it can change without touching pass policy. **Design only, not
+  authorized for implementation.**
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
   texture minification and bound texture, descriptor, visibility, and static-
   shadow costs through Resource, Render, and Graphics ownership boundaries.

@@ -172,7 +172,9 @@ evidence about a different one.
 
 ## `editor.panel.list`
 
-Lists the logical Editor tool-row panels and their current presentation state.
+Lists the logical Editor panels and their current presentation state. This
+includes the standalone `asset_reference_viewer` window in addition to the
+tool-row panels.
 The command is available after the Editor workspace has been promoted.
 
 | Property | Value |
@@ -204,7 +206,7 @@ on the next Editor frame.
 | Execution lane | Game, then Editor render frame |
 | Capability | `MutatesState` |
 | Allowed callers | Agent, tests, C++ callers |
-| `id` | Required stable panel ID, for example `asset_browser` or `console`. |
+| `id` | Required stable panel ID, for example `asset_browser`, `console`, or `asset_reference_viewer`. |
 | Result | `success` with the panel's effective placement and lock state, or `not_found`/`failed`. |
 
 Locking does not block this command. The lock only gates drag and dock changes.
@@ -219,7 +221,8 @@ mutating capability required by this command.
 
 Activates an already-open panel without changing its visibility or placement.
 For a docked panel this selects its tab; for a floating panel it requests native
-ImGui window focus on the next Editor frame.
+ImGui window focus on the next Editor frame. The standalone reference viewer is
+also addressable by `asset_reference_viewer`.
 
 | Property | Value |
 |---|---|

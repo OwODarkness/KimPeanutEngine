@@ -158,6 +158,7 @@ namespace kpengine
             // database nor reads anything: only CaptureAssetCatalog() does.
             asset::IAssetCatalogSnapshotSource *GetAssetCatalogSnapshotSource() noexcept;
             void SetStartupLevel(asset::AssetID level_asset) { startup_level_asset_ = level_asset; }
+            asset::AssetID GetStartupLevelAsset() const noexcept { return startup_level_asset_; }
             void SetSceneCameraControlCaptured(bool captured) override;
             float GetSceneCameraMoveSpeed() const noexcept override;
             void SetSceneCameraMoveSpeed(float units_per_second) override;

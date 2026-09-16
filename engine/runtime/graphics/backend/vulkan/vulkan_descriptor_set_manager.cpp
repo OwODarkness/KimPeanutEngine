@@ -127,6 +127,7 @@ namespace kpengine::graphics
             {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sampled_texture_capacity}};
         VkDescriptorPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
+        pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         pool_info.maxSets = max_sets;
         pool_info.poolSizeCount = 3;
         pool_info.pPoolSizes = pool_sizes;
@@ -344,7 +345,8 @@ namespace kpengine::graphics
         {
             resources_.emplace_back();
         }
-        resources_[handle.id] = {descriptor_set, resource_frame_slot, arena_index, handle};
+        resources_[handle.id] = {descriptor_set, arenas[arena_index].pool,
+                                 resource_frame_slot, arena_index, handle};
         ++arenas[arena_index].used_sets;
         arenas[arena_index].used_uniform_descriptors += uniform_count;
         arenas[arena_index].used_dynamic_uniform_descriptors += dynamic_uniform_count;
@@ -355,11 +357,16 @@ namespace kpengine::graphics
     bool VulkanDescriptorSetManager::DestroyResourceBindingSet(VkDevice logical_device,
                                                                 DescriptorSetHandle handle)
     {
-        (void)logical_device;
         const uint32_t index = handle_system_.Get(handle);
         if (index >= resources_.size() || resources_[index].descriptor_set == VK_NULL_HANDLE)
         {
             return false;
+        }
+        VulkanDescriptorSetResource &resource = resources_[index];
+        if (resource.descriptor_pool != VK_NULL_HANDLE)
+        {
+            vkFreeDescriptorSets(logical_device, resource.descriptor_pool, 1,
+                                  &resource.descriptor_set);
         }
         resources_[index] = {};
         return handle_system_.Destroy(handle);

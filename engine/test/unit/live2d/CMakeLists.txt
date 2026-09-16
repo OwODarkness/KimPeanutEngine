@@ -33,7 +33,8 @@ gtest_discover_tests(Live2DModelDataContractTest)
 add_executable(Live2DEmotionPolicyTest
     live2d_emotion_policy_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_emotion_policy.cpp
-    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_emotion_resolver.cpp)
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_emotion_resolver.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_emotion_replay.cpp)
 
 target_include_directories(Live2DEmotionPolicyTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime)

@@ -62,7 +62,17 @@ namespace kpengine::live2d
                      {"requires_reimport_for_secondary_behavior",
                       report.capabilities.requires_reimport_for_secondary_behavior},
                      {"behavior_mask", static_cast<std::uint64_t>(report.behavior_mask)},
-                     {"update_sequence", report.update_sequence}}};
+                     {"update_sequence", report.update_sequence},
+                     {"behavior_replay_available", report.behavior_replay_available},
+                     {"behavior_replay_passed", report.behavior_replay_passed},
+                     {"behavior_replay_deterministic",
+                      report.behavior_replay_deterministic},
+                     {"behavior_state", report.behavior_state},
+                     {"behavior_transition_sequence",
+                      report.behavior_transition_sequence},
+                     {"behavior_history_count", report.behavior_history_count},
+                     {"behavior_replay_diagnostic",
+                      report.behavior_replay_diagnostic}}};
             },
             runtime::command::CommandThread::Game};
 

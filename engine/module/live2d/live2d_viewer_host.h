@@ -5,6 +5,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "command/command_registry.h"
@@ -16,6 +17,7 @@
 #include "glyph_cell.h"
 #include "module/live2d/render/live2d_renderer.h"
 #include "panel.h"
+#include "runtime/live2d_emotion_replay.h"
 #include "runtime/live2d_system.h"
 #include "screenshot/runtime_screenshot_service.h"
 #include "window/window_system.h"
@@ -66,6 +68,8 @@ namespace kpengine::live2d
         void RenderControlPanel();
         void RenderProfilerWindow();
         void RenderDebugControls();
+        void ApplyEmotionPreset(std::string_view preset);
+        bool ShowEmotionBubble(std::string_view text);
         Live2DFrameInput BuildFrameInput(float delta_time);
         void HandleCursorEvent(const CursorEvent &event) noexcept;
         void CompleteWindowCapture() noexcept;
@@ -98,8 +102,8 @@ namespace kpengine::live2d
 
         // The speech bubble, when one is asked for. It is a panel consumer: the
         // text is a panel's content, and the bubble is the shape around it. None
-        // of this exists unless --panel-text and --panel-glyph-product were both
-        // given, so the viewer without a bubble is byte-for-byte what it was.
+        // The bubble is optional at startup and is also created on demand by an
+        // emotion preset, so the default viewer pays no GPU cost until needed.
         std::unique_ptr<BubbleRenderer> bubble_;
         panel::GlyphSet bubble_glyphs_{0u, {}};
         panel::Panel bubble_panel_{};
@@ -111,14 +115,20 @@ namespace kpengine::live2d
         // light, the opposite of a lit display.
         BubbleAppearance bubble_appearance_{};
         BubblePlacement bubble_placement_{};
+        panel::GlyphSet emotion_glyphs_{32u, std::vector<panel::GlyphCell>(95u)};
         bool bubble_enabled_ = false;
         bool bubble_placement_logged_ = false;
         // The pop-in, from nothing to finished. Driven here rather than by the
         // renderer so the animation is a property of the frame, not of the shape.
         float bubble_pop_ = 1.0f;
+        float emotion_bubble_remaining_ = 0.0f;
+        bool emotion_bubble_timed_ = false;
         // shared_ptr keeps the private UI state incomplete in this public host
         // header; ownership remains exclusive to this host.
         std::shared_ptr<Live2DViewerUiState> viewer_ui_;
+        Live2DEmotionReplayResult behavior_replay_{};
+        std::string emotion_status_ = "Normal";
+        std::string emotion_diagnostic_;
         std::unique_ptr<render::RenderCaptureService> render_capture_service_;
         std::unique_ptr<runtime::RuntimeScreenshotService> screenshot_service_;
         asset::AssetID model_asset_{};

@@ -1,6 +1,6 @@
 # AB1.2 — Asset Browser Window and Editor Composition
 
-- Status: in progress; visual work tracked in [AB1.2b](AB1.2b.md)
+- Status: implemented; AB1.3 is next
 - Parent design: [Asset Browser Plans](../PLANS.md)
 - Roadmap: [Asset Browser TODO](../TODO.md)
 - Prerequisites: [AB1.0 catalog contract](AB1.0.md), [AB1.1 snapshot provider](AB1.1.md), [AB1.2a imported content boundary](AB1.2a.md)
@@ -19,6 +19,26 @@ search/filter/sort/selection behavior is covered by headless model tests.
 "Movable" is satisfied by the tool row's detach: the browser tab can be isolated into
 a standalone window and re-docked, per [ED1](../../../editor/.plan/ED1.md). The browser
 does not own window geometry of its own.
+
+## Implemented closeout
+
+AB1.2 is implemented across the Runtime composition boundary, Editor model, and
+tool-row presentation:
+
+- Runtime owns the concrete catalog provider. The Editor receives only a borrowed
+  immutable snapshot source, and `AssetBrowserModel` promotes validated snapshots
+  by value only during initial promotion or an explicit **Refresh**.
+- The normal browser projection is imported-content metadata. Raw sources, archive
+  products, runtime-only objects, and internal shaders are excluded from normal
+  rows; problems and diagnostic details remain available through the catalog model.
+- Compact Tiles intentionally show only a type-appropriate icon and readable name.
+  Table mode and the details surface provide Type, State, Size, paths, hashes,
+  provenance, dependency coverage, and diagnostics.
+- The browser is a shared Editor tool-row tab. **View > Asset Browser**, the tab
+  close button, and the panel command API observe the same visibility state; detach
+  and re-dock remain tool-row responsibilities.
+- The stable-key open-reference callback seam is present and unbound. No inert
+  reference-viewer action is shipped before AB1.3 implements the viewer.
 
 ## Design question
 
@@ -226,9 +246,10 @@ rebuilds only Editor indexes; it never recaptures.
 ```
 
 Table mode uses an ImGui table with frozen Name column and columns Name, Type,
-State, Size, and Path. Compact Tiles use a fixed minimum tile width and always
-show icon, elided display name, Type, and State text. Both use an ImGui clipper
-and stable keys for widget IDs.
+State, Size, and Path. Compact Tiles use a fixed minimum tile width and show only
+an icon and elided display name. Table mode and the details surface retain Type,
+State, Size, and path text. Both use an ImGui clipper and stable keys for widget
+IDs.
 
 Icons are drawn with `ImDrawList` primitives: a tabbed folder for navigation, a
 document outline for assets, and a small type-colored badge. The badge color is
@@ -301,20 +322,22 @@ the callback receives the stable key and cannot load the asset.
 
 ## Acceptance criteria
 
-- [ ] Runtime owns the concrete provider; Editor receives only a borrowed
+- [x] Runtime owns the concrete provider; Editor receives only a borrowed
   `IAssetCatalogSnapshotSource*`.
-- [ ] The model holds one validated snapshot by value and refreshes only at
+- [x] The model holds one validated snapshot by value and refreshes only at
   promotion or explicit user request.
-- [ ] Archive, loaded, runtime-only, missing, and custom-type nodes are readable
-  in both Table and Compact Tiles modes.
-- [ ] Search, navigation, filters, sorting, and stable-key selection match the
+- [x] Imported logical assets are readable in Table mode and the details surface;
+  Compact Tiles intentionally show only their icon and name while retaining
+  details access.
+- [x] Search, navigation, filters, sorting, and stable-key selection match the
   deterministic rules above.
-- [ ] **View > Asset Browser** and the tab close button share live state, both routed
+- [x] **View > Asset Browser** and the tab close button share live state, both routed
   through the tool row's `EditorWindowVisibility`.
-- [ ] The browser performs no asset load, mutation, filesystem enumeration, or
+- [x] The browser performs no asset load, mutation, filesystem enumeration, or
   direct database access.
-- [ ] The AB1.3 open-root callback exists but no dead reference-viewer UI ships.
-- [ ] Focused Asset/Editor tests and Editor lifecycle tests pass.
+- [x] The AB1.3 open-root callback exists but no dead reference-viewer UI ships.
+- [x] Focused Asset/Editor model and command tests, Editor lifecycle tests, and
+  the test-level Editor startup smoke pass.
 
 ## Validation commands
 

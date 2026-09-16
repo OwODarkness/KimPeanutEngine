@@ -20,6 +20,7 @@ namespace kpengine::graphics
     struct VulkanDescriptorSetResource
     {
         VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+        VkDescriptorPool descriptor_pool = VK_NULL_HANDLE;
         uint32_t frame_slot = UINT32_MAX;
         std::size_t arena_index = 0;
         DescriptorSetHandle handle{};

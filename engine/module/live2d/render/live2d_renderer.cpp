@@ -476,10 +476,17 @@ namespace kpengine::live2d
             graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
         sampler_settings.address_mode_w =
             graphics::SamplerAddressMode::SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE;
+        sampler_settings.mag_filter =
+            graphics::SamplerFilterType::SAMPLER_FILTER_LINEAR;
+        sampler_settings.min_filter =
+            graphics::SamplerFilterType::SAMPLER_FILTER_LINEAR;
         sampler_settings.mipmap_mode =
-            graphics::SamplerMipmapMode::SAMPLER_MIPMAP_MODE_NEAREST;
+            graphics::SamplerMipmapMode::SAMPLER_MIPMAP_MODE_LINEAR;
         sampler_settings.enable_anisotropy = false;
-        sampler_settings.max_lod = 0.0f;
+        // Imported model textures carry mip chains. Keeping the previous
+        // max_lod=0 forced base-level sampling and caused visible minification
+        // aliasing; single-level mask atlases clamp naturally to level zero.
+        sampler_settings.max_lod = 16.0f;
         resources_.sampler = backend_->CreateSampler(sampler_settings);
         return resources_.sampler.IsValid() && diagnostic.empty();
     }
@@ -577,6 +584,30 @@ namespace kpengine::live2d
         preview_motion_enabled_ = true;
         return true;
     }
+
+    bool Live2DRenderer::SetPreviewExpression(const std::string_view name,
+                                              std::string &diagnostic)
+    {
+        diagnostic.clear();
+        if (!initialized_ || instance_ == nullptr)
+        {
+            diagnostic = "Live2D renderer is not initialized";
+            return false;
+        }
+        return instance_->SetExpression(name, diagnostic);
+    }
+
+    bool Live2DRenderer::ClearPreviewExpression(std::string &diagnostic)
+    {
+        diagnostic.clear();
+        if (!initialized_ || instance_ == nullptr)
+        {
+            diagnostic = "Live2D renderer is not initialized";
+            return false;
+        }
+        return instance_->ClearExpression(Live2DStopMode::Immediate, diagnostic);
+    }
+
     bool Live2DRenderer::Record(render::FrameContext &frame_context,
                                 graphics::CommandRecorder &recorder,
                                 const float delta_time,

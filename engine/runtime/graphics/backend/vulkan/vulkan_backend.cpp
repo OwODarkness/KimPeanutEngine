@@ -874,6 +874,10 @@ namespace kpengine::graphics
             glfwWaitEvents();
         }
 
+        // Attachments can be referenced by the frame just submitted. Wait
+        // before destroying their views; VulkanSwapchain::Recreate waits too,
+        // but that is after these render-target attachments are released.
+        vkDeviceWaitIdle(device_->GetLogicalDevice());
         render_target_manager_->DestroySwapchainAttachments();
         swapchain_->Recreate(width_, height_);
         editor_bridge_->OnSwapchainRecreated();

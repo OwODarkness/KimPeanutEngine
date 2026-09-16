@@ -265,10 +265,10 @@ namespace kpengine::live2d
             return false;
         }
 
-        backend_->WaitIdle();
         if (text_mask_.IsValid())
         {
-            backend_->DestroyTexture(text_mask_);
+            retired_text_masks_.push_back(
+                {text_mask_, std::max(1u, backend_->GetFramesInFlight())});
         }
         text_mask_ = replacement;
         return true;
@@ -337,7 +337,35 @@ namespace kpengine::live2d
         count += quad_vertices_.IsValid() ? 1u : 0u;
         count += quad_indices_.IsValid() ? 1u : 0u;
         count += text_mask_.IsValid() ? 1u : 0u;
+        count += static_cast<std::uint32_t>(retired_text_masks_.size());
         return count;
+    }
+
+    void BubbleRenderer::CollectRetiredResources() noexcept
+    {
+        if (backend_ == nullptr)
+        {
+            retired_text_masks_.clear();
+            return;
+        }
+        std::vector<RetiredTextMask> pending;
+        pending.reserve(retired_text_masks_.size());
+        for (RetiredTextMask retired : retired_text_masks_)
+        {
+            if (retired.frames_remaining > 0u)
+            {
+                --retired.frames_remaining;
+            }
+            if (retired.frames_remaining > 0u)
+            {
+                pending.push_back(retired);
+            }
+            else if (retired.handle.IsValid())
+            {
+                backend_->DestroyTexture(retired.handle);
+            }
+        }
+        retired_text_masks_ = std::move(pending);
     }
 
     void BubbleRenderer::DestroyText() noexcept
@@ -347,6 +375,7 @@ namespace kpengine::live2d
             backend_->DestroyTexture(text_mask_);
         }
         text_mask_ = {};
+        CollectRetiredResources();
     }
 
     void BubbleRenderer::DestroyQuadGeometry() noexcept

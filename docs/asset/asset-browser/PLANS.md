@@ -1,6 +1,6 @@
 # Asset Browser Plans
 
-**Status: proposed.** This document defines the Editor Asset Browser and Asset Reference Viewer. The imported-content boundary is frozen first by [AB1.2a](.plan/AB1.2a.md). Work is tracked in [TODO.md](TODO.md); parent architecture remains in [Asset Module Plans](../PLANS.md).
+**Status: AB1.2 implemented; AB1.3 proposed.** This document defines the Editor Asset Browser and Asset Reference Viewer. The imported-content boundary is frozen first by [AB1.2a](.plan/AB1.2a.md). Work is tracked in [TODO.md](TODO.md); parent architecture remains in [Asset Module Plans](../PLANS.md).
 
 ## Goal
 
@@ -67,7 +67,12 @@ Source-file dependencies are import provenance, not runtime references, and rema
 +----------------------------------------------------------------+
 ```
 
-Icons use ImGui primitives or a bundled cross-backend font and always sit beside readable Name and Type text. Labels prefer archive display name, logical filename, then product filename. Search covers names, paths, and type. State uses text plus color. Refresh is explicit until change notification exists. Double-click/Open References never triggers a load.
+Icons use ImGui primitives or a bundled cross-backend font. Compact Tiles show
+the icon beside a readable name; Table mode and details retain Type and State
+text. Labels prefer archive display name, logical filename, then product filename.
+Search covers names, paths, and type. State uses text plus color. Refresh is
+explicit until change notification exists. Double-click/Open References never
+triggers a load.
 
 ```text
 + Asset Reference Viewer -----------------------------------------+
@@ -117,7 +122,7 @@ Menu checkmarks and title-bar close buttons share one visibility state; the menu
   the real Sponza closure, failure/refresh states, layout, performance bounds,
   teardown, and fresh Vulkan/OpenGL captures.
 
-Tests prove deterministic enumeration, pointer/lock-free snapshots, joining, reverse edges, shared/cycle/missing handling, bounds, and pure filtering/export. Runtime evidence uses the checked-in Sponza fixture and command-registry window captures under `save/screenshots/validation/` on both backends. Compilation alone is insufficient.
+Tests prove deterministic enumeration, pointer/lock-free snapshots, joining, reverse edges, shared/cycle/missing handling, bounds, and pure filtering/export. AB1.2 runtime smoke evidence uses the test-level fixture and command-registry captures; the checked-in Sponza closure and dual-backend captures remain AB1.4/AB1.3 follow-up validation. Compilation alone is insufficient.
 
 ## Rejected and deferred
 

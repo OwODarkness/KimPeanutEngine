@@ -55,7 +55,10 @@
       "Bash(./Live2DCoreTest.exe --gtest_filter=Live2DAssetTest.CharacterizesV1AnimationMetadataLoss)",
       "Bash(./Live2DCoreTest.exe)",
       "Read(//d/library/CubismSdkForNative-5-r.5/Samples/Resources/**)",
-      "Read(//d/library/CubismSdkForNative-5-r.5/Samples/OpenGL/Demo/proj.win.cmake/**)"
+      "Read(//d/library/CubismSdkForNative-5-r.5/Samples/OpenGL/Demo/proj.win.cmake/**)",
+      "Bash(./build/engine/test/unit/editor/Debug/EditorToolRowModelUnitTest.exe)",
+      "Bash(./build/engine/test/unit/editor/Debug/EditorToolRowModelUnitTest.exe --gtest_filter='*ClosingTheLastOpenEntry*')",
+      "Bash(cmake --build build --config Debug --target EditorToolRowModelUnitTest)"
     ],
     "deny": [],
     "additionalDirectories": [

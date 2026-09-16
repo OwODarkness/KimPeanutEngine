@@ -155,17 +155,17 @@ namespace
         ASSERT_TRUE(renderer.UploadText(MakeText(), diagnostic)) << diagnostic;
         const std::uint32_t handles = renderer.GetLiveGpuHandleCount();
         const int creates = probe->texture_create_count;
-        const int waits = probe->wait_idle_count;
 
         ASSERT_TRUE(renderer.UploadText(MakeText(), diagnostic)) << diagnostic;
 
         EXPECT_EQ(probe->texture_create_count, creates + 1);
-        // If the previous mask were not released the count would grow with every
-        // upload. The probe records no texture-destroy event, so a stable count
-        // is the stronger statement anyway.
+        // The previous mask stays live until the next frame boundary, because
+        // the current command buffer may still reference it.
+        EXPECT_EQ(renderer.GetLiveGpuHandleCount(), handles + 1u);
+
+        renderer.CollectRetiredResources();
         EXPECT_EQ(renderer.GetLiveGpuHandleCount(), handles)
-            << "the replaced text mask was not released";
-        EXPECT_GT(probe->wait_idle_count, waits);
+            << "the retired text mask was not released";
     }
 
     TEST_F(BubbleRendererTest, FailedTextUploadKeepsTheRendererUsable)

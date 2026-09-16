@@ -22,6 +22,13 @@ namespace kpengine::live2d
         Live2DBehaviorCapabilities capabilities{};
         std::uint32_t behavior_mask = 0u;
         std::uint64_t update_sequence = 0u;
+        bool behavior_replay_available = false;
+        bool behavior_replay_passed = false;
+        bool behavior_replay_deterministic = false;
+        std::string behavior_state;
+        std::uint64_t behavior_transition_sequence = 0u;
+        std::uint64_t behavior_history_count = 0u;
+        std::string behavior_replay_diagnostic;
     };
 
     // Resolves the model the active host has loaded, or nullopt when no host

@@ -154,7 +154,8 @@ the cached-tree design below, not a per-call build.
 - [ ] If revisited: a persistent, content-stamped tree shared across the G-buffer
   filter and every per-light shadow filter in `DeferredRenderer`, keyed on the
   proxy set rather than rebuilt per call. This is the only formulation that
-  reaches the low-survival regime where traversal wins.
+  reaches the low-survival regime where traversal wins. Designed, not authorized:
+  [R2 — adaptive render spatial index](../../docs/render/.plan/R2.md).
 - [ ] Validate through the runtime command registry with a checked-in startup
   fixture, not by compilation alone.
 

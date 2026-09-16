@@ -46,10 +46,14 @@ namespace kpengine::live2d
 
         // Uploads the text's ink mask, one texel per dot, replacing any previous
         // one. Recreate rather than update, because the backend has no in-place
-        // upload; the previous texture is released only after WaitIdle, since
-        // submitted work may still reference it.
+        // upload; replaced masks are retired until the next frame boundary so
+        // an active command buffer can finish using them.
         bool UploadText(const panel::DotMatrix &ink, std::string &diagnostic);
         bool HasText() const noexcept { return text_mask_.IsValid(); }
+
+        // Advances retired masks after the caller has waited for the previous
+        // frame's submission; release occurs after all frame slots have cycled.
+        void CollectRetiredResources() noexcept;
 
         // Appends the bubble's draw to `out`, for the caller to insert into the
         // model's pass. The viewport is the pass's, not the bubble's: placement is
@@ -67,6 +71,12 @@ namespace kpengine::live2d
         void Cleanup() noexcept;
 
     private:
+        struct RetiredTextMask final
+        {
+            graphics::TextureHandle handle{};
+            std::uint32_t frames_remaining = 1u;
+        };
+
         bool CreatePipeline(TextureFormat color_format, std::string &diagnostic);
         bool CreateQuadGeometry(std::string &diagnostic);
         void DestroyText() noexcept;
@@ -79,6 +89,7 @@ namespace kpengine::live2d
         graphics::BufferHandle quad_vertices_{};
         graphics::BufferHandle quad_indices_{};
         graphics::TextureHandle text_mask_{};
+        std::vector<RetiredTextMask> retired_text_masks_;
         // What the shader needs to read the text out of the mask: where it sits
         // in it, and how many dots it is made of. Measured when the mask is
         // uploaded, because that is where the mask's extent is known.

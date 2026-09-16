@@ -81,6 +81,16 @@ details and stage checklists belong in the linked submodule documents.
 - [x] Add direct RenderSystem orchestration tests for partial-init rollback,
   fixed pass order, conditional capture, resize, terminal editor composition,
   and reverse-order teardown before moving the corresponding code (R1.1).
+- [ ] **R2 — adaptive render spatial index:** introduce one `RenderSpatialIndex`
+  query boundary with `Flat` / `Bvh` / `Auto` strategies and workload
+  metrics, so culling granularity and structure can change without touching
+  pass policy. Acceptance: `Flat` and `Bvh` return identical handle sets for
+  identical world state, an unchanged frame does no build work, and `stats`
+  reports primitive/visible counts, build/refit/query time, visited nodes,
+  tested primitives, and moved count. Status: **design only, not authorized for
+  implementation** — the 2026-09-14 measurements show the current workload does
+  not benefit, so the work waits for a scene that justifies it. →
+  [R2 design](.plan/R2.md), [spatial-bvh spec](../../.spec/specs/spatial-bvh.md)
 - [ ] Keep source registries, immutable snapshots, pass scheduling, and
   frame-local resource lifetime aligned across Render submodules.
 - [ ] Add read-only Gameplay/editor snapshots before exposing mutable gameplay

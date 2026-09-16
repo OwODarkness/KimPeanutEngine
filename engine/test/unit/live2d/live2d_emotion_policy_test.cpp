@@ -1,6 +1,9 @@
 #include <gtest/gtest.h>
 
+#include <vector>
+
 #include "live2d_emotion_policy.h"
+#include "live2d_emotion_replay.h"
 #include "live2d_emotion_resolver.h"
 
 namespace kpengine::live2d
@@ -214,5 +217,146 @@ namespace kpengine::live2d
             EXPECT_EQ(first_resolution.behavior.state_id,
                       second_resolution.behavior.state_id);
         }
+    }
+
+    TEST(Live2DEmotionResolverTest, ExposesSnapshotAndTerminalResults)
+    {
+        const Live2DProductData product = MakeProduct();
+        const auto policy = std::make_shared<const Live2DEmotionPolicy>(MakePolicy());
+        std::string diagnostic;
+        auto resolver = Live2DEmotionResolver::Create(policy, product, diagnostic);
+        ASSERT_NE(resolver, nullptr) << diagnostic;
+
+        Live2DBehaviorRequest request{};
+        request.intent = {"joy", "open"};
+        request.priority = 2;
+        Live2DBehaviorResolution resolution{};
+        ASSERT_TRUE(resolver->Resolve(request, resolution, diagnostic)) << diagnostic;
+
+        Live2DBehaviorSnapshot snapshot = resolver->Snapshot();
+        EXPECT_TRUE(snapshot.active);
+        EXPECT_EQ(snapshot.state_id, "joy");
+        EXPECT_EQ(snapshot.behavior.state_id, "joy");
+        ASSERT_TRUE(snapshot.behavior.motion.has_value());
+        EXPECT_EQ(snapshot.behavior.motion->group, "Joy");
+        ASSERT_TRUE(snapshot.behavior.expression.has_value());
+        EXPECT_EQ(*snapshot.behavior.expression, "Happy");
+        EXPECT_EQ(snapshot.terminal_state,
+                  Live2DBehaviorTerminalState::Pending);
+
+        auto history = resolver->TransitionHistory();
+        ASSERT_EQ(history.size(), 1u);
+        EXPECT_EQ(history[0].reason, Live2DBehaviorTransitionReason::Initial);
+        EXPECT_EQ(history[0].terminal_state,
+                  Live2DBehaviorTerminalState::Pending);
+
+        ASSERT_TRUE(resolver->CompleteActive(diagnostic)) << diagnostic;
+        snapshot = resolver->Snapshot();
+        EXPECT_FALSE(snapshot.active);
+        EXPECT_EQ(snapshot.terminal_state,
+                  Live2DBehaviorTerminalState::Completed);
+        history = resolver->TransitionHistory();
+        ASSERT_EQ(history.size(), 1u);
+        EXPECT_EQ(history[0].terminal_state,
+                  Live2DBehaviorTerminalState::Completed);
+        EXPECT_FALSE(resolver->CompleteActive(diagnostic));
+        EXPECT_NE(diagnostic.find("no active behavior"), std::string::npos);
+
+        request.intent = {"neutral", "idle"};
+        request.force = true;
+        ASSERT_TRUE(resolver->Resolve(request, resolution, diagnostic)) << diagnostic;
+        ASSERT_TRUE(resolver->CancelActive(diagnostic)) << diagnostic;
+        snapshot = resolver->Snapshot();
+        EXPECT_FALSE(snapshot.active);
+        EXPECT_EQ(snapshot.terminal_state,
+                  Live2DBehaviorTerminalState::Cancelled);
+        history = resolver->TransitionHistory();
+        ASSERT_EQ(history.size(), 2u);
+        EXPECT_EQ(history.back().terminal_state,
+                  Live2DBehaviorTerminalState::Cancelled);
+    }
+
+    TEST(Live2DEmotionResolverTest, InterruptsActiveBehaviorAndBoundsHistory)
+    {
+        const Live2DProductData product = MakeProduct();
+        const auto policy = std::make_shared<const Live2DEmotionPolicy>(MakePolicy());
+        std::string diagnostic;
+        auto resolver = Live2DEmotionResolver::Create(policy, product, diagnostic);
+        ASSERT_NE(resolver, nullptr) << diagnostic;
+
+        Live2DBehaviorRequest request{};
+        request.intent = {"joy", "open"};
+        request.priority = 2;
+        Live2DBehaviorResolution resolution{};
+        ASSERT_TRUE(resolver->Resolve(request, resolution, diagnostic)) << diagnostic;
+
+        request.intent = {"neutral", "idle"};
+        request.force = true;
+        ASSERT_TRUE(resolver->Resolve(request, resolution, diagnostic)) << diagnostic;
+        auto history = resolver->TransitionHistory();
+        ASSERT_EQ(history.size(), 2u);
+        EXPECT_EQ(history[0].terminal_state,
+                  Live2DBehaviorTerminalState::Interrupted);
+        EXPECT_EQ(history[1].terminal_state,
+                  Live2DBehaviorTerminalState::Pending);
+
+        for (std::size_t index = 0u;
+             index < kLive2DEmotionTransitionHistoryCapacity + 5u; ++index)
+        {
+            request.intent = index % 2u == 0u
+                                 ? Live2DBehaviorIntent{"joy", "open"}
+                                 : Live2DBehaviorIntent{"neutral", "idle"};
+            request.retrigger = true;
+            ASSERT_TRUE(resolver->Resolve(request, resolution, diagnostic))
+                << diagnostic;
+        }
+
+        history = resolver->TransitionHistory();
+        EXPECT_EQ(history.size(), kLive2DEmotionTransitionHistoryCapacity);
+        ASSERT_FALSE(history.empty());
+        for (std::size_t index = 1u; index < history.size(); ++index)
+        {
+            EXPECT_LT(history[index - 1u].record_sequence,
+                      history[index].record_sequence);
+        }
+        EXPECT_EQ(history.back().transition_sequence,
+                  resolver->TransitionSequence());
+    }
+
+    TEST(Live2DEmotionReplayTest, CoversFallbackTransitionInterruptionAndRecovery)
+    {
+        const Live2DProductData product = MakeProduct();
+        Live2DEmotionReplayResult result{};
+        std::string diagnostic;
+
+        ASSERT_TRUE(RunLive2DEmotionReplay(product, result, diagnostic))
+            << diagnostic;
+        EXPECT_TRUE(result.passed);
+        EXPECT_TRUE(result.deterministic);
+        ASSERT_EQ(result.step_snapshots.size(), 4u);
+        EXPECT_EQ(result.step_snapshots[0].state_id, "neutral_idle");
+        EXPECT_EQ(result.step_snapshots[1].state_id, "joy_open");
+        EXPECT_EQ(result.step_snapshots[2].state_id, "neutral_recovery");
+        EXPECT_EQ(result.step_snapshots[3].terminal_state,
+                  Live2DBehaviorTerminalState::Completed);
+        ASSERT_EQ(result.transition_history.size(), 3u);
+        EXPECT_EQ(result.transition_history[0].terminal_state,
+                  Live2DBehaviorTerminalState::Interrupted);
+        EXPECT_EQ(result.transition_history[1].terminal_state,
+                  Live2DBehaviorTerminalState::Interrupted);
+        EXPECT_EQ(result.transition_history[2].terminal_state,
+                  Live2DBehaviorTerminalState::Completed);
+    }
+
+    TEST(Live2DEmotionReplayTest, RequiresTypedMotionProduct)
+    {
+        Live2DProductData product = MakeProduct();
+        product.product_version = 1u;
+        Live2DEmotionReplayResult result{};
+        std::string diagnostic;
+
+        EXPECT_FALSE(RunLive2DEmotionReplay(product, result, diagnostic));
+        EXPECT_NE(diagnostic.find("Product V2"), std::string::npos);
+        EXPECT_FALSE(result.passed);
     }
 }

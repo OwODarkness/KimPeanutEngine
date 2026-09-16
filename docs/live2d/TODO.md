@@ -7,12 +7,14 @@ the [live2d-v1-rendering spec](../../.spec/specs/live2d-v1-rendering.md).
 
 ## Current focus
 
-- [ ] **L2D8 — semantic emotion and body-language policy** ([plan](.plan/L2D8.md)).
+- [x] **L2D8 — semantic emotion and body-language policy** ([plan](.plan/L2D8.md),
+  [journal](../../.spec/journal/2026-09-16-live2d-l2d8-3.md)).
   Map application intent to authored motion/expression combinations through a
   data-driven controller. Expose an SDK-free state snapshot and transition
   record for runtime and viewer diagnostics. This is the missing high-level
   emotion layer; speech bubbles remain a separate presentation channel.
-  L2D8.0 and L2D8.1 are complete; L2D8.2 is the next implementation stage.
+  L2D8.0 through L2D8.3 are complete, including deterministic viewer replay and
+  cross-backend command evidence.
 - [ ] **L2D9 — speech integration.** Add lip-sync inputs and optional TTS/audio
   coupling through narrow interfaces; Live2D must not depend on a provider.
 - [ ] **L2D10 — engine/editor integration.** Add gameplay composition,
@@ -44,6 +46,10 @@ the [live2d-v1-rendering spec](../../.spec/specs/live2d-v1-rendering.md).
   [closeout journal](../../.spec/journal/2026-09-16-live2d-l2d7-closeout.md)).
   Physics, pose, blink/breath/gaze, hit areas, user data, deterministic replay,
   and viewer diagnostics are complete.
+- [x] **L2D8 — semantic emotion and body-language policy** ([plan](.plan/L2D8.md),
+  [journal](../../.spec/journal/2026-09-16-live2d-l2d8-3.md)). Deterministic
+  intent resolution, bounded transition history, and a viewer state-graph replay
+  are complete; the command report exposes the copied validation result.
 
 ## Acceptance gates
 
@@ -91,5 +97,5 @@ and [implementation journal](../../.spec/journal/2026-09-15-live2d-l2d8.md).
 
 - [ ] Approve a redistributable runtime/import test model and record its license
   terms before checking it into the repository.
-- [ ] When L2D8 starts, define the semantic emotion vocabulary and the mapping
-  from intent to authored expressions, motions, gaze, and optional bubble text.
+- [x] During L2D8.3, define the viewer state-graph presentation and scripted
+  replay evidence; optional speech-bubble text remains a presentation concern.

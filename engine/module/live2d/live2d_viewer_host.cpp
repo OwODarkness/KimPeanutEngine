@@ -1,9 +1,11 @@
 #include "live2d_viewer_host.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <exception>
+#include <utility>
 
 #include <imgui.h>
 
@@ -34,6 +36,94 @@ namespace kpengine::live2d
         // Upper bound on how long a --capture waits for its --resize to reach
         // the output target before capturing at whatever extent is current.
         constexpr uint32_t kResizeWaitFrameBudget = 240u;
+        constexpr std::uint32_t kEmotionBubbleMinimumTextWidth =
+            panel::kHalfwidthAdvance * 4u;
+
+        panel::GlyphCell MakeEmotionGlyph(
+            const std::array<std::string_view, 8u> &pattern)
+        {
+            panel::GlyphCell glyph{};
+            glyph.advance = panel::kHalfwidthAdvance;
+            for (std::uint32_t row = 0u; row < pattern.size(); ++row)
+            {
+                for (std::uint32_t column = 0u; column < pattern[row].size(); ++column)
+                {
+                    if (pattern[row][column] != ' ')
+                    {
+                        glyph.SetDot(row * 2u, column, true);
+                        glyph.SetDot(row * 2u + 1u, column, true);
+                    }
+                }
+            }
+            return glyph;
+        }
+
+        panel::GlyphSet MakeEmotionGlyphs()
+        {
+            std::vector<panel::GlyphCell> glyphs(95u);
+            const auto set = [&glyphs](const char character,
+                                       const std::array<std::string_view, 8u> &pattern) {
+                glyphs[static_cast<std::size_t>(character) - 32u] =
+                    MakeEmotionGlyph(pattern);
+            };
+            set('^', {"  **  ", " *  * ", "*    *", "      ",
+                      "      ", "      ", "      ", "      "});
+            set('_', {"      ", "      ", "      ", "      ",
+                      "      ", "      ", " ******", "      "});
+            set('T', {"*******", "*******", "   **  ", "   **  ",
+                      "   **  ", "   **  ", "   **  ", "   **  "});
+            set('>', {"*     ", " **   ", "   ** ", "     *",
+                      "     *", "   ** ", " **   ", "*     "});
+            set('<', {"     *", "   ** ", " **   ", "*     ",
+                      "*     ", " **   ", "   ** ", "     *"});
+            set('o', {"  **** ", " **  **", "**    *", "**    *",
+                      "**    *", " **  **", "  **** ", "      "});
+            set('O', {"  **** ", " **  **", "**    *", "**    *",
+                      "**    *", " **  **", "  **** ", "      "});
+            set('x', {"*    *", " *  * ", "  **  ", "  **  ",
+                      "  **  ", " *  * ", "*    *", "      "});
+            return panel::GlyphSet(32u, std::move(glyphs));
+        }
+
+        const char *TerminalStateName(
+            const Live2DBehaviorTerminalState state) noexcept
+        {
+            switch (state)
+            {
+            case Live2DBehaviorTerminalState::Pending:
+                return "pending";
+            case Live2DBehaviorTerminalState::Completed:
+                return "completed";
+            case Live2DBehaviorTerminalState::Cancelled:
+                return "cancelled";
+            case Live2DBehaviorTerminalState::Interrupted:
+                return "interrupted";
+            default:
+                return "unknown";
+            }
+        }
+
+        const char *TransitionReasonName(
+            const Live2DBehaviorTransitionReason reason) noexcept
+        {
+            switch (reason)
+            {
+            case Live2DBehaviorTransitionReason::Initial:
+                return "initial";
+            case Live2DBehaviorTransitionReason::IntentChanged:
+                return "intent_changed";
+            case Live2DBehaviorTransitionReason::Fallback:
+                return "fallback";
+            case Live2DBehaviorTransitionReason::Retriggered:
+                return "retriggered";
+            case Live2DBehaviorTransitionReason::LowerPriorityRejected:
+                return "lower_priority_rejected";
+            case Live2DBehaviorTransitionReason::SameStateIgnored:
+                return "same_state_ignored";
+            default:
+                return "unknown";
+            }
+        }
 
     }
 
@@ -62,6 +152,8 @@ namespace kpengine::live2d
                 "Live2D viewer cannot initialize while Scene3D services are present";
             return false;
         }
+
+        emotion_glyphs_ = MakeEmotionGlyphs();
 
         try
         {
@@ -165,6 +257,37 @@ namespace kpengine::live2d
             }
             render_initialized_ = true;
 
+            const auto model_resource =
+                asset::AssetManager::GetInstance().GetResource<Live2DModelResource>(
+                    model_asset_);
+            if (model_resource == nullptr)
+            {
+                behavior_replay_.diagnostic =
+                    "Live2D viewer behavior replay could not read the loaded product";
+                KP_LOG("Live2DViewer", LOG_LEVEL_WARNING, "%s",
+                       behavior_replay_.diagnostic.c_str());
+            }
+            else
+            {
+                std::string replay_diagnostic;
+                if (!RunLive2DEmotionReplay(model_resource->Product(),
+                                            behavior_replay_, replay_diagnostic))
+                {
+                    behavior_replay_.diagnostic = std::move(replay_diagnostic);
+                    KP_LOG("Live2DViewer", LOG_LEVEL_WARNING,
+                           "Live2D emotion replay unavailable: %s",
+                           behavior_replay_.diagnostic.c_str());
+                }
+                else
+                {
+                    KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
+                           "Live2D emotion replay passed: %llu transitions, deterministic=%d",
+                           static_cast<unsigned long long>(
+                               behavior_replay_.transition_history.size()),
+                           behavior_replay_.deterministic ? 1 : 0);
+                }
+            }
+
             // Viewer policy starts the configured product's authored Idle clip. Other products
             // can remain static until a viewer command selects a valid motion.
             std::string preview_motion_diagnostic;
@@ -212,17 +335,18 @@ namespace kpengine::live2d
                     return false;
                 }
 
-                // Manga is dark on light, the opposite of a lit display: the
-                // panel's own defaults would give a glowing bubble with dark
-                // text, which is the wrong reading entirely.
-                bubble_appearance_.fill_color = {1.0f, 1.0f, 1.0f, 1.0f};
-                bubble_appearance_.outline_color = {0.09f, 0.09f, 0.11f, 1.0f};
-                bubble_appearance_.dot_color = {0.09f, 0.09f, 0.11f, 1.0f};
-                // The paper's cells are visible against the bezel, so every dot
-                // reads as an element whether or not it is lit. A flat white
-                // field would make this ink on a page rather than a display.
-                bubble_appearance_.bezel_color = {0.74f, 0.76f, 0.82f, 1.0f};
-                bubble_appearance_.dot_gap = 0.20f;
+                // A cyber theme rather than paper: a dark panel, a grid that
+                // glows faintly, neon ink, and a hot edge. The three levels are
+                // what make it read -- the darkest is the panel, the middle is
+                // the grid, and only the lit dots carry the colour.
+                //
+                // These are display-space colours; the shader linearises them,
+                // because the target is sRGB and the hardware encodes on store.
+                bubble_appearance_.fill_color = {0.02f, 0.03f, 0.06f, 1.0f};
+                bubble_appearance_.bezel_color = {0.07f, 0.16f, 0.30f, 1.0f};
+                bubble_appearance_.dot_color = {0.10f, 0.95f, 1.0f, 1.0f};
+                bubble_appearance_.outline_color = {1.0f, 0.16f, 0.66f, 1.0f};
+                bubble_appearance_.dot_gap = 0.22f;
 
                 // Off to one side and clear of the character, rather than
                 // centred at the top where it sits on the head and hides the
@@ -454,6 +578,13 @@ namespace kpengine::live2d
         BubbleLayoutRequest request;
         request.text_width = bounds.right - bounds.left + 1u;
         request.text_height = bounds.bottom - bounds.top + 1u;
+        if (emotion_bubble_timed_)
+        {
+            // A three-glyph face is deliberately sparse. Reserve one extra
+            // cell so its bubble reads as a speech cue instead of a square.
+            request.text_width =
+                std::max(request.text_width, kEmotionBubbleMinimumTextWidth);
+        }
         // The tail points at the model, which is the one thing the bubble needs
         // to know about it. It arrives as a direction and not as a Live2D type:
         // the renderer publishes where the model was fitted, in the same
@@ -618,6 +749,16 @@ namespace kpengine::live2d
         if (bubble_enabled_)
         {
             const bool settled = AdvanceBubblePop(kViewerDeltaSeconds);
+            if (emotion_bubble_timed_)
+            {
+                emotion_bubble_remaining_ -= kViewerDeltaSeconds;
+                if (emotion_bubble_remaining_ <= 0.0f)
+                {
+                    emotion_bubble_remaining_ = 0.0f;
+                    emotion_bubble_timed_ = false;
+                    bubble_enabled_ = false;
+                }
+            }
             if (settled && capture_waits_for_bubble_)
             {
                 capture_waits_for_bubble_ = false;
@@ -634,6 +775,13 @@ namespace kpengine::live2d
             elapsed_seconds_ += kViewerDeltaSeconds;
         }
         frame.Begin(frame_index, {frame_number_++, elapsed_seconds_, kViewerDeltaSeconds}, extent);
+        if (bubble_)
+        {
+            // FrameContext::Begin releases this slot's descriptor sets after
+            // BeginFrame has waited for their submission. Retire masks only
+            // after that release, so no descriptor can still reference them.
+            bubble_->CollectRetiredResources();
+        }
         const auto render_started = std::chrono::steady_clock::now();
         // The bubble's draws join the model's pass. A pass of its own would
         // re-apply the target's clear and leave an image containing only the
@@ -768,6 +916,16 @@ namespace kpengine::live2d
                     report.capabilities = renderer_->GetBehaviorCapabilities();
                     report.behavior_mask = renderer_->GetLastBehaviorMask();
                     report.update_sequence = renderer_->GetLastFrameSequence();
+                    report.behavior_replay_available = behavior_replay_.available;
+                    report.behavior_replay_passed = behavior_replay_.passed;
+                    report.behavior_replay_deterministic =
+                        behavior_replay_.deterministic;
+                    report.behavior_state = behavior_replay_.final_snapshot.state_id;
+                    report.behavior_transition_sequence =
+                        behavior_replay_.final_snapshot.transition_sequence;
+                    report.behavior_history_count =
+                        behavior_replay_.transition_history.size();
+                    report.behavior_replay_diagnostic = behavior_replay_.diagnostic;
                     return true;
                 });
         if (!registration.IsSuccess())
@@ -1014,6 +1172,36 @@ namespace kpengine::live2d
                 }
                 ImGui::EndTabItem();
             }
+
+            if (ImGui::BeginTabItem("Emotion"))
+            {
+                ImGui::Text("EMOTION");
+                ImGui::TextDisabled("Choose a face and body-language preset.");
+                const ImVec2 button_size(-1.0f, 30.0f);
+                if (ImGui::Button("NORMAL", button_size))
+                {
+                    ApplyEmotionPreset("Normal");
+                }
+                if (ImGui::Button("SAD", button_size))
+                {
+                    ApplyEmotionPreset("Sad");
+                }
+                if (ImGui::Button("ANGRY", button_size))
+                {
+                    ApplyEmotionPreset("Angry");
+                }
+                if (ImGui::Button("HAPPY", button_size))
+                {
+                    ApplyEmotionPreset("Happy");
+                }
+                ImGui::Separator();
+                ImGui::Text("Current  %s", emotion_status_.c_str());
+                if (!emotion_diagnostic_.empty())
+                {
+                    ImGui::TextWrapped("%s", emotion_diagnostic_.c_str());
+                }
+                ImGui::EndTabItem();
+            }
             ImGui::EndTabBar();
         }
     }
@@ -1097,6 +1285,16 @@ namespace kpengine::live2d
         command_registration_ = {};
         screenshot_service_.reset();
         render_capture_service_.reset();
+        for (const std::unique_ptr<render::FrameContext> &frame : frame_contexts_)
+        {
+            if (frame)
+            {
+                // Release descriptor sets before destroying the textures they
+                // reference; Vulkan validates that relationship at image-view teardown.
+                frame->Cleanup();
+            }
+        }
+        frame_contexts_.clear();
         if (renderer_)
         {
             // Release every module GPU handle explicitly, in reverse creation
@@ -1128,14 +1326,6 @@ namespace kpengine::live2d
             shutdown_leaked_handles_ += bubble_->GetLiveGpuHandleCount();
             bubble_.reset();
         }
-        for (const std::unique_ptr<render::FrameContext> &frame : frame_contexts_)
-        {
-            if (frame)
-            {
-                frame->Cleanup();
-            }
-        }
-        frame_contexts_.clear();
         if (backend_)
         {
             if (backend_initialized_)
@@ -1172,5 +1362,131 @@ namespace kpengine::live2d
         }
         model_asset_ = {};
         engine_ = nullptr;
+    }
+
+    bool Live2DViewerHost::ShowEmotionBubble(const std::string_view text)
+    {
+        if (backend_ == nullptr || renderer_ == nullptr)
+        {
+            emotion_diagnostic_ = "Emotion bubble needs an initialized viewer";
+            return false;
+        }
+        std::string diagnostic;
+        if (!bubble_)
+        {
+            bubble_ = std::make_unique<BubbleRenderer>();
+            if (!bubble_->Initialize(*backend_, renderer_->GetOutputColorFormat(), diagnostic))
+            {
+                bubble_.reset();
+                emotion_diagnostic_ = diagnostic;
+                return false;
+            }
+            bubble_appearance_.fill_color = {0.02f, 0.03f, 0.06f, 1.0f};
+            bubble_appearance_.bezel_color = {0.07f, 0.16f, 0.30f, 1.0f};
+            bubble_appearance_.dot_color = {0.10f, 0.95f, 1.0f, 1.0f};
+            bubble_appearance_.outline_color = {1.0f, 0.16f, 0.66f, 1.0f};
+            bubble_appearance_.dot_gap = 0.22f;
+            bubble_placement_.center_x = 0.26f;
+            bubble_placement_.center_y = 0.16f;
+            bubble_placement_.height_fraction = 0.15f;
+        }
+
+        bubble_panel_.SetText(0u, text);
+        bubble_ink_ = bubble_panel_.Rebuild(emotion_glyphs_);
+        if (!bubble_->UploadText(bubble_ink_, diagnostic))
+        {
+            emotion_diagnostic_ = diagnostic;
+            return false;
+        }
+        bubble_enabled_ = true;
+        bubble_pop_ = 0.0f;
+        emotion_bubble_remaining_ = 2.5f;
+        emotion_bubble_timed_ = true;
+        return true;
+    }
+
+    void Live2DViewerHost::ApplyEmotionPreset(const std::string_view preset)
+    {
+        emotion_diagnostic_.clear();
+        if (renderer_ == nullptr)
+        {
+            emotion_diagnostic_ = "Live2D renderer is not ready";
+            return;
+        }
+
+        std::string diagnostic;
+        renderer_->ClearPreviewExpression(diagnostic);
+        bool expression_applied = false;
+        if (preset == "Happy")
+        {
+            expression_applied = renderer_->SetPreviewExpression("exp_02", diagnostic) ||
+                                 renderer_->SetPreviewExpression("exp_04", diagnostic);
+        }
+        else if (preset == "Sad")
+        {
+            expression_applied = renderer_->SetPreviewExpression("exp_03", diagnostic) ||
+                                 renderer_->SetPreviewExpression("exp_01", diagnostic);
+        }
+        else if (preset == "Angry")
+        {
+            expression_applied = renderer_->SetPreviewExpression("exp_08", diagnostic) ||
+                                 renderer_->SetPreviewExpression("exp_07", diagnostic);
+        }
+        bool motion_applied = false;
+        const auto try_motion = [&](const std::string_view group,
+                                    const std::uint32_t index) {
+            if (motion_applied)
+            {
+                return;
+            }
+            std::string motion_diagnostic;
+            motion_applied = renderer_->StartPreviewMotion(group, index, 2,
+                                                            motion_diagnostic);
+            if (!motion_applied)
+            {
+                diagnostic = std::move(motion_diagnostic);
+            }
+        };
+        if (preset == "Happy")
+        {
+            try_motion("Idle", 1u);
+            try_motion("Idle", 0u);
+        }
+        else if (preset == "Sad")
+        {
+            try_motion("FlickDown", 0u);
+            try_motion("Flick", 0u);
+            try_motion("Idle", 0u);
+        }
+        else if (preset == "Angry")
+        {
+            try_motion("Tap@Body", 0u);
+            try_motion("TapBody", 0u);
+            try_motion("Tap", 0u);
+            try_motion("Flick", 0u);
+            try_motion("Idle", 0u);
+        }
+        else
+        {
+            try_motion("Idle", 0u);
+        }
+
+        if (!expression_applied && !motion_applied)
+        {
+            emotion_diagnostic_ = diagnostic.empty()
+                                      ? "No authored expression or motion matched this preset"
+                                      : diagnostic;
+            return;
+        }
+        emotion_status_ = std::string(preset);
+        if (!expression_applied)
+        {
+            emotion_status_ += " (body motion)";
+        }
+        const std::string_view bubble_text =
+            preset == "Happy" ? "^_^" :
+            preset == "Sad" ? "T_T" :
+            preset == "Angry" ? ">_<" : "o_o";
+        ShowEmotionBubble(bubble_text);
     }
 }

@@ -56,6 +56,8 @@ namespace kpengine::live2d
         // forwards both to the instance during frame recording.
         bool StartPreviewMotion(std::string_view group, uint32_t index,
                                 int32_t priority, std::string &diagnostic);
+        bool SetPreviewExpression(std::string_view name, std::string &diagnostic);
+        bool ClearPreviewExpression(std::string &diagnostic);
         bool Record(render::FrameContext &frame_context,
                     graphics::CommandRecorder &recorder,
                     float delta_time,
