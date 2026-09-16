@@ -88,6 +88,23 @@ namespace kpengine::runtime
             return {{}, command::CommandRegistrationStatus::InvalidDescriptor,
                     "Screenshot command provider requires a screenshot service"};
         }
+        return RegisterScreenshotCommands(
+            registry,
+            [screenshot_service = std::move(screenshot_service)]()
+            {
+                return screenshot_service.get();
+            });
+    }
+
+    command::CommandRegistrationResult RegisterScreenshotCommands(
+        command::CommandRegistry &registry,
+        ScreenshotServiceResolver screenshot_service_resolver)
+    {
+        if (!screenshot_service_resolver)
+        {
+            return {{}, command::CommandRegistrationStatus::InvalidDescriptor,
+                    "Screenshot command provider requires a service resolver"};
+        }
 
         command::CommandDesc descriptor{
             "capture.screenshot",
@@ -107,7 +124,7 @@ namespace kpengine::runtime
                                             "host_output",
                                             "live2d",
                                             "engine_window"}}}},
-            [screenshot_service = std::move(screenshot_service)](
+            [screenshot_service_resolver = std::move(screenshot_service_resolver)](
                 const command::CommandCall &call, const command::CommandContext &context)
             {
                 if (!context.complete)
@@ -134,6 +151,16 @@ namespace kpengine::runtime
 
                 const command::CommandCompletionSink complete = context.complete;
                 const uint64_t request_id = context.request_id;
+                RuntimeScreenshotService *const screenshot_service =
+                    screenshot_service_resolver();
+                if (screenshot_service == nullptr)
+                {
+                    return command::CommandResult{
+                        command::CommandStatus::Failed,
+                        "Screenshot service is not initialized",
+                        request_id,
+                        {}};
+                }
                 const bool accepted = screenshot_service->RequestScreenshot(
                     std::move(request),
                     [complete, request_id](ScreenshotResult result) mutable

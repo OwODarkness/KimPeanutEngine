@@ -182,7 +182,7 @@
 
 ## Post-V1 roadmap
 
-- [ ] **L2D6 — authored motion and expression playback**
+- [x] **L2D6 — authored motion and expression playback**
   ([concrete plan](.plan/L2D6.md),
   [execution spec](../../.spec/specs/live2d-authored-playback.md)): execute five
   ordered subtasks—
@@ -190,8 +190,8 @@
   ([journal](../../.spec/journal/2026-09-12-live2d-l2d6-0.md)),
   [x] [typed product/import](.plan/L2D6.1.md) ([journal](../../.spec/journal/2026-09-12-live2d-l2d6-1.md)),
   [x] [instance-local clip library](.plan/L2D6.2.md) ([journal](../../.spec/journal/2026-09-12-live2d-l2d6-2.md)),
-  [ ] [deterministic playback transaction](.plan/L2D6.3.md), and
-  [ ] [hardening/L2D7 handoff](.plan/L2D6.4.md). L2D6 exposes named motion groups,
+  [x] [deterministic playback transaction](.plan/L2D6.3.md), and
+  [x] [hardening/L2D7 handoff](.plan/L2D6.4.md). L2D6 exposes named motion groups,
   one logical expression channel, fades, priorities, cancellation, completion,
   and value-owned events without embedding selection policy in the shared asset.
   L2D6.0 froze 42 decisions against pinned R5 source and a standalone probe, and
@@ -237,7 +237,7 @@
 
 ## L2D7 acceptance
 
-- [ ] L2D6.4 is accepted and its internal transaction exposes named phases that
+- [x] L2D6.4 is accepted and its internal transaction exposes named phases that
   can place automatic blink before expression without changing public playback
   tokens, priorities, fades, completion, or value-owned event behavior.
 - [ ] Product V3 deterministically preserves L2D6 animation data plus optional

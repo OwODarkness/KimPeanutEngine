@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_SCREENSHOT_SCREENSHOT_COMMAND_PROVIDER_H
 #define KPENGINE_RUNTIME_SCREENSHOT_SCREENSHOT_COMMAND_PROVIDER_H
 
+#include <functional>
 #include <memory>
 
 #include "command/command_registry.h"
@@ -9,11 +10,20 @@ namespace kpengine::runtime
 {
     class RuntimeScreenshotService;
 
+    using ScreenshotServiceResolver =
+        std::function<RuntimeScreenshotService *()>;
+
     // Registers the Runtime-facing command adapter. The handler retains this
     // shared service ownership for any dispatch already accepted by the registry.
     command::CommandRegistrationResult RegisterScreenshotCommands(
         command::CommandRegistry &registry,
         std::shared_ptr<RuntimeScreenshotService> screenshot_service);
+
+    // Hosts that construct their capture service after the command registry
+    // exists may resolve it at game-thread dispatch time.
+    command::CommandRegistrationResult RegisterScreenshotCommands(
+        command::CommandRegistry &registry,
+        ScreenshotServiceResolver screenshot_service_resolver);
 }
 
 #endif

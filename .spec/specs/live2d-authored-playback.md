@@ -1,10 +1,11 @@
 # Live2D Authored Playback
 
-- Status: proposed; implementation has not started
+- Status: complete (2026-09-16); L2D6.4 hardening gate accepted
 - Parent roadmap: [Live2D Module Roadmap](../../docs/live2d/TODO.md)
 - Architecture: [Live2D Module Plans](../../docs/live2d/PLANS.md)
 - Concrete design: [L2D6](../../docs/live2d/.plan/L2D6.md)
-- Journal: create a dated L2D6 journal when L2D6.0 execution begins
+- Journal: [L2D6.3 closeout](../journal/2026-09-12-live2d-l2d6-3.md),
+  [L2D6.4 closeout](../journal/2026-09-12-live2d-l2d6-4.md)
 
 ## Objective
 

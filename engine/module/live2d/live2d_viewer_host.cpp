@@ -24,6 +24,7 @@
 #include "render/render_capture_service_internal.h"
 #include "screenshot/runtime_screenshot_service.h"
 #include "runtime_global_context.h"
+#include "screenshot/screenshot_command_provider.h"
 #include "window/window_system.h"
 
 namespace kpengine::live2d
@@ -777,6 +778,20 @@ namespace kpengine::live2d
         // Holding the token is what keeps the entry installed; the registry
         // releases it when this host is destroyed.
         command_registration_ = std::move(registration.registration);
+        runtime::command::CommandRegistrationResult screenshot_registration =
+            runtime::RegisterScreenshotCommands(
+                registry,
+                [this]()
+                {
+                    return screenshot_service_.get();
+                });
+        if (!screenshot_registration.IsSuccess())
+        {
+            diagnostic = screenshot_registration.diagnostic;
+            return false;
+        }
+        screenshot_command_registration_ =
+            std::move(screenshot_registration.registration);
         return true;
     }
 
@@ -1078,6 +1093,8 @@ namespace kpengine::live2d
         {
             backend_->WaitIdle();
         }
+        screenshot_command_registration_ = {};
+        command_registration_ = {};
         screenshot_service_.reset();
         render_capture_service_.reset();
         if (renderer_)

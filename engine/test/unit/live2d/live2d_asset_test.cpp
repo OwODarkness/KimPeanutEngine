@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <filesystem>
 #include <fstream>
+#include <limits>
 #include <memory>
 #include <string>
 #include <vector>
@@ -22,6 +24,8 @@ namespace
 {
     constexpr const char *kModelPath =
         "live2d/hiyori_pro/runtime/hiyori_pro_t11.model3.json";
+    constexpr const char *kMaoModelPath =
+        "live2d/mao/runtime/Mao.model3.json";
 
     std::filesystem::path MakeTempContentRoot()
     {
@@ -913,4 +917,335 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
 
     std::error_code error;
     std::filesystem::remove_all(content_root, error);
+}
+
+TEST(Live2DAssetTest, ReplaysMaoMotionAndExpressionDeterministically)
+{
+    kpengine::asset::AssetManager &manager =
+        kpengine::asset::AssetManager::GetInstance();
+    std::string diagnostic;
+    ASSERT_TRUE(kpengine::live2d::RegisterLive2DAssetTypes(manager, diagnostic))
+        << diagnostic;
+
+    kpengine::asset::ImportProviderRegistry registry;
+    ASSERT_TRUE(kpengine::live2d::RegisterLive2DImporters(registry, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(registry.Seal(diagnostic)) << diagnostic;
+
+    const std::filesystem::path content_root =
+        std::filesystem::temp_directory_path() /
+        "kpengine_live2d_mao_playback_root";
+    std::error_code cleanup_error;
+    std::filesystem::remove_all(content_root, cleanup_error);
+
+    kpengine::asset::ImportProviderRequest request{};
+    request.asset_root = kpengine::project_root / "asset";
+    request.archive_root = content_root / ".archive";
+    request.source_path = kMaoModelPath;
+    const auto imported = registry.Execute(request, {}, diagnostic);
+    ASSERT_TRUE(diagnostic.empty()) << diagnostic;
+    const auto product = std::dynamic_pointer_cast<
+        kpengine::asset::TypedImportProduct<
+            kpengine::live2d::Live2DImportProduct,
+            kpengine::asset::ImportProviderKind::Custom>>(imported.product);
+    ASSERT_NE(product, nullptr) << imported.diagnostic;
+    ASSERT_EQ(product->value.product.product_version, 3u);
+    ASSERT_EQ(product->value.product.expressions.size(), 8u);
+
+    const std::filesystem::path output = content_root / "mao.live2d";
+    std::filesystem::create_directories(content_root);
+    {
+        std::ofstream file(output, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(file.is_open());
+        file.write(reinterpret_cast<const char *>(product->value.product_bytes.data()),
+                   static_cast<std::streamsize>(product->value.product_bytes.size()));
+        ASSERT_TRUE(file.good());
+    }
+
+    const kpengine::asset::AssetID id = manager.LoadSync(output.generic_string());
+    ASSERT_TRUE(id.IsValid());
+    kpengine::live2d::Live2DSystem system;
+    ASSERT_TRUE(system.Initialize());
+    auto first = system.CreateInstance(id);
+    auto second = system.CreateInstance(id);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    ASSERT_EQ(first->ExpressionCount(), 8u);
+    ASSERT_EQ(second->ExpressionCount(), 8u);
+
+    auto expect_same_update = [&](
+        const kpengine::live2d::Live2DPlaybackUpdateResult &left,
+        const kpengine::live2d::Live2DPlaybackUpdateResult &right)
+    {
+        EXPECT_EQ(left.motion_parameters_updated, right.motion_parameters_updated);
+        ASSERT_EQ(left.events.size(), right.events.size());
+        for (std::size_t index = 0u; index < left.events.size(); ++index)
+        {
+            EXPECT_EQ(left.events[index].kind, right.events[index].kind);
+            EXPECT_EQ(left.events[index].value, right.events[index].value);
+        }
+        ASSERT_EQ(first->ParameterCount(), second->ParameterCount());
+        for (std::size_t index = 0u; index < first->ParameterCount(); ++index)
+        {
+            float left_value = 0.0f;
+            float right_value = 0.0f;
+            ASSERT_TRUE(first->GetParameterValue(index, left_value));
+            ASSERT_TRUE(second->GetParameterValue(index, right_value));
+            EXPECT_FLOAT_EQ(left_value, right_value);
+        }
+    };
+
+    kpengine::live2d::Live2DPlaybackToken first_idle{};
+    kpengine::live2d::Live2DPlaybackToken second_idle{};
+    ASSERT_TRUE(first->PlayMotion(
+        {"Idle", 0u}, 1, kpengine::live2d::Live2DMotionStartMode::Force,
+        first_idle, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(second->PlayMotion(
+        {"Idle", 0u}, 1, kpengine::live2d::Live2DMotionStartMode::Force,
+        second_idle, diagnostic))
+        << diagnostic;
+
+    kpengine::live2d::Live2DPlaybackToken rejected{};
+    EXPECT_FALSE(first->PlayMotion(
+        {"TapBody", 0u}, 1,
+        kpengine::live2d::Live2DMotionStartMode::RespectPriority,
+        rejected, diagnostic));
+    EXPECT_EQ(rejected.sequence, 0u);
+    EXPECT_NE(diagnostic.find("priority was rejected"), std::string::npos);
+
+    kpengine::live2d::Live2DPlaybackToken first_tap{};
+    kpengine::live2d::Live2DPlaybackToken second_tap{};
+    ASSERT_TRUE(first->PlayMotion(
+        {"TapBody", 0u}, 2,
+        kpengine::live2d::Live2DMotionStartMode::RespectPriority,
+        first_tap, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(second->PlayMotion(
+        {"TapBody", 0u}, 2,
+        kpengine::live2d::Live2DMotionStartMode::RespectPriority,
+        second_tap, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(first->SetExpression("exp_01", diagnostic)) << diagnostic;
+    ASSERT_TRUE(second->SetExpression("exp_01", diagnostic)) << diagnostic;
+    ASSERT_TRUE(first->SetExpression("exp_01", diagnostic)) << diagnostic;
+    ASSERT_TRUE(second->SetExpression("exp_01", diagnostic)) << diagnostic;
+
+    const std::array<float, 5> deltas{{0.0f, 1.0f / 60.0f, 0.25f, 0.5f, 1.0f}};
+    for (const float delta : deltas)
+    {
+        kpengine::live2d::Live2DPlaybackUpdateResult first_result;
+        kpengine::live2d::Live2DPlaybackUpdateResult second_result;
+        ASSERT_TRUE(first->AdvancePlayback(delta, first_result, diagnostic))
+            << diagnostic;
+        ASSERT_TRUE(second->AdvancePlayback(delta, second_result, diagnostic))
+            << diagnostic;
+        expect_same_update(first_result, second_result);
+    }
+
+    kpengine::live2d::Live2DPlaybackUpdateResult first_result;
+    kpengine::live2d::Live2DPlaybackUpdateResult second_result;
+    std::vector<float> first_values_before_invalid_delta;
+    std::vector<float> second_values_before_invalid_delta;
+    first_values_before_invalid_delta.reserve(first->ParameterCount());
+    second_values_before_invalid_delta.reserve(second->ParameterCount());
+    for (std::size_t index = 0u; index < first->ParameterCount(); ++index)
+    {
+        float first_value = 0.0f;
+        float second_value = 0.0f;
+        ASSERT_TRUE(first->GetParameterValue(index, first_value));
+        ASSERT_TRUE(second->GetParameterValue(index, second_value));
+        first_values_before_invalid_delta.push_back(first_value);
+        second_values_before_invalid_delta.push_back(second_value);
+    }
+    EXPECT_FALSE(first->AdvancePlayback(std::numeric_limits<float>::quiet_NaN(),
+                                         first_result, diagnostic));
+    EXPECT_NE(diagnostic.find("finite and non-negative"), std::string::npos);
+    EXPECT_EQ(first_result.motion_parameters_updated, false);
+    EXPECT_FALSE(second->AdvancePlayback(std::numeric_limits<float>::infinity(),
+                                          second_result, diagnostic));
+    EXPECT_EQ(second_result.motion_parameters_updated, false);
+    for (std::size_t index = 0u; index < first->ParameterCount(); ++index)
+    {
+        float first_value = 0.0f;
+        float second_value = 0.0f;
+        ASSERT_TRUE(first->GetParameterValue(index, first_value));
+        ASSERT_TRUE(second->GetParameterValue(index, second_value));
+        EXPECT_FLOAT_EQ(first_value, first_values_before_invalid_delta[index]);
+        EXPECT_FLOAT_EQ(second_value, second_values_before_invalid_delta[index]);
+    }
+
+    ASSERT_TRUE(first->ClearExpression(kpengine::live2d::Live2DStopMode::Immediate,
+                                       diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(second->ClearExpression(kpengine::live2d::Live2DStopMode::Immediate,
+                                        diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(first->SetExpression("exp_02", diagnostic)) << diagnostic;
+    ASSERT_TRUE(second->SetExpression("exp_02", diagnostic)) << diagnostic;
+
+    ASSERT_TRUE(first->StopMotion(
+        first_tap, kpengine::live2d::Live2DStopMode::AuthoredFadeOut,
+        diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(second->StopMotion(
+        second_tap, kpengine::live2d::Live2DStopMode::AuthoredFadeOut,
+        diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(first->AdvancePlayback(0.0f, first_result, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(second->AdvancePlayback(0.0f, second_result, diagnostic))
+        << diagnostic;
+    expect_same_update(first_result, second_result);
+    ASSERT_TRUE(first->AdvancePlayback(2.0f, first_result, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(second->AdvancePlayback(2.0f, second_result, diagnostic))
+        << diagnostic;
+    expect_same_update(first_result, second_result);
+    ASSERT_TRUE(std::any_of(
+        first_result.events.begin(), first_result.events.end(),
+        [](const kpengine::live2d::Live2DPlaybackEvent &event)
+        {
+            return event.kind == kpengine::live2d::Live2DPlaybackEventKind::MotionCancelled;
+        }));
+
+    ASSERT_TRUE(first->ClearExpression(kpengine::live2d::Live2DStopMode::AuthoredFadeOut,
+                                       diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(second->ClearExpression(kpengine::live2d::Live2DStopMode::AuthoredFadeOut,
+                                        diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(first->AdvancePlayback(2.0f, first_result, diagnostic))
+        << diagnostic;
+    ASSERT_TRUE(second->AdvancePlayback(2.0f, second_result, diagnostic))
+        << diagnostic;
+    expect_same_update(first_result, second_result);
+
+    auto write_product = [&](const std::filesystem::path &path,
+                             const kpengine::live2d::Live2DProductData &product_data)
+    {
+        std::vector<std::byte> bytes;
+        ASSERT_TRUE(kpengine::live2d::SerializeLive2DProduct(
+            product_data, bytes, diagnostic))
+            << diagnostic;
+        std::ofstream file(path, std::ios::binary | std::ios::trunc);
+        ASSERT_TRUE(file.is_open()) << path.generic_string();
+        file.write(reinterpret_cast<const char *>(bytes.data()),
+                   static_cast<std::streamsize>(bytes.size()));
+        ASSERT_TRUE(file.good()) << path.generic_string();
+    };
+
+    kpengine::live2d::Live2DProductData v1_product = product->value.product;
+    v1_product.product_version = 1u;
+    v1_product.motions.clear();
+    v1_product.expressions.clear();
+    v1_product.parameter_groups.clear();
+    v1_product.secondary_behavior = {};
+    const std::filesystem::path v1_output = content_root / "mao-v1.live2d";
+    write_product(v1_output, v1_product);
+    const kpengine::asset::AssetID v1_id = manager.LoadSync(v1_output.generic_string());
+    ASSERT_TRUE(v1_id.IsValid());
+    auto v1_instance = system.CreateInstance(v1_id);
+    ASSERT_NE(v1_instance, nullptr);
+    kpengine::live2d::Live2DPlaybackToken v1_token{};
+    EXPECT_FALSE(v1_instance->PlayMotion(
+        {"Idle", 0u}, 1, kpengine::live2d::Live2DMotionStartMode::Force,
+        v1_token, diagnostic));
+    EXPECT_NE(diagnostic.find("reimport required"), std::string::npos);
+    EXPECT_EQ(v1_token.sequence, 0u);
+    EXPECT_FALSE(v1_instance->SetExpression("exp_01", diagnostic));
+    EXPECT_NE(diagnostic.find("reimport required"), std::string::npos);
+    v1_instance.reset();
+    manager.UnRegisterAsset(v1_id);
+
+    kpengine::live2d::Live2DProductData v2_static_product = product->value.product;
+    v2_static_product.product_version = 2u;
+    v2_static_product.motions.clear();
+    v2_static_product.expressions.clear();
+    v2_static_product.parameter_groups.clear();
+    v2_static_product.secondary_behavior = {};
+    const std::filesystem::path v2_output = content_root / "mao-v2-static.live2d";
+    write_product(v2_output, v2_static_product);
+    const kpengine::asset::AssetID v2_id = manager.LoadSync(v2_output.generic_string());
+    ASSERT_TRUE(v2_id.IsValid());
+    auto v2_instance = system.CreateInstance(v2_id);
+    ASSERT_NE(v2_instance, nullptr);
+    EXPECT_EQ(v2_instance->MotionCount(), 0u);
+    EXPECT_EQ(v2_instance->ExpressionCount(), 0u);
+    kpengine::live2d::Live2DPlaybackUpdateResult v2_result;
+    ASSERT_TRUE(v2_instance->AdvancePlayback(0.0f, v2_result, diagnostic))
+        << diagnostic;
+    EXPECT_TRUE(v2_result.events.empty());
+    v2_instance.reset();
+    manager.UnRegisterAsset(v2_id);
+
+    auto capacity_instance = system.CreateInstance(id);
+    ASSERT_NE(capacity_instance, nullptr);
+    std::vector<kpengine::live2d::Live2DPlaybackToken> active_tokens;
+    active_tokens.reserve(16u);
+    for (std::size_t index = 0u; index < 16u; ++index)
+    {
+        kpengine::live2d::Live2DPlaybackToken token{};
+        ASSERT_TRUE(capacity_instance->PlayMotion(
+            {"Idle", 0u}, 1, kpengine::live2d::Live2DMotionStartMode::Force,
+            token, diagnostic))
+            << diagnostic;
+        active_tokens.push_back(token);
+    }
+    kpengine::live2d::Live2DPlaybackToken exhausted_token{};
+    EXPECT_FALSE(capacity_instance->PlayMotion(
+        {"Idle", 0u}, 1, kpengine::live2d::Live2DMotionStartMode::Force,
+        exhausted_token, diagnostic));
+    EXPECT_NE(diagnostic.find("capacity is exhausted"), std::string::npos);
+    capacity_instance->StopAllMotions(kpengine::live2d::Live2DStopMode::Immediate);
+    ASSERT_TRUE(capacity_instance->AdvancePlayback(0.0f, first_result, diagnostic))
+        << diagnostic;
+    EXPECT_EQ(first_result.events.size(), active_tokens.size());
+    for (std::size_t index = 0u; index < first_result.events.size(); ++index)
+    {
+        EXPECT_EQ(first_result.events[index].kind,
+                  kpengine::live2d::Live2DPlaybackEventKind::MotionCancelled);
+        EXPECT_EQ(first_result.events[index].token.sequence,
+                  active_tokens[index].sequence);
+    }
+    capacity_instance.reset();
+
+    auto pending_capacity_instance = system.CreateInstance(id);
+    ASSERT_NE(pending_capacity_instance, nullptr);
+    for (std::size_t index = 0u; index < 64u; ++index)
+    {
+        kpengine::live2d::Live2DPlaybackToken token{};
+        ASSERT_TRUE(pending_capacity_instance->PlayMotion(
+            {"Idle", 0u}, 1, kpengine::live2d::Live2DMotionStartMode::Force,
+            token, diagnostic))
+            << diagnostic;
+        ASSERT_TRUE(pending_capacity_instance->StopMotion(
+            token, kpengine::live2d::Live2DStopMode::Immediate, diagnostic))
+            << diagnostic;
+    }
+    kpengine::live2d::Live2DPlaybackToken pending_exhausted_token{};
+    EXPECT_FALSE(pending_capacity_instance->PlayMotion(
+        {"Idle", 0u}, 1, kpengine::live2d::Live2DMotionStartMode::Force,
+        pending_exhausted_token, diagnostic));
+    EXPECT_NE(diagnostic.find("capacity is exhausted"), std::string::npos);
+    pending_capacity_instance.reset();
+
+    auto expression_capacity_instance = system.CreateInstance(id);
+    ASSERT_NE(expression_capacity_instance, nullptr);
+    for (std::size_t index = 0u; index < 4u; ++index)
+    {
+        ASSERT_TRUE(expression_capacity_instance->SetExpression(
+            "exp_01", diagnostic))
+            << diagnostic;
+    }
+    EXPECT_FALSE(expression_capacity_instance->SetExpression("exp_01", diagnostic));
+    EXPECT_NE(diagnostic.find("capacity is exhausted"), std::string::npos);
+    expression_capacity_instance.reset();
+
+    first.reset();
+    second.reset();
+    system.Shutdown();
+    manager.UnRegisterAsset(id);
+    EXPECT_EQ(manager.GetLiveAssetCount(kpengine::live2d::kLive2DModelAssetType), 0u);
+    std::filesystem::remove_all(content_root, cleanup_error);
 }

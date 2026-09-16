@@ -279,23 +279,20 @@
   update. Public playback behavior and module boundaries are unchanged; Product
   V3 and secondary controllers remain in L2D7.1–L2D7.4. → [L2D7.0 journal](../.spec/journal/2026-09-13-live2d-l2d7-0.md),
   [L2D7 plan](live2d/.plan/L2D7.md)
-- **Live2D L2D6.4 playback hardening baseline (2026-09-12)** — named the
-  instance-local playback phases and L2D7 late-update insertion point, made
-  immediate cancellation token-local, rejected invalid deltas before Cubism
-  mutation, and added bounded event-storage checks. Focused Live2D tests pass
-  19/19; OpenGL and Vulkan viewer smoke both submit 111 draws and shut down
-  through `CubismFramework::Dispose()`. The complete synthetic priority/fade/
-  expression matrix, SDK-off evidence, and full-duration viewer completion
-  capture remain open. → [L2D6.4 journal](../.spec/journal/2026-09-12-live2d-l2d6-4.md),
+- **Live2D L2D6.4 playback hardening and L2D7 handoff (2026-09-16)** — closed
+  Product V1/V2 compatibility, retained-resource lifetime, SDK-off, and
+  full-duration authored-motion evidence. The standalone viewer now registers
+  the existing screenshot command through a deferred service resolver; OpenGL
+  and Vulkan runs crossed the Hiyori motion boundary, exported validation
+  captures, and shut down cleanly. Focused screenshot/Live2D tests pass 20/20;
+  the full Live2D suite remains green at 56/56. → [L2D6.4 journal](../.spec/journal/2026-09-12-live2d-l2d6-4.md),
   [L2D6.4 plan](live2d/.plan/L2D6.4.md)
-- **Live2D L2D6.3 playback transaction baseline (2026-09-12)** — added the SDK-free
-  motion/expression control surface, instance-local opaque playback tokens, bounded
-  event adaptation, direct-write checkpointing, and the caller-driven
-  `Load → motion → Save → expression → model update` transaction. The standalone
-  Live2D viewer now starts Hiyori `Idle/0`, advances it every frame, and restarts
-  the clip after completion; Hiyori playback also proves token-associated
-  completion, stale-token rejection, and a runtime parameter change. The full
-  numeric/fade/event hardening gate remains open. →
+- **Live2D L2D6.3 deterministic playback transaction (2026-09-16)** — closed the
+  playback hardening gate with two-instance Mao replay, priority and same-name
+  expression restart coverage, authored-fade cancellation, invalid-delta
+  atomicity, and deterministic active/pending transition capacity failures. The
+  full Live2D suite passes 56/56 and the SDK-off runtime build passes; authored
+  motion-user-event records remain a named L2D6.4 fixture follow-up. →
   [L2D6.3 journal](../.spec/journal/2026-09-12-live2d-l2d6-3.md),
   [L2D6.3 plan](live2d/.plan/L2D6.3.md)
 - **Live2D L2D6.2 instance-local clip library (2026-09-12)** — runtime instance

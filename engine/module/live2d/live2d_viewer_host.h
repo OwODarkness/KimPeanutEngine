@@ -128,6 +128,7 @@ namespace kpengine::live2d
         // Keeps the host's command registration alive; the registry releases the
         // entry when this token is destroyed.
         runtime::command::CommandRegistration command_registration_;
+        runtime::command::CommandRegistration screenshot_command_registration_;
         // Pending --resize extent. Applied after the first recorded frame; the
         // startup capture is requested only once the output target carries the
         // new extent, so the exported image's dimensions are the evidence.
