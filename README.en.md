@@ -2,33 +2,9 @@
 
 **Engine version: 1.2.0**
 
-<p align="center">
-  <img src="./config/icon.png" alt="KimPeanut Engine icon" width="96" height="96">
-</p>
-
-![KimPeanut Engine](./docs/images/main.png)
-
-
-
-
-KimPeanut Engine is a C++ game-engine R&D project focused on rendering and
-low-level infrastructure. It emphasizes explicit resource ownership, GPU
-lifetime management, testable module boundaries, and portable Vulkan/OpenGL
-graphics contracts.
+![KimPeanut Engine](./docs/images/readme-banner.png)
 
 > Chinese documentation: [README.md](README.md)
-
-## Contents
-
-- [About](#about)
-- [Features](#features)
-- [Technology](#technology)
-- [Third-party](#third-party)
-- [Build](#build)
-- [Test](#test)
-- [Documentation](#documentation)
-- [Contributing](#contributing)
-- [License](#license)
 
 ## About
 
@@ -41,6 +17,13 @@ prototypes.
 
 See the [architecture overview](docs/architecture_overview.md) for module
 relationships, data flow, and ownership boundaries.
+
+# Show Cases
+
+<p align="center">
+  <img src="./resouce/example/live2d.png" width="30%" />
+  <img src="./resouce/example/main.png" width="65%" />
+</p>
 
 ## Features
 

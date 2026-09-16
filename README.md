@@ -2,25 +2,10 @@
 
 **引擎版本：1.2.0**
 
-<p align="center">
-  <img src="./config/icon.png" alt="KimPeanut Engine icon" width="96" height="96">
-</p>
 
-![KimPeanut Engine](./docs/images/main.png)
+![KimPeanut Engine](./docs/images/readme-banner.png)
 
 > English documentation: [README.en.md](README.en.md)
-
-## 目录
-
-- [项目简介](#项目简介)
-- [主要特性](#主要特性)
-- [技术栈](#技术栈)
-- [第三方依赖](#第三方依赖)
-- [构建](#构建)
-- [测试](#测试)
-- [文档](#文档)
-- [贡献](#贡献)
-- [许可证](#许可证)
 
 ## 项目简介
 
@@ -31,6 +16,15 @@ KimPeanut Engine（KP Engine）是一个基于 **C++20** 开发的实验性 3D �
 > KP Engine 更关注工程结构与底层机制的实现，而不是提供完整的商业游戏引擎功能。项目中的许多模块都用于实践和验证现代游戏引擎中的关键问题，例如资源生命周期管理、跨 API 抽象、GPU 内存管理以及可扩展的渲染架构。
 
 完整的模块关系、数据流和所有权边界见[架构总览](docs/architecture_overview.md)。
+
+## 示例
+
+<p align="center">
+  <img src="./resouce/example/live2d.png" width="30%" />
+  <img src="./resouce/example/main.png" width="65%" />
+</p>
+
+
 
 ## 主要特性
 
