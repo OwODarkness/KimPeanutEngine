@@ -67,7 +67,9 @@ set(KPENGINE_LIVE2D_MSVC_RUNTIME
     CACHE INTERNAL "Live2D target MSVC runtime base")
 
 add_library(Live2DProduct STATIC
-    runtime/live2d_product.cpp)
+    runtime/live2d_product.cpp
+    runtime/live2d_emotion_policy.cpp
+    runtime/live2d_emotion_resolver.cpp)
 target_include_directories(Live2DProduct PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
 set_property(TARGET Live2DProduct PROPERTY

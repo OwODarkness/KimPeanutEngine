@@ -92,14 +92,14 @@ and declined on evidence:
   quad mesh asset that does not exist.
 
 What was actually wanted was a **speech bubble for the character**, which is
-[L2D8](../live2d/.plan/L2D8.md) and landed in the Live2D module — consuming this
+[L2D8 speech bubble](../live2d/.plan/L2D8-speech-bubble.md) and landed in the Live2D module — consuming this
 module for its text. See [live2d/TODO.md](../live2d/TODO.md).
 
 The panel's own offscreen-and-capture mode remains what it is.
 
 ## Open question left by L2D8
 
-[L2D8](../live2d/.plan/L2D8.md) found that the panel cannot be captured on demand
+[L2D8 speech bubble](../live2d/.plan/L2D8-speech-bubble.md) found that the panel cannot be captured on demand
 in a viewer: `capture.screenshot` belongs to the Scene3D command path, so a
 standalone viewer captures only at startup. That is why `--panel-text`,
 `--panel-dot-color`, `--panel-accent-color`, and `--panel-gradient` exist — a

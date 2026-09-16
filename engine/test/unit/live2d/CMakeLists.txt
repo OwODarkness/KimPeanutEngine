@@ -30,6 +30,19 @@ target_link_libraries(Live2DModelDataContractTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
 gtest_discover_tests(Live2DModelDataContractTest)
 
+add_executable(Live2DEmotionPolicyTest
+    live2d_emotion_policy_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_emotion_policy.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_emotion_resolver.cpp)
+
+target_include_directories(Live2DEmotionPolicyTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime)
+
+target_link_libraries(Live2DEmotionPolicyTest PRIVATE KP::GoogleTest)
+
+include(GoogleTest)
+gtest_discover_tests(Live2DEmotionPolicyTest)
+
 add_executable(Live2DRenderPlannerTest
     live2d_render_planner_test.cpp
     live2d_submission_hardening_test.cpp

@@ -1,5 +1,12 @@
 # Project Status
 
+- **Live2D semantic behavior contract (2026-09-16)** — L2D8.0 defines a
+  versioned, SDK-free emotion/body-language vocabulary and validates authored
+  motion/expression bindings against Product V2/V3 data. L2D8.1 now resolves
+  intent deterministically into authored behavior references; observability
+  remains planned for L2D8.2. → [L2D8 plan](live2d/.plan/L2D8.md) ·
+  [journal](../.spec/journal/2026-09-16-live2d-l2d8-1.md)
+
 - **Live2D speech bubble (2026-09-15)** — the character can now say something. A
   manga-style bubble hangs beside the model, hugs its text, carries a tail aimed
   at it, pops in when the text is set, and appears in the same image as the model.
@@ -30,7 +37,7 @@
   on frame one. Same-code captures differ by **131 channel samples of 2,764,800,
   maximum 1/255** — blend rounding, not a divergence. Full suite 914/915, the one
   failure the pre-existing `LevelLoaderTest` fixture. →
-  [L2D8 plan](live2d/.plan/L2D8.md) · [PLANS](live2d/PLANS.md) · [journal](../.spec/journal/2026-09-15-live2d-l2d8.md)
+  [L2D8 speech bubble plan](live2d/.plan/L2D8-speech-bubble.md) · [PLANS](live2d/PLANS.md) · [journal](../.spec/journal/2026-09-15-live2d-l2d8.md)
 
 - **Panel renders and captures on both backends (2026-09-15)** — the panel module
   became visible. P0 gave it a dot-matrix representation and P1 gave it real

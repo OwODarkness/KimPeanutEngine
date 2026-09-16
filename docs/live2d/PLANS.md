@@ -10,6 +10,8 @@ staged in [`.plan/L2D4.md`](.plan/L2D4.md), authored playback is staged in
 [`.plan/L2D7.md`](.plan/L2D7.md), with viewer debug tools staged in
 [`.plan/L2D7.5.md`](.plan/L2D7.5.md), and the complete V1 execution contract is in
 [`.spec/specs/live2d-v1-rendering.md`](../../.spec/specs/live2d-v1-rendering.md).
+The next semantic behavior policy is staged in [`.plan/L2D8.md`](.plan/L2D8.md);
+the landed speech-bubble companion has its own [plan](.plan/L2D8-speech-bubble.md).
 
 ## Outcome
 
@@ -465,7 +467,7 @@ the bottom and Vulkan from the top, agreeing only for a full-extent viewport at
 backends. The pop-in rides the same matrix, so the shape is always drawn finished
 and the transform does the growing, keeping its proportions exact at every frame.
 
-Stage design: [.plan/L2D8.md](.plan/L2D8.md).
+Stage design: [.plan/L2D8-speech-bubble.md](.plan/L2D8-speech-bubble.md).
 
 ## Long-term stages after V1
 
