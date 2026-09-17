@@ -117,6 +117,16 @@ namespace kpengine::graphics
         ResetStateCache();
     }
 
+    bool VulkanCommandRecorder::RequireRenderTargetUsage(RenderTargetHandle target,
+                                                         ResourceUsage usage)
+    {
+        if (command_buffer_ == VK_NULL_HANDLE || !render_target_manager_)
+        {
+            return false;
+        }
+        return render_target_manager_->RequireUsage(command_buffer_, target, usage);
+    }
+
     bool VulkanCommandRecorder::BindPipeline(PipelineHandle pipeline)
     {
         ++profile_counters_.pipeline_bind_requests;

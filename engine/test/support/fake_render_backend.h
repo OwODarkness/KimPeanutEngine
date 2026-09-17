@@ -117,6 +117,10 @@ namespace kpengine::test
         bool BeginRenderTarget(graphics::RenderTargetHandle target) override;
         bool BeginPresentation(const std::array<float, 4> *) override { return true; }
         void EndRenderTarget() override;
+        bool RequireRenderTargetUsage(graphics::RenderTargetHandle, graphics::ResourceUsage) override
+        {
+            return true;
+        }
         bool BindPipeline(graphics::PipelineHandle) override { return true; }
         void BindMesh(graphics::MeshHandle) override {}
         bool BindGeometry(const graphics::GeometryView &) override { return true; }

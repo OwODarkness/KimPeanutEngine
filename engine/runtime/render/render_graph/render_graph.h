@@ -211,6 +211,10 @@ namespace kpengine::render
             RenderGraphPassOwner owner = RenderGraphPassOwner::Renderer;
             bool terminal = false;
             std::optional<uint64_t> user_key;
+            // This pass's slice of the plan's transition list, so a caller
+            // holding one pass can apply exactly the requirements it introduces.
+            std::size_t transition_offset = 0;
+            std::size_t transition_count = 0;
         };
 
         const std::vector<Pass> &Passes() const noexcept { return passes_; }

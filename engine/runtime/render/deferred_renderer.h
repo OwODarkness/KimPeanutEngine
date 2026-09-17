@@ -147,6 +147,12 @@ namespace kpengine::render
             Matrix4f projection;
         };
 
+        // Applies the state requirements the plan records for one pass, before
+        // the pass records anything. The plan owns what state a resource must be
+        // in; the backend owns what it is currently in and elides what is
+        // already satisfied.
+        void ApplyPassTransitions(const CompiledRenderGraph &plan,
+                                  const CompiledRenderGraph::Pass &pass);
         void ConfigureFramePlans();
         const CompiledRenderGraph *GetFramePlan(RenderFrameConditions conditions) const;
         std::optional<DirectionalShadowFrame> ScheduleDirectionalShadow(
@@ -205,6 +211,9 @@ namespace kpengine::render
         // The compiled plan is now the only authority for pass order.
         std::array<std::optional<RenderGraphCompileResult>, 2> frame_plans_;
         std::optional<RenderGraphFrame> active_pass_frame_;
+        // The plan the active frame executes, so the external terminal's state
+        // requirements can be applied before the host's callback records.
+        const CompiledRenderGraph *active_frame_plan_ = nullptr;
         bool frame_plan_valid_ = false;
         double frame_plan_compile_ms_ = 0.0;
         graphics::Extent2D pending_scene_render_target_extent_;

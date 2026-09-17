@@ -6,6 +6,7 @@
 #include <vulkan/vulkan.h>
 
 #include "base/handle.h"
+#include "common/command_recorder.h"
 #include "common/render_target.h"
 
 namespace kpengine::graphics
@@ -43,6 +44,12 @@ namespace kpengine::graphics
 
         bool BeginRendering(VkCommandBuffer command_buffer, RenderTargetHandle handle);
         void EndRendering(VkCommandBuffer command_buffer);
+        // Moves the target's attachments to the native state the portable usage
+        // requires, emitting a barrier only for attachments whose tracked layout
+        // differs. The tracked layout is the authority on the current state, so
+        // this is safe to call repeatedly and across frames.
+        bool RequireUsage(VkCommandBuffer command_buffer, RenderTargetHandle handle,
+                          ResourceUsage usage);
 
         void CreateSwapchainAttachments(uint32_t width, uint32_t height,
                                         uint32_t color_sample_count);

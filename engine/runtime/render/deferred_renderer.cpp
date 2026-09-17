@@ -57,6 +57,40 @@ namespace kpengine::render
         constexpr uint64_t kPointShadowPerPassUniformKey = 0x534841444f575f50ull;
         constexpr uint64_t kGBufferPerPassUniformKey = 0x4742554646455250ull;
 
+        // The persistent target backing each graph resource. The two enums list
+        // the same resources in different orders, and this is the only place that
+        // relates them, so neither header has to depend on the other.
+        constexpr std::array<RenderTargetName,
+                             static_cast<std::size_t>(RenderPassResource::Count)>
+            kResourceTargets{
+                RenderTargetName::SceneColor,      RenderTargetName::SceneHdr,
+                RenderTargetName::GBuffer,         RenderTargetName::DirectionalShadow,
+                RenderTargetName::SpotShadow,      RenderTargetName::PointShadow,
+                RenderTargetName::CaptureOutput,
+            };
+
+        graphics::ResourceUsage ToResourceUsage(RenderGraphUsage usage)
+        {
+            switch (usage)
+            {
+            case RenderGraphUsage::Sampled:
+                return graphics::ResourceUsage::Sampled;
+            case RenderGraphUsage::ColorAttachment:
+                return graphics::ResourceUsage::ColorAttachment;
+            case RenderGraphUsage::DepthAttachment:
+                return graphics::ResourceUsage::DepthAttachment;
+            case RenderGraphUsage::TransferSource:
+                return graphics::ResourceUsage::TransferSource;
+            case RenderGraphUsage::TransferDestination:
+                return graphics::ResourceUsage::TransferDestination;
+            case RenderGraphUsage::Present:
+                return graphics::ResourceUsage::Present;
+            case RenderGraphUsage::Undefined:
+                break;
+            }
+            return graphics::ResourceUsage::Undefined;
+        }
+
         uint64_t GetObjectUniformKey(const RenderableHandle handle)
         {
             return 0x4f424a4543545f55ull ^
@@ -447,6 +481,7 @@ namespace kpengine::render
         frame_material_bindings_.clear();
         pending_scene_render_target_extent_ = {};
         active_pass_frame_.reset();
+        active_frame_plan_ = nullptr;
         active_pending_capture_.reset();
         for (std::optional<RenderGraphCompileResult> &plan : frame_plans_)
         {
@@ -651,9 +686,10 @@ namespace kpengine::render
             return result;
         }
         active_pass_frame_.emplace(*frame_plan);
+        active_frame_plan_ = frame_plan;
         const auto graph_execute_started = std::chrono::steady_clock::now();
         const bool cursor_started = active_pass_frame_->ExecuteRenderer(
-            [this, &input](const CompiledRenderGraph::Pass &pass) {
+            [this, &input, frame_plan](const CompiledRenderGraph::Pass &pass) {
                 // The authored declaration always keys its passes; an unkeyed
                 // pass cannot be dispatched and must not be reported as a
                 // successful visit.
@@ -661,6 +697,7 @@ namespace kpengine::render
                 {
                     return false;
                 }
+                ApplyPassTransitions(*frame_plan, pass);
                 return ExecutePass(static_cast<FixedRenderPassId>(*pass.user_key), input.lights);
             });
         profile_.cpu_graph_execute_ms +=
@@ -767,6 +804,20 @@ namespace kpengine::render
         }
         const auto started = std::chrono::steady_clock::now();
         backend_->BeginGpuProfilePass(static_cast<uint32_t>(RenderProfilePass::EditorComposite));
+        // The external terminal samples SceneColor, and the host's callback below
+        // is what reads it, so its requirement is applied before the callback
+        // rather than after the sweep.
+        if (active_frame_plan_ != nullptr)
+        {
+            for (const CompiledRenderGraph::Pass &pass : active_frame_plan_->Passes())
+            {
+                if (pass.owner == RenderGraphPassOwner::External && pass.terminal)
+                {
+                    ApplyPassTransitions(*active_frame_plan_, pass);
+                    break;
+                }
+            }
+        }
         const bool succeeded = active_pass_frame_->ExecuteExternal(record_pass);
         backend_->EndGpuProfilePass(static_cast<uint32_t>(RenderProfilePass::EditorComposite));
         profile_.passes[static_cast<size_t>(RenderProfilePass::EditorComposite)].cpu_time_ms =
@@ -792,6 +843,7 @@ namespace kpengine::render
         if (finalized)
         {
             active_pass_frame_.reset();
+            active_frame_plan_ = nullptr;
             active_pending_capture_.reset();
             active_frame_context_ = nullptr;
             render_world_ = nullptr;
@@ -834,6 +886,42 @@ namespace kpengine::render
             failed_environment_source_ = source_handle;
         }
         active_environment_ = {};
+    }
+
+    void DeferredRenderer::ApplyPassTransitions(const CompiledRenderGraph &plan,
+                                                const CompiledRenderGraph::Pass &pass)
+    {
+        graphics::CommandRecorder *const recorder =
+            backend_ != nullptr ? backend_->GetCommandRecorder() : nullptr;
+        if (recorder == nullptr || pass.transition_count == 0)
+        {
+            return;
+        }
+        const std::vector<RenderGraphTransitionIntent> &transitions = plan.Transitions();
+        for (std::size_t index = 0; index < pass.transition_count; ++index)
+        {
+            const std::size_t intent_index = pass.transition_offset + index;
+            if (intent_index >= transitions.size())
+            {
+                break;
+            }
+            const auto *texture =
+                std::get_if<GraphTextureHandle>(&transitions[intent_index].handle);
+            if (texture == nullptr ||
+                texture->resource >=
+                    static_cast<uint32_t>(RenderPassResource::Count))
+            {
+                continue;
+            }
+            RenderTarget *const target = frame_targets_.GetTarget(
+                kResourceTargets[static_cast<std::size_t>(texture->resource)]);
+            if (target == nullptr)
+            {
+                continue;
+            }
+            recorder->RequireRenderTargetUsage(
+                target->GetHandle(), ToResourceUsage(transitions[intent_index].usage));
+        }
     }
 
     void DeferredRenderer::ConfigureFramePlans()

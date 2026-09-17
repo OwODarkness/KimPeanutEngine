@@ -29,6 +29,21 @@ namespace kpengine::graphics
         uint32_t height = 0;
     };
 
+    // Portable state a render target's attachments are required to be in, named
+    // as a purpose rather than a native layout, barrier, or pipeline stage. The
+    // backend owns the current state and translates the difference; Render never
+    // names a layout.
+    enum class ResourceUsage : uint8_t
+    {
+        Undefined,
+        Sampled,
+        ColorAttachment,
+        DepthAttachment,
+        TransferSource,
+        TransferDestination,
+        Present,
+    };
+
     // Commands are valid only while the owning RenderBackend is between
     // BeginFrame() and EndFrame(). Implementations translate these intents to
     // the native graphics API command stream.
@@ -44,6 +59,13 @@ namespace kpengine::graphics
         // presentation attachment clear.
         virtual bool BeginPresentation(const std::array<float, 4> *clear_color = nullptr) = 0;
         virtual void EndRenderTarget() = 0;
+        // Requires the target's attachments to be in the given state before any
+        // later command reads them, so a pass that samples an earlier pass's
+        // output declares that need instead of the backend guessing it from
+        // execution order. A backend that orders implicitly treats it as a
+        // no-op; one that models state elides the transition when the resource
+        // is already where it is asked to be.
+        virtual bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage) = 0;
         virtual bool BindPipeline(PipelineHandle pipeline) = 0;
         virtual void BindMesh(MeshHandle mesh) = 0;
         virtual bool BindGeometry(const GeometryView &geometry) = 0;

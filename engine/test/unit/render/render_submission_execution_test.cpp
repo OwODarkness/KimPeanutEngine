@@ -126,6 +126,13 @@ namespace kpengine::render
                 return true;
             }
 
+            bool RequireRenderTargetUsage(graphics::RenderTargetHandle,
+                                          graphics::ResourceUsage) override
+            {
+                // Submission execution records no state requirements.
+                return true;
+            }
+
             void EndRenderTarget() override
             {
                 ++target_ends;

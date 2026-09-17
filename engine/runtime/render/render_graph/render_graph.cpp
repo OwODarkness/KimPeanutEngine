@@ -750,7 +750,7 @@ namespace kpengine::render
             compiled_passes.push_back(
                 {GraphPassId{graph_id_, static_cast<uint32_t>(pass_index)}, record.desc.name,
                  pass_index, record.uses, record.desc.condition, record.desc.owner,
-                 record.desc.terminal, record.desc.user_key});
+                 record.desc.terminal, record.desc.user_key, 0, 0});
         }
 
         std::vector<RenderGraphLifetimeInterval> lifetimes;
@@ -814,9 +814,10 @@ namespace kpengine::render
         std::vector<RenderGraphTransitionIntent> transitions;
         {
             std::map<LifetimeKey, RenderGraphUsage> required_usage;
-            for (const CompiledRenderGraph::Pass &pass : compiled_passes)
+            for (CompiledRenderGraph::Pass &pass : compiled_passes)
             {
                 const std::size_t execution_index = live_order[pass.id.index];
+                pass.transition_offset = transitions.size();
                 for (const RenderGraphResourceUse &use : pass.uses)
                 {
                     if (use.usage == RenderGraphUsage::Undefined)
@@ -833,6 +834,7 @@ namespace kpengine::render
                     transitions.push_back(
                         {use.handle, resource_name(use.handle), execution_index, use.usage});
                 }
+                pass.transition_count = transitions.size() - pass.transition_offset;
             }
         }
 

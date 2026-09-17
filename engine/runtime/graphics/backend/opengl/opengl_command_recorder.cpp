@@ -168,6 +168,22 @@ namespace kpengine::graphics
         ResetStateCache();
     }
 
+    bool OpenglCommandRecorder::RequireRenderTargetUsage(RenderTargetHandle target,
+                                                         ResourceUsage usage)
+    {
+        // OpenGL orders sampled reads after attachment writes without an explicit
+        // barrier, so the requirement is satisfied implicitly and there is no
+        // state to move. The call is accepted only when the target is real, so a
+        // caller still learns about an invalid handle rather than assuming the
+        // requirement was met.
+        if (!active_render_target_.IsValid() && !target.IsValid())
+        {
+            return false;
+        }
+        (void)usage;
+        return true;
+    }
+
     bool OpenglCommandRecorder::BindPipeline(PipelineHandle pipeline)
     {
         ++profile_counters_.pipeline_bind_requests;

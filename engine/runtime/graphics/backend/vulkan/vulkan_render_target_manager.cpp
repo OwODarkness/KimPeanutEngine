@@ -369,19 +369,28 @@ namespace kpengine::graphics
         const uint32_t index = handles_.Get(active_target_);
         if (index < targets_.size())
         {
+            // Attachments are made readable at the end of every pass. A pass can
+            // also declare the requirement earlier through RequireUsage, so this
+            // is state-checked rather than unconditional: it guarantees a target
+            // is readable for consumers the frame plan does not know about --
+            // the editor viewport and presentation read SceneColor directly --
+            // without re-emitting a barrier the plan already placed.
             TargetState &state = states_[index];
             for (uint32_t i = 0; i < targets_[index].color_attachments.size(); ++i)
             {
+                if (state.color_layouts[i] == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) continue;
                 Texture *color_texture = texture_manager_->GetTexture(
                     targets_[index].color_attachments[i]);
                 if (!color_texture) continue;
                 const VulkanTextureResource color =
                     ConvertToVulkanTextureResource(color_texture->GetTextueHandle());
-                frame_context_->TransitionImageLayout(command_buffer, color.image,
-                    VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL, VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                const VkImageLayout from = state.color_layouts[i];
+                frame_context_->TransitionImageLayout(command_buffer, color.image, from,
+                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+                    VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                     VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT, VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
+                    from == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
+                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
                     VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
                 state.color_layouts[i] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
             }
@@ -389,25 +398,111 @@ namespace kpengine::graphics
             // attachment layout so the next pass reuses it without a barrier.
             if (targets_[index].depth.IsValid() &&
                 targets_[index].desc.depth.has_value() &&
-                targets_[index].desc.depth->shader_readable)
+                targets_[index].desc.depth->shader_readable &&
+                state.depth_layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
             {
                 Texture *depth_texture = texture_manager_->GetTexture(targets_[index].depth);
                 if (depth_texture)
                 {
                     const VulkanTextureResource depth =
                         ConvertToVulkanTextureResource(depth_texture->GetTextueHandle());
-                    frame_context_->TransitionImageLayout(command_buffer, depth.image,
-                        VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL,
+                    const VkImageLayout from = state.depth_layout;
+                    frame_context_->TransitionImageLayout(command_buffer, depth.image, from,
                         VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
                         VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
                         VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                        VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        from == VK_IMAGE_LAYOUT_UNDEFINED
+                            ? 0
+                            : VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
                         VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1);
                     state.depth_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
                 }
             }
         }
         active_target_ = {};
+    }
+
+    bool VulkanRenderTargetManager::RequireUsage(VkCommandBuffer command_buffer,
+                                                 RenderTargetHandle handle, ResourceUsage usage)
+    {
+        if (command_buffer == VK_NULL_HANDLE) return false;
+        const uint32_t index = handles_.Get(handle);
+        if (index >= targets_.size() || !IsLive(targets_[index])) return false;
+
+        // Only the states the frame plan actually asks for are translated. A
+        // usage outside them is rejected rather than silently ignored, so a
+        // declaration that needs new state fails loudly instead of sampling a
+        // resource the backend never moved.
+        if (usage != ResourceUsage::Sampled && usage != ResourceUsage::ColorAttachment &&
+            usage != ResourceUsage::DepthAttachment)
+        {
+            return false;
+        }
+
+        const VkImageLayout color_layout = usage == ResourceUsage::Sampled
+                                          ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                          : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+        TargetState &state = states_[index];
+        for (uint32_t i = 0; i < targets_[index].color_attachments.size(); ++i)
+        {
+            if (state.color_layouts[i] == color_layout) continue;
+            Texture *color_texture = texture_manager_->GetTexture(targets_[index].color_attachments[i]);
+            if (!color_texture) continue;
+            const VulkanTextureResource color =
+                ConvertToVulkanTextureResource(color_texture->GetTextueHandle());
+            const VkImageLayout from = state.color_layouts[i];
+            frame_context_->TransitionImageLayout(
+                command_buffer, color.image, from, static_cast<VkImageLayout>(color_layout),
+                VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                usage == ResourceUsage::Sampled ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                                : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                from == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
+                usage == ResourceUsage::Sampled ? VK_ACCESS_2_SHADER_SAMPLED_READ_BIT
+                                                : VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
+            state.color_layouts[i] = static_cast<VkImageLayout>(color_layout);
+        }
+
+        // Write-only depth has no readable state to reach, so it stays where the
+        // attachment boundary put it. Sampled depth is a different matter: it is
+        // read through a descriptor, so it must actually reach the read-only
+        // layout rather than the attachment one.
+        const bool depth_requested =
+            usage == ResourceUsage::Sampled || usage == ResourceUsage::DepthAttachment;
+        if (depth_requested && targets_[index].depth.IsValid() &&
+            targets_[index].desc.depth.has_value() &&
+            targets_[index].desc.depth->shader_readable)
+        {
+            const VkImageLayout depth_layout = usage == ResourceUsage::Sampled
+                                                   ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                                   : VK_IMAGE_LAYOUT_DEPTH_ATTACHMENT_OPTIMAL;
+            if (state.depth_layout != depth_layout)
+            {
+                Texture *depth_texture = texture_manager_->GetTexture(targets_[index].depth);
+                if (depth_texture)
+                {
+                    const VulkanTextureResource depth =
+                        ConvertToVulkanTextureResource(depth_texture->GetTextueHandle());
+                    const VkImageLayout from = state.depth_layout;
+                    const bool sampled = usage == ResourceUsage::Sampled;
+                    frame_context_->TransitionImageLayout(
+                        command_buffer, depth.image, from, depth_layout,
+                        sampled ? VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT
+                                : VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
+                        sampled ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
+                                : VK_PIPELINE_STAGE_2_EARLY_FRAGMENT_TESTS_BIT,
+                        from == VK_IMAGE_LAYOUT_UNDEFINED
+                            ? 0
+                            : (sampled ? VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT
+                                       : VK_ACCESS_2_MEMORY_READ_BIT),
+                        sampled ? VK_ACCESS_2_SHADER_SAMPLED_READ_BIT
+                                : VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
+                        VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1);
+                    state.depth_layout = depth_layout;
+                }
+            }
+        }
+        return true;
     }
 
     void VulkanRenderTargetManager::CreateSwapchainAttachments(
