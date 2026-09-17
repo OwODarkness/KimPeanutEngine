@@ -125,7 +125,14 @@ namespace kpengine::render
         bool UsesBindlessTextures(MaterialInstanceHandle handle) const;
         RenderProfileTextureMetrics GetTextureMetrics() const;
         bool PollTextureResidency();
-        void CollectRetiredTextures();
+        // Counts the retire window down and reports whether any texture is now
+        // ready to destroy. Split from the destroy so the caller can drop the
+        // descriptor sets that reference an image view before it goes away: a
+        // view must not be destroyed while any set still holds it.
+        bool TickRetiredTextures();
+        // Destroys every texture whose retire window has elapsed. Returns true
+        // when at least one was destroyed.
+        bool DestroyRetiredTextures();
         void Cleanup();
 
     private:

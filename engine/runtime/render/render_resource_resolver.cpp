@@ -396,18 +396,32 @@ namespace kpengine::render
         return changed;
     }
 
-    void RenderResourceResolver::CollectRetiredTextures()
+    bool RenderResourceResolver::TickRetiredTextures()
+    {
+        bool any_ready = false;
+        for (RetiredTexture &retired : retired_textures_)
+        {
+            if (retired.frames_remaining > 0)
+            {
+                --retired.frames_remaining;
+            }
+            if (retired.frames_remaining == 0)
+            {
+                any_ready = true;
+            }
+        }
+        return any_ready;
+    }
+
+    bool RenderResourceResolver::DestroyRetiredTextures()
     {
         if (!backend_)
         {
-            return;
+            return false;
         }
+        bool destroyed_any = false;
         for (auto it = retired_textures_.begin(); it != retired_textures_.end();)
         {
-            if (it->frames_remaining > 0)
-            {
-                --it->frames_remaining;
-            }
             if (it->frames_remaining != 0)
             {
                 ++it;
@@ -417,8 +431,10 @@ namespace kpengine::render
             resident_texture_bytes_ = resident_texture_bytes_ >= it->bytes
                                           ? resident_texture_bytes_ - it->bytes
                                           : 0;
+            destroyed_any = true;
             it = retired_textures_.erase(it);
         }
+        return destroyed_any;
     }
 
     void RenderResourceResolver::Cleanup()

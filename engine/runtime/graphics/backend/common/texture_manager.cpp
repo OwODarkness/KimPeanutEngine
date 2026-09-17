@@ -77,8 +77,11 @@ namespace kpengine::graphics
         }
         if (index >= resources_.size())
         {
+            // A stale handle must not take the render thread down. Texture
+            // residency changes make this reachable at run time, and a missing
+            // texture degrades one frame instead of ending the process.
             KP_LOG("TextureManagerLog", LOG_LEVEL_ERROR, "Failed to get texture, out of range");
-            throw std::runtime_error("Failed to get texture, out of range");
+            return nullptr;
         }
 
         return &resources_[index];

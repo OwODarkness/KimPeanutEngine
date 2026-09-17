@@ -543,6 +543,12 @@ namespace kpengine::render
         transient_binding_sets_.clear();
     }
 
+    void FrameContext::InvalidateTextureBindings()
+    {
+        ReleaseStableBindings();
+        cached_materials_.clear();
+    }
+
     void FrameContext::ReleaseStableBindings()
     {
         if (backend_)

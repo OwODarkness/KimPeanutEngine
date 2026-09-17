@@ -226,9 +226,19 @@ namespace kpengine::render
                 .count();
         const auto backend_begin_started = std::chrono::steady_clock::now();
         backend_->BeginFrame();
-        if (scene_ready)
+        if (scene_ready && resource_resolver_->TickRetiredTextures())
         {
-            resource_resolver_->CollectRetiredTextures();
+            // A retired texture is about to lose its image view. Descriptor sets
+            // built from it must not outlive it -- Vulkan forbids destroying a
+            // view while any set still references it, even one never submitted --
+            // so the cached bindings go first and are rebuilt on next use. This
+            // runs after the in-flight fence wait above, so no submission still
+            // references them either.
+            for (FrameContext &frame_context : frame_contexts_)
+            {
+                frame_context.InvalidateTextureBindings();
+            }
+            resource_resolver_->DestroyRetiredTextures();
         }
         const double backend_begin_ms =
             std::chrono::duration<double, std::milli>(

@@ -139,8 +139,13 @@ namespace kpengine::render
         // RenderSystem is the normal owner. The explicit lifecycle also keeps the
         // standalone RHI example able to exercise the same render-layer path.
         void Initialize(graphics::RenderBackend &backend, size_t uniform_capacity);
-        void Begin(uint32_t frame_index, const FrameGlobals &globals,
-                   graphics::Extent2D render_extent);
+        // Drops descriptor sets and material records that captured texture
+        // views. Call after a texture is destroyed: a Vulkan image view must not
+        // be destroyed while any descriptor set still references it, even one
+        // that was never submitted, and a cached set would otherwise keep the
+        // dead view alive. Bindings are rebuilt on next use.
+        void InvalidateTextureBindings();
+        void Begin(uint32_t frame_index, const FrameGlobals &globals,                   graphics::Extent2D render_extent);
         void End();
         void Cleanup();
 
