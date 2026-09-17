@@ -48,6 +48,43 @@ namespace
     }
 }
 
+TEST(RenderGraphCompatibilityTest, ProductionDeclarationDerivesTransitionIntents)
+{
+    const auto result = CompileRenderFrameGraph(RenderFrameConditions{false});
+    ASSERT_TRUE(result.Succeeded());
+
+    // One requirement per resource whose usage changes, in pass order. The
+    // capture pass is culled here, so the terminal is pass 6.
+    const auto &transitions = result.graph->Transitions();
+    ASSERT_EQ(transitions.size(), 12U);
+    for (const auto &transition : transitions)
+    {
+        EXPECT_TRUE(transition.handle.index() == 0);
+        EXPECT_FALSE(transition.resource_name.empty());
+    }
+
+    const auto expect = [&transitions](std::size_t index, const char *name,
+                                       kpengine::render::RenderGraphUsage usage) {
+        ASSERT_LT(index, transitions.size());
+        EXPECT_EQ(transitions[index].resource_name, name);
+        EXPECT_EQ(transitions[index].usage, usage);
+    };
+    using kpengine::render::RenderGraphUsage;
+    // Shadows are written as depth attachments and read sampled afterwards.
+    expect(0, "DirectionalShadow", RenderGraphUsage::DepthAttachment);
+    expect(1, "SpotShadow", RenderGraphUsage::DepthAttachment);
+    expect(2, "PointShadow", RenderGraphUsage::DepthAttachment);
+    // The G-buffer is written once and sampled by lighting.
+    expect(3, "GBuffer", RenderGraphUsage::ColorAttachment);
+    expect(4, "GBuffer", RenderGraphUsage::Sampled);
+    // SceneHdr and SceneColor each flip from attachment to sampled.
+    expect(8, "SceneHdr", RenderGraphUsage::ColorAttachment);
+    expect(9, "SceneHdr", RenderGraphUsage::Sampled);
+    expect(10, "SceneColor", RenderGraphUsage::ColorAttachment);
+    expect(11, "SceneColor", RenderGraphUsage::Sampled);
+    EXPECT_EQ(transitions[11].pass_index, 6U); // the external terminal
+}
+
 TEST(RenderGraphCompatibilityTest, AuthoredDeclarationIsCanonicalAndWellFormed)
 {
     const std::vector<FixedRenderPassEntry> &entries = GetRenderFramePassEntries();

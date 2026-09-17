@@ -188,39 +188,41 @@ namespace kpengine::render
                                  buffers_[buffer.resource].latest_version};
     }
 
-    RenderGraphPassRef &RenderGraphPassRef::Read(GraphTextureHandle texture)
+    RenderGraphPassRef &RenderGraphPassRef::Read(GraphTextureHandle texture, RenderGraphUsage usage)
     {
         if (builder_ != nullptr)
         {
-            builder_->ReadTexture(pass_, builder_->CurrentVersion(texture));
+            builder_->ReadTexture(pass_, builder_->CurrentVersion(texture), usage);
         }
         return *this;
     }
 
-    RenderGraphPassRef &RenderGraphPassRef::Read(GraphBufferHandle buffer)
+    RenderGraphPassRef &RenderGraphPassRef::Read(GraphBufferHandle buffer, RenderGraphUsage usage)
     {
         if (builder_ != nullptr)
         {
-            builder_->ReadBuffer(pass_, builder_->CurrentVersion(buffer));
+            builder_->ReadBuffer(pass_, builder_->CurrentVersion(buffer), usage);
         }
         return *this;
     }
 
-    RenderGraphPassRef &RenderGraphPassRef::Write(GraphTextureHandle texture)
+    RenderGraphPassRef &RenderGraphPassRef::Write(GraphTextureHandle texture, RenderGraphUsage usage,
+                                                  RenderGraphAttachmentOp attachment_op)
     {
         if (builder_ != nullptr)
         {
             // A rejected write records a declaration error, which Compile reports.
-            builder_->WriteTexture(pass_, builder_->CurrentVersion(texture));
+            builder_->WriteTexture(pass_, builder_->CurrentVersion(texture), usage, attachment_op);
         }
         return *this;
     }
 
-    RenderGraphPassRef &RenderGraphPassRef::Write(GraphBufferHandle buffer)
+    RenderGraphPassRef &RenderGraphPassRef::Write(GraphBufferHandle buffer, RenderGraphUsage usage,
+                                                  RenderGraphAttachmentOp attachment_op)
     {
         if (builder_ != nullptr)
         {
-            builder_->WriteBuffer(pass_, builder_->CurrentVersion(buffer));
+            builder_->WriteBuffer(pass_, builder_->CurrentVersion(buffer), usage, attachment_op);
         }
         return *this;
     }
@@ -234,30 +236,35 @@ namespace kpengine::render
         return *this;
     }
 
-    bool RenderGraphBuilder::ReadTexture(GraphPassId pass, GraphTextureHandle texture)
+    bool RenderGraphBuilder::ReadTexture(GraphPassId pass, GraphTextureHandle texture,
+                                         RenderGraphUsage usage)
     {
         if (!IsValidPass(pass) || !IsValidTexture(texture))
         {
             RecordDeclarationError("A render graph texture read references an invalid handle.");
             return false;
         }
-        passes_[ToIndex(pass)].uses.push_back({texture, RenderGraphAccess::Read});
+        passes_[ToIndex(pass)].uses.push_back(
+            {texture, RenderGraphAccess::Read, usage, RenderGraphAttachmentOp::None, {}});
         return true;
     }
 
-    bool RenderGraphBuilder::ReadBuffer(GraphPassId pass, GraphBufferHandle buffer)
+    bool RenderGraphBuilder::ReadBuffer(GraphPassId pass, GraphBufferHandle buffer,
+                                        RenderGraphUsage usage)
     {
         if (!IsValidPass(pass) || !IsValidBuffer(buffer))
         {
             RecordDeclarationError("A render graph buffer read references an invalid handle.");
             return false;
         }
-        passes_[ToIndex(pass)].uses.push_back({buffer, RenderGraphAccess::Read});
+        passes_[ToIndex(pass)].uses.push_back(
+            {buffer, RenderGraphAccess::Read, usage, RenderGraphAttachmentOp::None, {}});
         return true;
     }
 
     std::optional<GraphTextureHandle> RenderGraphBuilder::WriteTexture(
-        GraphPassId pass, GraphTextureHandle previous_version)
+        GraphPassId pass, GraphTextureHandle previous_version, RenderGraphUsage usage,
+        RenderGraphAttachmentOp attachment_op)
     {
         if (!IsValidPass(pass) || !IsValidTexture(previous_version))
         {
@@ -282,12 +289,14 @@ namespace kpengine::render
         record.latest_version = version;
         pass_record.written_textures.push_back(previous_version.resource);
         const GraphTextureHandle output{graph_id_, previous_version.resource, version};
-        pass_record.uses.push_back({output, RenderGraphAccess::Write});
+        pass_record.uses.push_back(
+            {output, RenderGraphAccess::Write, usage, attachment_op, {}});
         return output;
     }
 
     std::optional<GraphBufferHandle> RenderGraphBuilder::WriteBuffer(
-        GraphPassId pass, GraphBufferHandle previous_version)
+        GraphPassId pass, GraphBufferHandle previous_version, RenderGraphUsage usage,
+        RenderGraphAttachmentOp attachment_op)
     {
         if (!IsValidPass(pass) || !IsValidBuffer(previous_version))
         {
@@ -312,7 +321,8 @@ namespace kpengine::render
         record.latest_version = version;
         pass_record.written_buffers.push_back(previous_version.resource);
         const GraphBufferHandle output{graph_id_, previous_version.resource, version};
-        pass_record.uses.push_back({output, RenderGraphAccess::Write});
+        pass_record.uses.push_back(
+            {output, RenderGraphAccess::Write, usage, attachment_op, {}});
         return output;
     }
 
@@ -469,6 +479,33 @@ namespace kpengine::render
                     result.diagnostics.push_back(
                         {RenderGraphDiagnosticCode::InvalidDeclaration,
                          "An external terminal render graph pass cannot write resources."});
+                }
+                if (use.usage != RenderGraphUsage::Undefined)
+                {
+                    // An attachment or transfer destination is written; a sampled
+                    // or transfer source read is read. A use whose declared usage
+                    // contradicts its access would compile a nonsensical
+                    // transition requirement.
+                    const bool requires_write = use.usage == RenderGraphUsage::ColorAttachment ||
+                                                use.usage == RenderGraphUsage::DepthAttachment ||
+                                                use.usage == RenderGraphUsage::TransferDestination;
+                    const bool requires_read = use.usage == RenderGraphUsage::Sampled ||
+                                               use.usage == RenderGraphUsage::TransferSource;
+                    if ((requires_write && use.access != RenderGraphAccess::Write) ||
+                        (requires_read && use.access != RenderGraphAccess::Read))
+                    {
+                        result.diagnostics.push_back(
+                            {RenderGraphDiagnosticCode::InvalidUsage,
+                             "A render graph use declares a usage that contradicts its access."});
+                    }
+                    const bool is_attachment = use.usage == RenderGraphUsage::ColorAttachment ||
+                                               use.usage == RenderGraphUsage::DepthAttachment;
+                    if (use.attachment_op != RenderGraphAttachmentOp::None && !is_attachment)
+                    {
+                        result.diagnostics.push_back(
+                            {RenderGraphDiagnosticCode::InvalidUsage,
+                             "A render graph attachment operation requires an attachment usage."});
+                    }
                 }
                 if (const auto *texture = std::get_if<GraphTextureHandle>(&use.handle))
                 {
@@ -769,8 +806,38 @@ namespace kpengine::render
             }
         }
 
+        // State requirements, in compiled execution order. A use emits an intent
+        // only when it asks for a usage the resource is not already required to
+        // be in, so consecutive same-usage uses cost nothing. The intent names
+        // the usage and never the state the resource is currently in, which the
+        // backend owns and tracks across frames.
+        std::vector<RenderGraphTransitionIntent> transitions;
+        {
+            std::map<LifetimeKey, RenderGraphUsage> required_usage;
+            for (const CompiledRenderGraph::Pass &pass : compiled_passes)
+            {
+                const std::size_t execution_index = live_order[pass.id.index];
+                for (const RenderGraphResourceUse &use : pass.uses)
+                {
+                    if (use.usage == RenderGraphUsage::Undefined)
+                    {
+                        continue;
+                    }
+                    auto [iterator, inserted] =
+                        required_usage.emplace(lifetime_key(use.handle), RenderGraphUsage::Undefined);
+                    if (!inserted && iterator->second == use.usage)
+                    {
+                        continue;
+                    }
+                    iterator->second = use.usage;
+                    transitions.push_back(
+                        {use.handle, resource_name(use.handle), execution_index, use.usage});
+                }
+            }
+        }
+
         result.graph = CompiledRenderGraph::Create(graph_id_, std::move(compiled_passes),
-                                                   std::move(lifetimes));
+                                                   std::move(lifetimes), std::move(transitions));
         return result;
     }
 }

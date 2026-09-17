@@ -148,6 +148,86 @@ TEST(RenderGraphTest, RejectsMissingProducersCyclesAndConditionalDependencies)
                               RenderGraphDiagnosticCode::ConditionalDependency));
 }
 
+TEST(RenderGraphTest, DerivesOneIntentPerUsageChangeAndSkipsRepeats)
+{
+    using kpengine::render::GraphTextureHandle;
+    using kpengine::render::RenderGraphUsage;
+
+    RenderGraphBuilder builder;
+    const auto color = builder.CreateTexture("Color");
+    // Written as an attachment, sampled by the next pass, sampled again by a
+    // third: only the first change of usage is a requirement.
+    builder.AddPass({"Writer", RenderGraphPassCondition::Always, true, true})
+        .Write(color, RenderGraphUsage::ColorAttachment);
+    builder.AddPass({"Reader", RenderGraphPassCondition::Always, true, true})
+        .Read(color, RenderGraphUsage::Sampled);
+    builder.AddPass({"ReaderAgain", RenderGraphPassCondition::Always, true, true})
+        .Read(color, RenderGraphUsage::Sampled);
+    builder.ExportTexture(builder.CurrentVersion(color), "Color");
+
+    const auto result = builder.Compile();
+    ASSERT_TRUE(result.Succeeded());
+    ASSERT_EQ(result.graph->Transitions().size(), 2U);
+    EXPECT_EQ(result.graph->Transitions()[0].usage, RenderGraphUsage::ColorAttachment);
+    EXPECT_EQ(result.graph->Transitions()[0].pass_index, 0U);
+    EXPECT_EQ(result.graph->Transitions()[1].usage, RenderGraphUsage::Sampled);
+    EXPECT_EQ(result.graph->Transitions()[1].pass_index, 1U);
+    EXPECT_EQ(result.graph->Transitions()[1].resource_name, "Color");
+
+    // A use with no declared requirement contributes no intent.
+    RenderGraphBuilder untyped;
+    const auto plain = untyped.CreateTexture("Plain");
+    untyped.AddPass({"Writer", RenderGraphPassCondition::Always, true, true}).Write(plain);
+    untyped.AddPass({"Reader", RenderGraphPassCondition::Always, true, true}).Read(plain);
+    untyped.ExportTexture(untyped.CurrentVersion(plain), "Plain");
+    const auto untyped_result = untyped.Compile();
+    ASSERT_TRUE(untyped_result.Succeeded());
+    EXPECT_TRUE(untyped_result.graph->Transitions().empty());
+}
+
+TEST(RenderGraphTest, RejectsUsageThatContradictsAccessOrIsNotAnAttachment)
+{
+    using kpengine::render::RenderGraphAttachmentOp;
+    using kpengine::render::RenderGraphUsage;
+
+    // An attachment usage is written, so declaring it on a read is rejected.
+    RenderGraphBuilder read_attachment;
+    const auto color = read_attachment.CreateTexture("Color");
+    read_attachment.AddPass({"Writer", RenderGraphPassCondition::Always, true, true})
+        .Write(color, RenderGraphUsage::ColorAttachment);
+    read_attachment.AddPass({"BadReader", RenderGraphPassCondition::Always, true, true})
+        .Read(color, RenderGraphUsage::ColorAttachment);
+    read_attachment.ExportTexture(read_attachment.CurrentVersion(color), "Color");
+    EXPECT_TRUE(HasDiagnostic(read_attachment.Compile(),
+                              RenderGraphDiagnosticCode::InvalidUsage));
+
+    // A sampled usage is read, so declaring it on a write is rejected.
+    RenderGraphBuilder write_sampled;
+    const auto other = write_sampled.CreateTexture("Other");
+    write_sampled.AddPass({"BadWriter", RenderGraphPassCondition::Always, true, true})
+        .Write(other, RenderGraphUsage::Sampled);
+    write_sampled.ExportTexture(write_sampled.CurrentVersion(other), "Other");
+    EXPECT_TRUE(HasDiagnostic(write_sampled.Compile(),
+                              RenderGraphDiagnosticCode::InvalidUsage));
+
+    // An attachment operation needs an attachment usage to apply to.
+    RenderGraphBuilder op_without_attachment;
+    const auto third = op_without_attachment.CreateTexture("Third");
+    op_without_attachment.AddPass({"Writer", RenderGraphPassCondition::Always, true, true})
+        .Write(third, RenderGraphUsage::Sampled, RenderGraphAttachmentOp::Clear);
+    op_without_attachment.ExportTexture(op_without_attachment.CurrentVersion(third), "Third");
+    EXPECT_TRUE(HasDiagnostic(op_without_attachment.Compile(),
+                              RenderGraphDiagnosticCode::InvalidUsage));
+
+    // The well-formed pair compiles.
+    RenderGraphBuilder valid;
+    const auto fourth = valid.CreateTexture("Fourth");
+    valid.AddPass({"Writer", RenderGraphPassCondition::Always, true, true})
+        .Write(fourth, RenderGraphUsage::ColorAttachment, RenderGraphAttachmentOp::Clear);
+    valid.ExportTexture(valid.CurrentVersion(fourth), "Fourth");
+    EXPECT_TRUE(valid.Compile().Succeeded());
+}
+
 TEST(RenderGraphTest, ChainedDeclarationCompilesToTheSameGraphAsTheExplicitOne)
 {
     RenderGraphBuilder explicit_builder;

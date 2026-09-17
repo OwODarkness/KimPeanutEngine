@@ -38,39 +38,58 @@ namespace kpengine::render
         {
             static const std::vector<FixedRenderPassEntry> entries{
                 {FixedRenderPassId::DirectionalShadow, "DirectionalShadowPass",
-                 {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write}},
+                 {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write,
+                   RenderGraphUsage::DepthAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
                 {FixedRenderPassId::SpotShadow, "SpotShadowPass",
-                 {{RenderPassResource::SpotShadow, RenderPassAccess::Write}},
+                 {{RenderPassResource::SpotShadow, RenderPassAccess::Write,
+                   RenderGraphUsage::DepthAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
                 {FixedRenderPassId::PointShadow, "PointShadowPass",
-                 {{RenderPassResource::PointShadow, RenderPassAccess::Write}},
+                 {{RenderPassResource::PointShadow, RenderPassAccess::Write,
+                   RenderGraphUsage::DepthAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
                 {FixedRenderPassId::GBuffer, "GBufferPass",
-                 {{RenderPassResource::GBuffer, RenderPassAccess::Write}},
+                 {{RenderPassResource::GBuffer, RenderPassAccess::Write,
+                   RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
                 {FixedRenderPassId::DeferredLighting, "DeferredLightingPass",
-                 {{RenderPassResource::GBuffer, RenderPassAccess::Read},
-                  {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
-                  {RenderPassResource::SpotShadow, RenderPassAccess::Read},
-                  {RenderPassResource::PointShadow, RenderPassAccess::Read},
-                  {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
+                 {{RenderPassResource::GBuffer, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::DirectionalShadow, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::SpotShadow, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::PointShadow, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::SceneHdr, RenderPassAccess::Write,
+                   RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
                 {FixedRenderPassId::ToneMap, "ToneMapPass",
-                 {{RenderPassResource::SceneHdr, RenderPassAccess::Read},
-                  {RenderPassResource::SceneColor, RenderPassAccess::Write}},
+                 {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::SceneColor, RenderPassAccess::Write,
+                   RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
                 {FixedRenderPassId::CaptureView, "CaptureViewPass",
-                 {{RenderPassResource::GBuffer, RenderPassAccess::Read},
-                  {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
-                  {RenderPassResource::SpotShadow, RenderPassAccess::Read},
-                  {RenderPassResource::PointShadow, RenderPassAccess::Read},
-                  {RenderPassResource::SceneColor, RenderPassAccess::Read},
-                  {RenderPassResource::CaptureOutput, RenderPassAccess::Write}},
+                 // The conversion views are derived from the G-buffer and the
+                 // shadow maps; this pass does not read SceneColor, and the
+                 // declaration must not claim a read that never reaches the GPU.
+                 {{RenderPassResource::GBuffer, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::DirectionalShadow, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::SpotShadow, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::PointShadow, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::CaptureOutput, RenderPassAccess::Write,
+                   RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer,
                  RenderPassCondition::DiagnosticCaptureRequested, false},
                 {FixedRenderPassId::EditorComposite, "EditorCompositePass",
-                 {{RenderPassResource::SceneColor, RenderPassAccess::Read}},
+                 {{RenderPassResource::SceneColor, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled}},
                  RenderPassExecutionOwner::External, RenderPassCondition::ExternalRequest, true},
             };
             return entries;
@@ -113,11 +132,11 @@ namespace kpengine::render
                     resources[static_cast<std::size_t>(use.resource)];
                 if (use.access == RenderPassAccess::Read)
                 {
-                    pass.Read(resource);
+                    pass.Read(resource, use.usage);
                 }
                 else
                 {
-                    pass.Write(resource);
+                    pass.Write(resource, use.usage);
                 }
             }
         }

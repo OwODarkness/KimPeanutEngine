@@ -58,6 +58,10 @@ namespace kpengine::render
     {
         RenderPassResource resource = RenderPassResource::SceneColor;
         RenderPassAccess access = RenderPassAccess::Read;
+        // The portable state the pass requires. Declared with the graph's own
+        // usage vocabulary rather than a mirrored enum, so there is one encoding
+        // of it in the module.
+        RenderGraphUsage usage = RenderGraphUsage::Undefined;
     };
 
     struct FixedRenderPassEntry

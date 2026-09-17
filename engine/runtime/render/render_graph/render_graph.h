@@ -71,6 +71,53 @@ namespace kpengine::render
         Write,
     };
 
+    // Portable state a use requires, never a native layout. The backend resolves
+    // the state a resource is currently in and translates the difference.
+    enum class RenderGraphUsage : uint8_t
+    {
+        Undefined,
+        Sampled,
+        ColorAttachment,
+        DepthAttachment,
+        TransferSource,
+        TransferDestination,
+        Present,
+    };
+
+    // What an attachment use does to its contents. Load and Clear are the
+    // authored intent; the persistent raster targets currently fix their load
+    // operation at creation, so no authored entry sets this yet -- it exists for
+    // the transient consumer, which will describe attachments it owns.
+    enum class RenderGraphAttachmentOp : uint8_t
+    {
+        None,
+        Load,
+        Clear,
+    };
+
+    // Whole-resource today. The fields are retained so mip and layer tracking can
+    // be added later without replacing the handle types.
+    struct RenderGraphResourceRange
+    {
+        static constexpr uint32_t AllRemaining = std::numeric_limits<uint32_t>::max();
+
+        uint32_t base_mip_level = 0;
+        uint32_t mip_level_count = AllRemaining;
+        uint32_t base_array_layer = 0;
+        uint32_t array_layer_count = AllRemaining;
+
+        // True when the range covers the whole resource, which is the only shape
+        // the graph currently produces or consumes.
+        bool IsWholeResource() const noexcept
+        {
+            return base_mip_level == 0 && mip_level_count == AllRemaining &&
+                   base_array_layer == 0 && array_layer_count == AllRemaining;
+        }
+
+        friend bool operator==(const RenderGraphResourceRange &,
+                               const RenderGraphResourceRange &) = default;
+    };
+
     enum class RenderGraphPassCondition : uint8_t
     {
         Always,
@@ -95,6 +142,7 @@ namespace kpengine::render
         Cycle,
         DuplicateExport,
         DuplicatePassKey,
+        InvalidUsage,
     };
 
     struct RenderGraphPassDesc
@@ -123,6 +171,21 @@ namespace kpengine::render
     {
         RenderGraphResourceHandle handle;
         RenderGraphAccess access = RenderGraphAccess::Read;
+        RenderGraphUsage usage = RenderGraphUsage::Undefined;
+        RenderGraphAttachmentOp attachment_op = RenderGraphAttachmentOp::None;
+        RenderGraphResourceRange range{};
+    };
+
+    // One requirement that a pass places on a resource's state: at this pass the
+    // resource version must be in this usage. It deliberately carries no
+    // from-state, because the backend owns what the resource is currently in.
+    struct RenderGraphTransitionIntent
+    {
+        RenderGraphResourceHandle handle;
+        std::string resource_name;
+        // Index into the compiled execution order, i.e. the pass that requires it.
+        std::size_t pass_index = 0;
+        RenderGraphUsage usage = RenderGraphUsage::Undefined;
     };
 
     struct RenderGraphLifetimeInterval
@@ -155,13 +218,22 @@ namespace kpengine::render
         {
             return lifetimes_;
         }
+        // State requirements in compiled execution order. Each entry says a
+        // resource version must be in that usage at that pass; the backend owns
+        // what it is currently in and translates the difference.
+        const std::vector<RenderGraphTransitionIntent> &Transitions() const noexcept
+        {
+            return transitions_;
+        }
         uint64_t GraphId() const noexcept { return graph_id_; }
 
         static CompiledRenderGraph Create(
             uint64_t graph_id, std::vector<Pass> passes,
-            std::vector<RenderGraphLifetimeInterval> lifetimes)
+            std::vector<RenderGraphLifetimeInterval> lifetimes,
+            std::vector<RenderGraphTransitionIntent> transitions)
         {
-            return CompiledRenderGraph(graph_id, std::move(passes), std::move(lifetimes));
+            return CompiledRenderGraph(graph_id, std::move(passes), std::move(lifetimes),
+                                       std::move(transitions));
         }
 
         bool ContainsPass(GraphPassId id) const noexcept;
@@ -171,14 +243,17 @@ namespace kpengine::render
         friend class RenderGraphBuilder;
 
         CompiledRenderGraph(uint64_t graph_id, std::vector<Pass> passes,
-                            std::vector<RenderGraphLifetimeInterval> lifetimes)
-            : graph_id_(graph_id), passes_(std::move(passes)), lifetimes_(std::move(lifetimes))
+                            std::vector<RenderGraphLifetimeInterval> lifetimes,
+                            std::vector<RenderGraphTransitionIntent> transitions)
+            : graph_id_(graph_id), passes_(std::move(passes)), lifetimes_(std::move(lifetimes)),
+              transitions_(std::move(transitions))
         {
         }
 
         uint64_t graph_id_ = 0;
         std::vector<Pass> passes_;
         std::vector<RenderGraphLifetimeInterval> lifetimes_;
+        std::vector<RenderGraphTransitionIntent> transitions_;
     };
 
     struct RenderGraphCompileResult
@@ -209,12 +284,18 @@ namespace kpengine::render
         GraphBufferHandle CurrentVersion(GraphBufferHandle buffer) const noexcept;
 
         RenderGraphPassRef AddPass(RenderGraphPassDesc desc);
-        bool ReadTexture(GraphPassId pass, GraphTextureHandle texture);
-        bool ReadBuffer(GraphPassId pass, GraphBufferHandle buffer);
-        std::optional<GraphTextureHandle> WriteTexture(GraphPassId pass,
-                                                        GraphTextureHandle previous_version);
-        std::optional<GraphBufferHandle> WriteBuffer(GraphPassId pass,
-                                                      GraphBufferHandle previous_version);
+        bool ReadTexture(GraphPassId pass, GraphTextureHandle texture,
+                         RenderGraphUsage usage = RenderGraphUsage::Undefined);
+        bool ReadBuffer(GraphPassId pass, GraphBufferHandle buffer,
+                        RenderGraphUsage usage = RenderGraphUsage::Undefined);
+        std::optional<GraphTextureHandle> WriteTexture(
+            GraphPassId pass, GraphTextureHandle previous_version,
+            RenderGraphUsage usage = RenderGraphUsage::Undefined,
+            RenderGraphAttachmentOp attachment_op = RenderGraphAttachmentOp::None);
+        std::optional<GraphBufferHandle> WriteBuffer(
+            GraphPassId pass, GraphBufferHandle previous_version,
+            RenderGraphUsage usage = RenderGraphUsage::Undefined,
+            RenderGraphAttachmentOp attachment_op = RenderGraphAttachmentOp::None);
         bool AddDependency(GraphPassId pass, GraphPassId dependency);
         bool ExportTexture(GraphTextureHandle texture, std::string export_name);
         bool ExportBuffer(GraphBufferHandle buffer, std::string export_name);
@@ -295,10 +376,18 @@ namespace kpengine::render
     public:
         RenderGraphPassRef() = default;
 
-        RenderGraphPassRef &Read(GraphTextureHandle texture);
-        RenderGraphPassRef &Read(GraphBufferHandle buffer);
-        RenderGraphPassRef &Write(GraphTextureHandle texture);
-        RenderGraphPassRef &Write(GraphBufferHandle buffer);
+        RenderGraphPassRef &Read(GraphTextureHandle texture,
+                                 RenderGraphUsage usage = RenderGraphUsage::Undefined);
+        RenderGraphPassRef &Read(GraphBufferHandle buffer,
+                                 RenderGraphUsage usage = RenderGraphUsage::Undefined);
+        RenderGraphPassRef &Write(GraphTextureHandle texture,
+                                  RenderGraphUsage usage = RenderGraphUsage::Undefined,
+                                  RenderGraphAttachmentOp attachment_op =
+                                      RenderGraphAttachmentOp::None);
+        RenderGraphPassRef &Write(GraphBufferHandle buffer,
+                                  RenderGraphUsage usage = RenderGraphUsage::Undefined,
+                                  RenderGraphAttachmentOp attachment_op =
+                                      RenderGraphAttachmentOp::None);
         RenderGraphPassRef &DependsOn(GraphPassId dependency);
 
         GraphPassId Id() const noexcept { return pass_; }
