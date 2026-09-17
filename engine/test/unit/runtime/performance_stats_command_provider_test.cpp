@@ -27,6 +27,10 @@ namespace kpengine::runtime
         expected.profile.draw_calls = 7;
         expected.profile.passes[static_cast<size_t>(render::RenderProfilePass::GBuffer)]
             .gpu_time_ms = 1.25;
+        expected.profile.passes[static_cast<size_t>(render::RenderProfilePass::GBuffer)]
+            .cpu_time_ms = 0.75;
+        expected.profile.summary.passes[static_cast<size_t>(render::RenderProfilePass::GBuffer)]
+            .gpu_p95_ms = 2.5;
         expected.frame_loop.frame_total_ms = 16.6;
 
         command::CommandRegistry registry;
@@ -57,5 +61,19 @@ namespace kpengine::runtime
         EXPECT_EQ(std::get<uint64_t>(*Find(completed->data, "frame_number")), 42U);
         ASSERT_NE(Find(completed->data, "g_buffer_ms"), nullptr);
         EXPECT_DOUBLE_EQ(std::get<double>(*Find(completed->data, "g_buffer_ms")), 1.25);
+        ASSERT_NE(Find(completed->data, "pass.g_buffer.gpu_p95_ms"), nullptr);
+        EXPECT_DOUBLE_EQ(std::get<double>(*Find(completed->data, "pass.g_buffer.gpu_p95_ms")), 2.5);
+
+        std::optional<command::CommandResult> combined;
+        const command::CommandResult combined_pending = registry.ExecuteText(
+            "stats --json",
+            {command::CommandOrigin::Test, command::CommandThread::Immediate},
+            [&combined](const command::CommandResult &result) { combined = result; });
+        ASSERT_EQ(combined_pending.status, command::CommandStatus::Pending)
+            << combined_pending.message;
+        ASSERT_EQ(registry.PumpGameThread(), 1U);
+        ASSERT_TRUE(combined.has_value());
+        ASSERT_NE(Find(combined->data, "pass.g_buffer.cpu_ms"), nullptr);
+        EXPECT_DOUBLE_EQ(std::get<double>(*Find(combined->data, "pass.g_buffer.cpu_ms")), 0.75);
     }
 }

@@ -37,6 +37,13 @@ resource aliasing, or synchronization inference.
 `MeshProxy` state. Gameplay cannot hold `MeshProxy`, material, RHI, or backend
 types.
 
+The proposed [R3 render graph](render_graph/PLANS.md) evolves this fixed
+declaration only after a reference/design gate. `DeferredRenderer` remains the
+policy owner; a Render-private compiler derives order and logical lifetimes;
+Graphics retains physical allocation, native synchronization, and command
+execution. Existing recording methods first become graph callbacks rather than
+being replaced by a speculative class-per-pass hierarchy.
+
 ## RenderSystem target shape
 
 `RenderSystem` is the Runtime-facing facade and composition root, not the
@@ -102,8 +109,9 @@ rendering implementation detail rather than a new Gameplay dependency.
 
 - Do not make Render load arbitrary source files outside Asset/Resource.
 - Do not put backend-specific implementation types in common Render contracts.
-- Do not introduce a general render graph until a concrete pass/resource need
-  exceeds the current explicit schedule.
+- Do not migrate fixed-schedule execution or add backend graph machinery before
+  R3's fixed-schedule parity proof, ownership contract, and execution spec are
+  complete. The R3.2 pure compiler is intentionally CPU-only.
 - Do not expose a general backend context for Editor integration; add only the
   presentation capability the matching API adapter consumes.
 - Do not treat smaller files or a lower line count as completion; ownership,

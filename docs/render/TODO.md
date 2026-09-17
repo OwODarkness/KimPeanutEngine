@@ -26,19 +26,22 @@ details and stage checklists belong in the linked submodule documents.
   GPU. Stage 6 targets ineffective shadow reuse, per-draw descriptor updates,
   redundant state work, section-packet copying, and OpenGL whole-arena uploads;
   its fixed-scenario record-time budget is 12.73 ms p95. Runtime Stage 6.0
-  proof on both APIs remains pending; Stage 6.2–6.4 implementation work is
-  landed.
+  proof is now recorded for Vulkan Debug, Vulkan RelWithDebInfo, and OpenGL
+  RelWithDebInfo; Stage 6.5 re-profiling and the larger performance gate remain
+  open.
   The solved black-frame defect is out of
   scope. →
   [issue](issue/issue-9.7.md), [plan](.plan/issue-9.7.md),
   [review](.review/issue-9.7.md),
   [spec](../../.spec/specs/sponza-render-quality-performance.md),
-  [journal](../../.spec/journal/2026-09-07-sponza-render-quality-performance.md)
-- [ ] **R1 — RenderSystem responsibility split:** R1.1–R1.5 code fixes are
+  [journal](../../.spec/journal/2026-09-07-sponza-render-quality-performance.md),
+  [Stage 6.0 evidence](../../.spec/journal/2026-09-17-render-r1-5-stage6-0-evidence.md)
+- [x] **R1 — RenderSystem responsibility split:** R1.1–R1.5 code fixes are
   landed and the independent source findings are addressed. The comparator now
   bounds edge and structural differences, Runtime skips recoverable failed
   begins without presenting, and Editor UI initialization rolls back
-  transactionally. Orderly application-close evidence is still required. →
+  transactionally. Dual-backend orderly application-close evidence is recorded
+  on 2026-09-17. →
   [R1 plan](.plan/R1.md),
   [R1.5 review](.review/R1.5.md),
   [R1.5 journal](../../.spec/journal/2026-09-04-render-system-r1-5.md)
@@ -71,13 +74,14 @@ details and stage checklists belong in the linked submodule documents.
   exported and inspected. R1.5 closed the comparator risk with bounded
   contour/area/edge metrics and synthetic rejection probes. → [R1.4 review](.review/R1.4.md),
   [R1.4 journal](../../.spec/journal/2026-09-02-render-system-r1-4.md)
-- [ ] **R1.5 — facade hardening and R1 evidence:** implementation and review
+- [x] **R1.5 — facade hardening and R1 evidence:** implementation and review
   fixes landed 2026-09-04. Focused lifecycle/rollback tests, full Debug
   validation, dual-backend smoke, six inspected captures, and the durable
-  Render/Graphics record updates are complete; orderly application-close
-  evidence remains open. →
+  Render/Graphics record updates are complete; orderly Vulkan/OpenGL
+  application-close evidence was recorded on 2026-09-17. →
   [R1.5 plan](.plan/R1.5.md), [R1.5 review](.review/R1.5.md),
-  [R1.5 journal](../../.spec/journal/2026-09-04-render-system-r1-5.md)
+  [R1.5 journal](../../.spec/journal/2026-09-04-render-system-r1-5.md),
+  [closeout evidence](../../.spec/journal/2026-09-17-render-r1-5-stage6-0-evidence.md)
 - [x] Add direct RenderSystem orchestration tests for partial-init rollback,
   fixed pass order, conditional capture, resize, terminal editor composition,
   and reverse-order teardown before moving the corresponding code (R1.1).
@@ -91,12 +95,24 @@ details and stage checklists belong in the linked submodule documents.
   implementation** — the 2026-09-14 measurements show the current workload does
   not benefit, so the work waits for a scene that justifies it. →
   [R2 design](.plan/R2.md), [spatial-bvh spec](../../.spec/specs/spatial-bvh.md)
+- [ ] **R3 — render graph foundation:** R3.0 baseline evidence, the R3.1
+  reference/design gate, and the R3.2 pure graph compiler are complete. The
+  graph keeps `DeferredRenderer` as policy owner, compiles logical
+  pass/resource dependencies in Render, records through the common command
+  seam, and leaves physical allocation/native synchronization in Graphics.
+  Runtime migration remains gated by R3.3 compatibility proof. →
+  [R3 design](.plan/R3.md),
+  [Render Graph plans](render_graph/PLANS.md),
+  [Render Graph roadmap](render_graph/TODO.md)
 - [ ] Keep source registries, immutable snapshots, pass scheduling, and
   frame-local resource lifetime aligned across Render submodules.
 - [ ] Add read-only Gameplay/editor snapshots before exposing mutable gameplay
   state to editor tools.
-- [ ] Revisit the explicit pass schedule only after measured dependency,
-  aliasing, or scheduling pressure exists.
+- [x] Revisit the explicit pass schedule only after measured dependency,
+  aliasing, or scheduling pressure exists. Planned acceleration-structure
+  build/consume and ray-output dependencies satisfy the design-review gate;
+  R3.2 is complete and R3.3 compatibility proof remains before execution
+  migration.
 - [ ] Keep Render documentation links, validation evidence, and ownership
   boundaries current when a submodule lands work.
 

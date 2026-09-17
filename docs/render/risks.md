@@ -28,14 +28,13 @@ lighting-darkened interior pixels do not appear as geometry differences;
 fresh smoke passes both APIs.
 
 R1.5 code fixes landed 2026-09-04 in the [facade-hardening plan](.plan/R1.5.md).
-It
-introduced the address-stable scene coordinator, typed Graphics-owned
+It introduced the address-stable scene coordinator, typed Graphics-owned
 presentation bridge, value-only viewport/metrics access, and frame-open unwind.
 The outstanding R1.4 comparator is superseded by a reviewed policy with
 separate edge/structural budgets, contour bounds, and synthetic rejection
-probes. R1 remains open only until orderly application-close evidence is
-captured; the journal records the evidence gap and the intentionally retained
-Graphics-internal context helper.
+probes. Dual-backend orderly application-close evidence was recorded on
+2026-09-17; the intentionally retained Graphics-internal context helper remains
+a separate internal limitation.
 
 ## Active architecture risks
 
@@ -52,9 +51,11 @@ Graphics-internal context helper.
 
 ## Feature and validation limits
 
-- The explicit fixed schedule is still the chosen policy. Add graph machinery
-  only after measured dependency, aliasing, pass-culling, or transient-lifetime
-  pressure; R1 is not that evidence.
+- The explicit fixed schedule remains the active policy. Planned
+  acceleration-structure build/consume and ray-output work now supplies the
+  dependency/lifetime pressure for the R3 design. The R3.2 pure compiler is
+  implemented, while runtime graph machinery remains behind the [R3 reference
+  and parity gates](.plan/R3.md).
 - Capture is a developer-debug path. Deterministic authored levels and image
   comparison are still needed for repeatable visual regression testing.
 - Material and source resolution may be pending or failed. A proxy must never
@@ -77,12 +78,15 @@ Graphics-internal context helper.
 6. Harden the facade and replace the native editor context seam through R1.5.
 7. Close R1 only after focused, full, cross-backend, Editor lifecycle, and
    visual evidence—including the R1.4 comparator disposition—is recorded.
+8. Introduce R3 only through reference review, fixed-sequence parity, then
+   graph-directed execution; keep resource-state and transient allocation as
+   later explicit stages.
 
-R1 source risks are addressed on 2026-09-04. Future work should treat the
-coordinator, typed bridge, and value-view contracts as the baseline; the
-RuntimeLib ↔ EditorLib cycle, Graphics-internal context helpers, and orderly
-close-path evidence remain separate/open items.
+R1 source risks and close-path evidence are addressed on 2026-09-17. Future
+work should treat the coordinator, typed bridge, and value-view contracts as
+the baseline; the RuntimeLib ↔ EditorLib cycle and Graphics-internal context
+helpers remain separate/open items.
 
-Do not begin with a render graph, speculative renderer plugins, or a universal
-context object. Those would increase surface area before the current ownership
-risks are controlled.
+Do not use R3 to introduce speculative renderer plugins or a universal context
+object, and do not skip its reference/parity gates. Those would increase surface
+area beyond the dependency problem the graph is meant to solve.

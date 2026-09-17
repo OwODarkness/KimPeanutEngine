@@ -12,9 +12,9 @@ coordinator. Editor presentation uses a typed Graphics bridge and borrowed
 target view; the editor keeps Scene Color as its 80%-width main image and
 previews the Render-owned G-buffer and shadow conversion views in a separate
 20%-width Debug Viewer window through that same seam. Later limits include
-stronger
-deterministic visual regression and any independently justified render-graph/
-generalized-scene work.
+stronger deterministic visual regression and the R3 render-graph migration;
+the R3.2 pure compiler is landed, while the fixed sequence remains active until
+R3.3 parity and later execution gates are complete.
 
 ```text
 Gameplay source values → Render source sink → RenderWorld / MeshProxy
@@ -36,6 +36,8 @@ Gameplay source values → Render source sink → RenderWorld / MeshProxy
 - [Module TODO](TODO.md) — Render-wide roadmap and submodule index.
 - [Agent guide](AGENTS.md) — documentation and implementation boundaries.
 - [Render scene](render_scene/overview.md) — current scene recording boundary.
+- [Render graph](render_graph/overview.md) — R3.2 declaration/compiler,
+  compilation, execution, resource-lifetime, and migration boundary.
 - [Material system](material_system/overview.md) — templates, instances, and
   frame-local material bindings. Its plans and roadmap are [here](material_system/PLANS.md)
   and [here](material_system/TODO.md).

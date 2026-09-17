@@ -1,9 +1,9 @@
 # issue-9.7 — Sponza Quality and Throughput Stage Design
 
-**Status: Stages 0–5 and Stage 6.0–6.3 CPU submission slices have landed. A
-supplied post-Stage-5 snapshot attributes the remaining approximately 30 FPS
-result to CPU command submission; fixed-window performance-build proof remains
-open. Block compression remains pending.**
+**Status: Stages 0–5 and Stage 6.0–6.3 CPU submission slices have landed. The
+Stage 6.0 fixed-window proof is recorded on Vulkan Debug, Vulkan RelWithDebInfo,
+and OpenGL RelWithDebInfo; Stage 6.5 re-profiling and the performance gate
+remain open. Block compression remains pending.**
 
 Links: [issue](../issue/issue-9.7.md),
 [formal review](../.review/issue-9.7.md),
@@ -258,7 +258,8 @@ comparisons; rejected options and their cost are journaled.
   uniform writes, descriptor work, pipeline validation, requested/emitted binds,
   and native draws. The fixed profile window reports CPU-subphase p50/p95 and
   the completion log includes the diagnostic counters. Runtime Vulkan Debug,
-  Vulkan performance, and OpenGL performance captures remain pending.
+  Vulkan performance, and OpenGL performance captures are recorded in the
+  2026-09-17 evidence journal.
 - Add CPU timers and counts for section-packet build, shadow stamp/fit,
   material resolution, uniform writes, descriptor search/allocation/update,
   pipeline validation, requested/emitted native binds, and draw calls.

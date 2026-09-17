@@ -237,11 +237,14 @@ are [render_capture/PLANS.md](render_capture/PLANS.md) and
 
 ### Later render phases
 
-After Render Phase 3 supplies multiple real pass consumers, evolve the same
-declarations into a render graph: dependency sorting, dead-pass culling,
-transient-resource lifetime analysis, then backend-private barrier and aliasing
-plans. These remain render decisions expressed through the common RHI; Vulkan
-and OpenGL continue to own their native state transitions.
+R3 now records the proposed evolution of these declarations into a render
+graph: dependency sorting, dead-pass culling, transient-resource lifetime
+analysis, then backend-private barrier planning. The canonical architecture and
+roadmap are [render_graph/PLANS.md](render_graph/PLANS.md) and
+[render_graph/TODO.md](render_graph/TODO.md). The fixed sequence remains active
+until the reference and raster-parity gates close. These remain Render decisions
+expressed through the common RHI; Vulkan and OpenGL continue to own their native
+state transitions.
 
 ## Future work
 
@@ -267,8 +270,11 @@ and OpenGL continue to own their native state transitions.
   with the active context plus common recorder. The context owns transient UBO
   ranges and binding sets; scenes retain only logical and static resource state.
 
-- **Render graph (after Render Phase 1).** The long-term graph uses the pass
-  declarations above as nodes with explicit resource dependencies, then adds
-  culling, ordering, and lifetime analysis before issuing RHI recording calls.
-  `RenderSystem` remains the graph executor; graphics remains an executor rather
-  than a scheduler.
+- **Render graph (R3.2 pure compiler complete).** The graph uses pass
+  declarations as nodes with
+  explicit versioned resource dependencies, then adds culling, stable ordering,
+  lifetime analysis, and portable transition intents before pass callbacks
+  issue common RHI recording calls. `RenderSystem` remains the frame-lifecycle
+  owner, `DeferredRenderer` remains the policy owner, and Graphics remains the
+  physical executor/synchronization owner. See the canonical
+  [R3 stage design](.plan/R3.md).

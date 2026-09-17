@@ -1,6 +1,7 @@
 # Issue 9.7 — Sponza Texture Aliasing and Frame Throughput
 
-**Status: active; Stages 5–6.4 are landed; fixed-scenario runtime proof remains open.** The Sponza startup fixture renders,
+**Status: active; Stages 5–6.4 are landed; Stage 6.0 runtime proof is complete.**
+The Sponza startup fixture renders,
 but its material channels contain severe high-frequency speckle and the
 observed frame rate falls to approximately 30 FPS.
 
@@ -103,5 +104,6 @@ profile.
 Stage 6.0 now exposes the required Render/Graphics subphase timers and counts,
 including descriptor search/allocation/update work, requested versus emitted
 native binds, and CPU-subphase p50/p95 summaries. The fixed-scenario runtime
-profile still needs to be captured on Vulkan Debug, Vulkan performance, and
-OpenGL performance builds before declaring the Stage 6 CPU path complete.
+profile is recorded on Vulkan Debug, Vulkan RelWithDebInfo, and OpenGL
+RelWithDebInfo, including captures and per-pass CPU/GPU measurements. Stage 6.5
+re-profiling and the performance gate remain separate.

@@ -151,6 +151,9 @@ namespace kpengine::runtime
                     std::string{"pass."} +
                     RenderPassName(static_cast<render::RenderProfilePass>(index));
                 AddOptional(data, prefix + ".gpu_ms", pass.gpu_time_ms);
+                const auto &summary = profile.summary.passes[index];
+                AddOptional(data, prefix + ".gpu_p50_ms", summary.gpu_p50_ms);
+                AddOptional(data, prefix + ".gpu_p95_ms", summary.gpu_p95_ms);
                 data[prefix + ".draw_calls"] = pass.draw_calls;
                 data[prefix + ".sections"] = pass.sections;
             }
@@ -214,6 +217,14 @@ namespace kpengine::runtime
                         static_cast<render::RenderProfileCpuSubphase>(index));
                 AddOptional(data, prefix + ".p50_ms", subphase.cpu_p50_ms);
                 AddOptional(data, prefix + ".p95_ms", subphase.cpu_p95_ms);
+            }
+            for (size_t index = 0;
+                 index < static_cast<size_t>(render::RenderProfilePass::Count); ++index)
+            {
+                const auto &pass = profile.passes[index];
+                data[std::string{"pass."} + RenderPassName(
+                    static_cast<render::RenderProfilePass>(index)) + ".cpu_ms"] =
+                    pass.cpu_time_ms;
             }
             data["section_packet_build_calls"] = profile.section_packet_build_calls;
             data["section_packets_built"] = profile.section_packets_built;

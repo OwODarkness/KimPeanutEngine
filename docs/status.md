@@ -654,7 +654,7 @@
   command discovery, async polling, and scene/normal/depth captures while
   preserving C++ Runtime ownership of command policy, thread dispatch, and
   render synchronization. → [MCP bridge](../mcp/README.md)
-- **Render issue-9.7 Sponza quality/throughput (2026-09-07)** — Stage 0
+- **Render issue-9.7 Sponza quality/throughput (2026-09-17)** — Stage 0
   instrumentation, the Stage 1 runtime mip path, the Stage 2 portable native
   texture importer/cooker, and the Stage 3 Vulkan frame-slot descriptor-pool
   arena slice, the Stage 4 section-visibility/static-shadow slice, and the
@@ -673,9 +673,11 @@
   with dynamic uniform offsets, and Stage 6.3 now suppresses redundant native
   recorder state work while sharing one lean section-packet source per frame;
   Stage 6.4 now bounds OpenGL uniform uploads to dirty written ranges; repeated
-  unchanged editor viewport-size requests no longer reset the cache. Fixed-
-  scenario Vulkan/OpenGL profile capture remains open before larger submission
-  redesign. →
+  unchanged editor viewport-size requests no longer reset the cache. The
+  fixed-window Stage 6.0 proof is now recorded on Vulkan Debug, Vulkan
+  RelWithDebInfo, and OpenGL RelWithDebInfo with per-pass CPU/GPU measurements
+  and preserved SceneColor captures. Stage 6.5 re-profiling remains open before
+  larger submission redesign. →
   [issue](render/issue/issue-9.7.md), [plan](render/.plan/issue-9.7.md),
   [review](render/.review/issue-9.7.md)
 - **MI1.7-R1 Asset build boundary (2026-09-06)** — split the database-free
@@ -999,16 +1001,18 @@
   cross-backend silhouette comparator difference. → [R1.4 review](render/.review/R1.4.md),
   [R1.4 journal](../.spec/journal/2026-09-02-render-system-r1-4.md)
 
-- **Render R1.5 — facade hardening and R1 closure (2026-09-04)** — the stable
+- **Render R1.5 — facade hardening and R1 closure (2026-09-17)** — the stable
   `RenderSceneCoordinator`, typed Graphics-owned Editor bridge, borrowed target
   view, Runtime failed-begin policy, and transactional Editor initialization
   are landed. The comparator now bounds edge/structural differences and rejects
   translated silhouettes and removed thin features with synthetic probes.
   Focused lifecycle tests, full Debug validation, dual-backend GraphicsSmoke,
-  and six inspected captures pass. Native orderly Editor close remains an
-  environment-limited evidence follow-up. →
+  and six inspected captures pass. Native orderly Vulkan/OpenGL application
+  close was verified through the real GLFW window-close path; both processes
+  exited with no remaining process or stderr output. →
   [R1.5 review](render/.review/R1.5.md),
-  [R1.5 journal](../.spec/journal/2026-09-04-render-system-r1-5.md)
+  [R1.5 implementation journal](../.spec/journal/2026-09-04-render-system-r1-5.md),
+  [closeout evidence](../.spec/journal/2026-09-17-render-r1-5-stage6-0-evidence.md)
 
 - **Editor live debug viewer (2026-09-04)** — the Viewport keeps the normal
   Scene Color image at 80% width, while a separate 20%-width Debug Viewer
@@ -1704,6 +1708,16 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
+- **Render graph R3.2 pure compiler (2026-09-17)** — the fixed raster baseline
+  remains preserved, and the scoped R3.1 review is complete. Render now has a
+  backend-independent graph builder/compiler with graph-scoped typed texture and
+  buffer versions, imported/exported resources, deterministic dependency order,
+  reachability culling, diagnostics, and logical first/last-use intervals.
+  It performs no Graphics calls and does not alter fixed pass execution. R3.3
+  compatibility proof is next; R3.4+ still gate runtime/backend migration. →
+  [R3 design](render/.plan/R3.md), [R3.1 review](render/.review/R3.1.md),
+  [R3.2 spec](../.spec/specs/render-graph.md),
+  [Sakura study](render/render_graph/sakura_analysis.md)
 - **Engine host modes — post-MODE1 follow-up** — extract shared
   `EngineServices` only when a second host or an in-editor preview session
   provides a concrete consumer. MODE1.1–MODE1.5 now establish the two

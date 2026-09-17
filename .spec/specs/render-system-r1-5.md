@@ -1,6 +1,6 @@
 # RenderSystem R1.5 Facade Hardening
 
-- Status: implementation complete; orderly close evidence pending (2026-09-04)
+- Status: implementation and orderly close evidence complete (2026-09-17)
 - Owner: project maintainers / implementing agent
 - Parent TODO: [Render R1.5](../../docs/render/TODO.md)
 - Stage design: [R1.5](../../docs/render/.plan/R1.5.md)
@@ -113,13 +113,15 @@ spec records the executable scope and acceptance contract.
   `RenderTarget` or attachment handle.
 - [x] Common contracts remain free of Vulkan/OpenGL types and Graphics remains
   free of ImGui policy.
-- [ ] Focused and full automated validation, dual-backend smoke, Editor
+- [x] Focused and full automated validation, dual-backend smoke, Editor
   startup/shutdown, resize, teardown, and six inspected captures pass. Native
-  orderly Editor shutdown remains unverified in the current environment.
+  orderly Vulkan/OpenGL application close was verified on 2026-09-17; the
+  closeout run is recorded in the linked evidence journal.
 - [x] The R1.4 silhouette comparator is resolved or superseded by a reviewed
   evidence policy before R1 is marked complete.
-- [ ] Review and journal evidence close every parent R1 criterion or name the
-  exact remaining blocker: native orderly application-close evidence.
+- [x] Review and journal evidence close every parent R1 criterion. The
+  2026-09-17 closeout journal records the dual-backend native application-close
+  evidence.
 
 ## Validation plan
 

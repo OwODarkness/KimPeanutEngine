@@ -1,6 +1,11 @@
 # Sakura Engine — Graphics Module Reference
 
-**Study snapshot: 2026-08-14, `SakuraEngine/SakuraEngine` branch `engine` (tip, not a tagged release).** A design reference for the RHI/render reconstruction — *learn from, don't copy*. Sakura's license and design constraints stay in Sakura; we abstract the idea and map it back to our modules.
+**Initial study snapshot: 2026-08-14, `SakuraEngine/SakuraEngine` branch
+`engine`. Render-graph follow-up: 2026-09-17 at commit
+`c0fdb2bb30074058cb98df98b8134559d13d67b0`.** A design reference for the
+RHI/render reconstruction — *learn from, don't copy*. The focused, source-backed
+render-graph study is in
+[Sakura Engine Render Graph Analysis](../render/render_graph/sakura_analysis.md).
 
 ## The core idea in one paragraph
 
@@ -17,7 +22,7 @@ engine/modules/render/
 
 - **RHI = vendored CGPU** (`SkrGraphics`): C-style handles + an `ECGPUBackend` enum. `render_device.h` includes `SkrGraphics/api.h`.
 - **`RenderDevice`** (`renderer/include/SkrRenderer/render_device.h`) — the *only* backend knob is `Builder { ECGPUBackend backend; bool enable_debug_layer; ... }`. The class is just accessors: queues (gfx/copy/compute/dstorage), a linear sampler, a root-signature pool. No frame loop, no camera, no presentation — a pure resource/queue owner.
-- **`RenderGraphBackend : RenderGraph`** (`render_graph/include/SkrRenderGraph/backend/graph_backend.hpp`) — one CGPU-backed executor holding the device, the queues, and the **transient resource pools** (`buffer_pool`, `texture_pool`, `bind_table_pool`, …) that do aliasing/recycling. The `backend/` dir here = resource pools, **not** API backends.
+- **`RenderGraphBackend : RenderGraph`** (`render_graph/include/SkrRenderGraph/backend/graph_backend.hpp`) — one CGPU-backed executor holding the device, queues, and transient resource/view/bind-table pools. At the pinned follow-up revision the active path performs Tier0 pooling; true memory aliasing remains an unimplemented execution path. The `backend/` dir here = graph execution and pools, **not** API backends.
 - **`renderer`** (`renderer/README.md`, Chinese) — "the ECS renderer walks the scene's cameras, culls, produces a DrawCallList, and submits it to the render pipeline." Its `graphics/` subdir is caching only: `pso_map`/`pso_key`, `shader_map`/`shader_hash`, `gpu_table`, `tlas_manager`.
 
 ## What transfers to KimPeanut

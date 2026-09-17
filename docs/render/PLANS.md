@@ -32,9 +32,10 @@ Ownership remains deliberately split:
 - Graphics/RHI owns GPU allocation, API translation, synchronization, and safe
   destruction.
 
-The default frame policy is an explicit ordered schedule. A render graph is a
-later decision that requires measured dependency, aliasing, or scheduling
-pressure.
+The current frame policy remains an explicit ordered schedule. R3.2 now records
+the completed CPU-only graph foundation because planned ray-tracing
+build/consume work introduces concrete dependency, lifetime, and synchronization
+pressure. Runtime migration remains a separately gated stage.
 
 R1.2–R1.5 removed deferred-pass implementation, duplicated pass order,
 Asset/Resource preparation, and source/scene ownership from `RenderSystem`.
@@ -68,6 +69,10 @@ public policy while the coordinator owns scene preparation.
   workload instrumentation, so where visibility culling happens and what
   structure backs it can change without touching pass policy. **Design only, not
   authorized for implementation.**
+- [R3 — render graph foundation](.plan/R3.md) — evolve the fixed declaration
+  into a Render-owned compiled dependency graph, prove raster parity, then add a
+  portable resource-state plan and Graphics-owned non-aliasing transients.
+  **R3.2 pure compiler complete; R3.3+ runtime migration remains gated.**
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
   texture minification and bound texture, descriptor, visibility, and static-
   shadow costs through Resource, Render, and Graphics ownership boundaries.
@@ -80,6 +85,7 @@ public policy while the coordinator owns scene preparation.
 | Deferred PBR | [PLANS](deferred_pbr/PLANS.md) | [TODO](deferred_pbr/TODO.md) | [`.plan/`](deferred_pbr/.plan/) |
 | Render Capture | [PLANS](render_capture/PLANS.md) | [TODO](render_capture/TODO.md) | [`.plan/`](render_capture/.plan/) |
 | Render Scene | [PLANS](render_scene/PLANS.md) | [TODO](render_scene/TODO.md) | [`.plan/`](render_scene/.plan/) |
+| Render Graph | [PLANS](render_graph/PLANS.md) | [TODO](render_graph/TODO.md) | [R3](.plan/R3.md) |
 
 ## Module references
 

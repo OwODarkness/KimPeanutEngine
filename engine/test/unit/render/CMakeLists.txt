@@ -52,6 +52,15 @@ target_link_libraries(RenderSubmissionContractTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
 gtest_discover_tests(RenderSubmissionContractTest)
 
+add_executable(RenderGraphTest
+    render_graph_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph.cpp)
+target_include_directories(RenderGraphTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/runtime)
+target_link_libraries(RenderGraphTest PRIVATE KP::GoogleTest)
+include(GoogleTest)
+gtest_discover_tests(RenderGraphTest)
+
 # Compiles the executor without FrameContext so submission execution can be
 # driven by a fake frame allocator and a rejecting command recorder.
 add_executable(RenderSubmissionExecutionTest
