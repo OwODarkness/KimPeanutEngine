@@ -48,12 +48,19 @@ and later remain gated.** Architecture:
   - [x] R3.4c switched scheduling to the compiled plan, removed the fixed path
     and its executor, and passed the full gate on both APIs.
     → [journal](../../../.spec/journal/2026-09-17-render-graph-r3-4c.md)
-- [ ] **R3.5 — portable resource-state plan:** extend graph uses with access,
-  usage, stage, attachment operations, and whole-resource ranges. Add a common
-  transition-intent contract consumed by Graphics, including explicit portable
-  initial/final usage handoff for imported resources; Vulkan translates it to
-  native synchronization and OpenGL applies the required barrier or documented
-  implicit behavior. Keep native flags/layouts private.
+- [x] **R3.5 — portable resource-state plan:** graph uses carry a portable
+  usage, an attachment operation, and a whole-resource range; compilation emits
+  one intent per resource whose required usage changes, naming the usage and
+  never a native layout. A common contract consumed by Graphics translates it
+  (Vulkan through the frame context's single barrier emitter, OpenGL as
+  documented implicit ordering), and the executor now owns the attachment
+  boundary. The plan is **not yet authoritative** for transitions: removing the
+  backend's end-of-pass transition sampled three colour images still in the
+  attachment layout, so at least one consumer reads a target outside the planned
+  passes and is unidentified. The backend keeps a state-checked safety net until
+  it is found. The imported-resource handoff remains deferred -- no import path
+  exists to consume it. → [R3.5 review](../.review/R3.5.md),
+  [journal](../../../.spec/journal/2026-09-18-render-graph-r3-5.md)
 - [ ] **R3.6 — transient resource ownership:** add graph-declared transient
   texture/buffer descriptions and a Graphics-owned frame-safe pool. Validate
   first/last use, resize/recompile, failed-frame cleanup, and shutdown with no
