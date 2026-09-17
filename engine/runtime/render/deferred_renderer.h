@@ -151,6 +151,9 @@ namespace kpengine::render
         // the pass records anything. The plan owns what state a resource must be
         // in; the backend owns what it is currently in and elides what is
         // already satisfied.
+        // The target a pass records into, named by its write use. Null for a pass
+        // that writes no attachment, such as the external terminal.
+        RenderTarget *ResolvePassAttachment(const CompiledRenderGraph::Pass &pass);
         void ApplyPassTransitions(const CompiledRenderGraph &plan,
                                   const CompiledRenderGraph::Pass &pass);
         void ConfigureFramePlans();

@@ -697,8 +697,33 @@ namespace kpengine::render
                 {
                     return false;
                 }
+                const auto pass_id = static_cast<FixedRenderPassId>(*pass.user_key);
+                // A shadow cache hit keeps the previous frame's depth map. The
+                // pass must not open its target, because opening it clears the
+                // very contents the cache exists to preserve, so the skip is
+                // decided here, before the boundary.
+                if (pass_id == FixedRenderPassId::DirectionalShadow &&
+                    directional_shadow_cache_hit_)
+                {
+                    return true;
+                }
                 ApplyPassTransitions(*frame_plan, pass);
-                return ExecutePass(static_cast<FixedRenderPassId>(*pass.user_key), input.lights);
+                // The executor owns the attachment boundary now: the pass's write
+                // use names the target it records into, so no pass opens or
+                // closes its own target.
+                RenderTarget *const attachment = ResolvePassAttachment(pass);
+                graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+                if (attachment != nullptr && (recorder == nullptr ||
+                                              !attachment->BeginRecording(*recorder)))
+                {
+                    return false;
+                }
+                const bool succeeded = ExecutePass(pass_id, input.lights);
+                if (attachment != nullptr)
+                {
+                    attachment->EndRecording(*recorder);
+                }
+                return succeeded;
             });
         profile_.cpu_graph_execute_ms +=
             std::chrono::duration<double, std::milli>(
@@ -886,6 +911,28 @@ namespace kpengine::render
             failed_environment_source_ = source_handle;
         }
         active_environment_ = {};
+    }
+
+    RenderTarget *DeferredRenderer::ResolvePassAttachment(const CompiledRenderGraph::Pass &pass)
+    {
+        // A renderer pass records into exactly one target, named by its write
+        // use. A pass with no write use records no attachment.
+        for (const RenderGraphResourceUse &use : pass.uses)
+        {
+            if (use.access != RenderGraphAccess::Write)
+            {
+                continue;
+            }
+            const auto *texture = std::get_if<GraphTextureHandle>(&use.handle);
+            if (texture == nullptr || texture->resource >=
+                                          static_cast<uint32_t>(RenderPassResource::Count))
+            {
+                continue;
+            }
+            return frame_targets_.GetTarget(
+                kResourceTargets[static_cast<std::size_t>(texture->resource)]);
+        }
+        return nullptr;
     }
 
     void DeferredRenderer::ApplyPassTransitions(const CompiledRenderGraph &plan,
@@ -1183,7 +1230,7 @@ namespace kpengine::render
         }
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         RenderTarget *const shadow_target = frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
-        if (!recorder || !shadow_target || !shadow_target->BeginRecording(*recorder))
+        if (!recorder || !shadow_target)
         {
             return false;
         }
@@ -1192,13 +1239,11 @@ namespace kpengine::render
         {
             // Keep the always-bound fallback depth image in a valid sampled
             // layout when the directional fixture is intentionally disabled.
-            shadow_target->EndRecording(*recorder);
             directional_shadow_valid_ = false;
             return true;
         }
         if (!PrepareDirectionalShadowPassResources())
         {
-            shadow_target->EndRecording(*recorder);
             return false;
         }
 
@@ -1210,7 +1255,6 @@ namespace kpengine::render
             kDirectionalShadowPerPassUniformKey, per_pass_data);
         if (!per_pass.IsValid())
         {
-            shadow_target->EndRecording(*recorder);
             return false;
         }
         const std::vector<VisibleMeshSection> &shadow_caster_candidates =
@@ -1227,7 +1271,6 @@ namespace kpengine::render
                 RecordShadowCaster(proxy, per_pass, *recorder, candidate.section_index);
             }
         }
-        shadow_target->EndRecording(*recorder);
         directional_shadow_valid_ = true;
         directional_shadow_stamp_ = shadow.validity_stamp;
         return true;
@@ -1241,7 +1284,7 @@ namespace kpengine::render
         }
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         RenderTarget *const shadow_target = frame_targets_.GetTarget(RenderTargetName::SpotShadow);
-        if (!recorder || !shadow_target || !shadow_target->BeginRecording(*recorder))
+        if (!recorder || !shadow_target)
         {
             return false;
         }
@@ -1249,12 +1292,10 @@ namespace kpengine::render
         {
             // Clear the fixed target even when the previous frame's selected
             // source was disabled, destroyed, stale, or over budget.
-            shadow_target->EndRecording(*recorder);
             return true;
         }
         if (!PrepareDirectionalShadowPassResources())
         {
-            shadow_target->EndRecording(*recorder);
             return false;
         }
         const SpotShadowFrame &shadow = *active_spot_shadow_;
@@ -1265,7 +1306,6 @@ namespace kpengine::render
             kSpotShadowPerPassUniformKey, per_pass_data);
         if (!per_pass.IsValid())
         {
-            shadow_target->EndRecording(*recorder);
             return false;
         }
         const std::vector<VisibleMeshSection> &shadow_caster_candidates =
@@ -1287,7 +1327,6 @@ namespace kpengine::render
             }
             RecordShadowCaster(proxy, per_pass, *recorder, candidate.section_index);
         }
-        shadow_target->EndRecording(*recorder);
         spot_shadow_recorded_ = true;
         return true;
     }
@@ -1300,18 +1339,16 @@ namespace kpengine::render
         }
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         RenderTarget *const shadow_target = frame_targets_.GetTarget(RenderTargetName::PointShadow);
-        if (!recorder || !shadow_target || !shadow_target->BeginRecording(*recorder))
+        if (!recorder || !shadow_target)
         {
             return false;
         }
         if (!active_point_shadow_.has_value())
         {
-            shadow_target->EndRecording(*recorder);
             return true;
         }
         if (!PrepareDirectionalShadowPassResources())
         {
-            shadow_target->EndRecording(*recorder);
             return false;
         }
 
@@ -1353,7 +1390,6 @@ namespace kpengine::render
                 kPointShadowPerPassUniformKey + face_index, per_pass_data);
             if (!per_pass.IsValid())
             {
-                shadow_target->EndRecording(*recorder);
                 return false;
             }
             for (const VisibleMeshSection &candidate : caster_candidates)
@@ -1368,7 +1404,6 @@ namespace kpengine::render
                 ++face_draw_counts[face_index];
             }
         }
-        shadow_target->EndRecording(*recorder);
         point_shadow_recorded_ = true;
         return true;
     }
@@ -1382,7 +1417,7 @@ namespace kpengine::render
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
-        if (!recorder || !gbuffer_target || !gbuffer_target->BeginRecording(*recorder))
+        if (!recorder || !gbuffer_target)
         {
             return false;
         }
@@ -1406,7 +1441,6 @@ namespace kpengine::render
                 kGBufferPerPassUniformKey, per_pass_data);
             if (!per_pass.IsValid())
             {
-                gbuffer_target->EndRecording(*recorder);
                 return false;
             }
             for (const SceneDrawItem &item : draw_lists.opaque)
@@ -1430,7 +1464,6 @@ namespace kpengine::render
                 }
             }
         }
-        gbuffer_target->EndRecording(*recorder);
         return true;
     }
 
@@ -1463,7 +1496,7 @@ namespace kpengine::render
                    "Deferred lighting skipped: resources are not ready");
             return false;
         }
-        if (!hdr_target->BeginRecording(*recorder))
+        if (!hdr_target)
         {
             KP_LOG("RenderLog", LOG_LEVEL_WARNING,
                    "Deferred lighting skipped: SceneHdr target could not begin recording");
@@ -1568,7 +1601,6 @@ namespace kpengine::render
                 recorded = true;
             }
         }
-        hdr_target->EndRecording(*recorder);
         return recorded;
     }
 
@@ -1844,8 +1876,7 @@ namespace kpengine::render
         RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
         RenderTarget *const scene_target = frame_targets_.GetTarget(RenderTargetName::SceneColor);
         if (!recorder || !hdr_target || !gbuffer_target || !scene_target ||
-            !PrepareToneMapPassResources() ||
-            !scene_target->BeginRecording(*recorder))
+            !PrepareToneMapPassResources())
         {
             return false;
         }
@@ -1868,7 +1899,6 @@ namespace kpengine::render
             recorder->DrawIndexed();
             AddProfileDraws(1, 1);
         }
-        scene_target->EndRecording(*recorder);
         return tone_map_bindings.IsValid();
     }
 
@@ -1892,8 +1922,7 @@ namespace kpengine::render
             frame_targets_.GetTarget(RenderTargetName::PointShadow);
         if (!recorder || !output_target || !gbuffer_target || !shadow_target ||
             !spot_shadow_target || !point_shadow_target ||
-            !PrepareCaptureViewPassResources() ||
-            !output_target->BeginRecording(*recorder))
+            !PrepareCaptureViewPassResources())
         {
             return false;
         }
@@ -1959,7 +1988,6 @@ namespace kpengine::render
             active_frame_context_->AllocateUniform(point_shadow_data);
         if (!constants.IsValid() || !point_shadow_constants.IsValid())
         {
-            output_target->EndRecording(*recorder);
             return false;
         }
 
@@ -1998,7 +2026,6 @@ namespace kpengine::render
                        point_shadow_constants.range}}});
         if (!bindings.IsValid())
         {
-            output_target->EndRecording(*recorder);
             return false;
         }
 
@@ -2007,7 +2034,6 @@ namespace kpengine::render
         recorder->BindResourceBindings(capture_view_pipeline_, bindings);
         recorder->DrawIndexed();
         AddProfileDraws(1, 1);
-        output_target->EndRecording(*recorder);
         return true;
     }
 
