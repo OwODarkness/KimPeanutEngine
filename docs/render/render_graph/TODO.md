@@ -28,10 +28,11 @@
   declarations, stable topological ordering, reachability culling, diagnostics,
   and lifetime intervals. Compilation performs no Graphics calls and is covered
   by deterministic unit tests.
-- [ ] **R3.3 — fixed-schedule compatibility proof:** express the existing eight
+- [x] **R3.3 — fixed-schedule compatibility proof:** express the existing eight
   passes through the graph while retaining `FixedRenderPassSequence` as the
   execution oracle. Compare compiled order, conditions, external terminal
   policy, outcomes, and required resource edges without changing GPU recording.
+  → [R3.3 journal](../../../.spec/journal/2026-09-17-render-graph-r3-3.md)
 - [ ] **R3.4 — graph-directed raster execution:** execute existing
   `DeferredRenderer::Record*Pass` operations from the compiled plan using the
   current persistent render targets, one graphics queue, and existing backend
@@ -87,5 +88,5 @@
   not claim runtime performance improvement; R3.0 remains the migration oracle.
 - [x] Create [.spec/specs/render-graph.md](../../../.spec/specs/render-graph.md).
 
-R3.3 remains the next gate. Reference engines inform the decision; they do not
-define this API.
+R3.4 execution/parity remains the next gate. Reference engines inform the
+decision; they do not define this API.

@@ -54,6 +54,8 @@ gtest_discover_tests(RenderSubmissionContractTest)
 
 add_executable(RenderGraphTest
     render_graph_test.cpp
+    render_graph_compatibility_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph.cpp)
 target_include_directories(RenderGraphTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime)

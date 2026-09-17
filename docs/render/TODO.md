@@ -100,7 +100,7 @@ details and stage checklists belong in the linked submodule documents.
   graph keeps `DeferredRenderer` as policy owner, compiles logical
   pass/resource dependencies in Render, records through the common command
   seam, and leaves physical allocation/native synchronization in Graphics.
-  Runtime migration remains gated by R3.3 compatibility proof. →
+  Runtime migration remains gated by R3.4 execution/parity proof. →
   [R3 design](.plan/R3.md),
   [Render Graph plans](render_graph/PLANS.md),
   [Render Graph roadmap](render_graph/TODO.md)

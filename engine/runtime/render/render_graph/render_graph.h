@@ -77,6 +77,12 @@ namespace kpengine::render
         Optional,
     };
 
+    enum class RenderGraphPassOwner : uint8_t
+    {
+        Renderer,
+        External,
+    };
+
     enum class RenderGraphDiagnosticCode : uint8_t
     {
         InvalidDeclaration,
@@ -96,6 +102,8 @@ namespace kpengine::render
         RenderGraphPassCondition condition = RenderGraphPassCondition::Always;
         bool enabled = true;
         bool side_effect = false;
+        RenderGraphPassOwner owner = RenderGraphPassOwner::Renderer;
+        bool terminal = false;
     };
 
     struct RenderGraphDiagnostic
@@ -131,6 +139,9 @@ namespace kpengine::render
             std::string name;
             std::size_t declaration_index = 0;
             std::vector<RenderGraphResourceUse> uses;
+            RenderGraphPassCondition condition = RenderGraphPassCondition::Always;
+            RenderGraphPassOwner owner = RenderGraphPassOwner::Renderer;
+            bool terminal = false;
         };
 
         const std::vector<Pass> &Passes() const noexcept { return passes_; }

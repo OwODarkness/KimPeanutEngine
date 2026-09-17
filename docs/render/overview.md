@@ -13,8 +13,9 @@ target view; the editor keeps Scene Color as its 80%-width main image and
 previews the Render-owned G-buffer and shadow conversion views in a separate
 20%-width Debug Viewer window through that same seam. Later limits include
 stronger deterministic visual regression and the R3 render-graph migration;
-the R3.2 pure compiler is landed, while the fixed sequence remains active until
-R3.3 parity and later execution gates are complete.
+the R3.2 pure compiler and R3.3 fixed-schedule parity proof are landed, while
+the fixed sequence remains active until R3.4 execution and later gates are
+complete.
 
 ```text
 Gameplay source values → Render source sink → RenderWorld / MeshProxy

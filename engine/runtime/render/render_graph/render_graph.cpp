@@ -292,6 +292,7 @@ namespace kpengine::render
         }
 
         std::set<std::string> pass_names;
+        std::size_t external_terminal_count = 0;
         for (const PassRecord &pass : passes_)
         {
             if (pass.desc.name.empty() || !pass_names.insert(pass.desc.name).second)
@@ -306,6 +307,28 @@ namespace kpengine::render
                     {RenderGraphDiagnosticCode::InvalidDeclaration,
                      "An Always render graph pass cannot be disabled."});
             }
+            if (pass.desc.owner == RenderGraphPassOwner::External)
+            {
+                if (!pass.desc.terminal || !pass.desc.side_effect)
+                {
+                    result.diagnostics.push_back(
+                        {RenderGraphDiagnosticCode::InvalidDeclaration,
+                         "An external render graph pass must be a side-effect terminal."});
+                }
+                ++external_terminal_count;
+            }
+            else if (pass.desc.terminal)
+            {
+                result.diagnostics.push_back(
+                    {RenderGraphDiagnosticCode::InvalidDeclaration,
+                     "Only an external render graph pass may be terminal."});
+            }
+        }
+        if (external_terminal_count > 1)
+        {
+            result.diagnostics.push_back(
+                {RenderGraphDiagnosticCode::InvalidDeclaration,
+                 "A render graph may contain only one external terminal pass."});
         }
 
         std::set<std::string> export_names;
@@ -364,6 +387,13 @@ namespace kpengine::render
             const PassRecord &record = passes_[pass_index];
             for (const RenderGraphResourceUse &use : record.uses)
             {
+                if (record.desc.owner == RenderGraphPassOwner::External &&
+                    use.access == RenderGraphAccess::Write)
+                {
+                    result.diagnostics.push_back(
+                        {RenderGraphDiagnosticCode::InvalidDeclaration,
+                         "An external terminal render graph pass cannot write resources."});
+                }
                 if (const auto *texture = std::get_if<GraphTextureHandle>(&use.handle))
                 {
                     if (!IsValidTexture(*texture))
@@ -606,7 +636,8 @@ namespace kpengine::render
             const PassRecord &record = passes_[pass_index];
             compiled_passes.push_back(
                 {GraphPassId{graph_id_, static_cast<uint32_t>(pass_index)}, record.desc.name,
-                 pass_index, record.uses});
+                 pass_index, record.uses, record.desc.condition, record.desc.owner,
+                 record.desc.terminal});
         }
 
         std::vector<RenderGraphLifetimeInterval> lifetimes;

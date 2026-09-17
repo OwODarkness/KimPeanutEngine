@@ -8,8 +8,9 @@ proven on Vulkan and OpenGL.
 
 **Status: R3.2 pure compiler complete; runtime migration gated.** R3.0 baseline
 evidence, the pinned Sakura study, and the scoped R3.1 review are recorded.
-The graph model/compiler is implemented without changing runtime execution; the
-next step is the R3.3 fixed-schedule compatibility proof.
+The graph model/compiler and R3.3 fixed-schedule compatibility proof are
+implemented without changing runtime execution; the next step is R3.4
+graph-directed execution.
 
 ```text
 RenderSystem frame lifecycle

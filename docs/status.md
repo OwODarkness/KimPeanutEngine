@@ -1708,15 +1708,18 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-- **Render graph R3.2 pure compiler (2026-09-17)** — the fixed raster baseline
-  remains preserved, and the scoped R3.1 review is complete. Render now has a
-  backend-independent graph builder/compiler with graph-scoped typed texture and
-  buffer versions, imported/exported resources, deterministic dependency order,
-  reachability culling, diagnostics, and logical first/last-use intervals.
-  It performs no Graphics calls and does not alter fixed pass execution. R3.3
-  compatibility proof is next; R3.4+ still gate runtime/backend migration. →
+- **Render graph R3.3 compatibility proof (2026-09-17)** — the fixed raster
+  baseline remains preserved, and the scoped R3.1 review is complete. Render
+  now has a backend-independent SSA graph builder/compiler with graph-scoped
+  typed texture and buffer versions, imported/exported resources, deterministic
+  dependency order, reachability culling, diagnostics, and logical first/last-
+  use intervals. The canonical eight-pass graph matches fixed-frame order,
+  conditions, external terminal policy, outcomes, and resource edges across
+  normal/external/capture variants. It performs no Graphics calls and does not
+  alter fixed pass execution. R3.4+ still gate runtime/backend migration. →
   [R3 design](render/.plan/R3.md), [R3.1 review](render/.review/R3.1.md),
   [R3.2 spec](../.spec/specs/render-graph.md),
+  [R3.3 journal](../.spec/journal/2026-09-17-render-graph-r3-3.md),
   [Sakura study](render/render_graph/sakura_analysis.md)
 - **Engine host modes — post-MODE1 follow-up** — extract shared
   `EngineServices` only when a second host or an in-editor preview session
