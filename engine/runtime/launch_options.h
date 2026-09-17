@@ -35,6 +35,10 @@ namespace kpengine::runtime
     {
         ApplicationMode application_mode = ApplicationMode::Scene3D;
         GraphicsAPIType graphics_api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
+        // Whether presentation is locked to the display refresh. It controls
+        // the OpenGL swap interval; the Vulkan swapchain selects its own present
+        // mode independently and does not consult this yet.
+        bool vsync = true;
         command::LocalCommandTransportConfig command_transport_config{};
         std::optional<std::string> startup_level_override;
         // Optional Live2D product the viewer loads instead of the one named by

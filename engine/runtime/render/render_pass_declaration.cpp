@@ -85,10 +85,10 @@ namespace kpengine::render
     RenderGraphCompileResult CompileRenderFrameGraph(RenderFrameConditions conditions)
     {
         RenderGraphBuilder graph;
-        std::array<GraphTextureHandle, kResourceCount> current_versions{};
+        std::array<GraphTextureHandle, kResourceCount> resources{};
         for (std::size_t resource_index = 0; resource_index < kResourceCount; ++resource_index)
         {
-            current_versions[resource_index] = graph.CreateTexture(kResourceNames[resource_index]);
+            resources[resource_index] = graph.CreateTexture(kResourceNames[resource_index]);
         }
 
         for (const FixedRenderPassEntry &entry : AuthoredEntries())
@@ -101,37 +101,35 @@ namespace kpengine::render
                 entry.owner == RenderPassExecutionOwner::External
                     ? RenderGraphPassOwner::External
                     : RenderGraphPassOwner::Renderer;
-            const GraphPassId pass = graph.AddPass(
+            // Reads and writes act on each resource's current version, so the
+            // chain carries the SSA lineage without threading handles by hand.
+            RenderGraphPassRef pass = graph.AddPass(
                 RenderGraphPassDesc{entry.name, condition, IsPassEnabled(entry, conditions),
                                     owner == RenderGraphPassOwner::External, owner,
                                     entry.terminal, static_cast<uint64_t>(entry.id)});
             for (const RenderPassResourceUse &use : entry.resources)
             {
-                const std::size_t resource_index = static_cast<std::size_t>(use.resource);
+                const GraphTextureHandle &resource =
+                    resources[static_cast<std::size_t>(use.resource)];
                 if (use.access == RenderPassAccess::Read)
                 {
-                    graph.ReadTexture(pass, current_versions[resource_index]);
+                    pass.Read(resource);
                 }
                 else
                 {
-                    const auto next_version =
-                        graph.WriteTexture(pass, current_versions[resource_index]);
-                    if (!next_version.has_value())
-                    {
-                        return graph.Compile();
-                    }
-                    current_versions[resource_index] = *next_version;
+                    pass.Write(resource);
                 }
             }
         }
 
         graph.ExportTexture(
-            current_versions[static_cast<std::size_t>(RenderPassResource::SceneColor)],
+            graph.CurrentVersion(resources[static_cast<std::size_t>(RenderPassResource::SceneColor)]),
             "SceneColor");
         if (conditions.diagnostic_capture)
         {
             graph.ExportTexture(
-                current_versions[static_cast<std::size_t>(RenderPassResource::CaptureOutput)],
+                graph.CurrentVersion(
+                    resources[static_cast<std::size_t>(RenderPassResource::CaptureOutput)]),
                 "CaptureOutput");
         }
         return graph.Compile();

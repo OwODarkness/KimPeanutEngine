@@ -231,6 +231,7 @@ namespace kpengine::runtime
             bool has_mode = false;
             bool has_startup_level = false;
             bool has_startup_capture = false;
+            bool has_vsync = false;
             bool has_capture_view = false;
             bool has_capture_alpha = false;
             bool has_exit_after_capture = false;
@@ -322,6 +323,33 @@ namespace kpengine::runtime
                                        std::string{value} + "')");
                     }
                     has_graphics_api = true;
+                }
+                else if (argument == "--vsync")
+                {
+                    if (has_vsync)
+                    {
+                        return Failure("duplicate option '--vsync'");
+                    }
+                    if (HasMissingValue(arguments, index))
+                    {
+                        return Failure("--vsync requires on or off");
+                    }
+
+                    const std::string_view value = arguments[++index];
+                    if (value == "on")
+                    {
+                        result.options.vsync = true;
+                    }
+                    else if (value == "off")
+                    {
+                        result.options.vsync = false;
+                    }
+                    else
+                    {
+                        return Failure("--vsync requires on or off (got '" +
+                                       std::string{value} + "')");
+                    }
+                    has_vsync = true;
                 }
                 else if (argument == "--startup-level")
                 {

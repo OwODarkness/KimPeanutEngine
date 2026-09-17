@@ -149,6 +149,15 @@ namespace kpengine
             }
         }
 
+        void Engine::SetVSync(bool enabled)
+        {
+            if (initialization_started_ || cleared_)
+            {
+                return;
+            }
+            global_runtime_context.vsync_ = enabled;
+        }
+
         void Engine::SetStartupLevelOverride(std::string authored_or_normalized_path)
         {
             if (initialization_started_ || startup_level_loaded_ || render_thread_.joinable() ||

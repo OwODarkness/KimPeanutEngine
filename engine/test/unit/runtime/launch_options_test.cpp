@@ -47,6 +47,23 @@ TEST(RuntimeLaunchOptionsTest, DefaultsPreserveExistingLaunchBehavior)
     EXPECT_FALSE(result.options.startup_level_override.has_value());
     EXPECT_FALSE(result.options.startup_capture_override.has_value());
     EXPECT_FALSE(result.options.startup_resize.has_value());
+    // Presentation stays locked to the display refresh unless asked otherwise.
+    EXPECT_TRUE(result.options.vsync);
+}
+
+TEST(RuntimeLaunchOptionsTest, ParsesVSyncAndRejectsUnusableValues)
+{
+    const auto off = Parse({"--vsync", "off"});
+    ASSERT_TRUE(off) << off.diagnostic;
+    EXPECT_FALSE(off.options.vsync);
+
+    const auto on = Parse({"--vsync", "on"});
+    ASSERT_TRUE(on) << on.diagnostic;
+    EXPECT_TRUE(on.options.vsync);
+
+    EXPECT_FALSE(Parse({"--vsync"}));
+    EXPECT_FALSE(Parse({"--vsync", "true"}));
+    EXPECT_FALSE(Parse({"--vsync", "off", "--vsync", "on"}));
 }
 
 TEST(RuntimeLaunchOptionsTest, ParsesOptionsInAnyOrderAndNormalizesLevel)

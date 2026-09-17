@@ -204,6 +204,7 @@ namespace kpengine
             std::thread::id render_thread_id_;
 
             GraphicsAPIType graphics_api_type_;
+            bool vsync_ = true;
             asset::AssetID startup_level_asset_;
 
             std::shared_ptr<const render::PreparedRenderAssetCatalog> prepared_render_assets_;

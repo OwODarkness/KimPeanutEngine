@@ -22,6 +22,9 @@ namespace kpengine
         int height = 1080;
         std::string title;
         GraphicsAPIType graphics_api_type = GraphicsAPIType::GRAPHICS_API_OPENGL;
+        // Locks presentation to the display refresh. Only the OpenGL swap
+        // interval is currently driven by it.
+        bool vsync = true;
     };
 
     struct WindowCaptureResult

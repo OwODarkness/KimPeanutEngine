@@ -206,6 +206,7 @@ namespace kpengine
             window_create_info.title = "KimPeanut Engine";
 
             window_create_info.graphics_api_type = graphics_api_type_;
+            window_create_info.vsync = vsync_;
             window_system_->Initialize(window_create_info);
 
             // Window callbacks are translated into the Runtime input boundary

@@ -49,6 +49,7 @@ int main(int argc, char **argv)
     kpengine::module::RegisterModules(engine);
     engine.SetCommandTransportConfig(launch_options.options.command_transport_config);
     engine.SetGraphicsAPI(launch_options.options.graphics_api_type);
+    engine.SetVSync(launch_options.options.vsync);
     if (launch_options.options.startup_level_override.has_value())
     {
         engine.SetStartupLevelOverride(*launch_options.options.startup_level_override);

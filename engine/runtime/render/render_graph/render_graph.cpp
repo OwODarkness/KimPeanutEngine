@@ -161,11 +161,77 @@ namespace kpengine::render
         return GraphBufferHandle{graph_id_, resource, 0};
     }
 
-    GraphPassId RenderGraphBuilder::AddPass(RenderGraphPassDesc desc)
+    RenderGraphPassRef RenderGraphBuilder::AddPass(RenderGraphPassDesc desc)
     {
         const GraphPassId pass{graph_id_, static_cast<uint32_t>(passes_.size())};
         passes_.push_back(PassRecord{std::move(desc), {}, {}, {}, {}});
-        return pass;
+        return RenderGraphPassRef(*this, pass);
+    }
+
+    GraphTextureHandle RenderGraphBuilder::CurrentVersion(GraphTextureHandle texture) const noexcept
+    {
+        if (texture.graph_id != graph_id_ || texture.resource >= textures_.size())
+        {
+            return texture;
+        }
+        return GraphTextureHandle{graph_id_, texture.resource,
+                                  textures_[texture.resource].latest_version};
+    }
+
+    GraphBufferHandle RenderGraphBuilder::CurrentVersion(GraphBufferHandle buffer) const noexcept
+    {
+        if (buffer.graph_id != graph_id_ || buffer.resource >= buffers_.size())
+        {
+            return buffer;
+        }
+        return GraphBufferHandle{graph_id_, buffer.resource,
+                                 buffers_[buffer.resource].latest_version};
+    }
+
+    RenderGraphPassRef &RenderGraphPassRef::Read(GraphTextureHandle texture)
+    {
+        if (builder_ != nullptr)
+        {
+            builder_->ReadTexture(pass_, builder_->CurrentVersion(texture));
+        }
+        return *this;
+    }
+
+    RenderGraphPassRef &RenderGraphPassRef::Read(GraphBufferHandle buffer)
+    {
+        if (builder_ != nullptr)
+        {
+            builder_->ReadBuffer(pass_, builder_->CurrentVersion(buffer));
+        }
+        return *this;
+    }
+
+    RenderGraphPassRef &RenderGraphPassRef::Write(GraphTextureHandle texture)
+    {
+        if (builder_ != nullptr)
+        {
+            // A rejected write records a declaration error, which Compile reports.
+            builder_->WriteTexture(pass_, builder_->CurrentVersion(texture));
+        }
+        return *this;
+    }
+
+    RenderGraphPassRef &RenderGraphPassRef::Write(GraphBufferHandle buffer)
+    {
+        if (builder_ != nullptr)
+        {
+            builder_->WriteBuffer(pass_, builder_->CurrentVersion(buffer));
+        }
+        return *this;
+    }
+
+    RenderGraphPassRef &RenderGraphPassRef::DependsOn(GraphPassId dependency)
+    {
+        if (builder_ != nullptr)
+        {
+            builder_->AddDependency(pass_, dependency);
+        }
+        return *this;
     }
 
     bool RenderGraphBuilder::ReadTexture(GraphPassId pass, GraphTextureHandle texture)

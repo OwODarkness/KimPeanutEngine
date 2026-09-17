@@ -82,6 +82,9 @@ namespace kpengine
                                                  std::string &diagnostic);
             void SetGraphicsAPI(GraphicsAPIType api_type);
             GraphicsAPIType GetGraphicsAPI() const noexcept { return graphics_api_type_; }
+            // Must be called before initialization; it reaches the window's
+            // swap interval, which is fixed once the window exists.
+            void SetVSync(bool enabled);
             void SetStartupLevelOverride(std::string authored_or_normalized_path);
             // Selects the Live2D product a standalone viewer loads for this run.
             // Empty leaves the host on the product named by config/live2d.json.

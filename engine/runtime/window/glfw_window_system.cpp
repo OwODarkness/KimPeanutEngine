@@ -66,7 +66,7 @@ namespace kpengine
         {
             glfwMakeContextCurrent(window_);
             should_make_context_ = true;
-            glfwSwapInterval(1); // vsync
+            glfwSwapInterval(create_info.vsync ? 1 : 0);
         }
 
         glfwSetFramebufferSizeCallback(window_, GLFW_WindowSystem::OnFrameBufferSizeCallback);

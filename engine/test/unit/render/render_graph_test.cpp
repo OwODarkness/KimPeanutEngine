@@ -148,6 +148,82 @@ TEST(RenderGraphTest, RejectsMissingProducersCyclesAndConditionalDependencies)
                               RenderGraphDiagnosticCode::ConditionalDependency));
 }
 
+TEST(RenderGraphTest, ChainedDeclarationCompilesToTheSameGraphAsTheExplicitOne)
+{
+    RenderGraphBuilder explicit_builder;
+    const auto explicit_camera = explicit_builder.ImportTexture("CameraColor");
+    const auto explicit_color = explicit_builder.CreateTexture("Color");
+    const auto explicit_first =
+        explicit_builder.AddPass({"First", RenderGraphPassCondition::Always, true, false});
+    explicit_builder.ReadTexture(explicit_first, explicit_camera);
+    const auto explicit_color_v1 = explicit_builder.WriteTexture(explicit_first, explicit_color);
+    ASSERT_TRUE(explicit_color_v1.has_value());
+    const auto explicit_second =
+        explicit_builder.AddPass({"Second", RenderGraphPassCondition::Always, true, false});
+    explicit_builder.ReadTexture(explicit_second, *explicit_color_v1);
+    explicit_builder.ExportTexture(*explicit_color_v1, "Color");
+    const auto explicit_result = explicit_builder.Compile();
+    ASSERT_TRUE(explicit_result.Succeeded());
+
+    // The same declaration expressed as a chain. Reads and writes act on the
+    // resource's current version, so no handle is threaded by hand.
+    RenderGraphBuilder chained_builder;
+    const auto chained_camera = chained_builder.ImportTexture("CameraColor");
+    const auto chained_color = chained_builder.CreateTexture("Color");
+    chained_builder.AddPass({"First", RenderGraphPassCondition::Always, true, false})
+        .Read(chained_camera)
+        .Write(chained_color);
+    chained_builder.AddPass({"Second", RenderGraphPassCondition::Always, true, false})
+        .Read(chained_color);
+    chained_builder.ExportTexture(chained_builder.CurrentVersion(chained_color), "Color");
+    const auto chained_result = chained_builder.Compile();
+    ASSERT_TRUE(chained_result.Succeeded());
+
+    ASSERT_EQ(chained_result.graph->Passes().size(), explicit_result.graph->Passes().size());
+    for (std::size_t pass_index = 0; pass_index < chained_result.graph->Passes().size(); ++pass_index)
+    {
+        const auto &chained_pass = chained_result.graph->Passes()[pass_index];
+        const auto &explicit_pass = explicit_result.graph->Passes()[pass_index];
+        EXPECT_EQ(chained_pass.name, explicit_pass.name);
+        ASSERT_EQ(chained_pass.uses.size(), explicit_pass.uses.size());
+        for (std::size_t use_index = 0; use_index < chained_pass.uses.size(); ++use_index)
+        {
+            const auto *chained_texture =
+                std::get_if<GraphTextureHandle>(&chained_pass.uses[use_index].handle);
+            const auto *explicit_texture =
+                std::get_if<GraphTextureHandle>(&explicit_pass.uses[use_index].handle);
+            ASSERT_NE(chained_texture, nullptr);
+            ASSERT_NE(explicit_texture, nullptr);
+            EXPECT_EQ(chained_texture->resource, explicit_texture->resource);
+            EXPECT_EQ(chained_texture->version, explicit_texture->version);
+            EXPECT_EQ(chained_pass.uses[use_index].access, explicit_pass.uses[use_index].access);
+        }
+    }
+}
+
+TEST(RenderGraphTest, ChainedWriteExtendsTheVersionLaterPassesRead)
+{
+    RenderGraphBuilder builder;
+    const auto color = builder.CreateTexture("Color");
+    builder.AddPass({"Writer", RenderGraphPassCondition::Always, true, true}).Write(color);
+    builder.AddPass({"Reader", RenderGraphPassCondition::Always, true, true}).Read(color);
+    builder.ExportTexture(builder.CurrentVersion(color), "Color");
+
+    const auto result = builder.Compile();
+    ASSERT_TRUE(result.Succeeded());
+    ASSERT_EQ(result.graph->Passes().size(), 2U);
+    EXPECT_EQ(result.graph->Passes()[0].name, "Writer");
+    EXPECT_EQ(result.graph->Passes()[1].name, "Reader");
+    const auto *written =
+        std::get_if<GraphTextureHandle>(&result.graph->Passes()[0].uses[0].handle);
+    const auto *read = std::get_if<GraphTextureHandle>(&result.graph->Passes()[1].uses[0].handle);
+    ASSERT_NE(written, nullptr);
+    ASSERT_NE(read, nullptr);
+    // The reader sees the version the writer produced, not the created one.
+    EXPECT_EQ(written->version, read->version);
+    EXPECT_GT(read->version, 0U);
+}
+
 TEST(RenderGraphTest, RejectsDuplicateEnabledPassKeysButAllowsDisabledReuse)
 {
     RenderGraphBuilder builder;

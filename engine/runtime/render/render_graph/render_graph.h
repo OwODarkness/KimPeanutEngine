@@ -189,6 +189,9 @@ namespace kpengine::render
         bool Succeeded() const noexcept { return graph.has_value() && diagnostics.empty(); }
     };
 
+    class RenderGraphBuilder;
+    class RenderGraphPassRef;
+
     class RenderGraphBuilder final
     {
     public:
@@ -199,7 +202,13 @@ namespace kpengine::render
         GraphBufferHandle CreateBuffer(std::string name);
         GraphBufferHandle ImportBuffer(std::string name);
 
-        GraphPassId AddPass(RenderGraphPassDesc desc);
+        // Re-stamps the handle with the resource's current version, which is the
+        // version later passes produce. The fluent pass methods use this so a
+        // declaration does not have to thread versions by hand.
+        GraphTextureHandle CurrentVersion(GraphTextureHandle texture) const noexcept;
+        GraphBufferHandle CurrentVersion(GraphBufferHandle buffer) const noexcept;
+
+        RenderGraphPassRef AddPass(RenderGraphPassDesc desc);
         bool ReadTexture(GraphPassId pass, GraphTextureHandle texture);
         bool ReadBuffer(GraphPassId pass, GraphBufferHandle buffer);
         std::optional<GraphTextureHandle> WriteTexture(GraphPassId pass,
@@ -270,6 +279,45 @@ namespace kpengine::render
         std::vector<PassRecord> passes_;
         std::vector<ExportRecord> exports_;
         std::vector<std::string> declaration_errors_;
+    };
+
+    // One declared pass, returned by RenderGraphBuilder::AddPass. Reads and
+    // writes chain onto it, so a pass and its resource flow are one statement:
+    //
+    //     graph.AddPass({"ToneMap", ...}).Read(scene_hdr).Write(scene_color);
+    //
+    // Read and Write act on the resource's *current* version rather than the
+    // version stamped in the handle, so a write is visible to every later pass
+    // without the caller threading versions. The reference borrows its builder
+    // and must not outlive it.
+    class RenderGraphPassRef final
+    {
+    public:
+        RenderGraphPassRef() = default;
+
+        RenderGraphPassRef &Read(GraphTextureHandle texture);
+        RenderGraphPassRef &Read(GraphBufferHandle buffer);
+        RenderGraphPassRef &Write(GraphTextureHandle texture);
+        RenderGraphPassRef &Write(GraphBufferHandle buffer);
+        RenderGraphPassRef &DependsOn(GraphPassId dependency);
+
+        GraphPassId Id() const noexcept { return pass_; }
+        bool IsValid() const noexcept { return pass_.IsValid(); }
+
+        // Lets existing call sites that only need the identity keep taking a
+        // GraphPassId.
+        operator GraphPassId() const noexcept { return pass_; }
+
+    private:
+        friend class RenderGraphBuilder;
+
+        RenderGraphPassRef(RenderGraphBuilder &builder, GraphPassId pass) noexcept
+            : builder_(&builder), pass_(pass)
+        {
+        }
+
+        RenderGraphBuilder *builder_ = nullptr;
+        GraphPassId pass_;
     };
 }
 
