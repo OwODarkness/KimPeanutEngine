@@ -816,8 +816,49 @@ namespace kpengine
             cleared_ = true;
         }
 
+#ifdef _WIN32
+        // Windows rounds Sleep() up to the scheduler's timer granularity, which
+        // defaults to about 15.6 ms. The game lane paces itself with a sub-frame
+        // sleep, so that rounding made its tick period land near 15 ms instead of
+        // the requested ~8 ms. The render lane is lock-stepped to that tick, so
+        // the whole frame rate followed the game lane and the render lane spent a
+        // third of every frame waiting. Raising the resolution for the duration of
+        // the run lets the pacing sleep do what it asks. The trade-off is that a
+        // finer timer can keep the CPU out of deeper idle states.
+        extern "C" __declspec(dllimport) unsigned int __stdcall timeBeginPeriod(unsigned int);
+        extern "C" __declspec(dllimport) unsigned int __stdcall timeEndPeriod(unsigned int);
+#pragma comment(lib, "winmm.lib")
+
+        class ScopedTimerResolution final
+        {
+        public:
+            explicit ScopedTimerResolution(unsigned int milliseconds)
+                : milliseconds_(milliseconds), raised_(timeBeginPeriod(milliseconds) == 0)
+            {
+            }
+
+            ~ScopedTimerResolution()
+            {
+                if (raised_)
+                {
+                    timeEndPeriod(milliseconds_);
+                }
+            }
+
+            ScopedTimerResolution(const ScopedTimerResolution &) = delete;
+            ScopedTimerResolution &operator=(const ScopedTimerResolution &) = delete;
+
+        private:
+            unsigned int milliseconds_ = 0;
+            bool raised_ = false;
+        };
+#endif
+
         void Engine::Run()
         {
+#ifdef _WIN32
+            const ScopedTimerResolution timer_resolution(1);
+#endif
             // [thread model] This runs on the main OS thread — the game thread.
             while (!shutdown_requested_.load())
             {
