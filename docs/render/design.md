@@ -16,15 +16,15 @@ encoding, synchronization, and GPU destruction safety.
 
 ## Frame policy
 
-The current renderer uses one immutable, explicitly ordered
-`FixedRenderPassSequence` rather than a general render graph. Each closed typed
-pass ID carries its logical resources, execution owner, condition, and terminal
-policy; static validation binds the ID to its canonical ordinal. A short-lived
-`FixedRenderPassFrame` visits that same sequence and records execution, skip,
-and failure outcomes. Scene passes write the logical `SceneColor`; the
-terminal editor composite consumes it after input polling. Logical resource
-names and pass dependencies remain Render vocabulary and do not expose `Vk*`,
-OpenGL, queues, or command buffers.
+The renderer has one authored pass declaration, compiled into an SSA-style
+dependency graph whose plan is the only authority for pass order and logical
+resource flow. Each closed typed pass ID carries its logical resources,
+execution owner, condition, and terminal policy; the compiled plan is keyed by
+that ID so pass identity cannot drift. A short-lived `RenderGraphFrame` walks
+one compiled plan and records execution, skip, and failure outcomes. Scene
+passes write the logical `SceneColor`; the terminal editor composite consumes it
+after input polling. Logical resource names and pass dependencies remain Render
+vocabulary and do not expose `Vk*`, OpenGL, queues, or command buffers.
 
 `DeferredRenderer::ExecutePass()` maps each renderer-owned ID to one recording
 operation, while the frame cursor gates conditional capture and the optional

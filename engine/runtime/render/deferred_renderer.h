@@ -18,7 +18,8 @@
 #include "render/light/light_world.h"
 #include "render/material/material_system.h"
 #include "render_camera.h"
-#include "render_pass.h"
+#include "render_graph/render_graph_frame.h"
+#include "render_pass_declaration.h"
 #include "render_resource.h"
 #include "prepared_render_asset_catalog.h"
 #include "render_world/render_world.h"
@@ -84,7 +85,7 @@ namespace kpengine::render
         graphics::RenderTargetHandle GetCaptureTarget(CaptureView view) const;
         uint64_t GetTriangleCount() const { return triangle_count_; }
         RenderProfileSnapshot GetProfileSnapshot() const { return profile_; }
-        bool IsPassSequenceValid() const { return pass_sequence_.has_value(); }
+        bool IsFramePlanValid() const { return frame_plan_valid_; }
 
         bool ExecuteEditorCompositePass(const std::function<void()> &record_pass);
         bool FinalizeFrame();
@@ -145,7 +146,8 @@ namespace kpengine::render
             Matrix4f projection;
         };
 
-        void ConfigurePassSequence();
+        void ConfigureFramePlans();
+        const CompiledRenderGraph *GetFramePlan(RenderFrameConditions conditions) const;
         std::optional<DirectionalShadowFrame> ScheduleDirectionalShadow(
             const std::vector<Light> &lights,
             const std::function<bool(ShadowHandle)> &is_shadow_handle_valid);
@@ -198,8 +200,12 @@ namespace kpengine::render
         MaterialSystem *material_system_ = nullptr;
         const PreparedRenderAssetCatalog *prepared_assets_ = nullptr;
         RendererFrameTargets frame_targets_;
-        std::optional<FixedRenderPassSequence> pass_sequence_;
-        std::optional<FixedRenderPassFrame> active_pass_frame_;
+        // One compiled plan per frame-start condition set, each compiled once.
+        // The compiled plan is now the only authority for pass order.
+        std::array<std::optional<RenderGraphCompileResult>, 2> frame_plans_;
+        std::optional<RenderGraphFrame> active_pass_frame_;
+        bool frame_plan_valid_ = false;
+        double frame_plan_compile_ms_ = 0.0;
         graphics::Extent2D pending_scene_render_target_extent_;
         FrameContext *active_frame_context_ = nullptr;
         const RenderWorld *render_world_ = nullptr;

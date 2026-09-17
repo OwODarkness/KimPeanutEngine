@@ -371,10 +371,10 @@ namespace kpengine::render
             {
                 throw std::runtime_error("Failed to create the complete render target set.");
             }
-            ConfigurePassSequence();
-            if (!pass_sequence_.has_value())
+            ConfigureFramePlans();
+            if (!frame_plan_valid_)
             {
-                throw std::runtime_error("Fixed render pass sequence validation failed.");
+                throw std::runtime_error("Render graph frame plan compilation failed.");
             }
             return {true, {}};
         }
@@ -446,7 +446,12 @@ namespace kpengine::render
         pending_scene_render_target_extent_ = {};
         active_pass_frame_.reset();
         active_pending_capture_.reset();
-        pass_sequence_.reset();
+        for (std::optional<RenderGraphCompileResult> &plan : frame_plans_)
+        {
+            plan.reset();
+        }
+        frame_plan_valid_ = false;
+        frame_plan_compile_ms_ = 0.0;
         frame_targets_.Cleanup();
         backend_ = nullptr;
         resource_resolver_ = nullptr;
@@ -588,13 +593,14 @@ namespace kpengine::render
         DeferredRendererFrameResult result{};
         triangle_count_ = 0;
         profile_ = {};
+        profile_.graph_compile_ms = frame_plan_compile_ms_;
         profile_.frame_number = frame_context.GetGlobals().frame_number;
         profile_.graphics_api = backend_->GetGraphicsAPI();
         profile_.viewport_width = frame_context.GetRenderExtent().width;
         profile_.viewport_height = frame_context.GetRenderExtent().height;
         profile_.textures = resource_resolver_->GetTextureMetrics();
         material_system_->ResetProfileCounters();
-        if (!pass_sequence_.has_value() || active_pass_frame_.has_value())
+        if (!frame_plan_valid_ || active_pass_frame_.has_value())
         {
             result.normal_recording_completed = false;
             return result;
@@ -633,18 +639,39 @@ namespace kpengine::render
         active_point_shadow_ = SchedulePointShadow(input.lights, input.is_shadow_handle_valid);
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
-        active_pass_frame_.emplace(
-            *pass_sequence_, is_deferred_capture);
+        const CompiledRenderGraph *const frame_plan =
+            GetFramePlan(RenderFrameConditions{is_deferred_capture});
+        if (frame_plan == nullptr)
+        {
+            result.normal_recording_completed = false;
+            return result;
+        }
+        active_pass_frame_.emplace(*frame_plan);
+        const auto graph_execute_started = std::chrono::steady_clock::now();
         const bool cursor_started = active_pass_frame_->ExecuteRenderer(
-            [this, &input](FixedRenderPassId id) { return ExecutePass(id, input.lights); });
+            [this, &input](const CompiledRenderGraph::Pass &pass) {
+                // The authored declaration always keys its passes; an unkeyed
+                // pass cannot be dispatched and must not be reported as a
+                // successful visit.
+                if (!pass.user_key.has_value())
+                {
+                    return false;
+                }
+                return ExecutePass(static_cast<FixedRenderPassId>(*pass.user_key), input.lights);
+            });
+        profile_.cpu_graph_execute_ms +=
+            std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - graph_execute_started)
+                .count();
         result.normal_recording_completed =
             cursor_started && !active_pass_frame_->HasRequiredFailure();
         if (input.pending_capture.has_value())
         {
             result.capture_target_ready =
                 input.pending_capture.value() == CaptureView::SceneColor ||
-                active_pass_frame_->GetOutcome(FixedRenderPassId::CaptureView) ==
-                    RenderPassOutcome::Executed;
+                active_pass_frame_->GetOutcome(
+                    static_cast<uint64_t>(FixedRenderPassId::CaptureView)) ==
+                    RenderGraphPassOutcome::Executed;
         }
         const MaterialProfileCounters material_profile =
             material_system_->GetProfileCounters();
@@ -805,52 +832,44 @@ namespace kpengine::render
         active_environment_ = {};
     }
 
-    void DeferredRenderer::ConfigurePassSequence()
+    void DeferredRenderer::ConfigureFramePlans()
     {
-        std::vector<FixedRenderPassEntry> entries{
-            {FixedRenderPassId::DirectionalShadow, "DirectionalShadowPass",
-             {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::SpotShadow, "SpotShadowPass",
-             {{RenderPassResource::SpotShadow, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::PointShadow, "PointShadowPass",
-             {{RenderPassResource::PointShadow, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::GBuffer, "GBufferPass",
-             {{RenderPassResource::GBuffer, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::DeferredLighting, "DeferredLightingPass",
-             {{RenderPassResource::GBuffer, RenderPassAccess::Read},
-              {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
-              {RenderPassResource::SpotShadow, RenderPassAccess::Read},
-              {RenderPassResource::PointShadow, RenderPassAccess::Read},
-              {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::ToneMap, "ToneMapPass",
-             {{RenderPassResource::SceneHdr, RenderPassAccess::Read},
-              {RenderPassResource::SceneColor, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::CaptureView, "CaptureViewPass",
-             {{RenderPassResource::GBuffer, RenderPassAccess::Read},
-              {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
-              {RenderPassResource::SpotShadow, RenderPassAccess::Read},
-              {RenderPassResource::PointShadow, RenderPassAccess::Read},
-              {RenderPassResource::SceneColor, RenderPassAccess::Read},
-              {RenderPassResource::CaptureOutput, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer,
-             RenderPassCondition::DiagnosticCaptureRequested, false},
-            {FixedRenderPassId::EditorComposite, "EditorCompositePass",
-             {{RenderPassResource::SceneColor, RenderPassAccess::Read}},
-             RenderPassExecutionOwner::External, RenderPassCondition::ExternalRequest, true},
-        };
-        std::string error;
-        pass_sequence_ = FixedRenderPassSequence::Create(std::move(entries), error);
-        if (!pass_sequence_.has_value())
+        // The declaration is static, so each condition variant is compiled once
+        // here and reused for every frame that selects it.
+        frame_plan_valid_ = true;
+        frame_plan_compile_ms_ = 0.0;
+        for (const RenderFrameConditions conditions :
+             {RenderFrameConditions{false}, RenderFrameConditions{true}})
         {
-            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Invalid fixed render pass sequence: %s",
-                   error.c_str());
+            const std::size_t slot = conditions.diagnostic_capture ? 1U : 0U;
+            const auto started = std::chrono::steady_clock::now();
+            frame_plans_[slot] = CompileRenderFrameGraph(conditions);
+            frame_plan_compile_ms_ += std::chrono::duration<double, std::milli>(
+                                          std::chrono::steady_clock::now() - started)
+                                          .count();
+            if (frame_plans_[slot]->graph.has_value())
+            {
+                continue;
+            }
+            frame_plan_valid_ = false;
+            for (const RenderGraphDiagnostic &diagnostic : frame_plans_[slot]->diagnostics)
+            {
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Render graph declaration is invalid: %s",
+                       diagnostic.message.c_str());
+            }
         }
+    }
+
+    const CompiledRenderGraph *DeferredRenderer::GetFramePlan(
+        RenderFrameConditions conditions) const
+    {
+        const std::optional<RenderGraphCompileResult> &plan =
+            frame_plans_[conditions.diagnostic_capture ? 1U : 0U];
+        if (!plan.has_value() || !plan->graph.has_value())
+        {
+            return nullptr;
+        }
+        return &*plan->graph;
     }
 
     std::optional<DeferredRenderer::DirectionalShadowFrame> DeferredRenderer::ScheduleDirectionalShadow(

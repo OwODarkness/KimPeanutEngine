@@ -1,16 +1,17 @@
 # Render Graph Overview
 
-KimPeanutEngine's render graph is the Render-owned description and future
-execution layer for cross-pass GPU work. It will replace the manually executed
-`FixedRenderPassSequence` only after the existing raster frame has been
-characterized, the design has passed an external-reference gate, and parity is
-proven on Vulkan and OpenGL.
+KimPeanutEngine's render graph is the Render-owned description and execution
+layer for cross-pass GPU work. It replaced the manually executed fixed pass
+sequence once the existing raster frame was characterized, the design had
+passed an external-reference gate, and per-frame parity was proven on Vulkan
+and OpenGL.
 
-**Status: R3.2 pure compiler complete; runtime migration gated.** R3.0 baseline
-evidence, the pinned Sakura study, and the scoped R3.1 review are recorded.
-The graph model/compiler and R3.3 fixed-schedule compatibility proof are
-implemented without changing runtime execution; the next step is R3.4
-graph-directed execution.
+**Status: R3.4c complete — the compiled plan is the only pass scheduler.** R3.0
+baseline evidence, the pinned Sakura study, the scoped R3.1 review, and the
+R3.4 design review are recorded. The graph model/compiler, the fixed-schedule
+compatibility proof, and the graph-directed execution switch are implemented;
+the fixed sequence and its executor were removed with it. R3.5 portable
+resource state and R3.6 transient ownership remain gated.
 
 ```text
 RenderSystem frame lifecycle

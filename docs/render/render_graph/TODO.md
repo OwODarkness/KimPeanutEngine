@@ -1,6 +1,7 @@
 # Render Graph TODO
 
-**Status: R3.2 implemented; runtime migration remains gated.** Architecture:
+**Status: R3.4 complete — the compiled plan is the only pass scheduler. R3.5
+and later remain gated.** Architecture:
 [PLANS.md](PLANS.md). Concrete migration: [R3](../.plan/R3.md).
 
 ## Roadmap
@@ -38,6 +39,15 @@
   current persistent render targets, one graphics queue, and existing backend
   target transitions. Remove the second authored pass order only after focused,
   full, smoke, and visual parity evidence passes on Vulkan and OpenGL.
+  → [R3.4 review](../.review/R3.4.md)
+  - [x] R3.4a graph execution frame and caller-owned pass key; no runtime
+    wiring. → [journal](../../../.spec/journal/2026-09-17-render-graph-r3-4a.md)
+  - [x] R3.4b single authored declaration and per-frame dual-path parity; the
+    fixed path stays authoritative.
+    → [journal](../../../.spec/journal/2026-09-17-render-graph-r3-4b.md)
+  - [x] R3.4c switched scheduling to the compiled plan, removed the fixed path
+    and its executor, and passed the full gate on both APIs.
+    → [journal](../../../.spec/journal/2026-09-17-render-graph-r3-4c.md)
 - [ ] **R3.5 — portable resource-state plan:** extend graph uses with access,
   usage, stage, attachment operations, and whole-resource ranges. Add a common
   transition-intent contract consumed by Graphics, including explicit portable
@@ -55,35 +65,38 @@
 
 ## Acceptance ledger
 
-- [ ] One declaration is authoritative for pass identity, resource flow, and
+- [x] One declaration is authoritative for pass identity, resource flow, and
   graph execution; manual duplicate ordering is removed after migration.
-- [ ] The current directional/spot/point shadow, G-buffer, deferred-lighting,
+- [x] The current directional/spot/point shadow, G-buffer, deferred-lighting,
   tone-map, conditional capture, and external Editor behavior is preserved.
-- [ ] Graph compilation rejects cycles, missing producers, invalid handles,
+- [x] Graph compilation rejects cycles, missing producers, invalid handles,
   ambiguous writes, incompatible usage, and unsafe conditional dependencies
   with useful diagnostics.
-- [ ] Independent passes use declaration order as a deterministic tie-break.
+- [x] Independent passes use declaration order as a deterministic tie-break.
 - [ ] Imported resources are never destroyed by the graph; transient physical
   resources remain Graphics-owned and retire only after submitted work is safe.
-- [ ] Common graph and Graphics contracts contain no Vulkan/OpenGL types.
+- [x] Common graph and Graphics contracts contain no Vulkan/OpenGL types.
 - [ ] Graph callbacks record only through the common command seam and cannot
   access resources they did not declare.
-- [ ] Compilation is cached while topology/descriptions are unchanged, and
+- [x] Compilation is cached while topology/descriptions are unchanged, and
   graph build/compile/execute CPU costs are observable.
 - [ ] Raster output and pass metrics match the R3.0 baseline on Vulkan and
-  OpenGL within the reviewed comparator/performance policy.
+  OpenGL within the reviewed comparator/performance policy. Captures and graph
+  timings are recorded, but no numeric R3.0 comparator exists in the repository.
 - [ ] Resize, failed begin, required-pass failure, optional capture, orderly
   close, and repeated shutdown preserve current lifecycle behavior.
 
 ## Decisions required before R3.2
 
-- [ ] Finalize handle invalidation/generation and resource-version semantics.
-- [ ] Decide whether normal/capture/editor topology uses cached variants or one
+- [x] Finalize handle invalidation/generation and resource-version semantics.
+  → [R3.1 review](../.review/R3.1.md)
+- [x] Decide whether normal/capture/editor topology uses cached variants or one
   compiled graph with runtime conditions.
-- [ ] Define the minimum pass-context API and whether attachment begin/end moves
+- [x] Define the minimum pass-context API and whether attachment begin/end moves
   in R3.4 or R3.5.
-- [ ] Define which current composite targets are tracked as one logical resource
+- [x] Define which current composite targets are tracked as one logical resource
   during migration and when individual attachments become graph resources.
+  → [R3.4 review](../.review/R3.4.md)
 - [x] Set the R3.2 no-regression boundary: compilation is CPU-only and does
   not claim runtime performance improvement; R3.0 remains the migration oracle.
 - [x] Create [.spec/specs/render-graph.md](../../../.spec/specs/render-graph.md).

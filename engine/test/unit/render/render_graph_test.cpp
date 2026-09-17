@@ -13,6 +13,7 @@ namespace
     using kpengine::render::RenderGraphDiagnosticCode;
     using kpengine::render::RenderGraphPassCondition;
     using kpengine::render::RenderGraphPassDesc;
+    using kpengine::render::RenderGraphPassOwner;
 
     bool HasDiagnostic(const kpengine::render::RenderGraphCompileResult &result,
                        RenderGraphDiagnosticCode code)
@@ -145,6 +146,26 @@ TEST(RenderGraphTest, RejectsMissingProducersCyclesAndConditionalDependencies)
     ASSERT_TRUE(conditional_builder.ReadTexture(required, *conditional_output));
     EXPECT_TRUE(HasDiagnostic(conditional_builder.Compile(),
                               RenderGraphDiagnosticCode::ConditionalDependency));
+}
+
+TEST(RenderGraphTest, RejectsDuplicateEnabledPassKeysButAllowsDisabledReuse)
+{
+    RenderGraphBuilder builder;
+    builder.AddPass({"First", RenderGraphPassCondition::Always, true, false,
+                     RenderGraphPassOwner::Renderer, false, 7U});
+    builder.AddPass({"Second", RenderGraphPassCondition::Always, true, false,
+                     RenderGraphPassOwner::Renderer, false, 7U});
+    const auto result = builder.Compile();
+    EXPECT_TRUE(HasDiagnostic(result, RenderGraphDiagnosticCode::DuplicatePassKey));
+    EXPECT_FALSE(result.Succeeded());
+
+    // A disabled pass never reaches an executor, so it cannot collide.
+    RenderGraphBuilder disabled_builder;
+    disabled_builder.AddPass({"Enabled", RenderGraphPassCondition::Always, true, false,
+                              RenderGraphPassOwner::Renderer, false, 7U});
+    disabled_builder.AddPass({"Disabled", RenderGraphPassCondition::Optional, false, false,
+                              RenderGraphPassOwner::Renderer, false, 7U});
+    EXPECT_TRUE(disabled_builder.Compile().Succeeded());
 }
 
 TEST(RenderGraphTest, RejectsCrossGraphHandlesAndAmbiguousWrites)

@@ -94,6 +94,7 @@ namespace kpengine::render
         ConditionalDependency,
         Cycle,
         DuplicateExport,
+        DuplicatePassKey,
     };
 
     struct RenderGraphPassDesc
@@ -104,6 +105,10 @@ namespace kpengine::render
         bool side_effect = false;
         RenderGraphPassOwner owner = RenderGraphPassOwner::Renderer;
         bool terminal = false;
+        // Caller-owned identity, such as the renderer's typed pass id. Authors
+        // who need to dispatch or query by pass must set it, and enabled passes
+        // must not share one; the graph never interprets the value.
+        std::optional<uint64_t> user_key;
     };
 
     struct RenderGraphDiagnostic
@@ -142,6 +147,7 @@ namespace kpengine::render
             RenderGraphPassCondition condition = RenderGraphPassCondition::Always;
             RenderGraphPassOwner owner = RenderGraphPassOwner::Renderer;
             bool terminal = false;
+            std::optional<uint64_t> user_key;
         };
 
         const std::vector<Pass> &Passes() const noexcept { return passes_; }

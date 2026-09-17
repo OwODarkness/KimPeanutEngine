@@ -35,6 +35,7 @@ namespace kpengine::render
         DescriptorAllocation,
         DescriptorUpdate,
         PipelineValidation,
+        GraphExecute,
         Count,
     };
 
@@ -127,6 +128,10 @@ namespace kpengine::render
         uint64_t resource_binding_bind_requests = 0;
         uint64_t resource_binding_bind_emitted = 0;
         uint64_t native_draw_calls = 0;
+        // Graph cost is reported separately from pass cost: compilation is a
+        // one-time per-variant cost, while the sweep runs every frame.
+        double graph_compile_ms = 0.0;
+        double cpu_graph_execute_ms = 0.0;
         std::string present_mode = "unknown";
         RenderProfileTextureMetrics textures;
         std::array<RenderProfilePassMetrics,

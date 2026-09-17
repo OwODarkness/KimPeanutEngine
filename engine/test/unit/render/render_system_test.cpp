@@ -475,7 +475,7 @@ TEST(DeferredRendererTest, OwnsTargetLifetimeAndCleanupIsIdempotent)
     render::DeferredRenderer renderer;
 
     ASSERT_TRUE(renderer.Initialize({backend, resolver, materials, *prepared_assets}, 320, 200));
-    EXPECT_TRUE(renderer.IsPassSequenceValid());
+    EXPECT_TRUE(renderer.IsFramePlanValid());
     renderer.Cleanup();
     renderer.Cleanup();
 

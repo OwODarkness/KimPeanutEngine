@@ -22,7 +22,7 @@ namespace
 namespace kpengine::render
 {
     static_assert(static_cast<size_t>(RenderProfilePass::Count) == 8);
-    static_assert(static_cast<size_t>(RenderProfileCpuSubphase::Count) == 8);
+    static_assert(static_cast<size_t>(RenderProfileCpuSubphase::Count) == 9);
 
     RenderProfileWindow::RenderProfileWindow(const uint32_t warmup_frames,
                                              const uint32_t sample_frames)
@@ -62,7 +62,8 @@ namespace kpengine::render
                 snapshot.descriptor_search_cpu_ms,
                 snapshot.descriptor_allocation_cpu_ms,
                 snapshot.descriptor_update_cpu_ms,
-                snapshot.pipeline_validation_cpu_ms};
+                snapshot.pipeline_validation_cpu_ms,
+                snapshot.cpu_graph_execute_ms};
         for (size_t index = 0; index < cpu_subphase_samples_.size(); ++index)
         {
             cpu_subphase_samples_[index].push_back(cpu_subphases[index]);

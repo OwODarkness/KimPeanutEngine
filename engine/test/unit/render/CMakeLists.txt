@@ -1,6 +1,5 @@
 add_executable(
     RenderPassScheduleTest
-    render_pass_schedule_test.cpp
     mesh_proxy_test.cpp
     render_world_test.cpp
     frustum_test.cpp
@@ -20,7 +19,6 @@ add_executable(
     camera_utils_test.cpp
     render_profile_test.cpp
     texture_mipmap_test.cpp
-    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_system.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/material/material_asset_resolver.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/prepared_render_asset_catalog.cpp
@@ -55,8 +53,10 @@ gtest_discover_tests(RenderSubmissionContractTest)
 add_executable(RenderGraphTest
     render_graph_test.cpp
     render_graph_compatibility_test.cpp
-    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass.cpp
-    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph.cpp)
+    render_graph_frame_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass_declaration.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph_frame.cpp)
 target_include_directories(RenderGraphTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime)
 target_link_libraries(RenderGraphTest PRIVATE KP::GoogleTest)

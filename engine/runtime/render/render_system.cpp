@@ -445,7 +445,8 @@ namespace kpengine::render
                "pipeline_validation_ms=%.3f "
                "cpu_subphase_p95_ms=[packets:%.3f shadow:%.3f material:%.3f "
                "uniform:%.3f descriptor_search:%.3f descriptor_alloc:%.3f "
-               "descriptor_update:%.3f validation:%.3f] "
+               "descriptor_update:%.3f validation:%.3f graph:%.3f] "
+               "graph_compile_ms=%.3f "
                "textures=%u source_bytes=%llu decoded_bytes=%llu resident_bytes=%llu "
                "present_mode=%s shadow_hits=%llu shadow_misses=%llu",
                scenario.name, scenario.startup_level, scenario.camera_id,
@@ -479,6 +480,8 @@ namespace kpengine::render
                cpu_subphase_p95(RenderProfileCpuSubphase::DescriptorSearch),
                cpu_subphase_p95(RenderProfileCpuSubphase::DescriptorAllocation),
                cpu_subphase_p95(RenderProfileCpuSubphase::DescriptorUpdate),
+               cpu_subphase_p95(RenderProfileCpuSubphase::GraphExecute),
+               profile_.graph_compile_ms,
                cpu_subphase_p95(RenderProfileCpuSubphase::PipelineValidation),
                profile_.textures.dependency_count,
                static_cast<unsigned long long>(profile_.textures.source_bytes),

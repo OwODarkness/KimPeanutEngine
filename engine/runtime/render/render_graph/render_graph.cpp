@@ -292,6 +292,7 @@ namespace kpengine::render
         }
 
         std::set<std::string> pass_names;
+        std::set<uint64_t> pass_keys;
         std::size_t external_terminal_count = 0;
         for (const PassRecord &pass : passes_)
         {
@@ -300,6 +301,15 @@ namespace kpengine::render
                 result.diagnostics.push_back(
                     {RenderGraphDiagnosticCode::DuplicateName,
                      "Render graph pass names must be unique and non-empty."});
+            }
+            // Only enabled passes reach an executor, so a key shared with a
+            // disabled pass cannot be dispatched ambiguously.
+            if (pass.desc.user_key.has_value() && pass.desc.enabled &&
+                !pass_keys.insert(*pass.desc.user_key).second)
+            {
+                result.diagnostics.push_back(
+                    {RenderGraphDiagnosticCode::DuplicatePassKey,
+                     "Enabled render graph passes must not share a caller-owned pass key."});
             }
             if (pass.desc.condition == RenderGraphPassCondition::Always && !pass.desc.enabled)
             {
@@ -637,7 +647,7 @@ namespace kpengine::render
             compiled_passes.push_back(
                 {GraphPassId{graph_id_, static_cast<uint32_t>(pass_index)}, record.desc.name,
                  pass_index, record.uses, record.desc.condition, record.desc.owner,
-                 record.desc.terminal});
+                 record.desc.terminal, record.desc.user_key});
         }
 
         std::vector<RenderGraphLifetimeInterval> lifetimes;

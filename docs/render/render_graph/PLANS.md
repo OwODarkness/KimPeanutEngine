@@ -199,8 +199,9 @@ resources retire through Graphics frame/fence safety.
 - `DeferredRenderer` prepares the frame packet and declares the graph.
 - Existing `Record*Pass` methods initially become execution callbacks; do not
   create a speculative virtual class hierarchy per pass.
-- `FixedRenderPassSequence` remains the compatibility oracle during migration
-  and is removed only after compiled-graph parity is proven.
+- The compiled plan replaced the fixed sequence as the execution authority once
+  per-frame parity against it was proven on both APIs; the fixed sequence and
+  its executor no longer exist.
 - `FrameContext` remains the owner of frame-local uniform ranges and binding
   sets; the graph does not absorb it in R3.
 - Graphics remains an executor, allocator, and synchronization owner rather

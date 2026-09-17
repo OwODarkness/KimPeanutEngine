@@ -1,189 +1,77 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
-#include <optional>
+#include <cstdint>
 #include <string>
-#include <utility>
 #include <vector>
 
 #include "render/render_graph/render_graph.h"
-#include "render/render_pass.h"
+#include "render/render_pass_declaration.h"
 
 namespace
 {
     using kpengine::render::CompiledRenderGraph;
+    using kpengine::render::CompileRenderFrameGraph;
     using kpengine::render::FixedRenderPassEntry;
-    using kpengine::render::FixedRenderPassFrame;
     using kpengine::render::FixedRenderPassId;
-    using kpengine::render::FixedRenderPassSequence;
+    using kpengine::render::GetRenderFramePassEntries;
     using kpengine::render::GraphTextureHandle;
-    using kpengine::render::GraphPassId;
+    using kpengine::render::RenderFrameConditions;
     using kpengine::render::RenderGraphAccess;
-    using kpengine::render::RenderGraphBuilder;
-    using kpengine::render::RenderGraphCompileResult;
-    using kpengine::render::RenderGraphPassCondition;
-    using kpengine::render::RenderGraphPassDesc;
     using kpengine::render::RenderGraphPassOwner;
     using kpengine::render::RenderPassAccess;
     using kpengine::render::RenderPassCondition;
-    using kpengine::render::RenderPassExecutionOwner;
-    using kpengine::render::RenderPassOutcome;
     using kpengine::render::RenderPassResource;
     using kpengine::render::RenderPassResourceUse;
 
     constexpr std::size_t kResourceCount =
         static_cast<std::size_t>(RenderPassResource::Count);
 
-    std::vector<FixedRenderPassEntry> MakeCanonicalEntries()
+    // The passes the conditions schedule: everything except a pass whose
+    // condition is not met. The compiled plan culls exactly those.
+    std::vector<std::string> ExpectedPlannedPasses(RenderFrameConditions conditions)
     {
-        return {
-            {FixedRenderPassId::DirectionalShadow, "DirectionalShadowPass",
-             {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::SpotShadow, "SpotShadowPass",
-             {{RenderPassResource::SpotShadow, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::PointShadow, "PointShadowPass",
-             {{RenderPassResource::PointShadow, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::GBuffer, "GBufferPass",
-             {{RenderPassResource::GBuffer, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::DeferredLighting, "DeferredLightingPass",
-             {{RenderPassResource::GBuffer, RenderPassAccess::Read},
-              {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
-              {RenderPassResource::SpotShadow, RenderPassAccess::Read},
-              {RenderPassResource::PointShadow, RenderPassAccess::Read},
-              {RenderPassResource::SceneHdr, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::ToneMap, "ToneMapPass",
-             {{RenderPassResource::SceneHdr, RenderPassAccess::Read},
-              {RenderPassResource::SceneColor, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
-            {FixedRenderPassId::CaptureView, "CaptureViewPass",
-             {{RenderPassResource::GBuffer, RenderPassAccess::Read},
-              {RenderPassResource::DirectionalShadow, RenderPassAccess::Read},
-              {RenderPassResource::SpotShadow, RenderPassAccess::Read},
-              {RenderPassResource::PointShadow, RenderPassAccess::Read},
-              {RenderPassResource::SceneColor, RenderPassAccess::Read},
-              {RenderPassResource::CaptureOutput, RenderPassAccess::Write}},
-             RenderPassExecutionOwner::Renderer,
-             RenderPassCondition::DiagnosticCaptureRequested, false},
-            {FixedRenderPassId::EditorComposite, "EditorCompositePass",
-             {{RenderPassResource::SceneColor, RenderPassAccess::Read}},
-             RenderPassExecutionOwner::External, RenderPassCondition::ExternalRequest, true},
-        };
-    }
-
-    std::optional<FixedRenderPassSequence> MakeCanonical(std::string &error)
-    {
-        return FixedRenderPassSequence::Create(MakeCanonicalEntries(), error);
-    }
-
-    RenderGraphCompileResult CompileCanonicalGraph(const FixedRenderPassSequence &sequence,
-                                                   bool capture_requested,
-                                                   bool external_requested)
-    {
-        RenderGraphBuilder graph;
-        std::array<GraphTextureHandle, kResourceCount> current_versions{};
-        const std::array<const char *, kResourceCount> resource_names{
-            "SceneColor", "SceneHdr", "GBuffer", "DirectionalShadow", "SpotShadow",
-            "PointShadow", "CaptureOutput"};
-        for (std::size_t resource_index = 0; resource_index < kResourceCount; ++resource_index)
+        std::vector<std::string> names;
+        for (const FixedRenderPassEntry &entry : GetRenderFramePassEntries())
         {
-            current_versions[resource_index] =
-                graph.CreateTexture(resource_names[resource_index]);
-        }
-
-        for (const FixedRenderPassEntry &entry : sequence.Entries())
-        {
-            const bool enabled =
-                entry.condition == RenderPassCondition::Always ||
-                (entry.condition == RenderPassCondition::DiagnosticCaptureRequested &&
-                 capture_requested) ||
-                (entry.condition == RenderPassCondition::ExternalRequest &&
-                 external_requested);
-            const RenderGraphPassCondition condition =
-                entry.condition == RenderPassCondition::Always
-                    ? RenderGraphPassCondition::Always
-                    : RenderGraphPassCondition::Optional;
-            const RenderGraphPassOwner owner =
-                entry.owner == RenderPassExecutionOwner::External
-                    ? RenderGraphPassOwner::External
-                    : RenderGraphPassOwner::Renderer;
-            const GraphPassId pass = graph.AddPass(
-                RenderGraphPassDesc{entry.name, condition, enabled,
-                                     owner == RenderGraphPassOwner::External, owner,
-                                     entry.terminal});
-            for (const RenderPassResourceUse &use : entry.resources)
+            const bool skipped =
+                entry.condition == RenderPassCondition::DiagnosticCaptureRequested &&
+                !conditions.diagnostic_capture;
+            if (!skipped)
             {
-                const std::size_t resource_index = static_cast<std::size_t>(use.resource);
-                if (use.access == RenderPassAccess::Read)
-                {
-                    graph.ReadTexture(pass, current_versions[resource_index]);
-                }
-                else
-                {
-                    const auto next_version =
-                        graph.WriteTexture(pass, current_versions[resource_index]);
-                    if (!next_version.has_value())
-                    {
-                        return graph.Compile();
-                    }
-                    current_versions[resource_index] = *next_version;
-                }
+                names.push_back(entry.name);
             }
         }
-
-        graph.ExportTexture(current_versions[static_cast<std::size_t>(RenderPassResource::SceneColor)],
-                            "SceneColor");
-        if (capture_requested)
-        {
-            graph.ExportTexture(
-                current_versions[static_cast<std::size_t>(RenderPassResource::CaptureOutput)],
-                "CaptureOutput");
-        }
-        return graph.Compile();
-    }
-
-    std::vector<std::string> ExpectedExecutedPasses(const FixedRenderPassSequence &sequence,
-                                                    bool capture_requested,
-                                                    bool external_requested)
-    {
-        FixedRenderPassFrame frame(sequence, capture_requested);
-        std::vector<std::string> names;
-        EXPECT_TRUE(frame.ExecuteRenderer([&](FixedRenderPassId id) {
-            names.push_back(sequence.Entries()[static_cast<std::size_t>(id)].name);
-            return true;
-        }));
-        if (external_requested)
-        {
-            EXPECT_TRUE(frame.ExecuteExternal([&] {
-                names.push_back(sequence.Entries()[static_cast<std::size_t>(
-                    FixedRenderPassId::EditorComposite)].name);
-            }));
-        }
-        std::string error;
-        EXPECT_TRUE(frame.Finalize(error)) << error;
         return names;
     }
 }
 
-TEST(RenderGraphCompatibilityTest, CanonicalEightPassesCompileAsAnSsaChain)
+TEST(RenderGraphCompatibilityTest, AuthoredDeclarationIsCanonicalAndWellFormed)
 {
-    std::string error;
-    const auto sequence = MakeCanonical(error);
-    ASSERT_TRUE(sequence.has_value()) << error;
-
-    for (const auto [capture_requested, external_requested] :
-         {std::pair{false, false}, std::pair{false, true}, std::pair{true, true}})
+    const std::vector<FixedRenderPassEntry> &entries = GetRenderFramePassEntries();
+    ASSERT_EQ(entries.size(), static_cast<std::size_t>(FixedRenderPassId::Count));
+    for (std::size_t index = 0; index < entries.size(); ++index)
     {
-        const auto result =
-            CompileCanonicalGraph(*sequence, capture_requested, external_requested);
+        // The compiled plan's key is the id, and pass identity indexes the
+        // profile arrays and the backend GPU-profile slots.
+        EXPECT_EQ(static_cast<std::size_t>(entries[index].id), index);
+        EXPECT_FALSE(entries[index].name.empty());
+    }
+    EXPECT_EQ(entries.back().id, FixedRenderPassId::EditorComposite);
+    EXPECT_TRUE(entries.back().terminal);
+}
+
+TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesAsAnSsaChainForBothConditionSets)
+{
+    for (const bool capture_requested : {false, true})
+    {
+        const RenderFrameConditions conditions{capture_requested};
+        const auto result = CompileRenderFrameGraph(conditions);
         ASSERT_TRUE(result.Succeeded());
-        const std::vector<std::string> expected =
-            ExpectedExecutedPasses(*sequence, capture_requested, external_requested);
+        const std::vector<std::string> expected = ExpectedPlannedPasses(conditions);
+        const std::vector<FixedRenderPassEntry> &entries = GetRenderFramePassEntries();
         ASSERT_EQ(result.graph->Passes().size(), expected.size());
 
         std::array<uint32_t, kResourceCount> current_versions{};
@@ -191,12 +79,15 @@ TEST(RenderGraphCompatibilityTest, CanonicalEightPassesCompileAsAnSsaChain)
         {
             const CompiledRenderGraph::Pass &pass = result.graph->Passes()[pass_index];
             EXPECT_EQ(pass.name, expected[pass_index]);
-            const FixedRenderPassEntry &entry = sequence->Entries()[pass.id.index];
+            ASSERT_TRUE(pass.user_key.has_value());
+            const std::size_t entry_index = static_cast<std::size_t>(*pass.user_key);
+            ASSERT_LT(entry_index, entries.size());
+            const FixedRenderPassEntry &entry = entries[entry_index];
+            EXPECT_EQ(pass.name, entry.name);
             ASSERT_EQ(pass.uses.size(), entry.resources.size());
             for (std::size_t use_index = 0; use_index < pass.uses.size(); ++use_index)
             {
-                const auto *texture =
-                    std::get_if<GraphTextureHandle>(&pass.uses[use_index].handle);
+                const auto *texture = std::get_if<GraphTextureHandle>(&pass.uses[use_index].handle);
                 ASSERT_NE(texture, nullptr);
                 const std::size_t resource_index =
                     static_cast<std::size_t>(entry.resources[use_index].resource);
@@ -218,11 +109,21 @@ TEST(RenderGraphCompatibilityTest, CanonicalEightPassesCompileAsAnSsaChain)
             }
         }
 
-        if (external_requested)
-        {
-            ASSERT_FALSE(result.graph->Passes().empty());
-            EXPECT_EQ(result.graph->Passes().back().owner, RenderGraphPassOwner::External);
-            EXPECT_TRUE(result.graph->Passes().back().terminal);
-        }
+        // The Editor terminal is compiled whatever the conditions, because
+        // whether it runs is not known when the frame declares.
+        ASSERT_FALSE(result.graph->Passes().empty());
+        const CompiledRenderGraph::Pass &terminal = result.graph->Passes().back();
+        EXPECT_EQ(terminal.name, "EditorCompositePass");
+        EXPECT_EQ(terminal.owner, RenderGraphPassOwner::External);
+        EXPECT_TRUE(terminal.terminal);
+
+        // Only the capture variant plans the conversion pass.
+        const auto capture_pass = std::find_if(
+            result.graph->Passes().begin(), result.graph->Passes().end(),
+            [](const CompiledRenderGraph::Pass &pass) {
+                return pass.user_key ==
+                       static_cast<uint64_t>(FixedRenderPassId::CaptureView);
+            });
+        EXPECT_EQ(capture_pass != result.graph->Passes().end(), capture_requested);
     }
 }

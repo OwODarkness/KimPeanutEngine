@@ -16,9 +16,9 @@ intervals. Compilation performs no Graphics or GPU work.
 
 ## Current state
 
-`FixedRenderPassSequence` remains the execution and compatibility oracle. The
-new graph is a separate foundation for later R3.3 comparison; it does not
-replace fixed scheduling or record commands.
+The compiled graph plan is the only authority for pass order and logical
+resource flow. The fixed sequence that served as the R3.3–R3.4 compatibility
+oracle has been removed, so no second authored pass order exists.
 
 ## Scope and non-goals
 

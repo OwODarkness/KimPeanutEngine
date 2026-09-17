@@ -22,7 +22,7 @@ frame_context.cpp
 render_submission.cpp
 render_submission_executor.cpp
 render_submission_frame_context.cpp
-render_pass.cpp
+render_pass_declaration.cpp
 render_target.cpp
 renderer_frame_targets.cpp
 render_camera.cpp
@@ -30,6 +30,7 @@ camera_utils.cpp
 render_scene.cpp
 render_profile.cpp
 render_graph/render_graph.cpp
+render_graph/render_graph_frame.cpp
 )
 
 target_include_directories(Render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)
