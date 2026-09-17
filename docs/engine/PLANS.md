@@ -165,6 +165,35 @@ Graphics, and RenderSubmission contracts are shared between the hosts.
 The migration must not modify DeferredRenderer pass policy to accommodate
 Live2D.
 
+## Frame loop and lane pacing
+
+`Engine::Run()` executes on the main OS thread as the game lane and owns the
+authoritative tick. A render lane runs on its own thread. Each frame the render
+lane blocks until the game lane publishes a tick, so the two lanes are
+lock-stepped rather than pipelined: the render lane cannot begin frame *N*
+before the game lane finishes tick *N*, and it waits out any difference between
+the two periods.
+
+That makes the game lane's tick period a hard floor for the frame rate. Both
+lanes pace with a sub-frame `sleep_for` against `target_fps`, and on Windows
+`Sleep()` is rounded up to the scheduler's timer granularity — about 15.6 ms by
+default. A pacing sleep of a few milliseconds therefore overshot to a tick
+period near 15 ms, and the render lane inherited it, spending roughly a third of
+every frame waiting on the handoff. Render work was invisible in the frame rate
+because the game lane, not the renderer, was the constraint.
+
+`Engine::Run()` holds the process at 1 ms resolution for its duration so the
+pacing sleep does what it asks; the handoff wait then drops to nothing and the
+render lane becomes the binding constraint.
+
+Two consequences for future changes:
+
+- Any sub-frame sleep on either lane's pacing path reintroduces the same trap.
+  The pacing period must stay short relative to the timer granularity in force.
+- Before attributing a frame-rate change to render work, check `game_wait_ms`.
+  If it is non-zero, the frame rate is following the game lane and the render
+  measurement is not the constraint.
+
 ## Reference mapping
 
 Sakura provides the closest small-engine precedent: its `SkrLive2D` module has

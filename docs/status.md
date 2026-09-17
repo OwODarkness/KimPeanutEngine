@@ -746,6 +746,24 @@
 
 ## Done
 
+- **Render graph R3.4 and the frame-rate investigation (2026-09-17)** — The
+  compiled graph plan is now the only authority for pass order and logical
+  resource flow: `DeferredRenderer` compiles one plan per frame-start condition
+  set and executes each frame from it, and the fixed pass sequence, its executor,
+  and the parity scaffolding that justified the switch were removed. The switch
+  was proven by per-frame comparison of both schedulers on Vulkan and OpenGL
+  before removal. Separately, the low frame rate reported against the G-buffer
+  turned out not to be the renderer: the game lane paced itself with a sub-frame
+  `Sleep()`, which Windows rounds up to its ~15.6 ms timer granularity, and the
+  lock-stepped render lane inherited that period and spent a third of every frame
+  waiting. Holding 1 ms timer resolution for the run removed the wait. G-buffer
+  per-section re-resolution was also memoized. Measured together on the sponza
+  fixture, OpenGL, 1094x619: 48 fps and 22.5 ms of render work before, 83.6 fps
+  and 11.9 ms after. →
+  [R3.4 review](render/.review/R3.4.md),
+  [R3.4c journal](../.spec/journal/2026-09-17-render-graph-r3-4c.md),
+  [frame loop and lane pacing](engine/PLANS.md)
+
 - **Model-import MI1.6 transactional importer (2026-09-06)** — Asset now
   exposes a standalone `ModelImportService` that runs without AssetManager or
   the engine application. It probes recorded dependencies before Assimp,
@@ -1708,19 +1726,23 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-- **Render graph R3.3 compatibility proof (2026-09-17)** — the fixed raster
-  baseline remains preserved, and the scoped R3.1 review is complete. Render
-  now has a backend-independent SSA graph builder/compiler with graph-scoped
-  typed texture and buffer versions, imported/exported resources, deterministic
-  dependency order, reachability culling, diagnostics, and logical first/last-
-  use intervals. The canonical eight-pass graph matches fixed-frame order,
-  conditions, external terminal policy, outcomes, and resource edges across
-  normal/external/capture variants. It performs no Graphics calls and does not
-  alter fixed pass execution. R3.4+ still gate runtime/backend migration. →
-  [R3 design](render/.plan/R3.md), [R3.1 review](render/.review/R3.1.md),
-  [R3.2 spec](../.spec/specs/render-graph.md),
-  [R3.3 journal](../.spec/journal/2026-09-17-render-graph-r3-3.md),
-  [Sakura study](render/render_graph/sakura_analysis.md)
+- **Render graph R3.5/R3.6 remain gated (2026-09-17)** — the graph schedules
+  passes but does not yet own resource state. Attachment begin/end still lives
+  inside the pass callbacks, passes still bind the persistent targets from
+  `RendererFrameTargets`, and no transition or transient-allocation contract
+  exists. R3.5 would move transition authority into the compiled plan and R3.6
+  would add Graphics-owned transients; both are held until a consumer justifies
+  them, since their stated purpose is the later ray-tracing path and no
+  ray-tracing work exists yet. →
+  [R3 plan](render/.plan/R3.md), [render graph TODO](render/render_graph/TODO.md)
+- **Frame-rate follow-ups (2026-09-17)** — the timer-resolution and G-buffer
+  fixes landed, and the render lane is now the binding constraint on OpenGL at
+  about 11.9 ms of an 11.9 ms frame. Two open items: Vulkan runs with validation
+  layers enabled in any non-`NDEBUG` build, so its Debug figures (21.5 ms of
+  record work against OpenGL's 6.1 ms) are not representative and Vulkan
+  performance work needs a `RelWithDebInfo` measurement first; and the frame
+  rate is capped by the game lane's tick whenever `game_wait_ms` is non-zero. →
+  [frame loop and lane pacing](engine/PLANS.md)
 - **Engine host modes — post-MODE1 follow-up** — extract shared
   `EngineServices` only when a second host or an in-editor preview session
   provides a concrete consumer. MODE1.1–MODE1.5 now establish the two
