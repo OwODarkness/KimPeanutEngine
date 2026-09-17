@@ -443,6 +443,8 @@ namespace kpengine::render
         frame_render_world_snapshot_.clear();
         frame_section_packets_.clear();
         frame_section_packets_ready_ = false;
+        frame_object_states_.clear();
+        frame_material_bindings_.clear();
         pending_scene_render_target_extent_ = {};
         active_pass_frame_.reset();
         active_pending_capture_.reset();
@@ -610,6 +612,8 @@ namespace kpengine::render
         frame_render_world_snapshot_ = render_world_->Snapshot();
         frame_section_packets_.clear();
         frame_section_packets_ready_ = false;
+        frame_object_states_.clear();
+        frame_material_bindings_.clear();
         scene_camera_ = input.camera;
         const std::optional<CaptureView> active_capture_view =
             input.pending_capture.has_value() ? input.pending_capture : input.debug_view;
@@ -2171,35 +2175,64 @@ namespace kpengine::render
             return false;
         }
 
-        graphics::PerObjectData per_object_data{};
-        per_object_data.model = Matrix4f::MakeTransformMatrix(proxy.world_transform).Transpose();
-        const UniformAllocation per_object = active_frame_context_->UpdateStableUniform(
-            GetObjectUniformKey(proxy.handle), per_object_data);
+        // A mesh's sections repeat the same per-object state, so resolve it once
+        // per renderable per pass and reuse it.
+        const uint64_t object_key =
+            GetObjectUniformKey(proxy.handle) ^ static_cast<uint64_t>(pass);
+        auto object_it = frame_object_states_.find(object_key);
+        if (object_it == frame_object_states_.end())
+        {
+            FrameObjectState state{};
+            graphics::PerObjectData per_object_data{};
+            per_object_data.model =
+                Matrix4f::MakeTransformMatrix(proxy.world_transform).Transpose();
+            state.per_object = active_frame_context_->UpdateStableUniform(
+                GetObjectUniformKey(proxy.handle), per_object_data);
+            if (pass == MaterialPass::GBuffer)
+            {
+                const SelectionGpuData selection_data{
+                    Vector4f{proxy.flags.selected ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f}};
+                state.selection = active_frame_context_->UpdateStableUniform(
+                    GetSelectionUniformKey(proxy.handle), selection_data);
+            }
+            object_it = frame_object_states_.emplace(object_key, state).first;
+        }
+        const FrameObjectState &object_state = object_it->second;
+        const UniformAllocation &per_object = object_state.per_object;
         if (!per_pass.IsValid() || !per_object.IsValid())
         {
             return false;
         }
 
-        std::vector<graphics::ResourceBinding> draw_bindings{
-            graphics::UniformBufferBinding{0, 0, per_pass.buffer, per_pass.offset, per_pass.range},
-            graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset, per_object.range},
-        };
-        if (pass == MaterialPass::GBuffer)
+        // The binding is a pure function of the same renderable, its material,
+        // the pass, and the per-pass block, so it can be resolved once too.
+        const uint64_t binding_key =
+            object_key ^ (static_cast<uint64_t>(proxy.material.id) << 1) ^
+            (static_cast<uint64_t>(proxy.material.generation) << 17) ^ (per_pass.offset << 3);
+        auto binding_it = frame_material_bindings_.find(binding_key);
+        if (binding_it == frame_material_bindings_.end())
         {
-            const SelectionGpuData selection_data{
-                Vector4f{proxy.flags.selected ? 1.0f : 0.0f, 0.0f, 0.0f, 0.0f}};
-            const UniformAllocation selection =
-                active_frame_context_->UpdateStableUniform(
-                    GetSelectionUniformKey(proxy.handle), selection_data);
-            if (!selection.IsValid())
+            std::vector<graphics::ResourceBinding> draw_bindings{
+                graphics::UniformBufferBinding{0, 0, per_pass.buffer, per_pass.offset,
+                                               per_pass.range},
+                graphics::UniformBufferBinding{0, 1, per_object.buffer, per_object.offset,
+                                               per_object.range},
+            };
+            if (pass == MaterialPass::GBuffer)
             {
-                return false;
+                if (!object_state.selection.IsValid())
+                {
+                    return false;
+                }
+                draw_bindings.emplace_back(graphics::UniformBufferBinding{
+                    0, 9, object_state.selection.buffer, object_state.selection.offset,
+                    object_state.selection.range});
             }
-            draw_bindings.emplace_back(graphics::UniformBufferBinding{
-                0, 9, selection.buffer, selection.offset, selection.range});
+            const FrameMaterialBinding resolved = active_frame_context_->CreateMaterialBinding(
+                *material_system_, *resource_resolver_, proxy.material, draw_bindings, pass);
+            binding_it = frame_material_bindings_.emplace(binding_key, resolved).first;
         }
-        const FrameMaterialBinding material_binding = active_frame_context_->CreateMaterialBinding(
-            *material_system_, *resource_resolver_, proxy.material, draw_bindings, pass);
+        const FrameMaterialBinding &material_binding = binding_it->second;
         if (!active_frame_context_->IsMaterialBindingCurrent(material_binding))
         {
             return false;

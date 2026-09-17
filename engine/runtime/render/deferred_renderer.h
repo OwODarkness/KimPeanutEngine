@@ -7,6 +7,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 #include "asset/common.h"
@@ -215,6 +216,18 @@ namespace kpengine::render
         std::vector<VisibleMeshSection> frame_section_packets_;
         bool frame_section_packets_ready_ = false;
         FrameLightingBinding frame_lighting_binding_;
+        // Per-frame resolved draw state. Within one frame the per-object uniform
+        // and the material binding are pure functions of the renderable and its
+        // material, so a section whose mesh was already drawn reuses the
+        // resolution instead of repeating the lookups, hashing, and uniform
+        // write. Both are cleared at frame start.
+        struct FrameObjectState
+        {
+            UniformAllocation per_object;
+            UniformAllocation selection;
+        };
+        std::unordered_map<uint64_t, FrameObjectState> frame_object_states_;
+        std::unordered_map<uint64_t, FrameMaterialBinding> frame_material_bindings_;
         std::optional<DirectionalShadowFrame> active_directional_shadow_;
         std::optional<SpotShadowFrame> active_spot_shadow_;
         std::optional<PointShadowFrame> active_point_shadow_;

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <limits>
+#include <unordered_map>
 #include <utility>
 
 #include "data/mesh.h"
@@ -116,30 +117,54 @@ namespace kpengine::render
         draw_lists.opaque.reserve(visible_sections.size());
         draw_lists.alpha_blend.reserve(visible_sections.size());
 
+        // A mesh's sections usually share one material, so resolve each material
+        // once per call instead of once per section.
+        struct ResolvedMaterial
+        {
+            graphics::PipelineHandle pipeline;
+            MaterialDrawClass draw_class = MaterialDrawClass::Opaque;
+            bool drawable = false;
+        };
+        std::unordered_map<MaterialInstanceHandle, ResolvedMaterial> resolved_materials;
+        const auto resolve_material = [&](MaterialInstanceHandle material) -> const ResolvedMaterial & {
+            const auto [entry, inserted] = resolved_materials.try_emplace(material);
+            if (!inserted)
+            {
+                return entry->second;
+            }
+            ResolvedMaterial &resolved = entry->second;
+            if (materials.GetInstanceResolution(material).state != MaterialResourceState::Ready)
+            {
+                return resolved;
+            }
+            const MaterialTemplateHandle template_handle = materials.GetInstanceTemplate(material);
+            const MaterialTemplateDesc *const template_desc = materials.FindTemplate(template_handle);
+            resolved.pipeline = resource_resolver.FindMaterialPipeline(template_handle, pass);
+            const std::optional<MaterialDrawClass> draw_class = materials.GetDrawClass(material);
+            resolved.drawable = template_desc != nullptr && SupportsPass(*template_desc, pass) &&
+                                resolved.pipeline.IsValid() && draw_class.has_value();
+            if (resolved.drawable)
+            {
+                resolved.draw_class = *draw_class;
+            }
+            return resolved;
+        };
+
         for (const VisibleMeshSection &visible_section : visible_sections)
         {
             const MeshProxy &proxy = visible_section.proxy;
-            if (!proxy.mesh.IsValid() || !proxy.material.IsValid() ||
-                materials.GetInstanceResolution(proxy.material).state != MaterialResourceState::Ready)
+            if (!proxy.mesh.IsValid() || !proxy.material.IsValid())
             {
                 continue;
             }
-            const MaterialTemplateHandle template_handle =
-                materials.GetInstanceTemplate(proxy.material);
-            const MaterialTemplateDesc *const template_desc =
-                materials.FindTemplate(template_handle);
-            const graphics::PipelineHandle pipeline =
-                resource_resolver.FindMaterialPipeline(template_handle, pass);
-            const std::optional<MaterialDrawClass> draw_class =
-                materials.GetDrawClass(proxy.material);
-            if (!template_desc || !SupportsPass(*template_desc, pass) ||
-                !pipeline.IsValid() || !draw_class)
+            const ResolvedMaterial &resolved = resolve_material(proxy.material);
+            if (!resolved.drawable)
             {
                 continue;
             }
-            SceneDrawItem item{MakeDrawPacketProxy(proxy), pipeline,
+            SceneDrawItem item{MakeDrawPacketProxy(proxy), resolved.pipeline,
                                visible_section.section_index};
-            if (*draw_class == MaterialDrawClass::Opaque)
+            if (resolved.draw_class == MaterialDrawClass::Opaque)
             {
                 draw_lists.opaque.push_back(std::move(item));
             }
