@@ -22,7 +22,6 @@ namespace kpengine::render
         DirectionalShadow,
         SpotShadow,
         PointShadow,
-        SceneHdr,
         CaptureOutput,
         Count,
     };
@@ -47,6 +46,12 @@ namespace kpengine::render
 
         RenderTarget *GetTarget(RenderTargetName name);
         const RenderTarget *GetTarget(RenderTargetName name) const;
+
+        // The HDR lighting/debug target is a transient now: its contents never
+        // survive the frame, so it is described here and allocated by the
+        // Graphics-owned pool rather than created with the persistent set. The
+        // description stays beside the persistent ones it sits among.
+        static graphics::RenderTargetDesc DescribeSceneHdr(uint32_t width, uint32_t height);
 
     private:
         graphics::RenderTargetDesc BuildDesc(RenderTargetName name, uint32_t width,

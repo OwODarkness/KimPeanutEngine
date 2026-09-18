@@ -642,7 +642,10 @@ TEST(RenderSystemLifecycleTest, CharacterizesFrameCaptureResizeEditorAndTeardown
 
     const std::vector<std::string> expected_targets{
         "target:DirectionalShadow", "target:SpotShadow", "target:PointShadow",
-        "target:GBuffer", "target:SceneHdr", "target:SceneColor"};
+        // SceneHdr is deliberately absent: its contents never survive the frame,
+        // so it is a transient the Graphics-owned pool allocates rather than one
+        // of the persistent named targets.
+        "target:GBuffer", "target:SceneColor"};
     std::vector<std::string> actual_targets;
     for (const std::string &event : probe->events)
     {
@@ -660,10 +663,16 @@ TEST(RenderSystemLifecycleTest, CharacterizesFrameCaptureResizeEditorAndTeardown
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
     ASSERT_TRUE(system.EndFrame());
     EXPECT_GT(probe->wait_idle_count, waits_before_resize);
-    ASSERT_GE(probe->targets.size(), 14u);
-    EXPECT_EQ(probe->targets[7].name, "SceneColor");
-    EXPECT_EQ(probe->targets[7].width, 640u);
-    EXPECT_EQ(probe->targets[7].height, 360u);
+    // Six persistent targets per initialization, and two initializations.
+    ASSERT_GE(probe->targets.size(), 12u);
+    EXPECT_EQ(probe->targets[6].name, "SceneColor");
+    EXPECT_EQ(probe->targets[6].width, 640u);
+    EXPECT_EQ(probe->targets[6].height, 360u);
+    // SceneHdr is taken from the pool once per frame and returned after the
+    // sweep, so the transient path is exercised rather than merely present.
+    EXPECT_EQ(std::count(probe->events.begin(), probe->events.end(), "transient_acquire"),
+              std::count(probe->events.begin(), probe->events.end(), "transient_release"));
+
     const graphics::RenderTargetView view_after_resize = system.GetSceneRenderTargetView();
     ASSERT_TRUE(view_after_resize.IsValid());
     EXPECT_EQ(view_after_resize.width, 640u);

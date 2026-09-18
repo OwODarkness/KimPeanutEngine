@@ -153,6 +153,14 @@ namespace kpengine::render
         // already satisfied.
         // The target a pass records into, named by its write use. Null for a pass
         // that writes no attachment, such as the external terminal.
+        // The target backing a logical resource. Everything except SceneHdr is a
+        // persistent frame target; SceneHdr is the frame's transient, taken from
+        // the Graphics-owned pool.
+        RenderTarget *ResolveResourceTarget(RenderPassResource resource);
+        // Acquires this frame's SceneHdr transient. False when it could not be
+        // had, which fails the frame before any pass records.
+        bool AcquireTransientSceneHdr();
+        void ReleaseTransientSceneHdr();
         RenderTarget *ResolvePassAttachment(const CompiledRenderGraph::Pass &pass);
         void ApplyPassTransitions(const CompiledRenderGraph &plan,
                                   const CompiledRenderGraph::Pass &pass);
@@ -217,6 +225,9 @@ namespace kpengine::render
         // The plan the active frame executes, so the external terminal's state
         // requirements can be applied before the host's callback records.
         const CompiledRenderGraph *active_frame_plan_ = nullptr;
+        // The frame's SceneHdr transient, wrapped around a pool-owned handle.
+        // RenderTarget is not movable, so the wrapper is held by pointer.
+        std::unique_ptr<RenderTarget> transient_scene_hdr_;
         bool frame_plan_valid_ = false;
         double frame_plan_compile_ms_ = 0.0;
         graphics::Extent2D pending_scene_render_target_extent_;

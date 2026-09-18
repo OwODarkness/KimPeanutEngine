@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cstddef>
 
+#include "log/logger.h"
 #include "vulkan_frame_context.h"
 #include "vulkan_render_target_manager.h"
 
@@ -52,6 +53,12 @@ namespace kpengine::graphics
         // see rather than infer.
         if (HasEntryFor(outstanding_, desc) || HasEntryFor(retired_, desc))
         {
+            if (identity_changes_ == 0)
+            {
+                KP_LOG("VulkanRenderTargetManagerLog", LOG_LEVEL_WARNING,
+                       "Transient target pool handed a description a second target; callers "
+                       "keying caches on its handles will rebuild them");
+            }
             ++identity_changes_;
         }
         Entry entry{targets_->Create(desc), desc};

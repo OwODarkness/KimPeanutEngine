@@ -1227,15 +1227,13 @@ namespace kpengine::example
                     named_targets.GetTarget(render::RenderTargetName::GBuffer);
                 const render::RenderTarget *const named_shadow =
                     named_targets.GetTarget(render::RenderTargetName::DirectionalShadow);
-                const render::RenderTarget *const named_scene_hdr =
-                    named_targets.GetTarget(render::RenderTargetName::SceneHdr);
+                // SceneHdr is not part of this set any more: its contents never
+                // survive the frame, so it is a graph-declared transient that
+                // Graphics allocates. Its description still comes from here.
                 if (!named_scene_color || !named_scene_color->IsValid() ||
                     !named_gbuffer || !named_gbuffer->IsValid() ||
                     !named_shadow || !named_shadow->IsValid() ||
-                    !named_shadow->GetSampledDepthTexture().IsValid() ||
-                    !named_scene_hdr || !named_scene_hdr->IsValid() ||
-                    named_scene_hdr->GetColorAttachmentCount() != 1 ||
-                    !named_scene_hdr->GetColorAttachmentTexture(0).IsValid())
+                    !named_shadow->GetSampledDepthTexture().IsValid())
                 {
                     throw std::runtime_error("D5.1 named frame target set is incomplete");
                 }

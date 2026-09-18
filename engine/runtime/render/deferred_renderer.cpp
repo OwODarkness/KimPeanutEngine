@@ -57,17 +57,32 @@ namespace kpengine::render
         constexpr uint64_t kPointShadowPerPassUniformKey = 0x534841444f575f50ull;
         constexpr uint64_t kGBufferPerPassUniformKey = 0x4742554646455250ull;
 
-        // The persistent target backing each graph resource. The two enums list
-        // the same resources in different orders, and this is the only place that
-        // relates them, so neither header has to depend on the other.
-        constexpr std::array<RenderTargetName,
-                             static_cast<std::size_t>(RenderPassResource::Count)>
-            kResourceTargets{
-                RenderTargetName::SceneColor,      RenderTargetName::SceneHdr,
-                RenderTargetName::GBuffer,         RenderTargetName::DirectionalShadow,
-                RenderTargetName::SpotShadow,      RenderTargetName::PointShadow,
-                RenderTargetName::CaptureOutput,
-            };
+        // The persistent target backing a logical resource, if it has one. The
+        // two enums list the same resources in different orders, and this is the
+        // only place that relates them, so neither header depends on the other.
+        // SceneHdr is absent: it is a transient served by the Graphics pool.
+        std::optional<RenderTargetName> PersistentTargetForResource(RenderPassResource resource)
+        {
+            switch (resource)
+            {
+            case RenderPassResource::SceneColor:
+                return RenderTargetName::SceneColor;
+            case RenderPassResource::GBuffer:
+                return RenderTargetName::GBuffer;
+            case RenderPassResource::DirectionalShadow:
+                return RenderTargetName::DirectionalShadow;
+            case RenderPassResource::SpotShadow:
+                return RenderTargetName::SpotShadow;
+            case RenderPassResource::PointShadow:
+                return RenderTargetName::PointShadow;
+            case RenderPassResource::CaptureOutput:
+                return RenderTargetName::CaptureOutput;
+            case RenderPassResource::SceneHdr:
+            case RenderPassResource::Count:
+                break;
+            }
+            return std::nullopt;
+        }
 
         graphics::ResourceUsage ToResourceUsage(RenderGraphUsage usage)
         {
@@ -427,6 +442,10 @@ namespace kpengine::render
 
     void DeferredRenderer::Cleanup()
     {
+        // Drop the adopted transient before the backend tears its pool down, so
+        // no wrapper outlives the handle it borrows.
+        ReleaseTransientSceneHdr();
+        transient_scene_hdr_.reset();
         if (backend_ != nullptr)
         {
             if (gbuffer_debug_pipeline_.IsValid())
@@ -701,6 +720,13 @@ namespace kpengine::render
             result.normal_recording_completed = false;
             return result;
         }
+        if (!AcquireTransientSceneHdr())
+        {
+            // Deferred lighting writes it and tone map reads it, so a frame
+            // without it cannot record.
+            result.normal_recording_completed = false;
+            return result;
+        }
         active_pass_frame_.emplace(*frame_plan);
         active_frame_plan_ = frame_plan;
         const auto graph_execute_started = std::chrono::steady_clock::now();
@@ -883,6 +909,10 @@ namespace kpengine::render
         }
         if (finalized)
         {
+            // Released after the sweep, so the next frame takes the same
+            // instance back rather than a second one: the caller's descriptor
+            // sets are keyed on this target's handles.
+            ReleaseTransientSceneHdr();
             active_pass_frame_.reset();
             active_frame_plan_ = nullptr;
             active_pending_capture_.reset();
@@ -945,10 +975,55 @@ namespace kpengine::render
             {
                 continue;
             }
-            return frame_targets_.GetTarget(
-                kResourceTargets[static_cast<std::size_t>(texture->resource)]);
+            return ResolveResourceTarget(static_cast<RenderPassResource>(texture->resource));
         }
         return nullptr;
+    }
+
+    bool DeferredRenderer::AcquireTransientSceneHdr()
+    {
+        if (backend_ == nullptr || !active_frame_context_)
+        {
+            return false;
+        }
+        const graphics::Extent2D extent = active_frame_context_->GetRenderExtent();
+        const graphics::RenderTargetDesc desc =
+            RendererFrameTargets::DescribeSceneHdr(extent.width, extent.height);
+        const graphics::RenderTargetHandle handle = backend_->AcquireTransientRenderTarget(desc);
+        if (!handle.IsValid())
+        {
+            return false;
+        }
+        if (!transient_scene_hdr_)
+        {
+            transient_scene_hdr_ = std::make_unique<RenderTarget>();
+        }
+        // Adopt, so dropping the wrapper never destroys what the pool owns.
+        transient_scene_hdr_->Adopt(*backend_, handle, desc);
+        return transient_scene_hdr_->IsValid();
+    }
+
+    void DeferredRenderer::ReleaseTransientSceneHdr()
+    {
+        if (!transient_scene_hdr_ || backend_ == nullptr)
+        {
+            return;
+        }
+        const graphics::RenderTargetHandle handle = transient_scene_hdr_->GetHandle();
+        transient_scene_hdr_->Cleanup();
+        backend_->ReleaseTransientRenderTarget(handle);
+    }
+
+    RenderTarget *DeferredRenderer::ResolveResourceTarget(RenderPassResource resource)
+    {
+        if (resource == RenderPassResource::SceneHdr)
+        {
+            // Acquired for this frame; null only if the frame never reached the
+            // acquire, which fails the frame before any pass runs.
+            return transient_scene_hdr_.get();
+        }
+        const std::optional<RenderTargetName> name = PersistentTargetForResource(resource);
+        return name.has_value() ? frame_targets_.GetTarget(*name) : nullptr;
     }
 
     void DeferredRenderer::ApplyPassTransitions(const CompiledRenderGraph &plan,
@@ -976,8 +1051,8 @@ namespace kpengine::render
             {
                 continue;
             }
-            RenderTarget *const target = frame_targets_.GetTarget(
-                kResourceTargets[static_cast<std::size_t>(texture->resource)]);
+            RenderTarget *const target =
+                ResolveResourceTarget(static_cast<RenderPassResource>(texture->resource));
             if (target == nullptr)
             {
                 continue;
@@ -1491,7 +1566,8 @@ namespace kpengine::render
         }
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        RenderTarget *const hdr_target = frame_targets_.GetTarget(RenderTargetName::SceneHdr);
+        RenderTarget *const hdr_target =
+            ResolveResourceTarget(RenderPassResource::SceneHdr);
         RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
         RenderTarget *const shadow_target =
             frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
@@ -1888,7 +1964,8 @@ namespace kpengine::render
         }
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        RenderTarget *const hdr_target = frame_targets_.GetTarget(RenderTargetName::SceneHdr);
+        RenderTarget *const hdr_target =
+            ResolveResourceTarget(RenderPassResource::SceneHdr);
         RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
         RenderTarget *const scene_target = frame_targets_.GetTarget(RenderTargetName::SceneColor);
         if (!recorder || !hdr_target || !gbuffer_target || !scene_target ||

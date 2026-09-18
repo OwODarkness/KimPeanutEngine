@@ -122,17 +122,6 @@ namespace kpengine::render
                 0,
                 true};
             break;
-        case RenderTargetName::SceneHdr:
-            // Linear HDR lighting/debug output. ToneMapPass is the only normal
-            // presentation consumer; SceneColor remains the stable LDR target.
-            desc.color_attachments = {
-                {graphics::RenderTargetColorAttachment{
-                    TextureFormat::TEXTURE_FORMAT_RGBA16F,
-                    graphics::RenderTargetLoadOp::Clear,
-                    graphics::RenderTargetStoreOp::Store,
-                    {0.f, 0.f, 0.f, 1.f}}},
-            };
-            break;
         case RenderTargetName::CaptureOutput:
             // Conditional diagnostic conversion output. Every semantic capture
             // is converted to displayable RGBA8 before Graphics readback.
@@ -160,6 +149,24 @@ namespace kpengine::render
             impl_->targets[index]->Initialize(
                 backend, BuildDesc(static_cast<RenderTargetName>(index), width, height));
         }
+    }
+
+    graphics::RenderTargetDesc RendererFrameTargets::DescribeSceneHdr(uint32_t width,
+                                                                      uint32_t height)
+    {
+        // Linear HDR lighting/debug output. ToneMapPass is the only normal
+        // presentation consumer; SceneColor remains the stable LDR target.
+        graphics::RenderTargetDesc desc{};
+        desc.width = width;
+        desc.height = height;
+        desc.color_attachments = {
+            {graphics::RenderTargetColorAttachment{
+                TextureFormat::TEXTURE_FORMAT_RGBA16F,
+                graphics::RenderTargetLoadOp::Clear,
+                graphics::RenderTargetStoreOp::Store,
+                {0.f, 0.f, 0.f, 1.f}}},
+        };
+        return desc;
     }
 
     void RendererFrameTargets::RebuildForExtent(graphics::RenderBackend &backend, uint32_t width,

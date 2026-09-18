@@ -230,11 +230,14 @@ namespace kpengine::test
                 return {};
             }
 
+            // Must match RenderTargetName's order and size, which is what the
+            // renderer creates in one initialization.
             static constexpr const char *names[] = {
-                "SceneColor",       "GBuffer",       "DirectionalShadow", "SpotShadow",
-                "PointShadow",      "SceneHdr",      "CaptureOutput",
+                "SceneColor", "GBuffer",    "DirectionalShadow",
+                "SpotShadow", "PointShadow", "CaptureOutput",
             };
-            const std::size_t name_index = probe_->targets.size() % 7;
+            constexpr std::size_t name_count = sizeof(names) / sizeof(names[0]);
+            const std::size_t name_index = probe_->targets.size() % name_count;
             probe_->targets.push_back({names[name_index], desc.width, desc.height});
             const graphics::RenderTargetHandle handle = MakeHandle<graphics::RenderTargetHandle>();
             target_names_[handle.id] = names[name_index];
@@ -246,12 +249,21 @@ namespace kpengine::test
             const graphics::RenderTargetDesc &) override
         {
             // The fake backend models no GPU storage, so a transient target is
-            // simply a fresh handle.
+            // simply a fresh handle. The events let a test see that a caller
+            // took the pooled path rather than a named target.
+            probe_->events.push_back("transient_acquire");
             return MakeHandle<graphics::RenderTargetHandle>();
         }
 
-        void ReleaseTransientRenderTarget(graphics::RenderTargetHandle) override {}
-        void DiscardTransientRenderTargets() override {}
+        void ReleaseTransientRenderTarget(graphics::RenderTargetHandle) override
+        {
+            probe_->events.push_back("transient_release");
+        }
+
+        void DiscardTransientRenderTargets() override
+        {
+            probe_->events.push_back("transient_discard");
+        }
 
         bool DestroyRenderTarget(graphics::RenderTargetHandle) override
         {
