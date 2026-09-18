@@ -1,5 +1,9 @@
 {
   "version": 1,
+  "environment": {
+    "texture": "texture/hdr/qwantani_dusk_2_puresky_4k.hdr",
+    "ibl_intensity": 0.35
+  },
   "objects": [
     {
       "id": "sponza",
