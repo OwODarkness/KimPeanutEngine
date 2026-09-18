@@ -9,4 +9,4 @@ add_executable(CommandRegistryTest
 target_link_libraries(CommandRegistryTest PRIVATE RuntimeCommand KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(CommandRegistryTest)
+gtest_discover_tests(CommandRegistryTest PROPERTIES LABELS "command")

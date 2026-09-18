@@ -5,4 +5,4 @@ add_executable(TrieTest
 target_link_libraries(TrieTest PRIVATE Core KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(TrieTest)
+gtest_discover_tests(TrieTest PROPERTIES LABELS "containers")

@@ -9,7 +9,7 @@ target_include_directories(RuntimeScreenshotServiceTest PRIVATE
 target_link_libraries(RuntimeScreenshotServiceTest PRIVATE RuntimeScreenshot KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(RuntimeScreenshotServiceTest)
+gtest_discover_tests(RuntimeScreenshotServiceTest PROPERTIES LABELS "runtime")
 
 add_executable(ScreenshotCommandProviderTest
     screenshot_command_provider_test.cpp
@@ -22,7 +22,7 @@ target_include_directories(ScreenshotCommandProviderTest PRIVATE
 target_link_libraries(ScreenshotCommandProviderTest PRIVATE RuntimeScreenshotCommand KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(ScreenshotCommandProviderTest)
+gtest_discover_tests(ScreenshotCommandProviderTest PROPERTIES LABELS "runtime")
 
 add_executable(PerformanceStatsCommandProviderTest
     performance_stats_command_provider_test.cpp
@@ -37,7 +37,7 @@ target_link_libraries(PerformanceStatsCommandProviderTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(PerformanceStatsCommandProviderTest)
+gtest_discover_tests(PerformanceStatsCommandProviderTest PROPERTIES LABELS "runtime")
 
 add_executable(RuntimeStartupTest
     runtime_startup_test.cpp
@@ -58,7 +58,7 @@ add_custom_command(TARGET RuntimeStartupTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(RuntimeStartupTest)
+gtest_discover_tests(RuntimeStartupTest PROPERTIES LABELS "runtime")
 
 add_executable(RenderAssetPreparerTest
     render_asset_preparer_test.cpp
@@ -77,7 +77,7 @@ add_custom_command(TARGET RenderAssetPreparerTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(RenderAssetPreparerTest)
+gtest_discover_tests(RenderAssetPreparerTest PROPERTIES LABELS "runtime")
 
 add_executable(RuntimeLaunchOptionsTest
     launch_options_test.cpp
@@ -96,7 +96,7 @@ add_custom_command(TARGET RuntimeLaunchOptionsTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(RuntimeLaunchOptionsTest)
+gtest_discover_tests(RuntimeLaunchOptionsTest PROPERTIES LABELS "runtime")
 
 add_executable(WindowCommandProviderTest
     window_command_provider_test.cpp
@@ -111,4 +111,4 @@ target_link_libraries(WindowCommandProviderTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(WindowCommandProviderTest)
+gtest_discover_tests(WindowCommandProviderTest PROPERTIES LABELS "runtime")

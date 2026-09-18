@@ -30,7 +30,7 @@ add_custom_command(TARGET AssetUnitTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(AssetUnitTest)
+gtest_discover_tests(AssetUnitTest PROPERTIES LABELS "asset")
 
 # Separate executable: the provider reads the process-wide AssetManager
 # singleton, so it must not share the type registry and caches with other tests.
@@ -48,7 +48,7 @@ add_custom_command(TARGET AssetCatalogProviderTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(AssetCatalogProviderTest)
+gtest_discover_tests(AssetCatalogProviderTest PROPERTIES LABELS "asset")
 
 add_executable(
     ModelArchiveDatabaseTest
@@ -64,7 +64,7 @@ add_custom_command(TARGET ModelArchiveDatabaseTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(ModelArchiveDatabaseTest)
+gtest_discover_tests(ModelArchiveDatabaseTest PROPERTIES LABELS "asset")
 
 add_executable(
     ModelDecoderTest
@@ -84,7 +84,7 @@ add_custom_command(TARGET ModelDecoderTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(ModelDecoderTest)
+gtest_discover_tests(ModelDecoderTest PROPERTIES LABELS "asset")
 
 add_executable(
     NativeModelTest
@@ -104,7 +104,7 @@ add_custom_command(TARGET NativeModelTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(NativeModelTest)
+gtest_discover_tests(NativeModelTest PROPERTIES LABELS "asset")
 
 add_executable(
     NativeMaterialTest
@@ -120,7 +120,7 @@ add_custom_command(TARGET NativeMaterialTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(NativeMaterialTest)
+gtest_discover_tests(NativeMaterialTest PROPERTIES LABELS "asset")
 
 add_executable(
     ModelImportServiceTest
@@ -136,7 +136,7 @@ add_custom_command(TARGET ModelImportServiceTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(ModelImportServiceTest)
+gtest_discover_tests(ModelImportServiceTest PROPERTIES LABELS "asset")
 
 add_executable(
     TextureImportTest
@@ -146,7 +146,7 @@ add_executable(
 target_link_libraries(TextureImportTest PRIVATE AssetImport Config KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(TextureImportTest)
+gtest_discover_tests(TextureImportTest PROPERTIES LABELS "asset")
 
 add_executable(
     AssetImportRegistryTest
@@ -162,7 +162,7 @@ add_custom_command(TARGET AssetImportRegistryTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(AssetImportRegistryTest)
+gtest_discover_tests(AssetImportRegistryTest PROPERTIES LABELS "asset")
 
 add_executable(
     AssetImportAdapterTest
@@ -178,7 +178,7 @@ add_custom_command(TARGET AssetImportAdapterTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(AssetImportAdapterTest)
+gtest_discover_tests(AssetImportAdapterTest PROPERTIES LABELS "asset")
 
 add_executable(
     AssetExtensionHardeningTest
@@ -194,7 +194,7 @@ add_custom_command(TARGET AssetExtensionHardeningTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(AssetExtensionHardeningTest)
+gtest_discover_tests(AssetExtensionHardeningTest PROPERTIES LABELS "asset")
 
 add_executable(
     ContentMetadataTest
@@ -204,7 +204,7 @@ add_executable(
 target_link_libraries(ContentMetadataTest PRIVATE AssetContent Config KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(ContentMetadataTest)
+gtest_discover_tests(ContentMetadataTest PROPERTIES LABELS "asset")
 
 add_executable(
     ContentCatalogBuilderTest
@@ -220,4 +220,4 @@ add_custom_command(TARGET ContentCatalogBuilderTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(ContentCatalogBuilderTest)
+gtest_discover_tests(ContentCatalogBuilderTest PROPERTIES LABELS "asset")

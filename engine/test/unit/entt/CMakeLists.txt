@@ -8,4 +8,4 @@ target_link_libraries(EnTTUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(EnTTUnitTest)
+gtest_discover_tests(EnTTUnitTest PROPERTIES LABELS "entt")

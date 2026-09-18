@@ -5,4 +5,4 @@ add_executable(DatabaseUnitTest
 target_link_libraries(DatabaseUnitTest PRIVATE Core Database KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(DatabaseUnitTest)
+gtest_discover_tests(DatabaseUnitTest PROPERTIES LABELS "database")

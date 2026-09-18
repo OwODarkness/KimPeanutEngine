@@ -31,6 +31,8 @@ Examples:
   .\tools\kp.ps1 validate engine/runtime/render/render_scene.cpp
   .\tools\kp.ps1 build RenderPassScheduleTest
   .\tools\kp.ps1 test RenderPassScheduleTest
+  .\tools\kp.ps1 test -l render
+  .\tools\kp.ps1 test -l "render|graphics"
 "@
 }
 
@@ -300,7 +302,12 @@ switch ($Command) {
     }
     "test" {
         Ensure-BuildTree
-        if ($CommandArgs.Count -gt 0) {
+        # `test -l <module>` runs one module's tests by label; the module is the
+        # directory under engine/test/unit, so render work can skip the rest.
+        if ($CommandArgs.Count -ge 2 -and ($CommandArgs[0] -eq "-l" -or $CommandArgs[0] -eq "--label")) {
+            Invoke-External "ctest" @("--test-dir", $BuildDir, "-C", $BuildConfig, "-L", $CommandArgs[1], "--output-on-failure")
+        }
+        elseif ($CommandArgs.Count -gt 0) {
             Invoke-External "ctest" @("--test-dir", $BuildDir, "-C", $BuildConfig, "-R", $CommandArgs[0], "--output-on-failure")
         }
         else {

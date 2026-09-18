@@ -15,4 +15,4 @@ target_include_directories(ProfileTest PRIVATE
 target_link_libraries(ProfileTest PRIVATE KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(ProfileTest)
+gtest_discover_tests(ProfileTest PROPERTIES LABELS "profile")

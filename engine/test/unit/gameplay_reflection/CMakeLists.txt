@@ -13,4 +13,4 @@ target_link_libraries(GameplayReflectionUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(GameplayReflectionUnitTest)
+gtest_discover_tests(GameplayReflectionUnitTest PROPERTIES LABELS "gameplay_reflection")

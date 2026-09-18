@@ -5,4 +5,4 @@ add_executable(ImageIOUnitTest
 target_link_libraries(ImageIOUnitTest PRIVATE ImageIO KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(ImageIOUnitTest)
+gtest_discover_tests(ImageIOUnitTest PROPERTIES LABELS "image_io")

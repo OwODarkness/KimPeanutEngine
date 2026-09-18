@@ -18,4 +18,4 @@ add_custom_command(TARGET RuntimeLevelTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(RuntimeLevelTest)
+gtest_discover_tests(RuntimeLevelTest PROPERTIES LABELS "runtime_level")

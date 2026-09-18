@@ -13,4 +13,4 @@ target_link_libraries(GameplayEditorBridgeUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(GameplayEditorBridgeUnitTest)
+gtest_discover_tests(GameplayEditorBridgeUnitTest PROPERTIES LABELS "gameplay_editor_bridge")

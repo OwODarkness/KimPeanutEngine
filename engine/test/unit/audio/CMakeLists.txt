@@ -15,4 +15,4 @@ target_link_libraries(
 copy_runtime_dependencies(AudioUnitTest)
 
 include(GoogleTest)
-gtest_discover_tests(AudioUnitTest)
+gtest_discover_tests(AudioUnitTest PROPERTIES LABELS "audio")

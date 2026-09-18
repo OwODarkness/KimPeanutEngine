@@ -16,4 +16,4 @@ target_link_libraries(
 # Static-only deps (lua53.lib, gtest) — no runtime DLLs to copy.
 
 include(GoogleTest)
-gtest_discover_tests(ScriptUnitTest)
+gtest_discover_tests(ScriptUnitTest PROPERTIES LABELS "script")

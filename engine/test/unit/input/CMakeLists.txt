@@ -9,4 +9,4 @@ target_include_directories(InputSystemTest PRIVATE
 target_link_libraries(InputSystemTest PRIVATE Input KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(InputSystemTest)
+gtest_discover_tests(InputSystemTest PROPERTIES LABELS "input")

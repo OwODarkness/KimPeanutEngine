@@ -48,7 +48,7 @@ target_include_directories(RenderSubmissionContractTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend)
 target_link_libraries(RenderSubmissionContractTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
-gtest_discover_tests(RenderSubmissionContractTest)
+gtest_discover_tests(RenderSubmissionContractTest PROPERTIES LABELS "render")
 
 add_executable(RenderGraphTest
     render_graph_test.cpp
@@ -61,7 +61,7 @@ target_include_directories(RenderGraphTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime)
 target_link_libraries(RenderGraphTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
-gtest_discover_tests(RenderGraphTest)
+gtest_discover_tests(RenderGraphTest PROPERTIES LABELS "render")
 
 # Compiles the executor without FrameContext so submission execution can be
 # driven by a fake frame allocator and a rejecting command recorder.
@@ -75,7 +75,7 @@ target_include_directories(RenderSubmissionExecutionTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend)
 target_link_libraries(RenderSubmissionExecutionTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
-gtest_discover_tests(RenderSubmissionExecutionTest)
+gtest_discover_tests(RenderSubmissionExecutionTest PROPERTIES LABELS "render")
 
 target_include_directories(RenderPassScheduleTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
@@ -94,7 +94,7 @@ add_custom_command(TARGET RenderPassScheduleTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(RenderPassScheduleTest)
+gtest_discover_tests(RenderPassScheduleTest PROPERTIES LABELS "render")
 
 add_executable(RenderSystemTest
     render_system_test.cpp
@@ -110,4 +110,4 @@ target_include_directories(RenderSystemTest PRIVATE
 target_link_libraries(RenderSystemTest PRIVATE Render KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(RenderSystemTest)
+gtest_discover_tests(RenderSystemTest PROPERTIES LABELS "render")

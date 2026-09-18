@@ -21,7 +21,7 @@ if(KPENGINE_PANEL_FONT_PATH AND EXISTS "${KPENGINE_PANEL_FONT_PATH}")
 endif()
 
 include(GoogleTest)
-gtest_discover_tests(PanelUnitTest)
+gtest_discover_tests(PanelUnitTest PROPERTIES LABELS "panel")
 
 # CPU-only render contract test. It compiles the planner and the generic
 # submission together and links neither Render nor a backend, so it runs
@@ -40,7 +40,7 @@ target_include_directories(PanelRenderPlannerTest PRIVATE
 
 target_link_libraries(PanelRenderPlannerTest PRIVATE KP::GoogleTest)
 
-gtest_discover_tests(PanelRenderPlannerTest)
+gtest_discover_tests(PanelRenderPlannerTest PROPERTIES LABELS "panel")
 
 # The renderer against the shared backend test double: no device, no window, and
 # no Cubism, so the texture-swap and handle-lifetime rules are assertable in CI.
@@ -61,7 +61,7 @@ target_link_libraries(PanelRendererTest PRIVATE PanelRender Panel KP::GoogleTest
 # discovery failure rather than a build error.
 copy_runtime_dependencies(PanelRendererTest)
 
-gtest_discover_tests(PanelRendererTest)
+gtest_discover_tests(PanelRendererTest PROPERTIES LABELS "panel")
 
 # The command contract: what the provider accepts, rejects, and reports. It
 # compiles the provider directly and links only the command lane, so it needs no
@@ -77,4 +77,4 @@ target_include_directories(PanelCommandProviderTest PRIVATE
 
 target_link_libraries(PanelCommandProviderTest PRIVATE RuntimeCommand KP::GoogleTest)
 
-gtest_discover_tests(PanelCommandProviderTest)
+gtest_discover_tests(PanelCommandProviderTest PROPERTIES LABELS "panel")

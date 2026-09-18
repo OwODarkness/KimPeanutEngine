@@ -6,4 +6,4 @@ add_executable(
 target_link_libraries(SpatialUnitTest PRIVATE Spatial KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(SpatialUnitTest)
+gtest_discover_tests(SpatialUnitTest PROPERTIES LABELS "spatial")

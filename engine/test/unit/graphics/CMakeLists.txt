@@ -21,4 +21,4 @@ target_link_libraries(GraphicsContractTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(GraphicsContractTest)
+gtest_discover_tests(GraphicsContractTest PROPERTIES LABELS "graphics")

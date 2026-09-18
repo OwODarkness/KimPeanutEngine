@@ -13,4 +13,4 @@ target_link_libraries(
 )
 
 include(GoogleTest)
-gtest_discover_tests(BootstrapTest)
+gtest_discover_tests(BootstrapTest PROPERTIES LABELS "bootstrap")

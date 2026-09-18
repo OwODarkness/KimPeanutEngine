@@ -51,6 +51,21 @@ The repository wrapper provides the standard entry point for agents and develope
 
 Use the wrapper for normal targeted validation. The raw CMake and CTest commands below remain useful for diagnosis and CI.
 
+### Running one module's tests
+
+Every test carries a label naming its module, taken from the directory under
+`engine/test/unit`, so work in one subsystem does not pay for the rest:
+
+```powershell
+.\tools\kp.ps1 test -l render              # 145 tests, about 6 seconds
+.\tools\kp.ps1 test -l "render|graphics"
+ctest --test-dir build -C Debug -L asset   # the equivalent raw command
+```
+
+The full suite is 957 tests and takes a bit over two minutes. Labels change
+which tests run, never which exist: run the full suite before a change is
+considered validated, and in CI. A labelled run is for the inner loop.
+
 Configure when no build tree exists or CMake wiring changed:
 
 ```powershell

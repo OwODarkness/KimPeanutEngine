@@ -11,4 +11,4 @@ target_include_directories(GameplayUnitTest PRIVATE
 target_link_libraries(GameplayUnitTest PRIVATE Gameplay KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(GameplayUnitTest)
+gtest_discover_tests(GameplayUnitTest PROPERTIES LABELS "gameplay")

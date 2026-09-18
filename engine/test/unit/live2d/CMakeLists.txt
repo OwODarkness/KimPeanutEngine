@@ -13,7 +13,7 @@ target_include_directories(Live2DRenderContractTest PRIVATE
 target_link_libraries(Live2DRenderContractTest PRIVATE KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(Live2DRenderContractTest)
+gtest_discover_tests(Live2DRenderContractTest PROPERTIES LABELS "live2d")
 
 add_executable(Live2DModelDataContractTest
     live2d_model_data_test.cpp
@@ -28,7 +28,7 @@ target_include_directories(Live2DModelDataContractTest PRIVATE
 target_link_libraries(Live2DModelDataContractTest PRIVATE KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(Live2DModelDataContractTest)
+gtest_discover_tests(Live2DModelDataContractTest PROPERTIES LABELS "live2d")
 
 add_executable(Live2DEmotionPolicyTest
     live2d_emotion_policy_test.cpp
@@ -42,7 +42,7 @@ target_include_directories(Live2DEmotionPolicyTest PRIVATE
 target_link_libraries(Live2DEmotionPolicyTest PRIVATE KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(Live2DEmotionPolicyTest)
+gtest_discover_tests(Live2DEmotionPolicyTest PROPERTIES LABELS "live2d")
 
 add_executable(Live2DRenderPlannerTest
     live2d_render_planner_test.cpp
@@ -61,7 +61,7 @@ target_include_directories(Live2DRenderPlannerTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime/graphics/backend)
 target_link_libraries(Live2DRenderPlannerTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
-gtest_discover_tests(Live2DRenderPlannerTest)
+gtest_discover_tests(Live2DRenderPlannerTest PROPERTIES LABELS "live2d")
 
 add_executable(Live2DMaskPlannerTest
     live2d_mask_planner_test.cpp
@@ -75,7 +75,7 @@ target_include_directories(Live2DMaskPlannerTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime)
 target_link_libraries(Live2DMaskPlannerTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
-gtest_discover_tests(Live2DMaskPlannerTest)
+gtest_discover_tests(Live2DMaskPlannerTest PROPERTIES LABELS "live2d")
 
 if(KPENGINE_ENABLE_LIVE2D)
     add_executable(Live2DCoreTest
@@ -120,7 +120,7 @@ if(KPENGINE_ENABLE_LIVE2D)
             $<TARGET_FILE_DIR:Live2DCoreTest>)
 
     include(GoogleTest)
-    gtest_discover_tests(Live2DCoreTest)
+    gtest_discover_tests(Live2DCoreTest PROPERTIES LABELS "live2d")
 endif()
 
 # The bubble's geometry, which is pure CPU: the shape a shader evaluates, with
@@ -135,7 +135,7 @@ target_include_directories(Live2DBubbleLayoutTest PRIVATE
 target_link_libraries(Live2DBubbleLayoutTest PRIVATE KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(Live2DBubbleLayoutTest)
+gtest_discover_tests(Live2DBubbleLayoutTest PROPERTIES LABELS "live2d")
 
 # The bubble's placement and constant packing. Also pure CPU: the pop-in and the
 # aspect correction are arithmetic, and the only thing a device would add is the
@@ -152,7 +152,7 @@ target_include_directories(Live2DBubbleRenderContractTest PRIVATE
 target_link_libraries(Live2DBubbleRenderContractTest PRIVATE KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(Live2DBubbleRenderContractTest)
+gtest_discover_tests(Live2DBubbleRenderContractTest PROPERTIES LABELS "live2d")
 
 # The bubble renderer against the shared backend test double: no device, no
 # Cubism, so the text swap and the handle lifetime are assertable in CI.
@@ -173,4 +173,4 @@ target_link_libraries(Live2DBubbleRendererTest PRIVATE Live2DBubble Panel
 copy_runtime_dependencies(Live2DBubbleRendererTest)
 
 include(GoogleTest)
-gtest_discover_tests(Live2DBubbleRendererTest)
+gtest_discover_tests(Live2DBubbleRendererTest PROPERTIES LABELS "live2d")

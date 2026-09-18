@@ -21,7 +21,7 @@ add_custom_command(TARGET EditorUILifecycleTest POST_BUILD
 )
 
 include(GoogleTest)
-gtest_discover_tests(EditorUILifecycleTest)
+gtest_discover_tests(EditorUILifecycleTest PROPERTIES LABELS "editor")
 
 add_executable(ActorEditorModelUnitTest
     actor_editor_model_test.cpp
@@ -40,7 +40,7 @@ target_link_libraries(ActorEditorModelUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(ActorEditorModelUnitTest)
+gtest_discover_tests(ActorEditorModelUnitTest PROPERTIES LABELS "editor")
 
 # The tool-row model is ImGui-free by design, so this target links no ImGui and
 # compiles the model source directly. If it ever starts pulling imgui.h, the
@@ -63,7 +63,7 @@ target_link_libraries(EditorToolRowModelUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(EditorToolRowModelUnitTest)
+gtest_discover_tests(EditorToolRowModelUnitTest PROPERTIES LABELS "editor")
 
 add_executable(EditorPanelCommandProviderUnitTest
     editor_panel_command_provider_test.cpp
@@ -80,7 +80,7 @@ target_link_libraries(EditorPanelCommandProviderUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(EditorPanelCommandProviderUnitTest)
+gtest_discover_tests(EditorPanelCommandProviderUnitTest PROPERTIES LABELS "editor")
 
 # The layout model is ImGui-free by design, so this target links no ImGui and compiles
 # the model source directly. If it ever starts pulling imgui.h, the layering has been
@@ -108,7 +108,7 @@ target_link_libraries(EditorLayoutModelUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(EditorLayoutModelUnitTest)
+gtest_discover_tests(EditorLayoutModelUnitTest PROPERTIES LABELS "editor")
 
 # The asset browser model is ImGui-free AND Asset-library-free by design: it compiles its
 # own source and links only KP::GoogleTest, so a dependency on either — or a call into
@@ -130,7 +130,7 @@ target_link_libraries(AssetBrowserModelUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(AssetBrowserModelUnitTest)
+gtest_discover_tests(AssetBrowserModelUnitTest PROPERTIES LABELS "editor")
 
 # The reference view model is a pure Editor projection. It links the browser model
 # only to provide the immutable snapshot source and keeps all traversal independent
@@ -152,4 +152,4 @@ target_link_libraries(AssetReferenceViewModelUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(AssetReferenceViewModelUnitTest)
+gtest_discover_tests(AssetReferenceViewModelUnitTest PROPERTIES LABELS "editor")

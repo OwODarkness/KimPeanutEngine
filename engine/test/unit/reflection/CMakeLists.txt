@@ -13,4 +13,4 @@ target_include_directories(ReflectionUnitTest PRIVATE
 )
 
 include(GoogleTest)
-gtest_discover_tests(ReflectionUnitTest)
+gtest_discover_tests(ReflectionUnitTest PROPERTIES LABELS "reflection")

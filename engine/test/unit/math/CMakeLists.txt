@@ -6,4 +6,4 @@ add_executable(
 target_link_libraries(MathUnitTest PRIVATE Math KP::GoogleTest)
 
 include(GoogleTest)
-gtest_discover_tests(MathUnitTest)
+gtest_discover_tests(MathUnitTest PROPERTIES LABELS "math")
