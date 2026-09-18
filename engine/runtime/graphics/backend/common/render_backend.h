@@ -94,6 +94,11 @@ namespace kpengine::graphics
         // to the pool rather than destroying it.
         virtual RenderTargetHandle AcquireTransientRenderTarget(const RenderTargetDesc &desc) = 0;
         virtual void ReleaseTransientRenderTarget(RenderTargetHandle handle) = 0;
+        // Drops the reusable transient targets, so a description change -- a
+        // resize -- does not leave the previous size pooled for the rest of the
+        // session. Targets still outstanding or awaiting a submission are left
+        // for a later call. Call only where submitted work is already safe.
+        virtual void DiscardTransientRenderTargets() = 0;
         virtual TextureHandle GetRenderTargetColor(RenderTargetHandle handle) = 0;
         // Returns an invalid handle when the target has no depth attachment or
         // the color index is out of range.

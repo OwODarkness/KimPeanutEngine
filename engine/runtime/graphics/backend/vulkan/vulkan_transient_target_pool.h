@@ -43,12 +43,37 @@ namespace kpengine::graphics
         // Destroys every target the pool holds. The caller must have made
         // submitted work safe first.
         void DestroyAll();
+        // Destroys the reusable targets, so a description change -- a resize --
+        // does not strand the previous size in the pool for the rest of the
+        // session. Targets still outstanding or waiting on a submission serial
+        // are left alone; they are trimmed by a later call. The caller must have
+        // made submitted work safe first, as for DestroyAll.
+        void DiscardReusable();
 
-        uint32_t OutstandingCount() const noexcept { return outstanding_.size(); }
-        uint32_t RetiredCount() const noexcept { return retired_.size(); }
-        uint32_t ReusableCount() const noexcept { return reusable_.size(); }
+        uint32_t OutstandingCount() const noexcept
+        {
+            return static_cast<uint32_t>(outstanding_.size());
+        }
+        uint32_t RetiredCount() const noexcept
+        {
+            return static_cast<uint32_t>(retired_.size());
+        }
+        uint32_t ReusableCount() const noexcept
+        {
+            return static_cast<uint32_t>(reusable_.size());
+        }
+        // How often a description was handed a target other than the one it had
+        // before. Reuse is identity-stable for a single consumer, which is what
+        // keeps a caller's texture-handle-keyed caches valid; a non-zero count
+        // means that assumption has stopped holding and cached descriptor sets
+        // are being rebuilt per frame.
+        uint32_t IdentityChangeCount() const noexcept { return identity_changes_; }
 
     private:
+        struct Entry;
+
+        static bool HasEntryFor(const std::vector<Entry> &entries, const RenderTargetDesc &desc);
+
         struct Entry
         {
             RenderTargetHandle handle;
@@ -67,6 +92,7 @@ namespace kpengine::graphics
         std::vector<Entry> retired_;
         // Released and safe to hand out again.
         std::vector<Entry> reusable_;
+        uint32_t identity_changes_ = 0;
     };
 }
 

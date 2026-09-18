@@ -251,6 +251,7 @@ namespace kpengine::test
         }
 
         void ReleaseTransientRenderTarget(graphics::RenderTargetHandle) override {}
+        void DiscardTransientRenderTargets() override {}
 
         bool DestroyRenderTarget(graphics::RenderTargetHandle) override
         {

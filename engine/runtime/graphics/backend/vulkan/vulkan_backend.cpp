@@ -539,6 +539,14 @@ namespace kpengine::graphics
         }
     }
 
+    void VulkanBackend::DiscardTransientRenderTargets()
+    {
+        if (transient_target_pool_)
+        {
+            transient_target_pool_->DiscardReusable();
+        }
+    }
+
     TextureHandle VulkanBackend::GetRenderTargetColor(RenderTargetHandle handle)
     {
         return render_target_manager_->GetColor(handle);

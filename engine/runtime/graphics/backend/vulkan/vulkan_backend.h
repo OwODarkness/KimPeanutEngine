@@ -37,6 +37,7 @@ namespace kpengine::graphics
         bool DestroyRenderTarget(RenderTargetHandle handle) override;
         RenderTargetHandle AcquireTransientRenderTarget(const RenderTargetDesc &desc) override;
         void ReleaseTransientRenderTarget(RenderTargetHandle handle) override;
+        void DiscardTransientRenderTargets() override;
         TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColorAttachment(RenderTargetHandle handle,
                                                      uint32_t index) override;

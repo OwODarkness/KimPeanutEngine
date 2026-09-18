@@ -717,6 +717,17 @@ namespace kpengine::graphics
         transient_reusable_.push_back({handle, render_targets_[index].desc});
     }
 
+    void OpenglBackend::DiscardTransientRenderTargets()
+    {
+        // OpenGL keeps no serial-stamped quarantine, so a reusable target is
+        // simply destroyed here.
+        for (const TransientTargetEntry &entry : transient_reusable_)
+        {
+            DestroyRenderTarget(entry.handle);
+        }
+        transient_reusable_.clear();
+    }
+
     bool OpenglBackend::DestroyRenderTarget(RenderTargetHandle handle)
     {
         if (render_target_readback_)

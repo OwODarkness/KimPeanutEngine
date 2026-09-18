@@ -21,6 +21,14 @@ namespace kpengine::graphics
         DestroyAll();
     }
 
+    bool VulkanTransientTargetPool::HasEntryFor(const std::vector<Entry> &entries,
+                                                const RenderTargetDesc &desc)
+    {
+        return std::any_of(entries.begin(), entries.end(),
+                           [&desc](const Entry &entry)
+                           { return RenderTargetDescsShareStorage(entry.desc, desc); });
+    }
+
     RenderTargetHandle VulkanTransientTargetPool::Acquire(const RenderTargetDesc &desc)
     {
         if (!targets_)
@@ -36,6 +44,15 @@ namespace kpengine::graphics
                 reusable_.erase(it);
                 return handle;
             }
+        }
+        // Nothing reusable matched, so this description is getting a target it
+        // has not had before. If an earlier target for it still exists --
+        // outstanding or awaiting a submission -- the caller's handle-keyed
+        // caches are about to be invalidated, and that is worth being able to
+        // see rather than infer.
+        if (HasEntryFor(outstanding_, desc) || HasEntryFor(retired_, desc))
+        {
+            ++identity_changes_;
         }
         Entry entry{targets_->Create(desc), desc};
         if (!entry.handle.IsValid())
@@ -83,6 +100,18 @@ namespace kpengine::graphics
             }
             ++it;
         }
+    }
+
+    void VulkanTransientTargetPool::DiscardReusable()
+    {
+        if (targets_)
+        {
+            for (const Entry &entry : reusable_)
+            {
+                targets_->Destroy(entry.handle);
+            }
+        }
+        reusable_.clear();
     }
 
     void VulkanTransientTargetPool::DestroyAll()

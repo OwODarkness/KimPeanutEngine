@@ -174,6 +174,11 @@ namespace kpengine::render
             return;
         }
         backend.WaitIdle();
+        // The extent changed, so every pooled transient sized for the old
+        // extent is now unusable. Drop them here rather than letting the pool
+        // hold one per window size the session passes through; the idle above
+        // is what makes that safe.
+        backend.DiscardTransientRenderTargets();
         Initialize(backend, width, height);
     }
 
