@@ -87,6 +87,14 @@ namespace kpengine::render
         globals_ = globals;
         render_extent_ = render_extent;
         ReleaseTransientBindings();
+        if (invalidate_texture_bindings_)
+        {
+            // Reached only after this slot's submission fence was waited, so the
+            // sets that captured a now-destroyed texture's view can be freed.
+            ReleaseStableBindings();
+            cached_materials_.clear();
+            invalidate_texture_bindings_ = false;
+        }
         uniform_cursor_ = stable_uniform_cursor_;
         profile_counters_ = {};
         active_ = true;
@@ -545,8 +553,11 @@ namespace kpengine::render
 
     void FrameContext::InvalidateTextureBindings()
     {
-        ReleaseStableBindings();
-        cached_materials_.clear();
+        // Marked, not freed. These sets are still referenced by this slot's
+        // in-flight submission, and freeing them here is exactly the violation
+        // this exists to prevent. Begin() runs after the slot's fence has been
+        // waited, so the release belongs there.
+        invalidate_texture_bindings_ = true;
     }
 
     void FrameContext::ReleaseStableBindings()

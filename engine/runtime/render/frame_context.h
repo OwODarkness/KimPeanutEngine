@@ -139,11 +139,11 @@ namespace kpengine::render
         // RenderSystem is the normal owner. The explicit lifecycle also keeps the
         // standalone RHI example able to exercise the same render-layer path.
         void Initialize(graphics::RenderBackend &backend, size_t uniform_capacity);
-        // Drops descriptor sets and material records that captured texture
-        // views. Call after a texture is destroyed: a Vulkan image view must not
-        // be destroyed while any descriptor set still references it, even one
-        // that was never submitted, and a cached set would otherwise keep the
-        // dead view alive. Bindings are rebuilt on next use.
+        // Asks this slot to drop the descriptor sets and material records that
+        // captured texture views, once its own submission fence has been waited.
+        // A Vulkan image view must not be destroyed while any set still
+        // references it, so the caller marks first and lets each slot release at
+        // its own safe point. Bindings are rebuilt on next use.
         void InvalidateTextureBindings();
         void Begin(uint32_t frame_index, const FrameGlobals &globals,                   graphics::Extent2D render_extent);
         void End();
@@ -194,6 +194,9 @@ namespace kpengine::render
         std::unordered_map<uint64_t, StableBindingRecord> stable_binding_sets_;
         std::unordered_map<uint64_t, CachedMaterialRecord> cached_materials_;
         bool active_ = false;
+        // Set when a texture died; the next Begin() releases the bindings that
+        // captured its view, after this slot's fence has been waited.
+        bool invalidate_texture_bindings_ = false;
         FrameContextProfileCounters profile_counters_{};
     };
 }

@@ -171,6 +171,12 @@ namespace kpengine::render
             graphics::TextureHandle handle;
             uint64_t bytes = 0;
             uint32_t frames_remaining = 0;
+            // The retire runs in two windows. The first lets the frame slots
+            // drop the descriptor sets that captured this texture's view; the
+            // second lets every slot actually reach its own drop point, which
+            // only happens after that slot's submission fence is waited. Only
+            // then may the view go away.
+            bool bindings_invalidated = false;
         };
         std::vector<RetiredTexture> retired_textures_;
         graphics::SamplerHandle default_sampler_handle_;

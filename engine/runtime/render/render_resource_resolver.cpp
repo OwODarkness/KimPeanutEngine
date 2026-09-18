@@ -158,10 +158,16 @@ namespace kpengine::render
                         old_key.variant == variant &&
                         old_key.first_resident_mip > key.first_resident_mip)
                     {
+                        // The replacement is recorded later in this same frame, so
+                        // the last frame that could still reference the retired
+                        // texture is the one before this. Destroying it needs that
+                        // frame's submission fence waited, and one frame waits only
+                        // its own slot, so the window is frames-in-flight plus one:
+                        // by then every slot has been waited since that frame.
                         retired_textures_.push_back({
                             it->second,
                             texture_cache_bytes_[old_key],
-                            std::max(1U, backend_->GetFramesInFlight())});
+                            std::max(1U, backend_->GetFramesInFlight()) + 1});
                         texture_cache_bytes_.erase(old_key);
                         it = texture_cache_.erase(it);
                         continue;
@@ -398,19 +404,24 @@ namespace kpengine::render
 
     bool RenderResourceResolver::TickRetiredTextures()
     {
-        bool any_ready = false;
+        bool invalidate_now = false;
         for (RetiredTexture &retired : retired_textures_)
         {
             if (retired.frames_remaining > 0)
             {
                 --retired.frames_remaining;
             }
-            if (retired.frames_remaining == 0)
+            if (retired.frames_remaining == 0 && !retired.bindings_invalidated)
             {
-                any_ready = true;
+                // First window elapsed. Open the second, during which each slot
+                // drops its cached bindings at its own Begin, and report that the
+                // caller must ask for that now.
+                retired.bindings_invalidated = true;
+                retired.frames_remaining = std::max(1U, backend_->GetFramesInFlight()) + 1;
+                invalidate_now = true;
             }
         }
-        return any_ready;
+        return invalidate_now;
     }
 
     bool RenderResourceResolver::DestroyRetiredTextures()
@@ -422,7 +433,7 @@ namespace kpengine::render
         bool destroyed_any = false;
         for (auto it = retired_textures_.begin(); it != retired_textures_.end();)
         {
-            if (it->frames_remaining != 0)
+            if (!it->bindings_invalidated || it->frames_remaining != 0)
             {
                 ++it;
                 continue;
