@@ -256,9 +256,21 @@ stats --json
 {"op":"execute","command":"stats","arguments":{"json":true}}
 ```
 
-Unavailable GPU timings and utilization are returned as JSON `null`. The
+Unavailable GPU timings and utilization are returned as JSON `null`. A pass the
+compiled graph skipped — a cached shadow, a capture view nobody asked for —
+reports `null` for that frame rather than the last time it ran, so a numeric
+per-pass value always belongs to a frame in which that pass executed. The
 snapshot is published by Render at the presentation boundary, so a Game-thread
 command never reads a partially updated render profile.
+
+All three commands report the profile window itself under `summary_complete`,
+`summary_warmup_frames_completed`, and `summary_samples_collected`. Until the
+window completes, the percentile fields are a partial sample — that state is the
+signal, because the profiler writes no completion line to the log. `gpu-stats`
+carries the texture cost in bytes (`textures_source_bytes`,
+`textures_decoded_bytes`, `textures_resident_bytes`), and `cpu-stats` carries
+`graph_compile_ms`, which is a per-variant cost rather than a per-frame one, so
+neither belongs in a per-frame counter.
 
 ## Planned, not registered
 

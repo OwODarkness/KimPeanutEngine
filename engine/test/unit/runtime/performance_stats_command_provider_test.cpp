@@ -76,4 +76,63 @@ namespace kpengine::runtime
         ASSERT_NE(Find(combined->data, "pass.g_buffer.cpu_ms"), nullptr);
         EXPECT_DOUBLE_EQ(std::get<double>(*Find(combined->data, "pass.g_buffer.cpu_ms")), 0.75);
     }
+
+    // The profiler reports no window log, so every stats command has to carry
+    // enough state for a caller to know whether the percentiles mean anything.
+    TEST(PerformanceStatsCommandProviderTest, ReportsProfileWindowStateAndTextureCosts)
+    {
+        PerformanceStatsSnapshot expected{};
+        expected.profile.summary.complete = true;
+        expected.profile.summary.warmup_frames_completed = 120;
+        expected.profile.summary.samples_collected = 300;
+        expected.profile.summary.cpu_total_p50_ms = 4.5;
+        expected.profile.summary.cpu_present_p50_ms = 1.5;
+        expected.profile.graph_compile_ms = 0.25;
+        expected.profile.textures.dependency_count = 3;
+        expected.profile.textures.resident_bytes = 2048;
+
+        command::CommandRegistry registry;
+        const auto registration = RegisterPerformanceStatsCommands(
+            registry, [expected] { return expected; });
+        ASSERT_TRUE(registration.IsSuccess()) << registration.diagnostic;
+
+        std::optional<command::CommandResult> completed;
+        const auto run = [&registry, &completed](const char *text)
+        {
+            completed.reset();
+            const command::CommandResult pending = registry.ExecuteText(
+                text, {command::CommandOrigin::Test, command::CommandThread::Immediate},
+                [&completed](const command::CommandResult &result) { completed = result; });
+            EXPECT_EQ(pending.status, command::CommandStatus::Pending) << pending.message;
+            EXPECT_EQ(registry.PumpGameThread(), 1U);
+            EXPECT_TRUE(completed.has_value());
+        };
+
+        run("gpu-stats --json");
+        ASSERT_TRUE(completed.has_value());
+        ASSERT_NE(Find(completed->data, "summary_complete"), nullptr);
+        EXPECT_TRUE(std::get<bool>(*Find(completed->data, "summary_complete")));
+        ASSERT_NE(Find(completed->data, "summary_warmup_frames_completed"), nullptr);
+        EXPECT_EQ(std::get<uint64_t>(*Find(completed->data, "summary_warmup_frames_completed")),
+                  120U);
+        ASSERT_NE(Find(completed->data, "summary_samples_collected"), nullptr);
+        EXPECT_EQ(std::get<uint64_t>(*Find(completed->data, "summary_samples_collected")), 300U);
+        ASSERT_NE(Find(completed->data, "textures_dependency_count"), nullptr);
+        EXPECT_EQ(std::get<uint64_t>(*Find(completed->data, "textures_dependency_count")), 3U);
+        ASSERT_NE(Find(completed->data, "textures_resident_bytes"), nullptr);
+        EXPECT_EQ(std::get<uint64_t>(*Find(completed->data, "textures_resident_bytes")), 2048U);
+
+        run("cpu-stats --json");
+        ASSERT_TRUE(completed.has_value());
+        ASSERT_NE(Find(completed->data, "summary_complete"), nullptr);
+        EXPECT_TRUE(std::get<bool>(*Find(completed->data, "summary_complete")));
+        ASSERT_NE(Find(completed->data, "graph_compile_ms"), nullptr);
+        EXPECT_DOUBLE_EQ(std::get<double>(*Find(completed->data, "graph_compile_ms")), 0.25);
+        ASSERT_NE(Find(completed->data, "summary_cpu_total_p50_ms"), nullptr);
+        EXPECT_DOUBLE_EQ(std::get<double>(*Find(completed->data, "summary_cpu_total_p50_ms")),
+                         4.5);
+        ASSERT_NE(Find(completed->data, "summary_cpu_present_p50_ms"), nullptr);
+        EXPECT_DOUBLE_EQ(std::get<double>(*Find(completed->data, "summary_cpu_present_p50_ms")),
+                         1.5);
+    }
 }

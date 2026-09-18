@@ -130,6 +130,15 @@ namespace kpengine::runtime
             {
                 data["gpu_usage_percent"] = std::monostate{};
             }
+            // The profile window is what makes the percentile fields readable:
+            // until it completes, a p50/p95 above is a partial sample. Every
+            // stats command carries its state so a caller does not have to poll
+            // a different one to learn whether the window finished.
+            data["summary_complete"] = profile.summary.complete;
+            data["summary_warmup_frames_completed"] =
+                static_cast<uint64_t>(profile.summary.warmup_frames_completed);
+            data["summary_samples_collected"] =
+                static_cast<uint64_t>(profile.summary.samples_collected);
         }
 
         void AddGpuStats(command::CommandData &data, const PerformanceStatsSnapshot &snapshot)
@@ -181,12 +190,27 @@ namespace kpengine::runtime
                                             render::RenderProfilePass::ToneMap,
                                             render::RenderProfilePass::CaptureView,
                                             render::RenderProfilePass::EditorComposite}));
+            // What the frame's textures cost the GPU in bytes. Reported with the
+            // GPU group because that is where the residency is paid.
+            data["textures_dependency_count"] =
+                static_cast<uint64_t>(profile.textures.dependency_count);
+            data["textures_source_bytes"] = profile.textures.source_bytes;
+            data["textures_decoded_bytes"] = profile.textures.decoded_bytes;
+            data["textures_resident_bytes"] = profile.textures.resident_bytes;
         }
 
         void AddCpuStats(command::CommandData &data, const PerformanceStatsSnapshot &snapshot)
         {
             const auto &profile = snapshot.profile;
             const auto &frame = snapshot.frame_loop;
+            const auto &summary = profile.summary;
+            data["summary_cpu_total_p50_ms"] = summary.cpu_total_p50_ms;
+            data["summary_cpu_total_p95_ms"] = summary.cpu_total_p95_ms;
+            data["summary_cpu_present_p50_ms"] = summary.cpu_present_p50_ms;
+            data["summary_cpu_present_p95_ms"] = summary.cpu_present_p95_ms;
+            // Compilation is a cost per compiled variant, not a per-frame one,
+            // so it is reported apart from the pass and sweep costs.
+            data["graph_compile_ms"] = profile.graph_compile_ms;
             data["cpu_total_ms"] = profile.cpu_total_ms;
             data["cpu_scene_prepare_ms"] = profile.cpu_scene_prepare_ms;
             data["cpu_backend_begin_ms"] = profile.cpu_backend_begin_ms;
@@ -263,19 +287,6 @@ namespace kpengine::runtime
             if (include_cpu)
             {
                 AddCpuStats(data, snapshot);
-            }
-            if (include_cpu && include_gpu)
-            {
-                const auto &summary = snapshot.profile.summary;
-                data["summary_complete"] = summary.complete;
-                data["summary_warmup_frames_completed"] =
-                    static_cast<uint64_t>(summary.warmup_frames_completed);
-                data["summary_samples_collected"] =
-                    static_cast<uint64_t>(summary.samples_collected);
-                data["summary_cpu_total_p50_ms"] = summary.cpu_total_p50_ms;
-                data["summary_cpu_total_p95_ms"] = summary.cpu_total_p95_ms;
-                data["summary_cpu_present_p50_ms"] = summary.cpu_present_p50_ms;
-                data["summary_cpu_present_p95_ms"] = summary.cpu_present_p95_ms;
             }
             return {command::CommandStatus::Success,
                     json_requested ? "Performance stats JSON" : "Performance stats",
