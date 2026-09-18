@@ -51,7 +51,9 @@ migration, and Vulkan/OpenGL runtime changes.
 2. Implement the pure builder/compiler and focused tests.
 3. Validate the Render target and graph test target.
 4. Record implementation evidence and leave R3.3 compatibility proof as the
-   next stage.
+   next stage. That stage followed as its own slice, and R3 closed through
+   R3.7 on 2026-09-18; see the
+   [closeout journal](../journal/2026-09-18-render-graph-r3-closeout.md).
 
 ## Acceptance criteria
 

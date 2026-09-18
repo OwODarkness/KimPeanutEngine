@@ -109,9 +109,10 @@ rendering implementation detail rather than a new Gameplay dependency.
 
 - Do not make Render load arbitrary source files outside Asset/Resource.
 - Do not put backend-specific implementation types in common Render contracts.
-- Do not migrate fixed-schedule execution or add backend graph machinery before
-  R3's fixed-schedule parity proof, ownership contract, and execution spec are
-  complete. The R3.2 pure compiler is intentionally CPU-only.
+- Do not migrate fixed-schedule execution or add backend graph machinery ahead
+  of R3's parity proof, ownership contract, and execution spec. That gate is
+  passed (R3 closed 2026-09-18), and graph compilation stays intentionally
+  CPU-only.
 - Do not expose a general backend context for Editor integration; add only the
   presentation capability the matching API adapter consumes.
 - Do not treat smaller files or a lower line count as completion; ownership,

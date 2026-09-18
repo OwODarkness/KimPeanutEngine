@@ -8,7 +8,8 @@ and environment lighting.
 Read the [architecture plans](PLANS.md), [roadmap](TODO.md), and concrete
 [D-stage plans](.plan/) before implementation. D6.4 runtime evidence and the
 fixed-budget profile hook are complete; numeric warm-runtime profile samples
-are recorded, while GPU timing remains unavailable without RHI timestamp
-queries. The true-cube decision is closed without implementation, and multiple
+are recorded, and per-pass GPU timings reach the profiler on both backends since
+2026-09-18, reporting a value only for passes that ran in the frame. The
+true-cube decision is closed without implementation, and multiple
 punctual jobs remain deferred. Detailed execution history is in the central
 [deferred-PBR journal](../../../.spec/journal/render-deferred-pbr.md).

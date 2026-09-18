@@ -271,8 +271,8 @@ state transitions.
   with the active context plus common recorder. The context owns transient UBO
   ranges and binding sets; scenes retain only logical and static resource state.
 
-- **Render graph (R3.2 pure compiler complete).** The graph uses pass
-  declarations as nodes with
+- **Render graph (R3 complete; the compiled plan is the schedule).** The graph
+  uses pass declarations as nodes with
   explicit versioned resource dependencies, then adds culling, stable ordering,
   lifetime analysis, and portable transition intents before pass callbacks
   issue common RHI recording calls. `RenderSystem` remains the frame-lifecycle

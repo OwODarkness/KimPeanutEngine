@@ -51,11 +51,10 @@ a separate internal limitation.
 
 ## Feature and validation limits
 
-- The explicit fixed schedule remains the active policy. Planned
-  acceleration-structure build/consume and ray-output work now supplies the
-  dependency/lifetime pressure for the R3 design. The R3.2 pure compiler is
-  implemented, while runtime graph machinery remains behind the [R3 reference
-  and parity gates](.plan/R3.md).
+- The pass schedule is compiled (R3, closed 2026-09-18). Planned
+  acceleration-structure build/consume and ray-output work is what would supply
+  the dependency/lifetime pressure a later stage needs; the unlock criteria for
+  the extensions R3 gated live in the [R3 plan](.plan/R3.md).
 - Capture is a developer-debug path. Deterministic authored levels and image
   comparison are still needed for repeatable visual regression testing.
 - Material and source resolution may be pending or failed. A proxy must never

@@ -243,7 +243,9 @@ redesign.
   culling, and add a one-shot Render diagnostic for per-face/total draw counts
   and CPU recording time. GPU timing remains unavailable until timestamp-query
   support exists; a longer warm-runtime session is still needed for numeric
-  per-face/CPU samples.
+  per-face/CPU samples. Correction (2026-09-18): the backends did have timestamp
+  queries, and per-pass GPU times reach the profiler on both backends now; the
+  per-face shadow diagnostics were CPU-side either way.
 - [ ] Evaluate cascades, atlases, clustered/forward+, and a render graph only
   from measured light/pass dependency pressure.
 
@@ -278,7 +280,9 @@ working baseline. This is not authorization to begin a cubemap refactor.
 - [x] Run a longer warm-runtime point-shadow session and record the existing
   profiler's numeric per-face draw counts, total shadow draws, empty-face count,
   candidate count, and CPU command-recording time. Record that GPU pass timing
-  remains unavailable until the RHI has timestamp-query support. See the
+  remains unavailable until the RHI has timestamp-query support — corrected
+  2026-09-18: pass timings were written and are now reported, with a `null` for
+  any pass the plan skipped that frame. See the
   [2026-09-01 follow-up journal entry](../../../.spec/journal/render-deferred-pbr.md#2026-09-01--deferred-point-shadow-resource-follow-up).
 - [x] Compare the measured cost and observed face-seam quality against the
   fixed atlas budget. The two backends produced the same draw distribution and

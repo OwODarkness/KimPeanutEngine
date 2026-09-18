@@ -72,7 +72,8 @@ public policy while the coordinator owns scene preparation.
 - [R3 — render graph foundation](.plan/R3.md) — evolve the fixed declaration
   into a Render-owned compiled dependency graph, prove raster parity, then add a
   portable resource-state plan and Graphics-owned non-aliasing transients.
-  **R3.2 pure compiler complete; R3.3+ runtime migration remains gated.**
+  **R3 complete and closed (2026-09-18); the compiled plan is the schedule and
+  R3.7's extensions closed as a gate.**
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
   texture minification and bound texture, descriptor, visibility, and static-
   shadow costs through Resource, Render, and Graphics ownership boundaries.

@@ -746,6 +746,38 @@
 
 ## Done
 
+- **Render graph R3 closed through R3.7 as a gate (2026-09-18)** — R3 is
+  complete through R3.6: the compiled plan schedules passes, is authoritative
+  for resource state, and declares its transients, with the executor owning the
+  attachment boundary, portable usage requirements reaching Graphics as intents
+  rather than native layouts, and `SceneHdr` served by a Graphics-owned pool
+  with serial-quarantined reuse. R3.7 lists five extensions — subresources,
+  aliasing, async compute, parallel recording, acceleration structures — and
+  none has a consumer: the pool holds one transient, the engine has no compute
+  shaders, no ray-tracing work is planned, and R3.4 measured recording as not
+  the binding constraint. It is therefore closed as a gate with recorded unlock
+  criteria rather than started, and that closure is now accepted: the render
+  graph roadmap has no open R3 item. →
+  [R3 plan](render/.plan/R3.md), [render graph TODO](render/render_graph/TODO.md)
+
+- **GPU pass timing reaches the profiler on Vulkan (2026-09-18)** — Vulkan had
+  written per-pass timestamps since issue-9.7, but the profiler reported no GPU
+  time at all: the backend read the whole frame's query range in one call, and a
+  pass that was skipped — a cached directional shadow, a conditional capture
+  view — writes no timestamps, which makes a whole-range read answer
+  `VK_NOT_READY` and discards every pass in the frame. Reads now ask for
+  per-query availability and gate each pass on its own. The same frame shows the
+  matching defect on OpenGL, where a skipped pass reported the previous frame's
+  value as current, so OpenGL now gates a pass on whether it issued a counter
+  that frame. Both backends therefore report a numeric time for a pass that ran
+  and `null` for a pass the plan skipped. Measured on the sponza editor fixture,
+  Vulkan: G-buffer 3.65 ms, lighting 0.13 ms, tone map 0.06 ms, 4.03 ms total,
+  with the cached shadow as `null`; forcing a shadow cache miss (window resize)
+  reported 4.56 ms for that pass. OpenGL reported 3.76 ms G-buffer and `null`
+  for the cached shadow where it previously showed a stale 21.9 ms. →
+  [deferred-PBR roadmap](render/deferred_pbr/TODO.md),
+  [profiler command contract](command/built_in_commands.md)
+
 - **Render graph R3.4 and the frame-rate investigation (2026-09-17)** — The
   compiled graph plan is now the only authority for pass order and logical
   resource flow: `DeferredRenderer` compiles one plan per frame-start condition
@@ -1137,7 +1169,9 @@
   was captured and inspected on Vulkan/OpenGL, then normal bootstrap lighting
   was restored. A one-shot Render profile records per-face/total draws and CPU
   recording time; the fixed D32 target is 6,291,456 bytes and GPU timestamps are
-  not available. The follow-up warm sessions recorded identical six-face work
+  not available. (Superseded 2026-09-18: per-pass GPU timestamps do reach the
+  profiler on both backends — see the GPU pass-timing entry above.) The
+  follow-up warm sessions recorded identical six-face work
   on Vulkan/OpenGL (`[2,3,1,0,0,6]`, 12 total draws, 2 empty faces, 6
   candidates; 307/177 µs CPU recording), and stable seam-free visibility
   captures. The fixed atlas remains the baseline; true cube resources are
@@ -1726,17 +1760,7 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-- **Render graph R3.7 closed as a gate (2026-09-18)** — R3 is complete through
-  R3.6. The compiled plan schedules passes, is authoritative for resource state,
-  and declares its transients: the executor owns the attachment boundary,
-  portable usage requirements reach Graphics as intents rather than native
-  layouts, and `SceneHdr` is a graph-declared transient served by a
-  Graphics-owned pool with serial-quarantined reuse. R3.7 lists five extensions
-  — subresources, aliasing, async compute, parallel recording, acceleration
-  structures — and none has a consumer, so it is closed as a gate with recorded
-  unlock criteria rather than started. →
-  [R3 plan](render/.plan/R3.md), [render graph TODO](render/render_graph/TODO.md),
-  [R3.5 review](render/.review/R3.5.md)
+
 - **Frame-rate follow-ups (2026-09-17)** — the timer-resolution and G-buffer
   fixes landed, and the render lane is now the binding constraint on OpenGL at
   about 11.9 ms of an 11.9 ms frame. Two open items: Vulkan runs with validation

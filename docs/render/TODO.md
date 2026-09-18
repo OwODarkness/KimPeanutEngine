@@ -95,24 +95,25 @@ details and stage checklists belong in the linked submodule documents.
   implementation** — the 2026-09-14 measurements show the current workload does
   not benefit, so the work waits for a scene that justifies it. →
   [R2 design](.plan/R2.md), [spatial-bvh spec](../../.spec/specs/spatial-bvh.md)
-- [ ] **R3 — render graph foundation:** R3.0 baseline evidence, the R3.1
-  reference/design gate, and the R3.2 pure graph compiler are complete. The
-  graph keeps `DeferredRenderer` as policy owner, compiles logical
-  pass/resource dependencies in Render, records through the common command
-  seam, and leaves physical allocation/native synchronization in Graphics.
-  Runtime migration remains gated by R3.4 execution/parity proof. →
+- [x] **R3 — render graph foundation (2026-09-18):** the graph keeps
+  `DeferredRenderer` as policy owner, compiles logical pass/resource
+  dependencies in Render, records through the common command seam, and leaves
+  physical allocation and native synchronization in Graphics. The compiled plan
+  is authoritative for pass order, resource state, and transients; R3.7's five
+  extensions are closed as a gate with unlock criteria. →
   [R3 design](.plan/R3.md),
   [Render Graph plans](render_graph/PLANS.md),
-  [Render Graph roadmap](render_graph/TODO.md)
+  [Render Graph roadmap](render_graph/TODO.md),
+  [closeout journal](../../.spec/journal/2026-09-18-render-graph-r3-closeout.md)
 - [ ] Keep source registries, immutable snapshots, pass scheduling, and
   frame-local resource lifetime aligned across Render submodules.
 - [ ] Add read-only Gameplay/editor snapshots before exposing mutable gameplay
   state to editor tools.
 - [x] Revisit the explicit pass schedule only after measured dependency,
   aliasing, or scheduling pressure exists. Planned acceleration-structure
-  build/consume and ray-output dependencies satisfy the design-review gate;
-  R3.2 is complete and R3.3 compatibility proof remains before execution
-  migration.
+  build/consume and ray-output dependencies satisfy the design-review gate; the
+  schedule is now compiled (R3, complete). R3.7 records what a later stage would
+  have to measure before resuming any of the gated extensions.
 - [ ] Keep Render documentation links, validation evidence, and ownership
   boundaries current when a submodule lands work.
 

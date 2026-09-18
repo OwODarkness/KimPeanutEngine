@@ -1,7 +1,7 @@
 # Render Graph Plans
 
-**Status: R3.2 pure compiler complete; runtime migration gated.** This page
-records KimPeanutEngine's architecture after inspecting Sakura Engine's actual
+**Status: built and closed with R3 (2026-09-18).** This page records
+KimPeanutEngine's architecture after inspecting Sakura Engine's actual
 render-graph source. The evidence and adopt/modify/reject decisions are in the
 [Sakura analysis](sakura_analysis.md).
 
@@ -263,8 +263,9 @@ Sakura's explicit phase pipeline, typed frame-scoped handles, resource pools,
 and imported-state tracking are useful. KimPeanut deliberately does not copy
 its every-frame compilation, unversioned last-access dependencies, string-based
 automatic binding, raw CGPU pass contexts, or incomplete multi-queue/aliasing
-surface. R3.1 remains open only for the formal plan review; no other reference
-is required unless that review identifies a concrete unresolved question.
+surface. R3.1's formal plan review is complete and closed the pre-R3.2
+decisions, so no further reference is required unless a future stage identifies
+a concrete unresolved question.
 
 ## Non-goals for R3
 

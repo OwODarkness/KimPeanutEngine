@@ -16,6 +16,7 @@ Read [repository instructions](../../../AGENTS.md), the
 - Keep architecture in `PLANS.md`, current work in `TODO.md`, the concrete R3
   migration in `../.plan/R3.md`, formal stage reviews in `.review/`, and dated
   execution facts in `.spec/journal/`.
-- The Sakura reference study and scoped R3.1 design review are complete for
-  R3.2. Reference code is evidence rather than a template to copy; R3.3+
-  remain separately gated.
+- The Sakura reference study and scoped R3.1 design review are complete, and R3
+  is closed through R3.7 as a gate. Reference code is evidence rather than a
+  template to copy; the R3 plan's unlock criteria are the path back into the
+  extensions that gate covers.
