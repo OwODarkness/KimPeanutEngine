@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_OPENGL_BACKEND_H
 #define KPENGINE_RUNTIME_GRAPHICS_OPENGL_BACKEND_H
 
+#include <array>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -140,7 +141,11 @@ namespace kpengine::graphics
         std::vector<GLuint> profile_query_ids_;
         std::vector<GpuProfileTiming> completed_gpu_profile_timings_;
         bool profile_gpu_timing_available_ = false;
-        bool profile_queries_written_ = false;
+        // A GL query keeps its last result, so a pass that was skipped this frame
+        // would otherwise report the previous frame's value as if it were
+        // current. The flags say which passes wrote a timestamp in the frame the
+        // collection reads.
+        std::array<bool, kGpuProfilePassCount> profile_pass_queries_written_{};
 
     };
 }

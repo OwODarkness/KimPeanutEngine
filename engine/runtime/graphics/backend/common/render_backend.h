@@ -43,6 +43,10 @@ namespace kpengine::graphics
         Matrix4f model;
     };
 
+    // Passes a backend can time. Render's RenderProfilePass indexes passes by
+    // this id, so both sides must agree on the count; Render asserts it.
+    inline constexpr uint32_t kGpuProfilePassCount = 8;
+
     struct GpuProfileTiming
     {
         uint32_t pass_id = 0;

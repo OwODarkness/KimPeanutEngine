@@ -33,8 +33,7 @@ namespace kpengine::graphics
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
     namespace
     {
-        constexpr uint32_t kProfilePassCount = 8;
-        constexpr uint32_t kProfileQueriesPerFrame = kProfilePassCount * 2;
+        constexpr uint32_t kProfileQueriesPerFrame = kGpuProfilePassCount * 2;
     }
 
     VulkanBackend::VulkanBackend() : pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
@@ -243,7 +242,7 @@ namespace kpengine::graphics
     void VulkanBackend::BeginGpuProfilePass(const uint32_t pass_id)
     {
         if (profile_query_pool_ == VK_NULL_HANDLE || !frame_active_ ||
-            pass_id >= kProfilePassCount)
+            pass_id >= kGpuProfilePassCount)
         {
             return;
         }
@@ -256,7 +255,7 @@ namespace kpengine::graphics
     void VulkanBackend::EndGpuProfilePass(const uint32_t pass_id)
     {
         if (profile_query_pool_ == VK_NULL_HANDLE || !frame_active_ ||
-            pass_id >= kProfilePassCount)
+            pass_id >= kGpuProfilePassCount)
         {
             return;
         }
@@ -288,26 +287,43 @@ namespace kpengine::graphics
         }
         const uint32_t base_query = frame_context_->GetCurrentFrameIndex() *
                                     kProfileQueriesPerFrame;
-        std::array<uint64_t, kProfileQueriesPerFrame> timestamps{};
+        // A pass that was not visited writes no timestamps: the plan drops
+        // conditional passes, and a cached shadow never reaches its recorder.
+        // One unwritten query makes the whole-range read answer VK_NOT_READY, so
+        // the results are asked for with per-query availability and each pass is
+        // gated on its own. Otherwise a single skipped pass hides every GPU
+        // timing in the frame. Every query answers with a value/availability
+        // pair, hence the doubled stride.
+        std::array<uint64_t, kProfileQueriesPerFrame * 2> query_results{};
         const VkResult result = vkGetQueryPoolResults(
             device_->GetLogicalDevice(), profile_query_pool_, base_query,
-            kProfileQueriesPerFrame, sizeof(timestamps), timestamps.data(), sizeof(uint64_t),
-            VK_QUERY_RESULT_64_BIT);
-        if (result != VK_SUCCESS)
+            kProfileQueriesPerFrame, sizeof(query_results), query_results.data(),
+            sizeof(uint64_t) * 2,
+            VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
+        if (result != VK_SUCCESS && result != VK_NOT_READY)
         {
+            if (!profile_query_failure_logged_)
+            {
+                profile_query_failure_logged_ = true;
+                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_WARNING,
+                       "GPU pass timestamps could not be read from the query pool; the "
+                       "profile reports no GPU time");
+            }
             return;
         }
-        for (uint32_t pass_id = 0; pass_id < kProfilePassCount; ++pass_id)
+        for (uint32_t pass_id = 0; pass_id < kGpuProfilePassCount; ++pass_id)
         {
-            const uint64_t begin = timestamps[pass_id * 2];
-            const uint64_t end = timestamps[pass_id * 2 + 1];
-            if (end >= begin && end != 0)
+            const uint64_t *const pass_results = &query_results[pass_id * 4];
+            const uint64_t begin = pass_results[0];
+            const uint64_t end = pass_results[2];
+            if (pass_results[1] == 0 || pass_results[3] == 0 || end < begin)
             {
-                completed_gpu_profile_timings_.push_back(
-                    {pass_id, static_cast<uint64_t>(
-                                  static_cast<double>(end - begin) *
-                                  static_cast<double>(profile_timestamp_period_ns_))});
+                continue;
             }
+            completed_gpu_profile_timings_.push_back(
+                {pass_id, static_cast<uint64_t>(
+                              static_cast<double>(end - begin) *
+                              static_cast<double>(profile_timestamp_period_ns_))});
         }
     }
 

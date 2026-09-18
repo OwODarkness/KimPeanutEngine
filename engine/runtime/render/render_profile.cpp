@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include "graphics/backend/common/render_backend.h"
+
 namespace
 {
     double Percentile(std::vector<double> values, const double fraction)
@@ -23,6 +25,10 @@ namespace kpengine::render
 {
     static_assert(static_cast<size_t>(RenderProfilePass::Count) == 8);
     static_assert(static_cast<size_t>(RenderProfileCpuSubphase::Count) == 9);
+    // A backend times passes it was handed by this enum's value, so the two
+    // counts are one contract, not two coincidences.
+    static_assert(static_cast<size_t>(RenderProfilePass::Count) ==
+                  static_cast<size_t>(graphics::kGpuProfilePassCount));
 
     RenderProfileWindow::RenderProfileWindow(const uint32_t warmup_frames,
                                              const uint32_t sample_frames)

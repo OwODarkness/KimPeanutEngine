@@ -145,6 +145,7 @@ namespace kpengine::graphics
         bool frame_active_ = false;
         VkQueryPool profile_query_pool_ = VK_NULL_HANDLE;
         float profile_timestamp_period_ns_ = 0.0f;
+        bool profile_query_failure_logged_ = false;
         std::vector<GpuProfileTiming> completed_gpu_profile_timings_;
     };
 }

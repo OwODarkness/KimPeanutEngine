@@ -26,10 +26,6 @@ namespace kpengine::graphics
 {
     static_assert(!std::is_base_of_v<IRenderTargetReadback, OpenglBackend>);
     static_assert(!std::is_base_of_v<CommandRecorder, OpenglBackend>);
-    namespace
-    {
-        constexpr uint32_t kProfilePassCount = 8;
-    }
 
     OpenglBackend::OpenglBackend() : mesh_manager_(std::make_unique<MeshManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
@@ -69,7 +65,7 @@ namespace kpengine::graphics
                                         glad_glGetQueryObjectui64v != nullptr;
         if (profile_gpu_timing_available_)
         {
-            profile_query_ids_.resize(kProfilePassCount * 2);
+            profile_query_ids_.resize(kGpuProfilePassCount * 2);
             glGenQueries(static_cast<GLsizei>(profile_query_ids_.size()),
                          profile_query_ids_.data());
         }
@@ -180,18 +176,18 @@ namespace kpengine::graphics
     void OpenglBackend::BeginGpuProfilePass(const uint32_t pass_id)
     {
         if (!profile_gpu_timing_available_ || !frame_active_ ||
-            pass_id >= kProfilePassCount || profile_query_ids_.empty())
+            pass_id >= kGpuProfilePassCount || profile_query_ids_.empty())
         {
             return;
         }
         glQueryCounter(profile_query_ids_[pass_id * 2], GL_TIMESTAMP);
-        profile_queries_written_ = true;
+        profile_pass_queries_written_[pass_id] = true;
     }
 
     void OpenglBackend::EndGpuProfilePass(const uint32_t pass_id)
     {
         if (!profile_gpu_timing_available_ || !frame_active_ ||
-            pass_id >= kProfilePassCount || profile_query_ids_.empty())
+            pass_id >= kGpuProfilePassCount || profile_query_ids_.empty())
         {
             return;
         }
@@ -208,13 +204,20 @@ namespace kpengine::graphics
     void OpenglBackend::CollectCompletedGpuProfileTimings()
     {
         completed_gpu_profile_timings_.clear();
-        if (!profile_gpu_timing_available_ || !profile_queries_written_ ||
-            profile_query_ids_.empty())
+        if (!profile_gpu_timing_available_ || profile_query_ids_.empty())
         {
             return;
         }
-        for (uint32_t pass_id = 0; pass_id < kProfilePassCount; ++pass_id)
+        // A pass the plan skipped was never issued a counter, and its queries
+        // still hold the result of the last frame that did issue one. Reading
+        // that would report a stale time as if it were this frame's, so only
+        // passes that wrote a timestamp in the frame being read are collected.
+        for (uint32_t pass_id = 0; pass_id < kGpuProfilePassCount; ++pass_id)
         {
+            if (!profile_pass_queries_written_[pass_id])
+            {
+                continue;
+            }
             GLuint64 begin = 0;
             GLuint64 end = 0;
             glGetQueryObjectui64v(profile_query_ids_[pass_id * 2], GL_QUERY_RESULT, &begin);
@@ -224,7 +227,7 @@ namespace kpengine::graphics
                 completed_gpu_profile_timings_.push_back({pass_id, end - begin});
             }
         }
-        profile_queries_written_ = false;
+        profile_pass_queries_written_.fill(false);
     }
 
     BufferHandle OpenglBackend::CreateUniformBuffer(uint32_t size)
