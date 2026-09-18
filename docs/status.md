@@ -1726,15 +1726,17 @@
 - **Render module reconstruction** — `RenderSystem` owns the API-neutral `RenderBackend`, default `PipelineDesc` warmup/cache, and frame lifecycle. It still lacks material-defined state, a scene graph, and API-neutral recording; `RenderScene` remains the Vulkan-specific demo seam.
 
 ## Planned (next up)
-- **Render graph R3.5/R3.6 remain gated (2026-09-17)** — the graph schedules
-  passes but does not yet own resource state. Attachment begin/end still lives
-  inside the pass callbacks, passes still bind the persistent targets from
-  `RendererFrameTargets`, and no transition or transient-allocation contract
-  exists. R3.5 would move transition authority into the compiled plan and R3.6
-  would add Graphics-owned transients; both are held until a consumer justifies
-  them, since their stated purpose is the later ray-tracing path and no
-  ray-tracing work exists yet. →
-  [R3 plan](render/.plan/R3.md), [render graph TODO](render/render_graph/TODO.md)
+- **Render graph R3.7 closed as a gate (2026-09-18)** — R3 is complete through
+  R3.6. The compiled plan schedules passes, is authoritative for resource state,
+  and declares its transients: the executor owns the attachment boundary,
+  portable usage requirements reach Graphics as intents rather than native
+  layouts, and `SceneHdr` is a graph-declared transient served by a
+  Graphics-owned pool with serial-quarantined reuse. R3.7 lists five extensions
+  — subresources, aliasing, async compute, parallel recording, acceleration
+  structures — and none has a consumer, so it is closed as a gate with recorded
+  unlock criteria rather than started. →
+  [R3 plan](render/.plan/R3.md), [render graph TODO](render/render_graph/TODO.md),
+  [R3.5 review](render/.review/R3.5.md)
 - **Frame-rate follow-ups (2026-09-17)** — the timer-resolution and G-buffer
   fixes landed, and the render lane is now the binding constraint on OpenGL at
   about 11.9 ms of an 11.9 ms frame. Two open items: Vulkan runs with validation

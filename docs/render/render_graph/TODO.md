@@ -1,7 +1,7 @@
 # Render Graph TODO
 
-**Status: R3.5 complete — the compiled plan schedules passes and is authoritative
-for resource state. R3.6 and later remain gated.** Architecture:
+**Status: R3 complete — the compiled plan schedules passes, owns resource state,
+and declares its transients. R3.7 closed as a gate.** Architecture:
 [PLANS.md](PLANS.md). Concrete migration: [R3](../.plan/R3.md).
 
 ## Roadmap
@@ -62,14 +62,19 @@ for resource state. R3.6 and later remain gated.** Architecture:
   read. The imported-resource handoff remains deferred: no import path exists to
   consume it. → [R3.5 review](../.review/R3.5.md),
   [journal](../../../.spec/journal/2026-09-18-render-graph-r3-5.md)
-- [ ] **R3.6 — transient resource ownership:** add graph-declared transient
-  texture/buffer descriptions and a Graphics-owned frame-safe pool. Validate
-  first/last use, resize/recompile, failed-frame cleanup, and shutdown with no
-  aliasing.
-- [ ] **R3.7 — measured extensions:** consider subresource tracking, memory
-  aliasing, compute queues, parallel recording, and acceleration-structure
-  resource usages only as separately planned, capability-gated work backed by
-  a current consumer and measurements.
+- [x] **R3.6 — transient resource ownership:** graph-declared transients and a
+  Graphics-owned frame-safe pool. Declared resources carry a caller-owned
+  description key, the graph plans each with the window it is needed for, and
+  the renderer takes every declared transient from the pool before the frame
+  records. `SceneHdr` is the first: its contents never survive the frame, so it
+  left the persistent target set. Reuse is serial-quarantined, trimmed on
+  resize, and reports identity churn rather than assuming stability. No
+  aliasing, as the stage requires.
+- [ ] **R3.7 — measured extensions — closed as a gate, not started.** None of
+  the five extensions has a consumer, so building any would be the speculative
+  abstraction the stage exists to forbid. Each has a recorded unlock criterion
+  in the [R3 plan](../.plan/R3.md); a future stage picks one, names its
+  consumer, and plans it as its own work rather than resuming R3.7.
 
 ## Acceptance ledger
 
@@ -81,18 +86,27 @@ for resource state. R3.6 and later remain gated.** Architecture:
   ambiguous writes, incompatible usage, and unsafe conditional dependencies
   with useful diagnostics.
 - [x] Independent passes use declaration order as a deterministic tie-break.
-- [ ] Imported resources are never destroyed by the graph; transient physical
+- [x] Imported resources are never destroyed by the graph; transient physical
   resources remain Graphics-owned and retire only after submitted work is safe.
+  The pool stamps a release with the pending submission and only hands the
+  resource out once that submission has completed.
 - [x] Common graph and Graphics contracts contain no Vulkan/OpenGL types.
 - [ ] Graph callbacks record only through the common command seam and cannot
-  access resources they did not declare.
+  access resources they did not declare. Recording goes through the common
+  recorder, but a callback's declared uses are not enforced against what it
+  touches; the declaration is authored, not policed.
 - [x] Compilation is cached while topology/descriptions are unchanged, and
   graph build/compile/execute CPU costs are observable.
 - [ ] Raster output and pass metrics match the R3.0 baseline on Vulkan and
-  OpenGL within the reviewed comparator/performance policy. Captures and graph
-  timings are recorded, but no numeric R3.0 comparator exists in the repository.
-- [ ] Resize, failed begin, required-pass failure, optional capture, orderly
-  close, and repeated shutdown preserve current lifecycle behavior.
+  OpenGL within the reviewed comparator/performance policy. Parity is
+  behavioural -- every slice captured pixel-identical on both APIs -- and no
+  numeric R3.0 comparator exists in the repository, so this is not a numeric
+  match and does not claim one.
+- [x] Resize, failed begin, required-pass failure, optional capture, orderly
+  close, and repeated shutdown preserve current lifecycle behavior. Seeking this
+  evidence found and fixed a real fault: streamed texture retirement destroyed
+  descriptor sets and a texture before their last user was done, which could end
+  the render thread.
 
 ## Decisions required before R3.2
 
