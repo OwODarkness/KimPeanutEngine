@@ -44,6 +44,10 @@ namespace kpengine::render
         friend class RendererFrameTargets;
 
         void Initialize(graphics::RenderBackend &backend, const graphics::RenderTargetDesc &desc);
+        // Wraps a target another owner allocated, such as one taken from the
+        // transient pool. Cleanup drops the reference without destroying it.
+        void Adopt(graphics::RenderBackend &backend, graphics::RenderTargetHandle handle,
+                   const graphics::RenderTargetDesc &desc);
         void Cleanup();
         bool BeginRecording(graphics::CommandRecorder &recorder) const;
         void EndRecording(graphics::CommandRecorder &recorder) const;

@@ -56,6 +56,39 @@ namespace kpengine::graphics
         std::optional<RenderTargetDepthAttachment> depth;
     };
 
+    // Whether two descriptions address the same physical storage, so a pooled
+    // backend may hand the same target to both. Only the fields that decide the
+    // images take part: a differing load or store operation still addresses the
+    // same attachments.
+    inline bool RenderTargetDescsShareStorage(const RenderTargetDesc &left,
+                                              const RenderTargetDesc &right) noexcept
+    {
+        if (left.width != right.width || left.height != right.height ||
+            left.sample_count != right.sample_count ||
+            left.color_attachments.size() != right.color_attachments.size())
+        {
+            return false;
+        }
+        for (std::size_t index = 0; index < left.color_attachments.size(); ++index)
+        {
+            if (left.color_attachments[index].format != right.color_attachments[index].format)
+            {
+                return false;
+            }
+        }
+        if (left.depth.has_value() != right.depth.has_value())
+        {
+            return false;
+        }
+        if (left.depth.has_value() &&
+            (left.depth->format != right.depth->format ||
+             left.depth->shader_readable != right.depth->shader_readable))
+        {
+            return false;
+        }
+        return true;
+    }
+
     struct RenderTargetResource
     {
         std::vector<TextureHandle> color_attachments;

@@ -12,6 +12,7 @@
 #include "vulkan_command_recorder.h"
 #include "vulkan_render_target_manager.h"
 #include "vulkan_render_target_readback.h"
+#include "vulkan_transient_target_pool.h"
 #include "vulkan_editor_bridge.h"
 #include "vulkan_upload_context.h"
 #include "vulkan_pipeline_manager.h"
@@ -108,6 +109,8 @@ namespace kpengine::graphics
             device_->GetLogicalDevice(), CreateGraphicsContext(), *frame_context_, *texture_manager_);
         render_target_readback_ = std::make_unique<VulkanRenderTargetReadback>(
             device_->GetLogicalDevice(), *frame_context_, *buffer_manager_, *render_target_manager_);
+        transient_target_pool_ = std::make_unique<VulkanTransientTargetPool>(
+            *render_target_manager_, *frame_context_);
         const VkExtent2D extent = swapchain_->GetExtent();
         render_target_manager_->CreateSwapchainAttachments(extent.width, extent.height,
                                                            msaa_sampe_count_);
@@ -120,6 +123,13 @@ namespace kpengine::graphics
         // 3. caller selects render targets and records draws, then EndFrame submits
 
         frame_context_->WaitForInFlightFence();
+        if (transient_target_pool_)
+        {
+            // The fence wait above is what makes a retired target safe to hand
+            // out again, so this runs immediately after it.
+            transient_target_pool_->CollectCompleted(
+                frame_context_->GetCompletedSubmissionSerial());
+        }
         ResetCurrentFrameGeometryBuffers(frame_context_->GetCurrentFrameIndex());
         descriptor_set_manager_->BeginFrame(device_->GetLogicalDevice(),
                                              frame_context_->GetCurrentFrameIndex());
@@ -321,6 +331,12 @@ namespace kpengine::graphics
             render_target_readback_->DrainPendingReadbacks("Vulkan backend shutdown");
         }
 
+        // The pool destroys through the manager, so it goes first. Work is
+        // already idle here: the readbacks were drained above and WaitIdle ran
+        // before this road.
+        transient_target_pool_->DestroyAll();
+        transient_target_pool_.reset();
+
         render_target_manager_->DestroyAll();
 
         CleanupSwapchain();
@@ -508,6 +524,19 @@ namespace kpengine::graphics
     {
         render_target_readback_->CancelTarget(handle, "Render target was destroyed before readback completed");
         return render_target_manager_->Destroy(handle);
+    }
+
+    RenderTargetHandle VulkanBackend::AcquireTransientRenderTarget(const RenderTargetDesc &desc)
+    {
+        return transient_target_pool_ ? transient_target_pool_->Acquire(desc) : RenderTargetHandle{};
+    }
+
+    void VulkanBackend::ReleaseTransientRenderTarget(RenderTargetHandle handle)
+    {
+        if (transient_target_pool_)
+        {
+            transient_target_pool_->Release(handle);
+        }
     }
 
     TextureHandle VulkanBackend::GetRenderTargetColor(RenderTargetHandle handle)
@@ -825,6 +854,12 @@ namespace kpengine::graphics
         if (device_)
         {
             vkDeviceWaitIdle(device_->GetLogicalDevice());
+            if (transient_target_pool_)
+            {
+                // Nothing is executing, so every retired target is now safe.
+                transient_target_pool_->CollectCompleted(
+                    frame_context_->GetLastSubmittedSerial());
+            }
             if (bindless_texture_table_)
             {
                 bindless_texture_table_->CollectCompletedSubmissions(

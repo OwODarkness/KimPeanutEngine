@@ -39,6 +39,7 @@ if(USE_VULKAN)
     backend/vulkan/vulkan_frame_context.cpp
     backend/vulkan/vulkan_command_recorder.cpp
     backend/vulkan/vulkan_render_target_manager.cpp
+    backend/vulkan/vulkan_transient_target_pool.cpp
     backend/vulkan/vulkan_render_target_readback.cpp
     backend/vulkan/vulkan_editor_bridge.cpp
     backend/vulkan/vulkan_upload_context.cpp

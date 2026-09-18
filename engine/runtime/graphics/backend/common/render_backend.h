@@ -86,6 +86,14 @@ namespace kpengine::graphics
         virtual bool DestroySampler(SamplerHandle handle) = 0;
         virtual RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) = 0;
         virtual bool DestroyRenderTarget(RenderTargetHandle handle) = 0;
+        // Acquires a render target for a bounded use, described rather than
+        // owned by the caller. Graphics owns the physical object and may hand
+        // back one released earlier with the same description, but only once the
+        // submitted work that referenced it has completed -- a caller must not
+        // assume the contents it left behind are still there. Release returns it
+        // to the pool rather than destroying it.
+        virtual RenderTargetHandle AcquireTransientRenderTarget(const RenderTargetDesc &desc) = 0;
+        virtual void ReleaseTransientRenderTarget(RenderTargetHandle handle) = 0;
         virtual TextureHandle GetRenderTargetColor(RenderTargetHandle handle) = 0;
         // Returns an invalid handle when the target has no depth attachment or
         // the color index is out of range.

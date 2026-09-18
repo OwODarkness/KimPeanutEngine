@@ -35,6 +35,8 @@ namespace kpengine::graphics
         bool DestroySampler(SamplerHandle handle) override;
         RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) override;
         bool DestroyRenderTarget(RenderTargetHandle handle) override;
+        RenderTargetHandle AcquireTransientRenderTarget(const RenderTargetDesc &desc) override;
+        void ReleaseTransientRenderTarget(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColorAttachment(RenderTargetHandle handle,
                                                      uint32_t index) override;
@@ -109,6 +111,7 @@ namespace kpengine::graphics
         std::unique_ptr<class VulkanFrameContext> frame_context_;
         std::unique_ptr<class VulkanCommandRecorder> command_recorder_;
         std::unique_ptr<class VulkanRenderTargetManager> render_target_manager_;
+        std::unique_ptr<class VulkanTransientTargetPool> transient_target_pool_;
         std::unique_ptr<class VulkanRenderTargetReadback> render_target_readback_;
         std::unique_ptr<class VulkanEditorBridge> editor_bridge_;
         VulkanContext context_;

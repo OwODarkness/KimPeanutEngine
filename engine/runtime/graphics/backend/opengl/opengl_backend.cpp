@@ -683,6 +683,40 @@ namespace kpengine::graphics
         return handle;
     }
 
+    RenderTargetHandle OpenglBackend::AcquireTransientRenderTarget(const RenderTargetDesc &desc)
+    {
+        // OpenGL orders commands implicitly and already reuses one set of
+        // targets frame after frame, so a released target is immediately
+        // reusable rather than quarantined by submission serial.
+        for (auto it = transient_reusable_.begin(); it != transient_reusable_.end(); ++it)
+        {
+            if (RenderTargetDescsShareStorage(it->desc, desc))
+            {
+                const RenderTargetHandle handle = it->handle;
+                transient_reusable_.erase(it);
+                return handle;
+            }
+        }
+        return CreateRenderTarget(desc);
+    }
+
+    void OpenglBackend::ReleaseTransientRenderTarget(RenderTargetHandle handle)
+    {
+        for (const TransientTargetEntry &entry : transient_reusable_)
+        {
+            if (entry.handle == handle)
+            {
+                return; // already released
+            }
+        }
+        const uint32_t index = render_target_handles_.Get(handle);
+        if (index >= render_targets_.size())
+        {
+            return;
+        }
+        transient_reusable_.push_back({handle, render_targets_[index].desc});
+    }
+
     bool OpenglBackend::DestroyRenderTarget(RenderTargetHandle handle)
     {
         if (render_target_readback_)

@@ -35,6 +35,8 @@ namespace kpengine::graphics
         bool DestroySampler(SamplerHandle handle) override;
         RenderTargetHandle CreateRenderTarget(const RenderTargetDesc &desc) override;
         bool DestroyRenderTarget(RenderTargetHandle handle) override;
+        RenderTargetHandle AcquireTransientRenderTarget(const RenderTargetDesc &desc) override;
+        void ReleaseTransientRenderTarget(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColor(RenderTargetHandle handle) override;
         TextureHandle GetRenderTargetColorAttachment(RenderTargetHandle handle,
                                                      uint32_t index) override;
@@ -107,6 +109,14 @@ namespace kpengine::graphics
         std::unique_ptr<class OpenglRenderTargetReadback> render_target_readback_;
 
         std::vector<RenderTargetResource> render_targets_;
+        // Released transient targets, immediately reusable because OpenGL orders
+        // commands implicitly and already reuses one target set across frames.
+        struct TransientTargetEntry
+        {
+            RenderTargetHandle handle;
+            RenderTargetDesc desc;
+        };
+        std::vector<TransientTargetEntry> transient_reusable_;
         std::vector<GLuint> render_target_framebuffers_;
         HandleSystem<RenderTargetHandle> render_target_handles_;
 

@@ -12,6 +12,8 @@ namespace kpengine::render
         graphics::RenderTargetDesc desc{};
         uint32_t width = 0;
         uint32_t height = 0;
+        // False when the handle came from a pool, which owns its lifetime.
+        bool owns_handle = true;
     };
 
     RenderTarget::RenderTarget() : impl_(std::make_unique<Impl>()) {}
@@ -49,6 +51,7 @@ namespace kpengine::render
         impl_->backend = &backend;
         impl_->desc = desc;
         impl_->handle = backend.CreateRenderTarget(desc);
+        impl_->owns_handle = true;
         if (impl_->handle.IsValid())
         {
             impl_->width = desc.width;
@@ -93,9 +96,27 @@ namespace kpengine::render
         return impl_->backend->GetRenderTargetSampledDepthAttachment(impl_->handle);
     }
 
+    void RenderTarget::Adopt(graphics::RenderBackend &backend,
+                             graphics::RenderTargetHandle handle,
+                             const graphics::RenderTargetDesc &desc)
+    {
+        Cleanup();
+        impl_->backend = &backend;
+        impl_->desc = desc;
+        impl_->handle = handle;
+        // Another owner allocated this target and is responsible for releasing
+        // it; dropping the reference must not destroy it.
+        impl_->owns_handle = false;
+        if (handle.IsValid())
+        {
+            impl_->width = desc.width;
+            impl_->height = desc.height;
+        }
+    }
+
     void RenderTarget::Cleanup()
     {
-        if (impl_ && impl_->backend && impl_->handle.IsValid())
+        if (impl_ && impl_->backend && impl_->handle.IsValid() && impl_->owns_handle)
         {
             impl_->backend->DestroyRenderTarget(impl_->handle);
         }

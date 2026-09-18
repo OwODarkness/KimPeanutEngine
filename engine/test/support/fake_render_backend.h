@@ -242,6 +242,16 @@ namespace kpengine::test
             return handle;
         }
 
+        graphics::RenderTargetHandle AcquireTransientRenderTarget(
+            const graphics::RenderTargetDesc &) override
+        {
+            // The fake backend models no GPU storage, so a transient target is
+            // simply a fresh handle.
+            return MakeHandle<graphics::RenderTargetHandle>();
+        }
+
+        void ReleaseTransientRenderTarget(graphics::RenderTargetHandle) override {}
+
         bool DestroyRenderTarget(graphics::RenderTargetHandle) override
         {
             ++probe_->render_target_destroy_count;
