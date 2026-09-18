@@ -37,6 +37,22 @@ records and closes it after, deriving the target from the pass's write use. The
 26 scattered `BeginRecording`/`EndRecording` sites in the seven pass bodies are
 gone.
 
+## Correction, later the same day
+
+The gap recorded below was found and closed. The consumer the plan did not
+declare is the host: `GetViewportRenderTargetView` maps every non-SceneColor
+view to `CaptureOutput`, so the editor viewport samples the capture pass's
+output whenever a diagnostic view is active, and no renderer pass reads that
+target. The terminal pass now declares that read under the same
+diagnostic-capture condition that schedules the capture pass.
+
+With it declared, the backend's end-of-pass transition is removed and the plan
+is authoritative: zero validation messages across a full Vulkan profile run,
+where the same configuration produced sixteen before. Both APIs capture
+pixel-identical. The lesson is that the declaration must name the host's reads
+as well as the passes' -- the plan decides resource state, so a read it does not
+know about is a hole, not a case to absorb.
+
 ## What did not
 
 **The plan is not yet the authority for transitions.** Removing
