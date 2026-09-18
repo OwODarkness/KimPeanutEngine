@@ -228,6 +228,39 @@ TEST(RenderGraphTest, RejectsUsageThatContradictsAccessOrIsNotAnAttachment)
     EXPECT_TRUE(valid.Compile().Succeeded());
 }
 
+TEST(RenderGraphTest, PlansDeclaredTransientsWithTheWindowTheyAreNeededFor)
+{
+    RenderGraphBuilder builder;
+    const auto pooled = builder.CreateTexture("Pooled", 42u);
+    const auto owned = builder.CreateTexture("Owned");
+    builder.AddPass({"Writer", RenderGraphPassCondition::Always, true, true})
+        .Write(pooled)
+        .Write(owned);
+    builder.AddPass({"Reader", RenderGraphPassCondition::Always, true, true}).Read(pooled);
+    builder.AddPass({"Tail", RenderGraphPassCondition::Always, true, true}).Read(owned);
+    builder.ExportTexture(builder.CurrentVersion(owned), "Owned");
+
+    const auto result = builder.Compile();
+    ASSERT_TRUE(result.Succeeded());
+
+    // Only the keyed resource is one the caller must supply a physical object
+    // for, and its window spans every live pass that touches it.
+    ASSERT_EQ(result.graph->Transients().size(), 1U);
+    EXPECT_EQ(result.graph->Transients()[0].key, 42U);
+    EXPECT_EQ(result.graph->Transients()[0].name, "Pooled");
+    EXPECT_EQ(result.graph->Transients()[0].first_use, 0U);
+    EXPECT_EQ(result.graph->Transients()[0].last_use, 1U);
+
+    // A keyed resource nothing reachable uses is not planned, so it asks for no
+    // physical object.
+    RenderGraphBuilder culled;
+    culled.CreateTexture("Unused", 7u);
+    culled.AddPass({"Only", RenderGraphPassCondition::Always, true, true});
+    const auto culled_result = culled.Compile();
+    ASSERT_TRUE(culled_result.Succeeded());
+    EXPECT_TRUE(culled_result.graph->Transients().empty());
+}
+
 TEST(RenderGraphTest, ChainedDeclarationCompilesToTheSameGraphAsTheExplicitOne)
 {
     RenderGraphBuilder explicit_builder;

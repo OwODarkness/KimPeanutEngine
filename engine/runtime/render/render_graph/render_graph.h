@@ -222,6 +222,22 @@ namespace kpengine::render
         {
             return lifetimes_;
         }
+        // A resource the plan needs for a bounded stretch of it. The caller must
+        // have a physical resource for each of these from its first use until
+        // its last; the graph says which, and for how long, not what.
+        struct TransientResource
+        {
+            uint64_t key = 0;
+            std::string name;
+            // Compiled execution indices, inclusive.
+            std::size_t first_use = 0;
+            std::size_t last_use = 0;
+        };
+        const std::vector<TransientResource> &Transients() const noexcept
+        {
+            return transients_;
+        }
+
         // State requirements in compiled execution order. Each entry says a
         // resource version must be in that usage at that pass; the backend owns
         // what it is currently in and translates the difference.
@@ -234,10 +250,11 @@ namespace kpengine::render
         static CompiledRenderGraph Create(
             uint64_t graph_id, std::vector<Pass> passes,
             std::vector<RenderGraphLifetimeInterval> lifetimes,
-            std::vector<RenderGraphTransitionIntent> transitions)
+            std::vector<RenderGraphTransitionIntent> transitions,
+            std::vector<TransientResource> transients)
         {
             return CompiledRenderGraph(graph_id, std::move(passes), std::move(lifetimes),
-                                       std::move(transitions));
+                                       std::move(transitions), std::move(transients));
         }
 
         bool ContainsPass(GraphPassId id) const noexcept;
@@ -248,9 +265,10 @@ namespace kpengine::render
 
         CompiledRenderGraph(uint64_t graph_id, std::vector<Pass> passes,
                             std::vector<RenderGraphLifetimeInterval> lifetimes,
-                            std::vector<RenderGraphTransitionIntent> transitions)
+                            std::vector<RenderGraphTransitionIntent> transitions,
+                            std::vector<TransientResource> transients)
             : graph_id_(graph_id), passes_(std::move(passes)), lifetimes_(std::move(lifetimes)),
-              transitions_(std::move(transitions))
+              transitions_(std::move(transitions)), transients_(std::move(transients))
         {
         }
 
@@ -258,6 +276,7 @@ namespace kpengine::render
         std::vector<Pass> passes_;
         std::vector<RenderGraphLifetimeInterval> lifetimes_;
         std::vector<RenderGraphTransitionIntent> transitions_;
+        std::vector<TransientResource> transients_;
     };
 
     struct RenderGraphCompileResult
@@ -276,7 +295,13 @@ namespace kpengine::render
     public:
         RenderGraphBuilder();
 
-        GraphTextureHandle CreateTexture(std::string name);
+        // A resource the graph plans but does not own. A description key marks it
+        // as one the caller must have a physical resource for, and the graph
+        // never interprets the key: the caller maps it to whatever description
+        // its provider needs. The graph's contribution is the lifetime, not the
+        // description.
+        GraphTextureHandle CreateTexture(std::string name,
+                                         std::optional<uint64_t> transient_key = std::nullopt);
         GraphTextureHandle ImportTexture(std::string name);
         GraphBufferHandle CreateBuffer(std::string name);
         GraphBufferHandle ImportBuffer(std::string name);
@@ -324,6 +349,7 @@ namespace kpengine::render
         {
             std::string name;
             RenderGraphResourceLifetime lifetime = RenderGraphResourceLifetime::Transient;
+            std::optional<uint64_t> transient_key;
             std::vector<TextureVersion> versions;
             uint32_t latest_version = 0;
         };

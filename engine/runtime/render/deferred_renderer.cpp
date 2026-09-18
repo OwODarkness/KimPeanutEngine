@@ -444,7 +444,7 @@ namespace kpengine::render
     {
         // Drop the adopted transient before the backend tears its pool down, so
         // no wrapper outlives the handle it borrows.
-        ReleaseTransientSceneHdr();
+        ReleaseFrameTransients();
         transient_scene_hdr_.reset();
         if (backend_ != nullptr)
         {
@@ -720,7 +720,7 @@ namespace kpengine::render
             result.normal_recording_completed = false;
             return result;
         }
-        if (!AcquireTransientSceneHdr())
+        if (!AcquireFrameTransients(*frame_plan))
         {
             // Deferred lighting writes it and tone map reads it, so a frame
             // without it cannot record.
@@ -912,7 +912,7 @@ namespace kpengine::render
             // Released after the sweep, so the next frame takes the same
             // instance back rather than a second one: the caller's descriptor
             // sets are keyed on this target's handles.
-            ReleaseTransientSceneHdr();
+            ReleaseFrameTransients();
             active_pass_frame_.reset();
             active_frame_plan_ = nullptr;
             active_pending_capture_.reset();
@@ -980,30 +980,57 @@ namespace kpengine::render
         return nullptr;
     }
 
-    bool DeferredRenderer::AcquireTransientSceneHdr()
+    std::optional<graphics::RenderTargetDesc> DeferredRenderer::DescribeFrameTransient(
+        uint64_t key, const graphics::Extent2D &extent) const
+    {
+        if (key == static_cast<uint64_t>(RenderFrameTransient::SceneHdr))
+        {
+            return RendererFrameTargets::DescribeSceneHdr(extent.width, extent.height);
+        }
+        return std::nullopt;
+    }
+
+    bool DeferredRenderer::AcquireFrameTransients(const CompiledRenderGraph &plan)
     {
         if (backend_ == nullptr || !active_frame_context_)
         {
             return false;
         }
         const graphics::Extent2D extent = active_frame_context_->GetRenderExtent();
-        const graphics::RenderTargetDesc desc =
-            RendererFrameTargets::DescribeSceneHdr(extent.width, extent.height);
-        const graphics::RenderTargetHandle handle = backend_->AcquireTransientRenderTarget(desc);
-        if (!handle.IsValid())
+        for (const CompiledRenderGraph::TransientResource &transient : plan.Transients())
         {
-            return false;
+            const std::optional<graphics::RenderTargetDesc> desc =
+                DescribeFrameTransient(transient.key, extent);
+            if (!desc.has_value())
+            {
+                // A declared transient this renderer cannot describe is a
+                // declaration it does not implement, and silently skipping it
+                // would leave a pass reading nothing.
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                       "No description for declared transient '%s'", transient.name.c_str());
+                return false;
+            }
+            const graphics::RenderTargetHandle handle =
+                backend_->AcquireTransientRenderTarget(*desc);
+            if (!handle.IsValid())
+            {
+                return false;
+            }
+            if (!transient_scene_hdr_)
+            {
+                transient_scene_hdr_ = std::make_unique<RenderTarget>();
+            }
+            // Adopt, so dropping the wrapper never destroys what the pool owns.
+            transient_scene_hdr_->Adopt(*backend_, handle, *desc);
+            if (!transient_scene_hdr_->IsValid())
+            {
+                return false;
+            }
         }
-        if (!transient_scene_hdr_)
-        {
-            transient_scene_hdr_ = std::make_unique<RenderTarget>();
-        }
-        // Adopt, so dropping the wrapper never destroys what the pool owns.
-        transient_scene_hdr_->Adopt(*backend_, handle, desc);
-        return transient_scene_hdr_->IsValid();
+        return true;
     }
 
-    void DeferredRenderer::ReleaseTransientSceneHdr()
+    void DeferredRenderer::ReleaseFrameTransients()
     {
         if (!transient_scene_hdr_ || backend_ == nullptr)
         {

@@ -84,6 +84,14 @@ namespace kpengine::render
                                const RenderFrameConditions &) = default;
     };
 
+    // Caller-owned keys for resources the graph plans but does not own. The
+    // graph never interprets them; the renderer maps a key to the description
+    // its provider needs.
+    enum class RenderFrameTransient : uint64_t
+    {
+        SceneHdr = 1,
+    };
+
     // The one authored raster declaration. The compiled plan is derived from it
     // and is the only authority for pass order and resource flow.
     const std::vector<FixedRenderPassEntry> &GetRenderFramePassEntries();

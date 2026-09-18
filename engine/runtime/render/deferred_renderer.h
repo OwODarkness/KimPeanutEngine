@@ -157,10 +157,14 @@ namespace kpengine::render
         // persistent frame target; SceneHdr is the frame's transient, taken from
         // the Graphics-owned pool.
         RenderTarget *ResolveResourceTarget(RenderPassResource resource);
-        // Acquires this frame's SceneHdr transient. False when it could not be
+        // The description for a declared transient key, or null for one this
+        // renderer does not implement.
+        std::optional<graphics::RenderTargetDesc> DescribeFrameTransient(
+            uint64_t key, const graphics::Extent2D &extent) const;
+        // Acquires every transient the plan declares. False when one could not be
         // had, which fails the frame before any pass records.
-        bool AcquireTransientSceneHdr();
-        void ReleaseTransientSceneHdr();
+        bool AcquireFrameTransients(const CompiledRenderGraph &plan);
+        void ReleaseFrameTransients();
         RenderTarget *ResolvePassAttachment(const CompiledRenderGraph::Pass &pass);
         void ApplyPassTransitions(const CompiledRenderGraph &plan,
                                   const CompiledRenderGraph::Pass &pass);
@@ -225,7 +229,7 @@ namespace kpengine::render
         // The plan the active frame executes, so the external terminal's state
         // requirements can be applied before the host's callback records.
         const CompiledRenderGraph *active_frame_plan_ = nullptr;
-        // The frame's SceneHdr transient, wrapped around a pool-owned handle.
+        // The frame's pooled transient, wrapped around a pool-owned handle.
         // RenderTarget is not movable, so the wrapper is held by pointer.
         std::unique_ptr<RenderTarget> transient_scene_hdr_;
         bool frame_plan_valid_ = false;

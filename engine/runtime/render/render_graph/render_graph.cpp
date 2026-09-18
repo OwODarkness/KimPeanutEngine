@@ -101,7 +101,8 @@ namespace kpengine::render
         declaration_errors_.push_back(std::move(message));
     }
 
-    GraphTextureHandle RenderGraphBuilder::CreateTexture(std::string name)
+    GraphTextureHandle RenderGraphBuilder::CreateTexture(std::string name,
+                                                         std::optional<uint64_t> transient_key)
     {
         const GraphTextureHandle invalid{graph_id_, GraphTextureHandle::InvalidIndex,
                                          GraphTextureHandle::InvalidIndex};
@@ -112,6 +113,7 @@ namespace kpengine::render
         }
         const uint32_t resource = static_cast<uint32_t>(textures_.size());
         textures_.push_back(TextureRecord{std::move(name), RenderGraphResourceLifetime::Transient,
+                                          transient_key,
                                           std::vector<TextureVersion>{{std::nullopt, false}}, 0});
         return GraphTextureHandle{graph_id_, resource, 0};
     }
@@ -126,7 +128,10 @@ namespace kpengine::render
             return invalid;
         }
         const uint32_t resource = static_cast<uint32_t>(textures_.size());
+        // An imported resource is produced outside the graph, so it carries no
+        // transient key: the graph borrows it rather than asking for one.
         textures_.push_back(TextureRecord{std::move(name), RenderGraphResourceLifetime::Imported,
+                                          std::nullopt,
                                           std::vector<TextureVersion>{{std::nullopt, true}}, 0});
         return GraphTextureHandle{graph_id_, resource, 0};
     }
@@ -838,8 +843,45 @@ namespace kpengine::render
             }
         }
 
+        // Every declared transient that a live pass actually touches, with the
+        // window it is needed for. A transient nothing reachable uses is not
+        // planned and needs no physical resource.
+        std::vector<CompiledRenderGraph::TransientResource> transients;
+        for (std::size_t resource_index = 0; resource_index < textures_.size(); ++resource_index)
+        {
+            const TextureRecord &record = textures_[resource_index];
+            if (!record.transient_key.has_value())
+            {
+                continue;
+            }
+            std::size_t first_use = std::numeric_limits<std::size_t>::max();
+            std::size_t last_use = 0;
+            bool used = false;
+            for (const CompiledRenderGraph::Pass &pass : compiled_passes)
+            {
+                const std::size_t execution_index = live_order[pass.id.index];
+                for (const RenderGraphResourceUse &use : pass.uses)
+                {
+                    const auto *texture = std::get_if<GraphTextureHandle>(&use.handle);
+                    if (texture == nullptr || texture->resource != resource_index)
+                    {
+                        continue;
+                    }
+                    first_use = std::min(first_use, execution_index);
+                    last_use = std::max(last_use, execution_index);
+                    used = true;
+                }
+            }
+            if (used)
+            {
+                transients.push_back(
+                    {*record.transient_key, record.name, first_use, last_use});
+            }
+        }
+
         result.graph = CompiledRenderGraph::Create(graph_id_, std::move(compiled_passes),
-                                                   std::move(lifetimes), std::move(transitions));
+                                                   std::move(lifetimes), std::move(transitions),
+                                                   std::move(transients));
         return result;
     }
 }

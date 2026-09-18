@@ -86,6 +86,23 @@ TEST(RenderGraphCompatibilityTest, ProductionDeclarationDerivesTransitionIntents
     EXPECT_EQ(transitions[11].pass_index, 6U); // the external terminal
 }
 
+TEST(RenderGraphCompatibilityTest, ProductionDeclarationPlansSceneHdrAsATransient)
+{
+    const auto result = CompileRenderFrameGraph(RenderFrameConditions{false});
+    ASSERT_TRUE(result.Succeeded());
+
+    // SceneHdr is written by deferred lighting and read by tone map, both inside
+    // the frame, so the plan asks for a physical object for that window and only
+    // that window. Everything else is a persistent target the renderer owns.
+    const auto &transients = result.graph->Transients();
+    ASSERT_EQ(transients.size(), 1U);
+    EXPECT_EQ(transients[0].name, "SceneHdr");
+    EXPECT_EQ(transients[0].key,
+              static_cast<uint64_t>(kpengine::render::RenderFrameTransient::SceneHdr));
+    EXPECT_EQ(transients[0].first_use, 4U); // deferred lighting
+    EXPECT_EQ(transients[0].last_use, 5U);  // tone map
+}
+
 TEST(RenderGraphCompatibilityTest, AuthoredDeclarationIsCanonicalAndWellFormed)
 {
     const std::vector<FixedRenderPassEntry> &entries = GetRenderFramePassEntries();

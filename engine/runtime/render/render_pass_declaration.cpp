@@ -107,7 +107,16 @@ namespace kpengine::render
         std::array<GraphTextureHandle, kResourceCount> resources{};
         for (std::size_t resource_index = 0; resource_index < kResourceCount; ++resource_index)
         {
-            resources[resource_index] = graph.CreateTexture(kResourceNames[resource_index]);
+            // SceneHdr is the one resource the graph plans but does not own: its
+            // contents never survive the frame, so the renderer takes it from the
+            // Graphics-owned pool for the window the plan computes.
+            const bool pooled =
+                resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr);
+            resources[resource_index] = graph.CreateTexture(
+                kResourceNames[resource_index],
+                pooled ? std::optional<uint64_t>(
+                             static_cast<uint64_t>(RenderFrameTransient::SceneHdr))
+                       : std::nullopt);
         }
 
         RenderGraphPassRef terminal_pass;
