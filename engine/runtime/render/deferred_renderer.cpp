@@ -650,14 +650,30 @@ namespace kpengine::render
         frame_object_states_.clear();
         frame_material_bindings_.clear();
         scene_camera_ = input.camera;
-        const std::optional<CaptureView> active_capture_view =
-            input.pending_capture.has_value() ? input.pending_capture : input.debug_view;
         // Only a view this renderer converts itself is recorded here. A
         // host-resolved view is satisfied by the host's own target instead.
-        const bool is_deferred_capture =
-            active_capture_view.has_value() &&
-            RequiresCaptureViewConversionPass(active_capture_view.value());
-        active_pending_capture_ = is_deferred_capture ? active_capture_view : std::nullopt;
+        const bool pending_needs_conversion =
+            input.pending_capture.has_value() &&
+            RequiresCaptureViewConversionPass(*input.pending_capture);
+        // RenderSystem passes a debug view only when it is not SceneColor, so
+        // any debug view reaching here is one this renderer converts.
+        const bool debug_needs_conversion = input.debug_view.has_value();
+        // A pending capture does not shadow the debug view. The editor samples
+        // its own view independently of any capture request, so a SceneColor
+        // capture alongside a conversion debug view still needs the pass:
+        // otherwise the plan drops it while the host keeps sampling the target
+        // it writes, and no declared read remains to move that target's state.
+        std::optional<CaptureView> conversion_view;
+        if (pending_needs_conversion)
+        {
+            conversion_view = input.pending_capture;
+        }
+        else if (debug_needs_conversion)
+        {
+            conversion_view = input.debug_view;
+        }
+        active_pending_capture_ = conversion_view;
+        const bool is_deferred_capture = conversion_view.has_value();
         UpdateEnvironment(input);
         const auto shadow_stamp_fit_started = std::chrono::steady_clock::now();
         active_directional_shadow_ = ScheduleDirectionalShadow(input.lights,
