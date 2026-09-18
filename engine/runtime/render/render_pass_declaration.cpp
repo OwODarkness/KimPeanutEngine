@@ -110,6 +110,7 @@ namespace kpengine::render
             resources[resource_index] = graph.CreateTexture(kResourceNames[resource_index]);
         }
 
+        RenderGraphPassRef terminal_pass;
         for (const FixedRenderPassEntry &entry : AuthoredEntries())
         {
             const RenderGraphPassCondition condition =
@@ -139,6 +140,23 @@ namespace kpengine::render
                     pass.Write(resource, use.usage);
                 }
             }
+            if (owner == RenderGraphPassOwner::External)
+            {
+                terminal_pass = pass;
+            }
+        }
+
+        // The host samples the conversion output through the editor viewport
+        // whenever a diagnostic view is active -- GetViewportRenderTargetView
+        // maps every non-SceneColor view to CaptureOutput. No renderer pass reads
+        // that target, so without declaring the host's read here nothing
+        // transitions it out of the attachment layout the capture pass wrote it
+        // in, and the host samples it in the wrong layout.
+        if (conditions.diagnostic_capture && terminal_pass.IsValid())
+        {
+            terminal_pass.Read(
+                resources[static_cast<std::size_t>(RenderPassResource::CaptureOutput)],
+                RenderGraphUsage::Sampled);
         }
 
         graph.ExportTexture(

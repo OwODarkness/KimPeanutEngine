@@ -23,6 +23,7 @@ namespace
     using kpengine::render::RenderGraphPassOwner;
     using kpengine::render::RenderPassAccess;
     using kpengine::render::RenderPassCondition;
+    using kpengine::render::RenderPassExecutionOwner;
     using kpengine::render::RenderPassResource;
     using kpengine::render::RenderPassResourceUse;
 
@@ -121,8 +122,16 @@ TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesAsAnSsaChainForBot
             ASSERT_LT(entry_index, entries.size());
             const FixedRenderPassEntry &entry = entries[entry_index];
             EXPECT_EQ(pass.name, entry.name);
-            ASSERT_EQ(pass.uses.size(), entry.resources.size());
-            for (std::size_t use_index = 0; use_index < pass.uses.size(); ++use_index)
+            // The terminal also carries the host's read of the conversion
+            // output. No renderer pass reads CaptureOutput, and the editor
+            // viewport samples it whenever a diagnostic view is active, so the
+            // declaration has to name that read or nothing transitions the
+            // target out of the attachment layout the capture pass wrote it in.
+            const bool host_reads_conversion =
+                entry.owner == RenderPassExecutionOwner::External && capture_requested;
+            ASSERT_EQ(pass.uses.size(),
+                      entry.resources.size() + (host_reads_conversion ? 1U : 0U));
+            for (std::size_t use_index = 0; use_index < entry.resources.size(); ++use_index)
             {
                 const auto *texture = std::get_if<GraphTextureHandle>(&pass.uses[use_index].handle);
                 ASSERT_NE(texture, nullptr);

@@ -366,59 +366,12 @@ namespace kpengine::graphics
     {
         if (command_buffer == VK_NULL_HANDLE || !active_target_.IsValid()) return;
         vkCmdEndRendering(command_buffer);
-        const uint32_t index = handles_.Get(active_target_);
-        if (index < targets_.size())
-        {
-            // Attachments are made readable at the end of every pass. A pass can
-            // also declare the requirement earlier through RequireUsage, so this
-            // is state-checked rather than unconditional: it guarantees a target
-            // is readable for consumers the frame plan does not know about --
-            // the editor viewport and presentation read SceneColor directly --
-            // without re-emitting a barrier the plan already placed.
-            TargetState &state = states_[index];
-            for (uint32_t i = 0; i < targets_[index].color_attachments.size(); ++i)
-            {
-                if (state.color_layouts[i] == VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL) continue;
-                Texture *color_texture = texture_manager_->GetTexture(
-                    targets_[index].color_attachments[i]);
-                if (!color_texture) continue;
-                const VulkanTextureResource color =
-                    ConvertToVulkanTextureResource(color_texture->GetTextueHandle());
-                const VkImageLayout from = state.color_layouts[i];
-                frame_context_->TransitionImageLayout(command_buffer, color.image, from,
-                    VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                    VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
-                    VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                    from == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
-                    VK_ACCESS_2_SHADER_SAMPLED_READ_BIT,
-                    VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
-                state.color_layouts[i] = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-            }
-            // Sampled depth becomes readable; write-only depth stays in its
-            // attachment layout so the next pass reuses it without a barrier.
-            if (targets_[index].depth.IsValid() &&
-                targets_[index].desc.depth.has_value() &&
-                targets_[index].desc.depth->shader_readable &&
-                state.depth_layout != VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL)
-            {
-                Texture *depth_texture = texture_manager_->GetTexture(targets_[index].depth);
-                if (depth_texture)
-                {
-                    const VulkanTextureResource depth =
-                        ConvertToVulkanTextureResource(depth_texture->GetTextueHandle());
-                    const VkImageLayout from = state.depth_layout;
-                    frame_context_->TransitionImageLayout(command_buffer, depth.image, from,
-                        VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
-                        VK_PIPELINE_STAGE_2_LATE_FRAGMENT_TESTS_BIT,
-                        VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT,
-                        from == VK_IMAGE_LAYOUT_UNDEFINED
-                            ? 0
-                            : VK_ACCESS_2_DEPTH_STENCIL_ATTACHMENT_WRITE_BIT,
-                        VK_ACCESS_2_SHADER_SAMPLED_READ_BIT, VK_IMAGE_ASPECT_DEPTH_BIT, 0, 1);
-                    state.depth_layout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL;
-                }
-            }
-        }
+        // Attachments are deliberately left in their attachment layout. What a
+        // resource must be in next is the frame plan's decision and reaches this
+        // manager through RequireUsage, so a target nothing reads keeps its
+        // layout instead of paying a barrier every frame. A consumer the plan
+        // does not declare would sample the wrong layout, which is why the
+        // declaration has to name the host's reads as well as the passes'.
         active_target_ = {};
     }
 
@@ -440,19 +393,20 @@ namespace kpengine::graphics
         }
 
         const VkImageLayout color_layout = usage == ResourceUsage::Sampled
-                                          ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                                          : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                                              ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                                              : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         TargetState &state = states_[index];
         for (uint32_t i = 0; i < targets_[index].color_attachments.size(); ++i)
         {
             if (state.color_layouts[i] == color_layout) continue;
-            Texture *color_texture = texture_manager_->GetTexture(targets_[index].color_attachments[i]);
+            Texture *color_texture =
+                texture_manager_->GetTexture(targets_[index].color_attachments[i]);
             if (!color_texture) continue;
             const VulkanTextureResource color =
                 ConvertToVulkanTextureResource(color_texture->GetTextueHandle());
             const VkImageLayout from = state.color_layouts[i];
             frame_context_->TransitionImageLayout(
-                command_buffer, color.image, from, static_cast<VkImageLayout>(color_layout),
+                command_buffer, color.image, from, color_layout,
                 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                 usage == ResourceUsage::Sampled ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
                                                 : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
@@ -460,7 +414,7 @@ namespace kpengine::graphics
                 usage == ResourceUsage::Sampled ? VK_ACCESS_2_SHADER_SAMPLED_READ_BIT
                                                 : VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
                 VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
-            state.color_layouts[i] = static_cast<VkImageLayout>(color_layout);
+            state.color_layouts[i] = color_layout;
         }
 
         // Write-only depth has no readable state to reach, so it stays where the
