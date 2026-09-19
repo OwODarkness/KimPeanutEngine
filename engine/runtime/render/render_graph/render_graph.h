@@ -167,6 +167,31 @@ namespace kpengine::render
 
     using RenderGraphResourceHandle = std::variant<GraphTextureHandle, GraphBufferHandle>;
 
+    // Which attachments of a composite target a use touches. A logical resource
+    // can cover several physical images -- the G-buffer is four colour
+    // attachments plus depth -- and a pass usually touches a subset. Declaring
+    // the whole target when only one attachment is read is how a plan comes to
+    // schedule transitions it does not need, and to hide a read it does.
+    struct RenderGraphAttachmentScope
+    {
+        // True for a use that covers the whole target, which is what a logical
+        // resource means on its own.
+        bool all = true;
+        // Bit n addresses colour attachment n.
+        uint32_t color_mask = 0;
+        bool depth = false;
+
+        static RenderGraphAttachmentScope Whole() noexcept { return {}; }
+        static RenderGraphAttachmentScope Colors(uint32_t mask,
+                                                 bool with_depth = false) noexcept
+        {
+            return {false, mask, with_depth};
+        }
+
+        friend bool operator==(const RenderGraphAttachmentScope &,
+                               const RenderGraphAttachmentScope &) = default;
+    };
+
     struct RenderGraphResourceUse
     {
         RenderGraphResourceHandle handle;
@@ -174,6 +199,7 @@ namespace kpengine::render
         RenderGraphUsage usage = RenderGraphUsage::Undefined;
         RenderGraphAttachmentOp attachment_op = RenderGraphAttachmentOp::None;
         RenderGraphResourceRange range{};
+        RenderGraphAttachmentScope scope{};
     };
 
     // One requirement that a pass places on a resource's state: at this pass the
@@ -186,6 +212,8 @@ namespace kpengine::render
         // Index into the compiled execution order, i.e. the pass that requires it.
         std::size_t pass_index = 0;
         RenderGraphUsage usage = RenderGraphUsage::Undefined;
+        // The attachments the requirement covers, so a backend moves only those.
+        RenderGraphAttachmentScope scope{};
     };
 
     struct RenderGraphLifetimeInterval
@@ -314,13 +342,15 @@ namespace kpengine::render
 
         RenderGraphPassRef AddPass(RenderGraphPassDesc desc);
         bool ReadTexture(GraphPassId pass, GraphTextureHandle texture,
-                         RenderGraphUsage usage = RenderGraphUsage::Undefined);
+                         RenderGraphUsage usage = RenderGraphUsage::Undefined,
+                         RenderGraphAttachmentScope scope = {});
         bool ReadBuffer(GraphPassId pass, GraphBufferHandle buffer,
                         RenderGraphUsage usage = RenderGraphUsage::Undefined);
         std::optional<GraphTextureHandle> WriteTexture(
             GraphPassId pass, GraphTextureHandle previous_version,
             RenderGraphUsage usage = RenderGraphUsage::Undefined,
-            RenderGraphAttachmentOp attachment_op = RenderGraphAttachmentOp::None);
+            RenderGraphAttachmentOp attachment_op = RenderGraphAttachmentOp::None,
+            RenderGraphAttachmentScope scope = {});
         std::optional<GraphBufferHandle> WriteBuffer(
             GraphPassId pass, GraphBufferHandle previous_version,
             RenderGraphUsage usage = RenderGraphUsage::Undefined,
@@ -407,13 +437,15 @@ namespace kpengine::render
         RenderGraphPassRef() = default;
 
         RenderGraphPassRef &Read(GraphTextureHandle texture,
-                                 RenderGraphUsage usage = RenderGraphUsage::Undefined);
+                                 RenderGraphUsage usage = RenderGraphUsage::Undefined,
+                                 RenderGraphAttachmentScope scope = {});
         RenderGraphPassRef &Read(GraphBufferHandle buffer,
                                  RenderGraphUsage usage = RenderGraphUsage::Undefined);
         RenderGraphPassRef &Write(GraphTextureHandle texture,
                                   RenderGraphUsage usage = RenderGraphUsage::Undefined,
                                   RenderGraphAttachmentOp attachment_op =
-                                      RenderGraphAttachmentOp::None);
+                                      RenderGraphAttachmentOp::None,
+                                  RenderGraphAttachmentScope scope = {});
         RenderGraphPassRef &Write(GraphBufferHandle buffer,
                                   RenderGraphUsage usage = RenderGraphUsage::Undefined,
                                   RenderGraphAttachmentOp attachment_op =

@@ -193,11 +193,12 @@ namespace kpengine::render
                                  buffers_[buffer.resource].latest_version};
     }
 
-    RenderGraphPassRef &RenderGraphPassRef::Read(GraphTextureHandle texture, RenderGraphUsage usage)
+    RenderGraphPassRef &RenderGraphPassRef::Read(GraphTextureHandle texture, RenderGraphUsage usage,
+                                                 RenderGraphAttachmentScope scope)
     {
         if (builder_ != nullptr)
         {
-            builder_->ReadTexture(pass_, builder_->CurrentVersion(texture), usage);
+            builder_->ReadTexture(pass_, builder_->CurrentVersion(texture), usage, scope);
         }
         return *this;
     }
@@ -212,12 +213,14 @@ namespace kpengine::render
     }
 
     RenderGraphPassRef &RenderGraphPassRef::Write(GraphTextureHandle texture, RenderGraphUsage usage,
-                                                  RenderGraphAttachmentOp attachment_op)
+                                                  RenderGraphAttachmentOp attachment_op,
+                                                  RenderGraphAttachmentScope scope)
     {
         if (builder_ != nullptr)
         {
             // A rejected write records a declaration error, which Compile reports.
-            builder_->WriteTexture(pass_, builder_->CurrentVersion(texture), usage, attachment_op);
+            builder_->WriteTexture(pass_, builder_->CurrentVersion(texture), usage, attachment_op,
+                                   scope);
         }
         return *this;
     }
@@ -242,7 +245,8 @@ namespace kpengine::render
     }
 
     bool RenderGraphBuilder::ReadTexture(GraphPassId pass, GraphTextureHandle texture,
-                                         RenderGraphUsage usage)
+                                         RenderGraphUsage usage,
+                                         RenderGraphAttachmentScope scope)
     {
         if (!IsValidPass(pass) || !IsValidTexture(texture))
         {
@@ -250,7 +254,7 @@ namespace kpengine::render
             return false;
         }
         passes_[ToIndex(pass)].uses.push_back(
-            {texture, RenderGraphAccess::Read, usage, RenderGraphAttachmentOp::None, {}});
+            {texture, RenderGraphAccess::Read, usage, RenderGraphAttachmentOp::None, {}, scope});
         return true;
     }
 
@@ -263,13 +267,13 @@ namespace kpengine::render
             return false;
         }
         passes_[ToIndex(pass)].uses.push_back(
-            {buffer, RenderGraphAccess::Read, usage, RenderGraphAttachmentOp::None, {}});
+            {buffer, RenderGraphAccess::Read, usage, RenderGraphAttachmentOp::None, {}, {}});
         return true;
     }
 
     std::optional<GraphTextureHandle> RenderGraphBuilder::WriteTexture(
         GraphPassId pass, GraphTextureHandle previous_version, RenderGraphUsage usage,
-        RenderGraphAttachmentOp attachment_op)
+        RenderGraphAttachmentOp attachment_op, RenderGraphAttachmentScope scope)
     {
         if (!IsValidPass(pass) || !IsValidTexture(previous_version))
         {
@@ -295,7 +299,7 @@ namespace kpengine::render
         pass_record.written_textures.push_back(previous_version.resource);
         const GraphTextureHandle output{graph_id_, previous_version.resource, version};
         pass_record.uses.push_back(
-            {output, RenderGraphAccess::Write, usage, attachment_op, {}});
+            {output, RenderGraphAccess::Write, usage, attachment_op, {}, scope});
         return output;
     }
 
@@ -326,8 +330,9 @@ namespace kpengine::render
         record.latest_version = version;
         pass_record.written_buffers.push_back(previous_version.resource);
         const GraphBufferHandle output{graph_id_, previous_version.resource, version};
+        // A buffer has no attachments, so a use of one never carries a scope.
         pass_record.uses.push_back(
-            {output, RenderGraphAccess::Write, usage, attachment_op, {}});
+            {output, RenderGraphAccess::Write, usage, attachment_op, {}, {}});
         return output;
     }
 
@@ -818,7 +823,12 @@ namespace kpengine::render
         // backend owns and tracks across frames.
         std::vector<RenderGraphTransitionIntent> transitions;
         {
-            std::map<LifetimeKey, RenderGraphUsage> required_usage;
+            // Keyed per resource version and per attachment scope: a requirement
+            // covering one attachment is not the same requirement as one covering
+            // the whole target, so a narrower later use still has to be stated.
+            using ScopeRequirements =
+                std::vector<std::pair<RenderGraphAttachmentScope, RenderGraphUsage>>;
+            std::map<LifetimeKey, ScopeRequirements> required_usage;
             for (CompiledRenderGraph::Pass &pass : compiled_passes)
             {
                 const std::size_t execution_index = live_order[pass.id.index];
@@ -829,15 +839,24 @@ namespace kpengine::render
                     {
                         continue;
                     }
-                    auto [iterator, inserted] =
-                        required_usage.emplace(lifetime_key(use.handle), RenderGraphUsage::Undefined);
-                    if (!inserted && iterator->second == use.usage)
+                    ScopeRequirements &requirements = required_usage[lifetime_key(use.handle)];
+                    const auto known = std::find_if(
+                        requirements.begin(), requirements.end(),
+                        [&use](const auto &entry) { return entry.first == use.scope; });
+                    if (known != requirements.end())
                     {
-                        continue;
+                        if (known->second == use.usage)
+                        {
+                            continue;
+                        }
+                        known->second = use.usage;
                     }
-                    iterator->second = use.usage;
-                    transitions.push_back(
-                        {use.handle, resource_name(use.handle), execution_index, use.usage});
+                    else
+                    {
+                        requirements.push_back({use.scope, use.usage});
+                    }
+                    transitions.push_back({use.handle, resource_name(use.handle), execution_index,
+                                           use.usage, use.scope});
                 }
                 pass.transition_count = transitions.size() - pass.transition_offset;
             }

@@ -753,12 +753,17 @@
   rather than native layouts, and `SceneHdr` served by a Graphics-owned pool
   with serial-quarantined reuse. R3.7 lists five extensions — subresources,
   aliasing, async compute, parallel recording, acceleration structures — and
-  none has a consumer: the pool holds one transient, the engine has no compute
-  shaders, no ray-tracing work is planned, and R3.4 measured recording as not
-  the binding constraint. It is therefore closed as a gate with recorded unlock
-  criteria rather than started, and that closure is now accepted: the render
-  graph roadmap has no open R3 item. →
-  [R3 plan](render/.plan/R3.md), [render graph TODO](render/render_graph/TODO.md)
+  none had a consumer when the gate closed: the pool held one transient, the
+  engine had no compute shaders, no ray-tracing work was planned, and R3.4
+  measured recording as not the binding constraint. It is therefore closed as
+  a gate with recorded unlock criteria rather than started, and that closure is
+  accepted: the render graph roadmap has no open R3 item. Ray tracing is now
+  proposed separately as R4, so this historical closure is not reopened. R4.0
+  has now selected ray-query directional hard-shadow visibility with the existing
+  directional shadow-map fallback, and the Vulkan smoke path fails on captured
+  validation errors after orderly cleanup. →
+  [R3 plan](render/.plan/R3.md), [R4 plan](render/.plan/R4.md),
+  [render graph TODO](render/render_graph/TODO.md)
 
 - **GPU pass timing reaches the profiler on Vulkan (2026-09-18)** — Vulkan had
   written per-pass timestamps since issue-9.7, but the profiler reported no GPU
@@ -1761,6 +1766,15 @@
 
 ## Planned (next up)
 
+- **Render R4 ray-tracing foundation (R4.0 complete 2026-09-19)** — the first
+  consumer is ray-query directional hard-shadow visibility, with the existing
+  directional shadow-map path as the OpenGL and unavailable-Vulkan fallback.
+  The Vulkan smoke path now fails after orderly cleanup when validation reports
+  an error. R4.1 next hardens write/update lineage, failed transitions, buffer
+  requirements, and physical graph-resource bindings before R4.2–R4.3 add the
+  minimum Graphics-owned AS contract and imported-TLAS consumer. →
+  [R4 plan](render/.plan/R4.md), [R4.0 spec](../.spec/specs/render-r4-ray-query-shadow.md),
+  [render graph roadmap](render/render_graph/TODO.md)
 - **Frame-rate follow-ups (2026-09-17)** — the timer-resolution and G-buffer
   fixes landed, and the render lane is now the binding constraint on OpenGL at
   about 11.9 ms of an 11.9 ms frame. Two open items: Vulkan runs with validation

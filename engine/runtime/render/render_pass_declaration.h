@@ -62,6 +62,11 @@ namespace kpengine::render
         // usage vocabulary rather than a mirrored enum, so there is one encoding
         // of it in the module.
         RenderGraphUsage usage = RenderGraphUsage::Undefined;
+        // Which attachments of a composite target the pass touches. The G-buffer
+        // is four colour attachments plus depth and each consumer reads a
+        // subset, so a whole-target claim would both schedule transitions that
+        // are not needed and describe reads that do not happen.
+        RenderGraphAttachmentScope scope{};
     };
 
     struct FixedRenderPassEntry

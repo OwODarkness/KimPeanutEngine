@@ -146,6 +146,10 @@ namespace kpengine::graphics
         }
         virtual const char *GetPresentModeName() const { return "unknown"; }
         virtual BackendProfileCounters GetBackendProfileCounters() const { return {}; }
+        // Optional backend validation diagnostic. A value means that the
+        // backend observed a runtime API validation failure during this session.
+        // Native validation objects remain below the backend boundary.
+        virtual std::optional<std::string> GetValidationDiagnostic() const { return std::nullopt; }
         virtual CommandRecorder *GetCommandRecorder() = 0;
         virtual void EndFrame() = 0;
         virtual GraphicsAPIType GetGraphicsAPI() const = 0;

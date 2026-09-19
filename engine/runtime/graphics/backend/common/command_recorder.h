@@ -7,6 +7,7 @@
 #include "api.h"
 #include "buffer_types.h"
 #include "profile_counters.h"
+#include "render_target.h"
 #include "resource_binding.h"
 
 namespace kpengine::graphics
@@ -65,7 +66,8 @@ namespace kpengine::graphics
         // execution order. A backend that orders implicitly treats it as a
         // no-op; one that models state elides the transition when the resource
         // is already where it is asked to be.
-        virtual bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage) = 0;
+        virtual bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage,
+                                              RenderTargetAttachmentScope scope = {}) = 0;
         virtual bool BindPipeline(PipelineHandle pipeline) = 0;
         virtual void BindMesh(MeshHandle mesh) = 0;
         virtual bool BindGeometry(const GeometryView &geometry) = 0;

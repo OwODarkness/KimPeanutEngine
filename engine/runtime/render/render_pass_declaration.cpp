@@ -50,12 +50,16 @@ namespace kpengine::render
                    RenderGraphUsage::DepthAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
                 {FixedRenderPassId::GBuffer, "GBufferPass",
+                 // Writes all four colour attachments and the depth.
                  {{RenderPassResource::GBuffer, RenderPassAccess::Write,
-                   RenderGraphUsage::ColorAttachment}},
+                   RenderGraphUsage::ColorAttachment, RenderGraphAttachmentScope::Whole()}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
                 {FixedRenderPassId::DeferredLighting, "DeferredLightingPass",
+                 // Colours 0-2 and the sampled depth. This pass does not read
+                 // the selection mask in attachment 3, and saying otherwise
+                 // would transition an attachment nothing here touches.
                  {{RenderPassResource::GBuffer, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled},
+                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b0111U, true)},
                   {RenderPassResource::DirectionalShadow, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
                   {RenderPassResource::SpotShadow, RenderPassAccess::Read,
@@ -68,6 +72,12 @@ namespace kpengine::render
                 {FixedRenderPassId::ToneMap, "ToneMapPass",
                  {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
+                  // The selection mask. This read was unstated until subresource
+                  // scopes made it matter: it worked only because deferred
+                  // lighting had already moved the whole G-buffer, so narrowing
+                  // that requirement would have left this attachment behind.
+                  {RenderPassResource::GBuffer, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b1000U)},
                   {RenderPassResource::SceneColor, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
@@ -76,7 +86,7 @@ namespace kpengine::render
                  // shadow maps; this pass does not read SceneColor, and the
                  // declaration must not claim a read that never reaches the GPU.
                  {{RenderPassResource::GBuffer, RenderPassAccess::Read,
-                   RenderGraphUsage::Sampled},
+                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b1111U, true)},
                   {RenderPassResource::DirectionalShadow, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
                   {RenderPassResource::SpotShadow, RenderPassAccess::Read,
@@ -142,11 +152,11 @@ namespace kpengine::render
                     resources[static_cast<std::size_t>(use.resource)];
                 if (use.access == RenderPassAccess::Read)
                 {
-                    pass.Read(resource, use.usage);
+                    pass.Read(resource, use.usage, use.scope);
                 }
                 else
                 {
-                    pass.Write(resource, use.usage);
+                    pass.Write(resource, use.usage, RenderGraphAttachmentOp::None, use.scope);
                 }
             }
             if (owner == RenderGraphPassOwner::External)

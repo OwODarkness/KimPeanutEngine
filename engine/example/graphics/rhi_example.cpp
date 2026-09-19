@@ -319,8 +319,11 @@ namespace kpengine::example
                 {1, 1, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, 0},
             };
             streaming_pipeline_desc.raster_state.cull_mode = graphics::CullMode::CULL_MODE_NONE;
+            // The scene target owns a depth attachment. Vulkan dynamic
+            // rendering requires the pipeline to carry its format even for a
+            // streaming pass whose shader does not author depth.
             streaming_pipeline_desc.depth_attachment_format =
-                TextureFormat::TEXTURE_FORMAT_UNKNOW;
+                TextureFormat::TEXTURE_FORMAT_D32;
             const graphics::PipelineHandle streaming_pipeline =
                 rhi->CreatePipelineResource(streaming_pipeline_desc);
             if (!streaming_pipeline.IsValid())
@@ -1073,6 +1076,13 @@ namespace kpengine::example
                             recorder->DrawIndexed();
                             recorder->EndRenderTarget();
 
+                            if (!recorder->RequireRenderTargetUsage(
+                                    multi_target, graphics::ResourceUsage::Sampled,
+                                    graphics::RenderTargetAttachmentScope::Colors(1U)))
+                            {
+                                throw std::runtime_error(
+                                    "D2 multi-attachment sampled transition failed");
+                            }
                             recorder->BeginRenderTarget(output_target);
                             recorder->BindPipeline(sample_pipeline);
                             recorder->BindMesh(fullscreen_mesh);
@@ -1665,6 +1675,16 @@ namespace kpengine::example
                             recorder->DrawIndexed();
                             recorder->EndRenderTarget();
 
+                            if (!recorder->RequireRenderTargetUsage(
+                                    gbuffer_target, graphics::ResourceUsage::Sampled,
+                                    graphics::RenderTargetAttachmentScope::Colors(0b0111U, true)) ||
+                                !recorder->RequireRenderTargetUsage(
+                                    d4_shadow_target, graphics::ResourceUsage::Sampled,
+                                    graphics::RenderTargetAttachmentScope::Whole()))
+                            {
+                                throw std::runtime_error(
+                                    "D5 sampled attachment transition failed");
+                            }
                             recorder->BeginRenderTarget(d5_hdr_target);
                             const graphics::DescriptorSetHandle deferred_lighting_bindings =
                                 frame_context.AllocateResourceBindingSet(
@@ -1721,6 +1741,16 @@ namespace kpengine::example
                             recorder->DrawIndexed();
                             recorder->EndRenderTarget();
 
+                            if (!recorder->RequireRenderTargetUsage(
+                                    d5_hdr_target, graphics::ResourceUsage::Sampled,
+                                    graphics::RenderTargetAttachmentScope::Whole()) ||
+                                !recorder->RequireRenderTargetUsage(
+                                    gbuffer_target, graphics::ResourceUsage::Sampled,
+                                    graphics::RenderTargetAttachmentScope::Colors(0b1000U)))
+                            {
+                                throw std::runtime_error(
+                                    "D5 tone-map sampled transition failed");
+                            }
                             recorder->BeginRenderTarget(d3_output_target);
                             const graphics::DescriptorSetHandle tone_map_bindings =
                                 frame_context.AllocateResourceBindingSet(
@@ -1877,8 +1907,15 @@ namespace kpengine::example
                 rhi->DestroyPipelineResource(streaming_pipeline);
             resource_resolver.Cleanup();
             rhi->Cleanup();
+            const std::optional<std::string> validation_diagnostic =
+                rhi->GetValidationDiagnostic();
             input->Shutdown();
             window->Cleanup();
+            if (validation_diagnostic.has_value())
+            {
+                throw std::runtime_error("graphics smoke observed runtime validation failure: " +
+                                         *validation_diagnostic);
+            }
             return true;
         }
         catch (const std::exception &e)

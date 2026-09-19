@@ -84,6 +84,15 @@ namespace kpengine::render
             return std::nullopt;
         }
 
+        graphics::RenderTargetAttachmentScope ToAttachmentScope(RenderGraphAttachmentScope scope)
+        {
+            if (scope.all)
+            {
+                return {};
+            }
+            return {false, scope.color_mask, scope.depth};
+        }
+
         graphics::ResourceUsage ToResourceUsage(RenderGraphUsage usage)
         {
             switch (usage)
@@ -1085,7 +1094,8 @@ namespace kpengine::render
                 continue;
             }
             recorder->RequireRenderTargetUsage(
-                target->GetHandle(), ToResourceUsage(transitions[intent_index].usage));
+                target->GetHandle(), ToResourceUsage(transitions[intent_index].usage),
+                ToAttachmentScope(transitions[intent_index].scope));
         }
     }
 

@@ -56,6 +56,34 @@ namespace kpengine::graphics
         std::optional<RenderTargetDepthAttachment> depth;
     };
 
+    // Which attachments of a target a state requirement covers. A target can be
+    // several physical images -- four colour attachments plus depth -- and a
+    // requirement that names the ones it means lets a backend move only those.
+    struct RenderTargetAttachmentScope
+    {
+        // True for a requirement covering the whole target.
+        bool all = true;
+        // Bit n addresses colour attachment n.
+        uint32_t color_mask = 0;
+        bool depth = false;
+
+        static RenderTargetAttachmentScope Whole() noexcept { return {}; }
+        static RenderTargetAttachmentScope Colors(uint32_t mask,
+                                                  bool with_depth = false) noexcept
+        {
+            return {false, mask, with_depth};
+        }
+
+        bool CoversColor(uint32_t index) const noexcept
+        {
+            return all || (color_mask & (1U << index)) != 0;
+        }
+        bool CoversDepth() const noexcept { return all || depth; }
+
+        friend bool operator==(const RenderTargetAttachmentScope &,
+                               const RenderTargetAttachmentScope &) = default;
+    };
+
     // Whether two descriptions address the same physical storage, so a pooled
     // backend may hand the same target to both. Only the fields that decide the
     // images take part: a differing load or store operation still addresses the

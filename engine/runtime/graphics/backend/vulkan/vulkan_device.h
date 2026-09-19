@@ -4,7 +4,10 @@
 #include <vector>
 #include <cstdint>
 #include <climits>
+#include <atomic>
+#include <mutex>
 #include <optional>
+#include <string>
 #include <vulkan/vulkan.h>
 
 struct GLFWwindow;
@@ -64,6 +67,11 @@ namespace kpengine::graphics
         const VulkanQueue &GetTransferQueue() const { return transfer_queue_; }
         bool SupportsBindlessTextures() const { return bindless_textures_enabled_; }
         uint32_t GetBindlessTextureTableCapacity() const { return bindless_texture_table_capacity_; }
+        std::optional<std::string> GetValidationDiagnostic() const;
+
+        // Called by the Vulkan debug callback. It records state instead of
+        // throwing across the Vulkan callback boundary.
+        void RecordValidationError(const char *message) noexcept;
 
     private:
         void CreateInstance();
@@ -90,6 +98,10 @@ namespace kpengine::graphics
 
         bool bindless_textures_enabled_ = false;
         uint32_t bindless_texture_table_capacity_ = 0;
+
+        std::atomic<uint32_t> validation_error_count_{0};
+        mutable std::mutex validation_error_mutex_;
+        std::string last_validation_error_;
 
         std::vector<const char *> validation_layers = {"VK_LAYER_KHRONOS_validation"};
         std::vector<const char *> device_extensions = {VK_KHR_SWAPCHAIN_EXTENSION_NAME};

@@ -57,33 +57,41 @@ TEST(RenderGraphCompatibilityTest, ProductionDeclarationDerivesTransitionIntents
     // One requirement per resource whose usage changes, in pass order. The
     // capture pass is culled here, so the terminal is pass 6.
     const auto &transitions = result.graph->Transitions();
-    ASSERT_EQ(transitions.size(), 12U);
+    ASSERT_EQ(transitions.size(), 13U);
     for (const auto &transition : transitions)
     {
         EXPECT_TRUE(transition.handle.index() == 0);
         EXPECT_FALSE(transition.resource_name.empty());
     }
 
+    using kpengine::render::RenderGraphAttachmentScope;
+    using kpengine::render::RenderGraphUsage;
     const auto expect = [&transitions](std::size_t index, const char *name,
-                                       kpengine::render::RenderGraphUsage usage) {
+                                       RenderGraphUsage usage,
+                                       RenderGraphAttachmentScope scope = {}) {
         ASSERT_LT(index, transitions.size());
         EXPECT_EQ(transitions[index].resource_name, name);
         EXPECT_EQ(transitions[index].usage, usage);
+        EXPECT_EQ(transitions[index].scope, scope);
     };
-    using kpengine::render::RenderGraphUsage;
     // Shadows are written as depth attachments and read sampled afterwards.
     expect(0, "DirectionalShadow", RenderGraphUsage::DepthAttachment);
     expect(1, "SpotShadow", RenderGraphUsage::DepthAttachment);
     expect(2, "PointShadow", RenderGraphUsage::DepthAttachment);
-    // The G-buffer is written once and sampled by lighting.
-    expect(3, "GBuffer", RenderGraphUsage::ColorAttachment);
-    expect(4, "GBuffer", RenderGraphUsage::Sampled);
+    // The G-buffer is written whole, then read by two passes that touch
+    // different attachments, so each states its own requirement.
+    expect(3, "GBuffer", RenderGraphUsage::ColorAttachment, RenderGraphAttachmentScope::Whole());
+    expect(4, "GBuffer", RenderGraphUsage::Sampled,
+           RenderGraphAttachmentScope::Colors(0b0111U, true));
     // SceneHdr and SceneColor each flip from attachment to sampled.
     expect(8, "SceneHdr", RenderGraphUsage::ColorAttachment);
     expect(9, "SceneHdr", RenderGraphUsage::Sampled);
-    expect(10, "SceneColor", RenderGraphUsage::ColorAttachment);
-    expect(11, "SceneColor", RenderGraphUsage::Sampled);
-    EXPECT_EQ(transitions[11].pass_index, 6U); // the external terminal
+    expect(10, "GBuffer", RenderGraphUsage::Sampled,
+           RenderGraphAttachmentScope::Colors(0b1000U));
+    EXPECT_EQ(transitions[10].pass_index, 5U); // tone map reads the selection mask
+    expect(11, "SceneColor", RenderGraphUsage::ColorAttachment);
+    expect(12, "SceneColor", RenderGraphUsage::Sampled);
+    EXPECT_EQ(transitions[12].pass_index, 6U); // the external terminal
 }
 
 TEST(RenderGraphCompatibilityTest, ProductionDeclarationPlansSceneHdrAsATransient)

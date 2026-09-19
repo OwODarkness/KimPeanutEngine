@@ -49,7 +49,7 @@ namespace kpengine::graphics
         // differs. The tracked layout is the authority on the current state, so
         // this is safe to call repeatedly and across frames.
         bool RequireUsage(VkCommandBuffer command_buffer, RenderTargetHandle handle,
-                          ResourceUsage usage);
+                          ResourceUsage usage, RenderTargetAttachmentScope scope);
 
         void CreateSwapchainAttachments(uint32_t width, uint32_t height,
                                         uint32_t color_sample_count);

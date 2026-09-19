@@ -40,21 +40,24 @@ namespace kpengine::graphics
         const VkDebugUtilsMessengerCallbackDataEXT *pCallbackData,
         void *pUserData)
     {
+        VulkanDevice *const device = static_cast<VulkanDevice *>(pUserData);
         if (messageSeverity == VK_DEBUG_UTILS_MESSAGE_SEVERITY_ERROR_BIT_EXT)
         {
             KP_LOG(KP_VULKAN_DEVICE_LOG_NAME, LOG_LEVEL_ERROR, pCallbackData->pMessage);
-            // throw std::runtime_error(pCallbackData->pMessage);
-            return VK_FALSE;
+            if (device)
+            {
+                device->RecordValidationError(pCallbackData->pMessage);
+            }
         }
         else if (messageSeverity & VK_DEBUG_UTILS_MESSAGE_SEVERITY_WARNING_BIT_EXT)
         {
             KP_LOG(KP_VULKAN_DEVICE_LOG_NAME, LOG_LEVEL_WARNING, pCallbackData->pMessage);
-            return VK_TRUE;
         }
         return VK_FALSE;
     }
 
-    void PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo)
+    void PopulateDebugMessengerCreateInfo(VkDebugUtilsMessengerCreateInfoEXT &createInfo,
+                                          void *user_data)
     {
         createInfo = {};
         createInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_MESSENGER_CREATE_INFO_EXT;
@@ -68,6 +71,7 @@ namespace kpengine::graphics
             VK_DEBUG_UTILS_MESSAGE_TYPE_VALIDATION_BIT_EXT |
             VK_DEBUG_UTILS_MESSAGE_TYPE_PERFORMANCE_BIT_EXT;
         createInfo.pfnUserCallback = DebugCallback;
+        createInfo.pUserData = user_data;
     }
 
     int RateDeviceSuitability(VkPhysicalDevice device)
@@ -165,6 +169,33 @@ namespace kpengine::graphics
         vkDestroyInstance(instance_, nullptr);
     }
 
+    std::optional<std::string> VulkanDevice::GetValidationDiagnostic() const
+    {
+        if (validation_error_count_.load(std::memory_order_relaxed) == 0)
+        {
+            return std::nullopt;
+        }
+        std::lock_guard<std::mutex> lock(validation_error_mutex_);
+        return last_validation_error_.empty()
+                   ? std::optional<std::string>{"Vulkan validation reported an error"}
+                   : std::optional<std::string>{last_validation_error_};
+    }
+
+    void VulkanDevice::RecordValidationError(const char *message) noexcept
+    {
+        validation_error_count_.fetch_add(1, std::memory_order_relaxed);
+        try
+        {
+            std::lock_guard<std::mutex> lock(validation_error_mutex_);
+            last_validation_error_ = message ? message : "Vulkan validation reported an error";
+        }
+        catch (...)
+        {
+            // The atomic count remains authoritative when diagnostic storage
+            // cannot allocate from the validation callback.
+        }
+    }
+
     void VulkanDevice::CreateInstance()
     {
         VkApplicationInfo app_info{};
@@ -195,7 +226,7 @@ namespace kpengine::graphics
         {
             if (CheckValidationLayerSupport(validation_layers))
             {
-                PopulateDebugMessengerCreateInfo(debug_create_info);
+                PopulateDebugMessengerCreateInfo(debug_create_info, this);
                 instance_create_info.enabledLayerCount = static_cast<uint32_t>(validation_layers.size());
                 instance_create_info.ppEnabledLayerNames = validation_layers.data();
                 instance_create_info.pNext = &debug_create_info;
@@ -232,7 +263,7 @@ namespace kpengine::graphics
         }
 
         VkDebugUtilsMessengerCreateInfoEXT debug_messager_create_info{};
-        PopulateDebugMessengerCreateInfo(debug_messager_create_info);
+        PopulateDebugMessengerCreateInfo(debug_messager_create_info, this);
         if (CreateDebugUtilsMessengerEXT(instance_, &debug_messager_create_info, nullptr, &debug_messager_) != VK_SUCCESS)
         {
             KP_LOG(KP_VULKAN_DEVICE_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create debug messager");

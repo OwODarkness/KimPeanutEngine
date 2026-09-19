@@ -105,15 +105,24 @@ details and stage checklists belong in the linked submodule documents.
   [Render Graph plans](render_graph/PLANS.md),
   [Render Graph roadmap](render_graph/TODO.md),
   [closeout journal](../../.spec/journal/2026-09-18-render-graph-r3-closeout.md)
+- [ ] **R4 — ray-tracing foundation and render-graph integration:** R3 remains
+  closed as the raster foundation. The next gate selects exactly one RT
+  consumer and fallback, closes the current Vulkan validation and smoke gap,
+  fixes write/update lineage, transition failure propagation, buffer execution,
+  and physical graph-resource binding, then adds the minimum Graphics-owned
+  acceleration-structure contract. The first integration imports a
+  Graphics-owned TLAS; graph-scheduled BLAS/TLAS builds follow only after that
+  slice is correct and measured. Status: **proposed; start with R4.0, not RT
+  command implementation.** → [R4 design](.plan/R4.md),
+  [Render Graph roadmap](render_graph/TODO.md)
 - [ ] Keep source registries, immutable snapshots, pass scheduling, and
   frame-local resource lifetime aligned across Render submodules.
 - [ ] Add read-only Gameplay/editor snapshots before exposing mutable gameplay
   state to editor tools.
 - [x] Revisit the explicit pass schedule only after measured dependency,
-  aliasing, or scheduling pressure exists. Planned acceleration-structure
-  build/consume and ray-output dependencies satisfy the design-review gate; the
-  schedule is now compiled (R3, complete). R3.7 records what a later stage would
-  have to measure before resuming any of the gated extensions.
+  aliasing, or scheduling pressure exists. The schedule is now compiled (R3,
+  complete); the user-planned ray-tracing consumer unlocks the acceleration-
+  structure row as the separate proposed R4 stage rather than reopening R3.7.
 - [ ] Keep Render documentation links, validation evidence, and ownership
   boundaries current when a submodule lands work.
 

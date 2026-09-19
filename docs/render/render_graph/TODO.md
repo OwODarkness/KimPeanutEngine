@@ -1,11 +1,12 @@
 # Render Graph TODO
 
-**Status: R3 complete and closed. No R3 item is open.** The compiled plan
+**Status: R3 complete and closed. No R3 item is open. R4 is proposed.** The compiled plan
 schedules passes, owns resource state, and declares its transients; R3.7's five
 extensions are closed as a gate with recorded unlock criteria. Completed-stage
 detail moved to the R3 closeout journal:
 [2026-09-18-render-graph-r3-closeout.md](../../../.spec/journal/2026-09-18-render-graph-r3-closeout.md).
-Architecture: [PLANS.md](PLANS.md). Concrete migration: [R3](../.plan/R3.md).
+Architecture: [PLANS.md](PLANS.md). Completed migration:
+[R3](../.plan/R3.md). Next proposed stage: [R4](../.plan/R4.md).
 
 ## Roadmap
 
@@ -44,6 +45,27 @@ Architecture: [PLANS.md](PLANS.md). Concrete migration: [R3](../.plan/R3.md).
   its consumer, and plans it as its own work rather than resuming R3.7. Closing
   this box accepts the gate decision; it does not mean the extensions were
   built.
+- [x] **R4.0 — ray-tracing consumer and clean-baseline gate (2026-09-19):**
+  selected ray-query directional hard-shadow visibility with the existing
+  directional shadow-map fallback, made Vulkan validation errors fail
+  `GraphicsSmoke`, and recorded the Vulkan/OpenGL raster baseline. The
+  attachment-scope work remains a validated raster-baseline change; no RT
+  contract was added. → [spec](../../../.spec/specs/render-r4-ray-query-shadow.md),
+  [review](../.review/R4.0.md),
+  [journal](../../../.spec/journal/2026-09-19-render-graph-r4-0.md)
+- [ ] **R4.1 — graph correctness prerequisites:** model preserving/update
+  writes as dependencies on prior versions, propagate transition/binding
+  failures, replace raster resource ordinals with explicit frame bindings, and
+  execute buffer requirements.
+- [ ] **R4.2–R4.3 — minimal Graphics and imported-TLAS path:** add effective
+  capability reporting and Graphics-owned AS/pipeline/build/dispatch contracts,
+  then introduce the graph AS/storage vocabulary needed to import and consume a
+  TLAS through one selected RT pass.
+- [ ] **R4.4–R4.5 — scheduled builds and evidence:** move BLAS/TLAS build or
+  update work into graph passes only after the imported-TLAS slice is proven;
+  integrate its output with composite/tone-map/capture and validate lifecycle,
+  fallback, captures, metrics, and Vulkan correctness. →
+  [R4 plan](../.plan/R4.md)
 
 ## Acceptance ledger
 

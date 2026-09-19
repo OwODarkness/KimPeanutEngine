@@ -332,6 +332,13 @@ namespace kpengine::graphics
         return editor_bridge_.get();
     }
 
+    std::optional<std::string> VulkanBackend::GetValidationDiagnostic() const
+    {
+        return validation_diagnostic_.has_value()
+                   ? validation_diagnostic_
+                   : (device_ ? device_->GetValidationDiagnostic() : std::nullopt);
+    }
+
     void VulkanBackend::Cleanup()
     {
         vkDeviceWaitIdle(device_->GetLogicalDevice());
@@ -375,6 +382,7 @@ namespace kpengine::graphics
         frame_context_->Destroy();
 
         device_->Destroy();
+        validation_diagnostic_ = device_->GetValidationDiagnostic();
     }
 
     BufferHandle VulkanBackend::CreateVertexBuffer(const std::span<const std::byte> data)

@@ -1,6 +1,7 @@
 # Render Graph Plans
 
-**Status: built and closed with R3 (2026-09-18).** This page records
+**Status: raster foundation built and closed with R3 (2026-09-18); RT extension
+proposed as R4.** This page records
 KimPeanutEngine's architecture after inspecting Sakura Engine's actual
 render-graph source. The evidence and adopt/modify/reject decisions are in the
 [Sakura analysis](sakura_analysis.md).
@@ -9,7 +10,8 @@ render-graph source. The evidence and adopt/modify/reject decisions are in the
 
 **Roadmap:** [Render Graph TODO](TODO.md)
 
-**Concrete stage:** [R3](../.plan/R3.md)
+**Concrete stages:** completed [R3](../.plan/R3.md); proposed
+[R4](../.plan/R4.md)
 
 ## Objective
 
@@ -238,6 +240,13 @@ update is required. Graphics will own native acceleration structures, scratch
 storage, build commands, synchronization, and retirement. OpenGL may omit these
 passes through an explicit capability/fallback path; it must not emulate native
 ray-tracing objects in the common contract.
+
+The user-planned ray-tracing work now unlocks this extension as the separate
+[R4 stage](../.plan/R4.md). R4 first selects one consumer and restores a clean
+validation baseline; it does not treat the existing raster graph as already
+capable of buffer/AS synchronization or ray dispatch. The initial integration
+imports a Graphics-owned TLAS, following the incremental pattern established by
+the Sakura study, before graph-scheduled AS builds expand the contract.
 
 ## Performance policy
 

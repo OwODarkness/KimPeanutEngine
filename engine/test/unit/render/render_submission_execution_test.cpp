@@ -126,8 +126,8 @@ namespace kpengine::render
                 return true;
             }
 
-            bool RequireRenderTargetUsage(graphics::RenderTargetHandle,
-                                          graphics::ResourceUsage) override
+            bool RequireRenderTargetUsage(graphics::RenderTargetHandle, graphics::ResourceUsage,
+                                          graphics::RenderTargetAttachmentScope) override
             {
                 // Submission execution records no state requirements.
                 return true;

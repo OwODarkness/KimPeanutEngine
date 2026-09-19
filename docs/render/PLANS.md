@@ -32,10 +32,10 @@ Ownership remains deliberately split:
 - Graphics/RHI owns GPU allocation, API translation, synchronization, and safe
   destruction.
 
-The current frame policy remains an explicit ordered schedule. R3.2 now records
-the completed CPU-only graph foundation because planned ray-tracing
-build/consume work introduces concrete dependency, lifetime, and synchronization
-pressure. Runtime migration remains a separately gated stage.
+The current frame policy is the compiled R3 render graph. R4 is the proposed
+consumer-driven extension for ray tracing: it first closes the clean-baseline
+and graph-correctness gates, then adds the minimum Graphics and graph contracts
+required by one selected RT consumer.
 
 R1.2–R1.5 removed deferred-pass implementation, duplicated pass order,
 Asset/Resource preparation, and source/scene ownership from `RenderSystem`.
@@ -74,6 +74,10 @@ public policy while the coordinator owns scene preparation.
   portable resource-state plan and Graphics-owned non-aliasing transients.
   **R3 complete and closed (2026-09-18); the compiled plan is the schedule and
   R3.7's extensions closed as a gate.**
+- [R4 — ray-tracing foundation and render-graph integration](.plan/R4.md) —
+  selected ray-query directional hard-shadow visibility and closed the
+  validation-clean raster gate; R4.1 now hardens graph write/binding/transition
+  semantics before any RT contract is added. **R4.0 complete (2026-09-19).**
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
   texture minification and bound texture, descriptor, visibility, and static-
   shadow costs through Resource, Render, and Graphics ownership boundaries.
@@ -86,7 +90,7 @@ public policy while the coordinator owns scene preparation.
 | Deferred PBR | [PLANS](deferred_pbr/PLANS.md) | [TODO](deferred_pbr/TODO.md) | [`.plan/`](deferred_pbr/.plan/) |
 | Render Capture | [PLANS](render_capture/PLANS.md) | [TODO](render_capture/TODO.md) | [`.plan/`](render_capture/.plan/) |
 | Render Scene | [PLANS](render_scene/PLANS.md) | [TODO](render_scene/TODO.md) | [`.plan/`](render_scene/.plan/) |
-| Render Graph | [PLANS](render_graph/PLANS.md) | [TODO](render_graph/TODO.md) | [R3](.plan/R3.md) |
+| Render Graph | [PLANS](render_graph/PLANS.md) | [TODO](render_graph/TODO.md) | [R3](.plan/R3.md), [R4](.plan/R4.md) |
 
 ## Module references
 

@@ -118,13 +118,14 @@ namespace kpengine::graphics
     }
 
     bool VulkanCommandRecorder::RequireRenderTargetUsage(RenderTargetHandle target,
-                                                         ResourceUsage usage)
+                                                         ResourceUsage usage,
+                                                         RenderTargetAttachmentScope scope)
     {
         if (command_buffer_ == VK_NULL_HANDLE || !render_target_manager_)
         {
             return false;
         }
-        return render_target_manager_->RequireUsage(command_buffer_, target, usage);
+        return render_target_manager_->RequireUsage(command_buffer_, target, usage, scope);
     }
 
     bool VulkanCommandRecorder::BindPipeline(PipelineHandle pipeline)
@@ -169,6 +170,16 @@ namespace kpengine::graphics
             std::string error;
             compatible =
                 ValidateRenderTargetPipelineCompatibility(*target_desc, pipeline_desc, &error);
+            if (compatible && target_desc->depth.has_value() &&
+                resource->depth_attachment_format == TextureFormat::TEXTURE_FORMAT_UNKNOW)
+            {
+                // Vulkan dynamic rendering needs the depth format in the
+                // pipeline even when the shader does not write depth. The
+                // common contract permits this on APIs that bind an unused
+                // depth attachment, so keep the stricter rule at translation.
+                compatible = false;
+                error = "Vulkan pipeline must declare the target depth format";
+            }
             ++profile_counters_.pipeline_validation_calls;
             profile_counters_.pipeline_validation_cpu_ms +=
                 std::chrono::duration<double, std::milli>(

@@ -376,7 +376,8 @@ namespace kpengine::graphics
     }
 
     bool VulkanRenderTargetManager::RequireUsage(VkCommandBuffer command_buffer,
-                                                 RenderTargetHandle handle, ResourceUsage usage)
+                                                 RenderTargetHandle handle, ResourceUsage usage,
+                                                 RenderTargetAttachmentScope scope)
     {
         if (command_buffer == VK_NULL_HANDLE) return false;
         const uint32_t index = handles_.Get(handle);
@@ -398,6 +399,9 @@ namespace kpengine::graphics
         TargetState &state = states_[index];
         for (uint32_t i = 0; i < targets_[index].color_attachments.size(); ++i)
         {
+            // Only the attachments the requirement names, so a pass reading one
+            // attachment does not move the others.
+            if (!scope.CoversColor(i)) continue;
             if (state.color_layouts[i] == color_layout) continue;
             Texture *color_texture =
                 texture_manager_->GetTexture(targets_[index].color_attachments[i]);
@@ -421,8 +425,9 @@ namespace kpengine::graphics
         // attachment boundary put it. Sampled depth is a different matter: it is
         // read through a descriptor, so it must actually reach the read-only
         // layout rather than the attachment one.
-        const bool depth_requested =
-            usage == ResourceUsage::Sampled || usage == ResourceUsage::DepthAttachment;
+        const bool depth_requested = scope.CoversDepth() &&
+                                     (usage == ResourceUsage::Sampled ||
+                                      usage == ResourceUsage::DepthAttachment);
         if (depth_requested && targets_[index].depth.IsValid() &&
             targets_[index].desc.depth.has_value() &&
             targets_[index].desc.depth->shader_readable)

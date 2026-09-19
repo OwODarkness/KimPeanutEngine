@@ -33,7 +33,8 @@ namespace kpengine::graphics
         bool BeginRenderTarget(RenderTargetHandle target) override;
         bool BeginPresentation(const std::array<float, 4> *clear_color = nullptr) override;
         void EndRenderTarget() override;
-        bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage) override;
+        bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage,
+                                      RenderTargetAttachmentScope scope) override;
         bool BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
         bool BindGeometry(const GeometryView &geometry) override;

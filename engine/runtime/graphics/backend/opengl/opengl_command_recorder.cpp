@@ -169,7 +169,8 @@ namespace kpengine::graphics
     }
 
     bool OpenglCommandRecorder::RequireRenderTargetUsage(RenderTargetHandle target,
-                                                         ResourceUsage usage)
+                                                         ResourceUsage usage,
+                                                         RenderTargetAttachmentScope scope)
     {
         // OpenGL orders sampled reads after attachment writes without an explicit
         // barrier, so the requirement is satisfied implicitly and there is no
@@ -181,6 +182,7 @@ namespace kpengine::graphics
             return false;
         }
         (void)usage;
+        (void)scope;
         return true;
     }
 

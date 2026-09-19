@@ -62,6 +62,7 @@ namespace kpengine::graphics
         {
             return profile_counters_;
         }
+        std::optional<std::string> GetValidationDiagnostic() const override;
         CommandRecorder *GetCommandRecorder() override;
         virtual void EndFrame() override;
         GraphicsAPIType GetGraphicsAPI() const override
@@ -147,6 +148,7 @@ namespace kpengine::graphics
         float profile_timestamp_period_ns_ = 0.0f;
         bool profile_query_failure_logged_ = false;
         std::vector<GpuProfileTiming> completed_gpu_profile_timings_;
+        std::optional<std::string> validation_diagnostic_;
     };
 }
 
