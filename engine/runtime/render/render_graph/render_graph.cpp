@@ -20,15 +20,15 @@ namespace kpengine::render
 
         struct LifetimeKey
         {
-            bool is_texture = false;
+            uint8_t kind = 0;
             uint32_t resource = 0;
             uint32_t version = 0;
 
             friend bool operator<(const LifetimeKey &left, const LifetimeKey &right) noexcept
             {
-                if (left.is_texture != right.is_texture)
+                if (left.kind != right.kind)
                 {
-                    return left.is_texture < right.is_texture;
+                    return left.kind < right.kind;
                 }
                 if (left.resource != right.resource)
                 {
@@ -37,6 +37,24 @@ namespace kpengine::render
                 return left.version < right.version;
             }
         };
+
+        bool IsReadUsage(RenderGraphUsage usage) noexcept
+        {
+            return usage == RenderGraphUsage::Sampled ||
+                   usage == RenderGraphUsage::TransferSource ||
+                   usage == RenderGraphUsage::AccelerationStructureBuildInput ||
+                   usage == RenderGraphUsage::AccelerationStructureRead ||
+                   usage == RenderGraphUsage::StorageRead;
+        }
+
+        bool IsWriteUsage(RenderGraphUsage usage) noexcept
+        {
+            return usage == RenderGraphUsage::ColorAttachment ||
+                   usage == RenderGraphUsage::DepthAttachment ||
+                   usage == RenderGraphUsage::TransferDestination ||
+                   usage == RenderGraphUsage::AccelerationStructureBuildOutput ||
+                   usage == RenderGraphUsage::StorageWrite;
+        }
     }
 
     bool CompiledRenderGraph::ContainsPass(GraphPassId id) const noexcept
@@ -76,7 +94,11 @@ namespace kpengine::render
                }) ||
                std::any_of(buffers_.begin(), buffers_.end(), [&](const BufferRecord &record) {
                    return record.name == name;
-               });
+               }) ||
+               std::any_of(acceleration_structures_.begin(), acceleration_structures_.end(),
+                           [&](const AccelerationStructureRecord &record) {
+                               return record.name == name;
+                           });
     }
 
     bool RenderGraphBuilder::IsValidPass(GraphPassId pass) const noexcept
@@ -94,6 +116,15 @@ namespace kpengine::render
     {
         return buffer.graph_id == graph_id_ && buffer.resource < buffers_.size() &&
                buffer.version < buffers_[buffer.resource].versions.size();
+    }
+
+    bool RenderGraphBuilder::IsValidAccelerationStructure(
+        GraphAccelerationStructureHandle acceleration_structure) const noexcept
+    {
+        return acceleration_structure.graph_id == graph_id_ &&
+               acceleration_structure.resource < acceleration_structures_.size() &&
+               acceleration_structure.version <
+                   acceleration_structures_[acceleration_structure.resource].versions.size();
     }
 
     void RenderGraphBuilder::RecordDeclarationError(std::string message)
@@ -166,6 +197,26 @@ namespace kpengine::render
         return GraphBufferHandle{graph_id_, resource, 0};
     }
 
+    GraphAccelerationStructureHandle RenderGraphBuilder::ImportAccelerationStructure(
+        std::string name)
+    {
+        const GraphAccelerationStructureHandle invalid{
+            graph_id_, GraphAccelerationStructureHandle::InvalidIndex,
+            GraphAccelerationStructureHandle::InvalidIndex};
+        if (name.empty() || HasResourceName(name))
+        {
+            RecordDeclarationError(
+                "An imported render graph acceleration structure requires a unique non-empty name.");
+            return invalid;
+        }
+        const uint32_t resource = static_cast<uint32_t>(acceleration_structures_.size());
+        acceleration_structures_.push_back(
+            AccelerationStructureRecord{std::move(name), RenderGraphResourceLifetime::Imported,
+                                        std::vector<AccelerationStructureVersion>{{std::nullopt, true}},
+                                        0});
+        return GraphAccelerationStructureHandle{graph_id_, resource, 0};
+    }
+
     RenderGraphPassRef RenderGraphBuilder::AddPass(RenderGraphPassDesc desc)
     {
         const GraphPassId pass{graph_id_, static_cast<uint32_t>(passes_.size())};
@@ -193,6 +244,19 @@ namespace kpengine::render
                                  buffers_[buffer.resource].latest_version};
     }
 
+    GraphAccelerationStructureHandle RenderGraphBuilder::CurrentVersion(
+        GraphAccelerationStructureHandle acceleration_structure) const noexcept
+    {
+        if (acceleration_structure.graph_id != graph_id_ ||
+            acceleration_structure.resource >= acceleration_structures_.size())
+        {
+            return acceleration_structure;
+        }
+        return GraphAccelerationStructureHandle{
+            graph_id_, acceleration_structure.resource,
+            acceleration_structures_[acceleration_structure.resource].latest_version};
+    }
+
     RenderGraphPassRef &RenderGraphPassRef::Read(GraphTextureHandle texture, RenderGraphUsage usage,
                                                  RenderGraphAttachmentScope scope)
     {
@@ -208,6 +272,18 @@ namespace kpengine::render
         if (builder_ != nullptr)
         {
             builder_->ReadBuffer(pass_, builder_->CurrentVersion(buffer), usage);
+        }
+        return *this;
+    }
+
+    RenderGraphPassRef &RenderGraphPassRef::Read(
+        GraphAccelerationStructureHandle acceleration_structure, RenderGraphUsage usage,
+        RenderGraphStage stage)
+    {
+        if (builder_ != nullptr)
+        {
+            builder_->ReadAccelerationStructure(pass_, builder_->CurrentVersion(acceleration_structure),
+                                                usage, stage);
         }
         return *this;
     }
@@ -268,6 +344,22 @@ namespace kpengine::render
         }
         passes_[ToIndex(pass)].uses.push_back(
             {buffer, RenderGraphAccess::Read, usage, RenderGraphAttachmentOp::None, {}, {}});
+        return true;
+    }
+
+    bool RenderGraphBuilder::ReadAccelerationStructure(
+        GraphPassId pass, GraphAccelerationStructureHandle acceleration_structure,
+        RenderGraphUsage usage, RenderGraphStage stage)
+    {
+        if (!IsValidPass(pass) || !IsValidAccelerationStructure(acceleration_structure))
+        {
+            RecordDeclarationError(
+                "A render graph acceleration structure read references an invalid handle.");
+            return false;
+        }
+        passes_[ToIndex(pass)].uses.push_back(
+            {acceleration_structure, RenderGraphAccess::Read, usage,
+             RenderGraphAttachmentOp::None, {}, {}, stage});
         return true;
     }
 
@@ -366,6 +458,19 @@ namespace kpengine::render
             return false;
         }
         exports_.push_back({buffer, std::move(export_name)});
+        return true;
+    }
+
+    bool RenderGraphBuilder::ExportAccelerationStructure(
+        GraphAccelerationStructureHandle acceleration_structure, std::string export_name)
+    {
+        if (!IsValidAccelerationStructure(acceleration_structure) || export_name.empty())
+        {
+            RecordDeclarationError(
+                "A render graph acceleration structure export references an invalid handle or name.");
+            return false;
+        }
+        exports_.push_back({acceleration_structure, std::move(export_name)});
         return true;
     }
 
@@ -496,11 +601,8 @@ namespace kpengine::render
                     // or transfer source read is read. A use whose declared usage
                     // contradicts its access would compile a nonsensical
                     // transition requirement.
-                    const bool requires_write = use.usage == RenderGraphUsage::ColorAttachment ||
-                                                use.usage == RenderGraphUsage::DepthAttachment ||
-                                                use.usage == RenderGraphUsage::TransferDestination;
-                    const bool requires_read = use.usage == RenderGraphUsage::Sampled ||
-                                               use.usage == RenderGraphUsage::TransferSource;
+                    const bool requires_write = IsWriteUsage(use.usage);
+                    const bool requires_read = IsReadUsage(use.usage);
                     if ((requires_write && use.access != RenderGraphAccess::Write) ||
                         (requires_read && use.access != RenderGraphAccess::Read))
                     {
@@ -549,17 +651,16 @@ namespace kpengine::render
                         add_producer_edge(previous.producer, pass);
                     }
                 }
-                else
+                else if (const auto *buffer = std::get_if<GraphBufferHandle>(&use.handle))
                 {
-                    const GraphBufferHandle buffer = std::get<GraphBufferHandle>(use.handle);
-                    if (!IsValidBuffer(buffer))
+                    if (!IsValidBuffer(*buffer))
                     {
                         result.diagnostics.push_back(
                             {RenderGraphDiagnosticCode::InvalidHandle,
                              "A render graph pass contains an invalid buffer handle."});
                         continue;
                     }
-                    const BufferVersion &version = buffers_[buffer.resource].versions[buffer.version];
+                    const BufferVersion &version = buffers_[buffer->resource].versions[buffer->version];
                     if (use.access == RenderGraphAccess::Read && !version.imported &&
                         !version.producer.has_value())
                     {
@@ -572,11 +673,38 @@ namespace kpengine::render
                         add_producer_edge(version.producer, pass);
                     }
                     else if (use.attachment_op != RenderGraphAttachmentOp::Clear &&
-                             buffer.version > 0)
+                             buffer->version > 0)
                     {
                         const BufferVersion &previous =
-                            buffers_[buffer.resource].versions[buffer.version - 1];
+                            buffers_[buffer->resource].versions[buffer->version - 1];
                         add_producer_edge(previous.producer, pass);
+                    }
+                }
+                else
+                {
+                    const auto *acceleration_structure =
+                        std::get_if<GraphAccelerationStructureHandle>(&use.handle);
+                    if (acceleration_structure == nullptr ||
+                        !IsValidAccelerationStructure(*acceleration_structure))
+                    {
+                        result.diagnostics.push_back(
+                            {RenderGraphDiagnosticCode::InvalidHandle,
+                             "A render graph pass contains an invalid acceleration structure handle."});
+                        continue;
+                    }
+                    const AccelerationStructureVersion &version =
+                        acceleration_structures_[acceleration_structure->resource]
+                            .versions[acceleration_structure->version];
+                    if (use.access == RenderGraphAccess::Read && !version.imported &&
+                        !version.producer.has_value())
+                    {
+                        result.diagnostics.push_back(
+                            {RenderGraphDiagnosticCode::MissingProducer,
+                             "A render graph acceleration structure is read without an imported or produced version."});
+                    }
+                    if (use.access == RenderGraphAccess::Read)
+                    {
+                        add_producer_edge(version.producer, pass);
                     }
                 }
             }
@@ -618,17 +746,39 @@ namespace kpengine::render
                          "A render graph export depends on a disabled conditional producer."});
                 }
             }
-            else
+            else if (const auto *buffer = std::get_if<GraphBufferHandle>(&export_record.handle))
             {
-                const GraphBufferHandle buffer = std::get<GraphBufferHandle>(export_record.handle);
-                if (!IsValidBuffer(buffer))
+                if (!IsValidBuffer(*buffer))
                 {
                     result.diagnostics.push_back(
                         {RenderGraphDiagnosticCode::InvalidHandle,
                          "A render graph export contains an invalid buffer handle."});
                     return;
                 }
-                const BufferVersion &version = buffers_[buffer.resource].versions[buffer.version];
+                const BufferVersion &version = buffers_[buffer->resource].versions[buffer->version];
+                if (version.producer.has_value() &&
+                    !passes_[ToIndex(*version.producer)].desc.enabled)
+                {
+                    result.diagnostics.push_back(
+                        {RenderGraphDiagnosticCode::ConditionalDependency,
+                         "A render graph export depends on a disabled conditional producer."});
+                }
+            }
+            else
+            {
+                const auto *acceleration_structure =
+                    std::get_if<GraphAccelerationStructureHandle>(&export_record.handle);
+                if (acceleration_structure == nullptr ||
+                    !IsValidAccelerationStructure(*acceleration_structure))
+                {
+                    result.diagnostics.push_back(
+                        {RenderGraphDiagnosticCode::InvalidHandle,
+                         "A render graph export contains an invalid acceleration structure handle."});
+                    return;
+                }
+                const AccelerationStructureVersion &version =
+                    acceleration_structures_[acceleration_structure->resource]
+                        .versions[acceleration_structure->version];
                 if (version.producer.has_value() &&
                     !passes_[ToIndex(*version.producer)].desc.enabled)
                 {
@@ -732,12 +882,23 @@ namespace kpengine::render
                     producer = textures_[texture->resource].versions[texture->version].producer;
                 }
             }
+            else if (const auto *buffer = std::get_if<GraphBufferHandle>(&export_record.handle))
+            {
+                if (IsValidBuffer(*buffer))
+                {
+                    producer = buffers_[buffer->resource].versions[buffer->version].producer;
+                }
+            }
             else
             {
-                const GraphBufferHandle buffer = std::get<GraphBufferHandle>(export_record.handle);
-                if (IsValidBuffer(buffer))
+                const auto *acceleration_structure =
+                    std::get_if<GraphAccelerationStructureHandle>(&export_record.handle);
+                if (acceleration_structure != nullptr &&
+                    IsValidAccelerationStructure(*acceleration_structure))
                 {
-                    producer = buffers_[buffer.resource].versions[buffer.version].producer;
+                    producer = acceleration_structures_[acceleration_structure->resource]
+                                   .versions[acceleration_structure->version]
+                                   .producer;
                 }
             }
             if (producer.has_value() && passes_[ToIndex(*producer)].desc.enabled)
@@ -787,15 +948,27 @@ namespace kpengine::render
             {
                 return textures_[texture->resource].name;
             }
-            return buffers_[std::get<GraphBufferHandle>(handle).resource].name;
+            if (const auto *buffer = std::get_if<GraphBufferHandle>(&handle))
+            {
+                return buffers_[buffer->resource].name;
+            }
+            return acceleration_structures_[std::get<GraphAccelerationStructureHandle>(handle)
+                                                .resource]
+                .name;
         };
         const auto lifetime_key = [](const RenderGraphResourceHandle &handle) {
             if (const auto *texture = std::get_if<GraphTextureHandle>(&handle))
             {
-                return LifetimeKey{true, texture->resource, texture->version};
+                return LifetimeKey{0, texture->resource, texture->version};
             }
-            const GraphBufferHandle buffer = std::get<GraphBufferHandle>(handle);
-            return LifetimeKey{false, buffer.resource, buffer.version};
+            if (const auto *buffer = std::get_if<GraphBufferHandle>(&handle))
+            {
+                return LifetimeKey{1, buffer->resource, buffer->version};
+            }
+            const GraphAccelerationStructureHandle acceleration_structure =
+                std::get<GraphAccelerationStructureHandle>(handle);
+            return LifetimeKey{2, acceleration_structure.resource,
+                               acceleration_structure.version};
         };
         const auto record_lifetime = [&](const RenderGraphResourceHandle &handle,
                                          std::size_t pass_index) {
@@ -873,7 +1046,7 @@ namespace kpengine::render
                         requirements.push_back({use.scope, use.usage});
                     }
                     transitions.push_back({use.handle, resource_name(use.handle), execution_index,
-                                           use.usage, use.scope});
+                                           use.usage, use.scope, use.stage});
                 }
                 pass.transition_count = transitions.size() - pass.transition_offset;
             }

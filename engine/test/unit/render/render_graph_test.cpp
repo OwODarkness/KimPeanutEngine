@@ -337,6 +337,41 @@ TEST(RenderGraphTest, ChainedWriteExtendsTheVersionLaterPassesRead)
     EXPECT_GT(read->version, 0U);
 }
 
+TEST(RenderGraphTest, CompilesImportedAccelerationStructureAtRayTracingStage)
+{
+    using kpengine::render::GraphAccelerationStructureHandle;
+    using kpengine::render::RenderGraphStage;
+    using kpengine::render::RenderGraphUsage;
+
+    RenderGraphBuilder builder;
+    const GraphAccelerationStructureHandle tlas =
+        builder.ImportAccelerationStructure("SceneTLAS");
+    const auto visibility = builder.CreateTexture("RayQueryVisibility");
+    const auto pass = builder.AddPass({"RayQueryShadows", RenderGraphPassCondition::Always,
+                                       true, true});
+    ASSERT_TRUE(builder.ReadAccelerationStructure(
+        pass, tlas, RenderGraphUsage::AccelerationStructureRead,
+        RenderGraphStage::RayTracingShader));
+    builder.WriteTexture(pass, visibility, RenderGraphUsage::StorageWrite);
+    const auto reader = builder.AddPass({"RayQueryConsumer", RenderGraphPassCondition::Always,
+                                         true, true});
+    ASSERT_TRUE(builder.ReadTexture(reader, builder.CurrentVersion(visibility),
+                                    RenderGraphUsage::StorageRead));
+    builder.ExportTexture(builder.CurrentVersion(visibility), "RayQueryVisibility");
+
+    const auto result = builder.Compile();
+    ASSERT_TRUE(result.Succeeded());
+    ASSERT_EQ(result.graph->Passes().size(), 2U);
+    ASSERT_EQ(result.graph->Transitions().size(), 3U);
+    EXPECT_TRUE(std::holds_alternative<GraphAccelerationStructureHandle>(
+        result.graph->Transitions()[0].handle));
+    EXPECT_EQ(result.graph->Transitions()[0].usage,
+              RenderGraphUsage::AccelerationStructureRead);
+    EXPECT_EQ(result.graph->Transitions()[0].stage, RenderGraphStage::RayTracingShader);
+    EXPECT_EQ(result.graph->Transitions()[1].usage, RenderGraphUsage::StorageWrite);
+    EXPECT_EQ(result.graph->Transitions()[2].usage, RenderGraphUsage::StorageRead);
+}
+
 TEST(RenderGraphTest, PreservingWriteDependsOnThePreviousVersionProducer)
 {
     using kpengine::render::RenderGraphAttachmentOp;

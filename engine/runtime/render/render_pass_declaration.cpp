@@ -115,6 +115,11 @@ namespace kpengine::render
     {
         RenderGraphBuilder graph;
         std::array<GraphTextureHandle, kResourceCount> resources{};
+        const std::optional<GraphAccelerationStructureHandle> imported_tlas =
+            conditions.ray_query_shadow
+                ? std::optional<GraphAccelerationStructureHandle>(
+                      graph.ImportAccelerationStructure("SceneTLAS"))
+                : std::nullopt;
         for (std::size_t resource_index = 0; resource_index < kResourceCount; ++resource_index)
         {
             // SceneHdr is the one resource the graph plans but does not own: its
@@ -130,6 +135,7 @@ namespace kpengine::render
         }
 
         RenderGraphPassRef terminal_pass;
+        RenderGraphPassRef deferred_lighting_pass;
         for (const FixedRenderPassEntry &entry : AuthoredEntries())
         {
             const RenderGraphPassCondition condition =
@@ -159,10 +165,22 @@ namespace kpengine::render
                     pass.Write(resource, use.usage, RenderGraphAttachmentOp::None, use.scope);
                 }
             }
+            if (entry.id == FixedRenderPassId::DeferredLighting)
+            {
+                deferred_lighting_pass = pass;
+            }
             if (owner == RenderGraphPassOwner::External)
             {
                 terminal_pass = pass;
             }
+        }
+
+        if (conditions.ray_query_shadow && imported_tlas.has_value() &&
+            deferred_lighting_pass.IsValid())
+        {
+            deferred_lighting_pass.Read(*imported_tlas,
+                                        RenderGraphUsage::AccelerationStructureRead,
+                                        RenderGraphStage::RayTracingShader);
         }
 
         // The host samples the conversion output through the editor viewport

@@ -151,6 +151,12 @@ namespace kpengine::graphics
         // Native validation objects remain below the backend boundary.
         virtual std::optional<std::string> GetValidationDiagnostic() const { return std::nullopt; }
         virtual CommandRecorder *GetCommandRecorder() = 0;
+        // Borrowed, frame-stable TLAS selected by the Graphics owner. An
+        // invalid handle means the backend must use the authored raster fallback.
+        virtual AccelerationStructureHandle GetActiveTopLevelAccelerationStructure() const
+        {
+            return {};
+        }
         virtual void EndFrame() = 0;
         virtual GraphicsAPIType GetGraphicsAPI() const = 0;
         // Borrowed bridge. The backend owns it and invalidates it during

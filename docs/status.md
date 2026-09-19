@@ -1766,14 +1766,16 @@
 
 ## Planned (next up)
 
-- **Render R4 ray-tracing foundation (R4.2 complete 2026-09-19)** — the first
+- **Render R4 ray-tracing foundation (R4.3 graph/import slice, 2026-09-19)** — the first
   consumer is ray-query directional hard-shadow visibility, with the existing
   directional shadow-map path as the OpenGL and unavailable-Vulkan fallback.
   The Vulkan smoke path now fails after orderly cleanup when validation reports
   an error. R4.1 now hardens write/update lineage, failed transitions, buffer
   requirements, and physical graph-resource bindings. R4.2 defines the
   API-neutral AS, RT-pipeline, resource-binding, dispatch, and capability-gate
-  contract; R4.3 adds the native owner and imported-TLAS consumer. →
+  contract; R4.3 adds typed graph AS resources, portable ray-stage/storage
+  vocabulary, and the imported-TLAS frame seam. Native ownership remains
+  capability-gated until complete. →
   [R4 plan](render/.plan/R4.md), [R4.0 spec](../.spec/specs/render-r4-ray-query-shadow.md),
   [render graph roadmap](render/render_graph/TODO.md)
 - **Frame-rate follow-ups (2026-09-17)** — the timer-resolution and G-buffer

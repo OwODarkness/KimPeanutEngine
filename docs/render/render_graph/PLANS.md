@@ -1,7 +1,7 @@
 # Render Graph Plans
 
 **Status: raster foundation built and closed with R3 (2026-09-18); R4.2's common
-RT contract is complete and R4.3 is next.** This page records
+RT contract is complete and R4.3's graph/import slice is implemented.** This page records
 KimPeanutEngine's architecture after inspecting Sakura Engine's actual
 render-graph source. The evidence and adopt/modify/reject decisions are in the
 [Sakura analysis](sakura_analysis.md).

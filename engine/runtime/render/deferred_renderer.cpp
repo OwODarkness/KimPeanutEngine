@@ -80,6 +80,16 @@ namespace kpengine::render
                 return graphics::ResourceUsage::TransferSource;
             case RenderGraphUsage::TransferDestination:
                 return graphics::ResourceUsage::TransferDestination;
+            case RenderGraphUsage::AccelerationStructureBuildInput:
+                return graphics::ResourceUsage::AccelerationStructureBuildInput;
+            case RenderGraphUsage::AccelerationStructureBuildOutput:
+                return graphics::ResourceUsage::AccelerationStructureBuildOutput;
+            case RenderGraphUsage::AccelerationStructureRead:
+                return graphics::ResourceUsage::AccelerationStructureRead;
+            case RenderGraphUsage::StorageRead:
+                return graphics::ResourceUsage::StorageRead;
+            case RenderGraphUsage::StorageWrite:
+                return graphics::ResourceUsage::StorageWrite;
             case RenderGraphUsage::Present:
                 return graphics::ResourceUsage::Present;
             case RenderGraphUsage::Undefined:
@@ -695,8 +705,11 @@ namespace kpengine::render
         active_point_shadow_ = SchedulePointShadow(input.lights, input.is_shadow_handle_valid);
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
+        const bool ray_query_shadow =
+            backend_->GetCapabilities().SupportsRayQueryShadows() &&
+            backend_->GetActiveTopLevelAccelerationStructure().IsValid();
         const CompiledRenderGraph *const frame_plan =
-            GetFramePlan(RenderFrameConditions{is_deferred_capture});
+            GetFramePlan(RenderFrameConditions{is_deferred_capture, ray_query_shadow});
         if (frame_plan == nullptr)
         {
             result.normal_recording_completed = false;
@@ -1026,10 +1039,25 @@ namespace kpengine::render
                                                        : graphics::BufferHandle{};
     }
 
+    graphics::AccelerationStructureHandle DeferredRenderer::ResolveFrameAccelerationStructure(
+        GraphAccelerationStructureHandle acceleration_structure) const
+    {
+        const auto binding = std::find_if(
+            frame_acceleration_structure_bindings_.begin(),
+            frame_acceleration_structure_bindings_.end(),
+            [acceleration_structure](const FrameAccelerationStructureBinding &entry) {
+                return entry.logical == acceleration_structure;
+            });
+        return binding != frame_acceleration_structure_bindings_.end()
+                   ? binding->physical
+                   : graphics::AccelerationStructureHandle{};
+    }
+
     bool DeferredRenderer::BuildFrameResourceBindings(const CompiledRenderGraph &plan)
     {
         frame_texture_bindings_.clear();
         frame_buffer_bindings_.clear();
+        frame_acceleration_structure_bindings_.clear();
         for (const RenderGraphLifetimeInterval &lifetime : plan.Lifetimes())
         {
             if (const auto *texture = std::get_if<GraphTextureHandle>(&lifetime.handle))
@@ -1046,15 +1074,38 @@ namespace kpengine::render
                 continue;
             }
 
-            // R4.1 makes the missing physical-buffer binding explicit. The
-            // current raster renderer has no graph-owned buffer provider yet;
-            // a future buffer owner must populate this table before execution.
-            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                   "No frame binding provider for graph buffer '%s'",
-                   lifetime.resource_name.c_str());
-            frame_texture_bindings_.clear();
-            frame_buffer_bindings_.clear();
-            return false;
+            if (const auto *buffer = std::get_if<GraphBufferHandle>(&lifetime.handle))
+            {
+                // R4.1 makes the missing physical-buffer binding explicit. The
+                // current raster renderer has no graph-owned buffer provider yet;
+                // a future buffer owner must populate this table before execution.
+                (void)buffer;
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                       "No frame binding provider for graph buffer '%s'",
+                       lifetime.resource_name.c_str());
+                frame_texture_bindings_.clear();
+                frame_buffer_bindings_.clear();
+                frame_acceleration_structure_bindings_.clear();
+                return false;
+            }
+
+            const auto *acceleration_structure =
+                std::get_if<GraphAccelerationStructureHandle>(&lifetime.handle);
+            const graphics::AccelerationStructureHandle physical =
+                backend_ != nullptr ? backend_->GetActiveTopLevelAccelerationStructure()
+                                    : graphics::AccelerationStructureHandle{};
+            if (acceleration_structure == nullptr || !physical.IsValid())
+            {
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                       "No imported TLAS binding for graph resource '%s'",
+                       lifetime.resource_name.c_str());
+                frame_texture_bindings_.clear();
+                frame_buffer_bindings_.clear();
+                frame_acceleration_structure_bindings_.clear();
+                return false;
+            }
+            frame_acceleration_structure_bindings_.push_back(
+                {*acceleration_structure, lifetime.resource_name, physical});
         }
         return true;
     }
@@ -1070,7 +1121,16 @@ namespace kpengine::render
                     return false;
                 }
             }
-            else if (!ResolveFrameBuffer(std::get<GraphBufferHandle>(use.handle)).IsValid())
+            else if (const auto *buffer = std::get_if<GraphBufferHandle>(&use.handle))
+            {
+                if (!ResolveFrameBuffer(*buffer).IsValid())
+                {
+                    return false;
+                }
+            }
+            else if (!ResolveFrameAccelerationStructure(
+                         std::get<GraphAccelerationStructureHandle>(use.handle))
+                          .IsValid())
             {
                 return false;
             }
@@ -1152,6 +1212,7 @@ namespace kpengine::render
         {
             frame_texture_bindings_.clear();
             frame_buffer_bindings_.clear();
+            frame_acceleration_structure_bindings_.clear();
             return;
         }
         const graphics::RenderTargetHandle handle = transient_scene_hdr_->GetHandle();
@@ -1159,6 +1220,7 @@ namespace kpengine::render
         backend_->ReleaseTransientRenderTarget(handle);
         frame_texture_bindings_.clear();
         frame_buffer_bindings_.clear();
+        frame_acceleration_structure_bindings_.clear();
     }
 
     bool DeferredRenderer::ApplyPassTransitions(const CompiledRenderGraph &plan,
@@ -1201,13 +1263,31 @@ namespace kpengine::render
                 }
                 continue;
             }
-            const GraphBufferHandle buffer = std::get<GraphBufferHandle>(intent.handle);
-            const graphics::BufferHandle physical = ResolveFrameBuffer(buffer);
+            if (const auto *buffer = std::get_if<GraphBufferHandle>(&intent.handle))
+            {
+                const graphics::BufferHandle physical = ResolveFrameBuffer(*buffer);
+                if (!physical.IsValid() ||
+                    !recorder->RequireBufferUsage(physical, ToResourceUsage(intent.usage)))
+                {
+                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                           "Render graph buffer requirement failed for pass '%s'",
+                           pass.name.c_str());
+                    return false;
+                }
+                continue;
+            }
+            const auto *acceleration_structure =
+                std::get_if<GraphAccelerationStructureHandle>(&intent.handle);
+            const graphics::AccelerationStructureHandle physical =
+                acceleration_structure != nullptr
+                    ? ResolveFrameAccelerationStructure(*acceleration_structure)
+                    : graphics::AccelerationStructureHandle{};
             if (!physical.IsValid() ||
-                !recorder->RequireBufferUsage(physical, ToResourceUsage(intent.usage)))
+                !recorder->RequireAccelerationStructureUsage(
+                    physical, ToResourceUsage(intent.usage)))
             {
                 KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "Render graph buffer requirement failed for pass '%s'",
+                       "Render graph acceleration structure requirement failed for pass '%s'",
                        pass.name.c_str());
                 return false;
             }
@@ -1222,9 +1302,11 @@ namespace kpengine::render
         frame_plan_valid_ = true;
         frame_plan_compile_ms_ = 0.0;
         for (const RenderFrameConditions conditions :
-             {RenderFrameConditions{false}, RenderFrameConditions{true}})
+             {RenderFrameConditions{false, false}, RenderFrameConditions{false, true},
+              RenderFrameConditions{true, false}, RenderFrameConditions{true, true}})
         {
-            const std::size_t slot = conditions.diagnostic_capture ? 1U : 0U;
+            const std::size_t slot = (conditions.diagnostic_capture ? 2U : 0U) +
+                                     (conditions.ray_query_shadow ? 1U : 0U);
             const auto started = std::chrono::steady_clock::now();
             frame_plans_[slot] = CompileRenderFrameGraph(conditions);
             frame_plan_compile_ms_ += std::chrono::duration<double, std::milli>(
@@ -1247,7 +1329,8 @@ namespace kpengine::render
         RenderFrameConditions conditions) const
     {
         const std::optional<RenderGraphCompileResult> &plan =
-            frame_plans_[conditions.diagnostic_capture ? 1U : 0U];
+            frame_plans_[(conditions.diagnostic_capture ? 2U : 0U) +
+                        (conditions.ray_query_shadow ? 1U : 0U)];
         if (!plan.has_value() || !plan->graph.has_value())
         {
             return nullptr;

@@ -157,6 +157,8 @@ namespace kpengine::render
         RenderTarget *ResolveFrameTexture(GraphTextureHandle texture) const;
         RenderTarget *ResolveFrameTextureByName(std::string_view name) const;
         graphics::BufferHandle ResolveFrameBuffer(GraphBufferHandle buffer) const;
+        graphics::AccelerationStructureHandle ResolveFrameAccelerationStructure(
+            GraphAccelerationStructureHandle acceleration_structure) const;
         RenderTarget *ResolveNamedFrameTarget(std::string_view name);
         bool BuildFrameResourceBindings(const CompiledRenderGraph &plan);
         bool ValidatePassBindings(const CompiledRenderGraph::Pass &pass) const;
@@ -227,7 +229,7 @@ namespace kpengine::render
         RendererFrameTargets frame_targets_;
         // One compiled plan per frame-start condition set, each compiled once.
         // The compiled plan is now the only authority for pass order.
-        std::array<std::optional<RenderGraphCompileResult>, 2> frame_plans_;
+        std::array<std::optional<RenderGraphCompileResult>, 4> frame_plans_;
         std::optional<RenderGraphFrame> active_pass_frame_;
         // The plan the active frame executes, so the external terminal's state
         // requirements can be applied before the host's callback records.
@@ -247,10 +249,17 @@ namespace kpengine::render
             std::string name;
             graphics::BufferHandle physical;
         };
+        struct FrameAccelerationStructureBinding
+        {
+            GraphAccelerationStructureHandle logical;
+            std::string name;
+            graphics::AccelerationStructureHandle physical;
+        };
         // Explicit frame-local bindings keep physical resolution separate from
         // authored pass-resource identities and reject missing graph resources.
         std::vector<FrameTextureBinding> frame_texture_bindings_;
         std::vector<FrameBufferBinding> frame_buffer_bindings_;
+        std::vector<FrameAccelerationStructureBinding> frame_acceleration_structure_bindings_;
         bool frame_execution_failed_ = false;
         bool frame_plan_valid_ = false;
         double frame_plan_compile_ms_ = 0.0;

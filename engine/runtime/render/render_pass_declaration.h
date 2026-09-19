@@ -84,6 +84,7 @@ namespace kpengine::render
     struct RenderFrameConditions
     {
         bool diagnostic_capture = false;
+        bool ray_query_shadow = false;
 
         friend bool operator==(const RenderFrameConditions &,
                                const RenderFrameConditions &) = default;

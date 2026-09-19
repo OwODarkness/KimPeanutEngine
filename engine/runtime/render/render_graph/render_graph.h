@@ -44,6 +44,23 @@ namespace kpengine::render
         friend bool operator==(const GraphBufferHandle &, const GraphBufferHandle &) = default;
     };
 
+    struct GraphAccelerationStructureHandle
+    {
+        static constexpr uint32_t InvalidIndex = std::numeric_limits<uint32_t>::max();
+
+        uint64_t graph_id = 0;
+        uint32_t resource = InvalidIndex;
+        uint32_t version = InvalidIndex;
+
+        bool IsValid() const noexcept
+        {
+            return graph_id != 0 && resource != InvalidIndex && version != InvalidIndex;
+        }
+
+        friend bool operator==(const GraphAccelerationStructureHandle &,
+                               const GraphAccelerationStructureHandle &) = default;
+    };
+
     struct GraphPassId
     {
         static constexpr uint32_t InvalidIndex = std::numeric_limits<uint32_t>::max();
@@ -81,7 +98,22 @@ namespace kpengine::render
         DepthAttachment,
         TransferSource,
         TransferDestination,
+        AccelerationStructureBuildInput,
+        AccelerationStructureBuildOutput,
+        AccelerationStructureRead,
+        StorageRead,
+        StorageWrite,
         Present,
+    };
+
+    // Portable shader-stage intent. The backend maps it to native stages.
+    enum class RenderGraphStage : uint8_t
+    {
+        None,
+        FragmentShader,
+        ComputeShader,
+        RayTracingShader,
+        Transfer,
     };
 
     // What an attachment use does to its contents. Load and Clear are the
@@ -165,7 +197,8 @@ namespace kpengine::render
         std::string message;
     };
 
-    using RenderGraphResourceHandle = std::variant<GraphTextureHandle, GraphBufferHandle>;
+    using RenderGraphResourceHandle =
+        std::variant<GraphTextureHandle, GraphBufferHandle, GraphAccelerationStructureHandle>;
 
     // Which attachments of a composite target a use touches. A logical resource
     // can cover several physical images -- the G-buffer is four colour
@@ -200,6 +233,7 @@ namespace kpengine::render
         RenderGraphAttachmentOp attachment_op = RenderGraphAttachmentOp::None;
         RenderGraphResourceRange range{};
         RenderGraphAttachmentScope scope{};
+        RenderGraphStage stage = RenderGraphStage::None;
     };
 
     // One requirement that a pass places on a resource's state: at this pass the
@@ -214,6 +248,7 @@ namespace kpengine::render
         RenderGraphUsage usage = RenderGraphUsage::Undefined;
         // The attachments the requirement covers, so a backend moves only those.
         RenderGraphAttachmentScope scope{};
+        RenderGraphStage stage = RenderGraphStage::None;
     };
 
     struct RenderGraphLifetimeInterval
@@ -333,12 +368,15 @@ namespace kpengine::render
         GraphTextureHandle ImportTexture(std::string name);
         GraphBufferHandle CreateBuffer(std::string name);
         GraphBufferHandle ImportBuffer(std::string name);
+        GraphAccelerationStructureHandle ImportAccelerationStructure(std::string name);
 
         // Re-stamps the handle with the resource's current version, which is the
         // version later passes produce. The fluent pass methods use this so a
         // declaration does not have to thread versions by hand.
         GraphTextureHandle CurrentVersion(GraphTextureHandle texture) const noexcept;
         GraphBufferHandle CurrentVersion(GraphBufferHandle buffer) const noexcept;
+        GraphAccelerationStructureHandle CurrentVersion(
+            GraphAccelerationStructureHandle acceleration_structure) const noexcept;
 
         RenderGraphPassRef AddPass(RenderGraphPassDesc desc);
         bool ReadTexture(GraphPassId pass, GraphTextureHandle texture,
@@ -346,6 +384,10 @@ namespace kpengine::render
                          RenderGraphAttachmentScope scope = {});
         bool ReadBuffer(GraphPassId pass, GraphBufferHandle buffer,
                         RenderGraphUsage usage = RenderGraphUsage::Undefined);
+        bool ReadAccelerationStructure(
+            GraphPassId pass, GraphAccelerationStructureHandle acceleration_structure,
+            RenderGraphUsage usage = RenderGraphUsage::AccelerationStructureRead,
+            RenderGraphStage stage = RenderGraphStage::RayTracingShader);
         std::optional<GraphTextureHandle> WriteTexture(
             GraphPassId pass, GraphTextureHandle previous_version,
             RenderGraphUsage usage = RenderGraphUsage::Undefined,
@@ -358,6 +400,8 @@ namespace kpengine::render
         bool AddDependency(GraphPassId pass, GraphPassId dependency);
         bool ExportTexture(GraphTextureHandle texture, std::string export_name);
         bool ExportBuffer(GraphBufferHandle buffer, std::string export_name);
+        bool ExportAccelerationStructure(GraphAccelerationStructureHandle acceleration_structure,
+                                         std::string export_name);
 
         RenderGraphCompileResult Compile() const;
         uint64_t GraphId() const noexcept { return graph_id_; }
@@ -370,6 +414,12 @@ namespace kpengine::render
         };
 
         struct BufferVersion
+        {
+            std::optional<GraphPassId> producer;
+            bool imported = false;
+        };
+
+        struct AccelerationStructureVersion
         {
             std::optional<GraphPassId> producer;
             bool imported = false;
@@ -389,6 +439,14 @@ namespace kpengine::render
             std::string name;
             RenderGraphResourceLifetime lifetime = RenderGraphResourceLifetime::Transient;
             std::vector<BufferVersion> versions;
+            uint32_t latest_version = 0;
+        };
+
+        struct AccelerationStructureRecord
+        {
+            std::string name;
+            RenderGraphResourceLifetime lifetime = RenderGraphResourceLifetime::Imported;
+            std::vector<AccelerationStructureVersion> versions;
             uint32_t latest_version = 0;
         };
 
@@ -412,11 +470,14 @@ namespace kpengine::render
         bool IsValidPass(GraphPassId pass) const noexcept;
         bool IsValidTexture(GraphTextureHandle texture) const noexcept;
         bool IsValidBuffer(GraphBufferHandle buffer) const noexcept;
+        bool IsValidAccelerationStructure(
+            GraphAccelerationStructureHandle acceleration_structure) const noexcept;
         void RecordDeclarationError(std::string message);
 
         uint64_t graph_id_ = 0;
         std::vector<TextureRecord> textures_;
         std::vector<BufferRecord> buffers_;
+        std::vector<AccelerationStructureRecord> acceleration_structures_;
         std::vector<PassRecord> passes_;
         std::vector<ExportRecord> exports_;
         std::vector<std::string> declaration_errors_;
@@ -441,6 +502,10 @@ namespace kpengine::render
                                  RenderGraphAttachmentScope scope = {});
         RenderGraphPassRef &Read(GraphBufferHandle buffer,
                                  RenderGraphUsage usage = RenderGraphUsage::Undefined);
+        RenderGraphPassRef &Read(
+            GraphAccelerationStructureHandle acceleration_structure,
+            RenderGraphUsage usage = RenderGraphUsage::AccelerationStructureRead,
+            RenderGraphStage stage = RenderGraphStage::RayTracingShader);
         RenderGraphPassRef &Write(GraphTextureHandle texture,
                                   RenderGraphUsage usage = RenderGraphUsage::Undefined,
                                   RenderGraphAttachmentOp attachment_op =

@@ -21,6 +21,7 @@ namespace
     using kpengine::render::RenderFrameConditions;
     using kpengine::render::RenderGraphAccess;
     using kpengine::render::RenderGraphPassOwner;
+    using kpengine::render::RenderGraphResourceUse;
     using kpengine::render::RenderPassAccess;
     using kpengine::render::RenderPassCondition;
     using kpengine::render::RenderPassExecutionOwner;
@@ -109,6 +110,35 @@ TEST(RenderGraphCompatibilityTest, ProductionDeclarationPlansSceneHdrAsATransien
               static_cast<uint64_t>(kpengine::render::RenderFrameTransient::SceneHdr));
     EXPECT_EQ(transients[0].first_use, 4U); // deferred lighting
     EXPECT_EQ(transients[0].last_use, 5U);  // tone map
+}
+
+TEST(RenderGraphCompatibilityTest, RayQueryVariantImportsTheGraphicsOwnedTlas)
+{
+    const auto result = CompileRenderFrameGraph(RenderFrameConditions{false, true});
+    ASSERT_TRUE(result.Succeeded());
+
+    const auto deferred_lighting = std::find_if(
+        result.graph->Passes().begin(), result.graph->Passes().end(),
+        [](const CompiledRenderGraph::Pass &pass) {
+            return pass.name == "DeferredLightingPass";
+        });
+    ASSERT_NE(deferred_lighting, result.graph->Passes().end());
+    const auto tlas_use = std::find_if(
+        deferred_lighting->uses.begin(), deferred_lighting->uses.end(),
+        [](const RenderGraphResourceUse &use) {
+            return std::holds_alternative<kpengine::render::GraphAccelerationStructureHandle>(
+                       use.handle) &&
+                   use.usage == kpengine::render::RenderGraphUsage::AccelerationStructureRead;
+        });
+    ASSERT_NE(tlas_use, deferred_lighting->uses.end());
+    EXPECT_EQ(tlas_use->stage, kpengine::render::RenderGraphStage::RayTracingShader);
+    EXPECT_TRUE(std::any_of(
+        result.graph->Lifetimes().begin(), result.graph->Lifetimes().end(),
+        [](const auto &lifetime) {
+            return lifetime.resource_name == "SceneTLAS" &&
+                   std::holds_alternative<kpengine::render::GraphAccelerationStructureHandle>(
+                       lifetime.handle);
+        }));
 }
 
 TEST(RenderGraphCompatibilityTest, AuthoredDeclarationIsCanonicalAndWellFormed)

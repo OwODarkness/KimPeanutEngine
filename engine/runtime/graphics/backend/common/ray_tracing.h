@@ -188,9 +188,8 @@ namespace kpengine::graphics
     }
 
     // Graphics owns native AS storage, RT pipelines, descriptor resources,
-    // scratch reuse, and deferred destruction. Render may use this seam only
-    // after a later stage wires it to the backend; R4.2 deliberately does not
-    // expose it through RenderBackend yet.
+    // scratch reuse, and deferred destruction. Render receives only opaque
+    // handles through the backend frame seam; ownership operations remain here.
     class RayTracingResourceOwner
     {
     public:

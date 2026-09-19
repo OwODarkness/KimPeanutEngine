@@ -44,6 +44,11 @@ namespace kpengine::graphics
         DepthAttachment,
         TransferSource,
         TransferDestination,
+        AccelerationStructureBuildInput,
+        AccelerationStructureBuildOutput,
+        AccelerationStructureRead,
+        StorageRead,
+        StorageWrite,
         Present,
     };
 
@@ -74,6 +79,16 @@ namespace kpengine::graphics
         // Backends translate the requirement to their native synchronization
         // model; Render does not name stages or barriers.
         virtual bool RequireBufferUsage(BufferHandle buffer, ResourceUsage usage) = 0;
+        // Requires a Graphics-owned acceleration structure to be visible for
+        // the declared portable operation. Unsupported backends fail rather
+        // than silently treating an AS hazard as a raster resource.
+        virtual bool RequireAccelerationStructureUsage(AccelerationStructureHandle handle,
+                                                       ResourceUsage usage)
+        {
+            (void)handle;
+            (void)usage;
+            return false;
+        }
         virtual bool BindPipeline(PipelineHandle pipeline) = 0;
         virtual void BindMesh(MeshHandle mesh) = 0;
         virtual bool BindGeometry(const GeometryView &geometry) = 0;

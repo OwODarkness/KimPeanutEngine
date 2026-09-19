@@ -78,7 +78,8 @@ public policy while the coordinator owns scene preparation.
   selected ray-query directional hard-shadow visibility and closed the
   validation-clean raster gate; R4.1 hardened graph write/binding/transition
   semantics, and R4.2 now defines the API-neutral Graphics RT contract without
-  enabling a partial backend. **R4.2 complete (2026-09-19); R4.3 is next.**
+  enabling a partial backend. **R4.2 complete (2026-09-19); R4.3's graph/import
+  slice is implemented and native ownership remains capability-gated.**
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
   texture minification and bound texture, descriptor, visibility, and static-
   shadow costs through Resource, Render, and Graphics ownership boundaries.
