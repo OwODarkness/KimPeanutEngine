@@ -32,7 +32,8 @@ namespace kpengine::graphics
         const VkMemoryRequirements &requirements,
         VkMemoryPropertyFlags required_properties,
         VulkanMemoryAllocationPolicy policy,
-        const VkMemoryDedicatedAllocateInfo *dedicated_info)
+        const VkMemoryDedicatedAllocateInfo *dedicated_info,
+        bool device_address)
     {
         if (destroyed_ || requirements.size == 0)
         {
@@ -48,6 +49,7 @@ namespace kpengine::graphics
             requirements.alignment,
             FindMemoryType(requirements.memoryTypeBits, required_properties),
             required_properties,
+            device_address,
             use_dedicated ? dedicated_info : nullptr,
         };
         IVulkanMemoryAllocator *const allocator = use_dedicated

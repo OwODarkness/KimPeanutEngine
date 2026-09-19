@@ -42,6 +42,7 @@ namespace kpengine::graphics
         VkDeviceSize alignment = 1;
         uint32_t memory_type_index = UINT32_MAX;
         VkMemoryPropertyFlags properties = 0;
+        bool device_address = false;
         // Consumed synchronously by vkAllocateMemory (for example, dedicated-info).
         const void *allocation_pnext = nullptr;
     };

@@ -11,6 +11,7 @@ namespace kpengine::graphics{
         class VulkanUploadContext* upload_context = nullptr;
         class VulkanImageMemoryManager* image_memory_manager = nullptr;
         class VulkanEditorBridge* editor_bridge = nullptr;
+        bool ray_tracing_supported = false;
     };
 }
 

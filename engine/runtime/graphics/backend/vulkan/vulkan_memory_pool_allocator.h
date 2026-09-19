@@ -25,6 +25,7 @@ namespace kpengine::graphics
             VkDeviceSize size = 0;
             uint32_t memory_type_index = UINT32_MAX;
             VkMemoryPropertyFlags properties = 0;
+            bool device_address = false;
             VulkanMemoryFreeRangeList free_ranges;
         };
 

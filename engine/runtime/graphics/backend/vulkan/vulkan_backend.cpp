@@ -24,6 +24,7 @@
 #include "common/mesh_manager.h"
 #include "common/pipeline_validation.h"
 #include "vulkan_mesh.h"
+#include "vulkan_acceleration_structure_owner.h"
 
 namespace kpengine::graphics
 {
@@ -64,6 +65,12 @@ namespace kpengine::graphics
             device_->GetPhysicalDevice(), device_->GetLogicalDevice());
         image_memory_manager_ = std::make_unique<VulkanImageMemoryManager>(*memory_manager_);
         buffer_manager_ = std::make_unique<VulkanBufferManager>(*memory_manager_);
+        if (device_->SupportsRayTracing())
+        {
+            acceleration_structure_owner_ =
+                std::make_unique<VulkanAccelerationStructureOwner>(
+                    device_->GetLogicalDevice(), *buffer_manager_);
+        }
 
         swapchain_ = std::make_unique<VulkanSwapchain>();
         swapchain_->Initialize(device_.get(), window);
@@ -122,6 +129,11 @@ namespace kpengine::graphics
         // 3. caller selects render targets and records draws, then EndFrame submits
 
         frame_context_->WaitForInFlightFence();
+        if (acceleration_structure_owner_)
+        {
+            acceleration_structure_owner_->CollectCompleted(
+                frame_context_->GetCompletedSubmissionSerial());
+        }
         if (transient_target_pool_)
         {
             // The fence wait above is what makes a retired target safe to hand
@@ -186,7 +198,8 @@ namespace kpengine::graphics
         command_recorder_->Begin(frame_context_->GetCurrentSceneCommandBuffer(), *pipeline_manager_,
                                  *descriptor_set_manager_, *buffer_manager_, *mesh_manager_,
                                  *render_target_manager_, bindless_texture_table_.get(),
-                                 frame_context_->GetCurrentFrameIndex(), editor_bridge_.get());
+                                 frame_context_->GetCurrentFrameIndex(), editor_bridge_.get(),
+                                 acceleration_structure_owner_.get());
         const uint32_t frame_index = frame_context_->GetCurrentFrameIndex();
         command_recorder_->SetGeometryBufferResolvers(
             [this, frame_index](BufferHandle handle) {
@@ -216,6 +229,11 @@ namespace kpengine::graphics
         editor_bridge_->EndFrame();
 
         frame_context_->Submit(scene_command_buffer, current_image_index_);
+        if (acceleration_structure_owner_)
+        {
+            acceleration_structure_owner_->RetireSubmitted(
+                frame_context_->GetLastSubmittedSerial());
+        }
 
         VkResult present_res = frame_context_->Present(swapchain_->GetSwapchain(), current_image_index_);
         if (present_res == VK_ERROR_OUT_OF_DATE_KHR || present_res == VK_SUBOPTIMAL_KHR || swapchain_->HasResized())
@@ -237,6 +255,18 @@ namespace kpengine::graphics
     CommandRecorder *VulkanBackend::GetCommandRecorder()
     {
         return frame_active_ ? command_recorder_.get() : nullptr;
+    }
+
+    RayTracingResourceOwner *VulkanBackend::GetRayTracingResourceOwner()
+    {
+        return acceleration_structure_owner_.get();
+    }
+
+    AccelerationStructureHandle VulkanBackend::GetActiveTopLevelAccelerationStructure() const
+    {
+        return acceleration_structure_owner_
+                   ? acceleration_structure_owner_->GetActiveTopLevel()
+                   : AccelerationStructureHandle{};
     }
 
     void VulkanBackend::BeginGpuProfilePass(const uint32_t pass_id)
@@ -368,6 +398,7 @@ namespace kpengine::graphics
         // them before the backend; only backend-owned GPU state lives here now.
         descriptor_set_manager_->DestroyAll(device_->GetLogicalDevice());
         pipeline_manager_->DestroyAll(device_->GetLogicalDevice());
+        acceleration_structure_owner_.reset();
         if (bindless_texture_table_)
         {
             bindless_texture_table_->Destroy(device_->GetLogicalDevice());
@@ -387,14 +418,26 @@ namespace kpengine::graphics
 
     BufferHandle VulkanBackend::CreateVertexBuffer(const std::span<const std::byte> data)
     {
-        return CreateBuffer(data.data(), data.size(),
-                            VK_BUFFER_USAGE_VERTEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        VkBufferUsageFlags usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                   VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        if (device_ && device_->SupportsRayTracing())
+        {
+            usage |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        }
+        return CreateBuffer(data.data(), data.size(), usage);
     }
 
     BufferHandle VulkanBackend::CreateIndexBuffer(const std::span<const std::byte> data)
     {
-        return CreateBuffer(data.data(), data.size(),
-                            VK_BUFFER_USAGE_INDEX_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT);
+        VkBufferUsageFlags usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                   VK_BUFFER_USAGE_TRANSFER_DST_BIT;
+        if (device_ && device_->SupportsRayTracing())
+        {
+            usage |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                     VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        }
+        return CreateBuffer(data.data(), data.size(), usage);
     }
 
     void VulkanBackend::FramebufferResizeCallback(const ResizeEvent &event)
@@ -414,6 +457,8 @@ namespace kpengine::graphics
         capabilities_.bindless_texture_table_capacity = capabilities_.bindless_textures
                                                              ? device_->GetBindlessTextureTableCapacity()
                                                              : 0;
+        capabilities_.acceleration_structures = acceleration_structure_owner_ &&
+                                                acceleration_structure_owner_->IsSupported();
 
         const auto supports_sampled_format = [physical_device = device_->GetPhysicalDevice()](
                                                  VkFormat format)
@@ -442,6 +487,7 @@ namespace kpengine::graphics
         context_.instance = device_->GetInstance();
         context_.physical_device = device_->GetPhysicalDevice();
         context_.logical_device = device_->GetLogicalDevice();
+        context_.ray_tracing_supported = device_->SupportsRayTracing();
     }
 
     GraphicsContext VulkanBackend::CreateGraphicsContext() const
@@ -712,6 +758,11 @@ namespace kpengine::graphics
         const VkBufferUsageFlags usage = desc.role == BufferRole::Index
                                              ? VK_BUFFER_USAGE_INDEX_BUFFER_BIT
                                              : VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        const VkBufferUsageFlags ray_tracing_usage =
+            device_ && device_->SupportsRayTracing()
+                ? VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                      VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT
+                : 0;
         try
         {
             for (uint32_t slot = 0; slot < slot_count; ++slot)
@@ -719,7 +770,7 @@ namespace kpengine::graphics
                 VkBufferCreateInfo create_info{};
                 create_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
                 create_info.size = static_cast<VkDeviceSize>(desc.capacity_bytes);
-                create_info.usage = usage;
+                create_info.usage = usage | ray_tracing_usage;
                 if (desc.update_mode == BufferUpdateMode::Immutable)
                 {
                     create_info.usage |= VK_BUFFER_USAGE_TRANSFER_DST_BIT;

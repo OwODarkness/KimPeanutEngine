@@ -53,6 +53,7 @@ if(USE_VULKAN)
     backend/vulkan/vulkan_image_memory_manager.cpp
     backend/vulkan/vulkan_sampler.cpp
     backend/vulkan/vulkan_mesh.cpp
+    backend/vulkan/vulkan_acceleration_structure_owner.cpp
     )
 endif()
 

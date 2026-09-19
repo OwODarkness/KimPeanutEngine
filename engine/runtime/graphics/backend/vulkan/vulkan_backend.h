@@ -64,6 +64,8 @@ namespace kpengine::graphics
         }
         std::optional<std::string> GetValidationDiagnostic() const override;
         CommandRecorder *GetCommandRecorder() override;
+        AccelerationStructureHandle GetActiveTopLevelAccelerationStructure() const override;
+        RayTracingResourceOwner *GetRayTracingResourceOwner() override;
         virtual void EndFrame() override;
         GraphicsAPIType GetGraphicsAPI() const override
         {
@@ -127,6 +129,7 @@ namespace kpengine::graphics
         std::unique_ptr<class VulkanBindlessTextureTable> bindless_texture_table_;
 
         std::unique_ptr<class VulkanImageMemoryManager> image_memory_manager_;
+        std::unique_ptr<class VulkanAccelerationStructureOwner> acceleration_structure_owner_;
 
         std::unique_ptr<class TextureManager> texture_manager_;
         std::unique_ptr<class SamplerManager> sampler_manager_;

@@ -17,7 +17,8 @@ namespace kpengine::graphics
         {
             const MemoryBlock *block = blocks_[index].get();
             if (!block || block->memory_type_index != request.memory_type_index ||
-                block->properties != request.properties)
+                block->properties != request.properties ||
+                (request.device_address && !block->device_address))
             {
                 continue;
             }
@@ -74,9 +75,17 @@ namespace kpengine::graphics
         block->size = block_size;
         block->memory_type_index = request.memory_type_index;
         block->properties = request.properties;
+        block->device_address = request.device_address;
 
         VkMemoryAllocateInfo allocate_info{};
         allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
+        VkMemoryAllocateFlagsInfo flags_info{};
+        if (request.device_address)
+        {
+            flags_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+            flags_info.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+            allocate_info.pNext = &flags_info;
+        }
         allocate_info.allocationSize = block_size;
         allocate_info.memoryTypeIndex = request.memory_type_index;
         if (vkAllocateMemory(logical_device, &allocate_info, nullptr, &block->memory) != VK_SUCCESS)

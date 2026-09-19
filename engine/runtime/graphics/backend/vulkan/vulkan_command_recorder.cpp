@@ -17,6 +17,7 @@
 #include "vulkan_pipeline_manager.h"
 #include "vulkan_render_target_manager.h"
 #include "vulkan_editor_bridge.h"
+#include "vulkan_acceleration_structure_owner.h"
 
 namespace kpengine::graphics
 {
@@ -43,7 +44,8 @@ namespace kpengine::graphics
         VulkanBufferManager &buffer_manager, MeshManager &mesh_manager,
         VulkanRenderTargetManager &render_target_manager,
         VulkanBindlessTextureTable *bindless_table, uint32_t frame_index,
-        VulkanEditorBridge *presentation_bridge)
+        VulkanEditorBridge *presentation_bridge,
+        VulkanAccelerationStructureOwner *acceleration_structure_owner)
     {
         command_buffer_ = command_buffer;
         pipeline_manager_ = &pipeline_manager;
@@ -54,6 +56,7 @@ namespace kpengine::graphics
         bindless_table_ = bindless_table;
         frame_index_ = frame_index;
         presentation_bridge_ = presentation_bridge;
+        acceleration_structure_owner_ = acceleration_structure_owner;
         presentation_active_ = false;
         active_target_ = {};
         draws_suppressed_ = false;
@@ -196,6 +199,20 @@ namespace kpengine::graphics
         vkCmdPipelineBarrier2(command_buffer_, &dependency);
         buffer_usage_cache_[buffer] = usage;
         return true;
+    }
+
+    bool VulkanCommandRecorder::RequireAccelerationStructureUsage(
+        AccelerationStructureHandle handle, ResourceUsage usage)
+    {
+        return acceleration_structure_owner_ &&
+               acceleration_structure_owner_->RequireUsage(command_buffer_, handle, usage);
+    }
+
+    bool VulkanCommandRecorder::BuildAccelerationStructures(
+        std::span<const RayTracingBuildDesc> builds)
+    {
+        return acceleration_structure_owner_ &&
+               acceleration_structure_owner_->Build(command_buffer_, builds);
     }
 
     bool VulkanCommandRecorder::BindPipeline(PipelineHandle pipeline)

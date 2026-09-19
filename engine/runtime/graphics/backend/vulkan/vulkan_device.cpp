@@ -310,6 +310,7 @@ namespace kpengine::graphics
         else
         {
             physical_device_ = best_device;
+            ray_tracing_enabled_ = QueryRayTracingSupport(physical_device_);
             VkPhysicalDeviceProperties props;
             vkGetPhysicalDeviceProperties(physical_device_, &props);
             std::string message = props.deviceName;
@@ -351,6 +352,31 @@ namespace kpengine::graphics
         uint32_t bindless_capacity = 0;
         bindless_textures_enabled_ = QueryBindlessTextureSupport(physical_device_, bindless_capacity);
         bindless_texture_table_capacity_ = bindless_textures_enabled_ ? bindless_capacity : 0;
+        VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features{};
+        acceleration_structure_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+        VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features{};
+        ray_query_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+        VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features{};
+        buffer_device_address_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+
+        if (ray_tracing_enabled_)
+        {
+            acceleration_structure_features.accelerationStructure = VK_TRUE;
+            ray_query_features.rayQuery = VK_TRUE;
+            buffer_device_address_features.bufferDeviceAddress = VK_TRUE;
+        }
+
+        std::vector<const char *> enabled_extensions = device_extensions;
+        if (ray_tracing_enabled_)
+        {
+            enabled_extensions.push_back(VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME);
+            enabled_extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
+            enabled_extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
+            enabled_extensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+        }
+
         if (bindless_textures_enabled_)
         {
             descriptor_indexing.runtimeDescriptorArray = VK_TRUE;
@@ -366,10 +392,24 @@ namespace kpengine::graphics
             features2.pNext = &device13_feature;
         }
 
+        VkBaseOutStructure *feature_tail =
+            reinterpret_cast<VkBaseOutStructure *>(&device13_feature);
+        if (ray_tracing_enabled_)
+        {
+            feature_tail->pNext = reinterpret_cast<VkBaseOutStructure *>(
+                &acceleration_structure_features);
+            feature_tail = reinterpret_cast<VkBaseOutStructure *>(
+                &acceleration_structure_features);
+            feature_tail->pNext = reinterpret_cast<VkBaseOutStructure *>(&ray_query_features);
+            feature_tail = reinterpret_cast<VkBaseOutStructure *>(&ray_query_features);
+            feature_tail->pNext = reinterpret_cast<VkBaseOutStructure *>(
+                &buffer_device_address_features);
+        }
+
         VkDeviceCreateInfo device_create_info{};
         device_create_info.sType = VK_STRUCTURE_TYPE_DEVICE_CREATE_INFO;
-        device_create_info.enabledExtensionCount = static_cast<uint32_t>(device_extensions.size());
-        device_create_info.ppEnabledExtensionNames = device_extensions.data();
+        device_create_info.enabledExtensionCount = static_cast<uint32_t>(enabled_extensions.size());
+        device_create_info.ppEnabledExtensionNames = enabled_extensions.data();
         device_create_info.queueCreateInfoCount = static_cast<uint32_t>(queue_create_infos.size());
         device_create_info.pQueueCreateInfos = queue_create_infos.data();
         device_create_info.enabledLayerCount = 0;
@@ -487,5 +527,44 @@ namespace kpengine::graphics
                              descriptor_properties.maxPerStageDescriptorUpdateAfterBindSamplers,
                              4096u});
         return capacity > 0;
+    }
+
+    bool VulkanDevice::QueryRayTracingSupport(VkPhysicalDevice device) const
+    {
+        VkPhysicalDeviceProperties properties{};
+        vkGetPhysicalDeviceProperties(device, &properties);
+        if (VK_VERSION_MINOR(properties.apiVersion) < 2)
+        {
+            return false;
+        }
+
+        const std::vector<const char *> required_extensions = {
+            VK_KHR_ACCELERATION_STRUCTURE_EXTENSION_NAME,
+            VK_KHR_RAY_QUERY_EXTENSION_NAME,
+            VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME,
+            VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME};
+        if (!CheckDeviceExtensionsSupport(device, required_extensions))
+        {
+            return false;
+        }
+
+        VkPhysicalDeviceAccelerationStructureFeaturesKHR acceleration_structure_features{};
+        acceleration_structure_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_ACCELERATION_STRUCTURE_FEATURES_KHR;
+        VkPhysicalDeviceRayQueryFeaturesKHR ray_query_features{};
+        ray_query_features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_QUERY_FEATURES_KHR;
+        VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features{};
+        buffer_device_address_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+        acceleration_structure_features.pNext = &ray_query_features;
+        ray_query_features.pNext = &buffer_device_address_features;
+
+        VkPhysicalDeviceFeatures2 features{};
+        features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features.pNext = &acceleration_structure_features;
+        vkGetPhysicalDeviceFeatures2(device, &features);
+        return acceleration_structure_features.accelerationStructure == VK_TRUE &&
+               ray_query_features.rayQuery == VK_TRUE &&
+               buffer_device_address_features.bufferDeviceAddress == VK_TRUE;
     }
 }

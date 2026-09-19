@@ -1,7 +1,7 @@
 # Render Graph TODO
 
-**Status: R3 complete and closed. R4.2 is complete; the R4.3 graph slice is
-implemented and its native owner remains capability-gated.** The compiled plan
+**Status: R3 complete and closed. R4.2 is complete; R4.3's graph/import slice
+is complete and R4.4 native AS build groundwork is in progress.** The compiled plan
 schedules passes, owns resource state, and declares its transients; R3.7's five
 extensions are closed as a gate with recorded unlock criteria. Completed-stage
 detail moved to the R3 closeout journal:

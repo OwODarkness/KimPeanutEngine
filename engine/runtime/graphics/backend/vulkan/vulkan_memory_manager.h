@@ -31,7 +31,8 @@ namespace kpengine::graphics
             const VkMemoryRequirements &requirements,
             VkMemoryPropertyFlags required_properties,
             VulkanMemoryAllocationPolicy policy,
-            const VkMemoryDedicatedAllocateInfo *dedicated_info = nullptr);
+            const VkMemoryDedicatedAllocateInfo *dedicated_info = nullptr,
+            bool device_address = false);
         void Free(VulkanMemoryAllocation &allocation) noexcept;
 
         void Write(const VulkanMemoryAllocation &allocation, const void *source,

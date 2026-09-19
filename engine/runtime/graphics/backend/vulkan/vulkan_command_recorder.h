@@ -18,6 +18,7 @@ namespace kpengine::graphics
     class VulkanRenderTargetManager;
     class VulkanBindlessTextureTable;
     class VulkanEditorBridge;
+    class VulkanAccelerationStructureOwner;
 
     // Valid only between VulkanBackend::BeginFrame and EndFrame. It borrows all
     // services; VulkanBackend remains their owner and controls submission.
@@ -29,7 +30,8 @@ namespace kpengine::graphics
                    VulkanBufferManager &buffer_manager, MeshManager &mesh_manager,
                    VulkanRenderTargetManager &render_target_manager,
                    VulkanBindlessTextureTable *bindless_table, uint32_t frame_index,
-                   VulkanEditorBridge *presentation_bridge);
+                   VulkanEditorBridge *presentation_bridge,
+                   VulkanAccelerationStructureOwner *acceleration_structure_owner);
 
         bool BeginRenderTarget(RenderTargetHandle target) override;
         bool BeginPresentation(const std::array<float, 4> *clear_color = nullptr) override;
@@ -37,12 +39,16 @@ namespace kpengine::graphics
         bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage,
                                       RenderTargetAttachmentScope scope) override;
         bool RequireBufferUsage(BufferHandle buffer, ResourceUsage usage) override;
+        bool RequireAccelerationStructureUsage(AccelerationStructureHandle handle,
+                                               ResourceUsage usage) override;
         bool BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
         bool BindGeometry(const GeometryView &geometry) override;
         bool BindResourceBindings(PipelineHandle pipeline,
                                   DescriptorSetHandle bindings,
                                   const DynamicUniformOffsets &dynamic_offsets = {}) override;
+        bool BuildAccelerationStructures(
+            std::span<const RayTracingBuildDesc> builds) override;
 
         void SetGeometryBufferResolvers(
             std::function<std::optional<BufferDesc>(BufferHandle)> desc_lookup,
@@ -72,6 +78,7 @@ namespace kpengine::graphics
         VulkanRenderTargetManager *render_target_manager_ = nullptr;
         VulkanBindlessTextureTable *bindless_table_ = nullptr;
         VulkanEditorBridge *presentation_bridge_ = nullptr;
+        VulkanAccelerationStructureOwner *acceleration_structure_owner_ = nullptr;
         uint32_t frame_index_ = 0;
         uint32_t recorded_index_count_ = 0;
         uint32_t recorded_first_index_ = 0;

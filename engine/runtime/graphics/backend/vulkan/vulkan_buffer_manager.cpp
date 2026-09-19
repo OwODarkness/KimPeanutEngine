@@ -63,7 +63,8 @@ namespace kpengine::graphics
             resource.allocation = memory_manager_->Allocate(
                 requirements2.memoryRequirements, properties, policy,
                 policy == VulkanMemoryAllocationPolicy::Dedicated
-                    ? &dedicated_allocate_info : nullptr);
+                    ? &dedicated_allocate_info : nullptr,
+                (buffer_create_info->usage & VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT) != 0);
             if (vkBindBufferMemory(logical_device, resource.buffer,
                                    resource.allocation.memory,
                                    resource.allocation.offset) != VK_SUCCESS)
@@ -155,5 +156,20 @@ namespace kpengine::graphics
             return nullptr;
         }
         return resource.allocation.mapped_address;
+    }
+
+    VkDeviceAddress VulkanBufferManager::GetDeviceAddress(VkDevice logical_device,
+                                                           BufferHandle handle) const
+    {
+        const uint32_t index = handle_system_.Get(handle);
+        if (index >= buffer_resources_.size() || !buffer_resources_[index].alive)
+        {
+            return 0;
+        }
+        const VkBufferDeviceAddressInfo address_info{
+            VK_STRUCTURE_TYPE_BUFFER_DEVICE_ADDRESS_INFO,
+            nullptr,
+            buffer_resources_[index].buffer};
+        return vkGetBufferDeviceAddress(logical_device, &address_info);
     }
 }

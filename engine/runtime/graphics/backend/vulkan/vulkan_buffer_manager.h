@@ -42,6 +42,7 @@ namespace kpengine::graphics
         void UploadData(BufferHandle handle, VkDeviceSize size, const void *src,
                         VkDeviceSize offset = 0);
         void *GetMappedAddress(BufferHandle handle, VkDeviceSize size);
+        VkDeviceAddress GetDeviceAddress(VkDevice logical_device, BufferHandle handle) const;
 
     private:
         std::vector<VulkanBufferResource> buffer_resources_;

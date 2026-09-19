@@ -20,6 +20,14 @@ namespace kpengine::graphics
         VkMemoryAllocateInfo allocate_info{};
         allocate_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO;
         allocate_info.pNext = request.allocation_pnext;
+        VkMemoryAllocateFlagsInfo flags_info{};
+        if (request.device_address)
+        {
+            flags_info.sType = VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_FLAGS_INFO;
+            flags_info.flags = VK_MEMORY_ALLOCATE_DEVICE_ADDRESS_BIT;
+            flags_info.pNext = allocate_info.pNext;
+            allocate_info.pNext = &flags_info;
+        }
         allocate_info.allocationSize = request.size;
         allocate_info.memoryTypeIndex = request.memory_type_index;
         if (vkAllocateMemory(logical_device, &allocate_info, nullptr, &block->memory) != VK_SUCCESS)

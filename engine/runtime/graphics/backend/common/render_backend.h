@@ -19,6 +19,7 @@
 #include "pipeline_types.h"
 #include "profile_counters.h"
 #include "resource_binding.h"
+#include "ray_tracing.h"
 #include "render_target.h"
 #include "render_target_readback.h"
 #include "sampler.h"
@@ -157,6 +158,7 @@ namespace kpengine::graphics
         {
             return {};
         }
+        virtual RayTracingResourceOwner *GetRayTracingResourceOwner() { return nullptr; }
         virtual void EndFrame() = 0;
         virtual GraphicsAPIType GetGraphicsAPI() const = 0;
         // Borrowed bridge. The backend owns it and invalidates it during

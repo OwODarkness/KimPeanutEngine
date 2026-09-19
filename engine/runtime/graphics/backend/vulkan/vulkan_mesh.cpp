@@ -58,12 +58,24 @@ namespace kpengine::graphics
         }
 
         const VkDeviceSize vertices_size = sizeof(Vertex) * data.vertices.size();
+        VkBufferUsageFlags geometry_usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT;
+        if (context_ptr->ray_tracing_supported)
+        {
+            geometry_usage |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        }
         resource_.vertex_handle = CreateDeviceBuffer(*context_ptr, data.vertices.data(), vertices_size,
-                                                     VK_BUFFER_USAGE_VERTEX_BUFFER_BIT);
+                                                     geometry_usage);
 
         const VkDeviceSize indices_size = sizeof(uint32_t) * data.indices.size();
+        geometry_usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
+        if (context_ptr->ray_tracing_supported)
+        {
+            geometry_usage |= VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        }
         resource_.index_handle = CreateDeviceBuffer(*context_ptr, data.indices.data(), indices_size,
-                                                    VK_BUFFER_USAGE_INDEX_BUFFER_BIT);
+                                                    geometry_usage);
 
         resource_.sections = data.sections;
     }
