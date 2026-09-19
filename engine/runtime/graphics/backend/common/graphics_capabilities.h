@@ -22,6 +22,14 @@ namespace kpengine::graphics
         bool bc5_unorm_textures = false;
         bool bc3_unorm_textures = false;
         bool bc3_srgb_textures = false;
+        // These are effective capabilities, not raw extension probes. The
+        // backend may set them only after the common RT contract and its
+        // native owner are both complete.
+        bool ray_tracing_contract = false;
+        bool acceleration_structures = false;
+        bool ray_query = false;
+        bool ray_tracing_pipeline = false;
+        bool ray_tracing_storage_image = false;
 
         constexpr bool SupportsBindlessTextures() const noexcept
         {
@@ -44,6 +52,17 @@ namespace kpengine::graphics
             default:
                 return true;
             }
+        }
+
+        constexpr bool SupportsRayQueryShadows() const noexcept
+        {
+            return ray_tracing_contract && acceleration_structures && ray_query;
+        }
+
+        constexpr bool SupportsRayTracingPipeline() const noexcept
+        {
+            return ray_tracing_contract && acceleration_structures &&
+                   ray_tracing_pipeline && ray_tracing_storage_image;
         }
     };
 }

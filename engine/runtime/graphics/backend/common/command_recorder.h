@@ -3,10 +3,12 @@
 
 #include <array>
 #include <cstdint>
+#include <span>
 
 #include "api.h"
 #include "buffer_types.h"
 #include "profile_counters.h"
+#include "ray_tracing.h"
 #include "render_target.h"
 #include "resource_binding.h"
 
@@ -78,6 +80,29 @@ namespace kpengine::graphics
         virtual bool BindResourceBindings(PipelineHandle pipeline,
                                           DescriptorSetHandle bindings,
                                           const DynamicUniformOffsets &dynamic_offsets = {}) = 0;
+        // Optional RT commands. Unsupported backends retain the explicit
+        // fallback path until a complete owner and graph consumer exist.
+        virtual bool BuildAccelerationStructures(
+            std::span<const RayTracingBuildDesc> builds)
+        {
+            (void)builds;
+            return false;
+        }
+        virtual bool BindRayTracingPipeline(RayTracingPipelineHandle pipeline)
+        {
+            (void)pipeline;
+            return false;
+        }
+        virtual bool BindRayTracingResourceBindings(DescriptorSetHandle bindings)
+        {
+            (void)bindings;
+            return false;
+        }
+        virtual bool DispatchRays(const RayTracingDispatchDesc &dispatch)
+        {
+            (void)dispatch;
+            return false;
+        }
         virtual void SetViewport(const Viewport &viewport) = 0;
         virtual void SetScissor(const Scissor &scissor) = 0;
         virtual void DrawIndexed(uint32_t index_count = 0,

@@ -1,6 +1,6 @@
 # Render Graph TODO
 
-**Status: R3 complete and closed. No R3 item is open. R4 is proposed.** The compiled plan
+**Status: R3 complete and closed. R4.2 is complete; R4.3 is next.** The compiled plan
 schedules passes, owns resource state, and declares its transients; R3.7's five
 extensions are closed as a gate with recorded unlock criteria. Completed-stage
 detail moved to the R3 closeout journal:
@@ -60,10 +60,17 @@ Architecture: [PLANS.md](PLANS.md). Completed migration:
   [spec](../../../.spec/specs/render-r4-1-graph-correctness.md),
   [review](../.review/R4.1.md),
   [journal](../../../.spec/journal/2026-09-19-render-graph-r4-1.md)
-- [ ] **R4.2–R4.3 — minimal Graphics and imported-TLAS path:** add effective
-  capability reporting and Graphics-owned AS/pipeline/build/dispatch contracts,
-  then introduce the graph AS/storage vocabulary needed to import and consume a
-  TLAS through one selected RT pass.
+- [x] **R4.2 — common Graphics RT contract (2026-09-19):** add API-neutral
+  generational AS/RT-pipeline handles, validated build/pipeline/binding/dispatch
+  descriptors, effective capability gates, and optional recorder operations
+  without enabling a partial backend. →
+  [spec](../../../.spec/specs/render-r4-2-graphics-rt-contract.md),
+  [review](../.review/R4.2.md),
+  [journal](../../../.spec/journal/2026-09-19-render-graph-r4-2.md)
+- [ ] **R4.3 — graph RT vocabulary and imported-TLAS path:** add the graph AS
+  and storage-image vocabulary, wire a Graphics-owned TLAS into one selected RT
+  pass, and preserve the explicit fallback when the complete capability set is
+  unavailable.
 - [ ] **R4.4–R4.5 — scheduled builds and evidence:** move BLAS/TLAS build or
   update work into graph passes only after the imported-TLAS slice is proven;
   integrate its output with composite/tone-map/capture and validate lifecycle,

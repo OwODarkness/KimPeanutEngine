@@ -77,8 +77,8 @@ public policy while the coordinator owns scene preparation.
 - [R4 — ray-tracing foundation and render-graph integration](.plan/R4.md) —
   selected ray-query directional hard-shadow visibility and closed the
   validation-clean raster gate; R4.1 hardened graph write/binding/transition
-  semantics before any RT contract is added. **R4.1 complete (2026-09-19); R4.2
-  is next.**
+  semantics, and R4.2 now defines the API-neutral Graphics RT contract without
+  enabling a partial backend. **R4.2 complete (2026-09-19); R4.3 is next.**
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
   texture minification and bound texture, descriptor, visibility, and static-
   shadow costs through Resource, Render, and Graphics ownership boundaries.

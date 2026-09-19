@@ -12,6 +12,7 @@
 #include "common/buffer_types.h"
 #include "common/graphics_capabilities.h"
 #include "common/pipeline_validation.h"
+#include "common/ray_tracing.h"
 #include "common/render_target_validation.h"
 #include "common/render_target_readback.h"
 #include "data/shader.h"
@@ -84,6 +85,83 @@ TEST(GraphicsCapabilities, DefaultsToThePortableBoundResourcePath)
     compressed.bc3_srgb_textures = true;
     EXPECT_TRUE(compressed.SupportsTextureFormat(
         TextureFormat::TEXTURE_FORMAT_BC3_SRGB));
+    EXPECT_FALSE(capabilities.SupportsRayQueryShadows());
+    EXPECT_FALSE(capabilities.SupportsRayTracingPipeline());
+}
+
+TEST(GraphicsCapabilities, RequiresTheCompleteCommonAndBackendContract)
+{
+    kpengine::graphics::GraphicsCapabilities incomplete{};
+    incomplete.acceleration_structures = true;
+    incomplete.ray_query = true;
+    EXPECT_FALSE(incomplete.SupportsRayQueryShadows());
+
+    incomplete.ray_tracing_contract = true;
+    EXPECT_TRUE(incomplete.SupportsRayQueryShadows());
+    EXPECT_FALSE(incomplete.SupportsRayTracingPipeline());
+
+    incomplete.ray_tracing_pipeline = true;
+    incomplete.ray_tracing_storage_image = true;
+    EXPECT_TRUE(incomplete.SupportsRayTracingPipeline());
+}
+
+TEST(RayTracingContract, ValidatesOpaqueResourcesAndDispatchDescriptors)
+{
+    using namespace kpengine::graphics;
+
+    const BufferHandle vertex{1, 0};
+    const BufferHandle index{2, 0};
+    const RayTracingGeometryDesc geometry{vertex, 0, 12, 3, index, 0, 3,
+                                          RayTracingIndexType::UInt32};
+    EXPECT_TRUE(IsRayTracingGeometryDescValid(geometry));
+
+    const RayTracingAccelerationStructureDesc blas{
+        RayTracingAccelerationStructureType::BottomLevel, 1, 0, true};
+    const RayTracingAccelerationStructureDesc tlas{
+        RayTracingAccelerationStructureType::TopLevel, 0, 1, true};
+    EXPECT_TRUE(IsRayTracingAccelerationStructureDescValid(blas));
+    EXPECT_TRUE(IsRayTracingAccelerationStructureDescValid(tlas));
+    EXPECT_FALSE(IsRayTracingAccelerationStructureDescValid(
+        {RayTracingAccelerationStructureType::BottomLevel, 0, 1, false}));
+
+    const AccelerationStructureHandle imported_blas{4, 2};
+    const RayTracingInstanceDesc instance{imported_blas};
+    EXPECT_TRUE(IsRayTracingInstanceDescValid(instance));
+
+    const RayTracingBuildDesc build{AccelerationStructureHandle{6, 1},
+                                    RayTracingBuildMode::Build, {&geometry, 1}, {}};
+    EXPECT_TRUE(IsRayTracingBuildDescValid(build));
+    EXPECT_FALSE(IsRayTracingBuildDescValid(
+        {AccelerationStructureHandle{6, 1}, RayTracingBuildMode::Update, {}, {}}));
+
+    kpengine::data::ShaderData ray_generation{};
+    kpengine::data::ShaderData miss{};
+    kpengine::data::ShaderData closest_hit{};
+    const RayTracingPipelineDesc pipeline{
+        &ray_generation, &miss, &closest_hit, 2, {}};
+    EXPECT_TRUE(IsRayTracingPipelineDescValid(pipeline));
+
+    const RayTracingDispatchDesc dispatch{
+        RayTracingPipelineHandle{8, 1}, DescriptorSetHandle{9, 1}, 128, 64, 1};
+    EXPECT_TRUE(IsRayTracingDispatchDescValid(dispatch));
+    EXPECT_FALSE(IsRayTracingDispatchDescValid(
+        {RayTracingPipelineHandle{}, DescriptorSetHandle{9, 1}, 128, 64, 1}));
+}
+
+TEST(RayTracingContract, KeepsASAndStorageBindingsOutOfRasterBindingVariant)
+{
+    using namespace kpengine::graphics;
+
+    const RayTracingResourceBindingSetDesc resources{
+        0,
+        {RayTracingAccelerationStructureBinding{0, 0, AccelerationStructureHandle{3, 1}},
+         RayTracingStorageTextureBinding{0, 1, TextureHandle{5, 0}}},
+        true};
+    ASSERT_EQ(resources.bindings.size(), 2U);
+    EXPECT_TRUE(std::holds_alternative<RayTracingAccelerationStructureBinding>(
+        resources.bindings[0]));
+    EXPECT_TRUE(std::holds_alternative<RayTracingStorageTextureBinding>(
+        resources.bindings[1]));
 }
 
 TEST(TextureFormatContract, DefinesBlockSizedMipPayloadsAndBackendMappings)

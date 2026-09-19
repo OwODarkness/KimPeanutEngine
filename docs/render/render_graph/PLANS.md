@@ -1,7 +1,7 @@
 # Render Graph Plans
 
-**Status: raster foundation built and closed with R3 (2026-09-18); RT extension
-proposed as R4.** This page records
+**Status: raster foundation built and closed with R3 (2026-09-18); R4.2's common
+RT contract is complete and R4.3 is next.** This page records
 KimPeanutEngine's architecture after inspecting Sakura Engine's actual
 render-graph source. The evidence and adopt/modify/reject decisions are in the
 [Sakura analysis](sakura_analysis.md).
@@ -10,8 +10,7 @@ render-graph source. The evidence and adopt/modify/reject decisions are in the
 
 **Roadmap:** [Render Graph TODO](TODO.md)
 
-**Concrete stages:** completed [R3](../.plan/R3.md); proposed
-[R4](../.plan/R4.md)
+**Concrete stages:** completed [R3](../.plan/R3.md); active [R4](../.plan/R4.md)
 
 ## Objective
 

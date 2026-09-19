@@ -14,6 +14,8 @@ namespace kpengine::graphics
     struct MeshTag{};
     struct RenderTargetTag{};
     struct AudioTag{};
+    struct AccelerationStructureTag{};
+    struct RayTracingPipelineTag{};
 
 
     using TextureHandle = Handle<TextureTag>;
@@ -24,6 +26,10 @@ namespace kpengine::graphics
     using BufferHandle = Handle<BufferTag>;
     using MeshHandle = Handle<MeshTag>;
     using RenderTargetHandle = Handle<RenderTargetTag>;
+    // Opaque Graphics-owned handles. Native acceleration structures and RT
+    // pipelines never cross this common boundary.
+    using AccelerationStructureHandle = Handle<AccelerationStructureTag>;
+    using RayTracingPipelineHandle = Handle<RayTracingPipelineTag>;
 
 }
 
