@@ -57,6 +57,7 @@ namespace kpengine::graphics
         presentation_active_ = false;
         active_target_ = {};
         draws_suppressed_ = false;
+        buffer_usage_cache_.clear();
         ResetStateCache();
         profile_counters_ = {};
     }
@@ -126,6 +127,75 @@ namespace kpengine::graphics
             return false;
         }
         return render_target_manager_->RequireUsage(command_buffer_, target, usage, scope);
+    }
+
+    bool VulkanCommandRecorder::RequireBufferUsage(BufferHandle buffer, ResourceUsage usage)
+    {
+        if (command_buffer_ == VK_NULL_HANDLE || !buffer_manager_ || !buffer.IsValid())
+        {
+            return false;
+        }
+        VulkanBufferResource *const resource = buffer_manager_->GetBufferResource(buffer);
+        if (resource == nullptr)
+        {
+            return false;
+        }
+        if (usage == ResourceUsage::Undefined)
+        {
+            return true;
+        }
+        if (usage == ResourceUsage::ColorAttachment || usage == ResourceUsage::DepthAttachment ||
+            usage == ResourceUsage::Present)
+        {
+            return false;
+        }
+        const auto previous = buffer_usage_cache_.find(buffer);
+        if (previous != buffer_usage_cache_.end() && previous->second == usage)
+        {
+            return true;
+        }
+
+        VkPipelineStageFlags2 destination_stage = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        VkAccessFlags2 destination_access = VK_ACCESS_2_MEMORY_READ_BIT;
+        switch (usage)
+        {
+        case ResourceUsage::Sampled:
+            destination_stage = VK_PIPELINE_STAGE_2_VERTEX_SHADER_BIT |
+                                VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT;
+            destination_access = VK_ACCESS_2_SHADER_READ_BIT;
+            break;
+        case ResourceUsage::TransferSource:
+            destination_stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            destination_access = VK_ACCESS_2_TRANSFER_READ_BIT;
+            break;
+        case ResourceUsage::TransferDestination:
+            destination_stage = VK_PIPELINE_STAGE_2_TRANSFER_BIT;
+            destination_access = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            break;
+        case ResourceUsage::Undefined:
+        case ResourceUsage::ColorAttachment:
+        case ResourceUsage::DepthAttachment:
+        case ResourceUsage::Present:
+            break;
+        }
+
+        VkBufferMemoryBarrier2 barrier{};
+        barrier.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+        barrier.srcStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+        barrier.srcAccessMask = VK_ACCESS_2_MEMORY_READ_BIT | VK_ACCESS_2_MEMORY_WRITE_BIT;
+        barrier.dstStageMask = destination_stage;
+        barrier.dstAccessMask = destination_access;
+        barrier.buffer = resource->buffer;
+        barrier.offset = 0;
+        barrier.size = VK_WHOLE_SIZE;
+
+        VkDependencyInfo dependency{};
+        dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+        dependency.bufferMemoryBarrierCount = 1;
+        dependency.pBufferMemoryBarriers = &barrier;
+        vkCmdPipelineBarrier2(command_buffer_, &dependency);
+        buffer_usage_cache_[buffer] = usage;
+        return true;
     }
 
     bool VulkanCommandRecorder::BindPipeline(PipelineHandle pipeline)

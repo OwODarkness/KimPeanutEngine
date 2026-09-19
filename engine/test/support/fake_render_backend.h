@@ -122,6 +122,10 @@ namespace kpengine::test
         {
             return true;
         }
+        bool RequireBufferUsage(graphics::BufferHandle buffer, graphics::ResourceUsage) override
+        {
+            return buffer.IsValid();
+        }
         bool BindPipeline(graphics::PipelineHandle) override { return true; }
         void BindMesh(graphics::MeshHandle) override {}
         bool BindGeometry(const graphics::GeometryView &) override { return true; }

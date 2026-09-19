@@ -76,8 +76,9 @@ public policy while the coordinator owns scene preparation.
   R3.7's extensions closed as a gate.**
 - [R4 — ray-tracing foundation and render-graph integration](.plan/R4.md) —
   selected ray-query directional hard-shadow visibility and closed the
-  validation-clean raster gate; R4.1 now hardens graph write/binding/transition
-  semantics before any RT contract is added. **R4.0 complete (2026-09-19).**
+  validation-clean raster gate; R4.1 hardened graph write/binding/transition
+  semantics before any RT contract is added. **R4.1 complete (2026-09-19); R4.2
+  is next.**
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
   texture minification and bound texture, descriptor, visibility, and static-
   shadow costs through Resource, Render, and Graphics ownership boundaries.

@@ -83,6 +83,7 @@ namespace kpengine::graphics
         void EndRenderTarget() override;
         bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage,
                                       RenderTargetAttachmentScope scope) override;
+        bool RequireBufferUsage(BufferHandle buffer, ResourceUsage usage) override;
         bool BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
         bool BindGeometry(const GeometryView &geometry) override;

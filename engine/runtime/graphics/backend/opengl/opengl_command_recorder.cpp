@@ -186,6 +186,18 @@ namespace kpengine::graphics
         return true;
     }
 
+    bool OpenglCommandRecorder::RequireBufferUsage(BufferHandle buffer, ResourceUsage usage)
+    {
+        // OpenGL orders accesses implicitly. The explicit handle check keeps
+        // the common seam honest when a graph binding is missing.
+        if (!buffer.IsValid())
+        {
+            return false;
+        }
+        (void)usage;
+        return true;
+    }
+
     bool OpenglCommandRecorder::BindPipeline(PipelineHandle pipeline)
     {
         ++profile_counters_.pipeline_bind_requests;

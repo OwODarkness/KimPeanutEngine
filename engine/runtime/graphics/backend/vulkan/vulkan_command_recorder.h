@@ -3,6 +3,7 @@
 
 #include <functional>
 #include <optional>
+#include <unordered_map>
 #include <utility>
 #include <vulkan/vulkan.h>
 
@@ -35,6 +36,7 @@ namespace kpengine::graphics
         void EndRenderTarget() override;
         bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage,
                                       RenderTargetAttachmentScope scope) override;
+        bool RequireBufferUsage(BufferHandle buffer, ResourceUsage usage) override;
         bool BindPipeline(PipelineHandle pipeline) override;
         void BindMesh(MeshHandle mesh) override;
         bool BindGeometry(const GeometryView &geometry) override;
@@ -90,6 +92,7 @@ namespace kpengine::graphics
         // submitting a pipeline-state mismatch to the driver.
         bool draws_suppressed_ = false;
         bool presentation_active_ = false;
+        std::unordered_map<BufferHandle, ResourceUsage> buffer_usage_cache_;
         std::function<std::optional<BufferDesc>(BufferHandle)> get_geometry_buffer_desc_;
         std::function<BufferHandle(BufferHandle)> get_geometry_buffer_handle_;
         CommandRecorderProfileCounters profile_counters_{};

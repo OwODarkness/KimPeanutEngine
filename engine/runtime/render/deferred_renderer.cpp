@@ -57,33 +57,6 @@ namespace kpengine::render
         constexpr uint64_t kPointShadowPerPassUniformKey = 0x534841444f575f50ull;
         constexpr uint64_t kGBufferPerPassUniformKey = 0x4742554646455250ull;
 
-        // The persistent target backing a logical resource, if it has one. The
-        // two enums list the same resources in different orders, and this is the
-        // only place that relates them, so neither header depends on the other.
-        // SceneHdr is absent: it is a transient served by the Graphics pool.
-        std::optional<RenderTargetName> PersistentTargetForResource(RenderPassResource resource)
-        {
-            switch (resource)
-            {
-            case RenderPassResource::SceneColor:
-                return RenderTargetName::SceneColor;
-            case RenderPassResource::GBuffer:
-                return RenderTargetName::GBuffer;
-            case RenderPassResource::DirectionalShadow:
-                return RenderTargetName::DirectionalShadow;
-            case RenderPassResource::SpotShadow:
-                return RenderTargetName::SpotShadow;
-            case RenderPassResource::PointShadow:
-                return RenderTargetName::PointShadow;
-            case RenderPassResource::CaptureOutput:
-                return RenderTargetName::CaptureOutput;
-            case RenderPassResource::SceneHdr:
-            case RenderPassResource::Count:
-                break;
-            }
-            return std::nullopt;
-        }
-
         graphics::RenderTargetAttachmentScope ToAttachmentScope(RenderGraphAttachmentScope scope)
         {
             if (scope.all)
@@ -736,8 +709,14 @@ namespace kpengine::render
             result.normal_recording_completed = false;
             return result;
         }
+        if (!BuildFrameResourceBindings(*frame_plan))
+        {
+            result.normal_recording_completed = false;
+            return result;
+        }
         active_pass_frame_.emplace(*frame_plan);
         active_frame_plan_ = frame_plan;
+        frame_execution_failed_ = false;
         const auto graph_execute_started = std::chrono::steady_clock::now();
         const bool cursor_started = active_pass_frame_->ExecuteRenderer(
             [this, &input, frame_plan](const CompiledRenderGraph::Pass &pass) {
@@ -758,14 +737,23 @@ namespace kpengine::render
                 {
                     return true;
                 }
-                ApplyPassTransitions(*frame_plan, pass);
+                if (!ApplyPassTransitions(*frame_plan, pass))
+                {
+                    return false;
+                }
                 // The executor owns the attachment boundary now: the pass's write
                 // use names the target it records into, so no pass opens or
                 // closes its own target.
                 RenderTarget *const attachment = ResolvePassAttachment(pass);
+                const bool has_attachment_write = std::any_of(
+                    pass.uses.begin(), pass.uses.end(), [](const RenderGraphResourceUse &use) {
+                        return use.access == RenderGraphAccess::Write &&
+                               std::holds_alternative<GraphTextureHandle>(use.handle);
+                    });
                 graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-                if (attachment != nullptr && (recorder == nullptr ||
-                                              !attachment->BeginRecording(*recorder)))
+                if ((has_attachment_write && attachment == nullptr) ||
+                    (attachment != nullptr && (recorder == nullptr ||
+                                               !attachment->BeginRecording(*recorder))))
                 {
                     return false;
                 }
@@ -889,7 +877,11 @@ namespace kpengine::render
             {
                 if (pass.owner == RenderGraphPassOwner::External && pass.terminal)
                 {
-                    ApplyPassTransitions(*active_frame_plan_, pass);
+                    if (!ApplyPassTransitions(*active_frame_plan_, pass))
+                    {
+                        frame_execution_failed_ = true;
+                        return false;
+                    }
                     break;
                 }
             }
@@ -916,6 +908,14 @@ namespace kpengine::render
             KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Fixed render pass finalization failed: %s",
                    error.c_str());
         }
+        if (frame_execution_failed_)
+        {
+            if (error.empty())
+            {
+                error = "Render graph external pass requirements failed.";
+            }
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", error.c_str());
+        }
         if (finalized)
         {
             // Released after the sweep, so the next frame takes the same
@@ -929,7 +929,7 @@ namespace kpengine::render
             render_world_ = nullptr;
             frame_lighting_binding_ = {};
         }
-        return finalized;
+        return finalized && !frame_execution_failed_;
     }
 
     void DeferredRenderer::UpdateEnvironment(const RenderSceneFrameInput &input)
@@ -968,6 +968,116 @@ namespace kpengine::render
         active_environment_ = {};
     }
 
+    RenderTarget *DeferredRenderer::ResolveNamedFrameTarget(std::string_view name)
+    {
+        if (name == "SceneHdr")
+        {
+            return transient_scene_hdr_.get();
+        }
+        if (name == "SceneColor")
+        {
+            return frame_targets_.GetTarget(RenderTargetName::SceneColor);
+        }
+        if (name == "GBuffer")
+        {
+            return frame_targets_.GetTarget(RenderTargetName::GBuffer);
+        }
+        if (name == "DirectionalShadow")
+        {
+            return frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
+        }
+        if (name == "SpotShadow")
+        {
+            return frame_targets_.GetTarget(RenderTargetName::SpotShadow);
+        }
+        if (name == "PointShadow")
+        {
+            return frame_targets_.GetTarget(RenderTargetName::PointShadow);
+        }
+        if (name == "CaptureOutput")
+        {
+            return frame_targets_.GetTarget(RenderTargetName::CaptureOutput);
+        }
+        return nullptr;
+    }
+
+    RenderTarget *DeferredRenderer::ResolveFrameTexture(GraphTextureHandle texture) const
+    {
+        const auto binding = std::find_if(
+            frame_texture_bindings_.begin(), frame_texture_bindings_.end(),
+            [texture](const FrameTextureBinding &entry) { return entry.logical == texture; });
+        return binding != frame_texture_bindings_.end() ? binding->physical : nullptr;
+    }
+
+    RenderTarget *DeferredRenderer::ResolveFrameTextureByName(std::string_view name) const
+    {
+        const auto binding = std::find_if(
+            frame_texture_bindings_.begin(), frame_texture_bindings_.end(),
+            [name](const FrameTextureBinding &entry) { return entry.name == name; });
+        return binding != frame_texture_bindings_.end() ? binding->physical : nullptr;
+    }
+
+    graphics::BufferHandle DeferredRenderer::ResolveFrameBuffer(GraphBufferHandle buffer) const
+    {
+        const auto binding = std::find_if(
+            frame_buffer_bindings_.begin(), frame_buffer_bindings_.end(),
+            [buffer](const FrameBufferBinding &entry) { return entry.logical == buffer; });
+        return binding != frame_buffer_bindings_.end() ? binding->physical
+                                                       : graphics::BufferHandle{};
+    }
+
+    bool DeferredRenderer::BuildFrameResourceBindings(const CompiledRenderGraph &plan)
+    {
+        frame_texture_bindings_.clear();
+        frame_buffer_bindings_.clear();
+        for (const RenderGraphLifetimeInterval &lifetime : plan.Lifetimes())
+        {
+            if (const auto *texture = std::get_if<GraphTextureHandle>(&lifetime.handle))
+            {
+                RenderTarget *const target = ResolveNamedFrameTarget(lifetime.resource_name);
+                if (target == nullptr)
+                {
+                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                           "No frame binding for graph texture '%s'", lifetime.resource_name.c_str());
+                    frame_texture_bindings_.clear();
+                    return false;
+                }
+                frame_texture_bindings_.push_back({*texture, lifetime.resource_name, target});
+                continue;
+            }
+
+            // R4.1 makes the missing physical-buffer binding explicit. The
+            // current raster renderer has no graph-owned buffer provider yet;
+            // a future buffer owner must populate this table before execution.
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "No frame binding provider for graph buffer '%s'",
+                   lifetime.resource_name.c_str());
+            frame_texture_bindings_.clear();
+            frame_buffer_bindings_.clear();
+            return false;
+        }
+        return true;
+    }
+
+    bool DeferredRenderer::ValidatePassBindings(const CompiledRenderGraph::Pass &pass) const
+    {
+        for (const RenderGraphResourceUse &use : pass.uses)
+        {
+            if (const auto *texture = std::get_if<GraphTextureHandle>(&use.handle))
+            {
+                if (ResolveFrameTexture(*texture) == nullptr)
+                {
+                    return false;
+                }
+            }
+            else if (!ResolveFrameBuffer(std::get<GraphBufferHandle>(use.handle)).IsValid())
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     RenderTarget *DeferredRenderer::ResolvePassAttachment(const CompiledRenderGraph::Pass &pass)
     {
         // A renderer pass records into exactly one target, named by its write
@@ -978,13 +1088,10 @@ namespace kpengine::render
             {
                 continue;
             }
-            const auto *texture = std::get_if<GraphTextureHandle>(&use.handle);
-            if (texture == nullptr || texture->resource >=
-                                          static_cast<uint32_t>(RenderPassResource::Count))
+            if (const auto *texture = std::get_if<GraphTextureHandle>(&use.handle))
             {
-                continue;
+                return ResolveFrameTexture(*texture);
             }
-            return ResolveResourceTarget(static_cast<RenderPassResource>(texture->resource));
         }
         return nullptr;
     }
@@ -1043,33 +1150,32 @@ namespace kpengine::render
     {
         if (!transient_scene_hdr_ || backend_ == nullptr)
         {
+            frame_texture_bindings_.clear();
+            frame_buffer_bindings_.clear();
             return;
         }
         const graphics::RenderTargetHandle handle = transient_scene_hdr_->GetHandle();
         transient_scene_hdr_->Cleanup();
         backend_->ReleaseTransientRenderTarget(handle);
+        frame_texture_bindings_.clear();
+        frame_buffer_bindings_.clear();
     }
 
-    RenderTarget *DeferredRenderer::ResolveResourceTarget(RenderPassResource resource)
-    {
-        if (resource == RenderPassResource::SceneHdr)
-        {
-            // Acquired for this frame; null only if the frame never reached the
-            // acquire, which fails the frame before any pass runs.
-            return transient_scene_hdr_.get();
-        }
-        const std::optional<RenderTargetName> name = PersistentTargetForResource(resource);
-        return name.has_value() ? frame_targets_.GetTarget(*name) : nullptr;
-    }
-
-    void DeferredRenderer::ApplyPassTransitions(const CompiledRenderGraph &plan,
+    bool DeferredRenderer::ApplyPassTransitions(const CompiledRenderGraph &plan,
                                                 const CompiledRenderGraph::Pass &pass)
     {
         graphics::CommandRecorder *const recorder =
             backend_ != nullptr ? backend_->GetCommandRecorder() : nullptr;
-        if (recorder == nullptr || pass.transition_count == 0)
+        if (recorder == nullptr || !ValidatePassBindings(pass))
         {
-            return;
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Render graph pass '%s' has an unresolved physical binding",
+                   pass.name.c_str());
+            return false;
+        }
+        if (pass.transition_count == 0)
+        {
+            return true;
         }
         const std::vector<RenderGraphTransitionIntent> &transitions = plan.Transitions();
         for (std::size_t index = 0; index < pass.transition_count; ++index)
@@ -1079,24 +1185,34 @@ namespace kpengine::render
             {
                 break;
             }
-            const auto *texture =
-                std::get_if<GraphTextureHandle>(&transitions[intent_index].handle);
-            if (texture == nullptr ||
-                texture->resource >=
-                    static_cast<uint32_t>(RenderPassResource::Count))
+            const RenderGraphTransitionIntent &intent = transitions[intent_index];
+            if (const auto *texture = std::get_if<GraphTextureHandle>(&intent.handle))
             {
+                RenderTarget *const target = ResolveFrameTexture(*texture);
+                if (target == nullptr ||
+                    !recorder->RequireRenderTargetUsage(
+                        target->GetHandle(), ToResourceUsage(intent.usage),
+                        ToAttachmentScope(intent.scope)))
+                {
+                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                           "Render graph texture requirement failed for pass '%s'",
+                           pass.name.c_str());
+                    return false;
+                }
                 continue;
             }
-            RenderTarget *const target =
-                ResolveResourceTarget(static_cast<RenderPassResource>(texture->resource));
-            if (target == nullptr)
+            const GraphBufferHandle buffer = std::get<GraphBufferHandle>(intent.handle);
+            const graphics::BufferHandle physical = ResolveFrameBuffer(buffer);
+            if (!physical.IsValid() ||
+                !recorder->RequireBufferUsage(physical, ToResourceUsage(intent.usage)))
             {
-                continue;
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                       "Render graph buffer requirement failed for pass '%s'",
+                       pass.name.c_str());
+                return false;
             }
-            recorder->RequireRenderTargetUsage(
-                target->GetHandle(), ToResourceUsage(transitions[intent_index].usage),
-                ToAttachmentScope(transitions[intent_index].scope));
         }
+        return true;
     }
 
     void DeferredRenderer::ConfigureFramePlans()
@@ -1603,15 +1719,11 @@ namespace kpengine::render
         }
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        RenderTarget *const hdr_target =
-            ResolveResourceTarget(RenderPassResource::SceneHdr);
-        RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
-        RenderTarget *const shadow_target =
-            frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
-        RenderTarget *const spot_shadow_target =
-            frame_targets_.GetTarget(RenderTargetName::SpotShadow);
-        RenderTarget *const point_shadow_target =
-            frame_targets_.GetTarget(RenderTargetName::PointShadow);
+        RenderTarget *const hdr_target = ResolveFrameTextureByName("SceneHdr");
+        RenderTarget *const gbuffer_target = ResolveFrameTextureByName("GBuffer");
+        RenderTarget *const shadow_target = ResolveFrameTextureByName("DirectionalShadow");
+        RenderTarget *const spot_shadow_target = ResolveFrameTextureByName("SpotShadow");
+        RenderTarget *const point_shadow_target = ResolveFrameTextureByName("PointShadow");
         if (!recorder || !hdr_target || !gbuffer_target || !shadow_target ||
             !spot_shadow_target || !point_shadow_target)
         {
@@ -2001,10 +2113,9 @@ namespace kpengine::render
         }
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        RenderTarget *const hdr_target =
-            ResolveResourceTarget(RenderPassResource::SceneHdr);
-        RenderTarget *const gbuffer_target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
-        RenderTarget *const scene_target = frame_targets_.GetTarget(RenderTargetName::SceneColor);
+        RenderTarget *const hdr_target = ResolveFrameTextureByName("SceneHdr");
+        RenderTarget *const gbuffer_target = ResolveFrameTextureByName("GBuffer");
+        RenderTarget *const scene_target = ResolveFrameTextureByName("SceneColor");
         if (!recorder || !hdr_target || !gbuffer_target || !scene_target ||
             !PrepareToneMapPassResources())
         {
@@ -2040,16 +2151,11 @@ namespace kpengine::render
         }
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        RenderTarget *const output_target =
-            frame_targets_.GetTarget(RenderTargetName::CaptureOutput);
-        RenderTarget *const gbuffer_target =
-            frame_targets_.GetTarget(RenderTargetName::GBuffer);
-        RenderTarget *const shadow_target =
-            frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
-        RenderTarget *const spot_shadow_target =
-            frame_targets_.GetTarget(RenderTargetName::SpotShadow);
-        RenderTarget *const point_shadow_target =
-            frame_targets_.GetTarget(RenderTargetName::PointShadow);
+        RenderTarget *const output_target = ResolveFrameTextureByName("CaptureOutput");
+        RenderTarget *const gbuffer_target = ResolveFrameTextureByName("GBuffer");
+        RenderTarget *const shadow_target = ResolveFrameTextureByName("DirectionalShadow");
+        RenderTarget *const spot_shadow_target = ResolveFrameTextureByName("SpotShadow");
+        RenderTarget *const point_shadow_target = ResolveFrameTextureByName("PointShadow");
         if (!recorder || !output_target || !gbuffer_target || !shadow_target ||
             !spot_shadow_target || !point_shadow_target ||
             !PrepareCaptureViewPassResources())

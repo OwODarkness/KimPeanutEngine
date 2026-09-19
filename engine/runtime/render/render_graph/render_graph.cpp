@@ -538,6 +538,16 @@ namespace kpengine::render
                     {
                         add_producer_edge(version.producer, pass);
                     }
+                    else if (use.attachment_op != RenderGraphAttachmentOp::Clear &&
+                             texture->version > 0)
+                    {
+                        // A preserving/update write consumes the previous
+                        // version even when the pass does not also declare a
+                        // read. Clear is the explicit discard form.
+                        const TextureVersion &previous =
+                            textures_[texture->resource].versions[texture->version - 1];
+                        add_producer_edge(previous.producer, pass);
+                    }
                 }
                 else
                 {
@@ -560,6 +570,13 @@ namespace kpengine::render
                     if (use.access == RenderGraphAccess::Read)
                     {
                         add_producer_edge(version.producer, pass);
+                    }
+                    else if (use.attachment_op != RenderGraphAttachmentOp::Clear &&
+                             buffer.version > 0)
+                    {
+                        const BufferVersion &previous =
+                            buffers_[buffer.resource].versions[buffer.version - 1];
+                        add_producer_edge(previous.producer, pass);
                     }
                 }
             }

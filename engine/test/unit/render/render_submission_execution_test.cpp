@@ -133,6 +133,11 @@ namespace kpengine::render
                 return true;
             }
 
+            bool RequireBufferUsage(graphics::BufferHandle buffer, graphics::ResourceUsage) override
+            {
+                return buffer.IsValid();
+            }
+
             void EndRenderTarget() override
             {
                 ++target_ends;

@@ -337,6 +337,68 @@ TEST(RenderGraphTest, ChainedWriteExtendsTheVersionLaterPassesRead)
     EXPECT_GT(read->version, 0U);
 }
 
+TEST(RenderGraphTest, PreservingWriteDependsOnThePreviousVersionProducer)
+{
+    using kpengine::render::RenderGraphAttachmentOp;
+    using kpengine::render::RenderGraphUsage;
+
+    RenderGraphBuilder builder;
+    const auto color = builder.CreateTexture("Color");
+    builder.AddPass({"Initial", RenderGraphPassCondition::Always, true, false})
+        .Write(color, RenderGraphUsage::ColorAttachment, RenderGraphAttachmentOp::Clear);
+    builder.AddPass({"Update", RenderGraphPassCondition::Always, true, true})
+        .Write(color, RenderGraphUsage::ColorAttachment);
+    builder.ExportTexture(builder.CurrentVersion(color), "Color");
+
+    const auto result = builder.Compile();
+    ASSERT_TRUE(result.Succeeded());
+    ASSERT_EQ(result.graph->Passes().size(), 2U);
+    EXPECT_EQ(result.graph->Passes()[0].name, "Initial");
+    EXPECT_EQ(result.graph->Passes()[1].name, "Update");
+}
+
+TEST(RenderGraphTest, ClearWriteExplicitlyDiscardsThePreviousVersionDependency)
+{
+    using kpengine::render::RenderGraphAttachmentOp;
+    using kpengine::render::RenderGraphUsage;
+
+    RenderGraphBuilder builder;
+    const auto color = builder.CreateTexture("Color");
+    builder.AddPass({"OldContents", RenderGraphPassCondition::Always, true, false})
+        .Write(color, RenderGraphUsage::ColorAttachment, RenderGraphAttachmentOp::Clear);
+    builder.AddPass({"DiscardAndClear", RenderGraphPassCondition::Always, true, true})
+        .Write(color, RenderGraphUsage::ColorAttachment, RenderGraphAttachmentOp::Clear);
+    builder.ExportTexture(builder.CurrentVersion(color), "Color");
+
+    const auto result = builder.Compile();
+    ASSERT_TRUE(result.Succeeded());
+    ASSERT_EQ(result.graph->Passes().size(), 1U);
+    EXPECT_EQ(result.graph->Passes()[0].name, "DiscardAndClear");
+}
+
+TEST(RenderGraphTest, ReadModifyWriteKeepsThePreviousBufferProducerLive)
+{
+    using kpengine::render::RenderGraphUsage;
+
+    RenderGraphBuilder builder;
+    const auto buffer = builder.CreateBuffer("LightData");
+    builder.AddPass({"Upload", RenderGraphPassCondition::Always, true, false})
+        .Write(buffer, RenderGraphUsage::TransferDestination);
+    builder.AddPass({"Update", RenderGraphPassCondition::Always, true, true})
+        .Read(buffer, RenderGraphUsage::TransferSource)
+        .Write(buffer, RenderGraphUsage::TransferDestination);
+    builder.ExportBuffer(builder.CurrentVersion(buffer), "LightData");
+
+    const auto result = builder.Compile();
+    ASSERT_TRUE(result.Succeeded());
+    ASSERT_EQ(result.graph->Passes().size(), 2U);
+    EXPECT_EQ(result.graph->Passes()[0].name, "Upload");
+    EXPECT_EQ(result.graph->Passes()[1].name, "Update");
+    ASSERT_EQ(result.graph->Transitions().size(), 3U);
+    EXPECT_TRUE(std::holds_alternative<kpengine::render::GraphBufferHandle>(
+        result.graph->Transitions()[0].handle));
+}
+
 TEST(RenderGraphTest, RejectsDuplicateEnabledPassKeysButAllowsDisabledReuse)
 {
     RenderGraphBuilder builder;

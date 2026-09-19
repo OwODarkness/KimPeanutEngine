@@ -7,6 +7,7 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
 #include <vector>
 
@@ -153,10 +154,12 @@ namespace kpengine::render
         // already satisfied.
         // The target a pass records into, named by its write use. Null for a pass
         // that writes no attachment, such as the external terminal.
-        // The target backing a logical resource. Everything except SceneHdr is a
-        // persistent frame target; SceneHdr is the frame's transient, taken from
-        // the Graphics-owned pool.
-        RenderTarget *ResolveResourceTarget(RenderPassResource resource);
+        RenderTarget *ResolveFrameTexture(GraphTextureHandle texture) const;
+        RenderTarget *ResolveFrameTextureByName(std::string_view name) const;
+        graphics::BufferHandle ResolveFrameBuffer(GraphBufferHandle buffer) const;
+        RenderTarget *ResolveNamedFrameTarget(std::string_view name);
+        bool BuildFrameResourceBindings(const CompiledRenderGraph &plan);
+        bool ValidatePassBindings(const CompiledRenderGraph::Pass &pass) const;
         // The description for a declared transient key, or null for one this
         // renderer does not implement.
         std::optional<graphics::RenderTargetDesc> DescribeFrameTransient(
@@ -166,7 +169,7 @@ namespace kpengine::render
         bool AcquireFrameTransients(const CompiledRenderGraph &plan);
         void ReleaseFrameTransients();
         RenderTarget *ResolvePassAttachment(const CompiledRenderGraph::Pass &pass);
-        void ApplyPassTransitions(const CompiledRenderGraph &plan,
+        bool ApplyPassTransitions(const CompiledRenderGraph &plan,
                                   const CompiledRenderGraph::Pass &pass);
         void ConfigureFramePlans();
         const CompiledRenderGraph *GetFramePlan(RenderFrameConditions conditions) const;
@@ -232,6 +235,23 @@ namespace kpengine::render
         // The frame's pooled transient, wrapped around a pool-owned handle.
         // RenderTarget is not movable, so the wrapper is held by pointer.
         std::unique_ptr<RenderTarget> transient_scene_hdr_;
+        struct FrameTextureBinding
+        {
+            GraphTextureHandle logical;
+            std::string name;
+            RenderTarget *physical = nullptr;
+        };
+        struct FrameBufferBinding
+        {
+            GraphBufferHandle logical;
+            std::string name;
+            graphics::BufferHandle physical;
+        };
+        // Explicit frame-local bindings keep physical resolution separate from
+        // authored pass-resource identities and reject missing graph resources.
+        std::vector<FrameTextureBinding> frame_texture_bindings_;
+        std::vector<FrameBufferBinding> frame_buffer_bindings_;
+        bool frame_execution_failed_ = false;
         bool frame_plan_valid_ = false;
         double frame_plan_compile_ms_ = 0.0;
         graphics::Extent2D pending_scene_render_target_extent_;

@@ -53,10 +53,13 @@ Architecture: [PLANS.md](PLANS.md). Completed migration:
   contract was added. → [spec](../../../.spec/specs/render-r4-ray-query-shadow.md),
   [review](../.review/R4.0.md),
   [journal](../../../.spec/journal/2026-09-19-render-graph-r4-0.md)
-- [ ] **R4.1 — graph correctness prerequisites:** model preserving/update
-  writes as dependencies on prior versions, propagate transition/binding
-  failures, replace raster resource ordinals with explicit frame bindings, and
-  execute buffer requirements.
+- [x] **R4.1 — graph correctness prerequisites (2026-09-19):** model
+  preserving/update writes as dependencies on prior versions, propagate
+  transition/binding failures, replace raster resource ordinals with explicit
+  frame bindings, and execute buffer requirements. →
+  [spec](../../../.spec/specs/render-r4-1-graph-correctness.md),
+  [review](../.review/R4.1.md),
+  [journal](../../../.spec/journal/2026-09-19-render-graph-r4-1.md)
 - [ ] **R4.2–R4.3 — minimal Graphics and imported-TLAS path:** add effective
   capability reporting and Graphics-owned AS/pipeline/build/dispatch contracts,
   then introduce the graph AS/storage vocabulary needed to import and consume a

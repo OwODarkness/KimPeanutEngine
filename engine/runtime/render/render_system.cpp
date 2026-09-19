@@ -332,11 +332,18 @@ namespace kpengine::render
             return false;
         }
         const auto finalize_started = std::chrono::steady_clock::now();
+        bool frame_finalized = true;
         if (active_frame_context_)
         {
             if (deferred_renderer_)
             {
-                deferred_renderer_->FinalizeFrame();
+                frame_finalized = deferred_renderer_->FinalizeFrame();
+                if (!frame_finalized)
+                {
+                    last_diagnostic_ =
+                        "Render graph execution failed while finalizing the frame.";
+                    KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", last_diagnostic_.c_str());
+                }
             }
             active_frame_context_->End();
             active_frame_context_ = nullptr;
@@ -387,7 +394,7 @@ namespace kpengine::render
             PublishMetricsSnapshot();
         }
         lifecycle_state_ = frame_return_state_;
-        return true;
+        return frame_finalized;
     }
 
     void RenderSystem::RecordPresentationTime(const double milliseconds)

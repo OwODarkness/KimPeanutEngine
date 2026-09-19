@@ -68,6 +68,10 @@ namespace kpengine::graphics
         // is already where it is asked to be.
         virtual bool RequireRenderTargetUsage(RenderTargetHandle target, ResourceUsage usage,
                                               RenderTargetAttachmentScope scope = {}) = 0;
+        // Requires a buffer to be visible for the declared portable operation.
+        // Backends translate the requirement to their native synchronization
+        // model; Render does not name stages or barriers.
+        virtual bool RequireBufferUsage(BufferHandle buffer, ResourceUsage usage) = 0;
         virtual bool BindPipeline(PipelineHandle pipeline) = 0;
         virtual void BindMesh(MeshHandle mesh) = 0;
         virtual bool BindGeometry(const GeometryView &geometry) = 0;
