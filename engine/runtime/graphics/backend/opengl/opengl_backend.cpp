@@ -855,7 +855,7 @@ namespace kpengine::graphics
                                           value.offset, value.range,
                                           get_descriptor_type(value.binding));
                 }
-                else
+                else if constexpr (std::is_same_v<Binding, SampledTextureBinding>)
                 {
                     Texture *texture = texture_manager_->GetTexture(value.texture);
                     Sampler *sampler = sampler_manager_->GetSampler(value.sampler);
@@ -873,6 +873,10 @@ namespace kpengine::graphics
                         ConvertToOpenglSamplerResource(sampler->GetSampleHandle());
                     set->SetCombinedImageSampler(value.binding, texture_resource.image,
                                                  sampler_resource.sampler);
+                }
+                else
+                {
+                    valid = false;
                 }
             }, binding);
         }

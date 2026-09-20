@@ -8,6 +8,8 @@ namespace kpengine::graphics{
     struct VulkanMeshResource{
         BufferHandle vertex_handle;
         BufferHandle index_handle;
+        uint32_t vertex_count = 0;
+        uint32_t index_count = 0;
         std::vector<MeshSection> sections;
     };
 

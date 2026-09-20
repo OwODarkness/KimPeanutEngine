@@ -38,6 +38,8 @@ namespace kpengine::render
         ToneMap,
         CaptureView,
         EditorComposite,
+        RayTracingBlasBuild,
+        RayTracingTlasBuild,
         Count,
     };
 
@@ -52,6 +54,7 @@ namespace kpengine::render
         Always,
         DiagnosticCaptureRequested,
         ExternalRequest,
+        RayTracingBuildRequested,
     };
 
     struct RenderPassResourceUse
@@ -85,6 +88,8 @@ namespace kpengine::render
     {
         bool diagnostic_capture = false;
         bool ray_query_shadow = false;
+        bool ray_tracing_blas_build = false;
+        bool ray_tracing_tlas_build = false;
 
         friend bool operator==(const RenderFrameConditions &,
                                const RenderFrameConditions &) = default;

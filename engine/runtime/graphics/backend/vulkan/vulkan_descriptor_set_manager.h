@@ -15,6 +15,7 @@ namespace kpengine::graphics
     class SamplerManager;
     class TextureManager;
     class VulkanBufferManager;
+    class VulkanAccelerationStructureOwner;
     struct VulkanPipelineResource;
 
     struct VulkanDescriptorSetResource
@@ -33,10 +34,12 @@ namespace kpengine::graphics
         uint32_t uniform_capacity = 0;
         uint32_t dynamic_uniform_capacity = 0;
         uint32_t sampled_texture_capacity = 0;
+        uint32_t acceleration_structure_capacity = 0;
         uint32_t used_sets = 0;
         uint32_t used_uniform_descriptors = 0;
         uint32_t used_dynamic_uniform_descriptors = 0;
         uint32_t used_sampled_texture_descriptors = 0;
+        uint32_t used_acceleration_structure_descriptors = 0;
     };
 
     class VulkanDescriptorSetManager
@@ -48,6 +51,7 @@ namespace kpengine::graphics
         DescriptorSetHandle CreateResourceBindingSet(
             VkDevice logical_device, const VulkanPipelineResource &pipeline, const ResourceBindingSetDesc &desc,
             VulkanBufferManager &buffers, TextureManager &textures, SamplerManager &samplers,
+            VulkanAccelerationStructureOwner *acceleration_structures = nullptr,
             bool *pool_created = nullptr);
         bool DestroyResourceBindingSet(VkDevice logical_device, DescriptorSetHandle handle);
         void DestroyAll(VkDevice logical_device);
@@ -59,7 +63,8 @@ namespace kpengine::graphics
             VkDevice logical_device, std::vector<VulkanDescriptorPoolArena> &arenas,
             uint32_t required_sets, uint32_t required_uniform_descriptors,
             uint32_t required_dynamic_uniform_descriptors,
-            uint32_t required_sampled_texture_descriptors);
+            uint32_t required_sampled_texture_descriptors,
+            uint32_t required_acceleration_structure_descriptors);
 
         std::vector<std::vector<VulkanDescriptorPoolArena>> frame_arenas_;
         std::vector<VulkanDescriptorPoolArena> persistent_arenas_;

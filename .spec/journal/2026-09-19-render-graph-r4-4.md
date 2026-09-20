@@ -41,12 +41,50 @@ geometry snapshot, descriptor binding, and shader consumer exist.
 - The six retained smoke capture hashes are unchanged from the R4.3 baseline:
   Vulkan/OpenGL final, D2, and D5 remain byte-identical.
 
+## 2026-09-20 scheduled-build slice
+
+- Render now snapshots visible shadow-casting mesh proxies at the frame
+  boundary, resolves immutable triangle inputs through the common backend seam,
+  and derives a stable instance signature from mesh handles and transforms.
+- Graphics remains the physical owner: Vulkan resolves mesh storage to opaque
+  `BufferHandle` descriptors, owns BLAS/TLAS storage, and keeps scratch and
+  instance buffers private to the owner.
+- The graph now has SSA acceleration-structure writes and separate optional
+  BLAS/TLAS build passes. A new or changed mesh schedules BLAS build; changed
+  transforms or instance membership schedule TLAS update/build. Unchanged
+  frames do not visit either build pass.
+- The graph provider maps the logical geometry group to physical buffers only
+  while applying the pass transition. Render never sees a device address or a
+  Vulkan object.
+- Added a compatibility test covering AS version lineage and the BLAS-to-TLAS
+  build dependency.
+
+## 2026-09-20 ordering fix and validation
+
+- The first live Vulkan run exposed that build passes authored after the
+  external terminal could be scheduled after it when ray-query consumption was
+  disabled. The terminal now depends on the active TLAS build, or BLAS build
+  when no TLAS is scheduled, and the compatibility test locks the terminal to
+  the final compiled position.
+- Focused render/graphics CTest passed 30/30; the full Debug build passed.
+- Full CTest reached 969 tests: 968 passed and the unrelated checked-in-level
+  fixture failed because `asset/model/rock1-bl/rock2` is absent from the
+  archive. The same failure reproduces in isolation as
+  `LevelLoaderTest.LoadsCheckedInGameplayLevelFixtures`.
+- Vulkan startup with `level/sponza.level` passed the live command gate after
+  the fix. Performance stats preserved graph compile time and per-pass CPU/GPU
+  measurements; scene, world-normal, and linear-depth captures were exported
+  under `save/screenshots/validation/`. No terminal-order or Vulkan validation
+  errors were found in the run log.
+- OpenGL startup remained alive at sustained CPU for roughly two minutes
+  without opening its command port or producing readiness logs. It was stopped
+  without a capture; OpenGL runtime evidence remains unverified.
+
 ## Remaining work
 
-1. Add a Render-owned, frame-stable geometry/instance snapshot and a common
-   buffer-resolution seam for the native owner.
-2. Schedule the owner build/update as graph work and import its TLAS into the
-   same frame plan before selecting the ray-query variant.
-3. Add Vulkan descriptor binding and the directional ray-query shader variant;
+1. Add Vulkan descriptor binding and the directional ray-query shader variant;
    only then advertise `SupportsRayQueryShadows()` and collect RT captures and
    per-pass CPU/GPU measurements.
+2. Validate native build/update, resize, orderly close, and lifetime retirement
+   on an RT-capable Vulkan device; investigate the OpenGL startup-path blocker
+   before claiming cross-API runtime evidence.

@@ -39,8 +39,13 @@ namespace
         for (const FixedRenderPassEntry &entry : GetRenderFramePassEntries())
         {
             const bool skipped =
-                entry.condition == RenderPassCondition::DiagnosticCaptureRequested &&
-                !conditions.diagnostic_capture;
+                (entry.condition == RenderPassCondition::DiagnosticCaptureRequested &&
+                 !conditions.diagnostic_capture) ||
+                (entry.condition == RenderPassCondition::RayTracingBuildRequested &&
+                 ((entry.id == FixedRenderPassId::RayTracingBlasBuild &&
+                   !conditions.ray_tracing_blas_build) ||
+                  (entry.id == FixedRenderPassId::RayTracingTlasBuild &&
+                   !conditions.ray_tracing_tlas_build)));
             if (!skipped)
             {
                 names.push_back(entry.name);
@@ -152,8 +157,67 @@ TEST(RenderGraphCompatibilityTest, AuthoredDeclarationIsCanonicalAndWellFormed)
         EXPECT_EQ(static_cast<std::size_t>(entries[index].id), index);
         EXPECT_FALSE(entries[index].name.empty());
     }
-    EXPECT_EQ(entries.back().id, FixedRenderPassId::EditorComposite);
-    EXPECT_TRUE(entries.back().terminal);
+    const auto terminal = std::find_if(
+        entries.begin(), entries.end(), [](const FixedRenderPassEntry &entry) {
+            return entry.terminal;
+        });
+    ASSERT_NE(terminal, entries.end());
+    EXPECT_EQ(terminal->id, FixedRenderPassId::EditorComposite);
+}
+
+TEST(RenderGraphCompatibilityTest, ScheduledAccelerationBuildsUseSSAAndDeclaredHazards)
+{
+    const auto result = CompileRenderFrameGraph(RenderFrameConditions{false, false, true, true});
+    ASSERT_TRUE(result.Succeeded());
+
+    const auto blas = std::find_if(
+        result.graph->Passes().begin(), result.graph->Passes().end(),
+        [](const CompiledRenderGraph::Pass &pass) {
+            return pass.name == "RayTracingBlasBuildPass";
+        });
+    const auto tlas = std::find_if(
+        result.graph->Passes().begin(), result.graph->Passes().end(),
+        [](const CompiledRenderGraph::Pass &pass) {
+            return pass.name == "RayTracingTlasBuildPass";
+        });
+    ASSERT_NE(blas, result.graph->Passes().end());
+    ASSERT_NE(tlas, result.graph->Passes().end());
+    ASSERT_LT(blas->declaration_index, tlas->declaration_index);
+    ASSERT_FALSE(result.graph->Passes().empty());
+    EXPECT_EQ(result.graph->Passes().back().name, "EditorCompositePass");
+    EXPECT_TRUE(result.graph->Passes().back().terminal);
+
+    const auto blas_write = std::find_if(
+        blas->uses.begin(), blas->uses.end(), [](const RenderGraphResourceUse &use) {
+            return use.access == RenderGraphAccess::Write &&
+                   use.usage == kpengine::render::RenderGraphUsage::AccelerationStructureBuildOutput;
+        });
+    const auto tlas_write = std::find_if(
+        tlas->uses.begin(), tlas->uses.end(), [](const RenderGraphResourceUse &use) {
+            return use.access == RenderGraphAccess::Write &&
+                   use.usage == kpengine::render::RenderGraphUsage::AccelerationStructureBuildOutput;
+        });
+    ASSERT_NE(blas_write, blas->uses.end());
+    ASSERT_NE(tlas_write, tlas->uses.end());
+    const auto *blas_handle =
+        std::get_if<kpengine::render::GraphAccelerationStructureHandle>(&blas_write->handle);
+    const auto *tlas_handle =
+        std::get_if<kpengine::render::GraphAccelerationStructureHandle>(&tlas_write->handle);
+    ASSERT_NE(blas_handle, nullptr);
+    ASSERT_NE(tlas_handle, nullptr);
+    EXPECT_EQ(blas_handle->version, 1U);
+    EXPECT_EQ(tlas_handle->version, 1U);
+
+    const auto tlas_input = std::find_if(
+        tlas->uses.begin(), tlas->uses.end(), [](const RenderGraphResourceUse &use) {
+            return use.access == RenderGraphAccess::Read &&
+                   use.usage == kpengine::render::RenderGraphUsage::AccelerationStructureBuildInput;
+        });
+    ASSERT_NE(tlas_input, tlas->uses.end());
+    const auto *tlas_input_handle =
+        std::get_if<kpengine::render::GraphAccelerationStructureHandle>(&tlas_input->handle);
+    ASSERT_NE(tlas_input_handle, nullptr);
+    EXPECT_EQ(tlas_input_handle->version, 1U);
 }
 
 TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesAsAnSsaChainForBothConditionSets)

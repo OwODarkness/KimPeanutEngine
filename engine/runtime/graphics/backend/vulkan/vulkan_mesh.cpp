@@ -66,6 +66,7 @@ namespace kpengine::graphics
         }
         resource_.vertex_handle = CreateDeviceBuffer(*context_ptr, data.vertices.data(), vertices_size,
                                                      geometry_usage);
+        resource_.vertex_count = static_cast<uint32_t>(data.vertices.size());
 
         const VkDeviceSize indices_size = sizeof(uint32_t) * data.indices.size();
         geometry_usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT;
@@ -76,6 +77,7 @@ namespace kpengine::graphics
         }
         resource_.index_handle = CreateDeviceBuffer(*context_ptr, data.indices.data(), indices_size,
                                                     geometry_usage);
+        resource_.index_count = static_cast<uint32_t>(data.indices.size());
 
         resource_.sections = data.sections;
     }

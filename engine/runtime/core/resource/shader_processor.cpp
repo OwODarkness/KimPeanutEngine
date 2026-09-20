@@ -13,7 +13,16 @@ namespace kpengine::resource
     {
         const char *GetVariantName(asset::ShaderProgramVariant variant)
         {
-            return variant == asset::ShaderProgramVariant::Bindless ? "bindless" : "bound";
+            switch (variant)
+            {
+            case asset::ShaderProgramVariant::Bindless:
+                return "bindless";
+            case asset::ShaderProgramVariant::RayQuery:
+                return "ray_query";
+            case asset::ShaderProgramVariant::Bound:
+            default:
+                return "bound";
+            }
         }
 
         // The shared shader ABI is intentionally expressed as preprocessor

@@ -68,7 +68,9 @@ namespace kpengine::asset
                 const std::string name = variant.value("name", std::string{});
                 const ShaderProgramVariant kind = name == "bindless"
                                                       ? ShaderProgramVariant::Bindless
-                                                      : ShaderProgramVariant::Bound;
+                                                      : name == "ray_query"
+                                                            ? ShaderProgramVariant::RayQuery
+                                                            : ShaderProgramVariant::Bound;
                 std::vector<std::string> defines;
                 if (variant.contains("defines") && variant["defines"].is_array())
                 {

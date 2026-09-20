@@ -340,6 +340,8 @@ inline TextureFormat ConvertFromVulkanTextureFormat(VkFormat format)
             return VK_DESCRIPTOR_TYPE_SAMPLER;
         case DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER:
             return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
+        case DescriptorType::DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE:
+            return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
         default:
             return VK_DESCRIPTOR_TYPE_MAX_ENUM; // fallback / invalid
         }

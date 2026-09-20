@@ -22,6 +22,8 @@ namespace kpengine::render
         ToneMap,
         CaptureView,
         EditorComposite,
+        RayTracingBlasBuild,
+        RayTracingTlasBuild,
         Count,
     };
 

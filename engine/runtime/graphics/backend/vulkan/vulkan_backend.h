@@ -28,6 +28,8 @@ namespace kpengine::graphics
         bool DestroyPipelineResource(PipelineHandle handle) override;
         MeshHandle CreateMesh(const data::MeshData &data) override;
         bool DestroyMesh(MeshHandle handle) override;
+        std::vector<RayTracingGeometryDesc> GetRayTracingGeometry(
+            MeshHandle mesh) override;
         TextureHandle CreateTexture(const data::TextureData &data,
                                     const TextureSettings &settings) override;
         bool DestroyTexture(TextureHandle handle) override;

@@ -388,6 +388,9 @@ namespace kpengine::render
             GraphPassId pass, GraphAccelerationStructureHandle acceleration_structure,
             RenderGraphUsage usage = RenderGraphUsage::AccelerationStructureRead,
             RenderGraphStage stage = RenderGraphStage::RayTracingShader);
+        std::optional<GraphAccelerationStructureHandle> WriteAccelerationStructure(
+            GraphPassId pass, GraphAccelerationStructureHandle previous_version,
+            RenderGraphUsage usage = RenderGraphUsage::AccelerationStructureBuildOutput);
         std::optional<GraphTextureHandle> WriteTexture(
             GraphPassId pass, GraphTextureHandle previous_version,
             RenderGraphUsage usage = RenderGraphUsage::Undefined,
@@ -463,6 +466,7 @@ namespace kpengine::render
             std::vector<GraphPassId> explicit_dependencies;
             std::vector<uint32_t> written_textures;
             std::vector<uint32_t> written_buffers;
+            std::vector<uint32_t> written_acceleration_structures;
         };
 
         static uint64_t AllocateGraphId() noexcept;
@@ -515,6 +519,9 @@ namespace kpengine::render
                                   RenderGraphUsage usage = RenderGraphUsage::Undefined,
                                   RenderGraphAttachmentOp attachment_op =
                                       RenderGraphAttachmentOp::None);
+        RenderGraphPassRef &Write(
+            GraphAccelerationStructureHandle acceleration_structure,
+            RenderGraphUsage usage = RenderGraphUsage::AccelerationStructureBuildOutput);
         RenderGraphPassRef &DependsOn(GraphPassId dependency);
 
         GraphPassId Id() const noexcept { return pass_; }

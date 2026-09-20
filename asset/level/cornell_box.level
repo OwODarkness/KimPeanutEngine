@@ -25,14 +25,14 @@
       "id": "main_camera",
       "kind": "camera",
       "transform": {
-        "position": [0.0, 2.7, 0.15],
+        "position": [0.0, 2.65, 5.5],
         "rotation_degrees": [0.0, -90.0, 0.0],
         "scale": [1.0, 1.0, 1.0]
       },
       "projection": "perspective",
       "near_plane": 0.05,
       "far_plane": 100.0,
-      "field_of_view_degrees": 50.0,
+      "field_of_view_degrees": 65.0,
       "enabled": true,
       "priority": 0
     },

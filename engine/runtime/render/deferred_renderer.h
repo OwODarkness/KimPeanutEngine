@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "asset/common.h"
+#include "asset/shader.h"
 #include "graphics/backend/common/api.h"
 #include "graphics/backend/common/render_backend.h"
 #include "render_capture_service.h"
@@ -195,10 +196,15 @@ namespace kpengine::render
         bool RecordToneMapPass();
         bool RecordCaptureViewPass(CaptureView view);
         bool ExecutePass(FixedRenderPassId id, const std::vector<Light> &lights);
+        bool PrepareRayTracingScene();
+        bool RecordRayTracingBlasBuild();
+        bool RecordRayTracingTlasBuild();
+        void DestroyRayTracingResources();
         bool PrepareDirectionalShadowPassResources();
         bool GetPreparedProgram(
             BuiltInRenderAsset role,
-            std::shared_ptr<const asset::ShaderProgramResource> &out_program) const;
+            std::shared_ptr<const asset::ShaderProgramResource> &out_program,
+            asset::ShaderProgramVariant variant = asset::ShaderProgramVariant::Bound) const;
         bool PrepareFullscreenPassResources();
         bool PrepareDeferredLightingPassResources();
         bool PrepareEnvironmentIbl(asset::AssetID source_asset,
@@ -229,7 +235,7 @@ namespace kpengine::render
         RendererFrameTargets frame_targets_;
         // One compiled plan per frame-start condition set, each compiled once.
         // The compiled plan is now the only authority for pass order.
-        std::array<std::optional<RenderGraphCompileResult>, 4> frame_plans_;
+        std::array<std::optional<RenderGraphCompileResult>, 16> frame_plans_;
         std::optional<RenderGraphFrame> active_pass_frame_;
         // The plan the active frame executes, so the external terminal's state
         // requirements can be applied before the host's callback records.
@@ -287,6 +293,33 @@ namespace kpengine::render
         std::optional<DirectionalShadowFrame> active_directional_shadow_;
         std::optional<SpotShadowFrame> active_spot_shadow_;
         std::optional<PointShadowFrame> active_point_shadow_;
+        struct RayTracingBlasState
+        {
+            graphics::AccelerationStructureHandle handle;
+            uint32_t geometry_count = 0;
+            bool built = false;
+        };
+        struct RayTracingMeshBuild
+        {
+            graphics::MeshHandle mesh;
+            graphics::AccelerationStructureHandle blas;
+            std::size_t geometry_offset = 0;
+            std::size_t geometry_count = 0;
+            bool needs_build = false;
+        };
+        std::unordered_map<graphics::MeshHandle, RayTracingBlasState> ray_tracing_blas_;
+        graphics::AccelerationStructureHandle ray_tracing_tlas_;
+        uint32_t ray_tracing_tlas_capacity_ = 0;
+        bool ray_tracing_tlas_built_ = false;
+        uint64_t ray_tracing_instance_signature_ = 0;
+        uint64_t frame_ray_tracing_instance_signature_ = 0;
+        std::vector<graphics::RayTracingGeometryDesc> frame_ray_tracing_geometries_;
+        std::vector<graphics::RayTracingInstanceDesc> frame_ray_tracing_instances_;
+        std::vector<RayTracingMeshBuild> frame_ray_tracing_mesh_builds_;
+        std::vector<graphics::RayTracingBuildDesc> frame_ray_tracing_blas_builds_;
+        std::vector<graphics::RayTracingBuildDesc> frame_ray_tracing_tlas_builds_;
+        bool frame_ray_tracing_blas_build_ = false;
+        bool frame_ray_tracing_tlas_build_ = false;
         bool spot_shadow_recorded_ = false;
         bool point_shadow_recorded_ = false;
         bool directional_shadow_cache_hit_ = false;
@@ -296,6 +329,8 @@ namespace kpengine::render
         RenderCamera scene_camera_;
         std::optional<CaptureView> active_pending_capture_;
         graphics::PipelineHandle deferred_lighting_pipeline_;
+        graphics::PipelineHandle deferred_lighting_ray_query_pipeline_;
+        bool ray_query_shadow_path_active_ = false;
         graphics::PipelineHandle gbuffer_debug_pipeline_;
         graphics::PipelineHandle capture_view_pipeline_;
         graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;

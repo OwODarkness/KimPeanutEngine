@@ -44,6 +44,8 @@ namespace kpengine::graphics
         {
             return active_top_level_;
         }
+        VkAccelerationStructureKHR GetNativeAccelerationStructure(
+            AccelerationStructureHandle handle) const noexcept;
         bool RequireUsage(VkCommandBuffer command_buffer,
                           AccelerationStructureHandle handle,
                           ResourceUsage usage);

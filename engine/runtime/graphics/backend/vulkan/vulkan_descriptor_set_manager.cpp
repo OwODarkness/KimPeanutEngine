@@ -9,6 +9,7 @@
 #include "common/sampler_manager.h"
 #include "common/texture_manager.h"
 #include "log/logger.h"
+#include "vulkan_acceleration_structure_owner.h"
 #include "vulkan_buffer_manager.h"
 #include "vulkan_pipeline_manager.h"
 #include "vulkan_sampler.h"
@@ -22,6 +23,7 @@ namespace kpengine::graphics
         constexpr uint32_t kInitialUniformDescriptors = 4096;
         constexpr uint32_t kInitialDynamicUniformDescriptors = 4096;
         constexpr uint32_t kInitialSampledTextureDescriptors = 4096;
+        constexpr uint32_t kInitialAccelerationStructureDescriptors = 1024;
 
         uint32_t GrowCapacity(uint32_t current, uint32_t required)
         {
@@ -35,14 +37,17 @@ namespace kpengine::graphics
         }
 
         bool HasCapacity(const VulkanDescriptorPoolArena &arena, uint32_t uniform_count,
-                         uint32_t dynamic_uniform_count, uint32_t sampled_texture_count)
+                         uint32_t dynamic_uniform_count, uint32_t sampled_texture_count,
+                         uint32_t acceleration_structure_count)
         {
             return arena.used_sets < arena.max_sets &&
                    uniform_count <= arena.uniform_capacity - arena.used_uniform_descriptors &&
                    dynamic_uniform_count <= arena.dynamic_uniform_capacity -
                                                arena.used_dynamic_uniform_descriptors &&
                    sampled_texture_count <=
-                       arena.sampled_texture_capacity - arena.used_sampled_texture_descriptors;
+                       arena.sampled_texture_capacity - arena.used_sampled_texture_descriptors &&
+                   acceleration_structure_count <= arena.acceleration_structure_capacity -
+                                                       arena.used_acceleration_structure_descriptors;
         }
     }
 
@@ -79,6 +84,7 @@ namespace kpengine::graphics
             arena.used_uniform_descriptors = 0;
             arena.used_dynamic_uniform_descriptors = 0;
             arena.used_sampled_texture_descriptors = 0;
+            arena.used_acceleration_structure_descriptors = 0;
         }
 
         // FrameContext releases its old transient handles after Backend's
@@ -101,7 +107,8 @@ namespace kpengine::graphics
         VkDevice logical_device, std::vector<VulkanDescriptorPoolArena> &arenas,
         uint32_t required_sets,
         uint32_t required_uniform_descriptors, uint32_t required_dynamic_uniform_descriptors,
-        uint32_t required_sampled_texture_descriptors)
+        uint32_t required_sampled_texture_descriptors,
+        uint32_t required_acceleration_structure_descriptors)
     {
         uint32_t max_sets = std::max(kInitialDescriptorSets, required_sets);
         uint32_t uniform_capacity =
@@ -110,6 +117,9 @@ namespace kpengine::graphics
             std::max(kInitialDynamicUniformDescriptors, required_dynamic_uniform_descriptors);
         uint32_t sampled_texture_capacity =
             std::max(kInitialSampledTextureDescriptors, required_sampled_texture_descriptors);
+        uint32_t acceleration_structure_capacity =
+            std::max(kInitialAccelerationStructureDescriptors,
+                     required_acceleration_structure_descriptors);
         if (!arenas.empty())
         {
             const VulkanDescriptorPoolArena &previous = arenas.back();
@@ -119,17 +129,20 @@ namespace kpengine::graphics
                 GrowCapacity(previous.dynamic_uniform_capacity, required_dynamic_uniform_descriptors);
             sampled_texture_capacity =
                 GrowCapacity(previous.sampled_texture_capacity, required_sampled_texture_descriptors);
+            acceleration_structure_capacity = GrowCapacity(
+                previous.acceleration_structure_capacity, required_acceleration_structure_descriptors);
         }
 
         const VkDescriptorPoolSize pool_sizes[] = {
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER, uniform_capacity},
             {VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER_DYNAMIC, dynamic_uniform_capacity},
-            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sampled_texture_capacity}};
+            {VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER, sampled_texture_capacity},
+            {VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR, acceleration_structure_capacity}};
         VkDescriptorPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
         pool_info.maxSets = max_sets;
-        pool_info.poolSizeCount = 3;
+        pool_info.poolSizeCount = 4;
         pool_info.pPoolSizes = pool_sizes;
 
         VulkanDescriptorPoolArena arena{};
@@ -137,6 +150,7 @@ namespace kpengine::graphics
         arena.uniform_capacity = uniform_capacity;
         arena.dynamic_uniform_capacity = dynamic_uniform_capacity;
         arena.sampled_texture_capacity = sampled_texture_capacity;
+        arena.acceleration_structure_capacity = acceleration_structure_capacity;
         if (vkCreateDescriptorPool(logical_device, &pool_info, nullptr, &arena.pool) != VK_SUCCESS)
         {
             throw std::runtime_error("failed to create descriptor pool arena");
@@ -148,7 +162,8 @@ namespace kpengine::graphics
     DescriptorSetHandle VulkanDescriptorSetManager::CreateResourceBindingSet(
         VkDevice logical_device, const VulkanPipelineResource &pipeline,
         const ResourceBindingSetDesc &desc, VulkanBufferManager &buffers,
-        TextureManager &textures, SamplerManager &samplers, bool *pool_created)
+        TextureManager &textures, SamplerManager &samplers,
+        VulkanAccelerationStructureOwner *acceleration_structures, bool *pool_created)
     {
         if (pool_created)
         {
@@ -174,7 +189,8 @@ namespace kpengine::graphics
                 });
             if (layout_binding == layout_bindings.end())
             {
-                throw std::runtime_error("resource binding is not declared by the pipeline");
+                throw std::runtime_error("resource binding " + std::to_string(binding) +
+                                         " is not declared by the pipeline");
             }
             return layout_binding->descriptorType;
         };
@@ -182,6 +198,7 @@ namespace kpengine::graphics
         uint32_t uniform_count = 0;
         uint32_t dynamic_uniform_count = 0;
         uint32_t sampled_texture_count = 0;
+        uint32_t acceleration_structure_count = 0;
         for (const ResourceBinding &binding : desc.bindings)
         {
             std::visit([&](const auto &value) {
@@ -197,9 +214,13 @@ namespace kpengine::graphics
                         ++uniform_count;
                     }
                 }
-                else
+                else if constexpr (std::is_same_v<Binding, SampledTextureBinding>)
                 {
                     ++sampled_texture_count;
+                }
+                else
+                {
+                    ++acceleration_structure_count;
                 }
             }, binding);
         }
@@ -215,7 +236,7 @@ namespace kpengine::graphics
         for (std::size_t index = 0; index < arenas.size(); ++index)
         {
             if (HasCapacity(arenas[index], uniform_count, dynamic_uniform_count,
-                            sampled_texture_count))
+                            sampled_texture_count, acceleration_structure_count))
             {
                 arena_index = index;
                 break;
@@ -224,7 +245,7 @@ namespace kpengine::graphics
         if (arena_index == std::numeric_limits<std::size_t>::max())
         {
             CreateArena(logical_device, arenas, 1, uniform_count, dynamic_uniform_count,
-                        sampled_texture_count);
+                        sampled_texture_count, acceleration_structure_count);
             arena_index = arenas.size() - 1;
             if (pool_created)
             {
@@ -250,7 +271,7 @@ namespace kpengine::graphics
         if (allocate_result == VK_ERROR_OUT_OF_POOL_MEMORY || allocate_result == VK_ERROR_FRAGMENTED_POOL)
         {
             CreateArena(logical_device, arenas, 1, uniform_count, dynamic_uniform_count,
-                        sampled_texture_count);
+                        sampled_texture_count, acceleration_structure_count);
             arena_index = arenas.size() - 1;
             allocate_info.descriptorPool = arenas[arena_index].pool;
             allocate_result = vkAllocateDescriptorSets(logical_device, &allocate_info, &descriptor_set);
@@ -272,9 +293,13 @@ namespace kpengine::graphics
         std::vector<VkWriteDescriptorSet> writes;
         std::vector<VkDescriptorBufferInfo> buffer_infos;
         std::vector<VkDescriptorImageInfo> image_infos;
+        std::vector<VkWriteDescriptorSetAccelerationStructureKHR> acceleration_structure_infos;
+        std::vector<VkAccelerationStructureKHR> acceleration_structures_native;
         writes.reserve(desc.bindings.size());
         buffer_infos.reserve(uniform_count + dynamic_uniform_count);
         image_infos.reserve(sampled_texture_count);
+        acceleration_structure_infos.reserve(acceleration_structure_count);
+        acceleration_structures_native.reserve(acceleration_structure_count);
 
         for (const ResourceBinding &binding : desc.bindings)
         {
@@ -308,7 +333,7 @@ namespace kpengine::graphics
                     write.descriptorType = descriptor_type;
                     write.pBufferInfo = &buffer_infos.back();
                 }
-                else
+                else if constexpr (std::is_same_v<Binding, SampledTextureBinding>)
                 {
                     Texture *texture = textures.GetTexture(value.texture);
                     Sampler *sampler = samplers.GetSampler(value.sampler);
@@ -327,6 +352,28 @@ namespace kpengine::graphics
                                            VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL});
                     write.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
                     write.pImageInfo = &image_infos.back();
+                }
+                else
+                {
+                    if (acceleration_structures == nullptr)
+                    {
+                        throw std::runtime_error("acceleration-structure binding has no owner");
+                    }
+                    acceleration_structures_native.push_back(
+                        acceleration_structures->GetNativeAccelerationStructure(
+                            value.acceleration_structure));
+                    if (acceleration_structures_native.back() == VK_NULL_HANDLE ||
+                        get_descriptor_type(value.binding) != VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR)
+                    {
+                        throw std::runtime_error("invalid acceleration-structure binding");
+                    }
+                    acceleration_structure_infos.push_back({});
+                    auto &info = acceleration_structure_infos.back();
+                    info.sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET_ACCELERATION_STRUCTURE_KHR;
+                    info.accelerationStructureCount = 1;
+                    info.pAccelerationStructures = &acceleration_structures_native.back();
+                    write.descriptorType = VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+                    write.pNext = &info;
                 }
                 writes.push_back(write);
             }, binding);
@@ -351,6 +398,7 @@ namespace kpengine::graphics
         arenas[arena_index].used_uniform_descriptors += uniform_count;
         arenas[arena_index].used_dynamic_uniform_descriptors += dynamic_uniform_count;
         arenas[arena_index].used_sampled_texture_descriptors += sampled_texture_count;
+        arenas[arena_index].used_acceleration_structure_descriptors += acceleration_structure_count;
         return handle;
     }
 

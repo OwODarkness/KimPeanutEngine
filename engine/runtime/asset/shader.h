@@ -28,6 +28,7 @@ enum class ShaderProgramVariant : uint8_t
 {
     Bound,
     Bindless,
+    RayQuery,
 };
 
 

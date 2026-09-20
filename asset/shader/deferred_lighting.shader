@@ -1,7 +1,8 @@
 {
     "version": 1,
     "variants": [
-        {"name": "bound", "defines": []}
+        {"name": "bound", "defines": []},
+        {"name": "ray_query", "defines": ["KP_RAY_QUERY 1"]}
     ],
     "shaders": [
         {

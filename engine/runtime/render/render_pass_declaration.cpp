@@ -30,6 +30,10 @@ namespace kpengine::render
                 // Whether the Editor terminal runs is not known when the frame
                 // declares, so it is always compiled and the executor decides.
                 return true;
+            case RenderPassCondition::RayTracingBuildRequested:
+                return entry.id == FixedRenderPassId::RayTracingBlasBuild
+                           ? conditions.ray_tracing_blas_build
+                           : conditions.ray_tracing_tlas_build;
             }
             return false;
         }
@@ -101,6 +105,12 @@ namespace kpengine::render
                  {{RenderPassResource::SceneColor, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled}},
                  RenderPassExecutionOwner::External, RenderPassCondition::ExternalRequest, true},
+                {FixedRenderPassId::RayTracingBlasBuild, "RayTracingBlasBuildPass", {},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RayTracingBuildRequested,
+                 false},
+                {FixedRenderPassId::RayTracingTlasBuild, "RayTracingTlasBuildPass", {},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RayTracingBuildRequested,
+                 false},
             };
             return entries;
         }
@@ -115,8 +125,25 @@ namespace kpengine::render
     {
         RenderGraphBuilder graph;
         std::array<GraphTextureHandle, kResourceCount> resources{};
-        const std::optional<GraphAccelerationStructureHandle> imported_tlas =
-            conditions.ray_query_shadow
+        const bool needs_blas = conditions.ray_tracing_blas_build;
+        const bool needs_tlas = conditions.ray_tracing_tlas_build || conditions.ray_query_shadow;
+        const std::optional<GraphBufferHandle> scene_geometry =
+            needs_blas ? std::optional<GraphBufferHandle>(graph.ImportBuffer("SceneGeometry"))
+                       : std::nullopt;
+        const std::optional<GraphBufferHandle> scene_instances =
+            needs_tlas ? std::optional<GraphBufferHandle>(graph.ImportBuffer("SceneInstances"))
+                       : std::nullopt;
+        const std::optional<GraphBufferHandle> scene_scratch =
+            needs_tlas || needs_blas
+                ? std::optional<GraphBufferHandle>(graph.ImportBuffer("SceneScratch"))
+                : std::nullopt;
+        const std::optional<GraphAccelerationStructureHandle> scene_blas =
+            needs_tlas || needs_blas
+                ? std::optional<GraphAccelerationStructureHandle>(
+                      graph.ImportAccelerationStructure("SceneBLAS"))
+                : std::nullopt;
+        const std::optional<GraphAccelerationStructureHandle> scene_tlas =
+            needs_tlas
                 ? std::optional<GraphAccelerationStructureHandle>(
                       graph.ImportAccelerationStructure("SceneTLAS"))
                 : std::nullopt;
@@ -136,6 +163,8 @@ namespace kpengine::render
 
         RenderGraphPassRef terminal_pass;
         RenderGraphPassRef deferred_lighting_pass;
+        RenderGraphPassRef blas_build_pass;
+        RenderGraphPassRef tlas_build_pass;
         for (const FixedRenderPassEntry &entry : AuthoredEntries())
         {
             const RenderGraphPassCondition condition =
@@ -150,7 +179,10 @@ namespace kpengine::render
             // chain carries the SSA lineage without threading handles by hand.
             RenderGraphPassRef pass = graph.AddPass(
                 RenderGraphPassDesc{entry.name, condition, IsPassEnabled(entry, conditions),
-                                    owner == RenderGraphPassOwner::External, owner,
+                                    owner == RenderGraphPassOwner::External ||
+                                        entry.id == FixedRenderPassId::RayTracingBlasBuild ||
+                                        entry.id == FixedRenderPassId::RayTracingTlasBuild,
+                                    owner,
                                     entry.terminal, static_cast<uint64_t>(entry.id)});
             for (const RenderPassResourceUse &use : entry.resources)
             {
@@ -169,16 +201,60 @@ namespace kpengine::render
             {
                 deferred_lighting_pass = pass;
             }
+            if (entry.id == FixedRenderPassId::RayTracingBlasBuild)
+            {
+                blas_build_pass = pass;
+            }
+            if (entry.id == FixedRenderPassId::RayTracingTlasBuild)
+            {
+                tlas_build_pass = pass;
+            }
             if (owner == RenderGraphPassOwner::External)
             {
                 terminal_pass = pass;
             }
         }
 
-        if (conditions.ray_query_shadow && imported_tlas.has_value() &&
+        if (needs_blas && scene_geometry.has_value() && scene_blas.has_value() &&
+            blas_build_pass.IsValid())
+        {
+            blas_build_pass.Read(*scene_geometry,
+                                 RenderGraphUsage::AccelerationStructureBuildInput)
+                .Write(*scene_blas, RenderGraphUsage::AccelerationStructureBuildOutput);
+        }
+        if (conditions.ray_tracing_tlas_build && scene_instances.has_value() &&
+            scene_scratch.has_value() && scene_blas.has_value() && scene_tlas.has_value() &&
+            tlas_build_pass.IsValid())
+        {
+            tlas_build_pass.Read(graph.CurrentVersion(*scene_blas),
+                                 RenderGraphUsage::AccelerationStructureBuildInput)
+                .Read(*scene_instances, RenderGraphUsage::AccelerationStructureBuildInput)
+                .Read(*scene_scratch, RenderGraphUsage::StorageRead)
+                .Write(*scene_tlas, RenderGraphUsage::AccelerationStructureBuildOutput);
+            if (blas_build_pass.IsValid() && conditions.ray_tracing_blas_build)
+            {
+                tlas_build_pass.DependsOn(blas_build_pass);
+            }
+        }
+
+        // Build passes are authored after the external terminal. When no
+        // consumer reads the built AS this edge keeps the terminal last.
+        if (!conditions.ray_query_shadow && terminal_pass.IsValid())
+        {
+            if (conditions.ray_tracing_tlas_build && tlas_build_pass.IsValid())
+            {
+                terminal_pass.DependsOn(tlas_build_pass);
+            }
+            else if (conditions.ray_tracing_blas_build && blas_build_pass.IsValid())
+            {
+                terminal_pass.DependsOn(blas_build_pass);
+            }
+        }
+
+        if (conditions.ray_query_shadow && scene_tlas.has_value() &&
             deferred_lighting_pass.IsValid())
         {
-            deferred_lighting_pass.Read(*imported_tlas,
+            deferred_lighting_pass.Read(graph.CurrentVersion(*scene_tlas),
                                         RenderGraphUsage::AccelerationStructureRead,
                                         RenderGraphStage::RayTracingShader);
         }

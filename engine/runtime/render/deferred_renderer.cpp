@@ -110,6 +110,12 @@ namespace kpengine::render
                    (static_cast<uint64_t>(handle.id) << 32) ^ handle.generation;
         }
 
+        bool IsRayTracingVirtualBuffer(std::string_view name) noexcept
+        {
+            return name == "SceneGeometry" || name == "SceneInstances" ||
+                   name == "SceneScratch";
+        }
+
         uint64_t DrawMeshSections(const RenderResourceResolver &resource_resolver,
                                   graphics::CommandRecorder &recorder,
                                   graphics::MeshHandle mesh,
@@ -438,6 +444,7 @@ namespace kpengine::render
         // no wrapper outlives the handle it borrows.
         ReleaseFrameTransients();
         transient_scene_hdr_.reset();
+        DestroyRayTracingResources();
         if (backend_ != nullptr)
         {
             if (gbuffer_debug_pipeline_.IsValid())
@@ -446,6 +453,8 @@ namespace kpengine::render
                 backend_->DestroyPipelineResource(capture_view_pipeline_);
             if (deferred_lighting_pipeline_.IsValid())
                 backend_->DestroyPipelineResource(deferred_lighting_pipeline_);
+            if (deferred_lighting_ray_query_pipeline_.IsValid())
+                backend_->DestroyPipelineResource(deferred_lighting_ray_query_pipeline_);
             if (gbuffer_debug_fullscreen_mesh_.IsValid())
                 backend_->DestroyMesh(gbuffer_debug_fullscreen_mesh_);
             if (gbuffer_debug_sampler_.IsValid())
@@ -464,6 +473,8 @@ namespace kpengine::render
         gbuffer_debug_pipeline_ = {};
         capture_view_pipeline_ = {};
         deferred_lighting_pipeline_ = {};
+        deferred_lighting_ray_query_pipeline_ = {};
+        ray_query_shadow_path_active_ = false;
         gbuffer_debug_fullscreen_mesh_ = {};
         gbuffer_debug_sampler_ = {};
         directional_shadow_sampler_ = {};
@@ -488,6 +499,13 @@ namespace kpengine::render
         frame_render_world_snapshot_.clear();
         frame_section_packets_.clear();
         frame_section_packets_ready_ = false;
+        frame_ray_tracing_geometries_.clear();
+        frame_ray_tracing_instances_.clear();
+        frame_ray_tracing_mesh_builds_.clear();
+        frame_ray_tracing_blas_builds_.clear();
+        frame_ray_tracing_tlas_builds_.clear();
+        frame_ray_tracing_blas_build_ = false;
+        frame_ray_tracing_tlas_build_ = false;
         frame_object_states_.clear();
         frame_material_bindings_.clear();
         pending_scene_render_target_extent_ = {};
@@ -508,7 +526,8 @@ namespace kpengine::render
     }
 
     bool DeferredRenderer::GetPreparedProgram(BuiltInRenderAsset role,
-                                              std::shared_ptr<const asset::ShaderProgramResource> &out_program) const
+                                              std::shared_ptr<const asset::ShaderProgramResource> &out_program,
+                                              asset::ShaderProgramVariant variant) const
     {
         out_program = prepared_assets_ != nullptr
                           ? prepared_assets_->Get<asset::ShaderProgramResource>(
@@ -523,7 +542,7 @@ namespace kpengine::render
         {
             const asset::AssetID shader_id = out_program->GetData(
                 stage, ShaderFormat::SHADER_FORMAT_GLSL,
-                asset::ShaderProgramVariant::Bound);
+                variant);
             const auto shader = prepared_assets_->Get<asset::ShaderResource>(shader_id);
             if (!shader || !shader->data || shader->status != asset::ShaderStatus::Ready)
             {
@@ -635,6 +654,234 @@ namespace kpengine::render
         return target ? target->GetHandle() : graphics::RenderTargetHandle{};
     }
 
+    bool DeferredRenderer::PrepareRayTracingScene()
+    {
+        frame_ray_tracing_geometries_.clear();
+        frame_ray_tracing_instances_.clear();
+        frame_ray_tracing_mesh_builds_.clear();
+        frame_ray_tracing_blas_builds_.clear();
+        frame_ray_tracing_tlas_builds_.clear();
+        frame_ray_tracing_blas_build_ = false;
+        frame_ray_tracing_tlas_build_ = false;
+
+        graphics::RayTracingResourceOwner *const owner =
+            backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
+        if (owner == nullptr || !owner->IsSupported())
+        {
+            return true;
+        }
+
+        uint64_t instance_signature = 1469598103934665603ull;
+        const auto add_signature = [&instance_signature](uint64_t value) {
+            instance_signature ^= value;
+            instance_signature *= 1099511628211ull;
+        };
+        const auto add_float = [&add_signature](float value) {
+            add_signature(static_cast<uint64_t>(std::hash<float>{}(value)));
+        };
+
+        std::unordered_map<graphics::MeshHandle, std::size_t> mesh_indices;
+        for (const MeshProxy &proxy : frame_render_world_snapshot_)
+        {
+            if (!proxy.flags.visible || !proxy.flags.casts_shadow || !proxy.mesh.IsValid())
+            {
+                continue;
+            }
+
+            const auto [mesh_iterator, inserted] = mesh_indices.emplace(
+                proxy.mesh, frame_ray_tracing_mesh_builds_.size());
+            if (inserted)
+            {
+                std::vector<graphics::RayTracingGeometryDesc> geometries =
+                    backend_->GetRayTracingGeometry(proxy.mesh);
+                if (geometries.empty())
+                {
+                    mesh_indices.erase(mesh_iterator);
+                    continue;
+                }
+
+                RayTracingBlasState &state = ray_tracing_blas_[proxy.mesh];
+                if (state.handle.IsValid() && state.geometry_count != geometries.size())
+                {
+                    owner->DestroyAccelerationStructure(state.handle);
+                    state = {};
+                }
+                if (!state.handle.IsValid())
+                {
+                    state.handle = owner->CreateAccelerationStructure(
+                        {graphics::RayTracingAccelerationStructureType::BottomLevel,
+                         static_cast<uint32_t>(geometries.size()), 0, false});
+                    state.geometry_count = static_cast<uint32_t>(geometries.size());
+                    state.built = false;
+                }
+                if (!state.handle.IsValid())
+                {
+                    mesh_indices.erase(mesh_iterator);
+                    continue;
+                }
+
+                const std::size_t geometry_offset = frame_ray_tracing_geometries_.size();
+                frame_ray_tracing_geometries_.insert(frame_ray_tracing_geometries_.end(),
+                                                     geometries.begin(), geometries.end());
+                frame_ray_tracing_mesh_builds_.push_back(
+                    {proxy.mesh, state.handle, geometry_offset, geometries.size(), !state.built});
+                if (!state.built)
+                {
+                    frame_ray_tracing_blas_build_ = true;
+                }
+            }
+
+            const auto build_iterator = mesh_indices.find(proxy.mesh);
+            if (build_iterator == mesh_indices.end())
+            {
+                continue;
+            }
+            const RayTracingMeshBuild &mesh_build =
+                frame_ray_tracing_mesh_builds_[build_iterator->second];
+            graphics::RayTracingInstanceDesc instance{};
+            instance.bottom_level = mesh_build.blas;
+            instance.instance_id = proxy.handle.id & 0x00FFFFFFu;
+            const Matrix4f transform = Matrix4f::MakeTransformMatrix(proxy.world_transform);
+            for (std::size_t row = 0; row < 3; ++row)
+            {
+                for (std::size_t column = 0; column < 4; ++column)
+                {
+                    instance.transform[row * 4 + column] = transform[row][column];
+                    add_float(transform[row][column]);
+                }
+            }
+            add_signature(proxy.handle.id);
+            add_signature(proxy.handle.generation);
+            add_signature(proxy.mesh.id);
+            add_signature(proxy.mesh.generation);
+            frame_ray_tracing_instances_.push_back(instance);
+        }
+
+        if (frame_ray_tracing_instances_.empty())
+        {
+            return true;
+        }
+        frame_ray_tracing_instance_signature_ = instance_signature;
+
+        if (!ray_tracing_tlas_.IsValid() ||
+            ray_tracing_tlas_capacity_ < frame_ray_tracing_instances_.size())
+        {
+            if (ray_tracing_tlas_.IsValid())
+            {
+                owner->DestroyAccelerationStructure(ray_tracing_tlas_);
+            }
+            ray_tracing_tlas_ = owner->CreateAccelerationStructure(
+                {graphics::RayTracingAccelerationStructureType::TopLevel, 0,
+                 static_cast<uint32_t>(frame_ray_tracing_instances_.size()), true});
+            ray_tracing_tlas_capacity_ =
+                static_cast<uint32_t>(frame_ray_tracing_instances_.size());
+            ray_tracing_tlas_built_ = false;
+        }
+        if (!ray_tracing_tlas_.IsValid())
+        {
+            return true;
+        }
+
+        for (const RayTracingMeshBuild &mesh_build : frame_ray_tracing_mesh_builds_)
+        {
+            if (mesh_build.needs_build)
+            {
+                frame_ray_tracing_blas_builds_.push_back(
+                    {mesh_build.blas, graphics::RayTracingBuildMode::Build,
+                     std::span<const graphics::RayTracingGeometryDesc>(
+                         frame_ray_tracing_geometries_.data() + mesh_build.geometry_offset,
+                         mesh_build.geometry_count),
+                     {}});
+            }
+        }
+
+        frame_ray_tracing_tlas_build_ =
+            !ray_tracing_tlas_built_ || instance_signature != ray_tracing_instance_signature_;
+        if (frame_ray_tracing_tlas_build_)
+        {
+            frame_ray_tracing_tlas_builds_.push_back(
+                {ray_tracing_tlas_,
+                 ray_tracing_tlas_built_ ? graphics::RayTracingBuildMode::Update
+                                         : graphics::RayTracingBuildMode::Build,
+                 {},
+                 std::span<const graphics::RayTracingInstanceDesc>(
+                     frame_ray_tracing_instances_.data(), frame_ray_tracing_instances_.size())});
+        }
+        return true;
+    }
+
+    bool DeferredRenderer::RecordRayTracingBlasBuild()
+    {
+        graphics::CommandRecorder *const recorder =
+            backend_ != nullptr ? backend_->GetCommandRecorder() : nullptr;
+        if (recorder == nullptr || frame_ray_tracing_blas_builds_.empty())
+        {
+            return false;
+        }
+        if (!recorder->BuildAccelerationStructures(frame_ray_tracing_blas_builds_))
+        {
+            return false;
+        }
+        for (const RayTracingMeshBuild &mesh_build : frame_ray_tracing_mesh_builds_)
+        {
+            if (mesh_build.needs_build)
+            {
+                const auto iterator = ray_tracing_blas_.find(mesh_build.mesh);
+                if (iterator != ray_tracing_blas_.end())
+                {
+                    iterator->second.built = true;
+                }
+            }
+        }
+        return true;
+    }
+
+    bool DeferredRenderer::RecordRayTracingTlasBuild()
+    {
+        graphics::CommandRecorder *const recorder =
+            backend_ != nullptr ? backend_->GetCommandRecorder() : nullptr;
+        if (recorder == nullptr || frame_ray_tracing_tlas_builds_.empty())
+        {
+            return false;
+        }
+        if (!recorder->BuildAccelerationStructures(frame_ray_tracing_tlas_builds_))
+        {
+            return false;
+        }
+        ray_tracing_tlas_built_ = true;
+        ray_tracing_instance_signature_ = frame_ray_tracing_instance_signature_;
+        return true;
+    }
+
+    void DeferredRenderer::DestroyRayTracingResources()
+    {
+        graphics::RayTracingResourceOwner *const owner =
+            backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
+        if (owner == nullptr)
+        {
+            ray_tracing_blas_.clear();
+            ray_tracing_tlas_ = {};
+            return;
+        }
+        for (const auto &[mesh, state] : ray_tracing_blas_)
+        {
+            (void)mesh;
+            if (state.handle.IsValid())
+            {
+                owner->DestroyAccelerationStructure(state.handle);
+            }
+        }
+        if (ray_tracing_tlas_.IsValid())
+        {
+            owner->DestroyAccelerationStructure(ray_tracing_tlas_);
+        }
+        ray_tracing_blas_.clear();
+        ray_tracing_tlas_ = {};
+        ray_tracing_tlas_capacity_ = 0;
+        ray_tracing_tlas_built_ = false;
+        ray_tracing_instance_signature_ = 0;
+    }
+
     DeferredRendererFrameResult DeferredRenderer::RecordFrame(
         FrameContext &frame_context, const RenderSceneFrameInput &input)
     {
@@ -688,7 +935,7 @@ namespace kpengine::render
         UpdateEnvironment(input);
         const auto shadow_stamp_fit_started = std::chrono::steady_clock::now();
         active_directional_shadow_ = ScheduleDirectionalShadow(input.lights,
-                                                               input.is_shadow_handle_valid);
+                                                                input.is_shadow_handle_valid);
         profile_.cpu_shadow_stamp_fit_ms +=
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - shadow_stamp_fit_started)
@@ -705,11 +952,18 @@ namespace kpengine::render
         active_point_shadow_ = SchedulePointShadow(input.lights, input.is_shadow_handle_valid);
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
+        if (!PrepareRayTracingScene())
+        {
+            result.normal_recording_completed = false;
+            return result;
+        }
         const bool ray_query_shadow =
             backend_->GetCapabilities().SupportsRayQueryShadows() &&
             backend_->GetActiveTopLevelAccelerationStructure().IsValid();
         const CompiledRenderGraph *const frame_plan =
-            GetFramePlan(RenderFrameConditions{is_deferred_capture, ray_query_shadow});
+            GetFramePlan(RenderFrameConditions{is_deferred_capture, ray_query_shadow,
+                                               frame_ray_tracing_blas_build_,
+                                               frame_ray_tracing_tlas_build_});
         if (frame_plan == nullptr)
         {
             result.normal_recording_completed = false;
@@ -860,6 +1114,14 @@ namespace kpengine::render
                         RecordCaptureViewPass(*active_pending_capture_);
             break;
         case FixedRenderPassId::EditorComposite:
+            succeeded = false;
+            break;
+        case FixedRenderPassId::RayTracingBlasBuild:
+            succeeded = RecordRayTracingBlasBuild();
+            break;
+        case FixedRenderPassId::RayTracingTlasBuild:
+            succeeded = RecordRayTracingTlasBuild();
+            break;
         case FixedRenderPassId::Count:
             succeeded = false;
             break;
@@ -1076,10 +1338,24 @@ namespace kpengine::render
 
             if (const auto *buffer = std::get_if<GraphBufferHandle>(&lifetime.handle))
             {
-                // R4.1 makes the missing physical-buffer binding explicit. The
-                // current raster renderer has no graph-owned buffer provider yet;
-                // a future buffer owner must populate this table before execution.
-                (void)buffer;
+                if (IsRayTracingVirtualBuffer(lifetime.resource_name))
+                {
+                    // Geometry buffers are a logical group resolved by the
+                    // backend provider during transition application. Instance
+                    // and scratch storage stay Graphics-owned inside the AS
+                    // owner and intentionally have no Render-visible handle.
+                    if (lifetime.resource_name == "SceneGeometry" &&
+                        !frame_ray_tracing_geometries_.empty())
+                    {
+                        frame_buffer_bindings_.push_back(
+                            {*buffer, lifetime.resource_name,
+                             frame_ray_tracing_geometries_.front().vertex_buffer});
+                    }
+                    continue;
+                }
+                // R4.1 makes the missing physical-buffer binding explicit for
+                // ordinary graph buffers; the RT build provider is the only
+                // supported exception in this frame plan.
                 KP_LOG("RenderLog", LOG_LEVEL_ERROR,
                        "No frame binding provider for graph buffer '%s'",
                        lifetime.resource_name.c_str());
@@ -1091,6 +1367,20 @@ namespace kpengine::render
 
             const auto *acceleration_structure =
                 std::get_if<GraphAccelerationStructureHandle>(&lifetime.handle);
+            if (lifetime.resource_name == "SceneBLAS")
+            {
+                if (frame_ray_tracing_mesh_builds_.empty())
+                {
+                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                           "No BLAS provider for graph resource '%s'",
+                           lifetime.resource_name.c_str());
+                    frame_texture_bindings_.clear();
+                    frame_buffer_bindings_.clear();
+                    frame_acceleration_structure_bindings_.clear();
+                    return false;
+                }
+                continue;
+            }
             const graphics::AccelerationStructureHandle physical =
                 backend_ != nullptr ? backend_->GetActiveTopLevelAccelerationStructure()
                                     : graphics::AccelerationStructureHandle{};
@@ -1123,16 +1413,62 @@ namespace kpengine::render
             }
             else if (const auto *buffer = std::get_if<GraphBufferHandle>(&use.handle))
             {
+                std::string_view resource_name;
+                if (active_frame_plan_ != nullptr)
+                {
+                    for (const RenderGraphLifetimeInterval &lifetime :
+                         active_frame_plan_->Lifetimes())
+                    {
+                        const auto *lifetime_buffer =
+                            std::get_if<GraphBufferHandle>(&lifetime.handle);
+                        if (lifetime_buffer != nullptr && *lifetime_buffer == *buffer)
+                        {
+                            resource_name = lifetime.resource_name;
+                            break;
+                        }
+                    }
+                }
+                if (IsRayTracingVirtualBuffer(resource_name))
+                {
+                    continue;
+                }
                 if (!ResolveFrameBuffer(*buffer).IsValid())
                 {
                     return false;
                 }
             }
-            else if (!ResolveFrameAccelerationStructure(
-                         std::get<GraphAccelerationStructureHandle>(use.handle))
-                          .IsValid())
+            else
             {
-                return false;
+                const auto acceleration_structure =
+                    std::get<GraphAccelerationStructureHandle>(use.handle);
+                std::string_view resource_name;
+                if (active_frame_plan_ != nullptr)
+                {
+                    for (const RenderGraphLifetimeInterval &lifetime :
+                         active_frame_plan_->Lifetimes())
+                    {
+                        const auto *lifetime_acceleration_structure =
+                            std::get_if<GraphAccelerationStructureHandle>(&lifetime.handle);
+                        if (lifetime_acceleration_structure != nullptr &&
+                            *lifetime_acceleration_structure == acceleration_structure)
+                        {
+                            resource_name = lifetime.resource_name;
+                            break;
+                        }
+                    }
+                }
+                if (resource_name == "SceneBLAS")
+                {
+                    if (frame_ray_tracing_mesh_builds_.empty())
+                    {
+                        return false;
+                    }
+                    continue;
+                }
+                if (!ResolveFrameAccelerationStructure(acceleration_structure).IsValid())
+                {
+                    return false;
+                }
             }
         }
         return true;
@@ -1265,6 +1601,30 @@ namespace kpengine::render
             }
             if (const auto *buffer = std::get_if<GraphBufferHandle>(&intent.handle))
             {
+                if (IsRayTracingVirtualBuffer(intent.resource_name))
+                {
+                    if (intent.resource_name == "SceneGeometry")
+                    {
+                        for (const graphics::RayTracingGeometryDesc &geometry :
+                             frame_ray_tracing_geometries_)
+                        {
+                            for (const graphics::BufferHandle physical :
+                                 {geometry.vertex_buffer, geometry.index_buffer})
+                            {
+                                if (!physical.IsValid() ||
+                                    !recorder->RequireBufferUsage(
+                                        physical, ToResourceUsage(intent.usage)))
+                                {
+                                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                                           "Render graph geometry requirement failed for pass '%s'",
+                                           pass.name.c_str());
+                                    return false;
+                                }
+                            }
+                        }
+                    }
+                    continue;
+                }
                 const graphics::BufferHandle physical = ResolveFrameBuffer(*buffer);
                 if (!physical.IsValid() ||
                     !recorder->RequireBufferUsage(physical, ToResourceUsage(intent.usage)))
@@ -1278,6 +1638,22 @@ namespace kpengine::render
             }
             const auto *acceleration_structure =
                 std::get_if<GraphAccelerationStructureHandle>(&intent.handle);
+            if (intent.resource_name == "SceneBLAS")
+            {
+                for (const RayTracingMeshBuild &mesh_build : frame_ray_tracing_mesh_builds_)
+                {
+                    if (!mesh_build.blas.IsValid() ||
+                        !recorder->RequireAccelerationStructureUsage(
+                            mesh_build.blas, ToResourceUsage(intent.usage)))
+                    {
+                        KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                               "Render graph BLAS requirement failed for pass '%s'",
+                               pass.name.c_str());
+                        return false;
+                    }
+                }
+                continue;
+            }
             const graphics::AccelerationStructureHandle physical =
                 acceleration_structure != nullptr
                     ? ResolveFrameAccelerationStructure(*acceleration_structure)
@@ -1301,12 +1677,19 @@ namespace kpengine::render
         // here and reused for every frame that selects it.
         frame_plan_valid_ = true;
         frame_plan_compile_ms_ = 0.0;
-        for (const RenderFrameConditions conditions :
-             {RenderFrameConditions{false, false}, RenderFrameConditions{false, true},
-              RenderFrameConditions{true, false}, RenderFrameConditions{true, true}})
+        for (uint32_t condition_bits = 0; condition_bits < frame_plans_.size();
+             ++condition_bits)
         {
-            const std::size_t slot = (conditions.diagnostic_capture ? 2U : 0U) +
-                                     (conditions.ray_query_shadow ? 1U : 0U);
+            const RenderFrameConditions conditions{
+                (condition_bits & 1U) != 0,
+                (condition_bits & 2U) != 0,
+                (condition_bits & 4U) != 0,
+                (condition_bits & 8U) != 0};
+            const std::size_t slot =
+                (conditions.diagnostic_capture ? 1U : 0U) |
+                (conditions.ray_query_shadow ? 2U : 0U) |
+                (conditions.ray_tracing_blas_build ? 4U : 0U) |
+                (conditions.ray_tracing_tlas_build ? 8U : 0U);
             const auto started = std::chrono::steady_clock::now();
             frame_plans_[slot] = CompileRenderFrameGraph(conditions);
             frame_plan_compile_ms_ += std::chrono::duration<double, std::milli>(
@@ -1329,8 +1712,10 @@ namespace kpengine::render
         RenderFrameConditions conditions) const
     {
         const std::optional<RenderGraphCompileResult> &plan =
-            frame_plans_[(conditions.diagnostic_capture ? 2U : 0U) +
-                        (conditions.ray_query_shadow ? 1U : 0U)];
+            frame_plans_[(conditions.diagnostic_capture ? 1U : 0U) |
+                        (conditions.ray_query_shadow ? 2U : 0U) |
+                        (conditions.ray_tracing_blas_build ? 4U : 0U) |
+                        (conditions.ray_tracing_tlas_build ? 8U : 0U)];
         if (!plan.has_value() || !plan->graph.has_value())
         {
             return nullptr;
@@ -1828,12 +2213,26 @@ namespace kpengine::render
         }
 
         DeferredLightingGpuData lighting_data{};
+        const bool ray_query_shadows =
+            backend_->GetCapabilities().SupportsRayQueryShadows() &&
+            backend_->GetActiveTopLevelAccelerationStructure().IsValid() &&
+            deferred_lighting_ray_query_pipeline_.IsValid();
+        if (ray_query_shadows != ray_query_shadow_path_active_)
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_INFO,
+                   "Deferred lighting shadow path: %s",
+                   ray_query_shadows ? "ray_query" : "shadow_map_fallback");
+            ray_query_shadow_path_active_ = ray_query_shadows;
+        }
+        const graphics::PipelineHandle lighting_pipeline = ray_query_shadows
+                                                               ? deferred_lighting_ray_query_pipeline_
+                                                               : deferred_lighting_pipeline_;
         lighting_data.inverse_view_projection =
             scene_camera_.GetViewProjectionMatrix().Inverse().Transpose();
         const Vector3f &camera_position = scene_camera_.GetPosition();
         lighting_data.camera_world_position = Vector4f{camera_position, 1.0f};
         lighting_data.environment_ibl_params = Vector4f{
-            active_environment_.ibl_enabled ? 1.0f : 0.0f,
+            ray_query_shadows ? 0.0f : (active_environment_.ibl_enabled ? 1.0f : 0.0f),
             static_cast<float>(active_environment_.prefilter_level_count),
             active_environment_.ibl_intensity, 0.0f};
         if (active_directional_shadow_.has_value())
@@ -1871,11 +2270,8 @@ namespace kpengine::render
         bool recorded = false;
         if (lighting_constants.IsValid() && point_shadow_constants.IsValid())
         {
-            const graphics::DescriptorSetHandle bindings =
-                active_frame_context_->AllocateResourceBindingSet(
-                    deferred_lighting_pipeline_,
-                    {0,
-                     {graphics::SampledTextureBinding{
+            std::vector<graphics::ResourceBinding> resource_bindings{
+                graphics::SampledTextureBinding{
                           0, 0, gbuffer_target->GetColorAttachmentTexture(0),
                           gbuffer_debug_sampler_},
                       graphics::SampledTextureBinding{
@@ -1914,12 +2310,20 @@ namespace kpengine::render
                            active_environment_.prefiltered_radiance.sampler},
                        graphics::SampledTextureBinding{
                            0, 10, active_environment_.brdf_lut.texture,
-                           active_environment_.brdf_lut.sampler}}});
+                           active_environment_.brdf_lut.sampler}};
+            if (ray_query_shadows)
+            {
+                resource_bindings.emplace_back(graphics::AccelerationStructureBinding{
+                    0, 14, backend_->GetActiveTopLevelAccelerationStructure()});
+            }
+            const graphics::DescriptorSetHandle bindings =
+                active_frame_context_->AllocateResourceBindingSet(
+                    lighting_pipeline, {0, std::move(resource_bindings)});
             if (bindings.IsValid())
             {
-                recorder->BindPipeline(deferred_lighting_pipeline_);
+                recorder->BindPipeline(lighting_pipeline);
                 recorder->BindMesh(gbuffer_debug_fullscreen_mesh_);
-                recorder->BindResourceBindings(deferred_lighting_pipeline_, bindings);
+                recorder->BindResourceBindings(lighting_pipeline, bindings);
                 recorder->DrawIndexed();
                 AddProfileDraws(1, 1);
                 recorded = true;
@@ -1962,9 +2366,11 @@ namespace kpengine::render
 
     bool DeferredRenderer::PrepareDeferredLightingPassResources()
     {
+        const bool supports_ray_query = backend_->GetCapabilities().SupportsRayQueryShadows();
         if (deferred_lighting_pipeline_.IsValid() && directional_shadow_sampler_.IsValid() &&
             spot_shadow_sampler_.IsValid() && point_shadow_sampler_.IsValid() &&
-            active_environment_.HasCompleteBindings())
+            active_environment_.HasCompleteBindings() &&
+            (!supports_ray_query || deferred_lighting_ray_query_pipeline_.IsValid()))
         {
             return true;
         }
@@ -2019,11 +2425,6 @@ namespace kpengine::render
         {
             return false;
         }
-        if (deferred_lighting_pipeline_.IsValid())
-        {
-            return true;
-        }
-
         std::shared_ptr<const asset::ShaderProgramResource> program;
         if (!GetPreparedProgram(BuiltInRenderAsset::DeferredLightingProgram, program))
         {
@@ -2085,7 +2486,44 @@ namespace kpengine::render
                ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
         deferred_lighting_pipeline_ = backend_->CreatePipelineResource(desc);
-        return deferred_lighting_pipeline_.IsValid();
+        if (!deferred_lighting_pipeline_.IsValid())
+        {
+            return false;
+        }
+        if (!supports_ray_query)
+        {
+            return true;
+        }
+
+        std::shared_ptr<const asset::ShaderProgramResource> ray_query_program;
+        if (!GetPreparedProgram(BuiltInRenderAsset::DeferredLightingProgram,
+                                ray_query_program, asset::ShaderProgramVariant::RayQuery))
+        {
+            return false;
+        }
+        const auto ray_query_vert_shader = prepared_assets_->Get<asset::ShaderResource>(
+            ray_query_program->GetData(ShaderStage::SHADER_STAGE_VERTEX,
+                                       ShaderFormat::SHADER_FORMAT_GLSL,
+                                       asset::ShaderProgramVariant::RayQuery));
+        const auto ray_query_frag_shader = prepared_assets_->Get<asset::ShaderResource>(
+            ray_query_program->GetData(ShaderStage::SHADER_STAGE_FRAGMENT,
+                                       ShaderFormat::SHADER_FORMAT_GLSL,
+                                       asset::ShaderProgramVariant::RayQuery));
+        if (!ray_query_vert_shader || !ray_query_frag_shader ||
+            !ray_query_vert_shader->data || !ray_query_frag_shader->data ||
+            ray_query_vert_shader->status == asset::ShaderStatus::CompileFailed ||
+            ray_query_frag_shader->status == asset::ShaderStatus::CompileFailed)
+        {
+            return false;
+        }
+        graphics::PipelineDesc ray_query_desc = desc;
+        ray_query_desc.vert_shader = ray_query_vert_shader->data.get();
+        ray_query_desc.frag_shader = ray_query_frag_shader->data.get();
+        ray_query_desc.descriptor_binding_descs[0].push_back({
+            14, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE,
+            ShaderStage::SHADER_STAGE_FRAGMENT});
+        deferred_lighting_ray_query_pipeline_ = backend_->CreatePipelineResource(ray_query_desc);
+        return deferred_lighting_ray_query_pipeline_.IsValid();
     }
 
     bool DeferredRenderer::PrepareEnvironmentIbl(asset::AssetID source_asset,

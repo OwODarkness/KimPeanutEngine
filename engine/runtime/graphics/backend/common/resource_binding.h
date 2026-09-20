@@ -29,7 +29,15 @@ namespace kpengine::graphics
         SamplerHandle sampler;
     };
 
-    using ResourceBinding = std::variant<UniformBufferBinding, SampledTextureBinding>;
+    struct AccelerationStructureBinding
+    {
+        uint32_t set = 0;
+        uint32_t binding = 0;
+        AccelerationStructureHandle acceleration_structure;
+    };
+
+    using ResourceBinding = std::variant<UniformBufferBinding, SampledTextureBinding,
+                                         AccelerationStructureBinding>;
 
     struct ResourceBindingSetDesc
     {

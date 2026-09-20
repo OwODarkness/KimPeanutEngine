@@ -46,7 +46,7 @@ namespace kpengine::graphics
 
     // Passes a backend can time. Render's RenderProfilePass indexes passes by
     // this id, so both sides must agree on the count; Render asserts it.
-    inline constexpr uint32_t kGpuProfilePassCount = 8;
+    inline constexpr uint32_t kGpuProfilePassCount = 10;
 
     struct GpuProfileTiming
     {
@@ -84,6 +84,15 @@ namespace kpengine::graphics
         virtual bool DestroyPipelineResource(PipelineHandle handle) = 0;
         virtual MeshHandle CreateMesh(const data::MeshData &data) = 0;
         virtual bool DestroyMesh(MeshHandle handle) = 0;
+        // Returns API-neutral triangle inputs for a Graphics-owned AS build.
+        // The backend resolves mesh storage; Render never reaches through a
+        // MeshResource or receives a native buffer address.
+        virtual std::vector<RayTracingGeometryDesc> GetRayTracingGeometry(
+            MeshHandle mesh)
+        {
+            (void)mesh;
+            return {};
+        }
         virtual TextureHandle CreateTexture(const data::TextureData &data,
                                             const TextureSettings &settings) = 0;
         virtual bool DestroyTexture(TextureHandle handle) = 0;

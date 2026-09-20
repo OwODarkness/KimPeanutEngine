@@ -74,6 +74,12 @@ namespace kpengine::graphics
         resource.handle = handle;
         resource.desc = desc;
         resource.alive = true;
+        if (desc.type == RayTracingAccelerationStructureType::TopLevel)
+        {
+            // The opaque handle is valid as soon as Graphics reserves the
+            // owner slot; storage is created by the first graph build.
+            active_top_level_ = handle;
+        }
         return handle;
     }
 
@@ -138,6 +144,13 @@ namespace kpengine::graphics
         return index < resources_.size() && resources_[index].alive
                    ? &resources_[index]
                    : nullptr;
+    }
+
+    VkAccelerationStructureKHR VulkanAccelerationStructureOwner::GetNativeAccelerationStructure(
+        AccelerationStructureHandle handle) const noexcept
+    {
+        const Resource *const resource = GetResource(handle);
+        return resource != nullptr ? resource->acceleration_structure : VK_NULL_HANDLE;
     }
 
     bool VulkanAccelerationStructureOwner::EnsureStorage(Resource &resource, VkDeviceSize size)
@@ -404,8 +417,19 @@ namespace kpengine::graphics
         ResourceUsage usage)
     {
         const Resource *resource = GetResource(handle);
-        if (!supported_ || command_buffer == VK_NULL_HANDLE || !resource ||
+        if (!supported_ || command_buffer == VK_NULL_HANDLE || !resource)
+        {
+            return false;
+        }
+        if (usage == ResourceUsage::AccelerationStructureBuildOutput &&
             resource->acceleration_structure == VK_NULL_HANDLE)
+        {
+            // The first build creates native storage inside BuildOne. There is
+            // no prior native state to transition, but the graph declaration is
+            // still valid and remains the ordering authority.
+            return true;
+        }
+        if (resource->acceleration_structure == VK_NULL_HANDLE)
         {
             return false;
         }

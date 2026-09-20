@@ -1,4 +1,9 @@
-#version 450
+#version 460
+
+#if KP_RAY_QUERY
+#extension GL_EXT_ray_query : require
+layout(binding = 14) uniform accelerationStructureEXT scene_tlas;
+#endif
 
 const float PI = 3.14159265359;
 const uint LIGHT_ABI_VERSION = 1u;
@@ -187,6 +192,56 @@ float directional_shadow_visibility(vec3 world_position, vec3 normal,
     return 1.0 - occluded_samples / 9.0;
 }
 
+#if KP_RAY_QUERY
+float ray_query_directional_visibility(vec3 world_position, vec3 normal,
+                                       vec3 light_direction)
+{
+    const float normal_bias = 0.001;
+    const float ray_min = 0.001;
+    const float ray_max = 1.0e27;
+    rayQueryEXT query;
+    rayQueryInitializeEXT(query, scene_tlas,
+                          gl_RayFlagsTerminateOnFirstHitEXT |
+                              gl_RayFlagsOpaqueEXT,
+                          0xff, world_position + normal * normal_bias,
+                          ray_min, light_direction, ray_max);
+    while (rayQueryProceedEXT(query))
+    {
+    }
+    return rayQueryGetIntersectionTypeEXT(query, true) ==
+                   gl_RayQueryCommittedIntersectionNoneEXT
+               ? 1.0
+               : 0.0;
+}
+
+float ray_query_point_visibility(vec3 world_position, vec3 normal,
+                                 vec3 light_position)
+{
+    const float normal_bias = 0.001;
+    const float ray_min = 0.001;
+    vec3 light_delta = light_position - world_position;
+    float light_distance = length(light_delta);
+    if (light_distance <= ray_min)
+    {
+        return 1.0;
+    }
+    rayQueryEXT query;
+    rayQueryInitializeEXT(query, scene_tlas,
+                          gl_RayFlagsTerminateOnFirstHitEXT |
+                              gl_RayFlagsOpaqueEXT,
+                          0xff, world_position + normal * normal_bias,
+                          ray_min, light_delta / light_distance,
+                          light_distance - ray_min);
+    while (rayQueryProceedEXT(query))
+    {
+    }
+    return rayQueryGetIntersectionTypeEXT(query, true) ==
+                   gl_RayQueryCommittedIntersectionNoneEXT
+               ? 1.0
+               : 0.0;
+}
+#endif
+
 float spot_shadow_visibility(vec3 world_position, vec3 normal,
                              vec3 light_direction)
 {
@@ -304,7 +359,12 @@ void main()
     float depth = texture(gbuffer_depth, frag_texcoord).r;
     if (depth >= 0.999999)
     {
+#if KP_RAY_QUERY
+        // Keep the RT validation image focused on geometry and direct lighting.
+        out_color = vec4(0.0, 0.0, 0.0, 1.0);
+#else
         out_color = vec4(sample_environment_background(), 1.0);
+#endif
         return;
     }
 
@@ -389,12 +449,25 @@ void main()
         vec3 diffuse_weight = (vec3(1.0) - fresnel) * (1.0 - metallic);
         vec3 radiance = light.color_intensity.rgb * light.color_intensity.a * attenuation;
         float shadow_visibility = 1.0;
+#if KP_RAY_QUERY
+        if (directional)
+        {
+            shadow_visibility = ray_query_directional_visibility(
+                world_position, normal, light_direction);
+        }
+        else if (light.type == LIGHT_TYPE_POINT)
+        {
+            shadow_visibility = ray_query_point_visibility(
+                world_position, normal, light.position_range.xyz);
+        }
+#else
         if (directional && light.shadow_kind == SHADOW_KIND_DIRECTIONAL_2D &&
             light.shadow_binding_slot == DIRECTIONAL_SHADOW_BINDING_SLOT)
         {
             shadow_visibility = directional_shadow_visibility(
                 world_position, normal, light_direction);
         }
+#endif
         else if (!directional && light.type == LIGHT_TYPE_SPOT &&
                  light.shadow_kind == SHADOW_KIND_SPOT_2D &&
                  light.shadow_binding_slot == SPOT_SHADOW_BINDING_SLOT)

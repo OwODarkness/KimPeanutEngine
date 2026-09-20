@@ -220,7 +220,7 @@ namespace kpengine::render
     RenderGraphPassRef RenderGraphBuilder::AddPass(RenderGraphPassDesc desc)
     {
         const GraphPassId pass{graph_id_, static_cast<uint32_t>(passes_.size())};
-        passes_.push_back(PassRecord{std::move(desc), {}, {}, {}, {}});
+        passes_.push_back(PassRecord{std::move(desc), {}, {}, {}, {}, {}});
         return RenderGraphPassRef(*this, pass);
     }
 
@@ -311,6 +311,18 @@ namespace kpengine::render
         return *this;
     }
 
+    RenderGraphPassRef &RenderGraphPassRef::Write(
+        GraphAccelerationStructureHandle acceleration_structure, RenderGraphUsage usage)
+    {
+        if (builder_ != nullptr)
+        {
+            builder_->WriteAccelerationStructure(pass_,
+                                                 builder_->CurrentVersion(acceleration_structure),
+                                                 usage);
+        }
+        return *this;
+    }
+
     RenderGraphPassRef &RenderGraphPassRef::DependsOn(GraphPassId dependency)
     {
         if (builder_ != nullptr)
@@ -361,6 +373,45 @@ namespace kpengine::render
             {acceleration_structure, RenderGraphAccess::Read, usage,
              RenderGraphAttachmentOp::None, {}, {}, stage});
         return true;
+    }
+
+    std::optional<GraphAccelerationStructureHandle>
+    RenderGraphBuilder::WriteAccelerationStructure(
+        GraphPassId pass, GraphAccelerationStructureHandle previous_version,
+        RenderGraphUsage usage)
+    {
+        if (!IsValidPass(pass) || !IsValidAccelerationStructure(previous_version))
+        {
+            RecordDeclarationError(
+                "A render graph acceleration structure write references an invalid handle.");
+            return std::nullopt;
+        }
+        AccelerationStructureRecord &record =
+            acceleration_structures_[previous_version.resource];
+        if (previous_version.version != record.latest_version)
+        {
+            RecordDeclarationError(
+                "A render graph acceleration structure write must extend the latest resource version.");
+            return std::nullopt;
+        }
+        PassRecord &pass_record = passes_[ToIndex(pass)];
+        if (std::find(pass_record.written_acceleration_structures.begin(),
+                      pass_record.written_acceleration_structures.end(),
+                      previous_version.resource) !=
+            pass_record.written_acceleration_structures.end())
+        {
+            RecordDeclarationError(
+                "A render graph pass writes one acceleration structure resource more than once.");
+            return std::nullopt;
+        }
+        const uint32_t version = static_cast<uint32_t>(record.versions.size());
+        record.versions.push_back(AccelerationStructureVersion{pass, false});
+        record.latest_version = version;
+        pass_record.written_acceleration_structures.push_back(previous_version.resource);
+        const GraphAccelerationStructureHandle output{graph_id_, previous_version.resource, version};
+        pass_record.uses.push_back(
+            {output, RenderGraphAccess::Write, usage, RenderGraphAttachmentOp::None, {}, {}, {}});
+        return output;
     }
 
     std::optional<GraphTextureHandle> RenderGraphBuilder::WriteTexture(
@@ -705,6 +756,13 @@ namespace kpengine::render
                     if (use.access == RenderGraphAccess::Read)
                     {
                         add_producer_edge(version.producer, pass);
+                    }
+                    else if (acceleration_structure->version > 0)
+                    {
+                        const AccelerationStructureVersion &previous =
+                            acceleration_structures_[acceleration_structure->resource]
+                                .versions[acceleration_structure->version - 1];
+                        add_producer_edge(previous.producer, pass);
                     }
                 }
             }

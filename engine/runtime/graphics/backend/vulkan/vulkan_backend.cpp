@@ -459,6 +459,9 @@ namespace kpengine::graphics
                                                              : 0;
         capabilities_.acceleration_structures = acceleration_structure_owner_ &&
                                                 acceleration_structure_owner_->IsSupported();
+        capabilities_.ray_tracing_contract = capabilities_.acceleration_structures &&
+                                              device_->SupportsRayTracing();
+        capabilities_.ray_query = capabilities_.ray_tracing_contract;
 
         const auto supports_sampled_format = [physical_device = device_->GetPhysicalDevice()](
                                                  VkFormat format)
@@ -537,6 +540,38 @@ namespace kpengine::graphics
     bool VulkanBackend::DestroyMesh(MeshHandle handle)
     {
         return mesh_manager_->DestroyMesh(CreateGraphicsContext(), handle);
+    }
+
+    std::vector<RayTracingGeometryDesc> VulkanBackend::GetRayTracingGeometry(
+        MeshHandle mesh)
+    {
+        if (!device_ || !device_->SupportsRayTracing() || !mesh_manager_)
+        {
+            return {};
+        }
+        Mesh *const mesh_resource = mesh_manager_->GetMesh(mesh);
+        if (mesh_resource == nullptr)
+        {
+            return {};
+        }
+        const MeshResource resource = mesh_resource->GetMeshHandle();
+        const auto *const vulkan_resource =
+            static_cast<const VulkanMeshResource *>(resource.native);
+        if (vulkan_resource == nullptr || !vulkan_resource->vertex_handle.IsValid() ||
+            !vulkan_resource->index_handle.IsValid() ||
+            vulkan_resource->vertex_count < 3 || vulkan_resource->index_count < 3)
+        {
+            return {};
+        }
+        return {RayTracingGeometryDesc{
+            vulkan_resource->vertex_handle,
+            0,
+            static_cast<uint32_t>(sizeof(data::Vertex)),
+            vulkan_resource->vertex_count,
+            vulkan_resource->index_handle,
+            0,
+            vulkan_resource->index_count,
+            RayTracingIndexType::UInt32}};
     }
 
     TextureHandle VulkanBackend::CreateTexture(const data::TextureData &data,
@@ -655,7 +690,8 @@ namespace kpengine::graphics
         bool pool_created = false;
         const DescriptorSetHandle handle = descriptor_set_manager_->CreateResourceBindingSet(
             device_->GetLogicalDevice(), *pipeline_resource, desc, *buffer_manager_,
-            *texture_manager_, *sampler_manager_, &pool_created);
+            *texture_manager_, *sampler_manager_, acceleration_structure_owner_.get(),
+            &pool_created);
         if (handle.IsValid())
         {
             RecordDescriptorSetCreated(pool_created);
