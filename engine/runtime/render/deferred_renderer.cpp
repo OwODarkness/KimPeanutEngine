@@ -20,6 +20,7 @@
 #include "log/logger.h"
 #include "render/camera_utils.h"
 #include "render/path_trace_history_signature.h"
+#include "render/path_trace_history_progress.h"
 #include "render/ray_tracing_scene_signature.h"
 #include "render/material/material_system.h"
 #include "render/material/material_asset_resolver.h"
@@ -1402,11 +1403,18 @@ namespace kpengine::render
             }
             KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", error.c_str());
         }
-        const bool succeeded = finalized && !frame_execution_failed_;
+        const bool required_pass_failed = active_pass_frame_->HasRequiredFailure();
+        const bool succeeded = finalized && !frame_execution_failed_ &&
+                               !required_pass_failed;
+        const detail::PathTraceHistoryProgress history_progress =
+            detail::CommitPathTraceHistoryProgress(
+                {path_trace_sample_count_, path_trace_write_index_}, finalized,
+                frame_execution_failed_, required_pass_failed,
+                active_ray_tracing_path_trace_, kPathTraceSamplesPerDispatch);
+        path_trace_sample_count_ = history_progress.sample_count;
+        path_trace_write_index_ = history_progress.write_index;
         if (succeeded && active_ray_tracing_path_trace_)
         {
-            path_trace_sample_count_ += kPathTraceSamplesPerDispatch;
-            path_trace_write_index_ ^= 1u;
             profile_.path_trace_samples = path_trace_sample_count_;
         }
         if (finalized)

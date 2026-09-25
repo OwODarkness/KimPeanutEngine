@@ -78,8 +78,12 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
   its stdout/stderr had no `VUID-`, `Validation Error`, or `ERROR` strings.
 - Shader/pipeline/dispatch failure recovery remains without an injection path.
   Independent primary/miss/hit and bounce-off probes are also not retained.
-  `RenderSystemTest` passed 23/23; the full Debug build and CTest passed
-  976/976 after the reload command was added.
+  `FinalizeFrame` now observes required RenderGraph pass failures before it
+  advances path history; a pure progress-state test covers failure and retry
+  transitions. `RenderSystemTest` passed 24/24; the full Debug build and CTest
+  passed 977/977. A fresh Vulkan capture after this fix retained the accepted
+  Cornell look with RT active and no validation-error text. Runtime injection
+  remains unverified.
 - The local reference is `save/cornell_box_ref.jpeg`; the user's qualitative
   guide clarification means exact pixel comparison is not required. Its tracked
   manifest remains provenance context rather than an acceptance gate.

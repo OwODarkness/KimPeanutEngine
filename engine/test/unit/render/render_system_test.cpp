@@ -25,6 +25,7 @@
 #include "render/render_submission_executor.h"
 #include "render/prepared_render_asset_catalog.h"
 #include "render/path_trace_history_signature.h"
+#include "render/path_trace_history_progress.h"
 #include "render/ray_tracing_scene_signature.h"
 #include "support/fake_render_backend.h"
 
@@ -103,6 +104,25 @@ namespace
         changed = input;
         changed.camera_position[0] += 0.25f;
         EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+    }
+
+    TEST(PathTraceHistoryProgressTest, FailedFrameDoesNotAdvanceOrSwapHistory)
+    {
+        using render::detail::CommitPathTraceHistoryProgress;
+        using render::detail::PathTraceHistoryProgress;
+
+        const PathTraceHistoryProgress current{128, 1};
+        EXPECT_EQ(CommitPathTraceHistoryProgress(current, true, false, true, true, 4),
+                  current);
+        EXPECT_EQ(CommitPathTraceHistoryProgress(current, true, true, false, true, 4),
+                  current);
+        EXPECT_EQ(CommitPathTraceHistoryProgress(current, false, false, false, true, 4),
+                  current);
+        EXPECT_EQ(CommitPathTraceHistoryProgress(current, true, false, false, false, 4),
+                  current);
+
+        EXPECT_EQ(CommitPathTraceHistoryProgress(current, true, false, false, true, 4),
+                  (PathTraceHistoryProgress{132, 0}));
     }
 
     TEST(RenderSubmissionExecutorTest, PreparesAndRecordsGenericWorkInOrder)

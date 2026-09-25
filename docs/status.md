@@ -1807,8 +1807,10 @@
   movement reset accumulation from 24,952 to 36 samples, then converged at the
   moved view; a pure-key regression covers every accumulation input. The new
   game-thread `level.reload` command was exercised live: history reset and the
-  Cornell composition remained intact. Injected failure recovery, independent
-  primary/miss/hit probes, and bounce-off probes remain open, so R4.6
+  Cornell composition remained intact. Required graph-pass failures now block
+  history advancement, with a focused state-transition regression. A Vulkan
+  failure injection, independent primary/miss/hit probes, and bounce-off
+  probes remain open, so R4.6
   acceptance is not claimed. →
   [R4 plan](render/.plan/R4.md), [R4.0 spec](../.spec/specs/render-r4-ray-query-shadow.md),
   [R4.6 spec](../.spec/specs/render-r4-6-cornell-path-tracing.md),
