@@ -399,6 +399,17 @@ namespace kpengine::graphics
         // them before the backend; only backend-owned GPU state lives here now.
         descriptor_set_manager_->DestroyAll(device_->GetLogicalDevice());
         pipeline_manager_->DestroyAll(device_->GetLogicalDevice());
+        if (acceleration_structure_owner_)
+        {
+            const auto counts = acceleration_structure_owner_->GetLifecycleCounts();
+            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_INFO,
+                   "R4.6 RT teardown snapshot: AS=%u (pending=%u), pipelines=%u, "
+                   "binding sets=%u (pending=%u), temporary build batches=%u",
+                   counts.acceleration_structures,
+                   counts.pending_acceleration_structures, counts.pipelines,
+                   counts.descriptor_sets, counts.pending_descriptor_sets,
+                   counts.temporary_buffer_batches);
+        }
         acceleration_structure_owner_.reset();
         if (bindless_texture_table_)
         {

@@ -1766,7 +1766,8 @@
 
 ## Planned (next up)
 
-- **Render R4 ray-tracing foundation (R4.5 evidence open; R4.6 in progress,
+- **Render R4 ray-tracing foundation (R4.5 evidence open; R4.6 qualitative
+  visual/lifecycle acceptance complete,
   updated 2026-09-25)** — the first
   consumer is ray-query directional hard-shadow visibility, with the existing
   directional shadow-map path as the OpenGL and unavailable-Vulkan fallback.
@@ -1812,10 +1813,16 @@
   visibility/normal/albedo probes now isolate hit reconstruction; a direct-only
   probe removes measured red/green bounce regions while leaving the neutral-floor
   region lit. Fixed-seed repeat runs differ by stride-2 RGB MAE 0.0536. A one-shot
-  required-pass rejection recovers on Vulkan, but it is injected before backend
-  submission, not inside the driver. Complete semantic history revisions and
-  resource-leak instrumentation remain open, so R4.6
-  acceptance is not claimed. →
+  injected zero-width RT dispatch is rejected by Graphics validation before
+  `vkCmdTraceRaysKHR`; subsequent Vulkan frames recover. Shutdown logs report
+  two history targets released and zero remaining, plus zero RT-owner AS,
+  pipeline/SBT, binding-set, and temporary-buffer resources. The history key now
+  includes material/light/output/integrator/RNG revisions and ray/tone-map shader
+  byte hashes. `capture.screenshot max_dimension=512` exports a 512×290 preview
+  without changing the live render. The full Debug suite passes 979/979; a fresh
+  Vulkan run retained the accepted view and shut down with all tracked RT owner
+  counts at zero. The injected validation failure does not emulate a GPU/driver
+  device-loss fault. →
   [R4 plan](render/.plan/R4.md), [R4.0 spec](../.spec/specs/render-r4-ray-query-shadow.md),
   [R4.6 spec](../.spec/specs/render-r4-6-cornell-path-tracing.md),
   [R4.6 review](render/.review/R4.6.md),

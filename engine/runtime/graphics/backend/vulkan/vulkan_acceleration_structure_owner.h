@@ -20,6 +20,16 @@ namespace kpengine::graphics
     class VulkanAccelerationStructureOwner final : public RayTracingResourceOwner
     {
     public:
+        struct LifecycleCounts
+        {
+            uint32_t acceleration_structures = 0;
+            uint32_t pending_acceleration_structures = 0;
+            uint32_t pipelines = 0;
+            uint32_t descriptor_sets = 0;
+            uint32_t pending_descriptor_sets = 0;
+            uint32_t temporary_buffer_batches = 0;
+        };
+
         VulkanAccelerationStructureOwner(VkPhysicalDevice physical_device, VkDevice device,
                                          VulkanBufferManager &buffer_manager,
                                          TextureManager &texture_manager,
@@ -30,6 +40,7 @@ namespace kpengine::graphics
         VulkanAccelerationStructureOwner &operator=(const VulkanAccelerationStructureOwner &) = delete;
 
         bool IsSupported() const noexcept override { return supported_; }
+        LifecycleCounts GetLifecycleCounts() const noexcept;
         AccelerationStructureHandle CreateAccelerationStructure(
             const RayTracingAccelerationStructureDesc &desc) override;
         bool DestroyAccelerationStructure(AccelerationStructureHandle handle) override;

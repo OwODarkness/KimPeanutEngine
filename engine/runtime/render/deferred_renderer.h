@@ -256,6 +256,8 @@ namespace kpengine::render
         uint32_t path_trace_write_index_ = 0;
         uint32_t path_trace_sample_count_ = 0;
         uint64_t path_trace_history_signature_ = 0;
+        uint64_t path_trace_shader_signature_ = 0;
+        uint64_t tone_map_shader_signature_ = 0;
         PathTraceProbeMode path_trace_probe_mode_ = PathTraceProbeMode::Beauty;
         bool fail_next_path_trace_dispatch_ = false;
         struct FrameTextureBinding
@@ -330,6 +332,7 @@ namespace kpengine::render
         bool ray_tracing_tlas_built_ = false;
         uint64_t ray_tracing_instance_signature_ = 0;
         uint64_t frame_ray_tracing_instance_signature_ = 0;
+        uint64_t frame_ray_tracing_material_signature_ = 0;
         std::vector<graphics::RayTracingGeometryDesc> frame_ray_tracing_geometries_;
         std::vector<graphics::RayTracingInstanceDesc> frame_ray_tracing_instances_;
         std::vector<RayTracingMeshBuild> frame_ray_tracing_mesh_builds_;

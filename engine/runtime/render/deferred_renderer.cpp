@@ -61,7 +61,47 @@ namespace kpengine::render
         constexpr uint64_t kPointShadowPerPassUniformKey = 0x534841444f575f50ull;
         constexpr uint64_t kGBufferPerPassUniformKey = 0x4742554646455250ull;
         constexpr uint32_t kPathTraceSamplesPerDispatch = 4;
+        constexpr uint32_t kPathTraceDirectLightSamples = 4;
+        constexpr uint32_t kPathTraceDiffuseBounces = 1;
+        constexpr uint32_t kPathTraceIntegratorVersion = 1;
         constexpr uint32_t kPathTraceRngSeed = 0x52463436u;
+        constexpr uint32_t kPathTraceRngPolicyVersion = 1;
+        constexpr uint32_t kPathTraceToneMapOperatorReinhard = 1;
+        constexpr uint32_t kPathTraceOutputTransferSrgb = 1;
+        constexpr float kPathTraceExposure = 1.0f;
+        constexpr float kPathTraceRayMinimumDistance = 0.001f;
+        constexpr float kPathTraceRayMaximumDistance = 1000.0f;
+        constexpr float kPathTraceSecondaryRayOffset = 0.002f;
+        constexpr float kPathTraceLightEndpointPadding = 0.004f;
+        constexpr std::array<float, 3> kPathTraceLightCenter{
+            -0.234011f, 5.3189155f, -3.042968f};
+        constexpr std::array<float, 3> kPathTraceLightU{0.65f, 0.0f, 0.0f};
+        constexpr std::array<float, 3> kPathTraceLightV{0.0f, 0.0f, 0.525f};
+        constexpr std::array<float, 3> kPathTraceLightRadiance{70.0f, 70.0f, 70.0f};
+
+        void AddShaderSignature(uint64_t &signature, const data::ShaderData &shader)
+        {
+            const auto add = [&signature](uint64_t value) {
+                signature ^= value;
+                signature *= 1099511628211ull;
+            };
+            add(static_cast<uint32_t>(shader.stage));
+            add(static_cast<uint32_t>(shader.api));
+            add(shader.byte_code.size());
+            for (const uint8_t byte : shader.byte_code)
+            {
+                add(byte);
+            }
+            add(shader.source.size());
+            for (const unsigned char character : shader.source)
+            {
+                add(character);
+            }
+            for (const unsigned char character : shader.entry)
+            {
+                add(character);
+            }
+        }
         static_assert(static_cast<size_t>(FixedRenderPassId::RayTracingPathTrace) ==
                       static_cast<size_t>(RenderProfilePass::RayTracingPathTrace));
         static_assert(static_cast<size_t>(FixedRenderPassId::Count) ==
@@ -477,6 +517,11 @@ namespace kpengine::render
 
     void DeferredRenderer::Cleanup()
     {
+        uint32_t allocated_history_targets = 0;
+        for (const auto &target : path_trace_history_targets_)
+        {
+            allocated_history_targets += target ? 1u : 0u;
+        }
         // Drop the adopted transient before the backend tears its pool down, so
         // no wrapper outlives the handle it borrows.
         ReleaseFrameTransients();
@@ -499,9 +544,20 @@ namespace kpengine::render
             if (target) target->Cleanup();
             target.reset();
         }
+        uint32_t remaining_history_targets = 0;
+        for (const auto &target : path_trace_history_targets_)
+        {
+            remaining_history_targets += target ? 1u : 0u;
+        }
+        KP_LOG("RenderLog", LOG_LEVEL_INFO,
+               "R4.6 history-target teardown: released=%u, remaining=%u",
+               allocated_history_targets - remaining_history_targets,
+               remaining_history_targets);
         path_trace_sample_count_ = 0;
         path_trace_write_index_ = 0;
         path_trace_history_signature_ = 0;
+        path_trace_shader_signature_ = 0;
+        tone_map_shader_signature_ = 0;
         if (ray_tracing_owner && ray_tracing_path_tracing_pipeline_.IsValid())
             ray_tracing_owner->DestroyRayTracingPipeline(ray_tracing_path_tracing_pipeline_);
         if (backend_ != nullptr)
@@ -567,6 +623,7 @@ namespace kpengine::render
         frame_ray_tracing_mesh_builds_.clear();
         frame_ray_tracing_blas_builds_.clear();
         frame_ray_tracing_tlas_builds_.clear();
+        frame_ray_tracing_material_signature_ = 0;
         frame_ray_tracing_blas_build_ = false;
         frame_ray_tracing_tlas_build_ = false;
         frame_object_states_.clear();
@@ -734,6 +791,7 @@ namespace kpengine::render
         frame_ray_tracing_mesh_builds_.clear();
         frame_ray_tracing_blas_builds_.clear();
         frame_ray_tracing_tlas_builds_.clear();
+        frame_ray_tracing_material_signature_ = 0;
         frame_ray_tracing_blas_build_ = false;
         frame_ray_tracing_tlas_build_ = false;
 
@@ -745,9 +803,14 @@ namespace kpengine::render
         }
 
         uint64_t instance_signature = 1469598103934665603ull;
+        uint64_t material_signature = 1469598103934665603ull;
         const auto add_signature = [&instance_signature](uint64_t value) {
             instance_signature ^= value;
             instance_signature *= 1099511628211ull;
+        };
+        const auto add_material_signature = [&material_signature](uint64_t value) {
+            material_signature ^= value;
+            material_signature *= 1099511628211ull;
         };
         const auto add_float = [&add_signature](float value) {
             add_signature(static_cast<uint64_t>(std::hash<float>{}(value)));
@@ -817,6 +880,8 @@ namespace kpengine::render
             }
             const RayTracingMeshBuild &mesh_build =
                 frame_ray_tracing_mesh_builds_[build_iterator->second];
+            add_material_signature(proxy.material.id);
+            add_material_signature(proxy.material.generation);
             graphics::RayTracingInstanceDesc instance{};
             instance.bottom_level = mesh_build.blas;
             // The RT shader uses the custom index as the stable frame-local
@@ -845,9 +910,11 @@ namespace kpengine::render
         if (frame_ray_tracing_instances_.empty())
         {
             frame_ray_tracing_instance_signature_ = instance_signature;
+            frame_ray_tracing_material_signature_ = material_signature;
             return true;
         }
         frame_ray_tracing_instance_signature_ = instance_signature;
+        frame_ray_tracing_material_signature_ = material_signature;
 
         if (!ray_tracing_tlas_.IsValid() ||
             ray_tracing_tlas_capacity_ < frame_ray_tracing_instances_.size())
@@ -959,6 +1026,10 @@ namespace kpengine::render
         desc.ray_generation_shader = raygen->data.get();
         desc.miss_shader = miss->data.get();
         desc.closest_hit_shader = closest_hit->data.get();
+        path_trace_shader_signature_ = 1469598103934665603ull;
+        AddShaderSignature(path_trace_shader_signature_, *raygen->data);
+        AddShaderSignature(path_trace_shader_signature_, *miss->data);
+        AddShaderSignature(path_trace_shader_signature_, *closest_hit->data);
         desc.max_recursion_depth = 1;
         desc.descriptor_binding_descs = {{
             {0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE,
@@ -1161,6 +1232,11 @@ namespace kpengine::render
         profile_.path_trace_active = ray_tracing_path_trace;
         if (ray_tracing_path_trace)
         {
+            if (!PrepareToneMapPassResources())
+            {
+                result.normal_recording_completed = false;
+                return result;
+            }
             const graphics::Extent2D extent = frame_context.GetRenderExtent();
             if (!EnsurePathTraceHistoryTargets(extent.width, extent.height))
             {
@@ -1527,9 +1603,31 @@ namespace kpengine::render
         input.height = height;
         input.scene_signature = frame_ray_tracing_instance_signature_;
         input.geometry_count = frame_ray_tracing_geometries_.size();
+        input.material_signature = frame_ray_tracing_material_signature_;
         input.pipeline_id = ray_tracing_path_tracing_pipeline_.id;
         input.pipeline_generation = ray_tracing_path_tracing_pipeline_.generation;
+        input.shader_signature = path_trace_shader_signature_;
+        input.output_pipeline_id = tone_map_pipeline_.id;
+        input.output_pipeline_generation = tone_map_pipeline_.generation;
+        input.output_shader_signature = tone_map_shader_signature_;
         input.probe_mode = static_cast<uint32_t>(path_trace_probe_mode_);
+        input.exposure = kPathTraceExposure;
+        input.tone_map_operator = kPathTraceToneMapOperatorReinhard;
+        input.output_transfer = kPathTraceOutputTransferSrgb;
+        input.light_parameters = {
+            kPathTraceLightCenter[0], kPathTraceLightCenter[1], kPathTraceLightCenter[2],
+            kPathTraceLightU[0], kPathTraceLightU[1], kPathTraceLightU[2],
+            kPathTraceLightV[0], kPathTraceLightV[1], kPathTraceLightV[2],
+            kPathTraceLightRadiance[0], kPathTraceLightRadiance[1],
+            kPathTraceLightRadiance[2]};
+        input.ray_parameters = {
+            kPathTraceRayMinimumDistance, kPathTraceRayMaximumDistance,
+            kPathTraceSecondaryRayOffset, kPathTraceLightEndpointPadding};
+        input.integrator_parameters = {
+            kPathTraceSamplesPerDispatch, kPathTraceDirectLightSamples,
+            kPathTraceDiffuseBounces, kPathTraceIntegratorVersion};
+        input.rng_seed = kPathTraceRngSeed;
+        input.rng_policy_version = kPathTraceRngPolicyVersion;
         const Matrix4f view_projection = scene_camera_.GetViewProjectionMatrix();
         std::size_t value_index = 0;
         for (std::size_t row = 0; row < 4; ++row)
@@ -2967,23 +3065,21 @@ namespace kpengine::render
         {
             return false;
         }
-        if (fail_next_path_trace_dispatch_)
-        {
-            fail_next_path_trace_dispatch_ = false;
-            KP_LOG("RenderLog", LOG_LEVEL_WARNING,
-                   "R4.6 test injection rejected one path-trace dispatch before backend submission");
-            return false;
-        }
-
         PathTracingCameraGpuData camera_data{};
         camera_data.inverse_view_projection =
             scene_camera_.GetViewProjectionMatrix().Inverse().Transpose();
         camera_data.camera_position = Vector4f{scene_camera_.GetPosition(), 1.0f};
         // The fixture emitter matches the imported area_light quad.
-        camera_data.light_center = Vector4f{-0.234011f, 5.3189155f, -3.042968f, 1.0f};
-        camera_data.light_u = Vector4f{0.65f, 0.0f, 0.0f, 0.0f};
-        camera_data.light_v = Vector4f{0.0f, 0.0f, 0.525f, 0.0f};
-        camera_data.light_radiance = Vector4f{70.0f, 70.0f, 70.0f, 1.0f};
+        camera_data.light_center = Vector4f{kPathTraceLightCenter[0],
+                                             kPathTraceLightCenter[1],
+                                             kPathTraceLightCenter[2], 1.0f};
+        camera_data.light_u = Vector4f{kPathTraceLightU[0], kPathTraceLightU[1],
+                                        kPathTraceLightU[2], 0.0f};
+        camera_data.light_v = Vector4f{kPathTraceLightV[0], kPathTraceLightV[1],
+                                        kPathTraceLightV[2], 0.0f};
+        camera_data.light_radiance = Vector4f{kPathTraceLightRadiance[0],
+                                               kPathTraceLightRadiance[1],
+                                               kPathTraceLightRadiance[2], 1.0f};
         camera_data.rng_seed = kPathTraceRngSeed;
         camera_data.sample_count = path_trace_sample_count_;
         camera_data.samples_per_dispatch = kPathTraceSamplesPerDispatch;
@@ -3048,9 +3144,21 @@ namespace kpengine::render
         {
             return false;
         }
-        return recorder->DispatchRays(
-            {ray_tracing_path_tracing_pipeline_, ray_tracing_path_tracing_bindings_,
-             hdr_target->GetWidth(), hdr_target->GetHeight(), 1});
+        graphics::RayTracingDispatchDesc dispatch{
+            ray_tracing_path_tracing_pipeline_, ray_tracing_path_tracing_bindings_,
+            hdr_target->GetWidth(), hdr_target->GetHeight(), 1};
+        if (fail_next_path_trace_dispatch_)
+        {
+            fail_next_path_trace_dispatch_ = false;
+            dispatch.width = 0;
+            const bool unexpectedly_accepted = recorder->DispatchRays(dispatch);
+            KP_LOG("RenderLog", LOG_LEVEL_WARNING,
+                   "R4.6 test injection passed a zero-width RT dispatch through Graphics; "
+                   "rejected=%s (no vkCmdTraceRaysKHR call)",
+                   unexpectedly_accepted ? "false" : "true");
+            return false;
+        }
+        return recorder->DispatchRays(dispatch);
     }
 
     bool DeferredRenderer::RecordToneMapPass()
@@ -3262,6 +3370,9 @@ namespace kpengine::render
         graphics::PipelineDesc desc{};
         desc.vert_shader = vert_shader->data.get();
         desc.frag_shader = frag_shader->data.get();
+        tone_map_shader_signature_ = 1469598103934665603ull;
+        AddShaderSignature(tone_map_shader_signature_, *vert_shader->data);
+        AddShaderSignature(tone_map_shader_signature_, *frag_shader->data);
         desc.color_attachment_formats = {TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB};
         desc.depth_attachment_format = TextureFormat::TEXTURE_FORMAT_UNKNOW;
         desc.binding_descs = {{0, sizeof(data::Vertex), false}};

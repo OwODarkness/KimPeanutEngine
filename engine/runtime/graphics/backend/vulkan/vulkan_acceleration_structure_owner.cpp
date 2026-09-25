@@ -95,6 +95,37 @@ namespace kpengine::graphics
         DestroyAll();
     }
 
+    VulkanAccelerationStructureOwner::LifecycleCounts
+    VulkanAccelerationStructureOwner::GetLifecycleCounts() const noexcept
+    {
+        LifecycleCounts counts{};
+        for (const Resource &resource : resources_)
+        {
+            if (resource.alive)
+            {
+                ++counts.acceleration_structures;
+                counts.pending_acceleration_structures += resource.pending_destroy ? 1u : 0u;
+            }
+        }
+        for (const RayTracingPipelineResource &resource : ray_tracing_pipelines_)
+        {
+            counts.pipelines += resource.alive ? 1u : 0u;
+        }
+        for (const RayTracingDescriptorSetResource &resource : ray_tracing_descriptor_sets_)
+        {
+            if (resource.alive)
+            {
+                ++counts.descriptor_sets;
+                counts.pending_descriptor_sets += resource.pending_destroy ? 1u : 0u;
+            }
+        }
+        for (const TemporaryBuffers &buffers : temporary_buffers_)
+        {
+            counts.temporary_buffer_batches += buffers.handles.empty() ? 0u : 1u;
+        }
+        return counts;
+    }
+
     AccelerationStructureHandle VulkanAccelerationStructureOwner::CreateAccelerationStructure(
         const RayTracingAccelerationStructureDesc &desc)
     {

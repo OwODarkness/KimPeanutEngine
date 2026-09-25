@@ -16,8 +16,9 @@ pixel-threshold requirements below are retained as historical design context;
 they do not block visual tuning or completion. Record capture extent, samples,
 active RT passes, and known visual differences for review.
 
-- Status: implementation in progress; remaining lifecycle and complete
-  semantic-reset acceptance remain open. See the
+- Status: qualitative visual, semantic-reset, and lifecycle acceptance complete.
+  A true device/driver-fault recovery remains untested; deterministic
+  invalid-dispatch recovery is covered. See the
   [formal review](../../docs/render/.review/R4.6.md)
 - Owner: Render policy and validation; Graphics owns physical RT resources and
   Vulkan execution
@@ -43,7 +44,7 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
 - The camera UBO is pinned by C++ size/offset assertions; raygen and closest-hit
   now declare the same field offsets. Four samples are traced per dispatch, and
   the profile count reflects actual accumulated samples.
-- The latest Vulkan capture is 1094×619 at 5,896 samples. The emitter, neutral,
+- The latest Vulkan beauty capture is 1094×619 at 54,740 samples. The emitter, neutral,
   red, and green surfaces, boxes, penumbrae, and indirect color are visible. It
   is a qualitative guide comparison under the user's 2026-09-22 clarification.
 - Resize was exercised through `window.resize`: the history count reset from
@@ -88,25 +89,38 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
   `save/screenshots/validation/r46-beauty-final-fixed-seed-2026-09-25.png` at
   54,740 samples immediately before capture, with RT active. The composition
   matches the previously accepted Cornell look.
-- `render.path_trace_fail_next` rejects one required Render pass before backend
-  submission. A live Vulkan run advanced from 14,548 samples before the
-  injection to 17,032 after the rejected frame and 17,432 on recovery, with RT
-  active. This validates required-pass history recovery at the Render boundary;
-  it is not a simulated Vulkan driver/`vkCmdTraceRaysKHR` failure. The log records
-  the one-shot rejection, and captured output has no `VUID-`, `Validation Error`,
-  or `ERROR`. The application closed normally.
+- `render.path_trace_fail_next` makes one zero-width dispatch reach Graphics RT
+  validation, which rejects it before `vkCmdTraceRaysKHR`. A live Vulkan run
+  advanced from 9,424 samples before injection to 9,684 on the next stats
+  response, with RT active. The log records the rejection and normal cleanup.
 - `FinalizeFrame` observes required RenderGraph pass failures before advancing
-  path history. The probe mode participates in the history key. The key still
-  lacks explicit revisions for every documented material, emitter, exposure,
-  integrator, and RNG-policy input; fixed-seed repeatability does not prove those
-  reset cases. Resource-leak absence is also not established by the no-validation
-  error logs alone.
+  path history. The history key covers extent, camera, scene/geometry and
+  material revisions, RT pipeline identity and compiled shader bytes, tone-map
+  pipeline/shader, exposure/operator/transfer, area-light parameters, ray and
+  integrator settings, probe mode, RNG seed, and RNG-policy version. A regression
+  changes each category independently. The RT tone-map pipeline is prepared
+  before the first history key is computed.
+- Live Vulkan recovery passed a zero-width dispatch through the Graphics RT
+  validation path; Graphics rejected it without calling `vkCmdTraceRaysKHR`.
+  Samples advanced 9,424 → 9,684 on subsequent frames with RT active. This is a
+  deterministic Graphics rejection, not a simulated device/driver fault.
+- On graceful close, the deferred renderer logged two accumulation targets
+  released and zero remaining. The Vulkan RT owner teardown snapshot reported
+  zero AS handles, pending AS handles, RT pipelines/SBTs, descriptor binding
+  sets, pending binding sets, and temporary build-buffer batches. The captured
+  log had no VUID, validation error, or error entries.
+- `capture.screenshot max_dimension=512` exports a 512×290 agent preview from
+  the 1094×619 Cornell scene, preserving aspect ratio and leaving live render
+  resolution/history unchanged. The latest preview is
+  `save/screenshots/validation/r46-agent-preview-final-2026-09-25.png`.
 - The `PATH`/`Path` process-environment collision that broke MSBuild through
   `tools/kp.ps1` is resolved by normalizing child-process environment keys and
   merging path components. Both `RenderSystemTest` and `KimPeanutEngine` builds
   succeeded through the wrapper.
-- Focused history/lifecycle tests passed 12/12 after the latest additions. The
-  full Debug CTest suite passed 977/977 in 158.88 seconds.
+- Focused history/lifecycle and screenshot tests passed 17/17. The full Debug
+  CTest suite passed 979/979 in 162.83 seconds. A fresh Vulkan run reported RT
+  active at 4,580 samples, then closed with both history targets and all tracked
+  Vulkan RT owner counts at zero.
 - The local reference is `save/cornell_box_ref.jpeg`; the user's qualitative
   guide clarification means exact pixel comparison is not required. Its tracked
   manifest remains provenance context rather than an acceptance gate.
@@ -257,23 +271,25 @@ their termination and maximum depth must be explicit.
 
 - [x] A captured Cornell scene has reviewable camera framing, geometry,
   diffuse colors, emitter, soft shadows, and secondary color bleeding.
-- [ ] Vulkan creates and retires the RT pipeline, SBT, bindings, accumulation
-  resources, and AS dependencies without validation errors or leaks.
+- [x] Vulkan creates and retires the RT pipeline/SBT, binding sets, both
+  accumulation targets, and AS dependencies without validation errors or live
+  RT resources remaining at graceful shutdown.
 - [x] Primary hit/miss visibility, normals, and albedo have independent live
   probes.
 - [x] The renderer samples a rectangular emitter and visibly produces a soft
   penumbra.
 - [x] Disabling the diffuse secondary bounce makes the measured red/green
   bounce regions black while the neutral floor region remains lit.
-- [ ] Fixed seed plus fixed inputs is reproducible. Accumulation reset coverage
-  for every documented semantic revision remains incomplete.
+- [x] Fixed seed plus fixed inputs is reproducible, and the history key covers
+  each documented semantic revision category with an independent regression.
 - [x] The final capture reports its extent and sample count and visibly
   converges; the downloaded JPEG is a qualitative guide.
 - [x] Unsupported/OpenGL execution reports R4.6 unavailable and keeps the normal
   raster renderer operational without claiming reference evidence.
-- [ ] Resize, simulated required-pass rejection/recovery, capture, cleanup, and
-  orderly application close preserve correct lifetime and observable failure
-  behavior. Driver-level dispatch failure and leak instrumentation remain open.
+- [x] Resize, Graphics-validated dispatch rejection/recovery, capture, cleanup,
+  and orderly application close preserve correct lifetime and observable
+  failure behavior. The injected zero-width dispatch is rejected before the
+  Vulkan trace command; this does not emulate a device/driver failure.
 
 ## Validation plan
 
