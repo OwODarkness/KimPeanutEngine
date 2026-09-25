@@ -1,12 +1,16 @@
 #include "screenshot/runtime_screenshot_service.h"
 
 #include <chrono>
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <filesystem>
 #include <iomanip>
 #include <memory>
 #include <optional>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #include "image_io/image_io.h"
 
@@ -20,7 +24,94 @@ namespace kpengine::runtime
         struct ExportRequest
         {
             std::optional<std::filesystem::path> explicit_path;
+            uint32_t max_dimension = 0;
         };
+
+        float SrgbToLinear(uint8_t value)
+        {
+            static const std::array<float, 256> lookup = []
+            {
+                std::array<float, 256> values{};
+                for (size_t index = 0; index < values.size(); ++index)
+                {
+                    const float encoded = static_cast<float>(index) / 255.0f;
+                    values[index] = encoded <= 0.04045f
+                                        ? encoded / 12.92f
+                                        : std::pow((encoded + 0.055f) / 1.055f, 2.4f);
+                }
+                return values;
+            }();
+            return lookup[value];
+        }
+
+        uint8_t LinearToSrgb(float value)
+        {
+            const float clamped = std::clamp(value, 0.0f, 1.0f);
+            const float encoded = clamped <= 0.0031308f
+                                      ? clamped * 12.92f
+                                      : 1.055f * std::pow(clamped, 1.0f / 2.4f) - 0.055f;
+            return static_cast<uint8_t>(std::lround(encoded * 255.0f));
+        }
+
+        void Downsample(render::CapturedImage &image, uint32_t max_dimension)
+        {
+            const uint32_t source_max = std::max(image.width, image.height);
+            if (max_dimension == 0 || max_dimension >= source_max)
+            {
+                return;
+            }
+
+            const double scale = static_cast<double>(max_dimension) / source_max;
+            const uint32_t target_width = std::max(
+                1u, static_cast<uint32_t>(std::lround(image.width * scale)));
+            const uint32_t target_height = std::max(
+                1u, static_cast<uint32_t>(std::lround(image.height * scale)));
+            std::vector<uint8_t> target(static_cast<size_t>(target_width) * target_height * 4);
+            for (uint32_t y = 0; y < target_height; ++y)
+            {
+                const double y0 = static_cast<double>(y) * image.height / target_height;
+                const double y1 = static_cast<double>(y + 1) * image.height / target_height;
+                for (uint32_t x = 0; x < target_width; ++x)
+                {
+                    const double x0 = static_cast<double>(x) * image.width / target_width;
+                    const double x1 = static_cast<double>(x + 1) * image.width / target_width;
+                    std::array<double, 4> sum{};
+                    double total_weight = 0.0;
+                    for (uint32_t source_y = static_cast<uint32_t>(y0);
+                         source_y < static_cast<uint32_t>(std::ceil(y1)); ++source_y)
+                    {
+                        const double wy = std::max(
+                            0.0, std::min(y1, static_cast<double>(source_y + 1)) -
+                                     std::max(y0, static_cast<double>(source_y)));
+                        for (uint32_t source_x = static_cast<uint32_t>(x0);
+                             source_x < static_cast<uint32_t>(std::ceil(x1)); ++source_x)
+                        {
+                            const double wx = std::max(
+                                0.0, std::min(x1, static_cast<double>(source_x + 1)) -
+                                         std::max(x0, static_cast<double>(source_x)));
+                            const double weight = wx * wy;
+                            const size_t source_offset =
+                                (static_cast<size_t>(source_y) * image.width + source_x) * 4;
+                            sum[0] += SrgbToLinear(image.rgba8_pixels[source_offset]) * weight;
+                            sum[1] += SrgbToLinear(image.rgba8_pixels[source_offset + 1]) * weight;
+                            sum[2] += SrgbToLinear(image.rgba8_pixels[source_offset + 2]) * weight;
+                            sum[3] += image.rgba8_pixels[source_offset + 3] / 255.0 * weight;
+                            total_weight += weight;
+                        }
+                    }
+                    const size_t target_offset =
+                        (static_cast<size_t>(y) * target_width + x) * 4;
+                    target[target_offset] = LinearToSrgb(static_cast<float>(sum[0] / total_weight));
+                    target[target_offset + 1] = LinearToSrgb(static_cast<float>(sum[1] / total_weight));
+                    target[target_offset + 2] = LinearToSrgb(static_cast<float>(sum[2] / total_weight));
+                    target[target_offset + 3] = static_cast<uint8_t>(std::lround(
+                        std::clamp(sum[3] / total_weight, 0.0, 1.0) * 255.0));
+                }
+            }
+            image.width = target_width;
+            image.height = target_height;
+            image.rgba8_pixels = std::move(target);
+        }
 
         bool IsInside(const std::filesystem::path &path, const std::filesystem::path &root)
         {
@@ -144,6 +235,8 @@ namespace kpengine::runtime
                 return;
             }
 
+            Downsample(capture_result.image, request.max_dimension);
+
             std::filesystem::path requested_path = request.explicit_path.value_or(
                 MakeDefaultPath(capture_result.image.frame_number));
             std::string diagnostic;
@@ -193,7 +286,15 @@ namespace kpengine::runtime
             return false;
         }
 
+        if (request.max_dimension > 8192)
+        {
+            on_completed({ScreenshotResultStatus::InvalidDimensions, {},
+                          "Screenshot max dimension must be between 1 and 8192"});
+            return true;
+        }
+
         auto export_request = std::make_shared<ExportRequest>();
+        export_request->max_dimension = request.max_dimension;
         if (!request.output_path.empty())
         {
             std::string diagnostic;

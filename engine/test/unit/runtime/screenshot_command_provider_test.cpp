@@ -1,4 +1,6 @@
 #include <filesystem>
+#include <array>
+#include <fstream>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -64,7 +66,8 @@ namespace kpengine::runtime
         std::optional<command::CommandResult> callback_result;
         const command::CommandResult pending = registry.Execute(
             {"capture.screenshot", {{"path", std::string{output_path}},
-                                    {"view", std::string{"scene_color"}}}},
+                                    {"view", std::string{"scene_color"}},
+                                    {"max_dimension", uint64_t{1}}}},
             {command::CommandOrigin::Agent, command::CommandThread::Immediate},
             [&callback_result](const command::CommandResult &result)
             { callback_result = result; });
@@ -86,6 +89,20 @@ namespace kpengine::runtime
                       .generic_string(),
                   std::filesystem::path{output_path}.generic_string());
         EXPECT_TRUE(std::filesystem::exists(output_path));
+        std::array<uint8_t, 24> png_header{};
+        std::ifstream png{output_path, std::ios::binary};
+        png.read(reinterpret_cast<char *>(png_header.data()),
+                 static_cast<std::streamsize>(png_header.size()));
+        ASSERT_EQ(png.gcount(), static_cast<std::streamsize>(png_header.size()));
+        const auto ReadBigEndian = [&png_header](size_t offset) -> uint32_t
+        {
+            return (static_cast<uint32_t>(png_header[offset]) << 24) |
+                   (static_cast<uint32_t>(png_header[offset + 1]) << 16) |
+                   (static_cast<uint32_t>(png_header[offset + 2]) << 8) |
+                   static_cast<uint32_t>(png_header[offset + 3]);
+        };
+        EXPECT_EQ(ReadBigEndian(16), 1u);
+        EXPECT_EQ(ReadBigEndian(20), 1u);
 
         const auto completion = registry.TakeCompletion(pending.request_id);
         ASSERT_TRUE(completion.has_value());

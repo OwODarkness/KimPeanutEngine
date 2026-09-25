@@ -17,6 +17,8 @@ namespace kpengine::runtime
                 return "exported";
             case ScreenshotResultStatus::InvalidOutputPath:
                 return "invalid_output_path";
+            case ScreenshotResultStatus::InvalidDimensions:
+                return "invalid_dimensions";
             case ScreenshotResultStatus::CaptureRejected:
                 return "capture_rejected";
             case ScreenshotResultStatus::CaptureUnavailable:
@@ -37,7 +39,8 @@ namespace kpengine::runtime
             {
                 return command::CommandStatus::Success;
             }
-            if (status == ScreenshotResultStatus::InvalidOutputPath)
+            if (status == ScreenshotResultStatus::InvalidOutputPath ||
+                status == ScreenshotResultStatus::InvalidDimensions)
             {
                 return command::CommandStatus::InvalidArguments;
             }
@@ -123,7 +126,10 @@ namespace kpengine::runtime
                                             "point_shadow_visibility", "selection_mask",
                                             "host_output",
                                             "live2d",
-                                            "engine_window"}}}},
+                                            "engine_window"}},
+              command::CommandArgumentDesc{"max_dimension",
+                                           command::CommandValueType::UnsignedInteger,
+                                           false, {}, {}}}},
             [screenshot_service_resolver = std::move(screenshot_service_resolver)](
                 const command::CommandCall &call, const command::CommandContext &context)
             {
@@ -147,6 +153,20 @@ namespace kpengine::runtime
                 {
                     request.capture.view =
                         ToCaptureView(std::get<std::string>(view->second));
+                }
+                const auto max_dimension = call.arguments.find("max_dimension");
+                if (max_dimension != call.arguments.end())
+                {
+                    const uint64_t value = std::get<uint64_t>(max_dimension->second);
+                    if (value == 0 || value > 8192)
+                    {
+                        return command::CommandResult{
+                            command::CommandStatus::InvalidArguments,
+                            "max_dimension must be between 1 and 8192",
+                            context.request_id,
+                            {}};
+                    }
+                    request.max_dimension = static_cast<uint32_t>(value);
                 }
 
                 const command::CommandCompletionSink complete = context.complete;

@@ -15,12 +15,15 @@ namespace kpengine::runtime
         // Empty selects a UTC-named output under save/screenshots/. Explicit
         // paths are restricted to save/screenshots/validation/.
         std::string output_path;
+        // Downsamples only the exported image; zero preserves capture size.
+        uint32_t max_dimension = 0;
     };
 
     enum class ScreenshotResultStatus : uint8_t
     {
         Exported,
         InvalidOutputPath,
+        InvalidDimensions,
         CaptureRejected,
         CaptureUnavailable,
         CaptureCancelled,

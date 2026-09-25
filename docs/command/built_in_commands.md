@@ -65,6 +65,7 @@ this same provider.
 | Allowed callers | Editor console, Agent, Lua, tests, C++ callers |
 | `path` | Optional string. Explicit paths must end in `.png` and remain below `save/screenshots/validation/`. |
 | `view` | Optional enum: `engine_window`, `scene_color`, `linear_depth`, `world_normal`, `base_color`, `material_params`, `shadow_visibility`, `spot_shadow_depth`, `spot_shadow_visibility`, `point_shadow_depth`, or `point_shadow_visibility`. Defaults to `scene_color`. `engine_window` includes the final Editor/ImGui composite. |
+| `max_dimension` | Optional unsigned integer from 1 to 8192. Downsamples the exported PNG to fit within this maximum width/height while preserving aspect ratio; the live render and capture source resolution are unchanged. Omit it to keep native capture size. |
 | Initial result | Normally `pending` with a request ID. |
 | Terminal result | `success` with `data.output_path`, `data.status`, `data.success`, and `data.diagnostic`; otherwise an error status and diagnostic. |
 
@@ -76,6 +77,14 @@ capture.screenshot path="save/screenshots/validation/frame.png" view=scene_color
 
 Use `view=engine_window` to capture the final presented engine client area,
 including the Editor/ImGui composite.
+
+For a small agent-review preview, set `max_dimension=512`. The image is
+area-downsampled in linear-light color after readback, without resizing the
+viewport or resetting path-trace accumulation:
+
+```text
+capture.screenshot path="save/screenshots/validation/preview.png" view=scene_color max_dimension=512
+```
 
 Example agent request:
 
