@@ -179,6 +179,8 @@ namespace kpengine
             command::CommandRegistration screenshot_command_registration_;
             command::CommandRegistration window_command_registration_;
             command::CommandRegistration level_reload_command_registration_;
+            command::CommandRegistration path_trace_probe_command_registration_;
+            command::CommandRegistration path_trace_failure_command_registration_;
             std::unique_ptr<reflection::ReflectionSystem> reflection_system_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
             std::unique_ptr<gameplay::GameplayEditorBridge> gameplay_editor_bridge_;

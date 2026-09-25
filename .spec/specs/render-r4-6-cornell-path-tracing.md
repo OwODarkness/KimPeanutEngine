@@ -16,8 +16,8 @@ pixel-threshold requirements below are retained as historical design context;
 they do not block visual tuning or completion. Record capture extent, samples,
 active RT passes, and known visual differences for review.
 
-- Status: implementation in progress; visual and lifecycle
-  acceptance remain open. See the
+- Status: implementation in progress; remaining lifecycle and complete
+  semantic-reset acceptance remain open. See the
   [formal review](../../docs/render/.review/R4.6.md)
 - Owner: Render policy and validation; Graphics owns physical RT resources and
   Vulkan execution
@@ -76,14 +76,37 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
   succeeded, reset history from 7,368 to 4,752 samples shortly afterward, and
   captured the same Cornell composition. The application closed normally, and
   its stdout/stderr had no `VUID-`, `Validation Error`, or `ERROR` strings.
-- Shader/pipeline/dispatch failure recovery remains without an injection path.
-  Independent primary/miss/hit and bounce-off probes are also not retained.
-  `FinalizeFrame` now observes required RenderGraph pass failures before it
-  advances path history; a pure progress-state test covers failure and retry
-  transitions. `RenderSystemTest` passed 24/24; the full Debug build and CTest
-  passed 977/977. A fresh Vulkan capture after this fix retained the accepted
-  Cornell look with RT active and no validation-error text. Runtime injection
-  remains unverified.
+- `render.path_trace_probe` now switches live between primary visibility,
+  normal, albedo, direct-only, and beauty modes. The primary probes independently
+  expose hit/miss and reconstructed hit data. A matched 1094×619 beauty/direct-only
+  pair shows the ceiling ROI changing from RGB (103.0, 82.8, 54.0) to black;
+  red- and green-bounce floor ROIs likewise change from (44.9, 23.5, 13.0) and
+  (11.7, 35.3, 3.6) to black. A neutral floor ROI stays nearly unchanged.
+- The fixed-seed beauty output repeated across fresh runs: a stride-2 pixel
+  comparison measured RGB MAE 0.0536 over 1094×619 despite different capture
+  sample counts (7,140 and 7,004). The final beauty capture is
+  `save/screenshots/validation/r46-beauty-final-fixed-seed-2026-09-25.png` at
+  54,740 samples immediately before capture, with RT active. The composition
+  matches the previously accepted Cornell look.
+- `render.path_trace_fail_next` rejects one required Render pass before backend
+  submission. A live Vulkan run advanced from 14,548 samples before the
+  injection to 17,032 after the rejected frame and 17,432 on recovery, with RT
+  active. This validates required-pass history recovery at the Render boundary;
+  it is not a simulated Vulkan driver/`vkCmdTraceRaysKHR` failure. The log records
+  the one-shot rejection, and captured output has no `VUID-`, `Validation Error`,
+  or `ERROR`. The application closed normally.
+- `FinalizeFrame` observes required RenderGraph pass failures before advancing
+  path history. The probe mode participates in the history key. The key still
+  lacks explicit revisions for every documented material, emitter, exposure,
+  integrator, and RNG-policy input; fixed-seed repeatability does not prove those
+  reset cases. Resource-leak absence is also not established by the no-validation
+  error logs alone.
+- The `PATH`/`Path` process-environment collision that broke MSBuild through
+  `tools/kp.ps1` is resolved by normalizing child-process environment keys and
+  merging path components. Both `RenderSystemTest` and `KimPeanutEngine` builds
+  succeeded through the wrapper.
+- Focused history/lifecycle tests passed 12/12 after the latest additions. The
+  full Debug CTest suite passed 977/977 in 158.88 seconds.
 - The local reference is `save/cornell_box_ref.jpeg`; the user's qualitative
   guide clarification means exact pixel comparison is not required. Its tracked
   manifest remains provenance context rather than an acceptance gate.
@@ -236,19 +259,21 @@ their termination and maximum depth must be explicit.
   diffuse colors, emitter, soft shadows, and secondary color bleeding.
 - [ ] Vulkan creates and retires the RT pipeline, SBT, bindings, accumulation
   resources, and AS dependencies without validation errors or leaks.
-- [ ] Primary/miss/hit reconstruction is proven independently before indirect
-  lighting is evaluated.
+- [x] Primary hit/miss visibility, normals, and albedo have independent live
+  probes.
 - [x] The renderer samples a rectangular emitter and visibly produces a soft
   penumbra.
-- [ ] Disabling the diffuse secondary bounce makes red/green local probes fail.
-- [ ] Fixed seed plus fixed inputs is reproducible, while accumulation resets on
-  every documented semantic revision.
+- [x] Disabling the diffuse secondary bounce makes the measured red/green
+  bounce regions black while the neutral floor region remains lit.
+- [ ] Fixed seed plus fixed inputs is reproducible. Accumulation reset coverage
+  for every documented semantic revision remains incomplete.
 - [x] The final capture reports its extent and sample count and visibly
   converges; the downloaded JPEG is a qualitative guide.
 - [x] Unsupported/OpenGL execution reports R4.6 unavailable and keeps the normal
   raster renderer operational without claiming reference evidence.
-- [ ] Resize, shader/pipeline failure, capture, cleanup, and orderly application
-  close preserve correct lifetime and observable failure behavior.
+- [ ] Resize, simulated required-pass rejection/recovery, capture, cleanup, and
+  orderly application close preserve correct lifetime and observable failure
+  behavior. Driver-level dispatch failure and leak instrumentation remain open.
 
 ## Validation plan
 

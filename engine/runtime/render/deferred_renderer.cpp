@@ -61,6 +61,7 @@ namespace kpengine::render
         constexpr uint64_t kPointShadowPerPassUniformKey = 0x534841444f575f50ull;
         constexpr uint64_t kGBufferPerPassUniformKey = 0x4742554646455250ull;
         constexpr uint32_t kPathTraceSamplesPerDispatch = 4;
+        constexpr uint32_t kPathTraceRngSeed = 0x52463436u;
         static_assert(static_cast<size_t>(FixedRenderPassId::RayTracingPathTrace) ==
                       static_cast<size_t>(RenderProfilePass::RayTracingPathTrace));
         static_assert(static_cast<size_t>(FixedRenderPassId::Count) ==
@@ -74,13 +75,15 @@ namespace kpengine::render
             Vector4f light_u;
             Vector4f light_v;
             Vector4f light_radiance;
-            uint32_t frame_index = 0;
+            uint32_t rng_seed = kPathTraceRngSeed;
             uint32_t sample_count = 0;
             uint32_t samples_per_dispatch = 1;
-            uint32_t padding[5]{};
+            uint32_t probe_mode = 0;
+            uint32_t padding[4]{};
             std::array<std::array<uint32_t, 4>, 4> geometry_index_starts{};
         };
         static_assert(offsetof(PathTracingCameraGpuData, geometry_index_starts) == 176);
+        static_assert(offsetof(PathTracingCameraGpuData, rng_seed) == 144);
         static_assert(sizeof(PathTracingCameraGpuData) == 240);
 
         graphics::RenderTargetAttachmentScope ToAttachmentScope(RenderGraphAttachmentScope scope)
@@ -712,6 +715,16 @@ namespace kpengine::render
                                                  : RenderTargetName::CaptureOutput;
         const RenderTarget *const target = frame_targets_.GetTarget(target_name);
         return target ? target->GetHandle() : graphics::RenderTargetHandle{};
+    }
+
+    void DeferredRenderer::SetPathTraceProbeMode(PathTraceProbeMode mode)
+    {
+        path_trace_probe_mode_ = mode;
+    }
+
+    void DeferredRenderer::InjectNextPathTraceDispatchFailure()
+    {
+        fail_next_path_trace_dispatch_ = true;
     }
 
     bool DeferredRenderer::PrepareRayTracingScene()
@@ -1516,6 +1529,7 @@ namespace kpengine::render
         input.geometry_count = frame_ray_tracing_geometries_.size();
         input.pipeline_id = ray_tracing_path_tracing_pipeline_.id;
         input.pipeline_generation = ray_tracing_path_tracing_pipeline_.generation;
+        input.probe_mode = static_cast<uint32_t>(path_trace_probe_mode_);
         const Matrix4f view_projection = scene_camera_.GetViewProjectionMatrix();
         std::size_t value_index = 0;
         for (std::size_t row = 0; row < 4; ++row)
@@ -2953,6 +2967,13 @@ namespace kpengine::render
         {
             return false;
         }
+        if (fail_next_path_trace_dispatch_)
+        {
+            fail_next_path_trace_dispatch_ = false;
+            KP_LOG("RenderLog", LOG_LEVEL_WARNING,
+                   "R4.6 test injection rejected one path-trace dispatch before backend submission");
+            return false;
+        }
 
         PathTracingCameraGpuData camera_data{};
         camera_data.inverse_view_projection =
@@ -2963,10 +2984,10 @@ namespace kpengine::render
         camera_data.light_u = Vector4f{0.65f, 0.0f, 0.0f, 0.0f};
         camera_data.light_v = Vector4f{0.0f, 0.0f, 0.525f, 0.0f};
         camera_data.light_radiance = Vector4f{70.0f, 70.0f, 70.0f, 1.0f};
-        camera_data.frame_index = static_cast<uint32_t>(
-            active_frame_context_->GetGlobals().frame_number);
+        camera_data.rng_seed = kPathTraceRngSeed;
         camera_data.sample_count = path_trace_sample_count_;
         camera_data.samples_per_dispatch = kPathTraceSamplesPerDispatch;
+        camera_data.probe_mode = static_cast<uint32_t>(path_trace_probe_mode_);
         if (frame_ray_tracing_geometries_.size() > 16)
             return false;
         for (std::size_t geometry = 0; geometry < frame_ray_tracing_geometries_.size(); ++geometry)

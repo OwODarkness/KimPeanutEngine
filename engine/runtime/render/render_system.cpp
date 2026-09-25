@@ -212,6 +212,13 @@ namespace kpengine::render
         if (scene_ready)
         {
             debug_view_ = requested_debug_view_;
+            deferred_renderer_->SetPathTraceProbeMode(
+                requested_path_trace_probe_mode_.load(std::memory_order_acquire));
+            if (requested_path_trace_dispatch_failure_.exchange(
+                    false, std::memory_order_acq_rel))
+            {
+                deferred_renderer_->InjectNextPathTraceDispatchFailure();
+            }
             scene_input.emplace(scene_coordinator_.PrepareFrame(
                 render_capture_service_ ? render_capture_service_->GetPendingView()
                                         : std::nullopt,
@@ -532,6 +539,16 @@ namespace kpengine::render
             return;
         }
         requested_debug_view_ = view;
+    }
+
+    void RenderSystem::RequestPathTraceProbeMode(PathTraceProbeMode mode) noexcept
+    {
+        requested_path_trace_probe_mode_.store(mode, std::memory_order_release);
+    }
+
+    void RenderSystem::RequestPathTraceDispatchFailureInjection() noexcept
+    {
+        requested_path_trace_dispatch_failure_.store(true, std::memory_order_release);
     }
 
     graphics::RenderTargetView RenderSystem::GetDebugRenderTargetView() const

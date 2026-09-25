@@ -29,6 +29,7 @@
 #include "render_world/scene_visibility.h"
 #include "renderer_frame_targets.h"
 #include "render_profile.h"
+#include "path_trace_probe_mode.h"
 
 namespace kpengine::data
 {
@@ -78,6 +79,8 @@ namespace kpengine::render
         void Cleanup();
 
         void RequestExtent(uint32_t width, uint32_t height);
+        void SetPathTraceProbeMode(PathTraceProbeMode mode);
+        void InjectNextPathTraceDispatchFailure();
         void ApplyPendingExtent();
         const RenderTarget &GetSceneRenderTarget() const;
         spatial::Ray BuildSceneRay(float ndc_x, float ndc_y,
@@ -253,6 +256,8 @@ namespace kpengine::render
         uint32_t path_trace_write_index_ = 0;
         uint32_t path_trace_sample_count_ = 0;
         uint64_t path_trace_history_signature_ = 0;
+        PathTraceProbeMode path_trace_probe_mode_ = PathTraceProbeMode::Beauty;
+        bool fail_next_path_trace_dispatch_ = false;
         struct FrameTextureBinding
         {
             GraphTextureHandle logical;

@@ -99,6 +99,9 @@ namespace
         ++changed.pipeline_generation;
         EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
         changed = input;
+        ++changed.probe_mode;
+        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+        changed = input;
         changed.view_projection[12] += 0.25f;
         EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
         changed = input;

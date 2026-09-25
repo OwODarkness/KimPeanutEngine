@@ -15,6 +15,7 @@ namespace kpengine::render::detail
         uint64_t geometry_count = 0;
         uint32_t pipeline_id = 0;
         uint32_t pipeline_generation = 0;
+        uint32_t probe_mode = 0;
         std::array<float, 16> view_projection{};
         std::array<float, 3> camera_position{};
     };
@@ -37,6 +38,7 @@ namespace kpengine::render::detail
         add(input.geometry_count);
         add(input.pipeline_id);
         add(input.pipeline_generation);
+        add(input.probe_mode);
         for (const float value : input.view_projection)
         {
             add_float(value);

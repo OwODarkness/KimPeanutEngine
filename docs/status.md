@@ -1808,9 +1808,13 @@
   moved view; a pure-key regression covers every accumulation input. The new
   game-thread `level.reload` command was exercised live: history reset and the
   Cornell composition remained intact. Required graph-pass failures now block
-  history advancement, with a focused state-transition regression. A Vulkan
-  failure injection, independent primary/miss/hit probes, and bounce-off
-  probes remain open, so R4.6
+  history advancement, with a focused state-transition regression. Live primary
+  visibility/normal/albedo probes now isolate hit reconstruction; a direct-only
+  probe removes measured red/green bounce regions while leaving the neutral-floor
+  region lit. Fixed-seed repeat runs differ by stride-2 RGB MAE 0.0536. A one-shot
+  required-pass rejection recovers on Vulkan, but it is injected before backend
+  submission, not inside the driver. Complete semantic history revisions and
+  resource-leak instrumentation remain open, so R4.6
   acceptance is not claimed. →
   [R4 plan](render/.plan/R4.md), [R4.0 spec](../.spec/specs/render-r4-ray-query-shadow.md),
   [R4.6 spec](../.spec/specs/render-r4-6-cornell-path-tracing.md),

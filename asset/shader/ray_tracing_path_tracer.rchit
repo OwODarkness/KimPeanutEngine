@@ -10,9 +10,10 @@ layout(set = 0, binding = 2, std140) uniform CameraData
     vec4 light_u;
     vec4 light_v;
     vec4 light_radiance;
-    uint frame_index;
+    uint rng_seed;
     uint sample_count;
     uint samples_per_dispatch;
+    uint probe_mode;
     uvec2 padding;
     uvec4 geometry_index_starts[4];
 } camera;

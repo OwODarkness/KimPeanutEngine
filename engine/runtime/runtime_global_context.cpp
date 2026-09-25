@@ -95,6 +95,104 @@ namespace kpengine
                            "Could not register level.reload: %s",
                            registration.diagnostic.c_str());
                 }
+
+                command::CommandRegistrationResult probe_registration =
+                    command_registry_->Register(
+                        {"render.path_trace_probe",
+                         "RenderDiagnostics",
+                         "Select the Cornell RT path-tracing validation output",
+                         command::CommandCategory::Render,
+                         command::CommandFlags::AgentAllowed |
+                             command::CommandFlags::MutatesState,
+                         {{command::CommandArgumentDesc{
+                             "mode",
+                             command::CommandValueType::Enum,
+                             true,
+                              {},
+                             {"beauty", "primary_visibility", "primary_normal",
+                               "primary_albedo", "direct_only"}}}},
+                         [this](const command::CommandCall &call,
+                                const command::CommandContext &context)
+                         {
+                             const std::string &mode =
+                                 std::get<std::string>(call.arguments.at("mode"));
+                             render::PathTraceProbeMode probe_mode =
+                                 render::PathTraceProbeMode::Beauty;
+                             if (mode == "primary_visibility")
+                                 probe_mode = render::PathTraceProbeMode::PrimaryVisibility;
+                             else if (mode == "primary_normal")
+                                 probe_mode = render::PathTraceProbeMode::PrimaryNormal;
+                             else if (mode == "primary_albedo")
+                                 probe_mode = render::PathTraceProbeMode::PrimaryAlbedo;
+                             else if (mode == "direct_only")
+                                 probe_mode = render::PathTraceProbeMode::DirectOnly;
+                             if (!render_system_)
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::Failed,
+                                     "RenderSystem is unavailable",
+                                     context.request_id,
+                                     {}};
+                             }
+                             render_system_->RequestPathTraceProbeMode(probe_mode);
+                             return command::CommandResult{
+                                 command::CommandStatus::Success,
+                                 "Path-trace probe mode scheduled: " + mode,
+                                 context.request_id,
+                                 {{"mode", mode}}};
+                         },
+                         command::CommandThread::Game});
+                if (probe_registration.IsSuccess())
+                {
+                    path_trace_probe_command_registration_ =
+                        std::move(probe_registration.registration);
+                }
+                else
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not register render.path_trace_probe: %s",
+                           probe_registration.diagnostic.c_str());
+                }
+
+                command::CommandRegistrationResult failure_registration =
+                    command_registry_->Register(
+                        {"render.path_trace_fail_next",
+                         "RenderDiagnostics",
+                         "Reject one path-trace pass before backend dispatch for recovery validation",
+                         command::CommandCategory::Render,
+                         command::CommandFlags::AgentAllowed |
+                             command::CommandFlags::MutatesState,
+                         {},
+                         [this](const command::CommandCall &,
+                                const command::CommandContext &context)
+                         {
+                             if (!render_system_)
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::Failed,
+                                     "RenderSystem is unavailable",
+                                     context.request_id,
+                                     {}};
+                             }
+                             render_system_->RequestPathTraceDispatchFailureInjection();
+                             return command::CommandResult{
+                                 command::CommandStatus::Success,
+                                 "One path-trace pass rejection scheduled",
+                                 context.request_id,
+                                 {}};
+                         },
+                         command::CommandThread::Game});
+                if (failure_registration.IsSuccess())
+                {
+                    path_trace_failure_command_registration_ =
+                        std::move(failure_registration.registration);
+                }
+                else
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not register render.path_trace_fail_next: %s",
+                           failure_registration.diagnostic.c_str());
+                }
             }
             // The Asset-owned catalog boundary the Editor's browser reads through. Its
             // config is left empty on purpose: the provider already resolves an empty
@@ -668,6 +766,8 @@ namespace kpengine
             }
             screenshot_command_registration_ = {};
             level_reload_command_registration_ = {};
+            path_trace_probe_command_registration_ = {};
+            path_trace_failure_command_registration_ = {};
             screenshot_service_.reset();
             report_progress(3, "Releasing renderer");
             if (render_system_)

@@ -13,6 +13,109 @@ $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $BuildDir = Join-Path $RepoRoot "build"
 $BuildConfig = "Debug"
 
+if (-not ("KpCleanExternalProcess" -as [type])) {
+    Add-Type -TypeDefinition @'
+using System;
+using System.Collections;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.InteropServices;
+using System.Text;
+
+public static class KpCleanExternalProcess {
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
+    private struct StartupInfo {
+        public int cb;
+        public string reserved, desktop, title;
+        public int x, y, xSize, ySize, xChars, yChars, fill, flags;
+        public short show, reserved2Size;
+        public IntPtr reserved2, stdin, stdout, stderr;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct ProcessInfo {
+        public IntPtr process, thread;
+        public int processId, threadId;
+    }
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool CreateProcess(string application, StringBuilder commandLine,
+        IntPtr processAttributes, IntPtr threadAttributes, bool inheritHandles,
+        uint creationFlags, IntPtr environment, string currentDirectory,
+        ref StartupInfo startupInfo, out ProcessInfo processInfo);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern uint WaitForSingleObject(IntPtr handle, uint milliseconds);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool GetExitCodeProcess(IntPtr process, out uint exitCode);
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr handle);
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr GetStdHandle(int standardHandle);
+
+    private static string Quote(string value) {
+        if (value.Length > 0 && value.IndexOfAny(new[] {' ', '\t', '"'}) < 0) return value;
+        var result = new StringBuilder("\"");
+        int slashes = 0;
+        foreach (char character in value) {
+            if (character == '\\') { slashes++; continue; }
+            if (character == '"') result.Append('\\', slashes * 2 + 1);
+            else result.Append('\\', slashes);
+            result.Append(character);
+            slashes = 0;
+        }
+        result.Append('\\', slashes * 2).Append('"');
+        return result.ToString();
+    }
+
+    private static SortedDictionary<string, string> ReadEnvironment() {
+        var values = new SortedDictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var pathParts = new List<string>();
+        var pathPartSet = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (DictionaryEntry entry in Environment.GetEnvironmentVariables()) {
+            string key = (string)entry.Key;
+            string value = Convert.ToString(entry.Value);
+            if (key.Equals("Path", StringComparison.OrdinalIgnoreCase)) {
+                foreach (string part in value.Split(';'))
+                    if (part.Length > 0 && pathPartSet.Add(part)) pathParts.Add(part);
+                continue;
+            }
+            if (!values.ContainsKey(key)) values.Add(key, value);
+        }
+        values["Path"] = String.Join(";", pathParts);
+        return values;
+    }
+
+    public static int Run(string application, string[] arguments, string currentDirectory) {
+        var commandLine = new StringBuilder(Quote(application));
+        foreach (string argument in arguments) commandLine.Append(' ').Append(Quote(argument));
+        var environment = new StringBuilder();
+        foreach (var entry in ReadEnvironment())
+            environment.Append(entry.Key).Append('=').Append(entry.Value).Append('\0');
+        environment.Append('\0');
+        IntPtr environmentBlock = Marshal.StringToHGlobalUni(environment.ToString());
+        var startup = new StartupInfo { cb = Marshal.SizeOf(typeof(StartupInfo)), flags = 0x100,
+            stdin = GetStdHandle(-10), stdout = GetStdHandle(-11), stderr = GetStdHandle(-12) };
+        ProcessInfo process;
+        try {
+            if (!CreateProcess(application, commandLine, IntPtr.Zero, IntPtr.Zero, true,
+                0x400, environmentBlock, currentDirectory, ref startup, out process))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+        } finally { Marshal.FreeHGlobal(environmentBlock); }
+        CloseHandle(process.thread);
+        WaitForSingleObject(process.process, 0xffffffff);
+        uint exitCode;
+        if (!GetExitCodeProcess(process.process, out exitCode)) {
+            int error = Marshal.GetLastWin32Error();
+            CloseHandle(process.process);
+            throw new Win32Exception(error);
+        }
+        CloseHandle(process.process);
+        return unchecked((int)exitCode);
+    }
+}
+'@
+}
+
 function Show-Usage {
     @"
 KimPeanutEngine command wrapper
@@ -43,9 +146,10 @@ function Invoke-External {
     )
 
     Write-Host ("> {0} {1}" -f $Executable, ($Arguments -join " ")) -ForegroundColor DarkGray
-    & $Executable @Arguments
-    if ($LASTEXITCODE -ne 0) {
-        throw ("Command failed with exit code {0}: {1}" -f $LASTEXITCODE, $Executable)
+    $resolvedExecutable = Get-Command $Executable -CommandType Application -ErrorAction Stop
+    $exitCode = [KpCleanExternalProcess]::Run($resolvedExecutable.Source, $Arguments, $RepoRoot)
+    if ($exitCode -ne 0) {
+        throw ("Command failed with exit code {0}: {1}" -f $exitCode, $Executable)
     }
 }
 

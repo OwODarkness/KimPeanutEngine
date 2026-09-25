@@ -23,6 +23,7 @@
 #include "prepared_render_asset_catalog.h"
 #include "render_scene_coordinator.h"
 #include "render_profile.h"
+#include "path_trace_probe_mode.h"
 
 namespace kpengine::graphics
 {
@@ -121,6 +122,8 @@ namespace kpengine::render
         // Selects the Render-owned diagnostic output displayed by the editor
         // viewport. The request takes effect at the next frame boundary.
         void SetDebugView(CaptureView view);
+        void RequestPathTraceProbeMode(PathTraceProbeMode mode) noexcept;
+        void RequestPathTraceDispatchFailureInjection() noexcept;
         CaptureView GetDebugView() const { return debug_view_; }
         graphics::RenderTargetView GetDebugRenderTargetView() const;
         // The editor provides its available viewport extent. Reallocation happens
@@ -189,6 +192,9 @@ namespace kpengine::render
         bool profile_scene_seen_ = false;
         CaptureView debug_view_ = CaptureView::SceneColor;
         CaptureView requested_debug_view_ = CaptureView::SceneColor;
+        std::atomic<PathTraceProbeMode> requested_path_trace_probe_mode_{
+            PathTraceProbeMode::Beauty};
+        std::atomic<bool> requested_path_trace_dispatch_failure_{false};
     };
 }
 
