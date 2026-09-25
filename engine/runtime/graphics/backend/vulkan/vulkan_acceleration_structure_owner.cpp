@@ -9,9 +9,11 @@
 #include "asset/shader.h"
 #include "common/sampler_manager.h"
 #include "common/texture_manager.h"
+#include "log/logger.h"
 #include "vulkan_buffer_manager.h"
 #include "vulkan_enum.h"
 #include "vulkan_pipeline_manager.h"
+#include "vulkan_ray_tracing_validation.h"
 #include "vulkan_sampler.h"
 #include "vulkan_texture.h"
 
@@ -80,7 +82,11 @@ namespace kpengine::graphics
                 supported_ && create_ray_tracing_pipelines_ != nullptr &&
                 get_ray_tracing_shader_group_handles_ != nullptr &&
                 cmd_trace_rays_ != nullptr && ray_tracing_properties_.shaderGroupHandleSize > 0 &&
-                ray_tracing_properties_.shaderGroupBaseAlignment > 0;
+                ray_tracing_properties_.shaderGroupHandleAlignment > 0 &&
+                ray_tracing_properties_.shaderGroupBaseAlignment > 0 &&
+                ray_tracing_properties_.maxShaderGroupStride > 0 &&
+                ray_tracing_properties_.maxRayRecursionDepth > 0 &&
+                ray_tracing_properties_.maxRayDispatchInvocationCount > 0;
         }
     }
 
@@ -135,6 +141,17 @@ namespace kpengine::graphics
         const RayTracingPipelineDesc &desc)
     {
         if (!ray_tracing_pipeline_supported_ || !IsRayTracingPipelineDescValid(desc))
+        {
+            return {};
+        }
+        vulkan_detail::ShaderBindingTableLayout sbt_layout{};
+        if (!vulkan_detail::IsRayTracingRecursionDepthWithinLimit(
+                desc.max_recursion_depth, ray_tracing_properties_.maxRayRecursionDepth) ||
+            !vulkan_detail::TryComputeShaderBindingTableLayout(
+                ray_tracing_properties_.shaderGroupHandleSize,
+                ray_tracing_properties_.shaderGroupHandleAlignment,
+                ray_tracing_properties_.shaderGroupBaseAlignment,
+                ray_tracing_properties_.maxShaderGroupStride, 3, sbt_layout))
         {
             return {};
         }
@@ -287,11 +304,10 @@ namespace kpengine::graphics
         vkDestroyShaderModule(device_, closest_hit_module, nullptr);
 
         const VkDeviceSize handle_size = ray_tracing_properties_.shaderGroupHandleSize;
-        const VkDeviceSize handle_stride =
-            (handle_size + ray_tracing_properties_.shaderGroupBaseAlignment - 1) /
-            ray_tracing_properties_.shaderGroupBaseAlignment *
-            ray_tracing_properties_.shaderGroupBaseAlignment;
-        const VkDeviceSize sbt_size = handle_stride * 3;
+        const VkDeviceSize handle_stride = sbt_layout.stride;
+        const VkDeviceSize sbt_data_size = sbt_layout.data_size;
+        const VkDeviceSize sbt_allocation_size = sbt_data_size +
+            ray_tracing_properties_.shaderGroupBaseAlignment - 1;
         std::vector<uint8_t> handles(static_cast<size_t>(handle_size) * 3);
         if (get_ray_tracing_shader_group_handles_(device_, pipeline, 0, 3, handles.size(),
                                                   handles.data()) != VK_SUCCESS)
@@ -304,29 +320,36 @@ namespace kpengine::graphics
         }
         VkBufferCreateInfo sbt_info{};
         sbt_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        sbt_info.size = sbt_size;
+        sbt_info.size = sbt_allocation_size;
         sbt_info.usage = VK_BUFFER_USAGE_SHADER_BINDING_TABLE_BIT_KHR |
                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
         sbt_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
         BufferHandle sbt = buffer_manager_->CreateBufferResource(
             device_, &sbt_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
-        std::vector<uint8_t> sbt_data(static_cast<size_t>(sbt_size));
-        for (uint32_t group = 0; group < 3; ++group)
+        const VkDeviceAddress allocation_address =
+            buffer_manager_->GetDeviceAddress(device_, sbt);
+        uint64_t sbt_offset = 0;
+        uint64_t sbt_address = 0;
+        if (!sbt.IsValid() || !vulkan_detail::TryAlignShaderBindingTableAddress(
+                                  allocation_address,
+                                  ray_tracing_properties_.shaderGroupBaseAlignment,
+                                  sbt_data_size, sbt_allocation_size, sbt_offset, sbt_address))
         {
-            std::memcpy(sbt_data.data() + group * handle_stride,
-                        handles.data() + group * handle_size, static_cast<size_t>(handle_size));
-        }
-        buffer_manager_->UploadData(sbt, sbt_size, sbt_data.data());
-        const VkDeviceAddress sbt_address = buffer_manager_->GetDeviceAddress(device_, sbt);
-        if (sbt_address == 0)
-        {
-            buffer_manager_->DestroyBufferResource(device_, sbt);
+            if (sbt.IsValid()) buffer_manager_->DestroyBufferResource(device_, sbt);
             vkDestroyPipeline(device_, pipeline, nullptr);
             vkDestroyPipelineLayout(device_, pipeline_layout, nullptr);
             for (const auto &layout : layouts)
                 vkDestroyDescriptorSetLayout(device_, layout.layout, nullptr);
             return {};
         }
+
+        std::vector<uint8_t> sbt_data(static_cast<size_t>(sbt_allocation_size));
+        for (uint32_t group = 0; group < 3; ++group)
+        {
+            std::memcpy(sbt_data.data() + sbt_offset + group * handle_stride,
+                        handles.data() + group * handle_size, static_cast<size_t>(handle_size));
+        }
+        buffer_manager_->UploadData(sbt, sbt_allocation_size, sbt_data.data());
 
         const RayTracingPipelineHandle handle = ray_tracing_pipeline_handle_system_.Create();
         if (handle.id == ray_tracing_pipelines_.size()) ray_tracing_pipelines_.emplace_back();
@@ -341,6 +364,25 @@ namespace kpengine::graphics
         resource.miss_region = {sbt_address + handle_stride, handle_stride, handle_stride};
         resource.hit_region = {sbt_address + handle_stride * 2, handle_stride, handle_stride};
         resource.alive = true;
+        KP_LOG("VulkanRayTracing", LOG_LEVEL_INFO,
+               "SBT ready: handle=%u handleAlign=%u baseAlign=%u maxStride=%u "
+               "recursion=%u/%u maxInvocations=%u raygen=(%llu,%llu,%llu) "
+               "miss=(%llu,%llu,%llu) hit=(%llu,%llu,%llu) callable=(0,0,0)",
+               ray_tracing_properties_.shaderGroupHandleSize,
+               ray_tracing_properties_.shaderGroupHandleAlignment,
+               ray_tracing_properties_.shaderGroupBaseAlignment,
+               ray_tracing_properties_.maxShaderGroupStride, desc.max_recursion_depth,
+               ray_tracing_properties_.maxRayRecursionDepth,
+               ray_tracing_properties_.maxRayDispatchInvocationCount,
+               static_cast<unsigned long long>(resource.raygen_region.deviceAddress),
+               static_cast<unsigned long long>(resource.raygen_region.stride),
+               static_cast<unsigned long long>(resource.raygen_region.size),
+               static_cast<unsigned long long>(resource.miss_region.deviceAddress),
+               static_cast<unsigned long long>(resource.miss_region.stride),
+               static_cast<unsigned long long>(resource.miss_region.size),
+               static_cast<unsigned long long>(resource.hit_region.deviceAddress),
+               static_cast<unsigned long long>(resource.hit_region.stride),
+               static_cast<unsigned long long>(resource.hit_region.size));
         return handle;
     }
 
@@ -564,7 +606,10 @@ namespace kpengine::graphics
         VkCommandBuffer command_buffer, const RayTracingDispatchDesc &dispatch) const
     {
         if (!ray_tracing_pipeline_supported_ || command_buffer == VK_NULL_HANDLE ||
-            !IsRayTracingDispatchDescValid(dispatch) || cmd_trace_rays_ == nullptr)
+            !IsRayTracingDispatchDescValid(dispatch) || cmd_trace_rays_ == nullptr ||
+            !vulkan_detail::IsRayTracingDispatchWithinLimit(
+                dispatch.width, dispatch.height, dispatch.depth,
+                ray_tracing_properties_.maxRayDispatchInvocationCount))
             return false;
         const uint32_t pipeline_index = ray_tracing_pipeline_handle_system_.Get(dispatch.pipeline);
         const uint32_t descriptor_index =

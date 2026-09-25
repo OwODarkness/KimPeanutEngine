@@ -1054,6 +1054,7 @@ namespace kpengine::render
         profile_.graph_compile_ms = frame_plan_compile_ms_;
         profile_.frame_number = frame_context.GetGlobals().frame_number;
         profile_.graphics_api = backend_->GetGraphicsAPI();
+        profile_.path_tracing_available = ray_tracing_path_tracing_available_;
         profile_.viewport_width = frame_context.GetRenderExtent().width;
         profile_.viewport_height = frame_context.GetRenderExtent().height;
         profile_.textures = resource_resolver_->GetTextureMetrics();
@@ -1129,6 +1130,7 @@ namespace kpengine::render
         const bool ray_tracing_path_trace = ray_tracing_path_tracing_available_ &&
                                             ray_tracing_tlas_.IsValid();
         active_ray_tracing_path_trace_ = ray_tracing_path_trace;
+        profile_.path_trace_active = ray_tracing_path_trace;
         if (ray_tracing_path_trace)
         {
             const graphics::Extent2D extent = frame_context.GetRenderExtent();

@@ -36,24 +36,37 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
 
 ## Current state
 
-- R4.5 traces shadow rays from the raster deferred-lighting pass against a
-  Graphics-owned TLAS. It does not generate camera rays or indirect paths.
-- The shader asset path and Vulkan backend now create raygen, miss, and
-  closest-hit modules, an RT pipeline, descriptor bindings, and an SBT.
-  Bind-only preparation is stable, but every real `vkCmdTraceRaysKHR` probe
-  exits. Review found that the call passes a null callable-SBT pointer, which is
-  invalid Vulkan usage; this is the leading cause hypothesis pending a
-  corrected 1×1 dispatch.
-- `asset/level/cornell_box.level` exists and currently contains the Cornell mesh,
-  a perspective camera at `[0.0, 2.65, 5.5]` with a 65-degree field of view, and
-  a point light. These are not automatically the reference camera or a
-  rectangular emitter.
-- The local reference is `save/cornell_box_ref.jpeg`: 1920×2030, 24-bit RGB
-  JPEG, SHA-256
-  `0193aeadcf7fa8ef7c6f6ba7b72c10512c216d3b4c8815c0bd9e778538de8af2`.
-  `save/` is intentionally Git-ignored, so a tracked manifest must preserve this
-  identity plus provenance and rendering metadata before comparison thresholds
-  are chosen or output is tuned.
+- R4.5 ray-query lighting remains a separate hybrid path. R4.6 has a dedicated
+  Vulkan RT pipeline with raygen, miss, and closest-hit stages, TLAS traversal,
+  Cornell hit reconstruction, rectangular area-light sampling, one cosine
+  secondary bounce, and graph-declared ping-pong HDR history.
+- The camera UBO is pinned by C++ size/offset assertions; raygen and closest-hit
+  now declare the same field offsets. Four samples are traced per dispatch, and
+  the profile count reflects actual accumulated samples.
+- The latest Vulkan capture is 1094×619 at 10,636 samples. The emitter, neutral,
+  red, and green surfaces, boxes, penumbrae, and indirect color are visible. It
+  is a qualitative guide comparison under the user's 2026-09-22 clarification.
+- Resize was exercised through `window.resize`: the history count reset from
+  91,312 to 276 in the first follow-up report at a 560×302 render extent. A
+  repeated run restored the original composition and accumulated 10,636 samples.
+- The SBT owner checks handle/base alignment, max stride, recursion, buffer
+  address alignment and total dispatch invocation count. On the tested RTX 4070
+  Laptop GPU, the runtime diagnostic reported 32-byte handle/handle alignment,
+  64-byte base alignment, 4096 max stride, 1/31 recursion, and a
+  1,073,741,824 invocation limit; raygen/miss/hit addresses were aligned.
+- OpenGL fallback was run after the SBT changes: the level loaded and captured,
+  RT sample count remained zero, RT passes were absent, and raster tone mapping
+  was active. The `stats` response now reports `path_tracing_available` and
+  `path_trace_active` explicitly. Vulkan and OpenGL application windows both
+  closed on a normal window-close request; no `VUID-` or `Validation Error`
+  appeared in the captured validation-run logs.
+- The Runtime command surface has no camera motion, in-place scene reload, or
+  deliberate RT-failure operation. Camera-motion reset, in-place reload, and
+  failed-dispatch recovery remain open. Fresh `GraphicsContractTest` passed
+  29/29 and full Debug CTest passed 974/974.
+- The local reference is `save/cornell_box_ref.jpeg`; the user's qualitative
+  guide clarification means exact pixel comparison is not required. Its tracked
+  manifest remains provenance context rather than an acceptance gate.
 
 ## Original reference manifest gate (superseded by acceptance revision)
 
@@ -199,21 +212,20 @@ their termination and maximum depth must be explicit.
 
 ## Acceptance criteria (read with the 2026-09-22 revision)
 
-- [ ] A captured Cornell scene has reviewable camera framing, geometry,
+- [x] A captured Cornell scene has reviewable camera framing, geometry,
   diffuse colors, emitter, soft shadows, and secondary color bleeding.
 - [ ] Vulkan creates and retires the RT pipeline, SBT, bindings, accumulation
   resources, and AS dependencies without validation errors or leaks.
 - [ ] Primary/miss/hit reconstruction is proven independently before indirect
   lighting is evaluated.
-- [ ] The renderer samples a rectangular emitter and visibly produces a soft
+- [x] The renderer samples a rectangular emitter and visibly produces a soft
   penumbra.
-- [ ] At least one diffuse secondary bounce produces red/green color bleeding;
-  disabling that bounce makes the corresponding local probes fail.
+- [ ] Disabling the diffuse secondary bounce makes red/green local probes fail.
 - [ ] Fixed seed plus fixed inputs is reproducible, while accumulation resets on
   every documented semantic revision.
-- [ ] The final capture reports its extent and sample count and visibly
+- [x] The final capture reports its extent and sample count and visibly
   converges; the downloaded JPEG is a qualitative guide.
-- [ ] Unsupported/OpenGL execution reports R4.6 unavailable and keeps the normal
+- [x] Unsupported/OpenGL execution reports R4.6 unavailable and keeps the normal
   raster renderer operational without claiming reference evidence.
 - [ ] Resize, shader/pipeline failure, capture, cleanup, and orderly application
   close preserve correct lifetime and observable failure behavior.
@@ -239,9 +251,10 @@ their termination and maximum depth must be explicit.
 
 ## Risks and open questions
 
-- The reference image exists locally, but its provenance and rendering metadata
-  remain the first blocker; the existing camera and point light must not be
-  assumed to match it.
+- The reference metadata is incomplete, but exact agreement is not an acceptance
+  gate under the user's visual-guide clarification. Treat the authored Cornell
+  camera and rectangular emitter as validation-scene settings, not recovered
+  reference parameters.
 - The current model/material path may not expose enough per-primitive lookup
   information for closest-hit reconstruction; section-to-geometry identity must
   be designed without backend leakage.

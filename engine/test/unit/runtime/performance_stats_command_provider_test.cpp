@@ -24,6 +24,8 @@ namespace kpengine::runtime
         PerformanceStatsSnapshot expected{};
         expected.profile.frame_number = 42;
         expected.profile.graphics_api = GraphicsAPIType::GRAPHICS_API_VULKAN;
+        expected.profile.path_tracing_available = true;
+        expected.profile.path_trace_active = true;
         expected.profile.draw_calls = 7;
         expected.profile.passes[static_cast<size_t>(render::RenderProfilePass::GBuffer)]
             .gpu_time_ms = 1.25;
@@ -59,6 +61,10 @@ namespace kpengine::runtime
         EXPECT_EQ(std::get<std::string>(*Find(completed->data, "format")), "json");
         ASSERT_NE(Find(completed->data, "frame_number"), nullptr);
         EXPECT_EQ(std::get<uint64_t>(*Find(completed->data, "frame_number")), 42U);
+        ASSERT_NE(Find(completed->data, "path_tracing_available"), nullptr);
+        EXPECT_TRUE(std::get<bool>(*Find(completed->data, "path_tracing_available")));
+        ASSERT_NE(Find(completed->data, "path_trace_active"), nullptr);
+        EXPECT_TRUE(std::get<bool>(*Find(completed->data, "path_trace_active")));
         ASSERT_NE(Find(completed->data, "g_buffer_ms"), nullptr);
         EXPECT_DOUBLE_EQ(std::get<double>(*Find(completed->data, "g_buffer_ms")), 1.25);
         ASSERT_NE(Find(completed->data, "pass.g_buffer.gpu_p95_ms"), nullptr);
@@ -110,6 +116,10 @@ namespace kpengine::runtime
 
         run("gpu-stats --json");
         ASSERT_TRUE(completed.has_value());
+        ASSERT_NE(Find(completed->data, "path_tracing_available"), nullptr);
+        EXPECT_FALSE(std::get<bool>(*Find(completed->data, "path_tracing_available")));
+        ASSERT_NE(Find(completed->data, "path_trace_active"), nullptr);
+        EXPECT_FALSE(std::get<bool>(*Find(completed->data, "path_trace_active")));
         ASSERT_NE(Find(completed->data, "summary_complete"), nullptr);
         EXPECT_TRUE(std::get<bool>(*Find(completed->data, "summary_complete")));
         ASSERT_NE(Find(completed->data, "summary_warmup_frames_completed"), nullptr);

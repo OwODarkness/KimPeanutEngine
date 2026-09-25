@@ -92,6 +92,8 @@ namespace kpengine::render
     {
         uint64_t frame_number = 0;
         uint32_t path_trace_samples = 0;
+        bool path_tracing_available = false;
+        bool path_trace_active = false;
         GraphicsAPIType graphics_api = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         uint32_t viewport_width = 0;
         uint32_t viewport_height = 0;

@@ -1785,18 +1785,23 @@
   resource-metric evidence remains open. R4.6 is attempting a separate Vulkan
   RT-pipeline Cornell Box validation path with primary rays, explicit
   hit/material/instance reconstruction, rectangular area-light sampling, at
-  least one diffuse bounce, progressive HDR accumulation, and locked comparison
+  least one diffuse bounce, progressive HDR accumulation, and qualitative review
   against the local 1920×2030 `save/cornell_box_ref.jpeg`; it does not turn the
   R4.5 deferred shadow query into a path tracer. The null callable-SBT pointer
-  was corrected. Vulkan runtime dispatch now renders Cornell geometry, direct
-  area lighting, and one diffuse bounce; a graph-declared ping-pong HDR target
-  accumulates samples (8,442 observed). The downloaded JPEG is now a visual
-  guide under the user's 2026-09-22 clarification. A 2026-09-25 runtime run
-  reports the RT pass active at 6,907 samples and about 1.04 ms GPU time; a
-  viewport resize resets accumulation and the pass resumes. The lifecycle
-  pipeline-count regression is fixed, and all 970 Debug CTest cases pass.
-  Failure/reload/repeated-start/stop and orderly-close runtime evidence remain
-  open. No R4.6 acceptance is claimed. →
+  was corrected. Vulkan runtime dispatch renders Cornell geometry, direct area
+  lighting, and one diffuse bounce; graph-declared ping-pong HDR history
+  accumulates samples. The downloaded JPEG is a visual guide under the user's
+  2026-09-22 clarification. The 2026-09-25 camera UBO mismatch that distorted
+  closest-hit geometry is fixed. A 10,636-sample 1094×619 capture at 2.73 ms
+  GPU path-trace time shows the restored composition. Resize resets history
+  (91,312 samples to 276 shortly after the extent change); repeated Vulkan
+  startup and graceful close succeeded. SBT alignment, recursion, stride, and
+  dispatch-limit checks now have four focused tests and a live RTX 4070 Laptop
+  diagnostic. OpenGL fallback loads and captures Cornell with zero RT samples
+  and raster tone mapping active. Runtime stats report path-tracing availability
+  and active state explicitly (`false/false` on OpenGL; `true/true` on Vulkan).
+  Camera-motion reset, in-place reload, and injected failure recovery remain
+  open, so R4.6 acceptance is not claimed. →
   [R4 plan](render/.plan/R4.md), [R4.0 spec](../.spec/specs/render-r4-ray-query-shadow.md),
   [R4.6 spec](../.spec/specs/render-r4-6-cornell-path-tracing.md),
   [R4.6 review](render/.review/R4.6.md),

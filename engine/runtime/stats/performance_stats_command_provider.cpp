@@ -121,6 +121,8 @@ namespace kpengine::runtime
             data["format"] = std::string{json_requested ? "json" : "text"};
             data["frame_number"] = profile.frame_number;
             data["path_trace_samples"] = static_cast<uint64_t>(profile.path_trace_samples);
+            data["path_tracing_available"] = profile.path_tracing_available;
+            data["path_trace_active"] = profile.path_trace_active;
             AddOptional(data, "gpu_frame_number", profile.gpu_frame_number);
             data["graphics_api"] = std::string{GraphicsApiName(profile.graphics_api)};
             data["viewport_width"] = static_cast<uint64_t>(profile.viewport_width);

@@ -20,6 +20,7 @@
 #include "render/pipeline_cache_key.h"
 #include "vulkan/vulkan_enum.h"
 #include "vulkan/vulkan_memory_free_range_list.h"
+#include "vulkan/vulkan_ray_tracing_validation.h"
 
 namespace
 {
@@ -162,6 +163,60 @@ TEST(RayTracingContract, KeepsASAndStorageBindingsOutOfRasterBindingVariant)
         resources.bindings[0]));
     EXPECT_TRUE(std::holds_alternative<RayTracingStorageTextureBinding>(
         resources.bindings[1]));
+}
+
+TEST(VulkanRayTracingValidation, ComputesAlignedShaderBindingTableRegions)
+{
+    using namespace kpengine::graphics::vulkan_detail;
+
+    ShaderBindingTableLayout layout{};
+    ASSERT_TRUE(TryComputeShaderBindingTableLayout(32, 32, 64, 4096, 3, layout));
+    EXPECT_EQ(layout.stride, 64u);
+    EXPECT_EQ(layout.region_size, 64u);
+    EXPECT_EQ(layout.data_size, 192u);
+
+    ASSERT_TRUE(TryComputeShaderBindingTableLayout(72, 32, 64, 4096, 3, layout));
+    EXPECT_EQ(layout.stride, 128u);
+    EXPECT_FALSE(TryComputeShaderBindingTableLayout(32, 32, 64, 63, 3, layout));
+    EXPECT_FALSE(TryComputeShaderBindingTableLayout(0, 32, 64, 4096, 3, layout));
+    EXPECT_FALSE(TryComputeShaderBindingTableLayout(32, 0, 64, 4096, 3, layout));
+}
+
+TEST(VulkanRayTracingValidation, AlignsSbtAddressWithinPaddedAllocation)
+{
+    using namespace kpengine::graphics::vulkan_detail;
+
+    uint64_t offset = 0;
+    uint64_t address = 0;
+    ASSERT_TRUE(TryAlignShaderBindingTableAddress(0x1003, 64, 192, 255,
+                                                  offset, address));
+    EXPECT_EQ(offset, 61u);
+    EXPECT_EQ(address, 0x1040u);
+    EXPECT_EQ(address % 64, 0u);
+    EXPECT_FALSE(TryAlignShaderBindingTableAddress(0x1003, 64, 192, 252,
+                                                   offset, address));
+}
+
+TEST(VulkanRayTracingValidation, BoundsTotalTraceInvocationCount)
+{
+    using kpengine::graphics::vulkan_detail::IsRayTracingDispatchWithinLimit;
+
+    EXPECT_TRUE(IsRayTracingDispatchWithinLimit(1920, 1080, 1, 1u << 24));
+    EXPECT_FALSE(IsRayTracingDispatchWithinLimit(1920, 1080, 1, 1u << 20));
+    EXPECT_FALSE(IsRayTracingDispatchWithinLimit(UINT32_MAX, UINT32_MAX, UINT32_MAX,
+                                                  UINT32_MAX));
+    EXPECT_FALSE(IsRayTracingDispatchWithinLimit(1, 1, 1, 0));
+}
+
+TEST(VulkanRayTracingValidation, BoundsPipelineRecursionDepth)
+{
+    using kpengine::graphics::vulkan_detail::IsRayTracingRecursionDepthWithinLimit;
+
+    EXPECT_TRUE(IsRayTracingRecursionDepthWithinLimit(1, 31));
+    EXPECT_TRUE(IsRayTracingRecursionDepthWithinLimit(31, 31));
+    EXPECT_FALSE(IsRayTracingRecursionDepthWithinLimit(32, 31));
+    EXPECT_FALSE(IsRayTracingRecursionDepthWithinLimit(1, 0));
+    EXPECT_FALSE(IsRayTracingRecursionDepthWithinLimit(0, 31));
 }
 
 TEST(TextureFormatContract, DefinesBlockSizedMipPayloadsAndBackendMappings)
