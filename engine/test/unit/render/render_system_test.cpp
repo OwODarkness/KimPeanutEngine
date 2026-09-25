@@ -24,12 +24,39 @@
 #include "render/render_system.h"
 #include "render/render_submission_executor.h"
 #include "render/prepared_render_asset_catalog.h"
+#include "render/ray_tracing_scene_signature.h"
 #include "support/fake_render_backend.h"
 
 namespace
 {
     using namespace kpengine;
     using namespace kpengine::test;
+
+    TEST(RayTracingSceneSignatureTest, TracksGeometryResourcesAndTopology)
+    {
+        std::array<graphics::RayTracingGeometryDesc, 1> geometries{};
+        geometries[0].vertex_buffer = {3, 1};
+        geometries[0].vertex_offset = 16;
+        geometries[0].vertex_stride = 32;
+        geometries[0].vertex_count = 12;
+        geometries[0].index_buffer = {4, 1};
+        geometries[0].index_offset = 8;
+        geometries[0].index_count = 36;
+        const uint64_t baseline = render::detail::RayTracingGeometrySignature(geometries);
+
+        auto changed = geometries;
+        changed[0].vertex_buffer.generation++;
+        EXPECT_NE(render::detail::RayTracingGeometrySignature(changed), baseline);
+        changed = geometries;
+        changed[0].index_offset++;
+        EXPECT_NE(render::detail::RayTracingGeometrySignature(changed), baseline);
+        changed = geometries;
+        changed[0].index_count += 3;
+        EXPECT_NE(render::detail::RayTracingGeometrySignature(changed), baseline);
+        EXPECT_NE(render::detail::RayTracingGeometrySignature(
+                      std::span<const graphics::RayTracingGeometryDesc>{}),
+                  baseline);
+    }
 
     TEST(RenderSubmissionExecutorTest, PreparesAndRecordsGenericWorkInOrder)
     {

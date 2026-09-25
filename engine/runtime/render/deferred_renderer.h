@@ -307,6 +307,7 @@ namespace kpengine::render
         {
             graphics::AccelerationStructureHandle handle;
             uint32_t geometry_count = 0;
+            uint64_t geometry_signature = 0;
             bool built = false;
         };
         struct RayTracingMeshBuild
@@ -315,6 +316,7 @@ namespace kpengine::render
             graphics::AccelerationStructureHandle blas;
             std::size_t geometry_offset = 0;
             std::size_t geometry_count = 0;
+            uint64_t geometry_signature = 0;
             bool needs_build = false;
         };
         std::unordered_map<graphics::MeshHandle, RayTracingBlasState> ray_tracing_blas_;

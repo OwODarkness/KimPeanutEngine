@@ -54,6 +54,11 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
   Laptop GPU, the runtime diagnostic reported 32-byte handle/handle alignment,
   64-byte base alignment, 4096 max stride, 1/31 recursion, and a
   1,073,741,824 invocation limit; raygen/miss/hit addresses were aligned.
+- BLAS reuse includes vertex/index buffer identity, generation, offsets, stride,
+  counts, and index type. A changed geometry signature rebuilds BLAS and changes
+  the TLAS/history signature. Empty snapshots cannot dispatch against a stale
+  TLAS. The fresh live capture after this change reports 35,332 samples at
+  1094×619 with RT active and retains the known composition.
 - OpenGL fallback was run after the SBT changes: the level loaded and captured,
   RT sample count remained zero, RT passes were absent, and raster tone mapping
   was active. The `stats` response now reports `path_tracing_available` and
@@ -62,8 +67,10 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
   appeared in the captured validation-run logs.
 - The Runtime command surface has no camera motion, in-place scene reload, or
   deliberate RT-failure operation. Camera-motion reset, in-place reload, and
-  failed-dispatch recovery remain open. Fresh `GraphicsContractTest` passed
-  29/29 and full Debug CTest passed 974/974.
+  failed-dispatch recovery remain open. Geometry-signature behavior has a unit
+  regression, but live reload remains unverified. `RenderSystemTest` passed
+  22/22 and the full Debug build and CTest inventory passed 975/975 after this
+  follow-up.
 - The local reference is `save/cornell_box_ref.jpeg`; the user's qualitative
   guide clarification means exact pixel comparison is not required. Its tracked
   manifest remains provenance context rather than an acceptance gate.

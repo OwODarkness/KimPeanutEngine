@@ -19,6 +19,7 @@
 #include "graphics/backend/common/command_recorder.h"
 #include "log/logger.h"
 #include "render/camera_utils.h"
+#include "render/ray_tracing_scene_signature.h"
 #include "render/material/material_system.h"
 #include "render/material/material_asset_resolver.h"
 #include "render/render_capture_service_internal.h"
@@ -757,8 +758,12 @@ namespace kpengine::render
                     continue;
                 }
 
+                const uint64_t geometry_signature =
+                    detail::RayTracingGeometrySignature(geometries);
                 RayTracingBlasState &state = ray_tracing_blas_[proxy.mesh];
-                if (state.handle.IsValid() && state.geometry_count != geometries.size())
+                if (state.handle.IsValid() &&
+                    (state.geometry_count != geometries.size() ||
+                     state.geometry_signature != geometry_signature))
                 {
                     owner->DestroyAccelerationStructure(state.handle);
                     state = {};
@@ -769,6 +774,7 @@ namespace kpengine::render
                         {graphics::RayTracingAccelerationStructureType::BottomLevel,
                          static_cast<uint32_t>(geometries.size()), 0, false});
                     state.geometry_count = static_cast<uint32_t>(geometries.size());
+                    state.geometry_signature = geometry_signature;
                     state.built = false;
                 }
                 if (!state.handle.IsValid())
@@ -781,7 +787,8 @@ namespace kpengine::render
                 frame_ray_tracing_geometries_.insert(frame_ray_tracing_geometries_.end(),
                                                      geometries.begin(), geometries.end());
                 frame_ray_tracing_mesh_builds_.push_back(
-                    {proxy.mesh, state.handle, geometry_offset, geometries.size(), !state.built});
+                    {proxy.mesh, state.handle, geometry_offset, geometries.size(),
+                     geometry_signature, !state.built});
                 if (!state.built)
                 {
                     frame_ray_tracing_blas_build_ = true;
@@ -814,11 +821,15 @@ namespace kpengine::render
             add_signature(proxy.handle.generation);
             add_signature(proxy.mesh.id);
             add_signature(proxy.mesh.generation);
+            add_signature(mesh_build.geometry_signature);
+            add_signature(mesh_build.blas.id);
+            add_signature(mesh_build.blas.generation);
             frame_ray_tracing_instances_.push_back(instance);
         }
 
         if (frame_ray_tracing_instances_.empty())
         {
+            frame_ray_tracing_instance_signature_ = instance_signature;
             return true;
         }
         frame_ray_tracing_instance_signature_ = instance_signature;
@@ -1123,12 +1134,14 @@ namespace kpengine::render
         }
         const bool ray_query_shadow =
             backend_->GetCapabilities().SupportsRayQueryShadows() &&
-            backend_->GetActiveTopLevelAccelerationStructure().IsValid();
+            backend_->GetActiveTopLevelAccelerationStructure().IsValid() &&
+            !frame_ray_tracing_instances_.empty();
         // The first loading frame can precede the first populated world
         // snapshot. Do not select an RT graph variant until its imported TLAS
         // provider exists; the next frame will rebuild the plan selection.
         const bool ray_tracing_path_trace = ray_tracing_path_tracing_available_ &&
-                                            ray_tracing_tlas_.IsValid();
+                                            ray_tracing_tlas_.IsValid() &&
+                                            !frame_ray_tracing_instances_.empty();
         active_ray_tracing_path_trace_ = ray_tracing_path_trace;
         profile_.path_trace_active = ray_tracing_path_trace;
         if (ray_tracing_path_trace)

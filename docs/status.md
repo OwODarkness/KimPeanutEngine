@@ -1800,8 +1800,12 @@
   diagnostic. OpenGL fallback loads and captures Cornell with zero RT samples
   and raster tone mapping active. Runtime stats report path-tracing availability
   and active state explicitly (`false/false` on OpenGL; `true/true` on Vulkan).
-  Camera-motion reset, in-place reload, and injected failure recovery remain
-  open, so R4.6 acceptance is not claimed. →
+  BLAS reuse detects changed vertex/index buffer identities, generations,
+  offsets, and topology and invalidates TLAS/history state; empty snapshots do
+  not trace against a stale TLAS. A fresh Vulkan capture after this change
+  retains the known Cornell composition at 35,332 samples. Camera-motion reset,
+  live in-place reload, and injected failure recovery remain open, so R4.6
+  acceptance is not claimed. →
   [R4 plan](render/.plan/R4.md), [R4.0 spec](../.spec/specs/render-r4-ray-query-shadow.md),
   [R4.6 spec](../.spec/specs/render-r4-6-cornell-path-tracing.md),
   [R4.6 review](render/.review/R4.6.md),
