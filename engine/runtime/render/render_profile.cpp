@@ -23,7 +23,7 @@ namespace
 
 namespace kpengine::render
 {
-        static_assert(static_cast<size_t>(RenderProfilePass::Count) == 10);
+    static_assert(static_cast<size_t>(RenderProfilePass::Count) == 12);
     static_assert(static_cast<size_t>(RenderProfileCpuSubphase::Count) == 9);
     // A backend times passes it was handed by this enum's value, so the two
     // counts are one contract, not two coincidences.

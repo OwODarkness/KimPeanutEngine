@@ -105,16 +105,28 @@ details and stage checklists belong in the linked submodule documents.
   [Render Graph plans](render_graph/PLANS.md),
   [Render Graph roadmap](render_graph/TODO.md),
   [closeout journal](../../.spec/journal/2026-09-18-render-graph-r3-closeout.md)
-- [ ] **R4 — ray-tracing foundation and render-graph integration:** R3 remains
-  closed as the raster foundation. The next gate selects exactly one RT
-  consumer and fallback, closes the current Vulkan validation and smoke gap,
-  fixes write/update lineage, transition failure propagation, buffer execution,
-  and physical graph-resource binding, then adds the minimum Graphics-owned
-  acceleration-structure contract. The first integration imports a
-  Graphics-owned TLAS; graph-scheduled BLAS/TLAS builds follow only after that
-  slice is correct and measured. Status: **proposed; start with R4.0, not RT
-  command implementation.** → [R4 design](.plan/R4.md),
+- [ ] **R4 — ray-tracing foundation and render-graph integration:** R4.0–R4.4
+  established the selected ray-query shadow consumer, graph correctness,
+  API-neutral RT contract, imported TLAS, and scheduled BLAS/TLAS work. R4.5
+  integrates the Vulkan ray-query shader and still owes lifecycle/resource
+  evidence. R4.6 is a separate Cornell Box path-tracing
+  validation path: full RT-pipeline primary rays, hit reconstruction,
+  rectangular area-light sampling, at least one diffuse bounce, progressive
+  accumulation, and a same-contract comparison against the local
+  `save/cornell_box_ref.jpeg` as a visual guide. Vulkan runtime dispatch and
+  progressive samples are observed; visual framing/quality and full lifecycle
+  evidence still block acceptance. → [R4 design](.plan/R4.md),
+  [R4.6 spec](../../.spec/specs/render-r4-6-cornell-path-tracing.md),
+  [R4.6 review](.review/R4.6.md),
   [Render Graph roadmap](render_graph/TODO.md)
+- [ ] **R5 — post-R4.6 Render/Graphics decoupling (design only):** review the
+  deferred renderer's mixed graph execution, pass recording, shadow/RT state,
+  and lifetime ownership; repair enabled-conditional-pass failure semantics
+  and typed physical binding coverage before extracting the graph executor and
+  concrete pass families. Graphics contract narrowing and Vulkan RT owner
+  decisions follow evidence, not file size. **Do not implement until R4.6 is
+  accepted with real RT runtime and Cornell comparison evidence.** →
+  [R5 review](.review/R5.md), [R5 plan](.plan/R5.md)
 - [ ] Keep source registries, immutable snapshots, pass scheduling, and
   frame-local resource lifetime aligned across Render submodules.
 - [ ] Add read-only Gameplay/editor snapshots before exposing mutable gameplay

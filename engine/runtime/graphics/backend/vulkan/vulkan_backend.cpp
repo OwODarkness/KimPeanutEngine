@@ -69,7 +69,8 @@ namespace kpengine::graphics
         {
             acceleration_structure_owner_ =
                 std::make_unique<VulkanAccelerationStructureOwner>(
-                    device_->GetLogicalDevice(), *buffer_manager_);
+                    device_->GetPhysicalDevice(), device_->GetLogicalDevice(), *buffer_manager_,
+                    *texture_manager_, *sampler_manager_);
         }
 
         swapchain_ = std::make_unique<VulkanSwapchain>();
@@ -419,6 +420,7 @@ namespace kpengine::graphics
     BufferHandle VulkanBackend::CreateVertexBuffer(const std::span<const std::byte> data)
     {
         VkBufferUsageFlags usage = VK_BUFFER_USAGE_VERTEX_BUFFER_BIT |
+                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         if (device_ && device_->SupportsRayTracing())
         {
@@ -431,6 +433,7 @@ namespace kpengine::graphics
     BufferHandle VulkanBackend::CreateIndexBuffer(const std::span<const std::byte> data)
     {
         VkBufferUsageFlags usage = VK_BUFFER_USAGE_INDEX_BUFFER_BIT |
+                                   VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
                                    VK_BUFFER_USAGE_TRANSFER_DST_BIT;
         if (device_ && device_->SupportsRayTracing())
         {
@@ -462,6 +465,10 @@ namespace kpengine::graphics
         capabilities_.ray_tracing_contract = capabilities_.acceleration_structures &&
                                               device_->SupportsRayTracing();
         capabilities_.ray_query = capabilities_.ray_tracing_contract;
+        capabilities_.ray_tracing_pipeline = capabilities_.ray_tracing_contract &&
+                                              device_->SupportsRayTracingPipeline() &&
+                                              acceleration_structure_owner_ != nullptr;
+        capabilities_.ray_tracing_storage_image = capabilities_.ray_tracing_pipeline;
 
         const auto supports_sampled_format = [physical_device = device_->GetPhysicalDevice()](
                                                  VkFormat format)
@@ -563,15 +570,26 @@ namespace kpengine::graphics
         {
             return {};
         }
-        return {RayTracingGeometryDesc{
-            vulkan_resource->vertex_handle,
-            0,
-            static_cast<uint32_t>(sizeof(data::Vertex)),
-            vulkan_resource->vertex_count,
-            vulkan_resource->index_handle,
-            0,
-            vulkan_resource->index_count,
-            RayTracingIndexType::UInt32}};
+        std::vector<RayTracingGeometryDesc> geometries;
+        geometries.reserve(vulkan_resource->sections.size());
+        for (const MeshSection &section : vulkan_resource->sections)
+        {
+            if (section.index_count < 3 || section.index_count % 3 != 0 ||
+                section.index_start > vulkan_resource->index_count ||
+                section.index_count > vulkan_resource->index_count - section.index_start)
+                return {};
+            geometries.push_back({vulkan_resource->vertex_handle, 0,
+                                  static_cast<uint32_t>(sizeof(data::Vertex)),
+                                  vulkan_resource->vertex_count, vulkan_resource->index_handle,
+                                  static_cast<size_t>(section.index_start) * sizeof(uint32_t),
+                                  section.index_count, RayTracingIndexType::UInt32});
+        }
+        if (geometries.empty())
+            geometries.push_back({vulkan_resource->vertex_handle, 0,
+                                  static_cast<uint32_t>(sizeof(data::Vertex)),
+                                  vulkan_resource->vertex_count, vulkan_resource->index_handle,
+                                  0, vulkan_resource->index_count, RayTracingIndexType::UInt32});
+        return geometries;
     }
 
     TextureHandle VulkanBackend::CreateTexture(const data::TextureData &data,
@@ -973,6 +991,13 @@ namespace kpengine::graphics
         if (device_)
         {
             vkDeviceWaitIdle(device_->GetLogicalDevice());
+            if (acceleration_structure_owner_ && frame_context_)
+            {
+                const uint64_t completed_serial =
+                    frame_context_->GetLastSubmittedSerial();
+                acceleration_structure_owner_->RetireSubmitted(completed_serial);
+                acceleration_structure_owner_->CollectCompleted(completed_serial);
+            }
             if (transient_target_pool_)
             {
                 // Nothing is executing, so every retired target is now safe.

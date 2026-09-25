@@ -31,6 +31,8 @@ namespace kpengine::graphics
         recorded_bindings_ = {};
         recorded_bindings_pipeline_ = {};
         recorded_dynamic_offsets_.clear();
+        recorded_ray_tracing_pipeline_ = {};
+        recorded_ray_tracing_bindings_ = {};
         recorded_index_count_ = 0;
         recorded_first_index_ = 0;
         recorded_index_offset_ = 0;
@@ -213,6 +215,50 @@ namespace kpengine::graphics
     {
         return acceleration_structure_owner_ &&
                acceleration_structure_owner_->Build(command_buffer_, builds);
+    }
+
+    bool VulkanCommandRecorder::BindRayTracingPipeline(RayTracingPipelineHandle pipeline)
+    {
+        if (command_buffer_ == VK_NULL_HANDLE || !acceleration_structure_owner_ ||
+            acceleration_structure_owner_->GetNativeRayTracingPipeline(pipeline) == VK_NULL_HANDLE)
+            return false;
+        if (recorded_ray_tracing_pipeline_ != pipeline)
+        {
+            vkCmdBindPipeline(command_buffer_, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                              acceleration_structure_owner_->GetNativeRayTracingPipeline(pipeline));
+            recorded_ray_tracing_pipeline_ = pipeline;
+            recorded_ray_tracing_bindings_ = {};
+        }
+        return true;
+    }
+
+    bool VulkanCommandRecorder::BindRayTracingResourceBindings(DescriptorSetHandle bindings)
+    {
+        if (command_buffer_ == VK_NULL_HANDLE || !acceleration_structure_owner_ ||
+            !recorded_ray_tracing_pipeline_.IsValid() ||
+            acceleration_structure_owner_->GetRayTracingDescriptorSet(bindings) == VK_NULL_HANDLE)
+            return false;
+        recorded_ray_tracing_bindings_ = bindings;
+        return true;
+    }
+
+    bool VulkanCommandRecorder::DispatchRays(const RayTracingDispatchDesc &dispatch)
+    {
+        if (!acceleration_structure_owner_ ||
+            recorded_ray_tracing_pipeline_ != dispatch.pipeline ||
+            recorded_ray_tracing_bindings_ != dispatch.bindings)
+            return false;
+        const VkDescriptorSet descriptor_set =
+            acceleration_structure_owner_->GetRayTracingDescriptorSet(dispatch.bindings);
+        const VkPipelineLayout layout =
+            acceleration_structure_owner_->GetRayTracingPipelineLayout(dispatch.pipeline);
+        const uint32_t set_index =
+            acceleration_structure_owner_->GetRayTracingDescriptorSetIndex(dispatch.bindings);
+        if (descriptor_set == VK_NULL_HANDLE || layout == VK_NULL_HANDLE || set_index == UINT32_MAX)
+            return false;
+        vkCmdBindDescriptorSets(command_buffer_, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
+                                layout, set_index, 1, &descriptor_set, 0, nullptr);
+        return acceleration_structure_owner_->TraceRays(command_buffer_, dispatch);
     }
 
     bool VulkanCommandRecorder::BindPipeline(PipelineHandle pipeline)

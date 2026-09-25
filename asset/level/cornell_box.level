@@ -32,7 +32,7 @@
       "projection": "perspective",
       "near_plane": 0.05,
       "far_plane": 100.0,
-      "field_of_view_degrees": 65.0,
+      "field_of_view_degrees": 52.0,
       "enabled": true,
       "priority": 0
     },

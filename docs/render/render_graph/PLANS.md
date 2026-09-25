@@ -247,6 +247,15 @@ capable of buffer/AS synchronization or ray dispatch. The initial integration
 imports a Graphics-owned TLAS, following the incremental pattern established by
 the Sakura study, before graph-scheduled AS builds expand the contract.
 
+R4.6 is a bounded validation extension beyond the hybrid shadow consumer. It
+uses a dedicated RT-pipeline graph variant whose primary visibility comes from
+camera rays rather than the raster G-buffer, while the graph remains
+authoritative for TLAS consumption, accumulation history, storage output,
+resolve, and capture ordering. The execution design lives in the
+[R4.6 plan](../.plan/R4.6.md), while the canonical contract lives in the
+[R4.6 spec](../../../.spec/specs/render-r4-6-cornell-path-tracing.md); it does not
+make a general path-tracing renderer part of this architecture.
+
 ## Performance policy
 
 The graph is justified by correctness and dependency pressure, not an assumed

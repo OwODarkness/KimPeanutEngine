@@ -311,6 +311,8 @@ namespace kpengine::graphics
         {
             physical_device_ = best_device;
             ray_tracing_enabled_ = QueryRayTracingSupport(physical_device_);
+            ray_tracing_pipeline_enabled_ =
+                ray_tracing_enabled_ && QueryRayTracingPipelineSupport(physical_device_);
             VkPhysicalDeviceProperties props;
             vkGetPhysicalDeviceProperties(physical_device_, &props);
             std::string message = props.deviceName;
@@ -360,12 +362,19 @@ namespace kpengine::graphics
         VkPhysicalDeviceBufferDeviceAddressFeatures buffer_device_address_features{};
         buffer_device_address_features.sType =
             VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_BUFFER_DEVICE_ADDRESS_FEATURES;
+        VkPhysicalDeviceRayTracingPipelineFeaturesKHR ray_tracing_pipeline_features{};
+        ray_tracing_pipeline_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
 
         if (ray_tracing_enabled_)
         {
             acceleration_structure_features.accelerationStructure = VK_TRUE;
             ray_query_features.rayQuery = VK_TRUE;
             buffer_device_address_features.bufferDeviceAddress = VK_TRUE;
+            if (ray_tracing_pipeline_enabled_)
+            {
+                ray_tracing_pipeline_features.rayTracingPipeline = VK_TRUE;
+            }
         }
 
         std::vector<const char *> enabled_extensions = device_extensions;
@@ -375,6 +384,10 @@ namespace kpengine::graphics
             enabled_extensions.push_back(VK_KHR_RAY_QUERY_EXTENSION_NAME);
             enabled_extensions.push_back(VK_KHR_DEFERRED_HOST_OPERATIONS_EXTENSION_NAME);
             enabled_extensions.push_back(VK_KHR_BUFFER_DEVICE_ADDRESS_EXTENSION_NAME);
+            if (ray_tracing_pipeline_enabled_)
+            {
+                enabled_extensions.push_back(VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME);
+            }
         }
 
         if (bindless_textures_enabled_)
@@ -404,6 +417,13 @@ namespace kpengine::graphics
             feature_tail = reinterpret_cast<VkBaseOutStructure *>(&ray_query_features);
             feature_tail->pNext = reinterpret_cast<VkBaseOutStructure *>(
                 &buffer_device_address_features);
+            feature_tail = reinterpret_cast<VkBaseOutStructure *>(
+                &buffer_device_address_features);
+            if (ray_tracing_pipeline_enabled_)
+            {
+                feature_tail->pNext = reinterpret_cast<VkBaseOutStructure *>(
+                    &ray_tracing_pipeline_features);
+            }
         }
 
         VkDeviceCreateInfo device_create_info{};
@@ -566,5 +586,22 @@ namespace kpengine::graphics
         return acceleration_structure_features.accelerationStructure == VK_TRUE &&
                ray_query_features.rayQuery == VK_TRUE &&
                buffer_device_address_features.bufferDeviceAddress == VK_TRUE;
+    }
+
+    bool VulkanDevice::QueryRayTracingPipelineSupport(VkPhysicalDevice device) const
+    {
+        if (!CheckDeviceExtensionsSupport(
+                device, {VK_KHR_RAY_TRACING_PIPELINE_EXTENSION_NAME}))
+        {
+            return false;
+        }
+        VkPhysicalDeviceRayTracingPipelineFeaturesKHR pipeline_features{};
+        pipeline_features.sType =
+            VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_RAY_TRACING_PIPELINE_FEATURES_KHR;
+        VkPhysicalDeviceFeatures2 features{};
+        features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
+        features.pNext = &pipeline_features;
+        vkGetPhysicalDeviceFeatures2(device, &features);
+        return pipeline_features.rayTracingPipeline == VK_TRUE;
     }
 }

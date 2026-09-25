@@ -23,6 +23,8 @@ namespace kpengine::render
                  asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::CaptureViewProgram, "shader/capture_view.shader",
                  asset::AssetType::KPAT_ShaderProgram},
+                {BuiltInRenderAsset::RayTracingPathTracerProgram,
+                 "shader/ray_tracing_path_tracer.shader", asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::DirectionalShadowProgram,
                  "shader/directional_shadow_depth.shader", asset::AssetType::KPAT_ShaderProgram},
                 {BuiltInRenderAsset::DefaultWhiteTexture, "texture/default/default_white.png",
@@ -92,13 +94,6 @@ namespace kpengine::render
                        : !shader.data->source.empty();
         }
 
-        bool ContainsDependency(const PreparedRenderAssetRecord &record,
-                                asset::AssetID dependency)
-        {
-            return std::find(record.dependencies.begin(), record.dependencies.end(), dependency) !=
-                   record.dependencies.end();
-        }
-
         bool ValidateProgram(const PreparedRenderAssetRecord &record,
                              const std::unordered_map<uint64_t, PreparedRenderAssetRecord> &records,
                              std::string &diagnostic)
@@ -109,20 +104,50 @@ namespace kpengine::render
                 return false;
             }
 
-            for (const ShaderStage stage : {ShaderStage::SHADER_STAGE_VERTEX,
-                                            ShaderStage::SHADER_STAGE_FRAGMENT})
+            const bool is_ray_tracing_program =
+                (*program)->GetData(ShaderStage::SHADER_STAGE_RAYGEN,
+                                    ShaderFormat::SHADER_FORMAT_GLSL,
+                                    asset::ShaderProgramVariant::Bound)
+                    .IsValid();
+            const std::vector<ShaderStage> required_stages =
+                is_ray_tracing_program
+                    ? std::vector<ShaderStage>{ShaderStage::SHADER_STAGE_RAYGEN,
+                                               ShaderStage::SHADER_STAGE_MISS,
+                                               ShaderStage::SHADER_STAGE_CLOSEST_HIT}
+                    : std::vector<ShaderStage>{ShaderStage::SHADER_STAGE_VERTEX,
+                                               ShaderStage::SHADER_STAGE_FRAGMENT};
+
+            for (const ShaderStage stage : required_stages)
             {
                 const asset::AssetID shader_id = (*program)->GetData(
                     stage, ShaderFormat::SHADER_FORMAT_GLSL,
                     asset::ShaderProgramVariant::Bound);
                 const auto shader_record = records.find(shader_id.Pack());
+                const auto stage_name = [](ShaderStage value) {
+                    switch (value)
+                    {
+                    case ShaderStage::SHADER_STAGE_RAYGEN:
+                        return "raygen";
+                    case ShaderStage::SHADER_STAGE_MISS:
+                        return "miss";
+                    case ShaderStage::SHADER_STAGE_CLOSEST_HIT:
+                        return "closest_hit";
+                    case ShaderStage::SHADER_STAGE_VERTEX:
+                        return "vertex";
+                    case ShaderStage::SHADER_STAGE_FRAGMENT:
+                        return "fragment";
+                    default:
+                        return "unknown";
+                    }
+                };
                 if (!shader_id.IsValid() || shader_id.type != asset::AssetType::KPAT_Shader ||
-                    shader_record == records.end() || !(shader_record->second.id == shader_id) ||
-                    !ContainsDependency(record, shader_id))
+                    shader_record == records.end() || !(shader_record->second.id == shader_id))
                 {
                     diagnostic = "prepared shader program AssetID " +
                                  std::to_string(record.id.Pack()) +
-                                 " has an unbound or unlisted required stage";
+                                 " has an unbound or unlisted required stage '" +
+                                 stage_name(stage) + "' (shader " +
+                                 std::to_string(shader_id.Pack()) + ")";
                     return false;
                 }
 

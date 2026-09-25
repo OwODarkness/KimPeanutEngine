@@ -41,8 +41,12 @@ namespace kpengine::runtime
                 return "deferred_lighting";
             case render::RenderProfilePass::ToneMap:
                 return "tone_map";
+            case render::RenderProfilePass::RayTracingToneMap:
+                return "ray_tracing_tone_map";
             case render::RenderProfilePass::CaptureView:
                 return "capture_view";
+            case render::RenderProfilePass::RayTracingPathTrace:
+                return "ray_tracing_path_trace";
             case render::RenderProfilePass::EditorComposite:
                 return "editor_composite";
             case render::RenderProfilePass::Count:
@@ -116,6 +120,7 @@ namespace kpengine::runtime
             data["schema"] = std::string{kSchema};
             data["format"] = std::string{json_requested ? "json" : "text"};
             data["frame_number"] = profile.frame_number;
+            data["path_trace_samples"] = static_cast<uint64_t>(profile.path_trace_samples);
             AddOptional(data, "gpu_frame_number", profile.gpu_frame_number);
             data["graphics_api"] = std::string{GraphicsApiName(profile.graphics_api)};
             data["viewport_width"] = static_cast<uint64_t>(profile.viewport_width);
@@ -178,6 +183,7 @@ namespace kpengine::runtime
                         SumPasses(profile, {render::RenderProfilePass::DeferredLighting}));
             AddOptional(data, "post_process_ms",
                         SumPasses(profile, {render::RenderProfilePass::ToneMap,
+                                            render::RenderProfilePass::RayTracingToneMap,
                                             render::RenderProfilePass::CaptureView}));
             AddOptional(data, "imgui_ms",
                         SumPasses(profile, {render::RenderProfilePass::EditorComposite}));
@@ -188,6 +194,8 @@ namespace kpengine::runtime
                                             render::RenderProfilePass::GBuffer,
                                             render::RenderProfilePass::DeferredLighting,
                                             render::RenderProfilePass::ToneMap,
+                                            render::RenderProfilePass::RayTracingToneMap,
+                                            render::RenderProfilePass::RayTracingPathTrace,
                                             render::RenderProfilePass::CaptureView,
                                             render::RenderProfilePass::EditorComposite}));
             // What the frame's textures cost the GPU in bytes. Reported with the

@@ -7,6 +7,11 @@ namespace kpengine::resource
     {
         ShaderCompiler::Initialize(api_type);
         options.SetOptimizationLevel(shaderc_optimization_level_performance);
+        // Ray-tracing shader stages are exposed by VK_KHR_ray_tracing_pipeline
+        // through the Vulkan 1.2/SPIR-V 1.4 target; shaderc's default target is
+        // too old and rejects GL_EXT_ray_tracing before validation can run.
+        options.SetTargetEnvironment(shaderc_target_env_vulkan, shaderc_env_version_vulkan_1_2);
+        options.SetTargetSpirv(shaderc_spirv_version_1_4);
     }
 
     std::vector<uint8_t> SPIRVCompiler::Compile(const ShaderCompileInput &input)

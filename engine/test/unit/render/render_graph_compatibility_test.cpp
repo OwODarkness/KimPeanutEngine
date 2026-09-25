@@ -41,6 +41,12 @@ namespace
             const bool skipped =
                 (entry.condition == RenderPassCondition::DiagnosticCaptureRequested &&
                  !conditions.diagnostic_capture) ||
+                (entry.condition == RenderPassCondition::RasterDiagnostic &&
+                 conditions.ray_tracing_path_trace && !conditions.diagnostic_capture) ||
+                (entry.condition == RenderPassCondition::RasterFrame &&
+                 conditions.ray_tracing_path_trace) ||
+                (entry.condition == RenderPassCondition::RayTracingPathTrace &&
+                 !conditions.ray_tracing_path_trace) ||
                 (entry.condition == RenderPassCondition::RayTracingBuildRequested &&
                  ((entry.id == FixedRenderPassId::RayTracingBlasBuild &&
                    !conditions.ray_tracing_blas_build) ||
@@ -144,6 +150,43 @@ TEST(RenderGraphCompatibilityTest, RayQueryVariantImportsTheGraphicsOwnedTlas)
                    std::holds_alternative<kpengine::render::GraphAccelerationStructureHandle>(
                        lifetime.handle);
         }));
+}
+
+TEST(RenderGraphCompatibilityTest, RayTracingSceneColorKeepsDiagnosticCaptureIndependent)
+{
+    const auto result = CompileRenderFrameGraph(RenderFrameConditions{true, false, false, false, true});
+    ASSERT_TRUE(result.Succeeded());
+
+    const auto has_pass = [&result](const char *name) {
+        return std::any_of(result.graph->Passes().begin(), result.graph->Passes().end(),
+                           [name](const CompiledRenderGraph::Pass &pass) {
+                               return pass.name == name;
+                           });
+    };
+    EXPECT_TRUE(has_pass("GBufferPass"));
+    EXPECT_TRUE(has_pass("CaptureViewPass"));
+    EXPECT_TRUE(has_pass("RayTracingPathTracePass"));
+    EXPECT_TRUE(has_pass("RayTracingToneMapPass"));
+    EXPECT_FALSE(has_pass("DeferredLightingPass"));
+    EXPECT_FALSE(has_pass("ToneMapPass"));
+    EXPECT_TRUE(result.graph->Transients().empty());
+
+    const auto path_trace = std::find_if(
+        result.graph->Passes().begin(), result.graph->Passes().end(),
+        [](const CompiledRenderGraph::Pass &pass) {
+            return pass.name == "RayTracingPathTracePass";
+        });
+    ASSERT_NE(path_trace, result.graph->Passes().end());
+    const auto history_read = std::find_if(
+        path_trace->uses.begin(), path_trace->uses.end(),
+        [](const RenderGraphResourceUse &use) {
+            const auto *texture = std::get_if<GraphTextureHandle>(&use.handle);
+            return texture &&
+                   texture->resource == static_cast<std::size_t>(RenderPassResource::PathTraceHistory) &&
+                   use.access == RenderGraphAccess::Read &&
+                   use.usage == kpengine::render::RenderGraphUsage::StorageRead;
+        });
+    EXPECT_NE(history_read, path_trace->uses.end());
 }
 
 TEST(RenderGraphCompatibilityTest, AuthoredDeclarationIsCanonicalAndWellFormed)

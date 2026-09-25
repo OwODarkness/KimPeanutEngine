@@ -49,6 +49,9 @@ namespace kpengine::graphics
                                   const DynamicUniformOffsets &dynamic_offsets = {}) override;
         bool BuildAccelerationStructures(
             std::span<const RayTracingBuildDesc> builds) override;
+        bool BindRayTracingPipeline(RayTracingPipelineHandle pipeline) override;
+        bool BindRayTracingResourceBindings(DescriptorSetHandle bindings) override;
+        bool DispatchRays(const RayTracingDispatchDesc &dispatch) override;
 
         void SetGeometryBufferResolvers(
             std::function<std::optional<BufferDesc>(BufferHandle)> desc_lookup,
@@ -93,6 +96,8 @@ namespace kpengine::graphics
         DescriptorSetHandle recorded_bindings_;
         PipelineHandle recorded_bindings_pipeline_;
         DynamicUniformOffsets recorded_dynamic_offsets_;
+        RayTracingPipelineHandle recorded_ray_tracing_pipeline_;
+        DescriptorSetHandle recorded_ray_tracing_bindings_;
         RenderTargetHandle active_target_;
         // Suppresses draws when the bound pipeline's attachment formats do not
         // match the active render target; recording stays pass-scoped instead of

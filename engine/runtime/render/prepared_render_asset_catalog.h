@@ -30,6 +30,7 @@ namespace kpengine::render
         GBufferDebugProgram,
         ToneMapProgram,
         CaptureViewProgram,
+        RayTracingPathTracerProgram,
         DirectionalShadowProgram,
         DefaultWhiteTexture,
         DefaultFlatNormalTexture,

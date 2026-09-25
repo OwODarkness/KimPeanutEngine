@@ -4,6 +4,17 @@
 
 Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_reference.md) — *learned, not copied*.
 
+## Post-R4.6 architecture proposal
+
+- [ ] **R5 Graphics boundary slice — design only:** after R4.6 is accepted,
+  move Render-specific uniform schemas and profile-pass count out of the common
+  RHI header; audit Vulkan AS/pipeline/SBT ownership and in-flight retirement
+  before deciding on a private split. Keep `RenderBackend` as the existing
+  composition/frame facade and preserve OpenGL fallback. See the cross-module
+  [R5 source review](../render/.review/R5.md) and
+  [stage plan](../render/.plan/R5.md). No implementation starts while R4.6 is
+  blocked.
+
 ## Build encapsulation
 
 - [x] Keep `Graphics` native SDK dependencies and backend include root private

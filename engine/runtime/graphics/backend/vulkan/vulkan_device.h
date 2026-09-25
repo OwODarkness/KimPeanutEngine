@@ -68,6 +68,7 @@ namespace kpengine::graphics
         bool SupportsBindlessTextures() const { return bindless_textures_enabled_; }
         uint32_t GetBindlessTextureTableCapacity() const { return bindless_texture_table_capacity_; }
         bool SupportsRayTracing() const { return ray_tracing_enabled_; }
+        bool SupportsRayTracingPipeline() const { return ray_tracing_pipeline_enabled_; }
         std::optional<std::string> GetValidationDiagnostic() const;
 
         // Called by the Vulkan debug callback. It records state instead of
@@ -87,6 +88,7 @@ namespace kpengine::graphics
         bool CheckPhysicalDeviceSuitable(VkPhysicalDevice device) const;
         bool QueryBindlessTextureSupport(VkPhysicalDevice device, uint32_t &capacity) const;
         bool QueryRayTracingSupport(VkPhysicalDevice device) const;
+        bool QueryRayTracingPipelineSupport(VkPhysicalDevice device) const;
 
         VkInstance instance_ = VK_NULL_HANDLE;
         VkDebugUtilsMessengerEXT debug_messager_ = VK_NULL_HANDLE;
@@ -101,6 +103,7 @@ namespace kpengine::graphics
         bool bindless_textures_enabled_ = false;
         uint32_t bindless_texture_table_capacity_ = 0;
         bool ray_tracing_enabled_ = false;
+        bool ray_tracing_pipeline_enabled_ = false;
 
         std::atomic<uint32_t> validation_error_count_{0};
         mutable std::mutex validation_error_mutex_;

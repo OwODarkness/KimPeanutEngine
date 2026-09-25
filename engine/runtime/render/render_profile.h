@@ -19,7 +19,9 @@ namespace kpengine::render
         PointShadow,
         GBuffer,
         DeferredLighting,
+        RayTracingPathTrace,
         ToneMap,
+        RayTracingToneMap,
         CaptureView,
         EditorComposite,
         RayTracingBlasBuild,
@@ -89,6 +91,7 @@ namespace kpengine::render
     struct RenderProfileSnapshot
     {
         uint64_t frame_number = 0;
+        uint32_t path_trace_samples = 0;
         GraphicsAPIType graphics_api = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         uint32_t viewport_width = 0;
         uint32_t viewport_height = 0;

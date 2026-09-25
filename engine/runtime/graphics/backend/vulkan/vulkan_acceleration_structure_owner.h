@@ -14,11 +14,16 @@
 namespace kpengine::graphics
 {
     class VulkanBufferManager;
+    class TextureManager;
+    class SamplerManager;
 
     class VulkanAccelerationStructureOwner final : public RayTracingResourceOwner
     {
     public:
-        VulkanAccelerationStructureOwner(VkDevice device, VulkanBufferManager &buffer_manager);
+        VulkanAccelerationStructureOwner(VkPhysicalDevice physical_device, VkDevice device,
+                                         VulkanBufferManager &buffer_manager,
+                                         TextureManager &texture_manager,
+                                         SamplerManager &sampler_manager);
         ~VulkanAccelerationStructureOwner() override;
 
         VulkanAccelerationStructureOwner(const VulkanAccelerationStructureOwner &) = delete;
@@ -46,6 +51,15 @@ namespace kpengine::graphics
         }
         VkAccelerationStructureKHR GetNativeAccelerationStructure(
             AccelerationStructureHandle handle) const noexcept;
+        VkPipeline GetNativeRayTracingPipeline(RayTracingPipelineHandle handle) const noexcept;
+        VkPipelineLayout GetRayTracingPipelineLayout(
+            RayTracingPipelineHandle handle) const noexcept;
+        VkDescriptorSet GetRayTracingDescriptorSet(DescriptorSetHandle handle) const noexcept;
+        uint32_t GetRayTracingDescriptorSetIndex(DescriptorSetHandle handle) const noexcept;
+        bool GetRayTracingShaderBindingTable(
+            RayTracingPipelineHandle handle, VkStridedDeviceAddressRegionKHR &raygen,
+            VkStridedDeviceAddressRegionKHR &miss, VkStridedDeviceAddressRegionKHR &hit) const;
+        bool TraceRays(VkCommandBuffer command_buffer, const RayTracingDispatchDesc &dispatch) const;
         bool RequireUsage(VkCommandBuffer command_buffer,
                           AccelerationStructureHandle handle,
                           ResourceUsage usage);
@@ -69,6 +83,36 @@ namespace kpengine::graphics
             uint64_t retire_serial = 0;
         };
 
+        struct RayTracingPipelineResource
+        {
+            RayTracingPipelineHandle handle{};
+            VkPipeline pipeline = VK_NULL_HANDLE;
+            VkPipelineLayout layout = VK_NULL_HANDLE;
+            struct DescriptorSetLayout
+            {
+                VkDescriptorSetLayout layout = VK_NULL_HANDLE;
+                std::vector<VkDescriptorSetLayoutBinding> bindings;
+            };
+            std::vector<DescriptorSetLayout> descriptor_set_layouts;
+            BufferHandle shader_binding_table{};
+            VkStridedDeviceAddressRegionKHR raygen_region{};
+            VkStridedDeviceAddressRegionKHR miss_region{};
+            VkStridedDeviceAddressRegionKHR hit_region{};
+            bool alive = false;
+        };
+
+        struct RayTracingDescriptorSetResource
+        {
+            DescriptorSetHandle handle{};
+            VkDescriptorPool pool = VK_NULL_HANDLE;
+            VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
+            RayTracingPipelineHandle pipeline{};
+            uint32_t set = 0;
+            bool alive = false;
+            bool pending_destroy = false;
+            uint64_t retire_serial = 0;
+        };
+
         Resource *GetResource(AccelerationStructureHandle handle);
         const Resource *GetResource(AccelerationStructureHandle handle) const;
         bool BuildOne(VkCommandBuffer command_buffer, const RayTracingBuildDesc &build,
@@ -76,12 +120,21 @@ namespace kpengine::graphics
         bool EnsureStorage(Resource &resource, VkDeviceSize size);
         void DestroyResource(Resource &resource) noexcept;
         void DestroyTemporaryBuffers(TemporaryBuffers &temporary_buffers) noexcept;
+        void DestroyRayTracingPipelineResource(RayTracingPipelineResource &resource) noexcept;
+        void DestroyRayTracingDescriptorSet(RayTracingDescriptorSetResource &resource) noexcept;
         void DestroyAll() noexcept;
 
+        VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
         VkDevice device_ = VK_NULL_HANDLE;
         VulkanBufferManager *buffer_manager_ = nullptr;
+        TextureManager *texture_manager_ = nullptr;
+        SamplerManager *sampler_manager_ = nullptr;
         HandleSystem<AccelerationStructureHandle> handle_system_;
+        HandleSystem<RayTracingPipelineHandle> ray_tracing_pipeline_handle_system_;
+        HandleSystem<DescriptorSetHandle> ray_tracing_descriptor_set_handle_system_;
         std::vector<Resource> resources_;
+        std::vector<RayTracingPipelineResource> ray_tracing_pipelines_;
+        std::vector<RayTracingDescriptorSetResource> ray_tracing_descriptor_sets_;
         std::vector<TemporaryBuffers> temporary_buffers_;
         AccelerationStructureHandle active_top_level_{};
         PFN_vkCreateAccelerationStructureKHR create_acceleration_structure_ = nullptr;
@@ -89,7 +142,12 @@ namespace kpengine::graphics
         PFN_vkGetAccelerationStructureDeviceAddressKHR get_acceleration_structure_address_ = nullptr;
         PFN_vkGetAccelerationStructureBuildSizesKHR get_build_sizes_ = nullptr;
         PFN_vkCmdBuildAccelerationStructuresKHR cmd_build_acceleration_structures_ = nullptr;
+        PFN_vkCreateRayTracingPipelinesKHR create_ray_tracing_pipelines_ = nullptr;
+        PFN_vkGetRayTracingShaderGroupHandlesKHR get_ray_tracing_shader_group_handles_ = nullptr;
+        PFN_vkCmdTraceRaysKHR cmd_trace_rays_ = nullptr;
+        VkPhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_properties_{};
         bool supported_ = false;
+        bool ray_tracing_pipeline_supported_ = false;
     };
 }
 

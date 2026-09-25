@@ -103,11 +103,21 @@ namespace kpengine::graphics
         TextureHandle texture;
     };
 
+    struct RayTracingStorageBufferBinding
+    {
+        uint32_t set = 0;
+        uint32_t binding = 0;
+        BufferHandle buffer;
+        size_t offset = 0;
+        size_t range = 0;
+    };
+
     using RayTracingResourceBinding = std::variant<
         UniformBufferBinding,
         SampledTextureBinding,
         RayTracingAccelerationStructureBinding,
-        RayTracingStorageTextureBinding>;
+        RayTracingStorageTextureBinding,
+        RayTracingStorageBufferBinding>;
 
     struct RayTracingResourceBindingSetDesc
     {

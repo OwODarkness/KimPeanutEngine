@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "stage": "R4.6a",
+  "status": "identity_verified_metadata_pending",
+  "reference": {
+    "path": "save/cornell_box_ref.jpeg",
+    "sha256": "0193aeadcf7fa8ef7c6f6ba7b72c10512c216d3b4c8815c0bd9e778538de8af2",
+    "width": 1920,
+    "height": 2030,
+    "channels": 3,
+    "pixel_format": "24-bit RGB JPEG",
+    "provenance": null,
+    "license_or_redistribution_status": null
+  },
+  "image_contract": {
+    "crop": null,
+    "pixel_aspect": 1.0,
+    "origin": null,
+    "transfer_function": null,
+    "color_space": null,
+    "exposure": null,
+    "tone_mapper": null,
+    "white_point": null
+  },
+  "camera": {
+    "position": null,
+    "orientation": null,
+    "view_matrix": null,
+    "projection": null,
+    "field_of_view_degrees": null,
+    "near_plane": null,
+    "ray_generation_convention": null
+  },
+  "cornell_geometry": {
+    "asset": "model/cornell-box/cornell-box",
+    "scale": null,
+    "orientation": null,
+    "wall_diffuse_reflectances": null
+  },
+  "rectangular_emitter": {
+    "source_section": "area_light",
+    "center": null,
+    "axis_u": null,
+    "axis_v": null,
+    "normal": null,
+    "dimensions": null,
+    "emitted_radiance": null,
+    "sidedness": null
+  },
+  "integrator": {
+    "maximum_surface_hits": 2,
+    "samples_per_pixel": null,
+    "rng_seed": null,
+    "estimator": "next_event_estimation_plus_one_cosine_diffuse_bounce",
+    "environment": "black",
+    "comparison_metrics": null,
+    "local_probes": [
+      "red_wall_bounce",
+      "green_wall_bounce",
+      "neutral_interior",
+      "emitter",
+      "soft_shadow_penumbra"
+    ]
+  },
+  "gate": {
+    "visual_tuning_allowed": false,
+    "blocking_fields": [
+      "reference.provenance",
+      "reference.license_or_redistribution_status",
+      "image_contract.crop",
+      "image_contract.origin",
+      "image_contract.transfer_function",
+      "image_contract.color_space",
+      "image_contract.exposure",
+      "image_contract.tone_mapper",
+      "camera",
+      "cornell_geometry.scale",
+      "cornell_geometry.orientation",
+      "cornell_geometry.wall_diffuse_reflectances",
+      "rectangular_emitter",
+      "integrator.samples_per_pixel",
+      "integrator.rng_seed",
+      "integrator.comparison_metrics"
+    ],
+    "note": "Reference identity is verified. Do not call an R4.6 visual comparison complete until the blocking metadata is supplied or independently recovered and recorded in a manifest revision."
+  }
+}

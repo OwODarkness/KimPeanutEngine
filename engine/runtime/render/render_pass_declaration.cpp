@@ -15,7 +15,7 @@ namespace kpengine::render
         // raster frame's logical resource names.
         constexpr std::array<const char *, kResourceCount> kResourceNames{
             "SceneColor", "SceneHdr",    "GBuffer",   "DirectionalShadow",
-            "SpotShadow", "PointShadow", "CaptureOutput",
+            "SpotShadow", "PointShadow", "CaptureOutput", "PathTraceHistory",
         };
 
         bool IsPassEnabled(const FixedRenderPassEntry &entry, RenderFrameConditions conditions)
@@ -34,6 +34,12 @@ namespace kpengine::render
                 return entry.id == FixedRenderPassId::RayTracingBlasBuild
                            ? conditions.ray_tracing_blas_build
                            : conditions.ray_tracing_tlas_build;
+            case RenderPassCondition::RayTracingPathTrace:
+                return conditions.ray_tracing_path_trace;
+            case RenderPassCondition::RasterDiagnostic:
+                return !conditions.ray_tracing_path_trace || conditions.diagnostic_capture;
+            case RenderPassCondition::RasterFrame:
+                return !conditions.ray_tracing_path_trace;
             }
             return false;
         }
@@ -44,20 +50,20 @@ namespace kpengine::render
                 {FixedRenderPassId::DirectionalShadow, "DirectionalShadowPass",
                  {{RenderPassResource::DirectionalShadow, RenderPassAccess::Write,
                    RenderGraphUsage::DepthAttachment}},
-                 RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterDiagnostic, false},
                 {FixedRenderPassId::SpotShadow, "SpotShadowPass",
                  {{RenderPassResource::SpotShadow, RenderPassAccess::Write,
                    RenderGraphUsage::DepthAttachment}},
-                 RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterDiagnostic, false},
                 {FixedRenderPassId::PointShadow, "PointShadowPass",
                  {{RenderPassResource::PointShadow, RenderPassAccess::Write,
                    RenderGraphUsage::DepthAttachment}},
-                 RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterDiagnostic, false},
                 {FixedRenderPassId::GBuffer, "GBufferPass",
                  // Writes all four colour attachments and the depth.
                  {{RenderPassResource::GBuffer, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment, RenderGraphAttachmentScope::Whole()}},
-                 RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterDiagnostic, false},
                 {FixedRenderPassId::DeferredLighting, "DeferredLightingPass",
                  // Colours 0-2 and the sampled depth. This pass does not read
                  // the selection mask in attachment 3, and saying otherwise
@@ -72,7 +78,14 @@ namespace kpengine::render
                    RenderGraphUsage::Sampled},
                   {RenderPassResource::SceneHdr, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
-                 RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterFrame, false},
+                {FixedRenderPassId::RayTracingPathTrace, "RayTracingPathTracePass",
+                 {{RenderPassResource::PathTraceHistory, RenderPassAccess::Read,
+                   RenderGraphUsage::StorageRead},
+                  {RenderPassResource::SceneHdr, RenderPassAccess::Write,
+                   RenderGraphUsage::StorageWrite}},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RayTracingPathTrace,
+                 false},
                 {FixedRenderPassId::ToneMap, "ToneMapPass",
                  {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
@@ -82,9 +95,16 @@ namespace kpengine::render
                   // that requirement would have left this attachment behind.
                   {RenderPassResource::GBuffer, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b1000U)},
+                 {RenderPassResource::SceneColor, RenderPassAccess::Write,
+                   RenderGraphUsage::ColorAttachment}},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterFrame, false},
+                {FixedRenderPassId::RayTracingToneMap, "RayTracingToneMapPass",
+                 {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
                   {RenderPassResource::SceneColor, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
-                 RenderPassExecutionOwner::Renderer, RenderPassCondition::Always, false},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::RayTracingPathTrace,
+                 false},
                 {FixedRenderPassId::CaptureView, "CaptureViewPass",
                  // The conversion views are derived from the G-buffer and the
                  // shadow maps; this pass does not read SceneColor, and the
@@ -126,7 +146,8 @@ namespace kpengine::render
         RenderGraphBuilder graph;
         std::array<GraphTextureHandle, kResourceCount> resources{};
         const bool needs_blas = conditions.ray_tracing_blas_build;
-        const bool needs_tlas = conditions.ray_tracing_tlas_build || conditions.ray_query_shadow;
+        const bool needs_tlas = conditions.ray_tracing_tlas_build || conditions.ray_query_shadow ||
+                                conditions.ray_tracing_path_trace;
         const std::optional<GraphBufferHandle> scene_geometry =
             needs_blas ? std::optional<GraphBufferHandle>(graph.ImportBuffer("SceneGeometry"))
                        : std::nullopt;
@@ -154,17 +175,23 @@ namespace kpengine::render
             // Graphics-owned pool for the window the plan computes.
             const bool pooled =
                 resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr);
-            resources[resource_index] = graph.CreateTexture(
-                kResourceNames[resource_index],
-                pooled ? std::optional<uint64_t>(
-                             static_cast<uint64_t>(RenderFrameTransient::SceneHdr))
-                       : std::nullopt);
+            if (conditions.ray_tracing_path_trace &&
+                (resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr) ||
+                 resource_index == static_cast<std::size_t>(RenderPassResource::PathTraceHistory)))
+                resources[resource_index] = graph.ImportTexture(kResourceNames[resource_index]);
+            else
+                resources[resource_index] = graph.CreateTexture(
+                    kResourceNames[resource_index],
+                    pooled ? std::optional<uint64_t>(
+                                 static_cast<uint64_t>(RenderFrameTransient::SceneHdr))
+                           : std::nullopt);
         }
 
         RenderGraphPassRef terminal_pass;
         RenderGraphPassRef deferred_lighting_pass;
         RenderGraphPassRef blas_build_pass;
         RenderGraphPassRef tlas_build_pass;
+        RenderGraphPassRef path_trace_pass;
         for (const FixedRenderPassEntry &entry : AuthoredEntries())
         {
             const RenderGraphPassCondition condition =
@@ -184,6 +211,10 @@ namespace kpengine::render
                                         entry.id == FixedRenderPassId::RayTracingTlasBuild,
                                     owner,
                                     entry.terminal, static_cast<uint64_t>(entry.id)});
+            if (!IsPassEnabled(entry, conditions))
+            {
+                continue;
+            }
             for (const RenderPassResourceUse &use : entry.resources)
             {
                 const GraphTextureHandle &resource =
@@ -208,6 +239,10 @@ namespace kpengine::render
             if (entry.id == FixedRenderPassId::RayTracingTlasBuild)
             {
                 tlas_build_pass = pass;
+            }
+            if (entry.id == FixedRenderPassId::RayTracingPathTrace)
+            {
+                path_trace_pass = pass;
             }
             if (owner == RenderGraphPassOwner::External)
             {
@@ -257,6 +292,17 @@ namespace kpengine::render
             deferred_lighting_pass.Read(graph.CurrentVersion(*scene_tlas),
                                         RenderGraphUsage::AccelerationStructureRead,
                                         RenderGraphStage::RayTracingShader);
+        }
+        if (conditions.ray_tracing_path_trace && scene_tlas.has_value() &&
+            path_trace_pass.IsValid())
+        {
+            path_trace_pass.Read(graph.CurrentVersion(*scene_tlas),
+                                 RenderGraphUsage::AccelerationStructureRead,
+                                 RenderGraphStage::RayTracingShader);
+            if (tlas_build_pass.IsValid() && conditions.ray_tracing_tlas_build)
+            {
+                path_trace_pass.DependsOn(tlas_build_pass);
+            }
         }
 
         // The host samples the conversion output through the editor viewport

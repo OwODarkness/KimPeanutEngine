@@ -1766,7 +1766,8 @@
 
 ## Planned (next up)
 
-- **Render R4 ray-tracing foundation (R4.4 native-owner groundwork, 2026-09-19)** — the first
+- **Render R4 ray-tracing foundation (R4.5 evidence open; R4.6 in progress,
+  updated 2026-09-25)** — the first
   consumer is ray-query directional hard-shadow visibility, with the existing
   directional shadow-map path as the OpenGL and unavailable-Vulkan fallback.
   The Vulkan smoke path now fails after orderly cleanup when validation reports
@@ -1775,11 +1776,40 @@
   API-neutral AS, RT-pipeline, resource-binding, dispatch, and capability-gate
   contract; R4.3 adds typed graph AS resources, portable ray-stage/storage
   vocabulary, and the imported-TLAS frame seam. The Vulkan device-address path
-  and Graphics-owned BLAS/TLAS build service now exist,
-  while the effective ray-query gate remains disabled until Render supplies a
-  geometry snapshot and Vulkan has the shader/resource-binding path. →
+  and Graphics-owned BLAS/TLAS build service now exist. Render now supplies a
+  frame-stable geometry/instance snapshot through an API-neutral backend seam,
+  and the graph schedules separate BLAS/TLAS build or update passes with SSA
+  AS versions. Vulkan now has the acceleration-structure descriptor binding and
+  directional ray-query shader variant; the output reaches deferred lighting,
+  tone-map, and capture, while OpenGL keeps the fallback. Lifecycle and
+  resource-metric evidence remains open. R4.6 is attempting a separate Vulkan
+  RT-pipeline Cornell Box validation path with primary rays, explicit
+  hit/material/instance reconstruction, rectangular area-light sampling, at
+  least one diffuse bounce, progressive HDR accumulation, and locked comparison
+  against the local 1920×2030 `save/cornell_box_ref.jpeg`; it does not turn the
+  R4.5 deferred shadow query into a path tracer. The null callable-SBT pointer
+  was corrected. Vulkan runtime dispatch now renders Cornell geometry, direct
+  area lighting, and one diffuse bounce; a graph-declared ping-pong HDR target
+  accumulates samples (8,442 observed). The downloaded JPEG is now a visual
+  guide under the user's 2026-09-22 clarification. A 2026-09-25 runtime run
+  reports the RT pass active at 6,907 samples and about 1.04 ms GPU time; a
+  viewport resize resets accumulation and the pass resumes. The lifecycle
+  pipeline-count regression is fixed, and all 970 Debug CTest cases pass.
+  Failure/reload/repeated-start/stop and orderly-close runtime evidence remain
+  open. No R4.6 acceptance is claimed. →
   [R4 plan](render/.plan/R4.md), [R4.0 spec](../.spec/specs/render-r4-ray-query-shadow.md),
+  [R4.6 spec](../.spec/specs/render-r4-6-cornell-path-tracing.md),
+  [R4.6 review](render/.review/R4.6.md),
   [render graph roadmap](render/render_graph/TODO.md)
+- **Render/Graphics R5 architecture (design only, 2026-09-22)** — a source
+  review identifies enabled-conditional-pass failure semantics, name-based
+  graph-to-physical binding, and the mixed graph/pass/lifetime responsibilities
+  in `DeferredRenderer` as the first boundaries to address. A staged plan
+  separates correctness tests, graph execution, pass-family state, and narrow
+  Graphics contract cleanup. No source refactor or runtime validation is
+  claimed; implementation waits for accepted R4.6 RT dispatch and Cornell
+  comparison evidence. → [review](render/.review/R5.md),
+  [plan](render/.plan/R5.md)
 - **Frame-rate follow-ups (2026-09-17)** — the timer-resolution and G-buffer
   fixes landed, and the render lane is now the binding constraint on OpenGL at
   about 11.9 ms of an 11.9 ms frame. Two open items: Vulkan runs with validation

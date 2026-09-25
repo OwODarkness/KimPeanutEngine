@@ -77,9 +77,19 @@ public policy while the coordinator owns scene preparation.
 - [R4 — ray-tracing foundation and render-graph integration](.plan/R4.md) —
   selected ray-query directional hard-shadow visibility and closed the
   validation-clean raster gate; R4.1 hardened graph write/binding/transition
-  semantics, and R4.2 now defines the API-neutral Graphics RT contract without
-  enabling a partial backend. **R4.2 complete (2026-09-19); R4.3's graph/import
-  slice is implemented and native ownership remains capability-gated.**
+  semantics, R4.2 defines the API-neutral Graphics RT contract, R4.3–R4.5 bring
+  the imported/scheduled TLAS into hybrid lighting, and R4.6 attempts a dedicated
+  Cornell Box RT-pipeline validation with area-light sampling, diffuse indirect
+  lighting, and accumulation. See the [R4.6 stage plan](.plan/R4.6.md) and
+  [R4.6 spec](../../.spec/specs/render-r4-6-cornell-path-tracing.md).
+  **R4.5 evidence remains open; R4.6 Vulkan dispatch and progressive
+  accumulation are observed, with visual and lifecycle acceptance open.** The
+  [R4.6 review](.review/R4.6.md) records remaining acceptance gaps.
+- [R5 — post-R4.6 Render/Graphics decoupling](.plan/R5.md) — a proposed,
+  design-only stage to separate graph execution and concrete pass-family state
+  from `DeferredRenderer`, correct graph failure/binding semantics, and narrow
+  proven Graphics boundary leaks. The [source review](.review/R5.md) is the
+  analysis record. Implementation waits for accepted R4.6 runtime evidence.
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
   texture minification and bound texture, descriptor, visibility, and static-
   shadow costs through Resource, Render, and Graphics ownership boundaries.

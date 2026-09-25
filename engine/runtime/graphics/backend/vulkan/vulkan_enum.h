@@ -342,6 +342,10 @@ inline TextureFormat ConvertFromVulkanTextureFormat(VkFormat format)
             return VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         case DescriptorType::DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE:
             return VK_DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE_KHR;
+        case DescriptorType::DESCRIPTOR_TYPE_STORAGE_BUFFER:
+            return VK_DESCRIPTOR_TYPE_STORAGE_BUFFER;
+        case DescriptorType::DESCRIPTOR_TYPE_STORAGE_IMAGE:
+            return VK_DESCRIPTOR_TYPE_STORAGE_IMAGE;
         default:
             return VK_DESCRIPTOR_TYPE_MAX_ENUM; // fallback / invalid
         }
@@ -349,15 +353,25 @@ inline TextureFormat ConvertFromVulkanTextureFormat(VkFormat format)
 
     inline VkShaderStageFlags ConvertToVulkanShaderStageFlags(ShaderStage stage)
     {
-        VkShaderStageFlags flags = 0;
-        if (static_cast<uint32_t>(stage) & static_cast<uint32_t>(ShaderStage::SHADER_STAGE_VERTEX))
-            flags |= VK_SHADER_STAGE_VERTEX_BIT;
-        if (static_cast<uint32_t>(stage) & static_cast<uint32_t>(ShaderStage::SHADER_STAGE_FRAGMENT))
-            flags |= VK_SHADER_STAGE_FRAGMENT_BIT;
-        if (static_cast<uint32_t>(stage) & static_cast<uint32_t>(ShaderStage::SHADER_STAGE_GEOMETRY))
-            flags |= VK_SHADER_STAGE_GEOMETRY_BIT;
-
-        return flags;
+        switch (stage)
+        {
+        case ShaderStage::SHADER_STAGE_VERTEX:
+            return VK_SHADER_STAGE_VERTEX_BIT;
+        case ShaderStage::SHADER_STAGE_FRAGMENT:
+            return VK_SHADER_STAGE_FRAGMENT_BIT;
+        case ShaderStage::SHADER_STAGE_GEOMETRY:
+            return VK_SHADER_STAGE_GEOMETRY_BIT;
+        case ShaderStage::SHADER_STAGE_COMPUTE:
+            return VK_SHADER_STAGE_COMPUTE_BIT;
+        case ShaderStage::SHADER_STAGE_RAYGEN:
+            return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
+        case ShaderStage::SHADER_STAGE_MISS:
+            return VK_SHADER_STAGE_MISS_BIT_KHR;
+        case ShaderStage::SHADER_STAGE_CLOSEST_HIT:
+            return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
+        default:
+            return 0;
+        }
     }
 
     inline VkFilter ConvertToVulkanFilter(SamplerFilterType filter)

@@ -1,13 +1,19 @@
 # Render Graph TODO
 
 **Status: R3 complete and closed. R4.2 is complete; R4.3's graph/import slice
-is complete and R4.4 native AS build groundwork is in progress.** The compiled plan
+is complete, R4.4's scheduled BLAS/TLAS build slice is implemented, R4.5
+evidence remains open, and R4.6 Vulkan dispatch is observed with visual and
+lifecycle acceptance still open.**
+The compiled plan
 schedules passes, owns resource state, and declares its transients; R3.7's five
 extensions are closed as a gate with recorded unlock criteria. Completed-stage
 detail moved to the R3 closeout journal:
 [2026-09-18-render-graph-r3-closeout.md](../../../.spec/journal/2026-09-18-render-graph-r3-closeout.md).
 Architecture: [PLANS.md](PLANS.md). Completed migration:
 [R3](../.plan/R3.md). Next proposed stage: [R4](../.plan/R4.md).
+Post-R4.6 executor/binding and failure-semantics work is proposed separately
+in the [R5 review](../.review/R5.md) and [R5 plan](../.plan/R5.md); it is not
+part of R4.6's visual and lifecycle acceptance.
 
 ## Roadmap
 
@@ -76,11 +82,27 @@ Architecture: [PLANS.md](PLANS.md). Completed migration:
   [spec](../../../.spec/specs/render-r4-3-imported-tlas.md),
   [review](../.review/R4.3.md),
   [journal](../../../.spec/journal/2026-09-19-render-graph-r4-3.md)
-- [ ] **R4.4–R4.5 — scheduled builds and evidence:** move BLAS/TLAS build or
-  update work into graph passes only after the imported-TLAS slice is proven;
-  integrate its output with composite/tone-map/capture and validate lifecycle,
-  fallback, captures, metrics, and Vulkan correctness. →
-  [R4 plan](../.plan/R4.md)
+- [ ] **R4.4–R4.5 — scheduled builds and evidence:** R4.4 supplies the
+  frame-stable geometry snapshot, backend buffer-resolution seam, SSA AS
+  versions, and separate graph-scheduled BLAS/TLAS build/update passes. R4.5
+  now integrates Vulkan ray-query directional visibility through the existing
+  deferred-lighting/composite/tone-map/capture path and preserves the OpenGL
+  fallback. Dedicated moving-instance, resize, failed-build, retirement, and
+  AS/scratch-memory evidence remains before closure. → [R4 plan](../.plan/R4.md),
+  [R4.5 journal](../../../.spec/journal/2026-09-20-render-graph-r4-5.md)
+- [ ] **R4.6 — dedicated Cornell Box path-tracing validation:** use the full
+  RT-pipeline path to generate primary rays, reconstruct hit/material/instance
+  data, sample the rectangular emitter, integrate at least one diffuse secondary
+  bounce, and progressively accumulate linear HDR output. Compare only after a
+  tracked manifest freezes the local `save/cornell_box_ref.jpeg` identity,
+  1920×2030 camera/light/exposure/output contract, sample budget, and global
+  plus local thresholds. OpenGL reports this validation path unavailable rather
+  than substituting raster evidence. Vulkan dispatch, Cornell shading, progressive
+  accumulation, and a resize reset are now observed. Failure, reload, repeated
+  start/stop, and orderly-close evidence remain open. → [R4 plan](../.plan/R4.md),
+  [R4.6 plan](../.plan/R4.6.md),
+  [R4.6 spec](../../../.spec/specs/render-r4-6-cornell-path-tracing.md),
+  [R4.6 review](../.review/R4.6.md)
 
 ## Acceptance ledger
 

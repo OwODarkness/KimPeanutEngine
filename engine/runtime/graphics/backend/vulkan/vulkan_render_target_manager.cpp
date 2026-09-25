@@ -72,6 +72,15 @@ namespace kpengine::graphics
             color_settings.usage = TextureUsage::TEXTURE_USAGE_COLOR_ATTACHMENT |
                                    TextureUsage::TEXTURE_USAGE_SAMPLE |
                                    TextureUsage::TEXTURE_USAGE_TRANSFER_SRC;
+            // Vulkan implementations commonly expose storage-image support for
+            // linear HDR formats but not for sRGB attachments. SceneHdr is the
+            // RT storage target; keep ordinary presentation/G-buffer images
+            // free of an unnecessary storage requirement.
+            if (attachment.format == TextureFormat::TEXTURE_FORMAT_RGBA16F)
+            {
+                color_settings.usage = color_settings.usage |
+                                       TextureUsage::TEXTURE_USAGE_STORAGE;
+            }
             color_settings.aspect = ImageAspect::IMAGE_ASPECT_COLOR;
             color_settings.mutable_format =
                 attachment.format == TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
@@ -388,14 +397,18 @@ namespace kpengine::graphics
         // declaration that needs new state fails loudly instead of sampling a
         // resource the backend never moved.
         if (usage != ResourceUsage::Sampled && usage != ResourceUsage::ColorAttachment &&
-            usage != ResourceUsage::DepthAttachment)
+            usage != ResourceUsage::DepthAttachment && usage != ResourceUsage::StorageRead &&
+            usage != ResourceUsage::StorageWrite)
         {
             return false;
         }
 
+        const bool storage = usage == ResourceUsage::StorageRead ||
+                             usage == ResourceUsage::StorageWrite;
         const VkImageLayout color_layout = usage == ResourceUsage::Sampled
                                               ? VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
-                                              : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+                                              : storage ? VK_IMAGE_LAYOUT_GENERAL
+                                                        : VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
         TargetState &state = states_[index];
         for (uint32_t i = 0; i < targets_[index].color_attachments.size(); ++i)
         {
@@ -413,10 +426,14 @@ namespace kpengine::graphics
                 command_buffer, color.image, from, color_layout,
                 VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT,
                 usage == ResourceUsage::Sampled ? VK_PIPELINE_STAGE_2_FRAGMENT_SHADER_BIT
-                                                : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
+                                                : storage ? VK_PIPELINE_STAGE_2_RAY_TRACING_SHADER_BIT_KHR
+                                                          : VK_PIPELINE_STAGE_2_COLOR_ATTACHMENT_OUTPUT_BIT,
                 from == VK_IMAGE_LAYOUT_UNDEFINED ? 0 : VK_ACCESS_2_MEMORY_READ_BIT,
                 usage == ResourceUsage::Sampled ? VK_ACCESS_2_SHADER_SAMPLED_READ_BIT
-                                                : VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
+                                                : storage ? (usage == ResourceUsage::StorageRead
+                                                                 ? VK_ACCESS_2_SHADER_STORAGE_READ_BIT
+                                                                 : VK_ACCESS_2_SHADER_STORAGE_WRITE_BIT)
+                                                          : VK_ACCESS_2_COLOR_ATTACHMENT_WRITE_BIT,
                 VK_IMAGE_ASPECT_COLOR_BIT, 0, 1);
             state.color_layouts[i] = color_layout;
         }

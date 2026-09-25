@@ -4,6 +4,7 @@
 #include <array>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <functional>
 #include <limits>
 #include <stdexcept>
@@ -56,6 +57,28 @@ namespace kpengine::render
         constexpr uint64_t kSpotShadowPerPassUniformKey = 0x534841444f575f53ull;
         constexpr uint64_t kPointShadowPerPassUniformKey = 0x534841444f575f50ull;
         constexpr uint64_t kGBufferPerPassUniformKey = 0x4742554646455250ull;
+        constexpr uint32_t kPathTraceSamplesPerDispatch = 4;
+        static_assert(static_cast<size_t>(FixedRenderPassId::RayTracingPathTrace) ==
+                      static_cast<size_t>(RenderProfilePass::RayTracingPathTrace));
+        static_assert(static_cast<size_t>(FixedRenderPassId::Count) ==
+                      static_cast<size_t>(RenderProfilePass::Count));
+
+        struct PathTracingCameraGpuData
+        {
+            Matrix4f inverse_view_projection;
+            Vector4f camera_position;
+            Vector4f light_center;
+            Vector4f light_u;
+            Vector4f light_v;
+            Vector4f light_radiance;
+            uint32_t frame_index = 0;
+            uint32_t sample_count = 0;
+            uint32_t samples_per_dispatch = 1;
+            uint32_t padding[5]{};
+            std::array<std::array<uint32_t, 4>, 4> geometry_index_starts{};
+        };
+        static_assert(offsetof(PathTracingCameraGpuData, geometry_index_starts) == 176);
+        static_assert(sizeof(PathTracingCameraGpuData) == 240);
 
         graphics::RenderTargetAttachmentScope ToAttachmentScope(RenderGraphAttachmentScope scope)
         {
@@ -413,11 +436,19 @@ namespace kpengine::render
         prepared_assets_ = &info.prepared_assets;
         try
         {
+            KP_LOG("RenderLog", LOG_LEVEL_INFO, "R4.6 initializing frame targets");
             frame_targets_.Initialize(*backend_, width, height);
             if (!frame_targets_.IsValid())
             {
                 throw std::runtime_error("Failed to create the complete render target set.");
             }
+            KP_LOG("RenderLog", LOG_LEVEL_INFO, "R4.6 frame targets initialized");
+            const bool r46_pipeline_ready =
+                backend_->GetCapabilities().SupportsRayTracingPipeline() &&
+                PrepareRayTracingPathTraceResources();
+            ray_tracing_path_tracing_available_ = r46_pipeline_ready;
+            KP_LOG("RenderLog", LOG_LEVEL_INFO,
+                   "R4.6 path tracing resource preparation completed");
             ConfigureFramePlans();
             if (!frame_plan_valid_)
             {
@@ -444,7 +475,29 @@ namespace kpengine::render
         // no wrapper outlives the handle it borrows.
         ReleaseFrameTransients();
         transient_scene_hdr_.reset();
+        graphics::RayTracingResourceOwner *const ray_tracing_owner =
+            backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
+        if (ray_tracing_owner && ray_tracing_path_tracing_bindings_.IsValid())
+        {
+            ray_tracing_owner->DestroyRayTracingResourceBindingSet(
+                ray_tracing_path_tracing_bindings_);
+        }
+        ray_tracing_path_tracing_bindings_ = {};
         DestroyRayTracingResources();
+        // RT bindings and acceleration structures are retired against submitted
+        // work; wait before releasing their referenced targets or pipeline.
+        if (backend_ != nullptr)
+            backend_->WaitIdle();
+        for (auto &target : path_trace_history_targets_)
+        {
+            if (target) target->Cleanup();
+            target.reset();
+        }
+        path_trace_sample_count_ = 0;
+        path_trace_write_index_ = 0;
+        path_trace_history_signature_ = 0;
+        if (ray_tracing_owner && ray_tracing_path_tracing_pipeline_.IsValid())
+            ray_tracing_owner->DestroyRayTracingPipeline(ray_tracing_path_tracing_pipeline_);
         if (backend_ != nullptr)
         {
             if (gbuffer_debug_pipeline_.IsValid())
@@ -482,6 +535,10 @@ namespace kpengine::render
         point_shadow_sampler_ = {};
         tone_map_pipeline_ = {};
         directional_shadow_pipeline_ = {};
+        ray_tracing_path_tracing_pipeline_ = {};
+        ray_tracing_path_tracing_bindings_ = {};
+        ray_tracing_path_tracing_available_ = false;
+        active_ray_tracing_path_trace_ = false;
         level_environment_ = {};
         active_environment_ = {};
         failed_environment_source_.reset();
@@ -740,7 +797,10 @@ namespace kpengine::render
                 frame_ray_tracing_mesh_builds_[build_iterator->second];
             graphics::RayTracingInstanceDesc instance{};
             instance.bottom_level = mesh_build.blas;
-            instance.instance_id = proxy.handle.id & 0x00FFFFFFu;
+            // The RT shader uses the custom index as the stable frame-local
+            // scene-lookup slot, not as a descriptor-creation or object-id
+            // accident. Each slot points at one mesh's vertex/index pair.
+            instance.instance_id = static_cast<uint32_t>(build_iterator->second);
             const Matrix4f transform = Matrix4f::MakeTransformMatrix(proxy.world_transform);
             for (std::size_t row = 0; row < 3; ++row)
             {
@@ -806,6 +866,109 @@ namespace kpengine::render
                  {},
                  std::span<const graphics::RayTracingInstanceDesc>(
                      frame_ray_tracing_instances_.data(), frame_ray_tracing_instances_.size())});
+        }
+        return true;
+    }
+
+    bool DeferredRenderer::GetPreparedRayTracingProgram(
+        std::shared_ptr<const asset::ShaderProgramResource> &out_program) const
+    {
+        out_program = prepared_assets_ != nullptr
+                          ? prepared_assets_->Get<asset::ShaderProgramResource>(
+                                prepared_assets_->GetBuiltIn(
+                                    BuiltInRenderAsset::RayTracingPathTracerProgram))
+                          : nullptr;
+        if (!out_program)
+        {
+            return false;
+        }
+        for (const ShaderStage stage : {ShaderStage::SHADER_STAGE_RAYGEN,
+                                        ShaderStage::SHADER_STAGE_MISS,
+                                        ShaderStage::SHADER_STAGE_CLOSEST_HIT})
+        {
+            const asset::AssetID shader_id = out_program->GetData(
+                stage, ShaderFormat::SHADER_FORMAT_GLSL);
+            const auto shader = prepared_assets_->Get<asset::ShaderResource>(shader_id);
+            if (!shader || !shader->data || shader->status != asset::ShaderStatus::Ready ||
+                shader->data->api != GraphicsAPIType::GRAPHICS_API_VULKAN ||
+                shader->data->byte_code.empty())
+            {
+                out_program.reset();
+                return false;
+            }
+        }
+        return true;
+    }
+
+    bool DeferredRenderer::PrepareRayTracingPathTraceResources()
+    {
+        if (ray_tracing_path_tracing_pipeline_.IsValid())
+        {
+            return true;
+        }
+        if (!backend_ || !backend_->GetCapabilities().SupportsRayTracingPipeline())
+        {
+            return false;
+        }
+        graphics::RayTracingResourceOwner *const owner =
+            backend_->GetRayTracingResourceOwner();
+        if (!owner)
+        {
+            return false;
+        }
+        std::shared_ptr<const asset::ShaderProgramResource> program;
+        if (!GetPreparedRayTracingProgram(program))
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_WARNING,
+                   "R4.6 path tracing is unavailable: Vulkan RT shader program is not ready");
+            return false;
+        }
+        const auto raygen = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_RAYGEN, ShaderFormat::SHADER_FORMAT_GLSL));
+        const auto miss = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_MISS, ShaderFormat::SHADER_FORMAT_GLSL));
+        const auto closest_hit = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
+            ShaderStage::SHADER_STAGE_CLOSEST_HIT, ShaderFormat::SHADER_FORMAT_GLSL));
+        graphics::RayTracingPipelineDesc desc{};
+        desc.ray_generation_shader = raygen->data.get();
+        desc.miss_shader = miss->data.get();
+        desc.closest_hit_shader = closest_hit->data.get();
+        desc.max_recursion_depth = 1;
+        desc.descriptor_binding_descs = {{
+            {0, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE,
+             ShaderStage::SHADER_STAGE_RAYGEN},
+            {1, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_STORAGE_IMAGE,
+             ShaderStage::SHADER_STAGE_RAYGEN},
+            {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+             ShaderStage::SHADER_STAGE_RAYGEN},
+            {35, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_STORAGE_IMAGE,
+             ShaderStage::SHADER_STAGE_RAYGEN},
+        }};
+        // Fixed slots keep the common descriptor contract portable without
+        // requiring descriptor-indexing features just for the validation
+        // scene. Unused slots alias the first geometry buffer at bind time.
+        for (uint32_t slot = 0; slot < 16; ++slot)
+        {
+            desc.descriptor_binding_descs[0].push_back(
+                {3 + slot, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                 ShaderStage::SHADER_STAGE_CLOSEST_HIT});
+        }
+        for (uint32_t slot = 0; slot < 16; ++slot)
+        {
+            desc.descriptor_binding_descs[0].push_back(
+                {19 + slot, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                 ShaderStage::SHADER_STAGE_CLOSEST_HIT});
+        }
+        KP_LOG("RenderLog", LOG_LEVEL_INFO,
+               "R4.6 creating Vulkan ray-tracing pipeline");
+        ray_tracing_path_tracing_pipeline_ = owner->CreateRayTracingPipeline(desc);
+        KP_LOG("RenderLog", LOG_LEVEL_INFO,
+               "R4.6 Vulkan ray-tracing pipeline creation returned");
+        if (!ray_tracing_path_tracing_pipeline_.IsValid())
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_WARNING,
+                   "R4.6 path tracing is unavailable: Vulkan RT pipeline creation failed");
+            return false;
         }
         return true;
     }
@@ -960,10 +1123,33 @@ namespace kpengine::render
         const bool ray_query_shadow =
             backend_->GetCapabilities().SupportsRayQueryShadows() &&
             backend_->GetActiveTopLevelAccelerationStructure().IsValid();
+        // The first loading frame can precede the first populated world
+        // snapshot. Do not select an RT graph variant until its imported TLAS
+        // provider exists; the next frame will rebuild the plan selection.
+        const bool ray_tracing_path_trace = ray_tracing_path_tracing_available_ &&
+                                            ray_tracing_tlas_.IsValid();
+        active_ray_tracing_path_trace_ = ray_tracing_path_trace;
+        if (ray_tracing_path_trace)
+        {
+            const graphics::Extent2D extent = frame_context.GetRenderExtent();
+            if (!EnsurePathTraceHistoryTargets(extent.width, extent.height))
+            {
+                result.normal_recording_completed = false;
+                return result;
+            }
+            const uint64_t signature = PathTraceHistorySignature(extent.width, extent.height);
+            if (signature != path_trace_history_signature_)
+            {
+                path_trace_sample_count_ = 0;
+                path_trace_history_signature_ = signature;
+            }
+            profile_.path_trace_samples = path_trace_sample_count_;
+        }
         const CompiledRenderGraph *const frame_plan =
             GetFramePlan(RenderFrameConditions{is_deferred_capture, ray_query_shadow,
                                                frame_ray_tracing_blas_build_,
-                                               frame_ray_tracing_tlas_build_});
+                                               frame_ray_tracing_tlas_build_,
+                                               ray_tracing_path_trace});
         if (frame_plan == nullptr)
         {
             result.normal_recording_completed = false;
@@ -1011,14 +1197,17 @@ namespace kpengine::render
                 // The executor owns the attachment boundary now: the pass's write
                 // use names the target it records into, so no pass opens or
                 // closes its own target.
-                RenderTarget *const attachment = ResolvePassAttachment(pass);
+                RenderTarget *const attachment = pass_id == FixedRenderPassId::RayTracingPathTrace
+                                                     ? nullptr
+                                                     : ResolvePassAttachment(pass);
                 const bool has_attachment_write = std::any_of(
                     pass.uses.begin(), pass.uses.end(), [](const RenderGraphResourceUse &use) {
                         return use.access == RenderGraphAccess::Write &&
                                std::holds_alternative<GraphTextureHandle>(use.handle);
                     });
                 graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-                if ((has_attachment_write && attachment == nullptr) ||
+                if ((has_attachment_write && attachment == nullptr &&
+                     pass_id != FixedRenderPassId::RayTracingPathTrace) ||
                     (attachment != nullptr && (recorder == nullptr ||
                                                !attachment->BeginRecording(*recorder))))
                 {
@@ -1109,6 +1298,12 @@ namespace kpengine::render
         case FixedRenderPassId::ToneMap:
             succeeded = RecordToneMapPass();
             break;
+        case FixedRenderPassId::RayTracingToneMap:
+            succeeded = RecordToneMapPass();
+            break;
+        case FixedRenderPassId::RayTracingPathTrace:
+            succeeded = RecordRayTracingPathTracePass();
+            break;
         case FixedRenderPassId::CaptureView:
             succeeded = active_pending_capture_.has_value() &&
                         RecordCaptureViewPass(*active_pending_capture_);
@@ -1191,6 +1386,13 @@ namespace kpengine::render
             }
             KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", error.c_str());
         }
+        const bool succeeded = finalized && !frame_execution_failed_;
+        if (succeeded && active_ray_tracing_path_trace_)
+        {
+            path_trace_sample_count_ += kPathTraceSamplesPerDispatch;
+            path_trace_write_index_ ^= 1u;
+            profile_.path_trace_samples = path_trace_sample_count_;
+        }
         if (finalized)
         {
             // Released after the sweep, so the next frame takes the same
@@ -1204,7 +1406,7 @@ namespace kpengine::render
             render_world_ = nullptr;
             frame_lighting_binding_ = {};
         }
-        return finalized && !frame_execution_failed_;
+        return succeeded;
     }
 
     void DeferredRenderer::UpdateEnvironment(const RenderSceneFrameInput &input)
@@ -1243,11 +1445,79 @@ namespace kpengine::render
         active_environment_ = {};
     }
 
+    bool DeferredRenderer::EnsurePathTraceHistoryTargets(uint32_t width, uint32_t height)
+    {
+        if (!backend_ || width == 0 || height == 0)
+            return false;
+        if (path_trace_history_targets_[0] && path_trace_history_targets_[1] &&
+            path_trace_history_targets_[0]->IsValid() &&
+            path_trace_history_targets_[1]->IsValid() &&
+            path_trace_history_targets_[0]->GetWidth() == width &&
+            path_trace_history_targets_[0]->GetHeight() == height)
+            return true;
+
+        if (path_trace_history_targets_[0] || path_trace_history_targets_[1])
+        {
+            if (graphics::RayTracingResourceOwner *const owner =
+                    backend_->GetRayTracingResourceOwner();
+                owner && ray_tracing_path_tracing_bindings_.IsValid())
+            {
+                owner->DestroyRayTracingResourceBindingSet(
+                    ray_tracing_path_tracing_bindings_);
+                ray_tracing_path_tracing_bindings_ = {};
+            }
+            backend_->WaitIdle();
+        }
+        const graphics::RenderTargetDesc desc =
+            RendererFrameTargets::DescribeSceneHdr(width, height);
+        for (auto &target : path_trace_history_targets_)
+        {
+            if (!target) target = std::make_unique<RenderTarget>();
+            target->Initialize(*backend_, desc);
+            if (!target->IsValid()) return false;
+        }
+        path_trace_sample_count_ = 0;
+        path_trace_write_index_ = 0;
+        path_trace_history_signature_ = 0;
+        return true;
+    }
+
+    uint64_t DeferredRenderer::PathTraceHistorySignature(uint32_t width,
+                                                          uint32_t height) const
+    {
+        uint64_t signature = 1469598103934665603ull;
+        const auto add = [&signature](uint64_t value) {
+            signature ^= value;
+            signature *= 1099511628211ull;
+        };
+        add(width);
+        add(height);
+        add(frame_ray_tracing_instance_signature_);
+        add(frame_ray_tracing_geometries_.size());
+        add(ray_tracing_path_tracing_pipeline_.id);
+        add(ray_tracing_path_tracing_pipeline_.generation);
+        const Matrix4f view_projection = scene_camera_.GetViewProjectionMatrix();
+        for (std::size_t row = 0; row < 4; ++row)
+            for (std::size_t column = 0; column < 4; ++column)
+                add(std::hash<float>{}(view_projection[row][column]));
+        const Vector3f position = scene_camera_.GetPosition();
+        add(std::hash<float>{}(position[0]));
+        add(std::hash<float>{}(position[1]));
+        add(std::hash<float>{}(position[2]));
+        return signature;
+    }
+
     RenderTarget *DeferredRenderer::ResolveNamedFrameTarget(std::string_view name)
     {
         if (name == "SceneHdr")
         {
-            return transient_scene_hdr_.get();
+            return active_ray_tracing_path_trace_
+                       ? path_trace_history_targets_[path_trace_write_index_].get()
+                       : transient_scene_hdr_.get();
+        }
+        if (name == "PathTraceHistory")
+        {
+            return path_trace_history_targets_[1u - path_trace_write_index_].get();
         }
         if (name == "SceneColor")
         {
@@ -1381,9 +1651,15 @@ namespace kpengine::render
                 }
                 continue;
             }
+            // The graph is bound before the TLAS build pass records. Use the
+            // renderer-owned handle prepared for this frame; the Vulkan owner
+            // marks it active when the build command is recorded.
             const graphics::AccelerationStructureHandle physical =
-                backend_ != nullptr ? backend_->GetActiveTopLevelAccelerationStructure()
-                                    : graphics::AccelerationStructureHandle{};
+                ray_tracing_tlas_.IsValid()
+                    ? ray_tracing_tlas_
+                    : (backend_ != nullptr
+                           ? backend_->GetActiveTopLevelAccelerationStructure()
+                           : graphics::AccelerationStructureHandle{});
             if (acceleration_structure == nullptr || !physical.IsValid())
             {
                 KP_LOG("RenderLog", LOG_LEVEL_ERROR,
@@ -1553,7 +1829,8 @@ namespace kpengine::render
         }
         const graphics::RenderTargetHandle handle = transient_scene_hdr_->GetHandle();
         transient_scene_hdr_->Cleanup();
-        backend_->ReleaseTransientRenderTarget(handle);
+        if (handle.IsValid())
+            backend_->ReleaseTransientRenderTarget(handle);
         frame_texture_bindings_.clear();
         frame_buffer_bindings_.clear();
         frame_acceleration_structure_bindings_.clear();
@@ -1684,12 +1961,14 @@ namespace kpengine::render
                 (condition_bits & 1U) != 0,
                 (condition_bits & 2U) != 0,
                 (condition_bits & 4U) != 0,
-                (condition_bits & 8U) != 0};
+                (condition_bits & 8U) != 0,
+                (condition_bits & 16U) != 0};
             const std::size_t slot =
                 (conditions.diagnostic_capture ? 1U : 0U) |
                 (conditions.ray_query_shadow ? 2U : 0U) |
                 (conditions.ray_tracing_blas_build ? 4U : 0U) |
-                (conditions.ray_tracing_tlas_build ? 8U : 0U);
+                (conditions.ray_tracing_tlas_build ? 8U : 0U) |
+                (conditions.ray_tracing_path_trace ? 16U : 0U);
             const auto started = std::chrono::steady_clock::now();
             frame_plans_[slot] = CompileRenderFrameGraph(conditions);
             frame_plan_compile_ms_ += std::chrono::duration<double, std::milli>(
@@ -1715,7 +1994,8 @@ namespace kpengine::render
             frame_plans_[(conditions.diagnostic_capture ? 1U : 0U) |
                         (conditions.ray_query_shadow ? 2U : 0U) |
                         (conditions.ray_tracing_blas_build ? 4U : 0U) |
-                        (conditions.ray_tracing_tlas_build ? 8U : 0U)];
+                        (conditions.ray_tracing_tlas_build ? 8U : 0U) |
+                        (conditions.ray_tracing_path_trace ? 16U : 0U)];
         if (!plan.has_value() || !plan->graph.has_value())
         {
             return nullptr;
@@ -2485,7 +2765,10 @@ namespace kpengine::render
               {10, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
                ShaderStage::SHADER_STAGE_FRAGMENT}},
         };
-        deferred_lighting_pipeline_ = backend_->CreatePipelineResource(desc);
+        if (!deferred_lighting_pipeline_.IsValid())
+        {
+            deferred_lighting_pipeline_ = backend_->CreatePipelineResource(desc);
+        }
         if (!deferred_lighting_pipeline_.IsValid())
         {
             return false;
@@ -2522,7 +2805,11 @@ namespace kpengine::render
         ray_query_desc.descriptor_binding_descs[0].push_back({
             14, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_ACCELERATION_STRUCTURE,
             ShaderStage::SHADER_STAGE_FRAGMENT});
-        deferred_lighting_ray_query_pipeline_ = backend_->CreatePipelineResource(ray_query_desc);
+        if (!deferred_lighting_ray_query_pipeline_.IsValid())
+        {
+            deferred_lighting_ray_query_pipeline_ =
+                backend_->CreatePipelineResource(ray_query_desc);
+        }
         return deferred_lighting_ray_query_pipeline_.IsValid();
     }
 
@@ -2626,6 +2913,103 @@ namespace kpengine::render
         return true;
     }
 
+    bool DeferredRenderer::RecordRayTracingPathTracePass()
+    {
+        if (!active_frame_context_ || !backend_ ||
+            !ray_tracing_path_tracing_pipeline_.IsValid())
+        {
+            return false;
+        }
+        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        graphics::RayTracingResourceOwner *const owner =
+            backend_->GetRayTracingResourceOwner();
+        RenderTarget *const hdr_target = ResolveFrameTextureByName("SceneHdr");
+        RenderTarget *const history_target = ResolveFrameTextureByName("PathTraceHistory");
+        const graphics::AccelerationStructureHandle top_level =
+            backend_->GetActiveTopLevelAccelerationStructure();
+        if (!recorder || !owner || !hdr_target || !history_target || !top_level.IsValid())
+        {
+            return false;
+        }
+
+        PathTracingCameraGpuData camera_data{};
+        camera_data.inverse_view_projection =
+            scene_camera_.GetViewProjectionMatrix().Inverse().Transpose();
+        camera_data.camera_position = Vector4f{scene_camera_.GetPosition(), 1.0f};
+        // The fixture emitter matches the imported area_light quad.
+        camera_data.light_center = Vector4f{-0.234011f, 5.3189155f, -3.042968f, 1.0f};
+        camera_data.light_u = Vector4f{0.65f, 0.0f, 0.0f, 0.0f};
+        camera_data.light_v = Vector4f{0.0f, 0.0f, 0.525f, 0.0f};
+        camera_data.light_radiance = Vector4f{70.0f, 70.0f, 70.0f, 1.0f};
+        camera_data.frame_index = static_cast<uint32_t>(
+            active_frame_context_->GetGlobals().frame_number);
+        camera_data.sample_count = path_trace_sample_count_;
+        camera_data.samples_per_dispatch = kPathTraceSamplesPerDispatch;
+        if (frame_ray_tracing_geometries_.size() > 16)
+            return false;
+        for (std::size_t geometry = 0; geometry < frame_ray_tracing_geometries_.size(); ++geometry)
+            camera_data.geometry_index_starts[geometry / 4][geometry % 4] =
+                static_cast<uint32_t>(frame_ray_tracing_geometries_[geometry].index_offset /
+                                      sizeof(uint32_t));
+        const UniformAllocation camera_uniform = active_frame_context_->AllocateUniform(camera_data);
+        if (!camera_uniform.IsValid())
+        {
+            return false;
+        }
+
+        if (ray_tracing_path_tracing_bindings_.IsValid())
+        {
+            owner->DestroyRayTracingResourceBindingSet(ray_tracing_path_tracing_bindings_);
+            ray_tracing_path_tracing_bindings_ = {};
+        }
+        if (frame_ray_tracing_geometries_.empty())
+        {
+            return false;
+        }
+        std::vector<graphics::RayTracingResourceBinding> bindings{
+            graphics::RayTracingAccelerationStructureBinding{0, 0, top_level},
+            graphics::RayTracingStorageTextureBinding{
+                0, 1, hdr_target->GetColorAttachmentTexture(0)},
+            graphics::RayTracingStorageTextureBinding{
+                0, 35, history_target->GetColorAttachmentTexture(0)},
+            graphics::UniformBufferBinding{0, 2, camera_uniform.buffer,
+                                           camera_uniform.offset, camera_uniform.range}};
+        for (uint32_t slot = 0; slot < 16; ++slot)
+        {
+            const std::size_t geometry_index =
+                std::min<std::size_t>(slot, frame_ray_tracing_geometries_.size() - 1);
+            const graphics::RayTracingGeometryDesc &geometry =
+                frame_ray_tracing_geometries_[geometry_index];
+            bindings.emplace_back(graphics::RayTracingStorageBufferBinding{
+                0, 3 + slot, geometry.vertex_buffer, geometry.vertex_offset,
+                static_cast<size_t>(geometry.vertex_stride) * geometry.vertex_count});
+        }
+        for (uint32_t slot = 0; slot < 16; ++slot)
+        {
+            const std::size_t geometry_index =
+                std::min<std::size_t>(slot, frame_ray_tracing_geometries_.size() - 1);
+            const graphics::RayTracingGeometryDesc &geometry =
+                frame_ray_tracing_geometries_[geometry_index];
+            const size_t index_stride = geometry.index_type == graphics::RayTracingIndexType::UInt16
+                                            ? sizeof(uint16_t)
+                                            : sizeof(uint32_t);
+            bindings.emplace_back(graphics::RayTracingStorageBufferBinding{
+                0, 19 + slot, geometry.index_buffer, 0,
+                geometry.index_offset + index_stride * geometry.index_count});
+        }
+        ray_tracing_path_tracing_bindings_ = owner->CreateRayTracingResourceBindingSet(
+            ray_tracing_path_tracing_pipeline_, {0, std::move(bindings), false});
+        if (!ray_tracing_path_tracing_bindings_.IsValid() ||
+            !recorder->BindRayTracingPipeline(ray_tracing_path_tracing_pipeline_) ||
+            !recorder->BindRayTracingResourceBindings(ray_tracing_path_tracing_bindings_))
+        {
+            return false;
+        }
+        return recorder->DispatchRays(
+            {ray_tracing_path_tracing_pipeline_, ray_tracing_path_tracing_bindings_,
+             hdr_target->GetWidth(), hdr_target->GetHeight(), 1});
+    }
+
     bool DeferredRenderer::RecordToneMapPass()
     {
         if (!active_frame_context_)
@@ -2637,12 +3021,17 @@ namespace kpengine::render
         RenderTarget *const hdr_target = ResolveFrameTextureByName("SceneHdr");
         RenderTarget *const gbuffer_target = ResolveFrameTextureByName("GBuffer");
         RenderTarget *const scene_target = ResolveFrameTextureByName("SceneColor");
-        if (!recorder || !hdr_target || !gbuffer_target || !scene_target ||
+        if (!recorder || !hdr_target || !scene_target ||
+            (!active_ray_tracing_path_trace_ && !gbuffer_target) ||
             !PrepareToneMapPassResources())
         {
             return false;
         }
 
+        const UniformAllocation tone_map_options = active_frame_context_->AllocateUniform(
+            Vector4f{active_ray_tracing_path_trace_ ? 0.0f : 1.0f, 0.0f, 0.0f, 0.0f});
+        if (!tone_map_options.IsValid())
+            return false;
         const graphics::DescriptorSetHandle tone_map_bindings =
             active_frame_context_->AllocateResourceBindingSet(
                 tone_map_pipeline_,
@@ -2651,8 +3040,14 @@ namespace kpengine::render
                       0, 2, hdr_target->GetColorAttachmentTexture(0),
                       gbuffer_debug_sampler_},
                    graphics::SampledTextureBinding{
-                       0, 3, gbuffer_target->GetColorAttachmentTexture(3),
-                       gbuffer_debug_sampler_}}});
+                       0, 3,
+                       active_ray_tracing_path_trace_
+                           ? hdr_target->GetColorAttachmentTexture(0)
+                           : gbuffer_target->GetColorAttachmentTexture(3),
+                       gbuffer_debug_sampler_},
+                   graphics::UniformBufferBinding{0, 4, tone_map_options.buffer,
+                                                  tone_map_options.offset,
+                                                  tone_map_options.range}}});
         if (tone_map_bindings.IsValid())
         {
             recorder->BindPipeline(tone_map_pipeline_);
@@ -2840,6 +3235,8 @@ namespace kpengine::render
             {2, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT},
             {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
+             ShaderStage::SHADER_STAGE_FRAGMENT},
+            {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
              ShaderStage::SHADER_STAGE_FRAGMENT},
         };
         tone_map_pipeline_ = backend_->CreatePipelineResource(desc);

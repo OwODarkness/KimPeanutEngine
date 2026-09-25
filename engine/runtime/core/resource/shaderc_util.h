@@ -22,6 +22,12 @@ namespace kpengine::resource
             return shaderc_geometry_shader;
         case ShaderStage::SHADER_STAGE_COMPUTE:
             return shaderc_compute_shader;
+        case ShaderStage::SHADER_STAGE_RAYGEN:
+            return shaderc_raygen_shader;
+        case ShaderStage::SHADER_STAGE_MISS:
+            return shaderc_miss_shader;
+        case ShaderStage::SHADER_STAGE_CLOSEST_HIT:
+            return shaderc_closesthit_shader;
         default:
             return shaderc_miss_shader;
         }
