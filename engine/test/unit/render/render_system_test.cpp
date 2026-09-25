@@ -24,6 +24,7 @@
 #include "render/render_system.h"
 #include "render/render_submission_executor.h"
 #include "render/prepared_render_asset_catalog.h"
+#include "render/path_trace_history_signature.h"
 #include "render/ray_tracing_scene_signature.h"
 #include "support/fake_render_backend.h"
 
@@ -56,6 +57,52 @@ namespace
         EXPECT_NE(render::detail::RayTracingGeometrySignature(
                       std::span<const graphics::RayTracingGeometryDesc>{}),
                   baseline);
+    }
+
+    TEST(PathTraceHistorySignatureTest, ChangesForEveryAccumulationInput)
+    {
+        using render::detail::ComputePathTraceHistorySignature;
+        using render::detail::PathTraceHistorySignatureInput;
+
+        PathTraceHistorySignatureInput input{};
+        input.width = 1094;
+        input.height = 619;
+        input.scene_signature = 42;
+        input.geometry_count = 8;
+        input.pipeline_id = 3;
+        input.pipeline_generation = 2;
+        input.view_projection[0] = 1.0f;
+        input.view_projection[5] = 1.0f;
+        input.view_projection[10] = 1.0f;
+        input.view_projection[15] = 1.0f;
+        input.camera_position = {0.0f, 1.0f, 5.0f};
+        const uint64_t baseline = ComputePathTraceHistorySignature(input);
+        EXPECT_EQ(ComputePathTraceHistorySignature(input), baseline);
+
+        auto changed = input;
+        ++changed.width;
+        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+        changed = input;
+        ++changed.height;
+        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+        changed = input;
+        ++changed.scene_signature;
+        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+        changed = input;
+        ++changed.geometry_count;
+        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+        changed = input;
+        ++changed.pipeline_id;
+        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+        changed = input;
+        ++changed.pipeline_generation;
+        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+        changed = input;
+        changed.view_projection[12] += 0.25f;
+        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+        changed = input;
+        changed.camera_position[0] += 0.25f;
+        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
     }
 
     TEST(RenderSubmissionExecutorTest, PreparesAndRecordsGenericWorkInOrder)

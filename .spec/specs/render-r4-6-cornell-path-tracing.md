@@ -43,7 +43,7 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
 - The camera UBO is pinned by C++ size/offset assertions; raygen and closest-hit
   now declare the same field offsets. Four samples are traced per dispatch, and
   the profile count reflects actual accumulated samples.
-- The latest Vulkan capture is 1094×619 at 10,636 samples. The emitter, neutral,
+- The latest Vulkan capture is 1094×619 at 5,896 samples. The emitter, neutral,
   red, and green surfaces, boxes, penumbrae, and indirect color are visible. It
   is a qualitative guide comparison under the user's 2026-09-22 clarification.
 - Resize was exercised through `window.resize`: the history count reset from
@@ -65,12 +65,17 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
   `path_trace_active` explicitly. Vulkan and OpenGL application windows both
   closed on a normal window-close request; no `VUID-` or `Validation Error`
   appeared in the captured validation-run logs.
-- The Runtime command surface has no camera motion, in-place scene reload, or
-  deliberate RT-failure operation. Camera-motion reset, in-place reload, and
-  failed-dispatch recovery remain open. Geometry-signature behavior has a unit
-  regression, but live reload remains unverified. `RenderSystemTest` passed
-  22/22 and the full Debug build and CTest inventory passed 975/975 after this
-  follow-up.
+- Real viewport camera motion was exercised on Vulkan. History reset from
+  24,952 to 36 samples shortly after movement; after input stopped, a settled
+  capture showed the moved Cornell view at 20,208 samples without visible
+  temporal noise. The reset and settled captures are linked from the journal.
+  The key hash is extracted into a pure helper, with a regression for every
+  accumulation input.
+- The Runtime command surface has no in-place scene reload or deliberate
+  RT-failure operation. Live reload and failed-dispatch recovery remain open.
+  Independent primary/miss/hit and bounce-off probes are also not retained.
+  `RenderSystemTest` passed 23/23; the full Debug build and CTest inventory
+  passed 976/976 after the history-signature follow-up.
 - The local reference is `save/cornell_box_ref.jpeg`; the user's qualitative
   guide clarification means exact pixel comparison is not required. Its tracked
   manifest remains provenance context rather than an acceptance gate.

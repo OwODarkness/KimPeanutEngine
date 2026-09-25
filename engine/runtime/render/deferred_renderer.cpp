@@ -19,6 +19,7 @@
 #include "graphics/backend/common/command_recorder.h"
 #include "log/logger.h"
 #include "render/camera_utils.h"
+#include "render/path_trace_history_signature.h"
 #include "render/ray_tracing_scene_signature.h"
 #include "render/material/material_system.h"
 #include "render/material/material_asset_resolver.h"
@@ -1500,26 +1501,24 @@ namespace kpengine::render
     uint64_t DeferredRenderer::PathTraceHistorySignature(uint32_t width,
                                                           uint32_t height) const
     {
-        uint64_t signature = 1469598103934665603ull;
-        const auto add = [&signature](uint64_t value) {
-            signature ^= value;
-            signature *= 1099511628211ull;
-        };
-        add(width);
-        add(height);
-        add(frame_ray_tracing_instance_signature_);
-        add(frame_ray_tracing_geometries_.size());
-        add(ray_tracing_path_tracing_pipeline_.id);
-        add(ray_tracing_path_tracing_pipeline_.generation);
+        detail::PathTraceHistorySignatureInput input{};
+        input.width = width;
+        input.height = height;
+        input.scene_signature = frame_ray_tracing_instance_signature_;
+        input.geometry_count = frame_ray_tracing_geometries_.size();
+        input.pipeline_id = ray_tracing_path_tracing_pipeline_.id;
+        input.pipeline_generation = ray_tracing_path_tracing_pipeline_.generation;
         const Matrix4f view_projection = scene_camera_.GetViewProjectionMatrix();
+        std::size_t value_index = 0;
         for (std::size_t row = 0; row < 4; ++row)
             for (std::size_t column = 0; column < 4; ++column)
-                add(std::hash<float>{}(view_projection[row][column]));
+                input.view_projection[value_index++] = view_projection[row][column];
         const Vector3f position = scene_camera_.GetPosition();
-        add(std::hash<float>{}(position[0]));
-        add(std::hash<float>{}(position[1]));
-        add(std::hash<float>{}(position[2]));
-        return signature;
+        for (std::size_t axis = 0; axis < 3; ++axis)
+        {
+            input.camera_position[axis] = position[axis];
+        }
+        return detail::ComputePathTraceHistorySignature(input);
     }
 
     RenderTarget *DeferredRenderer::ResolveNamedFrameTarget(std::string_view name)

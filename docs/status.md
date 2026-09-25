@@ -1803,8 +1803,10 @@
   BLAS reuse detects changed vertex/index buffer identities, generations,
   offsets, and topology and invalidates TLAS/history state; empty snapshots do
   not trace against a stale TLAS. A fresh Vulkan capture after this change
-  retains the known Cornell composition at 35,332 samples. Camera-motion reset,
-  live in-place reload, and injected failure recovery remain open, so R4.6
+  retains the known Cornell composition at 35,332 samples. Real viewport camera
+  movement reset accumulation from 24,952 to 36 samples, then converged at the
+  moved view; a pure-key regression covers every accumulation input. Live
+  in-place reload and injected failure recovery remain open, so R4.6
   acceptance is not claimed. →
   [R4 plan](render/.plan/R4.md), [R4.0 spec](../.spec/specs/render-r4-ray-query-shadow.md),
   [R4.6 spec](../.spec/specs/render-r4-6-cornell-path-tracing.md),
