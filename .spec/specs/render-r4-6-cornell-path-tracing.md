@@ -71,11 +71,15 @@ area-light penumbrae, indirect illumination, and red/green color bleeding.
   temporal noise. The reset and settled captures are linked from the journal.
   The key hash is extracted into a pure helper, with a regression for every
   accumulation input.
-- The Runtime command surface has no in-place scene reload or deliberate
-  RT-failure operation. Live reload and failed-dispatch recovery remain open.
+- The game-thread `level.reload` Runtime command now recreates the active
+  startup level and re-possesses its authored camera. A live Vulkan run
+  succeeded, reset history from 7,368 to 4,752 samples shortly afterward, and
+  captured the same Cornell composition. The application closed normally, and
+  its stdout/stderr had no `VUID-`, `Validation Error`, or `ERROR` strings.
+- Shader/pipeline/dispatch failure recovery remains without an injection path.
   Independent primary/miss/hit and bounce-off probes are also not retained.
-  `RenderSystemTest` passed 23/23; the full Debug build and CTest inventory
-  passed 976/976 after the history-signature follow-up.
+  `RenderSystemTest` passed 23/23; the full Debug build and CTest passed
+  976/976 after the reload command was added.
 - The local reference is `save/cornell_box_ref.jpeg`; the user's qualitative
   guide clarification means exact pixel comparison is not required. Its tracked
   manifest remains provenance context rather than an acceptance gate.

@@ -64,6 +64,38 @@ namespace kpengine
             level_instance_ = std::make_unique<LevelInstance>(
                 asset::AssetManager::GetInstance(), *gameplay_world_, LevelActorFactorySet{},
                 render_system_->GetEnvironmentSourceSink());
+            if (command_registry_ != nullptr)
+            {
+                command::CommandRegistrationResult registration = command_registry_->Register(
+                    {"level.reload",
+                     "RuntimeLevel",
+                     "Unload and recreate the active startup level",
+                     command::CommandCategory::Gameplay,
+                     command::CommandFlags::AgentAllowed | command::CommandFlags::MutatesState,
+                     {},
+                     [this](const command::CommandCall &, const command::CommandContext &context)
+                     {
+                         const StartupResult result = ReloadStartupLevel();
+                         return command::CommandResult{
+                             result.success ? command::CommandStatus::Success
+                                            : command::CommandStatus::Failed,
+                             result.success ? "Startup level reloaded" : result.diagnostic,
+                             context.request_id,
+                             {}};
+                     },
+                     command::CommandThread::Game});
+                if (registration.IsSuccess())
+                {
+                    level_reload_command_registration_ =
+                        std::move(registration.registration);
+                }
+                else
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not register level.reload: %s",
+                           registration.diagnostic.c_str());
+                }
+            }
             // The Asset-owned catalog boundary the Editor's browser reads through. Its
             // config is left empty on purpose: the provider already resolves an empty
             // database path to <asset>/.archive/archive.sqlite3 and derives the archive
@@ -288,6 +320,72 @@ namespace kpengine
                     screenshot_command_registration_ =
                         std::move(registration.registration);
                 }
+            }
+            return {true, {}};
+        }
+
+        RuntimeContext::StartupResult RuntimeContext::ReloadStartupLevel()
+        {
+            if (gameplay_world_ == nullptr || level_instance_ == nullptr ||
+                input_system_ == nullptr)
+            {
+                return {false, "Scene services are unavailable for level reload"};
+            }
+            if (!startup_level_asset_.IsValid() ||
+                startup_level_asset_.type != asset::AssetType::KPAT_Level)
+            {
+                return {false, "Startup level AssetID is invalid"};
+            }
+            if (!level_instance_->IsActive())
+            {
+                return {false, "There is no active startup level to reload"};
+            }
+            if (!startup_controller_setup_override_ &&
+                gameplay_world_->GetLocalPlayerController() == nullptr)
+            {
+                return {false, "Startup level reload requires a local player controller"};
+            }
+
+            gameplay_world_->SetSelectedActor(std::nullopt);
+            level_instance_->Unload();
+            const LevelInstanceResult level_result =
+                level_instance_->Instantiate(startup_level_asset_);
+            if (!level_result)
+            {
+                return {false, "Startup level reload failed: " + level_result.diagnostic};
+            }
+
+            const std::optional<gameplay::ActorHandle> camera_handle =
+                level_instance_->GetPreferredCameraActor();
+            if (!camera_handle.has_value())
+            {
+                level_instance_->Unload();
+                return {false, "Reloaded startup level has no enabled camera"};
+            }
+
+            bool controller_ready = false;
+            if (startup_controller_setup_override_)
+            {
+                controller_ready = startup_controller_setup_override_(
+                    *gameplay_world_, input_system_.get(), *camera_handle);
+            }
+            else
+            {
+                controller_ready = gameplay_world_->GetLocalPlayerController()->Possess(
+                    *camera_handle);
+            }
+            if (!controller_ready)
+            {
+                level_instance_->Unload();
+                return {false, "Startup controller could not possess the reloaded camera"};
+            }
+
+            gameplay_world_->SetLocalPlayerControllerInputEnabled(
+                scene_camera_control_captured_.load(std::memory_order_acquire));
+            if (input_system_ != nullptr)
+            {
+                input_system_->SetActiveContextEnabled(
+                    scene_camera_control_captured_.load(std::memory_order_acquire));
             }
             return {true, {}};
         }
@@ -569,6 +667,7 @@ namespace kpengine
                 command_registry_->Shutdown();
             }
             screenshot_command_registration_ = {};
+            level_reload_command_registration_ = {};
             screenshot_service_.reset();
             report_progress(3, "Releasing renderer");
             if (render_system_)

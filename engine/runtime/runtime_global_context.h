@@ -178,6 +178,7 @@ namespace kpengine
             std::shared_ptr<RuntimeScreenshotService> screenshot_service_;
             command::CommandRegistration screenshot_command_registration_;
             command::CommandRegistration window_command_registration_;
+            command::CommandRegistration level_reload_command_registration_;
             std::unique_ptr<reflection::ReflectionSystem> reflection_system_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
             std::unique_ptr<gameplay::GameplayEditorBridge> gameplay_editor_bridge_;
@@ -212,6 +213,7 @@ namespace kpengine
         private:
             void EnsureSceneServices();
             void ProcessScenePickRequests();
+            StartupResult ReloadStartupLevel();
 
             std::atomic<bool> scene_camera_control_captured_{false};
             std::atomic<float> scene_camera_move_speed_{kDefaultSceneCameraMoveSpeed};
