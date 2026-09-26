@@ -164,6 +164,8 @@ namespace kpengine::asset
         std::optional<SourceArchiveSnapshot> FindSource(std::string_view normalized_path);
         std::optional<SourceArchiveSnapshot> FindSourceByLogicalPath(
             std::string_view logical_path);
+        // Resolves canonical product metadata and file size. The native loader
+        // performs byte integrity verification before publishing the Asset.
         std::optional<std::filesystem::path> ResolveModelProductPath(
             std::string_view logical_path);
 

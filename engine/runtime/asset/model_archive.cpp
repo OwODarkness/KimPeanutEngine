@@ -344,6 +344,27 @@ namespace kpengine::asset
             }
         }
 
+        std::filesystem::path ValidateProductFileMetadata(
+            const std::filesystem::path &archive_root, const ProductRecord &product)
+        {
+            ValidateHashPath(product);
+            const std::filesystem::path path = archive_root / product.relative_path;
+            std::error_code error;
+            const auto size = std::filesystem::file_size(path, error);
+            if (error)
+            {
+                throw ModelArchiveError(ModelArchiveErrorCode::MissingProduct,
+                                        "archive product is missing: " + path.string());
+            }
+            if (size != product.byte_size)
+            {
+                throw ModelArchiveError(
+                    ModelArchiveErrorCode::CorruptProduct,
+                    "archive product size failed metadata verification: " + path.string());
+            }
+            return path;
+        }
+
         std::string ProbeDiagnostic(ArchiveProbeStatus status)
         {
             switch (status)
@@ -1133,8 +1154,9 @@ namespace kpengine::asset
                 throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
                                         "logical model source has no product metadata");
             }
-            VerifyProductFile(*product);
-            return ArchiveRoot() / product->relative_path;
+            // The native loader verifies the bytes before publishing the Asset.
+            // Resolution only needs a usable path and matching file metadata.
+            return ValidateProductFileMetadata(ArchiveRoot(), *product);
         }
         throw ModelArchiveError(ModelArchiveErrorCode::InvalidDatabase,
                                 "logical model source has no Model product");
@@ -1566,16 +1588,8 @@ namespace kpengine::asset
 
     void ModelArchiveDatabase::VerifyProductFile(const ProductRecord &product) const
     {
-        ValidateHashPath(product);
-        const std::filesystem::path path = ArchiveRoot() / product.relative_path;
-        std::error_code error;
-        const auto size = std::filesystem::file_size(path, error);
-        if (error)
-        {
-            throw ModelArchiveError(ModelArchiveErrorCode::MissingProduct,
-                                    "archive product is missing: " + path.string());
-        }
-        if (size != product.byte_size || Sha256File(path) != product.content_hash)
+        const std::filesystem::path path = ValidateProductFileMetadata(ArchiveRoot(), product);
+        if (Sha256File(path) != product.content_hash)
         {
             throw ModelArchiveError(ModelArchiveErrorCode::CorruptProduct,
                                     "archive product failed integrity verification: " +
@@ -1854,21 +1868,7 @@ namespace kpengine::asset
             {
                 try
                 {
-                    ValidateHashPath(product);
-                    const std::filesystem::path path = ArchiveRoot() / product.relative_path;
-                    std::error_code error;
-                    const auto size = std::filesystem::file_size(path, error);
-                    if (error)
-                    {
-                        throw ModelArchiveError(ModelArchiveErrorCode::MissingProduct,
-                                                "archive product is missing: " + path.string());
-                    }
-                    if (size != product.byte_size)
-                    {
-                        throw ModelArchiveError(
-                            ModelArchiveErrorCode::CorruptProduct,
-                            "archive product size failed metadata verification: " + path.string());
-                    }
+                    ValidateProductFileMetadata(ArchiveRoot(), product);
                 }
                 catch (const ModelArchiveError &error)
                 {

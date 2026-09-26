@@ -284,6 +284,12 @@ and embedded-digest checks from one source-buffer traversal. The loader still
 owns one product-sized read buffer for structural decoding; AP1.1 does not yet
 introduce memory mapping, package ranges, or allocator counters.
 
+Follow-up correction (2026-09-26): logical Model path resolution validates the
+canonical archive path and recorded file size only. `NativeModelLoader` remains
+the authoritative byte verifier before Asset publication, so Sponza startup no
+longer hashes each Model product once in the resolver and again in the loader.
+See the [measured correction journal](../../../.spec/journal/2026-09-26-sponza-startup-bottleneck.md#verification-correction).
+
 Reference comparison used for this slice: Distill's packfile reader keeps
 immutable mapped/buffer-backed bytes alive for decoding, while O3DE and Godot
 document chunked file hashing. KimPeanutEngine retains its current owned

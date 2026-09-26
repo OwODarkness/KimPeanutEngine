@@ -126,7 +126,10 @@ belongs in the corresponding `.spec/journal/` entry.
   - [x] **AP1.1 — Product verification:** native Texture/Model loading now
     computes the content and embedded-digest hashes without a product-sized
     integrity clone, reuses those results for archive verification and decode,
-    and retains strict corruption rejection. See the [AP1 journal](../../.spec/journal/2026-09-09-asset-ap1-0.md#ap11-product-verification).
+    and retains strict corruption rejection. Logical Model path resolution
+    validates path and size metadata; the native loader performs byte checks
+    before Asset publication. See the [AP1 journal](../../.spec/journal/2026-09-09-asset-ap1-0.md#ap11-product-verification)
+    and [startup bottleneck correction](../../.spec/journal/2026-09-26-sponza-startup-bottleneck.md#verification-correction).
   - [x] **AP1.2 — Texture compression:** BC4/BC5/BC3 products, block-aware
     native texture V2 validation, common Graphics capability reporting,
     Vulkan/OpenGL mappings and uploads, and portable cooking are implemented.
