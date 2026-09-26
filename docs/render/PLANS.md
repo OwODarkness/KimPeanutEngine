@@ -82,9 +82,11 @@ public policy while the coordinator owns scene preparation.
   Cornell Box RT-pipeline validation with area-light sampling, diffuse indirect
   lighting, and accumulation. See the [R4.6 stage plan](.plan/R4.6.md) and
   [R4.6 spec](../../.spec/specs/render-r4-6-cornell-path-tracing.md).
-  **R4.5 evidence remains open; R4.6 Vulkan dispatch and progressive
-  accumulation are observed, with visual and lifecycle acceptance open.** The
-  [R4.6 review](.review/R4.6.md) records remaining acceptance gaps.
+  **R4.5 evidence remains open; Cornell fixture acceptance is recorded, while
+  general scene shading remains open.** The
+  [scene-driven RT follow-up](.plan/R4.6-general-scene.md) defines common
+  geometry/instance/section/material/light inputs and optional execution policy;
+  [R4.6 review](.review/R4.6.md) records the live Sponza baseline.
 - [R5 — post-R4.6 Render/Graphics decoupling](.plan/R5.md) — a proposed,
   design-only stage to separate graph execution and concrete pass-family state
   from `DeferredRenderer`, correct graph failure/binding semantics, and narrow

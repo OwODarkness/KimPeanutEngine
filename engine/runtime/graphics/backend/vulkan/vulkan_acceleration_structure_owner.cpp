@@ -5,8 +5,10 @@
 #include <limits>
 #include <stdexcept>
 #include <type_traits>
+#include <unordered_set>
 
 #include "asset/shader.h"
+#include "common/bindless_texture.h"
 #include "common/sampler_manager.h"
 #include "common/texture_manager.h"
 #include "log/logger.h"
@@ -117,6 +119,8 @@ namespace kpengine::graphics
             {
                 ++counts.descriptor_sets;
                 counts.pending_descriptor_sets += resource.pending_destroy ? 1u : 0u;
+                counts.address_table_buffers +=
+                    static_cast<uint32_t>(resource.owned_address_table_buffers.size());
             }
         }
         for (const TemporaryBuffers &buffers : temporary_buffers_)
@@ -220,8 +224,36 @@ namespace kpengine::graphics
 
         std::vector<RayTracingPipelineResource::DescriptorSetLayout> layouts;
         layouts.reserve(desc.descriptor_binding_descs.size());
-        for (const auto &set_bindings : desc.descriptor_binding_descs)
+        const auto destroy_owned_layouts = [this, &layouts]() {
+            for (const auto &layout : layouts)
+            {
+                if (layout.layout != VK_NULL_HANDLE &&
+                    layout.layout != bindless_texture_layout_)
+                {
+                    vkDestroyDescriptorSetLayout(device_, layout.layout, nullptr);
+                }
+            }
+        };
+        for (std::size_t set_index = 0;
+             set_index < desc.descriptor_binding_descs.size(); ++set_index)
         {
+            const auto &set_bindings = desc.descriptor_binding_descs[set_index];
+            if (set_index == BindlessTextureTableLayout::descriptor_set &&
+                set_bindings.empty())
+            {
+                if (bindless_texture_layout_ == VK_NULL_HANDLE)
+                {
+                    destroy_owned_layouts();
+                    vkDestroyShaderModule(device_, raygen_module, nullptr);
+                    vkDestroyShaderModule(device_, miss_module, nullptr);
+                    vkDestroyShaderModule(device_, closest_hit_module, nullptr);
+                    return {};
+                }
+                RayTracingPipelineResource::DescriptorSetLayout layout{};
+                layout.layout = bindless_texture_layout_;
+                layouts.push_back(std::move(layout));
+                continue;
+            }
             std::vector<VkDescriptorSetLayoutBinding> bindings;
             bindings.reserve(set_bindings.size());
             for (const DescriptorBindingDesc &binding : set_bindings)
@@ -242,8 +274,7 @@ namespace kpengine::graphics
                 if (native.descriptorCount == 0 || native.descriptorType == VK_DESCRIPTOR_TYPE_MAX_ENUM ||
                     native.stageFlags == 0)
                 {
-                    for (const auto &layout : layouts)
-                        vkDestroyDescriptorSetLayout(device_, layout.layout, nullptr);
+                    destroy_owned_layouts();
                     vkDestroyShaderModule(device_, raygen_module, nullptr);
                     vkDestroyShaderModule(device_, miss_module, nullptr);
                     vkDestroyShaderModule(device_, closest_hit_module, nullptr);
@@ -260,8 +291,7 @@ namespace kpengine::graphics
             if (vkCreateDescriptorSetLayout(device_, &layout_info, nullptr, &layout.layout) !=
                 VK_SUCCESS)
             {
-                for (const auto &existing : layouts)
-                    vkDestroyDescriptorSetLayout(device_, existing.layout, nullptr);
+                destroy_owned_layouts();
                 vkDestroyShaderModule(device_, raygen_module, nullptr);
                 vkDestroyShaderModule(device_, miss_module, nullptr);
                 vkDestroyShaderModule(device_, closest_hit_module, nullptr);
@@ -281,8 +311,7 @@ namespace kpengine::graphics
         if (vkCreatePipelineLayout(device_, &pipeline_layout_info, nullptr, &pipeline_layout) !=
             VK_SUCCESS)
         {
-            for (const auto &layout : layouts)
-                vkDestroyDescriptorSetLayout(device_, layout.layout, nullptr);
+            destroy_owned_layouts();
             vkDestroyShaderModule(device_, raygen_module, nullptr);
             vkDestroyShaderModule(device_, miss_module, nullptr);
             vkDestroyShaderModule(device_, closest_hit_module, nullptr);
@@ -323,8 +352,7 @@ namespace kpengine::graphics
                                           &pipeline_info, nullptr, &pipeline) != VK_SUCCESS)
         {
             vkDestroyPipelineLayout(device_, pipeline_layout, nullptr);
-            for (const auto &layout : layouts)
-                vkDestroyDescriptorSetLayout(device_, layout.layout, nullptr);
+            destroy_owned_layouts();
             vkDestroyShaderModule(device_, raygen_module, nullptr);
             vkDestroyShaderModule(device_, miss_module, nullptr);
             vkDestroyShaderModule(device_, closest_hit_module, nullptr);
@@ -345,8 +373,7 @@ namespace kpengine::graphics
         {
             vkDestroyPipeline(device_, pipeline, nullptr);
             vkDestroyPipelineLayout(device_, pipeline_layout, nullptr);
-            for (const auto &layout : layouts)
-                vkDestroyDescriptorSetLayout(device_, layout.layout, nullptr);
+            destroy_owned_layouts();
             return {};
         }
         VkBufferCreateInfo sbt_info{};
@@ -369,8 +396,7 @@ namespace kpengine::graphics
             if (sbt.IsValid()) buffer_manager_->DestroyBufferResource(device_, sbt);
             vkDestroyPipeline(device_, pipeline, nullptr);
             vkDestroyPipelineLayout(device_, pipeline_layout, nullptr);
-            for (const auto &layout : layouts)
-                vkDestroyDescriptorSetLayout(device_, layout.layout, nullptr);
+            destroy_owned_layouts();
             return {};
         }
 
@@ -445,22 +471,37 @@ namespace kpengine::graphics
             return it == layout.bindings.end() ? VK_DESCRIPTOR_TYPE_MAX_ENUM : it->descriptorType;
         };
         std::vector<VkDescriptorPoolSize> pool_sizes;
-        auto add_pool_size = [&pool_sizes](VkDescriptorType type)
+        auto add_pool_size = [&pool_sizes](VkDescriptorType type, uint32_t count)
         {
             const auto it = std::find_if(pool_sizes.begin(), pool_sizes.end(),
                                          [type](const VkDescriptorPoolSize &size)
                                          { return size.type == type; });
-            if (it == pool_sizes.end()) pool_sizes.push_back({type, 1});
-            else ++const_cast<VkDescriptorPoolSize &>(*it).descriptorCount;
+            if (it == pool_sizes.end()) pool_sizes.push_back({type, count});
+            else const_cast<VkDescriptorPoolSize &>(*it).descriptorCount += count;
         };
+        for (const VkDescriptorSetLayoutBinding &binding : layout.bindings)
+            add_pool_size(binding.descriptorType, binding.descriptorCount);
+        std::unordered_set<uint32_t> written_bindings;
         for (const auto &binding : desc.bindings)
         {
             const VkDescriptorType type = std::visit(
                 [&get_type](const auto &value) { return get_type(value.binding); }, binding);
-            if (type == VK_DESCRIPTOR_TYPE_MAX_ENUM) return {};
-            add_pool_size(type);
+            const uint32_t binding_index = std::visit(
+                [](const auto &value) { return value.binding; }, binding);
+            if (type == VK_DESCRIPTOR_TYPE_MAX_ENUM ||
+                !written_bindings.insert(binding_index).second)
+                return {};
+            const auto layout_binding = std::find_if(
+                layout.bindings.begin(), layout.bindings.end(),
+                [binding_index](const VkDescriptorSetLayoutBinding &candidate) {
+                    return candidate.binding == binding_index;
+                });
+            if (layout_binding == layout.bindings.end() ||
+                layout_binding->descriptorCount != 1)
+                return {};
         }
-        if (pool_sizes.empty()) return {};
+        if (pool_sizes.empty() || written_bindings.size() != layout.bindings.size())
+            return {};
         VkDescriptorPoolCreateInfo pool_info{};
         pool_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO;
         pool_info.flags = VK_DESCRIPTOR_POOL_CREATE_FREE_DESCRIPTOR_SET_BIT;
@@ -487,6 +528,7 @@ namespace kpengine::graphics
         std::vector<VkDescriptorImageInfo> images;
         std::vector<VkWriteDescriptorSetAccelerationStructureKHR> acceleration_infos;
         std::vector<VkAccelerationStructureKHR> acceleration_structures;
+        std::vector<BufferHandle> owned_address_table_buffers;
         writes.reserve(desc.bindings.size());
         buffers.reserve(desc.bindings.size());
         images.reserve(desc.bindings.size());
@@ -546,6 +588,49 @@ namespace kpengine::graphics
                         write.descriptorType = type;
                         write.pImageInfo = &images.back();
                     }
+                    else if constexpr (std::is_same_v<Binding,
+                                                       RayTracingBufferReferenceTableBinding>)
+                    {
+                        if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || value.data.empty())
+                            throw std::runtime_error("invalid RT buffer-reference table binding");
+                        std::vector<std::byte> patched_data = value.data;
+                        for (const RayTracingBufferAddressPatch &patch : value.address_patches)
+                        {
+                            if (!patch.buffer.IsValid() ||
+                                patch.byte_offset > patched_data.size() ||
+                                sizeof(uint64_t) > patched_data.size() - patch.byte_offset)
+                            {
+                                throw std::runtime_error("invalid RT buffer-reference patch");
+                            }
+                            const VkDeviceAddress base_address =
+                                buffer_manager_->GetDeviceAddress(device_, patch.buffer);
+                            if (base_address == 0)
+                                throw std::runtime_error("RT source buffer has no device address");
+                            const uint64_t address = base_address + patch.buffer_offset;
+                            std::memcpy(patched_data.data() + patch.byte_offset,
+                                        &address, sizeof(address));
+                        }
+                        VkBufferCreateInfo table_info{};
+                        table_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+                        table_info.size = patched_data.size();
+                        table_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+                        table_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+                        const BufferHandle table_handle = buffer_manager_->CreateBufferResource(
+                            device_, &table_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
+                        if (!table_handle.IsValid())
+                            throw std::runtime_error("failed to allocate RT address table");
+                        owned_address_table_buffers.push_back(table_handle);
+                        buffer_manager_->UploadData(table_handle, patched_data.size(),
+                                                    patched_data.data());
+                        VulkanBufferResource *table_buffer =
+                            buffer_manager_->GetBufferResource(table_handle);
+                        if (!table_buffer)
+                            throw std::runtime_error("RT address table upload buffer is invalid");
+                        buffers.push_back({table_buffer->buffer, 0, patched_data.size()});
+                        write.descriptorType = type;
+                        write.pBufferInfo = &buffers.back();
+                    }
                     else
                     {
                         acceleration_structures.push_back(
@@ -568,12 +653,22 @@ namespace kpengine::graphics
         catch (...)
         {
             vkDestroyDescriptorPool(device_, pool, nullptr);
+            for (const BufferHandle table : owned_address_table_buffers)
+                buffer_manager_->DestroyBufferResource(device_, table);
             return {};
         }
         vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
         const DescriptorSetHandle handle = ray_tracing_descriptor_set_handle_system_.Create();
         if (handle.id == ray_tracing_descriptor_sets_.size()) ray_tracing_descriptor_sets_.emplace_back();
-        ray_tracing_descriptor_sets_[handle.id] = {handle, pool, descriptor_set, pipeline, desc.set, true};
+        RayTracingDescriptorSetResource &resource = ray_tracing_descriptor_sets_[handle.id];
+        resource = {};
+        resource.handle = handle;
+        resource.pool = pool;
+        resource.descriptor_set = descriptor_set;
+        resource.pipeline = pipeline;
+        resource.set = desc.set;
+        resource.owned_address_table_buffers = std::move(owned_address_table_buffers);
+        resource.alive = true;
         return handle;
     }
 
@@ -603,6 +698,19 @@ namespace kpengine::graphics
         const uint32_t index = ray_tracing_pipeline_handle_system_.Get(handle);
         return index < ray_tracing_pipelines_.size() && ray_tracing_pipelines_[index].alive
                    ? ray_tracing_pipelines_[index].layout : VK_NULL_HANDLE;
+    }
+
+    bool VulkanAccelerationStructureOwner::UsesBindlessTextureTable(
+        RayTracingPipelineHandle handle) const noexcept
+    {
+        const uint32_t index = ray_tracing_pipeline_handle_system_.Get(handle);
+        return index < ray_tracing_pipelines_.size() &&
+               ray_tracing_pipelines_[index].alive &&
+               ray_tracing_pipelines_[index].descriptor_set_layouts.size() >
+                   BindlessTextureTableLayout::descriptor_set &&
+               ray_tracing_pipelines_[index].descriptor_set_layouts[
+                   BindlessTextureTableLayout::descriptor_set].layout ==
+                   bindless_texture_layout_;
     }
 
     VkDescriptorSet VulkanAccelerationStructureOwner::GetRayTracingDescriptorSet(
@@ -1015,7 +1123,8 @@ namespace kpengine::graphics
             vkDestroyPipelineLayout(device_, resource.layout, nullptr);
         for (const auto &descriptor_layout : resource.descriptor_set_layouts)
         {
-            if (descriptor_layout.layout != VK_NULL_HANDLE)
+            if (descriptor_layout.layout != VK_NULL_HANDLE &&
+                descriptor_layout.layout != bindless_texture_layout_)
                 vkDestroyDescriptorSetLayout(device_, descriptor_layout.layout, nullptr);
         }
         if (resource.shader_binding_table.IsValid())
@@ -1028,6 +1137,8 @@ namespace kpengine::graphics
     {
         if (resource.alive && resource.pool != VK_NULL_HANDLE)
             vkDestroyDescriptorPool(device_, resource.pool, nullptr);
+        for (const BufferHandle table : resource.owned_address_table_buffers)
+            buffer_manager_->DestroyBufferResource(device_, table);
         resource = {};
     }
 

@@ -2,7 +2,7 @@
   "version": 1,
   "environment": {
     "texture": "texture/hdr/qwantani_dusk_2_puresky_4k.hdr",
-    "ibl_intensity": 0.35
+    "ibl_intensity": 0.0
   },
   "objects": [
     {
@@ -61,22 +61,11 @@
       "id": "sun",
       "name": "Sponza Sun",
       "kind": "directional_light",
-      "direction": [0.35, -0.8, -0.45],
-      "color": [1.0, 0.95, 0.9],
-      "intensity": 2.0,
+      "direction": [0.4, -1.0, 0.25],
+      "color": [1.0, 0.95, 0.85],
+      "intensity": 100.0,
       "enabled": true,
       "casts_shadow": true
-    },
-    {
-      "id": "fill_light",
-      "name": "Sponza Fill",
-      "kind": "point_light",
-      "position": [0.0, 5.0, 0.0],
-      "color": [1.0, 0.8, 0.65],
-      "intensity": 250.0,
-      "range": 25.0,
-      "enabled": true,
-      "casts_shadow": false
     }
   ]
 }

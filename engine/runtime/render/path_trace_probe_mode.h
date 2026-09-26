@@ -12,6 +12,7 @@ namespace kpengine::render
         PrimaryNormal = 2,
         PrimaryAlbedo = 3,
         DirectOnly = 4,
+        SurfaceParameters = 5,
     };
 }
 

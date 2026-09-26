@@ -85,6 +85,7 @@ namespace kpengine::render
         }
         try
         {
+            path_tracing_enabled_ = info.path_tracing_enabled;
             RenderBackendFactory factory = info.backend_factory;
             if (!factory)
             {
@@ -162,7 +163,8 @@ namespace kpengine::render
             const graphics::Extent2D extent = backend_->GetRenderExtent();
             deferred_renderer_ = std::make_unique<DeferredRenderer>();
             const DeferredRendererInitResult renderer_result = deferred_renderer_->Initialize(
-                {*backend_, *resource_resolver_, *material_system_, *prepared_assets_},
+                {*backend_, *resource_resolver_, *material_system_, *prepared_assets_,
+                 path_tracing_enabled_},
                 extent.width, extent.height);
             if (!renderer_result)
             {

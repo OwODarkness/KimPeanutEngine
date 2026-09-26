@@ -46,6 +46,7 @@ namespace kpengine::render
         RenderResourceResolver &resource_resolver;
         MaterialSystem &materials;
         const PreparedRenderAssetCatalog &prepared_assets;
+        bool path_tracing_enabled = true;
     };
 
     struct DeferredRendererInitResult
@@ -326,6 +327,32 @@ namespace kpengine::render
             uint64_t geometry_signature = 0;
             bool needs_build = false;
         };
+        struct RayTracingPathInstanceData
+        {
+            uint32_t geometry_offset = 0;
+            uint32_t material_offset = 0;
+            uint32_t geometry_count = 0;
+        };
+        struct RayTracingPathMaterialData
+        {
+            Vector4f base_color{0.72f, 0.72f, 0.72f, 1.0f};
+            Vector4f emissive{0.0f, 0.0f, 0.0f, 1.0f};
+            float metallic = 0.0f;
+            float roughness = 1.0f;
+            float normal_scale = 1.0f;
+            uint32_t base_color_texture_index = 0xffffffffu;
+            uint32_t metallic_texture_index = 0xffffffffu;
+            uint32_t roughness_texture_index = 0xffffffffu;
+            uint32_t metallic_channel = 0;
+            uint32_t roughness_channel = 0;
+        };
+        struct RayTracingPathLightData
+        {
+            Vector4f position_or_type{};
+            Vector4f direction_and_range{};
+            Vector4f color_intensity{};
+            Vector4f parameters{};
+        };
         std::unordered_map<graphics::MeshHandle, RayTracingBlasState> ray_tracing_blas_;
         graphics::AccelerationStructureHandle ray_tracing_tlas_;
         uint32_t ray_tracing_tlas_capacity_ = 0;
@@ -335,11 +362,16 @@ namespace kpengine::render
         uint64_t frame_ray_tracing_material_signature_ = 0;
         std::vector<graphics::RayTracingGeometryDesc> frame_ray_tracing_geometries_;
         std::vector<graphics::RayTracingInstanceDesc> frame_ray_tracing_instances_;
+        std::vector<RayTracingPathInstanceData> frame_ray_tracing_instance_data_;
+        std::vector<RayTracingPathMaterialData> frame_ray_tracing_material_data_;
+        std::vector<RayTracingPathLightData> frame_ray_tracing_light_data_;
+        uint64_t frame_ray_tracing_lighting_signature_ = 0;
         std::vector<RayTracingMeshBuild> frame_ray_tracing_mesh_builds_;
         std::vector<graphics::RayTracingBuildDesc> frame_ray_tracing_blas_builds_;
         std::vector<graphics::RayTracingBuildDesc> frame_ray_tracing_tlas_builds_;
         bool frame_ray_tracing_blas_build_ = false;
         bool frame_ray_tracing_tlas_build_ = false;
+        uint64_t path_trace_scene_limit_diagnostic_signature_ = 0;
         bool spot_shadow_recorded_ = false;
         bool point_shadow_recorded_ = false;
         bool directional_shadow_cache_hit_ = false;
@@ -366,6 +398,7 @@ namespace kpengine::render
         graphics::RayTracingPipelineHandle ray_tracing_path_tracing_pipeline_;
         graphics::DescriptorSetHandle ray_tracing_path_tracing_bindings_;
         bool ray_tracing_path_tracing_available_ = false;
+        bool path_tracing_enabled_ = true;
         bool active_ray_tracing_path_trace_ = false;
         RenderProfileSnapshot profile_;
         std::optional<size_t> active_profile_pass_;

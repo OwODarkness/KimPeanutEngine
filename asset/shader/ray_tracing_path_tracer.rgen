@@ -1,9 +1,52 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_control_flow_attributes : require
 
 layout(set = 0, binding = 0) uniform accelerationStructureEXT top_level;
 layout(set = 0, binding = 1, rgba16f) uniform image2D output_image;
 layout(set = 0, binding = 35, rgba16f) readonly uniform image2D history_image;
+layout(set = 0, binding = 4) uniform sampler2D environment_texture;
+
+struct HitPayload
+{
+    vec3 position;
+    uint hit;
+    vec3 normal;
+    uint geometry;
+    vec3 albedo;
+    uint material;
+    vec3 emissive;
+    float metallic;
+    float roughness;
+    vec3 radiance;
+};
+
+struct LightData
+{
+    vec4 position_or_type;
+    vec4 direction_and_range;
+    vec4 color_intensity;
+    vec4 parameters;
+};
+
+struct GeometryData
+{
+    uvec4 address_words;
+    uvec4 attributes;
+};
+
+struct InstanceData
+{
+    uvec4 geometry_material_count;
+};
+
+struct MaterialData
+{
+    vec4 base_color;
+    vec4 emissive;
+    vec4 surface;
+    uvec4 texture_indices;
+};
 
 layout(set = 0, binding = 2, std140) uniform CameraData
 {
@@ -17,18 +60,16 @@ layout(set = 0, binding = 2, std140) uniform CameraData
     uint sample_count;
     uint samples_per_dispatch;
     uint probe_mode;
-    uvec2 padding;
-    uvec4 geometry_index_starts[4];
+    uvec4 scene_data;
 } camera;
 
-struct HitPayload
+layout(set = 0, binding = 3, std140) uniform SceneData
 {
-    vec3 position;
-    uint hit;
-    vec3 normal;
-    uint geometry;
-    vec3 albedo;
-};
+    GeometryData geometries[512];
+    InstanceData instances[512];
+    MaterialData materials[512];
+    LightData lights[128];
+} scene;
 
 layout(location = 0) rayPayloadEXT HitPayload payload;
 
@@ -55,46 +96,101 @@ float Random(uint stream, uint sample_index)
 HitPayload Trace(vec3 origin, vec3 direction, float t_max)
 {
     payload.hit = 0u;
+    payload.radiance = vec3(0.0);
     traceRayEXT(top_level, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0,
                 origin, 0.001, direction, t_max, 0);
     return payload;
 }
 
-vec3 DirectLight(HitPayload surface, uint bounce, uint sample_index)
+vec3 EvaluateBrdf(HitPayload surface, vec3 normal, vec3 view_direction,
+                  vec3 light_direction)
 {
-    const vec3 light_normal = normalize(cross(camera.light_u.xyz, camera.light_v.xyz));
-    const float light_area = 4.0 * length(cross(camera.light_u.xyz, camera.light_v.xyz));
-    vec3 sum = vec3(0.0);
-    for (uint light_sample_index = 0u; light_sample_index < 4u; ++light_sample_index)
-    {
-        const uint stream = bounce * 8u + light_sample_index * 2u;
-        const vec2 square = vec2(Random(stream, sample_index),
-                                 Random(stream + 1u, sample_index)) *
-                            2.0 - 1.0;
-        const vec3 light_position = camera.light_center.xyz +
-                                    camera.light_u.xyz * square.x +
-                                    camera.light_v.xyz * square.y;
-        const vec3 to_light = light_position - surface.position;
-        const float distance_squared = dot(to_light, to_light);
-        const float distance_to_light = sqrt(distance_squared);
-        const vec3 direction = to_light / max(distance_to_light, 1e-4);
-        const float cos_surface = max(dot(surface.normal, direction), 0.0);
-        const float cos_light = max(dot(light_normal, -direction), 0.0);
-        if (cos_surface <= 0.0 || cos_light <= 0.0 || distance_to_light <= 0.004)
-            continue;
-        const HitPayload blocker = Trace(surface.position + surface.normal * 0.002,
-                                         direction, distance_to_light - 0.004);
-        if (blocker.hit == 0u)
-            sum += surface.albedo * camera.light_radiance.rgb *
-                   (cos_surface * cos_light * light_area /
-                    (3.14159265 * max(distance_squared, 1e-4)));
-    }
-    return sum * 0.25;
+    const float n_dot_l = max(dot(normal, light_direction), 0.0);
+    const float n_dot_v = max(dot(normal, view_direction), 0.0);
+    if (n_dot_l <= 0.0 || n_dot_v <= 0.0)
+        return vec3(0.0);
+
+    const float metallic = surface.metallic;
+    const float roughness = surface.roughness;
+    const vec3 f0 = mix(vec3(0.04), surface.albedo, metallic);
+    const vec3 half_vector = normalize(view_direction + light_direction);
+    const float n_dot_h = max(dot(normal, half_vector), 0.0);
+    const float v_dot_h = max(dot(view_direction, half_vector), 0.0);
+    const float alpha = roughness * roughness;
+    const float alpha2 = alpha * alpha;
+    const float denominator = n_dot_h * n_dot_h * (alpha2 - 1.0) + 1.0;
+    const float distribution = alpha2 / max(3.14159265 * denominator * denominator, 1e-12);
+    const float geometry_v = 2.0 * n_dot_v /
+        (n_dot_v + sqrt(alpha2 + (1.0 - alpha2) * n_dot_v * n_dot_v));
+    const float geometry_l = 2.0 * n_dot_l /
+        (n_dot_l + sqrt(alpha2 + (1.0 - alpha2) * n_dot_l * n_dot_l));
+    const vec3 fresnel = f0 + (1.0 - f0) * pow(1.0 - v_dot_h, 5.0);
+    const vec3 specular = distribution * geometry_v * geometry_l * fresnel /
+                          max(4.0 * n_dot_v * n_dot_l, 1e-8);
+    const vec3 diffuse = (1.0 - fresnel) * (1.0 - metallic) *
+                         surface.albedo / 3.14159265;
+    return diffuse + specular;
 }
 
-vec3 CosineDirection(vec3 normal, uint sample_index)
+vec3 DirectLight(HitPayload surface, vec3 view_direction)
 {
-    const vec2 random = vec2(Random(32u, sample_index), Random(33u, sample_index));
+    vec3 result = vec3(0.0);
+    const vec3 normal = normalize(surface.normal);
+    [[dont_unroll]] for (uint index = 0u; index < camera.scene_data.w; ++index)
+    {
+        const LightData light = scene.lights[index];
+        vec3 light_direction;
+        vec3 incident = light.color_intensity.rgb * light.color_intensity.a;
+        float maximum_distance = 100000.0;
+        const uint type = uint(light.position_or_type.w + 0.5);
+        if (type == 0u)
+        {
+            light_direction = normalize(-light.direction_and_range.xyz);
+        }
+        else
+        {
+            const vec3 to_light = light.position_or_type.xyz - surface.position;
+            const float distance_squared = dot(to_light, to_light);
+            const float distance_to_light = sqrt(distance_squared);
+            if (distance_to_light <= 1e-4 ||
+                distance_to_light >= light.direction_and_range.w)
+                continue;
+            light_direction = to_light / distance_to_light;
+            maximum_distance = distance_to_light - 0.002;
+            const float range_weight = clamp(
+                1.0 - pow(distance_to_light / light.direction_and_range.w, 4.0), 0.0, 1.0);
+            incident *= range_weight * range_weight / max(distance_squared, 1e-3);
+            if (type == 2u)
+            {
+                const float spot_cosine = dot(-light_direction,
+                                              normalize(light.direction_and_range.xyz));
+                const float cone = smoothstep(light.parameters.y, light.parameters.x,
+                                              spot_cosine);
+                if (cone <= 0.0)
+                    continue;
+                incident *= cone;
+            }
+        }
+        const float cosine = max(dot(normal, light_direction), 0.0);
+        if (cosine <= 0.0)
+            continue;
+        if (light.parameters.z > 0.5)
+        {
+            const HitPayload blocker = Trace(surface.position + normal * 0.002,
+                                             light_direction, maximum_distance);
+            if (blocker.hit != 0u)
+                continue;
+        }
+        result += incident * EvaluateBrdf(surface, normal, view_direction,
+                                          light_direction) * cosine;
+    }
+    return result;
+}
+
+vec3 CosineDirection(vec3 normal, uint sample_index, uint bounce_index)
+{
+    const vec2 random = vec2(Random(32u + bounce_index * 2u, sample_index),
+                             Random(33u + bounce_index * 2u, sample_index));
     const float phi = 6.2831853 * random.x;
     const float cos_theta = sqrt(1.0 - random.y);
     const float sin_theta = sqrt(random.y);
@@ -104,6 +200,51 @@ vec3 CosineDirection(vec3 normal, uint sample_index)
     return normalize(tangent * (cos(phi) * sin_theta) +
                      cross(normal, tangent) * (sin(phi) * sin_theta) +
                      normal * cos_theta);
+}
+
+bool SampleBsdf(HitPayload surface, vec3 view_direction, uint sample_index,
+                uint bounce, out vec3 direction, out vec3 weight)
+{
+    const vec3 normal = normalize(surface.normal);
+    const vec3 f0 = mix(vec3(0.04), surface.albedo, surface.metallic);
+    const float specular_probability = surface.metallic >= 0.999
+        ? 1.0 : clamp(max(max(f0.r, f0.g), f0.b), 0.1, 0.9);
+    if (Random(128u + bounce * 3u, sample_index) < specular_probability)
+    {
+        const vec2 xi = vec2(Random(129u + bounce * 3u, sample_index),
+                             Random(130u + bounce * 3u, sample_index));
+        const float alpha = surface.roughness * surface.roughness;
+        const float cos_theta = sqrt((1.0 - xi.y) /
+                                     (1.0 + (alpha * alpha - 1.0) * xi.y));
+        const float sin_theta = sqrt(max(0.0, 1.0 - cos_theta * cos_theta));
+        const float phi = 6.2831853 * xi.x;
+        const vec3 tangent = normalize(abs(normal.y) < 0.999
+            ? cross(normal, vec3(0.0, 1.0, 0.0)) : cross(normal, vec3(1.0, 0.0, 0.0)));
+        const vec3 half_vector = normalize(tangent * (cos(phi) * sin_theta) +
+            cross(normal, tangent) * (sin(phi) * sin_theta) + normal * cos_theta);
+        direction = reflect(-view_direction, half_vector);
+    }
+    else
+        direction = CosineDirection(normal, sample_index, bounce);
+
+    const float cosine = dot(normal, direction);
+    if (cosine <= 0.0)
+        return false;
+    const vec3 half_vector = normalize(view_direction + direction);
+    const float n_dot_h = max(dot(normal, half_vector), 0.0);
+    const float v_dot_h = max(dot(view_direction, half_vector), 0.0);
+    const float alpha = surface.roughness * surface.roughness;
+    const float denominator = n_dot_h * n_dot_h * (alpha * alpha - 1.0) + 1.0;
+    const float distribution = alpha * alpha /
+        max(3.14159265 * denominator * denominator, 1e-12);
+    const float specular_pdf = distribution * n_dot_h / max(4.0 * v_dot_h, 1e-8);
+    const float pdf = specular_probability * specular_pdf +
+        (1.0 - specular_probability) * cosine / 3.14159265;
+    if (pdf <= 0.0)
+        return false;
+    // The full mixture PDF keeps either sampled lobe consistent with direct shading.
+    weight = EvaluateBrdf(surface, normal, view_direction, direction) * cosine / pdf;
+    return !any(isnan(weight)) && !any(isinf(weight));
 }
 
 vec3 TraceSample(uint sample_index)
@@ -119,27 +260,45 @@ vec3 TraceSample(uint sample_index)
     if (camera.probe_mode == 2u)
         return primary.hit != 0u ? primary.normal * 0.5 + 0.5 : vec3(0.0);
     if (camera.probe_mode == 3u)
-        return primary.hit != 0u ? primary.albedo : vec3(0.0);
+        return primary.hit != 0u ? primary.albedo : primary.radiance;
+    if (camera.probe_mode == 5u)
+        return primary.hit != 0u ? vec3(primary.metallic, primary.roughness, 0.0) : vec3(0.0);
+
+    if (primary.hit == 0u)
+        return primary.radiance;
 
     vec3 radiance = vec3(0.0);
-    if (primary.hit != 0u)
+    vec3 throughput = vec3(1.0);
+    HitPayload surface = primary;
+    vec3 view_direction = normalize(camera.camera_position.xyz - primary.position);
+    const uint maximum_bounces = uint(clamp(camera.light_center.w, 0.0, 32.0));
+    [[dont_unroll]] for (uint bounce = 0u; bounce <= maximum_bounces; ++bounce)
     {
-        if (primary.geometry == 0u)
+        radiance += throughput * (surface.emissive + DirectLight(surface, view_direction));
+        if (camera.probe_mode == 4u || bounce == maximum_bounces)
+            break;
+
+        vec3 bounce_direction;
+        vec3 weight;
+        if (!SampleBsdf(surface, view_direction, sample_index, bounce, bounce_direction, weight))
+            break;
+        throughput *= weight;
+        if (bounce >= 3u)
         {
-            radiance = camera.light_radiance.rgb;
+            const float survival = clamp(max(max(throughput.r, throughput.g), throughput.b), 0.05, 0.95);
+            if (Random(192u + bounce, sample_index) >= survival)
+                break;
+            throughput /= survival;
         }
-        else
+        const HitPayload next_surface = Trace(surface.position + surface.normal * 0.002,
+                                              bounce_direction, 1000.0);
+        if (next_surface.hit == 0u)
         {
-            radiance = DirectLight(primary, 0u, sample_index);
-            if (camera.probe_mode != 4u)
-            {
-                const vec3 bounce_direction = CosineDirection(primary.normal, sample_index);
-                const HitPayload secondary = Trace(primary.position + primary.normal * 0.002,
-                                                   bounce_direction, 1000.0);
-                if (secondary.hit != 0u && secondary.geometry != 0u)
-                    radiance += primary.albedo * DirectLight(secondary, 1u, sample_index);
-            }
+            radiance += throughput * next_surface.radiance;
+            break;
         }
+        view_direction = -bounce_direction;
+        surface = next_surface;
     }
     return radiance;
 }
@@ -148,7 +307,7 @@ void main()
 {
     const ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
     vec3 radiance_sum = vec3(0.0);
-    for (uint sample_index = 0u; sample_index < camera.samples_per_dispatch; ++sample_index)
+    [[dont_unroll]] for (uint sample_index = 0u; sample_index < camera.samples_per_dispatch; ++sample_index)
         radiance_sum += TraceSample(sample_index);
 
     const uint next_sample_count = camera.sample_count + camera.samples_per_dispatch;

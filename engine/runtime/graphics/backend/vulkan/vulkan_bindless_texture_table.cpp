@@ -23,7 +23,10 @@ namespace kpengine::graphics
         binding.binding = BindlessTextureTableLayout::descriptor_binding;
         binding.descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER;
         binding.descriptorCount = capacity;
-        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT;
+        binding.stageFlags = VK_SHADER_STAGE_FRAGMENT_BIT |
+                             VK_SHADER_STAGE_RAYGEN_BIT_KHR |
+                             VK_SHADER_STAGE_MISS_BIT_KHR |
+                             VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;
 
         const VkDescriptorBindingFlags binding_flags =
             VK_DESCRIPTOR_BINDING_PARTIALLY_BOUND_BIT |

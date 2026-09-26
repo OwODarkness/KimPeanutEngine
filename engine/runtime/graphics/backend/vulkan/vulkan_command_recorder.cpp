@@ -1,6 +1,7 @@
 #include "vulkan_command_recorder.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <string>
 
@@ -256,8 +257,20 @@ namespace kpengine::graphics
             acceleration_structure_owner_->GetRayTracingDescriptorSetIndex(dispatch.bindings);
         if (descriptor_set == VK_NULL_HANDLE || layout == VK_NULL_HANDLE || set_index == UINT32_MAX)
             return false;
+        std::array<VkDescriptorSet, 2> descriptor_sets{descriptor_set, VK_NULL_HANDLE};
+        uint32_t descriptor_set_count = 1;
+        if (acceleration_structure_owner_->UsesBindlessTextureTable(dispatch.pipeline))
+        {
+            if (!bindless_table_)
+                return false;
+            descriptor_sets[1] = bindless_table_->GetDescriptorSet(frame_index_);
+            if (descriptor_sets[1] == VK_NULL_HANDLE)
+                return false;
+            descriptor_set_count = 2;
+        }
         vkCmdBindDescriptorSets(command_buffer_, VK_PIPELINE_BIND_POINT_RAY_TRACING_KHR,
-                                layout, set_index, 1, &descriptor_set, 0, nullptr);
+                                layout, set_index, descriptor_set_count,
+                                descriptor_sets.data(), 0, nullptr);
         return acceleration_structure_owner_->TraceRays(command_buffer_, dispatch);
     }
 

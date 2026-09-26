@@ -343,6 +343,7 @@ namespace kpengine::graphics
         VkPhysicalDeviceFeatures2 features2{};
         features2.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         features2.features.samplerAnisotropy = VK_TRUE;
+        features2.features.shaderInt64 = ray_tracing_pipeline_enabled_ ? VK_TRUE : VK_FALSE;
 
         VkPhysicalDeviceVulkan13Features device13_feature{};
         device13_feature.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES;
@@ -602,6 +603,7 @@ namespace kpengine::graphics
         features.sType = VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2;
         features.pNext = &pipeline_features;
         vkGetPhysicalDeviceFeatures2(device, &features);
-        return pipeline_features.rayTracingPipeline == VK_TRUE;
+        return pipeline_features.rayTracingPipeline == VK_TRUE &&
+               features.features.shaderInt64 == VK_TRUE;
     }
 }

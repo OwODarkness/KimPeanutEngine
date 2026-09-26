@@ -117,7 +117,7 @@ namespace kpengine
                     command_registry_->Register(
                         {"render.path_trace_probe",
                          "RenderDiagnostics",
-                         "Select the Cornell RT path-tracing validation output",
+                         "Select the RT path-tracing diagnostic output",
                          command::CommandCategory::Render,
                          command::CommandFlags::AgentAllowed |
                              command::CommandFlags::MutatesState,
@@ -127,7 +127,7 @@ namespace kpengine
                              true,
                               {},
                              {"beauty", "primary_visibility", "primary_normal",
-                               "primary_albedo", "direct_only"}}}},
+                               "primary_albedo", "direct_only", "surface_parameters"}}}},
                          [this](const command::CommandCall &call,
                                 const command::CommandContext &context)
                          {
@@ -143,6 +143,8 @@ namespace kpengine
                                  probe_mode = render::PathTraceProbeMode::PrimaryAlbedo;
                              else if (mode == "direct_only")
                                  probe_mode = render::PathTraceProbeMode::DirectOnly;
+                             else if (mode == "surface_parameters")
+                                 probe_mode = render::PathTraceProbeMode::SurfaceParameters;
                              if (!render_system_)
                              {
                                  return command::CommandResult{
@@ -370,6 +372,7 @@ namespace kpengine
 
             render::RenderSystemInitInfo render_init_info{};
             render_init_info.api_type = graphics_api_type_;
+            render_init_info.path_tracing_enabled = path_tracing_enabled_;
             render_init_info.native_window = window_system_->GetNativeHandle();
             render_init_info.resize_dispatcher = &window_system_->resize_event_dispatcher_;
             render_init_info.window_capture = [this]()

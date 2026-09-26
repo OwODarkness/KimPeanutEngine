@@ -1,7 +1,50 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_buffer_reference2 : require
+#extension GL_EXT_shader_explicit_arithmetic_types_int64 : require
+#extension GL_EXT_nonuniform_qualifier : require
 
-layout(set = 0, binding = 3, std430) readonly buffer VertexData { uint values[]; } vertices;
+struct HitPayload
+{
+    vec3 position;
+    uint hit;
+    vec3 normal;
+    uint geometry;
+    vec3 albedo;
+    uint material;
+    vec3 emissive;
+    float metallic;
+    float roughness;
+    vec3 radiance;
+};
+
+struct GeometryData
+{
+    uvec4 address_words;
+    uvec4 attributes;
+};
+
+struct InstanceData
+{
+    uvec4 geometry_material_count;
+};
+
+struct MaterialData
+{
+    vec4 base_color;
+    vec4 emissive;
+    vec4 surface;
+    uvec4 texture_indices;
+};
+
+struct LightData
+{
+    vec4 position_or_type;
+    vec4 direction_and_range;
+    vec4 color_intensity;
+    vec4 parameters;
+};
+
 layout(set = 0, binding = 2, std140) uniform CameraData
 {
     mat4 inverse_view_projection;
@@ -14,89 +57,122 @@ layout(set = 0, binding = 2, std140) uniform CameraData
     uint sample_count;
     uint samples_per_dispatch;
     uint probe_mode;
-    uvec2 padding;
-    uvec4 geometry_index_starts[4];
+    uvec4 scene_data;
 } camera;
-layout(set = 0, binding = 19, std430) readonly buffer IndexData0 { uint values[]; } index_data_0;
-layout(set = 0, binding = 20, std430) readonly buffer IndexData1 { uint values[]; } index_data_1;
-layout(set = 0, binding = 21, std430) readonly buffer IndexData2 { uint values[]; } index_data_2;
-layout(set = 0, binding = 22, std430) readonly buffer IndexData3 { uint values[]; } index_data_3;
-layout(set = 0, binding = 23, std430) readonly buffer IndexData4 { uint values[]; } index_data_4;
-layout(set = 0, binding = 24, std430) readonly buffer IndexData5 { uint values[]; } index_data_5;
-layout(set = 0, binding = 25, std430) readonly buffer IndexData6 { uint values[]; } index_data_6;
-layout(set = 0, binding = 26, std430) readonly buffer IndexData7 { uint values[]; } index_data_7;
-layout(set = 0, binding = 27, std430) readonly buffer IndexData8 { uint values[]; } index_data_8;
-layout(set = 0, binding = 28, std430) readonly buffer IndexData9 { uint values[]; } index_data_9;
-layout(set = 0, binding = 29, std430) readonly buffer IndexData10 { uint values[]; } index_data_10;
-layout(set = 0, binding = 30, std430) readonly buffer IndexData11 { uint values[]; } index_data_11;
-layout(set = 0, binding = 31, std430) readonly buffer IndexData12 { uint values[]; } index_data_12;
-layout(set = 0, binding = 32, std430) readonly buffer IndexData13 { uint values[]; } index_data_13;
-layout(set = 0, binding = 33, std430) readonly buffer IndexData14 { uint values[]; } index_data_14;
-layout(set = 0, binding = 34, std430) readonly buffer IndexData15 { uint values[]; } index_data_15;
 
-struct HitPayload
+layout(set = 0, binding = 3, std140) uniform SceneData
 {
-    vec3 position;
-    uint hit;
-    vec3 normal;
-    uint geometry;
-    vec3 albedo;
+    GeometryData geometries[512];
+    InstanceData instances[512];
+    MaterialData materials[512];
+    LightData lights[128];
+} scene;
+
+layout(set = 0, binding = 4) uniform sampler2D environment_texture;
+layout(set = 1, binding = 0) uniform sampler2D kp_textures[];
+
+layout(buffer_reference, std430, buffer_reference_align = 4) readonly buffer RawBuffer
+{
+    uint values[];
 };
 
 layout(location = 0) rayPayloadInEXT HitPayload payload;
 hitAttributeEXT vec2 barycentrics;
 
-uint LoadIndex(uint geometry, uint index)
+uint64_t JoinAddress(uvec2 words)
 {
-    switch (geometry)
-    {
-    case 1u: return index_data_1.values[index];
-    case 2u: return index_data_2.values[index];
-    case 3u: return index_data_3.values[index];
-    case 4u: return index_data_4.values[index];
-    case 5u: return index_data_5.values[index];
-    case 6u: return index_data_6.values[index];
-    case 7u: return index_data_7.values[index];
-    case 8u: return index_data_8.values[index];
-    case 9u: return index_data_9.values[index];
-    case 10u: return index_data_10.values[index];
-    case 11u: return index_data_11.values[index];
-    case 12u: return index_data_12.values[index];
-    case 13u: return index_data_13.values[index];
-    case 14u: return index_data_14.values[index];
-    case 15u: return index_data_15.values[index];
-    default: return index_data_0.values[index];
-    }
+    return uint64_t(words.x) | (uint64_t(words.y) << 32u);
 }
 
-vec3 LoadPosition(uint vertex_index)
+uint LoadIndex(GeometryData geometry, uint index)
 {
-    const uint word = vertex_index * 14u;
+    RawBuffer indices = RawBuffer(JoinAddress(geometry.address_words.zw));
+    return indices.values[index];
+}
+
+vec3 LoadVector3(GeometryData geometry, uint vertex_index, uint byte_offset)
+{
+    RawBuffer vertices = RawBuffer(JoinAddress(geometry.address_words.xy));
+    const uint word = vertex_index * (geometry.attributes.x / 4u) + byte_offset / 4u;
     return vec3(uintBitsToFloat(vertices.values[word]),
                 uintBitsToFloat(vertices.values[word + 1u]),
                 uintBitsToFloat(vertices.values[word + 2u]));
 }
 
+vec2 LoadUv(GeometryData geometry, uint vertex_index)
+{
+    RawBuffer vertices = RawBuffer(JoinAddress(geometry.address_words.xy));
+    const uint word = vertex_index * (geometry.attributes.x / 4u) +
+                      geometry.attributes.z / 4u;
+    return vec2(uintBitsToFloat(vertices.values[word]),
+                uintBitsToFloat(vertices.values[word + 1u]));
+}
+
 void main()
 {
-    const uint geometry = gl_GeometryIndexEXT;
-    const uint index_base = camera.geometry_index_starts[geometry / 4u][geometry % 4u] +
-                            gl_PrimitiveID * 3u;
-    const vec3 p0 = LoadPosition(LoadIndex(geometry, index_base));
-    const vec3 p1 = LoadPosition(LoadIndex(geometry, index_base + 1u));
-    const vec3 p2 = LoadPosition(LoadIndex(geometry, index_base + 2u));
+    const uint instance_index = gl_InstanceCustomIndexEXT;
+    if (instance_index >= camera.scene_data.y)
+    {
+        payload.hit = 0u;
+        return;
+    }
+    const InstanceData instance = scene.instances[instance_index];
+    if (gl_GeometryIndexEXT >= instance.geometry_material_count.z)
+    {
+        payload.hit = 0u;
+        return;
+    }
+    const uint geometry_index = instance.geometry_material_count.x + gl_GeometryIndexEXT;
+    const uint material_index = instance.geometry_material_count.y + gl_GeometryIndexEXT;
+    if (geometry_index >= camera.scene_data.x || material_index >= camera.scene_data.z)
+    {
+        payload.hit = 0u;
+        return;
+    }
+
+    const GeometryData geometry = scene.geometries[geometry_index];
+    const MaterialData material = scene.materials[material_index];
+    const uint index_base = gl_PrimitiveID * 3u;
+    const uint i0 = LoadIndex(geometry, index_base);
+    const uint i1 = LoadIndex(geometry, index_base + 1u);
+    const uint i2 = LoadIndex(geometry, index_base + 2u);
+    const vec3 p0 = LoadVector3(geometry, i0, 0u);
+    const vec3 p1 = LoadVector3(geometry, i1, 0u);
+    const vec3 p2 = LoadVector3(geometry, i2, 0u);
     const vec3 world_p0 = gl_ObjectToWorldEXT * vec4(p0, 1.0);
     const vec3 world_p1 = gl_ObjectToWorldEXT * vec4(p1, 1.0);
     const vec3 world_p2 = gl_ObjectToWorldEXT * vec4(p2, 1.0);
     const float weight0 = 1.0 - barycentrics.x - barycentrics.y;
+    const vec2 uv = LoadUv(geometry, i0) * weight0 +
+                    LoadUv(geometry, i1) * barycentrics.x +
+                    LoadUv(geometry, i2) * barycentrics.y;
+    const vec3 object_normal = normalize(
+        LoadVector3(geometry, i0, geometry.attributes.w) * weight0 +
+        LoadVector3(geometry, i1, geometry.attributes.w) * barycentrics.x +
+        LoadVector3(geometry, i2, geometry.attributes.w) * barycentrics.y);
     payload.position = world_p0 * weight0 + world_p1 * barycentrics.x +
                        world_p2 * barycentrics.y;
-    payload.normal = normalize(cross(world_p1 - world_p0, world_p2 - world_p0));
+    payload.normal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * object_normal);
     if (dot(payload.normal, -gl_WorldRayDirectionEXT) < 0.0)
         payload.normal = -payload.normal;
-    payload.geometry = geometry;
-    payload.albedo = geometry == 4u ? vec3(0.445, 0.0, 0.0)
-                   : geometry == 5u ? vec3(0.0, 0.32, 0.0)
-                                    : vec3(0.80, 0.659, 0.44);
+
+    vec3 base_color = material.base_color.rgb;
+    const uint texture_index = material.texture_indices.x;
+    if (texture_index != 0xffffffffu)
+        base_color *= texture(kp_textures[nonuniformEXT(texture_index)], uv).rgb;
+    payload.geometry = geometry_index;
+    payload.material = material_index;
+    payload.albedo = base_color;
+    payload.emissive = material.emissive.rgb;
+    const uint channels = uint(material.surface.w + 0.5);
+    float metallic = material.surface.x;
+    float roughness = material.surface.y;
+    if (material.texture_indices.y != 0xffffffffu)
+        metallic *= textureLod(kp_textures[nonuniformEXT(material.texture_indices.y)], uv, 0.0)[channels % 4u];
+    if (material.texture_indices.z != 0xffffffffu)
+        roughness *= textureLod(kp_textures[nonuniformEXT(material.texture_indices.z)], uv, 0.0)[channels / 4u];
+    payload.metallic = clamp(metallic, 0.0, 1.0);
+    payload.roughness = clamp(roughness, 0.04, 1.0);
+    payload.radiance = vec3(0.0);
     payload.hit = 1u;
 }

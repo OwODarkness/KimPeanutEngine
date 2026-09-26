@@ -14,6 +14,7 @@ namespace kpengine::render::detail
         uint64_t scene_signature = 0;
         uint64_t geometry_count = 0;
         uint64_t material_signature = 0;
+        uint64_t lighting_signature = 0;
         uint32_t pipeline_id = 0;
         uint32_t pipeline_generation = 0;
         uint64_t shader_signature = 0;
@@ -50,6 +51,7 @@ namespace kpengine::render::detail
         add(input.scene_signature);
         add(input.geometry_count);
         add(input.material_signature);
+        add(input.lighting_signature);
         add(input.pipeline_id);
         add(input.pipeline_generation);
         add(input.shader_signature);

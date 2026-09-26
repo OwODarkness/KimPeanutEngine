@@ -48,12 +48,20 @@ namespace kpengine::editor
                 return "g_buffer";
             case RenderProfilePass::DeferredLighting:
                 return "deferred_lighting";
+            case RenderProfilePass::RayTracingPathTrace:
+                return "ray_tracing_path_trace";
             case RenderProfilePass::ToneMap:
                 return "tone_map";
+            case RenderProfilePass::RayTracingToneMap:
+                return "ray_tracing_tone_map";
             case RenderProfilePass::CaptureView:
                 return "capture_view";
             case RenderProfilePass::EditorComposite:
                 return "editor_composite";
+            case RenderProfilePass::RayTracingBlasBuild:
+                return "ray_tracing_blas_build";
+            case RenderProfilePass::RayTracingTlasBuild:
+                return "ray_tracing_tlas_build";
             case RenderProfilePass::Count:
             default:
                 return "unknown";
@@ -80,6 +88,8 @@ namespace kpengine::editor
                 return "descriptor_update";
             case render::RenderProfileCpuSubphase::PipelineValidation:
                 return "pipeline_validation";
+            case render::RenderProfileCpuSubphase::GraphExecute:
+                return "graph_execute";
             case render::RenderProfileCpuSubphase::Count:
             default:
                 return "unknown";
@@ -119,6 +129,23 @@ namespace kpengine::editor
             char value[32]{};
             std::snprintf(value, sizeof(value), "%.2f ms", *milliseconds);
             return value;
+        }
+
+        const char *FeatureStatus(const bool available, const bool active)
+        {
+            if (!available)
+            {
+                return "unavailable";
+            }
+            return active ? "active" : "inactive";
+        }
+
+        double UnaccountedRecordTime(const RenderProfileSnapshot &profile)
+        {
+            const double measured = profile.cpu_render_world_snapshot_ms +
+                                    profile.cpu_ray_tracing_scene_prepare_ms +
+                                    profile.cpu_graph_execute_ms;
+            return profile.cpu_record_ms > measured ? profile.cpu_record_ms - measured : 0.0;
         }
 
         void DrawStageRow(const char *label, const std::optional<double> &milliseconds)
@@ -164,11 +191,29 @@ namespace kpengine::editor
                    << "  Lighting: " << FormatMilliseconds(lighting) << "\n"
                    << "  Postprocess: " << FormatMilliseconds(post_process) << "\n"
                    << "  ImGui GPU: " << FormatMilliseconds(imgui_gpu) << "\n"
+                   << "  RT passes: "
+                   << FormatMilliseconds(SumPasses(
+                          profile, {RenderProfilePass::RayTracingPathTrace,
+                                    RenderProfilePass::RayTracingToneMap,
+                                    RenderProfilePass::RayTracingBlasBuild,
+                                    RenderProfilePass::RayTracingTlasBuild}))
+                   << "\n"
                    << "  GPU total: " << FormatMilliseconds(total) << "\n"
                    << "  Shadow cache: hits " << profile.shadow_cache_hits
                    << ", misses " << profile.shadow_cache_misses << "\n"
                    << "  Draw calls: " << profile.draw_calls << "\n"
                    << "  Triangles: " << triangle_count << "\n"
+                   << "Ray tracing\n"
+                   << "  Path tracing: "
+                   << (!profile.path_tracing_enabled
+                           ? "disabled"
+                           : FeatureStatus(profile.path_tracing_available,
+                                           profile.path_trace_active))
+                   << ", samples " << profile.path_trace_samples << "\n"
+                   << "  Ray-query shadows: "
+                   << FeatureStatus(profile.ray_query_shadows_available,
+                                    profile.ray_query_shadows_active)
+                   << " (included in deferred lighting timing)\n"
                    << "Frame loop\n"
                    << "  Frame: " << frame.frame_total_ms << " ms\n"
                    << "  Game wait: " << frame.game_wait_ms << " ms\n"
@@ -181,6 +226,10 @@ namespace kpengine::editor
                    << "  Present: " << profile.cpu_present_ms << " ms\n"
                    << "  Begin: " << profile.cpu_backend_begin_ms << " ms\n"
                    << "  Record: " << profile.cpu_record_ms << " ms\n"
+                   << "    World snapshot: " << profile.cpu_render_world_snapshot_ms << " ms\n"
+                   << "    RT scene prep: " << profile.cpu_ray_tracing_scene_prepare_ms << " ms\n"
+                   << "    Graph execute: " << profile.cpu_graph_execute_ms << " ms\n"
+                   << "    Other record: " << UnaccountedRecordTime(profile) << " ms\n"
                    << "  Finalize: " << profile.cpu_finalize_ms << " ms\n"
                    << "  ImGui: " << imgui_total_ms << " ms\n"
                    << "  ImGui build: " << imgui_build_ms << " ms\n"
@@ -200,6 +249,10 @@ namespace kpengine::editor
             append_pass("Point shadow", RenderProfilePass::PointShadow);
             append_pass("G-buffer", RenderProfilePass::GBuffer);
             append_pass("Deferred lighting", RenderProfilePass::DeferredLighting);
+            append_pass("Ray tracing path trace", RenderProfilePass::RayTracingPathTrace);
+            append_pass("Ray tracing tone map", RenderProfilePass::RayTracingToneMap);
+            append_pass("Ray tracing BLAS build", RenderProfilePass::RayTracingBlasBuild);
+            append_pass("Ray tracing TLAS build", RenderProfilePass::RayTracingTlasBuild);
             append_pass("Tone map", RenderProfilePass::ToneMap);
             append_pass("Capture view", RenderProfilePass::CaptureView);
             append_pass("ImGui composite", RenderProfilePass::EditorComposite);
@@ -222,6 +275,19 @@ namespace kpengine::editor
                                             ? Json(*profile.gpu_frame_number)
                                             : Json(nullptr)},
                   {"graphics_api", GraphicsApiName(profile.graphics_api)},
+                  {"ray_tracing",
+                   {{"path_tracing_enabled", profile.path_tracing_enabled},
+                    {"path_tracing_available", profile.path_tracing_available},
+                    {"path_trace_active", profile.path_trace_active},
+                    {"path_trace_samples", profile.path_trace_samples},
+                    {"ray_query_shadows_available", profile.ray_query_shadows_available},
+                    {"ray_query_shadows_active", profile.ray_query_shadows_active},
+                    {"dedicated_passes_ms",
+                     OptionalMilliseconds(SumPasses(
+                         profile, {RenderProfilePass::RayTracingPathTrace,
+                                   RenderProfilePass::RayTracingToneMap,
+                                   RenderProfilePass::RayTracingBlasBuild,
+                                   RenderProfilePass::RayTracingTlasBuild}))}}},
                   {"viewport", {{"width", profile.viewport_width},
                                  {"height", profile.viewport_height}}},
                   {"present_mode", profile.present_mode},
@@ -232,11 +298,23 @@ namespace kpengine::editor
                             {"lighting_ms", OptionalMilliseconds(lighting)},
                             {"post_process_ms", OptionalMilliseconds(post_process)},
                             {"imgui_ms", OptionalMilliseconds(imgui_gpu)},
+                            {"ray_tracing_passes_ms",
+                             OptionalMilliseconds(SumPasses(
+                                 profile, {RenderProfilePass::RayTracingPathTrace,
+                                           RenderProfilePass::RayTracingToneMap,
+                                           RenderProfilePass::RayTracingBlasBuild,
+                                           RenderProfilePass::RayTracingTlasBuild}))},
                             {"total_ms", OptionalMilliseconds(total)}}},
                   {"cpu", {{"total_ms", profile.cpu_total_ms},
                             {"scene_prepare_ms", profile.cpu_scene_prepare_ms},
                             {"backend_begin_ms", profile.cpu_backend_begin_ms},
                             {"record_ms", profile.cpu_record_ms},
+                            {"record_breakdown_ms",
+                             {{"world_snapshot", profile.cpu_render_world_snapshot_ms},
+                              {"ray_tracing_scene_prepare",
+                               profile.cpu_ray_tracing_scene_prepare_ms},
+                              {"graph_execute", profile.cpu_graph_execute_ms},
+                              {"other", UnaccountedRecordTime(profile)}}},
                             {"finalize_ms", profile.cpu_finalize_ms},
                             {"present_ms", profile.cpu_present_ms},
                             {"imgui_total_ms", imgui_total_ms},
@@ -375,7 +453,16 @@ namespace kpengine::editor
             profile, {RenderProfilePass::DirectionalShadow, RenderProfilePass::SpotShadow,
                       RenderProfilePass::PointShadow, RenderProfilePass::GBuffer,
                       RenderProfilePass::DeferredLighting, RenderProfilePass::ToneMap,
-                      RenderProfilePass::CaptureView, RenderProfilePass::EditorComposite});
+                      RenderProfilePass::CaptureView, RenderProfilePass::EditorComposite,
+                      RenderProfilePass::RayTracingPathTrace,
+                      RenderProfilePass::RayTracingToneMap,
+                      RenderProfilePass::RayTracingBlasBuild,
+                      RenderProfilePass::RayTracingTlasBuild});
+        const std::optional<double> ray_tracing = SumPasses(
+            profile, {RenderProfilePass::RayTracingPathTrace,
+                      RenderProfilePass::RayTracingToneMap,
+                      RenderProfilePass::RayTracingBlasBuild,
+                      RenderProfilePass::RayTracingTlasBuild});
 
         if (ImGui::BeginTable("##GpuProfilerStages", 2,
                               ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_NoBordersInBody))
@@ -389,8 +476,21 @@ namespace kpengine::editor
             DrawStageRow("Lighting", lighting);
             DrawStageRow("Postprocess", post_process);
             DrawStageRow("ImGui GPU", imgui_gpu);
+            DrawStageRow("RT passes", ray_tracing);
             ImGui::EndTable();
         }
+
+        ImGui::Separator();
+        ImGui::TextDisabled("Ray tracing");
+        ImGui::Text("Path tracing %s  Samples %u",
+                    !profile.path_tracing_enabled
+                        ? "disabled"
+                        : FeatureStatus(profile.path_tracing_available,
+                                        profile.path_trace_active),
+                    profile.path_trace_samples);
+        ImGui::Text("Ray-query shadows %s  (timed with deferred lighting)",
+                    FeatureStatus(profile.ray_query_shadows_available,
+                                  profile.ray_query_shadows_active));
 
         const runtime::Engine::FrameLoopMetrics frame =
             engine_ != nullptr ? engine_->GetFrameLoopMetrics()
@@ -446,6 +546,10 @@ namespace kpengine::editor
                       profile.cpu_backend_begin_ms, profile.cpu_record_ms,
                       profile.cpu_finalize_ms);
         ImGui::Text("%s", value);
+        ImGui::Text("Record detail  Snapshot %.2f  RT scene %.2f  Graph %.2f  Other %.2f ms",
+                    profile.cpu_render_world_snapshot_ms,
+                    profile.cpu_ray_tracing_scene_prepare_ms,
+                    profile.cpu_graph_execute_ms, UnaccountedRecordTime(profile));
         std::snprintf(value, sizeof(value), "ImGui %.2f ms  (build %.2f / submit %.2f)",
                       imgui_total_ms, imgui_build_ms, imgui_submit_ms);
         ImGui::Text("%s", value);
@@ -469,6 +573,14 @@ namespace kpengine::editor
             DrawCpuPassRow("G-buffer", passes[static_cast<size_t>(RenderProfilePass::GBuffer)]);
             DrawCpuPassRow("Deferred lighting",
                            passes[static_cast<size_t>(RenderProfilePass::DeferredLighting)]);
+            DrawCpuPassRow("RT path trace",
+                           passes[static_cast<size_t>(RenderProfilePass::RayTracingPathTrace)]);
+            DrawCpuPassRow("RT tone map",
+                           passes[static_cast<size_t>(RenderProfilePass::RayTracingToneMap)]);
+            DrawCpuPassRow("RT BLAS build",
+                           passes[static_cast<size_t>(RenderProfilePass::RayTracingBlasBuild)]);
+            DrawCpuPassRow("RT TLAS build",
+                           passes[static_cast<size_t>(RenderProfilePass::RayTracingTlasBuild)]);
             DrawCpuPassRow("Tone map", passes[static_cast<size_t>(RenderProfilePass::ToneMap)]);
             DrawCpuPassRow("Capture view",
                            passes[static_cast<size_t>(RenderProfilePass::CaptureView)]);

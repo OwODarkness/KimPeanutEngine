@@ -27,6 +27,7 @@ namespace kpengine::graphics
             uint32_t pipelines = 0;
             uint32_t descriptor_sets = 0;
             uint32_t pending_descriptor_sets = 0;
+            uint32_t address_table_buffers = 0;
             uint32_t temporary_buffer_batches = 0;
         };
 
@@ -40,6 +41,10 @@ namespace kpengine::graphics
         VulkanAccelerationStructureOwner &operator=(const VulkanAccelerationStructureOwner &) = delete;
 
         bool IsSupported() const noexcept override { return supported_; }
+        void SetBindlessTextureLayout(VkDescriptorSetLayout layout) noexcept
+        {
+            bindless_texture_layout_ = layout;
+        }
         LifecycleCounts GetLifecycleCounts() const noexcept;
         AccelerationStructureHandle CreateAccelerationStructure(
             const RayTracingAccelerationStructureDesc &desc) override;
@@ -65,6 +70,7 @@ namespace kpengine::graphics
         VkPipeline GetNativeRayTracingPipeline(RayTracingPipelineHandle handle) const noexcept;
         VkPipelineLayout GetRayTracingPipelineLayout(
             RayTracingPipelineHandle handle) const noexcept;
+        bool UsesBindlessTextureTable(RayTracingPipelineHandle handle) const noexcept;
         VkDescriptorSet GetRayTracingDescriptorSet(DescriptorSetHandle handle) const noexcept;
         uint32_t GetRayTracingDescriptorSetIndex(DescriptorSetHandle handle) const noexcept;
         bool GetRayTracingShaderBindingTable(
@@ -119,6 +125,7 @@ namespace kpengine::graphics
             VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
             RayTracingPipelineHandle pipeline{};
             uint32_t set = 0;
+            std::vector<BufferHandle> owned_address_table_buffers;
             bool alive = false;
             bool pending_destroy = false;
             uint64_t retire_serial = 0;
@@ -137,6 +144,7 @@ namespace kpengine::graphics
 
         VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
         VkDevice device_ = VK_NULL_HANDLE;
+        VkDescriptorSetLayout bindless_texture_layout_ = VK_NULL_HANDLE;
         VulkanBufferManager *buffer_manager_ = nullptr;
         TextureManager *texture_manager_ = nullptr;
         SamplerManager *sampler_manager_ = nullptr;

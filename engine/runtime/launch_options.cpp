@@ -228,6 +228,7 @@ namespace kpengine::runtime
             RuntimeLaunchOptionsParseResult result{};
             bool has_agent_port = false;
             bool has_graphics_api = false;
+            bool has_disable_path_tracing = false;
             bool has_mode = false;
             bool has_startup_level = false;
             bool has_startup_capture = false;
@@ -323,6 +324,15 @@ namespace kpengine::runtime
                                        std::string{value} + "')");
                     }
                     has_graphics_api = true;
+                }
+                else if (argument == "--disable-path-tracing")
+                {
+                    if (has_disable_path_tracing)
+                    {
+                        return Failure("duplicate option '--disable-path-tracing'");
+                    }
+                    result.options.path_tracing_enabled = false;
+                    has_disable_path_tracing = true;
                 }
                 else if (argument == "--vsync")
                 {

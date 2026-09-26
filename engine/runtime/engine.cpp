@@ -158,6 +158,15 @@ namespace kpengine
             global_runtime_context.vsync_ = enabled;
         }
 
+        void Engine::SetPathTracingEnabled(bool enabled)
+        {
+            if (initialization_started_ || cleared_)
+            {
+                return;
+            }
+            global_runtime_context.path_tracing_enabled_ = enabled;
+        }
+
         void Engine::SetStartupLevelOverride(std::string authored_or_normalized_path)
         {
             if (initialization_started_ || startup_level_loaded_ || render_thread_.joinable() ||

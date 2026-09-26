@@ -63,6 +63,7 @@ namespace kpengine::render
     struct RenderSystemInitInfo
     {
         GraphicsAPIType api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
+        bool path_tracing_enabled = true;
         WindowHandle native_window = nullptr;
         EventDispatcher<ResizeEvent> *resize_dispatcher = nullptr;
         std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets;
@@ -182,6 +183,7 @@ namespace kpengine::render
             RenderSystemLifecycleState::Uninitialized;
         std::string last_diagnostic_;
         bool backend_initialized_ = false;
+        bool path_tracing_enabled_ = true;
         RenderSystemLifecycleState frame_return_state_ =
             RenderSystemLifecycleState::Uninitialized;
         RenderProfileSnapshot profile_;

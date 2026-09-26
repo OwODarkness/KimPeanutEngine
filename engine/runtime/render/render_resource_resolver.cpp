@@ -320,6 +320,25 @@ namespace kpengine::render
                 bindings.bindless_slots.clear();
             }
         }
+        if (backend_->GetCapabilities().SupportsBindlessTextures())
+        {
+            if (bindings.uses_bindless_textures)
+            {
+                bindings.ray_tracing_bindless_slots = bindings.bindless_slots;
+            }
+            else
+            {
+                for (const auto &[parameter_id, binding] : bindings.textures)
+                {
+                    const graphics::BindlessTextureHandle slot =
+                        backend_->AcquireBindlessTexture(binding.texture, binding.sampler);
+                    if (slot.IsValid())
+                    {
+                        bindings.ray_tracing_bindless_slots.emplace(parameter_id, slot);
+                    }
+                }
+            }
+        }
         material_texture_bindings_[handle] = std::move(bindings);
         return {MaterialResourceState::Ready, {}};
     }
@@ -342,6 +361,15 @@ namespace kpengine::render
             {
                 (void)parameter_id;
                 backend_->ReleaseBindlessTexture(slot);
+            }
+            if (!found->second.uses_bindless_textures)
+            {
+                for (const auto &[parameter_id, slot] :
+                     found->second.ray_tracing_bindless_slots)
+                {
+                    (void)parameter_id;
+                    backend_->ReleaseBindlessTexture(slot);
+                }
             }
         }
         material_texture_bindings_.erase(found);

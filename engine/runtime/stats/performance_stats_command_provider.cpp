@@ -1,5 +1,6 @@
 #include "stats/performance_stats_command_provider.h"
 
+#include <algorithm>
 #include <initializer_list>
 #include <string>
 #include <utility>
@@ -47,6 +48,10 @@ namespace kpengine::runtime
                 return "capture_view";
             case render::RenderProfilePass::RayTracingPathTrace:
                 return "ray_tracing_path_trace";
+            case render::RenderProfilePass::RayTracingBlasBuild:
+                return "ray_tracing_blas_build";
+            case render::RenderProfilePass::RayTracingTlasBuild:
+                return "ray_tracing_tlas_build";
             case render::RenderProfilePass::EditorComposite:
                 return "editor_composite";
             case render::RenderProfilePass::Count:
@@ -75,6 +80,8 @@ namespace kpengine::runtime
                 return "descriptor_update";
             case render::RenderProfileCpuSubphase::PipelineValidation:
                 return "pipeline_validation";
+            case render::RenderProfileCpuSubphase::GraphExecute:
+                return "graph_execute";
             case render::RenderProfileCpuSubphase::Count:
             default:
                 return "unknown";
@@ -121,8 +128,11 @@ namespace kpengine::runtime
             data["format"] = std::string{json_requested ? "json" : "text"};
             data["frame_number"] = profile.frame_number;
             data["path_trace_samples"] = static_cast<uint64_t>(profile.path_trace_samples);
+            data["path_tracing_enabled"] = profile.path_tracing_enabled;
             data["path_tracing_available"] = profile.path_tracing_available;
             data["path_trace_active"] = profile.path_trace_active;
+            data["ray_query_shadows_available"] = profile.ray_query_shadows_available;
+            data["ray_query_shadows_active"] = profile.ray_query_shadows_active;
             AddOptional(data, "gpu_frame_number", profile.gpu_frame_number);
             data["graphics_api"] = std::string{GraphicsApiName(profile.graphics_api)};
             data["viewport_width"] = static_cast<uint64_t>(profile.viewport_width);
@@ -183,6 +193,11 @@ namespace kpengine::runtime
                                             render::RenderProfilePass::PointShadow}));
             AddOptional(data, "lighting_ms",
                         SumPasses(profile, {render::RenderProfilePass::DeferredLighting}));
+            AddOptional(data, "ray_tracing_passes_ms",
+                        SumPasses(profile, {render::RenderProfilePass::RayTracingPathTrace,
+                                            render::RenderProfilePass::RayTracingToneMap,
+                                            render::RenderProfilePass::RayTracingBlasBuild,
+                                            render::RenderProfilePass::RayTracingTlasBuild}));
             AddOptional(data, "post_process_ms",
                         SumPasses(profile, {render::RenderProfilePass::ToneMap,
                                             render::RenderProfilePass::RayTracingToneMap,
@@ -195,6 +210,8 @@ namespace kpengine::runtime
                                             render::RenderProfilePass::PointShadow,
                                             render::RenderProfilePass::GBuffer,
                                             render::RenderProfilePass::DeferredLighting,
+                                            render::RenderProfilePass::RayTracingBlasBuild,
+                                            render::RenderProfilePass::RayTracingTlasBuild,
                                             render::RenderProfilePass::ToneMap,
                                             render::RenderProfilePass::RayTracingToneMap,
                                             render::RenderProfilePass::RayTracingPathTrace,
@@ -225,6 +242,15 @@ namespace kpengine::runtime
             data["cpu_scene_prepare_ms"] = profile.cpu_scene_prepare_ms;
             data["cpu_backend_begin_ms"] = profile.cpu_backend_begin_ms;
             data["cpu_record_ms"] = profile.cpu_record_ms;
+            data["cpu_render_world_snapshot_ms"] =
+                profile.cpu_render_world_snapshot_ms;
+            data["cpu_ray_tracing_scene_prepare_ms"] =
+                profile.cpu_ray_tracing_scene_prepare_ms;
+            data["cpu_graph_execute_ms"] = profile.cpu_graph_execute_ms;
+            data["cpu_record_other_ms"] = std::max(
+                0.0, profile.cpu_record_ms - profile.cpu_render_world_snapshot_ms -
+                         profile.cpu_ray_tracing_scene_prepare_ms -
+                         profile.cpu_graph_execute_ms);
             data["cpu_finalize_ms"] = profile.cpu_finalize_ms;
             data["cpu_present_ms"] = profile.cpu_present_ms;
             data["frame_total_ms"] = frame.frame_total_ms;

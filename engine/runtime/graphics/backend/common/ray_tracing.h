@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_GRAPHICS_RAY_TRACING_H
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <variant>
@@ -112,12 +113,31 @@ namespace kpengine::graphics
         size_t range = 0;
     };
 
+    struct RayTracingBufferAddressPatch
+    {
+        size_t byte_offset = 0;
+        BufferHandle buffer;
+        uint64_t buffer_offset = 0;
+    };
+
+    // Graphics resolves opaque buffer handles into native shader-reference
+    // addresses while creating its owned upload buffer. Render never observes
+    // or serializes a backend device address.
+    struct RayTracingBufferReferenceTableBinding
+    {
+        uint32_t set = 0;
+        uint32_t binding = 0;
+        std::vector<std::byte> data;
+        std::vector<RayTracingBufferAddressPatch> address_patches;
+    };
+
     using RayTracingResourceBinding = std::variant<
         UniformBufferBinding,
         SampledTextureBinding,
         RayTracingAccelerationStructureBinding,
         RayTracingStorageTextureBinding,
-        RayTracingStorageBufferBinding>;
+        RayTracingStorageBufferBinding,
+        RayTracingBufferReferenceTableBinding>;
 
     struct RayTracingResourceBindingSetDesc
     {

@@ -88,6 +88,10 @@ namespace kpengine::render
         {
             std::unordered_map<uint32_t, TextureBinding> textures;
             std::unordered_map<uint32_t, graphics::BindlessTextureHandle> bindless_slots;
+            // RT consumes the global texture table even when a raster material
+            // uses ordinary descriptors and its template is not bindless-ready.
+            std::unordered_map<uint32_t, graphics::BindlessTextureHandle>
+                ray_tracing_bindless_slots;
             bool uses_bindless_textures = false;
         };
         RenderResourceResolver(graphics::RenderBackend &backend,

@@ -95,6 +95,11 @@ namespace kpengine::graphics
                        "Vulkan descriptor indexing is available, but bindless table creation failed; using bound resources");
             }
         }
+        if (acceleration_structure_owner_ && bindless_texture_table_)
+        {
+            acceleration_structure_owner_->SetBindlessTextureLayout(
+                bindless_texture_table_->GetLayout());
+        }
         InitializeCapabilities();
         VkQueryPoolCreateInfo query_pool_info{};
         query_pool_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
@@ -404,10 +409,12 @@ namespace kpengine::graphics
             const auto counts = acceleration_structure_owner_->GetLifecycleCounts();
             KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_INFO,
                    "R4.6 RT teardown snapshot: AS=%u (pending=%u), pipelines=%u, "
-                   "binding sets=%u (pending=%u), temporary build batches=%u",
+                   "binding sets=%u (pending=%u), address tables=%u, "
+                   "temporary build batches=%u",
                    counts.acceleration_structures,
                    counts.pending_acceleration_structures, counts.pipelines,
                    counts.descriptor_sets, counts.pending_descriptor_sets,
+                   counts.address_table_buffers,
                    counts.temporary_buffer_batches);
         }
         acceleration_structure_owner_.reset();

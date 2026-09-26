@@ -92,13 +92,18 @@ namespace kpengine::render
     {
         uint64_t frame_number = 0;
         uint32_t path_trace_samples = 0;
+        bool path_tracing_enabled = false;
         bool path_tracing_available = false;
         bool path_trace_active = false;
+        bool ray_query_shadows_available = false;
+        bool ray_query_shadows_active = false;
         GraphicsAPIType graphics_api = GraphicsAPIType::GRAPHICS_API_UNKNOW;
         uint32_t viewport_width = 0;
         uint32_t viewport_height = 0;
         double cpu_total_ms = 0.0;
         double cpu_scene_prepare_ms = 0.0;
+        double cpu_render_world_snapshot_ms = 0.0;
+        double cpu_ray_tracing_scene_prepare_ms = 0.0;
         double cpu_backend_begin_ms = 0.0;
         double cpu_record_ms = 0.0;
         double cpu_finalize_ms = 0.0;

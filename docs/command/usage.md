@@ -39,6 +39,8 @@ KimPeanutEngine --graphics-api opengl `
 
 Use `--graphics-api vulkan` or `--graphics-api opengl` to select the backend
 for a reproducible capture run. The default remains Vulkan.
+Add `--disable-path-tracing` to keep Vulkan selected while using the raster
+render path.
 
 Once the live Engine is running, query performance from the same command
 transport:

@@ -832,6 +832,21 @@ namespace kpengine::editor
                 std::snprintf(value, sizeof(value), "%.2f ms", total);
                 return std::string{value};
             }));
+        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
+            "API",
+            [render_system]
+            {
+                switch (render_system->GetMetrics().profile.graphics_api)
+                {
+                case GraphicsAPIType::GRAPHICS_API_OPENGL:
+                    return std::string{"OpenGL"};
+                case GraphicsAPIType::GRAPHICS_API_VULKAN:
+                    return std::string{"Vulkan"};
+                case GraphicsAPIType::GRAPHICS_API_UNKNOW:
+                default:
+                    return std::string{"Unknown"};
+                }
+            }));
         profile_metrics.push_back(std::make_unique<EditorMemoryMetric>(
             [memory_sampler]() -> EditorMemoryMetric::Stats
             {
