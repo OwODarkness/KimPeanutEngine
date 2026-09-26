@@ -86,7 +86,7 @@ namespace kpengine::gameplay
                                     std::size_t &value_bytes) const;
         std::size_t CountReadableProperties(const ActorComponent &component) const;
         static std::size_t EstimateValueBytes(const reflection::ReflectionValue &value) noexcept;
-        static std::string MakeActorDisplayName(ActorHandle handle);
+        static std::string MakeActorDisplayName(const Actor &actor);
 
         GameplayWorld &world_;
         const reflection::IReflectionCatalog &catalog_;

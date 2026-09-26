@@ -412,6 +412,16 @@ namespace kpengine::gameplay
             return result;
         }
 
+        if (property->name == "transform.rotation.pitch" ||
+            property->name == "transform.rotation.yaw" ||
+            property->name == "transform.rotation.roll")
+        {
+            if (auto *const scene_component = dynamic_cast<SceneComponent *>(component))
+            {
+                world_.SynchronizeControlRotation(actor->GetHandle(), *scene_component);
+            }
+        }
+
         const reflection::ReflectionReadResult read = access_.Read(object, command.property);
         if (!read)
         {
@@ -459,7 +469,7 @@ namespace kpengine::gameplay
         ActorEditorSnapshot actor_snapshot;
         actor_snapshot.actor = actor.GetHandle();
         actor_snapshot.state = actor.GetState();
-        CopyStringWithinBudget(MakeActorDisplayName(actor.GetHandle()),
+        CopyStringWithinBudget(MakeActorDisplayName(actor),
                                actor_snapshot.display_name, snapshot, value_bytes);
         if (actor.root_component_ != nullptr)
         {
@@ -584,9 +594,12 @@ namespace kpengine::gameplay
         return 0;
     }
 
-    std::string GameplayEditorBridge::MakeActorDisplayName(ActorHandle handle)
+    std::string GameplayEditorBridge::MakeActorDisplayName(const Actor &actor)
     {
-        return "Actor " + std::to_string(handle.id) + ":" +
-               std::to_string(handle.generation);
+        const ActorHandle handle = actor.GetHandle();
+        const std::string handle_label = "Actor " + std::to_string(handle.id) + ":" +
+                                         std::to_string(handle.generation);
+        return actor.GetName().empty() ? handle_label
+                                       : actor.GetName() + " (" + handle_label + ")";
     }
 }

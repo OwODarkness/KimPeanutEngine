@@ -1,3 +1,4 @@
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -175,6 +176,77 @@ TEST(GameplayWorldTest, RunsComponentLifecycleInDocumentedOrder)
         "tick:first:0.500000", "tick:second:0.500000", "deactivate:second",
         "deactivate:first"};
     EXPECT_EQ(events, expected);
+}
+
+TEST(GameplayWorldTest, ListsActorsByNameAndPaginatesFilteredResults)
+{
+    kpengine::gameplay::GameplayWorld world{};
+    const auto first = world.CreateActor();
+    const auto second = world.CreateActor();
+    const auto third = world.CreateActor();
+    ASSERT_NE(world.FindActor(first), nullptr);
+    ASSERT_NE(world.FindActor(second), nullptr);
+    ASSERT_NE(world.FindActor(third), nullptr);
+    world.FindActor(first)->SetName("Bunny");
+    world.FindActor(second)->SetName("bunny_small");
+    world.FindActor(third)->SetName("Fox");
+
+    const auto page = world.ListActors(1U, 1U, "BUNNY");
+    ASSERT_EQ(page.actors.size(), 1U);
+    EXPECT_EQ(page.actors.front().name, "bunny_small");
+    EXPECT_EQ(page.actors.front().handle, second);
+    EXPECT_EQ(page.total_count, 2U);
+    EXPECT_FALSE(page.has_more);
+
+    const auto all = world.ListActors(0U, 2U);
+    ASSERT_EQ(all.actors.size(), 2U);
+    EXPECT_EQ(all.actors[0].handle, first);
+    EXPECT_EQ(all.actors[0].name, "Bunny");
+    EXPECT_EQ(all.total_count, 3U);
+    EXPECT_TRUE(all.has_more);
+}
+
+TEST(GameplayWorldTest, QueriesAndControlsRootTransformWithoutChangingScale)
+{
+    kpengine::gameplay::GameplayWorld world{};
+    const auto handle = world.CreateActor();
+    auto *const actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+    actor->SetName("Camera Target");
+    auto *const root = actor->AddComponent<kpengine::gameplay::SceneComponent>();
+    ASSERT_NE(root, nullptr);
+    ASSERT_TRUE(actor->SetRootComponent(root));
+    root->SetLocalTransform({{1.0f, 2.0f, 3.0f}, {4.0f, 5.0f, 6.0f}, {2.0f, 3.0f, 4.0f}});
+
+    const auto applied = world.SetActorRootTransform(handle, {10.0f, 20.0f, 30.0f},
+                                                      {11.0f, 22.0f, 33.0f});
+    ASSERT_EQ(applied.status,
+              kpengine::gameplay::ActorTransformControlStatus::Applied);
+    EXPECT_FLOAT_EQ(applied.applied_transform.position_.x_, 10.0f);
+    EXPECT_FLOAT_EQ(applied.applied_transform.rotator_.yaw_, 22.0f);
+    EXPECT_FLOAT_EQ(applied.applied_transform.scale_.x_, 2.0f);
+    EXPECT_FLOAT_EQ(applied.applied_transform.scale_.y_, 3.0f);
+    EXPECT_FLOAT_EQ(applied.applied_transform.scale_.z_, 4.0f);
+
+    const auto query = world.QueryActor(handle);
+    ASSERT_TRUE(query.has_value());
+    EXPECT_EQ(query->actor.name, "Camera Target");
+    ASSERT_TRUE(query->root_local_transform.has_value());
+    EXPECT_FLOAT_EQ(query->root_local_transform->position_.z_, 30.0f);
+
+    const auto invalid = world.SetActorRootTransform(
+        handle, {std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f}, {});
+    EXPECT_EQ(invalid.status,
+              kpengine::gameplay::ActorTransformControlStatus::InvalidTransform);
+    EXPECT_FLOAT_EQ(root->GetLocalLocation().x_, 10.0f);
+
+    const auto rootless = world.CreateActor();
+    EXPECT_EQ(world.SetActorRootTransform(rootless, {}, {}).status,
+              kpengine::gameplay::ActorTransformControlStatus::MissingRootComponent);
+    ASSERT_TRUE(world.DestroyActor(handle));
+    EXPECT_FALSE(world.QueryActor(handle).has_value());
+    EXPECT_EQ(world.SetActorRootTransform(handle, {}, {}).status,
+              kpengine::gameplay::ActorTransformControlStatus::ActorUnavailable);
 }
 
 TEST(GameplayWorldTest, AllowsDuplicateComponentsButRejectsLateAddition)
@@ -855,6 +927,33 @@ TEST(GameplayWorldTest, LocalPlayerControllerPossessesAndMovesFreeCamera)
     }
 
     input_system.Shutdown();
+}
+
+TEST(GameplayWorldTest, ControlledCameraRotationSurvivesTheNextGameplayTick)
+{
+    RecordingCameraSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{nullptr, nullptr, &source_sink};
+    const auto camera_handle = kpengine::gameplay::CreateCameraActor(world, {});
+    ASSERT_TRUE(camera_handle.IsValid());
+    auto *const controller = world.CreateLocalPlayerController(nullptr);
+    ASSERT_NE(controller, nullptr);
+    ASSERT_TRUE(controller->Possess(camera_handle));
+
+    const auto camera = world.FindActor(camera_handle)->FindComponent<
+        kpengine::gameplay::CameraComponent>();
+    ASSERT_NE(camera, nullptr);
+    const auto applied = world.SetActorRootTransform(
+        camera_handle, {20.0f, 30.0f, 40.0f}, {25.0f, 135.0f, 0.0f});
+    ASSERT_EQ(applied.status,
+              kpengine::gameplay::ActorTransformControlStatus::Applied);
+    EXPECT_FLOAT_EQ(controller->GetControlRotation().pitch_, 25.0f);
+    EXPECT_FLOAT_EQ(controller->GetControlRotation().yaw_, 135.0f);
+
+    world.Tick(0.0f);
+    EXPECT_FLOAT_EQ(camera->GetLocalTransform().rotator_.pitch_, 25.0f);
+    EXPECT_FLOAT_EQ(camera->GetLocalTransform().rotator_.yaw_, 135.0f);
+    ASSERT_FALSE(source_sink.updates.empty());
+    EXPECT_FLOAT_EQ(source_sink.updates.back().source.world_transform.rotator_.yaw_, 135.0f);
 }
 
 TEST(GameplayWorldTest, LocalPlayerControllerStopsCameraInputWhenDisabled)

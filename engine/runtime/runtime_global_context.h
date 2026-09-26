@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_GLOBAL_CONTEXT_H
 
 #include <atomic>
+#include <array>
 #include <deque>
 #include <functional>
 #include <memory>
@@ -181,6 +182,7 @@ namespace kpengine
             command::CommandRegistration level_reload_command_registration_;
             command::CommandRegistration path_trace_probe_command_registration_;
             command::CommandRegistration path_trace_failure_command_registration_;
+            std::array<command::CommandRegistration, 3> gameplay_command_registrations_;
             std::unique_ptr<reflection::ReflectionSystem> reflection_system_;
             std::unique_ptr<gameplay::GameplayWorld> gameplay_world_;
             std::unique_ptr<gameplay::GameplayEditorBridge> gameplay_editor_bridge_;

@@ -1,14 +1,18 @@
 #ifndef KPENGINE_RUNTIME_GAMEPLAY_WORLD_GAMEPLAY_WORLD_H
 #define KPENGINE_RUNTIME_GAMEPLAY_WORLD_GAMEPLAY_WORLD_H
 
+#include <cstddef>
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <unordered_map>
+#include <vector>
 
 #include "base/handle.h"
 #include "gameplay/actor/actor.h"
 #include "gameplay/actor/actor_types.h"
+#include "math/math_header.h"
 #include "spatial/ray.h"
 
 namespace kpengine::input
@@ -25,6 +29,47 @@ namespace kpengine::render
 
 namespace kpengine::gameplay
 {
+    struct ActorSummary
+    {
+        ActorHandle handle;
+        std::string name;
+        ActorState state = ActorState::Constructed;
+        bool has_root_component = false;
+    };
+
+    struct ActorListPage
+    {
+        std::vector<ActorSummary> actors;
+        std::size_t total_count = 0;
+        bool has_more = false;
+    };
+
+    struct ActorQuery
+    {
+        ActorSummary actor;
+        std::optional<Transform3f> root_local_transform;
+        std::optional<Transform3f> root_world_transform;
+    };
+
+    enum class ActorTransformControlStatus : uint8_t
+    {
+        Applied,
+        ActorUnavailable,
+        MissingRootComponent,
+        InvalidTransform,
+    };
+
+    struct ActorTransformControlResult
+    {
+        ActorTransformControlStatus status = ActorTransformControlStatus::ActorUnavailable;
+        Transform3f applied_transform;
+
+        bool IsSuccess() const noexcept
+        {
+            return status == ActorTransformControlStatus::Applied;
+        }
+    };
+
     class PlayerController;
     class GameplayEditorBridge;
 
@@ -44,6 +89,12 @@ namespace kpengine::gameplay
         ActorHandle CreateActor();
         Actor *FindActor(ActorHandle handle);
         const Actor *FindActor(ActorHandle handle) const;
+        ActorListPage ListActors(std::size_t offset, std::size_t limit,
+                                 std::string_view name_contains = {}) const;
+        std::optional<ActorQuery> QueryActor(ActorHandle handle) const;
+        ActorTransformControlResult SetActorRootTransform(
+            ActorHandle handle, const Vector3f &local_position,
+            const Rotatorf &local_rotation);
         std::optional<ActorHandle> PickActor(const spatial::Ray &ray) const;
         void SetSelectedActor(std::optional<ActorHandle> actor);
 
@@ -82,6 +133,8 @@ namespace kpengine::gameplay
         render::IRenderableSourceSink *source_sink_ = nullptr;
         render::ILightSourceSink *light_source_sink_ = nullptr;
         render::ICameraSourceSink *camera_source_sink_ = nullptr;
+
+        void SynchronizeControlRotation(ActorHandle handle, SceneComponent &changed_component);
     };
 }
 

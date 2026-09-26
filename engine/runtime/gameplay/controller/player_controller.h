@@ -20,6 +20,7 @@ namespace kpengine::gameplay
 {
     class CameraComponent;
     class GameplayWorld;
+    class SceneComponent;
 
     // Local, non-replicated control bridge. It owns neither the possessed Actor
     // nor any render object; GameplayWorld remains the Actor owner.
@@ -40,6 +41,8 @@ namespace kpengine::gameplay
 
         bool Possess(ActorHandle actor_handle);
         void Unpossess();
+        void SynchronizeControlRotation(ActorHandle actor_handle,
+                                        const SceneComponent &changed_component);
         ActorHandle GetPossessedActor() const { return possessed_actor_; }
         const Rotatorf &GetControlRotation() const { return control_rotation_; }
 

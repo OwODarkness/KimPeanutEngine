@@ -113,6 +113,7 @@ namespace kpengine::runtime
         struct PendingActor
         {
             std::string authored_id;
+            std::string name;
             const char *kind = "actor";
             std::variant<gameplay::StaticMeshActorDesc,
                          gameplay::DirectionalLightActorDesc,

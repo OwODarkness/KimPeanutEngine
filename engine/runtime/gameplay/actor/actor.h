@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_GAMEPLAY_ACTOR_ACTOR_H
 
 #include <memory>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -35,6 +36,8 @@ namespace kpengine::gameplay
         Actor &operator=(Actor &&) = delete;
 
         ActorHandle GetHandle() const { return handle_; }
+        const std::string &GetName() const { return name_; }
+        void SetName(std::string name) { name_ = std::move(name); }
         ActorState GetState() const { return state_; }
         SceneComponent *GetRootComponent() const { return root_component_; }
         render::IRenderableSourceSink *GetRenderableSourceSink() const { return source_sink_; }
@@ -85,6 +88,7 @@ namespace kpengine::gameplay
         bool AddComponentInternal(std::unique_ptr<ActorComponent> component);
 
         ActorHandle handle_;
+        std::string name_;
         ActorState state_ = ActorState::Constructed;
         std::vector<std::unique_ptr<ActorComponent>> components_;
         uint32_t next_component_instance_id_ = 1;

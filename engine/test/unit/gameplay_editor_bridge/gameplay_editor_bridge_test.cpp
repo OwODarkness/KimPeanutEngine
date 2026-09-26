@@ -10,6 +10,8 @@
 #include "gameplay/component/camera_component.h"
 #include "gameplay/component/scene_component.h"
 #include "gameplay/editor_bridge/gameplay_editor_bridge.h"
+#include "gameplay/factory/camera_actor_factory.h"
+#include "gameplay/controller/player_controller.h"
 #include "gameplay/reflection/gameplay_reflection.h"
 #include "gameplay/world/gameplay_world.h"
 #include "reflection/entt/entt_reflection_registry.h"
@@ -271,6 +273,44 @@ TEST(GameplayEditorBridgeTest, AppliesEditsOnTheGameThreadAndReadsBackAcceptedVa
     ASSERT_NE(it, properties.end());
     ASSERT_NE(it->value.TryGet<double>(), nullptr);
     EXPECT_DOUBLE_EQ(*it->value.TryGet<double>(), 12.5);
+}
+
+TEST(GameplayEditorBridgeTest, ReflectedCameraRotationEditSynchronizesPossessedController)
+{
+    ReflectionFixture fixture;
+    const auto camera_handle = kpengine::gameplay::CreateCameraActor(fixture.world, {});
+    ASSERT_TRUE(camera_handle.IsValid());
+    auto *const controller = fixture.world.CreateLocalPlayerController(nullptr);
+    ASSERT_NE(controller, nullptr);
+    ASSERT_TRUE(controller->Possess(camera_handle));
+
+    auto *const camera_actor = fixture.world.FindActor(camera_handle);
+    ASSERT_NE(camera_actor, nullptr);
+    auto *const camera = camera_actor->FindComponent<kpengine::gameplay::CameraComponent>();
+    ASSERT_NE(camera, nullptr);
+    const auto *const type = fixture.system.GetCatalog()->FindType(
+        "kpengine.gameplay.CameraComponent");
+    ASSERT_NE(type, nullptr);
+    const auto *const property = FindProperty(
+        *fixture.system.GetCatalog(), "kpengine.gameplay.CameraComponent",
+        "transform.rotation.yaw");
+    ASSERT_NE(property, nullptr);
+
+    kpengine::gameplay::GameplayEditorBridge bridge(
+        fixture.world, *fixture.system.GetCatalog(), *fixture.system.GetAccess());
+    ASSERT_TRUE(bridge.Initialize());
+    const auto submission = bridge.SubmitPropertyEdit({
+        7U, camera_handle, camera->GetInstanceId(), type->id, property->id,
+        kpengine::reflection::ReflectionValue{135.0f}});
+    ASSERT_TRUE(submission.IsQueued());
+    bridge.PumpEdits();
+    const auto results = bridge.ConsumeEditResults();
+    ASSERT_EQ(results.size(), 1U);
+    EXPECT_EQ(results.front().status, kpengine::gameplay::PropertyEditResultStatus::Applied);
+    EXPECT_FLOAT_EQ(controller->GetControlRotation().yaw_, 135.0f);
+
+    fixture.world.Tick(0.0f);
+    EXPECT_FLOAT_EQ(camera->GetLocalTransform().rotator_.yaw_, 135.0f);
 }
 
 TEST(GameplayEditorBridgeTest, AppliesDeterministicPrefixBudgets)

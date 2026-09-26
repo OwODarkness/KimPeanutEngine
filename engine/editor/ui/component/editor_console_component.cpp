@@ -61,6 +61,32 @@ namespace kpengine::editor
                                           : std::get_if<std::string>(&iterator->second);
         }
 
+        const uint64_t *FindUnsigned(const runtime::command::CommandData &data,
+                                     const std::string &name)
+        {
+            const auto iterator = data.find(name);
+            return iterator == data.end() ? nullptr
+                                          : std::get_if<uint64_t>(&iterator->second);
+        }
+
+        const bool *FindBoolean(const runtime::command::CommandData &data,
+                                const std::string &name)
+        {
+            const auto iterator = data.find(name);
+            return iterator == data.end() ? nullptr
+                                          : std::get_if<bool>(&iterator->second);
+        }
+
+        std::string CommandValueText(const runtime::command::CommandValue &value)
+        {
+            if (const auto *const item = std::get_if<std::string>(&value)) return *item;
+            if (const auto *const item = std::get_if<bool>(&value)) return *item ? "true" : "false";
+            if (const auto *const item = std::get_if<int64_t>(&value)) return std::to_string(*item);
+            if (const auto *const item = std::get_if<uint64_t>(&value)) return std::to_string(*item);
+            if (const auto *const item = std::get_if<double>(&value)) return std::to_string(*item);
+            return "null";
+        }
+
         void SetBuffer(ImGuiInputTextCallbackData *data, const std::string &value)
         {
             const size_t max_length = static_cast<size_t>(data->BufSize - 1);
@@ -419,6 +445,54 @@ namespace kpengine::editor
             line += " -> " + *output_path;
         }
         AppendOutput(std::move(line));
+
+        const uint64_t *const actor_count = FindUnsigned(result.data, "count");
+        const uint64_t *const total_count = FindUnsigned(result.data, "total_count");
+        const bool *const has_more = FindBoolean(result.data, "has_more");
+        const bool is_actor_list = total_count != nullptr && has_more != nullptr;
+        if (is_actor_list)
+        {
+            std::string summary = "  Actors: showing " +
+                std::to_string(actor_count != nullptr ? *actor_count : 0) + " of " +
+                std::to_string(*total_count) + (*has_more ? " (more available)" : "");
+            AppendOutput(std::move(summary));
+
+            const uint64_t row_count = actor_count != nullptr
+                ? std::min<uint64_t>(*actor_count, 64)
+                : 0;
+            for (uint64_t index = 0; index < row_count; ++index)
+            {
+                const std::string prefix = "actors." + std::to_string(index) + ".";
+                const uint64_t *const id = FindUnsigned(result.data, prefix + "id");
+                const uint64_t *const generation = FindUnsigned(result.data, prefix + "generation");
+                if (id == nullptr || generation == nullptr)
+                {
+                    continue;
+                }
+
+                const std::string *const name = FindString(result.data, (prefix + "name").c_str());
+                const std::string *const state = FindString(result.data, (prefix + "state").c_str());
+                const bool *const has_root = FindBoolean(result.data, prefix + "has_root_component");
+                std::string actor_line = "  " +
+                    (name != nullptr && !name->empty() ? *name : "<unnamed>") +
+                    " (" + std::to_string(*id) + ":" + std::to_string(*generation) + ")";
+                if (state != nullptr)
+                {
+                    actor_line += " state=" + *state;
+                }
+                if (has_root != nullptr)
+                {
+                    actor_line += *has_root ? " root=yes" : " root=no";
+                }
+                AppendOutput(std::move(actor_line));
+            }
+            return;
+        }
+
+        for (const auto &[name, value] : result.data)
+        {
+            AppendOutput("  " + name + " = " + CommandValueText(value));
+        }
     }
 
     void EditorConsoleComponent::AppendOutput(std::string text)

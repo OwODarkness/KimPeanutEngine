@@ -112,3 +112,18 @@ target_link_libraries(WindowCommandProviderTest PRIVATE
 
 include(GoogleTest)
 gtest_discover_tests(WindowCommandProviderTest PROPERTIES LABELS "runtime")
+
+add_executable(GameplayCommandProviderTest
+    gameplay_command_provider_test.cpp
+)
+
+target_include_directories(GameplayCommandProviderTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+)
+
+target_link_libraries(GameplayCommandProviderTest PRIVATE
+    RuntimeGameplayCommand KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(GameplayCommandProviderTest PROPERTIES LABELS "runtime")

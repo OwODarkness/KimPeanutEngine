@@ -1,5 +1,14 @@
 # Project Status
 
+- **Runtime Gameplay Actor commands (2026-09-26)** — Runtime now exposes
+  `actor.list`, `actor.query`, and `actor.control` through its generic command
+  transport. Gameplay owns Actor names, bounded filtered value summaries,
+  transform query, and root-transform mutation; Runtime only adapts the
+  commands. All 987 CTest cases pass; live list/query/control and post-control
+  screenshots were verified on `pbr_showcase`. →
+  [GP9 plan](gameplay/.plan/GP9.md) ·
+  [journal](../.spec/journal/2026-09-25-gameplay-gp9-runtime-commands.md)
+
 - **Live2D semantic behavior contract (2026-09-16)** — L2D8.0 defines a
   versioned, SDK-free emotion/body-language vocabulary and validates authored
   motion/expression bindings against Product V2/V3 data. L2D8.1 now resolves

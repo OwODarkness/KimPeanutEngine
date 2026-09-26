@@ -224,6 +224,7 @@ namespace kpengine::runtime
                                    " Actor for authored ID: " + pending.authored_id);
             }
             created_handles.push_back(handle);
+            gameplay_world_.FindActor(handle)->SetName(pending.name);
         }
 
         if (environment.has_value())
@@ -280,6 +281,7 @@ namespace kpengine::runtime
                 }
 
                 pending.authored_id = record.id;
+                pending.name = record.name.empty() ? record.id : record.name;
                 using Record = std::decay_t<decltype(record)>;
                 if constexpr (std::is_same_v<Record, asset::LevelStaticMeshRecord>)
                 {

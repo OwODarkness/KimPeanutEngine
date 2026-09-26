@@ -53,6 +53,9 @@ in [Gameplay Module Design](gameplay_module.md).
   Landed 2026-09-02.
 - [GP8 — light transform alignment](.plan/GP8.md) — make point, spot, and
   directional lights consume SceneComponent transforms before Reflection RF2.
+- [GP9 — Runtime Gameplay control requests](.plan/GP9.md) — expose a narrow,
+  game-thread Gameplay control API through Runtime commands so an agent can set
+  an Actor transform without teaching the generic command registry about Actors.
 
 The multi-stage ownership, migration, and acceptance contract is the
 [Gameplay Level Asset GP7 spec](../../.spec/specs/gameplay-level-asset.md).

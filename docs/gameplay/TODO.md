@@ -1,11 +1,12 @@
 # Gameplay Module TODO
 
-**Status: GP0–GP5 validation and bootstrap-actor migration landed 2026-08-28;
-editor inspection deferred; GP6.1 camera data/source contract, GP6.2 local
-camera traversal, GP6.3 controller/gamepad proof, and GP6.4 viewport camera
-capture landed 2026-08-30. EnTT 3.16.0 dependency foundation landed
-2026-09-05; GP8 light transform alignment landed 2026-09-05; Gameplay has
-not migrated to ECS or reflection.**
+**Status: GP0–GP8 landed. Gameplay uses Actor/component ownership rather than an
+ECS registry; selected Gameplay component properties are registered with engine
+Reflection and are exposed to the editor through copied snapshots and queued
+property edits. GP9 Runtime Gameplay commands landed 2026-09-26: `actor.list`,
+`actor.query`, and `actor.control` include level-authored names and filtering,
+Gameplay-owned transform mutation, editor camera-rotation synchronization,
+focused test coverage, and a successful live Runtime smoke.**
 Architecture map: [PLANS.md](PLANS.md). Detailed design:
 [gameplay_module.md](gameplay_module.md).
 The render-side proxy contract is already implemented; its integration ledger is
@@ -422,6 +423,41 @@ file schema.
 the level loader/schema remains unchanged. This stage intentionally precedes
 Reflection RF2 so light reflection can expose only color, intensity, range,
 cone, enabled, and shadow properties.
+
+## GP9 — Runtime Gameplay control requests
+
+**Goal:** let an authorized local agent request a live Actor transform change
+through Runtime's command transport while Gameplay remains the owner of Actor
+identity, validation, and mutation. See the [GP9 plan](.plan/GP9.md).
+
+- [x] Add a Gameplay-owned operation for setting an Actor root's local
+  position and rotation by generational `ActorHandle`, preserving scale.
+- [x] Add bounded, read-only `actor.list` and `actor.query` commands so an agent
+  can discover live handles by authored name and inspect value-only root
+  transform state. `actor.list` supports a `name_contains` substring filter.
+- [x] Add a Runtime integration provider that registers Game-lane list, query,
+  and control commands; keep Actor and component types out of generic
+  RuntimeCommand and JSON transport layers.
+- [x] Preserve transform setter side effects, including dirty propagation and
+  camera/render source publication; synchronize a possessed root camera's
+  controller rotation after control requests.
+- [x] Return Actor identity and applied transform; reject stale handles,
+  missing roots, invalid values, and callers without Mutating capability.
+- [x] Keep editor property edits on the copied-snapshot/value-command path;
+  synchronize possessed camera control rotation after reflected rotation edits
+  without turning the editor bridge into a general command router.
+- [x] Add focused tests for handle validation, transform results, game-thread
+  execution, controller synchronization, command permissions, and regression
+  of existing editor property edits.
+- [x] Exercise list, query, and control through the live command transport on a
+  checked-in startup level; verify controlled Actor and camera transforms in
+  subsequent query results and capture a post-control frame.
+
+**Done when:** a local agent can discover live Actor handles and execute
+`actor.query` and `actor.control` against the running Engine, receive
+deterministic results, and observe the next Gameplay tick and render-source
+update reflect the accepted pose. No Actor pointer or mutable reflection
+object crosses the command transport boundary.
 
 ## After GP6
 

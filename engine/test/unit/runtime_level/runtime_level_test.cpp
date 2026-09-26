@@ -350,7 +350,9 @@ TEST(RuntimeLevelTest, InstantiatesStaticMeshesInAuthoredOrderAndMapsIDs)
     AssetFixture assets;
     RecordingSourceSink source_sink;
     kpengine::gameplay::GameplayWorld world{&source_sink};
-    const AssetID level_id = assets.AddLevel({MakeMeshRecord("first", 2), MakeMeshRecord("second", -1)});
+    LevelStaticMeshRecord named_record = MakeMeshRecord("first", 2);
+    named_record.name = "Named Bunny Actor";
+    const AssetID level_id = assets.AddLevel({named_record, MakeMeshRecord("second", -1)});
 
     kpengine::runtime::LevelInstance instance{assets.assets, world};
     const kpengine::runtime::LevelInstanceResult result = instance.Instantiate(level_id);
@@ -380,6 +382,7 @@ TEST(RuntimeLevelTest, InstantiatesStaticMeshesInAuthoredOrderAndMapsIDs)
     const auto second_actor = instance.FindActor("second");
     ASSERT_TRUE(first_actor.has_value());
     ASSERT_TRUE(second_actor.has_value());
+    EXPECT_EQ(world.FindActor(*first_actor)->GetName(), "Named Bunny Actor");
     EXPECT_EQ(world.FindActor(*first_actor)->GetState(), kpengine::gameplay::ActorState::Active);
     EXPECT_EQ(world.FindActor(*second_actor)->GetState(), kpengine::gameplay::ActorState::Active);
     EXPECT_FALSE(instance.FindActor("unknown").has_value());

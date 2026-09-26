@@ -12,6 +12,7 @@ add_subdirectory(asset)
 add_subdirectory(audio)
 add_subdirectory(bootstrap)
 add_subdirectory(command)
+add_subdirectory(gameplay_command)
 add_subdirectory(script)
 add_subdirectory(screenshot)
 add_subdirectory(level)
@@ -31,4 +32,4 @@ target_include_directories(RuntimeLib PUBLIC
 ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
-target_link_libraries(RuntimeLib PUBLIC Core Graphics Script PRIVATE EditorLib Window Input Render Gameplay GameplayReflection GameplayEditorBridge RuntimeLevel Bootstrap Platform ImageIO RuntimeScreenshot RuntimeCommand RuntimeScreenshotCommand RuntimeWindowCommand RuntimePerformanceStatsCommand)
+target_link_libraries(RuntimeLib PUBLIC Core Graphics Script PRIVATE EditorLib Window Input Render Gameplay GameplayReflection GameplayEditorBridge RuntimeLevel Bootstrap Platform ImageIO RuntimeScreenshot RuntimeCommand RuntimeScreenshotCommand RuntimeWindowCommand RuntimePerformanceStatsCommand RuntimeGameplayCommand)

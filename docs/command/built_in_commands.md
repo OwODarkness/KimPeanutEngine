@@ -10,6 +10,9 @@ below are stable built-ins today.
 | `help` | Show help for one command or list names. | [`help`](#help) |
 | `capture.screenshot` | Capture a live final or diagnostic render view and export a PNG. | [`capture.screenshot`](#capturescreenshot) |
 | `window.resize` | Resize the active window's client area. | [`window.resize`](#windowresize) |
+| `actor.list` | List and filter live Gameplay Actors by authored name and generational handle. | [`actor.list`](#actorlist) |
+| `actor.query` | Read one Actor's state and root transform by handle. | [`actor.query`](#actorquery) |
+| `actor.control` | Set an Actor root's local position and rotation. | [`actor.control`](#actorcontrol) |
 | `gpu-stats` | Return the latest completed-frame GPU statistics. | [`gpu-stats`](#gpu-stats-cpu-stats-and-stats) |
 | `cpu-stats` | Return the latest completed-frame CPU and frame-loop statistics. | [`cpu-stats`](#gpu-stats-cpu-stats-and-stats) |
 | `stats` | Return the latest completed-frame CPU and GPU statistics. | [`stats`](#gpu-stats-cpu-stats-and-stats) |
@@ -32,6 +35,68 @@ Lists registered command names in deterministic alphabetical order.
 Use it for human-readable discovery in the console or C++/Lua workflows. Agent
 JSON `{"op":"list"}` is the structured discovery equivalent and returns name,
 provider, and help text.
+
+## `actor.list`
+
+Lists a bounded page of live Actors in deterministic handle order. Available
+in Scene3D mode when the local agent transport is enabled.
+
+| Property | Value |
+|---|---|
+| Provider | `RuntimeGameplay` |
+| Execution lane | Game |
+| Allowed callers | Agent |
+| `name_contains` | Optional ASCII case-insensitive substring filter against the Actor's name; defaults to empty (no filter). |
+| `offset` | Optional unsigned integer; defaults to 0 and pages the filtered results. |
+| `limit` | Optional unsigned integer from 1 to 64; defaults to 32. |
+| Result | `count`, `total_count`, `has_more`, `next_offset`, and indexed `actors.N.*` fields containing `name`, `id`, `generation`, `state`, and `has_root_component`. |
+
+Level Actors use the authored object name, falling back to the authored ID;
+other Actors without a name return an empty `name`. The editor displays
+`name (Actor id:generation)` when named. Use the returned `id` and `generation`
+as the target identity because names may be duplicated or changed. Agent paging
+can observe a world that changes between requests; a stale generation is
+rejected by later commands. These commands execute on the Game lane, so the
+initial agent response is `pending` with a request ID; poll that ID for the
+terminal result.
+
+## `actor.query`
+
+Returns the current state and root component transforms for one live Actor.
+Available in Scene3D mode when the local agent transport is enabled.
+
+| Property | Value |
+|---|---|
+| Provider | `RuntimeGameplay` |
+| Execution lane | Game |
+| Allowed callers | Agent |
+| `id` | Required unsigned Actor handle ID. |
+| `generation` | Required unsigned Actor handle generation. |
+| Result | Name, handle, state, root presence, and `root.local.*` / `root.world.*` transform channels when a root exists. |
+
+## `actor.control`
+
+Sets the local position and rotation of an Actor's root SceneComponent and
+preserves its scale. When that root is the possessed camera, Gameplay
+synchronizes PlayerController rotation as part of the operation.
+
+| Property | Value |
+|---|---|
+| Provider | `RuntimeGameplay` |
+| Execution lane | Game |
+| Capability | `MutatesState` |
+| Allowed callers | Agent with mutating capability; `--agent-port` grants it. |
+| Handle | Required unsigned `id` and `generation`. |
+| Transform | Required finite float values `local_position_x/y/z` and `local_pitch/yaw/roll`. |
+| Result | Resolved handle and applied local position, rotation, and preserved scale. |
+
+Example JSON-lines requests after starting the Engine with `--agent-port 37373`:
+
+```json
+{"op":"execute","command":"actor.list","arguments":{"name_contains":"bunny","limit":32}}
+{"op":"execute","command":"actor.query","arguments":{"id":0,"generation":0}}
+{"op":"execute","command":"actor.control","arguments":{"id":0,"generation":0,"local_position_x":0.0,"local_position_y":0.0,"local_position_z":300.0,"local_pitch":0.0,"local_yaw":-90.0,"local_roll":0.0}}
+```
 
 ## `help`
 

@@ -6,6 +6,7 @@
 
 #include "gameplay/actor/actor.h"
 #include "gameplay/component/camera_component.h"
+#include "gameplay/component/scene_component.h"
 #include "gameplay/world/gameplay_world.h"
 #include "input/input_system.h"
 
@@ -175,6 +176,27 @@ namespace kpengine::gameplay
         movement_input_ = {};
         look_input_ = {};
         zoom_input_ = 0.0f;
+    }
+
+    void PlayerController::SynchronizeControlRotation(
+        const ActorHandle actor_handle, const SceneComponent &changed_component)
+    {
+        if (possessed_actor_ != actor_handle)
+        {
+            return;
+        }
+
+        CameraComponent *const camera = FindPossessedCamera();
+        if (camera == nullptr || camera != &changed_component)
+        {
+            return;
+        }
+
+        control_rotation_ = camera->GetLocalTransform().rotator_;
+        control_rotation_.pitch_ = std::clamp(control_rotation_.pitch_, kPitchMin, kPitchMax);
+        control_rotation_.yaw_ = WrapDegrees(control_rotation_.yaw_);
+        control_rotation_.roll_ = 0.0f;
+        camera->SetLocalRotation(control_rotation_);
     }
 
     void PlayerController::Tick(float delta_time)

@@ -8,6 +8,7 @@
 #include "screenshot/screenshot_command_provider.h"
 #include "window/window_system.h"
 #include "window/window_command_provider.h"
+#include "gameplay_command/gameplay_command_provider.h"
 #include "platform/memory_stats_sampler.h"
 #include "render/render_system.h"
 #include "render_asset_preparer.h"
@@ -61,6 +62,22 @@ namespace kpengine
                 render_system_->GetRenderableSourceSink(),
                 render_system_->GetLightSourceSink(),
                 render_system_->GetCameraSourceSink());
+            if (command_registry_ != nullptr)
+            {
+                GameplayCommandRegistrationResult gameplay_commands =
+                    RegisterGameplayCommands(*command_registry_, [this]()
+                    {
+                        return gameplay_world_.get();
+                    });
+                if (!gameplay_commands.IsSuccess())
+                {
+                    throw std::runtime_error(
+                        "Could not register Gameplay commands: " +
+                        gameplay_commands.diagnostic);
+                }
+                gameplay_command_registrations_ =
+                    std::move(gameplay_commands.registrations);
+            }
             level_instance_ = std::make_unique<LevelInstance>(
                 asset::AssetManager::GetInstance(), *gameplay_world_, LevelActorFactorySet{},
                 render_system_->GetEnvironmentSourceSink());
@@ -745,6 +762,7 @@ namespace kpengine
                 gameplay_editor_bridge_->Shutdown();
                 gameplay_editor_bridge_.reset();
             }
+            gameplay_command_registrations_ = {};
             report_progress(1, "Releasing level");
             level_instance_.reset();
             // With the level: both are consumers of Asset state, and releasing the copy
