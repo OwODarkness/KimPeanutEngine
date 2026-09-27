@@ -55,6 +55,7 @@ namespace kpengine::render
 
         void ApplyPendingCommands();
         std::vector<MeshProxy> Snapshot() const;
+        uint64_t GetRevision() const;
         std::optional<MeshProxy> Find(RenderableHandle handle) const;
         bool IsRegistered(RenderableHandle handle) const;
         void Clear();
@@ -67,6 +68,7 @@ namespace kpengine::render
         HandleSystem<RenderableHandle> handles_;
         std::unordered_map<uint32_t, MeshProxy> proxies_;
         std::vector<MeshProxyCommand> pending_commands_;
+        uint64_t revision_ = 1;
     };
 }
 

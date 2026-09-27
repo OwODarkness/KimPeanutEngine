@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_RENDER_DEFERRED_RENDERER_H
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <limits>
@@ -83,6 +84,7 @@ namespace kpengine::render
         void RequestExtent(uint32_t width, uint32_t height);
         void SetPathTraceProbeMode(PathTraceProbeMode mode);
         void InjectNextPathTraceDispatchFailure();
+        void InvalidateRayTracingTextureBindings();
         void ApplyPendingExtent();
         const RenderTarget &GetSceneRenderTarget() const;
         spatial::Ray BuildSceneRay(float ndc_x, float ndc_y,
@@ -207,6 +209,7 @@ namespace kpengine::render
         bool PrepareRayTracingScene();
         bool RecordRayTracingBlasBuild();
         bool RecordRayTracingTlasBuild();
+        void DestroyRayTracingPathTraceBindings();
         void DestroyRayTracingResources();
         bool PrepareDirectionalShadowPassResources();
         bool GetPreparedProgram(
@@ -354,6 +357,18 @@ namespace kpengine::render
             Vector4f color_intensity{};
             Vector4f parameters{};
         };
+        struct RayTracingPathTraceBindingCache
+        {
+            graphics::DescriptorSetHandle descriptor_set;
+            graphics::RayTracingPipelineHandle pipeline;
+            graphics::AccelerationStructureHandle top_level;
+            graphics::RayTracingBufferReferenceTableHandle scene_table;
+            graphics::TextureHandle hdr_output;
+            graphics::TextureHandle history_output;
+            graphics::TextureHandle environment;
+            graphics::SamplerHandle environment_sampler;
+            UniformAllocation camera_uniform;
+        };
         std::unordered_map<graphics::MeshHandle, RayTracingBlasState> ray_tracing_blas_;
         graphics::AccelerationStructureHandle ray_tracing_tlas_;
         uint32_t ray_tracing_tlas_capacity_ = 0;
@@ -366,6 +381,21 @@ namespace kpengine::render
         std::vector<RayTracingPathInstanceData> frame_ray_tracing_instance_data_;
         std::vector<RayTracingPathMaterialData> frame_ray_tracing_material_data_;
         std::vector<RayTracingPathLightData> frame_ray_tracing_light_data_;
+        std::vector<graphics::RayTracingBufferAddressPatch>
+            frame_ray_tracing_scene_address_patches_;
+        graphics::RayTracingBufferReferenceTableHandle ray_tracing_scene_table_;
+        uint64_t ray_tracing_scene_cache_world_revision_ = 0;
+        uint64_t ray_tracing_scene_cache_material_revision_ = 0;
+        uint64_t ray_tracing_scene_cache_instance_signature_ = 0;
+        uint64_t ray_tracing_scene_cache_material_signature_ = 0;
+        uint64_t ray_tracing_scene_table_lighting_signature_ = 0;
+        bool ray_tracing_scene_cache_path_tracing_enabled_ = false;
+        bool ray_tracing_scene_cache_valid_ = false;
+        bool frame_ray_tracing_scene_table_dirty_ = true;
+        uint64_t ray_tracing_scene_record_cache_hits_total_ = 0;
+        uint64_t ray_tracing_scene_record_cache_misses_total_ = 0;
+        std::vector<std::array<RayTracingPathTraceBindingCache, 2>>
+            ray_tracing_path_tracing_bindings_;
         uint64_t frame_ray_tracing_lighting_signature_ = 0;
         std::vector<RayTracingMeshBuild> frame_ray_tracing_mesh_builds_;
         std::vector<graphics::RayTracingBuildDesc> frame_ray_tracing_blas_builds_;
@@ -398,7 +428,6 @@ namespace kpengine::render
         graphics::PipelineHandle tone_map_pipeline_;
         graphics::PipelineHandle directional_shadow_pipeline_;
         graphics::RayTracingPipelineHandle ray_tracing_path_tracing_pipeline_;
-        graphics::DescriptorSetHandle ray_tracing_path_tracing_bindings_;
         bool ray_tracing_path_tracing_available_ = false;
         bool path_tracing_enabled_ = true;
         bool active_ray_tracing_path_trace_ = false;

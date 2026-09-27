@@ -247,6 +247,10 @@ namespace kpengine::render
             {
                 frame_context.InvalidateTextureBindings();
             }
+            if (deferred_renderer_)
+            {
+                deferred_renderer_->InvalidateRayTracingTextureBindings();
+            }
             resource_resolver_->DestroyRetiredTextures();
         }
         const double backend_begin_ms =
@@ -391,6 +395,8 @@ namespace kpengine::render
             backend_profile.ray_tracing.address_table_buffers_created;
         profile_.ray_tracing_address_table_upload_bytes =
             backend_profile.ray_tracing.address_table_upload_bytes;
+        profile_.ray_tracing_acceleration_structure_storage_bytes =
+            backend_profile.ray_tracing.acceleration_structure_storage_bytes;
         profile_.ray_tracing_blas_builds = backend_profile.ray_tracing.blas_builds;
         profile_.ray_tracing_blas_updates = backend_profile.ray_tracing.blas_updates;
         profile_.ray_tracing_tlas_builds = backend_profile.ray_tracing.tlas_builds;

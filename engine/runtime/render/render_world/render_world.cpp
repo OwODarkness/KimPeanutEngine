@@ -38,10 +38,11 @@ namespace kpengine::render
     void RenderWorld::ApplyPendingCommands()
     {
         std::scoped_lock lock(mutex_);
+        bool changed = false;
         for (const MeshProxyCommand &command : pending_commands_)
         {
             std::visit(
-                [this](const auto &value)
+                [this, &changed](const auto &value)
                 {
                     using Command = std::decay_t<decltype(value)>;
                     if constexpr (std::is_same_v<Command, CreateMeshProxyCommand>)
@@ -50,6 +51,7 @@ namespace kpengine::render
                             proxies_.find(value.handle.id) == proxies_.end())
                         {
                             proxies_.emplace(value.handle.id, MakeProxy(value.handle, value.desc));
+                            changed = true;
                         }
                     }
                     else if constexpr (std::is_same_v<Command, UpdateMeshProxyCommand>)
@@ -58,6 +60,7 @@ namespace kpengine::render
                         if (it != proxies_.end() && it->second.handle == value.handle)
                         {
                             it->second = MakeProxy(value.handle, value.desc);
+                            changed = true;
                         }
                     }
                     else
@@ -67,12 +70,17 @@ namespace kpengine::render
                         {
                             proxies_.erase(it);
                             handles_.Destroy(value.handle);
+                            changed = true;
                         }
                     }
                 },
                 command);
         }
         pending_commands_.clear();
+        if (changed && ++revision_ == 0)
+        {
+            ++revision_;
+        }
     }
 
     std::vector<MeshProxy> RenderWorld::Snapshot() const
@@ -89,6 +97,12 @@ namespace kpengine::render
                   [](const MeshProxy &lhs, const MeshProxy &rhs)
                   { return lhs.handle.id < rhs.handle.id; });
         return snapshot;
+    }
+
+    uint64_t RenderWorld::GetRevision() const
+    {
+        std::scoped_lock lock(mutex_);
+        return revision_;
     }
 
     std::optional<MeshProxy> RenderWorld::Find(RenderableHandle handle) const
@@ -109,9 +123,14 @@ namespace kpengine::render
     void RenderWorld::Clear()
     {
         std::scoped_lock lock(mutex_);
+        const bool changed = !proxies_.empty() || !pending_commands_.empty();
         proxies_.clear();
         pending_commands_.clear();
         handles_ = {};
+        if (changed && ++revision_ == 0)
+        {
+            ++revision_;
+        }
     }
 
     bool RenderWorld::IsHandleRegistered(RenderableHandle handle) const

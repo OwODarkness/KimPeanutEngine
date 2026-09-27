@@ -119,15 +119,32 @@ namespace kpengine::graphics
             {
                 ++counts.descriptor_sets;
                 counts.pending_descriptor_sets += resource.pending_destroy ? 1u : 0u;
-                counts.address_table_buffers +=
-                    static_cast<uint32_t>(resource.owned_address_table_buffers.size());
             }
+        }
+        for (const RayTracingBufferReferenceTableResource &resource :
+             ray_tracing_buffer_reference_tables_)
+        {
+            counts.address_table_buffers += resource.alive ? 1u : 0u;
         }
         for (const TemporaryBuffers &buffers : temporary_buffers_)
         {
             counts.temporary_buffer_batches += buffers.handles.empty() ? 0u : 1u;
         }
         return counts;
+    }
+
+    RayTracingResourceProfileCounters
+    VulkanAccelerationStructureOwner::GetProfileCounters() const noexcept
+    {
+        RayTracingResourceProfileCounters counters = profile_counters_;
+        for (const Resource &resource : resources_)
+        {
+            if (resource.alive)
+            {
+                counters.acceleration_structure_storage_bytes += resource.storage_size;
+            }
+        }
+        return counters;
     }
 
     AccelerationStructureHandle VulkanAccelerationStructureOwner::CreateAccelerationStructure(
@@ -478,6 +495,91 @@ namespace kpengine::graphics
         return ray_tracing_pipeline_handle_system_.Destroy(handle);
     }
 
+    RayTracingBufferReferenceTableHandle
+    VulkanAccelerationStructureOwner::CreateRayTracingBufferReferenceTable(
+        RayTracingBufferReferenceTableDesc desc)
+    {
+        if (!supported_ || desc.data.empty())
+        {
+            return {};
+        }
+        for (const RayTracingBufferAddressPatch &patch : desc.address_patches)
+        {
+            if (!patch.buffer.IsValid() || patch.byte_offset > desc.data.size() ||
+                sizeof(uint64_t) > desc.data.size() - patch.byte_offset)
+            {
+                return {};
+            }
+            const VkDeviceAddress base_address =
+                buffer_manager_->GetDeviceAddress(device_, patch.buffer);
+            if (base_address == 0 ||
+                patch.buffer_offset > std::numeric_limits<VkDeviceAddress>::max() - base_address)
+            {
+                return {};
+            }
+            const VkDeviceAddress address = base_address + patch.buffer_offset;
+            std::memcpy(desc.data.data() + patch.byte_offset, &address, sizeof(address));
+        }
+
+        VkBufferCreateInfo table_info{};
+        table_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+        table_info.size = desc.data.size();
+        table_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
+                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+        table_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+        const BufferHandle buffer = buffer_manager_->CreateBufferResource(
+            device_, &table_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
+        if (!buffer.IsValid())
+        {
+            return {};
+        }
+        VulkanBufferResource *const buffer_resource = buffer_manager_->GetBufferResource(buffer);
+        if (buffer_resource == nullptr)
+        {
+            buffer_manager_->DestroyBufferResource(device_, buffer);
+            return {};
+        }
+        try
+        {
+            buffer_manager_->UploadData(buffer, desc.data.size(), desc.data.data());
+        }
+        catch (...)
+        {
+            buffer_manager_->DestroyBufferResource(device_, buffer);
+            return {};
+        }
+
+        const RayTracingBufferReferenceTableHandle handle =
+            ray_tracing_buffer_reference_table_handle_system_.Create();
+        if (handle.id == ray_tracing_buffer_reference_tables_.size())
+        {
+            ray_tracing_buffer_reference_tables_.emplace_back();
+        }
+        RayTracingBufferReferenceTableResource &resource =
+            ray_tracing_buffer_reference_tables_[handle.id];
+        resource = {};
+        resource.handle = handle;
+        resource.buffer = buffer;
+        resource.byte_size = desc.data.size();
+        resource.alive = true;
+        ++profile_counters_.address_table_buffers_created;
+        profile_counters_.address_table_upload_bytes += desc.data.size();
+        return handle;
+    }
+
+    bool VulkanAccelerationStructureOwner::DestroyRayTracingBufferReferenceTable(
+        RayTracingBufferReferenceTableHandle handle)
+    {
+        RayTracingBufferReferenceTableResource *const resource =
+            GetRayTracingBufferReferenceTable(handle);
+        if (resource == nullptr || resource->pending_destroy)
+        {
+            return false;
+        }
+        resource->pending_destroy = true;
+        return true;
+    }
+
     DescriptorSetHandle VulkanAccelerationStructureOwner::CreateRayTracingResourceBindingSet(
         RayTracingPipelineHandle pipeline, const RayTracingResourceBindingSetDesc &desc)
     {
@@ -555,7 +657,7 @@ namespace kpengine::graphics
         std::vector<VkDescriptorImageInfo> images;
         std::vector<VkWriteDescriptorSetAccelerationStructureKHR> acceleration_infos;
         std::vector<VkAccelerationStructureKHR> acceleration_structures;
-        std::vector<BufferHandle> owned_address_table_buffers;
+        std::vector<RayTracingBufferReferenceTableHandle> referenced_address_tables;
         writes.reserve(desc.bindings.size());
         buffers.reserve(desc.bindings.size());
         images.reserve(desc.bindings.size());
@@ -618,45 +720,18 @@ namespace kpengine::graphics
                     else if constexpr (std::is_same_v<Binding,
                                                        RayTracingBufferReferenceTableBinding>)
                     {
-                        if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || value.data.empty())
+                        RayTracingBufferReferenceTableResource *const table =
+                            GetRayTracingBufferReferenceTable(value.table);
+                        VulkanBufferResource *const table_buffer =
+                            table != nullptr && !table->pending_destroy
+                                ? buffer_manager_->GetBufferResource(table->buffer)
+                                : nullptr;
+                        if (type != VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER || table == nullptr ||
+                            table->pending_destroy || table_buffer == nullptr ||
+                            table->byte_size == 0)
                             throw std::runtime_error("invalid RT buffer-reference table binding");
-                        std::vector<std::byte> patched_data = value.data;
-                        for (const RayTracingBufferAddressPatch &patch : value.address_patches)
-                        {
-                            if (!patch.buffer.IsValid() ||
-                                patch.byte_offset > patched_data.size() ||
-                                sizeof(uint64_t) > patched_data.size() - patch.byte_offset)
-                            {
-                                throw std::runtime_error("invalid RT buffer-reference patch");
-                            }
-                            const VkDeviceAddress base_address =
-                                buffer_manager_->GetDeviceAddress(device_, patch.buffer);
-                            if (base_address == 0)
-                                throw std::runtime_error("RT source buffer has no device address");
-                            const uint64_t address = base_address + patch.buffer_offset;
-                            std::memcpy(patched_data.data() + patch.byte_offset,
-                                        &address, sizeof(address));
-                        }
-                        VkBufferCreateInfo table_info{};
-                        table_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-                        table_info.size = patched_data.size();
-                        table_info.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT |
-                                           VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-                        table_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-                        const BufferHandle table_handle = buffer_manager_->CreateBufferResource(
-                            device_, &table_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
-                        if (!table_handle.IsValid())
-                            throw std::runtime_error("failed to allocate RT address table");
-                        owned_address_table_buffers.push_back(table_handle);
-                        ++profile_counters_.address_table_buffers_created;
-                        buffer_manager_->UploadData(table_handle, patched_data.size(),
-                                                    patched_data.data());
-                        profile_counters_.address_table_upload_bytes += patched_data.size();
-                        VulkanBufferResource *table_buffer =
-                            buffer_manager_->GetBufferResource(table_handle);
-                        if (!table_buffer)
-                            throw std::runtime_error("RT address table upload buffer is invalid");
-                        buffers.push_back({table_buffer->buffer, 0, patched_data.size()});
+                        referenced_address_tables.push_back(table->handle);
+                        buffers.push_back({table_buffer->buffer, 0, table->byte_size});
                         write.descriptorType = type;
                         write.pBufferInfo = &buffers.back();
                     }
@@ -682,8 +757,6 @@ namespace kpengine::graphics
         catch (...)
         {
             vkDestroyDescriptorPool(device_, pool, nullptr);
-            for (const BufferHandle table : owned_address_table_buffers)
-                buffer_manager_->DestroyBufferResource(device_, table);
             return {};
         }
         vkUpdateDescriptorSets(device_, static_cast<uint32_t>(writes.size()), writes.data(), 0, nullptr);
@@ -696,8 +769,17 @@ namespace kpengine::graphics
         resource.descriptor_set = descriptor_set;
         resource.pipeline = pipeline;
         resource.set = desc.set;
-        resource.owned_address_table_buffers = std::move(owned_address_table_buffers);
+        resource.referenced_address_tables = std::move(referenced_address_tables);
         resource.alive = true;
+        for (const RayTracingBufferReferenceTableHandle table_handle :
+             resource.referenced_address_tables)
+        {
+            if (RayTracingBufferReferenceTableResource *const table =
+                    GetRayTracingBufferReferenceTable(table_handle))
+            {
+                ++table->descriptor_references;
+            }
+        }
         return handle;
     }
 
@@ -813,6 +895,28 @@ namespace kpengine::graphics
         const uint32_t index = handle_system_.Get(handle);
         return index < resources_.size() && resources_[index].alive
                    ? &resources_[index]
+                   : nullptr;
+    }
+
+    VulkanAccelerationStructureOwner::RayTracingBufferReferenceTableResource *
+    VulkanAccelerationStructureOwner::GetRayTracingBufferReferenceTable(
+        RayTracingBufferReferenceTableHandle handle)
+    {
+        const uint32_t index = ray_tracing_buffer_reference_table_handle_system_.Get(handle);
+        return index < ray_tracing_buffer_reference_tables_.size() &&
+                       ray_tracing_buffer_reference_tables_[index].alive
+                   ? &ray_tracing_buffer_reference_tables_[index]
+                   : nullptr;
+    }
+
+    const VulkanAccelerationStructureOwner::RayTracingBufferReferenceTableResource *
+    VulkanAccelerationStructureOwner::GetRayTracingBufferReferenceTable(
+        RayTracingBufferReferenceTableHandle handle) const
+    {
+        const uint32_t index = ray_tracing_buffer_reference_table_handle_system_.Get(handle);
+        return index < ray_tracing_buffer_reference_tables_.size() &&
+                       ray_tracing_buffer_reference_tables_[index].alive
+                   ? &ray_tracing_buffer_reference_tables_[index]
                    : nullptr;
     }
 
@@ -1180,8 +1284,26 @@ namespace kpengine::graphics
     {
         if (resource.alive && resource.pool != VK_NULL_HANDLE)
             vkDestroyDescriptorPool(device_, resource.pool, nullptr);
-        for (const BufferHandle table : resource.owned_address_table_buffers)
-            buffer_manager_->DestroyBufferResource(device_, table);
+        for (const RayTracingBufferReferenceTableHandle table_handle :
+             resource.referenced_address_tables)
+        {
+            if (RayTracingBufferReferenceTableResource *const table =
+                    GetRayTracingBufferReferenceTable(table_handle);
+                table != nullptr && table->descriptor_references > 0)
+            {
+                --table->descriptor_references;
+            }
+        }
+        resource = {};
+    }
+
+    void VulkanAccelerationStructureOwner::DestroyRayTracingBufferReferenceTableResource(
+        RayTracingBufferReferenceTableResource &resource) noexcept
+    {
+        if (resource.buffer.IsValid())
+        {
+            buffer_manager_->DestroyBufferResource(device_, resource.buffer);
+        }
         resource = {};
     }
 
@@ -1213,6 +1335,21 @@ namespace kpengine::graphics
                 DestroyRayTracingDescriptorSet(resource);
                 ++profile_counters_.retired_descriptor_sets;
                 ray_tracing_descriptor_set_handle_system_.Destroy(handle);
+            }
+        }
+        for (uint32_t index = 0;
+             index < ray_tracing_buffer_reference_tables_.size(); ++index)
+        {
+            RayTracingBufferReferenceTableResource &resource =
+                ray_tracing_buffer_reference_tables_[index];
+            if (resource.alive && resource.pending_destroy &&
+                resource.retire_serial != 0 &&
+                resource.retire_serial <= completed_submission_serial &&
+                resource.descriptor_references == 0)
+            {
+                const RayTracingBufferReferenceTableHandle handle = resource.handle;
+                DestroyRayTracingBufferReferenceTableResource(resource);
+                ray_tracing_buffer_reference_table_handle_system_.Destroy(handle);
             }
         }
         for (TemporaryBuffers &temporary_buffers : temporary_buffers_)
@@ -1255,6 +1392,14 @@ namespace kpengine::graphics
             if (resource.alive && resource.pending_destroy && resource.retire_serial == 0)
                 resource.retire_serial = submission_serial;
         }
+        for (RayTracingBufferReferenceTableResource &resource :
+             ray_tracing_buffer_reference_tables_)
+        {
+            if (resource.alive && resource.pending_destroy && resource.retire_serial == 0)
+            {
+                resource.retire_serial = submission_serial;
+            }
+        }
     }
 
     void VulkanAccelerationStructureOwner::DestroyAll() noexcept
@@ -1262,6 +1407,11 @@ namespace kpengine::graphics
         for (RayTracingDescriptorSetResource &resource : ray_tracing_descriptor_sets_)
         {
             DestroyRayTracingDescriptorSet(resource);
+        }
+        for (RayTracingBufferReferenceTableResource &resource :
+             ray_tracing_buffer_reference_tables_)
+        {
+            DestroyRayTracingBufferReferenceTableResource(resource);
         }
         for (RayTracingPipelineResource &resource : ray_tracing_pipelines_)
         {

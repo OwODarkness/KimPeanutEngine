@@ -345,3 +345,245 @@ crash during frame-exception cleanup. Corrected Debug Cornell and Sponza now
 export valid Beauty captures; optimization acceptance remains open. This
 supersedes the earlier unresolved-crash/black-image observations for the fixed
 build without erasing historical run evidence.
+
+## R4.7.3 AS policy evaluation — 2026-09-27
+
+Measured static `PREFER_FAST_TRACE` for bottom-level AS and TLAS preference
+separately against the no-preference RelWithDebInfo baseline. Runs used Vulkan,
+the checked-in Sponza fixture, 1094×619, authored camera, 4 SPP, eight bounces,
+mailbox, and complete tracked texture residency for each completed 120-warmup /
+300-sample window. No concurrent build ran during sampling.
+
+| Variant | Startup to active PT | AS bytes | BLAS build CPU | PT p50 / p95 GPU |
+| --- | ---: | ---: | ---: | ---: |
+| No preference, completed window | 9.467 s first-active; 22.292 s window capture | 728,189,952 | 17.936 ms | 23.974 / 26.187 ms |
+| Static BLAS preference, first active only | 8.982 s | 786,098,304 | 19.988 ms | unavailable |
+| TLAS preference, completed window | 11.021 s first-active; 23.823 s window capture | 786,098,560 | 16.807 ms | 24.813 / 28.067 ms |
+
+The TLAS candidate used 57,908,608 more AS bytes (7.95%) and had a 0.839 ms
+slower PT p50 in the single collected window. This is not enough repetition to
+claim a regression, but it does not justify retaining the policy. The static
+BLAS run reached PT-active and collected its AS/build counters, then
+`vkQueueWaitIdle(upload)` returned `VkResult=-4` before a steady sample window.
+The process stopped on this first error; the same failing candidate was not
+relaunched. Neither policy is retained in the default build.
+
+Added the read-only `ray_tracing_acceleration_structure_storage_bytes` stats
+field, summing live Vulkan AS backing-storage sizes. It does not expose native
+handles or change GPU resource ownership. Rebuilt Debug and RelWithDebInfo
+engine targets. A monitored Debug Vulkan Sponza run (validation enabled)
+reached active PT, 3 BLAS / 1 TLAS and the baseline 728,189,952 AS bytes; a
+Runtime scene-color capture exported successfully. The capture was taken at
+accumulation start and is not visual convergence evidence. The converged
+RelWithDebInfo baseline capture is `save/screenshots/validation/r473-baseline-sponza.png`.
+
+Commands:
+
+- `.\tools\kp.ps1 -Configuration RelWithDebInfo build KimPeanutEngine` — passed.
+- `.\tools\kp.ps1 -Configuration Debug build KimPeanutEngine` — passed.
+- `git diff --check` — passed before documentation updates; rerun at closeout.
+- No tests were run. The gate remains open for repeated TLAS samples and a
+  completed static-BLAS performance window; the failed run was not repeated.
+
+## R4.7.4 persistent scene tables and frame-safe bindings — 2026-09-27
+
+Added a portable opaque handle for immutable RT buffer-reference table
+versions. Vulkan Graphics resolves device-address patches once when creating a
+version and owns its backing buffer until the table is retired, its last
+submission serial completes, and all referencing descriptor sets retire. Render
+keeps CPU scene-table bytes/patches for dirty detection, updates a new version
+only on content/source changes, and caches bindings by frame slot and
+history/output parity. The camera uniform uses a stable offset per frame slot.
+RT binding caches invalidate before retired textures are destroyed and on
+renderer cleanup.
+
+Build evidence:
+
+- `.\tools\kp.ps1 -Configuration Debug build KimPeanutEngine` — passed.
+- `.\tools\kp.ps1 -Configuration RelWithDebInfo build KimPeanutEngine` — passed.
+- `git diff --check` — passed (Git emitted only configured LF-to-CRLF notices).
+- No tests were run.
+
+Debug Vulkan runtime evidence used `level/sponza.level`, RT/PT enabled, and
+initial viewport 1094×619. The active scene reported 450 geometry records and
+3 instances. Across 12 frame snapshots, path-trace sample accumulation
+advanced from 3036 to 3284, while each snapshot reported zero table buffers,
+table bytes, RT descriptor sets/pools, and scene-table records created/written.
+The runtime exported `save/screenshots/validation/r474-debug-sponza.png`.
+The resize request was followed by a 574×413 scene viewport. The explicit
+`render.path_trace_fail_next` rejection recovered to active PT with increasing
+samples. `level.reload` recreated the scene and returned to active PT with
+450/3 records and zero steady allocation/write counters. The Debug log had no
+new `[Error]`, VUID, Vulkan validation, or device-loss message.
+
+Comparison against `save/diagnostics/r473-baseline-window.json`:
+
+| Per-frame RT counter | R4.7.3 RelWithDebInfo baseline | R4.7.4 Debug steady snapshot |
+| --- | ---: | ---: |
+| Scene-table backing-buffer creations | 1 | 0 |
+| Scene-table upload bytes | 65,536 | 0 |
+| RT descriptor-set creations | 1 | 0 |
+| RT descriptor-pool creations | 1 | 0 |
+| Legacy scene-table records-written counter | 904 | 0 reported |
+
+The candidate's old zero value was not a measure of CPU packing: it counted
+scene-table version uploads. The corrected counters below show that the CPU
+still packs 904 records each Sponza frame while the unchanged GPU table receives
+zero uploads.
+
+This is a mechanism/counter comparison only: the candidate counter sample is
+Debug, not a matched performance build. Baseline PT GPU p50/p95 were 23.974 /
+26.187 ms, total GPU p50 28.157 ms, and CPU total p50 28.005 ms. The candidate
+RelWithDebInfo build succeeded but its runtime exited before Sponza promotion:
+`vkQueueWaitIdle(upload)` returned `VkResult=-4` (`VK_ERROR_DEVICE_LOST`) at
+13:20:02, then the render thread stopped. Windows System log recorded two
+`nvlddmkm` Event 153 adapter errors at 13:19:58 and 13:20:02 (`\Device\Video3`,
+GPUID 100). This repeats the upload-queue device-loss signature from R4.7.3;
+no further runtime attempt was made. Accordingly there is no candidate PT
+timing window, no numeric performance delta, and no claim that R4.7.4 meets the
+performance acceptance gate.
+
+The code and Debug reuse/lifetime checks are complete; R4.7.4 stays unchecked
+until a clean RelWithDebInfo Sponza session yields matched 120-warmup/300-sample
+timings and repeated windows. The application was left stopped.
+
+## R4.7.4 source investigation — 2026-09-27
+
+Reviewed the uncommitted candidate against e5cd4fb and the 13.19.57 failed-run
+log without another launch. Recorded the inherited missing transfer-to-graphics
+ownership handoff for exclusive geometry buffers and the misleading zero CPU
+record-write metric in [R4.7.4 review](../../docs/render/.review/R4.7.4.md).
+The upload wait identifies device loss, not the faulting command; no causal
+root-cause or speedup claim is made. No code changed, build, or tests run in
+this review. Follow-up requires upload/submission diagnostics, the Graphics
+ownership correction, and correctness validation before another timing run.
+
+Validation: git diff --check passed with existing LF/CRLF notices; the new review, plan, and navigation link targets exist. Documentation changes only; runtime architecture and ownership are unchanged.
+
+## R4.7.4 corrected upload path and matched RelWithDebInfo windows
+
+The two source-review findings were addressed before retrying the optimized
+runtime. Synchronous buffer uploads now record in a command pool for the
+graphics queue family and submit to that same queue. A synchronization2
+buffer barrier publishes copy writes to later graphics/AS consumers. The
+transfer-to-graphics ownership handoff is therefore avoided by keeping this
+exclusive-buffer path within one queue family; `vkQueueWaitIdle` is only a
+completion wait. This correction is consistent with Vulkan's
+[queue-family ownership rules](https://docs.vulkan.org/spec/latest/chapters/synchronization.html#queue-family-ownership-transfer).
+It does not prove the cause of the earlier GPU reset.
+
+The scene-table profile now separates CPU packing (`records_packed`), actual
+GPU replacement uploads (`records_uploaded`), and CPU packing duration. Static
+Sponza reports 904 records packed and zero uploaded in steady state. Cornell
+Debug Vulkan validation reports 18 packed, zero uploaded and 0.0804 ms CPU
+packing in its sampled frame.
+
+After rebuilding the executable, three serial Sponza windows were measured;
+each used Vulkan, RelWithDebInfo, active path tracing, 1094×619 mailbox output,
+4 SPP/eight bounces, full tracked texture residency, 120 warm-up frames and 300
+samples. They had no new `[Error]`, VUID, Vulkan validation, or device-loss log
+entries. The final matched-window summaries are:
+
+| Window | PT GPU p50 / p95 (ms) | Total GPU p50 / p95 (ms) | CPU total p50 / p95 (ms) | CPU table pack snapshot (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| 1 | 25.041 / 27.664 | 29.339 / 32.092 | 29.310 / 32.160 | 0.0543 |
+| 2 | 25.694 / 27.867 | 29.782 / 32.340 | 29.668 / 32.484 | 0.0429 |
+| 3 | 25.173 / 27.463 | 29.230 / 31.959 | 29.017 / 31.925 | 0.0531 |
+
+The scene-table CPU-pack field is a final per-frame snapshot rather than a
+window percentile. Counters in every window reported 904 records packed and
+zero uploaded. Against the R4.7.3 baseline (PT GPU p50/p95 23.974/26.187 ms,
+total GPU p50/p95 28.157/30.546 ms, CPU total p50/p95 28.005/30.777 ms), the
+candidate medians are 25.173/27.664 ms, 29.339/32.092 ms, and
+29.310/32.160 ms respectively: +5.0%/+5.6% PT time, +4.2%/+5.1% total GPU
+time, and +4.7%/+4.5% CPU time. The reuse/correctness gate passes, but this is
+a timing regression, not an optimization win. The 512px fixed-camera Beauty
+capture `save/screenshots/validation/r474-sponza-relwithdebinfo.png` matches the
+preceding Sponza reference visually. Equal-sample quality and the parent R4.7
+acceptance remain separate open work.
+
+Candidate records are saved at:
+`save/diagnostics/r474-sponza-candidate-window.json`,
+`save/diagnostics/r474-sponza-candidate-window-2.json`, and
+`save/diagnostics/r474-sponza-candidate-window-3.json`.
+
+Validation: `.\tools\kp.ps1 -Configuration Debug build KimPeanutEngine` passed;
+`.\tools\kp.ps1 -Configuration RelWithDebInfo build KimPeanutEngine` passed
+(MSVC emitted the existing LNK4098 default-library conflict warning). Debug
+Cornell PT runtime and three optimized Sponza profile windows passed without
+new errors. No tests were run. Processes were closed through their GLFW
+window-close message.
+
+## R4.7 GPU strategy research — 2026-09-27
+
+User requested internet research and a GPU optimization strategy after R4.7.4
+remained around 34 FPS. Read current shader/integrator paths and matched timing
+records: candidate median PT 25.173 ms, total GPU 29.339 ms, first-window fence
+wait p50 24.522 ms. Added [GPU strategy](../../docs/render/.plan/R4.7-gpu.md)
+and R4.7.8–R4.7.13 roadmap items. This is planning only; runtime code unchanged.
+
+Applied reference-driven-engineering, engine-reference and modular-documentation
+workflows. GitHub MCP was unavailable; web repository discovery and direct raw
+source access succeeded. Inspected pbrt-v4 master wavefront/integrator.cpp Render
+and TraceShadowRays, nvpro mini path tracer main raytrace.comp.glsl main,
+Khronos Vulkan-Samples main SER README/code snippets, NRD master guide-buffer
+contract, NVIDIA RTX best practices, and the ReSTIR GI publication. Branch refs
+are moving, not pinned commits; URLs and applicability are in the plan.
+
+Chosen order is attribution, then closest-hit/live-state experiments; AS and
+coherence work depend on the measured limiter. Texture footprint, altered
+sampling and low-SPP reconstruction are separate quality tracks. No external
+speedup percentage is promised for this engine. Builds, tests and runtime
+launches were unnecessary for this documentation-only task and were not run.
+
+Documentation validation: git diff --check passed with configured LF/CRLF notices. Local links in the GPU plan and design/spec entry points resolve. Existing uncommitted implementation changes were preserved; no runtime ownership or APIs changed by this task.
+
+## R4.7.5 revision-driven CPU records and graph preparation — 2026-09-27
+
+Added a monotonically advancing RenderWorld revision at applied proxy
+create/update/destroy and `Clear` boundaries. MaterialSystem now advances its
+revision when templates/instances, resolvers, parameters or resource-resolution
+state change. DeferredRenderer uses those revisions and PT mode to retain
+geometry descriptors, instance data and material records on static frames.
+Static frames no longer query each mesh's RT geometry or traverse every section
+and material to construct scene records; they also skip CPU table packing and
+address-patch generation. A world/material revision conservatively rebuilds
+the complete CPU record arrays so index offsets remain coherent after edits.
+Authored lighting keeps a separate small signature and can dirty the GPU table
+without invalidating geometry/material records.
+
+Shadow scheduling now follows the compiled active graph: only plans containing
+directional/spot/point shadow pass keys schedule that preparation. Debug and
+level-reload checks passed, and runtime transform control confirmed a cache
+miss on edit and restoration. The Sponza editor runtime reported graph mode
+`capture` due its active World Normal preview, so the graph-without-capture
+branch was not exercised at runtime; its shadow consumers correctly remained
+scheduled.
+
+Three matched Vulkan RelWithDebInfo Sponza windows each completed 120 warm-up
+and 300 samples with 4 SPP, eight bounces, full tracked residency and 1094×619
+mailbox output. PT GPU p50/p95 were 24.568/26.019, 24.596/26.869 and
+24.083/26.375 ms. Total GPU values were 28.610/30.245, 28.658/31.030 and
+28.463/30.838 ms; CPU total values were 28.258/30.340, 28.332/31.643 and
+28.178/30.841 ms. Median p50 values improved 2.4% PT GPU, 2.5% total GPU and
+3.6% CPU versus the R4.7.4 medians. Because GPU timings moved too, this does
+not isolate the CPU caching effect. Static snapshots reported zero table
+records packed or uploaded and around 0.002 ms scene preparation, down from
+about 0.05 ms per-frame packing in R4.7.4.
+
+The 512px Sponza capture visually matches the R4.7.4 reference. All four logs
+from the Debug checks and optimized runs were free of new `[Error]`, VUID,
+Vulkan validation or `VK_ERROR_DEVICE_LOST` entries. Both Debug and
+RelWithDebInfo builds passed. Material edits, explicit residency transition,
+RT-off and no-capture graph runtime checks remain open. No unit tests were run.
+Details and raw data links are in the
+[R4.7.5 review](../../docs/render/.review/R4.7.5.md).
+
+An additional RelWithDebInfo Vulkan Sponza launch with
+`--disable-ray-tracing` reported `ray_tracing_enabled=false`, inactive PT,
+capture graph, 9,539,005 triangles, and complete texture residency. A Runtime
+`scene_color` screenshot exported, but the image is mostly black. The process
+logged no new Vulkan/error entries and closed cleanly. This confirms the startup
+mode switch, not healthy raster visual quality; record the capture at
+`save/screenshots/validation/r475-sponza-rtoff.png` and raw stats at
+`save/diagnostics/r475-sponza-rtoff-stats.json`.

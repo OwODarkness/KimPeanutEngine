@@ -144,12 +144,28 @@ namespace kpengine::graphics
                 throw std::runtime_error("invalid Vulkan buffer in upload");
             }
 
-            VkCommandBuffer command_buffer = BeginOneShot(frame_context_->GetTransferCommandPool());
+            VkCommandBuffer command_buffer = BeginOneShot(frame_context_->GetUploadCommandPool());
             VkBufferCopy copy{};
             copy.size = size;
             vkCmdCopyBuffer(command_buffer, source_resource->buffer, destination_resource->buffer, 1, &copy);
-            SubmitAndRelease(command_buffer, frame_context_->GetTransferCommandPool(),
-                             device_->GetTransferQueue().queue);
+            VkBufferMemoryBarrier2 upload_visibility{};
+            upload_visibility.sType = VK_STRUCTURE_TYPE_BUFFER_MEMORY_BARRIER_2;
+            upload_visibility.srcStageMask = VK_PIPELINE_STAGE_2_COPY_BIT;
+            upload_visibility.srcAccessMask = VK_ACCESS_2_TRANSFER_WRITE_BIT;
+            upload_visibility.dstStageMask = VK_PIPELINE_STAGE_2_ALL_COMMANDS_BIT;
+            upload_visibility.dstAccessMask = VK_ACCESS_2_MEMORY_READ_BIT;
+            upload_visibility.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            upload_visibility.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            upload_visibility.buffer = destination_resource->buffer;
+            upload_visibility.offset = 0;
+            upload_visibility.size = size;
+            VkDependencyInfo dependency{};
+            dependency.sType = VK_STRUCTURE_TYPE_DEPENDENCY_INFO;
+            dependency.bufferMemoryBarrierCount = 1;
+            dependency.pBufferMemoryBarriers = &upload_visibility;
+            vkCmdPipelineBarrier2(command_buffer, &dependency);
+            SubmitAndRelease(command_buffer, frame_context_->GetUploadCommandPool(),
+                             device_->GetGraphicsQueue().queue);
         }
         catch (...)
         {

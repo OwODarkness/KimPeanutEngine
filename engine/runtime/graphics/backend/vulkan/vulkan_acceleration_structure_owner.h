@@ -46,10 +46,7 @@ namespace kpengine::graphics
             bindless_texture_layout_ = layout;
         }
         LifecycleCounts GetLifecycleCounts() const noexcept;
-        RayTracingResourceProfileCounters GetProfileCounters() const noexcept override
-        {
-            return profile_counters_;
-        }
+        RayTracingResourceProfileCounters GetProfileCounters() const noexcept override;
         void ResetProfileCounters() noexcept override { profile_counters_ = {}; }
         AccelerationStructureHandle CreateAccelerationStructure(
             const RayTracingAccelerationStructureDesc &desc) override;
@@ -57,6 +54,10 @@ namespace kpengine::graphics
         RayTracingPipelineHandle CreateRayTracingPipeline(
             const RayTracingPipelineDesc &desc) override;
         bool DestroyRayTracingPipeline(RayTracingPipelineHandle handle) override;
+        RayTracingBufferReferenceTableHandle CreateRayTracingBufferReferenceTable(
+            RayTracingBufferReferenceTableDesc desc) override;
+        bool DestroyRayTracingBufferReferenceTable(
+            RayTracingBufferReferenceTableHandle handle) override;
         DescriptorSetHandle CreateRayTracingResourceBindingSet(
             RayTracingPipelineHandle pipeline,
             const RayTracingResourceBindingSetDesc &desc) override;
@@ -105,6 +106,17 @@ namespace kpengine::graphics
             uint64_t retire_serial = 0;
         };
 
+        struct RayTracingBufferReferenceTableResource
+        {
+            RayTracingBufferReferenceTableHandle handle{};
+            BufferHandle buffer{};
+            VkDeviceSize byte_size = 0;
+            uint32_t descriptor_references = 0;
+            bool alive = false;
+            bool pending_destroy = false;
+            uint64_t retire_serial = 0;
+        };
+
         struct RayTracingPipelineResource
         {
             RayTracingPipelineHandle handle{};
@@ -130,7 +142,7 @@ namespace kpengine::graphics
             VkDescriptorSet descriptor_set = VK_NULL_HANDLE;
             RayTracingPipelineHandle pipeline{};
             uint32_t set = 0;
-            std::vector<BufferHandle> owned_address_table_buffers;
+            std::vector<RayTracingBufferReferenceTableHandle> referenced_address_tables;
             bool alive = false;
             bool pending_destroy = false;
             uint64_t retire_serial = 0;
@@ -138,6 +150,10 @@ namespace kpengine::graphics
 
         Resource *GetResource(AccelerationStructureHandle handle);
         const Resource *GetResource(AccelerationStructureHandle handle) const;
+        RayTracingBufferReferenceTableResource *GetRayTracingBufferReferenceTable(
+            RayTracingBufferReferenceTableHandle handle);
+        const RayTracingBufferReferenceTableResource *GetRayTracingBufferReferenceTable(
+            RayTracingBufferReferenceTableHandle handle) const;
         bool BuildOne(VkCommandBuffer command_buffer, const RayTracingBuildDesc &build,
                       TemporaryBuffers &temporary_buffers);
         bool EnsureStorage(Resource &resource, VkDeviceSize size);
@@ -145,6 +161,8 @@ namespace kpengine::graphics
         void DestroyTemporaryBuffers(TemporaryBuffers &temporary_buffers) noexcept;
         void DestroyRayTracingPipelineResource(RayTracingPipelineResource &resource) noexcept;
         void DestroyRayTracingDescriptorSet(RayTracingDescriptorSetResource &resource) noexcept;
+        void DestroyRayTracingBufferReferenceTableResource(
+            RayTracingBufferReferenceTableResource &resource) noexcept;
         void DestroyAll() noexcept;
 
         VkPhysicalDevice physical_device_ = VK_NULL_HANDLE;
@@ -155,9 +173,13 @@ namespace kpengine::graphics
         SamplerManager *sampler_manager_ = nullptr;
         HandleSystem<AccelerationStructureHandle> handle_system_;
         HandleSystem<RayTracingPipelineHandle> ray_tracing_pipeline_handle_system_;
+        HandleSystem<RayTracingBufferReferenceTableHandle>
+            ray_tracing_buffer_reference_table_handle_system_;
         HandleSystem<DescriptorSetHandle> ray_tracing_descriptor_set_handle_system_;
         std::vector<Resource> resources_;
         std::vector<RayTracingPipelineResource> ray_tracing_pipelines_;
+        std::vector<RayTracingBufferReferenceTableResource>
+            ray_tracing_buffer_reference_tables_;
         std::vector<RayTracingDescriptorSetResource> ray_tracing_descriptor_sets_;
         std::vector<TemporaryBuffers> temporary_buffers_;
         AccelerationStructureHandle active_top_level_{};

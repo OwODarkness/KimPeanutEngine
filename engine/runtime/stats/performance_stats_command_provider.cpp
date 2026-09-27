@@ -152,8 +152,14 @@ namespace kpengine::runtime
                 static_cast<uint64_t>(profile.ray_tracing_material_records);
             data["ray_tracing_light_records"] =
                 static_cast<uint64_t>(profile.ray_tracing_light_records);
-            data["ray_tracing_scene_table_records_written"] =
-                profile.ray_tracing_scene_table_records_written;
+            data["ray_tracing_scene_table_records_packed"] =
+                profile.ray_tracing_scene_table_records_packed;
+            data["ray_tracing_scene_table_records_uploaded"] =
+                profile.ray_tracing_scene_table_records_uploaded;
+            data["ray_tracing_scene_record_cache_hits_total"] =
+                profile.ray_tracing_scene_record_cache_hits_total;
+            data["ray_tracing_scene_record_cache_misses_total"] =
+                profile.ray_tracing_scene_record_cache_misses_total;
             data["ray_tracing_descriptor_sets_created"] =
                 profile.ray_tracing_descriptor_sets_created;
             data["ray_tracing_descriptor_pools_created"] =
@@ -162,6 +168,8 @@ namespace kpengine::runtime
                 profile.ray_tracing_address_table_buffers_created;
             data["ray_tracing_address_table_upload_bytes"] =
                 profile.ray_tracing_address_table_upload_bytes;
+            data["ray_tracing_acceleration_structure_storage_bytes"] =
+                profile.ray_tracing_acceleration_structure_storage_bytes;
             data["ray_tracing_blas_builds"] = profile.ray_tracing_blas_builds;
             data["ray_tracing_blas_updates"] = profile.ray_tracing_blas_updates;
             data["ray_tracing_tlas_builds"] = profile.ray_tracing_tlas_builds;
@@ -307,6 +315,8 @@ namespace kpengine::runtime
                 profile.cpu_render_world_snapshot_ms;
             data["cpu_ray_tracing_scene_prepare_ms"] =
                 profile.cpu_ray_tracing_scene_prepare_ms;
+            data["cpu_ray_tracing_scene_table_pack_ms"] =
+                profile.cpu_ray_tracing_scene_table_pack_ms;
             data["cpu_graph_execute_ms"] = profile.cpu_graph_execute_ms;
             data["cpu_record_other_ms"] = std::max(
                 0.0, profile.cpu_record_ms - profile.cpu_render_world_snapshot_ms -

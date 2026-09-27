@@ -219,6 +219,7 @@ namespace kpengine::render
         bool DestroyInstance(MaterialInstanceHandle handle);
         MaterialTemplateHandle GetInstanceTemplate(MaterialInstanceHandle handle) const;
         uint64_t GetInstanceRevision(MaterialInstanceHandle handle) const;
+        uint64_t GetRevision() const noexcept { return revision_; }
         const MaterialParameterValue *GetParameterValue(MaterialInstanceHandle instance_handle,
                                                         MaterialParameterID parameter_id) const;
         bool IsInstanceValid(MaterialInstanceHandle handle) const;
@@ -257,6 +258,7 @@ namespace kpengine::render
         void ResolveInstance(MaterialInstanceHandle handle,
                              const MaterialTemplateRecord &template_record,
                              MaterialInstanceRecord &record);
+        void MarkChanged() noexcept;
 
         HandleSystem<MaterialTemplateHandle> template_handles_;
         HandleSystem<MaterialInstanceHandle> instance_handles_;
@@ -264,6 +266,7 @@ namespace kpengine::render
         std::unordered_map<uint32_t, MaterialInstanceRecord> instances_;
         IMaterialResourceResolver *resource_resolver_ = nullptr;
         mutable MaterialProfileCounters profile_counters_{};
+        uint64_t revision_ = 1;
     };
 }
 

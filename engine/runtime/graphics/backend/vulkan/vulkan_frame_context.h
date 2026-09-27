@@ -32,7 +32,7 @@ namespace kpengine::graphics
 
         VkCommandBuffer GetCurrentSceneCommandBuffer() const { return scene_command_buffers_[current_frame_index_]; }
         VkCommandPool GetGraphicsCommandPool() const { return graphics_command_pool_; }
-        VkCommandPool GetTransferCommandPool() const { return transfer_command_pool_; }
+        VkCommandPool GetUploadCommandPool() const { return upload_command_pool_; }
 
         // frame plumbing (BeginFrame's wait/acquire/reset/submit/present)
         double WaitForInFlightFence();
@@ -58,7 +58,7 @@ namespace kpengine::graphics
         uint32_t swapchain_image_count_ = 0;
 
         VkCommandPool graphics_command_pool_ = VK_NULL_HANDLE;
-        VkCommandPool transfer_command_pool_ = VK_NULL_HANDLE;
+        VkCommandPool upload_command_pool_ = VK_NULL_HANDLE;
         std::vector<VkCommandBuffer> scene_command_buffers_;
         std::vector<VkSemaphore> available_image_semaphores_;
         std::vector<VkSemaphore> render_finished_semaphores_;

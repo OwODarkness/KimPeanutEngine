@@ -191,15 +191,46 @@ details and stage checklists belong in the linked submodule documents.
     [R4.7.2 journal](../../.spec/journal/2026-09-27-render-r4-7-performance-plan.md#r472-primary-ray-reuse-and-hit-shader-reductions--2026-09-27)
     and [review correction](.review/R4.7.2.md).
   - [ ] **R4.7.3:** evaluate static fast-trace AS policy with build/startup,
-    memory and steady GPU evidence; preserve build/update compatibility.
-  - [ ] **R4.7.4:** persistent versioned GPU tables and frame-safe bindings;
+    memory and steady GPU evidence; preserve build/update compatibility. The
+    initial matched Sponza windows show no TLAS fast-trace gain and about 58 MB
+    more AS storage, so no preference is retained. Static BLAS reached PT-active
+    but its run hit `VK_ERROR_DEVICE_LOST` before a sampling window; repeats
+    remain open. Runtime stats now expose AS storage bytes. See the [R4.7.3
+    findings](.review/R4.7.md#r473-as-policy-evaluation--2026-09-27).
+  - [x] **R4.7.4:** persistent versioned GPU tables and frame-safe bindings;
     zero unchanged static-table uploads/native binding allocations after warm-up.
-  - [ ] **R4.7.5:** revision-driven extraction and graph-required preparation;
-    edits/residency/RT-off/deferred views invalidate and refresh correctly.
+    Debug Vulkan validation passed through steady frames, resize, one rejected
+    dispatch, and Sponza reload. Three matched RelWithDebInfo Sponza windows
+    completed 120 warm-up plus 300 samples each after moving synchronous mesh
+    uploads to the graphics queue family. The candidate median PT GPU p50 is
+    25.173 ms versus 23.974 ms at the R4.7.3 baseline (+5.0%); this stage meets
+    its reuse gate but does not improve overall timing. CPU records are still
+    packed each frame (about 0.05 ms); GPU uploads remain zero. The upload
+    ownership defect is fixed, but device-loss causality is unproven. See the
+    [R4.7.4 review](.review/R4.7.md#r474-persistent-scene-tables-and-frame-safe-bindings--2026-09-27),
+    [source review](.review/R4.7.4.md), and
+    [candidate timings](../../.spec/journal/2026-09-27-render-r4-7-performance-plan.md#r474-corrected-upload-path-and-matched-relwithdebinfo-windows).
+  - [ ] **R4.7.5:** revision-driven extraction and graph-required preparation.
+    Implementation and three matched windows are recorded; direct material,
+    residency and no-capture graph checks remain open. RT-off disables PT, but
+    its mostly black capture and recovery still need follow-up. →
+    [R4.7.5 review](.review/R4.7.5.md)
   - [ ] **R4.7.6:** optional explicit interactive sample/bounce budget;
     retain 4-SPP/8-bounce reference and compare convergence separately.
   - [ ] **R4.7.7:** repeatable timing improvement, Cornell/Sponza/general-scene
     captures and lifecycle/failure coverage; close or justify each review finding.
+  - [ ] **R4.7.8:** GPU attribution: traversal, shading, registers/spills,
+    texture bandwidth and diagnostic ray counts. → [GPU strategy](.plan/R4.7-gpu.md)
+  - [ ] **R4.7.9:** reduce closest-hit position fetches/transforms and live
+    payload state; prove repeatable gain at unchanged samples/bounces.
+  - [ ] **R4.7.10:** conditional traversal/BLAS layout and static compaction
+    experiments; preserve geometry and record startup/memory cost.
+  - [ ] **R4.7.11:** conditional SER or bounded wavefront/ray-query prototypes;
+    verify feature/compiler support and include scheduling cost.
+  - [ ] **R4.7.12:** separate texture-footprint and importance-sampling study;
+    measure filtering/variance/convergence changes explicitly.
+  - [ ] **R4.7.13:** optional low-SPP reconstruction design extending R4.7.6;
+    guide buffers, reprojection and denoiser cost require separate acceptance.
 - [ ] **R5 — post-R4.6 Render/Graphics decoupling (design only):** review the
   deferred renderer's mixed graph execution, pass recording, shadow/RT state,
   and lifetime ownership; repair enabled-conditional-pass failure semantics

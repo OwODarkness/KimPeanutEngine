@@ -35,7 +35,7 @@ namespace kpengine::graphics
             vkDestroyFence(device_->GetLogicalDevice(), fence, nullptr);
         }
         vkDestroyCommandPool(device_->GetLogicalDevice(), graphics_command_pool_, nullptr);
-        vkDestroyCommandPool(device_->GetLogicalDevice(), transfer_command_pool_, nullptr);
+        vkDestroyCommandPool(device_->GetLogicalDevice(), upload_command_pool_, nullptr);
     }
 
     double VulkanFrameContext::WaitForInFlightFence()
@@ -237,16 +237,16 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to create graphics command pool");
         }
 
-        // transfer pool create
-        VkCommandPoolCreateInfo transfer_command_pool_create_info{};
-        transfer_command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
-        transfer_command_pool_create_info.queueFamilyIndex = device_->GetTransferQueue().index;
-        transfer_command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
+        // Synchronous uploads target resources consumed by graphics and AS-build commands.
+        VkCommandPoolCreateInfo upload_command_pool_create_info{};
+        upload_command_pool_create_info.sType = VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO;
+        upload_command_pool_create_info.queueFamilyIndex = device_->GetGraphicsQueue().index;
+        upload_command_pool_create_info.flags = VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT;
 
-        if (vkCreateCommandPool(device_->GetLogicalDevice(), &transfer_command_pool_create_info, nullptr, &transfer_command_pool_) != VK_SUCCESS)
+        if (vkCreateCommandPool(device_->GetLogicalDevice(), &upload_command_pool_create_info, nullptr, &upload_command_pool_) != VK_SUCCESS)
         {
-            KP_LOG(KP_VULKAN_FRAME_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create transfer command pool");
-            throw std::runtime_error("Failed to create transfer command pool");
+            KP_LOG(KP_VULKAN_FRAME_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR, "Failed to create graphics upload command pool");
+            throw std::runtime_error("Failed to create graphics upload command pool");
         }
     }
 

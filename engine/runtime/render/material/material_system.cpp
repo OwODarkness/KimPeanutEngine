@@ -8,27 +8,42 @@ namespace kpengine::render
     void MaterialSystem::SetResourceResolver(IMaterialResourceResolver *resolver)
     {
         resource_resolver_ = resolver;
+        MarkChanged();
         RefreshResources();
     }
 
     void MaterialSystem::RefreshResources(bool force_ready)
     {
+        bool changed = false;
         for (auto &[id, record] : templates_)
         {
+            (void)id;
             if (record.resolution.state == MaterialResourceState::Pending)
             {
+                const MaterialResolution before = record.resolution;
                 ResolveTemplate(record.handle, record);
+                changed = changed || before.state != record.resolution.state ||
+                          before.diagnostic != record.resolution.diagnostic;
             }
         }
         for (auto &[id, record] : instances_)
         {
+            (void)id;
             const auto template_it = templates_.find(template_handles_.Get(record.template_handle));
             if (template_it != templates_.end() &&
                 (record.resolution.state == MaterialResourceState::Pending ||
                  (force_ready && record.resolution.state == MaterialResourceState::Ready)))
             {
+                const MaterialResolution before = record.resolution;
                 ResolveInstance(record.handle, template_it->second, record);
+                changed = changed || force_ready ||
+                          before.state != record.resolution.state ||
+                          before.diagnostic != record.resolution.diagnostic;
             }
+        }
+        if (changed)
+        {
+            MarkChanged();
         }
     }
     MaterialTemplateHandle MaterialSystem::CreateTemplate(const MaterialTemplateDesc &desc)
@@ -49,6 +64,7 @@ namespace kpengine::render
             handle.id, MaterialTemplateRecord{handle, desc, std::move(parameter_ids), {}, 0});
         (void)inserted;
         ResolveTemplate(handle, template_it->second);
+        MarkChanged();
         return handle;
     }
 
@@ -65,7 +81,12 @@ namespace kpengine::render
             resource_resolver_->ReleaseTemplate(handle);
         }
         templates_.erase(template_it);
-        return template_handles_.Destroy(handle);
+        const bool destroyed = template_handles_.Destroy(handle);
+        if (destroyed)
+        {
+            MarkChanged();
+        }
+        return destroyed;
     }
 
     const MaterialTemplateDesc *MaterialSystem::FindTemplate(MaterialTemplateHandle handle) const
@@ -119,6 +140,7 @@ namespace kpengine::render
         (void)inserted;
         ++template_it->second.instance_count;
         ResolveInstance(handle, template_it->second, instance_it->second);
+        MarkChanged();
         return handle;
     }
 
@@ -146,6 +168,7 @@ namespace kpengine::render
         instance_it->second.resolution = {};
         ++instance_it->second.revision;
         ResolveInstance(handle, template_it->second, instance_it->second);
+        MarkChanged();
         return true;
     }
 
@@ -169,7 +192,12 @@ namespace kpengine::render
         }
         --template_it->second.instance_count;
         instances_.erase(instance_it);
-        return instance_handles_.Destroy(handle);
+        const bool destroyed = instance_handles_.Destroy(handle);
+        if (destroyed)
+        {
+            MarkChanged();
+        }
+        return destroyed;
     }
 
     MaterialTemplateHandle MaterialSystem::GetInstanceTemplate(MaterialInstanceHandle handle) const
@@ -183,6 +211,14 @@ namespace kpengine::render
     {
         const auto instance_it = instances_.find(instance_handles_.Get(handle));
         return instance_it != instances_.end() ? instance_it->second.revision : 0;
+    }
+
+    void MaterialSystem::MarkChanged() noexcept
+    {
+        if (++revision_ == 0)
+        {
+            ++revision_;
+        }
     }
 
     const MaterialParameterValue *MaterialSystem::GetParameterValue(

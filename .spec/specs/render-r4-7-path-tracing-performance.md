@@ -4,7 +4,14 @@
 
 - Objective: reduce scene-independent PT CPU/GPU cost while preserving R4.6
   Sponza/Cornell indirect lighting, settings and resource-lifetime semantics.
+- Current execution authorization: R4.7.5 revision-driven CPU record reuse and
+  active-graph shadow preparation, with Debug/runtime correctness checks and
+  three matched RelWithDebInfo Sponza windows. Broader edit/residency and
+  non-capture graph coverage remains open.
 - Design and stages: [R4.7 plan](../../docs/render/.plan/R4.7.md).
+- GPU strategy: [R4.7.8–R4.7.13](../../docs/render/.plan/R4.7-gpu.md),
+  researched and planned only. GPU attribution precedes experiments; texture
+  filtering, sampling redesign and reconstruction have separate quality gates.
 - Findings: [R4.7 review](../../docs/render/.review/R4.7.md).
 - Acceptance ledger: [Render TODO](../../docs/render/TODO.md).
 - Baseline evidence: [matched R4.6 runs](../../docs/render/.review/R4.6.md#matched-rt-enabled-debug-and-relwithdebinfo-runs--2026-09-27).
@@ -17,8 +24,8 @@ reuse, static AS preferences, persistent Graphics tables/bindings, revision
 caches, graph preparation, optional budget and final validation. Render owns
 policy/data identity; Graphics owns GPU objects, native addresses and safe
 submission retirement. No level-specific path, asset-loader redesign or R5
-decomposition is required. This spec does not authorize implementation in the
-current review-only task.
+decomposition is required. Implementation remains bounded by the user-authorized
+stage and the open gates below.
 
 ## Required evidence for future implementation
 
@@ -61,6 +68,17 @@ current review-only task.
 
 ## Acceptance status
 
-All implementation/benchmark/runtime gates are open. The current deliverable
-is a source-backed review and executable plan, with Level 0 documentation
-validation only. No measured improvement or new runtime result is claimed.
+The R4.7.3 AS-policy result is preliminary: the TLAS candidate has one matched
+window, and the static-BLAS candidate ended before steady sampling. No AS policy
+is retained. R4.7.4 persistent-table reuse and Debug lifecycle gates pass. Its
+inherited exclusive mesh-buffer upload path now uses the graphics queue family;
+the reason for the earlier device-loss events remains unproven. Three matched
+RelWithDebInfo Sponza windows completed 120 warm-up plus 300 samples each.
+Median PT GPU p50 is 25.173 ms versus 23.974 ms at the R4.7.3 baseline (+5.0%),
+so no speedup is claimed. Broader quality/equal-sample and remaining lifecycle
+gates remain open. R4.7.5 then added scene/material revisions, static record
+reuse, and graph-keyed shadow preparation; its three-window medians improved
+relative to R4.7.4, but run-to-run causality and the remaining revision/graph
+matrix are not closed. See the
+[R4.7 findings](../../docs/render/.review/R4.7.md) and
+[R4.7.5 evidence](../../docs/render/.review/R4.7.5.md).

@@ -16,6 +16,7 @@ namespace kpengine::graphics
     struct AudioTag{};
     struct AccelerationStructureTag{};
     struct RayTracingPipelineTag{};
+    struct RayTracingBufferReferenceTableTag{};
 
 
     using TextureHandle = Handle<TextureTag>;
@@ -30,6 +31,7 @@ namespace kpengine::graphics
     // pipelines never cross this common boundary.
     using AccelerationStructureHandle = Handle<AccelerationStructureTag>;
     using RayTracingPipelineHandle = Handle<RayTracingPipelineTag>;
+    using RayTracingBufferReferenceTableHandle = Handle<RayTracingBufferReferenceTableTag>;
 
 }
 

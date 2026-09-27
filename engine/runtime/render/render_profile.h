@@ -108,11 +108,15 @@ namespace kpengine::render
         uint32_t ray_tracing_instance_records = 0;
         uint32_t ray_tracing_material_records = 0;
         uint32_t ray_tracing_light_records = 0;
-        uint64_t ray_tracing_scene_table_records_written = 0;
+        uint64_t ray_tracing_scene_table_records_packed = 0;
+        uint64_t ray_tracing_scene_table_records_uploaded = 0;
+        uint64_t ray_tracing_scene_record_cache_hits_total = 0;
+        uint64_t ray_tracing_scene_record_cache_misses_total = 0;
         uint64_t ray_tracing_descriptor_sets_created = 0;
         uint64_t ray_tracing_descriptor_pools_created = 0;
         uint64_t ray_tracing_address_table_buffers_created = 0;
         uint64_t ray_tracing_address_table_upload_bytes = 0;
+        uint64_t ray_tracing_acceleration_structure_storage_bytes = 0;
         uint64_t ray_tracing_blas_builds = 0;
         uint64_t ray_tracing_blas_updates = 0;
         uint64_t ray_tracing_tlas_builds = 0;
@@ -138,6 +142,7 @@ namespace kpengine::render
         double cpu_scene_prepare_ms = 0.0;
         double cpu_render_world_snapshot_ms = 0.0;
         double cpu_ray_tracing_scene_prepare_ms = 0.0;
+        double cpu_ray_tracing_scene_table_pack_ms = 0.0;
         double cpu_backend_begin_ms = 0.0;
         double cpu_record_ms = 0.0;
         double cpu_finalize_ms = 0.0;

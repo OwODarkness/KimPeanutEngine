@@ -1,5 +1,36 @@
 # Project Status
 
+- **R4.7.5 CPU record reuse and graph-required shadow preparation (2026-09-27)** —
+  Added RenderWorld and MaterialSystem revisions so unchanged CPU scene records
+  avoid section/material traversal, table packing and address-patch generation.
+  The compiled graph now selects whether shadow maps need preparation; capture
+  graphs retain those consumers. Debug reload/transform edits invalidate the
+  cache, and static frames report zero records packed/uploaded. Three fully
+  resident RelWithDebInfo Vulkan Sponza windows show candidate medians of
+  24.568 ms PT GPU p50, 28.610 ms total GPU p50 and 28.258 ms CPU total p50,
+  versus 25.173/29.339/29.310 ms for R4.7.4. The PT GPU also moved, so the CPU
+  cache's isolated benefit is unproven. RT-off disables PT and submits raster
+  draws, but the capture is mostly black; material/residency, recovery and
+  no-capture graph checks remain open. →
+  [review](render/.review/R4.7.5.md), [plan](render/.plan/R4.7.md),
+  [performance journal](../.spec/journal/2026-09-27-render-r4-7-performance-plan.md)
+
+- **R4.7 GPU strategy (2026-09-27, plan only)** — Added GPU attribution,
+  hit-shader/live-state reduction, conditional AS/coherence experiments and
+  separate filtering/reconstruction tracks after the measured ~34 FPS result.
+  No implementation or speedup claim. → [plan](render/.plan/R4.7-gpu.md)
+
+- **R4.7.4 source review and correction (2026-09-27)** — Exclusive geometry
+  uploads now execute on the graphics queue family with a copy-write to
+  consumer-read memory barrier; CPU scene-table packing and GPU table uploads
+  have separate counters and packing time. Three matched RelWithDebInfo Sponza
+  windows completed without new Vulkan/device-loss log errors. Median PT GPU
+  p50 is 25.173 ms versus the 23.974 ms R4.7.3 baseline (+5.0%), so the reuse
+  objective is met but no speedup is claimed. The upload defect's connection to
+  the earlier driver reset remains unproven. →
+  [source review](render/.review/R4.7.4.md), [R4.7 review](render/.review/R4.7.md),
+  [performance journal](../.spec/journal/2026-09-27-render-r4-7-performance-plan.md)
+
 - **R4.7.2 RT runtime blocker correction (2026-09-27)** — Fixed visibility
   miss-record stride and a secondary null-recorder crash during failed-frame
   cleanup. Corrected Debug Vulkan Cornell and fully resident Sponza now export
@@ -12,12 +43,19 @@
 
 - **R4.7 path-tracing optimization (2026-09-27)** — R4.7.0 now exposes
   fence/acquire/present durations, fresh GPU queries, scene/history/texture
-  state, RT table uploads, descriptor and AS lifecycle counts. Three initial
-  fully resident RelWithDebInfo Sponza windows measured median PT GPU p50
-  34.548 ms (33.852–34.729) and p95 37.225–47.155 ms. The first preliminary
-  baseline lacked residency state and is superseded. An earlier upload-queue
-  failure did not recur; its numeric VkResult remains unknown. F1 dedicated
-  visibility rays are the next implementation stage. →
+  state, RT table uploads, descriptor, AS lifecycle and AS storage counts.
+  R4.7.4 uses immutable Graphics-owned scene tables and frame-slot/history
+  parity binding caches. Debug Vulkan validation covered steady frames, resize,
+  a rejected dispatch and Sponza reload; steady per-frame allocations fell
+  from one 64 KiB table upload, one descriptor pool/set and 904 table records
+  to zero. The post-correction R4.7.4 candidate completed three matched
+  120/300 RelWithDebInfo Sponza windows, with median PT GPU p50 of 25.173 ms
+  versus 23.974 ms baseline; total GPU p50 regressed 4.2%. R4.7.3 measured one
+  TLAS fast-trace candidate at 24.813 ms PT GPU p50 and
+  786,098,560 B AS storage versus 23.974 ms and 728,189,952 B with neither
+  preference; no preference is retained. Static-BLAS sampling stopped on
+  `VK_ERROR_DEVICE_LOST`, leaving that comparison open. Earlier three-window
+  baseline: median PT GPU p50 34.548 ms. →
   [review](render/.review/R4.7.md), [plan](render/.plan/R4.7.md),
   [roadmap](render/TODO.md)
 

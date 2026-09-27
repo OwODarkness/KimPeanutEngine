@@ -121,15 +121,19 @@ namespace kpengine::graphics
         uint64_t buffer_offset = 0;
     };
 
-    // Graphics resolves opaque buffer handles into native shader-reference
-    // addresses while creating its owned upload buffer. Render never observes
-    // or serializes a backend device address.
+    struct RayTracingBufferReferenceTableDesc
+    {
+        std::vector<std::byte> data;
+        std::vector<RayTracingBufferAddressPatch> address_patches;
+    };
+
+    // The binding refers to an immutable table version. Graphics resolves its
+    // opaque buffer patches and owns the backing allocation and retirement.
     struct RayTracingBufferReferenceTableBinding
     {
         uint32_t set = 0;
         uint32_t binding = 0;
-        std::vector<std::byte> data;
-        std::vector<RayTracingBufferAddressPatch> address_patches;
+        RayTracingBufferReferenceTableHandle table;
     };
 
     using RayTracingResourceBinding = std::variant<
@@ -224,6 +228,7 @@ namespace kpengine::graphics
         uint64_t descriptor_pools_created = 0;
         uint64_t address_table_buffers_created = 0;
         uint64_t address_table_upload_bytes = 0;
+        uint64_t acceleration_structure_storage_bytes = 0;
         uint64_t blas_builds = 0;
         uint64_t blas_updates = 0;
         uint64_t tlas_builds = 0;
@@ -247,6 +252,10 @@ namespace kpengine::graphics
         virtual RayTracingPipelineHandle CreateRayTracingPipeline(
             const RayTracingPipelineDesc &desc) = 0;
         virtual bool DestroyRayTracingPipeline(RayTracingPipelineHandle handle) = 0;
+        virtual RayTracingBufferReferenceTableHandle CreateRayTracingBufferReferenceTable(
+            RayTracingBufferReferenceTableDesc desc) = 0;
+        virtual bool DestroyRayTracingBufferReferenceTable(
+            RayTracingBufferReferenceTableHandle handle) = 0;
         virtual DescriptorSetHandle CreateRayTracingResourceBindingSet(
             RayTracingPipelineHandle pipeline,
             const RayTracingResourceBindingSetDesc &desc) = 0;

@@ -8,6 +8,7 @@
 #include <cstring>
 #include <functional>
 #include <limits>
+#include <span>
 #include <stdexcept>
 #include <utility>
 
@@ -61,6 +62,7 @@ namespace kpengine::render
         constexpr uint64_t kSpotShadowPerPassUniformKey = 0x534841444f575f53ull;
         constexpr uint64_t kPointShadowPerPassUniformKey = 0x534841444f575f50ull;
         constexpr uint64_t kGBufferPerPassUniformKey = 0x4742554646455250ull;
+        constexpr uint64_t kPathTraceCameraUniformKey = 0x5254505443414d45ull;
         constexpr uint32_t kPathTraceSamplesPerDispatch = 4;
         constexpr std::size_t kPathTraceMaximumSceneRecords = 512;
         constexpr uint32_t kPathTraceDirectLightSamples = 1;
@@ -571,12 +573,7 @@ namespace kpengine::render
         transient_scene_hdr_.reset();
         graphics::RayTracingResourceOwner *const ray_tracing_owner =
             backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
-        if (ray_tracing_owner && ray_tracing_path_tracing_bindings_.IsValid())
-        {
-            ray_tracing_owner->DestroyRayTracingResourceBindingSet(
-                ray_tracing_path_tracing_bindings_);
-        }
-        ray_tracing_path_tracing_bindings_ = {};
+        DestroyRayTracingPathTraceBindings();
         DestroyRayTracingResources();
         // RT bindings and acceleration structures are retired against submitted
         // work; wait before releasing their referenced targets or pipeline.
@@ -641,7 +638,7 @@ namespace kpengine::render
         tone_map_pipeline_ = {};
         directional_shadow_pipeline_ = {};
         ray_tracing_path_tracing_pipeline_ = {};
-        ray_tracing_path_tracing_bindings_ = {};
+        ray_tracing_path_tracing_bindings_.clear();
         ray_tracing_path_tracing_available_ = false;
         active_ray_tracing_path_trace_ = false;
         level_environment_ = {};
@@ -665,6 +662,7 @@ namespace kpengine::render
         frame_ray_tracing_instances_.clear();
         frame_ray_tracing_instance_data_.clear();
         frame_ray_tracing_material_data_.clear();
+        frame_ray_tracing_scene_address_patches_.clear();
         frame_ray_tracing_light_data_.clear();
         frame_ray_tracing_lighting_signature_ = 0;
         frame_ray_tracing_mesh_builds_.clear();
@@ -673,6 +671,9 @@ namespace kpengine::render
         frame_ray_tracing_material_signature_ = 0;
         frame_ray_tracing_blas_build_ = false;
         frame_ray_tracing_tlas_build_ = false;
+        ray_tracing_scene_cache_valid_ = false;
+        frame_ray_tracing_scene_table_dirty_ = true;
+        ray_tracing_scene_table_lighting_signature_ = 0;
         frame_object_states_.clear();
         frame_material_bindings_.clear();
         pending_scene_render_target_extent_ = {};
@@ -833,16 +834,10 @@ namespace kpengine::render
 
     bool DeferredRenderer::PrepareRayTracingScene()
     {
-        frame_ray_tracing_geometries_.clear();
-        frame_ray_tracing_instances_.clear();
-        frame_ray_tracing_instance_data_.clear();
-        frame_ray_tracing_material_data_.clear();
         frame_ray_tracing_light_data_.clear();
         frame_ray_tracing_lighting_signature_ = 0;
-        frame_ray_tracing_mesh_builds_.clear();
         frame_ray_tracing_blas_builds_.clear();
         frame_ray_tracing_tlas_builds_.clear();
-        frame_ray_tracing_material_signature_ = 0;
         frame_ray_tracing_blas_build_ = false;
         frame_ray_tracing_tlas_build_ = false;
 
@@ -850,7 +845,59 @@ namespace kpengine::render
             backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
         if (owner == nullptr || !owner->IsSupported())
         {
+            ray_tracing_scene_cache_valid_ = false;
+            frame_ray_tracing_scene_table_dirty_ = true;
+            frame_ray_tracing_geometries_.clear();
+            frame_ray_tracing_instances_.clear();
+            frame_ray_tracing_instance_data_.clear();
+            frame_ray_tracing_material_data_.clear();
+            frame_ray_tracing_mesh_builds_.clear();
             return true;
+        }
+
+        const uint64_t world_revision = render_world_ != nullptr
+                                            ? render_world_->GetRevision()
+                                            : 0;
+        const uint64_t material_revision = material_system_ != nullptr
+                                               ? material_system_->GetRevision()
+                                               : 0;
+        const bool scene_cache_dirty = !ray_tracing_scene_cache_valid_ ||
+            world_revision != ray_tracing_scene_cache_world_revision_ ||
+            material_revision != ray_tracing_scene_cache_material_revision_ ||
+            path_tracing_enabled_ != ray_tracing_scene_cache_path_tracing_enabled_;
+        if (scene_cache_dirty)
+        {
+            ++ray_tracing_scene_record_cache_misses_total_;
+        }
+        else
+        {
+            ++ray_tracing_scene_record_cache_hits_total_;
+        }
+        profile_.ray_tracing_scene_record_cache_hits_total =
+            ray_tracing_scene_record_cache_hits_total_;
+        profile_.ray_tracing_scene_record_cache_misses_total =
+            ray_tracing_scene_record_cache_misses_total_;
+        frame_ray_tracing_scene_table_dirty_ = scene_cache_dirty;
+        if (scene_cache_dirty)
+        {
+            frame_ray_tracing_geometries_.clear();
+            frame_ray_tracing_instances_.clear();
+            frame_ray_tracing_instance_data_.clear();
+            frame_ray_tracing_material_data_.clear();
+            frame_ray_tracing_mesh_builds_.clear();
+        }
+        else
+        {
+            frame_ray_tracing_instance_signature_ =
+                ray_tracing_scene_cache_instance_signature_;
+            frame_ray_tracing_material_signature_ =
+                ray_tracing_scene_cache_material_signature_;
+            for (RayTracingMeshBuild &mesh_build : frame_ray_tracing_mesh_builds_)
+            {
+                const auto state = ray_tracing_blas_.find(mesh_build.mesh);
+                mesh_build.needs_build = state != ray_tracing_blas_.end() &&
+                                         !state->second.built;
+            }
         }
 
         uint64_t instance_signature = 1469598103934665603ull;
@@ -867,234 +914,256 @@ namespace kpengine::render
             add_signature(static_cast<uint64_t>(std::hash<float>{}(value)));
         };
 
-        std::unordered_map<graphics::MeshHandle, std::size_t> mesh_indices;
-        for (const MeshProxy &proxy : frame_render_world_snapshot_)
+        if (scene_cache_dirty)
         {
-            if (!proxy.flags.visible || !proxy.mesh.IsValid())
+            std::unordered_map<graphics::MeshHandle, std::size_t> mesh_indices;
+            for (const MeshProxy &proxy : frame_render_world_snapshot_)
             {
-                continue;
-            }
-
-            const auto [mesh_iterator, inserted] = mesh_indices.emplace(
-                proxy.mesh, frame_ray_tracing_mesh_builds_.size());
-            if (inserted)
-            {
-                std::vector<graphics::RayTracingGeometryDesc> geometries =
-                    backend_->GetRayTracingGeometry(proxy.mesh);
-                if (geometries.empty())
+                if (!proxy.flags.visible || !proxy.mesh.IsValid())
                 {
-                    mesh_indices.erase(mesh_iterator);
                     continue;
                 }
 
-                const uint64_t geometry_signature =
-                    detail::RayTracingGeometrySignature(geometries);
-                RayTracingBlasState &state = ray_tracing_blas_[proxy.mesh];
-                if (state.handle.IsValid() &&
-                    (state.geometry_count != geometries.size() ||
-                     state.geometry_signature != geometry_signature))
+                const auto [mesh_iterator, inserted] = mesh_indices.emplace(
+                    proxy.mesh, frame_ray_tracing_mesh_builds_.size());
+                if (inserted)
                 {
-                    owner->DestroyAccelerationStructure(state.handle);
-                    state = {};
+                    std::vector<graphics::RayTracingGeometryDesc> geometries =
+                        backend_->GetRayTracingGeometry(proxy.mesh);
+                    if (geometries.empty())
+                    {
+                        mesh_indices.erase(mesh_iterator);
+                        continue;
+                    }
+
+                    const uint64_t geometry_signature =
+                        detail::RayTracingGeometrySignature(geometries);
+                    RayTracingBlasState &state = ray_tracing_blas_[proxy.mesh];
+                    if (state.handle.IsValid() &&
+                        (state.geometry_count != geometries.size() ||
+                         state.geometry_signature != geometry_signature))
+                    {
+                        owner->DestroyAccelerationStructure(state.handle);
+                        state = {};
+                    }
+                    if (!state.handle.IsValid())
+                    {
+                        state.handle = owner->CreateAccelerationStructure(
+                            {graphics::RayTracingAccelerationStructureType::BottomLevel,
+                             static_cast<uint32_t>(geometries.size()), 0, false});
+                        state.geometry_count = static_cast<uint32_t>(geometries.size());
+                        state.geometry_signature = geometry_signature;
+                        state.built = false;
+                    }
+                    if (!state.handle.IsValid())
+                    {
+                        mesh_indices.erase(mesh_iterator);
+                        continue;
+                    }
+
+                    const std::size_t geometry_offset = frame_ray_tracing_geometries_.size();
+                    frame_ray_tracing_geometries_.insert(frame_ray_tracing_geometries_.end(),
+                                                         geometries.begin(), geometries.end());
+                    frame_ray_tracing_mesh_builds_.push_back(
+                        {proxy.mesh, state.handle, geometry_offset, geometries.size(),
+                         geometry_signature, !state.built});
+                    if (!state.built)
+                    {
+                        frame_ray_tracing_blas_build_ = true;
+                    }
                 }
-                if (!state.handle.IsValid())
+
+                const auto build_iterator = mesh_indices.find(proxy.mesh);
+                if (build_iterator == mesh_indices.end())
                 {
-                    state.handle = owner->CreateAccelerationStructure(
-                        {graphics::RayTracingAccelerationStructureType::BottomLevel,
-                         static_cast<uint32_t>(geometries.size()), 0, false});
-                    state.geometry_count = static_cast<uint32_t>(geometries.size());
-                    state.geometry_signature = geometry_signature;
-                    state.built = false;
-                }
-                if (!state.handle.IsValid())
-                {
-                    mesh_indices.erase(mesh_iterator);
                     continue;
                 }
-
-                const std::size_t geometry_offset = frame_ray_tracing_geometries_.size();
-                frame_ray_tracing_geometries_.insert(frame_ray_tracing_geometries_.end(),
-                                                     geometries.begin(), geometries.end());
-                frame_ray_tracing_mesh_builds_.push_back(
-                    {proxy.mesh, state.handle, geometry_offset, geometries.size(),
-                     geometry_signature, !state.built});
-                if (!state.built)
+                const RayTracingMeshBuild &mesh_build =
+                    frame_ray_tracing_mesh_builds_[build_iterator->second];
+                graphics::RayTracingInstanceDesc instance{};
+                instance.bottom_level = mesh_build.blas;
+                instance.instance_id = static_cast<uint32_t>(frame_ray_tracing_instances_.size());
+                const Matrix4f transform = Matrix4f::MakeTransformMatrix(proxy.world_transform);
+                for (std::size_t row = 0; row < 3; ++row)
                 {
-                    frame_ray_tracing_blas_build_ = true;
-                }
-            }
-
-            const auto build_iterator = mesh_indices.find(proxy.mesh);
-            if (build_iterator == mesh_indices.end())
-            {
-                continue;
-            }
-            const RayTracingMeshBuild &mesh_build =
-                frame_ray_tracing_mesh_builds_[build_iterator->second];
-            graphics::RayTracingInstanceDesc instance{};
-            instance.bottom_level = mesh_build.blas;
-            instance.instance_id = static_cast<uint32_t>(frame_ray_tracing_instances_.size());
-            const Matrix4f transform = Matrix4f::MakeTransformMatrix(proxy.world_transform);
-            for (std::size_t row = 0; row < 3; ++row)
-            {
-                for (std::size_t column = 0; column < 4; ++column)
-                {
-                    instance.transform[row * 4 + column] = transform[row][column];
-                    add_float(transform[row][column]);
-                }
-            }
-            add_signature(proxy.handle.id);
-            add_signature(proxy.handle.generation);
-            add_signature(proxy.mesh.id);
-            add_signature(proxy.mesh.generation);
-            add_signature(mesh_build.geometry_signature);
-            add_signature(mesh_build.blas.id);
-            add_signature(mesh_build.blas.generation);
-            if (path_tracing_enabled_)
-            {
-                const std::vector<data::MeshSection> *const sections =
-                    resource_resolver_ != nullptr
-                        ? resource_resolver_->FindMeshSections(proxy.mesh)
-                        : nullptr;
-                const std::size_t material_offset = frame_ray_tracing_material_data_.size();
-                for (std::size_t geometry = 0; geometry < mesh_build.geometry_count; ++geometry)
-                {
-                    RayTracingPathMaterialData material_data{};
-                    MaterialInstanceHandle material = proxy.material;
-                    if (sections != nullptr && geometry < sections->size())
+                    for (std::size_t column = 0; column < 4; ++column)
                     {
-                        material = proxy.GetMaterialForSection((*sections)[geometry].material_index);
+                        instance.transform[row * 4 + column] = transform[row][column];
+                        add_float(transform[row][column]);
                     }
-                    if (material_system_ != nullptr && material.IsValid())
+                }
+                add_signature(proxy.handle.id);
+                add_signature(proxy.handle.generation);
+                add_signature(proxy.mesh.id);
+                add_signature(proxy.mesh.generation);
+                add_signature(mesh_build.geometry_signature);
+                add_signature(mesh_build.blas.id);
+                add_signature(mesh_build.blas.generation);
+                if (path_tracing_enabled_)
+                {
+                    const std::vector<data::MeshSection> *const sections =
+                        resource_resolver_ != nullptr
+                            ? resource_resolver_->FindMeshSections(proxy.mesh)
+                            : nullptr;
+                    const std::size_t material_offset = frame_ray_tracing_material_data_.size();
+                    for (std::size_t geometry = 0; geometry < mesh_build.geometry_count; ++geometry)
                     {
-                    const MaterialTemplateHandle template_handle =
-                        material_system_->GetInstanceTemplate(material);
-                    const auto read_parameter = [this, material, template_handle](
-                        std::string_view name) -> const MaterialParameterValue * {
-                        const MaterialParameterID parameter =
-                            material_system_->FindParameterID(template_handle, name);
-                        return material_system_->GetParameterValue(material, parameter);
+                        RayTracingPathMaterialData material_data{};
+                        MaterialInstanceHandle material = proxy.material;
+                        if (sections != nullptr && geometry < sections->size())
+                        {
+                            material = proxy.GetMaterialForSection((*sections)[geometry].material_index);
+                        }
+                        if (material_system_ != nullptr && material.IsValid())
+                        {
+                            const MaterialTemplateHandle template_handle =
+                                material_system_->GetInstanceTemplate(material);
+                            const auto read_parameter = [this, material, template_handle](
+                                std::string_view name) -> const MaterialParameterValue * {
+                                const MaterialParameterID parameter =
+                                    material_system_->FindParameterID(template_handle, name);
+                                return material_system_->GetParameterValue(material, parameter);
+                            };
+                            if (const MaterialParameterValue *value = read_parameter("base_color"))
+                            {
+                                if (const Vector4f *color = std::get_if<Vector4f>(value))
+                                {
+                                    material_data.base_color = *color;
+                                }
+                            }
+                            if (const MaterialParameterValue *value = read_parameter("emissive"))
+                            {
+                                if (const Vector4f *emissive = std::get_if<Vector4f>(value))
+                                {
+                                    material_data.emissive = *emissive;
+                                }
+                            }
+                            if (const MaterialParameterValue *value = read_parameter("metallic"))
+                            {
+                                if (const float *metallic = std::get_if<float>(value))
+                                {
+                                    material_data.metallic = *metallic;
+                                }
+                            }
+                            if (const MaterialParameterValue *value = read_parameter("roughness"))
+                            {
+                                if (const float *roughness = std::get_if<float>(value))
+                                {
+                                    material_data.roughness = *roughness;
+                                }
+                            }
+                            const MaterialParameterID texture_parameter =
+                                material_system_->FindParameterID(template_handle, "base_color_texture");
+                            if (texture_parameter.IsValid() && resource_resolver_ != nullptr)
+                            {
+                                if (const MaterialParameterValue *texture_value =
+                                        material_system_->GetParameterValue(material, texture_parameter))
+                                {
+                                    if (const auto *texture =
+                                            std::get_if<MaterialTextureSamplerValue>(texture_value))
+                                    {
+                                        add_material_signature(texture->texture_asset.Pack());
+                                    }
+                                }
+                                if (const auto *textures =
+                                        resource_resolver_->FindTextureBindings(material))
+                                {
+                                    const auto slot = textures->ray_tracing_bindless_slots.find(
+                                        texture_parameter.value);
+                                    if (slot != textures->ray_tracing_bindless_slots.end() &&
+                                        slot->second.IsValid())
+                                    {
+                                        material_data.base_color_texture_index = slot->second.id;
+                                    }
+                                }
+                            }
+                            const auto resolve_scalar_texture = [&](std::string_view name) {
+                                const MaterialParameterID parameter =
+                                    material_system_->FindParameterID(template_handle, name);
+                                uint32_t index = 0xffffffffu;
+                                if (parameter.IsValid() && resource_resolver_ != nullptr)
+                                {
+                                    if (const auto *textures =
+                                            resource_resolver_->FindTextureBindings(material))
+                                    {
+                                        const auto slot =
+                                            textures->ray_tracing_bindless_slots.find(parameter.value);
+                                        if (slot != textures->ray_tracing_bindless_slots.end() &&
+                                            slot->second.IsValid())
+                                        {
+                                            index = slot->second.id;
+                                        }
+                                    }
+                                    if (const auto *value =
+                                            material_system_->GetParameterValue(material, parameter))
+                                    {
+                                        if (const auto *texture =
+                                                std::get_if<MaterialTextureSamplerValue>(value))
+                                        {
+                                            add_material_signature(texture->texture_asset.Pack());
+                                        }
+                                    }
+                                }
+                                return index;
+                            };
+                            material_data.metallic_texture_index =
+                                resolve_scalar_texture("metallic_texture");
+                            material_data.roughness_texture_index =
+                                resolve_scalar_texture("roughness_texture");
+                            if (const auto *value = read_parameter("texture_channels"))
+                            {
+                                if (const auto *channels = std::get_if<Vector4f>(value))
+                                {
+                                    material_data.metallic_channel =
+                                        static_cast<uint32_t>(std::clamp(channels->x_, 0.0f, 3.0f));
+                                    material_data.roughness_channel =
+                                        static_cast<uint32_t>(std::clamp(channels->y_, 0.0f, 3.0f));
+                                }
+                            }
+                            add_material_signature(material.id);
+                            add_material_signature(material.generation);
+                            add_material_signature(material_system_->GetInstanceRevision(material));
+                        }
+                    const auto add_material_color = [&add_material_signature](float component) {
+                        add_material_signature(static_cast<uint64_t>(std::hash<float>{}(component)));
                     };
-                    if (const MaterialParameterValue *value = read_parameter("base_color"))
-                    {
-                        if (const Vector4f *color = std::get_if<Vector4f>(value))
-                        {
-                            material_data.base_color = *color;
-                        }
-                    }
-                    if (const MaterialParameterValue *value = read_parameter("emissive"))
-                    {
-                        if (const Vector4f *emissive = std::get_if<Vector4f>(value))
-                        {
-                            material_data.emissive = *emissive;
-                        }
-                    }
-                    if (const MaterialParameterValue *value = read_parameter("metallic"))
-                    {
-                        if (const float *metallic = std::get_if<float>(value))
-                        {
-                            material_data.metallic = *metallic;
-                        }
-                    }
-                    if (const MaterialParameterValue *value = read_parameter("roughness"))
-                    {
-                        if (const float *roughness = std::get_if<float>(value))
-                        {
-                            material_data.roughness = *roughness;
-                        }
-                    }
-                    const MaterialParameterID texture_parameter =
-                        material_system_->FindParameterID(template_handle, "base_color_texture");
-                    if (texture_parameter.IsValid() && resource_resolver_ != nullptr)
-                    {
-                        if (const MaterialParameterValue *texture_value =
-                                material_system_->GetParameterValue(material, texture_parameter))
-                        {
-                            if (const auto *texture =
-                                    std::get_if<MaterialTextureSamplerValue>(texture_value))
-                            {
-                                add_material_signature(texture->texture_asset.Pack());
-                            }
-                        }
-                        if (const auto *textures = resource_resolver_->FindTextureBindings(material))
-                        {
-                            const auto slot =
-                                textures->ray_tracing_bindless_slots.find(texture_parameter.value);
-                            if (slot != textures->ray_tracing_bindless_slots.end() &&
-                                slot->second.IsValid())
-                            {
-                                material_data.base_color_texture_index = slot->second.id;
-                            }
-                        }
-                    }
-                    const auto resolve_scalar_texture = [&](std::string_view name) {
-                        const MaterialParameterID parameter =
-                            material_system_->FindParameterID(template_handle, name);
-                        uint32_t index = 0xffffffffu;
-                        if (parameter.IsValid() && resource_resolver_ != nullptr)
-                        {
-                            if (const auto *textures = resource_resolver_->FindTextureBindings(material))
-                            {
-                                const auto slot = textures->ray_tracing_bindless_slots.find(parameter.value);
-                                if (slot != textures->ray_tracing_bindless_slots.end() && slot->second.IsValid())
-                                    index = slot->second.id;
-                            }
-                            if (const auto *value = material_system_->GetParameterValue(material, parameter))
-                            {
-                                if (const auto *texture = std::get_if<MaterialTextureSamplerValue>(value))
-                                    add_material_signature(texture->texture_asset.Pack());
-                            }
-                        }
-                        return index;
-                    };
-                    material_data.metallic_texture_index = resolve_scalar_texture("metallic_texture");
-                    material_data.roughness_texture_index = resolve_scalar_texture("roughness_texture");
-                    if (const auto *value = read_parameter("texture_channels"))
-                    {
-                        if (const auto *channels = std::get_if<Vector4f>(value))
-                        {
-                            material_data.metallic_channel = static_cast<uint32_t>(std::clamp(channels->x_, 0.0f, 3.0f));
-                            material_data.roughness_channel = static_cast<uint32_t>(std::clamp(channels->y_, 0.0f, 3.0f));
-                        }
-                    }
-                    add_material_signature(material.id);
-                    add_material_signature(material.generation);
-                    add_material_signature(material_system_->GetInstanceRevision(material));
+                    add_material_color(material_data.base_color.x_);
+                    add_material_color(material_data.base_color.y_);
+                    add_material_color(material_data.base_color.z_);
+                    add_material_color(material_data.emissive.x_);
+                    add_material_color(material_data.emissive.y_);
+                    add_material_color(material_data.emissive.z_);
+                    add_material_color(material_data.metallic);
+                    add_material_color(material_data.roughness);
+                    add_material_signature(material_data.base_color_texture_index);
+                    add_material_signature(material_data.metallic_texture_index);
+                    add_material_signature(material_data.roughness_texture_index);
+                    add_material_signature(material_data.metallic_channel);
+                    add_material_signature(material_data.roughness_channel);
+                    frame_ray_tracing_material_data_.push_back(material_data);
                 }
-                const auto add_material_color = [&add_material_signature](float component) {
-                    add_material_signature(static_cast<uint64_t>(std::hash<float>{}(component)));
-                };
-                add_material_color(material_data.base_color.x_);
-                add_material_color(material_data.base_color.y_);
-                add_material_color(material_data.base_color.z_);
-                add_material_color(material_data.emissive.x_);
-                add_material_color(material_data.emissive.y_);
-                add_material_color(material_data.emissive.z_);
-                add_material_color(material_data.metallic);
-                add_material_color(material_data.roughness);
-                add_material_signature(material_data.base_color_texture_index);
-                add_material_signature(material_data.metallic_texture_index);
-                add_material_signature(material_data.roughness_texture_index);
-                add_material_signature(material_data.metallic_channel);
-                add_material_signature(material_data.roughness_channel);
-                frame_ray_tracing_material_data_.push_back(material_data);
+                    frame_ray_tracing_instance_data_.push_back(
+                        {static_cast<uint32_t>(mesh_build.geometry_offset),
+                         static_cast<uint32_t>(material_offset),
+                         static_cast<uint32_t>(mesh_build.geometry_count)});
+                }
+                frame_ray_tracing_instances_.push_back(instance);
             }
-                frame_ray_tracing_instance_data_.push_back(
-                    {static_cast<uint32_t>(mesh_build.geometry_offset),
-                     static_cast<uint32_t>(material_offset),
-                     static_cast<uint32_t>(mesh_build.geometry_count)});
-            }
-            frame_ray_tracing_instances_.push_back(instance);
+
+            frame_ray_tracing_instance_signature_ = instance_signature;
+            frame_ray_tracing_material_signature_ = material_signature;
+            ray_tracing_scene_cache_world_revision_ = world_revision;
+            ray_tracing_scene_cache_material_revision_ = material_revision;
+            ray_tracing_scene_cache_instance_signature_ = instance_signature;
+            ray_tracing_scene_cache_material_signature_ = material_signature;
+            ray_tracing_scene_cache_path_tracing_enabled_ = path_tracing_enabled_;
+            ray_tracing_scene_cache_valid_ = true;
         }
 
         if (frame_ray_tracing_instances_.empty())
         {
-            frame_ray_tracing_instance_signature_ = instance_signature;
-            frame_ray_tracing_material_signature_ = material_signature;
             return true;
         }
-        frame_ray_tracing_instance_signature_ = instance_signature;
-        frame_ray_tracing_material_signature_ = material_signature;
 
         if (!ray_tracing_tlas_.IsValid() ||
             ray_tracing_tlas_capacity_ < frame_ray_tracing_instances_.size())
@@ -1119,6 +1188,7 @@ namespace kpengine::render
         {
             if (mesh_build.needs_build)
             {
+                frame_ray_tracing_blas_build_ = true;
                 frame_ray_tracing_blas_builds_.push_back(
                     {mesh_build.blas, graphics::RayTracingBuildMode::Build,
                      std::span<const graphics::RayTracingGeometryDesc>(
@@ -1129,7 +1199,8 @@ namespace kpengine::render
         }
 
         frame_ray_tracing_tlas_build_ =
-            !ray_tracing_tlas_built_ || instance_signature != ray_tracing_instance_signature_;
+            !ray_tracing_tlas_built_ || frame_ray_tracing_instance_signature_ !=
+                                            ray_tracing_instance_signature_;
         if (frame_ray_tracing_tlas_build_)
         {
             frame_ray_tracing_tlas_builds_.push_back(
@@ -1311,7 +1382,15 @@ namespace kpengine::render
         {
             ray_tracing_blas_.clear();
             ray_tracing_tlas_ = {};
+            ray_tracing_scene_table_ = {};
+            ray_tracing_scene_cache_valid_ = false;
+            frame_ray_tracing_scene_table_dirty_ = true;
             return;
+        }
+        if (ray_tracing_scene_table_.IsValid())
+        {
+            owner->DestroyRayTracingBufferReferenceTable(ray_tracing_scene_table_);
+            ray_tracing_scene_table_ = {};
         }
         for (const auto &[mesh, state] : ray_tracing_blas_)
         {
@@ -1330,6 +1409,35 @@ namespace kpengine::render
         ray_tracing_tlas_capacity_ = 0;
         ray_tracing_tlas_built_ = false;
         ray_tracing_instance_signature_ = 0;
+        ray_tracing_scene_cache_valid_ = false;
+        frame_ray_tracing_scene_table_dirty_ = true;
+        ray_tracing_scene_table_lighting_signature_ = 0;
+    }
+
+    void DeferredRenderer::DestroyRayTracingPathTraceBindings()
+    {
+        graphics::RayTracingResourceOwner *const owner =
+            backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
+        if (owner != nullptr)
+        {
+            for (auto &frame_bindings : ray_tracing_path_tracing_bindings_)
+            {
+                for (RayTracingPathTraceBindingCache &cache : frame_bindings)
+                {
+                    if (cache.descriptor_set.IsValid())
+                    {
+                        owner->DestroyRayTracingResourceBindingSet(cache.descriptor_set);
+                    }
+                    cache = {};
+                }
+            }
+        }
+        ray_tracing_path_tracing_bindings_.clear();
+    }
+
+    void DeferredRenderer::InvalidateRayTracingTextureBindings()
+    {
+        DestroyRayTracingPathTraceBindings();
     }
 
     DeferredRendererFrameResult DeferredRenderer::RecordFrame(
@@ -1399,23 +1507,12 @@ namespace kpengine::render
         active_pending_capture_ = conversion_view;
         const bool is_deferred_capture = conversion_view.has_value();
         UpdateEnvironment(input);
-        const auto shadow_stamp_fit_started = std::chrono::steady_clock::now();
-        active_directional_shadow_ = ScheduleDirectionalShadow(input.lights,
-                                                                input.is_shadow_handle_valid);
-        profile_.cpu_shadow_stamp_fit_ms +=
-            std::chrono::duration<double, std::milli>(
-                std::chrono::steady_clock::now() - shadow_stamp_fit_started)
-                .count();
-        directional_shadow_cache_hit_ =
-            active_directional_shadow_.has_value() && directional_shadow_valid_ &&
-            active_directional_shadow_->validity_stamp == directional_shadow_stamp_;
-        profile_.shadow_cache_hits = directional_shadow_cache_hit_ ? 1 : 0;
-        profile_.shadow_cache_misses = active_directional_shadow_.has_value() &&
-                                               !directional_shadow_cache_hit_
-                                           ? 1
-                                           : 0;
-        active_spot_shadow_ = ScheduleSpotShadow(input.lights, input.is_shadow_handle_valid);
-        active_point_shadow_ = SchedulePointShadow(input.lights, input.is_shadow_handle_valid);
+        active_directional_shadow_.reset();
+        active_spot_shadow_.reset();
+        active_point_shadow_.reset();
+        directional_shadow_cache_hit_ = false;
+        profile_.shadow_cache_hits = 0;
+        profile_.shadow_cache_misses = 0;
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
         const auto ray_tracing_scene_prepare_started = std::chrono::steady_clock::now();
@@ -1500,6 +1597,9 @@ namespace kpengine::render
                 frame_ray_tracing_light_data_.push_back(record);
             }
         }
+        frame_ray_tracing_scene_table_dirty_ = frame_ray_tracing_scene_table_dirty_ ||
+            frame_ray_tracing_lighting_signature_ !=
+                ray_tracing_scene_table_lighting_signature_;
         profile_.ray_tracing_geometry_records = static_cast<uint32_t>(
             frame_ray_tracing_geometries_.size());
         profile_.ray_tracing_instance_records = static_cast<uint32_t>(
@@ -1590,6 +1690,39 @@ namespace kpengine::render
         {
             result.normal_recording_completed = false;
             return result;
+        }
+        const auto has_graph_pass = [frame_plan](FixedRenderPassId id) {
+            return std::any_of(frame_plan->Passes().begin(), frame_plan->Passes().end(),
+                               [id](const CompiledRenderGraph::Pass &pass) {
+                                   return pass.user_key.has_value() &&
+                                          *pass.user_key == static_cast<uint64_t>(id);
+                               });
+        };
+        const bool needs_shadow_maps =
+            has_graph_pass(FixedRenderPassId::DirectionalShadow) ||
+            has_graph_pass(FixedRenderPassId::SpotShadow) ||
+            has_graph_pass(FixedRenderPassId::PointShadow);
+        if (needs_shadow_maps)
+        {
+            const auto shadow_stamp_fit_started = std::chrono::steady_clock::now();
+            active_directional_shadow_ = ScheduleDirectionalShadow(
+                input.lights, input.is_shadow_handle_valid);
+            profile_.cpu_shadow_stamp_fit_ms +=
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - shadow_stamp_fit_started)
+                    .count();
+            directional_shadow_cache_hit_ =
+                active_directional_shadow_.has_value() && directional_shadow_valid_ &&
+                active_directional_shadow_->validity_stamp == directional_shadow_stamp_;
+            profile_.shadow_cache_hits = directional_shadow_cache_hit_ ? 1 : 0;
+            profile_.shadow_cache_misses = active_directional_shadow_.has_value() &&
+                                                   !directional_shadow_cache_hit_
+                                               ? 1
+                                               : 0;
+            active_spot_shadow_ = ScheduleSpotShadow(input.lights,
+                                                       input.is_shadow_handle_valid);
+            active_point_shadow_ = SchedulePointShadow(input.lights,
+                                                         input.is_shadow_handle_valid);
         }
         profile_.render_graph_mode = is_deferred_capture
                                          ? "capture"
@@ -1907,14 +2040,7 @@ namespace kpengine::render
 
         if (path_trace_history_targets_[0] || path_trace_history_targets_[1])
         {
-            if (graphics::RayTracingResourceOwner *const owner =
-                    backend_->GetRayTracingResourceOwner();
-                owner && ray_tracing_path_tracing_bindings_.IsValid())
-            {
-                owner->DestroyRayTracingResourceBindingSet(
-                    ray_tracing_path_tracing_bindings_);
-                ray_tracing_path_tracing_bindings_ = {};
-            }
+            DestroyRayTracingPathTraceBindings();
             backend_->WaitIdle();
         }
         const graphics::RenderTargetDesc desc =
@@ -3410,8 +3536,8 @@ namespace kpengine::render
         {
             return false;
         }
+        const auto scene_table_pack_started = std::chrono::steady_clock::now();
         PathTracingCameraGpuData camera_data{};
-        PathTracingSceneGpuData scene_gpu_data{};
         camera_data.inverse_view_projection =
             scene_camera_.GetViewProjectionMatrix().Inverse().Transpose();
         camera_data.camera_position = Vector4f{scene_camera_.GetPosition(), 1.0f};
@@ -3432,127 +3558,207 @@ namespace kpengine::render
         if (frame_ray_tracing_geometries_.size() > kPathTraceMaximumSceneRecords ||
             frame_ray_tracing_instance_data_.size() > kPathTraceMaximumSceneRecords ||
             frame_ray_tracing_material_data_.size() > kPathTraceMaximumSceneRecords ||
-            frame_ray_tracing_light_data_.size() > scene_gpu_data.light_data.size())
+            frame_ray_tracing_light_data_.size() > 128)
         {
             return false;
         }
-        std::vector<graphics::RayTracingBufferAddressPatch> address_patches;
-        address_patches.reserve(frame_ray_tracing_geometries_.size() * 2);
-        for (std::size_t geometry = 0; geometry < frame_ray_tracing_geometries_.size(); ++geometry)
-        {
-            const graphics::RayTracingGeometryDesc &source =
-                frame_ray_tracing_geometries_[geometry];
-            if (source.index_type != graphics::RayTracingIndexType::UInt32)
-            {
-                return false;
-            }
-            PathTracingGeometryGpuData &destination = scene_gpu_data.geometry_data[geometry];
-            destination.words = {
-                0u, 0u, 0u, 0u,
-                source.vertex_stride,
-                static_cast<uint32_t>(source.index_type),
-                static_cast<uint32_t>(offsetof(data::Vertex, tex_coord)),
-                static_cast<uint32_t>(offsetof(data::Vertex, normal))};
-            const std::size_t address_offset =
-                offsetof(PathTracingSceneGpuData, geometry_data) +
-                geometry * sizeof(PathTracingGeometryGpuData) +
-                offsetof(PathTracingGeometryGpuData, words);
-            address_patches.push_back(
-                {address_offset, source.vertex_buffer, source.vertex_offset});
-            address_patches.push_back(
-                {address_offset + sizeof(uint64_t), source.index_buffer, source.index_offset});
-        }
-        for (std::size_t instance = 0;
-             instance < frame_ray_tracing_instance_data_.size(); ++instance)
-        {
-            const RayTracingPathInstanceData &source =
-                frame_ray_tracing_instance_data_[instance];
-            PathTracingInstanceGpuData &destination = scene_gpu_data.instance_data[instance];
-            destination.geometry_offset = source.geometry_offset;
-            destination.material_offset = source.material_offset;
-            destination.geometry_count = source.geometry_count;
-        }
-        for (std::size_t material = 0;
-             material < frame_ray_tracing_material_data_.size(); ++material)
-        {
-            const RayTracingPathMaterialData &source =
-                frame_ray_tracing_material_data_[material];
-            PathTracingMaterialGpuData &destination = scene_gpu_data.material_data[material];
-            destination.base_color = {source.base_color.x_, source.base_color.y_,
-                                      source.base_color.z_, source.base_color.w_};
-            destination.emissive = {source.emissive.x_, source.emissive.y_,
-                                    source.emissive.z_, source.emissive.w_};
-            destination.surface = {source.metallic, source.roughness,
-                                   source.normal_scale, 0.0f};
-            destination.surface[3] = static_cast<float>(source.metallic_channel + 4u * source.roughness_channel);
-            destination.texture_indices[0] = source.base_color_texture_index;
-            destination.texture_indices[1] = source.metallic_texture_index;
-            destination.texture_indices[2] = source.roughness_texture_index;
-        }
-        for (std::size_t light = 0; light < frame_ray_tracing_light_data_.size(); ++light)
-        {
-            const RayTracingPathLightData &source = frame_ray_tracing_light_data_[light];
-            PathTracingLightGpuData &destination = scene_gpu_data.light_data[light];
-            destination.position_or_type = {source.position_or_type.x_,
-                                            source.position_or_type.y_,
-                                            source.position_or_type.z_,
-                                            source.position_or_type.w_};
-            destination.direction_and_range = {source.direction_and_range.x_,
-                                               source.direction_and_range.y_,
-                                               source.direction_and_range.z_,
-                                               source.direction_and_range.w_};
-            destination.color_intensity = {source.color_intensity.x_,
-                                           source.color_intensity.y_,
-                                           source.color_intensity.z_,
-                                           source.color_intensity.w_};
-            destination.parameters = {source.parameters.x_, source.parameters.y_,
-                                      source.parameters.z_, source.parameters.w_};
-        }
-        const UniformAllocation camera_uniform = active_frame_context_->AllocateUniform(camera_data);
+        const UniformAllocation camera_uniform = active_frame_context_->UpdateStableUniform(
+            kPathTraceCameraUniformKey, camera_data);
         if (!camera_uniform.IsValid())
         {
             return false;
         }
 
-        if (ray_tracing_path_tracing_bindings_.IsValid())
-        {
-            owner->DestroyRayTracingResourceBindingSet(ray_tracing_path_tracing_bindings_);
-            ray_tracing_path_tracing_bindings_ = {};
-        }
         if (frame_ray_tracing_geometries_.empty())
         {
             return false;
         }
-        std::vector<std::byte> scene_table_bytes(sizeof(scene_gpu_data));
-        std::memcpy(scene_table_bytes.data(), &scene_gpu_data, sizeof(scene_gpu_data));
-        profile_.ray_tracing_scene_table_records_written =
-            frame_ray_tracing_geometries_.size() +
-            frame_ray_tracing_instance_data_.size() +
-            frame_ray_tracing_material_data_.size() +
-            frame_ray_tracing_light_data_.size();
-        std::vector<graphics::RayTracingResourceBinding> bindings{
-            graphics::RayTracingAccelerationStructureBinding{0, 0, top_level},
-            graphics::RayTracingStorageTextureBinding{
-                0, 1, hdr_target->GetColorAttachmentTexture(0)},
-            graphics::RayTracingStorageTextureBinding{
-                0, 35, history_target->GetColorAttachmentTexture(0)},
-            graphics::SampledTextureBinding{
-                0, 4, active_environment_.panorama.texture,
-                active_environment_.panorama.sampler},
-            graphics::UniformBufferBinding{0, 2, camera_uniform.buffer,
-                                           camera_uniform.offset, camera_uniform.range},
-            graphics::RayTracingBufferReferenceTableBinding{
-                0, 3, std::move(scene_table_bytes), std::move(address_patches)}};
-        ray_tracing_path_tracing_bindings_ = owner->CreateRayTracingResourceBindingSet(
-            ray_tracing_path_tracing_pipeline_, {0, std::move(bindings), false});
-        if (!ray_tracing_path_tracing_bindings_.IsValid() ||
-            !recorder->BindRayTracingPipeline(ray_tracing_path_tracing_pipeline_) ||
-            !recorder->BindRayTracingResourceBindings(ray_tracing_path_tracing_bindings_))
+        if (frame_ray_tracing_scene_table_dirty_ || !ray_tracing_scene_table_.IsValid())
+        {
+            PathTracingSceneGpuData scene_gpu_data{};
+            frame_ray_tracing_scene_address_patches_.clear();
+            frame_ray_tracing_scene_address_patches_.reserve(
+                frame_ray_tracing_geometries_.size() * 2);
+            for (std::size_t geometry = 0;
+                 geometry < frame_ray_tracing_geometries_.size(); ++geometry)
+            {
+                const graphics::RayTracingGeometryDesc &source =
+                    frame_ray_tracing_geometries_[geometry];
+                if (source.index_type != graphics::RayTracingIndexType::UInt32)
+                {
+                    return false;
+                }
+                PathTracingGeometryGpuData &destination = scene_gpu_data.geometry_data[geometry];
+                destination.words = {
+                    0u, 0u, 0u, 0u,
+                    source.vertex_stride,
+                    static_cast<uint32_t>(source.index_type),
+                    static_cast<uint32_t>(offsetof(data::Vertex, tex_coord)),
+                    static_cast<uint32_t>(offsetof(data::Vertex, normal))};
+                const std::size_t address_offset =
+                    offsetof(PathTracingSceneGpuData, geometry_data) +
+                    geometry * sizeof(PathTracingGeometryGpuData) +
+                    offsetof(PathTracingGeometryGpuData, words);
+                frame_ray_tracing_scene_address_patches_.push_back(
+                    {address_offset, source.vertex_buffer, source.vertex_offset});
+                frame_ray_tracing_scene_address_patches_.push_back(
+                    {address_offset + sizeof(uint64_t), source.index_buffer, source.index_offset});
+            }
+            for (std::size_t instance = 0;
+                 instance < frame_ray_tracing_instance_data_.size(); ++instance)
+            {
+                const RayTracingPathInstanceData &source =
+                    frame_ray_tracing_instance_data_[instance];
+                PathTracingInstanceGpuData &destination = scene_gpu_data.instance_data[instance];
+                destination.geometry_offset = source.geometry_offset;
+                destination.material_offset = source.material_offset;
+                destination.geometry_count = source.geometry_count;
+            }
+            for (std::size_t material = 0;
+                 material < frame_ray_tracing_material_data_.size(); ++material)
+            {
+                const RayTracingPathMaterialData &source =
+                    frame_ray_tracing_material_data_[material];
+                PathTracingMaterialGpuData &destination = scene_gpu_data.material_data[material];
+                destination.base_color = {source.base_color.x_, source.base_color.y_,
+                                          source.base_color.z_, source.base_color.w_};
+                destination.emissive = {source.emissive.x_, source.emissive.y_,
+                                        source.emissive.z_, source.emissive.w_};
+                destination.surface = {source.metallic, source.roughness,
+                                       source.normal_scale, 0.0f};
+                destination.surface[3] = static_cast<float>(
+                    source.metallic_channel + 4u * source.roughness_channel);
+                destination.texture_indices[0] = source.base_color_texture_index;
+                destination.texture_indices[1] = source.metallic_texture_index;
+                destination.texture_indices[2] = source.roughness_texture_index;
+            }
+            for (std::size_t light = 0; light < frame_ray_tracing_light_data_.size(); ++light)
+            {
+                const RayTracingPathLightData &source = frame_ray_tracing_light_data_[light];
+                PathTracingLightGpuData &destination = scene_gpu_data.light_data[light];
+                destination.position_or_type = {source.position_or_type.x_,
+                                                source.position_or_type.y_,
+                                                source.position_or_type.z_,
+                                                source.position_or_type.w_};
+                destination.direction_and_range = {source.direction_and_range.x_,
+                                                   source.direction_and_range.y_,
+                                                   source.direction_and_range.z_,
+                                                   source.direction_and_range.w_};
+                destination.color_intensity = {source.color_intensity.x_,
+                                               source.color_intensity.y_,
+                                               source.color_intensity.z_,
+                                               source.color_intensity.w_};
+                destination.parameters = {source.parameters.x_, source.parameters.y_,
+                                          source.parameters.z_, source.parameters.w_};
+            }
+
+            profile_.ray_tracing_scene_table_records_packed =
+                frame_ray_tracing_geometries_.size() +
+                frame_ray_tracing_instance_data_.size() +
+                frame_ray_tracing_material_data_.size() +
+                frame_ray_tracing_light_data_.size();
+            const auto *const scene_table_begin =
+                reinterpret_cast<const std::byte *>(&scene_gpu_data);
+            const std::span<const std::byte> scene_table_bytes{
+                scene_table_begin, sizeof(scene_gpu_data)};
+            profile_.cpu_ray_tracing_scene_table_pack_ms =
+                std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - scene_table_pack_started)
+                    .count();
+            graphics::RayTracingBufferReferenceTableDesc table_desc{};
+            table_desc.data.assign(scene_table_bytes.begin(), scene_table_bytes.end());
+            table_desc.address_patches = frame_ray_tracing_scene_address_patches_;
+            const graphics::RayTracingBufferReferenceTableHandle new_table =
+                owner->CreateRayTracingBufferReferenceTable(std::move(table_desc));
+            if (!new_table.IsValid())
+            {
+                return false;
+            }
+            const graphics::RayTracingBufferReferenceTableHandle previous_table =
+                ray_tracing_scene_table_;
+            ray_tracing_scene_table_ = new_table;
+            ray_tracing_scene_table_lighting_signature_ =
+                frame_ray_tracing_lighting_signature_;
+            frame_ray_tracing_scene_table_dirty_ = false;
+            if (previous_table.IsValid())
+            {
+                owner->DestroyRayTracingBufferReferenceTable(previous_table);
+            }
+            profile_.ray_tracing_scene_table_records_uploaded =
+                profile_.ray_tracing_scene_table_records_packed;
+        }
+
+        const size_t frame_index = active_frame_context_->GetFrameIndex();
+        if (ray_tracing_path_tracing_bindings_.size() <= frame_index)
+        {
+            ray_tracing_path_tracing_bindings_.resize(frame_index + 1);
+        }
+        RayTracingPathTraceBindingCache &binding_cache =
+            ray_tracing_path_tracing_bindings_[frame_index][path_trace_write_index_ & 1u];
+        const graphics::TextureHandle hdr_output =
+            hdr_target->GetColorAttachmentTexture(0);
+        const graphics::TextureHandle history_output =
+            history_target->GetColorAttachmentTexture(0);
+        const bool binding_matches = binding_cache.descriptor_set.IsValid() &&
+                                     binding_cache.pipeline ==
+                                         ray_tracing_path_tracing_pipeline_ &&
+                                     binding_cache.top_level == top_level &&
+                                     binding_cache.scene_table == ray_tracing_scene_table_ &&
+                                     binding_cache.hdr_output == hdr_output &&
+                                     binding_cache.history_output == history_output &&
+                                     binding_cache.environment ==
+                                         active_environment_.panorama.texture &&
+                                     binding_cache.environment_sampler ==
+                                         active_environment_.panorama.sampler &&
+                                     binding_cache.camera_uniform.buffer ==
+                                         camera_uniform.buffer &&
+                                     binding_cache.camera_uniform.offset ==
+                                         camera_uniform.offset &&
+                                     binding_cache.camera_uniform.range ==
+                                         camera_uniform.range;
+        if (!binding_matches)
+        {
+            std::vector<graphics::RayTracingResourceBinding> bindings{
+                graphics::RayTracingAccelerationStructureBinding{0, 0, top_level},
+                graphics::RayTracingStorageTextureBinding{0, 1, hdr_output},
+                graphics::RayTracingStorageTextureBinding{0, 35, history_output},
+                graphics::SampledTextureBinding{
+                    0, 4, active_environment_.panorama.texture,
+                    active_environment_.panorama.sampler},
+                graphics::UniformBufferBinding{0, 2, camera_uniform.buffer,
+                                               camera_uniform.offset,
+                                               camera_uniform.range},
+                graphics::RayTracingBufferReferenceTableBinding{
+                    0, 3, ray_tracing_scene_table_}};
+            const graphics::DescriptorSetHandle new_descriptor_set =
+                owner->CreateRayTracingResourceBindingSet(
+                    ray_tracing_path_tracing_pipeline_,
+                    {0, std::move(bindings), true});
+            if (!new_descriptor_set.IsValid())
+            {
+                return false;
+            }
+            if (binding_cache.descriptor_set.IsValid())
+            {
+                owner->DestroyRayTracingResourceBindingSet(binding_cache.descriptor_set);
+            }
+            binding_cache.descriptor_set = new_descriptor_set;
+            binding_cache.pipeline = ray_tracing_path_tracing_pipeline_;
+            binding_cache.top_level = top_level;
+            binding_cache.scene_table = ray_tracing_scene_table_;
+            binding_cache.hdr_output = hdr_output;
+            binding_cache.history_output = history_output;
+            binding_cache.environment = active_environment_.panorama.texture;
+            binding_cache.environment_sampler = active_environment_.panorama.sampler;
+            binding_cache.camera_uniform = camera_uniform;
+        }
+        if (!recorder->BindRayTracingPipeline(ray_tracing_path_tracing_pipeline_) ||
+            !recorder->BindRayTracingResourceBindings(binding_cache.descriptor_set))
         {
             return false;
         }
         graphics::RayTracingDispatchDesc dispatch{
-            ray_tracing_path_tracing_pipeline_, ray_tracing_path_tracing_bindings_,
+            ray_tracing_path_tracing_pipeline_, binding_cache.descriptor_set,
             hdr_target->GetWidth(), hdr_target->GetHeight(), 1};
         if (fail_next_path_trace_dispatch_)
         {
