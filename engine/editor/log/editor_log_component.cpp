@@ -108,6 +108,8 @@ namespace kpengine::editor
                 if (ImGui::Selectable(kLogLevelFilters[index].label, selected))
                 {
                     level_filter_index_ = index;
+                    selection_anchor_index_ = -1;
+                    selection_caret_index_ = -1;
                     jump_to_latest_ = true;
                 }
                 if (selected)
@@ -123,6 +125,8 @@ namespace kpengine::editor
         if (ImGui::InputTextWithHint("##log-search", "Search logs...",
                                      search_buffer_.data(), search_buffer_.size()))
         {
+            selection_anchor_index_ = -1;
+            selection_caret_index_ = -1;
             jump_to_latest_ = true;
         }
 
@@ -156,6 +160,8 @@ namespace kpengine::editor
 
         if (filtered_logs.empty())
         {
+            selection_anchor_index_ = -1;
+            selection_caret_index_ = -1;
             ImGui::TextDisabled(logs.empty() ? "No logs" : "No matching logs");
             last_log_count_ = logs.size();
             jump_to_latest_ = false;
@@ -165,6 +171,8 @@ namespace kpengine::editor
         // Virtualized: render + format only the rows visible in the scroll window.
         // Logs grow past the viewport (there's a scrollbar), so walking every entry
         // each frame would re-run the timestamp/level formatting below on all of them.
+        ImGui::BeginChild("##log_entries", ImVec2(0.0f, 0.0f), false,
+                          ImGuiWindowFlags_HorizontalScrollbar);
         ImGuiListClipper clipper;
         clipper.Begin(static_cast<int>(filtered_logs.size()));
         while (clipper.Step())
@@ -172,16 +180,77 @@ namespace kpengine::editor
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
             {
                 const program::LogEntry &log = *filtered_logs[static_cast<size_t>(i)];
+                const std::string formatted_log = program::Logger::FetchStringFromLog(log);
                 // Colors come from config/settings.json (loaded by EditorUI, with
                 // defaults as fallback); index by level instead of switching on it.
                 const LogColor &color = colors_[static_cast<size_t>(log.level)];
-                // "%s": pass the message as data, never as the format string — a log
-                // line containing '%' must not be re-parsed.
-                ImGui::TextColored(ImVec4(color.r, color.g, color.b, color.a), "%s",
-                                   program::Logger::FetchStringFromLog(log).c_str());
+                ImGui::PushID(i);
+                const int first_selected = std::min(selection_anchor_index_,
+                                                    selection_caret_index_);
+                const int last_selected = std::max(selection_anchor_index_,
+                                                   selection_caret_index_);
+                const bool selected = selection_anchor_index_ >= 0 &&
+                                      i >= first_selected && i <= last_selected;
+                const ImVec2 row_size(ImGui::GetContentRegionAvail().x, 0.0f);
+                ImGui::PushStyleColor(ImGuiCol_Text,
+                                      ImVec4(color.r, color.g, color.b, color.a));
+                const bool clicked = ImGui::Selectable(
+                    formatted_log.c_str(), selected,
+                    ImGuiSelectableFlags_AllowDoubleClick |
+                        ImGuiSelectableFlags_SpanAllColumns,
+                    row_size);
+                ImGui::PopStyleColor();
+                const bool hovered = ImGui::IsItemHovered(
+                    ImGuiHoveredFlags_AllowWhenBlockedByActiveItem);
+                if (ImGui::IsItemClicked(ImGuiMouseButton_Left))
+                {
+                    selection_anchor_index_ = i;
+                    selection_caret_index_ = i;
+                }
+                else if (hovered && selection_anchor_index_ >= 0 &&
+                         ImGui::IsMouseDragging(ImGuiMouseButton_Left))
+                {
+                    selection_caret_index_ = i;
+                }
+                if (clicked && ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left))
+                {
+                    ImGui::SetClipboardText(formatted_log.c_str());
+                }
+                if (hovered)
+                {
+                    ImGui::SetTooltip(
+                        "Drag to select log entries; Ctrl+C copies the selection; double-click copies one entry");
+                }
+                if (ImGui::BeginPopupContextItem("##log_entry_context"))
+                {
+                    if (ImGui::MenuItem("Copy log entry"))
+                    {
+                        ImGui::SetClipboardText(formatted_log.c_str());
+                    }
+                    ImGui::EndPopup();
+                }
+                ImGui::PopID();
             }
         }
 
+        if (selection_anchor_index_ >= 0 && ImGui::IsWindowFocused() &&
+            ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C))
+        {
+            const int first_selected = std::min(selection_anchor_index_,
+                                                selection_caret_index_);
+            const int last_selected = std::max(selection_anchor_index_,
+                                               selection_caret_index_);
+            std::string clipboard_text;
+            for (int index = first_selected; index <= last_selected &&
+                                              index < static_cast<int>(filtered_logs.size());
+                 ++index)
+            {
+                clipboard_text += program::Logger::FetchStringFromLog(
+                    *filtered_logs[static_cast<size_t>(index)]);
+                clipboard_text.push_back('\n');
+            }
+            ImGui::SetClipboardText(clipboard_text.c_str());
+        }
         const bool logs_grew = logs.size() > last_log_count_;
         if (jump_to_latest_ || (follow_latest_ && logs_grew))
         {
@@ -189,6 +258,7 @@ namespace kpengine::editor
             // the final scroll range after this request.
             ImGui::SetScrollHereY(1.0f);
         }
+        ImGui::EndChild();
         jump_to_latest_ = false;
         last_log_count_ = logs.size();
     }

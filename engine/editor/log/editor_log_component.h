@@ -23,6 +23,8 @@ namespace kpengine{
             bool follow_latest_ = true;
             bool jump_to_latest_ = false;
             std::size_t last_log_count_ = 0;
+            int selection_anchor_index_ = -1;
+            int selection_caret_index_ = -1;
         };
     }
 }
