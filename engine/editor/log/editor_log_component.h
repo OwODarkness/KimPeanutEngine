@@ -1,7 +1,7 @@
 #ifndef KPENGINE_EDITOR_LOG_COMPONENT_H
 #define KPENGINE_EDITOR_LOG_COMPONENT_H
 
-
+#include <array>
 #include <cstddef>
 
 #include "editor/ui/component/editor_window_component.h"
@@ -18,6 +18,8 @@ namespace kpengine{
         private:
             LogSystem* log_system_;
             LogLevelColorTable colors_;
+            std::array<char, 256> search_buffer_{};
+            std::size_t level_filter_index_ = 0;
             bool follow_latest_ = true;
             bool jump_to_latest_ = false;
             std::size_t last_log_count_ = 0;

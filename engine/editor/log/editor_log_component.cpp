@@ -1,11 +1,74 @@
 #include "editor/log/editor_log_component.h"
 
+#include <algorithm>
+#include <cctype>
 #include <imgui.h>
+#include <iterator>
+#include <string>
+#include <string_view>
 #include <vector>
+
 #include "runtime/core/log/log_system.h"
 #include "runtime/core/log/logger.h"
+
 namespace kpengine::editor
 {
+    namespace
+    {
+        struct LogLevelFilterOption
+        {
+            const char *label;
+            bool matches_all;
+            program::LogLevel level;
+        };
+
+        constexpr LogLevelFilterOption kLogLevelFilters[] = {
+            {"All levels", true, program::LogLevel::Debug},
+            {"Debug", false, program::LogLevel::Debug},
+            {"Info", false, program::LogLevel::Info},
+            {"Warning", false, program::LogLevel::Warning},
+            {"Error", false, program::LogLevel::Error},
+            {"Fatal", false, program::LogLevel::Fatal},
+        };
+
+        bool ContainsCaseInsensitive(const std::string_view text,
+                                     const std::string_view substring)
+        {
+            if (substring.empty())
+            {
+                return true;
+            }
+            if (substring.size() > text.size())
+            {
+                return false;
+            }
+
+            return std::search(text.begin(), text.end(), substring.begin(), substring.end(),
+                               [](const char left, const char right)
+                               {
+                                   return std::tolower(static_cast<unsigned char>(left)) ==
+                                          std::tolower(static_cast<unsigned char>(right));
+                               }) != text.end();
+        }
+
+        bool MatchesSearch(const program::LogEntry &log, const std::string_view query)
+        {
+            const LogLevelFilterOption *level_filter = nullptr;
+            for (const LogLevelFilterOption &option : kLogLevelFilters)
+            {
+                if (!option.matches_all && option.level == log.level)
+                {
+                    level_filter = &option;
+                    break;
+                }
+            }
+
+            return ContainsCaseInsensitive(log.name, query) ||
+                   ContainsCaseInsensitive(log.message, query) ||
+                   ContainsCaseInsensitive(log.file, query) ||
+                   (level_filter != nullptr && ContainsCaseInsensitive(level_filter->label, query));
+        }
+    }
 
     EditorLogComponent::EditorLogComponent(LogSystem *log_system, const LogLevelColorTable &colors,
                                            EditorWindowConfig config)
@@ -34,9 +97,68 @@ namespace kpengine::editor
             jump_to_latest_ = true;
         }
 
-        if (logs.empty())
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(120.0f);
+        if (ImGui::BeginCombo("##log-level-filter",
+                              kLogLevelFilters[level_filter_index_].label))
         {
-            last_log_count_ = 0;
+            for (std::size_t index = 0; index < std::size(kLogLevelFilters); ++index)
+            {
+                const bool selected = index == level_filter_index_;
+                if (ImGui::Selectable(kLogLevelFilters[index].label, selected))
+                {
+                    level_filter_index_ = index;
+                    jump_to_latest_ = true;
+                }
+                if (selected)
+                {
+                    ImGui::SetItemDefaultFocus();
+                }
+            }
+            ImGui::EndCombo();
+        }
+
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(180.0f);
+        if (ImGui::InputTextWithHint("##log-search", "Search logs...",
+                                     search_buffer_.data(), search_buffer_.size()))
+        {
+            jump_to_latest_ = true;
+        }
+
+        const std::string_view search_query(search_buffer_.data());
+        std::vector<const program::LogEntry *> filtered_logs;
+        filtered_logs.reserve(logs.size());
+        for (const program::LogEntry &log : logs)
+        {
+            const LogLevelFilterOption &filter = kLogLevelFilters[level_filter_index_];
+            if ((!filter.matches_all && filter.level != log.level) ||
+                !MatchesSearch(log, search_query))
+            {
+                continue;
+            }
+            filtered_logs.push_back(&log);
+        }
+
+        ImGui::SameLine();
+        const std::string copy_label = "Copy filtered (" +
+            std::to_string(filtered_logs.size()) + ")";
+        if (ImGui::Button(copy_label.c_str()))
+        {
+            std::string clipboard_text;
+            for (const program::LogEntry *const log : filtered_logs)
+            {
+                clipboard_text += program::Logger::FetchStringFromLog(*log);
+                clipboard_text.push_back('\n');
+            }
+            ImGui::SetClipboardText(clipboard_text.c_str());
+        }
+
+        if (filtered_logs.empty())
+        {
+            ImGui::TextDisabled(logs.empty() ? "No logs" : "No matching logs");
+            last_log_count_ = logs.size();
+            jump_to_latest_ = false;
             return;
         }
 
@@ -44,12 +166,12 @@ namespace kpengine::editor
         // Logs grow past the viewport (there's a scrollbar), so walking every entry
         // each frame would re-run the timestamp/level formatting below on all of them.
         ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(logs.size()));
+        clipper.Begin(static_cast<int>(filtered_logs.size()));
         while (clipper.Step())
         {
             for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i)
             {
-                const program::LogEntry &log = logs[static_cast<size_t>(i)];
+                const program::LogEntry &log = *filtered_logs[static_cast<size_t>(i)];
                 // Colors come from config/settings.json (loaded by EditorUI, with
                 // defaults as fallback); index by level instead of switching on it.
                 const LogColor &color = colors_[static_cast<size_t>(log.level)];
