@@ -60,10 +60,7 @@ namespace kpengine::graphics
         void EndGpuProfilePass(uint32_t pass_id) override;
         std::vector<GpuProfileTiming> ConsumeCompletedGpuProfileTimings() override;
         const char *GetPresentModeName() const override;
-        BackendProfileCounters GetBackendProfileCounters() const override
-        {
-            return profile_counters_;
-        }
+        BackendProfileCounters GetBackendProfileCounters() const override;
         std::optional<std::string> GetValidationDiagnostic() const override;
         CommandRecorder *GetCommandRecorder() override;
         AccelerationStructureHandle GetActiveTopLevelAccelerationStructure() const override;

@@ -61,6 +61,21 @@ Relevant studies include Sakura (RHI/render graph), Piccolo (asset/resource laye
 
 ## Build and validation
 
+Use **Debug with Vulkan validation enabled for correctness checks** and
+**RelWithDebInfo for performance measurements** (FPS, CPU/GPU frame time,
+startup latency, and throughput). Rebuild the selected configuration before
+measuring and launch its matching executable. Debug timings are diagnostic
+evidence, not performance acceptance; label them explicitly when comparing
+Debug overhead. Do not disable validation in the normal Debug build to claim
+correctness or performance acceptance.
+
+Record the commit/working-tree state, build configuration, graphics API,
+validation state, fixture/camera, viewport resolution, actual RT mode,
+warm-up/residency state, and sample window with performance results. Verify
+the active mode through Runtime stats: disabling path tracing may still leave
+ray-query shadows active. Compare matched conditions and do not run builds or
+tests concurrently with performance sampling.
+
 Use `tools/kp.ps1` for targeted validation when possible. The standard fallback is:
 
 ```powershell

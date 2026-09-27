@@ -36,6 +36,12 @@ namespace kpengine::asset{
             }
         }
 
+        bool SupportsFullResolutionLoad() const
+        {
+            std::lock_guard<std::mutex> lock(residency_mutex_);
+            return full_resolution_data_.valid() || static_cast<bool>(full_resolution_loader_);
+        }
+
         std::shared_ptr<const TextureData> TryGetFullResolutionData() const
         {
             std::shared_future<std::shared_ptr<const TextureData>> result;

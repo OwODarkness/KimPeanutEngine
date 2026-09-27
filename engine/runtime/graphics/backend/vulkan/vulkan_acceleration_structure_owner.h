@@ -46,6 +46,11 @@ namespace kpengine::graphics
             bindless_texture_layout_ = layout;
         }
         LifecycleCounts GetLifecycleCounts() const noexcept;
+        RayTracingResourceProfileCounters GetProfileCounters() const noexcept override
+        {
+            return profile_counters_;
+        }
+        void ResetProfileCounters() noexcept override { profile_counters_ = {}; }
         AccelerationStructureHandle CreateAccelerationStructure(
             const RayTracingAccelerationStructureDesc &desc) override;
         bool DestroyAccelerationStructure(AccelerationStructureHandle handle) override;
@@ -167,6 +172,7 @@ namespace kpengine::graphics
         VkPhysicalDeviceRayTracingPipelinePropertiesKHR ray_tracing_properties_{};
         bool supported_ = false;
         bool ray_tracing_pipeline_supported_ = false;
+        RayTracingResourceProfileCounters profile_counters_{};
     };
 }
 

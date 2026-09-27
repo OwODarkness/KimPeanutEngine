@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 
 #include "log/logger.h"
 
@@ -36,11 +37,15 @@ namespace kpengine::graphics
         vkDestroyCommandPool(device_->GetLogicalDevice(), transfer_command_pool_, nullptr);
     }
 
-    void VulkanFrameContext::WaitForInFlightFence()
+    double VulkanFrameContext::WaitForInFlightFence()
     {
+        const auto started = std::chrono::steady_clock::now();
         vkWaitForFences(device_->GetLogicalDevice(), 1, &in_flight_fences_[current_frame_index_], VK_TRUE, UINT64_MAX);
         completed_submission_serial_ = std::max(completed_submission_serial_,
                                                 in_flight_submission_serials_[current_frame_index_]);
+        return std::chrono::duration<double, std::milli>(
+                   std::chrono::steady_clock::now() - started)
+            .count();
     }
 
     VkResult VulkanFrameContext::AcquireNextImage(VkSwapchainKHR swapchain, uint32_t &image_index)

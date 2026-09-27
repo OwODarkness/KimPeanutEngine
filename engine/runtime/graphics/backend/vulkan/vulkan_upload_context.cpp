@@ -3,6 +3,7 @@
 #include <cstring>
 #include <limits>
 #include <stdexcept>
+#include <string>
 #include <vector>
 
 #include "log/logger.h"
@@ -61,25 +62,40 @@ namespace kpengine::graphics
     void VulkanUploadContext::SubmitAndRelease(VkCommandBuffer command_buffer,
                                                 VkCommandPool command_pool, VkQueue queue)
     {
-        if (vkEndCommandBuffer(command_buffer) != VK_SUCCESS)
+        const VkResult end_result = vkEndCommandBuffer(command_buffer);
+        if (end_result != VK_SUCCESS)
         {
             vkFreeCommandBuffers(device_->GetLogicalDevice(), command_pool, 1, &command_buffer);
-            throw std::runtime_error("failed to end Vulkan upload command buffer");
+            KP_LOG(KP_VULKAN_UPLOAD_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR,
+                   "vkEndCommandBuffer(upload) failed (VkResult=%d)",
+                   static_cast<int>(end_result));
+            throw std::runtime_error("failed to end Vulkan upload command buffer (VkResult=" +
+                                     std::to_string(static_cast<int>(end_result)) + ")");
         }
 
         VkSubmitInfo submit_info{};
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.commandBufferCount = 1;
         submit_info.pCommandBuffers = &command_buffer;
-        if (vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE) != VK_SUCCESS)
+        const VkResult submit_result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
+        if (submit_result != VK_SUCCESS)
         {
             vkFreeCommandBuffers(device_->GetLogicalDevice(), command_pool, 1, &command_buffer);
-            throw std::runtime_error("failed to submit Vulkan upload command buffer");
+            KP_LOG(KP_VULKAN_UPLOAD_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR,
+                   "vkQueueSubmit(upload) failed (VkResult=%d)",
+                   static_cast<int>(submit_result));
+            throw std::runtime_error("failed to submit Vulkan upload command buffer (VkResult=" +
+                                     std::to_string(static_cast<int>(submit_result)) + ")");
         }
-        if (vkQueueWaitIdle(queue) != VK_SUCCESS)
+        const VkResult wait_result = vkQueueWaitIdle(queue);
+        if (wait_result != VK_SUCCESS)
         {
             vkFreeCommandBuffers(device_->GetLogicalDevice(), command_pool, 1, &command_buffer);
-            throw std::runtime_error("failed waiting for Vulkan upload queue");
+            KP_LOG(KP_VULKAN_UPLOAD_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR,
+                   "vkQueueWaitIdle(upload) failed (VkResult=%d)",
+                   static_cast<int>(wait_result));
+            throw std::runtime_error("failed waiting for Vulkan upload queue (VkResult=" +
+                                     std::to_string(static_cast<int>(wait_result)) + ")");
         }
         vkFreeCommandBuffers(device_->GetLogicalDevice(), command_pool, 1, &command_buffer);
     }

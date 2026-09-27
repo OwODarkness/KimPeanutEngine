@@ -35,7 +35,7 @@ namespace kpengine::graphics
         VkCommandPool GetTransferCommandPool() const { return transfer_command_pool_; }
 
         // frame plumbing (BeginFrame's wait/acquire/reset/submit/present)
-        void WaitForInFlightFence();
+        double WaitForInFlightFence();
         VkResult AcquireNextImage(VkSwapchainKHR swapchain, uint32_t &image_index);
         void ResetInFlightFence();
         void ResetCurrentSceneCommandBuffer();

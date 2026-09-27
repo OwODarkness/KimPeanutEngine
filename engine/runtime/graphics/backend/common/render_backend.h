@@ -61,6 +61,10 @@ namespace kpengine::graphics
         uint64_t descriptor_searches = 0;
         uint64_t descriptor_allocations = 0;
         uint64_t descriptor_updates = 0;
+        double cpu_fence_wait_ms = 0.0;
+        double cpu_acquire_wait_ms = 0.0;
+        double cpu_queue_present_ms = 0.0;
+        RayTracingResourceProfileCounters ray_tracing;
         double descriptor_search_cpu_ms = 0.0;
         double descriptor_allocation_cpu_ms = 0.0;
         double descriptor_update_cpu_ms = 0.0;

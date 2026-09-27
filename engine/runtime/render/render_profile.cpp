@@ -36,6 +36,10 @@ namespace kpengine::render
     {
         cpu_total_samples_.reserve(sample_frames_);
         cpu_present_samples_.reserve(sample_frames_);
+        cpu_fence_wait_samples_.reserve(sample_frames_);
+        cpu_acquire_wait_samples_.reserve(sample_frames_);
+        cpu_queue_present_samples_.reserve(sample_frames_);
+        gpu_total_samples_.reserve(sample_frames_);
         for (auto &samples : cpu_subphase_samples_)
         {
             samples.reserve(sample_frames_);
@@ -51,6 +55,7 @@ namespace kpengine::render
         if (frames_observed_ < warmup_frames_)
         {
             ++frames_observed_;
+            summary_dirty_ = true;
             return;
         }
         if (sample_frames_ == 0 || cpu_total_samples_.size() >= sample_frames_)
@@ -59,6 +64,9 @@ namespace kpengine::render
         }
         cpu_total_samples_.push_back(snapshot.cpu_total_ms);
         cpu_present_samples_.push_back(snapshot.cpu_present_ms);
+        cpu_fence_wait_samples_.push_back(snapshot.cpu_fence_wait_ms);
+        cpu_acquire_wait_samples_.push_back(snapshot.cpu_acquire_wait_ms);
+        cpu_queue_present_samples_.push_back(snapshot.cpu_queue_present_ms);
         const std::array<double, static_cast<size_t>(RenderProfileCpuSubphase::Count)>
             cpu_subphases = {
                 snapshot.cpu_section_packet_build_ms,
@@ -74,18 +82,32 @@ namespace kpengine::render
         {
             cpu_subphase_samples_[index].push_back(cpu_subphases[index]);
         }
+        double gpu_total_ms = 0.0;
+        bool has_gpu_total = false;
         for (size_t index = 0; index < gpu_samples_.size(); ++index)
         {
             if (snapshot.passes[index].gpu_time_ms.has_value())
             {
                 gpu_samples_[index].push_back(*snapshot.passes[index].gpu_time_ms);
+                gpu_total_ms += *snapshot.passes[index].gpu_time_ms;
+                has_gpu_total = true;
             }
         }
+        if (snapshot.gpu_timing_samples > 0 && has_gpu_total)
+        {
+            gpu_total_samples_.push_back(gpu_total_ms);
+        }
         ++frames_observed_;
+        summary_dirty_ = true;
     }
 
     RenderProfileSummary RenderProfileWindow::GetSummary() const
     {
+        if (!summary_dirty_)
+        {
+            return cached_summary_;
+        }
+
         RenderProfileSummary summary{};
         summary.warmup_frames_completed = std::min(frames_observed_, warmup_frames_);
         summary.samples_collected = static_cast<uint32_t>(cpu_total_samples_.size());
@@ -94,6 +116,17 @@ namespace kpengine::render
         summary.cpu_total_p95_ms = Percentile(cpu_total_samples_, 0.95);
         summary.cpu_present_p50_ms = Percentile(cpu_present_samples_, 0.50);
         summary.cpu_present_p95_ms = Percentile(cpu_present_samples_, 0.95);
+        summary.cpu_fence_wait_p50_ms = Percentile(cpu_fence_wait_samples_, 0.50);
+        summary.cpu_fence_wait_p95_ms = Percentile(cpu_fence_wait_samples_, 0.95);
+        summary.cpu_acquire_wait_p50_ms = Percentile(cpu_acquire_wait_samples_, 0.50);
+        summary.cpu_acquire_wait_p95_ms = Percentile(cpu_acquire_wait_samples_, 0.95);
+        summary.cpu_queue_present_p50_ms = Percentile(cpu_queue_present_samples_, 0.50);
+        summary.cpu_queue_present_p95_ms = Percentile(cpu_queue_present_samples_, 0.95);
+        if (!gpu_total_samples_.empty())
+        {
+            summary.gpu_total_p50_ms = Percentile(gpu_total_samples_, 0.50);
+            summary.gpu_total_p95_ms = Percentile(gpu_total_samples_, 0.95);
+        }
         for (size_t index = 0; index < gpu_samples_.size(); ++index)
         {
             if (!gpu_samples_[index].empty())
@@ -112,7 +145,9 @@ namespace kpengine::render
                     Percentile(cpu_subphase_samples_[index], 0.95);
             }
         }
-        return summary;
+        cached_summary_ = summary;
+        summary_dirty_ = false;
+        return cached_summary_;
     }
 
     void RenderProfileWindow::Reset()
@@ -120,6 +155,10 @@ namespace kpengine::render
         frames_observed_ = 0;
         cpu_total_samples_.clear();
         cpu_present_samples_.clear();
+        cpu_fence_wait_samples_.clear();
+        cpu_acquire_wait_samples_.clear();
+        cpu_queue_present_samples_.clear();
+        gpu_total_samples_.clear();
         for (auto &samples : gpu_samples_)
         {
             samples.clear();
@@ -128,5 +167,7 @@ namespace kpengine::render
         {
             samples.clear();
         }
+        cached_summary_ = {};
+        summary_dirty_ = true;
     }
 }

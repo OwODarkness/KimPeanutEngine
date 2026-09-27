@@ -521,7 +521,8 @@ namespace kpengine::render
         resource_resolver_ = &info.resource_resolver;
         material_system_ = &info.materials;
         prepared_assets_ = &info.prepared_assets;
-        path_tracing_enabled_ = info.path_tracing_enabled;
+        ray_tracing_enabled_ = info.ray_tracing_enabled;
+        path_tracing_enabled_ = info.ray_tracing_enabled && info.path_tracing_enabled;
         try
         {
             KP_LOG("RenderLog", LOG_LEVEL_INFO, "R4.6 initializing frame targets");
@@ -531,7 +532,7 @@ namespace kpengine::render
                 throw std::runtime_error("Failed to create the complete render target set.");
             }
             KP_LOG("RenderLog", LOG_LEVEL_INFO, "R4.6 frame targets initialized");
-            const bool r46_pipeline_ready = path_tracing_enabled_ &&
+            const bool r46_pipeline_ready = ray_tracing_enabled_ && path_tracing_enabled_ &&
                 backend_->GetCapabilities().SupportsRayTracingPipeline() &&
                 PrepareRayTracingPathTraceResources();
             ray_tracing_path_tracing_available_ = r46_pipeline_ready;
@@ -1321,12 +1322,15 @@ namespace kpengine::render
         profile_.graph_compile_ms = frame_plan_compile_ms_;
         profile_.frame_number = frame_context.GetGlobals().frame_number;
         profile_.graphics_api = backend_->GetGraphicsAPI();
+        profile_.ray_tracing_enabled = ray_tracing_enabled_;
         profile_.path_tracing_enabled = path_tracing_enabled_;
         profile_.path_tracing_available = ray_tracing_path_tracing_available_;
         profile_.ray_query_shadows_available =
             backend_->GetCapabilities().SupportsRayQueryShadows();
         profile_.viewport_width = frame_context.GetRenderExtent().width;
         profile_.viewport_height = frame_context.GetRenderExtent().height;
+        profile_.path_trace_samples_per_dispatch = kPathTraceSamplesPerDispatch;
+        profile_.path_trace_max_continuation_bounces = kPathTraceDiffuseBounces;
         profile_.textures = resource_resolver_->GetTextureMetrics();
         material_system_->ResetProfileCounters();
         if (!frame_plan_valid_ || active_pass_frame_.has_value())
@@ -1347,6 +1351,10 @@ namespace kpengine::render
         frame_object_states_.clear();
         frame_material_bindings_.clear();
         scene_camera_ = input.camera;
+        const Vector3f profile_camera_position = scene_camera_.GetPosition();
+        profile_.path_trace_camera_position = {
+            profile_camera_position.x_, profile_camera_position.y_,
+            profile_camera_position.z_};
         // Only a view this renderer converts itself is recorded here. A
         // host-resolved view is satisfied by the host's own target instead.
         const bool pending_needs_conversion =
@@ -1392,7 +1400,8 @@ namespace kpengine::render
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
         const auto ray_tracing_scene_prepare_started = std::chrono::steady_clock::now();
-        const bool ray_tracing_scene_prepared = PrepareRayTracingScene();
+        const bool ray_tracing_scene_prepared =
+            !ray_tracing_enabled_ || PrepareRayTracingScene();
         profile_.cpu_ray_tracing_scene_prepare_ms =
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - ray_tracing_scene_prepare_started)
@@ -1472,8 +1481,18 @@ namespace kpengine::render
                 frame_ray_tracing_light_data_.push_back(record);
             }
         }
+        profile_.ray_tracing_geometry_records = static_cast<uint32_t>(
+            frame_ray_tracing_geometries_.size());
+        profile_.ray_tracing_instance_records = static_cast<uint32_t>(
+            frame_ray_tracing_instance_data_.size());
+        profile_.ray_tracing_material_records = static_cast<uint32_t>(
+            frame_ray_tracing_material_data_.size());
+        profile_.ray_tracing_light_records = static_cast<uint32_t>(
+            frame_ray_tracing_light_data_.size());
+        profile_.path_trace_environment_enabled = active_environment_.ibl_enabled;
+        profile_.path_trace_environment_intensity = active_environment_.ibl_intensity;
         const bool ray_query_shadow =
-            backend_->GetCapabilities().SupportsRayQueryShadows() &&
+            ray_tracing_enabled_ && backend_->GetCapabilities().SupportsRayQueryShadows() &&
             backend_->GetActiveTopLevelAccelerationStructure().IsValid() &&
             !frame_ray_tracing_instances_.empty();
         // The first loading frame can precede the first populated world
@@ -1535,6 +1554,9 @@ namespace kpengine::render
             const uint64_t signature = PathTraceHistorySignature(extent.width, extent.height);
             if (signature != path_trace_history_signature_)
             {
+                profile_.path_trace_history_reset_reason =
+                    path_trace_history_signature_ == 0 ? "history_uninitialized"
+                                                       : "signature_changed";
                 path_trace_sample_count_ = 0;
                 path_trace_history_signature_ = signature;
             }
@@ -1550,6 +1572,12 @@ namespace kpengine::render
             result.normal_recording_completed = false;
             return result;
         }
+        profile_.render_graph_mode = is_deferred_capture
+                                         ? "capture"
+                                         : ray_tracing_path_trace
+                                               ? "path_tracing"
+                                               : ray_query_shadow ? "hybrid_ray_query"
+                                                                  : "deferred";
         if (!AcquireFrameTransients(*frame_plan))
         {
             // Deferred lighting writes it and tone map reads it, so a frame
@@ -2920,7 +2948,7 @@ namespace kpengine::render
 
         DeferredLightingGpuData lighting_data{};
         const bool ray_query_shadows =
-            backend_->GetCapabilities().SupportsRayQueryShadows() &&
+            ray_tracing_enabled_ && backend_->GetCapabilities().SupportsRayQueryShadows() &&
             backend_->GetActiveTopLevelAccelerationStructure().IsValid() &&
             deferred_lighting_ray_query_pipeline_.IsValid();
         profile_.ray_query_shadows_active = ray_query_shadows;
@@ -3073,7 +3101,8 @@ namespace kpengine::render
 
     bool DeferredRenderer::PrepareDeferredLightingPassResources()
     {
-        const bool supports_ray_query = backend_->GetCapabilities().SupportsRayQueryShadows();
+        const bool supports_ray_query = ray_tracing_enabled_ &&
+            backend_->GetCapabilities().SupportsRayQueryShadows();
         if (deferred_lighting_pipeline_.IsValid() && directional_shadow_sampler_.IsValid() &&
             spot_shadow_sampler_.IsValid() && point_shadow_sampler_.IsValid() &&
             active_environment_.HasCompleteBindings() &&
@@ -3473,6 +3502,11 @@ namespace kpengine::render
         }
         std::vector<std::byte> scene_table_bytes(sizeof(scene_gpu_data));
         std::memcpy(scene_table_bytes.data(), &scene_gpu_data, sizeof(scene_gpu_data));
+        profile_.ray_tracing_scene_table_records_written =
+            frame_ray_tracing_geometries_.size() +
+            frame_ray_tracing_instance_data_.size() +
+            frame_ray_tracing_material_data_.size() +
+            frame_ray_tracing_light_data_.size();
         std::vector<graphics::RayTracingResourceBinding> bindings{
             graphics::RayTracingAccelerationStructureBinding{0, 0, top_level},
             graphics::RayTracingStorageTextureBinding{

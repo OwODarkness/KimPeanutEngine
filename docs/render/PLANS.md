@@ -87,6 +87,11 @@ public policy while the coordinator owns scene preparation.
   [scene-driven RT follow-up](.plan/R4.6-general-scene.md) defines common
   geometry/instance/section/material/light inputs and optional execution policy;
   [R4.6 review](.review/R4.6.md) records the live Sponza baseline.
+- [R4.7 — general path-tracing optimization](.plan/R4.7.md) — proposed GPU
+  visibility/primary-hit/AS improvements and CPU table/binding/preparation
+  reuse at unchanged scene-independent lighting quality. Optional budget
+  settings are measured separately. See the [source review](.review/R4.7.md)
+  and [acceptance spec](../../.spec/specs/render-r4-7-path-tracing-performance.md).
 - [R5 — post-R4.6 Render/Graphics decoupling](.plan/R5.md) — a proposed,
   design-only stage to separate graph execution and concrete pass-family state
   from `DeferredRenderer`, correct graph failure/binding semantics, and narrow

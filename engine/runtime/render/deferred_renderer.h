@@ -46,6 +46,7 @@ namespace kpengine::render
         RenderResourceResolver &resource_resolver;
         MaterialSystem &materials;
         const PreparedRenderAssetCatalog &prepared_assets;
+        bool ray_tracing_enabled = true;
         bool path_tracing_enabled = true;
     };
 
@@ -383,6 +384,7 @@ namespace kpengine::render
         graphics::PipelineHandle deferred_lighting_pipeline_;
         graphics::PipelineHandle deferred_lighting_ray_query_pipeline_;
         bool ray_query_shadow_path_active_ = false;
+        bool ray_tracing_enabled_ = true;
         graphics::PipelineHandle gbuffer_debug_pipeline_;
         graphics::PipelineHandle capture_view_pipeline_;
         graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;

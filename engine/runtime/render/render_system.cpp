@@ -85,7 +85,8 @@ namespace kpengine::render
         }
         try
         {
-            path_tracing_enabled_ = info.path_tracing_enabled;
+            ray_tracing_enabled_ = info.ray_tracing_enabled;
+            path_tracing_enabled_ = info.ray_tracing_enabled && info.path_tracing_enabled;
             RenderBackendFactory factory = info.backend_factory;
             if (!factory)
             {
@@ -164,7 +165,7 @@ namespace kpengine::render
             deferred_renderer_ = std::make_unique<DeferredRenderer>();
             const DeferredRendererInitResult renderer_result = deferred_renderer_->Initialize(
                 {*backend_, *resource_resolver_, *material_system_, *prepared_assets_,
-                 path_tracing_enabled_},
+                 ray_tracing_enabled_, path_tracing_enabled_},
                 extent.width, extent.height);
             if (!renderer_result)
             {
@@ -319,6 +320,7 @@ namespace kpengine::render
                 profile_.gpu_frame_number = frame_number_;
             }
         }
+        profile_.gpu_timing_samples = static_cast<uint32_t>(completed_gpu_timings.size());
         if (scene_input->pending_capture.has_value())
         {
             if (!result.capture_target_ready)
@@ -378,6 +380,27 @@ namespace kpengine::render
         profile_.descriptor_search_cpu_ms = backend_profile.descriptor_search_cpu_ms;
         profile_.descriptor_allocation_cpu_ms = backend_profile.descriptor_allocation_cpu_ms;
         profile_.descriptor_update_cpu_ms = backend_profile.descriptor_update_cpu_ms;
+        profile_.cpu_fence_wait_ms = backend_profile.cpu_fence_wait_ms;
+        profile_.cpu_acquire_wait_ms = backend_profile.cpu_acquire_wait_ms;
+        profile_.cpu_queue_present_ms = backend_profile.cpu_queue_present_ms;
+        profile_.ray_tracing_descriptor_sets_created =
+            backend_profile.ray_tracing.descriptor_sets_created;
+        profile_.ray_tracing_descriptor_pools_created =
+            backend_profile.ray_tracing.descriptor_pools_created;
+        profile_.ray_tracing_address_table_buffers_created =
+            backend_profile.ray_tracing.address_table_buffers_created;
+        profile_.ray_tracing_address_table_upload_bytes =
+            backend_profile.ray_tracing.address_table_upload_bytes;
+        profile_.ray_tracing_blas_builds = backend_profile.ray_tracing.blas_builds;
+        profile_.ray_tracing_blas_updates = backend_profile.ray_tracing.blas_updates;
+        profile_.ray_tracing_tlas_builds = backend_profile.ray_tracing.tlas_builds;
+        profile_.ray_tracing_tlas_updates = backend_profile.ray_tracing.tlas_updates;
+        profile_.ray_tracing_retired_acceleration_structures =
+            backend_profile.ray_tracing.retired_acceleration_structures;
+        profile_.ray_tracing_retired_descriptor_sets =
+            backend_profile.ray_tracing.retired_descriptor_sets;
+        profile_.ray_tracing_retired_temporary_buffer_batches =
+            backend_profile.ray_tracing.retired_temporary_buffer_batches;
         profile_.pipeline_validation_cpu_ms =
             backend_profile.recorder.pipeline_validation_cpu_ms;
         profile_.pipeline_validation_calls =

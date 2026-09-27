@@ -372,6 +372,7 @@ namespace kpengine
 
             render::RenderSystemInitInfo render_init_info{};
             render_init_info.api_type = graphics_api_type_;
+            render_init_info.ray_tracing_enabled = ray_tracing_enabled_;
             render_init_info.path_tracing_enabled = path_tracing_enabled_;
             render_init_info.native_window = window_system_->GetNativeHandle();
             render_init_info.resize_dispatcher = &window_system_->resize_event_dispatcher_;

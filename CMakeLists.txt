@@ -11,11 +11,7 @@ list(APPEND CMAKE_MODULE_PATH
 
 include(RuntimeDependencies)
 
-# include_directories(
-#     third_party
-#     third_party/googletest/googletest/include
-#     third_party/vulkan/
-#     )
+
 add_subdirectory(third_party)
 
 add_subdirectory(engine)

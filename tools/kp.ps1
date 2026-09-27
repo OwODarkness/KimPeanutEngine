@@ -5,13 +5,17 @@ param(
     [string]$Command = "validate",
 
     [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
-    [string[]]$CommandArgs
+    [string[]]$CommandArgs,
+
+    [Alias("Config")]
+    [ValidateSet("Debug", "RelWithDebInfo", "Release", "MinSizeRel")]
+    [string]$Configuration = "Debug"
 )
 
 $ErrorActionPreference = "Stop"
 $RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $BuildDir = Join-Path $RepoRoot "build"
-$BuildConfig = "Debug"
+$BuildConfig = $Configuration
 
 if (-not ("KpCleanExternalProcess" -as [type])) {
     Add-Type -TypeDefinition @'
@@ -123,7 +127,7 @@ KimPeanutEngine command wrapper
 Usage:
   .\tools\kp.ps1 status
   .\tools\kp.ps1 configure
-  .\tools\kp.ps1 build [target]
+  .\tools\kp.ps1 [-Configuration <name>] build [target]
   .\tools\kp.ps1 test [CTest-regex]
   .\tools\kp.ps1 validate [changed-file ...]
   .\tools\kp.ps1 smoke
@@ -133,6 +137,7 @@ Examples:
   .\tools\kp.ps1 validate
   .\tools\kp.ps1 validate engine/runtime/render/render_scene.cpp
   .\tools\kp.ps1 build RenderPassScheduleTest
+  .\tools\kp.ps1 -Configuration RelWithDebInfo build KimPeanutEngine
   .\tools\kp.ps1 test RenderPassScheduleTest
   .\tools\kp.ps1 test -l render
   .\tools\kp.ps1 test -l "render|graphics"

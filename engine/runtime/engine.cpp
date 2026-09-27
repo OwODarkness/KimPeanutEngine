@@ -158,6 +158,15 @@ namespace kpengine
             global_runtime_context.vsync_ = enabled;
         }
 
+        void Engine::SetRayTracingEnabled(bool enabled)
+        {
+            if (initialization_started_ || cleared_)
+            {
+                return;
+            }
+            global_runtime_context.ray_tracing_enabled_ = enabled;
+        }
+
         void Engine::SetPathTracingEnabled(bool enabled)
         {
             if (initialization_started_ || cleared_)

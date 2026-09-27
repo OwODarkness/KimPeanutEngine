@@ -114,11 +114,76 @@ details and stage checklists belong in the linked submodule documents.
   rectangular area-light sampling, at least one diffuse bounce, progressive
   accumulation, and a same-contract comparison against the local
   `save/cornell_box_ref.jpeg` as a visual guide. Vulkan runtime dispatch and
-  progressive samples are observed; visual framing/quality and full lifecycle
-  evidence still block acceptance. → [R4 design](.plan/R4.md),
+  progressive samples are observed. Cornell qualitative/reset/lifecycle
+  acceptance is recorded on 2026-09-25; Sponza and optional RT selection remain
+  open in the [2026-09-26 review](.review/R4.6.md#sponza-and-optional-rt-review--2026-09-26).
+  Follow-up: explicit RT-off/hybrid/path-trace policy, Asset load diagnosis,
+  [measured startup review](.review/R4.6.md#measured-sponza-startup-bottleneck-and-history--2026-09-26):
+  blocking model verification dominates (26.4 seconds resolving/verifying plus
+  50.0 seconds hashing in a 91.0-second Asset run). Define model trust/verification
+  policy and reproduce the earlier ~30-second baseline under controlled conditions.
+  Separate this regression from the final ~2-second RT pipeline preparation.
+  [Frame-performance review](.review/R4.6.md#sponza-frame-performance-review--2026-09-26)
+  measures 27/35/101 FPS for Debug/validation-off Debug/RelWithDebInfo, with
+  existing caches retained. The existing full RT-off startup option was later
+  verified. Matched original/current unoptimized Debug runs both measure about
+  26 FPS; an earlier optimized binary remains a possible explanation for the
+  remembered 80–90 FPS. Log actual compiler configuration at startup, skip
+  irrelevant shadow-map scheduling, and control residency/clocks in further
+  comparisons. See the [Debug-to-Debug follow-up](.review/R4.6.md#debug-to-debug-follow-up--2026-09-26).
+  Follow-up also includes
+  clean shader/layout and descriptor allocation, Graphics-owned address
+  translation, and general-scene material/visibility evidence. Acceptance
+  requires opt-in RT, healthy raster with RT disabled, and captured Sponza
+  output with clean validation and safe mode transitions. A subsequent live
+  Sponza run proves active RT/19,608 samples and safe close, but albedo is
+  uniformly magenta from the proxy fallback material; section textures and
+  environment/point-fill illumination are missing. The historical Asset and
+  descriptor failures did not reproduce; see the
+  [live correction](.review/R4.6.md#live-sponza-correction--2026-09-26-18021805).
+  Implement the [general scene contract](.plan/R4.6-general-scene.md): remove
+  Cornell mesh-count/color/emitter assumptions, resolve per-instance section
+  materials/textures, and consume authored lights/environment/emission.
+  Both fixtures and reordered/overridden third-scene inputs must pass through
+  one renderer without level identification or special shading.
+  Latest [matched-size indirect review](.review/R4.6.md#reference-sized-indirect-light-review--2026-09-26-2013)
+  supersedes the earlier magenta baseline: section textures/four diffuse bounces
+  are now present, but environment intensity is zero and full BSDF continuation
+  is missing. Require isolated diffuse/specular/environment bounce evidence.
+  → [R4 design](.plan/R4.md),
   [R4.6 spec](../../.spec/specs/render-r4-6-cornell-path-tracing.md),
   [R4.6 review](.review/R4.6.md),
   [Render Graph roadmap](render_graph/TODO.md)
+- [ ] **R4.7 — general path-tracing optimization (proposed):** code review and
+  plan recorded; implementation and performance acceptance remain open.
+  Preserve scene-independent indirect lighting; compare unchanged-quality
+  optimization separately from optional sample-budget changes. →
+  [plan](.plan/R4.7.md), [review](.review/R4.7.md),
+  [spec](../../.spec/specs/render-r4-7-path-tracing-performance.md),
+  [journal](../../.spec/journal/2026-09-27-render-r4-7-performance-plan.md)
+  - [x] **R4.7.0 (2026-09-27):** cached
+    completed profile summaries; separate fence/acquire/present timings; fresh
+    GPU query counts; scene, camera, light/environment, history, texture
+    residency, table-write/upload, descriptor and AS lifecycle metadata are in
+    Runtime stats. Three separate 120-warmup/300-sample Vulkan Sponza windows
+    with tracked texture residency complete measure PT GPU p50 median
+    34.548 ms (33.852–34.729) and p95 37.225–47.155 ms. The renderer
+    rewrites all scene-table records; dirty-vs-unchanged tracking belongs to
+    the persistence stage. → [run evidence](../../.spec/journal/2026-09-27-render-r4-7-performance-plan.md#r4-7-0-vulkan-sponza-baseline-and-queue-retry--2026-09-27)
+  - [ ] **R4.7.1:** scalar visibility payload + dedicated miss/SBT record;
+    preserve occlusion and avoid full closest-hit shading for shadow rays.
+  - [ ] **R4.7.2:** one pixel-center primary trace per pixel; independent
+    continuation samples; verify normal/packed-texture/payload reductions.
+  - [ ] **R4.7.3:** evaluate static fast-trace AS policy with build/startup,
+    memory and steady GPU evidence; preserve build/update compatibility.
+  - [ ] **R4.7.4:** persistent versioned GPU tables and frame-safe bindings;
+    zero unchanged static-table uploads/native binding allocations after warm-up.
+  - [ ] **R4.7.5:** revision-driven extraction and graph-required preparation;
+    edits/residency/RT-off/deferred views invalidate and refresh correctly.
+  - [ ] **R4.7.6:** optional explicit interactive sample/bounce budget;
+    retain 4-SPP/8-bounce reference and compare convergence separately.
+  - [ ] **R4.7.7:** repeatable timing improvement, Cornell/Sponza/general-scene
+    captures and lifecycle/failure coverage; close or justify each review finding.
 - [ ] **R5 — post-R4.6 Render/Graphics decoupling (design only):** review the
   deferred renderer's mixed graph execution, pass recording, shadow/RT state,
   and lifetime ownership; repair enabled-conditional-pass failure semantics

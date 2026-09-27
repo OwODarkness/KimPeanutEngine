@@ -510,6 +510,7 @@ namespace kpengine::graphics
         pool_info.pPoolSizes = pool_sizes.data();
         VkDescriptorPool pool = VK_NULL_HANDLE;
         if (vkCreateDescriptorPool(device_, &pool_info, nullptr, &pool) != VK_SUCCESS) return {};
+        ++profile_counters_.descriptor_pools_created;
         VkDescriptorSetLayout native_layout = layout.layout;
         VkDescriptorSetAllocateInfo allocate_info{};
         allocate_info.sType = VK_STRUCTURE_TYPE_DESCRIPTOR_SET_ALLOCATE_INFO;
@@ -522,6 +523,7 @@ namespace kpengine::graphics
             vkDestroyDescriptorPool(device_, pool, nullptr);
             return {};
         }
+        ++profile_counters_.descriptor_sets_created;
 
         std::vector<VkWriteDescriptorSet> writes;
         std::vector<VkDescriptorBufferInfo> buffers;
@@ -621,8 +623,10 @@ namespace kpengine::graphics
                         if (!table_handle.IsValid())
                             throw std::runtime_error("failed to allocate RT address table");
                         owned_address_table_buffers.push_back(table_handle);
+                        ++profile_counters_.address_table_buffers_created;
                         buffer_manager_->UploadData(table_handle, patched_data.size(),
                                                     patched_data.data());
+                        profile_counters_.address_table_upload_bytes += patched_data.size();
                         VulkanBufferResource *table_buffer =
                             buffer_manager_->GetBufferResource(table_handle);
                         if (!table_buffer)
@@ -1020,6 +1024,20 @@ namespace kpengine::graphics
             ranges.data()};
         cmd_build_acceleration_structures_(command_buffer, 1, &build_info,
                                            range_pointers.data());
+        const bool is_tlas = resource->desc.type ==
+                             RayTracingAccelerationStructureType::TopLevel;
+        if (is_tlas)
+        {
+            build.mode == RayTracingBuildMode::Update
+                ? ++profile_counters_.tlas_updates
+                : ++profile_counters_.tlas_builds;
+        }
+        else
+        {
+            build.mode == RayTracingBuildMode::Update
+                ? ++profile_counters_.blas_updates
+                : ++profile_counters_.blas_builds;
+        }
         if (resource->desc.type == RayTracingAccelerationStructureType::TopLevel)
         {
             active_top_level_ = resource->handle;
@@ -1156,6 +1174,7 @@ namespace kpengine::graphics
                     active_top_level_ = {};
                 }
                 DestroyResource(resource);
+                ++profile_counters_.retired_acceleration_structures;
                 handle_system_.Destroy(handle);
             }
         }
@@ -1167,6 +1186,7 @@ namespace kpengine::graphics
             {
                 const DescriptorSetHandle handle = resource.handle;
                 DestroyRayTracingDescriptorSet(resource);
+                ++profile_counters_.retired_descriptor_sets;
                 ray_tracing_descriptor_set_handle_system_.Destroy(handle);
             }
         }
@@ -1175,7 +1195,12 @@ namespace kpengine::graphics
             if (temporary_buffers.retire_serial != 0 &&
                 temporary_buffers.retire_serial <= completed_submission_serial)
             {
+                const bool had_buffers = !temporary_buffers.handles.empty();
                 DestroyTemporaryBuffers(temporary_buffers);
+                if (had_buffers)
+                {
+                    ++profile_counters_.retired_temporary_buffer_batches;
+                }
             }
         }
         temporary_buffers_.erase(

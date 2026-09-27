@@ -50,6 +50,7 @@ int main(int argc, char **argv)
     engine.SetCommandTransportConfig(launch_options.options.command_transport_config);
     engine.SetGraphicsAPI(launch_options.options.graphics_api_type);
     engine.SetVSync(launch_options.options.vsync);
+    engine.SetRayTracingEnabled(launch_options.options.ray_tracing_enabled);
     engine.SetPathTracingEnabled(launch_options.options.path_tracing_enabled);
     if (launch_options.options.startup_level_override.has_value())
     {

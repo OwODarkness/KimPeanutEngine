@@ -406,6 +406,27 @@ namespace kpengine::render
                                                   ? prepared_assets_->GetTextureMetrics()
                                                   : RenderProfileTextureMetrics{};
         metrics.resident_bytes = resident_texture_bytes_;
+        for (const auto &[packed_id, weak_texture] : tracked_texture_resources_)
+        {
+            const auto texture = weak_texture.lock();
+            if (!texture)
+            {
+                continue;
+            }
+            if (!texture->SupportsFullResolutionLoad())
+            {
+                continue;
+            }
+            const auto full_resolution = texture->TryGetFullResolutionData();
+            const auto active = active_texture_mips_.find(packed_id);
+            if (!full_resolution || active == active_texture_mips_.end() ||
+                active->second != full_resolution->first_resident_mip)
+            {
+                ++metrics.tracked_residency_incomplete_count;
+            }
+        }
+        metrics.tracked_residency_complete =
+            metrics.tracked_residency_incomplete_count == 0;
         return metrics;
     }
 

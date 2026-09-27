@@ -1,6 +1,7 @@
 #include "vulkan_backend.h"
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <type_traits>
 #include <GLFW/glfw3.h>
 #include "log/logger.h"
@@ -134,7 +135,11 @@ namespace kpengine::graphics
         // 2. acquire the swapchain image and prepare the frame command buffer
         // 3. caller selects render targets and records draws, then EndFrame submits
 
-        frame_context_->WaitForInFlightFence();
+        if (acceleration_structure_owner_)
+        {
+            acceleration_structure_owner_->ResetProfileCounters();
+        }
+        const double fence_wait_ms = frame_context_->WaitForInFlightFence();
         if (acceleration_structure_owner_)
         {
             acceleration_structure_owner_->CollectCompleted(
@@ -163,7 +168,11 @@ namespace kpengine::graphics
         }
 
         uint32_t image_index;
+        const auto acquire_started = std::chrono::steady_clock::now();
         VkResult acquire_image_res = frame_context_->AcquireNextImage(swapchain_->GetSwapchain(), image_index);
+        const double acquire_wait_ms = std::chrono::duration<double, std::milli>(
+                                           std::chrono::steady_clock::now() - acquire_started)
+                                           .count();
 
         if (acquire_image_res == VK_ERROR_OUT_OF_DATE_KHR)
         {
@@ -189,6 +198,8 @@ namespace kpengine::graphics
             throw std::runtime_error("Failed to begin command buffer");
         }
         ResetBackendProfileCounters();
+        profile_counters_.cpu_fence_wait_ms = fence_wait_ms;
+        profile_counters_.cpu_acquire_wait_ms = acquire_wait_ms;
         if (profile_query_pool_ != VK_NULL_HANDLE)
         {
             const uint32_t base_query = frame_context_->GetCurrentFrameIndex() *
@@ -241,7 +252,11 @@ namespace kpengine::graphics
                 frame_context_->GetLastSubmittedSerial());
         }
 
+        const auto present_started = std::chrono::steady_clock::now();
         VkResult present_res = frame_context_->Present(swapchain_->GetSwapchain(), current_image_index_);
+        profile_counters_.cpu_queue_present_ms = std::chrono::duration<double, std::milli>(
+                                                       std::chrono::steady_clock::now() - present_started)
+                                                       .count();
         if (present_res == VK_ERROR_OUT_OF_DATE_KHR || present_res == VK_SUBOPTIMAL_KHR || swapchain_->HasResized())
         {
             RecreateSwapchain();
@@ -261,6 +276,16 @@ namespace kpengine::graphics
     CommandRecorder *VulkanBackend::GetCommandRecorder()
     {
         return frame_active_ ? command_recorder_.get() : nullptr;
+    }
+
+    BackendProfileCounters VulkanBackend::GetBackendProfileCounters() const
+    {
+        BackendProfileCounters counters = profile_counters_;
+        if (acceleration_structure_owner_)
+        {
+            counters.ray_tracing = acceleration_structure_owner_->GetProfileCounters();
+        }
+        return counters;
     }
 
     RayTracingResourceOwner *VulkanBackend::GetRayTracingResourceOwner()

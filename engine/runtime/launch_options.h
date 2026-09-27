@@ -35,6 +35,7 @@ namespace kpengine::runtime
     {
         ApplicationMode application_mode = ApplicationMode::Scene3D;
         GraphicsAPIType graphics_api_type = GraphicsAPIType::GRAPHICS_API_UNKNOW;
+        bool ray_tracing_enabled = true;
         bool path_tracing_enabled = true;
         // Whether presentation is locked to the display refresh. It controls
         // the OpenGL swap interval; the Vulkan swapchain selects its own present

@@ -1,5 +1,51 @@
 # Project Status
 
+- **R4.7 path-tracing optimization (2026-09-27)** — R4.7.0 now exposes
+  fence/acquire/present durations, fresh GPU queries, scene/history/texture
+  state, RT table uploads, descriptor and AS lifecycle counts. Three initial
+  fully resident RelWithDebInfo Sponza windows measured median PT GPU p50
+  34.548 ms (33.852–34.729) and p95 37.225–47.155 ms. The first preliminary
+  baseline lacked residency state and is superseded. An earlier upload-queue
+  failure did not recur; its numeric VkResult remains unknown. F1 dedicated
+  visibility rays are the next implementation stage. →
+  [review](render/.review/R4.7.md), [plan](render/.plan/R4.7.md),
+  [roadmap](render/TODO.md)
+
+- **R4.6 Sponza RT-enabled performance comparison (2026-09-27)** — Current
+  Debug Vulkan measured 100.344 ms CPU p50 / 166.957 ms p95; current
+  RelWithDebInfo measured 38.998 / 42.123 ms at 1094×619. Both report active
+  path tracing after 120 warm-up and 300 samples. Debug validation is enabled;
+  RelWithDebInfo validation is disabled, so this is diagnostic rather than a
+  compiler-only comparison. → [matched comparison](render/.review/R4.6.md#matched-rt-enabled-debug-and-relwithdebinfo-runs--2026-09-27)
+
+- **R4.6 Sponza frame-performance review (2026-09-26)** — Matched Vulkan
+  Debug runs of original renderer source (`b35deba`) and current full RT-off
+  source measure 26.6 and 26.3 FPS at 1094×619; CPU recording is 26.2 and 26.7 ms.
+  Historical source is also slow when rebuilt without CPU optimization today.
+  Current RelWithDebInfo measures 101 FPS. The earlier 80–90 FPS binary's
+  compiler settings remain unknown; an optimized build is plausible, not proven.
+  Diagnosis only; no performance fix applied. →
+  [Debug-to-Debug review](render/.review/R4.6.md#debug-to-debug-follow-up--2026-09-26)
+
+- **R4.6 Sponza startup performance review (2026-09-26)** — Removed redundant
+  full-file hashing from logical Model path resolution; native loading still
+  verifies product content and embedded integrity before Asset publication.
+  A fresh Debug Vulkan run loaded 127 Assets in 46.018 seconds, versus 60.380
+  and 91.000 seconds in diagnostic runs; historical runs vary down to 30.807
+  seconds, so controlled repeated timings remain open. →
+  [measured startup review](render/.review/R4.6.md#measured-sponza-startup-bottleneck-and-history--2026-09-26) ·
+  [correction journal](../.spec/journal/2026-09-26-sponza-startup-bottleneck.md#verification-correction)
+
+- **R4.6 Sponza / optional RT review (2026-09-26)** — Cornell acceptance
+  remains fixture-specific. Latest source/captures use section textures and
+  four diffuse bounces; the earlier uniform-magenta result is historical.
+  A fresh RT-active capture at 2,008 pre-capture samples and the user's
+  downsampled reference are both 768×435. The shaded interior remains almost
+  black. Current scene disables environment illumination; continuation is
+  diffuse-only despite GGX direct lighting. General indirect PBR remains open. →
+  [reference-sized indirect review](render/.review/R4.6.md#reference-sized-indirect-light-review--2026-09-26-2013)
+  · [general scene RT design](render/.plan/R4.6-general-scene.md)
+
 - **Runtime Gameplay Actor commands (2026-09-26)** — Runtime now exposes
   `actor.list`, `actor.query`, and `actor.control` through its generic command
   transport. Gameplay owns Actor names, bounded filtered value summaries,

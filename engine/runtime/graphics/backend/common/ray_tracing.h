@@ -217,6 +217,21 @@ namespace kpengine::graphics
                desc.height > 0 && desc.depth > 0;
     }
 
+    struct RayTracingResourceProfileCounters
+    {
+        uint64_t descriptor_sets_created = 0;
+        uint64_t descriptor_pools_created = 0;
+        uint64_t address_table_buffers_created = 0;
+        uint64_t address_table_upload_bytes = 0;
+        uint64_t blas_builds = 0;
+        uint64_t blas_updates = 0;
+        uint64_t tlas_builds = 0;
+        uint64_t tlas_updates = 0;
+        uint64_t retired_acceleration_structures = 0;
+        uint64_t retired_descriptor_sets = 0;
+        uint64_t retired_temporary_buffer_batches = 0;
+    };
+
     // Graphics owns native AS storage, RT pipelines, descriptor resources,
     // scratch reuse, and deferred destruction. Render receives only opaque
     // handles through the backend frame seam; ownership operations remain here.
@@ -239,6 +254,8 @@ namespace kpengine::graphics
         // while an in-flight frame still references them.
         virtual void CollectCompleted(uint64_t completed_submission_serial) = 0;
         virtual void RetireSubmitted(uint64_t submission_serial) = 0;
+        virtual RayTracingResourceProfileCounters GetProfileCounters() const noexcept = 0;
+        virtual void ResetProfileCounters() noexcept = 0;
     };
 }
 

@@ -228,6 +228,7 @@ namespace kpengine::runtime
             RuntimeLaunchOptionsParseResult result{};
             bool has_agent_port = false;
             bool has_graphics_api = false;
+            bool has_disable_ray_tracing = false;
             bool has_disable_path_tracing = false;
             bool has_mode = false;
             bool has_startup_level = false;
@@ -333,6 +334,16 @@ namespace kpengine::runtime
                     }
                     result.options.path_tracing_enabled = false;
                     has_disable_path_tracing = true;
+                }
+                else if (argument == "--disable-ray-tracing")
+                {
+                    if (has_disable_ray_tracing)
+                    {
+                        return Failure("duplicate option '--disable-ray-tracing'");
+                    }
+                    result.options.ray_tracing_enabled = false;
+                    result.options.path_tracing_enabled = false;
+                    has_disable_ray_tracing = true;
                 }
                 else if (argument == "--vsync")
                 {

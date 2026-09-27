@@ -128,6 +128,51 @@ namespace kpengine::runtime
             data["format"] = std::string{json_requested ? "json" : "text"};
             data["frame_number"] = profile.frame_number;
             data["path_trace_samples"] = static_cast<uint64_t>(profile.path_trace_samples);
+            data["path_trace_samples_per_dispatch"] =
+                static_cast<uint64_t>(profile.path_trace_samples_per_dispatch);
+            data["path_trace_max_continuation_bounces"] =
+                static_cast<uint64_t>(profile.path_trace_max_continuation_bounces);
+            data["path_trace_camera_x"] =
+                static_cast<double>(profile.path_trace_camera_position[0]);
+            data["path_trace_camera_y"] =
+                static_cast<double>(profile.path_trace_camera_position[1]);
+            data["path_trace_camera_z"] =
+                static_cast<double>(profile.path_trace_camera_position[2]);
+            data["path_trace_environment_enabled"] = profile.path_trace_environment_enabled;
+            data["path_trace_environment_intensity"] =
+                profile.path_trace_environment_intensity;
+            data["path_trace_history_reset_reason"] =
+                profile.path_trace_history_reset_reason;
+            data["render_graph_mode"] = profile.render_graph_mode;
+            data["ray_tracing_geometry_records"] =
+                static_cast<uint64_t>(profile.ray_tracing_geometry_records);
+            data["ray_tracing_instance_records"] =
+                static_cast<uint64_t>(profile.ray_tracing_instance_records);
+            data["ray_tracing_material_records"] =
+                static_cast<uint64_t>(profile.ray_tracing_material_records);
+            data["ray_tracing_light_records"] =
+                static_cast<uint64_t>(profile.ray_tracing_light_records);
+            data["ray_tracing_scene_table_records_written"] =
+                profile.ray_tracing_scene_table_records_written;
+            data["ray_tracing_descriptor_sets_created"] =
+                profile.ray_tracing_descriptor_sets_created;
+            data["ray_tracing_descriptor_pools_created"] =
+                profile.ray_tracing_descriptor_pools_created;
+            data["ray_tracing_address_table_buffers_created"] =
+                profile.ray_tracing_address_table_buffers_created;
+            data["ray_tracing_address_table_upload_bytes"] =
+                profile.ray_tracing_address_table_upload_bytes;
+            data["ray_tracing_blas_builds"] = profile.ray_tracing_blas_builds;
+            data["ray_tracing_blas_updates"] = profile.ray_tracing_blas_updates;
+            data["ray_tracing_tlas_builds"] = profile.ray_tracing_tlas_builds;
+            data["ray_tracing_tlas_updates"] = profile.ray_tracing_tlas_updates;
+            data["ray_tracing_retired_acceleration_structures"] =
+                profile.ray_tracing_retired_acceleration_structures;
+            data["ray_tracing_retired_descriptor_sets"] =
+                profile.ray_tracing_retired_descriptor_sets;
+            data["ray_tracing_retired_temporary_buffer_batches"] =
+                profile.ray_tracing_retired_temporary_buffer_batches;
+            data["ray_tracing_enabled"] = profile.ray_tracing_enabled;
             data["path_tracing_enabled"] = profile.path_tracing_enabled;
             data["path_tracing_available"] = profile.path_tracing_available;
             data["path_trace_active"] = profile.path_trace_active;
@@ -156,6 +201,12 @@ namespace kpengine::runtime
                 static_cast<uint64_t>(profile.summary.warmup_frames_completed);
             data["summary_samples_collected"] =
                 static_cast<uint64_t>(profile.summary.samples_collected);
+            data["gpu_timing_samples"] =
+                static_cast<uint64_t>(profile.gpu_timing_samples);
+            AddOptional(data, "summary_total_gpu_p50_ms",
+                        profile.summary.gpu_total_p50_ms);
+            AddOptional(data, "summary_total_gpu_p95_ms",
+                        profile.summary.gpu_total_p95_ms);
         }
 
         void AddGpuStats(command::CommandData &data, const PerformanceStatsSnapshot &snapshot)
@@ -221,6 +272,10 @@ namespace kpengine::runtime
             // GPU group because that is where the residency is paid.
             data["textures_dependency_count"] =
                 static_cast<uint64_t>(profile.textures.dependency_count);
+            data["textures_tracked_residency_incomplete_count"] =
+                static_cast<uint64_t>(profile.textures.tracked_residency_incomplete_count);
+            data["textures_tracked_residency_complete"] =
+                profile.textures.tracked_residency_complete;
             data["textures_source_bytes"] = profile.textures.source_bytes;
             data["textures_decoded_bytes"] = profile.textures.decoded_bytes;
             data["textures_resident_bytes"] = profile.textures.resident_bytes;
@@ -235,6 +290,12 @@ namespace kpengine::runtime
             data["summary_cpu_total_p95_ms"] = summary.cpu_total_p95_ms;
             data["summary_cpu_present_p50_ms"] = summary.cpu_present_p50_ms;
             data["summary_cpu_present_p95_ms"] = summary.cpu_present_p95_ms;
+            data["summary_cpu_fence_wait_p50_ms"] = summary.cpu_fence_wait_p50_ms;
+            data["summary_cpu_fence_wait_p95_ms"] = summary.cpu_fence_wait_p95_ms;
+            data["summary_cpu_acquire_wait_p50_ms"] = summary.cpu_acquire_wait_p50_ms;
+            data["summary_cpu_acquire_wait_p95_ms"] = summary.cpu_acquire_wait_p95_ms;
+            data["summary_cpu_queue_present_p50_ms"] = summary.cpu_queue_present_p50_ms;
+            data["summary_cpu_queue_present_p95_ms"] = summary.cpu_queue_present_p95_ms;
             // Compilation is a cost per compiled variant, not a per-frame one,
             // so it is reported apart from the pass and sweep costs.
             data["graph_compile_ms"] = profile.graph_compile_ms;
@@ -253,6 +314,9 @@ namespace kpengine::runtime
                          profile.cpu_graph_execute_ms);
             data["cpu_finalize_ms"] = profile.cpu_finalize_ms;
             data["cpu_present_ms"] = profile.cpu_present_ms;
+            data["cpu_fence_wait_ms"] = profile.cpu_fence_wait_ms;
+            data["cpu_acquire_wait_ms"] = profile.cpu_acquire_wait_ms;
+            data["cpu_queue_present_ms"] = profile.cpu_queue_present_ms;
             data["frame_total_ms"] = frame.frame_total_ms;
             data["game_wait_ms"] = frame.game_wait_ms;
             data["render_work_ms"] = frame.render_work_ms;

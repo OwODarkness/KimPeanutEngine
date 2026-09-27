@@ -72,6 +72,14 @@ namespace kpengine::render
         double cpu_total_p95_ms = 0.0;
         double cpu_present_p50_ms = 0.0;
         double cpu_present_p95_ms = 0.0;
+        double cpu_fence_wait_p50_ms = 0.0;
+        double cpu_fence_wait_p95_ms = 0.0;
+        double cpu_acquire_wait_p50_ms = 0.0;
+        double cpu_acquire_wait_p95_ms = 0.0;
+        double cpu_queue_present_p50_ms = 0.0;
+        double cpu_queue_present_p95_ms = 0.0;
+        std::optional<double> gpu_total_p50_ms;
+        std::optional<double> gpu_total_p95_ms;
         std::array<RenderProfilePassSummary,
                    static_cast<size_t>(RenderProfilePass::Count)>
             passes{};
@@ -83,15 +91,41 @@ namespace kpengine::render
     struct RenderProfileTextureMetrics
     {
         uint32_t dependency_count = 0;
+        uint32_t tracked_residency_incomplete_count = 0;
         uint64_t source_bytes = 0;
         uint64_t decoded_bytes = 0;
         uint64_t resident_bytes = 0;
+        bool tracked_residency_complete = true;
     };
 
     struct RenderProfileSnapshot
     {
         uint64_t frame_number = 0;
         uint32_t path_trace_samples = 0;
+        uint32_t path_trace_samples_per_dispatch = 0;
+        uint32_t path_trace_max_continuation_bounces = 0;
+        uint32_t ray_tracing_geometry_records = 0;
+        uint32_t ray_tracing_instance_records = 0;
+        uint32_t ray_tracing_material_records = 0;
+        uint32_t ray_tracing_light_records = 0;
+        uint64_t ray_tracing_scene_table_records_written = 0;
+        uint64_t ray_tracing_descriptor_sets_created = 0;
+        uint64_t ray_tracing_descriptor_pools_created = 0;
+        uint64_t ray_tracing_address_table_buffers_created = 0;
+        uint64_t ray_tracing_address_table_upload_bytes = 0;
+        uint64_t ray_tracing_blas_builds = 0;
+        uint64_t ray_tracing_blas_updates = 0;
+        uint64_t ray_tracing_tlas_builds = 0;
+        uint64_t ray_tracing_tlas_updates = 0;
+        uint64_t ray_tracing_retired_acceleration_structures = 0;
+        uint64_t ray_tracing_retired_descriptor_sets = 0;
+        uint64_t ray_tracing_retired_temporary_buffer_batches = 0;
+        std::array<float, 3> path_trace_camera_position{};
+        std::string render_graph_mode = "deferred";
+        std::string path_trace_history_reset_reason = "none";
+        bool path_trace_environment_enabled = false;
+        double path_trace_environment_intensity = 0.0;
+        bool ray_tracing_enabled = false;
         bool path_tracing_enabled = false;
         bool path_tracing_available = false;
         bool path_trace_active = false;
@@ -108,6 +142,10 @@ namespace kpengine::render
         double cpu_record_ms = 0.0;
         double cpu_finalize_ms = 0.0;
         double cpu_present_ms = 0.0;
+        double cpu_fence_wait_ms = 0.0;
+        double cpu_acquire_wait_ms = 0.0;
+        double cpu_queue_present_ms = 0.0;
+        uint32_t gpu_timing_samples = 0;
         uint64_t draw_calls = 0;
         uint64_t sections = 0;
         uint64_t shadow_cache_hits = 0;
@@ -186,11 +224,17 @@ namespace kpengine::render
         uint32_t frames_observed_ = 0;
         std::vector<double> cpu_total_samples_;
         std::vector<double> cpu_present_samples_;
+        std::vector<double> cpu_fence_wait_samples_;
+        std::vector<double> cpu_acquire_wait_samples_;
+        std::vector<double> cpu_queue_present_samples_;
+        std::vector<double> gpu_total_samples_;
         std::array<std::vector<double>,
                    static_cast<size_t>(RenderProfileCpuSubphase::Count)>
             cpu_subphase_samples_;
         std::array<std::vector<double>, static_cast<size_t>(RenderProfilePass::Count)>
             gpu_samples_;
+        mutable RenderProfileSummary cached_summary_{};
+        mutable bool summary_dirty_ = true;
     };
 }
 
