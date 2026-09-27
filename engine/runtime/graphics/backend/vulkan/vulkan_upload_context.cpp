@@ -2,6 +2,7 @@
 
 #include <cstring>
 #include <limits>
+#include <mutex>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -43,7 +44,13 @@ namespace kpengine::graphics
         allocate_info.commandBufferCount = 1;
 
         VkCommandBuffer command_buffer = VK_NULL_HANDLE;
-        if (vkAllocateCommandBuffers(device_->GetLogicalDevice(), &allocate_info, &command_buffer) != VK_SUCCESS)
+        VkResult allocate_result = VK_SUCCESS;
+        {
+            std::lock_guard queue_lock(device_->GetQueueOperationMutex());
+            allocate_result = vkAllocateCommandBuffers(
+                device_->GetLogicalDevice(), &allocate_info, &command_buffer);
+        }
+        if (allocate_result != VK_SUCCESS)
         {
             throw std::runtime_error("failed to allocate Vulkan upload command buffer");
         }
@@ -53,6 +60,7 @@ namespace kpengine::graphics
         begin_info.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         if (vkBeginCommandBuffer(command_buffer, &begin_info) != VK_SUCCESS)
         {
+            std::lock_guard queue_lock(device_->GetQueueOperationMutex());
             vkFreeCommandBuffers(device_->GetLogicalDevice(), command_pool, 1, &command_buffer);
             throw std::runtime_error("failed to begin Vulkan upload command buffer");
         }
@@ -65,6 +73,7 @@ namespace kpengine::graphics
         const VkResult end_result = vkEndCommandBuffer(command_buffer);
         if (end_result != VK_SUCCESS)
         {
+            std::lock_guard queue_lock(device_->GetQueueOperationMutex());
             vkFreeCommandBuffers(device_->GetLogicalDevice(), command_pool, 1, &command_buffer);
             KP_LOG(KP_VULKAN_UPLOAD_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR,
                    "vkEndCommandBuffer(upload) failed (VkResult=%d)",
@@ -77,10 +86,20 @@ namespace kpengine::graphics
         submit_info.sType = VK_STRUCTURE_TYPE_SUBMIT_INFO;
         submit_info.commandBufferCount = 1;
         submit_info.pCommandBuffers = &command_buffer;
+        std::lock_guard queue_lock(device_->GetQueueOperationMutex());
+        if (device_lost_.load(std::memory_order_acquire))
+        {
+            vkFreeCommandBuffers(device_->GetLogicalDevice(), command_pool, 1, &command_buffer);
+            throw std::runtime_error("Vulkan device was lost; upload submission skipped");
+        }
         const VkResult submit_result = vkQueueSubmit(queue, 1, &submit_info, VK_NULL_HANDLE);
         if (submit_result != VK_SUCCESS)
         {
             vkFreeCommandBuffers(device_->GetLogicalDevice(), command_pool, 1, &command_buffer);
+            if (submit_result == VK_ERROR_DEVICE_LOST)
+            {
+                device_lost_.store(true, std::memory_order_release);
+            }
             KP_LOG(KP_VULKAN_UPLOAD_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR,
                    "vkQueueSubmit(upload) failed (VkResult=%d)",
                    static_cast<int>(submit_result));
@@ -90,7 +109,10 @@ namespace kpengine::graphics
         const VkResult wait_result = vkQueueWaitIdle(queue);
         if (wait_result != VK_SUCCESS)
         {
-            vkFreeCommandBuffers(device_->GetLogicalDevice(), command_pool, 1, &command_buffer);
+            if (wait_result == VK_ERROR_DEVICE_LOST)
+            {
+                device_lost_.store(true, std::memory_order_release);
+            }
             KP_LOG(KP_VULKAN_UPLOAD_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR,
                    "vkQueueWaitIdle(upload) failed (VkResult=%d)",
                    static_cast<int>(wait_result));
@@ -102,6 +124,10 @@ namespace kpengine::graphics
 
     void VulkanUploadContext::UploadBuffer(BufferHandle destination, size_t size, const void *data)
     {
+        if (device_lost_.load(std::memory_order_acquire))
+        {
+            throw std::runtime_error("Vulkan device was lost; buffer upload skipped");
+        }
         if (!device_ || !frame_context_ || !buffer_manager_ || !data || size == 0)
         {
             throw std::runtime_error("Vulkan upload context is not ready for a buffer upload");
@@ -135,6 +161,10 @@ namespace kpengine::graphics
 
     void VulkanUploadContext::UploadTexture(VkImage image, const TextureData &data)
     {
+        if (device_lost_.load(std::memory_order_acquire))
+        {
+            throw std::runtime_error("Vulkan device was lost; texture upload skipped");
+        }
         if (!device_ || !frame_context_ || !buffer_manager_ || image == VK_NULL_HANDLE ||
             data.width == 0 || data.height == 0 || data.pixels.empty())
         {

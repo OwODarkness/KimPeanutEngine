@@ -182,6 +182,29 @@ TEST(VulkanRayTracingValidation, ComputesAlignedShaderBindingTableRegions)
     EXPECT_FALSE(TryComputeShaderBindingTableLayout(32, 0, 64, 4096, 3, layout));
 }
 
+TEST(VulkanRayTracingValidation, VisibilityMissIndexSelectsSecondMissNotHitRecord)
+{
+    using namespace kpengine::graphics::vulkan_detail;
+    for (const uint32_t miss_count : {1u, 2u})
+    {
+        ShaderBindingTableLayout layout{};
+        ASSERT_TRUE(TryComputeShaderBindingTableLayout(32, 32, 64, 4096,
+                                                       miss_count + 2, layout));
+        ShaderBindingTableRegionLayout miss{}, hit{};
+        ASSERT_TRUE(TryComputeShaderBindingTableRegion(layout, 1, miss_count, miss));
+        ASSERT_TRUE(TryComputeShaderBindingTableRegion(layout, miss_count + 1, 1, hit));
+        EXPECT_EQ(miss.stride, 64u);
+        EXPECT_EQ(miss.offset + miss.size, hit.offset);
+        if (miss_count == 2)
+        {
+            EXPECT_EQ(miss.offset + miss.stride, 128u);
+            EXPECT_LT(miss.offset + miss.stride, hit.offset);
+        }
+        EXPECT_FALSE(TryComputeShaderBindingTableRegion(layout, miss_count + 2, 1, hit));
+        EXPECT_FALSE(TryComputeShaderBindingTableRegion(layout, 1, UINT32_MAX, hit));
+    }
+}
+
 TEST(VulkanRayTracingValidation, AlignsSbtAddressWithinPaddedAllocation)
 {
     using namespace kpengine::graphics::vulkan_detail;

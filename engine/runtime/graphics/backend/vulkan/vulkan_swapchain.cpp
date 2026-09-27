@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <limits>
+#include <mutex>
 
 #include <GLFW/glfw3.h>
 
@@ -22,7 +23,10 @@ namespace kpengine::graphics
 
     void VulkanSwapchain::Recreate(uint32_t fallback_width, uint32_t fallback_height)
     {
-        vkDeviceWaitIdle(device_->GetLogicalDevice());
+        {
+            std::lock_guard queue_lock(device_->GetQueueOperationMutex());
+            vkDeviceWaitIdle(device_->GetLogicalDevice());
+        }
         Cleanup();
         CreateSwapchain(fallback_width, fallback_height);
         CreateSwapchainImageViews();

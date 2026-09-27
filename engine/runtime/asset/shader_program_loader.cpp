@@ -30,6 +30,8 @@ namespace kpengine::asset
             return ShaderStage::SHADER_STAGE_RAYGEN;
         if (stage == "miss")
             return ShaderStage::SHADER_STAGE_MISS;
+        if (stage == "visibility_miss")
+            return ShaderStage::SHADER_STAGE_VISIBILITY_MISS;
         if (stage == "closest_hit" || stage == "closest-hit")
             return ShaderStage::SHADER_STAGE_CLOSEST_HIT;
         return ShaderStage::SHADER_STAGE_UNKNOW;

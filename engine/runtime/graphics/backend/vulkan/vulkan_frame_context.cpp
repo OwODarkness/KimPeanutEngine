@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <mutex>
 
 #include "log/logger.h"
 
@@ -81,6 +82,7 @@ namespace kpengine::graphics
         submit_info.pSignalSemaphores = signal_semaphores.data();
         submit_info.pWaitDstStageMask = wait_stages.data();
 
+        std::lock_guard queue_lock(device_->GetQueueOperationMutex());
         if (vkQueueSubmit(device_->GetGraphicsQueue().queue, 1, &submit_info, in_flight_fences_[current_frame_index_]) != VK_SUCCESS)
         {
             KP_LOG(KP_VULKAN_FRAME_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR, "Failed to submit commandbuffer");
@@ -105,6 +107,7 @@ namespace kpengine::graphics
         present_info.pWaitSemaphores = signal_semaphores.data();
         present_info.pResults = nullptr;
 
+        std::lock_guard queue_lock(device_->GetQueueOperationMutex());
         return vkQueuePresentKHR(device_->GetPresentQueue().queue, &present_info);
     }
 

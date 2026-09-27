@@ -9,9 +9,7 @@ struct HitPayload
     vec3 position;
     uint hit;
     vec3 normal;
-    uint geometry;
     vec3 albedo;
-    uint material;
     vec3 emissive;
     float metallic;
     float roughness;
@@ -152,7 +150,7 @@ void main()
         LoadVector3(geometry, i2, geometry.attributes.w) * barycentrics.y);
     payload.position = world_p0 * weight0 + world_p1 * barycentrics.x +
                        world_p2 * barycentrics.y;
-    payload.normal = normalize(transpose(inverse(mat3(gl_ObjectToWorldEXT))) * object_normal);
+    payload.normal = normalize(transpose(mat3(gl_WorldToObjectEXT)) * object_normal);
     if (dot(payload.normal, -gl_WorldRayDirectionEXT) < 0.0)
         payload.normal = -payload.normal;
 
@@ -160,17 +158,29 @@ void main()
     const uint texture_index = material.texture_indices.x;
     if (texture_index != 0xffffffffu)
         base_color *= texture(kp_textures[nonuniformEXT(texture_index)], uv).rgb;
-    payload.geometry = geometry_index;
-    payload.material = material_index;
     payload.albedo = base_color;
     payload.emissive = material.emissive.rgb;
     const uint channels = uint(material.surface.w + 0.5);
     float metallic = material.surface.x;
     float roughness = material.surface.y;
-    if (material.texture_indices.y != 0xffffffffu)
-        metallic *= textureLod(kp_textures[nonuniformEXT(material.texture_indices.y)], uv, 0.0)[channels % 4u];
-    if (material.texture_indices.z != 0xffffffffu)
-        roughness *= textureLod(kp_textures[nonuniformEXT(material.texture_indices.z)], uv, 0.0)[channels / 4u];
+    const uint metallic_texture = material.texture_indices.y;
+    const uint roughness_texture = material.texture_indices.z;
+    if (metallic_texture != 0xffffffffu && metallic_texture == roughness_texture)
+    {
+        const vec4 packed_surface = textureLod(
+            kp_textures[nonuniformEXT(metallic_texture)], uv, 0.0);
+        metallic *= packed_surface[channels % 4u];
+        roughness *= packed_surface[channels / 4u];
+    }
+    else
+    {
+        if (metallic_texture != 0xffffffffu)
+            metallic *= textureLod(kp_textures[nonuniformEXT(metallic_texture)],
+                                   uv, 0.0)[channels % 4u];
+        if (roughness_texture != 0xffffffffu)
+            roughness *= textureLod(kp_textures[nonuniformEXT(roughness_texture)],
+                                    uv, 0.0)[channels / 4u];
+    }
     payload.metallic = clamp(metallic, 0.0, 1.0);
     payload.roughness = clamp(roughness, 0.04, 1.0);
     payload.radiance = vec3(0.0);

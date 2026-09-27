@@ -3,6 +3,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <atomic>
 #include <vulkan/vulkan.h>
 
 #include "common/api.h"
@@ -34,6 +35,7 @@ namespace kpengine::graphics
         VulkanDevice *device_ = nullptr;
         VulkanFrameContext *frame_context_ = nullptr;
         VulkanBufferManager *buffer_manager_ = nullptr;
+        std::atomic_bool device_lost_{false};
     };
 }
 

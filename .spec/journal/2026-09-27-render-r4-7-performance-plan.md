@@ -238,3 +238,110 @@ error or upload-queue failure match. The Debug validation smoke log is
 builds passed after final changes; RelWithDebInfo retained the existing
 `LNK4098` link warning. `R4.7.0` attribution and the residency-matched baseline
 gate are complete; proceed with the planned F1 visibility-ray experiment.
+
+## R4.7.1 — dedicated opaque visibility rays (2026-09-27)
+
+**Change.** Added the optional API-neutral visibility-miss shader pointer to
+`RayTracingPipelineDesc`, plus a distinct shader-program stage so the normal
+surface miss shader remains independently addressable. Vulkan now builds one
+or two miss groups and sizes/aligns the SBT miss region accordingly. The path
+tracer has a scalar visibility payload; direct-light rays use opaque,
+terminate-on-first-hit, and skip-closest-hit flags. The payload starts
+occluded and only `ray_tracing_visibility.rmiss` writes visible on a miss.
+Point/spot maximum distance, directional interval, and surface-origin bias are
+unchanged. The new shader is explicitly allowed by the asset `.gitignore`.
+
+**Validation.** `./tools/kp.ps1 -Configuration Debug build KimPeanutEngine`
+passed. In Debug Vulkan, Sponza shader compilation and pipeline creation
+succeeded and the SBT log showed a 128-byte miss region (two 64-byte records)
+followed by the hit region; that run later failed with `VK_ERROR_DEVICE_LOST`
+from upload-queue work before path-tracing scene records were available. A
+separate Cornell run reached active PT in Runtime stats with 8 geometry
+records, 1 instance, 8 material records, 1 light, and 9,200 samples. Its
+`base_color` capture shows the scene, but `scene_color` capture was black; the
+hidden `engine_window` capture was blank. That log also contains repeated
+TextureManager invalid-handle and SamplerManager out-of-range errors. Therefore
+the runtime proves shader load, pipeline/SBT construction, and dispatch
+activity, but does not prove blocked/unblocked visibility or final PT image
+quality. No tests were added or run.
+
+**Status.** F1 is implemented but its visual/occlusion gate remains open. The
+cause of the blank PT capture and runtime resource errors is undetermined; do
+not attribute it to the visibility shader without a controlled capture.
+
+## R4.7.2 — primary ray reuse and hit-shader reductions (2026-09-27)
+
+**Implementation.** Ray generation now constructs and traces the fixed
+pixel-center primary ray once per invocation, before the dispatch sample loop.
+The deterministic primary emission/direct-light term is evaluated once and
+reused by each independent continuation sample; each continuation retains its
+own sample index for BSDF and roulette RNG. Primary misses and all diagnostic
+probe modes still flow through the same progressive history average. The
+unused `geometry` and `material` payload members were removed from raygen,
+closest-hit and miss declarations and writes. Closest-hit now transforms
+normals with the provided world-to-object matrix, transposed, and shares an
+LOD-0 texture fetch only when metallic and roughness slots reference the same
+texture; distinct slots keep independent fetches and channel selection.
+
+For the fixed 1094×619 view, static source now has 677,186 primary traces per
+dispatch instead of 2,708,744 (a reduction of 2,031,558 primary traces). This
+is a ray-count result, not a GPU-time prediction. The primary direct/emissive
+term is repeated once per continuation sample before division by SPP, so its
+averaged weight is unchanged; secondary RNG still includes the per-sample
+index, and the continuation loop keeps the same number of traced bounces as the
+prior inclusive `0..maximum_bounces` loop.
+
+**Validation.** Debug build passed before the final hit-shader reductions;
+RelWithDebInfo build passed with all changes. A live RelWithDebInfo Vulkan
+Cornell process loaded the changed closest-hit shader, created the two-entry
+miss SBT, and reported path tracing active at 1094×619, 4 samples/dispatch,
+8 bounces, complete tracked texture residency, and advancing samples. The
+`scene_color` and `primary_albedo` exports are black while `base_color` is
+visible, matching the pre-existing R4.7.1 capture defect. Cornell does not
+produce the fixed profile window because its texture dependency count is zero;
+its current path-trace GPU query is also reported as 0 ms. The matched Sponza
+RelWithDebInfo run compiled/cached the modified closest-hit shader and created
+the RT pipeline/SBT, but the Vulkan device was lost during upload-queue work
+before scene records became available. No matched post-change performance
+window could be collected.
+
+**Repeated-log diagnosis.** When a level has no authored environment,
+`UpdateEnvironment` clears `active_environment_`. The path-tracing binding set
+still unconditionally binds its panorama at set 0/binding 4, while the black
+fallback was only ensured in deferred-lighting preparation. Pure PT bypasses
+that preparation and therefore submits default texture and sampler handles to
+descriptor creation every frame. The path-tracing pass now ensures the cached
+black environment fallback before creating its binding set. This addresses the
+specific repeated invalid-handle lookup path. Short monitored Debug Cornell
+and RelWithDebInfo Sponza launches after the fix produced zero texture- or
+sampler-handle errors. The Cornell process exited before Runtime stats were
+available; Sponza still hit `VK_ERROR_DEVICE_LOST` in upload-queue work seven
+seconds after startup. No further Runtime was launched. This does not establish
+the cause of the separate Sponza device loss. No tests were run.
+
+**Upload synchronization follow-up.** Static review found that uploads may run
+on asset worker threads while frame submission/presentation uses Vulkan queues,
+and both upload helpers share command pools. Vulkan requires host external
+synchronization for queue operations and command-pool allocation/free. A
+device-owned mutex now serializes upload queue submit/wait, frame submit/present,
+device-idle calls, and transient upload command-pool allocate/free operations.
+The Debug engine build passes with the change. This is a concrete race
+candidate for the startup device loss, but no runtime confirmation has been
+collected. Keep the device-loss and image/performance gates open. No tests were
+run. A guarded RelWithDebInfo Sponza launch exited with code 1 before producing
+a new engine log; no process remains and the attempt yielded no runtime evidence.
+
+**Status.** Source-level primary reuse and the three small hit-shader
+reductions are implemented. The unchanged-quality image and performance gates
+remain open: shader register pressure has not been measured, Sponza could not
+reach its sampling window, and Cornell PT captures are black. See the [R4.7.2
+runtime correction](../../docs/render/.review/R4.7.2.md).
+
+### Subsequent runtime correction
+
+The [focused investigation](2026-09-27-r472-runtime-failure-correction.md)
+identified an incorrect two-miss record stride and a secondary null-recorder
+crash during frame-exception cleanup. Corrected Debug Cornell and Sponza now
+export valid Beauty captures; optimization acceptance remains open. This
+supersedes the earlier unresolved-crash/black-image observations for the fixed
+build without erasing historical run evidence.

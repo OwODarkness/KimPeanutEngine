@@ -88,6 +88,7 @@ namespace kpengine::graphics
         data::ShaderData *closest_hit_shader = nullptr;
         uint32_t max_recursion_depth = 1;
         std::vector<std::vector<DescriptorBindingDesc>> descriptor_binding_descs;
+        data::ShaderData *visibility_miss_shader = nullptr;
     };
 
     struct RayTracingAccelerationStructureBinding

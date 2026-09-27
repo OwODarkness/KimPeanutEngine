@@ -25,6 +25,7 @@ namespace kpengine::resource
         case ShaderStage::SHADER_STAGE_RAYGEN:
             return shaderc_raygen_shader;
         case ShaderStage::SHADER_STAGE_MISS:
+        case ShaderStage::SHADER_STAGE_VISIBILITY_MISS:
             return shaderc_miss_shader;
         case ShaderStage::SHADER_STAGE_CLOSEST_HIT:
             return shaderc_closesthit_shader;

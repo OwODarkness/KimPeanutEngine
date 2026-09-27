@@ -13,6 +13,29 @@ namespace kpengine::graphics::vulkan_detail
         uint64_t data_size = 0;
     };
 
+    struct ShaderBindingTableRegionLayout
+    {
+        uint64_t offset = 0;
+        uint64_t stride = 0;
+        uint64_t size = 0;
+    };
+
+    constexpr bool TryComputeShaderBindingTableRegion(
+        const ShaderBindingTableLayout &layout, uint32_t first_record,
+        uint32_t record_count, ShaderBindingTableRegionLayout &out) noexcept
+    {
+        out = {};
+        if (layout.stride == 0 || record_count == 0)
+            return false;
+        const uint64_t available_records = layout.data_size / layout.stride;
+        if (first_record > available_records ||
+            record_count > available_records - first_record)
+            return false;
+        out = {static_cast<uint64_t>(first_record) * layout.stride, layout.stride,
+               static_cast<uint64_t>(record_count) * layout.stride};
+        return true;
+    }
+
     constexpr uint64_t GreatestCommonDivisor(uint64_t left, uint64_t right) noexcept
     {
         while (right != 0)

@@ -55,6 +55,7 @@ deprecated/
 !/asset/shader/ray_tracing_path_tracer.shader
 !/asset/shader/ray_tracing_path_tracer.rgen
 !/asset/shader/ray_tracing_path_tracer.rmiss
+!/asset/shader/ray_tracing_visibility.rmiss
 !/asset/shader/ray_tracing_path_tracer.rchit
 !/asset/shader/deferred_lighting.shader
 !/asset/shader/deferred_lighting.frag

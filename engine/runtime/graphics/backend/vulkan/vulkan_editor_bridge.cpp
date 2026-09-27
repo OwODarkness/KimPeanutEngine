@@ -1,6 +1,7 @@
 #include "vulkan_editor_bridge.h"
 
 #include <stdexcept>
+#include <mutex>
 
 #include "vulkan_device.h"
 #include "vulkan_frame_context.h"
@@ -113,6 +114,7 @@ namespace kpengine::graphics
 
     void VulkanEditorBridge::WaitIdle() const
     {
+        std::lock_guard queue_lock(device_->GetQueueOperationMutex());
         vkDeviceWaitIdle(device_->GetLogicalDevice());
     }
 

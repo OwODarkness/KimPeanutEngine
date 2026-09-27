@@ -180,13 +180,19 @@ namespace kpengine::graphics
             return {};
         }
         vulkan_detail::ShaderBindingTableLayout sbt_layout{};
+        vulkan_detail::ShaderBindingTableRegionLayout raygen_region{}, miss_region{}, hit_region{};
+        const uint32_t miss_record_count = desc.visibility_miss_shader != nullptr ? 2u : 1u;
+        const uint32_t group_count = miss_record_count + 2u;
         if (!vulkan_detail::IsRayTracingRecursionDepthWithinLimit(
                 desc.max_recursion_depth, ray_tracing_properties_.maxRayRecursionDepth) ||
             !vulkan_detail::TryComputeShaderBindingTableLayout(
                 ray_tracing_properties_.shaderGroupHandleSize,
                 ray_tracing_properties_.shaderGroupHandleAlignment,
                 ray_tracing_properties_.shaderGroupBaseAlignment,
-                ray_tracing_properties_.maxShaderGroupStride, 3, sbt_layout))
+                ray_tracing_properties_.maxShaderGroupStride, group_count, sbt_layout) ||
+            !vulkan_detail::TryComputeShaderBindingTableRegion(sbt_layout, 0, 1, raygen_region) ||
+            !vulkan_detail::TryComputeShaderBindingTableRegion(sbt_layout, 1, miss_record_count, miss_region) ||
+            !vulkan_detail::TryComputeShaderBindingTableRegion(sbt_layout, miss_record_count + 1, 1, hit_region))
         {
             return {};
         }
@@ -211,16 +217,30 @@ namespace kpengine::graphics
 
         const VkShaderModule raygen_module = create_shader_module(*desc.ray_generation_shader);
         const VkShaderModule miss_module = create_shader_module(*desc.miss_shader);
+        const VkShaderModule visibility_miss_module = desc.visibility_miss_shader != nullptr
+            ? create_shader_module(*desc.visibility_miss_shader)
+            : VK_NULL_HANDLE;
         const VkShaderModule closest_hit_module = create_shader_module(*desc.closest_hit_shader);
         if (raygen_module == VK_NULL_HANDLE || miss_module == VK_NULL_HANDLE ||
+            (desc.visibility_miss_shader != nullptr &&
+             visibility_miss_module == VK_NULL_HANDLE) ||
             closest_hit_module == VK_NULL_HANDLE)
         {
             if (raygen_module != VK_NULL_HANDLE) vkDestroyShaderModule(device_, raygen_module, nullptr);
             if (miss_module != VK_NULL_HANDLE) vkDestroyShaderModule(device_, miss_module, nullptr);
+            if (visibility_miss_module != VK_NULL_HANDLE)
+                vkDestroyShaderModule(device_, visibility_miss_module, nullptr);
             if (closest_hit_module != VK_NULL_HANDLE)
                 vkDestroyShaderModule(device_, closest_hit_module, nullptr);
             return {};
         }
+        const auto destroy_shader_modules = [&]() {
+            vkDestroyShaderModule(device_, raygen_module, nullptr);
+            vkDestroyShaderModule(device_, miss_module, nullptr);
+            if (visibility_miss_module != VK_NULL_HANDLE)
+                vkDestroyShaderModule(device_, visibility_miss_module, nullptr);
+            vkDestroyShaderModule(device_, closest_hit_module, nullptr);
+        };
 
         std::vector<RayTracingPipelineResource::DescriptorSetLayout> layouts;
         layouts.reserve(desc.descriptor_binding_descs.size());
@@ -244,9 +264,7 @@ namespace kpengine::graphics
                 if (bindless_texture_layout_ == VK_NULL_HANDLE)
                 {
                     destroy_owned_layouts();
-                    vkDestroyShaderModule(device_, raygen_module, nullptr);
-                    vkDestroyShaderModule(device_, miss_module, nullptr);
-                    vkDestroyShaderModule(device_, closest_hit_module, nullptr);
+                    destroy_shader_modules();
                     return {};
                 }
                 RayTracingPipelineResource::DescriptorSetLayout layout{};
@@ -265,6 +283,7 @@ namespace kpengine::graphics
                 native.stageFlags = ConvertToVulkanShaderStageFlags(binding.stage_flag);
                 if (binding.stage_flag == ShaderStage::SHADER_STAGE_RAYGEN ||
                     binding.stage_flag == ShaderStage::SHADER_STAGE_MISS ||
+                    binding.stage_flag == ShaderStage::SHADER_STAGE_VISIBILITY_MISS ||
                     binding.stage_flag == ShaderStage::SHADER_STAGE_CLOSEST_HIT)
                 {
                     native.stageFlags = VK_SHADER_STAGE_RAYGEN_BIT_KHR |
@@ -275,9 +294,7 @@ namespace kpengine::graphics
                     native.stageFlags == 0)
                 {
                     destroy_owned_layouts();
-                    vkDestroyShaderModule(device_, raygen_module, nullptr);
-                    vkDestroyShaderModule(device_, miss_module, nullptr);
-                    vkDestroyShaderModule(device_, closest_hit_module, nullptr);
+                    destroy_shader_modules();
                     return {};
                 }
                 bindings.push_back(native);
@@ -292,9 +309,7 @@ namespace kpengine::graphics
                 VK_SUCCESS)
             {
                 destroy_owned_layouts();
-                vkDestroyShaderModule(device_, raygen_module, nullptr);
-                vkDestroyShaderModule(device_, miss_module, nullptr);
-                vkDestroyShaderModule(device_, closest_hit_module, nullptr);
+                destroy_shader_modules();
                 return {};
             }
             layouts.push_back(std::move(layout));
@@ -312,20 +327,25 @@ namespace kpengine::graphics
             VK_SUCCESS)
         {
             destroy_owned_layouts();
-            vkDestroyShaderModule(device_, raygen_module, nullptr);
-            vkDestroyShaderModule(device_, miss_module, nullptr);
-            vkDestroyShaderModule(device_, closest_hit_module, nullptr);
+            destroy_shader_modules();
             return {};
         }
 
-        const VkPipelineShaderStageCreateInfo stages[] = {
+        std::vector<VkPipelineShaderStageCreateInfo> stages{
             {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr,
              0, VK_SHADER_STAGE_RAYGEN_BIT_KHR, raygen_module, desc.ray_generation_shader->entry.c_str(), nullptr},
             {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr,
-             0, VK_SHADER_STAGE_MISS_BIT_KHR, miss_module, desc.miss_shader->entry.c_str(), nullptr},
-            {VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr,
-             0, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closest_hit_module, desc.closest_hit_shader->entry.c_str(), nullptr}};
-        VkRayTracingShaderGroupCreateInfoKHR groups[3]{};
+             0, VK_SHADER_STAGE_MISS_BIT_KHR, miss_module, desc.miss_shader->entry.c_str(), nullptr}};
+        if (visibility_miss_module != VK_NULL_HANDLE)
+        {
+            stages.push_back({VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr,
+                              0, VK_SHADER_STAGE_MISS_BIT_KHR, visibility_miss_module,
+                              desc.visibility_miss_shader->entry.c_str(), nullptr});
+        }
+        stages.push_back({VK_STRUCTURE_TYPE_PIPELINE_SHADER_STAGE_CREATE_INFO, nullptr,
+                          0, VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR, closest_hit_module,
+                          desc.closest_hit_shader->entry.c_str(), nullptr});
+        std::vector<VkRayTracingShaderGroupCreateInfoKHR> groups(group_count);
         groups[0].sType = VK_STRUCTURE_TYPE_RAY_TRACING_SHADER_GROUP_CREATE_INFO_KHR;
         groups[0].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_GENERAL_KHR;
         groups[0].generalShader = 0;
@@ -334,17 +354,23 @@ namespace kpengine::graphics
         groups[0].intersectionShader = VK_SHADER_UNUSED_KHR;
         groups[1] = groups[0];
         groups[1].generalShader = 1;
-        groups[2] = groups[0];
-        groups[2].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
-        groups[2].generalShader = VK_SHADER_UNUSED_KHR;
-        groups[2].closestHitShader = 2;
+        if (visibility_miss_module != VK_NULL_HANDLE)
+        {
+            groups[2] = groups[0];
+            groups[2].generalShader = 2;
+        }
+        const uint32_t hit_group_index = miss_record_count + 1u;
+        groups[hit_group_index] = groups[0];
+        groups[hit_group_index].type = VK_RAY_TRACING_SHADER_GROUP_TYPE_TRIANGLES_HIT_GROUP_KHR;
+        groups[hit_group_index].generalShader = VK_SHADER_UNUSED_KHR;
+        groups[hit_group_index].closestHitShader = hit_group_index;
 
         VkRayTracingPipelineCreateInfoKHR pipeline_info{};
         pipeline_info.sType = VK_STRUCTURE_TYPE_RAY_TRACING_PIPELINE_CREATE_INFO_KHR;
-        pipeline_info.stageCount = 3;
-        pipeline_info.pStages = stages;
-        pipeline_info.groupCount = 3;
-        pipeline_info.pGroups = groups;
+        pipeline_info.stageCount = static_cast<uint32_t>(stages.size());
+        pipeline_info.pStages = stages.data();
+        pipeline_info.groupCount = group_count;
+        pipeline_info.pGroups = groups.data();
         pipeline_info.maxPipelineRayRecursionDepth = desc.max_recursion_depth;
         pipeline_info.layout = pipeline_layout;
         VkPipeline pipeline = VK_NULL_HANDLE;
@@ -353,22 +379,18 @@ namespace kpengine::graphics
         {
             vkDestroyPipelineLayout(device_, pipeline_layout, nullptr);
             destroy_owned_layouts();
-            vkDestroyShaderModule(device_, raygen_module, nullptr);
-            vkDestroyShaderModule(device_, miss_module, nullptr);
-            vkDestroyShaderModule(device_, closest_hit_module, nullptr);
+            destroy_shader_modules();
             return {};
         }
-        vkDestroyShaderModule(device_, raygen_module, nullptr);
-        vkDestroyShaderModule(device_, miss_module, nullptr);
-        vkDestroyShaderModule(device_, closest_hit_module, nullptr);
+        destroy_shader_modules();
 
         const VkDeviceSize handle_size = ray_tracing_properties_.shaderGroupHandleSize;
         const VkDeviceSize handle_stride = sbt_layout.stride;
         const VkDeviceSize sbt_data_size = sbt_layout.data_size;
         const VkDeviceSize sbt_allocation_size = sbt_data_size +
             ray_tracing_properties_.shaderGroupBaseAlignment - 1;
-        std::vector<uint8_t> handles(static_cast<size_t>(handle_size) * 3);
-        if (get_ray_tracing_shader_group_handles_(device_, pipeline, 0, 3, handles.size(),
+        std::vector<uint8_t> handles(static_cast<size_t>(handle_size) * group_count);
+        if (get_ray_tracing_shader_group_handles_(device_, pipeline, 0, group_count, handles.size(),
                                                   handles.data()) != VK_SUCCESS)
         {
             vkDestroyPipeline(device_, pipeline, nullptr);
@@ -401,7 +423,7 @@ namespace kpengine::graphics
         }
 
         std::vector<uint8_t> sbt_data(static_cast<size_t>(sbt_allocation_size));
-        for (uint32_t group = 0; group < 3; ++group)
+        for (uint32_t group = 0; group < group_count; ++group)
         {
             std::memcpy(sbt_data.data() + sbt_offset + group * handle_stride,
                         handles.data() + group * handle_size, static_cast<size_t>(handle_size));
@@ -417,9 +439,12 @@ namespace kpengine::graphics
         resource.layout = pipeline_layout;
         resource.descriptor_set_layouts = std::move(layouts);
         resource.shader_binding_table = sbt;
-        resource.raygen_region = {sbt_address, handle_stride, handle_stride};
-        resource.miss_region = {sbt_address + handle_stride, handle_stride, handle_stride};
-        resource.hit_region = {sbt_address + handle_stride * 2, handle_stride, handle_stride};
+        resource.raygen_region = {sbt_address + raygen_region.offset,
+                                  raygen_region.stride, raygen_region.size};
+        resource.miss_region = {sbt_address + miss_region.offset,
+                                miss_region.stride, miss_region.size};
+        resource.hit_region = {sbt_address + hit_region.offset,
+                               hit_region.stride, hit_region.size};
         resource.alive = true;
         KP_LOG("VulkanRayTracing", LOG_LEVEL_INFO,
                "SBT ready: handle=%u handleAlign=%u baseAlign=%u maxStride=%u "

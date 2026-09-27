@@ -6,9 +6,7 @@ struct HitPayload
     vec3 position;
     uint hit;
     vec3 normal;
-    uint geometry;
     vec3 albedo;
-    uint material;
     vec3 emissive;
     float metallic;
     float roughness;

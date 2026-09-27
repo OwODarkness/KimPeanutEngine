@@ -12,9 +12,7 @@ struct HitPayload
     vec3 position;
     uint hit;
     vec3 normal;
-    uint geometry;
     vec3 albedo;
-    uint material;
     vec3 emissive;
     float metallic;
     float roughness;
@@ -72,6 +70,7 @@ layout(set = 0, binding = 3, std140) uniform SceneData
 } scene;
 
 layout(location = 0) rayPayloadEXT HitPayload payload;
+layout(location = 1) rayPayloadEXT uint visibility_payload;
 
 uint Hash(uint value)
 {
@@ -100,6 +99,16 @@ HitPayload Trace(vec3 origin, vec3 direction, float t_max)
     traceRayEXT(top_level, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0,
                 origin, 0.001, direction, t_max, 0);
     return payload;
+}
+
+bool TraceVisibility(vec3 origin, vec3 direction, float t_max)
+{
+    visibility_payload = 1u;
+    traceRayEXT(top_level,
+                gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT |
+                    gl_RayFlagsSkipClosestHitShaderEXT,
+                0xff, 0, 0, 1, origin, 0.001, direction, t_max, 1);
+    return visibility_payload != 0u;
 }
 
 vec3 EvaluateBrdf(HitPayload surface, vec3 normal, vec3 view_direction,
@@ -176,9 +185,8 @@ vec3 DirectLight(HitPayload surface, vec3 view_direction)
             continue;
         if (light.parameters.z > 0.5)
         {
-            const HitPayload blocker = Trace(surface.position + normal * 0.002,
-                                             light_direction, maximum_distance);
-            if (blocker.hit != 0u)
+            if (TraceVisibility(surface.position + normal * 0.002,
+                                light_direction, maximum_distance))
                 continue;
         }
         result += incident * EvaluateBrdf(surface, normal, view_direction,
@@ -247,37 +255,29 @@ bool SampleBsdf(HitPayload surface, vec3 view_direction, uint sample_index,
     return !any(isnan(weight)) && !any(isinf(weight));
 }
 
-vec3 TraceSample(uint sample_index)
+HitPayload TracePrimary()
 {
     const vec2 uv = (vec2(gl_LaunchIDEXT.xy) + vec2(0.5)) /
                     vec2(gl_LaunchSizeEXT.xy);
     vec4 far_point = camera.inverse_view_projection * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
     far_point /= far_point.w;
     const vec3 origin = camera.camera_position.xyz;
-    const HitPayload primary = Trace(origin, normalize(far_point.xyz - origin), 1000.0);
-    if (camera.probe_mode == 1u)
-        return primary.hit != 0u ? vec3(1.0) : vec3(0.0);
-    if (camera.probe_mode == 2u)
-        return primary.hit != 0u ? primary.normal * 0.5 + 0.5 : vec3(0.0);
-    if (camera.probe_mode == 3u)
-        return primary.hit != 0u ? primary.albedo : primary.radiance;
-    if (camera.probe_mode == 5u)
-        return primary.hit != 0u ? vec3(primary.metallic, primary.roughness, 0.0) : vec3(0.0);
+    return Trace(origin, normalize(far_point.xyz - origin), 1000.0);
+}
 
+vec3 TraceContinuation(HitPayload primary, uint sample_index,
+                       vec3 primary_contribution)
+{
     if (primary.hit == 0u)
         return primary.radiance;
 
-    vec3 radiance = vec3(0.0);
+    vec3 radiance = primary_contribution;
     vec3 throughput = vec3(1.0);
     HitPayload surface = primary;
     vec3 view_direction = normalize(camera.camera_position.xyz - primary.position);
     const uint maximum_bounces = uint(clamp(camera.light_center.w, 0.0, 32.0));
-    [[dont_unroll]] for (uint bounce = 0u; bounce <= maximum_bounces; ++bounce)
+    [[dont_unroll]] for (uint bounce = 0u; bounce < maximum_bounces; ++bounce)
     {
-        radiance += throughput * (surface.emissive + DirectLight(surface, view_direction));
-        if (camera.probe_mode == 4u || bounce == maximum_bounces)
-            break;
-
         vec3 bounce_direction;
         vec3 weight;
         if (!SampleBsdf(surface, view_direction, sample_index, bounce, bounce_direction, weight))
@@ -299,6 +299,7 @@ vec3 TraceSample(uint sample_index)
         }
         view_direction = -bounce_direction;
         surface = next_surface;
+        radiance += throughput * (surface.emissive + DirectLight(surface, view_direction));
     }
     return radiance;
 }
@@ -306,9 +307,46 @@ vec3 TraceSample(uint sample_index)
 void main()
 {
     const ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
+    const HitPayload primary = TracePrimary();
     vec3 radiance_sum = vec3(0.0);
-    [[dont_unroll]] for (uint sample_index = 0u; sample_index < camera.samples_per_dispatch; ++sample_index)
-        radiance_sum += TraceSample(sample_index);
+    if (camera.probe_mode == 1u)
+    {
+        radiance_sum = (primary.hit != 0u ? vec3(1.0) : vec3(0.0)) *
+                       float(camera.samples_per_dispatch);
+    }
+    else if (camera.probe_mode == 2u)
+    {
+        const vec3 normal = primary.hit != 0u ? primary.normal * 0.5 + 0.5 : vec3(0.0);
+        radiance_sum = normal * float(camera.samples_per_dispatch);
+    }
+    else if (camera.probe_mode == 3u)
+    {
+        const vec3 albedo = primary.hit != 0u ? primary.albedo : primary.radiance;
+        radiance_sum = albedo * float(camera.samples_per_dispatch);
+    }
+    else if (camera.probe_mode == 5u)
+    {
+        const vec3 surface = primary.hit != 0u
+            ? vec3(primary.metallic, primary.roughness, 0.0) : vec3(0.0);
+        radiance_sum = surface * float(camera.samples_per_dispatch);
+    }
+    else if (primary.hit == 0u)
+    {
+        radiance_sum = primary.radiance * float(camera.samples_per_dispatch);
+    }
+    else
+    {
+        const vec3 view_direction = normalize(camera.camera_position.xyz - primary.position);
+        const vec3 primary_contribution = primary.emissive + DirectLight(primary, view_direction);
+        if (camera.probe_mode == 4u)
+            radiance_sum = primary_contribution * float(camera.samples_per_dispatch);
+        else
+        {
+            [[dont_unroll]] for (uint sample_index = 0u;
+                                sample_index < camera.samples_per_dispatch; ++sample_index)
+                radiance_sum += TraceContinuation(primary, sample_index, primary_contribution);
+        }
+    }
 
     const uint next_sample_count = camera.sample_count + camera.samples_per_dispatch;
     if (camera.sample_count > 0u)

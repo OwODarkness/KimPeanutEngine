@@ -113,6 +113,7 @@ namespace kpengine::render
                 is_ray_tracing_program
                     ? std::vector<ShaderStage>{ShaderStage::SHADER_STAGE_RAYGEN,
                                                ShaderStage::SHADER_STAGE_MISS,
+                                               ShaderStage::SHADER_STAGE_VISIBILITY_MISS,
                                                ShaderStage::SHADER_STAGE_CLOSEST_HIT}
                     : std::vector<ShaderStage>{ShaderStage::SHADER_STAGE_VERTEX,
                                                ShaderStage::SHADER_STAGE_FRAGMENT};
@@ -122,6 +123,11 @@ namespace kpengine::render
                 const asset::AssetID shader_id = (*program)->GetData(
                     stage, ShaderFormat::SHADER_FORMAT_GLSL,
                     asset::ShaderProgramVariant::Bound);
+                if (stage == ShaderStage::SHADER_STAGE_VISIBILITY_MISS &&
+                    !shader_id.IsValid())
+                {
+                    continue;
+                }
                 const auto shader_record = records.find(shader_id.Pack());
                 const auto stage_name = [](ShaderStage value) {
                     switch (value)
@@ -130,6 +136,8 @@ namespace kpengine::render
                         return "raygen";
                     case ShaderStage::SHADER_STAGE_MISS:
                         return "miss";
+                    case ShaderStage::SHADER_STAGE_VISIBILITY_MISS:
+                        return "visibility_miss";
                     case ShaderStage::SHADER_STAGE_CLOSEST_HIT:
                         return "closest_hit";
                     case ShaderStage::SHADER_STAGE_VERTEX:

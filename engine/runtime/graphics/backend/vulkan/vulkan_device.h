@@ -65,6 +65,7 @@ namespace kpengine::graphics
         const VulkanQueue &GetGraphicsQueue() const { return graphics_queue_; }
         const VulkanQueue &GetPresentQueue() const { return present_queue_; }
         const VulkanQueue &GetTransferQueue() const { return transfer_queue_; }
+        std::mutex &GetQueueOperationMutex() { return queue_operation_mutex_; }
         bool SupportsBindlessTextures() const { return bindless_textures_enabled_; }
         uint32_t GetBindlessTextureTableCapacity() const { return bindless_texture_table_capacity_; }
         bool SupportsRayTracing() const { return ray_tracing_enabled_; }
@@ -99,6 +100,7 @@ namespace kpengine::graphics
         VulkanQueue graphics_queue_;
         VulkanQueue present_queue_;
         VulkanQueue transfer_queue_;
+        std::mutex queue_operation_mutex_;
 
         bool bindless_textures_enabled_ = false;
         uint32_t bindless_texture_table_capacity_ = 0;

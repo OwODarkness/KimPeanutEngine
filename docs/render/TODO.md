@@ -172,8 +172,24 @@ details and stage checklists belong in the linked submodule documents.
     the persistence stage. → [run evidence](../../.spec/journal/2026-09-27-render-r4-7-performance-plan.md#r4-7-0-vulkan-sponza-baseline-and-queue-retry--2026-09-27)
   - [ ] **R4.7.1:** scalar visibility payload + dedicated miss/SBT record;
     preserve occlusion and avoid full closest-hit shading for shadow rays.
+    Implementation is in the working tree. Debug Vulkan created the two-entry
+    miss region and Cornell Runtime stats reached active path tracing, but the
+    blocked/unblocked visual gate is still open: scene-color captures were
+    black while base-color capture succeeded, and Sponza hit a device-lost
+    upload failure. See the latest [R4.7 review](.review/R4.7.md#f1-runtime-progress).
+    The later [runtime correction](.review/R4.7.2.md) fixes miss-record stride
+    and restores Beauty output; isolated blocked/unblocked coverage stays open.
   - [ ] **R4.7.2:** one pixel-center primary trace per pixel; independent
-    continuation samples; verify normal/packed-texture/payload reductions.
+    continuation samples; verified unused payload removal, the inverse
+    transform built-in, and shared-slot metallic/roughness fetch are in the
+    working tree. The [runtime correction review](.review/R4.7.2.md) identifies
+    incorrect two-miss SBT stride and secondary null-recorder exception cleanup.
+    Corrected Debug Vulkan Cornell and fully resident Sponza export valid Beauty
+    images with normal 4-SPP/8-bounce PT. Matched repeated performance,
+    equal-sample quality and complete lifecycle/transform/probe coverage remain
+    open; do not mark the optimization complete. Earlier investigation: the
+    [R4.7.2 journal](../../.spec/journal/2026-09-27-render-r4-7-performance-plan.md#r472-primary-ray-reuse-and-hit-shader-reductions--2026-09-27)
+    and [review correction](.review/R4.7.2.md).
   - [ ] **R4.7.3:** evaluate static fast-trace AS policy with build/startup,
     memory and steady GPU evidence; preserve build/update compatibility.
   - [ ] **R4.7.4:** persistent versioned GPU tables and frame-safe bindings;

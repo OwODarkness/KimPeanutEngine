@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <mutex>
 #include <type_traits>
 #include <GLFW/glfw3.h>
 #include "log/logger.h"
@@ -238,6 +239,8 @@ namespace kpengine::graphics
         command_recorder_->EndRenderTarget();
         AccumulateCommandRecorderProfileCounters(command_recorder_.get());
         AccumulateDescriptorProfileCounters(descriptor_set_manager_->GetProfileCounters());
+        // Cleanup must not re-enter a frame whose recorder has been consumed.
+        frame_active_ = false;
         command_recorder_.reset();
         VkCommandBuffer scene_command_buffer = frame_context_->GetCurrentSceneCommandBuffer();
         render_target_readback_->RecordPendingCopies(
@@ -402,7 +405,10 @@ namespace kpengine::graphics
 
     void VulkanBackend::Cleanup()
     {
-        vkDeviceWaitIdle(device_->GetLogicalDevice());
+        {
+            std::lock_guard queue_lock(device_->GetQueueOperationMutex());
+            vkDeviceWaitIdle(device_->GetLogicalDevice());
+        }
         if (profile_query_pool_ != VK_NULL_HANDLE)
         {
             vkDestroyQueryPool(device_->GetLogicalDevice(), profile_query_pool_, nullptr);
@@ -1033,7 +1039,10 @@ namespace kpengine::graphics
     {
         if (device_)
         {
-            vkDeviceWaitIdle(device_->GetLogicalDevice());
+            {
+                std::lock_guard queue_lock(device_->GetQueueOperationMutex());
+                vkDeviceWaitIdle(device_->GetLogicalDevice());
+            }
             if (acceleration_structure_owner_ && frame_context_)
             {
                 const uint64_t completed_serial =
@@ -1099,7 +1108,10 @@ namespace kpengine::graphics
         // Attachments can be referenced by the frame just submitted. Wait
         // before destroying their views; VulkanSwapchain::Recreate waits too,
         // but that is after these render-target attachments are released.
-        vkDeviceWaitIdle(device_->GetLogicalDevice());
+        {
+            std::lock_guard queue_lock(device_->GetQueueOperationMutex());
+            vkDeviceWaitIdle(device_->GetLogicalDevice());
+        }
         render_target_manager_->DestroySwapchainAttachments();
         swapchain_->Recreate(width_, height_);
         editor_bridge_->OnSwapchainRecreated();

@@ -366,6 +366,7 @@ inline TextureFormat ConvertFromVulkanTextureFormat(VkFormat format)
         case ShaderStage::SHADER_STAGE_RAYGEN:
             return VK_SHADER_STAGE_RAYGEN_BIT_KHR;
         case ShaderStage::SHADER_STAGE_MISS:
+        case ShaderStage::SHADER_STAGE_VISIBILITY_MISS:
             return VK_SHADER_STAGE_MISS_BIT_KHR;
         case ShaderStage::SHADER_STAGE_CLOSEST_HIT:
             return VK_SHADER_STAGE_CLOSEST_HIT_BIT_KHR;

@@ -1157,10 +1157,16 @@ namespace kpengine::render
         }
         for (const ShaderStage stage : {ShaderStage::SHADER_STAGE_RAYGEN,
                                         ShaderStage::SHADER_STAGE_MISS,
+                                        ShaderStage::SHADER_STAGE_VISIBILITY_MISS,
                                         ShaderStage::SHADER_STAGE_CLOSEST_HIT})
         {
             const asset::AssetID shader_id = out_program->GetData(
                 stage, ShaderFormat::SHADER_FORMAT_GLSL);
+            if (stage == ShaderStage::SHADER_STAGE_VISIBILITY_MISS &&
+                !shader_id.IsValid())
+            {
+                continue;
+            }
             const auto shader = prepared_assets_->Get<asset::ShaderResource>(shader_id);
             if (!shader || !shader->data || shader->status != asset::ShaderStatus::Ready ||
                 shader->data->api != GraphicsAPIType::GRAPHICS_API_VULKAN ||
@@ -1201,15 +1207,28 @@ namespace kpengine::render
             ShaderStage::SHADER_STAGE_RAYGEN, ShaderFormat::SHADER_FORMAT_GLSL));
         const auto miss = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
             ShaderStage::SHADER_STAGE_MISS, ShaderFormat::SHADER_FORMAT_GLSL));
+        const auto visibility_miss = prepared_assets_->Get<asset::ShaderResource>(
+            program->GetData(ShaderStage::SHADER_STAGE_VISIBILITY_MISS,
+                             ShaderFormat::SHADER_FORMAT_GLSL));
         const auto closest_hit = prepared_assets_->Get<asset::ShaderResource>(program->GetData(
             ShaderStage::SHADER_STAGE_CLOSEST_HIT, ShaderFormat::SHADER_FORMAT_GLSL));
         graphics::RayTracingPipelineDesc desc{};
         desc.ray_generation_shader = raygen->data.get();
         desc.miss_shader = miss->data.get();
+        if (visibility_miss && visibility_miss->data &&
+            visibility_miss->status == asset::ShaderStatus::Ready)
+        {
+            desc.visibility_miss_shader = visibility_miss->data.get();
+        }
         desc.closest_hit_shader = closest_hit->data.get();
         path_trace_shader_signature_ = 1469598103934665603ull;
         AddShaderSignature(path_trace_shader_signature_, *raygen->data);
         AddShaderSignature(path_trace_shader_signature_, *miss->data);
+        if (desc.visibility_miss_shader != nullptr)
+        {
+            AddShaderSignature(path_trace_shader_signature_,
+                               *desc.visibility_miss_shader);
+        }
         AddShaderSignature(path_trace_shader_signature_, *closest_hit->data);
         desc.max_recursion_depth = 1;
         desc.descriptor_binding_descs = {{
@@ -3373,6 +3392,10 @@ namespace kpengine::render
     {
         if (!active_frame_context_ || !backend_ ||
             !ray_tracing_path_tracing_pipeline_.IsValid())
+        {
+            return false;
+        }
+        if (!EnsureEnvironmentFallbackBindings())
         {
             return false;
         }

@@ -1,5 +1,15 @@
 # Project Status
 
+- **R4.7.2 RT runtime blocker correction (2026-09-27)** — Fixed visibility
+  miss-record stride and a secondary null-recorder crash during failed-frame
+  cleanup. Corrected Debug Vulkan Cornell and fully resident Sponza now export
+  valid Beauty captures with active PT. Startup zero records were transient.
+  Two fully resident RelWithDebInfo Sponza windows measure PT GPU p50 median
+  24.754 ms versus the prior 34.548 ms baseline median. More performance
+  repeats, quality equivalence and lifecycle gates remain open. →
+  [review](render/.review/R4.7.2.md),
+  [journal](../.spec/journal/2026-09-27-r472-runtime-failure-correction.md)
+
 - **R4.7 path-tracing optimization (2026-09-27)** — R4.7.0 now exposes
   fence/acquire/present durations, fresh GPU queries, scene/history/texture
   state, RT table uploads, descriptor and AS lifecycle counts. Three initial
