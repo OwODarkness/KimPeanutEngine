@@ -11,6 +11,8 @@ struct HitPayload
     float metallic;
     float roughness;
     vec3 radiance;
+    float cone_width;
+    float cone_spread;
 };
 
 layout(set = 0, binding = 2, std140) uniform CameraData
@@ -37,5 +39,7 @@ void main()
     const vec2 uv = vec2(atan(direction.z, direction.x) * 0.159154943 + 0.5,
                          asin(clamp(direction.y, -1.0, 1.0)) * 0.318309886 + 0.5);
     payload.hit = 0u;
+    payload.cone_width = 0.0;
+    payload.cone_spread = 0.0;
     payload.radiance = texture(environment_texture, uv).rgb * camera.light_radiance.w;
 }

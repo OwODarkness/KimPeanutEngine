@@ -24,6 +24,11 @@ add_executable(KimPeanutEngine
 
 if(MSVC)
     target_compile_options(KimPeanutEngine PRIVATE /utf-8)
+    # Keep the optimized editor GUI visible without creating a console window.
+    set_property(TARGET KimPeanutEngine PROPERTY WIN32_EXECUTABLE
+        "$<CONFIG:RelWithDebInfo>")
+    set_property(TARGET KimPeanutEngine APPEND_STRING PROPERTY LINK_FLAGS_RELWITHDEBINFO
+        " /ENTRY:mainCRTStartup")
 endif()
 
 

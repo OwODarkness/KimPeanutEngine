@@ -4,6 +4,8 @@
 #include <array>
 #include <chrono>
 #include <mutex>
+#include <stdexcept>
+#include <string>
 
 #include "log/logger.h"
 
@@ -83,10 +85,14 @@ namespace kpengine::graphics
         submit_info.pWaitDstStageMask = wait_stages.data();
 
         std::lock_guard queue_lock(device_->GetQueueOperationMutex());
-        if (vkQueueSubmit(device_->GetGraphicsQueue().queue, 1, &submit_info, in_flight_fences_[current_frame_index_]) != VK_SUCCESS)
+        const VkResult submit_result = vkQueueSubmit(device_->GetGraphicsQueue().queue, 1, &submit_info,
+                                                     in_flight_fences_[current_frame_index_]);
+        if (submit_result != VK_SUCCESS)
         {
-            KP_LOG(KP_VULKAN_FRAME_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR, "Failed to submit commandbuffer");
-            throw std::runtime_error("Failed to submit commandbuffer");
+            KP_LOG(KP_VULKAN_FRAME_CONTEXT_LOG_NAME, LOG_LEVEL_ERROR,
+                   "Failed to submit commandbuffer (VkResult=%d)", static_cast<int>(submit_result));
+            throw std::runtime_error("Failed to submit commandbuffer (VkResult=" +
+                                     std::to_string(static_cast<int>(submit_result)) + ")");
         }
         in_flight_submission_serials_[current_frame_index_] = next_submission_serial_;
         last_submitted_serial_ = next_submission_serial_;

@@ -217,6 +217,10 @@ namespace kpengine::render
             debug_view_ = requested_debug_view_;
             deferred_renderer_->SetPathTraceProbeMode(
                 requested_path_trace_probe_mode_.load(std::memory_order_acquire));
+            if (requested_profile_window_reset_.exchange(false, std::memory_order_acq_rel))
+            {
+                profile_window_.Reset();
+            }
             if (requested_path_trace_dispatch_failure_.exchange(
                     false, std::memory_order_acq_rel))
             {
@@ -575,6 +579,7 @@ namespace kpengine::render
     void RenderSystem::RequestPathTraceProbeMode(PathTraceProbeMode mode) noexcept
     {
         requested_path_trace_probe_mode_.store(mode, std::memory_order_release);
+        requested_profile_window_reset_.store(true, std::memory_order_release);
     }
 
     void RenderSystem::RequestPathTraceDispatchFailureInjection() noexcept

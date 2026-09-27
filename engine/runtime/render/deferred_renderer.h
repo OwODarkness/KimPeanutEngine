@@ -258,6 +258,7 @@ namespace kpengine::render
         // RenderTarget is not movable, so the wrapper is held by pointer.
         std::unique_ptr<RenderTarget> transient_scene_hdr_;
         std::array<std::unique_ptr<RenderTarget>, 2> path_trace_history_targets_;
+        std::unique_ptr<RenderTarget> path_trace_guide_target_;
         uint32_t path_trace_write_index_ = 0;
         uint32_t path_trace_sample_count_ = 0;
         uint64_t path_trace_history_signature_ = 0;
@@ -294,10 +295,11 @@ namespace kpengine::render
         graphics::Extent2D pending_scene_render_target_extent_;
         FrameContext *active_frame_context_ = nullptr;
         const RenderWorld *render_world_ = nullptr;
-        // One immutable, frame-local section packet snapshot is shared by
-        // shadow scheduling, shadow recording, and G-buffer visibility.
+        // Revision-stable section packets are shared by shadow scheduling,
+        // shadow recording, and per-frame G-buffer visibility filtering.
         std::vector<MeshProxy> frame_render_world_snapshot_;
         std::vector<VisibleMeshSection> frame_section_packets_;
+        uint64_t frame_section_packets_world_revision_ = 0;
         bool frame_section_packets_ready_ = false;
         FrameLightingBinding frame_lighting_binding_;
         // Per-frame resolved draw state. Within one frame the per-object uniform
@@ -365,6 +367,7 @@ namespace kpengine::render
             graphics::RayTracingBufferReferenceTableHandle scene_table;
             graphics::TextureHandle hdr_output;
             graphics::TextureHandle history_output;
+            graphics::TextureHandle guide_output;
             graphics::TextureHandle environment;
             graphics::SamplerHandle environment_sampler;
             UniformAllocation camera_uniform;

@@ -69,6 +69,18 @@ evidence, not performance acceptance; label them explicitly when comparing
 Debug overhead. Do not disable validation in the normal Debug build to claim
 correctness or performance acceptance.
 
+MSVC RelWithDebInfo builds launch the editor as a GUI application without a
+console window. When showing the engine to the user, launch its GUI normally;
+do not use `-WindowStyle Hidden` for the interactive engine window.
+KimPeanutEngine is a visual application. Never launch its executable inside the sandbox,
+including runtime validation and performance runs. The sandbox uses a private
+desktop that the user cannot see. Always use the approved execution path outside
+the sandbox for engine launches and verify the desktop is `Default`.
+Verify `GetForegroundWindow()` equals the
+GLFW window before claiming foreground focus; `SetForegroundWindow` can fail.
+When focusing or closing it, select the process's `GLFW30` window;
+`Process.MainWindowHandle` can identify an NVIDIA helper window instead.
+
 Record the commit/working-tree state, build configuration, graphics API,
 validation state, fixture/camera, viewport resolution, actual RT mode,
 warm-up/residency state, and sample window with performance results. Verify

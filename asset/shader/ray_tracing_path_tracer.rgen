@@ -1,10 +1,12 @@
 #version 460
 #extension GL_EXT_ray_tracing : require
+#extension GL_EXT_ray_query : require
 #extension GL_EXT_control_flow_attributes : require
 
 layout(set = 0, binding = 0) uniform accelerationStructureEXT top_level;
 layout(set = 0, binding = 1, rgba16f) uniform image2D output_image;
 layout(set = 0, binding = 35, rgba16f) readonly uniform image2D history_image;
+layout(set = 0, binding = 36, rgba16f) writeonly uniform image2D guide_image;
 layout(set = 0, binding = 4) uniform sampler2D environment_texture;
 
 struct HitPayload
@@ -17,6 +19,8 @@ struct HitPayload
     float metallic;
     float roughness;
     vec3 radiance;
+    float cone_width;
+    float cone_spread;
 };
 
 struct LightData
@@ -81,6 +85,11 @@ uint Hash(uint value)
     return value ^ (value >> 16u);
 }
 
+float Luminance(vec3 color)
+{
+    return dot(color, vec3(0.2126, 0.7152, 0.0722));
+}
+
 float Random(uint stream, uint sample_index)
 {
     const uint path_sample_index = camera.sample_count + sample_index;
@@ -92,10 +101,13 @@ float Random(uint stream, uint sample_index)
     return float(Hash(seed) >> 8u) * (1.0 / 16777216.0);
 }
 
-HitPayload Trace(vec3 origin, vec3 direction, float t_max)
+HitPayload Trace(vec3 origin, vec3 direction, float t_max,
+                 float cone_width, float cone_spread)
 {
     payload.hit = 0u;
     payload.radiance = vec3(0.0);
+    payload.cone_width = cone_width;
+    payload.cone_spread = cone_spread;
     traceRayEXT(top_level, gl_RayFlagsOpaqueEXT, 0xff, 0, 0, 0,
                 origin, 0.001, direction, t_max, 0);
     return payload;
@@ -103,6 +115,19 @@ HitPayload Trace(vec3 origin, vec3 direction, float t_max)
 
 bool TraceVisibility(vec3 origin, vec3 direction, float t_max)
 {
+    if (camera.probe_mode == 6u)
+    {
+        rayQueryEXT query;
+        rayQueryInitializeEXT(query, top_level,
+                              gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT,
+                              0xff, origin, 0.001, direction, t_max);
+        while (rayQueryProceedEXT(query))
+        {
+        }
+        return rayQueryGetIntersectionTypeEXT(query, true) !=
+               gl_RayQueryCommittedIntersectionNoneEXT;
+    }
+
     visibility_payload = 1u;
     traceRayEXT(top_level,
                 gl_RayFlagsOpaqueEXT | gl_RayFlagsTerminateOnFirstHitEXT |
@@ -262,7 +287,18 @@ HitPayload TracePrimary()
     vec4 far_point = camera.inverse_view_projection * vec4(uv * 2.0 - 1.0, 1.0, 1.0);
     far_point /= far_point.w;
     const vec3 origin = camera.camera_position.xyz;
-    return Trace(origin, normalize(far_point.xyz - origin), 1000.0);
+    const vec3 direction = normalize(far_point.xyz - origin);
+    vec2 x_uv = (vec2(gl_LaunchIDEXT.xy) + vec2(1.5, 0.5)) /
+                vec2(gl_LaunchSizeEXT.xy);
+    vec2 y_uv = (vec2(gl_LaunchIDEXT.xy) + vec2(0.5, 1.5)) /
+                vec2(gl_LaunchSizeEXT.xy);
+    vec4 x_point = camera.inverse_view_projection * vec4(x_uv * 2.0 - 1.0, 1.0, 1.0);
+    vec4 y_point = camera.inverse_view_projection * vec4(y_uv * 2.0 - 1.0, 1.0, 1.0);
+    x_point /= x_point.w;
+    y_point /= y_point.w;
+    const float cone_spread = max(length(normalize(x_point.xyz - origin) - direction),
+                                  length(normalize(y_point.xyz - origin) - direction));
+    return Trace(origin, direction, 1000.0, 0.0, cone_spread);
 }
 
 vec3 TraceContinuation(HitPayload primary, uint sample_index,
@@ -290,8 +326,11 @@ vec3 TraceContinuation(HitPayload primary, uint sample_index,
                 break;
             throughput /= survival;
         }
+        const float next_cone_spread = min(surface.cone_spread +
+            max(surface.roughness, 0.04) * 0.5, 1.0);
         const HitPayload next_surface = Trace(surface.position + surface.normal * 0.002,
-                                              bounce_direction, 1000.0);
+                                              bounce_direction, 1000.0,
+                                              surface.cone_width, next_cone_spread);
         if (next_surface.hit == 0u)
         {
             radiance += throughput * next_surface.radiance;
@@ -308,7 +347,13 @@ void main()
 {
     const ivec2 pixel = ivec2(gl_LaunchIDEXT.xy);
     const HitPayload primary = TracePrimary();
+    imageStore(guide_image, pixel,
+               vec4(primary.hit != 0u ? normalize(primary.normal) : vec3(0.0),
+                    primary.hit != 0u
+                        ? length(camera.camera_position.xyz - primary.position)
+                        : -1.0));
     vec3 radiance_sum = vec3(0.0);
+    float luminance_squared_sum = 0.0;
     if (camera.probe_mode == 1u)
     {
         radiance_sum = (primary.hit != 0u ? vec3(1.0) : vec3(0.0)) *
@@ -333,26 +378,56 @@ void main()
     else if (primary.hit == 0u)
     {
         radiance_sum = primary.radiance * float(camera.samples_per_dispatch);
+        const float luminance = Luminance(primary.radiance);
+        luminance_squared_sum = luminance * luminance *
+                                float(camera.samples_per_dispatch);
     }
     else
     {
         const vec3 view_direction = normalize(camera.camera_position.xyz - primary.position);
         const vec3 primary_contribution = primary.emissive + DirectLight(primary, view_direction);
         if (camera.probe_mode == 4u)
+        {
             radiance_sum = primary_contribution * float(camera.samples_per_dispatch);
+            const float luminance = Luminance(primary_contribution);
+            luminance_squared_sum = luminance * luminance *
+                                    float(camera.samples_per_dispatch);
+        }
         else
         {
             [[dont_unroll]] for (uint sample_index = 0u;
                                 sample_index < camera.samples_per_dispatch; ++sample_index)
-                radiance_sum += TraceContinuation(primary, sample_index, primary_contribution);
+            {
+                const vec3 sample_radiance = TraceContinuation(
+                    primary, sample_index, primary_contribution);
+                const float luminance = Luminance(sample_radiance);
+                radiance_sum += sample_radiance;
+                luminance_squared_sum += luminance * luminance;
+            }
         }
     }
 
+    const float batch_sample_count = float(camera.samples_per_dispatch);
+    const vec3 batch_mean = radiance_sum / batch_sample_count;
+    const float batch_mean_luminance = Luminance(batch_mean);
+    const float batch_m2 = max(luminance_squared_sum - batch_sample_count *
+                               batch_mean_luminance * batch_mean_luminance, 0.0);
     const uint next_sample_count = camera.sample_count + camera.samples_per_dispatch;
+    float accumulated_variance = batch_m2 / max(batch_sample_count - 1.0, 1.0);
     if (camera.sample_count > 0u)
-        radiance_sum = (imageLoad(history_image, pixel).rgb * float(camera.sample_count) +
-                        radiance_sum) / float(next_sample_count);
+    {
+        const vec4 previous = imageLoad(history_image, pixel);
+        const float previous_sample_count = float(camera.sample_count);
+        const float next_count = float(next_sample_count);
+        const float previous_mean_luminance = Luminance(previous.rgb);
+        const float delta = batch_mean_luminance - previous_mean_luminance;
+        radiance_sum = (previous.rgb * previous_sample_count + radiance_sum) / next_count;
+        const float previous_m2 = previous.a * max(previous_sample_count - 1.0, 0.0);
+        const float combined_m2 = previous_m2 + batch_m2 + delta * delta *
+            previous_sample_count * batch_sample_count / next_count;
+        accumulated_variance = combined_m2 / max(next_count - 1.0, 1.0);
+    }
     else
-        radiance_sum /= float(camera.samples_per_dispatch);
-    imageStore(output_image, pixel, vec4(radiance_sum, 1.0));
+        radiance_sum = batch_mean;
+    imageStore(output_image, pixel, vec4(radiance_sum, accumulated_variance));
 }

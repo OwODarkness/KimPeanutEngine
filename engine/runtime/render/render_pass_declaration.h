@@ -20,6 +20,7 @@ namespace kpengine::render
         PointShadow,
         CaptureOutput,
         PathTraceHistory,
+        PathTraceGuide,
         Count,
     };
 

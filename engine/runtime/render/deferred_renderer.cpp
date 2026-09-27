@@ -584,6 +584,11 @@ namespace kpengine::render
             if (target) target->Cleanup();
             target.reset();
         }
+        if (path_trace_guide_target_)
+        {
+            path_trace_guide_target_->Cleanup();
+            path_trace_guide_target_.reset();
+        }
         uint32_t remaining_history_targets = 0;
         for (const auto &target : path_trace_history_targets_)
         {
@@ -657,6 +662,7 @@ namespace kpengine::render
         render_world_ = nullptr;
         frame_render_world_snapshot_.clear();
         frame_section_packets_.clear();
+        frame_section_packets_world_revision_ = 0;
         frame_section_packets_ready_ = false;
         frame_ray_tracing_geometries_.clear();
         frame_ray_tracing_instances_.clear();
@@ -1315,6 +1321,8 @@ namespace kpengine::render
              ShaderStage::SHADER_STAGE_MISS},
             {35, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_STORAGE_IMAGE,
              ShaderStage::SHADER_STAGE_RAYGEN},
+            {36, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_STORAGE_IMAGE,
+             ShaderStage::SHADER_STAGE_RAYGEN},
         }};
         desc.descriptor_binding_descs.emplace_back();
         KP_LOG("RenderLog", LOG_LEVEL_INFO,
@@ -1456,7 +1464,9 @@ namespace kpengine::render
             backend_->GetCapabilities().SupportsRayQueryShadows();
         profile_.viewport_width = frame_context.GetRenderExtent().width;
         profile_.viewport_height = frame_context.GetRenderExtent().height;
-        profile_.path_trace_samples_per_dispatch = kPathTraceSamplesPerDispatch;
+        profile_.path_trace_samples_per_dispatch =
+            path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
+                ? 1u : kPathTraceSamplesPerDispatch;
         profile_.path_trace_max_continuation_bounces = kPathTraceDiffuseBounces;
         profile_.textures = resource_resolver_->GetTextureMetrics();
         material_system_->ResetProfileCounters();
@@ -1467,14 +1477,18 @@ namespace kpengine::render
         }
         active_frame_context_ = &frame_context;
         render_world_ = &input.render_world;
+        const uint64_t render_world_revision = render_world_->GetRevision();
         const auto render_world_snapshot_started = std::chrono::steady_clock::now();
         frame_render_world_snapshot_ = render_world_->Snapshot();
         profile_.cpu_render_world_snapshot_ms =
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - render_world_snapshot_started)
                 .count();
-        frame_section_packets_.clear();
-        frame_section_packets_ready_ = false;
+        if (frame_section_packets_world_revision_ != render_world_revision)
+        {
+            frame_section_packets_world_revision_ = render_world_revision;
+            frame_section_packets_ready_ = false;
+        }
         frame_object_states_.clear();
         frame_material_bindings_.clear();
         scene_camera_ = input.camera;
@@ -1968,7 +1982,9 @@ namespace kpengine::render
             detail::CommitPathTraceHistoryProgress(
                 {path_trace_sample_count_, path_trace_write_index_}, finalized,
                 frame_execution_failed_, required_pass_failed,
-                active_ray_tracing_path_trace_, kPathTraceSamplesPerDispatch);
+                active_ray_tracing_path_trace_,
+                path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
+                    ? 1u : kPathTraceSamplesPerDispatch);
         path_trace_sample_count_ = history_progress.sample_count;
         path_trace_write_index_ = history_progress.write_index;
         if (succeeded && active_ray_tracing_path_trace_)
@@ -2035,7 +2051,10 @@ namespace kpengine::render
             path_trace_history_targets_[0]->IsValid() &&
             path_trace_history_targets_[1]->IsValid() &&
             path_trace_history_targets_[0]->GetWidth() == width &&
-            path_trace_history_targets_[0]->GetHeight() == height)
+            path_trace_history_targets_[0]->GetHeight() == height &&
+            path_trace_guide_target_ && path_trace_guide_target_->IsValid() &&
+            path_trace_guide_target_->GetWidth() == width &&
+            path_trace_guide_target_->GetHeight() == height)
             return true;
 
         if (path_trace_history_targets_[0] || path_trace_history_targets_[1])
@@ -2051,6 +2070,10 @@ namespace kpengine::render
             target->Initialize(*backend_, desc);
             if (!target->IsValid()) return false;
         }
+        if (!path_trace_guide_target_)
+            path_trace_guide_target_ = std::make_unique<RenderTarget>();
+        path_trace_guide_target_->Initialize(*backend_, desc);
+        if (!path_trace_guide_target_->IsValid()) return false;
         path_trace_sample_count_ = 0;
         path_trace_write_index_ = 0;
         path_trace_history_signature_ = 0;
@@ -2117,6 +2140,10 @@ namespace kpengine::render
         if (name == "PathTraceHistory")
         {
             return path_trace_history_targets_[1u - path_trace_write_index_].get();
+        }
+        if (name == "PathTraceGuide")
+        {
+            return path_trace_guide_target_.get();
         }
         if (name == "SceneColor")
         {
@@ -3543,7 +3570,9 @@ namespace kpengine::render
         camera_data.camera_position = Vector4f{scene_camera_.GetPosition(), 1.0f};
         camera_data.rng_seed = kPathTraceRngSeed;
         camera_data.sample_count = path_trace_sample_count_;
-        camera_data.samples_per_dispatch = kPathTraceSamplesPerDispatch;
+        camera_data.samples_per_dispatch =
+            path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
+                ? 1u : kPathTraceSamplesPerDispatch;
         camera_data.probe_mode = static_cast<uint32_t>(path_trace_probe_mode_);
         camera_data.light_center = Vector4f{0.0f, 0.0f, 0.0f,
                                           static_cast<float>(kPathTraceDiffuseBounces)};
@@ -3699,6 +3728,11 @@ namespace kpengine::render
             hdr_target->GetColorAttachmentTexture(0);
         const graphics::TextureHandle history_output =
             history_target->GetColorAttachmentTexture(0);
+        RenderTarget *const guide_target = ResolveFrameTextureByName("PathTraceGuide");
+        if (guide_target == nullptr)
+            return false;
+        const graphics::TextureHandle guide_output =
+            guide_target->GetColorAttachmentTexture(0);
         const bool binding_matches = binding_cache.descriptor_set.IsValid() &&
                                      binding_cache.pipeline ==
                                          ray_tracing_path_tracing_pipeline_ &&
@@ -3706,6 +3740,7 @@ namespace kpengine::render
                                      binding_cache.scene_table == ray_tracing_scene_table_ &&
                                      binding_cache.hdr_output == hdr_output &&
                                      binding_cache.history_output == history_output &&
+                                     binding_cache.guide_output == guide_output &&
                                      binding_cache.environment ==
                                          active_environment_.panorama.texture &&
                                      binding_cache.environment_sampler ==
@@ -3722,6 +3757,7 @@ namespace kpengine::render
                 graphics::RayTracingAccelerationStructureBinding{0, 0, top_level},
                 graphics::RayTracingStorageTextureBinding{0, 1, hdr_output},
                 graphics::RayTracingStorageTextureBinding{0, 35, history_output},
+                graphics::RayTracingStorageTextureBinding{0, 36, guide_output},
                 graphics::SampledTextureBinding{
                     0, 4, active_environment_.panorama.texture,
                     active_environment_.panorama.sampler},
@@ -3748,6 +3784,7 @@ namespace kpengine::render
             binding_cache.scene_table = ray_tracing_scene_table_;
             binding_cache.hdr_output = hdr_output;
             binding_cache.history_output = history_output;
+            binding_cache.guide_output = guide_output;
             binding_cache.environment = active_environment_.panorama.texture;
             binding_cache.environment_sampler = active_environment_.panorama.sampler;
             binding_cache.camera_uniform = camera_uniform;
@@ -3793,7 +3830,18 @@ namespace kpengine::render
         }
 
         const UniformAllocation tone_map_options = active_frame_context_->AllocateUniform(
-            Vector4f{active_ray_tracing_path_trace_ ? 0.0f : 1.0f, 0.0f, 0.0f, 0.0f});
+            Vector4f{active_ray_tracing_path_trace_ ? 0.0f : 1.0f,
+                     active_ray_tracing_path_trace_ &&
+                             path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
+                         ? 1.0f
+                         : (active_ray_tracing_path_trace_ &&
+                                    path_trace_probe_mode_ ==
+                                        PathTraceProbeMode::BeautyDenoise
+                                ? 2.0f : 0.0f),
+                     static_cast<float>(path_trace_sample_count_ +
+                         (path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
+                              ? 1u : kPathTraceSamplesPerDispatch)),
+                     0.0f});
         if (!tone_map_options.IsValid())
             return false;
         const graphics::DescriptorSetHandle tone_map_bindings =
@@ -3808,6 +3856,13 @@ namespace kpengine::render
                        active_ray_tracing_path_trace_
                            ? hdr_target->GetColorAttachmentTexture(0)
                            : gbuffer_target->GetColorAttachmentTexture(3),
+                       gbuffer_debug_sampler_},
+                   graphics::SampledTextureBinding{
+                       0, 5,
+                       active_ray_tracing_path_trace_
+                           ? ResolveFrameTextureByName("PathTraceGuide")
+                                 ->GetColorAttachmentTexture(0)
+                           : hdr_target->GetColorAttachmentTexture(0),
                        gbuffer_debug_sampler_},
                    graphics::UniformBufferBinding{0, 4, tone_map_options.buffer,
                                                   tone_map_options.offset,
@@ -4004,6 +4059,8 @@ namespace kpengine::render
             {3, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT},
             {4, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
+             ShaderStage::SHADER_STAGE_FRAGMENT},
+            {5, 1, graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT},
         };
         tone_map_pipeline_ = backend_->CreatePipelineResource(desc);

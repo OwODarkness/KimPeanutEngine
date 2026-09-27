@@ -13,6 +13,10 @@ namespace kpengine::render
         PrimaryAlbedo = 3,
         DirectOnly = 4,
         SurfaceParameters = 5,
+        RayQueryVisibility = 6,
+        RayConeFiltering = 7,
+        LowSppPreview = 8,
+        BeautyDenoise = 9,
     };
 }
 

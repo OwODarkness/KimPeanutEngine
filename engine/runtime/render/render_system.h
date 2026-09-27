@@ -198,6 +198,7 @@ namespace kpengine::render
         CaptureView requested_debug_view_ = CaptureView::SceneColor;
         std::atomic<PathTraceProbeMode> requested_path_trace_probe_mode_{
             PathTraceProbeMode::Beauty};
+        std::atomic<bool> requested_profile_window_reset_{false};
         std::atomic<bool> requested_path_trace_dispatch_failure_{false};
     };
 }

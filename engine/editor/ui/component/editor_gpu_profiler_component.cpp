@@ -131,6 +131,35 @@ namespace kpengine::editor
             return value;
         }
 
+        std::string FormatBytes(const uint64_t bytes)
+        {
+            constexpr double bytes_per_mib = 1024.0 * 1024.0;
+            char value[48]{};
+            std::snprintf(value, sizeof(value), "%.2f MiB",
+                          static_cast<double>(bytes) / bytes_per_mib);
+            return value;
+        }
+
+        std::string FormatPercent(const std::optional<float> &percent)
+        {
+            if (!percent.has_value())
+            {
+                return "N/A";
+            }
+            char value[32]{};
+            std::snprintf(value, sizeof(value), "%.1f%%", *percent);
+            return value;
+        }
+
+        void DrawInfoRow(const char *label, const std::string &value)
+        {
+            ImGui::TableNextRow();
+            ImGui::TableSetColumnIndex(0);
+            ImGui::TextDisabled("%s", label);
+            ImGui::TableSetColumnIndex(1);
+            ImGui::Text("%s", value.c_str());
+        }
+
         const char *FeatureStatus(const bool available, const bool active)
         {
             if (!available)
@@ -178,7 +207,8 @@ namespace kpengine::editor
             const std::optional<double> &imgui_gpu, const std::optional<double> &total,
             const uint64_t triangle_count, const runtime::Engine::FrameLoopMetrics &frame,
             const double imgui_total_ms, const double imgui_build_ms,
-            const double imgui_submit_ms)
+            const double imgui_submit_ms,
+            const std::optional<float> &gpu_usage_percent)
         {
             std::ostringstream copied;
             copied << "Performance Profiler\n"
@@ -199,6 +229,45 @@ namespace kpengine::editor
                                     RenderProfilePass::RayTracingTlasBuild}))
                    << "\n"
                    << "  GPU total: " << FormatMilliseconds(total) << "\n"
+                   << "Advanced GPU\n"
+                   << "  GPU utilization: " << FormatPercent(gpu_usage_percent) << "\n"
+                   << "  GPU timing window: " << profile.gpu_timing_samples
+                   << " samples, frame "
+                   << (profile.gpu_frame_number.has_value()
+                           ? std::to_string(*profile.gpu_frame_number)
+                           : "N/A")
+                   << "\n"
+                   << "  GPU total p50/p95: "
+                   << FormatMilliseconds(profile.summary.gpu_total_p50_ms) << " / "
+                   << FormatMilliseconds(profile.summary.gpu_total_p95_ms) << "\n"
+                   << "  RT samples/dispatch: "
+                   << profile.path_trace_samples_per_dispatch << ", bounces: "
+                   << profile.path_trace_max_continuation_bounces << "\n"
+                   << "  RT geometry/instances/materials/lights: "
+                   << profile.ray_tracing_geometry_records << "/"
+                   << profile.ray_tracing_instance_records << "/"
+                   << profile.ray_tracing_material_records << "/"
+                   << profile.ray_tracing_light_records << "\n"
+                   << "  AS storage: "
+                   << FormatBytes(profile.ray_tracing_acceleration_structure_storage_bytes)
+                   << "; BLAS build/update " << profile.ray_tracing_blas_builds << "/"
+                   << profile.ray_tracing_blas_updates << "; TLAS build/update "
+                   << profile.ray_tracing_tlas_builds << "/"
+                   << profile.ray_tracing_tlas_updates << "\n"
+                   << "  RT table packed/uploaded: "
+                   << profile.ray_tracing_scene_table_records_packed << "/"
+                   << profile.ray_tracing_scene_table_records_uploaded
+                   << "; address buffers "
+                   << profile.ray_tracing_address_table_buffers_created << "; upload "
+                   << FormatBytes(profile.ray_tracing_address_table_upload_bytes) << "\n"
+                   << "  RT table cache hits/misses: "
+                   << profile.ray_tracing_scene_record_cache_hits_total << "/"
+                   << profile.ray_tracing_scene_record_cache_misses_total << "\n"
+                   << "  Texture resident/source/decoded: "
+                   << FormatBytes(profile.textures.resident_bytes) << "/"
+                   << FormatBytes(profile.textures.source_bytes) << "/"
+                   << FormatBytes(profile.textures.decoded_bytes) << "\n"
+                   << "  Hardware counters: external Nsight capture required\n"
                    << "  Shadow cache: hits " << profile.shadow_cache_hits
                    << ", misses " << profile.shadow_cache_misses << "\n"
                    << "  Draw calls: " << profile.draw_calls << "\n"
@@ -265,7 +334,8 @@ namespace kpengine::editor
             const std::optional<double> &imgui_gpu, const std::optional<double> &total,
             const uint64_t triangle_count, const runtime::Engine::FrameLoopMetrics &frame,
             const double imgui_total_ms, const double imgui_build_ms,
-            const double imgui_submit_ms)
+            const double imgui_submit_ms,
+            const std::optional<float> &gpu_usage_percent)
         {
             Json result{
                 {"schema", "kimpeanut.profiler.v1"},
@@ -304,7 +374,53 @@ namespace kpengine::editor
                                            RenderProfilePass::RayTracingToneMap,
                                            RenderProfilePass::RayTracingBlasBuild,
                                            RenderProfilePass::RayTracingTlasBuild}))},
-                            {"total_ms", OptionalMilliseconds(total)}}},
+                            {"total_ms", OptionalMilliseconds(total)},
+                            {"gpu_usage_percent", gpu_usage_percent.has_value()
+                                                       ? Json(*gpu_usage_percent)
+                                                       : Json(nullptr)}}},
+                  {"advanced_gpu",
+                   {{"timing_samples", profile.gpu_timing_samples},
+                    {"gpu_frame_number", profile.gpu_frame_number.has_value()
+                                             ? Json(*profile.gpu_frame_number)
+                                             : Json(nullptr)},
+                    {"total_p50_ms", OptionalMilliseconds(profile.summary.gpu_total_p50_ms)},
+                    {"total_p95_ms", OptionalMilliseconds(profile.summary.gpu_total_p95_ms)},
+                    {"render_graph_mode", profile.render_graph_mode},
+                    {"path_trace_samples_per_dispatch",
+                     profile.path_trace_samples_per_dispatch},
+                    {"path_trace_max_continuation_bounces",
+                     profile.path_trace_max_continuation_bounces},
+                    {"rt_records", {{"geometry", profile.ray_tracing_geometry_records},
+                                     {"instances", profile.ray_tracing_instance_records},
+                                     {"materials", profile.ray_tracing_material_records},
+                                     {"lights", profile.ray_tracing_light_records}}},
+                    {"acceleration_structure",
+                     {{"storage_bytes", profile.ray_tracing_acceleration_structure_storage_bytes},
+                      {"blas_builds", profile.ray_tracing_blas_builds},
+                      {"blas_updates", profile.ray_tracing_blas_updates},
+                      {"tlas_builds", profile.ray_tracing_tlas_builds},
+                      {"tlas_updates", profile.ray_tracing_tlas_updates}}},
+                    {"scene_table", {{"records_packed",
+                                      profile.ray_tracing_scene_table_records_packed},
+                                     {"records_uploaded",
+                                      profile.ray_tracing_scene_table_records_uploaded},
+                                     {"address_buffers_created",
+                                      profile.ray_tracing_address_table_buffers_created},
+                                     {"upload_bytes",
+                                      profile.ray_tracing_address_table_upload_bytes},
+                                     {"cache_hits",
+                                      profile.ray_tracing_scene_record_cache_hits_total},
+                                     {"cache_misses",
+                                      profile.ray_tracing_scene_record_cache_misses_total}}},
+                    {"textures", {{"dependency_count", profile.textures.dependency_count},
+                                   {"residency_complete",
+                                    profile.textures.tracked_residency_complete},
+                                   {"incomplete_count",
+                                    profile.textures.tracked_residency_incomplete_count},
+                                   {"resident_bytes", profile.textures.resident_bytes},
+                                   {"source_bytes", profile.textures.source_bytes},
+                                   {"decoded_bytes", profile.textures.decoded_bytes}}},
+                    {"vendor_hardware_counters", "external_capture_required"}}},
                   {"cpu", {{"total_ms", profile.cpu_total_ms},
                             {"scene_prepare_ms", profile.cpu_scene_prepare_ms},
                             {"backend_begin_ms", profile.cpu_backend_begin_ms},
@@ -502,11 +618,77 @@ namespace kpengine::editor
         const double imgui_submit_ms =
             editor_ui_ != nullptr ? editor_ui_->GetLastImGuiSubmitTimeMs() : 0.0;
 
+        if (ImGui::CollapsingHeader("Advanced GPU"))
+        {
+            if (ImGui::BeginTable("##AdvancedGpuDetails", 2,
+                                  ImGuiTableFlags_SizingStretchProp |
+                                      ImGuiTableFlags_NoBordersInBody))
+            {
+                ImGui::TableSetupColumn("Metric", ImGuiTableColumnFlags_WidthStretch);
+                ImGui::TableSetupColumn("Value", ImGuiTableColumnFlags_WidthStretch);
+                DrawInfoRow("GPU utilization", FormatPercent(metrics.gpu_usage_percent));
+                DrawInfoRow("GPU timing samples", std::to_string(profile.gpu_timing_samples));
+                DrawInfoRow("GPU query frame",
+                            profile.gpu_frame_number.has_value()
+                                ? std::to_string(*profile.gpu_frame_number)
+                                : "N/A");
+                DrawInfoRow("GPU total p50 / p95",
+                            FormatMilliseconds(profile.summary.gpu_total_p50_ms) + " / " +
+                                FormatMilliseconds(profile.summary.gpu_total_p95_ms));
+                DrawInfoRow("Render graph", profile.render_graph_mode);
+                DrawInfoRow("PT samples / dispatch, bounces",
+                            std::to_string(profile.path_trace_samples_per_dispatch) + " / " +
+                                std::to_string(profile.path_trace_max_continuation_bounces));
+                DrawInfoRow("RT records (geom / inst / mat / light)",
+                            std::to_string(profile.ray_tracing_geometry_records) + " / " +
+                                std::to_string(profile.ray_tracing_instance_records) + " / " +
+                                std::to_string(profile.ray_tracing_material_records) + " / " +
+                                std::to_string(profile.ray_tracing_light_records));
+                DrawInfoRow("AS storage",
+                            FormatBytes(profile.ray_tracing_acceleration_structure_storage_bytes));
+                DrawInfoRow("BLAS build / update",
+                            std::to_string(profile.ray_tracing_blas_builds) + " / " +
+                                std::to_string(profile.ray_tracing_blas_updates));
+                DrawInfoRow("TLAS build / update",
+                            std::to_string(profile.ray_tracing_tlas_builds) + " / " +
+                                std::to_string(profile.ray_tracing_tlas_updates));
+                DrawInfoRow("RT table packed / uploaded",
+                            std::to_string(profile.ray_tracing_scene_table_records_packed) +
+                                " / " + std::to_string(
+                                            profile.ray_tracing_scene_table_records_uploaded));
+                DrawInfoRow("Address table buffers / upload",
+                            std::to_string(profile.ray_tracing_address_table_buffers_created) +
+                                " / " + FormatBytes(
+                                            profile.ray_tracing_address_table_upload_bytes));
+                DrawInfoRow("Scene-table cache hits / misses",
+                            std::to_string(profile.ray_tracing_scene_record_cache_hits_total) +
+                                " / " + std::to_string(
+                                            profile.ray_tracing_scene_record_cache_misses_total));
+                DrawInfoRow("Texture resident / source / decoded",
+                            FormatBytes(profile.textures.resident_bytes) + " / " +
+                                FormatBytes(profile.textures.source_bytes) + " / " +
+                                FormatBytes(profile.textures.decoded_bytes));
+                DrawInfoRow("Texture residency tracking",
+                            profile.textures.tracked_residency_complete
+                                ? "complete"
+                                : "incomplete (" + std::to_string(
+                                                       profile.textures
+                                                           .tracked_residency_incomplete_count) +
+                                      ")");
+                ImGui::EndTable();
+            }
+            ImGui::TextWrapped(
+                "Registers, spills, occupancy, cache throughput, traversal utilization, "
+                "and per-ray counts are not collected by engine telemetry; use an external "
+                "Nsight Graphics capture for those counters.");
+        }
+
         if (ImGui::Button("Copy profiler JSON"))
         {
             const std::string copied = BuildClipboardJson(
                 profile, shadow, lighting, post_process, imgui_gpu, total,
-                metrics.triangle_count, frame, imgui_total_ms, imgui_build_ms, imgui_submit_ms);
+                metrics.triangle_count, frame, imgui_total_ms, imgui_build_ms, imgui_submit_ms,
+                metrics.gpu_usage_percent);
             ImGui::SetClipboardText(copied.c_str());
         }
         ImGui::SameLine();
@@ -514,7 +696,8 @@ namespace kpengine::editor
         {
             const std::string copied = BuildClipboardText(
                 profile, shadow, lighting, post_process, imgui_gpu, total,
-                metrics.triangle_count, frame, imgui_total_ms, imgui_build_ms, imgui_submit_ms);
+                metrics.triangle_count, frame, imgui_total_ms, imgui_build_ms, imgui_submit_ms,
+                metrics.gpu_usage_percent);
             ImGui::SetClipboardText(copied.c_str());
         }
 

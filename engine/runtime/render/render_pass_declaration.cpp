@@ -16,6 +16,7 @@ namespace kpengine::render
         constexpr std::array<const char *, kResourceCount> kResourceNames{
             "SceneColor", "SceneHdr",    "GBuffer",   "DirectionalShadow",
             "SpotShadow", "PointShadow", "CaptureOutput", "PathTraceHistory",
+            "PathTraceGuide",
         };
 
         bool IsPassEnabled(const FixedRenderPassEntry &entry, RenderFrameConditions conditions)
@@ -83,6 +84,8 @@ namespace kpengine::render
                  {{RenderPassResource::PathTraceHistory, RenderPassAccess::Read,
                    RenderGraphUsage::StorageRead},
                   {RenderPassResource::SceneHdr, RenderPassAccess::Write,
+                   RenderGraphUsage::StorageWrite},
+                  {RenderPassResource::PathTraceGuide, RenderPassAccess::Write,
                    RenderGraphUsage::StorageWrite}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RayTracingPathTrace,
                  false},
@@ -99,7 +102,9 @@ namespace kpengine::render
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer, RenderPassCondition::RasterFrame, false},
                 {FixedRenderPassId::RayTracingToneMap, "RayTracingToneMapPass",
-                 {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
+                {{RenderPassResource::SceneHdr, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::PathTraceGuide, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled},
                   {RenderPassResource::SceneColor, RenderPassAccess::Write,
                    RenderGraphUsage::ColorAttachment}},
@@ -177,7 +182,8 @@ namespace kpengine::render
                 resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr);
             if (conditions.ray_tracing_path_trace &&
                 (resource_index == static_cast<std::size_t>(RenderPassResource::SceneHdr) ||
-                 resource_index == static_cast<std::size_t>(RenderPassResource::PathTraceHistory)))
+                 resource_index == static_cast<std::size_t>(RenderPassResource::PathTraceHistory) ||
+                 resource_index == static_cast<std::size_t>(RenderPassResource::PathTraceGuide)))
                 resources[resource_index] = graph.ImportTexture(kResourceNames[resource_index]);
             else
                 resources[resource_index] = graph.CreateTexture(

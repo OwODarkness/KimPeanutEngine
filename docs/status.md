@@ -1,5 +1,67 @@
 # Project Status
 
+- **R4.7.11–R4.7.13 GPU path-tracing experiments (2026-09-27)** — Added an
+  opt-in inline ray-query visibility mode (three Sponza windows: PT p50 −5.38%,
+  total GPU p50 −4.54%), an opt-in ray-cone texture LOD experiment (PT p50
+  regressed 1.47% after the final cone-propagation fix, so it is not a default),
+  an opt-in guided one-SPP preview (total GPU p50 11.09 ms versus 27.09 ms for
+  4-SPP Beauty; this changes sample work), and a separate four-SPP
+  `beauty_denoise` mode using centered luminance variance with a normal/depth-
+  guided 5x5 à-trous filter. RelWithDebInfo Sponza captured raw Beauty at
+  5,228 samples and denoised Beauty at 6,148 samples in the same fixture and
+  configuration; visual comparison shows reduced grain, though counts are not
+  exactly matched. Debug and RelWithDebInfo builds plus direct GLSL compilation
+  passed. Cornell/another
+  scene, motion/edit, disocclusion, equal-count image-error, and query-disabled
+  RT portability checks remain open. The RelWithDebInfo editor is left running
+  in `beauty_denoise`. → [R4.7.11](render/.review/R4.7.11.md),
+  [R4.7.12](render/.review/R4.7.12.md),
+  [R4.7.13](render/.review/R4.7.13.md),
+  [journal](../.spec/journal/2026-09-27-render-r4-7-stages11-13.md),
+  [GPU strategy](render/.plan/R4.7-gpu.md)
+
+- **R4.7.9 / R4.7.10 independent review (2026-09-27; initial review state)** — Rechecked shader/AS
+  source, six Sponza timing windows, captures and failed-startup logs. R4.7.9
+  supports a provisional 3.04% PT gain but lacks required correctness and exact
+  quality/provenance evidence. At that review point, R4.7.10 had consistent
+  sizing/build flags but no candidate runtime result. Its later matched result
+  is recorded below. Graphics queue-submit errors now preserve and log
+  `VkResult` in the working tree, and RelWithDebInfo rebuild passes; the earlier
+  driver failure remains unexplained. Neither stage is complete. →
+  [R4.7.9](render/.review/R4.7.9.md), [R4.7.10](render/.review/R4.7.10.md)
+
+- **R4.7.10 static-BLAS traversal policy candidate (2026-09-27)** — Added
+  Vulkan `PREFER_FAST_TRACE` only to non-updatable bottom-level AS builds, then
+  measured three RelWithDebInfo Sponza windows per variant. The candidate
+  regressed PT GPU p50 by 5.2% and total GPU p50 by 5.0%; the flag was removed
+  and the no-preference build passes. Candidate AS memory, in-window clock data,
+  image equivalence, Debug validation and scene-lifetime checks remain open, so
+  R4.7.10 is not complete and no preference is retained. →
+  [review](render/.review/R4.7.10.md),
+  [journal](../.spec/journal/2026-09-27-r410-blas-policy.md),
+  [GPU strategy](render/.plan/R4.7-gpu.md)
+
+- **R4.7.9 closest-hit position candidate (2026-09-27)** — Vulkan shader and
+  Sponza runtime checks pass. Three matched RelWithDebInfo windows show PT GPU
+  p50 down 3.04% and total GPU p50 down 2.44%; near-matched captures show no
+  visible regression. Cornell startup failed before PT activation, and
+  large-coordinate/grazing/mirrored/nonuniform/thin-surface offset cases remain
+  open, so the stage is not complete. →
+  [review](render/.review/R4.7.9.md),
+  [GPU strategy](render/.plan/R4.7-gpu.md)
+
+- **R4.7.8 profiler groundwork (2026-09-27)** — Added an Advanced GPU section
+  with query freshness, GPU timing percentiles, optional backend utilization,
+  RT workload/AS/table metrics and tracked texture residency. JSON/text exports
+  carry the same context. A delayed Nsight Graphics 2026.3.1 Vulkan trace on the
+  RelWithDebInfo Sponza run sampled raygen/closest-hit and measured about 34%
+  RT Core, 25% SM, 41% L2 and 63% DRAM throughput. Exact ray counts,
+  per-pass/register attribution and the follow-up matched candidate comparison
+  remain open. →
+  [review](render/.review/R4.7.8.md),
+  [journal](../.spec/journal/2026-09-27-r478-gpu-attribution.md),
+  [plan](render/.plan/R4.7-gpu.md)
+
 - **R4.7.5 CPU record reuse and graph-required shadow preparation (2026-09-27)** —
   Added RenderWorld and MaterialSystem revisions so unchanged CPU scene records
   avoid section/material traversal, table packing and address-patch generation.
@@ -15,10 +77,12 @@
   [review](render/.review/R4.7.5.md), [plan](render/.plan/R4.7.md),
   [performance journal](../.spec/journal/2026-09-27-render-r4-7-performance-plan.md)
 
-- **R4.7 GPU strategy (2026-09-27, plan only)** — Added GPU attribution,
+- **R4.7 GPU strategy (2026-09-27)** — Added GPU attribution,
   hit-shader/live-state reduction, conditional AS/coherence experiments and
   separate filtering/reconstruction tracks after the measured ~34 FPS result.
-  No implementation or speedup claim. → [plan](render/.plan/R4.7-gpu.md)
+  R4.7.11–R4.7.13 now have candidate implementations and Sponza measurements;
+  their acceptance limits remain in the matching reviews. →
+  [plan](render/.plan/R4.7-gpu.md)
 
 - **R4.7.4 source review and correction (2026-09-27)** — Exclusive geometry
   uploads now execute on the graphics queue family with a copy-write to

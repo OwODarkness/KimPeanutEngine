@@ -1,6 +1,6 @@
 # R4.7 — Path-tracing performance acceptance
 
-**Status: implementation in progress; R4.7.0 attribution/baseline complete, later-stage performance acceptance open.**
+**Status: implementation in progress; R4.7.0 attribution/baseline complete, R4.7.11–R4.7.13 prototypes measured, later-stage correctness and quality acceptance open.**
 
 - Objective: reduce scene-independent PT CPU/GPU cost while preserving R4.6
   Sponza/Cornell indirect lighting, settings and resource-lifetime semantics.
@@ -9,9 +9,11 @@
   three matched RelWithDebInfo Sponza windows. Broader edit/residency and
   non-capture graph coverage remains open.
 - Design and stages: [R4.7 plan](../../docs/render/.plan/R4.7.md).
-- GPU strategy: [R4.7.8–R4.7.13](../../docs/render/.plan/R4.7-gpu.md),
-  researched and planned only. GPU attribution precedes experiments; texture
-  filtering, sampling redesign and reconstruction have separate quality gates.
+- GPU strategy: [R4.7.8–R4.7.13](../../docs/render/.plan/R4.7-gpu.md).
+  R4.7.11 inline ray-query, R4.7.12 ray-cone texture LOD and R4.7.13 guided
+  one-SPP preview prototypes have measured Sponza results. R4.7.13 also has an
+  opt-in accumulated-Beauty spatial denoiser; it retains the separate motion,
+  scene-coverage and quality gate recorded in its review.
 - Findings: [R4.7 review](../../docs/render/.review/R4.7.md).
 - Acceptance ledger: [Render TODO](../../docs/render/TODO.md).
 - Baseline evidence: [matched R4.6 runs](../../docs/render/.review/R4.6.md#matched-rt-enabled-debug-and-relwithdebinfo-runs--2026-09-27).

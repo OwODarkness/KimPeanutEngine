@@ -14,6 +14,8 @@ struct HitPayload
     float metallic;
     float roughness;
     vec3 radiance;
+    float cone_width;
+    float cone_spread;
 };
 
 struct GeometryData
@@ -134,22 +136,31 @@ void main()
     const uint i0 = LoadIndex(geometry, index_base);
     const uint i1 = LoadIndex(geometry, index_base + 1u);
     const uint i2 = LoadIndex(geometry, index_base + 2u);
-    const vec3 p0 = LoadVector3(geometry, i0, 0u);
-    const vec3 p1 = LoadVector3(geometry, i1, 0u);
-    const vec3 p2 = LoadVector3(geometry, i2, 0u);
-    const vec3 world_p0 = gl_ObjectToWorldEXT * vec4(p0, 1.0);
-    const vec3 world_p1 = gl_ObjectToWorldEXT * vec4(p1, 1.0);
-    const vec3 world_p2 = gl_ObjectToWorldEXT * vec4(p2, 1.0);
     const float weight0 = 1.0 - barycentrics.x - barycentrics.y;
     const vec2 uv = LoadUv(geometry, i0) * weight0 +
                     LoadUv(geometry, i1) * barycentrics.x +
                     LoadUv(geometry, i2) * barycentrics.y;
+    const float world_cone_width = payload.cone_width + gl_HitTEXT * payload.cone_spread;
+    payload.cone_width = world_cone_width;
+    float cone_world_texel_density = 0.0;
+    if (camera.probe_mode == 7u)
+    {
+        const vec3 p0 = gl_ObjectToWorldEXT * vec4(LoadVector3(geometry, i0, 0u), 1.0);
+        const vec3 p1 = gl_ObjectToWorldEXT * vec4(LoadVector3(geometry, i1, 0u), 1.0);
+        const vec3 p2 = gl_ObjectToWorldEXT * vec4(LoadVector3(geometry, i2, 0u), 1.0);
+        const float world_area = 0.5 * length(cross(p1 - p0, p2 - p0));
+        const float uv_area = 0.5 * abs((LoadUv(geometry, i1).x - LoadUv(geometry, i0).x) *
+                                        (LoadUv(geometry, i2).y - LoadUv(geometry, i0).y) -
+                                        (LoadUv(geometry, i1).y - LoadUv(geometry, i0).y) *
+                                        (LoadUv(geometry, i2).x - LoadUv(geometry, i0).x));
+        cone_world_texel_density = sqrt(uv_area / max(world_area, 1e-12));
+    }
     const vec3 object_normal = normalize(
         LoadVector3(geometry, i0, geometry.attributes.w) * weight0 +
         LoadVector3(geometry, i1, geometry.attributes.w) * barycentrics.x +
         LoadVector3(geometry, i2, geometry.attributes.w) * barycentrics.y);
-    payload.position = world_p0 * weight0 + world_p1 * barycentrics.x +
-                       world_p2 * barycentrics.y;
+    payload.position = gl_WorldRayOriginEXT +
+                       gl_HitTEXT * gl_WorldRayDirectionEXT;
     payload.normal = normalize(transpose(mat3(gl_WorldToObjectEXT)) * object_normal);
     if (dot(payload.normal, -gl_WorldRayDirectionEXT) < 0.0)
         payload.normal = -payload.normal;
@@ -157,7 +168,20 @@ void main()
     vec3 base_color = material.base_color.rgb;
     const uint texture_index = material.texture_indices.x;
     if (texture_index != 0xffffffffu)
-        base_color *= texture(kp_textures[nonuniformEXT(texture_index)], uv).rgb;
+    {
+        if (camera.probe_mode == 7u)
+        {
+            const ivec2 dimensions = textureSize(kp_textures[nonuniformEXT(texture_index)], 0);
+            const float texel_density = cone_world_texel_density *
+                sqrt(float(dimensions.x) * float(dimensions.y));
+            const float lod = clamp(log2(max(world_cone_width * texel_density, 1.0)),
+                                    0.0, float(textureQueryLevels(
+                                        kp_textures[nonuniformEXT(texture_index)]) - 1));
+            base_color *= textureLod(kp_textures[nonuniformEXT(texture_index)], uv, lod).rgb;
+        }
+        else
+            base_color *= texture(kp_textures[nonuniformEXT(texture_index)], uv).rgb;
+    }
     payload.albedo = base_color;
     payload.emissive = material.emissive.rgb;
     const uint channels = uint(material.surface.w + 0.5);

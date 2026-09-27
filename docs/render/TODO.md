@@ -219,18 +219,50 @@ details and stage checklists belong in the linked submodule documents.
     retain 4-SPP/8-bounce reference and compare convergence separately.
   - [ ] **R4.7.7:** repeatable timing improvement, Cornell/Sponza/general-scene
     captures and lifecycle/failure coverage; close or justify each review finding.
-  - [ ] **R4.7.8:** GPU attribution: traversal, shading, registers/spills,
-    texture bandwidth and diagnostic ray counts. → [GPU strategy](.plan/R4.7-gpu.md)
-  - [ ] **R4.7.9:** reduce closest-hit position fetches/transforms and live
-    payload state; prove repeatable gain at unchanged samples/bounces.
-  - [ ] **R4.7.10:** conditional traversal/BLAS layout and static compaction
-    experiments; preserve geometry and record startup/memory cost.
-  - [ ] **R4.7.11:** conditional SER or bounded wavefront/ray-query prototypes;
-    verify feature/compiler support and include scheduling cost.
-  - [ ] **R4.7.12:** separate texture-footprint and importance-sampling study;
-    measure filtering/variance/convergence changes explicitly.
-  - [ ] **R4.7.13:** optional low-SPP reconstruction design extending R4.7.6;
-    guide buffers, reprojection and denoiser cost require separate acceptance.
+  - [ ] **R4.7.8:** GPU attribution: the Advanced GPU profiler section now
+    exposes engine timing/workload context. A delayed, three-frame Nsight trace
+    now shows about 34% RT Core, 25% SM, 41% L2 and 63% DRAM throughput, with
+    raygen/closest-hit samples. Exact ray counts, per-pass attribution and
+    shader register/spill totals remain open; the short capture does not prove a
+    memory-only bottleneck. →
+    [review](.review/R4.7.8.md), [GPU strategy](.plan/R4.7-gpu.md)
+  - [ ] **R4.7.9:** closest-hit position reconstruction candidate compiles and
+    runs on Vulkan Sponza. Three matched RelWithDebInfo windows show a 3.04% PT
+    GPU p50 improvement and near-matched captures show no visible regression.
+    Cornell Debug validation, transform/precision cases, exact equal-sample
+    capture and complete source/fixture/layer provenance remain open. →
+    [review](.review/R4.7.9.md)
+  - [ ] **R4.7.10:** three matched Sponza windows per static-BLAS policy show
+    `PREFER_FAST_TRACE` regressing PT GPU p50 by 5.2% and total GPU p50 by 5.0%;
+    the flag was removed and the no-preference RelWithDebInfo build passes.
+    Candidate AS memory, clock telemetry, image equivalence, Debug validation
+    and scene-lifetime checks remain open. The candidate is rejected for this
+    workload; do not enable it by default. →
+    [review](.review/R4.7.10.md)
+  - [ ] **R4.7.11:** Sponza ray-query visibility prototype measures 5.38% lower
+    PT p50 and 4.54% lower total GPU p50 across three matched windows; Beauty's
+    `traceRayEXT` path remains the default. Debug query validation and capture
+    passed; Cornell and general-scene checks remain open. The current Vulkan RT
+    contract requires ray query, so query-disabled RT device portability is a
+    separate change. SER was not attempted because the installed GLSL
+    compiler rejects its extension. → [review](.review/R4.7.11.md)
+  - [x] **R4.7.12 evaluation:** ray-cone base-color LOD prototype was measured
+    across three matched windows after cone-width propagation was fixed; it
+    regressed PT p50 1.47% and total GPU p50 1.08%, so remains opt-in and is not
+    a speedup. Metallic/roughness mips,
+    motion/detail and equal-wall-time error remain quality follow-up. The
+    single-light Sponza fixture did not justify light-importance sampling. →
+    [review](.review/R4.7.12.md)
+  - [ ] **R4.7.13:** optional guided one-SPP preview and accumulated
+    `beauty_denoise` mode are implemented. The denoiser adds centered luminance
+    variance history and a variance/normal/depth-guided 5x5 à-trous spatial
+    filter without changing raw Beauty sampling. A Debug Sponza capture at
+    about 5k samples is visibly less grainy; strict equal-count image error,
+    Cornell/another scene, motion/edit, disocclusion and extended
+    resize/toggle checks remain open. The one-SPP preview's three matched
+    windows still show a 59.1% lower total-GPU p50 at one quarter of Beauty's
+    SPP; that is a sample-budget tradeoff. → [review](.review/R4.7.13.md),
+    [runtime evidence](../../.spec/journal/2026-09-27-render-r4-7-stages11-13.md)
 - [ ] **R5 — post-R4.6 Render/Graphics decoupling (design only):** review the
   deferred renderer's mixed graph execution, pass recording, shadow/RT state,
   and lifetime ownership; repair enabled-conditional-pass failure semantics

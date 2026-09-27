@@ -127,7 +127,9 @@ namespace kpengine
                              true,
                               {},
                              {"beauty", "primary_visibility", "primary_normal",
-                               "primary_albedo", "direct_only", "surface_parameters"}}}},
+                               "primary_albedo", "direct_only", "surface_parameters",
+                               "ray_query_visibility", "ray_cone_filtering",
+                               "low_spp_preview", "beauty_denoise"}}}},
                          [this](const command::CommandCall &call,
                                 const command::CommandContext &context)
                          {
@@ -145,6 +147,14 @@ namespace kpengine
                                  probe_mode = render::PathTraceProbeMode::DirectOnly;
                              else if (mode == "surface_parameters")
                                  probe_mode = render::PathTraceProbeMode::SurfaceParameters;
+                             else if (mode == "ray_query_visibility")
+                                 probe_mode = render::PathTraceProbeMode::RayQueryVisibility;
+                             else if (mode == "ray_cone_filtering")
+                                 probe_mode = render::PathTraceProbeMode::RayConeFiltering;
+                             else if (mode == "low_spp_preview")
+                                 probe_mode = render::PathTraceProbeMode::LowSppPreview;
+                             else if (mode == "beauty_denoise")
+                                 probe_mode = render::PathTraceProbeMode::BeautyDenoise;
                              if (!render_system_)
                              {
                                  return command::CommandResult{
