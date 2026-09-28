@@ -34,6 +34,24 @@ namespace kpengine::runtime
         expected.profile.graph_pass_outcomes[
             static_cast<size_t>(render::RenderProfilePass::GBuffer)] =
             render::RenderGraphPassOutcome::Executed;
+        expected.profile.ray_tracing_build_diagnostic_count = 1;
+        auto &build_diagnostic = expected.profile.ray_tracing_build_diagnostics[0];
+        build_diagnostic.sequence = 7;
+        build_diagnostic.frame_number = 42;
+        build_diagnostic.token = 11;
+        build_diagnostic.submission_serial = 19;
+        build_diagnostic.completed_serial = 19;
+        build_diagnostic.physical_resource_signature = 0x1234;
+        build_diagnostic.target_id = 3;
+        build_diagnostic.target_generation = 2;
+        build_diagnostic.build_count = 4;
+        build_diagnostic.recorded_build_count = 4;
+        build_diagnostic.geometry_count = 4;
+        build_diagnostic.geometry_buffer_count = 8;
+        build_diagnostic.scratch_buffer_count = 4;
+        build_diagnostic.type = graphics::RayTracingAccelerationStructureType::BottomLevel;
+        build_diagnostic.mode = graphics::RayTracingBuildMode::Build;
+        build_diagnostic.stage = graphics::RayTracingBuildDiagnosticStage::Retired;
         expected.profile.summary.passes[static_cast<size_t>(render::RenderProfilePass::GBuffer)]
             .gpu_p95_ms = 2.5;
         expected.frame_loop.frame_total_ms = 16.6;
@@ -75,6 +93,22 @@ namespace kpengine::runtime
         ASSERT_NE(Find(completed->data, "pass.g_buffer.outcome"), nullptr);
         EXPECT_EQ(std::get<std::string>(*Find(completed->data, "pass.g_buffer.outcome")),
                   "executed");
+        ASSERT_NE(Find(completed->data, "ray_tracing_build_diagnostic_count"), nullptr);
+        EXPECT_EQ(std::get<uint64_t>(
+                      *Find(completed->data, "ray_tracing_build_diagnostic_count")),
+                  1U);
+        ASSERT_NE(Find(completed->data, "ray_tracing_build.0.stage"), nullptr);
+        EXPECT_EQ(std::get<std::string>(*Find(completed->data, "ray_tracing_build.0.stage")),
+                  "retired");
+        EXPECT_EQ(std::get<uint64_t>(
+                      *Find(completed->data, "ray_tracing_build.0.frame_number")),
+                  42U);
+        EXPECT_EQ(std::get<uint64_t>(
+                      *Find(completed->data, "ray_tracing_build.0.recorded_build_count")),
+                  4U);
+        EXPECT_EQ(std::get<uint64_t>(
+                      *Find(completed->data, "ray_tracing_build.0.physical_resource_signature")),
+                  0x1234U);
 
         std::optional<command::CommandResult> combined;
         const command::CommandResult combined_pending = registry.ExecuteText(

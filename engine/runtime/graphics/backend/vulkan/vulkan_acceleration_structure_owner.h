@@ -1,6 +1,7 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_VULKAN_ACCELERATION_STRUCTURE_OWNER_H
 #define KPENGINE_RUNTIME_GRAPHICS_VULKAN_ACCELERATION_STRUCTURE_OWNER_H
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <span>
@@ -44,7 +45,8 @@ namespace kpengine::graphics
 
         bool IsSupported() const noexcept override { return supported_; }
         std::optional<RayTracingBuildResources> PrepareBuildResources(
-            std::span<const RayTracingBuildDesc> builds) override;
+            std::span<const RayTracingBuildDesc> builds,
+            uint64_t render_frame_number = 0) override;
         void CancelPreparedBuildResources(uint64_t token) noexcept override;
         void SetBindlessTextureLayout(VkDescriptorSetLayout layout) noexcept
         {
@@ -112,6 +114,7 @@ namespace kpengine::graphics
         {
             std::vector<BufferHandle> handles;
             uint64_t retire_serial = 0;
+            uint64_t diagnostic_sequence = 0;
         };
 
         struct PreparedBuild
@@ -128,6 +131,7 @@ namespace kpengine::graphics
         {
             std::vector<PreparedBuild> builds;
             TemporaryBuffers buffers;
+            uint64_t diagnostic_sequence = 0;
         };
 
         struct RayTracingBufferReferenceTableResource
@@ -180,6 +184,9 @@ namespace kpengine::graphics
             RayTracingBufferReferenceTableHandle handle) const;
         bool BuildOne(VkCommandBuffer command_buffer, const RayTracingBuildDesc &build,
                       const PreparedBuild &prepared);
+        RayTracingBuildDiagnostic &BeginBuildDiagnostic(
+            std::span<const RayTracingBuildDesc> builds) noexcept;
+        RayTracingBuildDiagnostic *FindBuildDiagnostic(uint64_t sequence) noexcept;
         static bool MatchesPreparedDescription(const RayTracingBuildDesc &build,
                                                const PreparedBuild &prepared) noexcept;
         bool EnsureStorage(Resource &resource, VkDeviceSize size);
@@ -210,6 +217,11 @@ namespace kpengine::graphics
         std::vector<TemporaryBuffers> temporary_buffers_;
         std::unordered_map<uint64_t, PreparedBatch> prepared_build_batches_;
         uint64_t next_prepared_build_token_ = 1;
+        std::array<RayTracingBuildDiagnostic, kRayTracingBuildDiagnosticCapacity>
+            build_diagnostics_{};
+        uint32_t build_diagnostic_count_ = 0;
+        uint32_t next_build_diagnostic_index_ = 0;
+        uint64_t next_build_diagnostic_sequence_ = 1;
         AccelerationStructureHandle active_top_level_{};
         PFN_vkCreateAccelerationStructureKHR create_acceleration_structure_ = nullptr;
         PFN_vkDestroyAccelerationStructureKHR destroy_acceleration_structure_ = nullptr;

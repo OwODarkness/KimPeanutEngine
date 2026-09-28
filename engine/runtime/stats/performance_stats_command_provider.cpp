@@ -62,6 +62,118 @@ namespace kpengine::runtime
             }
         }
 
+        const char *RayTracingBuildStageName(
+            const graphics::RayTracingBuildDiagnosticStage stage)
+        {
+            switch (stage)
+            {
+            case graphics::RayTracingBuildDiagnosticStage::PreparationFailed:
+                return "preparation_failed";
+            case graphics::RayTracingBuildDiagnosticStage::Prepared:
+                return "prepared";
+            case graphics::RayTracingBuildDiagnosticStage::RecordingFailed:
+                return "recording_failed";
+            case graphics::RayTracingBuildDiagnosticStage::Recorded:
+                return "recorded";
+            case graphics::RayTracingBuildDiagnosticStage::Cancelled:
+                return "cancelled";
+            case graphics::RayTracingBuildDiagnosticStage::Submitted:
+                return "submitted";
+            case graphics::RayTracingBuildDiagnosticStage::Retired:
+                return "retired";
+            }
+            return "unknown";
+        }
+
+        const char *RayTracingBuildFailureName(
+            const graphics::RayTracingBuildDiagnosticFailure failure)
+        {
+            switch (failure)
+            {
+            case graphics::RayTracingBuildDiagnosticFailure::None:
+                return "none";
+            case graphics::RayTracingBuildDiagnosticFailure::UnsupportedBackend:
+                return "unsupported_backend";
+            case graphics::RayTracingBuildDiagnosticFailure::EmptyBuildBatch:
+                return "empty_build_batch";
+            case graphics::RayTracingBuildDiagnosticFailure::InvalidCommandBuffer:
+                return "invalid_command_buffer";
+            case graphics::RayTracingBuildDiagnosticFailure::InvalidBuildDescription:
+                return "invalid_build_description";
+            case graphics::RayTracingBuildDiagnosticFailure::GeometryAddressUnavailable:
+                return "geometry_address_unavailable";
+            case graphics::RayTracingBuildDiagnosticFailure::BottomLevelAddressUnavailable:
+                return "bottom_level_address_unavailable";
+            case graphics::RayTracingBuildDiagnosticFailure::InstanceInputAllocationFailed:
+                return "instance_input_allocation_failed";
+            case graphics::RayTracingBuildDiagnosticFailure::AccelerationStructureStorageFailed:
+                return "acceleration_structure_storage_failed";
+            case graphics::RayTracingBuildDiagnosticFailure::ScratchSizeUnavailable:
+                return "scratch_size_unavailable";
+            case graphics::RayTracingBuildDiagnosticFailure::ScratchAllocationFailed:
+                return "scratch_allocation_failed";
+            case graphics::RayTracingBuildDiagnosticFailure::ScratchAddressUnavailable:
+                return "scratch_address_unavailable";
+            case graphics::RayTracingBuildDiagnosticFailure::MissingPreparedBatch:
+                return "missing_prepared_batch";
+            case graphics::RayTracingBuildDiagnosticFailure::PreparedResourceMismatch:
+                return "prepared_resource_mismatch";
+            case graphics::RayTracingBuildDiagnosticFailure::PreparedDescriptionMismatch:
+                return "prepared_description_mismatch";
+            case graphics::RayTracingBuildDiagnosticFailure::BuildCommandRecordingFailed:
+                return "build_command_recording_failed";
+            }
+            return "unknown";
+        }
+
+        void AddRayTracingBuildDiagnostics(command::CommandData &data,
+                                           const render::RenderProfileSnapshot &profile)
+        {
+            const uint32_t count = std::min<uint32_t>(
+                profile.ray_tracing_build_diagnostic_count,
+                static_cast<uint32_t>(profile.ray_tracing_build_diagnostics.size()));
+            data["ray_tracing_build_diagnostic_count"] = static_cast<uint64_t>(count);
+            for (uint32_t index = 0; index < count; ++index)
+            {
+                const auto &event = profile.ray_tracing_build_diagnostics[index];
+                const std::string prefix =
+                    "ray_tracing_build." + std::to_string(index) + ".";
+                data[prefix + "sequence"] = event.sequence;
+                data[prefix + "frame_number"] = event.frame_number;
+                data[prefix + "token"] = event.token;
+                data[prefix + "stage"] = std::string{RayTracingBuildStageName(event.stage)};
+                data[prefix + "failure"] =
+                    std::string{RayTracingBuildFailureName(event.failure)};
+                data[prefix + "type"] = std::string{
+                    event.type == graphics::RayTracingAccelerationStructureType::TopLevel
+                        ? "tlas"
+                        : "blas"};
+                data[prefix + "mode"] = std::string{
+                    event.mode == graphics::RayTracingBuildMode::Update ? "update" : "build"};
+                data[prefix + "target_id"] = static_cast<uint64_t>(event.target_id);
+                data[prefix + "target_generation"] =
+                    static_cast<uint64_t>(event.target_generation);
+                data[prefix + "build_count"] = static_cast<uint64_t>(event.build_count);
+                data[prefix + "recorded_build_count"] =
+                    static_cast<uint64_t>(event.recorded_build_count);
+                data[prefix + "geometry_count"] =
+                    static_cast<uint64_t>(event.geometry_count);
+                data[prefix + "instance_count"] =
+                    static_cast<uint64_t>(event.instance_count);
+                data[prefix + "geometry_buffer_count"] =
+                    static_cast<uint64_t>(event.geometry_buffer_count);
+                data[prefix + "instance_input_count"] =
+                    static_cast<uint64_t>(event.instance_input_count);
+                data[prefix + "scratch_buffer_count"] =
+                    static_cast<uint64_t>(event.scratch_buffer_count);
+                data[prefix + "physical_resource_signature"] =
+                    event.physical_resource_signature;
+                data[prefix + "submission_serial"] = event.submission_serial;
+                data[prefix + "completed_serial"] = event.completed_serial;
+                data[prefix + "immediately_reclaimed"] = event.immediately_reclaimed;
+            }
+        }
+
         const char *CpuSubphaseName(const render::RenderProfileCpuSubphase subphase)
         {
             switch (subphase)
@@ -207,6 +319,7 @@ namespace kpengine::runtime
                 profile.ray_tracing_retired_descriptor_sets;
             data["ray_tracing_retired_temporary_buffer_batches"] =
                 profile.ray_tracing_retired_temporary_buffer_batches;
+            AddRayTracingBuildDiagnostics(data, profile);
             data["ray_tracing_enabled"] = profile.ray_tracing_enabled;
             data["path_tracing_enabled"] = profile.path_tracing_enabled;
             data["path_tracing_available"] = profile.path_tracing_available;

@@ -2400,7 +2400,8 @@ namespace kpengine::render
                 return false;
             }
             frame_ray_tracing_blas_resources_ =
-                ray_tracing_owner->PrepareBuildResources(frame_ray_tracing_blas_builds_);
+                ray_tracing_owner->PrepareBuildResources(frame_ray_tracing_blas_builds_,
+                                                          profile_.frame_number);
             if (!frame_ray_tracing_blas_resources_.has_value())
             {
                 KP_LOG("RenderLog", LOG_LEVEL_ERROR,
@@ -2417,7 +2418,8 @@ namespace kpengine::render
                 return false;
             }
             frame_ray_tracing_tlas_resources_ =
-                ray_tracing_owner->PrepareBuildResources(frame_ray_tracing_tlas_builds_);
+                ray_tracing_owner->PrepareBuildResources(frame_ray_tracing_tlas_builds_,
+                                                          profile_.frame_number);
             if (!frame_ray_tracing_tlas_resources_.has_value())
             {
                 if (frame_ray_tracing_blas_resources_.has_value())

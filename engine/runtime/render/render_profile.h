@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "base/type.h"
+#include "graphics/backend/common/ray_tracing.h"
 #include "path_trace_settings.h"
 #include "render_graph/render_graph_frame.h"
 
@@ -130,6 +131,10 @@ namespace kpengine::render
         uint64_t ray_tracing_retired_acceleration_structures = 0;
         uint64_t ray_tracing_retired_descriptor_sets = 0;
         uint64_t ray_tracing_retired_temporary_buffer_batches = 0;
+        std::array<graphics::RayTracingBuildDiagnostic,
+                   graphics::kRayTracingBuildDiagnosticCapacity>
+            ray_tracing_build_diagnostics{};
+        uint32_t ray_tracing_build_diagnostic_count = 0;
         std::array<float, 3> path_trace_camera_position{};
         std::string render_graph_mode = "deferred";
         std::string path_trace_history_reset_reason = "none";

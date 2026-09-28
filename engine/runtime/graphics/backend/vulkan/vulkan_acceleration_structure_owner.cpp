@@ -35,6 +35,15 @@ namespace kpengine::graphics
         {
             return geometry.index_count / 3u;
         }
+
+        void HashHandle(uint64_t &hash, const auto handle) noexcept
+        {
+            constexpr uint64_t prime = 1099511628211ull;
+            hash ^= handle.id;
+            hash *= prime;
+            hash ^= handle.generation;
+            hash *= prime;
+        }
     }
 
     VulkanAccelerationStructureOwner::VulkanAccelerationStructureOwner(
@@ -144,7 +153,84 @@ namespace kpengine::graphics
                 counters.acceleration_structure_storage_bytes += resource.storage_size;
             }
         }
+        counters.recent_build_count = build_diagnostic_count_;
+        for (uint32_t index = 0; index < build_diagnostic_count_; ++index)
+        {
+            const uint32_t diagnostic_index =
+                (next_build_diagnostic_index_ + kRayTracingBuildDiagnosticCapacity -
+                 build_diagnostic_count_ + index) %
+                kRayTracingBuildDiagnosticCapacity;
+            counters.recent_builds[index] = build_diagnostics_[diagnostic_index];
+        }
         return counters;
+    }
+
+    RayTracingBuildDiagnostic &VulkanAccelerationStructureOwner::BeginBuildDiagnostic(
+        std::span<const RayTracingBuildDesc> builds) noexcept
+    {
+        RayTracingBuildDiagnostic &diagnostic =
+            build_diagnostics_[next_build_diagnostic_index_];
+        diagnostic = {};
+        diagnostic.sequence = next_build_diagnostic_sequence_++;
+        if (diagnostic.sequence == 0)
+        {
+            diagnostic.sequence = next_build_diagnostic_sequence_++;
+        }
+        next_build_diagnostic_index_ =
+            (next_build_diagnostic_index_ + 1) % kRayTracingBuildDiagnosticCapacity;
+        build_diagnostic_count_ = std::min<uint32_t>(
+            build_diagnostic_count_ + 1,
+            static_cast<uint32_t>(kRayTracingBuildDiagnosticCapacity));
+        if (builds.empty())
+        {
+            return diagnostic;
+        }
+
+        constexpr uint64_t offset_basis = 14695981039346656037ull;
+        diagnostic.frame_number = 0;
+        diagnostic.build_count = static_cast<uint32_t>(std::min<std::size_t>(
+            builds.size(), std::numeric_limits<uint32_t>::max()));
+        diagnostic.target_id = builds.front().target.id;
+        diagnostic.target_generation = builds.front().target.generation;
+        diagnostic.type = builds.front().geometries.empty()
+                              ? RayTracingAccelerationStructureType::TopLevel
+                              : RayTracingAccelerationStructureType::BottomLevel;
+        diagnostic.mode = builds.front().mode;
+        diagnostic.physical_resource_signature = offset_basis;
+        for (const RayTracingBuildDesc &build : builds)
+        {
+            HashHandle(diagnostic.physical_resource_signature, build.target);
+            diagnostic.geometry_count += static_cast<uint32_t>(build.geometries.size());
+            diagnostic.instance_count += static_cast<uint32_t>(build.instances.size());
+            for (const RayTracingGeometryDesc &geometry : build.geometries)
+            {
+                HashHandle(diagnostic.physical_resource_signature, geometry.vertex_buffer);
+                HashHandle(diagnostic.physical_resource_signature, geometry.index_buffer);
+                diagnostic.geometry_buffer_count += 2;
+            }
+            for (const RayTracingInstanceDesc &instance : build.instances)
+            {
+                HashHandle(diagnostic.physical_resource_signature, instance.bottom_level);
+            }
+        }
+        return diagnostic;
+    }
+
+    RayTracingBuildDiagnostic *VulkanAccelerationStructureOwner::FindBuildDiagnostic(
+        uint64_t sequence) noexcept
+    {
+        if (sequence == 0)
+        {
+            return nullptr;
+        }
+        for (RayTracingBuildDiagnostic &diagnostic : build_diagnostics_)
+        {
+            if (diagnostic.sequence == sequence)
+            {
+                return &diagnostic;
+            }
+        }
+        return nullptr;
     }
 
     AccelerationStructureHandle VulkanAccelerationStructureOwner::CreateAccelerationStructure(
@@ -978,16 +1064,30 @@ namespace kpengine::graphics
 
     std::optional<RayTracingBuildResources>
     VulkanAccelerationStructureOwner::PrepareBuildResources(
-        std::span<const RayTracingBuildDesc> builds)
+        std::span<const RayTracingBuildDesc> builds, uint64_t render_frame_number)
     {
-        if (!supported_ || builds.empty())
+        RayTracingBuildDiagnostic &diagnostic = BeginBuildDiagnostic(builds);
+        diagnostic.frame_number = render_frame_number;
+        if (!supported_)
         {
+            diagnostic.failure = RayTracingBuildDiagnosticFailure::UnsupportedBackend;
+            return std::nullopt;
+        }
+        if (builds.empty())
+        {
+            diagnostic.failure = RayTracingBuildDiagnosticFailure::EmptyBuildBatch;
             return std::nullopt;
         }
         PreparedBatch batch{};
+        batch.diagnostic_sequence = diagnostic.sequence;
         RayTracingBuildResources view{};
-        const auto fail = [this, &batch]() -> std::optional<RayTracingBuildResources> {
+        const auto fail = [this, &batch, &diagnostic](
+                              RayTracingBuildDiagnosticFailure reason)
+            -> std::optional<RayTracingBuildResources> {
             DestroyTemporaryBuffers(batch.buffers);
+            diagnostic.failure = reason;
+            diagnostic.stage = RayTracingBuildDiagnosticStage::PreparationFailed;
+            diagnostic.immediately_reclaimed = true;
             return std::nullopt;
         };
         for (const RayTracingBuildDesc &build : builds)
@@ -996,7 +1096,7 @@ namespace kpengine::graphics
             if (resource == nullptr || resource->pending_destroy ||
                 !IsRayTracingBuildDescValid(build))
             {
-                return fail();
+                return fail(RayTracingBuildDiagnosticFailure::InvalidBuildDescription);
             }
 
             std::vector<VkAccelerationStructureGeometryKHR> geometries;
@@ -1012,7 +1112,8 @@ namespace kpengine::graphics
                         buffer_manager_->GetDeviceAddress(device_, geometry.index_buffer);
                     if (vertex_address == 0 || index_address == 0)
                     {
-                        return fail();
+                        return fail(
+                            RayTracingBuildDiagnosticFailure::GeometryAddressUnavailable);
                     }
                     VkAccelerationStructureGeometryTrianglesDataKHR triangles{};
                     triangles.sType =
@@ -1045,7 +1146,8 @@ namespace kpengine::graphics
                     if (bottom_level == nullptr ||
                         bottom_level->acceleration_structure == VK_NULL_HANDLE)
                     {
-                        return fail();
+                        return fail(
+                            RayTracingBuildDiagnosticFailure::BottomLevelAddressUnavailable);
                     }
                     VkAccelerationStructureDeviceAddressInfoKHR address_info{};
                     address_info.sType =
@@ -1055,7 +1157,8 @@ namespace kpengine::graphics
                         get_acceleration_structure_address_(device_, &address_info);
                     if (address == 0)
                     {
-                        return fail();
+                        return fail(
+                            RayTracingBuildDiagnosticFailure::BottomLevelAddressUnavailable);
                     }
                     VkAccelerationStructureInstanceKHR native_instance{};
                     std::memcpy(native_instance.transform.matrix, instance.transform.data(),
@@ -1079,11 +1182,14 @@ namespace kpengine::graphics
                     device_, &instance_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
                 if (!instance_input.IsValid())
                 {
-                    return fail();
+                    return fail(
+                        RayTracingBuildDiagnosticFailure::InstanceInputAllocationFailed);
                 }
                 batch.buffers.handles.push_back(instance_input);
                 buffer_manager_->UploadData(instance_input, instance_info.size, instances.data());
                 view.instance_inputs.push_back(instance_input);
+                HashHandle(diagnostic.physical_resource_signature, instance_input);
+                ++diagnostic.instance_input_count;
                 VkAccelerationStructureGeometryInstancesDataKHR instances_data{};
                 instances_data.sType =
                     VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
@@ -1114,14 +1220,15 @@ namespace kpengine::graphics
             if (sizes.accelerationStructureSize == 0 ||
                 !EnsureStorage(*resource, sizes.accelerationStructureSize))
             {
-                return fail();
+                return fail(
+                    RayTracingBuildDiagnosticFailure::AccelerationStructureStorageFailed);
             }
             const VkDeviceSize scratch_size = build.mode == RayTracingBuildMode::Update
                                                   ? sizes.updateScratchSize
                                                   : sizes.buildScratchSize;
             if (scratch_size == 0)
             {
-                return fail();
+                return fail(RayTracingBuildDiagnosticFailure::ScratchSizeUnavailable);
             }
             VkBufferCreateInfo scratch_info{};
             scratch_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
@@ -1135,10 +1242,14 @@ namespace kpengine::graphics
             {
                 if (scratch.IsValid())
                     batch.buffers.handles.push_back(scratch);
-                return fail();
+                return fail(scratch.IsValid()
+                                ? RayTracingBuildDiagnosticFailure::ScratchAddressUnavailable
+                                : RayTracingBuildDiagnosticFailure::ScratchAllocationFailed);
             }
             batch.buffers.handles.push_back(scratch);
             view.scratch_buffers.push_back(scratch);
+            HashHandle(diagnostic.physical_resource_signature, scratch);
+            ++diagnostic.scratch_buffer_count;
             PreparedBuild prepared{};
             prepared.target = build.target;
             prepared.mode = build.mode;
@@ -1151,6 +1262,9 @@ namespace kpengine::graphics
         view.token = next_prepared_build_token_++;
         if (view.token == 0)
             view.token = next_prepared_build_token_++;
+        batch.buffers.diagnostic_sequence = diagnostic.sequence;
+        diagnostic.token = view.token;
+        diagnostic.stage = RayTracingBuildDiagnosticStage::Prepared;
         prepared_build_batches_.emplace(view.token, std::move(batch));
         return view;
     }
@@ -1160,6 +1274,12 @@ namespace kpengine::graphics
         const auto batch = prepared_build_batches_.find(token);
         if (batch == prepared_build_batches_.end())
             return;
+        if (RayTracingBuildDiagnostic *const diagnostic =
+                FindBuildDiagnostic(batch->second.diagnostic_sequence))
+        {
+            diagnostic->stage = RayTracingBuildDiagnosticStage::Cancelled;
+            diagnostic->immediately_reclaimed = true;
+        }
         DestroyTemporaryBuffers(batch->second.buffers);
         prepared_build_batches_.erase(batch);
     }
@@ -1368,10 +1488,28 @@ namespace kpengine::graphics
         const RayTracingBuildResources &resources)
     {
         const auto batch_iterator = prepared_build_batches_.find(resources.token);
+        if (!resources.IsValid() || batch_iterator == prepared_build_batches_.end())
+        {
+            RayTracingBuildDiagnostic &diagnostic = BeginBuildDiagnostic(builds);
+            diagnostic.failure = RayTracingBuildDiagnosticFailure::MissingPreparedBatch;
+            diagnostic.stage = RayTracingBuildDiagnosticStage::RecordingFailed;
+            return false;
+        }
+        RayTracingBuildDiagnostic *diagnostic =
+            FindBuildDiagnostic(batch_iterator->second.diagnostic_sequence);
         if (!supported_ || command_buffer == VK_NULL_HANDLE || builds.empty() ||
-            !resources.IsValid() || batch_iterator == prepared_build_batches_.end() ||
             batch_iterator->second.builds.size() != builds.size())
         {
+            if (diagnostic != nullptr)
+            {
+                diagnostic->failure = command_buffer == VK_NULL_HANDLE
+                                          ? RayTracingBuildDiagnosticFailure::InvalidCommandBuffer
+                                          : RayTracingBuildDiagnosticFailure::PreparedDescriptionMismatch;
+                diagnostic->stage = RayTracingBuildDiagnosticStage::RecordingFailed;
+                diagnostic->immediately_reclaimed = true;
+            }
+            DestroyTemporaryBuffers(batch_iterator->second.buffers);
+            prepared_build_batches_.erase(batch_iterator);
             return false;
         }
         PreparedBatch batch = std::move(batch_iterator->second);
@@ -1390,6 +1528,12 @@ namespace kpengine::graphics
             resources.scratch_buffers != prepared_scratch)
         {
             DestroyTemporaryBuffers(batch.buffers);
+            if (diagnostic != nullptr)
+            {
+                diagnostic->failure = RayTracingBuildDiagnosticFailure::PreparedResourceMismatch;
+                diagnostic->stage = RayTracingBuildDiagnosticStage::RecordingFailed;
+                diagnostic->immediately_reclaimed = true;
+            }
             return false;
         }
         bool succeeded = std::all_of(builds.begin(), builds.end(),
@@ -1399,8 +1543,15 @@ namespace kpengine::graphics
         if (!succeeded)
         {
             DestroyTemporaryBuffers(batch.buffers);
+            if (diagnostic != nullptr)
+            {
+                diagnostic->failure = RayTracingBuildDiagnosticFailure::PreparedDescriptionMismatch;
+                diagnostic->stage = RayTracingBuildDiagnosticStage::RecordingFailed;
+                diagnostic->immediately_reclaimed = true;
+            }
             return false;
         }
+        uint32_t recorded_build_count = 0;
         for (size_t index = 0; index < builds.size(); ++index)
         {
             const PreparedBuild &prepared = batch.builds[index];
@@ -1411,10 +1562,32 @@ namespace kpengine::graphics
                 succeeded = false;
                 break;
             }
+            ++recorded_build_count;
+            if (diagnostic != nullptr)
+                ++diagnostic->recorded_build_count;
         }
-        if (!batch.buffers.handles.empty())
+        if (!succeeded && diagnostic != nullptr)
         {
+            diagnostic->failure = RayTracingBuildDiagnosticFailure::BuildCommandRecordingFailed;
+            diagnostic->stage = RayTracingBuildDiagnosticStage::RecordingFailed;
+        }
+        else if (diagnostic != nullptr)
+        {
+            diagnostic->failure = RayTracingBuildDiagnosticFailure::None;
+            diagnostic->stage = RayTracingBuildDiagnosticStage::Recorded;
+        }
+        if (!batch.buffers.handles.empty() && recorded_build_count > 0)
+        {
+            batch.buffers.diagnostic_sequence = batch.diagnostic_sequence;
             temporary_buffers_.push_back(std::move(batch.buffers));
+        }
+        else
+        {
+            DestroyTemporaryBuffers(batch.buffers);
+            if (diagnostic != nullptr)
+            {
+                diagnostic->immediately_reclaimed = true;
+            }
         }
         return succeeded;
     }
@@ -1577,6 +1750,12 @@ namespace kpengine::graphics
                 temporary_buffers.retire_serial <= completed_submission_serial)
             {
                 const bool had_buffers = !temporary_buffers.handles.empty();
+                if (RayTracingBuildDiagnostic *const diagnostic =
+                        FindBuildDiagnostic(temporary_buffers.diagnostic_sequence))
+                {
+                    diagnostic->completed_serial = completed_submission_serial;
+                    diagnostic->stage = RayTracingBuildDiagnosticStage::Retired;
+                }
                 DestroyTemporaryBuffers(temporary_buffers);
                 if (had_buffers)
                 {
@@ -1604,6 +1783,12 @@ namespace kpengine::graphics
             if (temporary_buffers.retire_serial == 0)
             {
                 temporary_buffers.retire_serial = submission_serial;
+                if (RayTracingBuildDiagnostic *const diagnostic =
+                        FindBuildDiagnostic(temporary_buffers.diagnostic_sequence))
+                {
+                    diagnostic->submission_serial = submission_serial;
+                    diagnostic->stage = RayTracingBuildDiagnosticStage::Submitted;
+                }
             }
         }
         for (RayTracingDescriptorSetResource &resource : ray_tracing_descriptor_sets_)

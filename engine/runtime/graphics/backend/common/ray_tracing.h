@@ -91,6 +91,65 @@ namespace kpengine::graphics
         bool IsValid() const noexcept { return token != 0; }
     };
 
+    enum class RayTracingBuildDiagnosticFailure : uint8_t
+    {
+        None,
+        UnsupportedBackend,
+        EmptyBuildBatch,
+        InvalidCommandBuffer,
+        InvalidBuildDescription,
+        GeometryAddressUnavailable,
+        BottomLevelAddressUnavailable,
+        InstanceInputAllocationFailed,
+        AccelerationStructureStorageFailed,
+        ScratchSizeUnavailable,
+        ScratchAllocationFailed,
+        ScratchAddressUnavailable,
+        MissingPreparedBatch,
+        PreparedResourceMismatch,
+        PreparedDescriptionMismatch,
+        BuildCommandRecordingFailed,
+    };
+
+    enum class RayTracingBuildDiagnosticStage : uint8_t
+    {
+        PreparationFailed,
+        Prepared,
+        RecordingFailed,
+        Recorded,
+        Cancelled,
+        Submitted,
+        Retired,
+    };
+
+    struct RayTracingBuildDiagnostic
+    {
+        uint64_t sequence = 0;
+        uint64_t frame_number = 0;
+        uint64_t token = 0;
+        uint64_t submission_serial = 0;
+        uint64_t completed_serial = 0;
+        uint64_t physical_resource_signature = 0;
+        uint32_t target_id = UINT32_MAX;
+        uint16_t target_generation = 0;
+        uint32_t build_count = 0;
+        uint32_t recorded_build_count = 0;
+        uint32_t geometry_count = 0;
+        uint32_t instance_count = 0;
+        uint32_t geometry_buffer_count = 0;
+        uint32_t instance_input_count = 0;
+        uint32_t scratch_buffer_count = 0;
+        RayTracingAccelerationStructureType type =
+            RayTracingAccelerationStructureType::BottomLevel;
+        RayTracingBuildMode mode = RayTracingBuildMode::Build;
+        RayTracingBuildDiagnosticStage stage =
+            RayTracingBuildDiagnosticStage::PreparationFailed;
+        RayTracingBuildDiagnosticFailure failure = RayTracingBuildDiagnosticFailure::None;
+        bool immediately_reclaimed = false;
+    };
+
+    inline constexpr size_t kRayTracingBuildDiagnosticCapacity = 16;
+
     // The first consumer is ray-query based, but the contract reserves the
     // smallest complete RT-pipeline description for a later dispatch path.
     struct RayTracingPipelineDesc
@@ -248,6 +307,9 @@ namespace kpengine::graphics
         uint64_t retired_acceleration_structures = 0;
         uint64_t retired_descriptor_sets = 0;
         uint64_t retired_temporary_buffer_batches = 0;
+        std::array<RayTracingBuildDiagnostic, kRayTracingBuildDiagnosticCapacity>
+            recent_builds{};
+        uint32_t recent_build_count = 0;
     };
 
     // Graphics owns native AS storage, RT pipelines, descriptor resources,
@@ -259,8 +321,9 @@ namespace kpengine::graphics
         virtual ~RayTracingResourceOwner() = default;
         virtual bool IsSupported() const noexcept = 0;
         virtual std::optional<RayTracingBuildResources> PrepareBuildResources(
-            std::span<const RayTracingBuildDesc>)
+            std::span<const RayTracingBuildDesc>, uint64_t render_frame_number = 0)
         {
+            (void)render_frame_number;
             return std::nullopt;
         }
         virtual void CancelPreparedBuildResources(uint64_t) noexcept {}

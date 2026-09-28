@@ -142,3 +142,51 @@ F1 remains open: this turn did not add the bounded per-build event history or
 produce retained cold BLAS+TLAS, TLAS-update, partial-failure, abort, submitted-
 serial and retirement runtime evidence. R5.2 must stay in progress until that
 evidence and its failure-injection checks are captured.
+
+## Retained AS lifecycle diagnostics and runtime follow-up — 2026-09-28
+
+Added a fixed-capacity Graphics-owned AS build event history, copied into the
+published render profile and exposed as scalar `stats --json` fields. Each
+record captures frame/token/target identity, build mode and counts, a hashed
+physical-handle signature, prepare/record/cancel/submit/retire stage, failure
+reason, recorded command count, serials, and whether temporary buffers were
+reclaimed immediately. No native Vulkan object or address is exposed to Render.
+The graph remains the source of pass outcomes; frame numbers correlate those
+outcomes with the Graphics history.
+
+Fresh Debug Vulkan launch on the approved Default desktop with
+`level/cornell_box.level` established:
+
+- Cold build frame 3: BLAS and TLAS each recorded one build; BLAS covered eight
+  geometries and sixteen geometry buffers; TLAS covered one instance input.
+  Both events reached `retired` at submission/completion serial 4, with no
+  failure and no immediate reclamation. The saved stats snapshot is
+  `save/diagnostics/r5-2-cold-cornell-stats-initial.json`; the exported PT image
+  is `save/screenshots/validation/r5-2-cornell-cold-vulkan.png`.
+- After a runtime-only Cornell actor transform, frame 5108 recorded a TLAS-only
+  `update` (one instance; no BLAS event) and retired at serial 5109. The actor
+  was restored to its original transform. Snapshot:
+  `save/diagnostics/r5-2-cold-cornell-stats-transform.json`.
+- A separate Debug OpenGL Cornell launch reported `deferred` mode, GBuffer and
+  deferred lighting `executed`, ray tracing `not_in_plan`, and external
+  composite `executed`. Capture succeeded at
+  `save/screenshots/validation/r5-2-cornell-opengl.png`; snapshot:
+  `save/diagnostics/r5-2-cornell-opengl-stats.json`.
+- New typed executor tests cover an ignored undeclared lookup and a failed
+  external transition followed by a rejected duplicate call. Both pass.
+
+The instrumentation and these runs close the missing cold-build, TLAS-update,
+submission-serial and temporary-buffer-retirement observation gates for
+Cornell. They do not close injected partial preparation failure, recording
+failure after some BLAS commands, abort before submission, unchanged-frame
+allocation reuse, or the remaining R5.2 matrix: Vulkan raster/PT variants,
+Sponza query-shadow mode, simultaneous Capture/Viewer demand, resize/reload,
+required recording failure, and matched image-error comparison. Sponza was
+not relaunched because `asset/level/sponza.level` has unrelated pre-existing
+user edits and must remain untouched. R5.2 stays in progress.
+
+Validation for this follow-up: both new cases passed through
+`ctest --test-dir build -C Debug -R
+"RenderGraphExecutorTest\\.(IgnoredUndeclaredLookupFailsTypedPassRecording|ExternalTransitionFailureStaysFailedAfterDuplicateRejection)"
+--output-on-failure`. Final `.\tools\kp.ps1 build` succeeded and
+`.\tools\kp.ps1 test` passed 1009/1009 tests.

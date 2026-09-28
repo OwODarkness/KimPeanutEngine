@@ -437,6 +437,10 @@ namespace kpengine::render
             backend_profile.ray_tracing.retired_descriptor_sets;
         profile_.ray_tracing_retired_temporary_buffer_batches =
             backend_profile.ray_tracing.retired_temporary_buffer_batches;
+        profile_.ray_tracing_build_diagnostics =
+            backend_profile.ray_tracing.recent_builds;
+        profile_.ray_tracing_build_diagnostic_count =
+            backend_profile.ray_tracing.recent_build_count;
         profile_.pipeline_validation_cpu_ms =
             backend_profile.recorder.pipeline_validation_cpu_ms;
         profile_.pipeline_validation_calls =

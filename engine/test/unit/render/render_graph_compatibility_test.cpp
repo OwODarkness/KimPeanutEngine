@@ -483,7 +483,7 @@ TEST(RenderGraphCompatibilityTest, TypedImportMetadataCoversAllSixtyFourVariants
         EXPECT_EQ(role_is_present(RenderFrameResourceRole::DebugViewOutput),
                   conditions.debug_view);
         EXPECT_EQ(role_is_present(RenderFrameResourceRole::SceneGeometry),
-                  conditions.ray_tracing_blas_build);
+                  conditions.ray_tracing_blas_build || conditions.ray_tracing_path_trace);
         EXPECT_EQ(role_is_present(RenderFrameResourceRole::SceneInstances),
                   conditions.ray_tracing_tlas_build);
     }
