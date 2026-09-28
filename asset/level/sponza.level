@@ -63,7 +63,29 @@
       "kind": "directional_light",
       "direction": [0.4, -1.0, 0.25],
       "color": [1.0, 0.95, 0.85],
-      "intensity": 1000.0,
+      "intensity": 200.0,
+      "enabled": true,
+      "casts_shadow": true
+    },
+    {
+      "id": "nave_fill",
+      "name": "Sponza Nave Fill",
+      "kind": "point_light",
+      "position": [-14.0, 4.0, 0.05],
+      "color": [1.0, 0.82, 0.65],
+      "intensity": 50.0,
+      "range": 18.0,
+      "enabled": true,
+      "casts_shadow": true
+    },
+    {
+      "id": "nave_fill_2",
+      "name": "Sponza Nave Fill 2",
+      "kind": "point_light",
+      "position": [16.0, -3.4, -1.05],
+      "color": [1.0, 0.82, 0.65],
+      "intensity": 50.0,
+      "range": 18.0,
       "enabled": true,
       "casts_shadow": true
     }
