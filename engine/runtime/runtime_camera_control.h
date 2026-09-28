@@ -8,7 +8,7 @@
 
 namespace kpengine::runtime
 {
-    inline constexpr float kDefaultSceneCameraMoveSpeed = 100.0f;
+    inline constexpr float kDefaultSceneCameraMoveSpeed = 10.0f;
     inline constexpr float kMinimumSceneCameraMoveSpeed = 0.0f;
     inline constexpr float kMaximumSceneCameraMoveSpeed = 10000.0f;
 

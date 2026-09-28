@@ -135,7 +135,7 @@ The editor camera settings panel uses the same boundary for move speed. The
 panel records a bounded units-per-second value; `RuntimeContext` stores it
 atomically and applies it to `PlayerController` on the game thread. Built-in
 camera movement remains unchanged when the setting is left at its default of
-100 units per second.
+10 units per second.
 
 This module follows Unreal-style names because they express the intended game
 authoring model. It does not adopt Unreal's reflection, UObject, garbage
