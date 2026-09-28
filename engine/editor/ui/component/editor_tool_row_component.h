@@ -39,6 +39,7 @@ namespace kpengine::editor
                                         bool open = true,
                                         EditorLayoutSlot dock = EditorLayoutSlot::ToolRow);
         void SetPanelPump(std::string_view id, PanelPump pump);
+        bool IsPanelDrawn(std::string_view id) const noexcept;
 
         // Borrowed, and must outlive this component: EditorUI declares its layout model
         // before the component vector, so the components are destroyed first. Every dock

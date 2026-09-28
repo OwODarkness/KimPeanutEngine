@@ -2,10 +2,12 @@
 #define KPENGINE_RUNTIME_RENDER_RENDER_SYSTEM_H
 
 #include <atomic>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -24,6 +26,7 @@
 #include "render_scene_coordinator.h"
 #include "render_profile.h"
 #include "path_trace_probe_mode.h"
+#include "path_trace_settings.h"
 
 namespace kpengine::graphics
 {
@@ -47,6 +50,13 @@ namespace kpengine::render
         Ready,
         FrameActive,
         ShutDown,
+    };
+
+    enum class DebugViewConsumer : uint8_t
+    {
+        EditorDebugViewer,
+        RuntimeTooling,
+        Count,
     };
 
     struct RenderSystemInitResult
@@ -121,12 +131,14 @@ namespace kpengine::render
         // camera remains private to Render; Editor converts NDC to its image rect.
         std::optional<Vector3f> ProjectScenePoint(const Vector3f &world_point,
                                                   float viewport_aspect) const;
-        // Selects the Render-owned diagnostic output displayed by the editor
-        // viewport. The request takes effect at the next frame boundary.
+        // Legacy single-consumer adapter. New callers should scope their request.
         void SetDebugView(CaptureView view);
-        void RequestPathTraceProbeMode(PathTraceProbeMode mode) noexcept;
+        void SetDebugViewDemand(DebugViewConsumer consumer,
+                                std::optional<CaptureView> view);
+        bool RequestPathTraceSettings(PathTraceSettings settings);
+        void RequestPathTraceProbeMode(PathTraceProbeMode mode);
         void RequestPathTraceDispatchFailureInjection() noexcept;
-        CaptureView GetDebugView() const { return debug_view_; }
+        CaptureView GetDebugView() const;
         graphics::RenderTargetView GetDebugRenderTargetView() const;
         // The editor provides its available viewport extent. Reallocation happens
         // at the next safe frame boundary, never while UI is reading the view.
@@ -195,9 +207,11 @@ namespace kpengine::render
         std::chrono::steady_clock::time_point profile_frame_start_{};
         bool profile_scene_seen_ = false;
         CaptureView debug_view_ = CaptureView::SceneColor;
-        CaptureView requested_debug_view_ = CaptureView::SceneColor;
-        std::atomic<PathTraceProbeMode> requested_path_trace_probe_mode_{
-            PathTraceProbeMode::Beauty};
+        mutable std::mutex request_mutex_;
+        std::array<std::optional<CaptureView>,
+                   static_cast<std::size_t>(DebugViewConsumer::Count)> debug_view_demands_{};
+        PathTraceSettings requested_path_trace_settings_{};
+        std::optional<PathTraceSettings> pending_path_trace_settings_;
         std::atomic<bool> requested_profile_window_reset_{false};
         std::atomic<bool> requested_path_trace_dispatch_failure_{false};
     };

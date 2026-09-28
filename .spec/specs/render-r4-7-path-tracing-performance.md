@@ -4,10 +4,12 @@
 
 - Objective: reduce scene-independent PT CPU/GPU cost while preserving R4.6
   Sponza/Cornell indirect lighting, settings and resource-lifetime semantics.
-- Current execution authorization: R4.7.5 revision-driven CPU record reuse and
-  active-graph shadow preparation, with Debug/runtime correctness checks and
-  three matched RelWithDebInfo Sponza windows. Broader edit/residency and
-  non-capture graph coverage remains open.
+- Latest execution authorization: GPU attribution through temporary controlled
+  diagnostics and an evidence-based strategy, with no retained optimization
+  implementation. The [selected direction](../../docs/render/.plan/R4.7-gpu.md#measured-direction-after-the-gpu-trace)
+  follows measured diagnostic-demand and visibility-policy gains; interactive
+  sample reduction remains a separate quality decision. Earlier R4.7.5
+  edit/residency and non-capture graph coverage remains open.
 - Design and stages: [R4.7 plan](../../docs/render/.plan/R4.7.md).
 - GPU strategy: [R4.7.8–R4.7.13](../../docs/render/.plan/R4.7-gpu.md).
   R4.7.11 inline ray-query, R4.7.12 ray-cone texture LOD and R4.7.13 guided

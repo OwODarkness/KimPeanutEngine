@@ -8,6 +8,7 @@
 
 #include "render/render_graph/render_graph.h"
 #include "render/render_graph/render_graph_frame.h"
+#include "render/path_trace_settings.h"
 
 namespace
 {
@@ -16,6 +17,7 @@ namespace
     using kpengine::render::RenderGraphCompileResult;
     using kpengine::render::RenderGraphFrame;
     using kpengine::render::RenderGraphPassCondition;
+    using kpengine::render::RenderGraphPassFailurePolicy;
     using kpengine::render::RenderGraphPassOutcome;
     using kpengine::render::RenderGraphPassOwner;
 
@@ -54,7 +56,8 @@ namespace
 
         const auto capture = builder.AddPass({"Capture", RenderGraphPassCondition::Optional,
                                               capture_enabled, false,
-                                              RenderGraphPassOwner::Renderer, false, kCaptureKey});
+                                              RenderGraphPassOwner::Renderer, false, kCaptureKey,
+                                              RenderGraphPassFailurePolicy::Optional});
         builder.ReadTexture(capture, *color_version);
         const auto capture_version = builder.WriteTexture(capture, capture_output);
         if (!capture_version.has_value())
@@ -131,7 +134,7 @@ TEST(RenderGraphFrameTest, ExternalTerminalIsExactlyOnceAndCannotRunPrematurely)
     EXPECT_EQ(frame.GetOutcome(kCompositeKey), RenderGraphPassOutcome::Executed);
 }
 
-TEST(RenderGraphFrameTest, ContinuesAfterRequiredFailureAndRecordsOutcome)
+TEST(RenderGraphFrameTest, SkipsDependentOutputsAfterRequiredFailure)
 {
     const auto result = CompileFrameGraph(true);
     ASSERT_TRUE(result.Succeeded());
@@ -142,10 +145,32 @@ TEST(RenderGraphFrameTest, ContinuesAfterRequiredFailureAndRecordsOutcome)
         visited.push_back(*pass.user_key);
         return *pass.user_key != kLightingKey;
     }));
-    ASSERT_EQ(visited.size(), 3U);
+    ASSERT_EQ(visited.size(), 2U);
     EXPECT_EQ(frame.GetOutcome(kLightingKey), RenderGraphPassOutcome::Failed);
-    EXPECT_EQ(frame.GetOutcome(kCaptureKey), RenderGraphPassOutcome::Executed);
+    EXPECT_EQ(frame.GetOutcome(kCaptureKey), RenderGraphPassOutcome::SkippedDependency);
     EXPECT_TRUE(frame.HasRequiredFailure());
+    EXPECT_FALSE(frame.CanExecuteExternal());
+    EXPECT_TRUE(frame.ExecuteExternal([] {}));
+    EXPECT_EQ(frame.GetOutcome(kCompositeKey), RenderGraphPassOutcome::SkippedDependency);
+
+    std::string error;
+    EXPECT_TRUE(frame.Finalize(error)) << error;
+}
+
+TEST(RenderGraphFrameTest, OptionalCaptureFailureDoesNotPoisonSceneOutput)
+{
+    const auto result = CompileFrameGraph(true);
+    ASSERT_TRUE(result.Succeeded());
+    RenderGraphFrame frame(*result.graph);
+
+    ASSERT_TRUE(frame.ExecuteRenderer([](const auto &pass) {
+        return !pass.user_key.has_value() || *pass.user_key != kCaptureKey;
+    }));
+    EXPECT_EQ(frame.GetOutcome(kCaptureKey), RenderGraphPassOutcome::Failed);
+    EXPECT_FALSE(frame.HasRequiredFailure());
+    EXPECT_TRUE(frame.CanExecuteExternal());
+    ASSERT_TRUE(frame.ExecuteExternal([] {}));
+    EXPECT_EQ(frame.GetOutcome(kCompositeKey), RenderGraphPassOutcome::Executed);
 
     std::string error;
     EXPECT_TRUE(frame.Finalize(error)) << error;
@@ -223,6 +248,41 @@ TEST(RenderGraphFrameTest, RejectsAPassAfterTheExternalTerminal)
     EXPECT_FALSE(frame.Finalize(error));
     EXPECT_FALSE(error.empty());
     EXPECT_EQ(frame.GetOutcome(kShadowKey), RenderGraphPassOutcome::Pending);
+}
+
+TEST(PathTraceSettingsTest, ValidatesIndependentSettingsAndRejectsEnumHoles)
+{
+    using kpengine::render::IsValidPathTraceSettings;
+    using kpengine::render::PathTraceOutputProbe;
+    using kpengine::render::PathTraceSettings;
+
+    PathTraceSettings settings;
+    settings.visibility_method = kpengine::render::PathTraceVisibilityMethod::RayQuery;
+    settings.reconstruction = kpengine::render::PathTraceReconstruction::VarianceDenoise;
+    settings.samples_per_dispatch = 2;
+    EXPECT_TRUE(IsValidPathTraceSettings(settings));
+
+    settings.output_probe = static_cast<PathTraceOutputProbe>(6);
+    EXPECT_FALSE(IsValidPathTraceSettings(settings));
+}
+
+TEST(PathTraceSettingsTest, LegacyAdapterPreservesUnrelatedPolicy)
+{
+    using kpengine::render::ApplyLegacyPathTraceProbeMode;
+    using kpengine::render::PathTraceProbeMode;
+    using kpengine::render::PathTraceSettings;
+
+    PathTraceSettings settings;
+    settings.path_tracing_enabled = false;
+    settings.hybrid_ray_query_shadows_enabled = false;
+    settings.maximum_continuation_bounces = 12;
+    const PathTraceSettings adapted =
+        ApplyLegacyPathTraceProbeMode(settings, PathTraceProbeMode::PrimaryNormal);
+
+    EXPECT_FALSE(adapted.path_tracing_enabled);
+    EXPECT_FALSE(adapted.hybrid_ray_query_shadows_enabled);
+    EXPECT_EQ(adapted.maximum_continuation_bounces, 12U);
+    EXPECT_EQ(adapted.output_probe, kpengine::render::PathTraceOutputProbe::PrimaryNormal);
 }
 
 TEST(RenderGraphFrameTest, FinalizesAGraphWithoutAnExternalTerminal)

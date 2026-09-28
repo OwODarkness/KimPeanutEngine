@@ -4,6 +4,7 @@
 #include <array>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
@@ -58,6 +59,44 @@ namespace
         EXPECT_NE(render::detail::RayTracingGeometrySignature(
                       std::span<const graphics::RayTracingGeometryDesc>{}),
                   baseline);
+    }
+
+    TEST(RayTracingSectionSelectionTest, MixedMeshKeepsOriginalMaterialSectionOrder)
+    {
+        using render::MaterialDrawClass;
+        const std::array<std::optional<MaterialDrawClass>, 4> classes{
+            MaterialDrawClass::Opaque, MaterialDrawClass::AlphaBlend,
+            std::nullopt, MaterialDrawClass::Opaque};
+        const auto key = render::detail::MakeOpaqueRayTracingSectionKey({3, 1}, classes);
+        EXPECT_EQ(key.section_indices, (std::vector<uint32_t>{0, 3}));
+        const std::array<uint32_t, 4> material_slots{8, 9, 10, 11};
+        EXPECT_EQ(material_slots[key.section_indices[1]], 11U);
+    }
+
+    TEST(RayTracingSectionSelectionTest, SameMeshWithDifferentOverridesDoesNotShareBlas)
+    {
+        using render::MaterialDrawClass;
+        const std::array<std::optional<MaterialDrawClass>, 2> opaque{
+            MaterialDrawClass::Opaque, MaterialDrawClass::Opaque};
+        const std::array<std::optional<MaterialDrawClass>, 2> mixed{
+            MaterialDrawClass::AlphaBlend, MaterialDrawClass::Opaque};
+        const auto full = render::detail::MakeOpaqueRayTracingSectionKey({3, 1}, opaque);
+        const auto subset = render::detail::MakeOpaqueRayTracingSectionKey({3, 1}, mixed);
+        std::unordered_map<render::detail::RayTracingSectionKey, int,
+                           render::detail::RayTracingSectionKeyHash> cache;
+        cache[full] = 1;
+        cache[subset] = 2;
+        EXPECT_EQ(cache.size(), 2U);
+        EXPECT_EQ(cache.at(render::detail::MakeOpaqueRayTracingSectionKey({3, 1}, opaque)), 1);
+        EXPECT_NE(full, render::detail::MakeOpaqueRayTracingSectionKey({3, 2}, opaque));
+    }
+
+    TEST(RayTracingSectionSelectionTest, BlendedOnlyMeshDoesNotEnterOpaqueScene)
+    {
+        const std::array<std::optional<render::MaterialDrawClass>, 2> classes{
+            render::MaterialDrawClass::AlphaBlend, std::nullopt};
+        EXPECT_TRUE(render::detail::MakeOpaqueRayTracingSectionKey({3, 1}, classes)
+                        .section_indices.empty());
     }
 
     TEST(PathTraceHistorySignatureTest, ChangesForEveryAccumulationInput)
@@ -471,6 +510,58 @@ TEST(RenderSystemLifecycleTest, SelectsViewportDebugTargetAtFrameBoundary)
     system.Shutdown();
 }
 
+TEST(RenderSystemLifecycleTest, DebugViewConsumersCanReleaseWithoutCancellingEachOther)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+
+    system.SetDebugView(render::CaptureView::WorldNormal);
+    system.SetDebugViewDemand(render::DebugViewConsumer::EditorDebugViewer,
+                              render::CaptureView::BaseColor);
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    EXPECT_EQ(system.GetDebugView(), render::CaptureView::BaseColor);
+    ASSERT_TRUE(system.EndFrame());
+
+    system.SetDebugViewDemand(render::DebugViewConsumer::EditorDebugViewer, std::nullopt);
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    EXPECT_EQ(system.GetDebugView(), render::CaptureView::WorldNormal);
+    ASSERT_TRUE(system.EndFrame());
+    system.Shutdown();
+}
+
+TEST(RenderSystemLifecycleTest, AppliesCopiedPathTraceSettingsAtFrameBoundary)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    ASSERT_TRUE(system.Initialize(
+        fixtures.Info([probe](GraphicsAPIType)
+                      { return std::make_unique<FakeBackend>(probe); })));
+
+    render::PathTraceSettings settings;
+    settings.path_tracing_enabled = false;
+    settings.samples_per_dispatch = 2;
+    settings.maximum_continuation_bounces = 5;
+    settings.reconstruction = render::PathTraceReconstruction::GuidedPreview;
+    EXPECT_TRUE(system.RequestPathTraceSettings(settings));
+
+    settings.samples_per_dispatch = 0;
+    EXPECT_FALSE(system.RequestPathTraceSettings(settings));
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    const render::RenderProfileSnapshot profile = system.GetMetrics().profile;
+    EXPECT_FALSE(profile.path_trace_settings_requested.path_tracing_enabled);
+    EXPECT_EQ(profile.path_trace_settings_requested.samples_per_dispatch, 2U);
+    EXPECT_EQ(profile.path_trace_settings_requested.maximum_continuation_bounces, 5U);
+    EXPECT_EQ(profile.path_trace_settings_requested.reconstruction,
+              render::PathTraceReconstruction::GuidedPreview);
+    ASSERT_TRUE(system.EndFrame());
+    system.Shutdown();
+}
+
 TEST(RenderSystemLifecycleTest, RollsBackWhenARequiredCollaboratorFails)
 {
     const auto probe = std::make_shared<BackendProbe>();
@@ -570,7 +661,8 @@ TEST(RenderSystemLifecycleTest, FullscreenMeshSurvivesSamplerRetryFailure)
                        { return std::make_unique<FakeBackend>(probe); })));
 
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
-    ASSERT_TRUE(system.EndFrame());
+    // A failed required lighting producer blocks the frame's output.
+    EXPECT_FALSE(system.EndFrame());
     system.Shutdown();
 
     // The normal frame asks for the fullscreen pair from both deferred
@@ -591,7 +683,8 @@ TEST(RenderSystemLifecycleTest, FullscreenSamplerSurvivesMeshRetryFailure)
                        { return std::make_unique<FakeBackend>(probe); })));
 
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
-    ASSERT_TRUE(system.EndFrame());
+    // A failed required lighting producer blocks the frame's output.
+    EXPECT_FALSE(system.EndFrame());
     system.Shutdown();
 
     // The mesh failure is retried by both consumers, but the successful

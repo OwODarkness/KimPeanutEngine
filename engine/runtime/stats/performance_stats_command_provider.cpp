@@ -120,6 +120,25 @@ namespace kpengine::runtime
             return has_sample ? std::optional<double>{total} : std::nullopt;
         }
 
+        void AddPathTraceSettings(command::CommandData &data, const char *prefix,
+                                  const render::PathTraceSettings &settings)
+        {
+            const std::string key_prefix = std::string{prefix} + "_";
+            data[key_prefix + "enabled"] = settings.path_tracing_enabled;
+            data[key_prefix + "hybrid_ray_query_shadows"] =
+                settings.hybrid_ray_query_shadows_enabled;
+            data[key_prefix + "visibility_method"] = static_cast<uint64_t>(settings.visibility_method);
+            data[key_prefix + "samples_per_dispatch"] =
+                static_cast<uint64_t>(settings.samples_per_dispatch);
+            data[key_prefix + "maximum_continuation_bounces"] =
+                static_cast<uint64_t>(settings.maximum_continuation_bounces);
+            data[key_prefix + "reconstruction"] =
+                static_cast<uint64_t>(settings.reconstruction);
+            data[key_prefix + "output_probe"] = static_cast<uint64_t>(settings.output_probe);
+            data[key_prefix + "texture_policy"] =
+                static_cast<uint64_t>(settings.texture_policy);
+        }
+
         void AddCommon(command::CommandData &data, const PerformanceStatsSnapshot &snapshot,
                        const bool json_requested)
         {
@@ -132,6 +151,12 @@ namespace kpengine::runtime
                 static_cast<uint64_t>(profile.path_trace_samples_per_dispatch);
             data["path_trace_max_continuation_bounces"] =
                 static_cast<uint64_t>(profile.path_trace_max_continuation_bounces);
+            AddPathTraceSettings(data, "path_trace_settings_requested",
+                                 profile.path_trace_settings_requested);
+            AddPathTraceSettings(data, "path_trace_settings_effective",
+                                 profile.path_trace_settings_effective);
+            data["path_trace_settings_fallback_reason"] =
+                profile.path_trace_settings_fallback_reason;
             data["path_trace_camera_x"] =
                 static_cast<double>(profile.path_trace_camera_position[0]);
             data["path_trace_camera_y"] =

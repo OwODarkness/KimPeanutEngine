@@ -738,8 +738,19 @@ namespace kpengine::editor
         }
         row->AddPanel(kToolRowCameraSettingsId, "Camera Settings", BuildCameraSettingsPanel(),
                       /*open=*/true, EditorLayoutSlot::CameraSettings);
-        row->AddPanel(kToolRowDebugViewerId, "Debug Viewer", BuildDebugViewerPanel(),
-                      /*open=*/true, EditorLayoutSlot::DebugViewer);
+        auto *const debug_viewer = static_cast<EditorDebugViewerComponent *>(row->AddPanel(
+            kToolRowDebugViewerId, "Debug Viewer", BuildDebugViewerPanel(),
+            /*open=*/true, EditorLayoutSlot::DebugViewer));
+        if (debug_viewer != nullptr)
+        {
+            debug_viewer->UpdateDemand(false);
+            row->SetPanelPump(kToolRowDebugViewerId,
+                              [row_ptr = row.get(), debug_viewer]
+                              {
+                                  debug_viewer->UpdateDemand(
+                                      row_ptr->IsPanelDrawn(kToolRowDebugViewerId));
+                              });
+        }
         row->AddPanel(kToolRowGpuProfilerId, "Performance Profiler", BuildGpuProfilerPanel(),
                       /*open=*/true, EditorLayoutSlot::GpuProfiler);
 

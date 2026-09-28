@@ -216,7 +216,10 @@ namespace kpengine::render
                                         entry.id == FixedRenderPassId::RayTracingBlasBuild ||
                                         entry.id == FixedRenderPassId::RayTracingTlasBuild,
                                     owner,
-                                    entry.terminal, static_cast<uint64_t>(entry.id)});
+                                    entry.terminal, static_cast<uint64_t>(entry.id),
+                                    entry.id == FixedRenderPassId::CaptureView
+                                        ? RenderGraphPassFailurePolicy::Optional
+                                        : RenderGraphPassFailurePolicy::Required});
             if (!IsPassEnabled(entry, conditions))
             {
                 continue;

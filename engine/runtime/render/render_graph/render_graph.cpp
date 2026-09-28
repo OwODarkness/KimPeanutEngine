@@ -996,7 +996,7 @@ namespace kpengine::render
             compiled_passes.push_back(
                 {GraphPassId{graph_id_, static_cast<uint32_t>(pass_index)}, record.desc.name,
                  pass_index, record.uses, record.desc.condition, record.desc.owner,
-                 record.desc.terminal, record.desc.user_key, 0, 0});
+                 record.desc.terminal, record.desc.user_key, record.desc.failure_policy, 0, 0});
         }
 
         std::vector<RenderGraphLifetimeInterval> lifetimes;

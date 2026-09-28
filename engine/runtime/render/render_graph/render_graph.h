@@ -156,6 +156,12 @@ namespace kpengine::render
         Optional,
     };
 
+    enum class RenderGraphPassFailurePolicy : uint8_t
+    {
+        Optional,
+        Required,
+    };
+
     enum class RenderGraphPassOwner : uint8_t
     {
         Renderer,
@@ -189,6 +195,8 @@ namespace kpengine::render
         // who need to dispatch or query by pass must set it, and enabled passes
         // must not share one; the graph never interprets the value.
         std::optional<uint64_t> user_key;
+        RenderGraphPassFailurePolicy failure_policy =
+            RenderGraphPassFailurePolicy::Required;
     };
 
     struct RenderGraphDiagnostic
@@ -274,6 +282,8 @@ namespace kpengine::render
             RenderGraphPassOwner owner = RenderGraphPassOwner::Renderer;
             bool terminal = false;
             std::optional<uint64_t> user_key;
+            RenderGraphPassFailurePolicy failure_policy =
+                RenderGraphPassFailurePolicy::Required;
             // This pass's slice of the plan's transition list, so a caller
             // holding one pass can apply exactly the requirements it introduces.
             std::size_t transition_offset = 0;

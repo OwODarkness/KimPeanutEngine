@@ -20,8 +20,10 @@ namespace kpengine::editor
     public:
         EditorDebugViewerComponent(render::RenderSystem *render_system,
                                    IEditorImguiRenderer *imgui_renderer);
+        ~EditorDebugViewerComponent() override;
 
         void RenderContent() override;
+        void UpdateDemand(bool active);
 
     private:
         render::RenderSystem *render_system_ = nullptr;

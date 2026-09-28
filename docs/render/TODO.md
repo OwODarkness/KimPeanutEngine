@@ -16,6 +16,16 @@ details and stage checklists belong in the linked submodule documents.
 
 ## Cross-cutting Render work
 
+- [ ] **R5.1 — settings, demand and failure:** partial implementation landed
+  2026-09-27: frame-boundary copied PT settings, legacy adapters, requested /
+  effective stats, active Debug Viewer demand, and required-producer dependency
+  skips. Debug build and focused graph/system contracts pass. Runtime Sponza
+  Beauty/Primary-Albedo captures, World Normal/shadow diagnostics, and Scene
+  Color capture with an active World Normal Viewer are verified. Distinct
+  simultaneous converted diagnostic outputs remain open. The R5.0 Cornell
+  raster baseline is recorded. → [plan](.plan/R5.md#r51--separate-configuration-demand-and-failure-semantics),
+  [spec](../../.spec/specs/render-r5-render-configuration-graph-ownership.md),
+  [journal](../../.spec/journal/2026-09-27-r5-1-settings-demand-failure.md)
 - [ ] **issue-9.7 — Sponza texture aliasing and frame throughput:** Stages 0–5,
   Stage 6.0 telemetry, Stage 6.1 effective shadow validity, Stage 6.2 stable
   bindings, Stage 6.3 recorder/packet reuse, and Stage 6.4 dirty-range OpenGL
@@ -224,7 +234,14 @@ details and stage checklists belong in the linked submodule documents.
     now shows about 34% RT Core, 25% SM, 41% L2 and 63% DRAM throughput, with
     raygen/closest-hit samples. Exact ray counts, per-pass attribution and
     shader register/spill totals remain open; the short capture does not prove a
-    memory-only bottleneck. →
+    memory-only bottleneck. Controlled ablations now reject the tested compact
+    payload, Beauty specialization and primary re-trace ideas. A fixed-transport
+    pair establishes material-fetch cost, while default World Normal demand
+    explains an extra ~4.43 ms GBuffer pass. All diagnostic edits were restored.
+    Follow the [measured direction](.plan/R4.7-gpu.md#measured-direction-after-the-gpu-trace):
+    on-demand raster diagnostics, independently selectable query visibility,
+    and a separate explicit interactive budget; complete cross-scene/quality
+    gates before defaults change. →
     [review](.review/R4.7.8.md), [GPU strategy](.plan/R4.7-gpu.md)
   - [ ] **R4.7.9:** closest-hit position reconstruction candidate compiles and
     runs on Vulkan Sponza. Three matched RelWithDebInfo windows show a 3.04% PT
@@ -263,14 +280,32 @@ details and stage checklists belong in the linked submodule documents.
     windows still show a 59.1% lower total-GPU p50 at one quarter of Beauty's
     SPP; that is a sample-budget tradeoff. → [review](.review/R4.7.13.md),
     [runtime evidence](../../.spec/journal/2026-09-27-render-r4-7-stages11-13.md)
-- [ ] **R5 — post-R4.6 Render/Graphics decoupling (design only):** review the
-  deferred renderer's mixed graph execution, pass recording, shadow/RT state,
-  and lifetime ownership; repair enabled-conditional-pass failure semantics
-  and typed physical binding coverage before extracting the graph executor and
-  concrete pass families. Graphics contract narrowing and Vulkan RT owner
-  decisions follow evidence, not file size. **Do not implement until R4.6 is
-  accepted with real RT runtime and Cornell comparison evidence.** →
-  [R5 review](.review/R5.md), [R5 plan](.plan/R5.md)
+- [ ] **R5 — Render configuration, graph execution, and ownership (active):**
+  refreshed 2026-09-27 against current PT behavior; GPU tuning is paused.
+  Preserve existing R4.7 reuse and open quality/lifecycle gates. →
+  [plan](.plan/R5.md), [execution spec](../../.spec/specs/render-r5-render-configuration-graph-ownership.md),
+  [dated recheck](.review/R5.md#baseline-refresh--2026-09-27)
+  - [ ] **R5.0 (in progress):** label reconciliation, source ownership/cache
+    inventory, known Vulkan PT/cache baselines, and comparison budgets are
+    recorded. Vulkan/OpenGL RT-off Cornell captures now establish a raster
+    reference; indexed PT graph outcomes and the exit review remain open.
+  - [ ] **R5.1 (partial):** frame-boundary settings snapshots, legacy mappings,
+    scoped viewer/tooling demand, and required producer failure propagation are
+    implemented with focused contracts. Runtime Sponza Beauty/Primary-Albedo,
+    World Normal/shadow diagnostics, and Scene Color capture with an active
+    World Normal Viewer are verified. Distinct simultaneous converted
+    diagnostic outputs remain open. →
+    [journal](../../.spec/journal/2026-09-27-r5-1-settings-demand-failure.md)
+  - [ ] **R5.2:** typed one-to-many physical bindings and a Render-owned graph
+    executor with rollback, transition and terminal ordering tests.
+  - [ ] **R5.3:** extract concrete pass owners with cache/history invalidation,
+    init rollback, reload/resize/edit and safe cleanup parity.
+  - [ ] **R5.4:** preserve shader ABI while narrowing Graphics schemas/timing;
+    audit RT pipeline/table/SBT retirement before any private owner split.
+  - [ ] **R5.5:** optional graph extensions only with measured need; a documented
+    no-change decision is valid. No GPU shader tuning in this stage.
+  - [ ] **R5.6:** Debug validation, cross-backend visual/lifecycle checks and
+    matched RelWithDebInfo regression checks. No 60 FPS promise.
 - [ ] Keep source registries, immutable snapshots, pass scheduling, and
   frame-local resource lifetime aligned across Render submodules.
 - [ ] Add read-only Gameplay/editor snapshots before exposing mutable gameplay

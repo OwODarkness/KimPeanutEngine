@@ -63,10 +63,8 @@ namespace kpengine::render
         constexpr uint64_t kPointShadowPerPassUniformKey = 0x534841444f575f50ull;
         constexpr uint64_t kGBufferPerPassUniformKey = 0x4742554646455250ull;
         constexpr uint64_t kPathTraceCameraUniformKey = 0x5254505443414d45ull;
-        constexpr uint32_t kPathTraceSamplesPerDispatch = 4;
         constexpr std::size_t kPathTraceMaximumSceneRecords = 512;
         constexpr uint32_t kPathTraceDirectLightSamples = 1;
-        constexpr uint32_t kPathTraceDiffuseBounces = 8;
         constexpr uint32_t kPathTraceIntegratorVersion = 4;
         constexpr uint32_t kPathTraceRngSeed = 0x52463436u;
         constexpr uint32_t kPathTraceRngPolicyVersion = 1;
@@ -828,9 +826,15 @@ namespace kpengine::render
         return target ? target->GetHandle() : graphics::RenderTargetHandle{};
     }
 
-    void DeferredRenderer::SetPathTraceProbeMode(PathTraceProbeMode mode)
+    void DeferredRenderer::SetPathTraceSettings(const PathTraceSettings &settings)
     {
-        path_trace_probe_mode_ = mode;
+        if (!IsValidPathTraceSettings(settings))
+        {
+            return;
+        }
+        requested_path_trace_settings_ = settings;
+        path_tracing_enabled_ = settings.path_tracing_enabled &&
+                                ray_tracing_path_tracing_available_;
     }
 
     void DeferredRenderer::InjectNextPathTraceDispatchFailure()
@@ -900,7 +904,7 @@ namespace kpengine::render
                 ray_tracing_scene_cache_material_signature_;
             for (RayTracingMeshBuild &mesh_build : frame_ray_tracing_mesh_builds_)
             {
-                const auto state = ray_tracing_blas_.find(mesh_build.mesh);
+                const auto state = ray_tracing_blas_.find(mesh_build.key);
                 mesh_build.needs_build = state != ray_tracing_blas_.end() &&
                                          !state->second.built;
             }
@@ -922,7 +926,10 @@ namespace kpengine::render
 
         if (scene_cache_dirty)
         {
-            std::unordered_map<graphics::MeshHandle, std::size_t> mesh_indices;
+            std::unordered_map<detail::RayTracingSectionKey, std::size_t,
+                               detail::RayTracingSectionKeyHash> mesh_indices;
+            std::unordered_map<graphics::MeshHandle,
+                               std::vector<graphics::RayTracingGeometryDesc>> mesh_geometries;
             for (const MeshProxy &proxy : frame_render_world_snapshot_)
             {
                 if (!proxy.flags.visible || !proxy.mesh.IsValid())
@@ -930,21 +937,43 @@ namespace kpengine::render
                     continue;
                 }
 
+                auto [geometry_iterator, first_mesh_use] = mesh_geometries.try_emplace(proxy.mesh);
+                if (first_mesh_use)
+                    geometry_iterator->second = backend_->GetRayTracingGeometry(proxy.mesh);
+                const auto &source_geometries = geometry_iterator->second;
+                const std::vector<data::MeshSection> *const sections =
+                    resource_resolver_ != nullptr
+                        ? resource_resolver_->FindMeshSections(proxy.mesh)
+                        : nullptr;
+                std::vector<std::optional<MaterialDrawClass>> draw_classes;
+                draw_classes.reserve(source_geometries.size());
+                for (std::size_t section = 0; section < source_geometries.size(); ++section)
+                {
+                    const MaterialInstanceHandle material =
+                        sections != nullptr && section < sections->size()
+                            ? proxy.GetMaterialForSection((*sections)[section].material_index)
+                            : proxy.material;
+                    draw_classes.push_back(material_system_ != nullptr
+                                               ? material_system_->GetDrawClass(material)
+                                               : std::nullopt);
+                }
+                const detail::RayTracingSectionKey section_key =
+                    detail::MakeOpaqueRayTracingSectionKey(proxy.mesh, draw_classes);
+                if (section_key.section_indices.empty())
+                    continue;
+
                 const auto [mesh_iterator, inserted] = mesh_indices.emplace(
-                    proxy.mesh, frame_ray_tracing_mesh_builds_.size());
+                    section_key, frame_ray_tracing_mesh_builds_.size());
                 if (inserted)
                 {
-                    std::vector<graphics::RayTracingGeometryDesc> geometries =
-                        backend_->GetRayTracingGeometry(proxy.mesh);
-                    if (geometries.empty())
-                    {
-                        mesh_indices.erase(mesh_iterator);
-                        continue;
-                    }
+                    std::vector<graphics::RayTracingGeometryDesc> geometries;
+                    geometries.reserve(section_key.section_indices.size());
+                    for (uint32_t section : section_key.section_indices)
+                        geometries.push_back(source_geometries[section]);
 
                     const uint64_t geometry_signature =
                         detail::RayTracingGeometrySignature(geometries);
-                    RayTracingBlasState &state = ray_tracing_blas_[proxy.mesh];
+                    RayTracingBlasState &state = ray_tracing_blas_[section_key];
                     if (state.handle.IsValid() &&
                         (state.geometry_count != geometries.size() ||
                          state.geometry_signature != geometry_signature))
@@ -971,7 +1000,7 @@ namespace kpengine::render
                     frame_ray_tracing_geometries_.insert(frame_ray_tracing_geometries_.end(),
                                                          geometries.begin(), geometries.end());
                     frame_ray_tracing_mesh_builds_.push_back(
-                        {proxy.mesh, state.handle, geometry_offset, geometries.size(),
+                        {section_key, state.handle, geometry_offset, geometries.size(),
                          geometry_signature, !state.built});
                     if (!state.built)
                     {
@@ -979,7 +1008,7 @@ namespace kpengine::render
                     }
                 }
 
-                const auto build_iterator = mesh_indices.find(proxy.mesh);
+                const auto build_iterator = mesh_indices.find(section_key);
                 if (build_iterator == mesh_indices.end())
                 {
                     continue;
@@ -1007,18 +1036,15 @@ namespace kpengine::render
                 add_signature(mesh_build.blas.generation);
                 if (path_tracing_enabled_)
                 {
-                    const std::vector<data::MeshSection> *const sections =
-                        resource_resolver_ != nullptr
-                            ? resource_resolver_->FindMeshSections(proxy.mesh)
-                            : nullptr;
                     const std::size_t material_offset = frame_ray_tracing_material_data_.size();
                     for (std::size_t geometry = 0; geometry < mesh_build.geometry_count; ++geometry)
                     {
                         RayTracingPathMaterialData material_data{};
                         MaterialInstanceHandle material = proxy.material;
-                        if (sections != nullptr && geometry < sections->size())
+                        const uint32_t section = mesh_build.key.section_indices[geometry];
+                        if (sections != nullptr && section < sections->size())
                         {
-                            material = proxy.GetMaterialForSection((*sections)[geometry].material_index);
+                            material = proxy.GetMaterialForSection((*sections)[section].material_index);
                         }
                         if (material_system_ != nullptr && material.IsValid())
                         {
@@ -1082,6 +1108,11 @@ namespace kpengine::render
                                         material_data.base_color_texture_index = slot->second.id;
                                     }
                                 }
+                            }
+                            if (material_data.base_color_texture_index != 0xffffffffu)
+                            {
+                                // Match the raster resolver: a base-color map replaces its scalar tint.
+                                material_data.base_color = Vector4f{1.0f, 1.0f, 1.0f, 1.0f};
                             }
                             const auto resolve_scalar_texture = [&](std::string_view name) {
                                 const MaterialParameterID parameter =
@@ -1355,7 +1386,7 @@ namespace kpengine::render
         {
             if (mesh_build.needs_build)
             {
-                const auto iterator = ray_tracing_blas_.find(mesh_build.mesh);
+                const auto iterator = ray_tracing_blas_.find(mesh_build.key);
                 if (iterator != ray_tracing_blas_.end())
                 {
                     iterator->second.built = true;
@@ -1458,16 +1489,30 @@ namespace kpengine::render
         profile_.frame_number = frame_context.GetGlobals().frame_number;
         profile_.graphics_api = backend_->GetGraphicsAPI();
         profile_.ray_tracing_enabled = ray_tracing_enabled_;
-        profile_.path_tracing_enabled = path_tracing_enabled_;
         profile_.path_tracing_available = ray_tracing_path_tracing_available_;
         profile_.ray_query_shadows_available =
             backend_->GetCapabilities().SupportsRayQueryShadows();
         profile_.viewport_width = frame_context.GetRenderExtent().width;
         profile_.viewport_height = frame_context.GetRenderExtent().height;
+        effective_path_trace_settings_ = requested_path_trace_settings_;
+        path_trace_settings_fallback_reason_.clear();
+        effective_path_trace_settings_.path_tracing_enabled =
+            requested_path_trace_settings_.path_tracing_enabled &&
+            ray_tracing_path_tracing_available_;
+        if (requested_path_trace_settings_.path_tracing_enabled &&
+            !ray_tracing_path_tracing_available_)
+        {
+            path_trace_settings_fallback_reason_ =
+                "Path tracing was requested but its pipeline/resources are unavailable.";
+        }
+        path_tracing_enabled_ = effective_path_trace_settings_.path_tracing_enabled;
+        profile_.path_tracing_enabled = path_tracing_enabled_;
         profile_.path_trace_samples_per_dispatch =
-            path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
-                ? 1u : kPathTraceSamplesPerDispatch;
-        profile_.path_trace_max_continuation_bounces = kPathTraceDiffuseBounces;
+            effective_path_trace_settings_.samples_per_dispatch;
+        profile_.path_trace_max_continuation_bounces =
+            effective_path_trace_settings_.maximum_continuation_bounces;
+        profile_.path_trace_settings_requested = requested_path_trace_settings_;
+        profile_.path_trace_settings_effective = effective_path_trace_settings_;
         profile_.textures = resource_resolver_->GetTextureMetrics();
         material_system_->ResetProfileCounters();
         if (!frame_plan_valid_ || active_pass_frame_.has_value())
@@ -1624,10 +1669,6 @@ namespace kpengine::render
             frame_ray_tracing_light_data_.size());
         profile_.path_trace_environment_enabled = active_environment_.ibl_enabled;
         profile_.path_trace_environment_intensity = active_environment_.ibl_intensity;
-        const bool ray_query_shadow =
-            ray_tracing_enabled_ && backend_->GetCapabilities().SupportsRayQueryShadows() &&
-            backend_->GetActiveTopLevelAccelerationStructure().IsValid() &&
-            !frame_ray_tracing_instances_.empty();
         // The first loading frame can precede the first populated world
         // snapshot. Do not select an RT graph variant until its imported TLAS
         // provider exists; the next frame will rebuild the plan selection.
@@ -1638,6 +1679,39 @@ namespace kpengine::render
             frame_ray_tracing_light_data_.size() <= 128;
         const bool has_path_trace_scene = !frame_ray_tracing_instances_.empty();
         const bool has_path_trace_tlas = ray_tracing_tlas_.IsValid();
+        const bool ray_query_capable =
+            ray_tracing_enabled_ && backend_->GetCapabilities().SupportsRayQueryShadows();
+        if (effective_path_trace_settings_.visibility_method ==
+                PathTraceVisibilityMethod::RayQuery && !ray_query_capable)
+        {
+            effective_path_trace_settings_.visibility_method =
+                PathTraceVisibilityMethod::RayPipeline;
+            if (!path_trace_settings_fallback_reason_.empty())
+            {
+                path_trace_settings_fallback_reason_ += " ";
+            }
+            path_trace_settings_fallback_reason_ +=
+                "Path-trace ray-query visibility is unavailable; ray-pipeline visibility is active.";
+        }
+        effective_path_trace_settings_.hybrid_ray_query_shadows_enabled =
+            requested_path_trace_settings_.hybrid_ray_query_shadows_enabled &&
+            ray_query_capable && has_path_trace_tlas && has_path_trace_scene &&
+            deferred_lighting_ray_query_pipeline_.IsValid();
+        if (requested_path_trace_settings_.hybrid_ray_query_shadows_enabled &&
+            !effective_path_trace_settings_.hybrid_ray_query_shadows_enabled)
+        {
+            if (!path_trace_settings_fallback_reason_.empty())
+            {
+                path_trace_settings_fallback_reason_ += " ";
+            }
+            path_trace_settings_fallback_reason_ += ray_query_capable
+                ? "Hybrid ray-query shadows await a valid scene TLAS."
+                : "Hybrid ray-query shadows are unsupported; raster shadow maps remain active.";
+        }
+        profile_.path_trace_settings_effective = effective_path_trace_settings_;
+        profile_.path_trace_settings_fallback_reason = path_trace_settings_fallback_reason_;
+        const bool ray_query_shadow =
+            effective_path_trace_settings_.hybrid_ray_query_shadows_enabled;
         if (ray_tracing_path_tracing_available_ &&
             (!has_path_trace_scene || !has_path_trace_tlas || !path_trace_scene_within_capacity))
         {
@@ -1930,7 +2004,7 @@ namespace kpengine::render
         // The external terminal samples SceneColor, and the host's callback below
         // is what reads it, so its requirement is applied before the callback
         // rather than after the sweep.
-        if (active_frame_plan_ != nullptr)
+        if (active_frame_plan_ != nullptr && active_pass_frame_->CanExecuteExternal())
         {
             for (const CompiledRenderGraph::Pass &pass : active_frame_plan_->Passes())
             {
@@ -1983,8 +2057,7 @@ namespace kpengine::render
                 {path_trace_sample_count_, path_trace_write_index_}, finalized,
                 frame_execution_failed_, required_pass_failed,
                 active_ray_tracing_path_trace_,
-                path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
-                    ? 1u : kPathTraceSamplesPerDispatch);
+                effective_path_trace_settings_.samples_per_dispatch);
         path_trace_sample_count_ = history_progress.sample_count;
         path_trace_write_index_ = history_progress.write_index;
         if (succeeded && active_ray_tracing_path_trace_)
@@ -2103,7 +2176,7 @@ namespace kpengine::render
         input.output_pipeline_id = tone_map_pipeline_.id;
         input.output_pipeline_generation = tone_map_pipeline_.generation;
         input.output_shader_signature = tone_map_shader_signature_;
-        input.probe_mode = static_cast<uint32_t>(path_trace_probe_mode_);
+        input.probe_mode = PackPathTraceShaderMode(effective_path_trace_settings_);
         input.exposure = kPathTraceExposure;
         input.tone_map_operator = kPathTraceToneMapOperatorReinhard;
         input.output_transfer = kPathTraceOutputTransferSrgb;
@@ -2112,8 +2185,10 @@ namespace kpengine::render
             kPathTraceRayMinimumDistance, kPathTraceRayMaximumDistance,
             kPathTraceSecondaryRayOffset, 0.0f};
         input.integrator_parameters = {
-            kPathTraceSamplesPerDispatch, kPathTraceDirectLightSamples,
-            kPathTraceDiffuseBounces, kPathTraceIntegratorVersion};
+            effective_path_trace_settings_.samples_per_dispatch,
+            kPathTraceDirectLightSamples,
+            effective_path_trace_settings_.maximum_continuation_bounces,
+            kPathTraceIntegratorVersion};
         input.rng_seed = kPathTraceRngSeed;
         input.rng_policy_version = kPathTraceRngPolicyVersion;
         const Matrix4f view_projection = scene_camera_.GetViewProjectionMatrix();
@@ -3120,6 +3195,7 @@ namespace kpengine::render
 
         DeferredLightingGpuData lighting_data{};
         const bool ray_query_shadows =
+            effective_path_trace_settings_.hybrid_ray_query_shadows_enabled &&
             ray_tracing_enabled_ && backend_->GetCapabilities().SupportsRayQueryShadows() &&
             backend_->GetActiveTopLevelAccelerationStructure().IsValid() &&
             deferred_lighting_ray_query_pipeline_.IsValid();
@@ -3139,7 +3215,7 @@ namespace kpengine::render
         const Vector3f &camera_position = scene_camera_.GetPosition();
         lighting_data.camera_world_position = Vector4f{camera_position, 1.0f};
         lighting_data.environment_ibl_params = Vector4f{
-            ray_query_shadows ? 0.0f : (active_environment_.ibl_enabled ? 1.0f : 0.0f),
+            active_environment_.ibl_enabled ? 1.0f : 0.0f,
             static_cast<float>(active_environment_.prefilter_level_count),
             active_environment_.ibl_intensity, 0.0f};
         if (active_directional_shadow_.has_value())
@@ -3571,11 +3647,11 @@ namespace kpengine::render
         camera_data.rng_seed = kPathTraceRngSeed;
         camera_data.sample_count = path_trace_sample_count_;
         camera_data.samples_per_dispatch =
-            path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
-                ? 1u : kPathTraceSamplesPerDispatch;
-        camera_data.probe_mode = static_cast<uint32_t>(path_trace_probe_mode_);
+            effective_path_trace_settings_.samples_per_dispatch;
+        camera_data.probe_mode = PackPathTraceShaderMode(effective_path_trace_settings_);
         camera_data.light_center = Vector4f{0.0f, 0.0f, 0.0f,
-                                          static_cast<float>(kPathTraceDiffuseBounces)};
+                                          static_cast<float>(
+                                              effective_path_trace_settings_.maximum_continuation_bounces)};
         camera_data.scene_data[0] = static_cast<uint32_t>(frame_ray_tracing_geometries_.size());
         camera_data.scene_data[1] = static_cast<uint32_t>(frame_ray_tracing_instance_data_.size());
         camera_data.scene_data[2] = static_cast<uint32_t>(frame_ray_tracing_material_data_.size());
@@ -3832,15 +3908,15 @@ namespace kpengine::render
         const UniformAllocation tone_map_options = active_frame_context_->AllocateUniform(
             Vector4f{active_ray_tracing_path_trace_ ? 0.0f : 1.0f,
                      active_ray_tracing_path_trace_ &&
-                             path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
+                             effective_path_trace_settings_.reconstruction ==
+                                 PathTraceReconstruction::GuidedPreview
                          ? 1.0f
                          : (active_ray_tracing_path_trace_ &&
-                                    path_trace_probe_mode_ ==
-                                        PathTraceProbeMode::BeautyDenoise
+                                    effective_path_trace_settings_.reconstruction ==
+                                        PathTraceReconstruction::VarianceDenoise
                                 ? 2.0f : 0.0f),
                      static_cast<float>(path_trace_sample_count_ +
-                         (path_trace_probe_mode_ == PathTraceProbeMode::LowSppPreview
-                              ? 1u : kPathTraceSamplesPerDispatch)),
+                         effective_path_trace_settings_.samples_per_dispatch),
                      0.0f});
         if (!tone_map_options.IsValid())
             return false;

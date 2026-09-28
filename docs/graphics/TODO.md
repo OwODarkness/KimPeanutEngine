@@ -4,16 +4,17 @@
 
 Items marked **← sakura** are ideas taken from [sakura_reference.md](sakura_reference.md) — *learned, not copied*.
 
-## Post-R4.6 architecture proposal
+## R5 architecture proposal
 
-- [ ] **R5 Graphics boundary slice — design only:** after R4.6 is accepted,
-  move Render-specific uniform schemas and profile-pass count out of the common
-  RHI header; audit Vulkan AS/pipeline/SBT ownership and in-flight retirement
-  before deciding on a private split. Keep `RenderBackend` as the existing
-  composition/frame facade and preserve OpenGL fallback. See the cross-module
-  [R5 source review](../render/.review/R5.md) and
-  [stage plan](../render/.plan/R5.md). No implementation starts while R4.6 is
-  blocked.
+- [ ] **R5 Graphics boundary slice — baseline/design active, refreshed 2026-09-27:**
+  preserve current scene-table/binding reuse and safe retirement while moving
+  Render-specific schemas and timing count out of common Graphics. Audit Vulkan
+  AS/pipeline/SBT/table lifetime before deciding on a private split. Retain
+  the existing composition/frame facade and OpenGL behavior. Source work waits
+  for affected-path baselines in R5.0. Current PT/cache evidence is frozen;
+  fresh raster baselines remain open. See the canonical [plan](../render/.plan/R5.md),
+  [execution spec](../../.spec/specs/render-r5-render-configuration-graph-ownership.md), and
+  [dated recheck](../render/.review/R5.md#baseline-refresh--2026-09-27).
 
 ## Build encapsulation
 

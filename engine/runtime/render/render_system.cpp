@@ -87,6 +87,7 @@ namespace kpengine::render
         {
             ray_tracing_enabled_ = info.ray_tracing_enabled;
             path_tracing_enabled_ = info.ray_tracing_enabled && info.path_tracing_enabled;
+            requested_path_trace_settings_.path_tracing_enabled = path_tracing_enabled_;
             RenderBackendFactory factory = info.backend_factory;
             if (!factory)
             {
@@ -171,6 +172,12 @@ namespace kpengine::render
             {
                 throw std::runtime_error(renderer_result.diagnostic);
             }
+            PathTraceSettings initial_path_trace_settings;
+            {
+                std::lock_guard lock(request_mutex_);
+                initial_path_trace_settings = requested_path_trace_settings_;
+            }
+            deferred_renderer_->SetPathTraceSettings(initial_path_trace_settings);
             render_capture_service_ = std::make_unique<RenderCaptureService>(
                 backend_->GetRenderTargetReadback(),
                 [this](CaptureView view)
@@ -214,9 +221,23 @@ namespace kpengine::render
         const auto scene_prepare_started = std::chrono::steady_clock::now();
         if (scene_ready)
         {
-            debug_view_ = requested_debug_view_;
-            deferred_renderer_->SetPathTraceProbeMode(
-                requested_path_trace_probe_mode_.load(std::memory_order_acquire));
+            std::optional<CaptureView> editor_debug_view;
+            std::optional<CaptureView> tooling_debug_view;
+            std::optional<PathTraceSettings> path_trace_settings;
+            {
+                std::lock_guard lock(request_mutex_);
+                editor_debug_view = debug_view_demands_[static_cast<std::size_t>(
+                    DebugViewConsumer::EditorDebugViewer)];
+                tooling_debug_view = debug_view_demands_[static_cast<std::size_t>(
+                    DebugViewConsumer::RuntimeTooling)];
+                path_trace_settings = std::exchange(pending_path_trace_settings_, std::nullopt);
+            }
+            debug_view_ = editor_debug_view.value_or(
+                tooling_debug_view.value_or(CaptureView::SceneColor));
+            if (path_trace_settings.has_value())
+            {
+                deferred_renderer_->SetPathTraceSettings(*path_trace_settings);
+            }
             if (requested_profile_window_reset_.exchange(false, std::memory_order_acq_rel))
             {
                 profile_window_.Reset();
@@ -226,11 +247,14 @@ namespace kpengine::render
             {
                 deferred_renderer_->InjectNextPathTraceDispatchFailure();
             }
-            scene_input.emplace(scene_coordinator_.PrepareFrame(
+            const std::optional<CaptureView> capture_view =
                 render_capture_service_ ? render_capture_service_->GetPendingView()
-                                        : std::nullopt,
-                debug_view_ == CaptureView::SceneColor ? std::nullopt
-                                                       : std::optional<CaptureView>{debug_view_}));
+                                         : std::nullopt;
+            scene_input.emplace(scene_coordinator_.PrepareFrame(
+                capture_view,
+                debug_view_ == CaptureView::SceneColor
+                    ? std::nullopt
+                    : std::optional<CaptureView>{debug_view_}));
             deferred_renderer_->ApplyPendingExtent();
         }
         const double scene_prepare_ms =
@@ -331,7 +355,7 @@ namespace kpengine::render
         profile_.gpu_timing_samples = static_cast<uint32_t>(completed_gpu_timings.size());
         if (scene_input->pending_capture.has_value())
         {
-            if (!result.capture_target_ready)
+            if (!result.capture_target_ready || !result.normal_recording_completed)
             {
                 render_capture_service_->RejectPendingCapture(
                     "Render could not record the requested capture-view conversion pass");
@@ -569,16 +593,43 @@ namespace kpengine::render
 
     void RenderSystem::SetDebugView(CaptureView view)
     {
-        if (view == CaptureView::EngineWindow)
+        SetDebugViewDemand(DebugViewConsumer::RuntimeTooling, view);
+    }
+
+    void RenderSystem::SetDebugViewDemand(DebugViewConsumer consumer,
+                                         std::optional<CaptureView> view)
+    {
+        const std::size_t index = static_cast<std::size_t>(consumer);
+        if (index >= debug_view_demands_.size() ||
+            (view.has_value() && *view == CaptureView::EngineWindow))
         {
             return;
         }
-        requested_debug_view_ = view;
+        std::lock_guard lock(request_mutex_);
+        debug_view_demands_[index] = view;
     }
 
-    void RenderSystem::RequestPathTraceProbeMode(PathTraceProbeMode mode) noexcept
+    bool RenderSystem::RequestPathTraceSettings(PathTraceSettings settings)
     {
-        requested_path_trace_probe_mode_.store(mode, std::memory_order_release);
+        if (!IsValidPathTraceSettings(settings))
+        {
+            return false;
+        }
+        std::lock_guard lock(request_mutex_);
+        requested_path_trace_settings_ = settings;
+        pending_path_trace_settings_ = settings;
+        requested_profile_window_reset_.store(true, std::memory_order_release);
+        return true;
+    }
+
+    void RenderSystem::RequestPathTraceProbeMode(PathTraceProbeMode mode)
+    {
+        {
+            std::lock_guard lock(request_mutex_);
+            requested_path_trace_settings_ = ApplyLegacyPathTraceProbeMode(
+                requested_path_trace_settings_, mode);
+            pending_path_trace_settings_ = requested_path_trace_settings_;
+        }
         requested_profile_window_reset_.store(true, std::memory_order_release);
     }
 
@@ -591,6 +642,11 @@ namespace kpengine::render
     {
         return deferred_renderer_ ? deferred_renderer_->GetViewportRenderTargetView(debug_view_)
                                    : graphics::RenderTargetView{};
+    }
+
+    CaptureView RenderSystem::GetDebugView() const
+    {
+        return debug_view_;
     }
 
     RenderSystem::RenderSystemMetrics RenderSystem::GetMetrics() const
@@ -713,7 +769,11 @@ namespace kpengine::render
         frame_return_state_ = RenderSystemLifecycleState::Uninitialized;
         window_capture_ = {};
         debug_view_ = CaptureView::SceneColor;
-        requested_debug_view_ = CaptureView::SceneColor;
+        {
+            std::lock_guard lock(request_mutex_);
+            debug_view_demands_.fill(std::nullopt);
+            pending_path_trace_settings_.reset();
+        }
     }
 
     void RenderSystem::CleanupSceneState()
@@ -744,7 +804,11 @@ namespace kpengine::render
         }
         prepared_assets_.reset();
         debug_view_ = CaptureView::SceneColor;
-        requested_debug_view_ = CaptureView::SceneColor;
+        {
+            std::lock_guard lock(request_mutex_);
+            debug_view_demands_.fill(std::nullopt);
+            pending_path_trace_settings_.reset();
+        }
     }
 
     void RenderSystem::Shutdown()

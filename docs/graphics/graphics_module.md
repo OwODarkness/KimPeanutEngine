@@ -4,8 +4,9 @@ Location: `engine/runtime/graphics/backend/`
 
 The prospective post-R4.6 Render/Graphics boundary cleanup is documented in
 the [R5 architecture review](../render/.review/R5.md) and
-[R5 stage plan](../render/.plan/R5.md). It is design only until the R4.6 RT
-runtime and Cornell comparison gates are accepted.
+[R5 stage plan](../render/.plan/R5.md). R5.0 is freezing affected-path
+baselines before runtime extraction; the R4.6 RT runtime and Cornell quality
+gates remain separately open.
 
 The graphics module is the engine's RHI — the thin, cross-API layer that wraps Vulkan and OpenGL. It owns GPU state (swapchain, devices, buffers, textures, pipelines) and exposes it to the rest of the engine through **handles** and **cross-API descriptions**. The module above it (the render module) fills those descriptions; the backend bakes them into GPU objects. The RHI must never reach *up* — it knows nothing about `.shader` files, shader compilers, asset IDs, or the asset graph.
 

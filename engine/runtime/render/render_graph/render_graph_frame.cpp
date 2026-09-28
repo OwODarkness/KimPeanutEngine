@@ -1,5 +1,6 @@
 #include "render_graph_frame.h"
 
+#include <algorithm>
 #include <utility>
 
 namespace kpengine::render
@@ -13,7 +14,8 @@ namespace kpengine::render
         : graph_(other.graph_), outcomes_(std::move(other.outcomes_)), cursor_(other.cursor_),
           renderer_executed_(other.renderer_executed_),
           external_executed_(other.external_executed_), finalized_(other.finalized_),
-          required_failure_(other.required_failure_)
+          required_failure_(other.required_failure_),
+          failed_resources_(std::move(other.failed_resources_))
     {
         other.graph_ = nullptr;
         other.outcomes_.clear();
@@ -22,6 +24,7 @@ namespace kpengine::render
         other.external_executed_ = false;
         other.finalized_ = false;
         other.required_failure_ = false;
+        other.failed_resources_.clear();
     }
 
     RenderGraphFrame &RenderGraphFrame::operator=(RenderGraphFrame &&other) noexcept
@@ -35,6 +38,7 @@ namespace kpengine::render
             external_executed_ = other.external_executed_;
             finalized_ = other.finalized_;
             required_failure_ = other.required_failure_;
+            failed_resources_ = std::move(other.failed_resources_);
 
             other.graph_ = nullptr;
             other.outcomes_.clear();
@@ -43,6 +47,7 @@ namespace kpengine::render
             other.external_executed_ = false;
             other.finalized_ = false;
             other.required_failure_ = false;
+            other.failed_resources_.clear();
         }
         return *this;
     }
@@ -54,8 +59,8 @@ namespace kpengine::render
         {
             return false;
         }
-        // A failure does not stop the sweep: the caller keeps its existing
-        // continue-and-report behavior and reads HasRequiredFailure().
+        // Independent work may continue, but outputs that consume a failed
+        // producer are never recorded as successful.
         const std::vector<CompiledRenderGraph::Pass> &passes = graph_->Passes();
         while (cursor_ < passes.size())
         {
@@ -64,12 +69,23 @@ namespace kpengine::render
             {
                 break;
             }
+            if (IsBlockedByFailedProducer(pass))
+            {
+                outcomes_[cursor_] = RenderGraphPassOutcome::SkippedDependency;
+                MarkWritesFailed(pass);
+                required_failure_ = required_failure_ ||
+                    pass.failure_policy == RenderGraphPassFailurePolicy::Required;
+                ++cursor_;
+                continue;
+            }
             const bool succeeded = executor(pass);
             outcomes_[cursor_] =
                 succeeded ? RenderGraphPassOutcome::Executed : RenderGraphPassOutcome::Failed;
-            if (!succeeded && pass.condition == RenderGraphPassCondition::Always)
+            if (!succeeded)
             {
-                required_failure_ = true;
+                MarkWritesFailed(pass);
+                required_failure_ = required_failure_ ||
+                    pass.failure_policy == RenderGraphPassFailurePolicy::Required;
             }
             ++cursor_;
         }
@@ -89,11 +105,34 @@ namespace kpengine::render
         {
             return false;
         }
+        const CompiledRenderGraph::Pass &pass = passes[cursor_];
+        if (IsBlockedByFailedProducer(pass))
+        {
+            outcomes_[cursor_] = RenderGraphPassOutcome::SkippedDependency;
+            MarkWritesFailed(pass);
+            required_failure_ = required_failure_ ||
+                pass.failure_policy == RenderGraphPassFailurePolicy::Required;
+            external_executed_ = true;
+            ++cursor_;
+            return true;
+        }
         executor();
         outcomes_[cursor_] = RenderGraphPassOutcome::Executed;
         external_executed_ = true;
         ++cursor_;
         return true;
+    }
+
+    bool RenderGraphFrame::CanExecuteExternal() const noexcept
+    {
+        if (!graph_ || finalized_ || !renderer_executed_ || external_executed_ ||
+            cursor_ >= graph_->Passes().size())
+        {
+            return false;
+        }
+        const CompiledRenderGraph::Pass &pass = graph_->Passes()[cursor_];
+        return pass.owner == RenderGraphPassOwner::External && pass.terminal &&
+               !IsBlockedByFailedProducer(pass);
     }
 
     bool RenderGraphFrame::Finalize(std::string &error)
@@ -128,14 +167,12 @@ namespace kpengine::render
         }
         for (std::size_t index = 0; index < passes.size(); ++index)
         {
-            if (passes[index].owner != RenderGraphPassOwner::Renderer ||
-                passes[index].condition != RenderGraphPassCondition::Always)
+            if (passes[index].failure_policy != RenderGraphPassFailurePolicy::Required)
             {
                 continue;
             }
             const RenderGraphPassOutcome outcome = outcomes_[index];
-            if (outcome != RenderGraphPassOutcome::Executed &&
-                outcome != RenderGraphPassOutcome::Failed)
+            if (outcome == RenderGraphPassOutcome::Pending)
             {
                 error = "A required render graph pass was not visited.";
                 return false;
@@ -160,5 +197,31 @@ namespace kpengine::render
             }
         }
         return RenderGraphPassOutcome::NotInPlan;
+    }
+
+    bool RenderGraphFrame::IsBlockedByFailedProducer(
+        const CompiledRenderGraph::Pass &pass) const noexcept
+    {
+        return std::any_of(pass.uses.begin(), pass.uses.end(), [this](const auto &use) {
+            if (use.access != RenderGraphAccess::Read)
+            {
+                return false;
+            }
+            return std::find(failed_resources_.begin(), failed_resources_.end(), use.handle) !=
+                   failed_resources_.end();
+        });
+    }
+
+    void RenderGraphFrame::MarkWritesFailed(const CompiledRenderGraph::Pass &pass)
+    {
+        for (const auto &use : pass.uses)
+        {
+            if (use.access == RenderGraphAccess::Write &&
+                std::find(failed_resources_.begin(), failed_resources_.end(), use.handle) ==
+                    failed_resources_.end())
+            {
+                failed_resources_.push_back(use.handle);
+            }
+        }
     }
 }

@@ -75,9 +75,20 @@ namespace kpengine::editor
         : EditorWindowComponent("Debug Viewer", EditorWindowConfig{}),
           render_system_(render_system), imgui_renderer_(imgui_renderer)
     {
+    }
+
+    EditorDebugViewerComponent::~EditorDebugViewerComponent()
+    {
+        UpdateDemand(false);
+    }
+
+    void EditorDebugViewerComponent::UpdateDemand(bool active)
+    {
         if (render_system_ != nullptr)
         {
-            render_system_->SetDebugView(debug_view_);
+            render_system_->SetDebugViewDemand(
+                render::DebugViewConsumer::EditorDebugViewer,
+                active ? std::optional<render::CaptureView>{debug_view_} : std::nullopt);
         }
     }
 
@@ -87,6 +98,7 @@ namespace kpengine::editor
         {
             return;
         }
+        UpdateDemand(true);
 
         ImGui::TextUnformatted("Diagnostic Preview");
         ImGui::Separator();
@@ -123,7 +135,7 @@ namespace kpengine::editor
                 if (ImGui::Selectable(option.label, selected))
                 {
                     debug_view_ = option.view;
-                    render_system_->SetDebugView(debug_view_);
+                    UpdateDemand(true);
                 }
                 if (selected)
                 {

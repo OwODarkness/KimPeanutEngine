@@ -93,11 +93,13 @@ public policy while the coordinator owns scene preparation.
   reuse at unchanged scene-independent lighting quality. Optional budget
   settings are measured separately. See the [source review](.review/R4.7.md)
   and [acceptance spec](../../.spec/specs/render-r4-7-path-tracing-performance.md).
-- [R5 — post-R4.6 Render/Graphics decoupling](.plan/R5.md) — a proposed,
-  design-only stage to separate graph execution and concrete pass-family state
-  from `DeferredRenderer`, correct graph failure/binding semantics, and narrow
-  proven Graphics boundary leaks. The [source review](.review/R5.md) is the
-  analysis record. Implementation waits for accepted R4.6 runtime evidence.
+- [R5 — Render configuration, graph execution, and ownership](.plan/R5.md) —
+  refreshed against the current general-scene PT renderer: independent settings,
+  consumer demand and failure semantics precede typed graph execution and
+  pass-family extraction. Preserve R4.7 scene/binding reuse and Graphics
+  retirement. GPU tuning is paused; this remains design only. The
+  [dated source recheck](.review/R5.md#baseline-refresh--2026-09-27) records
+  current evidence and remaining baseline gates.
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
   texture minification and bound texture, descriptor, visibility, and static-
   shadow costs through Resource, Render, and Graphics ownership boundaries.

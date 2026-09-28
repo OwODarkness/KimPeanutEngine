@@ -19,6 +19,7 @@ namespace kpengine::render
         Pending,
         Executed,
         SkippedExternal,
+        SkippedDependency,
         Failed,
     };
 
@@ -40,6 +41,7 @@ namespace kpengine::render
         bool ExecuteRenderer(
             const std::function<bool(const CompiledRenderGraph::Pass &)> &executor);
         bool ExecuteExternal(const std::function<void()> &executor);
+        bool CanExecuteExternal() const noexcept;
         bool Finalize(std::string &error);
 
         RenderGraphPassOutcome GetOutcome(uint64_t user_key) const noexcept;
@@ -54,6 +56,10 @@ namespace kpengine::render
         bool external_executed_ = false;
         bool finalized_ = false;
         bool required_failure_ = false;
+        std::vector<RenderGraphResourceHandle> failed_resources_;
+
+        bool IsBlockedByFailedProducer(const CompiledRenderGraph::Pass &pass) const noexcept;
+        void MarkWritesFailed(const CompiledRenderGraph::Pass &pass);
     };
 }
 

@@ -85,6 +85,12 @@ namespace kpengine::editor
         }
     }
 
+    bool EditorToolRowComponent::IsPanelDrawn(std::string_view id) const noexcept
+    {
+        const std::optional<std::size_t> index = model_.IndexOf(id);
+        return index.has_value() && IsDrawnThisFrame(*index);
+    }
+
     bool EditorToolRowComponent::IsDrawnThisFrame(std::size_t index) const noexcept
     {
         const EditorToolRowEntry *const entry = model_.GetEntry(index);

@@ -1642,13 +1642,13 @@ namespace kpengine
                 if (frame_ended)
                 {
                     global_runtime_context.render_system_->CompletePendingWindowCapture();
+                    const auto swap_started = std::chrono::steady_clock::now();
+                    global_runtime_context.window_system_->SwapBuffers();
+                    global_runtime_context.render_system_->RecordPresentationTime(
+                        std::chrono::duration<double, std::milli>(
+                            std::chrono::steady_clock::now() - swap_started)
+                            .count());
                 }
-                const auto swap_started = std::chrono::steady_clock::now();
-                global_runtime_context.window_system_->SwapBuffers();
-                global_runtime_context.render_system_->RecordPresentationTime(
-                    std::chrono::duration<double, std::milli>(
-                        std::chrono::steady_clock::now() - swap_started)
-                        .count());
             }
             else if (frame_ended)
             {

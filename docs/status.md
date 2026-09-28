@@ -1,5 +1,62 @@
 # Project Status
 
+- **Sponza PT wall surface parity (2026-09-28)** — PT treated blended dirt
+  decals as opaque walls, while raster skipped them. Render now excludes
+  blended sections and retains original section-to-material mapping, with BLAS
+  sharing keyed by the retained subset. Fully resident Debug Vulkan captures
+  reduce a clear stone patch's linear RGB error from 0.128 to 0.006; perfect
+  whole-image parity and transparent transport remain open. →
+  [journal](../.spec/journal/2026-09-28-sponza-pt-surface-parity.md)
+
+- **Sponza environment-light recovery (2026-09-28; Vulkan runtime verified)** —
+  Raised the fixture's authored IBL intensity from zero to `0.35`. Raster
+  deferred lighting can now use its existing split-sum environment IBL, and
+  path tracing can receive the environment on ray misses. Also removed the
+  deferred-lighting rule that suppressed IBL whenever ray-query shadows were
+  selected. Debug Vulkan captures verify environment contribution with all RT
+  disabled and with PT off / ray-query shadows active. A PT capture is backed
+  by Runtime stats showing PT active and environment enabled at `0.35`. The
+  2026-09-27 R5.0 captures still describe the previous zero-intensity fixture. →
+  [journal](../.spec/journal/2026-09-28-sponza-environment-light.md)
+
+- **R5.1 settings, demand and failure (2026-09-27; runtime verification partial)** — Added a
+  frame-boundary snapshot for validated path-tracing settings, kept legacy probe
+  commands as adapters, exposed requested/effective policy in profiler stats,
+  scoped Editor Debug Viewer demand, and propagated required graph failures to
+  dependent outputs. Debug engine build and 162 render contracts pass.
+  Runtime captures now verify Vulkan Sponza Beauty/Primary-Albedo output,
+  requested/effective setting transitions, explicit World Normal/shadow
+  diagnostics, and Scene Color with an active World Normal Viewer. Distinct
+  simultaneous converted diagnostic outputs remain open. →
+  [plan](render/.plan/R5.md#r51--separate-configuration-demand-and-failure-semantics),
+  [execution spec](../.spec/specs/render-r5-render-configuration-graph-ownership.md),
+  [journal](../.spec/journal/2026-09-27-r5-1-settings-demand-failure.md)
+
+- **R5.0 baseline freeze (2026-09-27; raster baseline established, exit review open)** — Reconciled the R4.8
+  label without relabeling R4.7, inventoried Render/Graphics owners and reuse
+  keys, and froze existing Vulkan Sponza PT/cache evidence plus comparison
+  budgets. Fresh Vulkan/OpenGL Cornell RT-off captures now provide a usable
+  raster reference; the dark Sponza fallback is explained by zero authored IBL
+  and no raster indirect bounce. Indexed current PT graph outcomes and the R5.0
+  exit review remain open. → [plan](render/.plan/R5.md),
+  [execution spec](../.spec/specs/render-r5-render-configuration-graph-ownership.md),
+  [source recheck](render/.review/R5.md#baseline-refresh--2026-09-27),
+  [journal](../.spec/journal/2026-09-27-r5-0-baseline-freeze.md)
+
+- **R4.7.8 measured GPU direction (2026-09-27; diagnosis/design only)** —
+  Controlled RelWithDebInfo Sponza experiments identify default World Normal
+  viewing as an extra ~4.43 ms GBuffer workload. Scene Color-only viewing plus
+  existing query visibility measured 26.25 ms total GPU p50 versus the initial
+  32.65 ms diagnostic-active baseline; four SPP/eight bounces remain active.
+  One-SPP preview without raster diagnostics measured 9.47 ms p50/10.15 ms p95,
+  with an explicit sample/filter tradeoff. Compact payload, Beauty specialization
+  and primary re-tracing did not produce an acceptable gain. All temporary source
+  changes were restored, RelWithDebInfo rebuilt, and the investigation engine
+  closed. No optimization default was implemented. →
+  [review](render/.review/R4.7.8.md#controlled-gpu-investigation--2026-09-27),
+  [chosen strategy](render/.plan/R4.7-gpu.md#measured-direction-after-the-gpu-trace),
+  [journal](../.spec/journal/2026-09-27-r478-controlled-gpu-strategy.md)
+
 - **R4.7.11–R4.7.13 GPU path-tracing experiments (2026-09-27)** — Added an
   opt-in inline ray-query visibility mode (three Sponza windows: PT p50 −5.38%,
   total GPU p50 −4.54%), an opt-in ray-cone texture LOD experiment (PT p50
@@ -13,8 +70,7 @@
   exactly matched. Debug and RelWithDebInfo builds plus direct GLSL compilation
   passed. Cornell/another
   scene, motion/edit, disocclusion, equal-count image-error, and query-disabled
-  RT portability checks remain open. The RelWithDebInfo editor is left running
-  in `beauty_denoise`. → [R4.7.11](render/.review/R4.7.11.md),
+  RT portability checks remain open. → [R4.7.11](render/.review/R4.7.11.md),
   [R4.7.12](render/.review/R4.7.12.md),
   [R4.7.13](render/.review/R4.7.13.md),
   [journal](../.spec/journal/2026-09-27-render-r4-7-stages11-13.md),

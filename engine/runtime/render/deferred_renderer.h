@@ -31,6 +31,8 @@
 #include "renderer_frame_targets.h"
 #include "render_profile.h"
 #include "path_trace_probe_mode.h"
+#include "path_trace_settings.h"
+#include "ray_tracing_scene_sections.h"
 
 namespace kpengine::data
 {
@@ -82,7 +84,7 @@ namespace kpengine::render
         void Cleanup();
 
         void RequestExtent(uint32_t width, uint32_t height);
-        void SetPathTraceProbeMode(PathTraceProbeMode mode);
+        void SetPathTraceSettings(const PathTraceSettings &settings);
         void InjectNextPathTraceDispatchFailure();
         void InvalidateRayTracingTextureBindings();
         void ApplyPendingExtent();
@@ -264,7 +266,9 @@ namespace kpengine::render
         uint64_t path_trace_history_signature_ = 0;
         uint64_t path_trace_shader_signature_ = 0;
         uint64_t tone_map_shader_signature_ = 0;
-        PathTraceProbeMode path_trace_probe_mode_ = PathTraceProbeMode::Beauty;
+        PathTraceSettings requested_path_trace_settings_{};
+        PathTraceSettings effective_path_trace_settings_{};
+        std::string path_trace_settings_fallback_reason_;
         bool fail_next_path_trace_dispatch_ = false;
         struct FrameTextureBinding
         {
@@ -326,7 +330,7 @@ namespace kpengine::render
         };
         struct RayTracingMeshBuild
         {
-            graphics::MeshHandle mesh;
+            detail::RayTracingSectionKey key;
             graphics::AccelerationStructureHandle blas;
             std::size_t geometry_offset = 0;
             std::size_t geometry_count = 0;
@@ -372,7 +376,8 @@ namespace kpengine::render
             graphics::SamplerHandle environment_sampler;
             UniformAllocation camera_uniform;
         };
-        std::unordered_map<graphics::MeshHandle, RayTracingBlasState> ray_tracing_blas_;
+        std::unordered_map<detail::RayTracingSectionKey, RayTracingBlasState,
+                           detail::RayTracingSectionKeyHash> ray_tracing_blas_;
         graphics::AccelerationStructureHandle ray_tracing_tlas_;
         uint32_t ray_tracing_tlas_capacity_ = 0;
         bool ray_tracing_tlas_built_ = false;
