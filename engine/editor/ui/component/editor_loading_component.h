@@ -2,6 +2,8 @@
 #define KPENGINE_EDITOR_LOADING_COMPONENT_H
 
 #include <functional>
+#include <cstdint>
+#include <vector>
 
 #include "editor/ui/component/editor_loading_view_model.h"
 #include "editor/ui/component/editor_ui_component.h"
@@ -22,8 +24,12 @@ namespace kpengine::editor
         }
 
     private:
+        void LoadIconPixels();
+
         std::function<runtime::StartupSnapshot()> snapshot_source_;
         EditorLoadingViewModel last_view_model_{};
+        std::vector<uint32_t> icon_pixels_;
+        static constexpr uint32_t kIconSize = 56;
     };
 }
 
