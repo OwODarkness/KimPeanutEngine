@@ -222,8 +222,33 @@ Editor Composite executed, and the path-trace pass `not_in_plan`. Capture
 succeeded to `save/screenshots/validation/r5-2-cornell-vulkan-raster.png`;
 snapshot: `save/diagnostics/r5-2-cornell-vulkan-raster-stats.json`.
 
-Remaining R5.2 gaps: retain the required-failure frame's exact pass outcomes
-and sample state; inject partial AS preparation failure, recording failure
+Remaining R5.2 gaps: inject partial AS preparation failure, recording failure
 after some BLAS commands, and abort before submission; verify unchanged-frame
 preparation reuse; exercise Capture/Viewer demand; and freeze/run matched
 image-error comparison. No performance claim is made.
+
+## Retained required-failure frame — 2026-09-28
+
+Added a persistent last-required-graph-failure snapshot to the Render profile.
+Each subsequent profile/`stats --json` now retains the failed frame number,
+path-trace sample count after finalization, and every pass outcome. The
+snapshot is copied only when a frame fails and is not overwritten by later
+successful frames. A provider contract test covers the retained fields.
+
+Rebuilt `KimPeanutEngine` in Debug and ran
+`PerformanceStatsCommandProviderTest` (2/2 passed). A fresh visible Debug
+Vulkan Cornell run armed `render.path_trace_fail_next`; the retained record is
+frame 2215, with path trace `failed`, tone map `skipped_dependency`, and 8,840
+samples. The following stats request was frame 2217 and already showed PT
+recovery, while preserving the frame-2215 evidence in
+`save/diagnostics/r5-2-cornell-required-failure-exact.json`.
+
+Also exported `save/screenshots/validation/r5-2-cornell-capture-viewer.png`.
+That request used the `scene_color` view, which does not require the graph's
+CaptureView conversion pass, and the later stats poll missed its frame. It is
+therefore a screenshot artifact only; simultaneous Capture/Viewer graph
+outcomes remain unverified. R5.2 remains open for deterministic Vulkan AS
+partial-preparation/recording/abort failure injection, unchanged-frame
+allocation reuse, direct Vulkan owner token/resource tests, exact simultaneous
+Capture/Viewer evidence, matched image-error comparison, and the remaining
+contract tests in the review.

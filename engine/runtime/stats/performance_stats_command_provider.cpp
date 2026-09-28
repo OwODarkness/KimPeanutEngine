@@ -282,6 +282,19 @@ namespace kpengine::runtime
                 profile.path_trace_environment_intensity;
             data["path_trace_history_reset_reason"] =
                 profile.path_trace_history_reset_reason;
+            const auto &failure = profile.last_required_graph_failure;
+            data["last_required_graph_failure.valid"] = failure.valid;
+            data["last_required_graph_failure.frame_number"] = failure.frame_number;
+            data["last_required_graph_failure.path_trace_samples"] =
+                static_cast<uint64_t>(failure.path_trace_samples);
+            for (size_t index = 0;
+                 index < static_cast<size_t>(render::RenderProfilePass::Count); ++index)
+            {
+                data[std::string{"last_required_graph_failure.pass."} +
+                     RenderPassName(static_cast<render::RenderProfilePass>(index))] =
+                    std::string{render::RenderGraphPassOutcomeName(
+                        failure.pass_outcomes[index])};
+            }
             data["render_graph_mode"] = profile.render_graph_mode;
             data["ray_tracing_geometry_records"] =
                 static_cast<uint64_t>(profile.ray_tracing_geometry_records);

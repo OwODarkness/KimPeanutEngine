@@ -417,6 +417,7 @@ namespace kpengine::render
         bool path_tracing_enabled_ = true;
         bool active_ray_tracing_path_trace_ = false;
         RenderProfileSnapshot profile_;
+        RenderGraphFailureSnapshot last_required_graph_failure_;
         std::optional<size_t> active_profile_pass_;
         const RenderGraphPassContext *active_pass_context_ = nullptr;
     };

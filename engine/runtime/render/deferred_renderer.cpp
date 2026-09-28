@@ -1578,6 +1578,7 @@ namespace kpengine::render
         profile_ = {};
         profile_.graph_compile_ms = frame_plan_compile_ms_;
         profile_.frame_number = frame_context.GetGlobals().frame_number;
+        profile_.last_required_graph_failure = last_required_graph_failure_;
         profile_.graphics_api = backend_->GetGraphicsAPI();
         profile_.ray_tracing_enabled = ray_tracing_enabled_;
         profile_.path_tracing_available = ray_tracing_path_tracing_available_;
@@ -2194,6 +2195,14 @@ namespace kpengine::render
                 effective_path_trace_settings_.samples_per_dispatch);
         path_trace_sample_count_ = history_progress.sample_count;
         path_trace_write_index_ = history_progress.write_index;
+        if (!succeeded)
+        {
+            last_required_graph_failure_.valid = true;
+            last_required_graph_failure_.frame_number = profile_.frame_number;
+            last_required_graph_failure_.path_trace_samples = path_trace_sample_count_;
+            last_required_graph_failure_.pass_outcomes = profile_.graph_pass_outcomes;
+            profile_.last_required_graph_failure = last_required_graph_failure_;
+        }
         if (succeeded && active_ray_tracing_path_trace_)
         {
             profile_.path_trace_samples = path_trace_sample_count_;

@@ -34,6 +34,15 @@ namespace kpengine::runtime
         expected.profile.graph_pass_outcomes[
             static_cast<size_t>(render::RenderProfilePass::GBuffer)] =
             render::RenderGraphPassOutcome::Executed;
+        expected.profile.last_required_graph_failure.valid = true;
+        expected.profile.last_required_graph_failure.frame_number = 41;
+        expected.profile.last_required_graph_failure.path_trace_samples = 128;
+        expected.profile.last_required_graph_failure.pass_outcomes[
+            static_cast<size_t>(render::RenderProfilePass::RayTracingPathTrace)] =
+            render::RenderGraphPassOutcome::Failed;
+        expected.profile.last_required_graph_failure.pass_outcomes[
+            static_cast<size_t>(render::RenderProfilePass::RayTracingToneMap)] =
+            render::RenderGraphPassOutcome::SkippedDependency;
         expected.profile.ray_tracing_build_diagnostic_count = 1;
         auto &build_diagnostic = expected.profile.ray_tracing_build_diagnostics[0];
         build_diagnostic.sequence = 7;
@@ -93,6 +102,24 @@ namespace kpengine::runtime
         ASSERT_NE(Find(completed->data, "pass.g_buffer.outcome"), nullptr);
         EXPECT_EQ(std::get<std::string>(*Find(completed->data, "pass.g_buffer.outcome")),
                   "executed");
+        ASSERT_NE(Find(completed->data, "last_required_graph_failure.valid"), nullptr);
+        EXPECT_TRUE(std::get<bool>(
+            *Find(completed->data, "last_required_graph_failure.valid")));
+        EXPECT_EQ(std::get<uint64_t>(
+                      *Find(completed->data, "last_required_graph_failure.frame_number")),
+                  41U);
+        EXPECT_EQ(std::get<uint64_t>(*Find(
+                      completed->data,
+                      "last_required_graph_failure.path_trace_samples")),
+                  128U);
+        EXPECT_EQ(std::get<std::string>(*Find(
+                      completed->data,
+                      "last_required_graph_failure.pass.ray_tracing_path_trace")),
+                  "failed");
+        EXPECT_EQ(std::get<std::string>(*Find(
+                      completed->data,
+                      "last_required_graph_failure.pass.ray_tracing_tone_map")),
+                  "skipped_dependency");
         ASSERT_NE(Find(completed->data, "ray_tracing_build_diagnostic_count"), nullptr);
         EXPECT_EQ(std::get<uint64_t>(
                       *Find(completed->data, "ray_tracing_build_diagnostic_count")),

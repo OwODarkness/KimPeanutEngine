@@ -102,6 +102,16 @@ namespace kpengine::render
         bool tracked_residency_complete = true;
     };
 
+    struct RenderGraphFailureSnapshot
+    {
+        bool valid = false;
+        uint64_t frame_number = 0;
+        uint32_t path_trace_samples = 0;
+        std::array<RenderGraphPassOutcome,
+                   static_cast<size_t>(RenderProfilePass::Count)>
+            pass_outcomes{};
+    };
+
     struct RenderProfileSnapshot
     {
         uint64_t frame_number = 0;
@@ -208,6 +218,7 @@ namespace kpengine::render
         std::array<RenderGraphPassOutcome,
                    static_cast<size_t>(RenderProfilePass::Count)>
             graph_pass_outcomes{};
+        RenderGraphFailureSnapshot last_required_graph_failure{};
         std::optional<uint64_t> gpu_frame_number;
         RenderProfileSummary summary;
     };
