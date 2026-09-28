@@ -175,18 +175,55 @@ Fresh Debug Vulkan launch on the approved Default desktop with
 - New typed executor tests cover an ignored undeclared lookup and a failed
   external transition followed by a rejected duplicate call. Both pass.
 
-The instrumentation and these runs close the missing cold-build, TLAS-update,
-submission-serial and temporary-buffer-retirement observation gates for
-Cornell. They do not close injected partial preparation failure, recording
-failure after some BLAS commands, abort before submission, unchanged-frame
-allocation reuse, or the remaining R5.2 matrix: Vulkan raster/PT variants,
-Sponza query-shadow mode, simultaneous Capture/Viewer demand, resize/reload,
-required recording failure, and matched image-error comparison. Sponza was
-not relaunched because `asset/level/sponza.level` has unrelated pre-existing
-user edits and must remain untouched. R5.2 stays in progress.
+The instrumentation and these Cornell runs closed the cold-build, TLAS-update,
+submission-serial and temporary-buffer-retirement observation gates for that
+fixture. At the time of this entry, Sponza had not been relaunched because
+`asset/level/sponza.level` has unrelated pre-existing edits. A later section
+records Sponza runtime checks that read the current fixture without editing it.
+Partial preparation/recording failure, abort before submission, unchanged-frame
+allocation reuse, Capture/Viewer demand and matched image-error comparison
+remain open. R5.2 stays in progress.
 
 Validation for this follow-up: both new cases passed through
 `ctest --test-dir build -C Debug -R
 "RenderGraphExecutorTest\\.(IgnoredUndeclaredLookupFailsTypedPassRecording|ExternalTransitionFailureStaysFailedAfterDuplicateRejection)"
 --output-on-failure`. Final `.\tools\kp.ps1 build` succeeded and
 `.\tools\kp.ps1 test` passed 1009/1009 tests.
+
+## Additional Sponza and required-failure runtime checks — 2026-09-28
+
+Read the existing locally modified `asset/level/sponza.level` without editing
+it. A fresh Vulkan PT run recorded BLAS and TLAS builds on frame 9955 and
+retired both at serial 9956; the sample still had 54 tracked textures
+nonresident. The screenshot was exported to
+`save/screenshots/validation/r5-2-sponza-vulkan-current.png`.
+
+A separate Vulkan launch with `--disable-path-tracing` reached
+`hybrid_ray_query`, with ray-query shadows active and GBuffer, deferred
+lighting and Editor Composite executed. Its cold BLAS/TLAS records retired at
+serial 21367. After `window.resize` reached 1280x720 and `level.reload`
+succeeded, the published snapshot reported zero incomplete tracked textures;
+the scene viewport was 722x389 after Editor layout. Capture succeeded at
+`save/screenshots/validation/r5-2-sponza-vulkan-raster-query-resized.png`.
+Snapshot: `save/diagnostics/r5-2-sponza-vulkan-raster-resize-reload.json`.
+
+The existing `render.path_trace_fail_next` command was exercised on Cornell.
+Its command returned success, and the process log at
+`save/logs/2026-09-28/KimPeanutEngineLog-2026.09.28-19.22.05.txt` records the
+zero-width RT dispatch rejection followed by Render graph frame-finalization
+failure at 19:22:42. A bounded stats poll did not retain the brief failed
+frame outcome. A later snapshot at frame 6107 showed PT, tone-map and external
+composite executed again, with 24404 accumulated samples and no history reset:
+`save/diagnostics/r5-2-cornell-required-failure-recovery.json`.
+
+An additional Cornell Vulkan launch with `--disable-path-tracing` reported
+`hybrid_ray_query`, ray-query shadows active, GBuffer/deferred lighting/
+Editor Composite executed, and the path-trace pass `not_in_plan`. Capture
+succeeded to `save/screenshots/validation/r5-2-cornell-vulkan-raster.png`;
+snapshot: `save/diagnostics/r5-2-cornell-vulkan-raster-stats.json`.
+
+Remaining R5.2 gaps: retain the required-failure frame's exact pass outcomes
+and sample state; inject partial AS preparation failure, recording failure
+after some BLAS commands, and abort before submission; verify unchanged-frame
+preparation reuse; exercise Capture/Viewer demand; and freeze/run matched
+image-error comparison. No performance claim is made.
