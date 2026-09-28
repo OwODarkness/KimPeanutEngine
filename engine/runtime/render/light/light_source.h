@@ -38,6 +38,9 @@ namespace kpengine::render
         bool enabled = true;
         // Authored intent only; Render resolves this to a private ShadowHandle.
         bool casts_shadow = true;
+        // Zero axes select a point; nonzero perpendicular half-axes select a rectangle.
+        Vector3f half_axis_u{};
+        Vector3f half_axis_v{};
     };
 
     struct SpotLightSourceDesc

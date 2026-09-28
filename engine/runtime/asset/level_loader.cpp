@@ -174,13 +174,14 @@ namespace kpengine::asset
                         }
                         parsed_object = std::move(record);
                     }
-                    else if (kind == "point_light")
+                    else if (kind == "point_light" || kind == "area_light")
                     {
                         LevelPointLightRecord record;
                         record.id = std::move(id);
                         record.name = std::move(name);
                         if (!ValidateOnlyFields(object, {"id", "name", "kind", "position", "color",
-                                                          "intensity", "range", "enabled", "casts_shadow"}, location) ||
+                                                          "intensity", "range", "enabled", "casts_shadow",
+                                                          "half_axis_u", "half_axis_v"}, location) ||
                             !ParseRequiredVector3(object, "position", location, record.position) ||
                             !ParseRequiredVector3(object, "color", location, record.color) ||
                             !ParseRequiredFloat(object, "intensity", location, record.intensity) ||
@@ -193,6 +194,20 @@ namespace kpengine::asset
                         {
                             return false;
                         }
+                        if (kind == "area_light")
+                        {
+                            if (!ParseRequiredVector3(object, "half_axis_u", location, record.half_axis_u) ||
+                                !ParseRequiredVector3(object, "half_axis_v", location, record.half_axis_v))
+                                return false;
+                            const float u2 = record.half_axis_u.SquareLength();
+                            const float v2 = record.half_axis_v.SquareLength();
+                            const float dot = record.half_axis_u.DotProduct(record.half_axis_v);
+                            if (!(u2 > 0.0f && v2 > 0.0f && u2 * v2 > 0.0f) || !std::isfinite(u2 * v2) ||
+                                dot * dot > 1e-8f * u2 * v2)
+                                return Fail(location, "area-light half axes must be nonzero and perpendicular");
+                        }
+                        else if (object.contains("half_axis_u") || object.contains("half_axis_v"))
+                            return Fail(location, "half axes require kind area_light");
                         parsed_object = std::move(record);
                     }
                     else if (kind == "spot_light")

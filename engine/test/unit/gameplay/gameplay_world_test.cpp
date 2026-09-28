@@ -780,6 +780,33 @@ TEST(GameplayWorldTest, PointLightActorFactoryPublishesUnshadowedPointSource)
     EXPECT_EQ(updated.range, 48.0f);
 }
 
+TEST(GameplayWorldTest, RectangleLightFactoryPublishesSizeAndTracksWorldRotation)
+{
+    RecordingLightSourceSink source_sink{};
+    kpengine::gameplay::GameplayWorld world{nullptr, &source_sink};
+    kpengine::gameplay::PointLightActorDesc desc{};
+    desc.position = {0.0f, 5.0f, 0.0f};
+    desc.half_axis_u = {0.65f, 0.0f, 0.0f};
+    desc.half_axis_v = {0.0f, 0.0f, 0.525f};
+    const auto handle = kpengine::gameplay::CreatePointLightActor(world, desc);
+    auto *actor = world.FindActor(handle);
+    ASSERT_NE(actor, nullptr);
+    auto *light = actor->FindComponent<kpengine::gameplay::PointLightComponent>();
+    ASSERT_NE(light, nullptr);
+    ASSERT_EQ(source_sink.creates.size(), 1U);
+    const auto &source = std::get<kpengine::render::PointLightSourceDesc>(source_sink.creates.front());
+    EXPECT_EQ(source.half_axis_u, desc.half_axis_u);
+    EXPECT_EQ(source.half_axis_v, desc.half_axis_v);
+    light->SetLocalRotation({0.0f, 90.0f, 0.0f});
+    world.Tick(1.0f / 60.0f);
+    ASSERT_EQ(source_sink.updates.size(), 1U);
+    const auto &updated = std::get<kpengine::render::PointLightSourceDesc>(source_sink.updates.front().source);
+    const auto &rotation = light->GetWorldTransform().rotator_;
+    EXPECT_EQ(updated.half_axis_u, rotation.RotateVector(desc.half_axis_u));
+    EXPECT_EQ(updated.half_axis_v, rotation.RotateVector(desc.half_axis_v));
+    EXPECT_NE(updated.half_axis_u, desc.half_axis_u);
+}
+
 TEST(GameplayWorldTest, SpotLightActorFactoryPublishesUnshadowedSpotSource)
 {
     RecordingLightSourceSink source_sink{};

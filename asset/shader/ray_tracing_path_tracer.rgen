@@ -166,8 +166,10 @@ vec3 EvaluateBrdf(HitPayload surface, vec3 normal, vec3 view_direction,
     return diffuse + specular;
 }
 
-vec3 DirectLight(HitPayload surface, vec3 view_direction)
+vec3 DirectLight(HitPayload surface, vec3 view_direction, uint sample_index, uint bounce,
+                 out bool stochastic)
 {
+    stochastic = false;
     vec3 result = vec3(0.0);
     const vec3 normal = normalize(surface.normal);
     [[dont_unroll]] for (uint index = 0u; index < camera.scene_data.w; ++index)
@@ -183,7 +185,17 @@ vec3 DirectLight(HitPayload surface, vec3 view_direction)
         }
         else
         {
-            const vec3 to_light = light.position_or_type.xyz - surface.position;
+            vec3 light_position = light.position_or_type.xyz;
+            if (type == 3u)
+            {
+                stochastic = true;
+                const uint stream = 256u + bounce * 256u + index * 2u;
+                const vec2 square = 2.0 * vec2(Random(stream, sample_index),
+                                               Random(stream + 1u, sample_index)) - 1.0;
+                light_position += square.x * light.direction_and_range.xyz +
+                                  square.y * light.parameters.xyz;
+            }
+            const vec3 to_light = light_position - surface.position;
             const float distance_squared = dot(to_light, to_light);
             const float distance_to_light = sqrt(distance_squared);
             if (distance_to_light <= 1e-4 ||
@@ -193,7 +205,16 @@ vec3 DirectLight(HitPayload surface, vec3 view_direction)
             maximum_distance = distance_to_light - 0.002;
             const float range_weight = clamp(
                 1.0 - pow(distance_to_light / light.direction_and_range.w, 4.0), 0.0, 1.0);
-            incident *= range_weight * range_weight / max(distance_squared, 1e-3);
+            if (type == 3u)
+            {
+                const vec3 area_normal = cross(light.direction_and_range.xyz, light.parameters.xyz);
+                const float quarter_area = length(area_normal);
+                const float emitter_cosine = max(dot(area_normal / quarter_area, -light_direction), 0.0);
+                // Uniform area PDF converted to solid angle: d^2 / (cosEmitter * area).
+                incident *= emitter_cosine * (4.0 * quarter_area) / distance_squared;
+            }
+            else
+                incident *= range_weight * range_weight / max(distance_squared, 1e-3);
             if (type == 2u)
             {
                 const float spot_cosine = dot(-light_direction,
@@ -208,7 +229,7 @@ vec3 DirectLight(HitPayload surface, vec3 view_direction)
         const float cosine = max(dot(normal, light_direction), 0.0);
         if (cosine <= 0.0)
             continue;
-        if (light.parameters.z > 0.5)
+        if ((type == 3u ? light.parameters.w : light.parameters.z) > 0.5)
         {
             if (TraceVisibility(surface.position + normal * 0.002,
                                 light_direction, maximum_distance))
@@ -338,7 +359,9 @@ vec3 TraceContinuation(HitPayload primary, uint sample_index,
         }
         view_direction = -bounce_direction;
         surface = next_surface;
-        radiance += throughput * (surface.emissive + DirectLight(surface, view_direction));
+        bool stochastic;
+        radiance += throughput * (surface.emissive +
+            DirectLight(surface, view_direction, sample_index, bounce + 1u, stochastic));
     }
     return radiance;
 }
@@ -386,25 +409,20 @@ void main()
     else
     {
         const vec3 view_direction = normalize(camera.camera_position.xyz - primary.position);
-        const vec3 primary_contribution = primary.emissive + DirectLight(primary, view_direction);
-        if (output_probe == 4u)
+        bool stochastic;
+        const vec3 cached_primary = primary.emissive +
+            DirectLight(primary, view_direction, 0u, 0u, stochastic);
+        [[dont_unroll]] for (uint sample_index = 0u;
+                            sample_index < camera.samples_per_dispatch; ++sample_index)
         {
-            radiance_sum = primary_contribution * float(camera.samples_per_dispatch);
-            const float luminance = Luminance(primary_contribution);
-            luminance_squared_sum = luminance * luminance *
-                                    float(camera.samples_per_dispatch);
-        }
-        else
-        {
-            [[dont_unroll]] for (uint sample_index = 0u;
-                                sample_index < camera.samples_per_dispatch; ++sample_index)
-            {
-                const vec3 sample_radiance = TraceContinuation(
-                    primary, sample_index, primary_contribution);
-                const float luminance = Luminance(sample_radiance);
-                radiance_sum += sample_radiance;
-                luminance_squared_sum += luminance * luminance;
-            }
+            // Preserve one primary visibility evaluation for punctual-only scenes.
+            const vec3 primary_contribution = !stochastic || sample_index == 0u ? cached_primary :
+                primary.emissive + DirectLight(primary, view_direction, sample_index, 0u, stochastic);
+            const vec3 sample_radiance = output_probe == 4u ? primary_contribution :
+                TraceContinuation(primary, sample_index, primary_contribution);
+            const float luminance = Luminance(sample_radiance);
+            radiance_sum += sample_radiance;
+            luminance_squared_sum += luminance * luminance;
         }
     }
 

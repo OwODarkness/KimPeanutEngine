@@ -22,6 +22,7 @@ namespace kpengine::gameplay
         light->SetColor(desc.color);
         light->SetIntensity(desc.intensity);
         light->SetRange(desc.range);
+        light->SetAreaHalfAxes(desc.half_axis_u, desc.half_axis_v);
         light->SetLightEnabled(desc.enabled);
         light->SetCastsShadow(desc.casts_shadow);
         if (!world.InitializeActor(handle) || !world.ActivateActor(handle))

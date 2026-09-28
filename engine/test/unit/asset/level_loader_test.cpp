@@ -185,6 +185,30 @@ TEST(LevelLoaderTest, LoadsCompleteV1RecordsAndDeduplicatesRequests)
     EXPECT_EQ(mesh.model.path, model);
 }
 
+TEST(LevelLoaderTest, LoadsRectangularAreaLightAndRejectsInvalidAxes)
+{
+    LevelFixture fixture;
+    const std::string prefix = R"({"version":1,"objects":[{"id":"area","kind":"area_light",
+        "position":[0,5,0],"color":[1,1,1],"intensity":10,"range":20,
+        "half_axis_u":[0.65,0,0],"half_axis_v":)";
+    fixture.Write("scene.level", prefix + "[0,0,0.525]}]}");
+    AssetRegisterInfo info{};
+    ASSERT_TRUE(ParseDirect(fixture.Path("scene.level"), info));
+    const auto level = std::dynamic_pointer_cast<kpengine::asset::LevelResource>(info.resource);
+    ASSERT_NE(level, nullptr);
+    ASSERT_EQ(level->objects.size(), 1U);
+    const auto &area = std::get<kpengine::asset::LevelPointLightRecord>(level->objects.front());
+    EXPECT_EQ(area.half_axis_u, (kpengine::Vector3f{0.65f, 0.0f, 0.0f}));
+    EXPECT_EQ(area.half_axis_v, (kpengine::Vector3f{0.0f, 0.0f, 0.525f}));
+    EXPECT_FLOAT_EQ(area.intensity, 10.0f);
+    for (const char *axes : {"[0,0,0]", "[1,0,0]", "[1,0,1]"})
+    {
+        fixture.Write("scene.level", prefix + axes + "}]}");
+        AssetRegisterInfo invalid{};
+        EXPECT_FALSE(ParseDirect(fixture.Path("scene.level"), invalid));
+    }
+}
+
 TEST(LevelLoaderTest, LoadsOptionalPerSectionMaterialReferences)
 {
     LevelFixture fixture;

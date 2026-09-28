@@ -1109,11 +1109,6 @@ namespace kpengine::render
                                     }
                                 }
                             }
-                            if (material_data.base_color_texture_index != 0xffffffffu)
-                            {
-                                // Match the raster resolver: a base-color map replaces its scalar tint.
-                                material_data.base_color = Vector4f{1.0f, 1.0f, 1.0f, 1.0f};
-                            }
                             const auto resolve_scalar_texture = [&](std::string_view name) {
                                 const MaterialParameterID parameter =
                                     material_system_->FindParameterID(template_handle, name);
@@ -1625,8 +1620,11 @@ namespace kpengine::render
                     {
                         continue;
                     }
-                    record.position_or_type = Vector4f{point->position, 1.0f};
-                    record.direction_and_range.w_ = point->range;
+                    const bool rectangle = point->half_axis_u.SquareLength() > 0.0f;
+                    record.position_or_type = Vector4f{point->position, rectangle ? 3.0f : 1.0f};
+                    record.direction_and_range = Vector4f{point->half_axis_u, point->range};
+                    if (rectangle)
+                        record.parameters = Vector4f{point->half_axis_v, record.parameters.z_};
                 }
                 else
                 {

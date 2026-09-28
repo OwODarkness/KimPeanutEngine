@@ -16,6 +16,15 @@ details and stage checklists belong in the linked submodule documents.
 
 ## Cross-cutting Render work
 
+- [x] **Cornell finite-source shadow recovery (2026-09-28):** scene-authored
+  rectangular analytic light, general PT sampling, intensity 10. Beauty and
+  direct-only penumbrae verified with an equal-power small-emitter control;
+  trace-ray and inline-query Beauty agree. Debug build and all 999 tests pass.
+  Raster area shadows, visible analytic geometry, mesh-emitter linkage/MIS,
+  and Editor size controls remain future work. →
+  [usage](usage.md#rectangular-path-tracing-light),
+  [journal](../../.spec/journal/2026-09-28-cornell-area-light.md)
+
 - [ ] **R5.1 — settings, demand and failure:** partial implementation landed
   2026-09-27: frame-boundary copied PT settings, legacy adapters, requested /
   effective stats, active Debug Viewer demand, and required-producer dependency

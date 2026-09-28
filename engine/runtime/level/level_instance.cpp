@@ -307,7 +307,7 @@ namespace kpengine::runtime
                     pending.kind = "point-light";
                     pending.description = gameplay::PointLightActorDesc{
                         record.position, record.color, record.intensity, record.range,
-                        record.enabled, record.casts_shadow};
+                        record.enabled, record.casts_shadow, record.half_axis_u, record.half_axis_v};
                 }
                 else if constexpr (std::is_same_v<Record, asset::LevelSpotLightRecord>)
                 {

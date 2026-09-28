@@ -71,8 +71,15 @@ namespace kpengine::render
         case LightType::Point:
         {
             const auto *const point = std::get_if<PointLightData>(&desc.type_data);
-            return point != nullptr && IsFinite(point->position) && std::isfinite(point->range) &&
-                   point->range > 0.0f;
+            if (point == nullptr || !IsFinite(point->position) || !std::isfinite(point->range) ||
+                point->range <= 0.0f || !IsFinite(point->half_axis_u) || !IsFinite(point->half_axis_v))
+                return false;
+            const float u2 = point->half_axis_u.SquareLength();
+            const float v2 = point->half_axis_v.SquareLength();
+            const float dot = point->half_axis_u.DotProduct(point->half_axis_v);
+            return (u2 == 0.0f && v2 == 0.0f) ||
+                   (u2 > 0.0f && v2 > 0.0f && u2 * v2 > 0.0f && std::isfinite(u2 * v2) &&
+                    dot * dot <= 1e-8f * u2 * v2);
         }
         case LightType::Spot:
         {

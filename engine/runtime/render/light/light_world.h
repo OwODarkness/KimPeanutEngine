@@ -52,6 +52,9 @@ namespace kpengine::render
     {
         Vector3f position{};
         float range = 1.0f;
+        // Zero axes select a point; nonzero perpendicular half-axes select a rectangle.
+        Vector3f half_axis_u{};
+        Vector3f half_axis_v{};
     };
 
     struct SpotLightData

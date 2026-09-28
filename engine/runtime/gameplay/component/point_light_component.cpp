@@ -4,6 +4,16 @@
 
 namespace kpengine::gameplay
 {
+    void PointLightComponent::SetAreaHalfAxes(const Vector3f &u, const Vector3f &v)
+    {
+        if (half_axis_u_ != u || half_axis_v_ != v)
+        {
+            half_axis_u_ = u;
+            half_axis_v_ = v;
+            MarkSourceDirty();
+        }
+    }
+
     void PointLightComponent::SetColor(const Vector3f &color)
     {
         if (color_ != color)
@@ -90,7 +100,10 @@ namespace kpengine::gameplay
     render::LightSourceDesc PointLightComponent::BuildSourceDesc() const
     {
         render::PointLightSourceDesc source{};
-        source.position = GetWorldTransform().position_;
+        const Transform3f &transform = GetWorldTransform();
+        source.position = transform.position_;
+        source.half_axis_u = transform.rotator_.RotateVector(half_axis_u_);
+        source.half_axis_v = transform.rotator_.RotateVector(half_axis_v_);
         source.color = color_;
         source.intensity = intensity_;
         source.range = range_;

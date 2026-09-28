@@ -1,5 +1,21 @@
 # Project Status
 
+- **Cornell PT area light (2026-09-28)** — Ceiling now uses a scene-authored
+  1.3 × 1.05 rectangular emitter at intensity 10. General finite-area sampling
+  restores soft shadows; equal-power small-emitter control confirms the
+  penumbra depends on source size. Debug Vulkan Beauty verified with trace-ray
+  and inline-query visibility. Full Debug build and all 999 tests pass.
+  Raster still uses a center-point approximation. →
+  [journal](../.spec/journal/2026-09-28-cornell-area-light.md)
+
+- **Cornell Beauty recovery (2026-09-28)** — Historical level/camera/material
+  settings remained intact; PT packing incorrectly replaced scalar colors with
+  white when a fallback texture existed. Removed that redundant override and
+  captured restored red/green/neutral Beauty. Per user instruction, Cornell's
+  point-light intensity was set to 10 before its area-light conversion; a fresh Debug Vulkan Beauty
+  capture verify the updated fixture. All 165 render tests pass. →
+  [journal](../.spec/journal/2026-09-28-cornell-beauty-recovery.md)
+
 - **Sponza PT wall surface parity (2026-09-28)** — PT treated blended dirt
   decals as opaque walls, while raster skipped them. Render now excludes
   blended sections and retains original section-to-material mapping, with BLAS

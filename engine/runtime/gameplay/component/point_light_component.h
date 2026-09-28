@@ -6,8 +6,8 @@
 
 namespace kpengine::gameplay
 {
-    // Gameplay-owned punctual-light authoring state. Render retains point-shadow
-    // target and scheduling ownership.
+    // Gameplay-owned local light; optional half axes select a rectangular emitter.
+    // Render retains shadow target and scheduling ownership.
     class PointLightComponent final : public SceneComponent
     {
     public:
@@ -21,6 +21,7 @@ namespace kpengine::gameplay
         void SetColor(const Vector3f &color);
         void SetIntensity(float intensity);
         void SetRange(float range);
+        void SetAreaHalfAxes(const Vector3f &u, const Vector3f &v);
         void SetLightEnabled(bool enabled);
         void SetCastsShadow(bool casts_shadow);
 
@@ -35,6 +36,8 @@ namespace kpengine::gameplay
         void MarkSourceDirty();
         void FlushSourceUpdate();
 
+        Vector3f half_axis_u_{};
+        Vector3f half_axis_v_{};
         Vector3f color_{1.0f, 1.0f, 1.0f};
         float intensity_ = 1.0f;
         float range_ = 1.0f;

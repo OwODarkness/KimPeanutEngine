@@ -97,6 +97,42 @@ TEST(LightSourceRegistryTest, ResolvesSourceCommandsAtDrainIntoImmutableLightSna
     EXPECT_FALSE(world.IsRegistered(resolved_handle));
 }
 
+TEST(LightSourceRegistryTest, RectangleAxesSurviveUpdatesAndRejectDegenerateShapes)
+{
+    using namespace kpengine::render;
+    LightSourceRegistry registry{};
+    LightWorld world{};
+    auto source = MakePointSource();
+    source.half_axis_u = {0.65f, 0.0f, 0.0f};
+    source.half_axis_v = {0.0f, 0.0f, 0.525f};
+    source.casts_shadow = true;
+    const auto handle = registry.EnqueueCreate(source);
+    registry.Drain(world);
+    auto snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_TRUE(snapshot.front().desc.shadow.has_value());
+    const auto &rectangle = std::get<PointLightData>(snapshot.front().desc.type_data);
+    EXPECT_EQ(rectangle.half_axis_u, source.half_axis_u);
+    EXPECT_EQ(rectangle.half_axis_v, source.half_axis_v);
+    auto invalid = snapshot.front().desc;
+    auto &shape = std::get<PointLightData>(invalid.type_data);
+    shape.half_axis_v = shape.half_axis_u;
+    EXPECT_FALSE(IsLightDescValid(invalid));
+    shape.half_axis_v = {};
+    EXPECT_FALSE(IsLightDescValid(invalid));
+    source.half_axis_u = {};
+    source.half_axis_v = {};
+    ASSERT_TRUE(registry.EnqueueUpdate(handle, source));
+    registry.Drain(world);
+    snapshot = world.Snapshot();
+    ASSERT_EQ(snapshot.size(), 1U);
+    EXPECT_EQ(std::get<PointLightData>(snapshot.front().desc.type_data).half_axis_u,
+              kpengine::Vector3f{});
+    ASSERT_TRUE(registry.EnqueueDestroy(handle));
+    registry.Drain(world);
+    EXPECT_TRUE(world.Snapshot().empty());
+}
+
 TEST(LightSourceRegistryTest, SpotShadowIntentOwnsPrivateHandleAndRetiresOnDisable)
 {
     kpengine::render::LightSourceRegistry registry{};

@@ -123,6 +123,15 @@ public policy while the coordinator owns scene preparation.
 - [Risks](risks.md) — known limits and validation gaps.
 - [Usage](usage.md) — runtime capture and validation workflow.
 
+## Rectangular PT emitters
+
+Scene-authored rectangular PT emitters reuse the local-light source lifecycle
+with copied half axes. Render packs a finite emitter into the existing PT
+light record and samples its surface per path sample/bounce; Graphics retains
+GPU ownership. Punctual-only scenes retain cached primary direct lighting.
+Raster currently uses the center-point approximation. The authoring and
+transport limits are documented in [usage](usage.md#rectangular-path-tracing-light).
+
 ## Layering rule
 
 Read this file for Render-wide architecture. Read a submodule `PLANS.md` for

@@ -28,7 +28,8 @@ namespace
         desc.intensity = source.intensity;
         desc.enabled = source.enabled;
         desc.shadow = shadow;
-        desc.type_data = kpengine::render::PointLightData{source.position, source.range};
+        desc.type_data = kpengine::render::PointLightData{source.position, source.range,
+                                                           source.half_axis_u, source.half_axis_v};
         return desc;
     }
 

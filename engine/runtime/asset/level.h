@@ -72,6 +72,9 @@ namespace kpengine::asset
         float range = 1.0f;
         bool enabled = true;
         bool casts_shadow = true;
+        // Zero axes select a point; nonzero perpendicular half-axes select a rectangle.
+        Vector3f half_axis_u{};
+        Vector3f half_axis_v{};
     };
 
     struct LevelSpotLightRecord
