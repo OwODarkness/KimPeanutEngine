@@ -381,6 +381,8 @@ namespace kpengine::render
             if (deferred_renderer_)
             {
                 frame_finalized = deferred_renderer_->FinalizeFrame();
+                profile_.graph_pass_outcomes =
+                    deferred_renderer_->GetProfileSnapshot().graph_pass_outcomes;
                 if (!frame_finalized)
                 {
                     last_diagnostic_ =

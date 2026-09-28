@@ -54,12 +54,18 @@ add_executable(RenderGraphTest
     render_graph_test.cpp
     render_graph_compatibility_test.cpp
     render_graph_frame_test.cpp
+    render_graph_bindings_test.cpp
+    render_graph_executor_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_pass_declaration.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph.cpp
-    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph_frame.cpp)
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph_frame.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph_bindings.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph_executor.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_target.cpp)
 target_include_directories(RenderGraphTest PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/runtime)
-target_link_libraries(RenderGraphTest PRIVATE KP::GoogleTest)
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core)
+target_link_libraries(RenderGraphTest PRIVATE Graphics KP::GoogleTest)
 include(GoogleTest)
 gtest_discover_tests(RenderGraphTest PROPERTIES LABELS "render")
 

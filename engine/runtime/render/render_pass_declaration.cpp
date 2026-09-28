@@ -1,5 +1,6 @@
 #include "render_pass_declaration.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <utility>
@@ -18,6 +19,35 @@ namespace kpengine::render
             "PointShadow", "CaptureOutput", "DebugViewOutput", "PathTraceHistory",
             "PathTraceGuide",
         };
+
+        constexpr std::array<RenderFrameResourceRole, kResourceCount> kTextureRoles{
+            RenderFrameResourceRole::SceneColor,
+            RenderFrameResourceRole::SceneHdr,
+            RenderFrameResourceRole::GBuffer,
+            RenderFrameResourceRole::DirectionalShadow,
+            RenderFrameResourceRole::SpotShadow,
+            RenderFrameResourceRole::PointShadow,
+            RenderFrameResourceRole::CaptureOutput,
+            RenderFrameResourceRole::DebugViewOutput,
+            RenderFrameResourceRole::PathTraceHistory,
+            RenderFrameResourceRole::PathTraceGuide,
+        };
+
+        template <typename Handle>
+        void AppendResourceVersion(CompiledRenderFramePlan &plan,
+                                   RenderFrameResourceRole role, Handle handle)
+        {
+            const RenderFrameGraphResourceHandle typed_handle{handle};
+            const auto duplicate = std::find_if(
+                plan.resources.begin(), plan.resources.end(),
+                [&](const RenderFrameResourceImport &entry) {
+                    return entry.role == role && entry.handle == typed_handle;
+                });
+            if (duplicate == plan.resources.end())
+            {
+                plan.resources.push_back({role, typed_handle});
+            }
+        }
 
         bool IsPassEnabled(const FixedRenderPassEntry &entry, RenderFrameConditions conditions)
         {
@@ -162,15 +192,18 @@ namespace kpengine::render
         return AuthoredEntries();
     }
 
-    RenderGraphCompileResult CompileRenderFrameGraph(RenderFrameConditions conditions)
+    CompiledRenderFramePlan CompileRenderFramePlan(RenderFrameConditions conditions)
     {
+        CompiledRenderFramePlan plan;
         RenderGraphBuilder graph;
         std::array<GraphTextureHandle, kResourceCount> resources{};
         const bool needs_blas = conditions.ray_tracing_blas_build;
         const bool needs_tlas = conditions.ray_tracing_tlas_build || conditions.ray_query_shadow ||
                                 conditions.ray_tracing_path_trace;
+        const bool needs_scene_geometry = needs_blas || conditions.ray_tracing_path_trace;
         const std::optional<GraphBufferHandle> scene_geometry =
-            needs_blas ? std::optional<GraphBufferHandle>(graph.ImportBuffer("SceneGeometry"))
+            needs_scene_geometry
+                ? std::optional<GraphBufferHandle>(graph.ImportBuffer("SceneGeometry"))
                        : std::nullopt;
         const std::optional<GraphBufferHandle> scene_instances =
             needs_tlas ? std::optional<GraphBufferHandle>(graph.ImportBuffer("SceneInstances"))
@@ -189,6 +222,32 @@ namespace kpengine::render
                 ? std::optional<GraphAccelerationStructureHandle>(
                       graph.ImportAccelerationStructure("SceneTLAS"))
                 : std::nullopt;
+        std::vector<std::pair<uint32_t, RenderFrameResourceRole>> buffer_roles;
+        std::vector<std::pair<uint32_t, RenderFrameResourceRole>> acceleration_structure_roles;
+        const auto add_buffer_role = [&](GraphBufferHandle handle,
+                                         RenderFrameResourceRole role) {
+            if (handle.IsValid())
+            {
+                buffer_roles.emplace_back(handle.resource, role);
+            }
+        };
+        const auto add_acceleration_structure_role =
+            [&](GraphAccelerationStructureHandle handle, RenderFrameResourceRole role) {
+                if (handle.IsValid())
+                {
+                    acceleration_structure_roles.emplace_back(handle.resource, role);
+                }
+            };
+        if (scene_geometry.has_value())
+            add_buffer_role(*scene_geometry, RenderFrameResourceRole::SceneGeometry);
+        if (scene_instances.has_value())
+            add_buffer_role(*scene_instances, RenderFrameResourceRole::SceneInstances);
+        if (scene_scratch.has_value())
+            add_buffer_role(*scene_scratch, RenderFrameResourceRole::SceneScratch);
+        if (scene_blas.has_value())
+            add_acceleration_structure_role(*scene_blas, RenderFrameResourceRole::SceneBlas);
+        if (scene_tlas.has_value())
+            add_acceleration_structure_role(*scene_tlas, RenderFrameResourceRole::SceneTlas);
         for (std::size_t resource_index = 0; resource_index < kResourceCount; ++resource_index)
         {
             // SceneHdr is the one resource the graph plans but does not own: its
@@ -276,11 +335,13 @@ namespace kpengine::render
             }
         }
 
-        if (needs_blas && scene_geometry.has_value() && scene_blas.has_value() &&
+        if (needs_blas && scene_geometry.has_value() && scene_scratch.has_value() &&
+            scene_blas.has_value() &&
             blas_build_pass.IsValid())
         {
             blas_build_pass.Read(*scene_geometry,
                                  RenderGraphUsage::AccelerationStructureBuildInput)
+                .Write(*scene_scratch, RenderGraphUsage::StorageWrite)
                 .Write(*scene_blas, RenderGraphUsage::AccelerationStructureBuildOutput);
         }
         if (conditions.ray_tracing_tlas_build && scene_instances.has_value() &&
@@ -290,7 +351,7 @@ namespace kpengine::render
             tlas_build_pass.Read(graph.CurrentVersion(*scene_blas),
                                  RenderGraphUsage::AccelerationStructureBuildInput)
                 .Read(*scene_instances, RenderGraphUsage::AccelerationStructureBuildInput)
-                .Read(*scene_scratch, RenderGraphUsage::StorageRead)
+                .Write(graph.CurrentVersion(*scene_scratch), RenderGraphUsage::StorageWrite)
                 .Write(*scene_tlas, RenderGraphUsage::AccelerationStructureBuildOutput);
             if (blas_build_pass.IsValid() && conditions.ray_tracing_blas_build)
             {
@@ -322,6 +383,11 @@ namespace kpengine::render
         if (conditions.ray_tracing_path_trace && scene_tlas.has_value() &&
             path_trace_pass.IsValid())
         {
+            if (scene_geometry.has_value())
+            {
+                path_trace_pass.Read(*scene_geometry,
+                                    RenderGraphUsage::StorageRead);
+            }
             path_trace_pass.Read(graph.CurrentVersion(*scene_tlas),
                                  RenderGraphUsage::AccelerationStructureRead,
                                  RenderGraphStage::RayTracingShader);
@@ -363,6 +429,55 @@ namespace kpengine::render
                     resources[static_cast<std::size_t>(RenderPassResource::DebugViewOutput)]),
                 "DebugViewOutput");
         }
-        return graph.Compile();
+        plan.compilation = graph.Compile();
+        if (!plan.compilation.graph.has_value())
+        {
+            return plan;
+        }
+
+        // Add the exact SSA versions consumed or produced by enabled passes.
+        // Roles come from the authored handles above, never from graph names.
+        for (const CompiledRenderGraph::Pass &pass : plan.compilation.graph->Passes())
+        {
+            for (const RenderGraphResourceUse &use : pass.uses)
+            {
+                if (const auto *texture = std::get_if<GraphTextureHandle>(&use.handle))
+                {
+                    if (texture->resource < kTextureRoles.size())
+                    {
+                        AppendResourceVersion(plan, kTextureRoles[texture->resource], *texture);
+                    }
+                }
+                else if (const auto *buffer = std::get_if<GraphBufferHandle>(&use.handle))
+                {
+                    const auto role = std::find_if(
+                        buffer_roles.begin(), buffer_roles.end(),
+                        [buffer](const auto &entry) { return entry.first == buffer->resource; });
+                    if (role != buffer_roles.end())
+                    {
+                        AppendResourceVersion(plan, role->second, *buffer);
+                    }
+                }
+                else if (const auto *acceleration_structure =
+                             std::get_if<GraphAccelerationStructureHandle>(&use.handle))
+                {
+                    const auto role = std::find_if(
+                        acceleration_structure_roles.begin(), acceleration_structure_roles.end(),
+                        [acceleration_structure](const auto &entry) {
+                            return entry.first == acceleration_structure->resource;
+                        });
+                    if (role != acceleration_structure_roles.end())
+                    {
+                        AppendResourceVersion(plan, role->second, *acceleration_structure);
+                    }
+                }
+            }
+        }
+        return plan;
+    }
+
+    RenderGraphCompileResult CompileRenderFrameGraph(RenderFrameConditions conditions)
+    {
+        return CompileRenderFramePlan(conditions).compilation;
     }
 }

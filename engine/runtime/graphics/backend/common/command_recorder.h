@@ -103,6 +103,13 @@ namespace kpengine::graphics
             (void)builds;
             return false;
         }
+        virtual bool BuildAccelerationStructures(
+            std::span<const RayTracingBuildDesc> builds,
+            const RayTracingBuildResources &resources)
+        {
+            (void)resources;
+            return BuildAccelerationStructures(builds);
+        }
         virtual bool BindRayTracingPipeline(RayTracingPipelineHandle pipeline)
         {
             (void)pipeline;

@@ -34,6 +34,14 @@ details and stage checklists belong in the linked submodule documents.
   raster baseline is recorded. → [stage plan](.plan/R5.1.md), [R5 map](.plan/R5.md),
   [spec](../../.spec/specs/render-r5-render-configuration-graph-ownership.md),
   [journal](../../.spec/journal/2026-09-27-r5-1-settings-demand-failure.md)
+- [ ] **R5.2 — typed graph bindings and frame execution (in progress):** typed
+  one-to-many physical imports and a common Graphics AS-preparation bridge;
+  Render executor owns transitions, pass brackets, transient leases,
+  external-terminal ordering and typed finalization. Cornell Debug Vulkan PT
+  and screenshot export pass. Runtime-triggered AS build, failure/lease tests,
+  cross-backend and multi-demand parity, resize/reload, and the full validation
+  matrix remain open. → [stage plan](.plan/R5.2.md), [R5 map](.plan/R5.md),
+  [spec](../../.spec/specs/render-r5-render-configuration-graph-ownership.md)
 - [ ] **issue-9.7 — Sponza texture aliasing and frame throughput:** Stages 0–5,
   Stage 6.0 telemetry, Stage 6.1 effective shadow validity, Stage 6.2 stable
   bindings, Stage 6.3 recorder/packet reuse, and Stage 6.4 dirty-range OpenGL
@@ -294,20 +302,24 @@ details and stage checklists belong in the linked submodule documents.
   [plan](.plan/R5.md), [R5.0](.plan/R5.0.md), [R5.1](.plan/R5.1.md),
   [execution spec](../../.spec/specs/render-r5-render-configuration-graph-ownership.md),
   [dated recheck](.review/R5.md#baseline-refresh--2026-09-27)
-  - [ ] **R5.0 (in progress):** label reconciliation, source ownership/cache
+  - [x] **R5.0:** label reconciliation, source ownership/cache
     inventory, known Vulkan PT/cache baselines, and comparison budgets are
-    recorded. Vulkan/OpenGL RT-off Cornell captures now establish a raster
-    reference; indexed PT graph outcomes and the exit review remain open.
+    recorded. Vulkan/OpenGL RT-off Cornell captures establish a raster
+    reference; Cornell/Sponza PT graph outcomes and the R5.2 image comparison
+    limit are indexed in the [exit review](../../.spec/journal/2026-09-28-r5-0-exit-review.md).
   - [x] **R5.1:** frame-boundary settings snapshots, legacy mappings, scoped
     viewer/tooling demand, required producer failure propagation, and distinct
     capture/Viewer targets are implemented. Graph contracts pass. Runtime
     Sponza Beauty/Primary-Albedo, World Normal/shadow diagnostics, and Base Color
     readback alongside a live World Normal Viewer are verified. →
     [journal](../../.spec/journal/2026-09-27-r5-1-settings-demand-failure.md)
-  - [ ] **R5.2:** typed one-to-many physical bindings and a Render-owned graph
+  - [ ] **R5.2 (in progress):** typed one-to-many physical bindings and a Render-owned graph
     executor with rollback, transition and terminal ordering tests. Execute
     R5.2.1–R5.2.5; graph is authoritative and undeclared resource access fails. →
-    [concrete plan](.plan/R5.2.md)
+    [concrete plan](.plan/R5.2.md), [risk review and build-frame validation](.review/R5.2.md).
+    Close AS runtime/retirement evidence, buffer/AS context bypasses, sticky
+    external failure, context-violation enforcement and prepared-description
+    identity before stage acceptance.
   - [ ] **R5.3:** extract concrete pass owners with cache/history invalidation,
     init rollback, reload/resize/edit and safe cleanup parity. Execute
     R5.3.1–R5.3.7; move structs/state/constants with owners and remove pass

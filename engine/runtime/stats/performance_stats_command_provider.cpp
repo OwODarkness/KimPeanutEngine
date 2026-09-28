@@ -264,6 +264,8 @@ namespace kpengine::runtime
                 const std::string prefix =
                     std::string{"pass."} +
                     RenderPassName(static_cast<render::RenderProfilePass>(index));
+                data[prefix + ".outcome"] = std::string{
+                    render::RenderGraphPassOutcomeName(profile.graph_pass_outcomes[index])};
                 AddOptional(data, prefix + ".gpu_ms", pass.gpu_time_ms);
                 const auto &summary = profile.summary.passes[index];
                 AddOptional(data, prefix + ".gpu_p50_ms", summary.gpu_p50_ms);

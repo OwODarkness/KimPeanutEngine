@@ -218,6 +218,14 @@ namespace kpengine::graphics
                acceleration_structure_owner_->Build(command_buffer_, builds);
     }
 
+    bool VulkanCommandRecorder::BuildAccelerationStructures(
+        std::span<const RayTracingBuildDesc> builds,
+        const RayTracingBuildResources &resources)
+    {
+        return acceleration_structure_owner_ &&
+               acceleration_structure_owner_->Build(command_buffer_, builds, resources);
+    }
+
     bool VulkanCommandRecorder::BindRayTracingPipeline(RayTracingPipelineHandle pipeline)
     {
         if (command_buffer_ == VK_NULL_HANDLE || !acceleration_structure_owner_ ||

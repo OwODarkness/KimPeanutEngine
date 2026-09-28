@@ -1,6 +1,6 @@
 # R5 — Render configuration, graph execution, and ownership
 
-- Status: active; R5.1 complete; R5.0 PT graph outcomes/exit review open
+- Status: active; R5.0 and R5.1 complete; R5.2 implementation in progress
 - Owner: Render
 - Parent TODO: [Render R5 roadmap](../../docs/render/TODO.md)
 - Design: [R5 stage map](../../docs/render/.plan/R5.md),
@@ -32,7 +32,7 @@ not relabeled as accepted R4.8 work.
 | Requests and lifecycle | `RenderSystem` applies copied settings at frame boundaries, owns frame contexts, capture service, backend and renderer facade; Runtime supplies requests/callbacks. | Published metrics are completed-frame snapshots. Runtime does not depend on Editor. |
 | Scene and material inputs | `RenderSceneCoordinator`, `RenderWorld`, and `MaterialSystem` produce immutable/revisioned CPU-side records; `DeferredRenderer` consumes them. | World/material revisions key scene-record reuse. Authored light signature is independent. Unchanged records avoid section/material walks, table packing, and address-patch generation. |
 | Frame plans and graph | `DeferredRenderer` eagerly compiles the six-condition cross product into 64 plan slots. `RenderGraphFrame` borrows a compiled graph and owns per-frame outcomes/cursor/finalization state. | Keep all 64 cached plans initially. The frame object owns no GPU resources; the external Editor terminal remains ordered after renderer passes. |
-| Physical frame resources | `DeferredRenderer` resolves logical graph imports and transient leases to common Graphics handles; Graphics pools/allocates physical resources. | History is a two-target ping-pong pair. Frame imports and transient leases are frame scoped. Existing string-keyed geometry/BLAS expansion remains a known R5.2 issue. |
+| Physical frame resources | `RenderGraphBindings` validates exact logical imports and owns common physical groups; `RenderGraphExecutor` acquires/releases transient leases; Graphics pools/allocates physical resources. `DeferredRenderer` supplies the current owner resources and callbacks. | History is a two-target ping-pong pair. Imports and leases are frame scoped. No name-based geometry/BLAS exception remains in transition execution. Runtime-triggered AS build preparation and remaining parity gates are open in R5.2. |
 | Raster passes | `DeferredRenderer` records shadow, GBuffer, deferred-lighting, tone-map, diagnostics, and capture work through the common backend/recorder. | Scene Color raster and diagnostic/capture dependencies stay distinct. RT-off currently records raster draws but its known Sponza capture is mostly black and is not a parity oracle. |
 | RT preparation and tables | `DeferredRenderer` owns Render-side scene descriptors, revisions, record cache, pass policy and per-frame binding-cache keys. Graphics owns immutable GPU reference tables, descriptors, AS storage/builds, command submission and retirement. | Preserve frame-slot/history-parity binding reuse; static unchanged scene records and table uploads remain zero after warm-up. Vulkan native types stay below common Graphics. |
 | History and filtering | `DeferredRenderer` owns PT history signature/sample progression and guide/filter targets; PT shader implements estimator, preview, denoise and visibility variants. | Scene/camera/extent/estimator changes reset history according to the signature. Filtering/output mode interactions are not fully characterized and remain open. |
@@ -124,9 +124,9 @@ RuntimeLib/EditorLib dependency cycle.
 - [x] Fresh Vulkan/OpenGL raster captures and a usable RT-off raster parity
   baseline are recorded on Cornell; the dark Sponza fallback is diagnosed and
   retained as non-parity evidence.
-- [ ] Cornell/Sponza representative current PT captures and graph outcomes are
+- [x] Cornell/Sponza representative current PT captures and graph outcomes are
   indexed under the frozen conditions.
-- [ ] R5.0 exit is reviewed against the remaining PT graph-outcome rows before
+- [x] R5.0 exit is reviewed against the remaining PT graph-outcome rows before
   R5.2 begins an extraction whose behavior depends on those outcomes.
 - [x] R5.1 adds validated copied settings applied at a frame boundary, explicit
   legacy probe mappings, requested/effective stats, active Editor Viewer demand,

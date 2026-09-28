@@ -976,9 +976,236 @@ namespace kpengine::graphics
         return true;
     }
 
+    std::optional<RayTracingBuildResources>
+    VulkanAccelerationStructureOwner::PrepareBuildResources(
+        std::span<const RayTracingBuildDesc> builds)
+    {
+        if (!supported_ || builds.empty())
+        {
+            return std::nullopt;
+        }
+        PreparedBatch batch{};
+        RayTracingBuildResources view{};
+        const auto fail = [this, &batch]() -> std::optional<RayTracingBuildResources> {
+            DestroyTemporaryBuffers(batch.buffers);
+            return std::nullopt;
+        };
+        for (const RayTracingBuildDesc &build : builds)
+        {
+            Resource *resource = GetResource(build.target);
+            if (resource == nullptr || resource->pending_destroy ||
+                !IsRayTracingBuildDescValid(build))
+            {
+                return fail();
+            }
+
+            std::vector<VkAccelerationStructureGeometryKHR> geometries;
+            std::vector<uint32_t> primitive_counts;
+            BufferHandle instance_input{};
+            if (!build.geometries.empty())
+            {
+                for (const RayTracingGeometryDesc &geometry : build.geometries)
+                {
+                    const VkDeviceAddress vertex_address =
+                        buffer_manager_->GetDeviceAddress(device_, geometry.vertex_buffer);
+                    const VkDeviceAddress index_address =
+                        buffer_manager_->GetDeviceAddress(device_, geometry.index_buffer);
+                    if (vertex_address == 0 || index_address == 0)
+                    {
+                        return fail();
+                    }
+                    VkAccelerationStructureGeometryTrianglesDataKHR triangles{};
+                    triangles.sType =
+                        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_TRIANGLES_DATA_KHR;
+                    triangles.vertexFormat = VK_FORMAT_R32G32B32_SFLOAT;
+                    triangles.vertexData.deviceAddress = vertex_address + geometry.vertex_offset;
+                    triangles.vertexStride = geometry.vertex_stride;
+                    triangles.maxVertex = geometry.vertex_count - 1;
+                    triangles.indexType = geometry.index_type == RayTracingIndexType::UInt16
+                                              ? VK_INDEX_TYPE_UINT16
+                                              : VK_INDEX_TYPE_UINT32;
+                    triangles.indexData.deviceAddress = index_address + geometry.index_offset;
+                    VkAccelerationStructureGeometryKHR geometry_info{};
+                    geometry_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+                    geometry_info.geometryType = VK_GEOMETRY_TYPE_TRIANGLES_KHR;
+                    geometry_info.flags = VK_GEOMETRY_OPAQUE_BIT_KHR;
+                    geometry_info.geometry.triangles = triangles;
+                    geometries.push_back(geometry_info);
+                    primitive_counts.push_back(
+                        static_cast<uint32_t>(GeometryPrimitiveCount(geometry)));
+                }
+            }
+            else
+            {
+                std::vector<VkAccelerationStructureInstanceKHR> instances;
+                instances.reserve(build.instances.size());
+                for (const RayTracingInstanceDesc &instance : build.instances)
+                {
+                    const Resource *bottom_level = GetResource(instance.bottom_level);
+                    if (bottom_level == nullptr ||
+                        bottom_level->acceleration_structure == VK_NULL_HANDLE)
+                    {
+                        return fail();
+                    }
+                    VkAccelerationStructureDeviceAddressInfoKHR address_info{};
+                    address_info.sType =
+                        VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
+                    address_info.accelerationStructure = bottom_level->acceleration_structure;
+                    const VkDeviceAddress address =
+                        get_acceleration_structure_address_(device_, &address_info);
+                    if (address == 0)
+                    {
+                        return fail();
+                    }
+                    VkAccelerationStructureInstanceKHR native_instance{};
+                    std::memcpy(native_instance.transform.matrix, instance.transform.data(),
+                                sizeof(native_instance.transform.matrix));
+                    native_instance.instanceCustomIndex = instance.instance_id & 0x00FFFFFFu;
+                    native_instance.mask = instance.visibility_mask;
+                    native_instance.instanceShaderBindingTableRecordOffset = 0;
+                    native_instance.flags =
+                        VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
+                    native_instance.accelerationStructureReference = address;
+                    instances.push_back(native_instance);
+                }
+                VkBufferCreateInfo instance_info{};
+                instance_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+                instance_info.size = sizeof(VkAccelerationStructureInstanceKHR) * instances.size();
+                instance_info.usage =
+                    VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
+                    VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+                instance_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+                instance_input = buffer_manager_->CreateBufferResource(
+                    device_, &instance_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
+                if (!instance_input.IsValid())
+                {
+                    return fail();
+                }
+                batch.buffers.handles.push_back(instance_input);
+                buffer_manager_->UploadData(instance_input, instance_info.size, instances.data());
+                view.instance_inputs.push_back(instance_input);
+                VkAccelerationStructureGeometryInstancesDataKHR instances_data{};
+                instances_data.sType =
+                    VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+                instances_data.arrayOfPointers = VK_FALSE;
+                VkAccelerationStructureGeometryKHR geometry_info{};
+                geometry_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
+                geometry_info.geometryType = VK_GEOMETRY_TYPE_INSTANCES_KHR;
+                geometry_info.geometry.instances = instances_data;
+                geometries.push_back(geometry_info);
+                primitive_counts.push_back(static_cast<uint32_t>(build.instances.size()));
+            }
+
+            VkAccelerationStructureBuildGeometryInfoKHR build_info{};
+            build_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_GEOMETRY_INFO_KHR;
+            build_info.type = ToVulkanType(resource->desc.type);
+            build_info.flags = resource->desc.allow_update
+                                   ? VK_BUILD_ACCELERATION_STRUCTURE_ALLOW_UPDATE_BIT_KHR
+                                   : 0;
+            build_info.mode = build.mode == RayTracingBuildMode::Update
+                                  ? VK_BUILD_ACCELERATION_STRUCTURE_MODE_UPDATE_KHR
+                                  : VK_BUILD_ACCELERATION_STRUCTURE_MODE_BUILD_KHR;
+            build_info.geometryCount = static_cast<uint32_t>(geometries.size());
+            build_info.pGeometries = geometries.data();
+            VkAccelerationStructureBuildSizesInfoKHR sizes{};
+            sizes.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_BUILD_SIZES_INFO_KHR;
+            get_build_sizes_(device_, VK_ACCELERATION_STRUCTURE_BUILD_TYPE_DEVICE_KHR,
+                             &build_info, primitive_counts.data(), &sizes);
+            if (sizes.accelerationStructureSize == 0 ||
+                !EnsureStorage(*resource, sizes.accelerationStructureSize))
+            {
+                return fail();
+            }
+            const VkDeviceSize scratch_size = build.mode == RayTracingBuildMode::Update
+                                                  ? sizes.updateScratchSize
+                                                  : sizes.buildScratchSize;
+            if (scratch_size == 0)
+            {
+                return fail();
+            }
+            VkBufferCreateInfo scratch_info{};
+            scratch_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
+            scratch_info.size = scratch_size;
+            scratch_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                                 VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
+            scratch_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            const BufferHandle scratch = buffer_manager_->CreateBufferResource(
+                device_, &scratch_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
+            if (!scratch.IsValid() || buffer_manager_->GetDeviceAddress(device_, scratch) == 0)
+            {
+                if (scratch.IsValid())
+                    batch.buffers.handles.push_back(scratch);
+                return fail();
+            }
+            batch.buffers.handles.push_back(scratch);
+            view.scratch_buffers.push_back(scratch);
+            PreparedBuild prepared{};
+            prepared.target = build.target;
+            prepared.mode = build.mode;
+            prepared.geometries.assign(build.geometries.begin(), build.geometries.end());
+            prepared.instances.assign(build.instances.begin(), build.instances.end());
+            prepared.instance_input = instance_input;
+            prepared.scratch = scratch;
+            batch.builds.push_back(std::move(prepared));
+        }
+        view.token = next_prepared_build_token_++;
+        if (view.token == 0)
+            view.token = next_prepared_build_token_++;
+        prepared_build_batches_.emplace(view.token, std::move(batch));
+        return view;
+    }
+
+    void VulkanAccelerationStructureOwner::CancelPreparedBuildResources(uint64_t token) noexcept
+    {
+        const auto batch = prepared_build_batches_.find(token);
+        if (batch == prepared_build_batches_.end())
+            return;
+        DestroyTemporaryBuffers(batch->second.buffers);
+        prepared_build_batches_.erase(batch);
+    }
+
+    bool VulkanAccelerationStructureOwner::MatchesPreparedDescription(
+        const RayTracingBuildDesc &build, const PreparedBuild &prepared) noexcept
+    {
+        if (build.target != prepared.target || build.mode != prepared.mode ||
+            build.geometries.size() != prepared.geometries.size() ||
+            build.instances.size() != prepared.instances.size())
+        {
+            return false;
+        }
+        for (size_t index = 0; index < build.geometries.size(); ++index)
+        {
+            const RayTracingGeometryDesc &actual = build.geometries[index];
+            const RayTracingGeometryDesc &snapshot = prepared.geometries[index];
+            if (actual.vertex_buffer != snapshot.vertex_buffer ||
+                actual.vertex_offset != snapshot.vertex_offset ||
+                actual.vertex_stride != snapshot.vertex_stride ||
+                actual.vertex_count != snapshot.vertex_count ||
+                actual.index_buffer != snapshot.index_buffer ||
+                actual.index_offset != snapshot.index_offset ||
+                actual.index_count != snapshot.index_count ||
+                actual.index_type != snapshot.index_type)
+            {
+                return false;
+            }
+        }
+        for (size_t index = 0; index < build.instances.size(); ++index)
+        {
+            const RayTracingInstanceDesc &actual = build.instances[index];
+            const RayTracingInstanceDesc &snapshot = prepared.instances[index];
+            if (actual.bottom_level != snapshot.bottom_level ||
+                actual.transform != snapshot.transform || actual.instance_id != snapshot.instance_id ||
+                actual.visibility_mask != snapshot.visibility_mask)
+            {
+                return false;
+            }
+        }
+        return true;
+    }
+
     bool VulkanAccelerationStructureOwner::BuildOne(
         VkCommandBuffer command_buffer, const RayTracingBuildDesc &build,
-        TemporaryBuffers &temporary_buffers)
+        const PreparedBuild &prepared)
     {
         Resource *resource = GetResource(build.target);
         if (!resource || resource->pending_destroy ||
@@ -1036,56 +1263,17 @@ namespace kpengine::graphics
         }
         else
         {
-            std::vector<VkAccelerationStructureInstanceKHR> instances;
-            instances.reserve(build.instances.size());
-            for (const RayTracingInstanceDesc &instance : build.instances)
-            {
-                const Resource *bottom_level = GetResource(instance.bottom_level);
-                if (!bottom_level || bottom_level->acceleration_structure == VK_NULL_HANDLE)
-                {
-                    return false;
-                }
-                VkAccelerationStructureDeviceAddressInfoKHR address_info{};
-                address_info.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_DEVICE_ADDRESS_INFO_KHR;
-                address_info.accelerationStructure = bottom_level->acceleration_structure;
-                const VkDeviceAddress bottom_level_address =
-                    get_acceleration_structure_address_(device_, &address_info);
-                if (bottom_level_address == 0)
-                {
-                    return false;
-                }
-
-                VkAccelerationStructureInstanceKHR native_instance{};
-                std::memcpy(native_instance.transform.matrix, instance.transform.data(),
-                            sizeof(native_instance.transform.matrix));
-                native_instance.instanceCustomIndex = instance.instance_id & 0x00FFFFFFu;
-                native_instance.mask = instance.visibility_mask;
-                native_instance.instanceShaderBindingTableRecordOffset = 0;
-                native_instance.flags = VK_GEOMETRY_INSTANCE_TRIANGLE_FACING_CULL_DISABLE_BIT_KHR;
-                native_instance.accelerationStructureReference = bottom_level_address;
-                instances.push_back(native_instance);
-            }
-
-            VkBufferCreateInfo instance_buffer_info{};
-            instance_buffer_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-            instance_buffer_info.size = sizeof(VkAccelerationStructureInstanceKHR) * instances.size();
-            instance_buffer_info.usage = VK_BUFFER_USAGE_ACCELERATION_STRUCTURE_BUILD_INPUT_READ_ONLY_BIT_KHR |
-                                          VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-            instance_buffer_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-            const BufferHandle instance_handle = buffer_manager_->CreateBufferResource(
-                device_, &instance_buffer_info, VulkanMemoryUsageType::MEMORY_USAGE_UNIFORM);
-            buffer_manager_->UploadData(instance_handle, instance_buffer_info.size, instances.data());
-            temporary_buffers.handles.push_back(instance_handle);
             const VulkanBufferResource *instance_resource =
-                buffer_manager_->GetBufferResource(instance_handle);
+                buffer_manager_->GetBufferResource(prepared.instance_input);
             const VkDeviceAddress instance_address =
-                buffer_manager_->GetDeviceAddress(device_, instance_handle);
+                buffer_manager_->GetDeviceAddress(device_, prepared.instance_input);
             if (!instance_resource || instance_address == 0)
             {
                 return false;
             }
             VkAccelerationStructureGeometryInstancesDataKHR instances_data{};
-            instances_data.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
+            instances_data.sType =
+                VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_INSTANCES_DATA_KHR;
             instances_data.arrayOfPointers = VK_FALSE;
             instances_data.data.deviceAddress = instance_address;
             instance_geometry.sType = VK_STRUCTURE_TYPE_ACCELERATION_STRUCTURE_GEOMETRY_KHR;
@@ -1127,18 +1315,9 @@ namespace kpengine::graphics
         {
             return false;
         }
-        VkBufferCreateInfo scratch_info{};
-        scratch_info.sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO;
-        scratch_info.size = scratch_size;
-        scratch_info.usage = VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
-                              VK_BUFFER_USAGE_SHADER_DEVICE_ADDRESS_BIT;
-        scratch_info.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
-        const BufferHandle scratch_handle = buffer_manager_->CreateBufferResource(
-            device_, &scratch_info, VulkanMemoryUsageType::MEMORY_USAGE_DEVICE);
-        temporary_buffers.handles.push_back(scratch_handle);
         const VkDeviceAddress scratch_address =
-            buffer_manager_->GetDeviceAddress(device_, scratch_handle);
-        if (scratch_address == 0)
+            buffer_manager_->GetDeviceAddress(device_, prepared.scratch);
+        if (!prepared.scratch.IsValid() || scratch_address == 0)
         {
             return false;
         }
@@ -1178,26 +1357,66 @@ namespace kpengine::graphics
         VkCommandBuffer command_buffer, std::span<const RayTracingBuildDesc> builds)
     {
         if (!supported_ || command_buffer == VK_NULL_HANDLE || builds.empty())
+            return false;
+        const std::optional<RayTracingBuildResources> resources =
+            PrepareBuildResources(builds);
+        return resources.has_value() && Build(command_buffer, builds, *resources);
+    }
+
+    bool VulkanAccelerationStructureOwner::Build(
+        VkCommandBuffer command_buffer, std::span<const RayTracingBuildDesc> builds,
+        const RayTracingBuildResources &resources)
+    {
+        const auto batch_iterator = prepared_build_batches_.find(resources.token);
+        if (!supported_ || command_buffer == VK_NULL_HANDLE || builds.empty() ||
+            !resources.IsValid() || batch_iterator == prepared_build_batches_.end() ||
+            batch_iterator->second.builds.size() != builds.size())
         {
             return false;
         }
-        TemporaryBuffers temporary_buffers{};
-        for (const RayTracingBuildDesc &build : builds)
+        PreparedBatch batch = std::move(batch_iterator->second);
+        prepared_build_batches_.erase(batch_iterator);
+        std::vector<BufferHandle> prepared_instances;
+        std::vector<BufferHandle> prepared_scratch;
+        prepared_instances.reserve(batch.builds.size());
+        prepared_scratch.reserve(batch.builds.size());
+        for (const PreparedBuild &build : batch.builds)
         {
-            if (!BuildOne(command_buffer, build, temporary_buffers))
+            if (build.instance_input.IsValid())
+                prepared_instances.push_back(build.instance_input);
+            prepared_scratch.push_back(build.scratch);
+        }
+        if (resources.instance_inputs != prepared_instances ||
+            resources.scratch_buffers != prepared_scratch)
+        {
+            DestroyTemporaryBuffers(batch.buffers);
+            return false;
+        }
+        bool succeeded = std::all_of(builds.begin(), builds.end(),
+            [index = size_t{0}, &batch](const RayTracingBuildDesc &build) mutable {
+                return MatchesPreparedDescription(build, batch.builds[index++]);
+            });
+        if (!succeeded)
+        {
+            DestroyTemporaryBuffers(batch.buffers);
+            return false;
+        }
+        for (size_t index = 0; index < builds.size(); ++index)
+        {
+            const PreparedBuild &prepared = batch.builds[index];
+            const RayTracingBuildDesc snapshot{
+                prepared.target, prepared.mode, prepared.geometries, prepared.instances};
+            if (!BuildOne(command_buffer, snapshot, prepared))
             {
-                if (!temporary_buffers.handles.empty())
-                {
-                    temporary_buffers_.push_back(std::move(temporary_buffers));
-                }
-                return false;
+                succeeded = false;
+                break;
             }
         }
-        if (!temporary_buffers.handles.empty())
+        if (!batch.buffers.handles.empty())
         {
-            temporary_buffers_.push_back(std::move(temporary_buffers));
+            temporary_buffers_.push_back(std::move(batch.buffers));
         }
-        return true;
+        return succeeded;
     }
 
     bool VulkanAccelerationStructureOwner::RequireUsage(
@@ -1422,6 +1641,12 @@ namespace kpengine::graphics
             DestroyTemporaryBuffers(temporary_buffers);
         }
         temporary_buffers_.clear();
+        for (auto &[token, batch] : prepared_build_batches_)
+        {
+            (void)token;
+            DestroyTemporaryBuffers(batch.buffers);
+        }
+        prepared_build_batches_.clear();
         for (Resource &resource : resources_)
         {
             if (resource.alive)

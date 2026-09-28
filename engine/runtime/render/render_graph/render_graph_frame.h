@@ -23,6 +23,8 @@ namespace kpengine::render
         Failed,
     };
 
+    const char *RenderGraphPassOutcomeName(RenderGraphPassOutcome outcome) noexcept;
+
     // Executes one compiled plan for one frame. It borrows the compiled graph,
     // which must outlive it, and owns nothing but the frame's own execution
     // state. This is the renderer's pass scheduler.
@@ -40,7 +42,7 @@ namespace kpengine::render
         // external terminal, which the caller runs through ExecuteExternal.
         bool ExecuteRenderer(
             const std::function<bool(const CompiledRenderGraph::Pass &)> &executor);
-        bool ExecuteExternal(const std::function<void()> &executor);
+        bool ExecuteExternal(const std::function<bool()> &executor);
         bool CanExecuteExternal() const noexcept;
         bool Finalize(std::string &error);
 

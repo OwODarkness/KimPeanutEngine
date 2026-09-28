@@ -112,7 +112,7 @@ TEST(RenderGraphFrameTest, FinalizeSkipsTheUnrequestedExternalTerminal)
     EXPECT_TRUE(frame.IsFinalized());
     EXPECT_EQ(frame.GetOutcome(kCompositeKey), RenderGraphPassOutcome::SkippedExternal);
     EXPECT_FALSE(frame.ExecuteRenderer([](const auto &) { return true; }));
-    EXPECT_FALSE(frame.ExecuteExternal([] {}));
+    EXPECT_FALSE(frame.ExecuteExternal([] { return true; }));
 }
 
 TEST(RenderGraphFrameTest, ExternalTerminalIsExactlyOnceAndCannotRunPrematurely)
@@ -121,12 +121,12 @@ TEST(RenderGraphFrameTest, ExternalTerminalIsExactlyOnceAndCannotRunPrematurely)
     ASSERT_TRUE(result.Succeeded());
     RenderGraphFrame frame(*result.graph);
 
-    EXPECT_FALSE(frame.ExecuteExternal([] {}));
+    EXPECT_FALSE(frame.ExecuteExternal([] { return true; }));
 
     std::size_t executions = 0;
     ASSERT_TRUE(frame.ExecuteRenderer([](const auto &) { return true; }));
-    ASSERT_TRUE(frame.ExecuteExternal([&executions] { ++executions; }));
-    EXPECT_FALSE(frame.ExecuteExternal([&executions] { ++executions; }));
+    ASSERT_TRUE(frame.ExecuteExternal([&executions] { ++executions; return true; }));
+    EXPECT_FALSE(frame.ExecuteExternal([&executions] { ++executions; return true; }));
 
     std::string error;
     EXPECT_TRUE(frame.Finalize(error)) << error;
@@ -150,7 +150,7 @@ TEST(RenderGraphFrameTest, SkipsDependentOutputsAfterRequiredFailure)
     EXPECT_EQ(frame.GetOutcome(kCaptureKey), RenderGraphPassOutcome::SkippedDependency);
     EXPECT_TRUE(frame.HasRequiredFailure());
     EXPECT_FALSE(frame.CanExecuteExternal());
-    EXPECT_TRUE(frame.ExecuteExternal([] {}));
+    EXPECT_TRUE(frame.ExecuteExternal([] { return true; }));
     EXPECT_EQ(frame.GetOutcome(kCompositeKey), RenderGraphPassOutcome::SkippedDependency);
 
     std::string error;
@@ -169,11 +169,29 @@ TEST(RenderGraphFrameTest, OptionalCaptureFailureDoesNotPoisonSceneOutput)
     EXPECT_EQ(frame.GetOutcome(kCaptureKey), RenderGraphPassOutcome::Failed);
     EXPECT_FALSE(frame.HasRequiredFailure());
     EXPECT_TRUE(frame.CanExecuteExternal());
-    ASSERT_TRUE(frame.ExecuteExternal([] {}));
+    ASSERT_TRUE(frame.ExecuteExternal([] { return true; }));
     EXPECT_EQ(frame.GetOutcome(kCompositeKey), RenderGraphPassOutcome::Executed);
 
     std::string error;
     EXPECT_TRUE(frame.Finalize(error)) << error;
+}
+
+TEST(RenderGraphFrameTest, ExternalRecordingFailureIsRetainedAsFailed)
+{
+    const auto result = CompileFrameGraph(true);
+    ASSERT_TRUE(result.Succeeded());
+    RenderGraphFrame frame(*result.graph);
+    ASSERT_TRUE(frame.ExecuteRenderer([](const auto &) { return true; }));
+
+    EXPECT_FALSE(frame.ExecuteExternal([] { return false; }));
+    EXPECT_EQ(frame.GetOutcome(kCompositeKey), RenderGraphPassOutcome::Failed);
+    EXPECT_TRUE(frame.HasRequiredFailure());
+    EXPECT_FALSE(frame.ExecuteExternal([] { return true; }));
+
+    std::string error;
+    EXPECT_TRUE(frame.Finalize(error)) << error;
+    EXPECT_EQ(frame.GetOutcome(kCompositeKey), RenderGraphPassOutcome::Failed);
+    EXPECT_TRUE(frame.HasRequiredFailure());
 }
 
 TEST(RenderGraphFrameTest, CulledOptionalPassIsNotInPlan)
@@ -207,7 +225,7 @@ TEST(RenderGraphFrameTest, MovingFrameInvalidatesTheMovedFromFrame)
 
     ASSERT_TRUE(moved.ExecuteRenderer([](const auto &) { return true; }));
     EXPECT_FALSE(frame.ExecuteRenderer([](const auto &) { return true; }));
-    EXPECT_FALSE(frame.ExecuteExternal([] {}));
+    EXPECT_FALSE(frame.ExecuteExternal([] { return true; }));
     std::string error;
     EXPECT_FALSE(frame.Finalize(error));
     EXPECT_EQ(frame.GetOutcome(kShadowKey), RenderGraphPassOutcome::NotInPlan);

@@ -31,6 +31,9 @@ namespace kpengine::runtime
             .gpu_time_ms = 1.25;
         expected.profile.passes[static_cast<size_t>(render::RenderProfilePass::GBuffer)]
             .cpu_time_ms = 0.75;
+        expected.profile.graph_pass_outcomes[
+            static_cast<size_t>(render::RenderProfilePass::GBuffer)] =
+            render::RenderGraphPassOutcome::Executed;
         expected.profile.summary.passes[static_cast<size_t>(render::RenderProfilePass::GBuffer)]
             .gpu_p95_ms = 2.5;
         expected.frame_loop.frame_total_ms = 16.6;
@@ -69,6 +72,9 @@ namespace kpengine::runtime
         EXPECT_DOUBLE_EQ(std::get<double>(*Find(completed->data, "g_buffer_ms")), 1.25);
         ASSERT_NE(Find(completed->data, "pass.g_buffer.gpu_p95_ms"), nullptr);
         EXPECT_DOUBLE_EQ(std::get<double>(*Find(completed->data, "pass.g_buffer.gpu_p95_ms")), 2.5);
+        ASSERT_NE(Find(completed->data, "pass.g_buffer.outcome"), nullptr);
+        EXPECT_EQ(std::get<std::string>(*Find(completed->data, "pass.g_buffer.outcome")),
+                  "executed");
 
         std::optional<command::CommandResult> combined;
         const command::CommandResult combined_pending = registry.ExecuteText(

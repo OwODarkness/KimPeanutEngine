@@ -31,6 +31,8 @@ render_scene.cpp
 render_profile.cpp
 render_graph/render_graph.cpp
 render_graph/render_graph_frame.cpp
+render_graph/render_graph_bindings.cpp
+render_graph/render_graph_executor.cpp
 )
 
 target_include_directories(Render PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/..)

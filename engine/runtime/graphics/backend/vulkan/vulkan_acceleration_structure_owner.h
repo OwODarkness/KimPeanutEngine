@@ -2,7 +2,9 @@
 #define KPENGINE_RUNTIME_GRAPHICS_VULKAN_ACCELERATION_STRUCTURE_OWNER_H
 
 #include <cstdint>
+#include <optional>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 #include <vulkan/vulkan.h>
@@ -41,6 +43,9 @@ namespace kpengine::graphics
         VulkanAccelerationStructureOwner &operator=(const VulkanAccelerationStructureOwner &) = delete;
 
         bool IsSupported() const noexcept override { return supported_; }
+        std::optional<RayTracingBuildResources> PrepareBuildResources(
+            std::span<const RayTracingBuildDesc> builds) override;
+        void CancelPreparedBuildResources(uint64_t token) noexcept override;
         void SetBindlessTextureLayout(VkDescriptorSetLayout layout) noexcept
         {
             bindless_texture_layout_ = layout;
@@ -67,6 +72,9 @@ namespace kpengine::graphics
 
         bool Build(VkCommandBuffer command_buffer,
                    std::span<const RayTracingBuildDesc> builds);
+        bool Build(VkCommandBuffer command_buffer,
+                   std::span<const RayTracingBuildDesc> builds,
+                   const RayTracingBuildResources &resources);
         AccelerationStructureHandle GetActiveTopLevel() const noexcept
         {
             return active_top_level_;
@@ -104,6 +112,22 @@ namespace kpengine::graphics
         {
             std::vector<BufferHandle> handles;
             uint64_t retire_serial = 0;
+        };
+
+        struct PreparedBuild
+        {
+            AccelerationStructureHandle target{};
+            RayTracingBuildMode mode = RayTracingBuildMode::Build;
+            std::vector<RayTracingGeometryDesc> geometries;
+            std::vector<RayTracingInstanceDesc> instances;
+            BufferHandle instance_input{};
+            BufferHandle scratch{};
+        };
+
+        struct PreparedBatch
+        {
+            std::vector<PreparedBuild> builds;
+            TemporaryBuffers buffers;
         };
 
         struct RayTracingBufferReferenceTableResource
@@ -155,7 +179,9 @@ namespace kpengine::graphics
         const RayTracingBufferReferenceTableResource *GetRayTracingBufferReferenceTable(
             RayTracingBufferReferenceTableHandle handle) const;
         bool BuildOne(VkCommandBuffer command_buffer, const RayTracingBuildDesc &build,
-                      TemporaryBuffers &temporary_buffers);
+                      const PreparedBuild &prepared);
+        static bool MatchesPreparedDescription(const RayTracingBuildDesc &build,
+                                               const PreparedBuild &prepared) noexcept;
         bool EnsureStorage(Resource &resource, VkDeviceSize size);
         void DestroyResource(Resource &resource) noexcept;
         void DestroyTemporaryBuffers(TemporaryBuffers &temporary_buffers) noexcept;
@@ -182,6 +208,8 @@ namespace kpengine::graphics
             ray_tracing_buffer_reference_tables_;
         std::vector<RayTracingDescriptorSetResource> ray_tracing_descriptor_sets_;
         std::vector<TemporaryBuffers> temporary_buffers_;
+        std::unordered_map<uint64_t, PreparedBatch> prepared_build_batches_;
+        uint64_t next_prepared_build_token_ = 1;
         AccelerationStructureHandle active_top_level_{};
         PFN_vkCreateAccelerationStructureKHR create_acceleration_structure_ = nullptr;
         PFN_vkDestroyAccelerationStructureKHR destroy_acceleration_structure_ = nullptr;

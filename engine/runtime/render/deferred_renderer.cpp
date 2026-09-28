@@ -75,6 +75,14 @@ namespace kpengine::render
         constexpr float kPathTraceRayMaximumDistance = 1000.0f;
         constexpr float kPathTraceSecondaryRayOffset = 0.002f;
 
+        template <typename T, typename Range>
+        bool ContainsAll(std::span<const T> available, const Range &required)
+        {
+            return std::all_of(required.begin(), required.end(), [&](const T &value) {
+                return std::find(available.begin(), available.end(), value) != available.end();
+            });
+        }
+
         struct alignas(16) PathTracingGeometryGpuData
         {
             std::array<uint32_t, 8> words{};
@@ -218,12 +226,6 @@ namespace kpengine::render
         {
             return 0x53454c4543545f55ull ^
                    (static_cast<uint64_t>(handle.id) << 32) ^ handle.generation;
-        }
-
-        bool IsRayTracingVirtualBuffer(std::string_view name) noexcept
-        {
-            return name == "SceneGeometry" || name == "SceneInstances" ||
-                   name == "SceneScratch";
         }
 
         uint64_t DrawMeshSections(const RenderResourceResolver &resource_resolver,
@@ -592,10 +594,9 @@ namespace kpengine::render
         {
             allocated_history_targets += target ? 1u : 0u;
         }
-        // Drop the adopted transient before the backend tears its pool down, so
-        // no wrapper outlives the handle it borrows.
-        ReleaseFrameTransients();
-        transient_scene_hdr_.reset();
+        // Release graph-owned leases before the backend tears its pool down.
+        graph_executor_.Abort();
+        frame_bindings_.Clear();
         graphics::RayTracingResourceOwner *const ray_tracing_owner =
             backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
         DestroyRayTracingPathTraceBindings();
@@ -711,11 +712,11 @@ namespace kpengine::render
         frame_object_states_.clear();
         frame_material_bindings_.clear();
         pending_scene_render_target_extent_ = {};
-        active_pass_frame_.reset();
-        active_frame_plan_ = nullptr;
+        graph_executor_.Abort();
+        frame_bindings_.Clear();
         active_pending_capture_.reset();
         active_debug_view_.reset();
-        for (std::optional<RenderGraphCompileResult> &plan : frame_plans_)
+        for (std::optional<CompiledRenderFramePlan> &plan : frame_plans_)
         {
             plan.reset();
         }
@@ -875,6 +876,17 @@ namespace kpengine::render
 
     bool DeferredRenderer::PrepareRayTracingScene()
     {
+        graphics::RayTracingResourceOwner *const owner =
+            backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
+        if (owner != nullptr)
+        {
+            if (frame_ray_tracing_blas_resources_.has_value())
+                owner->CancelPreparedBuildResources(frame_ray_tracing_blas_resources_->token);
+            if (frame_ray_tracing_tlas_resources_.has_value())
+                owner->CancelPreparedBuildResources(frame_ray_tracing_tlas_resources_->token);
+        }
+        frame_ray_tracing_blas_resources_.reset();
+        frame_ray_tracing_tlas_resources_.reset();
         frame_ray_tracing_light_data_.clear();
         frame_ray_tracing_lighting_signature_ = 0;
         frame_ray_tracing_blas_builds_.clear();
@@ -882,8 +894,6 @@ namespace kpengine::render
         frame_ray_tracing_blas_build_ = false;
         frame_ray_tracing_tlas_build_ = false;
 
-        graphics::RayTracingResourceOwner *const owner =
-            backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
         if (owner == nullptr || !owner->IsSupported())
         {
             ray_tracing_scene_cache_valid_ = false;
@@ -1271,7 +1281,7 @@ namespace kpengine::render
                  ray_tracing_tlas_built_ ? graphics::RayTracingBuildMode::Update
                                          : graphics::RayTracingBuildMode::Build,
                  {},
-                 std::span<const graphics::RayTracingInstanceDesc>(
+                     std::span<const graphics::RayTracingInstanceDesc>(
                      frame_ray_tracing_instances_.data(), frame_ray_tracing_instances_.size())});
         }
         return true;
@@ -1396,15 +1406,41 @@ namespace kpengine::render
         return true;
     }
 
-    bool DeferredRenderer::RecordRayTracingBlasBuild()
+    bool DeferredRenderer::RecordRayTracingBlasBuild(const RenderGraphPassContext &context)
     {
-        graphics::CommandRecorder *const recorder =
-            backend_ != nullptr ? backend_->GetCommandRecorder() : nullptr;
-        if (recorder == nullptr || frame_ray_tracing_blas_builds_.empty())
+        graphics::CommandRecorder &recorder = context.GetRecorder();
+        const auto targets = context.ResolveAccelerationStructures(
+            RenderFrameResourceRole::SceneBlas, RenderGraphAccess::Write);
+        const auto geometry = context.ResolveBuffers(
+            RenderFrameResourceRole::SceneGeometry, RenderGraphAccess::Read);
+        const auto scratch = context.ResolveBuffers(
+            RenderFrameResourceRole::SceneScratch, RenderGraphAccess::Write);
+        if (frame_ray_tracing_blas_builds_.empty() ||
+            !frame_ray_tracing_blas_resources_.has_value() ||
+            frame_ray_tracing_blas_resources_->scratch_buffers.size() !=
+                frame_ray_tracing_blas_builds_.size() ||
+            !std::all_of(frame_ray_tracing_blas_builds_.begin(),
+                         frame_ray_tracing_blas_builds_.end(), [&](const auto &build) {
+                return std::find(targets.begin(), targets.end(), build.target) != targets.end();
+            }) ||
+            !ContainsAll<graphics::BufferHandle>(scratch,
+                frame_ray_tracing_blas_resources_->scratch_buffers))
         {
             return false;
         }
-        if (!recorder->BuildAccelerationStructures(frame_ray_tracing_blas_builds_))
+        for (const graphics::RayTracingBuildDesc &build : frame_ray_tracing_blas_builds_)
+        {
+            if (!build.instances.empty() || build.geometries.empty())
+                return false;
+            for (const graphics::RayTracingGeometryDesc &item : build.geometries)
+            {
+                if (std::find(geometry.begin(), geometry.end(), item.vertex_buffer) == geometry.end() ||
+                    std::find(geometry.begin(), geometry.end(), item.index_buffer) == geometry.end())
+                    return false;
+            }
+        }
+        if (!recorder.BuildAccelerationStructures(frame_ray_tracing_blas_builds_,
+                                                  *frame_ray_tracing_blas_resources_))
         {
             return false;
         }
@@ -1422,15 +1458,44 @@ namespace kpengine::render
         return true;
     }
 
-    bool DeferredRenderer::RecordRayTracingTlasBuild()
+    bool DeferredRenderer::RecordRayTracingTlasBuild(const RenderGraphPassContext &context)
     {
-        graphics::CommandRecorder *const recorder =
-            backend_ != nullptr ? backend_->GetCommandRecorder() : nullptr;
-        if (recorder == nullptr || frame_ray_tracing_tlas_builds_.empty())
+        graphics::CommandRecorder &recorder = context.GetRecorder();
+        const auto targets = context.ResolveAccelerationStructures(
+            RenderFrameResourceRole::SceneTlas, RenderGraphAccess::Write);
+        const auto blas = context.ResolveAccelerationStructures(
+            RenderFrameResourceRole::SceneBlas, RenderGraphAccess::Read);
+        const auto instances = context.ResolveBuffers(
+            RenderFrameResourceRole::SceneInstances, RenderGraphAccess::Read);
+        const auto scratch = context.ResolveBuffers(
+            RenderFrameResourceRole::SceneScratch, RenderGraphAccess::Write);
+        if (frame_ray_tracing_tlas_builds_.size() != 1 ||
+            !frame_ray_tracing_tlas_resources_.has_value() ||
+            frame_ray_tracing_tlas_resources_->instance_inputs.size() !=
+                frame_ray_tracing_tlas_builds_.size() ||
+            frame_ray_tracing_tlas_resources_->scratch_buffers.size() !=
+                frame_ray_tracing_tlas_builds_.size() ||
+            std::find(targets.begin(), targets.end(),
+                      frame_ray_tracing_tlas_builds_.front().target) == targets.end() ||
+            !ContainsAll<graphics::BufferHandle>(instances,
+                frame_ray_tracing_tlas_resources_->instance_inputs) ||
+            !ContainsAll<graphics::BufferHandle>(scratch,
+                frame_ray_tracing_tlas_resources_->scratch_buffers))
         {
             return false;
         }
-        if (!recorder->BuildAccelerationStructures(frame_ray_tracing_tlas_builds_))
+        for (const graphics::RayTracingBuildDesc &build : frame_ray_tracing_tlas_builds_)
+        {
+            if (!build.geometries.empty() || build.instances.empty())
+                return false;
+            for (const graphics::RayTracingInstanceDesc &instance : build.instances)
+            {
+                if (std::find(blas.begin(), blas.end(), instance.bottom_level) == blas.end())
+                    return false;
+            }
+        }
+        if (!recorder.BuildAccelerationStructures(frame_ray_tracing_tlas_builds_,
+                                                   *frame_ray_tracing_tlas_resources_))
         {
             return false;
         }
@@ -1541,7 +1606,7 @@ namespace kpengine::render
         profile_.path_trace_settings_effective = effective_path_trace_settings_;
         profile_.textures = resource_resolver_->GetTextureMetrics();
         material_system_->ResetProfileCounters();
-        if (!frame_plan_valid_ || active_pass_frame_.has_value())
+        if (!frame_plan_valid_ || graph_executor_.IsActive())
         {
             result.normal_recording_completed = false;
             return result;
@@ -1600,6 +1665,8 @@ namespace kpengine::render
                 .count();
         if (!ray_tracing_scene_prepared)
         {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Frame stopped because ray tracing scene preparation failed");
             result.normal_recording_completed = false;
             return result;
         }
@@ -1774,12 +1841,16 @@ namespace kpengine::render
         {
             if (!PrepareToneMapPassResources())
             {
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                       "Frame stopped because path tracing tone-map resources are unavailable");
                 result.normal_recording_completed = false;
                 return result;
             }
             const graphics::Extent2D extent = frame_context.GetRenderExtent();
             if (!EnsurePathTraceHistoryTargets(extent.width, extent.height))
             {
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                       "Frame stopped because path tracing history targets could not be prepared");
                 result.normal_recording_completed = false;
                 return result;
             }
@@ -1794,14 +1865,20 @@ namespace kpengine::render
             }
             profile_.path_trace_samples = path_trace_sample_count_;
         }
+        const RenderFrameConditions frame_conditions{
+            is_deferred_capture, ray_query_shadow, frame_ray_tracing_blas_build_,
+            frame_ray_tracing_tlas_build_, ray_tracing_path_trace,
+            active_debug_view_.has_value()};
+        const CompiledRenderFramePlan *const compiled_frame_plan =
+            GetCompiledFramePlan(frame_conditions);
         const CompiledRenderGraph *const frame_plan =
-            GetFramePlan(RenderFrameConditions{is_deferred_capture, ray_query_shadow,
-                                               frame_ray_tracing_blas_build_,
-                                               frame_ray_tracing_tlas_build_,
-                                               ray_tracing_path_trace,
-                                               active_debug_view_.has_value()});
+            compiled_frame_plan != nullptr && compiled_frame_plan->compilation.graph.has_value()
+                ? &*compiled_frame_plan->compilation.graph
+                : nullptr;
         if (frame_plan == nullptr)
         {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Frame condition set has no compiled render graph plan");
             result.normal_recording_completed = false;
             return result;
         }
@@ -1849,88 +1926,98 @@ namespace kpengine::render
                                                ? "path_tracing"
                                                : ray_query_shadow ? "hybrid_ray_query"
                                                                   : "deferred";
-        if (!AcquireFrameTransients(*frame_plan))
+        graph_executor_.BeginFrame(*frame_plan);
+        std::string transient_error;
+        const graphics::Extent2D transient_extent = frame_context.GetRenderExtent();
+        if (!graph_executor_.AcquireTransients(
+                *frame_plan, *backend_, transient_extent,
+                [this](uint64_t key, graphics::Extent2D extent) {
+                    return DescribeFrameTransient(key, extent);
+                },
+                transient_error))
         {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Frame graph transient acquisition failed: %s",
+                   transient_error.c_str());
+            graph_executor_.Abort();
+            frame_bindings_.Clear();
             // Deferred lighting writes it and tone map reads it, so a frame
             // without it cannot record.
             result.normal_recording_completed = false;
             return result;
         }
-        if (!BuildFrameResourceBindings(*frame_plan))
+        if (!BuildFrameResourceBindings(*compiled_frame_plan))
         {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                   "Frame graph physical resources could not be bound before pass recording");
+            CancelPreparedFrameBuildResources();
+            graph_executor_.Abort();
+            frame_bindings_.Clear();
             result.normal_recording_completed = false;
             return result;
         }
-        active_pass_frame_.emplace(*frame_plan);
-        active_frame_plan_ = frame_plan;
+        graphics::CommandRecorder *const graph_recorder = backend_->GetCommandRecorder();
+        if (graph_recorder == nullptr)
+        {
+            CancelPreparedFrameBuildResources();
+            graph_executor_.Abort();
+            frame_bindings_.Clear();
+            result.normal_recording_completed = false;
+            return result;
+        }
+        graph_executor_.BeginFrame(*frame_plan, frame_bindings_, *graph_recorder);
         frame_execution_failed_ = false;
         const auto graph_execute_started = std::chrono::steady_clock::now();
-        const bool cursor_started = active_pass_frame_->ExecuteRenderer(
-            [this, &input, frame_plan](const CompiledRenderGraph::Pass &pass) {
-                // The authored declaration always keys its passes; an unkeyed
-                // pass cannot be dispatched and must not be reported as a
-                // successful visit.
+        const bool cursor_started = graph_executor_.ExecuteRenderer(
+            [this](const CompiledRenderGraph::Pass &pass) {
                 if (!pass.user_key.has_value())
-                {
-                    return false;
-                }
+                    return RenderGraphPassDisposition::Fail;
                 const auto pass_id = static_cast<FixedRenderPassId>(*pass.user_key);
-                // A shadow cache hit keeps the previous frame's depth map. The
-                // pass must not open its target, because opening it clears the
-                // very contents the cache exists to preserve, so the skip is
-                // decided here, before the boundary.
                 if (pass_id == FixedRenderPassId::DirectionalShadow &&
                     directional_shadow_cache_hit_)
-                {
-                    return true;
-                }
+                    return RenderGraphPassDisposition::ReusePreviousOutput;
                 if (pass_id == FixedRenderPassId::PointShadow && point_shadow_cache_hit_)
                 {
                     point_shadow_recorded_ = true;
-                    return true;
+                    return RenderGraphPassDisposition::ReusePreviousOutput;
                 }
-                if (!ApplyPassTransitions(*frame_plan, pass))
-                {
+                return RenderGraphPassDisposition::Record;
+            },
+            [this, &input](const RenderGraphPassContext &context) {
+                const CompiledRenderGraph::Pass &pass = context.GetPass();
+                if (!pass.user_key.has_value())
                     return false;
-                }
-                // The executor owns the attachment boundary now: the pass's write
-                // use names the target it records into, so no pass opens or
-                // closes its own target.
-                RenderTarget *const attachment = pass_id == FixedRenderPassId::RayTracingPathTrace
-                                                     ? nullptr
-                                                     : ResolvePassAttachment(pass);
-                const bool has_attachment_write = std::any_of(
-                    pass.uses.begin(), pass.uses.end(), [](const RenderGraphResourceUse &use) {
-                        return use.access == RenderGraphAccess::Write &&
-                               std::holds_alternative<GraphTextureHandle>(use.handle);
-                    });
-                graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-                if ((has_attachment_write && attachment == nullptr &&
-                     pass_id != FixedRenderPassId::RayTracingPathTrace) ||
-                    (attachment != nullptr && (recorder == nullptr ||
-                                               !attachment->BeginRecording(*recorder))))
+                const auto pass_id = static_cast<FixedRenderPassId>(*pass.user_key);
+                struct ScopedPassContext
                 {
-                    return false;
-                }
-                const bool succeeded = ExecutePass(pass_id, input.lights);
-                if (attachment != nullptr)
-                {
-                    attachment->EndRecording(*recorder);
-                }
-                return succeeded;
+                    const RenderGraphPassContext *&slot;
+                    explicit ScopedPassContext(const RenderGraphPassContext *&target,
+                                               const RenderGraphPassContext &context)
+                        : slot(target)
+                    {
+                        slot = &context;
+                    }
+                    ~ScopedPassContext() { slot = nullptr; }
+                } scoped_context(active_pass_context_, context);
+                return ExecutePass(pass_id, input.lights, context);
+            },
+            [this](uint64_t key) {
+                backend_->BeginGpuProfilePass(static_cast<uint32_t>(key));
+            },
+            [this](uint64_t key) {
+                backend_->EndGpuProfilePass(static_cast<uint32_t>(key));
             });
         profile_.cpu_graph_execute_ms +=
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - graph_execute_started)
                 .count();
         result.normal_recording_completed =
-            cursor_started && !active_pass_frame_->HasRequiredFailure();
+            cursor_started && !graph_executor_.HasRequiredFailure();
         if (input.pending_capture.has_value())
         {
             result.capture_target_ready =
                 input.pending_capture.value() == CaptureView::SceneColor ||
                 !RequiresCaptureViewConversionPass(*input.pending_capture) ||
-                active_pass_frame_->GetOutcome(
+                graph_executor_.GetOutcome(
                     static_cast<uint64_t>(FixedRenderPassId::CaptureView)) ==
                     RenderGraphPassOutcome::Executed;
         }
@@ -1948,12 +2035,12 @@ namespace kpengine::render
         return result;
     }
 
-    bool DeferredRenderer::ExecutePass(FixedRenderPassId id, const std::vector<Light> &lights)
+    bool DeferredRenderer::ExecutePass(FixedRenderPassId id, const std::vector<Light> &lights,
+                                       const RenderGraphPassContext &context)
     {
         const size_t profile_index = static_cast<size_t>(id);
         const auto started = std::chrono::steady_clock::now();
         active_profile_pass_ = profile_index;
-        backend_->BeginGpuProfilePass(static_cast<uint32_t>(profile_index));
         bool succeeded = false;
         switch (id)
         {
@@ -2018,16 +2105,15 @@ namespace kpengine::render
             succeeded = false;
             break;
         case FixedRenderPassId::RayTracingBlasBuild:
-            succeeded = RecordRayTracingBlasBuild();
+            succeeded = RecordRayTracingBlasBuild(context);
             break;
         case FixedRenderPassId::RayTracingTlasBuild:
-            succeeded = RecordRayTracingTlasBuild();
+            succeeded = RecordRayTracingTlasBuild(context);
             break;
         case FixedRenderPassId::Count:
             succeeded = false;
             break;
         }
-        backend_->EndGpuProfilePass(static_cast<uint32_t>(profile_index));
         profile_.passes[profile_index].cpu_time_ms =
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - started)
@@ -2038,32 +2124,29 @@ namespace kpengine::render
 
     bool DeferredRenderer::ExecuteEditorCompositePass(const std::function<void()> &record_pass)
     {
-        if (!active_pass_frame_.has_value())
+        if (!graph_executor_.IsActive())
         {
             return false;
         }
+        if (!graph_executor_.CanExecuteExternal())
+            return false;
         const auto started = std::chrono::steady_clock::now();
-        backend_->BeginGpuProfilePass(static_cast<uint32_t>(RenderProfilePass::EditorComposite));
-        // The external terminal samples SceneColor, and the host's callback below
-        // is what reads it, so its requirement is applied before the callback
-        // rather than after the sweep.
-        if (active_frame_plan_ != nullptr && active_pass_frame_->CanExecuteExternal())
+        const bool succeeded = graph_executor_.ExecuteExternal(
+            record_pass,
+            [this]() {
+                backend_->BeginGpuProfilePass(
+                    static_cast<uint32_t>(RenderProfilePass::EditorComposite));
+            },
+            [this]() {
+                backend_->EndGpuProfilePass(
+                    static_cast<uint32_t>(RenderProfilePass::EditorComposite));
+            });
+        if (!succeeded)
         {
-            for (const CompiledRenderGraph::Pass &pass : active_frame_plan_->Passes())
-            {
-                if (pass.owner == RenderGraphPassOwner::External && pass.terminal)
-                {
-                    if (!ApplyPassTransitions(*active_frame_plan_, pass))
-                    {
-                        frame_execution_failed_ = true;
-                        return false;
-                    }
-                    break;
-                }
-            }
+            frame_execution_failed_ = true;
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s",
+                   graph_executor_.GetDiagnostic().c_str());
         }
-        const bool succeeded = active_pass_frame_->ExecuteExternal(record_pass);
-        backend_->EndGpuProfilePass(static_cast<uint32_t>(RenderProfilePass::EditorComposite));
         profile_.passes[static_cast<size_t>(RenderProfilePass::EditorComposite)].cpu_time_ms =
             std::chrono::duration<double, std::milli>(
                 std::chrono::steady_clock::now() - started)
@@ -2073,28 +2156,36 @@ namespace kpengine::render
 
     bool DeferredRenderer::FinalizeFrame()
     {
-        if (!active_pass_frame_.has_value())
+        if (!graph_executor_.IsActive())
         {
             return false;
         }
-        std::string error;
-        const bool finalized = active_pass_frame_->Finalize(error);
-        if (!finalized && !error.empty())
+        RenderGraphExecutionResult graph_result = graph_executor_.Finalize();
+        const bool finalized = graph_result.finalized;
+        for (size_t index = 0; index < profile_.graph_pass_outcomes.size(); ++index)
         {
-            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Fixed render pass finalization failed: %s",
-                   error.c_str());
+            const auto outcome = std::find_if(
+                graph_result.pass_outcomes.begin(), graph_result.pass_outcomes.end(),
+                [index](const auto &entry) { return entry.first == index; });
+            profile_.graph_pass_outcomes[index] = outcome != graph_result.pass_outcomes.end()
+                ? outcome->second
+                : RenderGraphPassOutcome::NotInPlan;
+        }
+        if (!graph_result.Succeeded() && !graph_result.diagnostic.empty())
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Render graph frame failed: %s",
+                   graph_result.diagnostic.c_str());
         }
         if (frame_execution_failed_)
         {
-            if (error.empty())
+            if (graph_result.diagnostic.empty())
             {
-                error = "Render graph external pass requirements failed.";
+                graph_result.diagnostic = "Render graph external pass requirements failed.";
             }
-            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", error.c_str());
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "%s", graph_result.diagnostic.c_str());
         }
-        const bool required_pass_failed = active_pass_frame_->HasRequiredFailure();
-        const bool succeeded = finalized && !frame_execution_failed_ &&
-                               !required_pass_failed;
+        const bool required_pass_failed = graph_result.required_pass_failed;
+        const bool succeeded = graph_result.Succeeded() && !frame_execution_failed_;
         const detail::PathTraceHistoryProgress history_progress =
             detail::CommitPathTraceHistoryProgress(
                 {path_trace_sample_count_, path_trace_write_index_}, finalized,
@@ -2107,14 +2198,14 @@ namespace kpengine::render
         {
             profile_.path_trace_samples = path_trace_sample_count_;
         }
-        if (finalized)
+        CancelPreparedFrameBuildResources();
+        if (graph_executor_.IsActive())
         {
             // Released after the sweep, so the next frame takes the same
             // instance back rather than a second one: the caller's descriptor
             // sets are keyed on this target's handles.
-            ReleaseFrameTransients();
-            active_pass_frame_.reset();
-            active_frame_plan_ = nullptr;
+            graph_executor_.Abort();
+            frame_bindings_.Clear();
             active_pending_capture_.reset();
             active_debug_view_.reset();
             active_frame_context_ = nullptr;
@@ -2248,273 +2339,224 @@ namespace kpengine::render
         return detail::ComputePathTraceHistorySignature(input);
     }
 
-    RenderTarget *DeferredRenderer::ResolveNamedFrameTarget(std::string_view name)
+    RenderTarget *DeferredRenderer::ResolveFrameTexture(
+        RenderFrameResourceRole role, RenderGraphAccess access) const
     {
-        if (name == "SceneHdr")
-        {
-            return active_ray_tracing_path_trace_
-                       ? path_trace_history_targets_[path_trace_write_index_].get()
-                       : transient_scene_hdr_.get();
-        }
-        if (name == "PathTraceHistory")
-        {
-            return path_trace_history_targets_[1u - path_trace_write_index_].get();
-        }
-        if (name == "PathTraceGuide")
-        {
-            return path_trace_guide_target_.get();
-        }
-        if (name == "SceneColor")
-        {
-            return frame_targets_.GetTarget(RenderTargetName::SceneColor);
-        }
-        if (name == "GBuffer")
-        {
-            return frame_targets_.GetTarget(RenderTargetName::GBuffer);
-        }
-        if (name == "DirectionalShadow")
-        {
-            return frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
-        }
-        if (name == "SpotShadow")
-        {
-            return frame_targets_.GetTarget(RenderTargetName::SpotShadow);
-        }
-        if (name == "PointShadow")
-        {
-            return frame_targets_.GetTarget(RenderTargetName::PointShadow);
-        }
-        if (name == "CaptureOutput")
-        {
-            return frame_targets_.GetTarget(RenderTargetName::CaptureOutput);
-        }
-        if (name == "DebugViewOutput")
-        {
-            return frame_targets_.GetTarget(RenderTargetName::DebugViewOutput);
-        }
-        return nullptr;
+        return active_pass_context_ != nullptr
+                   ? active_pass_context_->ResolveTexture(role, access)
+                   : nullptr;
     }
 
-    RenderTarget *DeferredRenderer::ResolveFrameTexture(GraphTextureHandle texture) const
+    void DeferredRenderer::CancelPreparedFrameBuildResources()
     {
-        const auto binding = std::find_if(
-            frame_texture_bindings_.begin(), frame_texture_bindings_.end(),
-            [texture](const FrameTextureBinding &entry) { return entry.logical == texture; });
-        return binding != frame_texture_bindings_.end() ? binding->physical : nullptr;
-    }
-
-    RenderTarget *DeferredRenderer::ResolveFrameTextureByName(std::string_view name) const
-    {
-        const auto binding = std::find_if(
-            frame_texture_bindings_.begin(), frame_texture_bindings_.end(),
-            [name](const FrameTextureBinding &entry) { return entry.name == name; });
-        return binding != frame_texture_bindings_.end() ? binding->physical : nullptr;
-    }
-
-    graphics::BufferHandle DeferredRenderer::ResolveFrameBuffer(GraphBufferHandle buffer) const
-    {
-        const auto binding = std::find_if(
-            frame_buffer_bindings_.begin(), frame_buffer_bindings_.end(),
-            [buffer](const FrameBufferBinding &entry) { return entry.logical == buffer; });
-        return binding != frame_buffer_bindings_.end() ? binding->physical
-                                                       : graphics::BufferHandle{};
-    }
-
-    graphics::AccelerationStructureHandle DeferredRenderer::ResolveFrameAccelerationStructure(
-        GraphAccelerationStructureHandle acceleration_structure) const
-    {
-        const auto binding = std::find_if(
-            frame_acceleration_structure_bindings_.begin(),
-            frame_acceleration_structure_bindings_.end(),
-            [acceleration_structure](const FrameAccelerationStructureBinding &entry) {
-                return entry.logical == acceleration_structure;
-            });
-        return binding != frame_acceleration_structure_bindings_.end()
-                   ? binding->physical
-                   : graphics::AccelerationStructureHandle{};
-    }
-
-    bool DeferredRenderer::BuildFrameResourceBindings(const CompiledRenderGraph &plan)
-    {
-        frame_texture_bindings_.clear();
-        frame_buffer_bindings_.clear();
-        frame_acceleration_structure_bindings_.clear();
-        for (const RenderGraphLifetimeInterval &lifetime : plan.Lifetimes())
+        graphics::RayTracingResourceOwner *const owner =
+            backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
+        if (owner != nullptr)
         {
-            if (const auto *texture = std::get_if<GraphTextureHandle>(&lifetime.handle))
+            if (frame_ray_tracing_blas_resources_.has_value())
+                owner->CancelPreparedBuildResources(frame_ray_tracing_blas_resources_->token);
+            if (frame_ray_tracing_tlas_resources_.has_value())
+                owner->CancelPreparedBuildResources(frame_ray_tracing_tlas_resources_->token);
+        }
+        frame_ray_tracing_blas_resources_.reset();
+        frame_ray_tracing_tlas_resources_.reset();
+    }
+
+    bool DeferredRenderer::BuildFrameResourceBindings(const CompiledRenderFramePlan &plan)
+    {
+        if (!plan.compilation.graph.has_value())
+        {
+            return false;
+        }
+        frame_bindings_.Clear();
+        std::string error;
+        graphics::RayTracingResourceOwner *const ray_tracing_owner =
+            backend_ != nullptr ? backend_->GetRayTracingResourceOwner() : nullptr;
+        struct PreparedResourceRollback
+        {
+            graphics::RayTracingResourceOwner *owner;
+            std::optional<graphics::RayTracingBuildResources> &blas;
+            std::optional<graphics::RayTracingBuildResources> &tlas;
+            bool keep = false;
+            ~PreparedResourceRollback()
             {
-                RenderTarget *const target = ResolveNamedFrameTarget(lifetime.resource_name);
-                if (target == nullptr)
-                {
-                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                           "No frame binding for graph texture '%s'", lifetime.resource_name.c_str());
-                    frame_texture_bindings_.clear();
-                    return false;
-                }
-                frame_texture_bindings_.push_back({*texture, lifetime.resource_name, target});
-                continue;
+                if (keep || owner == nullptr)
+                    return;
+                if (blas.has_value())
+                    owner->CancelPreparedBuildResources(blas->token);
+                if (tlas.has_value())
+                    owner->CancelPreparedBuildResources(tlas->token);
+                blas.reset();
+                tlas.reset();
             }
-
-            if (const auto *buffer = std::get_if<GraphBufferHandle>(&lifetime.handle))
-            {
-                if (IsRayTracingVirtualBuffer(lifetime.resource_name))
-                {
-                    // Geometry buffers are a logical group resolved by the
-                    // backend provider during transition application. Instance
-                    // and scratch storage stay Graphics-owned inside the AS
-                    // owner and intentionally have no Render-visible handle.
-                    if (lifetime.resource_name == "SceneGeometry" &&
-                        !frame_ray_tracing_geometries_.empty())
-                    {
-                        frame_buffer_bindings_.push_back(
-                            {*buffer, lifetime.resource_name,
-                             frame_ray_tracing_geometries_.front().vertex_buffer});
-                    }
-                    continue;
-                }
-                // R4.1 makes the missing physical-buffer binding explicit for
-                // ordinary graph buffers; the RT build provider is the only
-                // supported exception in this frame plan.
-                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "No frame binding provider for graph buffer '%s'",
-                       lifetime.resource_name.c_str());
-                frame_texture_bindings_.clear();
-                frame_buffer_bindings_.clear();
-                frame_acceleration_structure_bindings_.clear();
-                return false;
-            }
-
-            const auto *acceleration_structure =
-                std::get_if<GraphAccelerationStructureHandle>(&lifetime.handle);
-            if (lifetime.resource_name == "SceneBLAS")
-            {
-                if (frame_ray_tracing_mesh_builds_.empty())
-                {
-                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                           "No BLAS provider for graph resource '%s'",
-                           lifetime.resource_name.c_str());
-                    frame_texture_bindings_.clear();
-                    frame_buffer_bindings_.clear();
-                    frame_acceleration_structure_bindings_.clear();
-                    return false;
-                }
-                continue;
-            }
-            // The graph is bound before the TLAS build pass records. Use the
-            // renderer-owned handle prepared for this frame; the Vulkan owner
-            // marks it active when the build command is recorded.
-            const graphics::AccelerationStructureHandle physical =
-                ray_tracing_tlas_.IsValid()
-                    ? ray_tracing_tlas_
-                    : (backend_ != nullptr
-                           ? backend_->GetActiveTopLevelAccelerationStructure()
-                           : graphics::AccelerationStructureHandle{});
-            if (acceleration_structure == nullptr || !physical.IsValid())
+        } rollback{ray_tracing_owner, frame_ray_tracing_blas_resources_,
+                   frame_ray_tracing_tlas_resources_};
+        if (!frame_ray_tracing_blas_builds_.empty())
+        {
+            if (ray_tracing_owner == nullptr)
             {
                 KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "No imported TLAS binding for graph resource '%s'",
-                       lifetime.resource_name.c_str());
-                frame_texture_bindings_.clear();
-                frame_buffer_bindings_.clear();
-                frame_acceleration_structure_bindings_.clear();
+                       "BLAS build resources have no Graphics owner");
                 return false;
             }
-            frame_acceleration_structure_bindings_.push_back(
-                {*acceleration_structure, lifetime.resource_name, physical});
-        }
-        return true;
-    }
-
-    bool DeferredRenderer::ValidatePassBindings(const CompiledRenderGraph::Pass &pass) const
-    {
-        for (const RenderGraphResourceUse &use : pass.uses)
-        {
-            if (const auto *texture = std::get_if<GraphTextureHandle>(&use.handle))
+            frame_ray_tracing_blas_resources_ =
+                ray_tracing_owner->PrepareBuildResources(frame_ray_tracing_blas_builds_);
+            if (!frame_ray_tracing_blas_resources_.has_value())
             {
-                if (ResolveFrameTexture(*texture) == nullptr)
-                {
-                    return false;
-                }
-            }
-            else if (const auto *buffer = std::get_if<GraphBufferHandle>(&use.handle))
-            {
-                std::string_view resource_name;
-                if (active_frame_plan_ != nullptr)
-                {
-                    for (const RenderGraphLifetimeInterval &lifetime :
-                         active_frame_plan_->Lifetimes())
-                    {
-                        const auto *lifetime_buffer =
-                            std::get_if<GraphBufferHandle>(&lifetime.handle);
-                        if (lifetime_buffer != nullptr && *lifetime_buffer == *buffer)
-                        {
-                            resource_name = lifetime.resource_name;
-                            break;
-                        }
-                    }
-                }
-                if (IsRayTracingVirtualBuffer(resource_name))
-                {
-                    continue;
-                }
-                if (!ResolveFrameBuffer(*buffer).IsValid())
-                {
-                    return false;
-                }
-            }
-            else
-            {
-                const auto acceleration_structure =
-                    std::get<GraphAccelerationStructureHandle>(use.handle);
-                std::string_view resource_name;
-                if (active_frame_plan_ != nullptr)
-                {
-                    for (const RenderGraphLifetimeInterval &lifetime :
-                         active_frame_plan_->Lifetimes())
-                    {
-                        const auto *lifetime_acceleration_structure =
-                            std::get_if<GraphAccelerationStructureHandle>(&lifetime.handle);
-                        if (lifetime_acceleration_structure != nullptr &&
-                            *lifetime_acceleration_structure == acceleration_structure)
-                        {
-                            resource_name = lifetime.resource_name;
-                            break;
-                        }
-                    }
-                }
-                if (resource_name == "SceneBLAS")
-                {
-                    if (frame_ray_tracing_mesh_builds_.empty())
-                    {
-                        return false;
-                    }
-                    continue;
-                }
-                if (!ResolveFrameAccelerationStructure(acceleration_structure).IsValid())
-                {
-                    return false;
-                }
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                       "Graphics could not prepare BLAS instance/scratch resources");
+                return false;
             }
         }
-        return true;
-    }
-
-    RenderTarget *DeferredRenderer::ResolvePassAttachment(const CompiledRenderGraph::Pass &pass)
-    {
-        // A renderer pass records into exactly one target, named by its write
-        // use. A pass with no write use records no attachment.
-        for (const RenderGraphResourceUse &use : pass.uses)
+        if (!frame_ray_tracing_tlas_builds_.empty())
         {
-            if (use.access != RenderGraphAccess::Write)
+            if (ray_tracing_owner == nullptr)
             {
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                       "TLAS build resources have no Graphics owner");
+                return false;
+            }
+            frame_ray_tracing_tlas_resources_ =
+                ray_tracing_owner->PrepareBuildResources(frame_ray_tracing_tlas_builds_);
+            if (!frame_ray_tracing_tlas_resources_.has_value())
+            {
+                if (frame_ray_tracing_blas_resources_.has_value())
+                {
+                    ray_tracing_owner->CancelPreparedBuildResources(
+                        frame_ray_tracing_blas_resources_->token);
+                    frame_ray_tracing_blas_resources_.reset();
+                }
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
+                       "Graphics could not prepare TLAS instance/scratch resources");
+                return false;
+            }
+        }
+        for (const RenderFrameResourceImport &import : plan.resources)
+        {
+            if (std::holds_alternative<GraphTextureHandle>(import.handle))
+            {
+                RenderTarget *target = nullptr;
+                switch (import.role)
+                {
+                case RenderFrameResourceRole::SceneHdr:
+                    target = active_ray_tracing_path_trace_
+                                 ? path_trace_history_targets_[path_trace_write_index_].get()
+                                 : graph_executor_.ResolveTransient(
+                                       static_cast<uint64_t>(RenderFrameTransient::SceneHdr));
+                    break;
+                case RenderFrameResourceRole::PathTraceHistory:
+                    target = path_trace_history_targets_[1u - path_trace_write_index_].get();
+                    break;
+                case RenderFrameResourceRole::PathTraceGuide:
+                    target = path_trace_guide_target_.get();
+                    break;
+                case RenderFrameResourceRole::SceneColor:
+                    target = frame_targets_.GetTarget(RenderTargetName::SceneColor);
+                    break;
+                case RenderFrameResourceRole::GBuffer:
+                    target = frame_targets_.GetTarget(RenderTargetName::GBuffer);
+                    break;
+                case RenderFrameResourceRole::DirectionalShadow:
+                    target = frame_targets_.GetTarget(RenderTargetName::DirectionalShadow);
+                    break;
+                case RenderFrameResourceRole::SpotShadow:
+                    target = frame_targets_.GetTarget(RenderTargetName::SpotShadow);
+                    break;
+                case RenderFrameResourceRole::PointShadow:
+                    target = frame_targets_.GetTarget(RenderTargetName::PointShadow);
+                    break;
+                case RenderFrameResourceRole::CaptureOutput:
+                    target = frame_targets_.GetTarget(RenderTargetName::CaptureOutput);
+                    break;
+                case RenderFrameResourceRole::DebugViewOutput:
+                    target = frame_targets_.GetTarget(RenderTargetName::DebugViewOutput);
+                    break;
+                default:
+                    break;
+                }
+                if (!frame_bindings_.AddTexture(import.handle, import.role, target, error))
+                {
+                    KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Texture binding failed: %s", error.c_str());
+                    frame_bindings_.Clear();
+                    return false;
+                }
                 continue;
             }
-            if (const auto *texture = std::get_if<GraphTextureHandle>(&use.handle))
+
+            if (std::holds_alternative<GraphBufferHandle>(import.handle))
             {
-                return ResolveFrameTexture(*texture);
+                std::vector<graphics::BufferHandle> buffers;
+                if (import.role == RenderFrameResourceRole::SceneGeometry)
+                {
+                    for (const graphics::RayTracingGeometryDesc &geometry : frame_ray_tracing_geometries_)
+                    {
+                        buffers.push_back(geometry.vertex_buffer);
+                        buffers.push_back(geometry.index_buffer);
+                    }
+                }
+                else if (import.role == RenderFrameResourceRole::SceneInstances &&
+                         frame_ray_tracing_tlas_resources_.has_value())
+                {
+                    buffers = frame_ray_tracing_tlas_resources_->instance_inputs;
+                }
+                else if (import.role == RenderFrameResourceRole::SceneScratch)
+                {
+                    if (frame_ray_tracing_blas_resources_.has_value())
+                    {
+                        buffers.insert(buffers.end(),
+                                       frame_ray_tracing_blas_resources_->scratch_buffers.begin(),
+                                       frame_ray_tracing_blas_resources_->scratch_buffers.end());
+                    }
+                    if (frame_ray_tracing_tlas_resources_.has_value())
+                    {
+                        buffers.insert(buffers.end(),
+                                       frame_ray_tracing_tlas_resources_->scratch_buffers.begin(),
+                                       frame_ray_tracing_tlas_resources_->scratch_buffers.end());
+                    }
+                }
+                if (!frame_bindings_.AddBuffers(import.handle, import.role, buffers, error))
+                {
+                    KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Buffer binding failed for role %u: %s",
+                           static_cast<unsigned>(import.role), error.c_str());
+                    frame_bindings_.Clear();
+                    return false;
+                }
+                continue;
+            }
+
+            std::vector<graphics::AccelerationStructureHandle> structures;
+            if (import.role == RenderFrameResourceRole::SceneBlas)
+            {
+                for (const RayTracingMeshBuild &mesh_build : frame_ray_tracing_mesh_builds_)
+                {
+                    structures.push_back(mesh_build.blas);
+                }
+            }
+            else if (import.role == RenderFrameResourceRole::SceneTlas)
+            {
+                structures.push_back(
+                    ray_tracing_tlas_.IsValid()
+                        ? ray_tracing_tlas_
+                        : (backend_ != nullptr
+                               ? backend_->GetActiveTopLevelAccelerationStructure()
+                               : graphics::AccelerationStructureHandle{}));
+            }
+            if (!frame_bindings_.AddAccelerationStructures(import.handle, import.role,
+                                                            structures, error))
+            {
+                KP_LOG("RenderLog", LOG_LEVEL_ERROR, "AS binding failed: %s", error.c_str());
+                frame_bindings_.Clear();
+                return false;
             }
         }
-        return nullptr;
+        if (!frame_bindings_.Validate(plan, error))
+        {
+            KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Frame binding coverage failed: %s", error.c_str());
+            frame_bindings_.Clear();
+            return false;
+        }
+        rollback.keep = true;
+        return true;
     }
 
     std::optional<graphics::RenderTargetDesc> DeferredRenderer::DescribeFrameTransient(
@@ -2525,176 +2567,6 @@ namespace kpengine::render
             return RendererFrameTargets::DescribeSceneHdr(extent.width, extent.height);
         }
         return std::nullopt;
-    }
-
-    bool DeferredRenderer::AcquireFrameTransients(const CompiledRenderGraph &plan)
-    {
-        if (backend_ == nullptr || !active_frame_context_)
-        {
-            return false;
-        }
-        const graphics::Extent2D extent = active_frame_context_->GetRenderExtent();
-        for (const CompiledRenderGraph::TransientResource &transient : plan.Transients())
-        {
-            const std::optional<graphics::RenderTargetDesc> desc =
-                DescribeFrameTransient(transient.key, extent);
-            if (!desc.has_value())
-            {
-                // A declared transient this renderer cannot describe is a
-                // declaration it does not implement, and silently skipping it
-                // would leave a pass reading nothing.
-                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "No description for declared transient '%s'", transient.name.c_str());
-                return false;
-            }
-            const graphics::RenderTargetHandle handle =
-                backend_->AcquireTransientRenderTarget(*desc);
-            if (!handle.IsValid())
-            {
-                return false;
-            }
-            if (!transient_scene_hdr_)
-            {
-                transient_scene_hdr_ = std::make_unique<RenderTarget>();
-            }
-            // Adopt, so dropping the wrapper never destroys what the pool owns.
-            transient_scene_hdr_->Adopt(*backend_, handle, *desc);
-            if (!transient_scene_hdr_->IsValid())
-            {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    void DeferredRenderer::ReleaseFrameTransients()
-    {
-        if (!transient_scene_hdr_ || backend_ == nullptr)
-        {
-            frame_texture_bindings_.clear();
-            frame_buffer_bindings_.clear();
-            frame_acceleration_structure_bindings_.clear();
-            return;
-        }
-        const graphics::RenderTargetHandle handle = transient_scene_hdr_->GetHandle();
-        transient_scene_hdr_->Cleanup();
-        if (handle.IsValid())
-            backend_->ReleaseTransientRenderTarget(handle);
-        frame_texture_bindings_.clear();
-        frame_buffer_bindings_.clear();
-        frame_acceleration_structure_bindings_.clear();
-    }
-
-    bool DeferredRenderer::ApplyPassTransitions(const CompiledRenderGraph &plan,
-                                                const CompiledRenderGraph::Pass &pass)
-    {
-        graphics::CommandRecorder *const recorder =
-            backend_ != nullptr ? backend_->GetCommandRecorder() : nullptr;
-        if (recorder == nullptr || !ValidatePassBindings(pass))
-        {
-            KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                   "Render graph pass '%s' has an unresolved physical binding",
-                   pass.name.c_str());
-            return false;
-        }
-        if (pass.transition_count == 0)
-        {
-            return true;
-        }
-        const std::vector<RenderGraphTransitionIntent> &transitions = plan.Transitions();
-        for (std::size_t index = 0; index < pass.transition_count; ++index)
-        {
-            const std::size_t intent_index = pass.transition_offset + index;
-            if (intent_index >= transitions.size())
-            {
-                break;
-            }
-            const RenderGraphTransitionIntent &intent = transitions[intent_index];
-            if (const auto *texture = std::get_if<GraphTextureHandle>(&intent.handle))
-            {
-                RenderTarget *const target = ResolveFrameTexture(*texture);
-                if (target == nullptr ||
-                    !recorder->RequireRenderTargetUsage(
-                        target->GetHandle(), ToResourceUsage(intent.usage),
-                        ToAttachmentScope(intent.scope)))
-                {
-                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                           "Render graph texture requirement failed for pass '%s'",
-                           pass.name.c_str());
-                    return false;
-                }
-                continue;
-            }
-            if (const auto *buffer = std::get_if<GraphBufferHandle>(&intent.handle))
-            {
-                if (IsRayTracingVirtualBuffer(intent.resource_name))
-                {
-                    if (intent.resource_name == "SceneGeometry")
-                    {
-                        for (const graphics::RayTracingGeometryDesc &geometry :
-                             frame_ray_tracing_geometries_)
-                        {
-                            for (const graphics::BufferHandle physical :
-                                 {geometry.vertex_buffer, geometry.index_buffer})
-                            {
-                                if (!physical.IsValid() ||
-                                    !recorder->RequireBufferUsage(
-                                        physical, ToResourceUsage(intent.usage)))
-                                {
-                                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                                           "Render graph geometry requirement failed for pass '%s'",
-                                           pass.name.c_str());
-                                    return false;
-                                }
-                            }
-                        }
-                    }
-                    continue;
-                }
-                const graphics::BufferHandle physical = ResolveFrameBuffer(*buffer);
-                if (!physical.IsValid() ||
-                    !recorder->RequireBufferUsage(physical, ToResourceUsage(intent.usage)))
-                {
-                    KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                           "Render graph buffer requirement failed for pass '%s'",
-                           pass.name.c_str());
-                    return false;
-                }
-                continue;
-            }
-            const auto *acceleration_structure =
-                std::get_if<GraphAccelerationStructureHandle>(&intent.handle);
-            if (intent.resource_name == "SceneBLAS")
-            {
-                for (const RayTracingMeshBuild &mesh_build : frame_ray_tracing_mesh_builds_)
-                {
-                    if (!mesh_build.blas.IsValid() ||
-                        !recorder->RequireAccelerationStructureUsage(
-                            mesh_build.blas, ToResourceUsage(intent.usage)))
-                    {
-                        KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                               "Render graph BLAS requirement failed for pass '%s'",
-                               pass.name.c_str());
-                        return false;
-                    }
-                }
-                continue;
-            }
-            const graphics::AccelerationStructureHandle physical =
-                acceleration_structure != nullptr
-                    ? ResolveFrameAccelerationStructure(*acceleration_structure)
-                    : graphics::AccelerationStructureHandle{};
-            if (!physical.IsValid() ||
-                !recorder->RequireAccelerationStructureUsage(
-                    physical, ToResourceUsage(intent.usage)))
-            {
-                KP_LOG("RenderLog", LOG_LEVEL_ERROR,
-                       "Render graph acceleration structure requirement failed for pass '%s'",
-                       pass.name.c_str());
-                return false;
-            }
-        }
-        return true;
     }
 
     void DeferredRenderer::ConfigureFramePlans()
@@ -2721,16 +2593,17 @@ namespace kpengine::render
                 (conditions.ray_tracing_path_trace ? 16U : 0U) |
                 (conditions.debug_view ? 32U : 0U);
             const auto started = std::chrono::steady_clock::now();
-            frame_plans_[slot] = CompileRenderFrameGraph(conditions);
+            frame_plans_[slot] = CompileRenderFramePlan(conditions);
             frame_plan_compile_ms_ += std::chrono::duration<double, std::milli>(
                                           std::chrono::steady_clock::now() - started)
                                           .count();
-            if (frame_plans_[slot]->graph.has_value())
+            if (frame_plans_[slot]->compilation.graph.has_value())
             {
                 continue;
             }
             frame_plan_valid_ = false;
-            for (const RenderGraphDiagnostic &diagnostic : frame_plans_[slot]->diagnostics)
+            for (const RenderGraphDiagnostic &diagnostic :
+                 frame_plans_[slot]->compilation.diagnostics)
             {
                 KP_LOG("RenderLog", LOG_LEVEL_ERROR, "Render graph declaration is invalid: %s",
                        diagnostic.message.c_str());
@@ -2738,21 +2611,28 @@ namespace kpengine::render
         }
     }
 
-    const CompiledRenderGraph *DeferredRenderer::GetFramePlan(
+    const CompiledRenderFramePlan *DeferredRenderer::GetCompiledFramePlan(
         RenderFrameConditions conditions) const
     {
-        const std::optional<RenderGraphCompileResult> &plan =
+        const std::optional<CompiledRenderFramePlan> &plan =
             frame_plans_[(conditions.diagnostic_capture ? 1U : 0U) |
                         (conditions.ray_query_shadow ? 2U : 0U) |
                         (conditions.ray_tracing_blas_build ? 4U : 0U) |
                         (conditions.ray_tracing_tlas_build ? 8U : 0U) |
                         (conditions.ray_tracing_path_trace ? 16U : 0U) |
                         (conditions.debug_view ? 32U : 0U)];
-        if (!plan.has_value() || !plan->graph.has_value())
+        if (!plan.has_value() || !plan->compilation.graph.has_value())
         {
             return nullptr;
         }
-        return &*plan->graph;
+        return &*plan;
+    }
+
+    const CompiledRenderGraph *DeferredRenderer::GetFramePlan(
+        RenderFrameConditions conditions) const
+    {
+        const CompiledRenderFramePlan *const plan = GetCompiledFramePlan(conditions);
+        return plan != nullptr ? &*plan->compilation.graph : nullptr;
     }
 
     std::optional<DeferredRenderer::DirectionalShadowFrame> DeferredRenderer::ScheduleDirectionalShadow(
@@ -3218,12 +3098,14 @@ namespace kpengine::render
             return false;
         }
 
-        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        RenderTarget *const hdr_target = ResolveFrameTextureByName("SceneHdr");
-        RenderTarget *const gbuffer_target = ResolveFrameTextureByName("GBuffer");
-        RenderTarget *const shadow_target = ResolveFrameTextureByName("DirectionalShadow");
-        RenderTarget *const spot_shadow_target = ResolveFrameTextureByName("SpotShadow");
-        RenderTarget *const point_shadow_target = ResolveFrameTextureByName("PointShadow");
+        graphics::CommandRecorder *const recorder =
+            active_pass_context_ != nullptr ? &active_pass_context_->GetRecorder() : nullptr;
+        RenderTarget *const hdr_target = ResolveFrameTexture(
+            RenderFrameResourceRole::SceneHdr, RenderGraphAccess::Write);
+        RenderTarget *const gbuffer_target = ResolveFrameTexture(RenderFrameResourceRole::GBuffer);
+        RenderTarget *const shadow_target = ResolveFrameTexture(RenderFrameResourceRole::DirectionalShadow);
+        RenderTarget *const spot_shadow_target = ResolveFrameTexture(RenderFrameResourceRole::SpotShadow);
+        RenderTarget *const point_shadow_target = ResolveFrameTexture(RenderFrameResourceRole::PointShadow);
         if (!recorder || !hdr_target || !gbuffer_target || !shadow_target ||
             !spot_shadow_target || !point_shadow_target)
         {
@@ -3347,8 +3229,14 @@ namespace kpengine::render
                            active_environment_.brdf_lut.sampler}};
             if (ray_query_shadows)
             {
+                const auto scene_tlas = active_pass_context_ != nullptr
+                    ? active_pass_context_->ResolveAccelerationStructures(
+                          RenderFrameResourceRole::SceneTlas, RenderGraphAccess::Read)
+                    : std::span<const graphics::AccelerationStructureHandle>{};
+                if (scene_tlas.size() != 1 || !scene_tlas.front().IsValid())
+                    return false;
                 resource_bindings.emplace_back(graphics::AccelerationStructureBinding{
-                    0, 14, backend_->GetActiveTopLevelAccelerationStructure()});
+                    0, 14, scene_tlas.front()});
             }
             const graphics::DescriptorSetHandle bindings =
                 active_frame_context_->AllocateResourceBindingSet(
@@ -3679,13 +3567,24 @@ namespace kpengine::render
         {
             return false;
         }
-        graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
+        graphics::CommandRecorder *const recorder =
+            active_pass_context_ != nullptr ? &active_pass_context_->GetRecorder() : nullptr;
         graphics::RayTracingResourceOwner *const owner =
             backend_->GetRayTracingResourceOwner();
-        RenderTarget *const hdr_target = ResolveFrameTextureByName("SceneHdr");
-        RenderTarget *const history_target = ResolveFrameTextureByName("PathTraceHistory");
+        RenderTarget *const hdr_target = ResolveFrameTexture(
+            RenderFrameResourceRole::SceneHdr, RenderGraphAccess::Write);
+        RenderTarget *const history_target = ResolveFrameTexture(RenderFrameResourceRole::PathTraceHistory);
+        const auto scene_geometry = active_pass_context_ != nullptr
+            ? active_pass_context_->ResolveBuffers(RenderFrameResourceRole::SceneGeometry,
+                                                    RenderGraphAccess::Read)
+            : std::span<const graphics::BufferHandle>{};
+        const auto scene_tlas = active_pass_context_ != nullptr
+            ? active_pass_context_->ResolveAccelerationStructures(
+                  RenderFrameResourceRole::SceneTlas, RenderGraphAccess::Read)
+            : std::span<const graphics::AccelerationStructureHandle>{};
         const graphics::AccelerationStructureHandle top_level =
-            backend_->GetActiveTopLevelAccelerationStructure();
+            scene_tlas.size() == 1 ? scene_tlas.front()
+                                   : graphics::AccelerationStructureHandle{};
         if (!recorder || !owner || !hdr_target || !history_target || !top_level.IsValid())
         {
             return false;
@@ -3725,9 +3624,17 @@ namespace kpengine::render
             return false;
         }
 
-        if (frame_ray_tracing_geometries_.empty())
+        if (frame_ray_tracing_geometries_.empty() || scene_geometry.empty())
         {
             return false;
+        }
+        for (const graphics::RayTracingGeometryDesc &geometry : frame_ray_tracing_geometries_)
+        {
+            if (std::find(scene_geometry.begin(), scene_geometry.end(), geometry.vertex_buffer) ==
+                    scene_geometry.end() ||
+                std::find(scene_geometry.begin(), scene_geometry.end(), geometry.index_buffer) ==
+                    scene_geometry.end())
+                return false;
         }
         if (frame_ray_tracing_scene_table_dirty_ || !ray_tracing_scene_table_.IsValid())
         {
@@ -3855,7 +3762,8 @@ namespace kpengine::render
             hdr_target->GetColorAttachmentTexture(0);
         const graphics::TextureHandle history_output =
             history_target->GetColorAttachmentTexture(0);
-        RenderTarget *const guide_target = ResolveFrameTextureByName("PathTraceGuide");
+        RenderTarget *const guide_target = ResolveFrameTexture(
+            RenderFrameResourceRole::PathTraceGuide, RenderGraphAccess::Write);
         if (guide_target == nullptr)
             return false;
         const graphics::TextureHandle guide_output =
@@ -3946,9 +3854,12 @@ namespace kpengine::render
         }
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        RenderTarget *const hdr_target = ResolveFrameTextureByName("SceneHdr");
-        RenderTarget *const gbuffer_target = ResolveFrameTextureByName("GBuffer");
-        RenderTarget *const scene_target = ResolveFrameTextureByName("SceneColor");
+        RenderTarget *const hdr_target = ResolveFrameTexture(RenderFrameResourceRole::SceneHdr);
+        RenderTarget *const gbuffer_target = active_ray_tracing_path_trace_
+            ? nullptr
+            : ResolveFrameTexture(RenderFrameResourceRole::GBuffer);
+        RenderTarget *const scene_target = ResolveFrameTexture(
+            RenderFrameResourceRole::SceneColor, RenderGraphAccess::Write);
         if (!recorder || !hdr_target || !scene_target ||
             (!active_ray_tracing_path_trace_ && !gbuffer_target) ||
             !PrepareToneMapPassResources())
@@ -3987,7 +3898,7 @@ namespace kpengine::render
                    graphics::SampledTextureBinding{
                        0, 5,
                        active_ray_tracing_path_trace_
-                           ? ResolveFrameTextureByName("PathTraceGuide")
+                           ? ResolveFrameTexture(RenderFrameResourceRole::PathTraceGuide)
                                  ->GetColorAttachmentTexture(0)
                            : hdr_target->GetColorAttachmentTexture(0),
                        gbuffer_debug_sampler_},
@@ -4015,10 +3926,10 @@ namespace kpengine::render
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
         RenderTarget *const output_target = frame_targets_.GetTarget(output_name);
-        RenderTarget *const gbuffer_target = ResolveFrameTextureByName("GBuffer");
-        RenderTarget *const shadow_target = ResolveFrameTextureByName("DirectionalShadow");
-        RenderTarget *const spot_shadow_target = ResolveFrameTextureByName("SpotShadow");
-        RenderTarget *const point_shadow_target = ResolveFrameTextureByName("PointShadow");
+        RenderTarget *const gbuffer_target = ResolveFrameTexture(RenderFrameResourceRole::GBuffer);
+        RenderTarget *const shadow_target = ResolveFrameTexture(RenderFrameResourceRole::DirectionalShadow);
+        RenderTarget *const spot_shadow_target = ResolveFrameTexture(RenderFrameResourceRole::SpotShadow);
+        RenderTarget *const point_shadow_target = ResolveFrameTexture(RenderFrameResourceRole::PointShadow);
         if (!recorder || !output_target || !gbuffer_target || !shadow_target ||
             !spot_shadow_target || !point_shadow_target ||
             !PrepareCaptureViewPassResources())

@@ -49,6 +49,9 @@ namespace kpengine::graphics
                                   const DynamicUniformOffsets &dynamic_offsets = {}) override;
         bool BuildAccelerationStructures(
             std::span<const RayTracingBuildDesc> builds) override;
+        bool BuildAccelerationStructures(
+            std::span<const RayTracingBuildDesc> builds,
+            const RayTracingBuildResources &resources) override;
         bool BindRayTracingPipeline(RayTracingPipelineHandle pipeline) override;
         bool BindRayTracingResourceBindings(DescriptorSetHandle bindings) override;
         bool DispatchRays(const RayTracingDispatchDesc &dispatch) override;

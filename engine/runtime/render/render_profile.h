@@ -10,6 +10,7 @@
 
 #include "base/type.h"
 #include "path_trace_settings.h"
+#include "render_graph/render_graph_frame.h"
 
 namespace kpengine::render
 {
@@ -199,6 +200,9 @@ namespace kpengine::render
         std::array<RenderProfilePassMetrics,
                    static_cast<size_t>(RenderProfilePass::Count)>
             passes{};
+        std::array<RenderGraphPassOutcome,
+                   static_cast<size_t>(RenderProfilePass::Count)>
+            graph_pass_outcomes{};
         std::optional<uint64_t> gpu_frame_number;
         RenderProfileSummary summary;
     };

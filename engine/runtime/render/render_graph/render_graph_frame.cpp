@@ -5,6 +5,20 @@
 
 namespace kpengine::render
 {
+    const char *RenderGraphPassOutcomeName(RenderGraphPassOutcome outcome) noexcept
+    {
+        switch (outcome)
+        {
+        case RenderGraphPassOutcome::NotInPlan: return "not_in_plan";
+        case RenderGraphPassOutcome::Pending: return "pending";
+        case RenderGraphPassOutcome::Executed: return "executed";
+        case RenderGraphPassOutcome::SkippedExternal: return "skipped_external";
+        case RenderGraphPassOutcome::SkippedDependency: return "skipped_dependency";
+        case RenderGraphPassOutcome::Failed: return "failed";
+        }
+        return "unknown";
+    }
+
     RenderGraphFrame::RenderGraphFrame(const CompiledRenderGraph &graph)
         : graph_(&graph), outcomes_(graph.Passes().size(), RenderGraphPassOutcome::Pending)
     {
@@ -93,7 +107,7 @@ namespace kpengine::render
         return true;
     }
 
-    bool RenderGraphFrame::ExecuteExternal(const std::function<void()> &executor)
+    bool RenderGraphFrame::ExecuteExternal(const std::function<bool()> &executor)
     {
         if (!graph_ || finalized_ || !renderer_executed_ || external_executed_ || !executor)
         {
@@ -116,11 +130,18 @@ namespace kpengine::render
             ++cursor_;
             return true;
         }
-        executor();
-        outcomes_[cursor_] = RenderGraphPassOutcome::Executed;
+        const bool succeeded = executor();
+        outcomes_[cursor_] = succeeded ? RenderGraphPassOutcome::Executed
+                                       : RenderGraphPassOutcome::Failed;
+        if (!succeeded)
+        {
+            MarkWritesFailed(pass);
+            required_failure_ = required_failure_ ||
+                pass.failure_policy == RenderGraphPassFailurePolicy::Required;
+        }
         external_executed_ = true;
         ++cursor_;
-        return true;
+        return succeeded;
     }
 
     bool RenderGraphFrame::CanExecuteExternal() const noexcept

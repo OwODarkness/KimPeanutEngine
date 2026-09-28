@@ -13,12 +13,19 @@
 namespace
 {
     using kpengine::render::CompiledRenderGraph;
+    using kpengine::render::CompiledRenderFramePlan;
+    using kpengine::render::CompileRenderFramePlan;
     using kpengine::render::CompileRenderFrameGraph;
     using kpengine::render::FixedRenderPassEntry;
     using kpengine::render::FixedRenderPassId;
     using kpengine::render::GetRenderFramePassEntries;
     using kpengine::render::GraphTextureHandle;
+    using kpengine::render::GraphAccelerationStructureHandle;
     using kpengine::render::RenderFrameConditions;
+    using kpengine::render::RenderFrameGraphResourceHandle;
+    using kpengine::render::RenderFrameResourceImport;
+    using kpengine::render::RenderFrameResourceRole;
+    using kpengine::render::RenderGraphCompileResult;
     using kpengine::render::RenderGraphAccess;
     using kpengine::render::RenderGraphPassOwner;
     using kpengine::render::RenderGraphResourceUse;
@@ -347,5 +354,137 @@ TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesIndependentConsume
                 return pass.user_key == static_cast<uint64_t>(FixedRenderPassId::DebugView);
             });
         EXPECT_EQ(debug_pass != result.graph->Passes().end(), conditions.debug_view);
+    }
+}
+
+TEST(RenderGraphCompatibilityTest, TypedPlanCarriesExactGraphResourceRolesAndVersions)
+{
+    const RenderFrameConditions conditions{true, true, true, true, true, true};
+    const CompiledRenderFramePlan plan = CompileRenderFramePlan(conditions);
+    ASSERT_TRUE(plan.Succeeded());
+    ASSERT_TRUE(plan.compilation.graph.has_value());
+    const uint64_t graph_id = plan.compilation.graph->GraphId();
+
+    const auto has_role = [&plan](RenderFrameResourceRole role) {
+        return std::any_of(plan.resources.begin(), plan.resources.end(),
+                           [role](const RenderFrameResourceImport &entry) {
+                               return entry.role == role;
+                           });
+    };
+    for (const RenderFrameResourceRole role : {
+             RenderFrameResourceRole::SceneColor,
+             RenderFrameResourceRole::SceneHdr,
+             RenderFrameResourceRole::GBuffer,
+             RenderFrameResourceRole::CaptureOutput,
+             RenderFrameResourceRole::DebugViewOutput,
+             RenderFrameResourceRole::PathTraceHistory,
+             RenderFrameResourceRole::PathTraceGuide,
+             RenderFrameResourceRole::SceneGeometry,
+             RenderFrameResourceRole::SceneScratch,
+             RenderFrameResourceRole::SceneBlas,
+             RenderFrameResourceRole::SceneTlas})
+    {
+        EXPECT_TRUE(has_role(role)) << static_cast<int>(role);
+    }
+
+    for (const RenderFrameResourceImport &resource : plan.resources)
+    {
+        std::visit(
+            [graph_id](const auto &handle) {
+                EXPECT_TRUE(handle.IsValid());
+                EXPECT_EQ(handle.graph_id, graph_id);
+            },
+            resource.handle);
+    }
+
+    const auto has_tlas_version = [&plan](uint32_t version) {
+        return std::any_of(plan.resources.begin(), plan.resources.end(),
+                           [version](const RenderFrameResourceImport &entry) {
+                               const auto *handle = std::get_if<GraphAccelerationStructureHandle>(
+                                   &entry.handle);
+                               return entry.role == RenderFrameResourceRole::SceneTlas &&
+                                      handle != nullptr && handle->version == version;
+                           });
+    };
+    EXPECT_FALSE(has_tlas_version(0));
+    EXPECT_TRUE(has_tlas_version(1));
+}
+
+TEST(RenderGraphCompatibilityTest, LegacyCompileAdapterReturnsSameTypedPlanGraph)
+{
+    const RenderFrameConditions conditions{false, true, true, true, false, false};
+    const CompiledRenderFramePlan typed = CompileRenderFramePlan(conditions);
+    const RenderGraphCompileResult compatibility = CompileRenderFrameGraph(conditions);
+    ASSERT_TRUE(typed.Succeeded());
+    ASSERT_TRUE(compatibility.Succeeded());
+    ASSERT_TRUE(typed.compilation.graph.has_value());
+    ASSERT_TRUE(compatibility.graph.has_value());
+
+    const auto names = [](const CompiledRenderGraph &graph) {
+        std::vector<std::string> result;
+        for (const CompiledRenderGraph::Pass &pass : graph.Passes())
+        {
+            result.push_back(pass.name);
+        }
+        return result;
+    };
+    EXPECT_EQ(names(*typed.compilation.graph), names(*compatibility.graph));
+    EXPECT_EQ(typed.compilation.graph->Transients().size(),
+              compatibility.graph->Transients().size());
+}
+
+TEST(RenderGraphCompatibilityTest, TypedImportMetadataCoversAllSixtyFourVariants)
+{
+    for (uint32_t bits = 0; bits < 64; ++bits)
+    {
+        const RenderFrameConditions conditions{
+            (bits & 1U) != 0, (bits & 2U) != 0, (bits & 4U) != 0,
+            (bits & 8U) != 0, (bits & 16U) != 0, (bits & 32U) != 0};
+        const CompiledRenderFramePlan plan = CompileRenderFramePlan(conditions);
+        ASSERT_TRUE(plan.Succeeded()) << "condition bits=" << bits;
+        ASSERT_TRUE(plan.compilation.graph.has_value());
+        const CompiledRenderGraph &graph = *plan.compilation.graph;
+
+        std::vector<RenderFrameGraphResourceHandle> declared_handles;
+        for (const CompiledRenderGraph::Pass &pass : graph.Passes())
+        {
+            for (const RenderGraphResourceUse &use : pass.uses)
+            {
+                if (std::find(declared_handles.begin(), declared_handles.end(), use.handle) ==
+                    declared_handles.end())
+                {
+                    declared_handles.push_back(use.handle);
+                }
+            }
+        }
+        ASSERT_EQ(plan.resources.size(), declared_handles.size())
+            << "condition bits=" << bits;
+
+        for (const auto &handle : declared_handles)
+        {
+            const auto binding = std::find_if(
+                plan.resources.begin(), plan.resources.end(),
+                [&handle](const RenderFrameResourceImport &entry) {
+                    return entry.handle == handle;
+                });
+            ASSERT_NE(binding, plan.resources.end()) << "condition bits=" << bits;
+            EXPECT_NE(binding->role, RenderFrameResourceRole::Count)
+                << "condition bits=" << bits << ", missing authored role";
+        }
+
+        const auto role_is_present = [&plan](RenderFrameResourceRole role) {
+            return std::any_of(plan.resources.begin(), plan.resources.end(),
+                               [role](const RenderFrameResourceImport &entry) {
+                                   return entry.role == role;
+                               });
+        };
+        EXPECT_EQ(role_is_present(RenderFrameResourceRole::CaptureOutput),
+                  conditions.diagnostic_capture);
+        EXPECT_EQ(role_is_present(RenderFrameResourceRole::DebugViewOutput),
+                  conditions.debug_view);
+        EXPECT_EQ(role_is_present(RenderFrameResourceRole::SceneGeometry),
+                  conditions.ray_tracing_blas_build);
+        EXPECT_EQ(role_is_present(RenderFrameResourceRole::SceneInstances),
+                  conditions.ray_tracing_tlas_build);
     }
 }

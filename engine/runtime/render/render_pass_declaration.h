@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "render_graph/render_graph.h"
@@ -23,6 +24,48 @@ namespace kpengine::render
         PathTraceHistory,
         PathTraceGuide,
         Count,
+    };
+
+    // Render-owned meaning for a physical frame resource. These roles are
+    // attached while the graph is authored; execution never discovers them by
+    // comparing resource names.
+    enum class RenderFrameResourceRole : uint8_t
+    {
+        SceneColor,
+        SceneHdr,
+        GBuffer,
+        DirectionalShadow,
+        SpotShadow,
+        PointShadow,
+        CaptureOutput,
+        DebugViewOutput,
+        PathTraceHistory,
+        PathTraceGuide,
+        SceneGeometry,
+        SceneInstances,
+        SceneScratch,
+        SceneBlas,
+        SceneTlas,
+        Count,
+    };
+
+    using RenderFrameGraphResourceHandle = std::variant<
+        GraphTextureHandle, GraphBufferHandle, GraphAccelerationStructureHandle>;
+
+    struct RenderFrameResourceImport
+    {
+        RenderFrameResourceRole role = RenderFrameResourceRole::SceneColor;
+        RenderFrameGraphResourceHandle handle;
+    };
+
+    struct CompiledRenderFramePlan
+    {
+        RenderGraphCompileResult compilation;
+        // Includes each graph-sanctioned version used by an enabled pass, plus
+        // the initial imported handle for roles supplied by a frame owner.
+        std::vector<RenderFrameResourceImport> resources;
+
+        bool Succeeded() const noexcept { return compilation.Succeeded(); }
     };
 
     enum class RenderPassAccess : uint8_t
@@ -121,6 +164,9 @@ namespace kpengine::render
 
     // Declares the authored passes into a compiled graph for these conditions.
     // A disabled optional pass is culled, so its key is absent from the plan.
+    CompiledRenderFramePlan CompileRenderFramePlan(RenderFrameConditions conditions);
+
+    // Compatibility adapter for callers that only need the graph result.
     RenderGraphCompileResult CompileRenderFrameGraph(RenderFrameConditions conditions);
 }
 

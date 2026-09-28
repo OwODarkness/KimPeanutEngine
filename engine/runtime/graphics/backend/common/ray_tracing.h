@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <variant>
 #include <vector>
@@ -77,6 +78,17 @@ namespace kpengine::graphics
         RayTracingBuildMode mode = RayTracingBuildMode::Build;
         std::span<const RayTracingGeometryDesc> geometries;
         std::span<const RayTracingInstanceDesc> instances;
+    };
+
+    // Borrowed common handles prepared by Graphics for one frame's AS builds.
+    // The token remains Graphics-owned and is consumed or cancelled explicitly.
+    struct RayTracingBuildResources
+    {
+        uint64_t token = 0;
+        std::vector<BufferHandle> instance_inputs;
+        std::vector<BufferHandle> scratch_buffers;
+
+        bool IsValid() const noexcept { return token != 0; }
     };
 
     // The first consumer is ray-query based, but the contract reserves the
@@ -246,6 +258,12 @@ namespace kpengine::graphics
     public:
         virtual ~RayTracingResourceOwner() = default;
         virtual bool IsSupported() const noexcept = 0;
+        virtual std::optional<RayTracingBuildResources> PrepareBuildResources(
+            std::span<const RayTracingBuildDesc>)
+        {
+            return std::nullopt;
+        }
+        virtual void CancelPreparedBuildResources(uint64_t) noexcept {}
         virtual AccelerationStructureHandle CreateAccelerationStructure(
             const RayTracingAccelerationStructureDesc &desc) = 0;
         virtual bool DestroyAccelerationStructure(AccelerationStructureHandle handle) = 0;

@@ -23,6 +23,8 @@
 #include "render/material/material_system.h"
 #include "render_camera.h"
 #include "render_graph/render_graph_frame.h"
+#include "render_graph/render_graph_bindings.h"
+#include "render_graph/render_graph_executor.h"
 #include "render_pass_declaration.h"
 #include "render_resource.h"
 #include "prepared_render_asset_catalog.h"
@@ -166,28 +168,20 @@ namespace kpengine::render
         // already satisfied.
         // The target a pass records into, named by its write use. Null for a pass
         // that writes no attachment, such as the external terminal.
-        RenderTarget *ResolveFrameTexture(GraphTextureHandle texture) const;
-        RenderTarget *ResolveFrameTextureByName(std::string_view name) const;
-        graphics::BufferHandle ResolveFrameBuffer(GraphBufferHandle buffer) const;
-        graphics::AccelerationStructureHandle ResolveFrameAccelerationStructure(
-            GraphAccelerationStructureHandle acceleration_structure) const;
-        RenderTarget *ResolveNamedFrameTarget(std::string_view name);
+        RenderTarget *ResolveFrameTexture(
+            RenderFrameResourceRole role,
+            RenderGraphAccess access = RenderGraphAccess::Read) const;
         bool EnsurePathTraceHistoryTargets(uint32_t width, uint32_t height);
         uint64_t PathTraceHistorySignature(uint32_t width, uint32_t height) const;
-        bool BuildFrameResourceBindings(const CompiledRenderGraph &plan);
-        bool ValidatePassBindings(const CompiledRenderGraph::Pass &pass) const;
+        bool BuildFrameResourceBindings(const CompiledRenderFramePlan &plan);
+        void CancelPreparedFrameBuildResources();
         // The description for a declared transient key, or null for one this
         // renderer does not implement.
         std::optional<graphics::RenderTargetDesc> DescribeFrameTransient(
             uint64_t key, const graphics::Extent2D &extent) const;
-        // Acquires every transient the plan declares. False when one could not be
-        // had, which fails the frame before any pass records.
-        bool AcquireFrameTransients(const CompiledRenderGraph &plan);
-        void ReleaseFrameTransients();
-        RenderTarget *ResolvePassAttachment(const CompiledRenderGraph::Pass &pass);
-        bool ApplyPassTransitions(const CompiledRenderGraph &plan,
-                                  const CompiledRenderGraph::Pass &pass);
         void ConfigureFramePlans();
+        const CompiledRenderFramePlan *GetCompiledFramePlan(
+            RenderFrameConditions conditions) const;
         const CompiledRenderGraph *GetFramePlan(RenderFrameConditions conditions) const;
         std::optional<DirectionalShadowFrame> ScheduleDirectionalShadow(
             const std::vector<Light> &lights,
@@ -209,10 +203,11 @@ namespace kpengine::render
         bool RecordToneMapPass();
         bool RecordRayTracingPathTracePass();
         bool RecordCaptureViewPass(CaptureView view, RenderTargetName output_target);
-        bool ExecutePass(FixedRenderPassId id, const std::vector<Light> &lights);
+        bool ExecutePass(FixedRenderPassId id, const std::vector<Light> &lights,
+                         const RenderGraphPassContext &context);
         bool PrepareRayTracingScene();
-        bool RecordRayTracingBlasBuild();
-        bool RecordRayTracingTlasBuild();
+        bool RecordRayTracingBlasBuild(const RenderGraphPassContext &context);
+        bool RecordRayTracingTlasBuild(const RenderGraphPassContext &context);
         void DestroyRayTracingPathTraceBindings();
         void DestroyRayTracingResources();
         bool PrepareDirectionalShadowPassResources();
@@ -253,14 +248,10 @@ namespace kpengine::render
         RendererFrameTargets frame_targets_;
         // One compiled plan per frame-start condition set, each compiled once.
         // The compiled plan is now the only authority for pass order.
-        std::array<std::optional<RenderGraphCompileResult>, 64> frame_plans_;
-        std::optional<RenderGraphFrame> active_pass_frame_;
-        // The plan the active frame executes, so the external terminal's state
-        // requirements can be applied before the host's callback records.
-        const CompiledRenderGraph *active_frame_plan_ = nullptr;
+        std::array<std::optional<CompiledRenderFramePlan>, 64> frame_plans_;
+        RenderGraphExecutor graph_executor_;
         // The frame's pooled transient, wrapped around a pool-owned handle.
         // RenderTarget is not movable, so the wrapper is held by pointer.
-        std::unique_ptr<RenderTarget> transient_scene_hdr_;
         std::array<std::unique_ptr<RenderTarget>, 2> path_trace_history_targets_;
         std::unique_ptr<RenderTarget> path_trace_guide_target_;
         uint32_t path_trace_write_index_ = 0;
@@ -272,29 +263,7 @@ namespace kpengine::render
         PathTraceSettings effective_path_trace_settings_{};
         std::string path_trace_settings_fallback_reason_;
         bool fail_next_path_trace_dispatch_ = false;
-        struct FrameTextureBinding
-        {
-            GraphTextureHandle logical;
-            std::string name;
-            RenderTarget *physical = nullptr;
-        };
-        struct FrameBufferBinding
-        {
-            GraphBufferHandle logical;
-            std::string name;
-            graphics::BufferHandle physical;
-        };
-        struct FrameAccelerationStructureBinding
-        {
-            GraphAccelerationStructureHandle logical;
-            std::string name;
-            graphics::AccelerationStructureHandle physical;
-        };
-        // Explicit frame-local bindings keep physical resolution separate from
-        // authored pass-resource identities and reject missing graph resources.
-        std::vector<FrameTextureBinding> frame_texture_bindings_;
-        std::vector<FrameBufferBinding> frame_buffer_bindings_;
-        std::vector<FrameAccelerationStructureBinding> frame_acceleration_structure_bindings_;
+        RenderGraphBindings frame_bindings_;
         bool frame_execution_failed_ = false;
         bool frame_plan_valid_ = false;
         double frame_plan_compile_ms_ = 0.0;
@@ -410,6 +379,8 @@ namespace kpengine::render
         std::vector<RayTracingMeshBuild> frame_ray_tracing_mesh_builds_;
         std::vector<graphics::RayTracingBuildDesc> frame_ray_tracing_blas_builds_;
         std::vector<graphics::RayTracingBuildDesc> frame_ray_tracing_tlas_builds_;
+        std::optional<graphics::RayTracingBuildResources> frame_ray_tracing_blas_resources_;
+        std::optional<graphics::RayTracingBuildResources> frame_ray_tracing_tlas_resources_;
         bool frame_ray_tracing_blas_build_ = false;
         bool frame_ray_tracing_tlas_build_ = false;
         uint64_t path_trace_scene_limit_diagnostic_signature_ = 0;
@@ -447,6 +418,7 @@ namespace kpengine::render
         bool active_ray_tracing_path_trace_ = false;
         RenderProfileSnapshot profile_;
         std::optional<size_t> active_profile_pass_;
+        const RenderGraphPassContext *active_pass_context_ = nullptr;
     };
 }
 

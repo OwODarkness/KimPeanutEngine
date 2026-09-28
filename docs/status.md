@@ -1,10 +1,14 @@
 # Project Status
 
-- **R5.2 / R5.3 concrete plans (2026-09-28; planned)** — Typed graph binding
-  and execution extraction, followed by pass-family methods/state/struct
-  ownership extraction. The graph remains the scheduling/resource authority;
-  the facade reduction is explicitly gated on baseline and lifecycle parity. →
-  [R5.2](render/.plan/R5.2.md), [R5.3](render/.plan/R5.3.md)
+- **R5.2 implementation (2026-09-28; in progress)** — typed physical groups,
+  common Graphics AS preparation, executor-owned transitions, attachment and
+  profiling brackets, transient leases, external-terminal failure outcomes,
+  access-checked pass context, immutable prepared-build snapshots, and typed
+  finalization are implemented. Cornell Debug Vulkan PT and screenshot export
+  pass; retained AS build/retirement evidence, forced rebuild, cross-configuration
+  parity, and the full acceptance matrix remain. →
+  [R5.2](render/.plan/R5.2.md), [R5.0 exit review](../.spec/journal/2026-09-28-r5-0-exit-review.md),
+  [R5.3](render/.plan/R5.3.md), [R5.2 risk review](render/.review/R5.2.md)
 
 - **Cornell PT area light (2026-09-28)** — Ceiling now uses a scene-authored
   1.3 × 1.05 rectangular emitter at intensity 10. General finite-area sampling
