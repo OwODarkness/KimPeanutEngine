@@ -1,9 +1,11 @@
 # R5 — Render configuration, graph execution, and ownership
 
-- Status: active; R5.0 raster baseline established, PT graph outcomes/exit review open; R5.1 runtime acceptance partial
+- Status: active; R5.1 complete; R5.0 PT graph outcomes/exit review open
 - Owner: Render
 - Parent TODO: [Render R5 roadmap](../../docs/render/TODO.md)
-- Design: [R5 stage plan](../../docs/render/.plan/R5.md)
+- Design: [R5 stage map](../../docs/render/.plan/R5.md),
+  [R5.0](../../docs/render/.plan/R5.0.md),
+  [R5.1](../../docs/render/.plan/R5.1.md)
 - Source baseline: `9089df26325b5976b0ab2bc20bde46febd2ac9a`
 
 ## Objective
@@ -29,44 +31,28 @@ not relabeled as accepted R4.8 work.
 | --- | --- | --- |
 | Requests and lifecycle | `RenderSystem` applies copied settings at frame boundaries, owns frame contexts, capture service, backend and renderer facade; Runtime supplies requests/callbacks. | Published metrics are completed-frame snapshots. Runtime does not depend on Editor. |
 | Scene and material inputs | `RenderSceneCoordinator`, `RenderWorld`, and `MaterialSystem` produce immutable/revisioned CPU-side records; `DeferredRenderer` consumes them. | World/material revisions key scene-record reuse. Authored light signature is independent. Unchanged records avoid section/material walks, table packing, and address-patch generation. |
-| Frame plans and graph | `DeferredRenderer` eagerly compiles the five-condition cross product into 32 plan slots. `RenderGraphFrame` borrows a compiled graph and owns per-frame outcomes/cursor/finalization state. | Keep all 32 cached plans initially. The frame object owns no GPU resources; the external Editor terminal remains ordered after renderer passes. |
+| Frame plans and graph | `DeferredRenderer` eagerly compiles the six-condition cross product into 64 plan slots. `RenderGraphFrame` borrows a compiled graph and owns per-frame outcomes/cursor/finalization state. | Keep all 64 cached plans initially. The frame object owns no GPU resources; the external Editor terminal remains ordered after renderer passes. |
 | Physical frame resources | `DeferredRenderer` resolves logical graph imports and transient leases to common Graphics handles; Graphics pools/allocates physical resources. | History is a two-target ping-pong pair. Frame imports and transient leases are frame scoped. Existing string-keyed geometry/BLAS expansion remains a known R5.2 issue. |
 | Raster passes | `DeferredRenderer` records shadow, GBuffer, deferred-lighting, tone-map, diagnostics, and capture work through the common backend/recorder. | Scene Color raster and diagnostic/capture dependencies stay distinct. RT-off currently records raster draws but its known Sponza capture is mostly black and is not a parity oracle. |
 | RT preparation and tables | `DeferredRenderer` owns Render-side scene descriptors, revisions, record cache, pass policy and per-frame binding-cache keys. Graphics owns immutable GPU reference tables, descriptors, AS storage/builds, command submission and retirement. | Preserve frame-slot/history-parity binding reuse; static unchanged scene records and table uploads remain zero after warm-up. Vulkan native types stay below common Graphics. |
 | History and filtering | `DeferredRenderer` owns PT history signature/sample progression and guide/filter targets; PT shader implements estimator, preview, denoise and visibility variants. | Scene/camera/extent/estimator changes reset history according to the signature. Filtering/output mode interactions are not fully characterized and remain open. |
-| Debug demand | Editor Debug Viewer requests one `CaptureView` through `RenderSystem::SetDebugView`; graph conditions include diagnostic producers for that request. | Current single global request starts at World Normal in the editor and can keep raster diagnostics active with PT. It is not yet consumer-scoped or cancelled on hide/destruction. |
+| Debug demand | RenderSystem keeps bounded capture and Viewer requests separate, and `DeferredRenderer` plans each consumer's conversion independently. | Capture readback writes `CaptureOutput`; the Editor Viewer reads `DebugViewOutput`. Both may convert different semantic views in the same frame. |
 | Shutdown | `RenderSystem::Shutdown` delegates to owned-state/scene cleanup; `DeferredRenderer` releases its pass/history/binding wrappers and calls Graphics-owned destroy/retire paths. | Exact in-flight guarantees for Vulkan RT pipeline, SBT, descriptor and table cleanup remain an audit item; no lifetime defect is asserted without evidence. |
 
-The five plan-condition bits are diagnostic capture, RT BLAS build, RT TLAS
-build, ray-query shadows, and PT. The 32 variants are policy, not a measured
-bottleneck. Current graph conditions are not sufficient to distinguish
-inclusion from required execution: conditional producers are Optional and
-dependent skip/failure propagation is an open correctness issue.
+The six plan-condition bits are diagnostic capture, RT BLAS build, RT TLAS
+build, ray-query shadows, PT, and Editor Viewer conversion. The 64 variants are
+policy, not a measured bottleneck. Graph execution distinguishes optional
+capture failure from required output producers and propagates required failures
+to dependent outputs.
 
 ## Frozen measurement and comparison contract
 
-Use the controlled R4.7.8 Vulkan Sponza run as the current PT baseline where
-conditions match: `level/sponza.level`, 1094x742, camera position
-(10.80743, 1.59222, 0), fixture rotation (0,180,0), 58.5-degree authored FOV,
-sun intensity 1000, environment intensity 0, four SPP/eight continuation
-bounces, fully tracked residency (469,885,796 bytes, 81 dependencies),
-728,189,952 AS bytes, 120 warm-up frames and 300 samples per window. It used
-Vulkan RelWithDebInfo with the normal NDEBUG validation policy; this is timing
-evidence, not Debug correctness evidence. The restored-source run has three
-windows: PT GPU p50/p95 mean 28.545/32.296 ms, total GPU p50/p95 mean
-33.356/37.186 ms, and CPU total p50 mean 33.236 ms. Scene Color-only 4-SPP
-Beauty is a separate, diagnostic-demand-off baseline (six windows across two
-labels): PT/total GPU p50 means 28.363/28.579 ms. Scene Color plus query
-visibility is another separate setting: PT/total GPU p50 means
-26.039/26.250 ms. These are not interchangeable baselines.
-
-Use R4.7.5's current static-frame/cache evidence as the reuse baseline: Debug
-Vulkan Cornell reports zero scene-table records packed/uploaded after warm-up,
-cache hits on unchanged frames, and cache misses when the level reloads. Its
-three-window RelWithDebInfo Sponza candidate reports 24.568 ms PT GPU p50,
-28.610 ms total GPU p50, 28.258 ms CPU total p50, with 120 warm-up and 300
-samples per window at 1094x619. It is a distinct camera/output-size/config
-baseline from R4.7.8 and must only be compared under those matched conditions.
+Historical PT and static-reuse measurement values, fixture conditions, and
+known limitations are recorded in the
+[R5.0 baseline journal](../journal/2026-09-27-r5-0-baseline-freeze.md). Keep
+each demand/quality configuration as its own comparator; only compare matched
+conditions. The concrete collection procedure is in the
+[R5.0 plan](../../docs/render/.plan/R5.0.md).
 
 | Comparison dimension | R5 budget and rule |
 | --- | --- |
@@ -97,29 +83,27 @@ RuntimeLib/EditorLib dependency cycle.
   cannot retain frame-local pointers after completion.
 - A required producer failure prevents dependent presentation/readback success.
 - Editor terminal composition stays explicit and last; multiple consumers must
-  not cancel one another when R5.1 introduces scoped demand.
+  not cancel one another under scoped demand.
 - No new graph abstraction is added without a current consumer and measurable
   reason.
 
 ## Stages
 
-1. **R5.0 — baseline freeze:** reconcile the R4.8 label, inventory ownership,
-   variants, cache keys and lifetimes; complete affected raster/PT baselines and
-   freeze comparison rules. Current PT/cache baselines above are usable. Fresh
-   Vulkan/OpenGL raster evidence and the affected RT-off parity baseline remain
-   established on the Cornell fixture. The 2026-09-27 mostly-black RT-off
-   Sponza output used zero authored IBL, and raster adds no indirect bounce.
-   Sponza now authors IBL at `0.35`; fresh Vulkan captures verify RT-off raster,
-   PT-off with ray-query shadows active, and path tracing with the environment
-   enabled. Cross-backend Sponza parity and PT graph outcomes remain open. Do
-   not extract a path lacking a reproducible baseline.
-2. **R5.1 — settings, demand and failure:** independent copied settings and
-   legacy mappings; scoped viewer/capture demand; required-producer failure and
-   dependent skips.
+1. **R5.0 — baseline freeze:** reconcile the phase label, freeze ownership and
+   comparison conditions, and index graph outcomes before affected-path
+   extraction. See the [concrete plan](../../docs/render/.plan/R5.0.md) and
+   [journal](../journal/2026-09-27-r5-0-baseline-freeze.md).
+2. **R5.1 — settings, demand and failure:** define frame-boundary settings,
+   scoped consumer demand, and required-producer failure propagation. See the
+   [concrete plan](../../docs/render/.plan/R5.1.md) and
+   [journal](../journal/2026-09-27-r5-1-settings-demand-failure.md).
 3. **R5.2 — graph execution:** typed one-to-many physical bindings, Render-side
-   executor, transient rollback, transitions and terminal ordering.
+   executor, transient rollback, transitions and terminal ordering. Concrete
+   slices/contracts: [R5.2 plan](../../docs/render/.plan/R5.2.md).
 4. **R5.3 — pass owners:** move one cohesive family at a time with cache/history
-   invalidation and init/cleanup parity.
+   invalidation and init/cleanup parity; move structs/state/constants with their
+   owners and keep the graph authoritative. Concrete mapping and slices:
+   [R5.3 plan](../../docs/render/.plan/R5.3.md).
 5. **R5.4 — common Graphics contracts:** preserve shader ABI while narrowing
    uniform/timing schemas; decide RT retirement/split based on actual safety.
 6. **R5.5 — optional extensions:** only with measured demand; a documented
@@ -132,7 +116,7 @@ RuntimeLib/EditorLib dependency cycle.
 - [x] Historical R4.8 is reconciled without inventing R4.8 acceptance or
   relabeling R4.7 evidence.
 - [x] Current source owners, reuse keys, frame lifetimes, known graph failure
-  semantics and 32-plan policy are recorded.
+  semantics and 64-plan policy are recorded.
 - [x] Existing Vulkan Sponza PT and static reuse measurements are recorded with
   exact conditions and known limitations.
 - [x] Repeated timing, cache/reuse, graph outcome and image parity comparison
@@ -143,8 +127,7 @@ RuntimeLib/EditorLib dependency cycle.
 - [ ] Cornell/Sponza representative current PT captures and graph outcomes are
   indexed under the frozen conditions.
 - [ ] R5.0 exit is reviewed against the remaining PT graph-outcome rows before
-  R5.2 extraction; R5.1 source implementation proceeded earlier by user
-  direction while the raster baseline was open.
+  R5.2 begins an extraction whose behavior depends on those outcomes.
 - [x] R5.1 adds validated copied settings applied at a frame boundary, explicit
   legacy probe mappings, requested/effective stats, active Editor Viewer demand,
   and required-pass dependency propagation. Focused CPU contracts cover setting
@@ -153,20 +136,17 @@ RuntimeLib/EditorLib dependency cycle.
   transitions are verified through requested/effective stats.
 - [x] R5.1 explicit diagnostic-view captures and Scene Color capture alongside
   the active World Normal Viewer are verified through Runtime.
+- [x] R5.1 separate CaptureOutput and DebugViewOutput passes allow simultaneous
+  distinct conversions; Vulkan Runtime exports Base Color while the active
+  Editor Viewer displays World Normal.
 
 ## Validation plan
 
-R5.0 and R5.1 implementation contracts were built in Debug and validated with
-the focused RenderGraphTest and RenderSystemTest contracts. On 2026-09-28,
-Runtime screenshots verified Vulkan/OpenGL Cornell RT-off raster and Vulkan
-Sponza Beauty/Primary-Albedo output. Legacy probe transitions were verified
-through requested/effective stats. World Normal and shadow-visibility captures
-succeeded. The Debug Viewer was active while Scene Color captures ran; the
-engine-window capture shows the Beauty viewport and World Normal preview
-together. Distinct simultaneous converted diagnostic outputs, indexed PT graph
-outcomes, and the R5.0 exit review remain open. Runtime validation uses Runtime
-commands and checked-in fixtures on the normal `Default` desktop, with captures under
-`save/screenshots/validation/`.
+Runtime evidence and command outcomes are recorded in the
+[R5.0 baseline journal](../journal/2026-09-27-r5-0-baseline-freeze.md) and
+[R5.1 implementation journal](../journal/2026-09-27-r5-1-settings-demand-failure.md).
+Future runtime validation uses Runtime commands and checked-in fixtures on the
+normal `Default` desktop, with captures under `save/screenshots/validation/`.
 
 ## Risks and open questions
 
@@ -175,9 +155,9 @@ commands and checked-in fixtures on the normal `Default` desktop, with captures 
   bounce. The fixture now uses `0.35`; updated Vulkan raster, ray-query, and PT
   captures show environment contribution. Use Cornell for cross-backend raster
   parity until the Sponza comparison is re-established across backends.
-- Scene Color capture and World Normal Viewer output succeeded together.
-  Distinct simultaneous converted diagnostic views still share one
-  `CaptureOutput` and remain unverified as an independent-output combination.
+- Capture and Viewer conversions use separate Render-owned `CaptureOutput` and
+  `DebugViewOutput` targets. Vulkan Runtime verifies Base Color readback while
+  the Editor Viewer continues displaying World Normal.
 - Existing R4.7.8 Sponza timing conditions are suitable for PT policy work but
   do not stand in for every capture/debug graph variant.
 - No equal-sample image-error method or tolerance has been validated.

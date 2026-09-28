@@ -23,6 +23,7 @@ namespace kpengine::render
         SpotShadow,
         PointShadow,
         CaptureOutput,
+        DebugViewOutput,
         Count,
     };
     inline constexpr uint32_t kRenderTargetNameCount =

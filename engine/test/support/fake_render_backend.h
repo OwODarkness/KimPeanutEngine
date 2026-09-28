@@ -239,7 +239,7 @@ namespace kpengine::test
             // renderer creates in one initialization.
             static constexpr const char *names[] = {
                 "SceneColor", "GBuffer",    "DirectionalShadow",
-                "SpotShadow", "PointShadow", "CaptureOutput",
+                "SpotShadow", "PointShadow", "CaptureOutput", "DebugViewOutput",
             };
             constexpr std::size_t name_count = sizeof(names) / sizeof(names[0]);
             const std::size_t name_index = probe_->targets.size() % name_count;

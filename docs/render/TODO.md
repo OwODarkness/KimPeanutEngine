@@ -25,14 +25,13 @@ details and stage checklists belong in the linked submodule documents.
   [usage](usage.md#rectangular-path-tracing-light),
   [journal](../../.spec/journal/2026-09-28-cornell-area-light.md)
 
-- [ ] **R5.1 — settings, demand and failure:** partial implementation landed
-  2026-09-27: frame-boundary copied PT settings, legacy adapters, requested /
-  effective stats, active Debug Viewer demand, and required-producer dependency
-  skips. Debug build and focused graph/system contracts pass. Runtime Sponza
-  Beauty/Primary-Albedo captures, World Normal/shadow diagnostics, and Scene
-  Color capture with an active World Normal Viewer are verified. Distinct
-  simultaneous converted diagnostic outputs remain open. The R5.0 Cornell
-  raster baseline is recorded. → [plan](.plan/R5.md#r51--separate-configuration-demand-and-failure-semantics),
+- [x] **R5.1 — settings, demand and failure (complete 2026-09-28):**
+  frame-boundary copied PT settings, legacy adapters, requested/effective stats,
+  active Debug Viewer demand, required-producer dependency skips, and independent
+  capture/Viewer outputs. Debug build and graph contracts pass. Runtime Sponza
+  Beauty/Primary-Albedo, World Normal/shadow diagnostics, and simultaneous Base
+  Color readback with a live World Normal Viewer are verified. The R5.0 Cornell
+  raster baseline is recorded. → [stage plan](.plan/R5.1.md), [R5 map](.plan/R5.md),
   [spec](../../.spec/specs/render-r5-render-configuration-graph-ownership.md),
   [journal](../../.spec/journal/2026-09-27-r5-1-settings-demand-failure.md)
 - [ ] **issue-9.7 — Sponza texture aliasing and frame throughput:** Stages 0–5,
@@ -292,23 +291,27 @@ details and stage checklists belong in the linked submodule documents.
 - [ ] **R5 — Render configuration, graph execution, and ownership (active):**
   refreshed 2026-09-27 against current PT behavior; GPU tuning is paused.
   Preserve existing R4.7 reuse and open quality/lifecycle gates. →
-  [plan](.plan/R5.md), [execution spec](../../.spec/specs/render-r5-render-configuration-graph-ownership.md),
+  [plan](.plan/R5.md), [R5.0](.plan/R5.0.md), [R5.1](.plan/R5.1.md),
+  [execution spec](../../.spec/specs/render-r5-render-configuration-graph-ownership.md),
   [dated recheck](.review/R5.md#baseline-refresh--2026-09-27)
   - [ ] **R5.0 (in progress):** label reconciliation, source ownership/cache
     inventory, known Vulkan PT/cache baselines, and comparison budgets are
     recorded. Vulkan/OpenGL RT-off Cornell captures now establish a raster
     reference; indexed PT graph outcomes and the exit review remain open.
-  - [ ] **R5.1 (partial):** frame-boundary settings snapshots, legacy mappings,
-    scoped viewer/tooling demand, and required producer failure propagation are
-    implemented with focused contracts. Runtime Sponza Beauty/Primary-Albedo,
-    World Normal/shadow diagnostics, and Scene Color capture with an active
-    World Normal Viewer are verified. Distinct simultaneous converted
-    diagnostic outputs remain open. →
+  - [x] **R5.1:** frame-boundary settings snapshots, legacy mappings, scoped
+    viewer/tooling demand, required producer failure propagation, and distinct
+    capture/Viewer targets are implemented. Graph contracts pass. Runtime
+    Sponza Beauty/Primary-Albedo, World Normal/shadow diagnostics, and Base Color
+    readback alongside a live World Normal Viewer are verified. →
     [journal](../../.spec/journal/2026-09-27-r5-1-settings-demand-failure.md)
   - [ ] **R5.2:** typed one-to-many physical bindings and a Render-owned graph
-    executor with rollback, transition and terminal ordering tests.
+    executor with rollback, transition and terminal ordering tests. Execute
+    R5.2.1–R5.2.5; graph is authoritative and undeclared resource access fails. →
+    [concrete plan](.plan/R5.2.md)
   - [ ] **R5.3:** extract concrete pass owners with cache/history invalidation,
-    init rollback, reload/resize/edit and safe cleanup parity.
+    init rollback, reload/resize/edit and safe cleanup parity. Execute
+    R5.3.1–R5.3.7; move structs/state/constants with owners and remove pass
+    implementations from the facade. → [concrete plan](.plan/R5.3.md)
   - [ ] **R5.4:** preserve shader ABI while narrowing Graphics schemas/timing;
     audit RT pipeline/table/SBT retirement before any private owner split.
   - [ ] **R5.5:** optional graph extensions only with measured need; a documented

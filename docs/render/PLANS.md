@@ -97,7 +97,9 @@ public policy while the coordinator owns scene preparation.
   refreshed against the current general-scene PT renderer: independent settings,
   consumer demand and failure semantics precede typed graph execution and
   pass-family extraction. Preserve R4.7 scene/binding reuse and Graphics
-  retirement. GPU tuning is paused; this remains design only. The
+  retirement. GPU tuning is paused. Concrete stage designs: [R5.0 baseline
+  freeze](.plan/R5.0.md) and [R5.1 settings, demand and failure](.plan/R5.1.md).
+  The
   [dated source recheck](.review/R5.md#baseline-refresh--2026-09-27) records
   current evidence and remaining baseline gates.
 - [issue-9.7 — Sponza quality and throughput](.plan/issue-9.7.md) — correct
@@ -122,6 +124,14 @@ public policy while the coordinator owns scene preparation.
 - [Dependencies](dependencies.md) — allowed dependency directions.
 - [Risks](risks.md) — known limits and validation gaps.
 - [Usage](usage.md) — runtime capture and validation workflow.
+
+## Graph execution and pass ownership
+
+The concrete facade reduction work is defined by [R5.2](.plan/R5.2.md) and
+[R5.3](.plan/R5.3.md): graph-owned execution and typed resources, followed by
+cohesive pass-family methods/state/struct extraction. The graph remains the
+single dependency/execution authority; pass owners retain persistent caches and
+record through typed graph context.
 
 ## Rectangular PT emitters
 

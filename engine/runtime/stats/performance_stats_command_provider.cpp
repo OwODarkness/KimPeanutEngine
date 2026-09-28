@@ -46,6 +46,8 @@ namespace kpengine::runtime
                 return "ray_tracing_tone_map";
             case render::RenderProfilePass::CaptureView:
                 return "capture_view";
+            case render::RenderProfilePass::DebugView:
+                return "debug_view";
             case render::RenderProfilePass::RayTracingPathTrace:
                 return "ray_tracing_path_trace";
             case render::RenderProfilePass::RayTracingBlasBuild:
@@ -287,7 +289,8 @@ namespace kpengine::runtime
             AddOptional(data, "post_process_ms",
                         SumPasses(profile, {render::RenderProfilePass::ToneMap,
                                             render::RenderProfilePass::RayTracingToneMap,
-                                            render::RenderProfilePass::CaptureView}));
+                                            render::RenderProfilePass::CaptureView,
+                                            render::RenderProfilePass::DebugView}));
             AddOptional(data, "imgui_ms",
                         SumPasses(profile, {render::RenderProfilePass::EditorComposite}));
             AddOptional(data, "total_gpu_ms",
@@ -302,6 +305,7 @@ namespace kpengine::runtime
                                             render::RenderProfilePass::RayTracingToneMap,
                                             render::RenderProfilePass::RayTracingPathTrace,
                                             render::RenderProfilePass::CaptureView,
+                                            render::RenderProfilePass::DebugView,
                                             render::RenderProfilePass::EditorComposite}));
             // What the frame's textures cost the GPU in bytes. Reported with the
             // GPU group because that is where the residency is paid.

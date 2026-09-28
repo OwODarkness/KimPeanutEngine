@@ -892,11 +892,12 @@ TEST(RenderSystemLifecycleTest, CharacterizesFrameCaptureResizeEditorAndTeardown
     ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
     ASSERT_TRUE(system.EndFrame());
     EXPECT_GT(probe->wait_idle_count, waits_before_resize);
-    // Six persistent targets per initialization, and two initializations.
-    ASSERT_GE(probe->targets.size(), 12u);
-    EXPECT_EQ(probe->targets[6].name, "SceneColor");
-    EXPECT_EQ(probe->targets[6].width, 640u);
-    EXPECT_EQ(probe->targets[6].height, 360u);
+    // Two initializations: find the resized SceneColor target by its extent,
+    // since target creation order is an implementation detail of the fixture.
+    const auto resized_scene_color = std::find_if(
+        probe->targets.begin(), probe->targets.end(), [](const TargetRecord &target)
+        { return target.name == "SceneColor" && target.width == 640u && target.height == 360u; });
+    ASSERT_NE(resized_scene_color, probe->targets.end());
     // SceneHdr is taken from the pool once per frame and returned after the
     // sweep, so the transient path is exercised rather than merely present.
     EXPECT_EQ(std::count(probe->events.begin(), probe->events.end(), "transient_acquire"),

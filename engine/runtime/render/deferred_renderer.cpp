@@ -714,6 +714,7 @@ namespace kpengine::render
         active_pass_frame_.reset();
         active_frame_plan_ = nullptr;
         active_pending_capture_.reset();
+        active_debug_view_.reset();
         for (std::optional<RenderGraphCompileResult> &plan : frame_plans_)
         {
             plan.reset();
@@ -842,7 +843,7 @@ namespace kpengine::render
     {
         const RenderTargetName target_name = view == CaptureView::SceneColor
                                                  ? RenderTargetName::SceneColor
-                                                 : RenderTargetName::CaptureOutput;
+                                                 : RenderTargetName::DebugViewOutput;
         const RenderTarget *const target = frame_targets_.GetTarget(target_name);
         return target ? target->GetView() : graphics::RenderTargetView{};
     }
@@ -1566,30 +1567,18 @@ namespace kpengine::render
         profile_.path_trace_camera_position = {
             profile_camera_position.x_, profile_camera_position.y_,
             profile_camera_position.z_};
-        // Only a view this renderer converts itself is recorded here. A
-        // host-resolved view is satisfied by the host's own target instead.
-        const bool pending_needs_conversion =
+        // Readback and the Editor Viewer can request different conversions in
+        // one frame, so each owns its view and output target independently.
+        active_pending_capture_ =
             input.pending_capture.has_value() &&
-            RequiresCaptureViewConversionPass(*input.pending_capture);
-        // RenderSystem passes a debug view only when it is not SceneColor, so
-        // any debug view reaching here is one this renderer converts.
-        const bool debug_needs_conversion = input.debug_view.has_value();
-        // A pending capture does not shadow the debug view. The editor samples
-        // its own view independently of any capture request, so a SceneColor
-        // capture alongside a conversion debug view still needs the pass:
-        // otherwise the plan drops it while the host keeps sampling the target
-        // it writes, and no declared read remains to move that target's state.
-        std::optional<CaptureView> conversion_view;
-        if (pending_needs_conversion)
-        {
-            conversion_view = input.pending_capture;
-        }
-        else if (debug_needs_conversion)
-        {
-            conversion_view = input.debug_view;
-        }
-        active_pending_capture_ = conversion_view;
-        const bool is_deferred_capture = conversion_view.has_value();
+                    RequiresCaptureViewConversionPass(*input.pending_capture)
+                ? input.pending_capture
+                : std::nullopt;
+        active_debug_view_ = input.debug_view.has_value() &&
+                                     RequiresCaptureViewConversionPass(*input.debug_view)
+                                 ? input.debug_view
+                                 : std::nullopt;
+        const bool is_deferred_capture = active_pending_capture_.has_value();
         UpdateEnvironment(input);
         active_directional_shadow_.reset();
         active_spot_shadow_.reset();
@@ -1809,7 +1798,8 @@ namespace kpengine::render
             GetFramePlan(RenderFrameConditions{is_deferred_capture, ray_query_shadow,
                                                frame_ray_tracing_blas_build_,
                                                frame_ray_tracing_tlas_build_,
-                                               ray_tracing_path_trace});
+                                               ray_tracing_path_trace,
+                                               active_debug_view_.has_value()});
         if (frame_plan == nullptr)
         {
             result.normal_recording_completed = false;
@@ -1939,6 +1929,7 @@ namespace kpengine::render
         {
             result.capture_target_ready =
                 input.pending_capture.value() == CaptureView::SceneColor ||
+                !RequiresCaptureViewConversionPass(*input.pending_capture) ||
                 active_pass_frame_->GetOutcome(
                     static_cast<uint64_t>(FixedRenderPassId::CaptureView)) ==
                     RenderGraphPassOutcome::Executed;
@@ -2015,7 +2006,13 @@ namespace kpengine::render
             break;
         case FixedRenderPassId::CaptureView:
             succeeded = active_pending_capture_.has_value() &&
-                        RecordCaptureViewPass(*active_pending_capture_);
+                        RecordCaptureViewPass(*active_pending_capture_,
+                                              RenderTargetName::CaptureOutput);
+            break;
+        case FixedRenderPassId::DebugView:
+            succeeded = active_debug_view_.has_value() &&
+                        RecordCaptureViewPass(*active_debug_view_,
+                                              RenderTargetName::DebugViewOutput);
             break;
         case FixedRenderPassId::EditorComposite:
             succeeded = false;
@@ -2119,6 +2116,7 @@ namespace kpengine::render
             active_pass_frame_.reset();
             active_frame_plan_ = nullptr;
             active_pending_capture_.reset();
+            active_debug_view_.reset();
             active_frame_context_ = nullptr;
             render_world_ = nullptr;
             frame_lighting_binding_ = {};
@@ -2289,6 +2287,10 @@ namespace kpengine::render
         if (name == "CaptureOutput")
         {
             return frame_targets_.GetTarget(RenderTargetName::CaptureOutput);
+        }
+        if (name == "DebugViewOutput")
+        {
+            return frame_targets_.GetTarget(RenderTargetName::DebugViewOutput);
         }
         return nullptr;
     }
@@ -2709,13 +2711,15 @@ namespace kpengine::render
                 (condition_bits & 2U) != 0,
                 (condition_bits & 4U) != 0,
                 (condition_bits & 8U) != 0,
-                (condition_bits & 16U) != 0};
+                (condition_bits & 16U) != 0,
+                (condition_bits & 32U) != 0};
             const std::size_t slot =
                 (conditions.diagnostic_capture ? 1U : 0U) |
                 (conditions.ray_query_shadow ? 2U : 0U) |
                 (conditions.ray_tracing_blas_build ? 4U : 0U) |
                 (conditions.ray_tracing_tlas_build ? 8U : 0U) |
-                (conditions.ray_tracing_path_trace ? 16U : 0U);
+                (conditions.ray_tracing_path_trace ? 16U : 0U) |
+                (conditions.debug_view ? 32U : 0U);
             const auto started = std::chrono::steady_clock::now();
             frame_plans_[slot] = CompileRenderFrameGraph(conditions);
             frame_plan_compile_ms_ += std::chrono::duration<double, std::milli>(
@@ -2742,7 +2746,8 @@ namespace kpengine::render
                         (conditions.ray_query_shadow ? 2U : 0U) |
                         (conditions.ray_tracing_blas_build ? 4U : 0U) |
                         (conditions.ray_tracing_tlas_build ? 8U : 0U) |
-                        (conditions.ray_tracing_path_trace ? 16U : 0U)];
+                        (conditions.ray_tracing_path_trace ? 16U : 0U) |
+                        (conditions.debug_view ? 32U : 0U)];
         if (!plan.has_value() || !plan->graph.has_value())
         {
             return nullptr;
@@ -4000,7 +4005,8 @@ namespace kpengine::render
         return tone_map_bindings.IsValid();
     }
 
-    bool DeferredRenderer::RecordCaptureViewPass(CaptureView view)
+    bool DeferredRenderer::RecordCaptureViewPass(CaptureView view,
+                                                  RenderTargetName output_name)
     {
         if (!active_frame_context_ || view == CaptureView::SceneColor)
         {
@@ -4008,7 +4014,7 @@ namespace kpengine::render
         }
 
         graphics::CommandRecorder *const recorder = backend_->GetCommandRecorder();
-        RenderTarget *const output_target = ResolveFrameTextureByName("CaptureOutput");
+        RenderTarget *const output_target = frame_targets_.GetTarget(output_name);
         RenderTarget *const gbuffer_target = ResolveFrameTextureByName("GBuffer");
         RenderTarget *const shadow_target = ResolveFrameTextureByName("DirectionalShadow");
         RenderTarget *const spot_shadow_target = ResolveFrameTextureByName("SpotShadow");

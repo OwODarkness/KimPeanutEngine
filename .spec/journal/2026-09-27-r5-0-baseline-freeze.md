@@ -1,5 +1,9 @@
 # R5.0 baseline freeze — 2026-09-27
 
+Plan: [R5.0 concrete design](../../docs/render/.plan/R5.0.md) ·
+[R5 stage map](../../docs/render/.plan/R5.md) ·
+[execution contract](../specs/render-r5-render-configuration-graph-ownership.md)
+
 ## Objective and boundary
 
 Execute R5.0 for the refreshed Render/Graphics decoupling plan: reconcile the

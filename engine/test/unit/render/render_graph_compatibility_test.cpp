@@ -41,8 +41,11 @@ namespace
             const bool skipped =
                 (entry.condition == RenderPassCondition::DiagnosticCaptureRequested &&
                  !conditions.diagnostic_capture) ||
+                (entry.condition == RenderPassCondition::DebugViewRequested &&
+                 !conditions.debug_view) ||
                 (entry.condition == RenderPassCondition::RasterDiagnostic &&
-                 conditions.ray_tracing_path_trace && !conditions.diagnostic_capture) ||
+                 conditions.ray_tracing_path_trace && !conditions.diagnostic_capture &&
+                 !conditions.debug_view) ||
                 (entry.condition == RenderPassCondition::RasterFrame &&
                  conditions.ray_tracing_path_trace) ||
                 (entry.condition == RenderPassCondition::RayTracingPathTrace &&
@@ -263,11 +266,16 @@ TEST(RenderGraphCompatibilityTest, ScheduledAccelerationBuildsUseSSAAndDeclaredH
     EXPECT_EQ(tlas_input_handle->version, 1U);
 }
 
-TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesAsAnSsaChainForBothConditionSets)
+TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesIndependentConsumerOutputs)
 {
-    for (const bool capture_requested : {false, true})
+    const std::array<RenderFrameConditions, 4> condition_sets{{
+        RenderFrameConditions{false},
+        RenderFrameConditions{true},
+        RenderFrameConditions{false, false, false, false, false, true},
+        RenderFrameConditions{true, false, false, false, false, true},
+    }};
+    for (const RenderFrameConditions conditions : condition_sets)
     {
-        const RenderFrameConditions conditions{capture_requested};
         const auto result = CompileRenderFrameGraph(conditions);
         ASSERT_TRUE(result.Succeeded());
         const std::vector<std::string> expected = ExpectedPlannedPasses(conditions);
@@ -284,15 +292,15 @@ TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesAsAnSsaChainForBot
             ASSERT_LT(entry_index, entries.size());
             const FixedRenderPassEntry &entry = entries[entry_index];
             EXPECT_EQ(pass.name, entry.name);
-            // The terminal also carries the host's read of the conversion
-            // output. No renderer pass reads CaptureOutput, and the editor
-            // viewport samples it whenever a diagnostic view is active, so the
-            // declaration has to name that read or nothing transitions the
-            // target out of the attachment layout the capture pass wrote it in.
-            const bool host_reads_conversion =
-                entry.owner == RenderPassExecutionOwner::External && capture_requested;
+            // The terminal carries each active consumer's sampled read so the
+            // conversion outputs leave attachment layout before consumption.
+            const std::size_t host_read_count =
+                entry.owner == RenderPassExecutionOwner::External
+                    ? static_cast<std::size_t>(conditions.diagnostic_capture) +
+                          static_cast<std::size_t>(conditions.debug_view)
+                    : 0U;
             ASSERT_EQ(pass.uses.size(),
-                      entry.resources.size() + (host_reads_conversion ? 1U : 0U));
+                      entry.resources.size() + host_read_count);
             for (std::size_t use_index = 0; use_index < entry.resources.size(); ++use_index)
             {
                 const auto *texture = std::get_if<GraphTextureHandle>(&pass.uses[use_index].handle);
@@ -325,13 +333,19 @@ TEST(RenderGraphCompatibilityTest, AuthoredDeclarationCompilesAsAnSsaChainForBot
         EXPECT_EQ(terminal.owner, RenderGraphPassOwner::External);
         EXPECT_TRUE(terminal.terminal);
 
-        // Only the capture variant plans the conversion pass.
+        // Each consumer has a separate conversion pass and output.
         const auto capture_pass = std::find_if(
             result.graph->Passes().begin(), result.graph->Passes().end(),
             [](const CompiledRenderGraph::Pass &pass) {
                 return pass.user_key ==
                        static_cast<uint64_t>(FixedRenderPassId::CaptureView);
             });
-        EXPECT_EQ(capture_pass != result.graph->Passes().end(), capture_requested);
+        EXPECT_EQ(capture_pass != result.graph->Passes().end(), conditions.diagnostic_capture);
+        const auto debug_pass = std::find_if(
+            result.graph->Passes().begin(), result.graph->Passes().end(),
+            [](const CompiledRenderGraph::Pass &pass) {
+                return pass.user_key == static_cast<uint64_t>(FixedRenderPassId::DebugView);
+            });
+        EXPECT_EQ(debug_pass != result.graph->Passes().end(), conditions.debug_view);
     }
 }

@@ -1,5 +1,11 @@
 # Project Status
 
+- **R5.2 / R5.3 concrete plans (2026-09-28; planned)** — Typed graph binding
+  and execution extraction, followed by pass-family methods/state/struct
+  ownership extraction. The graph remains the scheduling/resource authority;
+  the facade reduction is explicitly gated on baseline and lifecycle parity. →
+  [R5.2](render/.plan/R5.2.md), [R5.3](render/.plan/R5.3.md)
+
 - **Cornell PT area light (2026-09-28)** — Ceiling now uses a scene-authored
   1.3 × 1.05 rectangular emitter at intensity 10. General finite-area sampling
   restores soft shadows; equal-power small-emitter control confirms the
@@ -35,16 +41,16 @@
   2026-09-27 R5.0 captures still describe the previous zero-intensity fixture. →
   [journal](../.spec/journal/2026-09-28-sponza-environment-light.md)
 
-- **R5.1 settings, demand and failure (2026-09-27; runtime verification partial)** — Added a
+- **R5.1 settings, demand and failure (complete 2026-09-28)** — Added a
   frame-boundary snapshot for validated path-tracing settings, kept legacy probe
   commands as adapters, exposed requested/effective policy in profiler stats,
   scoped Editor Debug Viewer demand, and propagated required graph failures to
-  dependent outputs. Debug engine build and 162 render contracts pass.
-  Runtime captures now verify Vulkan Sponza Beauty/Primary-Albedo output,
-  requested/effective setting transitions, explicit World Normal/shadow
-  diagnostics, and Scene Color with an active World Normal Viewer. Distinct
-  simultaneous converted diagnostic outputs remain open. →
-  [plan](render/.plan/R5.md#r51--separate-configuration-demand-and-failure-semantics),
+  dependent outputs. Debug engine build and focused contracts pass.
+  Runtime verifies Vulkan Sponza Beauty/Primary-Albedo, settings transitions,
+  explicit diagnostics, and simultaneous Base Color readback with a live World
+  Normal Viewer preview. Distinct capture and Viewer targets now feed separate
+  graph passes. R5.0 PT graph outcomes and exit review remain open. →
+  [stage plan](render/.plan/R5.1.md), [R5 map](render/.plan/R5.md),
   [execution spec](../.spec/specs/render-r5-render-configuration-graph-ownership.md),
   [journal](../.spec/journal/2026-09-27-r5-1-settings-demand-failure.md)
 
@@ -54,7 +60,7 @@
   budgets. Fresh Vulkan/OpenGL Cornell RT-off captures now provide a usable
   raster reference; the dark Sponza fallback is explained by zero authored IBL
   and no raster indirect bounce. Indexed current PT graph outcomes and the R5.0
-  exit review remain open. → [plan](render/.plan/R5.md),
+  exit review remain open. → [plan](render/.plan/R5.0.md), [R5 map](render/.plan/R5.md),
   [execution spec](../.spec/specs/render-r5-render-configuration-graph-ownership.md),
   [source recheck](render/.review/R5.md#baseline-refresh--2026-09-27),
   [journal](../.spec/journal/2026-09-27-r5-0-baseline-freeze.md)

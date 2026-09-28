@@ -208,7 +208,7 @@ namespace kpengine::render
         bool RecordDeferredLightingPass();
         bool RecordToneMapPass();
         bool RecordRayTracingPathTracePass();
-        bool RecordCaptureViewPass(CaptureView view);
+        bool RecordCaptureViewPass(CaptureView view, RenderTargetName output_target);
         bool ExecutePass(FixedRenderPassId id, const std::vector<Light> &lights);
         bool PrepareRayTracingScene();
         bool RecordRayTracingBlasBuild();
@@ -253,7 +253,7 @@ namespace kpengine::render
         RendererFrameTargets frame_targets_;
         // One compiled plan per frame-start condition set, each compiled once.
         // The compiled plan is now the only authority for pass order.
-        std::array<std::optional<RenderGraphCompileResult>, 32> frame_plans_;
+        std::array<std::optional<RenderGraphCompileResult>, 64> frame_plans_;
         std::optional<RenderGraphFrame> active_pass_frame_;
         // The plan the active frame executes, so the external terminal's state
         // requirements can be applied before the host's callback records.
@@ -424,6 +424,7 @@ namespace kpengine::render
         uint64_t triangle_count_ = 0;
         RenderCamera scene_camera_;
         std::optional<CaptureView> active_pending_capture_;
+        std::optional<CaptureView> active_debug_view_;
         graphics::PipelineHandle deferred_lighting_pipeline_;
         graphics::PipelineHandle deferred_lighting_ray_query_pipeline_;
         bool ray_query_shadow_path_active_ = false;

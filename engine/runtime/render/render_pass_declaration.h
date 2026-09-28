@@ -19,6 +19,7 @@ namespace kpengine::render
         SpotShadow,
         PointShadow,
         CaptureOutput,
+        DebugViewOutput,
         PathTraceHistory,
         PathTraceGuide,
         Count,
@@ -41,6 +42,7 @@ namespace kpengine::render
         ToneMap,
         RayTracingToneMap,
         CaptureView,
+        DebugView,
         EditorComposite,
         RayTracingBlasBuild,
         RayTracingTlasBuild,
@@ -57,6 +59,7 @@ namespace kpengine::render
     {
         Always,
         DiagnosticCaptureRequested,
+        DebugViewRequested,
         ExternalRequest,
         RayTracingBuildRequested,
         RayTracingPathTrace,
@@ -98,6 +101,7 @@ namespace kpengine::render
         bool ray_tracing_blas_build = false;
         bool ray_tracing_tlas_build = false;
         bool ray_tracing_path_trace = false;
+        bool debug_view = false;
 
         friend bool operator==(const RenderFrameConditions &,
                                const RenderFrameConditions &) = default;

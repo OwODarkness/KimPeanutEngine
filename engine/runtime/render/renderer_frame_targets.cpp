@@ -123,8 +123,11 @@ namespace kpengine::render
                 true};
             break;
         case RenderTargetName::CaptureOutput:
-            // Conditional diagnostic conversion output. Every semantic capture
-            // is converted to displayable RGBA8 before Graphics readback.
+            // Independent readback conversion target.
+            desc.color_attachments = {{graphics::RenderTargetColorAttachment{}}};
+            break;
+        case RenderTargetName::DebugViewOutput:
+            // Editor Viewer conversion target, independent from readback.
             desc.color_attachments = {{graphics::RenderTargetColorAttachment{}}};
             break;
         case RenderTargetName::Count:

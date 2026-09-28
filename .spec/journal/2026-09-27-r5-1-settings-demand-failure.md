@@ -1,6 +1,7 @@
 # R5.1 — Settings, Demand, and Failure Semantics (2026-09-27)
 
-Plan: [R5](../../docs/render/.plan/R5.md#r51--separate-configuration-demand-and-failure-semantics) ·
+Plan: [R5.1 concrete design](../../docs/render/.plan/R5.1.md) ·
+[R5 stage map](../../docs/render/.plan/R5.md) ·
 Spec: [Render R5 execution spec](../specs/render-r5-render-configuration-graph-ownership.md)
 
 ## Task
@@ -94,3 +95,25 @@ baseline; a 2026-09-28 follow-up is recorded below.
   The dark Sponza fallback was explained by zero authored IBL and lack of raster
   indirect bounce; it remains an unsuitable parity oracle, rather than evidence
   of cross-backend parity.
+
+## Runtime follow-up — independent diagnostic outputs (2026-09-28)
+
+- Added a separate Render-owned `DebugViewOutput` target and `DebugViewPass`.
+  The Runtime Viewer samples that target; semantic screenshot readback continues
+  using `CaptureOutput`. Their graph conditions, attachment transitions, and
+  conversion views are independent, including when both are active in one frame.
+- Expanded fixed-pass and GPU profiler slots for the Viewer conversion. The
+  Editor profiler and Runtime stats report the new pass separately.
+- `Debug` `KimPeanutEngine` build passed. `RenderGraphTest` passed 15/15 and
+  `RenderGraphCompatibilityTest` passed 7/7, including plans for both outputs
+  enabled together.
+- On Vulkan Debug Sponza, `editor.panel.list` reported the Debug Viewer open and
+  active on World Normal. `capture.screenshot` exported Base Color while that
+  Viewer remained active. A following `engine_window` capture shows Scene Color
+  in the main viewport and World Normal in the Viewer. Runtime stats confirmed
+  PT active and the separate debug-view conversion pass executing. Captures:
+  `save/screenshots/validation/r5-1-simultaneous-base-color.png` and
+  `save/screenshots/validation/r5-1-simultaneous-engine-window.png`.
+- The engine shut down cleanly after capture. No validation-layer diagnostics
+  were observed. The R5.0 PT graph-outcome index and exit review remain open;
+  this closes the remaining R5.1 runtime acceptance item.

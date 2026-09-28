@@ -56,6 +56,8 @@ namespace kpengine::editor
                 return "ray_tracing_tone_map";
             case RenderProfilePass::CaptureView:
                 return "capture_view";
+            case RenderProfilePass::DebugView:
+                return "debug_view";
             case RenderProfilePass::EditorComposite:
                 return "editor_composite";
             case RenderProfilePass::RayTracingBlasBuild:
@@ -324,6 +326,7 @@ namespace kpengine::editor
             append_pass("Ray tracing TLAS build", RenderProfilePass::RayTracingTlasBuild);
             append_pass("Tone map", RenderProfilePass::ToneMap);
             append_pass("Capture view", RenderProfilePass::CaptureView);
+            append_pass("Debug view", RenderProfilePass::DebugView);
             append_pass("ImGui composite", RenderProfilePass::EditorComposite);
             return copied.str();
         }
@@ -562,14 +565,16 @@ namespace kpengine::editor
         const std::optional<double> lighting =
             SumPasses(profile, {RenderProfilePass::DeferredLighting});
         const std::optional<double> post_process =
-            SumPasses(profile, {RenderProfilePass::ToneMap, RenderProfilePass::CaptureView});
+            SumPasses(profile, {RenderProfilePass::ToneMap, RenderProfilePass::CaptureView,
+                                RenderProfilePass::DebugView});
         const std::optional<double> imgui_gpu =
             SumPasses(profile, {RenderProfilePass::EditorComposite});
         const std::optional<double> total = SumPasses(
             profile, {RenderProfilePass::DirectionalShadow, RenderProfilePass::SpotShadow,
                       RenderProfilePass::PointShadow, RenderProfilePass::GBuffer,
                       RenderProfilePass::DeferredLighting, RenderProfilePass::ToneMap,
-                      RenderProfilePass::CaptureView, RenderProfilePass::EditorComposite,
+                      RenderProfilePass::CaptureView, RenderProfilePass::DebugView,
+                      RenderProfilePass::EditorComposite,
                       RenderProfilePass::RayTracingPathTrace,
                       RenderProfilePass::RayTracingToneMap,
                       RenderProfilePass::RayTracingBlasBuild,
@@ -767,6 +772,8 @@ namespace kpengine::editor
             DrawCpuPassRow("Tone map", passes[static_cast<size_t>(RenderProfilePass::ToneMap)]);
             DrawCpuPassRow("Capture view",
                            passes[static_cast<size_t>(RenderProfilePass::CaptureView)]);
+            DrawCpuPassRow("Debug view",
+                           passes[static_cast<size_t>(RenderProfilePass::DebugView)]);
             DrawCpuPassRow("ImGui composite",
                            passes[static_cast<size_t>(RenderProfilePass::EditorComposite)]);
             ImGui::EndTable();

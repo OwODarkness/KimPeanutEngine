@@ -14,8 +14,8 @@ namespace kpengine::render
         // Indexed by RenderPassResource. This is the only authored copy of the
         // raster frame's logical resource names.
         constexpr std::array<const char *, kResourceCount> kResourceNames{
-            "SceneColor", "SceneHdr",    "GBuffer",   "DirectionalShadow",
-            "SpotShadow", "PointShadow", "CaptureOutput", "PathTraceHistory",
+            "SceneColor", "SceneHdr", "GBuffer", "DirectionalShadow", "SpotShadow",
+            "PointShadow", "CaptureOutput", "DebugViewOutput", "PathTraceHistory",
             "PathTraceGuide",
         };
 
@@ -27,6 +27,8 @@ namespace kpengine::render
                 return true;
             case RenderPassCondition::DiagnosticCaptureRequested:
                 return conditions.diagnostic_capture;
+            case RenderPassCondition::DebugViewRequested:
+                return conditions.debug_view;
             case RenderPassCondition::ExternalRequest:
                 // Whether the Editor terminal runs is not known when the frame
                 // declares, so it is always compiled and the executor decides.
@@ -38,7 +40,8 @@ namespace kpengine::render
             case RenderPassCondition::RayTracingPathTrace:
                 return conditions.ray_tracing_path_trace;
             case RenderPassCondition::RasterDiagnostic:
-                return !conditions.ray_tracing_path_trace || conditions.diagnostic_capture;
+                return !conditions.ray_tracing_path_trace || conditions.diagnostic_capture ||
+                       conditions.debug_view;
             case RenderPassCondition::RasterFrame:
                 return !conditions.ray_tracing_path_trace;
             }
@@ -126,6 +129,19 @@ namespace kpengine::render
                    RenderGraphUsage::ColorAttachment}},
                  RenderPassExecutionOwner::Renderer,
                  RenderPassCondition::DiagnosticCaptureRequested, false},
+                {FixedRenderPassId::DebugView, "DebugViewPass",
+                 {{RenderPassResource::GBuffer, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled, RenderGraphAttachmentScope::Colors(0b1111U, true)},
+                  {RenderPassResource::DirectionalShadow, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::SpotShadow, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::PointShadow, RenderPassAccess::Read,
+                   RenderGraphUsage::Sampled},
+                  {RenderPassResource::DebugViewOutput, RenderPassAccess::Write,
+                   RenderGraphUsage::ColorAttachment}},
+                 RenderPassExecutionOwner::Renderer, RenderPassCondition::DebugViewRequested,
+                 false},
                 {FixedRenderPassId::EditorComposite, "EditorCompositePass",
                  {{RenderPassResource::SceneColor, RenderPassAccess::Read,
                    RenderGraphUsage::Sampled}},
@@ -217,7 +233,8 @@ namespace kpengine::render
                                         entry.id == FixedRenderPassId::RayTracingTlasBuild,
                                     owner,
                                     entry.terminal, static_cast<uint64_t>(entry.id),
-                                    entry.id == FixedRenderPassId::CaptureView
+                                    (entry.id == FixedRenderPassId::CaptureView ||
+                                     entry.id == FixedRenderPassId::DebugView)
                                         ? RenderGraphPassFailurePolicy::Optional
                                         : RenderGraphPassFailurePolicy::Required});
             if (!IsPassEnabled(entry, conditions))
@@ -314,16 +331,18 @@ namespace kpengine::render
             }
         }
 
-        // The host samples the conversion output through the editor viewport
-        // whenever a diagnostic view is active -- GetViewportRenderTargetView
-        // maps every non-SceneColor view to CaptureOutput. No renderer pass reads
-        // that target, so without declaring the host's read here nothing
-        // transitions it out of the attachment layout the capture pass wrote it
-        // in, and the host samples it in the wrong layout.
+        // The editor samples the Viewer output, while capture readback consumes
+        // the capture output. Keep their reads separate so both can be live.
         if (conditions.diagnostic_capture && terminal_pass.IsValid())
         {
             terminal_pass.Read(
                 resources[static_cast<std::size_t>(RenderPassResource::CaptureOutput)],
+                RenderGraphUsage::Sampled);
+        }
+        if (conditions.debug_view && terminal_pass.IsValid())
+        {
+            terminal_pass.Read(
+                resources[static_cast<std::size_t>(RenderPassResource::DebugViewOutput)],
                 RenderGraphUsage::Sampled);
         }
 
@@ -336,6 +355,13 @@ namespace kpengine::render
                 graph.CurrentVersion(
                     resources[static_cast<std::size_t>(RenderPassResource::CaptureOutput)]),
                 "CaptureOutput");
+        }
+        if (conditions.debug_view)
+        {
+            graph.ExportTexture(
+                graph.CurrentVersion(
+                    resources[static_cast<std::size_t>(RenderPassResource::DebugViewOutput)]),
+                "DebugViewOutput");
         }
         return graph.Compile();
     }
