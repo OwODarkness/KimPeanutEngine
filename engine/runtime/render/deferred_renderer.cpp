@@ -498,6 +498,33 @@ namespace kpengine::render
             }
             return stamp;
         }
+
+        uint64_t ComputePointShadowStamp(const Light &light,
+                                         uint64_t render_world_revision,
+                                         uint64_t material_revision)
+        {
+            uint64_t stamp = 1469598103934665603ULL;
+            const auto add = [&stamp](uint64_t value)
+            {
+                stamp ^= value;
+                stamp *= 1099511628211ULL;
+            };
+            const auto add_float = [&add](float value)
+            { add(static_cast<uint64_t>(std::hash<float>{}(value))); };
+            const PointLightData &point = std::get<PointLightData>(light.desc.type_data);
+            add(light.handle.id);
+            add(light.handle.generation);
+            add(light.desc.shadow->id);
+            add(light.desc.shadow->generation);
+            add(render_world_revision);
+            add(material_revision);
+            add(kPointShadowFaceResolution);
+            add_float(point.position.x_);
+            add_float(point.position.y_);
+            add_float(point.position.z_);
+            add_float(point.range);
+            return stamp;
+        }
     }
 
     DeferredRenderer::~DeferredRenderer()
@@ -656,6 +683,9 @@ namespace kpengine::render
         directional_shadow_cache_hit_ = false;
         directional_shadow_valid_ = false;
         directional_shadow_stamp_ = 0;
+        point_shadow_cache_hit_ = false;
+        point_shadow_valid_ = false;
+        point_shadow_stamp_ = 0;
         active_frame_context_ = nullptr;
         render_world_ = nullptr;
         frame_render_world_snapshot_.clear();
@@ -1565,8 +1595,11 @@ namespace kpengine::render
         active_spot_shadow_.reset();
         active_point_shadow_.reset();
         directional_shadow_cache_hit_ = false;
+        point_shadow_cache_hit_ = false;
         profile_.shadow_cache_hits = 0;
         profile_.shadow_cache_misses = 0;
+        profile_.point_shadow_cache_hits = 0;
+        profile_.point_shadow_cache_misses = 0;
         spot_shadow_recorded_ = false;
         point_shadow_recorded_ = false;
         const auto ray_tracing_scene_prepare_started = std::chrono::steady_clock::now();
@@ -1677,6 +1710,9 @@ namespace kpengine::render
             frame_ray_tracing_light_data_.size() <= 128;
         const bool has_path_trace_scene = !frame_ray_tracing_instances_.empty();
         const bool has_path_trace_tlas = ray_tracing_tlas_.IsValid();
+        const bool has_visible_mesh_proxy = std::any_of(
+            frame_render_world_snapshot_.begin(), frame_render_world_snapshot_.end(),
+            [](const MeshProxy &proxy) { return proxy.flags.visible && proxy.mesh.IsValid(); });
         const bool ray_query_capable =
             ray_tracing_enabled_ && backend_->GetCapabilities().SupportsRayQueryShadows();
         if (effective_path_trace_settings_.visibility_method ==
@@ -1710,7 +1746,7 @@ namespace kpengine::render
         profile_.path_trace_settings_fallback_reason = path_trace_settings_fallback_reason_;
         const bool ray_query_shadow =
             effective_path_trace_settings_.hybrid_ray_query_shadows_enabled;
-        if (ray_tracing_path_tracing_available_ &&
+        if (ray_tracing_path_tracing_available_ && has_visible_mesh_proxy &&
             (!has_path_trace_scene || !has_path_trace_tlas || !path_trace_scene_within_capacity))
         {
             const uint64_t diagnostic_signature =
@@ -1734,6 +1770,8 @@ namespace kpengine::render
         }
         else
         {
+            // An empty or not-yet-published render world is a normal loading
+            // state; defer the inactivity diagnostic until there is scene work.
             path_trace_scene_limit_diagnostic_signature_ = 0;
         }
         const bool ray_tracing_path_trace = path_tracing_enabled_ &&
@@ -1809,6 +1847,11 @@ namespace kpengine::render
                                                        input.is_shadow_handle_valid);
             active_point_shadow_ = SchedulePointShadow(input.lights,
                                                          input.is_shadow_handle_valid);
+            profile_.point_shadow_cache_hits = point_shadow_cache_hit_ ? 1 : 0;
+            profile_.point_shadow_cache_misses = active_point_shadow_.has_value() &&
+                                                         !point_shadow_cache_hit_
+                                                     ? 1
+                                                     : 0;
         }
         profile_.render_graph_mode = is_deferred_capture
                                          ? "capture"
@@ -1849,6 +1892,11 @@ namespace kpengine::render
                 if (pass_id == FixedRenderPassId::DirectionalShadow &&
                     directional_shadow_cache_hit_)
                 {
+                    return true;
+                }
+                if (pass_id == FixedRenderPassId::PointShadow && point_shadow_cache_hit_)
+                {
+                    point_shadow_recorded_ = true;
                     return true;
                 }
                 if (!ApplyPassTransitions(*frame_plan, pass))
@@ -2845,7 +2893,7 @@ namespace kpengine::render
         const std::vector<Light> &lights,
         const std::function<bool(ShadowHandle)> &is_shadow_handle_valid)
     {
-        const std::vector<VisibleMeshSection> &proxies = BuildSectionCandidatesProfiled();
+        point_shadow_cache_hit_ = false;
         for (const Light &light : lights)
         {
             if (!light.desc.enabled || light.desc.type != LightType::Point ||
@@ -2874,25 +2922,39 @@ namespace kpengine::render
             frame.position = point->position;
             frame.near_plane = near_plane;
             frame.far_plane = point->range;
-            bool has_caster = false;
-            for (const VisibleMeshSection &candidate : proxies)
+            ++profile_.shadow_stamp_evaluations;
+            frame.validity_stamp = ComputePointShadowStamp(
+                light, render_world_->GetRevision(), material_system_->GetRevision());
+            if (point_shadow_valid_ && point_shadow_stamp_ == frame.validity_stamp)
             {
-                const MeshProxy &proxy = candidate.proxy;
-                const std::optional<MaterialDrawClass> draw_class =
-                    material_system_->GetDrawClass(proxy.material);
-                const auto resolution = material_system_->GetInstanceResolution(proxy.material);
-                if (proxy.flags.visible && proxy.flags.casts_shadow &&
-                    IsBoundsInsideSphere(candidate.world_bounds, point->position, point->range) &&
-                    draw_class.has_value() && *draw_class == MaterialDrawClass::Opaque &&
-                    resolution.state == MaterialResourceState::Ready)
-                {
-                    has_caster = true;
-                    break;
-                }
+                point_shadow_cache_hit_ = true;
             }
-            if (!has_caster)
+            else
             {
-                continue;
+                point_shadow_valid_ = false;
+                const std::vector<VisibleMeshSection> &proxies =
+                    BuildSectionCandidatesProfiled();
+                frame.caster_candidates.reserve(proxies.size());
+                for (const VisibleMeshSection &candidate : proxies)
+                {
+                    const MeshProxy &proxy = candidate.proxy;
+                    const std::optional<MaterialDrawClass> draw_class =
+                        material_system_->GetDrawClass(proxy.material);
+                    const auto resolution =
+                        material_system_->GetInstanceResolution(proxy.material);
+                    if (proxy.flags.visible && proxy.flags.casts_shadow &&
+                        IsBoundsInsideSphere(candidate.world_bounds, point->position,
+                                             point->range) &&
+                        draw_class.has_value() && *draw_class == MaterialDrawClass::Opaque &&
+                        resolution.state == MaterialResourceState::Ready)
+                    {
+                        frame.caster_candidates.push_back(candidate);
+                    }
+                }
+                if (frame.caster_candidates.empty())
+                {
+                    continue;
+                }
             }
             const auto &faces = GetPointShadowFaceTable();
             for (size_t face_index = 0; face_index < faces.size(); ++face_index)
@@ -2906,6 +2968,7 @@ namespace kpengine::render
             }
             return frame;
         }
+        point_shadow_valid_ = false;
         return std::nullopt;
     }
 
@@ -3044,23 +3107,6 @@ namespace kpengine::render
         }
 
         const PointShadowFrame &shadow = *active_point_shadow_;
-        const std::vector<VisibleMeshSection> &proxies = BuildSectionCandidatesProfiled();
-        std::vector<VisibleMeshSection> caster_candidates;
-        caster_candidates.reserve(proxies.size());
-        for (const VisibleMeshSection &candidate : proxies)
-        {
-            const MeshProxy &proxy = candidate.proxy;
-            const std::optional<MaterialDrawClass> draw_class =
-                material_system_->GetDrawClass(proxy.material);
-            if (proxy.flags.visible && proxy.flags.casts_shadow &&
-                IsBoundsInsideSphere(candidate.world_bounds, shadow.position, shadow.far_plane) &&
-                draw_class.has_value() && *draw_class == MaterialDrawClass::Opaque &&
-                material_system_->GetInstanceResolution(proxy.material).state ==
-                    MaterialResourceState::Ready)
-            {
-                caster_candidates.push_back(candidate);
-            }
-        }
         const auto &faces = GetPointShadowFaceTable();
         std::array<uint32_t, 6> face_draw_counts{};
         for (size_t face_index = 0; face_index < faces.size(); ++face_index)
@@ -3083,7 +3129,7 @@ namespace kpengine::render
             {
                 return false;
             }
-            for (const VisibleMeshSection &candidate : caster_candidates)
+            for (const VisibleMeshSection &candidate : shadow.caster_candidates)
             {
                 if (!camera::IsAABBInsidePerspectiveFace(
                         candidate.world_bounds, view, shadow.near_plane, shadow.far_plane))
@@ -3096,6 +3142,8 @@ namespace kpengine::render
             }
         }
         point_shadow_recorded_ = true;
+        point_shadow_valid_ = true;
+        point_shadow_stamp_ = shadow.validity_stamp;
         return true;
     }
 
@@ -4518,6 +4566,8 @@ namespace kpengine::render
         {
             directional_shadow_valid_ = false;
             directional_shadow_stamp_ = 0;
+            point_shadow_valid_ = false;
+            point_shadow_cache_hit_ = false;
             active_frame_context_ = nullptr;
         }
         if (!frame_targets_.GetTarget(RenderTargetName::SceneColor)->IsValid())

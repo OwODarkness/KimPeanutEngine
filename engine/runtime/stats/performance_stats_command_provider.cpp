@@ -250,6 +250,8 @@ namespace kpengine::runtime
             data["native_draw_calls"] = profile.native_draw_calls;
             data["shadow_cache_hits"] = profile.shadow_cache_hits;
             data["shadow_cache_misses"] = profile.shadow_cache_misses;
+            data["point_shadow_cache_hits"] = profile.point_shadow_cache_hits;
+            data["point_shadow_cache_misses"] = profile.point_shadow_cache_misses;
             data["descriptor_sets_created"] = profile.descriptor_sets_created;
             data["descriptor_pools_created"] = profile.descriptor_pools_created;
 

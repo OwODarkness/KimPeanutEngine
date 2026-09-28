@@ -238,6 +238,11 @@ redesign.
   diagnostics and inspect the multi-face Vulkan/OpenGL runtime fixtures. The
   point-only validation captures show stable non-uniform visibility on both
   backends; perspective D32 depth is near-white after RGBA8 conversion.
+- [x] **D6.4.5 (2026-09-28):** Reuse the prepared point-shadow caster list across
+  scheduling and six-face recording. Cache the atlas while the selected light,
+  render-world revision, and material revision stay stable; skip the pass boundary
+  on cache hits so attachment clearing preserves the stored depth. Expose point
+  cache hit/miss counters in Runtime stats.
 - [x] **D6.4 profile baseline (2026-09-01):** Keep six 512² faces in the fixed
   1536×1024 D32 target (6,291,456 bytes / 6 MiB), retain explicit empty-face
   culling, and add a one-shot Render diagnostic for per-face/total draw counts

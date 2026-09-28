@@ -159,6 +159,8 @@ namespace kpengine::render
         uint64_t sections = 0;
         uint64_t shadow_cache_hits = 0;
         uint64_t shadow_cache_misses = 0;
+        uint64_t point_shadow_cache_hits = 0;
+        uint64_t point_shadow_cache_misses = 0;
         uint64_t descriptor_sets_created = 0;
         uint64_t descriptor_pools_created = 0;
         double cpu_section_packet_build_ms = 0.0;

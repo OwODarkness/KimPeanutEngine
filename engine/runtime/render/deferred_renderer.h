@@ -131,10 +131,12 @@ namespace kpengine::render
         {
             ShadowJobDesc job;
             ShadowHandle shadow;
+            uint64_t validity_stamp = 0;
             Vector3f position;
             float near_plane = 0.01f;
             float far_plane = 1.0f;
             std::array<Matrix4f, 6> face_view_projections{};
+            std::vector<VisibleMeshSection> caster_candidates;
         };
         struct DirectionalShadowFrame
         {
@@ -416,6 +418,9 @@ namespace kpengine::render
         bool directional_shadow_cache_hit_ = false;
         bool directional_shadow_valid_ = false;
         uint64_t directional_shadow_stamp_ = 0;
+        bool point_shadow_cache_hit_ = false;
+        bool point_shadow_valid_ = false;
+        uint64_t point_shadow_stamp_ = 0;
         uint64_t triangle_count_ = 0;
         RenderCamera scene_camera_;
         std::optional<CaptureView> active_pending_capture_;
