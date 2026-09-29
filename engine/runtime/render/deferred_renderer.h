@@ -5,19 +5,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <limits>
 #include <optional>
 #include <string>
-#include <string_view>
-#include <unordered_map>
 #include <vector>
 
-#include "asset/common.h"
-#include "asset/shader.h"
-#include "graphics/backend/common/api.h"
 #include "graphics/backend/common/render_backend.h"
 #include "render_capture_service.h"
-#include "environment_source.h"
 #include "frame_context.h"
 #include "render/light/light_world.h"
 #include "render/material/material_system.h"
@@ -26,20 +19,19 @@
 #include "render_graph/render_graph_bindings.h"
 #include "render_graph/render_graph_executor.h"
 #include "render_pass_declaration.h"
-#include "render_resource.h"
+#include "render/passes/scene_draw_recorder.h"
+#include "render/passes/fullscreen_pass_resources.h"
+#include "render/passes/deferred_lighting_pass.h"
+#include "render/passes/tone_map_pass.h"
+#include "render/passes/capture_view_pass.h"
+#include "render/passes/path_tracing_pass.h"
+#include "render/passes/shadow_pass.h"
 #include "prepared_render_asset_catalog.h"
 #include "render_world/render_world.h"
-#include "render_world/scene_visibility.h"
 #include "renderer_frame_targets.h"
 #include "render_profile.h"
-#include "path_trace_probe_mode.h"
 #include "path_trace_settings.h"
-#include "ray_tracing_scene_sections.h"
-
-namespace kpengine::data
-{
-    struct TextureData;
-}
+#include "ray_tracing/ray_tracing_scene.h"
 
 namespace kpengine::render
 {
@@ -108,60 +100,6 @@ namespace kpengine::render
             FrameContext &frame_context, const RenderSceneFrameInput &input);
 
     private:
-        struct EnvironmentBindingBundle
-        {
-            asset::AssetID source_asset;
-            TextureBinding panorama;
-            TextureBinding irradiance;
-            TextureBinding prefiltered_radiance;
-            TextureBinding brdf_lut;
-            uint32_t prefilter_level_count = 0;
-            float ibl_intensity = 0.25f;
-            bool ibl_enabled = false;
-
-            bool HasCompleteBindings() const
-            {
-                return panorama.texture.IsValid() && panorama.sampler.IsValid() &&
-                       irradiance.texture.IsValid() && irradiance.sampler.IsValid() &&
-                       prefiltered_radiance.texture.IsValid() &&
-                       prefiltered_radiance.sampler.IsValid() && brdf_lut.texture.IsValid() &&
-                       brdf_lut.sampler.IsValid();
-            }
-        };
-
-        struct PointShadowFrame
-        {
-            ShadowJobDesc job;
-            ShadowHandle shadow;
-            uint64_t validity_stamp = 0;
-            Vector3f position;
-            float near_plane = 0.01f;
-            float far_plane = 1.0f;
-            std::array<Matrix4f, 6> face_view_projections{};
-            std::vector<VisibleMeshSection> caster_candidates;
-        };
-        struct DirectionalShadowFrame
-        {
-            ShadowJobDesc job;
-            ShadowHandle shadow;
-            uint64_t validity_stamp = 0;
-            Vector3f light_direction;
-            Matrix4f view;
-            Matrix4f projection;
-        };
-        struct SpotShadowFrame
-        {
-            ShadowJobDesc job;
-            ShadowHandle shadow;
-            Vector3f position;
-            Vector3f light_direction;
-            float outer_cone_radians = 0.0f;
-            float near_plane = 0.01f;
-            float far_plane = 1.0f;
-            Matrix4f view;
-            Matrix4f projection;
-        };
-
         // Applies the state requirements the plan records for one pass, before
         // the pass records anything. The plan owns what state a resource must be
         // in; the backend owns what it is currently in and elides what is
@@ -171,8 +109,7 @@ namespace kpengine::render
         RenderTarget *ResolveFrameTexture(
             RenderFrameResourceRole role,
             RenderGraphAccess access = RenderGraphAccess::Read) const;
-        bool EnsurePathTraceHistoryTargets(uint32_t width, uint32_t height);
-        uint64_t PathTraceHistorySignature(uint32_t width, uint32_t height) const;
+        void ClearActiveFrameInputs();
         bool BuildFrameResourceBindings(const CompiledRenderFramePlan &plan);
         void CancelPreparedFrameBuildResources();
         // The description for a declared transient key, or null for one this
@@ -183,18 +120,6 @@ namespace kpengine::render
         const CompiledRenderFramePlan *GetCompiledFramePlan(
             RenderFrameConditions conditions) const;
         const CompiledRenderGraph *GetFramePlan(RenderFrameConditions conditions) const;
-        std::optional<DirectionalShadowFrame> ScheduleDirectionalShadow(
-            const std::vector<Light> &lights,
-            const std::function<bool(ShadowHandle)> &is_shadow_handle_valid);
-        std::optional<SpotShadowFrame> ScheduleSpotShadow(
-            const std::vector<Light> &lights,
-            const std::function<bool(ShadowHandle)> &is_shadow_handle_valid);
-        std::optional<PointShadowFrame> SchedulePointShadow(
-            const std::vector<Light> &lights,
-            const std::function<bool(ShadowHandle)> &is_shadow_handle_valid);
-        const std::vector<VisibleMeshSection> &BuildSectionCandidatesProfiled();
-        std::vector<VisibleMeshSection> BuildVisibleSectionsProfiled(
-            const Matrix4f &view_projection);
         bool RecordDirectionalShadowPass();
         bool RecordSpotShadowPass();
         bool RecordPointShadowPass();
@@ -205,39 +130,7 @@ namespace kpengine::render
         bool RecordCaptureViewPass(CaptureView view, RenderTargetName output_target);
         bool ExecutePass(FixedRenderPassId id, const std::vector<Light> &lights,
                          const RenderGraphPassContext &context);
-        bool PrepareRayTracingScene();
-        bool RecordRayTracingBlasBuild(const RenderGraphPassContext &context);
-        bool RecordRayTracingTlasBuild(const RenderGraphPassContext &context);
-        void DestroyRayTracingPathTraceBindings();
-        void DestroyRayTracingResources();
-        bool PrepareDirectionalShadowPassResources();
-        bool GetPreparedProgram(
-            BuiltInRenderAsset role,
-            std::shared_ptr<const asset::ShaderProgramResource> &out_program,
-            asset::ShaderProgramVariant variant = asset::ShaderProgramVariant::Bound) const;
-        bool GetPreparedRayTracingProgram(
-            std::shared_ptr<const asset::ShaderProgramResource> &out_program) const;
-        bool PrepareFullscreenPassResources();
         bool PrepareDeferredLightingPassResources();
-        bool PrepareEnvironmentIbl(asset::AssetID source_asset,
-                                   const data::TextureData &source,
-                                   EnvironmentBindingBundle &bundle);
-        bool EnsureEnvironmentFallbackBindings();
-        bool ResolveLevelEnvironment(const EnvironmentSourceDesc &source,
-                                     EnvironmentBindingBundle &bundle);
-        bool PrepareGBufferDebugPassResources();
-        bool PrepareToneMapPassResources();
-        bool PrepareRayTracingPathTraceResources();
-        bool PrepareCaptureViewPassResources();
-        void RecordShadowCaster(const MeshProxy &proxy,
-                                const UniformAllocation &per_pass,
-                                graphics::CommandRecorder &recorder,
-                                uint32_t section_index = std::numeric_limits<uint32_t>::max());
-        bool RecordMeshProxy(const MeshProxy &proxy,
-                             const UniformAllocation &per_pass,
-                             graphics::CommandRecorder &recorder, MaterialPass pass,
-                             uint32_t section_index = std::numeric_limits<uint32_t>::max());
-        void UpdateEnvironment(const RenderSceneFrameInput &input);
         void ApplyPendingSceneRenderTargetExtent();
         void AddProfileDraws(uint64_t draw_calls, uint64_t sections);
 
@@ -252,17 +145,9 @@ namespace kpengine::render
         RenderGraphExecutor graph_executor_;
         // The frame's pooled transient, wrapped around a pool-owned handle.
         // RenderTarget is not movable, so the wrapper is held by pointer.
-        std::array<std::unique_ptr<RenderTarget>, 2> path_trace_history_targets_;
-        std::unique_ptr<RenderTarget> path_trace_guide_target_;
-        uint32_t path_trace_write_index_ = 0;
-        uint32_t path_trace_sample_count_ = 0;
-        uint64_t path_trace_history_signature_ = 0;
-        uint64_t path_trace_shader_signature_ = 0;
-        uint64_t tone_map_shader_signature_ = 0;
         PathTraceSettings requested_path_trace_settings_{};
         PathTraceSettings effective_path_trace_settings_{};
         std::string path_trace_settings_fallback_reason_;
-        bool fail_next_path_trace_dispatch_ = false;
         RenderGraphBindings frame_bindings_;
         bool frame_execution_failed_ = false;
         bool frame_plan_valid_ = false;
@@ -270,152 +155,20 @@ namespace kpengine::render
         graphics::Extent2D pending_scene_render_target_extent_;
         FrameContext *active_frame_context_ = nullptr;
         const RenderWorld *render_world_ = nullptr;
-        // Revision-stable section packets are shared by shadow scheduling,
-        // shadow recording, and per-frame G-buffer visibility filtering.
-        std::vector<MeshProxy> frame_render_world_snapshot_;
-        std::vector<VisibleMeshSection> frame_section_packets_;
-        uint64_t frame_section_packets_world_revision_ = 0;
-        bool frame_section_packets_ready_ = false;
-        FrameLightingBinding frame_lighting_binding_;
-        // Per-frame resolved draw state. Within one frame the per-object uniform
-        // and the material binding are pure functions of the renderable and its
-        // material, so a section whose mesh was already drawn reuses the
-        // resolution instead of repeating the lookups, hashing, and uniform
-        // write. Both are cleared at frame start.
-        struct FrameObjectState
-        {
-            UniformAllocation per_object;
-            UniformAllocation selection;
-        };
-        std::unordered_map<uint64_t, FrameObjectState> frame_object_states_;
-        std::unordered_map<uint64_t, FrameMaterialBinding> frame_material_bindings_;
-        std::optional<DirectionalShadowFrame> active_directional_shadow_;
-        std::optional<SpotShadowFrame> active_spot_shadow_;
-        std::optional<PointShadowFrame> active_point_shadow_;
-        struct RayTracingBlasState
-        {
-            graphics::AccelerationStructureHandle handle;
-            uint32_t geometry_count = 0;
-            uint64_t geometry_signature = 0;
-            bool built = false;
-        };
-        struct RayTracingMeshBuild
-        {
-            detail::RayTracingSectionKey key;
-            graphics::AccelerationStructureHandle blas;
-            std::size_t geometry_offset = 0;
-            std::size_t geometry_count = 0;
-            uint64_t geometry_signature = 0;
-            bool needs_build = false;
-        };
-        struct RayTracingPathInstanceData
-        {
-            uint32_t geometry_offset = 0;
-            uint32_t material_offset = 0;
-            uint32_t geometry_count = 0;
-        };
-        struct RayTracingPathMaterialData
-        {
-            Vector4f base_color{0.72f, 0.72f, 0.72f, 1.0f};
-            Vector4f emissive{0.0f, 0.0f, 0.0f, 1.0f};
-            float metallic = 0.0f;
-            float roughness = 1.0f;
-            float normal_scale = 1.0f;
-            uint32_t base_color_texture_index = 0xffffffffu;
-            uint32_t metallic_texture_index = 0xffffffffu;
-            uint32_t roughness_texture_index = 0xffffffffu;
-            uint32_t metallic_channel = 0;
-            uint32_t roughness_channel = 0;
-        };
-        struct RayTracingPathLightData
-        {
-            Vector4f position_or_type{};
-            Vector4f direction_and_range{};
-            Vector4f color_intensity{};
-            Vector4f parameters{};
-        };
-        struct RayTracingPathTraceBindingCache
-        {
-            graphics::DescriptorSetHandle descriptor_set;
-            graphics::RayTracingPipelineHandle pipeline;
-            graphics::AccelerationStructureHandle top_level;
-            graphics::RayTracingBufferReferenceTableHandle scene_table;
-            graphics::TextureHandle hdr_output;
-            graphics::TextureHandle history_output;
-            graphics::TextureHandle guide_output;
-            graphics::TextureHandle environment;
-            graphics::SamplerHandle environment_sampler;
-            UniformAllocation camera_uniform;
-        };
-        std::unordered_map<detail::RayTracingSectionKey, RayTracingBlasState,
-                           detail::RayTracingSectionKeyHash> ray_tracing_blas_;
-        graphics::AccelerationStructureHandle ray_tracing_tlas_;
-        uint32_t ray_tracing_tlas_capacity_ = 0;
-        bool ray_tracing_tlas_built_ = false;
-        uint64_t ray_tracing_instance_signature_ = 0;
-        uint64_t frame_ray_tracing_instance_signature_ = 0;
-        uint64_t frame_ray_tracing_material_signature_ = 0;
-        std::vector<graphics::RayTracingGeometryDesc> frame_ray_tracing_geometries_;
-        std::vector<graphics::RayTracingInstanceDesc> frame_ray_tracing_instances_;
-        std::vector<RayTracingPathInstanceData> frame_ray_tracing_instance_data_;
-        std::vector<RayTracingPathMaterialData> frame_ray_tracing_material_data_;
-        std::vector<RayTracingPathLightData> frame_ray_tracing_light_data_;
-        std::vector<graphics::RayTracingBufferAddressPatch>
-            frame_ray_tracing_scene_address_patches_;
-        graphics::RayTracingBufferReferenceTableHandle ray_tracing_scene_table_;
-        uint64_t ray_tracing_scene_cache_world_revision_ = 0;
-        uint64_t ray_tracing_scene_cache_material_revision_ = 0;
-        uint64_t ray_tracing_scene_cache_instance_signature_ = 0;
-        uint64_t ray_tracing_scene_cache_material_signature_ = 0;
-        uint64_t ray_tracing_scene_table_lighting_signature_ = 0;
-        bool ray_tracing_scene_cache_path_tracing_enabled_ = false;
-        bool ray_tracing_scene_cache_valid_ = false;
-        bool frame_ray_tracing_scene_table_dirty_ = true;
-        uint64_t ray_tracing_scene_record_cache_hits_total_ = 0;
-        uint64_t ray_tracing_scene_record_cache_misses_total_ = 0;
-        std::vector<std::array<RayTracingPathTraceBindingCache, 2>>
-            ray_tracing_path_tracing_bindings_;
-        uint64_t frame_ray_tracing_lighting_signature_ = 0;
-        std::vector<RayTracingMeshBuild> frame_ray_tracing_mesh_builds_;
-        std::vector<graphics::RayTracingBuildDesc> frame_ray_tracing_blas_builds_;
-        std::vector<graphics::RayTracingBuildDesc> frame_ray_tracing_tlas_builds_;
-        std::optional<graphics::RayTracingBuildResources> frame_ray_tracing_blas_resources_;
-        std::optional<graphics::RayTracingBuildResources> frame_ray_tracing_tlas_resources_;
-        bool frame_ray_tracing_blas_build_ = false;
-        bool frame_ray_tracing_tlas_build_ = false;
-        uint64_t path_trace_scene_limit_diagnostic_signature_ = 0;
-        bool spot_shadow_recorded_ = false;
-        bool point_shadow_recorded_ = false;
-        bool directional_shadow_cache_hit_ = false;
-        bool directional_shadow_valid_ = false;
-        uint64_t directional_shadow_stamp_ = 0;
-        bool point_shadow_cache_hit_ = false;
-        bool point_shadow_valid_ = false;
-        uint64_t point_shadow_stamp_ = 0;
+        SceneDrawRecorder scene_draw_recorder_;
+        FullscreenPassResources fullscreen_pass_resources_;
+        DeferredLightingPass deferred_lighting_pass_;
+        ShadowPass shadow_pass_;
+        ToneMapPass tone_map_pass_;
+        CaptureViewPass capture_view_pass_;
+        PathTracingPass path_tracing_pass_;
+        RayTracingScene ray_tracing_scene_;
         uint64_t triangle_count_ = 0;
         RenderCamera scene_camera_;
         std::optional<CaptureView> active_pending_capture_;
         std::optional<CaptureView> active_debug_view_;
-        graphics::PipelineHandle deferred_lighting_pipeline_;
-        graphics::PipelineHandle deferred_lighting_ray_query_pipeline_;
-        bool ray_query_shadow_path_active_ = false;
         bool ray_tracing_enabled_ = true;
-        graphics::PipelineHandle gbuffer_debug_pipeline_;
-        graphics::PipelineHandle capture_view_pipeline_;
-        graphics::MeshHandle gbuffer_debug_fullscreen_mesh_;
-        graphics::SamplerHandle gbuffer_debug_sampler_;
-        graphics::SamplerHandle directional_shadow_sampler_;
-        graphics::SamplerHandle spot_shadow_sampler_;
-        graphics::SamplerHandle point_shadow_sampler_;
-        EnvironmentBindingBundle level_environment_;
-        EnvironmentBindingBundle active_environment_;
-        std::optional<EnvironmentSourceHandle> failed_environment_source_;
-        graphics::PipelineHandle tone_map_pipeline_;
-        graphics::PipelineHandle directional_shadow_pipeline_;
-        graphics::RayTracingPipelineHandle ray_tracing_path_tracing_pipeline_;
-        bool ray_tracing_path_tracing_available_ = false;
         bool path_tracing_enabled_ = true;
-        bool active_ray_tracing_path_trace_ = false;
         RenderProfileSnapshot profile_;
         RenderGraphFailureSnapshot last_required_graph_failure_;
         std::optional<size_t> active_profile_pass_;

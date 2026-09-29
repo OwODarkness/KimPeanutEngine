@@ -43,7 +43,13 @@ namespace kpengine::test
         bool fail_texture_creation = false;
         bool fail_mesh_creation = false;
         bool fail_sampler_creation = false;
+        int fail_sampler_creation_after = -1;
         bool missing_command_recorder = false;
+        bool fail_render_target_usage = false;
+        bool fail_buffer_usage = false;
+        bool fail_acceleration_structure_usage = false;
+        bool fail_begin_render_target = false;
+        int fail_transient_acquire_after = -1;
         std::vector<std::string> events;
         std::vector<TargetRecord> targets;
         // Extent this double reports. Defaults to the value the render tests
@@ -61,7 +67,22 @@ namespace kpengine::test
         int sampler_create_count = 0;
         int sampler_destroy_count = 0;
         int render_target_destroy_count = 0;
+        int transient_acquire_count = 0;
+        int transient_release_count = 0;
+        int render_target_begin_count = 0;
+        int render_target_end_count = 0;
         int descriptor_set_create_count = 0;
+        struct TargetUsageRecord
+        {
+            graphics::RenderTargetHandle target;
+            graphics::ResourceUsage usage = graphics::ResourceUsage::Undefined;
+            graphics::RenderTargetAttachmentScope scope{};
+        };
+        std::vector<TargetUsageRecord> target_usage_requirements;
+        std::vector<std::pair<graphics::BufferHandle, graphics::ResourceUsage>>
+            buffer_usage_requirements;
+        std::vector<std::pair<graphics::AccelerationStructureHandle, graphics::ResourceUsage>>
+            acceleration_structure_usage_requirements;
         std::vector<std::array<uint32_t, 4>> environment_binding_snapshots;
         // Viewports the recorder was given, in submission order. A caller that
         // resizes its output asserts the last entry to prove the frame it
@@ -117,15 +138,14 @@ namespace kpengine::test
         bool BeginRenderTarget(graphics::RenderTargetHandle target) override;
         bool BeginPresentation(const std::array<float, 4> *) override { return true; }
         void EndRenderTarget() override;
-        bool RequireRenderTargetUsage(graphics::RenderTargetHandle, graphics::ResourceUsage,
-                                      graphics::RenderTargetAttachmentScope) override
-        {
-            return true;
-        }
-        bool RequireBufferUsage(graphics::BufferHandle buffer, graphics::ResourceUsage) override
-        {
-            return buffer.IsValid();
-        }
+        bool RequireRenderTargetUsage(graphics::RenderTargetHandle target,
+                                      graphics::ResourceUsage usage,
+                                      graphics::RenderTargetAttachmentScope scope) override;
+        bool RequireBufferUsage(graphics::BufferHandle buffer,
+                                graphics::ResourceUsage usage) override;
+        bool RequireAccelerationStructureUsage(
+            graphics::AccelerationStructureHandle handle,
+            graphics::ResourceUsage usage) override;
         bool BindPipeline(graphics::PipelineHandle) override { return true; }
         void BindMesh(graphics::MeshHandle) override {}
         bool BindGeometry(const graphics::GeometryView &) override { return true; }
@@ -211,7 +231,9 @@ namespace kpengine::test
         graphics::SamplerHandle CreateSampler(const graphics::SamplerSettings &) override
         {
             ++probe_->sampler_create_count;
-            if (probe_->fail_sampler_creation)
+            if (probe_->fail_sampler_creation ||
+                (probe_->fail_sampler_creation_after >= 0 &&
+                 probe_->sampler_create_count > probe_->fail_sampler_creation_after))
             {
                 return {};
             }
@@ -257,11 +279,18 @@ namespace kpengine::test
             // simply a fresh handle. The events let a test see that a caller
             // took the pooled path rather than a named target.
             probe_->events.push_back("transient_acquire");
+            const int acquisition = probe_->transient_acquire_count++;
+            if (probe_->fail_transient_acquire_after >= 0 &&
+                acquisition >= probe_->fail_transient_acquire_after)
+            {
+                return {};
+            }
             return MakeHandle<graphics::RenderTargetHandle>();
         }
 
         void ReleaseTransientRenderTarget(graphics::RenderTargetHandle) override
         {
+            ++probe_->transient_release_count;
             probe_->events.push_back("transient_release");
         }
 
@@ -422,14 +451,37 @@ namespace kpengine::test
 
         bool DestroyBufferResource(graphics::BufferHandle) override { return true; }
 
-        void RecordBeginTarget(graphics::RenderTargetHandle target)
+        bool RecordBeginTarget(graphics::RenderTargetHandle target)
         {
+            ++probe_->render_target_begin_count;
             const auto it = target_names_.find(target.id);
             probe_->events.push_back(it == target_names_.end() ? "unknown_target"
                                                                : "target:" + it->second);
+            return !probe_->fail_begin_render_target;
         }
 
-        void RecordEndTarget() { probe_->events.push_back("end_target"); }
+        void RecordEndTarget()
+        {
+            ++probe_->render_target_end_count;
+            probe_->events.push_back("end_target");
+        }
+
+        BackendProbe &Probe() noexcept { return *probe_; }
+        void RecordRenderTargetUsage(graphics::RenderTargetHandle target,
+                                     graphics::ResourceUsage usage,
+                                     graphics::RenderTargetAttachmentScope scope)
+        {
+            probe_->target_usage_requirements.push_back({target, usage, scope});
+        }
+        void RecordBufferUsage(graphics::BufferHandle buffer, graphics::ResourceUsage usage)
+        {
+            probe_->buffer_usage_requirements.emplace_back(buffer, usage);
+        }
+        void RecordAccelerationStructureUsage(
+            graphics::AccelerationStructureHandle handle, graphics::ResourceUsage usage)
+        {
+            probe_->acceleration_structure_usage_requirements.emplace_back(handle, usage);
+        }
 
         void RecordViewport(const graphics::Viewport &viewport)
         {
@@ -456,11 +508,32 @@ namespace kpengine::test
 
     inline bool FakeCommandRecorder::BeginRenderTarget(graphics::RenderTargetHandle target)
     {
-        backend_.RecordBeginTarget(target);
-        return true;
+        return backend_.RecordBeginTarget(target);
     }
 
     inline void FakeCommandRecorder::EndRenderTarget() { backend_.RecordEndTarget(); }
+
+    inline bool FakeCommandRecorder::RequireRenderTargetUsage(
+        graphics::RenderTargetHandle target, graphics::ResourceUsage usage,
+        graphics::RenderTargetAttachmentScope scope)
+    {
+        backend_.RecordRenderTargetUsage(target, usage, scope);
+        return !backend_.Probe().fail_render_target_usage;
+    }
+
+    inline bool FakeCommandRecorder::RequireBufferUsage(
+        graphics::BufferHandle buffer, graphics::ResourceUsage usage)
+    {
+        backend_.RecordBufferUsage(buffer, usage);
+        return buffer.IsValid() && !backend_.Probe().fail_buffer_usage;
+    }
+
+    inline bool FakeCommandRecorder::RequireAccelerationStructureUsage(
+        graphics::AccelerationStructureHandle handle, graphics::ResourceUsage usage)
+    {
+        backend_.RecordAccelerationStructureUsage(handle, usage);
+        return handle.IsValid() && !backend_.Probe().fail_acceleration_structure_usage;
+    }
 
     inline void FakeCommandRecorder::SetViewport(const graphics::Viewport &viewport)
     {

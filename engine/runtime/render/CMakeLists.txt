@@ -3,6 +3,16 @@ render_system.cpp
 render_scene_coordinator.cpp
 prepared_render_asset_catalog.cpp
 deferred_renderer.cpp
+passes/deferred_lighting_pass.cpp
+passes/environment_bindings_owner.cpp
+passes/tone_map_pass.cpp
+passes/capture_view_pass.cpp
+passes/path_tracing_pass.cpp
+passes/fullscreen_pass_resources.cpp
+passes/scene_draw_recorder.cpp
+passes/shadow_pass.cpp
+passes/shadow_pass_utils.cpp
+ray_tracing/ray_tracing_scene.cpp
 render_capture_service.cpp
     render_source_registry.cpp
     camera_source_registry.cpp

@@ -1,5 +1,29 @@
 # Project Status
 
+- **R5.3 pass-family ownership (2026-09-28; source implementation complete, acceptance open)** — R5.3.1 moves
+  frame-local draw recording/cache state, shared fullscreen mesh/sampler,
+  environment bindings, path-tracing GPU schemas, shader hashing, and
+  shadow fitting/cache-stamp utilities and pass-specific constants into
+  explicit owners/contracts. R5.3.2 now puts all shadow scheduling/recording,
+  cache state, pipeline, samplers, and cleanup in `ShadowPass`; graph order
+  stays in the facade. R5.3.3 source ownership now places environment-binding
+  state and the frame-light binding under `DeferredLightingPass`; its behavior
+  has not been tested. `RayTracingScene` source ownership has also
+  been extracted and builds, while its focused/runtime acceptance is open.
+  `ToneMapPass`/`CaptureViewPass` own their recording code, tone-map policy now
+  belongs to `ToneMapPass`, and `PathTracingPass` owns PT pipeline/history/cache/
+  dispatch state; the affected Debug target builds, but these new owner paths
+  were not tested or run.
+  Earlier visible Vulkan Sponza stats show all three shadow passes and a
+  point-shadow cache hit, including after a viewport resize. `GraphicsSmoke`
+  still fails at a GBuffer descriptor validation check. R5.3.1–R5.3.7 source
+  ownership and the facade audit are complete; owner lifecycle/correctness,
+  cross-backend/runtime acceptance, diagnosis of the existing `GraphicsSmoke`
+  validation failure, and the R5.2 prerequisite remain open. →
+  [plan](render/.plan/R5.3.md),
+  [journal](../.spec/journal/2026-09-28-r5-3-pass-family-ownership.md),
+  [review](render/.review/R5.3.md)
+
 - **R5.2 implementation (2026-09-28; in progress)** — typed physical groups,
   common Graphics AS preparation, executor-owned transitions, attachment and
   profiling brackets, transient leases, external-terminal failure outcomes,

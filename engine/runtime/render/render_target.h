@@ -18,6 +18,7 @@ namespace kpengine::render
     class DeferredRenderer;
     class RendererFrameTargets;
     class RenderGraphExecutor;
+    class PathTracingPass;
 
     // Render-module output target. Its RHI attachments remain private so editor,
     // gameplay, and other high-level modules never need Graphics handles.
@@ -44,6 +45,7 @@ namespace kpengine::render
         friend class DeferredRenderer;
         friend class RendererFrameTargets;
         friend class RenderGraphExecutor;
+        friend class PathTracingPass;
 
         void Initialize(graphics::RenderBackend &backend, const graphics::RenderTargetDesc &desc);
         // Wraps a target another owner allocated, such as one taken from the

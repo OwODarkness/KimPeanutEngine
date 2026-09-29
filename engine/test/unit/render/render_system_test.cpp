@@ -25,6 +25,7 @@
 #include "render/render_system.h"
 #include "render/render_submission_executor.h"
 #include "render/prepared_render_asset_catalog.h"
+#include "render/passes/scene_draw_recorder.h"
 #include "render/path_trace_history_signature.h"
 #include "render/path_trace_history_progress.h"
 #include "render/ray_tracing_scene_signature.h"
@@ -405,6 +406,34 @@ namespace
         backend.EndFrame();
         return renderer.GetProfileSnapshot();
     }
+}
+
+TEST(SceneDrawRecorderTest, ReusesSectionPacketsUntilWorldRevisionChanges)
+{
+    auto probe = std::make_shared<BackendProbe>();
+    FakeBackend backend(probe);
+    const auto prepared_assets = BuildPreparedCatalog();
+    ASSERT_NE(prepared_assets, nullptr);
+    render::RenderResourceResolver resolver(backend, *prepared_assets);
+    render::SceneDrawRecorder recorder;
+
+    render::MeshProxy visible{};
+    visible.handle = {4u, 1u};
+    visible.flags.visible = true;
+    recorder.BeginFrame({visible}, 10u);
+    const auto &first = recorder.BuildSectionCandidates(resolver);
+    ASSERT_EQ(first.size(), 1u);
+    const auto &cached = recorder.BuildSectionCandidates(resolver);
+    EXPECT_EQ(&first, &cached);
+    EXPECT_EQ(recorder.GetProfileCounters().section_packet_build_calls, 1u);
+
+    render::MeshProxy hidden = visible;
+    hidden.flags.visible = false;
+    recorder.BeginFrame({hidden}, 11u);
+    EXPECT_TRUE(recorder.BuildSectionCandidates(resolver).empty());
+    EXPECT_EQ(recorder.GetProfileCounters().section_packet_build_calls, 1u);
+
+    resolver.Cleanup();
 }
 
 TEST(FrameContextTest, ReusesStableBindingSetAndPublishesDynamicOffsets)

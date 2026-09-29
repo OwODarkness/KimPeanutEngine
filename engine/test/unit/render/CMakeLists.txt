@@ -5,6 +5,7 @@ add_executable(
     frustum_test.cpp
     scene_visibility_test.cpp
     scene_draw_list_test.cpp
+    shadow_pass_utils_test.cpp
     material_system_test.cpp
     material_asset_resolver_test.cpp
     render_resource_resolver_test.cpp
@@ -37,6 +38,7 @@ add_executable(
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/scene_visibility.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_resource_resolver.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_world/scene_draw_list.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/passes/shadow_pass_utils.cpp
 )
 
 add_executable(RenderSubmissionContractTest
@@ -61,6 +63,7 @@ add_executable(RenderGraphTest
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph_frame.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph_bindings.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_graph/render_graph_executor.cpp
+    ${CMAKE_SOURCE_DIR}/engine/runtime/render/renderer_frame_targets.cpp
     ${CMAKE_SOURCE_DIR}/engine/runtime/render/render_target.cpp)
 target_include_directories(RenderGraphTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/runtime
@@ -104,6 +107,9 @@ gtest_discover_tests(RenderPassScheduleTest PROPERTIES LABELS "render")
 
 add_executable(RenderSystemTest
     render_system_test.cpp
+    scene_draw_recorder_test.cpp
+    fullscreen_pass_resources_test.cpp
+    shadow_pass_test.cpp
 )
 
 target_include_directories(RenderSystemTest PRIVATE

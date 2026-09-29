@@ -4,6 +4,7 @@
 #include <optional>
 
 #include "render/render_graph/render_graph_executor.h"
+#include "render/renderer_frame_targets.h"
 #include "../../support/fake_render_backend.h"
 
 namespace
@@ -127,4 +128,89 @@ TEST(RenderGraphExecutorTest, ExternalTransitionFailureStaysFailedAfterDuplicate
     EXPECT_TRUE(result.finalized);
     EXPECT_FALSE(result.Succeeded());
     EXPECT_NE(result.diagnostic.find("External terminal transition failed"), std::string::npos);
+}
+
+TEST(RenderGraphExecutorTest, EndsAttachmentAndProfileBracketsWhenRecordingFails)
+{
+    using namespace kpengine;
+    using namespace kpengine::render;
+
+    auto probe = std::make_shared<test::BackendProbe>();
+    test::FakeBackend backend(probe);
+    RendererFrameTargets targets;
+    targets.Initialize(backend, 320, 200);
+    RenderTarget *const target = targets.GetTarget(RenderTargetName::SceneColor);
+    ASSERT_NE(target, nullptr);
+
+    RenderGraphBuilder builder;
+    const GraphTextureHandle imported = builder.ImportTexture("SceneColor");
+    RenderGraphPassDesc raster_desc{"Raster", RenderGraphPassCondition::Always, true, true};
+    raster_desc.user_key = 37;
+    auto pass = builder.AddPass(raster_desc);
+    pass.Write(imported, RenderGraphUsage::ColorAttachment,
+               RenderGraphAttachmentOp::Load,
+               RenderGraphAttachmentScope::Colors(1u));
+    const GraphTextureHandle written = builder.CurrentVersion(imported);
+    const auto compilation = builder.Compile();
+    ASSERT_TRUE(compilation.Succeeded());
+
+    RenderGraphBindings bindings;
+    std::string error;
+    ASSERT_TRUE(bindings.AddTexture(written, RenderFrameResourceRole::SceneColor,
+                                    target, error));
+    RenderGraphExecutor executor;
+    ASSERT_TRUE(executor.BeginFrame(*compilation.graph, bindings,
+                                    *backend.GetCommandRecorder()));
+    int profile_begins = 0;
+    int profile_ends = 0;
+    ASSERT_TRUE(executor.ExecuteRenderer(
+        [](const CompiledRenderGraph::Pass &) { return RenderGraphPassDisposition::Record; },
+        [](const RenderGraphPassContext &) { return false; },
+        [&profile_begins](uint64_t) { ++profile_begins; },
+        [&profile_ends](uint64_t) { ++profile_ends; }));
+
+    EXPECT_EQ(probe->render_target_begin_count, 1);
+    EXPECT_EQ(probe->render_target_end_count, 1);
+    EXPECT_EQ(profile_begins, 1);
+    EXPECT_EQ(profile_ends, 1);
+    EXPECT_EQ(executor.GetOutcome(37), RenderGraphPassOutcome::Failed);
+    executor.Abort();
+    targets.Cleanup();
+}
+
+TEST(RenderGraphExecutorTest, PartialTransientAcquisitionRollsBackExactlyOnce)
+{
+    using namespace kpengine;
+    using namespace kpengine::render;
+
+    RenderGraphBuilder builder;
+    const GraphTextureHandle first = builder.CreateTexture("TransientA", 101u);
+    const GraphTextureHandle second = builder.CreateTexture("TransientB", 102u);
+    auto first_pass = builder.AddPass({"First", RenderGraphPassCondition::Always, true, true});
+    first_pass.Write(first, RenderGraphUsage::ColorAttachment);
+    auto second_pass = builder.AddPass({"Second", RenderGraphPassCondition::Always, true, true});
+    second_pass.Write(second, RenderGraphUsage::ColorAttachment);
+    ASSERT_TRUE(builder.ExportTexture(builder.CurrentVersion(first), "A"));
+    ASSERT_TRUE(builder.ExportTexture(builder.CurrentVersion(second), "B"));
+    const auto compilation = builder.Compile();
+    ASSERT_TRUE(compilation.Succeeded());
+    ASSERT_EQ(compilation.graph->Transients().size(), 2u);
+
+    auto probe = std::make_shared<test::BackendProbe>();
+    probe->fail_transient_acquire_after = 1;
+    test::FakeBackend backend(probe);
+    RenderGraphExecutor executor;
+    graphics::RenderTargetDesc description{};
+    description.width = 320;
+    description.height = 200;
+    std::string error;
+    EXPECT_FALSE(executor.AcquireTransients(
+        *compilation.graph, backend, {320, 200},
+        [&description](uint64_t, graphics::Extent2D) { return description; }, error));
+    EXPECT_FALSE(error.empty());
+    EXPECT_EQ(probe->transient_acquire_count, 2);
+    EXPECT_EQ(probe->transient_release_count, 1);
+    EXPECT_EQ(probe->render_target_destroy_count, 0);
+    executor.Abort();
+    EXPECT_EQ(probe->transient_release_count, 1);
 }
