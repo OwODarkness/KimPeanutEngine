@@ -262,6 +262,8 @@ namespace kpengine::render
             effective_path_trace_settings_.samples_per_dispatch;
         profile_.path_trace_max_continuation_bounces =
             effective_path_trace_settings_.maximum_continuation_bounces;
+        profile_.path_trace_direct_light_sampling =
+            effective_path_trace_settings_.direct_light_sampling;
         profile_.path_trace_settings_requested = requested_path_trace_settings_;
         profile_.path_trace_settings_effective = effective_path_trace_settings_;
         profile_.textures = resource_resolver_->GetTextureMetrics();
@@ -287,6 +289,62 @@ namespace kpengine::render
                 std::chrono::steady_clock::now() - render_world_snapshot_started)
                 .count();
         scene_camera_ = input.camera;
+        pending_adaptive_spp_decision_.reset();
+        path_trace_sampling_state_ = "fixed";
+        if (effective_path_trace_settings_.path_tracing_enabled &&
+            effective_path_trace_settings_.sampling_policy ==
+                PathTraceSamplingPolicy::AdaptiveCameraMotion)
+        {
+            const Vector3f position = scene_camera_.GetPosition();
+            const Rotatorf rotation = scene_camera_.GetRotation();
+            const detail::PathTraceCameraMotionSample motion_sample{
+                {position.x_, position.y_, position.z_},
+                {rotation.pitch_, rotation.yaw_, rotation.roll_}};
+            const detail::PathTraceAdaptiveSppState initial_state =
+                path_trace_adaptive_sampling_active_ ? adaptive_spp_state_
+                                                     : detail::PathTraceAdaptiveSppState{};
+            pending_adaptive_spp_decision_ = detail::EvaluatePathTraceAdaptiveSpp(
+                initial_state, motion_sample,
+                effective_path_trace_settings_.camera_translation_threshold,
+                effective_path_trace_settings_.camera_rotation_threshold_degrees,
+                effective_path_trace_settings_.settle_frame_threshold);
+            const bool camera_moving =
+                pending_adaptive_spp_decision_->camera_moving;
+            const detail::PathTraceAdaptiveSppSelection sampling_selection =
+                detail::SelectPathTraceAdaptiveSpp(
+                    camera_moving, path_tracing_pass_.SampleCount(),
+                    effective_path_trace_settings_.quality_2spp_sample_threshold,
+                    effective_path_trace_settings_.quality_1spp_sample_threshold,
+                    effective_path_trace_settings_.moving_samples_per_dispatch,
+                    effective_path_trace_settings_.settled_samples_per_dispatch,
+                    effective_path_trace_settings_.quality_2spp_samples_per_dispatch,
+                    effective_path_trace_settings_.quality_maintenance_samples_per_dispatch);
+            effective_path_trace_settings_.samples_per_dispatch =
+                sampling_selection.samples_per_dispatch;
+            effective_path_trace_settings_.reconstruction =
+                detail::SelectAdaptivePathTraceReconstruction(
+                    camera_moving,
+                    effective_path_trace_settings_.adaptive_moving_reconstruction);
+            switch (sampling_selection.phase)
+            {
+            case detail::PathTraceAdaptiveSppPhase::Moving:
+                path_trace_sampling_state_ = "moving";
+                break;
+            case detail::PathTraceAdaptiveSppPhase::ConvergingHighSpp:
+                path_trace_sampling_state_ = "stable_accumulating_4spp";
+                break;
+            case detail::PathTraceAdaptiveSppPhase::ConvergingMediumSpp:
+                path_trace_sampling_state_ = "stable_accumulating_2spp";
+                break;
+            case detail::PathTraceAdaptiveSppPhase::QualityMaintenance:
+                path_trace_sampling_state_ = "quality_maintaining_1spp";
+                break;
+            }
+        }
+        profile_.path_trace_samples_per_dispatch =
+            effective_path_trace_settings_.samples_per_dispatch;
+        profile_.path_trace_settings_effective = effective_path_trace_settings_;
+        profile_.path_trace_sampling_state = path_trace_sampling_state_;
         const Vector3f profile_camera_position = scene_camera_.GetPosition();
         profile_.path_trace_camera_position = {
             profile_camera_position.x_, profile_camera_position.y_,
@@ -446,8 +504,7 @@ namespace kpengine::render
             const uint64_t signature = path_tracing_pass_.HistorySignature(
                 extent.width, extent.height, rt_scene,
                 deferred_lighting_pass_.Environment(), scene_camera_,
-                effective_path_trace_settings_, tone_map_pass_.Pipeline(),
-                tone_map_pass_.ShaderSignature(), tone_map_pass_.OutputPolicy());
+                effective_path_trace_settings_);
             if (const char *const reset_reason =
                     path_tracing_pass_.UpdateHistorySignature(signature))
                 profile_.path_trace_history_reset_reason = reset_reason;
@@ -783,6 +840,18 @@ namespace kpengine::render
         path_tracing_pass_.CommitFrame(
             finalized, frame_execution_failed_, required_pass_failed,
             effective_path_trace_settings_.samples_per_dispatch);
+        if (succeeded && path_tracing_pass_.Active() &&
+            pending_adaptive_spp_decision_.has_value())
+        {
+            adaptive_spp_state_ = pending_adaptive_spp_decision_->next_state;
+            path_trace_adaptive_sampling_active_ = true;
+        }
+        else if (succeeded && path_tracing_pass_.Active())
+        {
+            path_trace_adaptive_sampling_active_ = false;
+            adaptive_spp_state_ = {};
+        }
+        pending_adaptive_spp_decision_.reset();
         if (!succeeded)
         {
             last_required_graph_failure_.valid = true;

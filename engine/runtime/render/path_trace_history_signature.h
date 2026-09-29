@@ -18,21 +18,40 @@ namespace kpengine::render::detail
         uint32_t pipeline_id = 0;
         uint32_t pipeline_generation = 0;
         uint64_t shader_signature = 0;
-        uint32_t output_pipeline_id = 0;
-        uint32_t output_pipeline_generation = 0;
-        uint64_t output_shader_signature = 0;
         uint32_t probe_mode = 0;
-        float exposure = 1.0f;
-        uint32_t tone_map_operator = 0;
-        uint32_t output_transfer = 0;
         std::array<float, 12> light_parameters{};
         std::array<float, 4> ray_parameters{};
-        std::array<uint32_t, 4> integrator_parameters{};
+        uint32_t batch_samples_per_dispatch = 1;
+        std::array<uint32_t, 3> integrator_parameters{};
         uint32_t rng_seed = 0;
         uint32_t rng_policy_version = 0;
         std::array<float, 16> view_projection{};
         std::array<float, 3> camera_position{};
     };
+
+    inline const char *DescribePathTraceHistoryChange(
+        const PathTraceHistorySignatureInput &previous,
+        const PathTraceHistorySignatureInput &current) noexcept
+    {
+        if (previous.width != current.width || previous.height != current.height)
+            return "viewport_changed";
+        if (previous.view_projection != current.view_projection ||
+            previous.camera_position != current.camera_position)
+            return "camera_changed";
+        if (previous.scene_signature != current.scene_signature ||
+            previous.geometry_count != current.geometry_count)
+            return "scene_changed";
+        if (previous.material_signature != current.material_signature)
+            return "materials_changed";
+        if (previous.lighting_signature != current.lighting_signature ||
+            previous.light_parameters != current.light_parameters)
+            return "lighting_changed";
+        if (previous.pipeline_id != current.pipeline_id ||
+            previous.pipeline_generation != current.pipeline_generation ||
+            previous.shader_signature != current.shader_signature)
+            return "pipeline_changed";
+        return "integrator_changed";
+    }
 
     inline uint64_t ComputePathTraceHistorySignature(
         const PathTraceHistorySignatureInput &input) noexcept
@@ -55,13 +74,7 @@ namespace kpengine::render::detail
         add(input.pipeline_id);
         add(input.pipeline_generation);
         add(input.shader_signature);
-        add(input.output_pipeline_id);
-        add(input.output_pipeline_generation);
-        add(input.output_shader_signature);
         add(input.probe_mode);
-        add_float(input.exposure);
-        add(input.tone_map_operator);
-        add(input.output_transfer);
         for (const float value : input.light_parameters)
         {
             add_float(value);

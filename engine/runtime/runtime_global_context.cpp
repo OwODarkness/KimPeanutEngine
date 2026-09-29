@@ -1,4 +1,6 @@
 #include "runtime_global_context.h"
+#include <limits>
+#include <cstdint>
 #include "asset/asset_manager.h"
 #include "asset/asset_catalog_snapshot_provider.h"
 #include "asset/level.h"
@@ -129,7 +131,8 @@ namespace kpengine
                              {"beauty", "primary_visibility", "primary_normal",
                                "primary_albedo", "direct_only", "surface_parameters",
                                "ray_query_visibility", "ray_cone_filtering",
-                               "low_spp_preview", "beauty_denoise"}}}},
+                               "low_spp_preview", "beauty_denoise",
+                               "single_light_preview"}}}},
                          [this](const command::CommandCall &call,
                                 const command::CommandContext &context)
                          {
@@ -155,6 +158,8 @@ namespace kpengine
                                  probe_mode = render::PathTraceProbeMode::LowSppPreview;
                              else if (mode == "beauty_denoise")
                                  probe_mode = render::PathTraceProbeMode::BeautyDenoise;
+                             else if (mode == "single_light_preview")
+                                 probe_mode = render::PathTraceProbeMode::SingleLightPreview;
                              if (!render_system_)
                              {
                                  return command::CommandResult{
@@ -181,6 +186,201 @@ namespace kpengine
                     KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
                            "Could not register render.path_trace_probe: %s",
                            probe_registration.diagnostic.c_str());
+                }
+
+                command::CommandRegistrationResult settings_registration =
+                    command_registry_->Register(
+                        {"render.path_trace_settings",
+                         "RenderSettings",
+                         "Set independent path-tracing work, visibility, reconstruction and lighting "
+                         "settings",
+                         command::CommandCategory::Render,
+                         command::CommandFlags::AgentAllowed |
+                             command::CommandFlags::MutatesState,
+                         {{command::CommandArgumentDesc{
+                               "enabled", command::CommandValueType::Boolean, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "hybrid_ray_query_shadows", command::CommandValueType::Boolean,
+                               true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "visibility_method", command::CommandValueType::Enum, true, {},
+                               {"ray_pipeline", "ray_query"}},
+                           command::CommandArgumentDesc{
+                               "samples_per_dispatch", command::CommandValueType::UnsignedInteger,
+                               true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "maximum_continuation_bounces",
+                               command::CommandValueType::UnsignedInteger, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "reconstruction", command::CommandValueType::Enum, true, {},
+                               {"raw", "guided_preview", "variance_denoise"}},
+                           command::CommandArgumentDesc{
+                               "adaptive_moving_reconstruction",
+                               command::CommandValueType::Enum, true, {},
+                               {"raw", "guided_preview", "variance_denoise"}},
+                           command::CommandArgumentDesc{
+                               "direct_light_sampling", command::CommandValueType::Enum, true,
+                               {}, {"all_lights", "uniform_one_light"}},
+                           command::CommandArgumentDesc{
+                               "sampling_policy", command::CommandValueType::Enum, true,
+                               {}, {"fixed", "adaptive_camera_motion"}},
+                           command::CommandArgumentDesc{
+                               "moving_samples_per_dispatch",
+                               command::CommandValueType::UnsignedInteger, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "settled_samples_per_dispatch",
+                               command::CommandValueType::UnsignedInteger, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "quality_2spp_samples_per_dispatch",
+                               command::CommandValueType::UnsignedInteger, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "quality_2spp_sample_threshold",
+                               command::CommandValueType::UnsignedInteger, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "quality_1spp_sample_threshold",
+                               command::CommandValueType::UnsignedInteger, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "quality_maintenance_samples_per_dispatch",
+                               command::CommandValueType::UnsignedInteger, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "settle_frame_threshold",
+                               command::CommandValueType::UnsignedInteger, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "camera_translation_threshold",
+                               command::CommandValueType::Float, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "camera_rotation_threshold_degrees",
+                               command::CommandValueType::Float, true, {}, {}},
+                           command::CommandArgumentDesc{
+                               "output_probe", command::CommandValueType::Enum, true, {},
+                               {"beauty", "primary_visibility", "primary_normal",
+                                "primary_albedo", "direct_only", "surface_parameters",
+                                "ray_cone_filtering"}}}},
+                         [this](const command::CommandCall &call,
+                                const command::CommandContext &context)
+                         {
+                             if (!render_system_)
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::Failed,
+                                     "RenderSystem is unavailable",
+                                     context.request_id,
+                                     {}};
+                             }
+
+                             const auto visibility = render::ParsePathTraceVisibilityMethod(
+                                 std::get<std::string>(call.arguments.at("visibility_method")));
+                             const auto reconstruction = render::ParsePathTraceReconstruction(
+                                 std::get<std::string>(call.arguments.at("reconstruction")));
+                             const auto adaptive_moving_reconstruction =
+                                 render::ParsePathTraceReconstruction(std::get<std::string>(
+                                     call.arguments.at("adaptive_moving_reconstruction")));
+                             const auto light_sampling =
+                                 render::ParsePathTraceDirectLightSampling(
+                                     std::get<std::string>(
+                                         call.arguments.at("direct_light_sampling")));
+                             const auto sampling_policy = render::ParsePathTraceSamplingPolicy(
+                                 std::get<std::string>(call.arguments.at("sampling_policy")));
+                             const auto output_probe = render::ParsePathTraceOutputProbe(
+                                 std::get<std::string>(call.arguments.at("output_probe")));
+                             const uint64_t samples = std::get<uint64_t>(
+                                 call.arguments.at("samples_per_dispatch"));
+                             const uint64_t bounces = std::get<uint64_t>(
+                                 call.arguments.at("maximum_continuation_bounces"));
+                             const uint64_t moving_samples = std::get<uint64_t>(
+                                 call.arguments.at("moving_samples_per_dispatch"));
+                             const uint64_t settled_samples = std::get<uint64_t>(
+                                 call.arguments.at("settled_samples_per_dispatch"));
+                             const uint64_t maintenance_samples = std::get<uint64_t>(
+                                 call.arguments.at("quality_maintenance_samples_per_dispatch"));
+                             const uint64_t quality_2spp_samples = std::get<uint64_t>(
+                                 call.arguments.at("quality_2spp_samples_per_dispatch"));
+                             const uint64_t quality_2spp_threshold = std::get<uint64_t>(
+                                 call.arguments.at("quality_2spp_sample_threshold"));
+                             const uint64_t quality_1spp_threshold = std::get<uint64_t>(
+                                 call.arguments.at("quality_1spp_sample_threshold"));
+                             const uint64_t settle_frames = std::get<uint64_t>(
+                                 call.arguments.at("settle_frame_threshold"));
+                             if (!visibility || !reconstruction ||
+                                 !adaptive_moving_reconstruction || !light_sampling ||
+                                 !sampling_policy || !output_probe ||
+                                 samples > std::numeric_limits<uint32_t>::max() ||
+                                 bounces > std::numeric_limits<uint32_t>::max() ||
+                                 moving_samples > std::numeric_limits<uint32_t>::max() ||
+                                 settled_samples > std::numeric_limits<uint32_t>::max() ||
+                                 maintenance_samples > std::numeric_limits<uint32_t>::max() ||
+                                 quality_2spp_samples > std::numeric_limits<uint32_t>::max() ||
+                                 quality_2spp_threshold > std::numeric_limits<uint32_t>::max() ||
+                                 quality_1spp_threshold > std::numeric_limits<uint32_t>::max() ||
+                                 settle_frames > std::numeric_limits<uint32_t>::max())
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::InvalidArguments,
+                                     "Path-tracing settings are invalid",
+                                     context.request_id,
+                                     {}};
+                             }
+
+                             render::PathTraceSettings settings{};
+                             settings.path_tracing_enabled = std::get<bool>(
+                                 call.arguments.at("enabled"));
+                             settings.hybrid_ray_query_shadows_enabled = std::get<bool>(
+                                 call.arguments.at("hybrid_ray_query_shadows"));
+                             settings.visibility_method = *visibility;
+                             settings.samples_per_dispatch = static_cast<uint32_t>(samples);
+                             settings.maximum_continuation_bounces =
+                                 static_cast<uint32_t>(bounces);
+                             settings.reconstruction = *reconstruction;
+                             settings.adaptive_moving_reconstruction =
+                                 *adaptive_moving_reconstruction;
+                             settings.direct_light_sampling = *light_sampling;
+                             settings.sampling_policy = *sampling_policy;
+                             settings.moving_samples_per_dispatch =
+                                 static_cast<uint32_t>(moving_samples);
+                             settings.settled_samples_per_dispatch =
+                                 static_cast<uint32_t>(settled_samples);
+                             settings.quality_maintenance_samples_per_dispatch =
+                                 static_cast<uint32_t>(maintenance_samples);
+                             settings.quality_2spp_samples_per_dispatch =
+                                 static_cast<uint32_t>(quality_2spp_samples);
+                             settings.quality_2spp_sample_threshold =
+                                 static_cast<uint32_t>(quality_2spp_threshold);
+                             settings.quality_1spp_sample_threshold =
+                                 static_cast<uint32_t>(quality_1spp_threshold);
+                             settings.settle_frame_threshold =
+                                 static_cast<uint32_t>(settle_frames);
+                             settings.camera_translation_threshold = static_cast<float>(
+                                 std::get<double>(
+                                     call.arguments.at("camera_translation_threshold")));
+                             settings.camera_rotation_threshold_degrees = static_cast<float>(
+                                 std::get<double>(call.arguments.at(
+                                     "camera_rotation_threshold_degrees")));
+                             settings.output_probe = *output_probe;
+                             if (!render_system_->RequestPathTraceSettings(settings))
+                             {
+                                 return command::CommandResult{
+                                     command::CommandStatus::InvalidArguments,
+                                     "Path-tracing settings are outside the supported range",
+                                     context.request_id,
+                                     {}};
+                             }
+                             return command::CommandResult{
+                                 command::CommandStatus::Success,
+                                 "Path-tracing settings scheduled",
+                                 context.request_id,
+                                 {}};
+                         },
+                         command::CommandThread::Game});
+                if (settings_registration.IsSuccess())
+                {
+                    path_trace_settings_command_registration_ =
+                        std::move(settings_registration.registration);
+                }
+                else
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not register render.path_trace_settings: %s",
+                           settings_registration.diagnostic.c_str());
                 }
 
                 command::CommandRegistrationResult failure_registration =
@@ -799,6 +999,7 @@ namespace kpengine
             screenshot_command_registration_ = {};
             level_reload_command_registration_ = {};
             path_trace_probe_command_registration_ = {};
+            path_trace_settings_command_registration_ = {};
             path_trace_failure_command_registration_ = {};
             screenshot_service_.reset();
             report_progress(3, "Releasing renderer");

@@ -82,7 +82,7 @@
       "id": "nave_fill_2",
       "name": "Sponza Nave Fill 2",
       "kind": "point_light",
-      "position": [16.0, 3.4, -1.0],
+      "position": [15.0, 2.8, -1.0],
       "color": [1.0, 0.82, 0.65],
       "intensity": 50.0,
       "range": 18.0,

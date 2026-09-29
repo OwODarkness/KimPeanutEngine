@@ -29,6 +29,17 @@ namespace kpengine::render::detail
         current.write_index ^= 1u;
         return current;
     }
+
+    constexpr uint32_t CommitPathTraceRandomFrameIndex(
+        uint32_t current, bool finalized, bool frame_execution_failed,
+        bool required_pass_failed, bool path_trace_active,
+        uint32_t samples_per_dispatch) noexcept
+    {
+        return finalized && !frame_execution_failed && !required_pass_failed &&
+                       path_trace_active
+            ? current + samples_per_dispatch
+            : current;
+    }
 }
 
 #endif

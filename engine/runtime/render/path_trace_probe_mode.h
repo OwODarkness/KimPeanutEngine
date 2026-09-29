@@ -17,6 +17,7 @@ namespace kpengine::render
         RayConeFiltering = 7,
         LowSppPreview = 8,
         BeautyDenoise = 9,
+        SingleLightPreview = 10,
     };
 }
 

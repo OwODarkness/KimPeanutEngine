@@ -348,6 +348,16 @@ details and stage checklists belong in the linked submodule documents.
 - [ ] Keep Render documentation links, validation evidence, and ownership
   boundaries current when a submodule lands work.
 
+  - [ ] **R6 — Interactive path tracing (active):** continue R6.0–R6.7;
+    establish a deterministic multi-light camera replay and fresh Nsight cost
+    attribution, then add 1-SPP guides/reprojection/temporal-spatial
+      reconstruction and measured GPU optimizations. Three static one-light
+      preview windows measure 13.76/15.25 ms total-GPU median p50/p95, 16.8% /
+      16.9% below three matched all-light controls; its capture is noisier.
+      Motion quality and R5.2/R5.3 lifetime prerequisites remain open. →
+      [concrete plan](.plan/R6.md) ·
+  [journal](../../.spec/journal/2026-09-29-r6-implementation.md)
+
 ## Document ownership
 
 This file tracks only Render-wide work. Use each submodule's `TODO.md` for

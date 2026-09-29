@@ -28,6 +28,8 @@
 #include "render/passes/scene_draw_recorder.h"
 #include "render/path_trace_history_signature.h"
 #include "render/path_trace_history_progress.h"
+#include "render/path_trace_adaptive_spp.h"
+#include "render/path_trace_settings.h"
 #include "render/ray_tracing_scene_signature.h"
 #include "support/fake_render_backend.h"
 
@@ -204,25 +206,7 @@ namespace
         ++changed.shader_signature;
         EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
         changed = input;
-        ++changed.output_pipeline_id;
-        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
-        changed = input;
-        ++changed.output_pipeline_generation;
-        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
-        changed = input;
-        ++changed.output_shader_signature;
-        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
-        changed = input;
         ++changed.probe_mode;
-        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
-        changed = input;
-        changed.exposure += 0.25f;
-        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
-        changed = input;
-        ++changed.tone_map_operator;
-        EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
-        changed = input;
-        ++changed.output_transfer;
         EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
         changed = input;
         changed.light_parameters[4] += 0.25f;
@@ -230,6 +214,9 @@ namespace
         changed = input;
         changed.ray_parameters[2] += 0.001f;
         EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+        changed = input;
+        changed.batch_samples_per_dispatch = 4;
+        EXPECT_EQ(ComputePathTraceHistorySignature(changed), baseline);
         changed = input;
         ++changed.integrator_parameters[0];
         EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
@@ -245,6 +232,244 @@ namespace
         changed = input;
         changed.camera_position[0] += 0.25f;
         EXPECT_NE(ComputePathTraceHistorySignature(changed), baseline);
+    }
+
+    TEST(PathTraceHistorySignatureTest, ReconstructionTransitionPreservesHistoryMode)
+    {
+        render::PathTraceSettings settings{};
+        settings.reconstruction = render::PathTraceReconstruction::GuidedPreview;
+        const auto moving_mode = render::PackPathTraceHistoryMode(settings);
+        settings.reconstruction = render::PathTraceReconstruction::Raw;
+        EXPECT_EQ(render::PackPathTraceHistoryMode(settings), moving_mode);
+        settings.reconstruction = render::PathTraceReconstruction::VarianceDenoise;
+        EXPECT_EQ(render::PackPathTraceHistoryMode(settings), moving_mode);
+        settings.direct_light_sampling = render::PathTraceDirectLightSampling::UniformOneLight;
+        EXPECT_NE(render::PackPathTraceHistoryMode(settings), moving_mode);
+    }
+
+    TEST(PathTraceHistorySignatureTest, ReportsMaterialResidencyAndCameraInvalidation)
+    {
+        using render::detail::DescribePathTraceHistoryChange;
+        render::detail::PathTraceHistorySignatureInput previous{};
+        auto current = previous;
+        ++current.material_signature;
+        EXPECT_STREQ(DescribePathTraceHistoryChange(previous, current), "materials_changed");
+        current = previous;
+        current.camera_position[0] = 0.5f;
+        EXPECT_STREQ(DescribePathTraceHistoryChange(previous, current), "camera_changed");
+        current = previous;
+        ++current.probe_mode;
+        EXPECT_STREQ(DescribePathTraceHistoryChange(previous, current), "integrator_changed");
+    }
+
+    TEST(PathTraceSettingsTest, SingleLightPreviewPreservesVisibilityAndBouncePolicy)
+    {
+        using render::ApplyLegacyPathTraceProbeMode;
+        using render::PackPathTraceShaderMode;
+        using render::PathTraceDirectLightSampling;
+        using render::PathTraceProbeMode;
+        using render::PathTraceReconstruction;
+        using render::PathTraceSettings;
+        using render::PathTraceVisibilityMethod;
+
+        PathTraceSettings settings{};
+        settings.visibility_method = PathTraceVisibilityMethod::RayQuery;
+        settings.maximum_continuation_bounces = 8;
+        const PathTraceSettings preview = ApplyLegacyPathTraceProbeMode(
+            settings, PathTraceProbeMode::SingleLightPreview);
+
+        EXPECT_TRUE(render::IsValidPathTraceSettings(preview));
+        EXPECT_EQ(preview.visibility_method, PathTraceVisibilityMethod::RayQuery);
+        EXPECT_EQ(preview.samples_per_dispatch, 1u);
+        EXPECT_EQ(preview.maximum_continuation_bounces, 8u);
+        EXPECT_EQ(preview.reconstruction, PathTraceReconstruction::GuidedPreview);
+        EXPECT_EQ(preview.direct_light_sampling,
+                  PathTraceDirectLightSampling::UniformOneLight);
+        EXPECT_NE(PackPathTraceShaderMode(preview) & (1u << 11u), 0u);
+    }
+
+    TEST(PathTraceSettingsTest, ParsesIndependentEstimatorAndReconstructionSettings)
+    {
+        using render::ParsePathTraceDirectLightSampling;
+        using render::ParsePathTraceOutputProbe;
+        using render::ParsePathTraceReconstruction;
+        using render::ParsePathTraceSamplingPolicy;
+        using render::ParsePathTraceVisibilityMethod;
+        using render::PathTraceDirectLightSampling;
+        using render::PathTraceOutputProbe;
+        using render::PathTraceReconstruction;
+        using render::PathTraceVisibilityMethod;
+
+        const auto visibility = ParsePathTraceVisibilityMethod("ray_query");
+        const auto reconstruction = ParsePathTraceReconstruction("raw");
+        const auto sampling = ParsePathTraceDirectLightSampling("all_lights");
+        const auto policy = ParsePathTraceSamplingPolicy("adaptive_camera_motion");
+        const auto output = ParsePathTraceOutputProbe("beauty");
+        ASSERT_TRUE(visibility.has_value());
+        ASSERT_TRUE(reconstruction.has_value());
+        ASSERT_TRUE(sampling.has_value());
+        ASSERT_TRUE(policy.has_value());
+        ASSERT_TRUE(output.has_value());
+        EXPECT_EQ(*visibility, PathTraceVisibilityMethod::RayQuery);
+        EXPECT_EQ(*reconstruction, PathTraceReconstruction::Raw);
+        EXPECT_EQ(*sampling, PathTraceDirectLightSampling::AllLights);
+        EXPECT_EQ(*policy, render::PathTraceSamplingPolicy::AdaptiveCameraMotion);
+        EXPECT_EQ(*output, PathTraceOutputProbe::Beauty);
+        EXPECT_FALSE(ParsePathTraceReconstruction("guided").has_value());
+
+        render::PathTraceSettings settings{};
+        settings.visibility_method = *visibility;
+        settings.samples_per_dispatch = 1;
+        settings.maximum_continuation_bounces = 8;
+        settings.reconstruction = *reconstruction;
+        settings.direct_light_sampling = *sampling;
+        settings.sampling_policy = *policy;
+        settings.output_probe = *output;
+        EXPECT_TRUE(render::IsValidPathTraceSettings(settings));
+        EXPECT_EQ(render::PackPathTraceShaderMode(settings) & (1u << 10u), 0u);
+        EXPECT_EQ(render::PackPathTraceShaderMode(settings) & (1u << 11u), 0u);
+        EXPECT_TRUE(render::IsValidPathTraceSettings(settings));
+    }
+
+    TEST(PathTraceSettingsTest, AdaptiveSingleSppUsesFrameSequenceIndependentOfDenoiser)
+    {
+        using render::PackPathTraceShaderMode;
+        using render::PathTraceSamplingPolicy;
+        using render::PathTraceSettings;
+
+        PathTraceSettings settings{};
+        settings.samples_per_dispatch = 1;
+        settings.reconstruction = render::PathTraceReconstruction::VarianceDenoise;
+        EXPECT_NE(PackPathTraceShaderMode(settings) & (1u << 12u), 0u);
+
+        settings.samples_per_dispatch = 2;
+        EXPECT_NE(PackPathTraceShaderMode(settings) & (1u << 12u), 0u);
+
+        settings.sampling_policy = PathTraceSamplingPolicy::Fixed;
+        settings.samples_per_dispatch = 1;
+        EXPECT_EQ(PackPathTraceShaderMode(settings) & (1u << 12u), 0u);
+    }
+
+    TEST(PathTraceAdaptiveSppTest, RequiresMotionThresholdAndStillFramesBeforeSettling)
+    {
+        using render::detail::EvaluatePathTraceAdaptiveSpp;
+        using render::detail::PathTraceAdaptiveSppState;
+        using render::detail::PathTraceCameraMotionSample;
+
+        PathTraceAdaptiveSppState state{};
+        PathTraceCameraMotionSample camera{};
+        auto decision = EvaluatePathTraceAdaptiveSpp(state, camera, 0.02f, 0.2f, 3u);
+        EXPECT_TRUE(decision.camera_moving);
+        state = decision.next_state;
+
+        decision = EvaluatePathTraceAdaptiveSpp(state, camera, 0.02f, 0.2f, 3u);
+        EXPECT_TRUE(decision.camera_moving);
+        state = decision.next_state;
+        decision = EvaluatePathTraceAdaptiveSpp(state, camera, 0.02f, 0.2f, 3u);
+        EXPECT_TRUE(decision.camera_moving);
+        state = decision.next_state;
+        decision = EvaluatePathTraceAdaptiveSpp(state, camera, 0.02f, 0.2f, 3u);
+        EXPECT_FALSE(decision.camera_moving);
+        state = decision.next_state;
+
+        camera.position[0] = 0.03f;
+        decision = EvaluatePathTraceAdaptiveSpp(state, camera, 0.02f, 0.2f, 3u);
+        EXPECT_TRUE(decision.camera_moving);
+        EXPECT_EQ(decision.stable_frames, 0u);
+    }
+
+    TEST(PathTraceAdaptiveSppTest, AccumulatesSubthresholdTravelAndWrapsYaw)
+    {
+        using render::detail::EvaluatePathTraceAdaptiveSpp;
+        using render::detail::PathTraceAdaptiveSppState;
+        using render::detail::PathTraceCameraMotionSample;
+
+        PathTraceAdaptiveSppState state{};
+        PathTraceCameraMotionSample camera{};
+        camera.rotation_degrees[1] = 179.9f;
+        for (uint32_t frame = 0; frame < 5u; ++frame)
+        {
+            state = EvaluatePathTraceAdaptiveSpp(
+                state, camera, 0.02f, 0.3f, 4u).next_state;
+        }
+        EXPECT_FALSE(state.camera_moving);
+        camera.rotation_degrees[1] = -179.9f;
+        auto wrapped = EvaluatePathTraceAdaptiveSpp(state, camera, 0.02f, 0.3f, 4u);
+        EXPECT_FALSE(wrapped.camera_moving);
+        state = wrapped.next_state;
+
+        camera.rotation_degrees[1] = -179.9f;
+        camera.position[0] = 0.01f;
+        auto decision = EvaluatePathTraceAdaptiveSpp(state, camera, 0.02f, 0.3f, 4u);
+        EXPECT_FALSE(decision.camera_moving);
+        state = decision.next_state;
+        camera.position[0] = 0.02f;
+        decision = EvaluatePathTraceAdaptiveSpp(state, camera, 0.02f, 0.3f, 4u);
+        EXPECT_TRUE(decision.camera_moving);
+    }
+
+    TEST(PathTraceAdaptiveSppTest, StepsFromFourToTwoToOneSppWithoutResettingHistory)
+    {
+        using render::detail::PathTraceAdaptiveSppPhase;
+        using render::detail::SelectPathTraceAdaptiveSpp;
+
+        const render::PathTraceSettings defaults{};
+        EXPECT_EQ(defaults.adaptive_moving_reconstruction,
+                  render::PathTraceReconstruction::GuidedPreview);
+        EXPECT_EQ(defaults.sampling_policy,
+                  render::PathTraceSamplingPolicy::AdaptiveCameraMotion);
+        EXPECT_TRUE(render::IsValidPathTraceSettings(defaults));
+        EXPECT_EQ(defaults.quality_2spp_sample_threshold, 100u);
+        EXPECT_EQ(defaults.quality_1spp_sample_threshold, 200u);
+        EXPECT_EQ(defaults.settled_samples_per_dispatch, 4u);
+        EXPECT_EQ(defaults.quality_2spp_samples_per_dispatch, 2u);
+        EXPECT_EQ(defaults.quality_maintenance_samples_per_dispatch, 1u);
+
+        auto selected = SelectPathTraceAdaptiveSpp(
+            true, 800u, 100u, 200u, 1u, 4u, 2u, 1u);
+        EXPECT_EQ(selected.phase, PathTraceAdaptiveSppPhase::Moving);
+        EXPECT_EQ(selected.samples_per_dispatch, 1u);
+
+        selected = SelectPathTraceAdaptiveSpp(
+            false, 96u, 100u, 200u, 1u, 4u, 2u, 1u);
+        EXPECT_EQ(selected.phase, PathTraceAdaptiveSppPhase::ConvergingHighSpp);
+        EXPECT_EQ(selected.samples_per_dispatch, 4u);
+        const auto at_threshold = render::detail::CommitPathTraceHistoryProgress(
+            {96u, 0u}, true, false, false, true, selected.samples_per_dispatch);
+        ASSERT_EQ(at_threshold.sample_count, 100u);
+
+        selected = SelectPathTraceAdaptiveSpp(
+            false, at_threshold.sample_count, 100u, 200u, 1u, 4u, 2u, 1u);
+        EXPECT_EQ(selected.phase, PathTraceAdaptiveSppPhase::ConvergingMediumSpp);
+        EXPECT_EQ(selected.samples_per_dispatch, 2u);
+        const auto near_quality = render::detail::CommitPathTraceHistoryProgress(
+            {198u, at_threshold.write_index}, true, false, false, true,
+            selected.samples_per_dispatch);
+        ASSERT_EQ(near_quality.sample_count, 200u);
+
+        selected = SelectPathTraceAdaptiveSpp(
+            false, near_quality.sample_count, 100u, 200u, 1u, 4u, 2u, 1u);
+        EXPECT_EQ(selected.phase, PathTraceAdaptiveSppPhase::QualityMaintenance);
+        EXPECT_EQ(selected.samples_per_dispatch, 1u);
+        const auto maintained = render::detail::CommitPathTraceHistoryProgress(
+            near_quality, true, false, false, true, selected.samples_per_dispatch);
+        EXPECT_EQ(maintained.sample_count, 201u);
+    }
+
+    TEST(PathTraceAdaptiveSppTest, UsesConfiguredDenoiseWhileMovingAndRawWhenStable)
+    {
+        using render::PathTraceReconstruction;
+        using render::detail::SelectAdaptivePathTraceReconstruction;
+
+        EXPECT_EQ(SelectAdaptivePathTraceReconstruction(
+                      true, PathTraceReconstruction::VarianceDenoise),
+                  PathTraceReconstruction::VarianceDenoise);
+        EXPECT_EQ(SelectAdaptivePathTraceReconstruction(
+                      false, PathTraceReconstruction::VarianceDenoise),
+                  PathTraceReconstruction::Raw);
+        EXPECT_EQ(SelectAdaptivePathTraceReconstruction(
+                      true, PathTraceReconstruction::GuidedPreview),
+                  PathTraceReconstruction::GuidedPreview);
     }
 
     TEST(PathTraceHistoryProgressTest, FailedFrameDoesNotAdvanceOrSwapHistory)
@@ -264,6 +489,19 @@ namespace
 
         EXPECT_EQ(CommitPathTraceHistoryProgress(current, true, false, false, true, 4),
                   (PathTraceHistoryProgress{132, 0}));
+    }
+
+    TEST(PathTraceHistoryProgressTest, RandomFrameIndexAdvancesOnlyOnCommittedPathTraceFrames)
+    {
+        using render::detail::CommitPathTraceRandomFrameIndex;
+
+        constexpr uint32_t current = 17;
+        EXPECT_EQ(CommitPathTraceRandomFrameIndex(current, false, false, false, true, 1), current);
+        EXPECT_EQ(CommitPathTraceRandomFrameIndex(current, true, true, false, true, 1), current);
+        EXPECT_EQ(CommitPathTraceRandomFrameIndex(current, true, false, true, true, 1), current);
+        EXPECT_EQ(CommitPathTraceRandomFrameIndex(current, true, false, false, false, 1), current);
+        EXPECT_EQ(CommitPathTraceRandomFrameIndex(current, true, false, false, true, 1), current + 1);
+        EXPECT_EQ(CommitPathTraceRandomFrameIndex(current, true, false, false, true, 4), current + 4);
     }
 
     TEST(RenderSubmissionExecutorTest, PreparesAndRecordsGenericWorkInOrder)

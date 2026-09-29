@@ -248,6 +248,30 @@ namespace kpengine::runtime
                 static_cast<uint64_t>(settings.maximum_continuation_bounces);
             data[key_prefix + "reconstruction"] =
                 static_cast<uint64_t>(settings.reconstruction);
+            data[key_prefix + "adaptive_moving_reconstruction"] =
+                static_cast<uint64_t>(settings.adaptive_moving_reconstruction);
+            data[key_prefix + "direct_light_sampling"] =
+                static_cast<uint64_t>(settings.direct_light_sampling);
+            data[key_prefix + "sampling_policy"] =
+                static_cast<uint64_t>(settings.sampling_policy);
+            data[key_prefix + "moving_samples_per_dispatch"] =
+                static_cast<uint64_t>(settings.moving_samples_per_dispatch);
+            data[key_prefix + "settled_samples_per_dispatch"] =
+                static_cast<uint64_t>(settings.settled_samples_per_dispatch);
+            data[key_prefix + "quality_2spp_samples_per_dispatch"] =
+                static_cast<uint64_t>(settings.quality_2spp_samples_per_dispatch);
+            data[key_prefix + "quality_2spp_sample_threshold"] =
+                static_cast<uint64_t>(settings.quality_2spp_sample_threshold);
+            data[key_prefix + "quality_1spp_sample_threshold"] =
+                static_cast<uint64_t>(settings.quality_1spp_sample_threshold);
+            data[key_prefix + "quality_maintenance_samples_per_dispatch"] =
+                static_cast<uint64_t>(settings.quality_maintenance_samples_per_dispatch);
+            data[key_prefix + "settle_frame_threshold"] =
+                static_cast<uint64_t>(settings.settle_frame_threshold);
+            data[key_prefix + "camera_translation_threshold"] =
+                static_cast<double>(settings.camera_translation_threshold);
+            data[key_prefix + "camera_rotation_threshold_degrees"] =
+                static_cast<double>(settings.camera_rotation_threshold_degrees);
             data[key_prefix + "output_probe"] = static_cast<uint64_t>(settings.output_probe);
             data[key_prefix + "texture_policy"] =
                 static_cast<uint64_t>(settings.texture_policy);
@@ -271,6 +295,7 @@ namespace kpengine::runtime
                                  profile.path_trace_settings_effective);
             data["path_trace_settings_fallback_reason"] =
                 profile.path_trace_settings_fallback_reason;
+            data["path_trace_sampling_state"] = profile.path_trace_sampling_state;
             data["path_trace_camera_x"] =
                 static_cast<double>(profile.path_trace_camera_position[0]);
             data["path_trace_camera_y"] =

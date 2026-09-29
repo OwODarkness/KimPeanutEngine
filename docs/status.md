@@ -1,5 +1,49 @@
 # Project Status
 
+- **R6 interactive path tracing (2026-09-29; active)** — Three matched static
+  RelWithDebInfo Vulkan Sponza windows establish 4-SPP/8-bounce total GPU
+  median p50 at 48.00 ms. Earlier 1-SPP guided preview reduces the three-window
+  total GPU median p50 to 16.80 ms, but p95 remains 21.26 ms and the image is
+  visibly grainy. Independent preview sampling is implemented. An opt-in
+  unbiased one-light-per-hit preview measured 13.76/15.25 ms total GPU p50/p95
+  across three static windows with all three lights and eight bounces, 16.8% /
+  16.9% below three matched all-light 1-SPP control windows. Its capture is
+  noisier than the all-light output, so this remains an opt-in experiment rather
+  than a quality or motion acceptance result.
+  Fresh Nsight attribution, deterministic motion replay, guides, reprojection,
+  and R6.2–R6.7 remain. Threshold-based adaptive SPP is now the default policy
+  (fixed SPP remains selectable) and uses
+  1 SPP while moving and, after eight stable frames, 4 SPP below 100 accumulated
+  samples, 2 SPP from 100, and 1 SPP from 200. The tier thresholds and rates
+  are settings. Variable-SPP dispatches preserve weighted history when a tier
+  changes. A fresh visible Runtime reached 551 samples in the 1-SPP maintenance
+  phase with reported thresholds 100/200; its adaptive profile measured
+  16.62/17.84 ms total GPU p50/p95. The p95 remains above 16.67 ms, so this is
+  not a 60-FPS acceptance result. During camera movement the adaptive policy
+  selects configurable reconstruction, defaulting to a 9x9 normal/depth-guided
+  spatial preview with HDR compression, local noise estimation and firefly
+  suppression; after settling, it returns to raw progressive accumulation.
+  Continuous-motion Debug Vulkan Sponza captures confirm moving state, 1 SPP,
+  and active reconstruction mode 1, with visibly reduced speckling versus raw.
+  Coarse mottling remains; temporal reprojection and temporal stability are
+  unverified. A fresh rebuilt RelWithDebInfo Sponza run verified the stronger
+  moving filter at 1 SPP and remains open. The earlier device loss did not
+  reproduce in this run; its root cause and the new filter's performance remain
+  open. Moving preview favors smoothing over texture detail as requested.
+  The earlier mixed profile was 32.80/51.56 ms.
+  The default Runtime policy is adaptive; fixed SPP remains selectable. The
+  reconstruction mapping is now aligned: mode 1 selects guided preview, mode 2
+  selects variance denoise. The
+  adaptive RNG mode now stays constant across SPP tiers and advances by each
+  dispatch's sample count, so crossing 200 preserves history and avoids seed
+  reuse. Switching reconstruction preserves radiance history. Debug startup
+  diagnostics reproduced resets at exactly 72 samples due to materials changing
+  during texture residency; resident stationary accumulation passed 1,361 samples.
+  Debug render-system and pass-scheduling tests passed 48/48 and 95/95.
+  → [plan](render/.plan/R6.md),
+  [implementation spec](../.spec/specs/render-r6-interactive-path-tracing.md),
+  [journal](../.spec/journal/2026-09-29-r6-implementation.md)
+
 - **R5.4 (2026-09-29; implementation and lifecycle acceptance complete)** — Moved
   Render uniform schemas out of common Graphics while preserving their member
   layout, replaced Graphics' Render-specific 13-pass constant with unique

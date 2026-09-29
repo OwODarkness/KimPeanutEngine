@@ -30,6 +30,7 @@
 #include "render_world/render_world.h"
 #include "renderer_frame_targets.h"
 #include "render_profile.h"
+#include "path_trace_adaptive_spp.h"
 #include "path_trace_settings.h"
 #include "ray_tracing/ray_tracing_scene.h"
 
@@ -147,6 +148,11 @@ namespace kpengine::render
         // RenderTarget is not movable, so the wrapper is held by pointer.
         PathTraceSettings requested_path_trace_settings_{};
         PathTraceSettings effective_path_trace_settings_{};
+        detail::PathTraceAdaptiveSppState adaptive_spp_state_{};
+        std::optional<detail::PathTraceAdaptiveSppDecision>
+            pending_adaptive_spp_decision_;
+        bool path_trace_adaptive_sampling_active_ = false;
+        std::string path_trace_sampling_state_ = "fixed";
         std::string path_trace_settings_fallback_reason_;
         RenderGraphBindings frame_bindings_;
         bool frame_execution_failed_ = false;

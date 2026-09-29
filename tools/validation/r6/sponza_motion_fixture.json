@@ -1,0 +1,40 @@
+{
+  "schema": "kimpeanut.r6.motion_fixture.v1",
+  "level": "level/sponza.level",
+  "graphics_api": "vulkan",
+  "viewport": {"width": 1094, "height": 631},
+  "path_tracing": {
+    "samples_per_dispatch": 1,
+    "maximum_continuation_bounces": 8,
+    "visibility_method": "ray_pipeline",
+    "reconstruction": "raw",
+    "adaptive_moving_reconstruction": "guided_preview",
+    "direct_light_sampling": "all_lights",
+    "sampling_policy": "fixed",
+    "moving_samples_per_dispatch": 1,
+    "settled_samples_per_dispatch": 4,
+    "quality_2spp_samples_per_dispatch": 2,
+    "quality_2spp_sample_threshold": 100,
+    "quality_1spp_sample_threshold": 200,
+    "quality_maintenance_samples_per_dispatch": 1,
+    "settle_frame_threshold": 8,
+    "camera_translation_threshold": 0.02,
+    "camera_rotation_threshold_degrees": 0.2,
+    "output_probe": "beauty"
+  },
+  "camera_actor": "Sponza Camera",
+  "camera_path": [
+    {"frame_offset": 0, "position": [10.80743, 1.59222, 0.0], "rotation_degrees": [0.0, 180.0, 0.0], "label": "start"},
+    {"frame_offset": 60, "position": [10.80743, 1.59222, 0.75], "rotation_degrees": [0.0, 180.0, 0.0], "label": "strafe_positive_z"},
+    {"frame_offset": 120, "position": [10.80743, 1.59222, -0.75], "rotation_degrees": [0.0, 180.0, 0.0], "label": "strafe_negative_z"},
+    {"frame_offset": 180, "position": [10.80743, 1.59222, 0.0], "rotation_degrees": [0.0, 180.0, 0.0], "label": "return"},
+    {"frame_offset": 240, "position": [10.80743, 1.59222, 0.0], "rotation_degrees": [0.0, 190.0, 0.0], "label": "pan_left"},
+    {"frame_offset": 300, "position": [10.80743, 1.59222, 0.0], "rotation_degrees": [0.0, 170.0, 0.0], "label": "pan_right"},
+    {"frame_offset": 360, "position": [10.80743, 1.59222, 0.0], "rotation_degrees": [0.0, 180.0, 0.0], "label": "settle"}
+  ],
+  "authored_lights": [
+    {"id": "sun", "kind": "directional", "direction": [0.4, -1.0, 0.25], "color": [1.0, 0.95, 0.85], "intensity": 200.0, "casts_shadow": true},
+    {"id": "nave_fill", "kind": "point", "position": [-14.0, 4.0, 0.05], "color": [1.0, 0.82, 0.65], "intensity": 50.0, "range": 18.0, "casts_shadow": true},
+    {"id": "nave_fill_2", "kind": "point", "position": [15.0, 2.8, -1.0], "color": [1.0, 0.82, 0.65], "intensity": 50.0, "range": 18.0, "casts_shadow": true}
+  ]
+}

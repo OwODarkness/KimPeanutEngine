@@ -45,6 +45,12 @@ public policy while the coordinator owns scene preparation.
 
 ## Render-wide stage plans
 
+- [R6 — Interactive path tracing and temporal reconstruction](.plan/R6.md) —
+  active low-SPP moving-camera denoising, multi-light GPU attribution and
+  evidence-gated optimization; retains progressive Beauty and R5 correctness
+  prerequisites. Includes Nsight findings and conditional experiments selected
+  by measured GPU cost.
+
 - [R1 — RenderSystem responsibility split](.plan/R1.md) — characterize and
   reduce the current facade/renderer/resource/lifecycle coupling without
   introducing a render graph.

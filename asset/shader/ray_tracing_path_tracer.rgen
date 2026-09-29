@@ -63,6 +63,10 @@ layout(set = 0, binding = 2, std140) uniform CameraData
     uint samples_per_dispatch;
     uint probe_mode;
     uvec4 scene_data;
+    uint random_frame_index;
+    uint padding_0;
+    uint padding_1;
+    uint padding_2;
 } camera;
 
 layout(set = 0, binding = 3, std140) uniform SceneData
@@ -92,7 +96,9 @@ float Luminance(vec3 color)
 
 float Random(uint stream, uint sample_index)
 {
-    const uint path_sample_index = camera.sample_count + sample_index;
+    const bool frame_sequence = (camera.probe_mode & (1u << 12u)) != 0u;
+    const uint path_sample_index = (frame_sequence ? camera.random_frame_index :
+                                    camera.sample_count) + sample_index;
     const uint seed = gl_LaunchIDEXT.x * 0x9e3779b9u ^
                       gl_LaunchIDEXT.y * 0x85ebca6bu ^
                       camera.rng_seed * 0xc2b2ae35u ^
@@ -169,11 +175,19 @@ vec3 EvaluateBrdf(HitPayload surface, vec3 normal, vec3 view_direction,
 vec3 DirectLight(HitPayload surface, vec3 view_direction, uint sample_index, uint bounce,
                  out bool stochastic)
 {
-    stochastic = false;
+    const bool sample_one_light = (camera.probe_mode & (1u << 11u)) != 0u;
+    stochastic = sample_one_light;
     vec3 result = vec3(0.0);
     const vec3 normal = normalize(surface.normal);
+    const uint light_count = camera.scene_data.w;
+    const uint selected_light = sample_one_light && light_count > 0u
+        ? min(uint(Random(32768u + bounce, sample_index) * float(light_count)),
+              light_count - 1u)
+        : 0u;
     [[dont_unroll]] for (uint index = 0u; index < camera.scene_data.w; ++index)
     {
+        if (sample_one_light && index != selected_light)
+            continue;
         const LightData light = scene.lights[index];
         vec3 light_direction;
         vec3 incident = light.color_intensity.rgb * light.color_intensity.a;
@@ -235,8 +249,9 @@ vec3 DirectLight(HitPayload surface, vec3 view_direction, uint sample_index, uin
                                 light_direction, maximum_distance))
                 continue;
         }
-        result += incident * EvaluateBrdf(surface, normal, view_direction,
-                                          light_direction) * cosine;
+        const float selection_weight = sample_one_light ? float(light_count) : 1.0;
+        result += selection_weight * incident *
+                  EvaluateBrdf(surface, normal, view_direction, light_direction) * cosine;
     }
     return result;
 }

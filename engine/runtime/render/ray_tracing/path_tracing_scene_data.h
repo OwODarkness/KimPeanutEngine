@@ -12,9 +12,9 @@ namespace kpengine::render::ray_tracing::path_trace_scene_data
     inline constexpr uint64_t kCameraUniformKey = 0x5254505443414d45ull;
     inline constexpr std::size_t kMaximumSceneRecords = 512;
     inline constexpr uint32_t kDirectLightSamples = 1;
-    inline constexpr uint32_t kIntegratorVersion = 4;
+    inline constexpr uint32_t kIntegratorVersion = 5;
     inline constexpr uint32_t kRngSeed = 0x52463436u;
-    inline constexpr uint32_t kRngPolicyVersion = 1;
+    inline constexpr uint32_t kRngPolicyVersion = 3;
     inline constexpr float kRayMinimumDistance = 0.001f;
     inline constexpr float kRayMaximumDistance = 1000.0f;
     inline constexpr float kSecondaryRayOffset = 0.002f;
@@ -69,6 +69,8 @@ namespace kpengine::render::ray_tracing::path_trace_scene_data
         uint32_t samples_per_dispatch = 1;
         uint32_t probe_mode = 0;
         uint32_t scene_data[4]{};
+        uint32_t random_frame_index = 0;
+        uint32_t padding[3]{};
     };
 
     static_assert(offsetof(PathTracingCameraGpuData, rng_seed) == 144);
@@ -77,7 +79,8 @@ namespace kpengine::render::ray_tracing::path_trace_scene_data
     static_assert(sizeof(PathTracingInstanceGpuData) == 16);
     static_assert(sizeof(PathTracingMaterialGpuData) == 64);
     static_assert(sizeof(PathTracingLightGpuData) == 64);
-    static_assert(sizeof(PathTracingCameraGpuData) == 176);
+    static_assert(offsetof(PathTracingCameraGpuData, random_frame_index) == 176);
+    static_assert(sizeof(PathTracingCameraGpuData) == 192);
     static_assert(sizeof(PathTracingSceneGpuData) ==
                   kMaximumSceneRecords * (32 + 16 + 64) + 128 * 64);
 }

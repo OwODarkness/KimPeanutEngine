@@ -181,8 +181,11 @@ namespace kpengine::render
         uint32_t path_trace_samples = 0;
         uint32_t path_trace_samples_per_dispatch = 0;
         uint32_t path_trace_max_continuation_bounces = 0;
+        PathTraceDirectLightSampling path_trace_direct_light_sampling =
+            PathTraceDirectLightSampling::AllLights;
         PathTraceSettings path_trace_settings_requested{};
         PathTraceSettings path_trace_settings_effective{};
+        std::string path_trace_sampling_state = "fixed";
         std::string path_trace_settings_fallback_reason;
         uint32_t ray_tracing_geometry_records = 0;
         uint32_t ray_tracing_instance_records = 0;

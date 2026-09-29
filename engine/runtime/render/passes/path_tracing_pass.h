@@ -10,7 +10,7 @@
 #include "render/environment_frame_bindings.h"
 #include "render/frame_context.h"
 #include "render/path_trace_settings.h"
-#include "render/passes/tone_map_pass.h"
+#include "render/path_trace_history_signature.h"
 #include "render/ray_tracing/ray_tracing_scene_view.h"
 #include "render/ray_tracing/path_tracing_scene_data.h"
 #include "render/render_graph/render_graph_executor.h"
@@ -40,10 +40,7 @@ namespace kpengine::render
             uint32_t width, uint32_t height,
             const ray_tracing::RayTracingSceneView &scene,
             const EnvironmentFrameBindings &environment,
-            const RenderCamera &camera, const PathTraceSettings &settings,
-            graphics::PipelineHandle output_pipeline,
-            uint64_t output_shader_signature,
-            ToneMapOutputPolicy output_policy) const;
+            const RenderCamera &camera, const PathTraceSettings &settings);
         const char *UpdateHistorySignature(uint64_t signature) noexcept;
         void CommitFrame(bool finalized, bool frame_execution_failed,
                          bool required_pass_failed, uint32_t samples_per_dispatch) noexcept;
@@ -97,7 +94,10 @@ namespace kpengine::render
         std::vector<std::array<BindingCache, 2>> bindings_;
         uint32_t write_index_ = 0;
         uint32_t sample_count_ = 0;
+        uint32_t random_frame_index_ = 0;
         uint64_t history_signature_ = 0;
+        detail::PathTraceHistorySignatureInput previous_history_input_{};
+        const char *pending_history_reset_reason_ = "signature_changed";
         bool active_ = false;
         bool fail_next_dispatch_ = false;
         uint64_t scene_capacity_report_signature_ = 0;

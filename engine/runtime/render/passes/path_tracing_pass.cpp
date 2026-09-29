@@ -191,8 +191,7 @@ namespace kpengine::render
         uint32_t width, uint32_t height,
         const ray_tracing::RayTracingSceneView &scene,
         const EnvironmentFrameBindings &environment, const RenderCamera &camera,
-        const PathTraceSettings &settings, graphics::PipelineHandle output_pipeline,
-        uint64_t output_shader_signature, ToneMapOutputPolicy output_policy) const
+        const PathTraceSettings &settings)
     {
         detail::PathTraceHistorySignatureInput input{};
         input.width = width;
@@ -211,19 +210,15 @@ namespace kpengine::render
         input.pipeline_id = pipeline_.id;
         input.pipeline_generation = pipeline_.generation;
         input.shader_signature = shader_signature_;
-        input.output_pipeline_id = output_pipeline.id;
-        input.output_pipeline_generation = output_pipeline.generation;
-        input.output_shader_signature = output_shader_signature;
-        input.probe_mode = PackPathTraceShaderMode(settings);
-        input.exposure = output_policy.exposure;
-        input.tone_map_operator = output_policy.tone_map_operator;
-        input.output_transfer = output_policy.output_transfer;
+        input.probe_mode = PackPathTraceHistoryMode(settings);
         input.ray_parameters = {path_trace_data::kRayMinimumDistance,
                                 path_trace_data::kRayMaximumDistance,
                                 path_trace_data::kSecondaryRayOffset, 0.0f};
+        input.batch_samples_per_dispatch = settings.samples_per_dispatch;
         input.integrator_parameters = {
-            settings.samples_per_dispatch, path_trace_data::kDirectLightSamples,
-            settings.maximum_continuation_bounces, path_trace_data::kIntegratorVersion};
+            path_trace_data::kDirectLightSamples,
+            settings.maximum_continuation_bounces,
+            path_trace_data::kIntegratorVersion};
         input.rng_seed = path_trace_data::kRngSeed;
         input.rng_policy_version = path_trace_data::kRngPolicyVersion;
         const Matrix4f view_projection = camera.GetViewProjectionMatrix();
@@ -234,6 +229,9 @@ namespace kpengine::render
         const Vector3f position = camera.GetPosition();
         for (std::size_t axis = 0; axis < 3; ++axis)
             input.camera_position[axis] = position[axis];
+        pending_history_reset_reason_ =
+            detail::DescribePathTraceHistoryChange(previous_history_input_, input);
+        previous_history_input_ = input;
         return detail::ComputePathTraceHistorySignature(input);
     }
 
@@ -242,7 +240,11 @@ namespace kpengine::render
         if (signature == history_signature_)
             return nullptr;
         const char *const reason = history_signature_ == 0
-            ? "history_uninitialized" : "signature_changed";
+            ? "history_uninitialized" : pending_history_reset_reason_;
+        if (sample_count_ >= 16 || history_signature_ == 0)
+            KP_LOG("RenderLog", LOG_LEVEL_INFO,
+                   "Path trace history reset: reason=%s, previous_samples=%u",
+                   reason, sample_count_);
         sample_count_ = 0;
         history_signature_ = signature;
         return reason;
@@ -252,6 +254,9 @@ namespace kpengine::render
                                       bool required_pass_failed,
                                       uint32_t samples_per_dispatch) noexcept
     {
+        random_frame_index_ = detail::CommitPathTraceRandomFrameIndex(
+            random_frame_index_, finalized, frame_execution_failed,
+            required_pass_failed, active_, samples_per_dispatch);
         const detail::PathTraceHistoryProgress progress =
             detail::CommitPathTraceHistoryProgress(
                 {sample_count_, write_index_}, finalized, frame_execution_failed,
@@ -314,6 +319,7 @@ namespace kpengine::render
         camera_data.sample_count = sample_count_;
         camera_data.samples_per_dispatch = settings.samples_per_dispatch;
         camera_data.probe_mode = PackPathTraceShaderMode(settings);
+        camera_data.random_frame_index = random_frame_index_;
         camera_data.light_center = Vector4f{0.0f, 0.0f, 0.0f,
             static_cast<float>(settings.maximum_continuation_bounces)};
         camera_data.scene_data[0] = static_cast<uint32_t>(scene.geometries.size());
