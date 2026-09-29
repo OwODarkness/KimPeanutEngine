@@ -1,6 +1,9 @@
 option(KPENGINE_ENABLE_LIVE2D
     "Build the optional Live2D Cubism 5 Native R5 module"
     ON)
+option(KPENGINE_ENABLE_TERRAIN
+    "Build the optional CPU-only terrain authoring and generation module"
+    OFF)
 
 add_subdirectory(editor)
 add_subdirectory(runtime)

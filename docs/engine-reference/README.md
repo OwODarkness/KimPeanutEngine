@@ -19,6 +19,9 @@ This directory contains durable design knowledge extracted from open-source engi
 
 ## Reference conclusions
 
+- [Terrain PCG source and algorithm study](../terrain/references.md) — Pangolin,
+  HTerrain data ownership, modern erosion/wind research, and typed operator
+  boundaries for the proposed terrain authoring module.
 - [Sakura graphics reference](../graphics/sakura_reference.md) — backend-independent device, render-graph, and cache boundaries.
 - [Sakura render-graph analysis](../render/render_graph/sakura_analysis.md) — pinned source study of the frontend, phase chain, executor, resource pools, deferred sample, ray-query sample, and KimPeanut adopt/modify/reject decisions.
 - [gkNextEngine rendering reference](../graphics/gknext_reference.md) — Vulkan-first rendering, GPU-driven techniques, runtime/editor integration, and validation.

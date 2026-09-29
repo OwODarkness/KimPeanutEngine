@@ -1,5 +1,16 @@
 # Project Status
 
+- **Terrain PCG (2026-09-29; TP1 implemented)** — Added optional CPU-only
+  TerrainCore/TerrainGeneration targets with explicit meter-space rectangular
+  fields, recipe JSON, typed operators, DAG evaluation, a bounded cache and
+  revision-aware worker/result ownership. Eight terrain contracts pass. TP2+
+  remain proposed. The dedicated `terrain-viewer`, generated preview-asset
+  publication, erosion, biomes/scatter and bakes remain unimplemented; shared
+  3D host composition is a TP3 prerequisite. → [plans](terrain/PLANS.md),
+  [roadmap](terrain/TODO.md), [source study](terrain/references.md),
+  [spec](../.spec/specs/terrain-pcg-authoring.md),
+  [TP1 journal](../.spec/journal/2026-09-29-terrain-pcg-TP1.md)
+
 - **R6 interactive path tracing (2026-09-29; active)** — Three matched static
   RelWithDebInfo Vulkan Sponza windows establish 4-SPP/8-bounce total GPU
   median p50 at 48.00 ms. Earlier 1-SPP guided preview reduces the three-window
