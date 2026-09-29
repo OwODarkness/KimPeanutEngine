@@ -155,13 +155,15 @@ namespace kpengine::editor
                 }
             }
 
-            if (hovered || mine)
+            const bool show_handle = mine || (hovered && free_to_start);
+            if (show_handle)
             {
                 ImGui::SetMouseCursor(axis == EditorLayoutAxis::Horizontal
                                           ? ImGuiMouseCursor_ResizeEW
                                           : ImGuiMouseCursor_ResizeNS);
+                DrawHandleExcluding(foreground, handle, axis, hovered || mine,
+                                    occlusion);
             }
-            DrawHandleExcluding(foreground, handle, axis, hovered || mine, occlusion);
         }
     }
 }
