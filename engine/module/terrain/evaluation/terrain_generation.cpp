@@ -1,11 +1,14 @@
 #include "terrain_generation.h"
 
 #include <algorithm>
+#include <array>
 #include <bit>
 #include <cmath>
 #include <numeric>
 #include <set>
 #include <stdexcept>
+
+#include "math/noise2d.h"
 
 namespace kpengine::terrain
 {
@@ -176,7 +179,14 @@ namespace kpengine::terrain
 
     bool OperatorRegistry::RegisterBuiltins(std::string &diagnostic)
     {
-        return Register({"terrain.scalar.constant", 1, {}, {{"value", PortType::ScalarField2D}},
+        const auto field_from_samples = [](const OperatorContext &context, std::vector<float> samples) {
+            std::string error;
+            auto field = ScalarField2D::Create(context.domain, std::move(samples),
+                                               context.maximum_samples, error);
+            if (!field) throw std::runtime_error(error);
+            return field;
+        };
+        if (!Register({"terrain.scalar.constant", 1, {}, {{"value", PortType::ScalarField2D}},
             [](const OperatorContext &context, const nlohmann::json &parameters,
                const OperatorInputs &) {
                 if (context.cancelled && context.cancelled->load())
@@ -189,7 +199,211 @@ namespace kpengine::terrain
                     std::vector<float>(count, value), context.maximum_samples, diagnostic);
                 if (!field) throw std::runtime_error(diagnostic);
                 return OperatorOutputs{{"value", std::move(field)}};
-            }}, diagnostic);
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.constant", 1, {}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &parameters,
+                                 const OperatorInputs &) {
+                const float value = parameters.at("height_m").get<float>();
+                if (!std::isfinite(value)) throw std::invalid_argument("height must be finite meters");
+                return OperatorOutputs{{"height", field_from_samples(context,
+                    std::vector<float>(context.domain.SampleCount(context.maximum_samples), value))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.raster", 1, {}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &) {
+                const auto width = p.at("width").get<std::uint32_t>();
+                const auto height = p.at("height").get<std::uint32_t>();
+                const double ox = p.at("origin_x_m").get<double>();
+                const double oz = p.at("origin_z_m").get<double>();
+                const double sx = p.at("spacing_x_m").get<double>();
+                const double sz = p.at("spacing_z_m").get<double>();
+                GridDomain2D source_domain{width, height, ox, oz, sx, sz, 0.0};
+                const auto source_count = source_domain.SampleCount(context.maximum_samples);
+                const auto source = p.at("samples_m").get<std::vector<float>>();
+                if (source.size() != source_count)
+                    throw std::invalid_argument("height raster samples do not match dimensions");
+                for (float value : source)
+                    if (!std::isfinite(value)) throw std::invalid_argument("height raster must be finite meters");
+                std::vector<float> samples(context.domain.SampleCount(context.maximum_samples));
+                for (std::uint32_t y = 0; y < context.domain.height; ++y)
+                    for (std::uint32_t x = 0; x < context.domain.width; ++x)
+                    {
+                        const double wx = context.domain.origin_x_m + x * context.domain.spacing_x_m;
+                        const double wz = context.domain.origin_z_m + y * context.domain.spacing_z_m;
+                        const double gx = std::clamp((wx - ox) / sx, 0.0, static_cast<double>(width - 1));
+                        const double gy = std::clamp((wz - oz) / sz, 0.0, static_cast<double>(height - 1));
+                        const auto x0 = static_cast<std::uint32_t>(std::floor(gx));
+                        const auto y0 = static_cast<std::uint32_t>(std::floor(gy));
+                        const auto x1 = std::min(x0 + 1, width - 1);
+                        const auto y1 = std::min(y0 + 1, height - 1);
+                        const double tx = gx - x0, ty = gy - y0;
+                        const auto at = [&source, width](std::uint32_t ix, std::uint32_t iy) {
+                            return static_cast<double>(source[static_cast<std::size_t>(iy) * width + ix]);
+                        };
+                        samples[static_cast<std::size_t>(y) * context.domain.width + x] =
+                            static_cast<float>((1.0 - ty) * ((1.0 - tx) * at(x0, y0) + tx * at(x1, y0)) +
+                                               ty * ((1.0 - tx) * at(x0, y1) + tx * at(x1, y1)));
+                    }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.ridge_curve", 1, {}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &) {
+                const float base = p.value("base_m", static_cast<float>(context.domain.datum_y_m));
+                const double width = p.at("width_m").get<double>();
+                const float amplitude = p.at("amplitude_m").get<float>();
+                const bool valley = p.value("valley", false);
+                if (!std::isfinite(width) || width <= 0.0 || !std::isfinite(amplitude) || !std::isfinite(base))
+                    throw std::invalid_argument("curve width must be positive and heights finite meters");
+                const auto points = p.at("points_xz_m").get<std::vector<std::array<double, 2>>>();
+                if (points.size() < 2) throw std::invalid_argument("ridge/valley curve needs two world-space points");
+                std::vector<float> samples(context.domain.SampleCount(context.maximum_samples), base);
+                for (std::uint32_t y = 0; y < context.domain.height; ++y)
+                    for (std::uint32_t x = 0; x < context.domain.width; ++x)
+                    {
+                        const double wx = context.domain.origin_x_m + x * context.domain.spacing_x_m;
+                        const double wz = context.domain.origin_z_m + y * context.domain.spacing_z_m;
+                        double distance_sq = std::numeric_limits<double>::infinity();
+                        for (std::size_t i = 1; i < points.size(); ++i)
+                        {
+                            const double ax = points[i - 1][0], az = points[i - 1][1];
+                            const double dx = points[i][0] - ax, dz = points[i][1] - az;
+                            const double length_sq = dx * dx + dz * dz;
+                            if (!std::isfinite(length_sq)) throw std::invalid_argument("curve coordinates must be finite");
+                            const double t = length_sq > 0.0 ? std::clamp(((wx - ax) * dx + (wz - az) * dz) / length_sq, 0.0, 1.0) : 0.0;
+                            const double ex = wx - (ax + t * dx), ez = wz - (az + t * dz);
+                            distance_sq = std::min(distance_sq, ex * ex + ez * ez);
+                        }
+                        const double influence = std::exp(-0.5 * distance_sq / (width * width));
+                        const double sign = valley ? -1.0 : 1.0;
+                        samples[static_cast<std::size_t>(y) * context.domain.width + x] =
+                            static_cast<float>(base + sign * amplitude * influence);
+                    }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.domain_warp", 1,
+            {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double amplitude = p.at("amplitude_m").get<double>();
+                const double frequency = p.at("frequency_per_m").get<double>();
+                if (!std::isfinite(amplitude) || amplitude < 0.0 || !std::isfinite(frequency) || frequency < 0.0)
+                    throw std::invalid_argument("warp amplitude and frequency must be finite and nonnegative");
+                const auto &source = *inputs.at("source");
+                std::vector<float> samples(context.domain.SampleCount(context.maximum_samples));
+                for (std::uint32_t y = 0; y < context.domain.height; ++y)
+                    for (std::uint32_t x = 0; x < context.domain.width; ++x)
+                    {
+                        const double wx = context.domain.origin_x_m + x * context.domain.spacing_x_m;
+                        const double wz = context.domain.origin_z_m + y * context.domain.spacing_z_m;
+                        const double limit = 0.5 / std::max(context.domain.spacing_x_m, context.domain.spacing_z_m);
+                        const double f = std::min(frequency, limit);
+                        const double px = wx + amplitude * math::PerlinNoise2D(wx * f, wz * f, context.node_seed);
+                        const double pz = wz + amplitude * math::PerlinNoise2D(wx * f, wz * f, context.node_seed ^ 0x9e3779b97f4a7c15ull);
+                        const auto gx = std::clamp((px - context.domain.origin_x_m) / context.domain.spacing_x_m, 0.0, static_cast<double>(context.domain.width - 1));
+                        const auto gy = std::clamp((pz - context.domain.origin_z_m) / context.domain.spacing_z_m, 0.0, static_cast<double>(context.domain.height - 1));
+                        const auto x0 = static_cast<std::uint32_t>(gx), y0 = static_cast<std::uint32_t>(gy);
+                        const auto x1 = std::min(x0 + 1, context.domain.width - 1), y1 = std::min(y0 + 1, context.domain.height - 1);
+                        const double tx = gx - x0, ty = gy - y0;
+                        const auto at = [&source, &context](std::uint32_t ix, std::uint32_t iy) { return static_cast<double>(source.At(ix, iy)); };
+                        samples[static_cast<std::size_t>(y) * context.domain.width + x] = static_cast<float>(
+                            (1.0 - ty) * ((1.0 - tx) * at(x0, y0) + tx * at(x1, y0)) +
+                            ty * ((1.0 - tx) * at(x0, y1) + tx * at(x1, y1)));
+                    }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.ridged_detail", 1,
+            {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double amplitude = p.at("amplitude_m").get<double>();
+                const double frequency = p.at("frequency_per_m").get<double>();
+                const std::uint32_t octaves = p.value("octaves", 4u);
+                if (!std::isfinite(amplitude) || !std::isfinite(frequency) || amplitude < 0.0 || frequency <= 0.0 || octaves == 0 || octaves > 12)
+                    throw std::invalid_argument("ridged detail needs finite amplitude, positive frequency and 1..12 octaves");
+                const double nyquist = 0.5 / std::max(context.domain.spacing_x_m, context.domain.spacing_z_m);
+                std::vector<float> samples = inputs.at("source")->Samples();
+                for (std::uint32_t y = 0; y < context.domain.height; ++y)
+                    for (std::uint32_t x = 0; x < context.domain.width; ++x)
+                    {
+                        const double wx = context.domain.origin_x_m + x * context.domain.spacing_x_m;
+                        const double wz = context.domain.origin_z_m + y * context.domain.spacing_z_m;
+                        double detail = 0.0, weight = 1.0, total = 0.0;
+                        double f = frequency;
+                        for (std::uint32_t octave = 0; octave < octaves && f <= nyquist; ++octave, f *= 2.0, weight *= 0.5)
+                        {
+                            const double n = math::PerlinNoise2D(wx * f, wz * f, context.node_seed + octave);
+                            detail += (1.0 - std::abs(n)) * weight;
+                            total += weight;
+                        }
+                        if (total > 0.0) samples[static_cast<std::size_t>(y) * context.domain.width + x] += static_cast<float>(amplitude * (detail / total - 0.5));
+                    }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.remap", 1,
+            {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double in_min = p.at("input_min_m").get<double>(), in_max = p.at("input_max_m").get<double>();
+                const double out_min = p.at("output_min_m").get<double>(), out_max = p.at("output_max_m").get<double>();
+                if (!std::isfinite(in_min) || !std::isfinite(in_max) || !std::isfinite(out_min) || !std::isfinite(out_max) || in_max <= in_min)
+                    throw std::invalid_argument("remap ranges must be finite and input range increasing");
+                auto samples = inputs.at("source")->Samples();
+                for (auto &sample : samples) sample = static_cast<float>(out_min + std::clamp((sample - in_min) / (in_max - in_min), 0.0, 1.0) * (out_max - out_min));
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.blend", 1,
+            {{"base", PortType::Heightfield}, {"detail", PortType::Heightfield}, {"weight", PortType::ScalarField2D}},
+            {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double scale = p.value("detail_scale", 1.0);
+                if (!std::isfinite(scale)) throw std::invalid_argument("blend detail scale must be finite");
+                std::vector<float> samples(context.domain.SampleCount(context.maximum_samples));
+                for (std::size_t i = 0; i < samples.size(); ++i)
+                {
+                    const double weight = std::clamp(static_cast<double>(inputs.at("weight")->Samples()[i]), 0.0, 1.0);
+                    samples[i] = static_cast<float>(inputs.at("base")->Samples()[i] * (1.0 - weight) + inputs.at("detail")->Samples()[i] * scale * weight);
+                }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.field.slope", 1, {{"height", PortType::Heightfield}},
+            {{"slope_radians", PortType::ScalarField2D}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &,
+                                 const OperatorInputs &inputs) {
+                return OperatorOutputs{{"slope_radians", field_from_samples(context, ComputeSlopeRadians(*inputs.at("height")))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.field.curvature", 1, {{"height", PortType::Heightfield}},
+            {{"curvature_per_m", PortType::ScalarField2D}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &,
+                                 const OperatorInputs &inputs) {
+                return OperatorOutputs{{"curvature_per_m", field_from_samples(context, ComputeCurvaturePerMeter(*inputs.at("height")))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.drainage.accumulation", 1, {{"height", PortType::Heightfield}},
+            {{"accumulation_cells", PortType::ScalarField2D}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const auto policy = p.value("authored_lakes", false) ? DrainageOutletPolicy::AuthoredLakesAndPerimeter : DrainageOutletPolicy::Perimeter;
+                std::vector<std::uint8_t> lakes;
+                if (p.contains("lake_mask")) lakes = p.at("lake_mask").get<std::vector<std::uint8_t>>();
+                const auto routed = RouteDrainage(*inputs.at("height"), policy, lakes);
+                std::vector<float> samples(routed.accumulation_cells.size());
+                std::transform(routed.accumulation_cells.begin(), routed.accumulation_cells.end(), samples.begin(),
+                    [](double value) { return static_cast<float>(value); });
+                return OperatorOutputs{{"accumulation_cells", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        return true;
     }
 
     TerrainEvaluator::TerrainEvaluator(std::shared_ptr<const OperatorRegistry> registry,
@@ -285,10 +499,10 @@ namespace kpengine::terrain
                 auto outputs = descriptor->evaluate(context, node.parameters, inputs);
                 if (outputs.size() != descriptor->outputs.size()) throw std::runtime_error("operator returned an invalid output set");
                 NodeResult node_result;
-                for (const auto &[port, type] : descriptor->outputs)
+                for (const auto &[port, ignored_type] : descriptor->outputs)
                 {
                     auto output = outputs.find(port);
-                    if (output == outputs.end() || !output->second || type != PortType::ScalarField2D ||
+                    if (output == outputs.end() || !output->second ||
                         !(output->second->Domain() == recipe.domain))
                         throw std::runtime_error("operator returned an invalid typed output: " + port);
                     node_result.content_hash ^= HashField(*output->second);

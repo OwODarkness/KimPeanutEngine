@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "seed": 29,
+  "domain": {
+    "width": 9,
+    "height": 9,
+    "origin_x_m": -4.0,
+    "origin_z_m": -4.0,
+    "spacing_x_m": 1.0,
+    "spacing_z_m": 1.0,
+    "datum_y_m": 0.0
+  },
+  "nodes": [
+    {
+      "id": "mountain_ring",
+      "operator": "terrain.heightfield.ridge_curve",
+      "version": 1,
+      "parameters": {
+        "base_m": 0.0,
+        "width_m": 0.75,
+        "amplitude_m": 120.0,
+        "points_xz_m": [[-2.0,-2.0],[2.0,-2.0],[2.0,2.0],[-2.0,2.0],[-2.0,-2.0]]
+      },
+      "inputs": {}
+    }
+  ]
+}

@@ -4,9 +4,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <span>
 #include <string>
 #include <utility>
 #include <vector>
+
+#include "data/mesh.h"
 
 namespace kpengine::terrain
 {
@@ -43,6 +46,31 @@ namespace kpengine::terrain
         GridDomain2D domain_;
         std::vector<float> samples_;
     };
+
+    enum class DrainageOutletPolicy
+    {
+        Perimeter,
+        AuthoredLakesAndPerimeter,
+    };
+
+    struct DrainageNetwork
+    {
+        static constexpr std::uint32_t NoDownstream = UINT32_MAX;
+        std::vector<std::uint32_t> downstream;
+        std::vector<float> filled_elevation_m;
+        std::vector<double> accumulation_cells;
+        std::vector<std::uint32_t> flood_order;
+    };
+
+    std::vector<float> ComputeSlopeRadians(const ScalarField2D &heightfield);
+    std::vector<float> ComputeCurvaturePerMeter(const ScalarField2D &heightfield);
+    std::shared_ptr<const ScalarField2D> ProjectMeshToHeightfield(
+        const data::MeshData &mesh, GridDomain2D domain, float no_hit_elevation_offset_m,
+        std::size_t maximum_samples, std::string &diagnostic);
+    data::MeshData BuildHeightfieldMesh(const ScalarField2D &heightfield);
+    DrainageNetwork RouteDrainage(const ScalarField2D &heightfield,
+                                  DrainageOutletPolicy policy,
+                                  std::span<const std::uint8_t> authored_lake_mask = {});
 }
 
 #endif
