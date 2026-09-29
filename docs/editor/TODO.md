@@ -1,6 +1,6 @@
 # Editor TODO
 
-**Status: ED1–ED3 implemented.** Landed editor design is in [editor_module.md](editor_module.md). Parent work remains in the root [status ledger](../status.md).
+**Status: ED1–ED3 implemented; ED4 planned.** Landed editor design is in [editor_module.md](editor_module.md). Parent work remains in the root [status ledger](../status.md).
 
 ## ED — Editor shell and layout
 
@@ -32,6 +32,14 @@
   - [x] Host the GPU Profiler and Debug Viewer as tool-row panels, freeing their two regions.
   - [x] Persist placements, with version 1 layout files still readable.
   - [x] Cover region identity, placeability, and the whole drop rule with headless tests.
+
+- [ ] **[ED4 — Loading Wireframe Icosahedron](.plan/ED4.md).**
+
+  - [ ] Add a loading-safe 12-vertex, 20-face, 30-edge projected wireframe model.
+  - [ ] Draw rear and front edge layers with ImGui in the unused left visual rail.
+  - [ ] Suppress the visual responsively before it can overlap loading telemetry.
+  - [ ] Preserve a presentation-local seam for a later bounded fault/glitch style.
+  - [ ] Validate active-loading, narrow-window, and failure states on Vulkan and OpenGL.
 
 ## Deferred follow-up
 

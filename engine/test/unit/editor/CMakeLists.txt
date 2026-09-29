@@ -23,6 +23,23 @@ add_custom_command(TARGET EditorUILifecycleTest POST_BUILD
 include(GoogleTest)
 gtest_discover_tests(EditorUILifecycleTest PROPERTIES LABELS "editor")
 
+add_executable(EditorLoadingIcosahedronTest
+    editor_loading_icosahedron_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/editor/ui/component/editor_loading_icosahedron.cpp
+)
+
+target_include_directories(EditorLoadingIcosahedronTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine
+)
+
+target_link_libraries(EditorLoadingIcosahedronTest PRIVATE
+    Math
+    KP::GoogleTest
+)
+
+include(GoogleTest)
+gtest_discover_tests(EditorLoadingIcosahedronTest PROPERTIES LABELS "editor")
+
 add_executable(ActorEditorModelUnitTest
     actor_editor_model_test.cpp
     ${CMAKE_SOURCE_DIR}/engine/editor/actor/actor_editor_model.cpp

@@ -12,6 +12,7 @@
 #include <imgui.h>
 
 #include "core/config/path.h"
+#include "editor/ui/component/editor_loading_icosahedron.h"
 #include "image_io/image_io.h"
 
 namespace kpengine::editor
@@ -74,6 +75,137 @@ namespace kpengine::editor
                                thickness);
             draw_list->AddLine(ImVec2(max.x - length, max.y), max, color, thickness);
             draw_list->AddLine(ImVec2(max.x, max.y - length), max, color, thickness);
+        }
+
+        ImU32 ScaleAlpha(const ImU32 color, const float weight) noexcept
+        {
+            constexpr int alpha_shift = IM_COL32_A_SHIFT;
+            constexpr ImU32 alpha_mask = 0xffU << alpha_shift;
+            const ImU32 alpha = (color & alpha_mask) >> alpha_shift;
+            const ImU32 scaled_alpha = static_cast<ImU32>(
+                std::clamp(weight, 0.0f, 1.0f) * static_cast<float>(alpha));
+            return (color & ~alpha_mask) | (scaled_alpha << alpha_shift);
+        }
+
+        float EaseInOut(const float value) noexcept
+        {
+            const float t = std::clamp(value, 0.0f, 1.0f);
+            return t * t * (3.0f - 2.0f * t);
+        }
+
+        void DrawBinaryReadouts(ImDrawList *const draw_list,
+                                const ImVec2 &center, const float radius,
+                                const double elapsed_seconds,
+                                const ImU32 color)
+        {
+            constexpr std::array<const char *, 2> kMessages{
+                "0101 1100 0010", "1010 0011 0110"};
+            constexpr double kCycleSeconds = 5.8;
+            constexpr float kVisibleSeconds = 2.1f;
+            constexpr float kFadeInSeconds = 0.34f;
+            constexpr float kFadeOutSeconds = 0.50f;
+            if (!std::isfinite(elapsed_seconds) || elapsed_seconds < 0.0)
+            {
+                return;
+            }
+
+            for (std::size_t index = 0; index < kMessages.size(); ++index)
+            {
+                const double phase_seconds = std::fmod(
+                    elapsed_seconds + static_cast<double>(index) * 2.45,
+                    kCycleSeconds);
+                if (phase_seconds >= kVisibleSeconds)
+                {
+                    continue;
+                }
+
+                const float progress = static_cast<float>(phase_seconds /
+                                                          kVisibleSeconds);
+                const float fade = std::min(
+                    EaseInOut(progress / kFadeInSeconds),
+                    EaseInOut((1.0f - progress) / kFadeOutSeconds));
+                const float orbit = static_cast<float>(elapsed_seconds * 0.22 +
+                                                       index * 2.7);
+                const float x = center.x + std::sin(orbit) * radius * 1.08f;
+                const float y = center.y + std::cos(orbit * 0.83f) * radius * 0.78f -
+                                progress * 9.0f;
+                draw_list->AddText(ImVec2(x, y), ScaleAlpha(color, fade * 0.62f),
+                                   kMessages[index]);
+            }
+        }
+
+        void DrawLoadingIcosahedron(ImDrawList *const draw_list,
+                                    const ImVec2 &rail_min, const ImVec2 &rail_max,
+                                    const double elapsed_seconds,
+                                    const EditorLoadingViewModel &model)
+        {
+            constexpr float kMinimumRailWidth = 132.0f;
+            constexpr float kMinimumRailHeight = 168.0f;
+            constexpr float kMaximumRadius = 154.0f;
+            constexpr float kRadiusFraction = 0.27f;
+
+            const float rail_width = rail_max.x - rail_min.x;
+            const float rail_height = rail_max.y - rail_min.y;
+            if (rail_width < kMinimumRailWidth || rail_height < kMinimumRailHeight)
+            {
+                return;
+            }
+
+            ImU32 rear_color = IM_COL32(32, 118, 139, 66);
+            ImU32 front_color = kAccent;
+            float rear_thickness = 1.0f;
+            float front_thickness = 1.8f;
+            if (model.failed)
+            {
+                rear_color = IM_COL32(150, 52, 67, 68);
+                front_color = IM_COL32(255, 101, 116, 235);
+            }
+            else if (model.closing)
+            {
+                rear_color = IM_COL32(87, 111, 124, 48);
+                front_color = IM_COL32(122, 151, 166, 160);
+            }
+            else if (model.ready)
+            {
+                rear_color = IM_COL32(57, 126, 103, 60);
+                front_color = IM_COL32(120, 238, 185, 210);
+            }
+
+            const float visual_size = std::min(rail_width, rail_height);
+            const float radius = std::min(kMaximumRadius, visual_size * kRadiusFraction);
+            const LoadingIcosahedronPoint center{
+                rail_min.x + rail_width * 0.5f,
+                rail_min.y + rail_height * 0.5f,
+            };
+            const LoadingIcosahedronFrame frame =
+                ProjectLoadingIcosahedron(elapsed_seconds, center, radius);
+
+            draw_list->PushClipRect(rail_min, rail_max, true);
+            for (const LoadingIcosahedronProjectedEdge &edge : frame.edges)
+            {
+                const LoadingIcosahedronPoint &a = frame.vertices[edge.a];
+                const LoadingIcosahedronPoint &b = frame.vertices[edge.b];
+                draw_list->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y),
+                                   rear_color, rear_thickness);
+            }
+            for (const LoadingIcosahedronProjectedEdge &edge : frame.edges)
+            {
+                if (edge.front_facing_weight <= 0.001f)
+                {
+                    continue;
+                }
+                const LoadingIcosahedronPoint &a = frame.vertices[edge.a];
+                const LoadingIcosahedronPoint &b = frame.vertices[edge.b];
+                draw_list->AddLine(ImVec2(a.x, a.y), ImVec2(b.x, b.y),
+                                   ScaleAlpha(front_color, edge.front_facing_weight),
+                                   rear_thickness +
+                                       (front_thickness - rear_thickness) *
+                                           edge.front_facing_weight);
+            }
+
+            DrawBinaryReadouts(draw_list, ImVec2(center.x, center.y), radius,
+                               elapsed_seconds, IM_COL32(94, 179, 194, 150));
+            draw_list->PopClipRect();
         }
 
         const char *StatusLabel(const EditorLoadingViewModel &model, const bool compact)
@@ -186,6 +318,15 @@ namespace kpengine::editor
         const ImVec2 card_min(work_pos.x + (work_size.x - card_width) * 0.5f,
                               work_pos.y + (work_size.y - card_height) * 0.5f);
         const ImVec2 card_max(card_min.x + card_width, card_min.y + card_height);
+        const ImVec2 icosahedron_rail_min(
+            screen_min.x + 28.0f,
+            std::max(screen_min.y + 24.0f, card_min.y + 8.0f));
+        const ImVec2 icosahedron_rail_max(
+            card_min.x - 28.0f,
+            std::min(card_max.y - 8.0f, screen_max.y - 54.0f));
+        DrawLoadingIcosahedron(draw_list, icosahedron_rail_min,
+                               icosahedron_rail_max, ImGui::GetTime(),
+                               last_view_model_);
         draw_list->AddRectFilled(card_min, card_max, kPanel, 12.0f);
         draw_list->AddRect(card_min, card_max, IM_COL32(53, 113, 137, 155), 12.0f,
                            ImDrawFlags_RoundCornersAll, 1.0f);
