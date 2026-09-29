@@ -261,7 +261,10 @@ namespace kpengine::editor
             }
             else
             {
-                double &value = FindNumericDraft(numeric_drafts, key, snapshot);
+                const auto draft = numeric_drafts.find(key);
+                double value = draft != numeric_drafts.end()
+                                   ? draft->second
+                                   : ReadFloatingValue(snapshot);
                 const double *minimum = descriptor.metadata.minimum.has_value()
                                             ? &*descriptor.metadata.minimum
                                             : nullptr;
@@ -277,14 +280,17 @@ namespace kpengine::editor
                                   maximum, "%.3f");
                 const bool value_active = ImGui::IsItemActive();
                 const bool edited = ImGui::IsItemDeactivatedAfterEdit();
-                const bool pending_after_input = model.IsPropertyPending(key);
-                if (!pending_after_input && value != ReadFloatingValue(snapshot) &&
+                if (!model.IsPropertyPending(key) && value != ReadFloatingValue(snapshot) &&
                     (value_active || edited))
                 {
                     SubmitValue(model, actor, component, descriptor,
                                 reflection::ReflectionValue{value});
                 }
-                if (edited || ImGui::IsItemDeactivated())
+                if (value_active || model.IsPropertyPending(key))
+                {
+                    numeric_drafts[key] = value;
+                }
+                else
                 {
                     numeric_drafts.erase(key);
                 }
