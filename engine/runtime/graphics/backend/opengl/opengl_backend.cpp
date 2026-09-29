@@ -47,6 +47,7 @@ namespace kpengine::graphics
 
     void OpenglBackend::Initialize(WindowHandle native_window)
     {
+        FinalizeGpuProfilePassConfiguration();
         if (!gladLoadGLLoader((GLADloadproc)glfwGetProcAddress))
         {
             KP_LOG("OpenglBackendLog", LOG_LEVEL_ERROR, "Failed to load OpenGL Loader");
@@ -65,9 +66,10 @@ namespace kpengine::graphics
                                         glad_glGetQueryObjectui64v != nullptr;
         if (profile_gpu_timing_available_)
         {
-            profile_query_ids_.resize(kGpuProfilePassCount * 2);
+            profile_query_ids_.resize(gpu_profile_pass_ids_.size() * 2);
             glGenQueries(static_cast<GLsizei>(profile_query_ids_.size()),
                          profile_query_ids_.data());
+            profile_pass_queries_written_.resize(gpu_profile_pass_ids_.size());
         }
     }
 
@@ -175,23 +177,29 @@ namespace kpengine::graphics
 
     void OpenglBackend::BeginGpuProfilePass(const uint32_t pass_id)
     {
+        const auto pass = std::find(gpu_profile_pass_ids_.begin(),
+                                    gpu_profile_pass_ids_.end(), pass_id);
         if (!profile_gpu_timing_available_ || !frame_active_ ||
-            pass_id >= kGpuProfilePassCount || profile_query_ids_.empty())
+            pass == gpu_profile_pass_ids_.end() || profile_query_ids_.empty())
         {
             return;
         }
-        glQueryCounter(profile_query_ids_[pass_id * 2], GL_TIMESTAMP);
-        profile_pass_queries_written_[pass_id] = true;
+        const size_t slot = static_cast<size_t>(pass - gpu_profile_pass_ids_.begin());
+        glQueryCounter(profile_query_ids_[slot * 2], GL_TIMESTAMP);
+        profile_pass_queries_written_[slot] = true;
     }
 
     void OpenglBackend::EndGpuProfilePass(const uint32_t pass_id)
     {
+        const auto pass = std::find(gpu_profile_pass_ids_.begin(),
+                                    gpu_profile_pass_ids_.end(), pass_id);
         if (!profile_gpu_timing_available_ || !frame_active_ ||
-            pass_id >= kGpuProfilePassCount || profile_query_ids_.empty())
+            pass == gpu_profile_pass_ids_.end() || profile_query_ids_.empty())
         {
             return;
         }
-        glQueryCounter(profile_query_ids_[pass_id * 2 + 1], GL_TIMESTAMP);
+        const size_t slot = static_cast<size_t>(pass - gpu_profile_pass_ids_.begin());
+        glQueryCounter(profile_query_ids_[slot * 2 + 1], GL_TIMESTAMP);
     }
 
     std::vector<GpuProfileTiming> OpenglBackend::ConsumeCompletedGpuProfileTimings()
@@ -212,22 +220,23 @@ namespace kpengine::graphics
         // still hold the result of the last frame that did issue one. Reading
         // that would report a stale time as if it were this frame's, so only
         // passes that wrote a timestamp in the frame being read are collected.
-        for (uint32_t pass_id = 0; pass_id < kGpuProfilePassCount; ++pass_id)
+        for (size_t slot = 0; slot < gpu_profile_pass_ids_.size(); ++slot)
         {
-            if (!profile_pass_queries_written_[pass_id])
+            if (!profile_pass_queries_written_[slot])
             {
                 continue;
             }
             GLuint64 begin = 0;
             GLuint64 end = 0;
-            glGetQueryObjectui64v(profile_query_ids_[pass_id * 2], GL_QUERY_RESULT, &begin);
-            glGetQueryObjectui64v(profile_query_ids_[pass_id * 2 + 1], GL_QUERY_RESULT, &end);
+            glGetQueryObjectui64v(profile_query_ids_[slot * 2], GL_QUERY_RESULT, &begin);
+            glGetQueryObjectui64v(profile_query_ids_[slot * 2 + 1], GL_QUERY_RESULT, &end);
             if (end >= begin && end != 0)
             {
-                completed_gpu_profile_timings_.push_back({pass_id, end - begin});
+                completed_gpu_profile_timings_.push_back({gpu_profile_pass_ids_[slot], end - begin});
             }
         }
-        profile_pass_queries_written_.fill(false);
+        std::fill(profile_pass_queries_written_.begin(),
+                  profile_pass_queries_written_.end(), false);
     }
 
     BufferHandle OpenglBackend::CreateUniformBuffer(uint32_t size)

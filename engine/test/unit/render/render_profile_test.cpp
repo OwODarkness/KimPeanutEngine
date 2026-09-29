@@ -1,6 +1,24 @@
 #include <gtest/gtest.h>
 
 #include "render/render_profile.h"
+#include "render/render_shader_data.h"
+
+TEST(RenderShaderDataAbi, PreservesUniformBlockSizesOffsetsAndAlignment)
+{
+    using kpengine::render::CameraData;
+    using kpengine::render::PerObjectData;
+    using kpengine::render::PerPassData;
+
+    EXPECT_EQ(sizeof(CameraData), 128u);
+    EXPECT_EQ(alignof(CameraData), 16u);
+    EXPECT_EQ(offsetof(CameraData, view), 0u);
+    EXPECT_EQ(offsetof(CameraData, proj), 64u);
+    EXPECT_EQ(sizeof(PerPassData), 128u);
+    EXPECT_EQ(alignof(PerPassData), 16u);
+    EXPECT_EQ(offsetof(PerPassData, camera_data), 0u);
+    EXPECT_EQ(sizeof(PerObjectData), 64u);
+    EXPECT_EQ(offsetof(PerObjectData, model), 0u);
+}
 
 TEST(RenderProfileScenario, SponzaBaselineIsStable)
 {

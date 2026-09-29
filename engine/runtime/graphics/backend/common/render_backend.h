@@ -28,25 +28,9 @@
 namespace kpengine::graphics
 {
 
-    struct CameraData
-    {
-        Matrix4f view;
-        Matrix4f proj;
-    };
-
-    struct PerPassData
-    {
-        CameraData camera_data;
-    };
-
-    struct PerObjectData
-    {
-        Matrix4f model;
-    };
-
-    // Passes a backend can time. Render's RenderProfilePass indexes passes by
-    // this id, so both sides must agree on the count; Render asserts it.
-    inline constexpr uint32_t kGpuProfilePassCount = 13;
+    // Graphics accepts caller-owned timing IDs and assigns query slots during
+    // backend initialization. The upper bound is a backend resource limit.
+    inline constexpr size_t kMaxGpuProfilePasses = 64;
 
     struct GpuProfileTiming
     {
@@ -81,6 +65,12 @@ namespace kpengine::graphics
     {
     public:
         static std::unique_ptr<RenderBackend> CreateGraphicsBackEnd(GraphicsAPIType backend_type);
+
+        bool ConfigureGpuProfilePasses(std::span<const uint32_t> pass_ids);
+        std::span<const uint32_t> GetConfiguredGpuProfilePasses() const noexcept
+        {
+            return gpu_profile_pass_ids_;
+        }
 
     public:
         virtual void Initialize(WindowHandle native_window) = 0;
@@ -220,6 +210,12 @@ namespace kpengine::graphics
         virtual bool DestroyBufferResource(BufferHandle) = 0;
 
     protected:
+        void FinalizeGpuProfilePassConfiguration() noexcept
+        {
+            gpu_profile_pass_configuration_finalized_ = true;
+        }
+        std::vector<uint32_t> gpu_profile_pass_ids_;
+        bool gpu_profile_pass_configuration_finalized_ = false;
         virtual void FramebufferResizeCallback(const ResizeEvent &event);
 
         void RecordDescriptorSetCreated(bool pool_created) noexcept

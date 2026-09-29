@@ -1,7 +1,6 @@
 #ifndef KPENGINE_RUNTIME_GRAPHICS_OPENGL_BACKEND_H
 #define KPENGINE_RUNTIME_GRAPHICS_OPENGL_BACKEND_H
 
-#include <array>
 #include <memory>
 #include <optional>
 #include <unordered_map>
@@ -145,7 +144,7 @@ namespace kpengine::graphics
         // would otherwise report the previous frame's value as if it were
         // current. The flags say which passes wrote a timestamp in the frame the
         // collection reads.
-        std::array<bool, kGpuProfilePassCount> profile_pass_queries_written_{};
+        std::vector<bool> profile_pass_queries_written_;
 
     };
 }

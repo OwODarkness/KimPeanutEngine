@@ -34,11 +34,6 @@ namespace kpengine::graphics
 
 
 #define KP_VULKAN_BACKEND_LOG_NAME "VulkanBackendLog"
-    namespace
-    {
-        constexpr uint32_t kProfileQueriesPerFrame = kGpuProfilePassCount * 2;
-    }
-
     VulkanBackend::VulkanBackend() : pipeline_manager_(std::make_unique<VulkanPipelineManager>()),
                                      descriptor_set_manager_(std::make_unique<VulkanDescriptorSetManager>()),
                                      texture_manager_(std::make_unique<TextureManager>()),
@@ -54,6 +49,7 @@ namespace kpengine::graphics
 
     void VulkanBackend::Initialize(WindowHandle native_window)
     {
+        FinalizeGpuProfilePassConfiguration();
         // The native window (WindowHandle = void*) is cast back to GLFW here — the
         // Vulkan surface + swapchain need it; the common facade never sees GLFW.
         GLFWwindow *window = static_cast<GLFWwindow *>(native_window);
@@ -103,17 +99,21 @@ namespace kpengine::graphics
                 bindless_texture_table_->GetLayout());
         }
         InitializeCapabilities();
-        VkQueryPoolCreateInfo query_pool_info{};
-        query_pool_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
-        query_pool_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
-        query_pool_info.queryCount = VulkanFrameContext::MAX_FRAMES_IN_FLIGHT *
-                                     kProfileQueriesPerFrame;
-        if (vkCreateQueryPool(device_->GetLogicalDevice(), &query_pool_info, nullptr,
-                              &profile_query_pool_) != VK_SUCCESS)
+        const uint32_t queries_per_frame = ProfileQueriesPerFrame();
+        if (queries_per_frame > 0)
         {
-            profile_query_pool_ = VK_NULL_HANDLE;
-            KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_WARNING,
-                   "GPU pass timestamp query pool unavailable; CPU profile remains active");
+            VkQueryPoolCreateInfo query_pool_info{};
+            query_pool_info.sType = VK_STRUCTURE_TYPE_QUERY_POOL_CREATE_INFO;
+            query_pool_info.queryType = VK_QUERY_TYPE_TIMESTAMP;
+            query_pool_info.queryCount = VulkanFrameContext::MAX_FRAMES_IN_FLIGHT *
+                                         queries_per_frame;
+            if (vkCreateQueryPool(device_->GetLogicalDevice(), &query_pool_info, nullptr,
+                                  &profile_query_pool_) != VK_SUCCESS)
+            {
+                profile_query_pool_ = VK_NULL_HANDLE;
+                KP_LOG(KP_VULKAN_BACKEND_LOG_NAME, LOG_LEVEL_WARNING,
+                       "GPU pass timestamp query pool unavailable; CPU profile remains active");
+            }
         }
         editor_bridge_ = std::make_unique<VulkanEditorBridge>(*device_, *swapchain_, *frame_context_);
         upload_context_ = std::make_unique<VulkanUploadContext>();
@@ -204,9 +204,9 @@ namespace kpengine::graphics
         if (profile_query_pool_ != VK_NULL_HANDLE)
         {
             const uint32_t base_query = frame_context_->GetCurrentFrameIndex() *
-                                        kProfileQueriesPerFrame;
+                                        ProfileQueriesPerFrame();
             vkCmdResetQueryPool(frame_context_->GetCurrentSceneCommandBuffer(),
-                                profile_query_pool_, base_query, kProfileQueriesPerFrame);
+                                profile_query_pool_, base_query, ProfileQueriesPerFrame());
         }
 
         current_image_index_ = image_index;
@@ -305,26 +305,32 @@ namespace kpengine::graphics
 
     void VulkanBackend::BeginGpuProfilePass(const uint32_t pass_id)
     {
+        const auto pass = std::find(gpu_profile_pass_ids_.begin(),
+                                    gpu_profile_pass_ids_.end(), pass_id);
         if (profile_query_pool_ == VK_NULL_HANDLE || !frame_active_ ||
-            pass_id >= kGpuProfilePassCount)
+            pass == gpu_profile_pass_ids_.end())
         {
             return;
         }
-        const uint32_t query = frame_context_->GetCurrentFrameIndex() * kProfileQueriesPerFrame +
-                               pass_id * 2;
+        const uint32_t slot = static_cast<uint32_t>(pass - gpu_profile_pass_ids_.begin());
+        const uint32_t query = frame_context_->GetCurrentFrameIndex() * ProfileQueriesPerFrame() +
+                               slot * 2;
         vkCmdWriteTimestamp2(frame_context_->GetCurrentSceneCommandBuffer(),
                              VK_PIPELINE_STAGE_2_TOP_OF_PIPE_BIT, profile_query_pool_, query);
     }
 
     void VulkanBackend::EndGpuProfilePass(const uint32_t pass_id)
     {
+        const auto pass = std::find(gpu_profile_pass_ids_.begin(),
+                                    gpu_profile_pass_ids_.end(), pass_id);
         if (profile_query_pool_ == VK_NULL_HANDLE || !frame_active_ ||
-            pass_id >= kGpuProfilePassCount)
+            pass == gpu_profile_pass_ids_.end())
         {
             return;
         }
-        const uint32_t query = frame_context_->GetCurrentFrameIndex() * kProfileQueriesPerFrame +
-                               pass_id * 2 + 1;
+        const uint32_t slot = static_cast<uint32_t>(pass - gpu_profile_pass_ids_.begin());
+        const uint32_t query = frame_context_->GetCurrentFrameIndex() * ProfileQueriesPerFrame() +
+                               slot * 2 + 1;
         vkCmdWriteTimestamp2(frame_context_->GetCurrentSceneCommandBuffer(),
                              VK_PIPELINE_STAGE_2_BOTTOM_OF_PIPE_BIT, profile_query_pool_, query);
     }
@@ -349,8 +355,12 @@ namespace kpengine::graphics
         {
             return;
         }
-        const uint32_t base_query = frame_context_->GetCurrentFrameIndex() *
-                                    kProfileQueriesPerFrame;
+        const uint32_t queries_per_frame = ProfileQueriesPerFrame();
+        if (queries_per_frame == 0)
+        {
+            return;
+        }
+        const uint32_t base_query = frame_context_->GetCurrentFrameIndex() * queries_per_frame;
         // A pass that was not visited writes no timestamps: the plan drops
         // conditional passes, and a cached shadow never reaches its recorder.
         // One unwritten query makes the whole-range read answer VK_NOT_READY, so
@@ -358,10 +368,10 @@ namespace kpengine::graphics
         // gated on its own. Otherwise a single skipped pass hides every GPU
         // timing in the frame. Every query answers with a value/availability
         // pair, hence the doubled stride.
-        std::array<uint64_t, kProfileQueriesPerFrame * 2> query_results{};
+        std::vector<uint64_t> query_results(static_cast<size_t>(queries_per_frame) * 2);
         const VkResult result = vkGetQueryPoolResults(
             device_->GetLogicalDevice(), profile_query_pool_, base_query,
-            kProfileQueriesPerFrame, sizeof(query_results), query_results.data(),
+            queries_per_frame, query_results.size() * sizeof(uint64_t), query_results.data(),
             sizeof(uint64_t) * 2,
             VK_QUERY_RESULT_64_BIT | VK_QUERY_RESULT_WITH_AVAILABILITY_BIT);
         if (result != VK_SUCCESS && result != VK_NOT_READY)
@@ -375,9 +385,9 @@ namespace kpengine::graphics
             }
             return;
         }
-        for (uint32_t pass_id = 0; pass_id < kGpuProfilePassCount; ++pass_id)
+        for (uint32_t slot = 0; slot < gpu_profile_pass_ids_.size(); ++slot)
         {
-            const uint64_t *const pass_results = &query_results[pass_id * 4];
+            const uint64_t *const pass_results = &query_results[slot * 4];
             const uint64_t begin = pass_results[0];
             const uint64_t end = pass_results[2];
             if (pass_results[1] == 0 || pass_results[3] == 0 || end < begin)
@@ -385,7 +395,7 @@ namespace kpengine::graphics
                 continue;
             }
             completed_gpu_profile_timings_.push_back(
-                {pass_id, static_cast<uint64_t>(
+                {gpu_profile_pass_ids_[slot], static_cast<uint64_t>(
                               static_cast<double>(end - begin) *
                               static_cast<double>(profile_timestamp_period_ns_))});
         }

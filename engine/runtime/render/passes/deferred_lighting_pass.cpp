@@ -7,6 +7,7 @@
 #include "render/prepared_render_asset_catalog.h"
 #include "render/passes/gbuffer_pass_constants.h"
 #include "render/render_resource_resolver.h"
+#include "render/render_shader_data.h"
 #include "render/render_world/scene_draw_list.h"
 
 #include <cstddef>
@@ -169,7 +170,7 @@ namespace kpengine::render
             camera.SetAspect(static_cast<float>(extent.width) /
                              static_cast<float>(extent.height));
             const CameraData camera_data = camera.GetCameraData();
-            graphics::PerPassData per_pass_data{};
+            PerPassData per_pass_data{};
             per_pass_data.camera_data.view = camera_data.view;
             per_pass_data.camera_data.proj = camera_data.proj;
             const std::vector<VisibleMeshSection> visible_sections =

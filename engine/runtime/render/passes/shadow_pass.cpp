@@ -13,6 +13,7 @@
 #include "render/passes/shadow_pass_utils.h"
 #include "render/prepared_render_asset_catalog.h"
 #include "render/render_resource_resolver.h"
+#include "render/render_shader_data.h"
 #include "render/render_world/render_world.h"
 
 namespace kpengine::render
@@ -324,7 +325,7 @@ namespace kpengine::render
         if (!pipeline_.IsValid())
             return false;
         const auto &shadow = *directional_frame_;
-        graphics::PerPassData data{};
+        PerPassData data{};
         data.camera_data.view = shadow.view.Transpose();
         data.camera_data.proj = shadow.projection.Transpose();
         const UniformAllocation per_pass = frame_context.UpdateStableUniform(
@@ -367,7 +368,7 @@ namespace kpengine::render
         if (!pipeline_.IsValid())
             return false;
         const auto &shadow = *spot_frame_;
-        graphics::PerPassData data{};
+        PerPassData data{};
         data.camera_data.view = shadow.view.Transpose();
         data.camera_data.proj = shadow.projection.Transpose();
         const UniformAllocation per_pass = frame_context.UpdateStableUniform(
@@ -423,7 +424,7 @@ namespace kpengine::render
                 static_cast<float>(face.tile_y * shadow_pass_detail::kPointShadowFaceResolution),
                 static_cast<float>(shadow_pass_detail::kPointShadowFaceResolution),
                 static_cast<float>(shadow_pass_detail::kPointShadowFaceResolution), 0.0f, 1.0f});
-            graphics::PerPassData data{};
+            PerPassData data{};
             data.camera_data.view = view.Transpose();
             data.camera_data.proj = projection.Transpose();
             const UniformAllocation per_pass = frame_context.UpdateStableUniform(

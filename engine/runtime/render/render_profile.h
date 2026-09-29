@@ -33,6 +33,69 @@ namespace kpengine::render
         Count,
     };
 
+    constexpr uint32_t GetRenderGpuProfilePassId(const RenderProfilePass pass) noexcept
+    {
+        const char *name = nullptr;
+        switch (pass)
+        {
+        case RenderProfilePass::DirectionalShadow: name = "render.directional_shadow"; break;
+        case RenderProfilePass::SpotShadow: name = "render.spot_shadow"; break;
+        case RenderProfilePass::PointShadow: name = "render.point_shadow"; break;
+        case RenderProfilePass::GBuffer: name = "render.gbuffer"; break;
+        case RenderProfilePass::DeferredLighting: name = "render.deferred_lighting"; break;
+        case RenderProfilePass::RayTracingPathTrace: name = "render.ray_tracing_path_trace"; break;
+        case RenderProfilePass::ToneMap: name = "render.tone_map"; break;
+        case RenderProfilePass::RayTracingToneMap: name = "render.ray_tracing_tone_map"; break;
+        case RenderProfilePass::CaptureView: name = "render.capture_view"; break;
+        case RenderProfilePass::DebugView: name = "render.debug_view"; break;
+        case RenderProfilePass::EditorComposite: name = "render.editor_composite"; break;
+        case RenderProfilePass::RayTracingBlasBuild: name = "render.ray_tracing_blas_build"; break;
+        case RenderProfilePass::RayTracingTlasBuild: name = "render.ray_tracing_tlas_build"; break;
+        case RenderProfilePass::Count: return 0;
+        }
+        if (name == nullptr)
+        {
+            return 0;
+        }
+        uint32_t hash = 2166136261u;
+        for (const char *cursor = name; *cursor != '\0'; ++cursor)
+        {
+            hash = (hash ^ static_cast<uint8_t>(*cursor)) * 16777619u;
+        }
+        return hash;
+    }
+
+    constexpr size_t GetRenderProfilePassIndex(const uint32_t gpu_profile_id) noexcept
+    {
+        for (size_t index = 0; index < static_cast<size_t>(RenderProfilePass::Count); ++index)
+        {
+            if (GetRenderGpuProfilePassId(static_cast<RenderProfilePass>(index)) == gpu_profile_id)
+            {
+                return index;
+            }
+        }
+        return static_cast<size_t>(RenderProfilePass::Count);
+    }
+
+    constexpr bool RenderGpuProfileIdsAreUnique() noexcept
+    {
+        for (size_t left = 0; left < static_cast<size_t>(RenderProfilePass::Count); ++left)
+        {
+            for (size_t right = left + 1;
+                 right < static_cast<size_t>(RenderProfilePass::Count); ++right)
+            {
+                if (GetRenderGpuProfilePassId(static_cast<RenderProfilePass>(left)) ==
+                    GetRenderGpuProfilePassId(static_cast<RenderProfilePass>(right)))
+                {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+
+    static_assert(RenderGpuProfileIdsAreUnique());
+
     enum class RenderProfileCpuSubphase : uint8_t
     {
         SectionPacketBuild,

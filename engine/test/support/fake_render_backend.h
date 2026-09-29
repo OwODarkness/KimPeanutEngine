@@ -288,6 +288,11 @@ namespace kpengine::test
             return MakeHandle<graphics::RenderTargetHandle>();
         }
 
+        void FinalizeProfileConfigurationForTest() noexcept
+        {
+            FinalizeGpuProfilePassConfiguration();
+        }
+
         void ReleaseTransientRenderTarget(graphics::RenderTargetHandle) override
         {
             ++probe_->transient_release_count;

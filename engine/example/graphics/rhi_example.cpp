@@ -21,6 +21,7 @@
 #include "runtime/input/input_system.h"
 #include "runtime/input/input_context.h"
 #include "runtime/render/render_camera.h"
+#include "runtime/render/render_shader_data.h"
 #include "runtime/render/render_capture_service_internal.h"
 #include "runtime/image_io/image_io.h"
 #include "runtime/screenshot/runtime_screenshot_service.h"
@@ -570,7 +571,7 @@ namespace kpengine::example
                             camera.SetAspect(static_cast<float>(extent.width) /
                                              static_cast<float>(extent.height));
                             const render::CameraData camera_data = camera.GetCameraData();
-                            graphics::PerPassData per_pass_data{};
+                            render::PerPassData per_pass_data{};
                             per_pass_data.camera_data.view = camera_data.view;
                             per_pass_data.camera_data.proj = camera_data.proj;
                         const render::UniformAllocation per_pass =
@@ -582,7 +583,7 @@ namespace kpengine::example
                                 {
                                     continue;
                                 }
-                                graphics::PerObjectData per_object_data{};
+                                render::PerObjectData per_object_data{};
                                 per_object_data.model = Matrix4f::MakeTransformMatrix(
                                     proxy.world_transform).Transpose();
                                 const render::UniformAllocation per_object =
@@ -636,12 +637,12 @@ namespace kpengine::example
                             }
                             const render::TextureBinding streaming_texture =
                                 streaming_texture_bindings->textures.begin()->second;
-                            graphics::PerPassData streaming_pass_data{};
+                            render::PerPassData streaming_pass_data{};
                             streaming_pass_data.camera_data.view = Matrix4f::Identity();
                             streaming_pass_data.camera_data.proj = Matrix4f::Identity();
                             const render::UniformAllocation streaming_pass =
                                 frame_context.AllocateUniform(streaming_pass_data);
-                            graphics::PerObjectData streaming_object_data{};
+                            render::PerObjectData streaming_object_data{};
                             streaming_object_data.model = Matrix4f::Identity();
                             const render::UniformAllocation streaming_object =
                                 frame_context.AllocateUniform(streaming_object_data);
@@ -1056,12 +1057,12 @@ namespace kpengine::example
                             camera.SetAspect(static_cast<float>(target_width) /
                                              static_cast<float>(target_height));
                             const render::CameraData camera_data = camera.GetCameraData();
-                            graphics::PerPassData per_pass_data{};
+                            render::PerPassData per_pass_data{};
                             per_pass_data.camera_data.view = camera_data.view;
                             per_pass_data.camera_data.proj = camera_data.proj;
                             const render::UniformAllocation d2_pass =
                                 frame_context.AllocateUniform(per_pass_data);
-                            graphics::PerObjectData per_object_data{};
+                            render::PerObjectData per_object_data{};
                             per_object_data.model = Matrix4f::MakeTransformMatrix(Transform3f{}).Transpose();
                             const render::UniformAllocation d2_object =
                                 frame_context.AllocateUniform(per_object_data);
@@ -1563,16 +1564,16 @@ namespace kpengine::example
                             camera.SetAspect(static_cast<float>(target_width) /
                                              static_cast<float>(target_height));
                             const render::CameraData camera_data = camera.GetCameraData();
-                            graphics::PerPassData per_pass_data{};
+                            render::PerPassData per_pass_data{};
                             per_pass_data.camera_data.view = camera_data.view;
                             per_pass_data.camera_data.proj = camera_data.proj;
                             const render::UniformAllocation d3_pass =
                                 frame_context.AllocateUniform(per_pass_data);
-                            graphics::PerObjectData per_object_data{};
+                            render::PerObjectData per_object_data{};
                             per_object_data.model = Matrix4f::MakeTransformMatrix(Transform3f{}).Transpose();
                             const render::UniformAllocation d3_object =
                                 frame_context.AllocateUniform(per_object_data);
-                            graphics::PerObjectData floor_object_data{};
+                            render::PerObjectData floor_object_data{};
                             floor_object_data.model =
                                 Matrix4f::MakeTransformMatrix(d5_floor_transform).Transpose();
                             const render::UniformAllocation floor_object =
@@ -1581,7 +1582,7 @@ namespace kpengine::example
                                 frame_context.AllocateUniform(Vector4f{0.0f, 0.0f, 0.0f, 0.0f});
                             const render::UniformAllocation floor_selection =
                                 frame_context.AllocateUniform(Vector4f{0.0f, 0.0f, 0.0f, 0.0f});
-                            graphics::PerPassData shadow_pass_data{};
+                            render::PerPassData shadow_pass_data{};
                             shadow_pass_data.camera_data.view = d5_shadow_view.Transpose();
                             shadow_pass_data.camera_data.proj = d5_shadow_projection.Transpose();
                             const render::UniformAllocation shadow_pass =

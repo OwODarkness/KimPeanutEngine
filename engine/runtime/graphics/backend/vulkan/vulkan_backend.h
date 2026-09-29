@@ -107,6 +107,10 @@ namespace kpengine::graphics
         void CleanupSwapchain();
         void FramebufferResizeCallback(const ResizeEvent &event) override;
         void CollectCompletedGpuProfileTimings();
+        uint32_t ProfileQueriesPerFrame() const noexcept
+        {
+            return static_cast<uint32_t>(gpu_profile_pass_ids_.size() * 2);
+        }
 
     private:
         std::unique_ptr<class VulkanDevice> device_;

@@ -1,5 +1,19 @@
 # Project Status
 
+- **R5.4 (2026-09-29; implementation and lifecycle acceptance complete)** — Moved
+  Render uniform schemas out of common Graphics while preserving their member
+  layout, replaced Graphics' Render-specific 13-pass constant with unique
+  caller-supplied timing IDs and backend-local query slots, and audited Vulkan
+  RT retirement. AS, binding sets, and address tables already retire by
+  completed submission serial; pipeline/SBT cleanup is behind renderer
+  `WaitIdle`. Decision: no private-owner split or new retirement path from the
+  source audit. Combined-backend and OpenGL-only Debug builds pass; 224
+  graphics/render tests pass. Vulkan rejection recovery, reload, and orderly
+  close report zero RT objects at teardown. The injected-failure frame exposed
+  an editor-composite sampled-image layout VUID, tracked for follow-up. →
+  [plan](render/.plan/R5.4.md), [journal](../.spec/journal/2026-09-29-render-r5-4.md),
+  [R5 map](render/.plan/R5.md)
+
 - **R5.3 pass-family ownership (2026-09-28; source implementation complete, acceptance open)** — R5.3.1 moves
   frame-local draw recording/cache state, shared fullscreen mesh/sampler,
   environment bindings, path-tracing GPU schemas, shader hashing, and

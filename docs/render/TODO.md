@@ -324,8 +324,15 @@ details and stage checklists belong in the linked submodule documents.
     init rollback, reload/resize/edit and safe cleanup parity. Execute
     R5.3.1–R5.3.7; move structs/state/constants with owners and remove pass
     implementations from the facade. → [concrete plan](.plan/R5.3.md)
-  - [ ] **R5.4:** preserve shader ABI while narrowing Graphics schemas/timing;
-    audit RT pipeline/table/SBT retirement before any private owner split.
+  - [x] **R5.4:** Render owns shader
+    uniform schemas and registers stable GPU profile IDs; Graphics owns query
+      slots. Vulkan RT audit retains the facade and existing serial retirement;
+      pipeline/SBT cleanup is gated by `WaitIdle`. Combined-backend and OpenGL-only
+      Debug builds pass, layout/registration contracts pass 224 graphics/render
+      tests, and Vulkan rejection/reload/close evidence reports zero RT objects
+      at teardown. The rejected-frame editor-composite image-layout validation
+      error is tracked for follow-up. →
+    [stage plan](.plan/R5.4.md)
   - [ ] **R5.5:** optional graph extensions only with measured need; a documented
     no-change decision is valid. No GPU shader tuning in this stage.
   - [ ] **R5.6:** Debug validation, cross-backend visual/lifecycle checks and

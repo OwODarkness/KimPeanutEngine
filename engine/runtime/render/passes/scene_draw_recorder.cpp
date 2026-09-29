@@ -8,6 +8,7 @@
 
 #include "asset/mesh.h"
 #include "render/render_resource_resolver.h"
+#include "render/render_shader_data.h"
 
 namespace kpengine::render
 {
@@ -178,7 +179,7 @@ namespace kpengine::render
             return {};
         }
 
-        graphics::PerObjectData per_object_data{};
+        PerObjectData per_object_data{};
         per_object_data.model = Matrix4f::MakeTransformMatrix(proxy.world_transform).Transpose();
         const UniformAllocation per_object =
             frame_context.UpdateStableUniform(GetObjectUniformKey(proxy.handle),
@@ -226,7 +227,7 @@ namespace kpengine::render
         if (object_it == frame_object_states_.end())
         {
             FrameObjectState state{};
-            graphics::PerObjectData per_object_data{};
+            PerObjectData per_object_data{};
             per_object_data.model =
                 Matrix4f::MakeTransformMatrix(proxy.world_transform).Transpose();
             state.per_object = frame_context.UpdateStableUniform(

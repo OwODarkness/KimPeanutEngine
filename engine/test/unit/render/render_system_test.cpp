@@ -36,6 +36,65 @@ namespace
     using namespace kpengine;
     using namespace kpengine::test;
 
+    TEST(GraphicsGpuProfileRegistration, AcceptsUniqueStableIdsAndPreservesOrder)
+    {
+        const auto probe = std::make_shared<BackendProbe>();
+        FakeBackend backend{probe};
+        const std::array<uint32_t, 3> ids{0x4b504501u, 0x4b504502u, 0x4b504503u};
+
+        ASSERT_TRUE(backend.ConfigureGpuProfilePasses(ids));
+        const auto configured = backend.GetConfiguredGpuProfilePasses();
+        ASSERT_EQ(configured.size(), ids.size());
+        EXPECT_TRUE(std::equal(configured.begin(), configured.end(), ids.begin()));
+    }
+
+    TEST(GraphicsGpuProfileRegistration, RejectsDuplicateIdsWithoutChangingRegistration)
+    {
+        const auto probe = std::make_shared<BackendProbe>();
+        FakeBackend backend{probe};
+        const std::array<uint32_t, 2> valid_ids{0x4b504511u, 0x4b504512u};
+        const std::array<uint32_t, 2> duplicate_ids{0x4b504521u, 0x4b504521u};
+
+        ASSERT_TRUE(backend.ConfigureGpuProfilePasses(valid_ids));
+        EXPECT_FALSE(backend.ConfigureGpuProfilePasses(duplicate_ids));
+        const auto configured = backend.GetConfiguredGpuProfilePasses();
+        ASSERT_EQ(configured.size(), valid_ids.size());
+        EXPECT_TRUE(std::equal(configured.begin(), configured.end(), valid_ids.begin()));
+    }
+
+    TEST(GraphicsGpuProfileRegistration, RejectsOverCapacityAndPostInitializationChanges)
+    {
+        const auto probe = std::make_shared<BackendProbe>();
+        FakeBackend backend{probe};
+        std::array<uint32_t, graphics::kMaxGpuProfilePasses + 1> too_many_ids{};
+        for (size_t index = 0; index < too_many_ids.size(); ++index)
+        {
+            too_many_ids[index] = static_cast<uint32_t>(0x4b505000u + index);
+        }
+        EXPECT_FALSE(backend.ConfigureGpuProfilePasses(too_many_ids));
+        EXPECT_TRUE(backend.GetConfiguredGpuProfilePasses().empty());
+
+        const std::array<uint32_t, 1> configured_id{0x4b504531u};
+        ASSERT_TRUE(backend.ConfigureGpuProfilePasses(configured_id));
+        backend.FinalizeProfileConfigurationForTest();
+        const std::array<uint32_t, 1> late_id{0x4b504532u};
+        EXPECT_FALSE(backend.ConfigureGpuProfilePasses(late_id));
+        EXPECT_EQ(backend.GetConfiguredGpuProfilePasses().front(), configured_id.front());
+    }
+
+    TEST(RenderGpuProfileIds, CanonicalIdsAreStableAndResolveToTheirPass)
+    {
+        for (size_t index = 0; index < static_cast<size_t>(render::RenderProfilePass::Count); ++index)
+        {
+            const auto pass = static_cast<render::RenderProfilePass>(index);
+            const uint32_t id = render::GetRenderGpuProfilePassId(pass);
+            EXPECT_NE(id, 0u);
+            EXPECT_EQ(render::GetRenderProfilePassIndex(id), index);
+        }
+        EXPECT_EQ(render::GetRenderProfilePassIndex(0u),
+                  static_cast<size_t>(render::RenderProfilePass::Count));
+    }
+
     TEST(RayTracingSceneSignatureTest, TracksGeometryResourcesAndTopology)
     {
         std::array<graphics::RayTracingGeometryDesc, 1> geometries{};

@@ -4,6 +4,7 @@
 
 #include "math/math_header.h"
 #include "render_resource_resolver.h"
+#include "render_shader_data.h"
 
 namespace kpengine::render
 {
@@ -32,7 +33,7 @@ namespace kpengine::render
         {
             return;
         }
-        graphics::PerPassData per_pass_data{};
+        PerPassData per_pass_data{};
         const graphics::Extent2D extent = frame.GetRenderExtent();
         if (extent.height == 0)
         {
@@ -48,7 +49,7 @@ namespace kpengine::render
         model.scale_ = {0.5f, 0.5f, 0.5f};
         model.rotator_.pitch_ = frame.GetGlobals().elapsed_seconds * 90.f;
 
-        graphics::PerObjectData per_object_data{};
+        PerObjectData per_object_data{};
         per_object_data.model = Matrix4f::MakeTransformMatrix(model).Transpose();
 
         const UniformAllocation per_pass = frame.UpdateStableUniform(

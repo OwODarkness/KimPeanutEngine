@@ -578,10 +578,12 @@ namespace kpengine::render
                 return ExecutePass(pass_id, input.lights, context);
             },
             [this](uint64_t key) {
-                backend_->BeginGpuProfilePass(static_cast<uint32_t>(key));
+                backend_->BeginGpuProfilePass(GetRenderGpuProfilePassId(
+                    static_cast<RenderProfilePass>(key)));
             },
             [this](uint64_t key) {
-                backend_->EndGpuProfilePass(static_cast<uint32_t>(key));
+                backend_->EndGpuProfilePass(GetRenderGpuProfilePassId(
+                    static_cast<RenderProfilePass>(key)));
             });
         profile_.cpu_graph_execute_ms +=
             std::chrono::duration<double, std::milli>(
@@ -727,11 +729,11 @@ namespace kpengine::render
             record_pass,
             [this]() {
                 backend_->BeginGpuProfilePass(
-                    static_cast<uint32_t>(RenderProfilePass::EditorComposite));
+                    GetRenderGpuProfilePassId(RenderProfilePass::EditorComposite));
             },
             [this]() {
                 backend_->EndGpuProfilePass(
-                    static_cast<uint32_t>(RenderProfilePass::EditorComposite));
+                    GetRenderGpuProfilePassId(RenderProfilePass::EditorComposite));
             });
         if (!succeeded)
         {

@@ -99,6 +99,16 @@ namespace kpengine::render
             {
                 throw std::runtime_error("No graphics backend is available for the requested API.");
             }
+            std::array<uint32_t, static_cast<size_t>(RenderProfilePass::Count)> profile_pass_ids{};
+            for (size_t index = 0; index < profile_pass_ids.size(); ++index)
+            {
+                profile_pass_ids[index] = GetRenderGpuProfilePassId(
+                    static_cast<RenderProfilePass>(index));
+            }
+            if (!backend_->ConfigureGpuProfilePasses(profile_pass_ids))
+            {
+                throw std::runtime_error("Graphics rejected the Render GPU profile pass configuration.");
+            }
             KP_LOG("RenderLog", LOG_LEVEL_INFO, "RenderSystem selected %s graphics backend",
                    GetGraphicsApiName(info.api_type));
             backend_->BindWindowResize(*info.resize_dispatcher);
@@ -345,9 +355,10 @@ namespace kpengine::render
         profile_.present_mode = backend_->GetPresentModeName();
         for (const graphics::GpuProfileTiming &timing : completed_gpu_timings)
         {
-            if (timing.pass_id < profile_.passes.size())
+            const size_t pass_index = GetRenderProfilePassIndex(timing.pass_id);
+            if (pass_index < profile_.passes.size())
             {
-                profile_.passes[timing.pass_id].gpu_time_ms =
+                profile_.passes[pass_index].gpu_time_ms =
                     static_cast<double>(timing.nanoseconds) / 1000000.0;
                 profile_.gpu_frame_number = frame_number_;
             }
