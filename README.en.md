@@ -1,6 +1,6 @@
 # KimPeanut Engine
 
-**Engine version: 1.2.0**
+**Engine version: 1.3.0**
 
 ![KimPeanut Engine](./docs/images/readme-banner.png)
 
@@ -18,11 +18,32 @@ prototypes.
 See the [architecture overview](docs/architecture_overview.md) for module
 relationships, data flow, and ownership boundaries.
 
-# Show Cases
+# Showcases
+
+### Real-time path tracing and global illumination
+
+The Vulkan path tracer supports progressive accumulation and adaptive SPP. It
+uses 1 SPP with guided spatial denoising while the camera moves. After eight
+stable camera frames, it uses 4 SPP below 100 accumulated samples, 2 SPP from
+100, and 1 SPP from 200, continuing to accumulate across frames for a cleaner
+still image. SPP thresholds and rates are configurable, and fixed-SPP mode
+remains available. Path tracing is experimental; performance and image quality
+depend on the scene and hardware.
 
 <p align="center">
-  <img src="./resouce/example/live2d.png" width="30%" />
-  <img src="./resouce/example/main.png" width="65%" />
+  <img src="./resouce/example/sponza.png" width="49%" alt="Path-traced Sponza scene" />
+  <img src="./resouce/example/cornell_box.png" width="49%" alt="Cornell Box global illumination and color bleeding" />
+</p>
+
+### Editor and loading screen
+
+<p align="center">
+  <img src="./resouce/example/main.png" width="49%" alt="Sponza in the KimPeanut Engine editor" />
+  <img src="./resouce/example/loading.png" width="49%" alt="Scene asset loading screen" />
+</p>
+
+<p align="center">
+  <img src="./resouce/example/live2d.png" width="49%" alt="Live2D example" />
 </p>
 
 ## Features
@@ -34,6 +55,7 @@ The main path is `Asset → Resource → Render → RHI`.
 - **Asset**: `AssetManager` owns typed asset IDs, path deduplication, generation checks, caching, dependencies, and CPU-side lifetime; synchronous and asynchronous loads share one pipeline.
 - **Resource / Import / Cook**: Converts CPU assets into native products and render data; imports and cooks models, materials, and textures with dependency closure, image decoding, mipmaps, format policy, and content-addressed output.
 - **Render**: Owns RenderWorld, MeshProxy, materials, render targets, fixed pass scheduling, SceneColor, shadows, and debug capture; it does not read arbitrary source files.
+- **Ray tracing**: The Vulkan backend provides experimental real-time path tracing and global illumination. Progressive accumulation and adaptive SPP adjust sample rate between camera motion and still views. A Vulkan ray-tracing-capable GPU and driver are required; OpenGL continues to provide raster rendering.
 - **Graphics / RHI**: Connects Vulkan and OpenGL through API-neutral handles, descriptions, and `RenderBackend`, owning GPU resources, pipelines, commands, synchronization, and deferred release.
 
 ### Supporting systems

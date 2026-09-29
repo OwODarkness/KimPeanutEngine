@@ -675,7 +675,7 @@
 
 **Snapshot: 2026-09-12.** This is the agent's source of truth for *what state the world is in* — update it as work lands so a future session doesn't re-derive it. Per-module detail lives in the module docs ([asset](asset/asset_module.md), [graphics](graphics/graphics_module.md), [render](render/overview.md), [resource](resource/resource_module.md), [reflection](reflection/PLANS.md)); this page is the one-line-per-item index.
 
-**Current release: v1.2.0.**
+**Current release: v1.3.0.**
 
 - **Runtime window resize command (2026-09-12)** — new `window.resize`
   Runtime command taking `width`/`height` (1–16384) and resizing the active

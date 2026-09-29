@@ -1,6 +1,6 @@
 # KimPeanut Engine
 
-**引擎版本：1.2.0**
+**引擎版本：1.3.0**
 
 
 ![KimPeanut Engine](./docs/images/readme-banner.png)
@@ -17,11 +17,26 @@ KimPeanut Engine（KP Engine）是一个基于 **C++20** 开发的实验性 3D �
 
 完整的模块关系、数据流和所有权边界见[架构总览](docs/architecture_overview.md)。
 
-## 示例
+## 示例与视觉展示
+
+### 实时路径追踪与全局光照
+
+Vulkan 路径追踪支持渐进式采样与自适应 SPP：相机移动时使用 1 SPP 和引导式空间降噪；相机连续稳定 8 帧后，累计样本数低于 100 时使用 4 SPP，达到 100 后降至 2 SPP，达到 200 后降至 1 SPP，并继续跨帧累积以提升静态画质。SPP 阈值和采样率可配置，固定 SPP 模式仍可选。路径追踪目前属于实验性功能，实际性能和画质取决于场景与硬件。
 
 <p align="center">
-  <img src="./resouce/example/live2d.png" width="30%" />
-  <img src="./resouce/example/main.png" width="65%" />
+  <img src="./resouce/example/sponza.png" width="49%" alt="Sponza 场景路径追踪" />
+  <img src="./resouce/example/cornell_box.png" width="49%" alt="Cornell Box 全局光照与颜色反弹" />
+</p>
+
+### 编辑器与加载界面
+
+<p align="center">
+  <img src="./resouce/example/main.png" width="49%" alt="KimPeanut Engine 编辑器中的 Sponza 场景" />
+  <img src="./resouce/example/loading.png" width="49%" alt="场景资源加载界面" />
+</p>
+
+<p align="center">
+  <img src="./resouce/example/live2d.png" width="49%" alt="Live2D 示例" />
 </p>
 
 
@@ -35,13 +50,14 @@ KP Engine 围绕 `Asset → Resource → Render → RHI` 构建清晰的资源�
 - **Asset**：统一管理类型化资产、缓存、依赖关系与 CPU 生命周期，并提供同步和异步加载。
 - **Resource / Import / Cook**：将 Model、Material、Texture 等源资源转换为引擎资产与渲染数据，支持依赖处理、mipmap、格式策略和 content-addressed cooking。
 - **Render**：基于 RenderWorld 与 RenderProxy 组织场景渲染，负责材质、RenderTarget、Pass、SceneColor、阴影及调试捕获。
+- **Ray Tracing**：Vulkan 后端提供实验性的实时路径追踪与全局光照；渐进式累积和自适应 SPP 在相机移动与静止时切换采样率。需要支持 Vulkan 光追的 GPU 与驱动；OpenGL 路径继续提供光栅化渲染。
 - **RHI**：通过 API-neutral handles、descriptors 与 `RenderBackend` 抽象 GPU 资源、Pipeline、Command、同步和生命周期，目前支持 Vulkan 与 OpenGL。
 
 ### 引擎与工具
 
 - **Runtime**：窗口、输入、Gameplay、Lua 脚本及基础运行时服务。
 - **Command / Agent Interface**：统一的类型化 `CommandRegistry`，供编辑器控制台、Lua、测试、本地自动化和 AI Agent 共用；支持游戏线程调度、结构化结果以及 JSON-lines 本地通信。
-- **Audio **：基础音频播放系统，支持同步、异步、buffered ，streaming播放
+- **Audio**：基础音频播放系统，支持同步、异步、缓冲和流式播放。
 - **Editor**：基于 Dear ImGui 的编辑器与调试工具。
 - **Optional Modules**：包括 Live2D 、TTS
 
