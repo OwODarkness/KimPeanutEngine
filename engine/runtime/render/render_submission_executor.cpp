@@ -93,6 +93,16 @@ namespace kpengine::render
         for (std::size_t pass_index = 0u; pass_index < submission.passes.size(); ++pass_index)
         {
             const SubmissionPass &pass = submission.passes[pass_index];
+            for (const SubmissionTargetUsage &usage : pass.target_usages)
+            {
+                if (!recorder.RequireRenderTargetUsage(usage.target, usage.usage,
+                                                       usage.scope))
+                {
+                    result.diagnostic = "render submission target usage requirement failed";
+                    result.partial_output = result.pass_count != 0u;
+                    return result;
+                }
+            }
             const bool began = pass.presentation ? recorder.BeginPresentation(
                                                        pass.clear_color.has_value()
                                                            ? &pass.clear_color.value()

@@ -18,8 +18,8 @@ namespace kpengine::live2d
         std::uint32_t y = 0u;
         std::uint32_t width = 0u;
         std::uint32_t height = 0u;
-        Live2DVector2 bounds_min{};
-        Live2DVector2 bounds_max{};
+        Vector2f bounds_min{};
+        Vector2f bounds_max{};
 
         // Matrices use column-vector, column-major-compatible layout. The
         // atlas sample matrix returns normalized top-left-origin UVs. The

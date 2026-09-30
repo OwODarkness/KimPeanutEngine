@@ -39,7 +39,7 @@ namespace kpengine::live2d
             AddTriangle(data, 0u, 1u, {2u});
             data.mask_contexts = {{{0u}}, {{2u}}};
             data.maximum_position_bytes =
-                data.uvs.size() * sizeof(Live2DVector2);
+                data.uvs.size() * sizeof(Vector2f);
             data.feature_report.drawable_count =
                 static_cast<std::uint32_t>(data.drawables.size());
             data.feature_report.active_mask_context_count =
@@ -145,7 +145,7 @@ namespace kpengine::live2d
             (void)consumer;
         }
         data.maximum_position_bytes =
-            data.uvs.size() * sizeof(Live2DVector2);
+                data.uvs.size() * sizeof(Vector2f);
         data.feature_report.drawable_count =
             static_cast<std::uint32_t>(data.drawables.size());
         data.feature_report.active_mask_context_count =

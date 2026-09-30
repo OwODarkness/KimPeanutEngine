@@ -79,10 +79,10 @@ namespace kpengine::live2d
                                  const uint32_t height)
         {
             FittedModel fitted;
-            Live2DVector2 minimum{std::numeric_limits<float>::max(),
-                                  std::numeric_limits<float>::max()};
-            Live2DVector2 maximum{std::numeric_limits<float>::lowest(),
-                                  std::numeric_limits<float>::lowest()};
+            Vector2f minimum{std::numeric_limits<float>::max(),
+                             std::numeric_limits<float>::max()};
+            Vector2f maximum{std::numeric_limits<float>::lowest(),
+                             std::numeric_limits<float>::lowest()};
             bool has_position = false;
             const std::size_t drawable_count = std::min(
                 static_data.drawables.size(), snapshot.drawables.size());
@@ -106,12 +106,12 @@ namespace kpengine::live2d
                 }
                 for (std::size_t vertex = 0u; vertex < vertex_count; ++vertex)
                 {
-                    const Live2DVector2 position =
+                    const Vector2f position =
                         snapshot.positions[first_vertex + vertex];
-                    minimum.x = std::min(minimum.x, position.x);
-                    minimum.y = std::min(minimum.y, position.y);
-                    maximum.x = std::max(maximum.x, position.x);
-                    maximum.y = std::max(maximum.y, position.y);
+                    minimum[0] = std::min(minimum[0], position[0]);
+                    minimum[1] = std::min(minimum[1], position[1]);
+                    maximum[0] = std::max(maximum[0], position[0]);
+                    maximum[1] = std::max(maximum[1], position[1]);
                     has_position = true;
                 }
             }
@@ -123,10 +123,10 @@ namespace kpengine::live2d
                                     0.0f, 0.0f, 0.0f, 1.0f};
                 return fitted;
             }
-            const float center_x = (minimum.x + maximum.x) * 0.5f;
-            const float center_y = (minimum.y + maximum.y) * 0.5f;
-            const float extent_x = std::max(maximum.x - minimum.x, 1.0e-4f);
-            const float extent_y = std::max(maximum.y - minimum.y, 1.0e-4f);
+            const float center_x = (minimum[0] + maximum[0]) * 0.5f;
+            const float center_y = (minimum[1] + maximum[1]) * 0.5f;
+            const float extent_x = std::max(maximum[0] - minimum[0], 1.0e-4f);
+            const float extent_y = std::max(maximum[1] - minimum[1], 1.0e-4f);
             const float aspect = static_cast<float>(width) /
                                  static_cast<float>(height);
             const float max_ndc_extent = 2.0f * kViewerCharacterFill;
@@ -142,10 +142,10 @@ namespace kpengine::live2d
             // Carried out alongside the transform because the bounds are what the
             // fit was computed from, and a caller aiming at the model needs them
             // rather than the matrix.
-            fitted.minimum_x = minimum.x;
-            fitted.minimum_y = minimum.y;
-            fitted.maximum_x = maximum.x;
-            fitted.maximum_y = maximum.y;
+            fitted.minimum_x = minimum[0];
+            fitted.minimum_y = minimum[1];
+            fitted.maximum_x = maximum[0];
+            fitted.maximum_y = maximum[1];
             fitted.has_bounds = true;
             return fitted;
         }
@@ -352,22 +352,20 @@ namespace kpengine::live2d
         }
 
         const std::array<graphics::VertexBindingDesc, 2> bindings{{
-            {kPositionBinding, sizeof(Live2DVector2), false},
-            {kUvBinding, sizeof(Live2DVector2), false}}};
+            {kPositionBinding, sizeof(Vector2f), false},
+            {kUvBinding, sizeof(Vector2f), false}}};
         const std::array<graphics::VertexAttributionDesc, 2> attributes{{
             {0u, kPositionBinding, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, 0u},
             {1u, kUvBinding, graphics::VertexFormat::VERTEX_FORMAT_TWO_FLOATS, 0u}}};
         const std::array<graphics::DescriptorBindingDesc, 2> color_descriptors{{
             {kConstantsBinding, 1u, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-             static_cast<ShaderStage>(static_cast<uint32_t>(ShaderStage::SHADER_STAGE_VERTEX) |
-                                      static_cast<uint32_t>(ShaderStage::SHADER_STAGE_FRAGMENT))},
+             ShaderStage::SHADER_STAGE_VERTEX_FRAGMENT},
             {kTextureBinding, 1u,
              graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT}}};
         const std::array<graphics::DescriptorBindingDesc, 3> masked_descriptors{{
             {kConstantsBinding, 1u, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-             static_cast<ShaderStage>(static_cast<uint32_t>(ShaderStage::SHADER_STAGE_VERTEX) |
-                                      static_cast<uint32_t>(ShaderStage::SHADER_STAGE_FRAGMENT))},
+             ShaderStage::SHADER_STAGE_VERTEX_FRAGMENT},
             {kTextureBinding, 1u,
              graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT},
@@ -376,8 +374,7 @@ namespace kpengine::live2d
              ShaderStage::SHADER_STAGE_FRAGMENT}}};
         const std::array<graphics::DescriptorBindingDesc, 2> mask_descriptors{{
             {kConstantsBinding, 1u, graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-             static_cast<ShaderStage>(static_cast<uint32_t>(ShaderStage::SHADER_STAGE_VERTEX) |
-                                      static_cast<uint32_t>(ShaderStage::SHADER_STAGE_FRAGMENT))},
+             ShaderStage::SHADER_STAGE_VERTEX_FRAGMENT},
             {kTextureBinding, 1u,
              graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT}}};
@@ -495,10 +492,10 @@ namespace kpengine::live2d
     {
         proxy_.position_buffer = backend_->CreateBuffer(
             {graphics::BufferRole::Vertex, graphics::BufferUpdateMode::PerFrame,
-             static_data_.uvs.size() * sizeof(Live2DVector2)}, {});
+             static_data_.uvs.size() * sizeof(Vector2f)}, {});
         proxy_.uv_buffer = backend_->CreateBuffer(
             {graphics::BufferRole::Vertex, graphics::BufferUpdateMode::Immutable,
-             static_data_.uvs.size() * sizeof(Live2DVector2)},
+             static_data_.uvs.size() * sizeof(Vector2f)},
             std::as_bytes(std::span{static_data_.uvs}));
         proxy_.index_buffer = backend_->CreateBuffer(
             {graphics::BufferRole::Index, graphics::BufferUpdateMode::Immutable,
@@ -748,6 +745,16 @@ namespace kpengine::live2d
                              ? execution.diagnostic +
                                    " (frame holds a partial Live2D output)"
                              : execution.diagnostic;
+            return false;
+        }
+        // The viewer samples the completed output through its presentation UI
+        // after this submission. Keep that consumer explicit so Vulkan moves
+        // the attachment out of COLOR_ATTACHMENT_OPTIMAL before ImGui binds it.
+        if (!recorder.RequireRenderTargetUsage(
+                proxy_.output_target, graphics::ResourceUsage::Sampled,
+                graphics::RenderTargetAttachmentScope::Colors(1u)))
+        {
+            diagnostic = "Live2D output target sampling transition failed";
             return false;
         }
         last_frame_sequence_ = snapshot.frame_sequence;

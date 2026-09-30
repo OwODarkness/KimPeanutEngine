@@ -26,7 +26,7 @@ namespace kpengine::live2d
             data.drawables = {
                 {0u, 3u, 0u, 3u, 0u, kLive2DNoMaskContext, {}},
                 {3u, 3u, 3u, 3u, 0u, kLive2DNoMaskContext, {}}};
-            data.maximum_position_bytes = data.uvs.size() * sizeof(Live2DVector2);
+            data.maximum_position_bytes = data.uvs.size() * sizeof(Vector2f);
             data.feature_report.drawable_count = 2u;
             return data;
         }
@@ -107,7 +107,7 @@ namespace kpengine::live2d
                 data.drawables.push_back(
                     {source * 3u, 3u, source * 3u, 3u, 0u, kLive2DNoMaskContext, {}});
             }
-            data.maximum_position_bytes = data.uvs.size() * sizeof(Live2DVector2);
+            data.maximum_position_bytes = data.uvs.size() * sizeof(Vector2f);
             data.feature_report.drawable_count =
                 static_cast<std::uint32_t>(data.drawables.size());
             data.feature_report.active_mask_context_count = kConsumerCount;
@@ -176,7 +176,7 @@ namespace kpengine::live2d
     {
         const Live2DStaticModelData data = MakeStaticData();
         Live2DFrameSnapshot frame = MakeFrame(data);
-        frame.positions[0].x = std::numeric_limits<float>::quiet_NaN();
+        frame.positions[0][0] = std::numeric_limits<float>::quiet_NaN();
 
         const Live2DRenderPlanResult result = Live2DRenderPlanner::Plan(
             MakeResources(), MakeProxy(data), data, frame);
@@ -296,7 +296,7 @@ namespace kpengine::live2d
         {
             Live2DFrameSnapshot frame = MakeFrame(data);
             frame.frame_sequence = sequence;
-            frame.positions[0].x = static_cast<float>(sequence);
+        frame.positions[0][0] = static_cast<float>(sequence);
 
             const Live2DRenderPlanResult result = Live2DRenderPlanner::Plan(
                 MakeResources(), MakeProxy(data), data, frame);

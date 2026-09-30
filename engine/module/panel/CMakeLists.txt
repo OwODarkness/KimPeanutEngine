@@ -43,9 +43,8 @@ target_include_directories(PanelRender PUBLIC
 
 target_link_libraries(PanelRender PUBLIC Render Panel)
 
-# The standalone panel viewer and the commands it contributes. It is not an
-# EngineModule: it has no per-frame module lifecycle, and its whole runtime
-# existence is the host the bootstrap registers.
+# The standalone panel viewer and its commands. Its registration callback is
+# compiled into the application composition by the generic module registry.
 add_library(PanelModule STATIC
     panel_command_provider.cpp
     panel_viewer_host.cpp)
@@ -57,3 +56,9 @@ target_include_directories(PanelModule PUBLIC
 # and needs no UI, so it stays clear of the RuntimeLib/EditorLib cycle.
 target_link_libraries(PanelModule PUBLIC PanelRender
     PRIVATE RuntimeLib RuntimeScreenshot)
+
+add_library(PanelRegistration OBJECT
+    panel_registration.cpp)
+target_include_directories(PanelRegistration PRIVATE
+    "${CMAKE_SOURCE_DIR}/engine")
+target_link_libraries(PanelRegistration PRIVATE PanelModule ModuleBootstrap)

@@ -21,7 +21,7 @@ namespace kpengine::live2d
             data.drawables = {
                 {0u, 3u, 0u, 3u, 0u, kLive2DNoMaskContext, {}},
                 {3u, 3u, 3u, 3u, 0u, kLive2DNoMaskContext, {}}};
-            data.maximum_position_bytes = data.uvs.size() * sizeof(Live2DVector2);
+            data.maximum_position_bytes = data.uvs.size() * sizeof(Vector2f);
             data.feature_report.drawable_count = 2u;
             return data;
         }
@@ -135,6 +135,10 @@ namespace kpengine::live2d
         ASSERT_EQ(result.submission.work.passes[1].draws.size(), 2u);
         EXPECT_EQ(result.submission.work.passes[0].target.id, 6u);
         EXPECT_EQ(result.submission.work.passes[1].target.id, 4u);
+        ASSERT_EQ(result.submission.work.passes[1].target_usages.size(), 1u);
+        EXPECT_EQ(result.submission.work.passes[1].target_usages[0].target.id, 6u);
+        EXPECT_EQ(result.submission.work.passes[1].target_usages[0].usage,
+                  graphics::ResourceUsage::Sampled);
         EXPECT_EQ(result.submission.work.passes[0].draws[0].scissor->width, 85u);
         EXPECT_EQ(result.submission.work.passes[1].draws[1].textures.size(), 2u);
         EXPECT_EQ(result.submission.counters.submitted_mask_source_draw_count, 1u);

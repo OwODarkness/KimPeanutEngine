@@ -9,6 +9,7 @@
 #include <vector>
 
 #include "asset/texture.h"
+#include "math/math_header.h"
 #include "live2d_model_data.h"
 
 namespace kpengine::live2d
@@ -84,9 +85,9 @@ namespace kpengine::live2d
     struct Live2DFrameInput final
     {
         float delta_seconds = 0.0f;
-        Live2DVector2 gaze_target{};
-        Live2DVector2 gravity{0.0f, -1.0f};
-        Live2DVector2 wind{};
+        Vector2f gaze_target{};
+        Vector2f gravity{0.0f, -1.0f};
+        Vector2f wind{};
     };
 
     inline constexpr std::uint32_t kLive2DBehaviorBlink = 1u << 0u;
@@ -155,12 +156,12 @@ namespace kpengine::live2d
                           std::string &diagnostic);
 
         // Queries current deformed geometry in model-local coordinates.
-        bool HitTest(Live2DVector2 point, Live2DHitAreaQueryResult &result,
+        bool HitTest(Vector2f point, Live2DHitAreaQueryResult &result,
                      std::string &diagnostic) const;
-        bool HitTest(std::string_view hit_area_name, Live2DVector2 point,
+        bool HitTest(std::string_view hit_area_name, Vector2f point,
                      bool &hit, std::string &diagnostic) const;
         bool HitTest(std::string_view hit_area_name,
-                     Live2DVector2 point) const;
+                     Vector2f point) const;
 
         const std::vector<std::shared_ptr<const asset::TextureResource>> &
         TextureDependencies() const noexcept;

@@ -195,7 +195,7 @@ namespace kpengine::live2d
         submission.counters.active_mask_context_count = static_cast<std::uint32_t>(
             mask_result.plan.contexts.size());
         submission.counters.position_upload_bytes =
-            snapshot.positions.size() * sizeof(Live2DVector2);
+            snapshot.positions.size() * sizeof(Vector2f);
         submission.work.buffer_writes.push_back({
             proxy.position_buffer, 0u,
             std::vector<std::byte>(submission.counters.position_upload_bytes)});
@@ -273,6 +273,12 @@ namespace kpengine::live2d
         pass.presentation = proxy.output_to_presentation;
         pass.target = proxy.output_to_presentation ? graphics::RenderTargetHandle{}
                                                     : proxy.output_target;
+        if (has_active_masks)
+        {
+            pass.target_usages.push_back({proxy.mask_atlas_target,
+                                          graphics::ResourceUsage::Sampled,
+                                          graphics::RenderTargetAttachmentScope::Colors(1u)});
+        }
         for (const std::uint32_t drawable_index : order)
         {
             const Live2DDrawableStatic &drawable = static_data.drawables[drawable_index];

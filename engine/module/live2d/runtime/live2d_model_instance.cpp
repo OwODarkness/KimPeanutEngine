@@ -235,16 +235,16 @@ namespace kpengine::live2d
             if (!std::isfinite(input.delta_seconds) || input.delta_seconds < 0.0f ||
                 input.delta_seconds > std::numeric_limits<float>::max() -
                                           playback_time_seconds ||
-                !std::isfinite(input.gaze_target.x) ||
-                !std::isfinite(input.gaze_target.y) ||
-                !std::isfinite(input.gravity.x) || !std::isfinite(input.gravity.y) ||
-                !std::isfinite(input.wind.x) || !std::isfinite(input.wind.y))
+                !std::isfinite(input.gaze_target[0]) ||
+                !std::isfinite(input.gaze_target[1]) ||
+                !std::isfinite(input.gravity[0]) || !std::isfinite(input.gravity[1]) ||
+                !std::isfinite(input.wind[0]) || !std::isfinite(input.wind[1]))
             {
                 diagnostic = "Live2D frame delta and vectors must be finite and non-negative";
                 return false;
             }
-            if (input.gaze_target.x < -1.0f || input.gaze_target.x > 1.0f ||
-                input.gaze_target.y < -1.0f || input.gaze_target.y > 1.0f)
+            if (input.gaze_target[0] < -1.0f || input.gaze_target[0] > 1.0f ||
+                input.gaze_target[1] < -1.0f || input.gaze_target[1] > 1.0f)
             {
                 diagnostic = "Live2D gaze target must be within [-1, 1]";
                 return false;
@@ -360,10 +360,10 @@ namespace kpengine::live2d
             }
 
             std::uint64_t topology_hash = 1469598103934665603ull;
-            HashValue(topology_hash, data.canvas.size_in_pixels.x);
-            HashValue(topology_hash, data.canvas.size_in_pixels.y);
-            HashValue(topology_hash, data.canvas.origin_in_pixels.x);
-            HashValue(topology_hash, data.canvas.origin_in_pixels.y);
+            HashValue(topology_hash, data.canvas.size_in_pixels[0]);
+            HashValue(topology_hash, data.canvas.size_in_pixels[1]);
+            HashValue(topology_hash, data.canvas.origin_in_pixels[0]);
+            HashValue(topology_hash, data.canvas.origin_in_pixels[1]);
             HashValue(topology_hash, data.canvas.pixels_per_unit);
             HashValue(topology_hash, data.texture_count);
 
@@ -514,7 +514,7 @@ namespace kpengine::live2d
 
             data.feature_report.active_mask_context_count =
                 static_cast<std::uint32_t>(data.mask_contexts.size());
-            data.maximum_position_bytes = data.uvs.size() * sizeof(Live2DVector2);
+            data.maximum_position_bytes = data.uvs.size() * sizeof(Vector2f);
             data.topology_revision = topology_hash == 0u ? 1u : topology_hash;
             if (!ValidateLive2DStaticModelData(data, diagnostic))
             {
@@ -768,7 +768,7 @@ namespace kpengine::live2d
         {
             if (look != nullptr && target_point != nullptr)
             {
-                target_point->Set(input.gaze_target.x, input.gaze_target.y);
+                target_point->Set(input.gaze_target[0], input.gaze_target[1]);
                 target_point->Update(static_cast<csmFloat32>(delta_seconds));
                 look->UpdateParameters(model, target_point->GetX(), target_point->GetY());
                 behavior_mask |= kLive2DBehaviorGaze;
@@ -781,8 +781,8 @@ namespace kpengine::live2d
             if (physics != nullptr)
             {
                 CubismPhysics::Options options{};
-                options.Gravity = {input.gravity.x, input.gravity.y};
-                options.Wind = {input.wind.x, input.wind.y};
+                options.Gravity = {input.gravity[0], input.gravity[1]};
+                options.Wind = {input.wind[0], input.wind[1]};
                 physics->SetOptions(options);
                 physics->Evaluate(model, static_cast<csmFloat32>(delta_seconds));
                 behavior_mask |= kLive2DBehaviorPhysics;
@@ -1820,7 +1820,7 @@ namespace kpengine::live2d
     }
 
     bool Live2DModelInstance::HitTest(
-        const Live2DVector2 point, Live2DHitAreaQueryResult &result,
+        const Vector2f point, Live2DHitAreaQueryResult &result,
         std::string &diagnostic) const
     {
         diagnostic.clear();
@@ -1830,7 +1830,7 @@ namespace kpengine::live2d
             diagnostic = "Live2D model instance is invalid";
             return false;
         }
-        if (!std::isfinite(point.x) || !std::isfinite(point.y))
+        if (!std::isfinite(point[0]) || !std::isfinite(point[1]))
         {
             diagnostic = "Live2D hit-test point must be finite";
             return false;
@@ -1885,8 +1885,8 @@ namespace kpengine::live2d
                 }
                 if (std::isfinite(left) && std::isfinite(right) &&
                     std::isfinite(top) && std::isfinite(bottom) &&
-                    left <= point.x && point.x <= right &&
-                    top <= point.y && point.y <= bottom)
+                    left <= point[0] && point[0] <= right &&
+                    top <= point[1] && point[1] <= bottom)
                 {
                     result.hit_area_names.push_back(areas[area_index].name);
                 }
@@ -1902,7 +1902,7 @@ namespace kpengine::live2d
     }
 
     bool Live2DModelInstance::HitTest(
-        const std::string_view hit_area_name, const Live2DVector2 point,
+        const std::string_view hit_area_name, const Vector2f point,
         bool &hit, std::string &diagnostic) const
     {
         diagnostic.clear();
@@ -1912,7 +1912,7 @@ namespace kpengine::live2d
             diagnostic = "Live2D model instance is invalid";
             return false;
         }
-        if (!std::isfinite(point.x) || !std::isfinite(point.y))
+        if (!std::isfinite(point[0]) || !std::isfinite(point[1]))
         {
             diagnostic = "Live2D hit-test point must be finite";
             return false;
@@ -1974,13 +1974,13 @@ namespace kpengine::live2d
                          std::string(hit_area_name);
             return false;
         }
-        hit = left <= point.x && point.x <= right &&
-              top <= point.y && point.y <= bottom;
+        hit = left <= point[0] && point[0] <= right &&
+              top <= point[1] && point[1] <= bottom;
         return true;
     }
 
     bool Live2DModelInstance::HitTest(
-        const std::string_view hit_area_name, const Live2DVector2 point) const
+        const std::string_view hit_area_name, const Vector2f point) const
     {
         bool hit = false;
         std::string diagnostic;
@@ -2055,7 +2055,7 @@ namespace kpengine::live2d
             snapshot.frame_sequence = impl_->frame_sequence + 1u;
             snapshot.positions.resize(
                 impl_->static_data.maximum_position_bytes /
-                sizeof(Live2DVector2));
+                sizeof(Vector2f));
             snapshot.drawables.resize(impl_->static_data.drawables.size());
 
             for (std::size_t drawable_index = 0u;

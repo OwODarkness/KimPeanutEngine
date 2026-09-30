@@ -12,6 +12,9 @@ staged in [`.plan/L2D4.md`](.plan/L2D4.md), authored playback is staged in
 [`.spec/specs/live2d-v1-rendering.md`](../../.spec/specs/live2d-v1-rendering.md).
 The next semantic behavior policy is staged in [`.plan/L2D8.md`](.plan/L2D8.md);
 the landed speech-bubble companion has its own [plan](.plan/L2D8-speech-bubble.md).
+The in-progress host/editor/emotion decomposition and core math migration are staged in
+[`.plan/L2D10.0.md`](.plan/L2D10.0.md), with the current extraction evidence in
+[`../../.spec/journal/2026-09-29-live2d-L2D10.0.md`](../../.spec/journal/2026-09-29-live2d-L2D10.0.md).
 
 ## Outcome
 
@@ -123,6 +126,15 @@ Live2D         -> INTERFACE aggregate, analogous to Module/TTS composition
 Live2DModule   -> CMake composition target for the standalone viewer host
 Live2DViewer   -> Live2D + Window + viewer-only presentation adapter
 ```
+
+The current viewer host is an orchestration seam, not the long-term home for
+Live2D editor UI or emotion decisions. L2D10.0 moves preview state, ImGui
+panels, and command presentation into `engine/module/live2d/editor/`, while
+moving deterministic emotion resolution into the UI-free
+`engine/module/live2d/emotion/` seam. Runtime and Render remain SDK/UI-free.
+That stage also converges module-local geometric values on `runtime/core/math`
+and leaves ImGui, pixel extents, and Cubism-native values at their subsystem
+boundaries.
 
 The application is the composition root for statically linked features. Its
 bootstrap function registers the viewer host provider for `live2d-viewer`;

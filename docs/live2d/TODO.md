@@ -17,6 +17,15 @@ the [live2d-v1-rendering spec](../../.spec/specs/live2d-v1-rendering.md).
   cross-backend command evidence.
 - [ ] **L2D9 — speech integration.** Add lip-sync inputs and optional TTS/audio
   coupling through narrow interfaces; Live2D must not depend on a provider.
+- [ ] **L2D10.0 — viewer host decomposition and core math convergence**
+  ([plan](.plan/L2D10.0.md)). Reduce `Live2DViewerHost` to lifecycle and
+  scheduling, move Live2D-specific UI/session/command code into `editor/`,
+  isolate deterministic emotion decisions in `emotion/`, and replace
+  module-local geometric types such as `Live2DVector2` with `runtime/core/math`
+  types at the correct subsystem boundaries.
+  Current increment: bubble presentation is isolated in `editor/`, and emotion
+  orchestration/replay state is isolated in `emotion/`; the next slice is the
+  preview-session owner for model/system/renderer lifetime.
 - [ ] **L2D10 — engine/editor integration.** Add gameplay composition,
   inspector, reimport/hot reload, packaging, and command/capture support.
 - [ ] **L2D11 — measured performance.** Profile first, then choose targeted

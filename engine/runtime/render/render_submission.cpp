@@ -124,6 +124,16 @@ namespace kpengine::render
                                         : "render submission contains an invalid render target";
                 return result;
             }
+            for (const SubmissionTargetUsage &usage : pass.target_usages)
+            {
+                if (!usage.target.IsValid() ||
+                    usage.usage == graphics::ResourceUsage::Undefined)
+                {
+                    result.diagnostic =
+                        "render submission contains an invalid target usage requirement";
+                    return result;
+                }
+            }
             for (const SubmissionDraw &draw : pass.draws)
             {
                 if (!draw.pipeline.IsValid() || !draw.geometry.indices.buffer.IsValid() ||

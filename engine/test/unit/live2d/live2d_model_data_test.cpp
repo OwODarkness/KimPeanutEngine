@@ -19,7 +19,7 @@ namespace kpengine::live2d
             data.indices = {0u, 1u, 2u};
             data.drawables.push_back({0u, 3u, 0u, 3u, 0u,
                                       kLive2DNoMaskContext, {}});
-            data.maximum_position_bytes = 3u * sizeof(Live2DVector2);
+            data.maximum_position_bytes = 3u * sizeof(Vector2f);
             data.feature_report.drawable_count = 1u;
             return data;
         }

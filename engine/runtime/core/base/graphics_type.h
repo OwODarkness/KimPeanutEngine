@@ -61,7 +61,11 @@ enum class ShaderStage : uint8_t
     SHADER_STAGE_RAYGEN,
     SHADER_STAGE_MISS,
     SHADER_STAGE_CLOSEST_HIT,
-    SHADER_STAGE_VISIBILITY_MISS
+    SHADER_STAGE_VISIBILITY_MISS,
+    // Descriptor layouts may expose a uniform block to both graphics stages.
+    // Keep this separate from the sequential single-stage values above; it is
+    // a semantic mask, not a value that can be formed by enum arithmetic.
+    SHADER_STAGE_VERTEX_FRAGMENT
 };
 
 enum class ShaderFormat

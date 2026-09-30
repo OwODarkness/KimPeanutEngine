@@ -49,6 +49,13 @@ namespace kpengine::render
         std::int32_t vertex_offset = 0;
     };
 
+    struct SubmissionTargetUsage final
+    {
+        graphics::RenderTargetHandle target;
+        graphics::ResourceUsage usage = graphics::ResourceUsage::Undefined;
+        graphics::RenderTargetAttachmentScope scope{};
+    };
+
     struct SubmissionPass final
     {
         graphics::RenderTargetHandle target;
@@ -59,6 +66,9 @@ namespace kpengine::render
         // Optional display-space clear for a presentation pass. Offscreen
         // targets continue to use their attachment descriptor clear value.
         std::optional<std::array<float, 4>> clear_color;
+        // Explicit attachment transitions consumed before this pass begins.
+        // Render submissions otherwise leave state tracking entirely to RHI.
+        std::vector<SubmissionTargetUsage> target_usages;
         std::vector<SubmissionDraw> draws;
     };
 

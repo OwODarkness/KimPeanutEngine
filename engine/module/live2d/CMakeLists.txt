@@ -67,13 +67,27 @@ set(KPENGINE_LIVE2D_MSVC_RUNTIME
     CACHE INTERNAL "Live2D target MSVC runtime base")
 
 add_library(Live2DProduct STATIC
-    runtime/live2d_product.cpp
-    runtime/live2d_emotion_policy.cpp
-    runtime/live2d_emotion_resolver.cpp
-    runtime/live2d_emotion_replay.cpp)
+    runtime/live2d_product.cpp)
 target_include_directories(Live2DProduct PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}/runtime")
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime/core")
 set_property(TARGET Live2DProduct PROPERTY
+    MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
+
+add_library(Live2DEmotion STATIC
+    emotion/live2d_emotion_controller.cpp
+    emotion/live2d_emotion_policy.cpp
+    emotion/live2d_emotion_resolver.cpp
+    emotion/live2d_emotion_replay.cpp
+    emotion/live2d_emotion_runtime.cpp)
+target_include_directories(Live2DEmotion PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}/emotion"
+    "${CMAKE_CURRENT_SOURCE_DIR}/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime"
+    "${CMAKE_SOURCE_DIR}/engine/runtime/core")
+target_link_libraries(Live2DEmotion PUBLIC Live2DProduct)
+set_property(TARGET Live2DEmotion PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
 
 add_library(Live2DRender STATIC
@@ -159,18 +173,30 @@ set_property(TARGET Live2DBubble PROPERTY
 
 add_library(Live2D INTERFACE)
 target_link_libraries(Live2D INTERFACE Live2DRuntime Live2DProduct
-    Live2DAssetRuntime Live2DRegistration Live2DRender)
+    Live2DEmotion Live2DAssetRuntime Live2DRegistration Live2DRender)
 
 add_library(Live2DModule STATIC
+    editor/live2d_viewer_command_bridge.cpp
+    editor/live2d_viewer_bubble.cpp
+    editor/live2d_viewer_editor.cpp
     live2d_model_report_command.cpp
     live2d_settings.cpp
     live2d_viewer_host.cpp)
 target_include_directories(Live2DModule PUBLIC
-    "${CMAKE_SOURCE_DIR}/engine")
+    "${CMAKE_SOURCE_DIR}/engine"
+    "${CMAKE_CURRENT_SOURCE_DIR}/emotion"
+    "${CMAKE_CURRENT_SOURCE_DIR}/editor")
 target_link_libraries(Live2DModule PUBLIC Live2D Live2DBubble
     PRIVATE Live2DImport RuntimeScreenshot EditorUILib KP::ImGui KP::NlohmannJson)
 set_property(TARGET Live2DModule PROPERTY
     MSVC_RUNTIME_LIBRARY "${_kpengine_live2d_msvc_runtime}$<$<CONFIG:Debug>:Debug>")
+
+add_library(Live2DModuleRegistration OBJECT
+    live2d_registration.cpp)
+target_include_directories(Live2DModuleRegistration PRIVATE
+    "${CMAKE_SOURCE_DIR}/engine"
+    "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(Live2DModuleRegistration PRIVATE Live2DModule ModuleBootstrap)
 
 set(KPENGINE_LIVE2D_MOC_PATH
     "${KPENGINE_CUBISM_SDK_ROOT}/Samples/Resources/Wanko/Wanko.moc3"

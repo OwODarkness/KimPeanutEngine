@@ -660,7 +660,7 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     EXPECT_EQ(static_data.feature_report.drawable_count,
               static_data.drawables.size());
     EXPECT_EQ(static_data.maximum_position_bytes,
-              static_data.uvs.size() * sizeof(kpengine::live2d::Live2DVector2));
+              static_data.uvs.size() * sizeof(kpengine::Vector2f));
 
     kpengine::live2d::Live2DStaticModelData second_static_data;
     ASSERT_TRUE(second_instance->ExtractStaticData(second_static_data,
@@ -691,10 +691,10 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     EXPECT_GT(hidden_pose_drawables, 0u);
     for (std::size_t vertex = 0u; vertex < first_frame.positions.size(); ++vertex)
     {
-        EXPECT_FLOAT_EQ(first_frame.positions[vertex].x,
-                        second_frame.positions[vertex].x);
-        EXPECT_FLOAT_EQ(first_frame.positions[vertex].y,
-                        second_frame.positions[vertex].y);
+        EXPECT_FLOAT_EQ(first_frame.positions[vertex][0],
+                        second_frame.positions[vertex][0]);
+        EXPECT_FLOAT_EQ(first_frame.positions[vertex][1],
+                        second_frame.positions[vertex][1]);
     }
 
     ASSERT_GT(first_instance->ParameterCount(), 0u);
@@ -719,8 +719,8 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
     for (std::size_t vertex = 0u;
          vertex < changed_frame.positions.size(); ++vertex)
     {
-        if (changed_frame.positions[vertex].x != first_frame.positions[vertex].x ||
-            changed_frame.positions[vertex].y != first_frame.positions[vertex].y)
+        if (changed_frame.positions[vertex][0] != first_frame.positions[vertex][0] ||
+            changed_frame.positions[vertex][1] != first_frame.positions[vertex][1])
         {
             position_changed = true;
             break;
@@ -882,7 +882,7 @@ TEST(Live2DAssetTest, LoadsImportedProductThroughAssetManagerDependencies)
                   kpengine::live2d::kLive2DBehaviorPose,
               0u);
 
-    frame_input.gaze_target.x = 2.0f;
+    frame_input.gaze_target[0] = 2.0f;
     EXPECT_FALSE(behavior_first->AdvanceFrame(frame_input, behavior_first_result,
                                               behavior_diagnostic));
     EXPECT_NE(behavior_diagnostic.find("within [-1, 1]"), std::string::npos);

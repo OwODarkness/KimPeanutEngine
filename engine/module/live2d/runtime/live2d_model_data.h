@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "math/math_header.h"
 #include "../render/live2d_render_contract.h"
 
 namespace kpengine::live2d
@@ -13,16 +14,13 @@ namespace kpengine::live2d
     inline constexpr std::uint32_t kLive2DNoMaskContext =
         static_cast<std::uint32_t>(-1);
 
-    struct Live2DVector2 final
-    {
-        float x = 0.0f;
-        float y = 0.0f;
-    };
+    static_assert(sizeof(Vector2f) == sizeof(float) * 2u,
+                  "Live2D geometric vectors must remain tightly packed");
 
     struct Live2DCanvasInfo final
     {
-        Live2DVector2 size_in_pixels{};
-        Live2DVector2 origin_in_pixels{};
+        Vector2f size_in_pixels{};
+        Vector2f origin_in_pixels{};
         float pixels_per_unit = 0.0f;
     };
 
@@ -46,7 +44,7 @@ namespace kpengine::live2d
     {
         std::uint64_t topology_revision = 0u;
         Live2DCanvasInfo canvas{};
-        std::vector<Live2DVector2> uvs;
+        std::vector<Vector2f> uvs;
         std::vector<std::uint16_t> indices;
         std::vector<Live2DDrawableStatic> drawables;
         std::vector<Live2DMaskContext> mask_contexts;
@@ -73,7 +71,7 @@ namespace kpengine::live2d
     {
         std::uint64_t topology_revision = 0u;
         std::uint64_t frame_sequence = 0u;
-        std::vector<Live2DVector2> positions;
+        std::vector<Vector2f> positions;
         std::vector<Live2DDrawableState> drawables;
     };
 

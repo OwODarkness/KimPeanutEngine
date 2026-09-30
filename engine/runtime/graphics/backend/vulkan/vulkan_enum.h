@@ -359,6 +359,8 @@ inline TextureFormat ConvertFromVulkanTextureFormat(VkFormat format)
             return VK_SHADER_STAGE_VERTEX_BIT;
         case ShaderStage::SHADER_STAGE_FRAGMENT:
             return VK_SHADER_STAGE_FRAGMENT_BIT;
+        case ShaderStage::SHADER_STAGE_VERTEX_FRAGMENT:
+            return VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
         case ShaderStage::SHADER_STAGE_GEOMETRY:
             return VK_SHADER_STAGE_GEOMETRY_BIT;
         case ShaderStage::SHADER_STAGE_COMPUTE:

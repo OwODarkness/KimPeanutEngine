@@ -120,8 +120,7 @@ namespace kpengine::live2d
         const std::array<graphics::DescriptorBindingDesc, 2> descriptors{{
             {kBubbleConstantsBinding, 1u,
              graphics::DescriptorType::DESCRIPTOR_TYPE_UNIFORM,
-             static_cast<ShaderStage>(static_cast<std::uint32_t>(ShaderStage::SHADER_STAGE_VERTEX) |
-                                      static_cast<std::uint32_t>(ShaderStage::SHADER_STAGE_FRAGMENT))},
+             ShaderStage::SHADER_STAGE_VERTEX_FRAGMENT},
             {kBubbleTextBinding, 1u,
              graphics::DescriptorType::DESCRIPTOR_TYPE_COMBINE_IMAGE_SAMPLER,
              ShaderStage::SHADER_STAGE_FRAGMENT}}};

@@ -52,13 +52,13 @@ namespace kpengine::live2d
         {
             return Fail(diagnostic, "Live2D static data has no topology revision");
         }
-        if (!IsFinite(data.canvas.size_in_pixels.x) ||
-            !IsFinite(data.canvas.size_in_pixels.y) ||
-            !IsFinite(data.canvas.origin_in_pixels.x) ||
-            !IsFinite(data.canvas.origin_in_pixels.y) ||
+        if (!IsFinite(data.canvas.size_in_pixels[0]) ||
+            !IsFinite(data.canvas.size_in_pixels[1]) ||
+            !IsFinite(data.canvas.origin_in_pixels[0]) ||
+            !IsFinite(data.canvas.origin_in_pixels[1]) ||
             !IsFinite(data.canvas.pixels_per_unit) ||
-            data.canvas.size_in_pixels.x <= 0.0f ||
-            data.canvas.size_in_pixels.y <= 0.0f ||
+            data.canvas.size_in_pixels[0] <= 0.0f ||
+            data.canvas.size_in_pixels[1] <= 0.0f ||
             data.canvas.pixels_per_unit <= 0.0f)
         {
             return Fail(diagnostic, "Live2D canvas information is invalid");
@@ -135,9 +135,9 @@ namespace kpengine::live2d
         }
         if (expected_vertex_count >
                 std::numeric_limits<std::size_t>::max() /
-                    sizeof(Live2DVector2) ||
+                    sizeof(Vector2f) ||
             data.maximum_position_bytes !=
-                expected_vertex_count * sizeof(Live2DVector2))
+                expected_vertex_count * sizeof(Vector2f))
         {
             return Fail(diagnostic,
                         "Live2D maximum position byte count is inconsistent");
@@ -152,8 +152,8 @@ namespace kpengine::live2d
         for (std::size_t vertex_index = 0u; vertex_index < data.uvs.size();
              ++vertex_index)
         {
-            if (!IsFinite(data.uvs[vertex_index].x) ||
-                !IsFinite(data.uvs[vertex_index].y))
+            if (!IsFinite(data.uvs[vertex_index][0]) ||
+                !IsFinite(data.uvs[vertex_index][1]))
             {
                 return Fail(diagnostic,
                             "Live2D UV contains a non-finite value at vertex " +
@@ -240,8 +240,8 @@ namespace kpengine::live2d
         }
         if (snapshot.positions.size() >
                 std::numeric_limits<std::size_t>::max() /
-                    sizeof(Live2DVector2) ||
-            snapshot.positions.size() * sizeof(Live2DVector2) !=
+                    sizeof(Vector2f) ||
+            snapshot.positions.size() * sizeof(Vector2f) !=
                 static_data.maximum_position_bytes)
         {
             return Fail(diagnostic,
@@ -255,8 +255,8 @@ namespace kpengine::live2d
         for (std::size_t vertex_index = 0u;
              vertex_index < snapshot.positions.size(); ++vertex_index)
         {
-            if (!IsFinite(snapshot.positions[vertex_index].x) ||
-                !IsFinite(snapshot.positions[vertex_index].y))
+            if (!IsFinite(snapshot.positions[vertex_index][0]) ||
+                !IsFinite(snapshot.positions[vertex_index][1]))
             {
                 return Fail(diagnostic,
                             "Live2D frame position contains a non-finite value at vertex " +

@@ -2,34 +2,27 @@ add_library(Module INTERFACE)
 add_subdirectory(tts)
 target_link_libraries(Module INTERFACE TTS)
 
+add_library(ModuleBootstrap STATIC
+    module_bootstrap.cpp
+    module_registration.cpp)
+target_include_directories(ModuleBootstrap PUBLIC
+    "${CMAKE_SOURCE_DIR}/engine")
+target_link_libraries(ModuleBootstrap PRIVATE RuntimeLib)
+target_link_libraries(Module INTERFACE ModuleBootstrap)
+
 if(KPENGINE_ENABLE_TERRAIN)
     add_subdirectory(terrain)
     target_link_libraries(Module INTERFACE Terrain)
 endif()
 
-# Panel is not registered as an EngineModule: its representation stage is data
-# with no runtime lifecycle yet, so it is only a library the tests consume.
+# Panel owns its host registration callback and runtime host. Its representation
+# library remains separately usable by tests and tools.
 add_subdirectory(panel)
-
-add_library(ModuleBootstrap STATIC
-    module_bootstrap.cpp)
-target_include_directories(ModuleBootstrap PUBLIC
-    "${CMAKE_SOURCE_DIR}/engine")
-target_link_libraries(ModuleBootstrap PRIVATE RuntimeLib EditorUILib)
-target_link_libraries(Module INTERFACE ModuleBootstrap)
+target_link_libraries(Module INTERFACE PanelModule)
+target_sources(Module INTERFACE $<TARGET_OBJECTS:PanelRegistration>)
 
 if(KPENGINE_ENABLE_LIVE2D)
     add_subdirectory(live2d)
-    target_compile_definitions(ModuleBootstrap PRIVATE
-        KPENGINE_ENABLE_LIVE2D=1)
-    target_link_libraries(ModuleBootstrap PRIVATE Live2DModule)
-    target_link_libraries(Module INTERFACE Live2D)
-else()
-    target_compile_definitions(ModuleBootstrap PRIVATE
-        KPENGINE_ENABLE_LIVE2D=0)
+    target_link_libraries(Module INTERFACE Live2D Live2DModule)
+    target_sources(Module INTERFACE $<TARGET_OBJECTS:Live2DModuleRegistration>)
 endif()
-
-# The bootstrap registers the panel viewer host, so it links the panel module
-# directly rather than through the Module interface: the panel is not an
-# EngineModule and has no module lifecycle to run.
-target_link_libraries(ModuleBootstrap PRIVATE PanelModule)

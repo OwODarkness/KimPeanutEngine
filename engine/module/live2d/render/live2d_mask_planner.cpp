@@ -14,10 +14,10 @@ namespace kpengine::live2d
 
         struct Bounds final
         {
-            Live2DVector2 min{
+            Vector2f min{
                 std::numeric_limits<float>::max(),
                 std::numeric_limits<float>::max()};
-            Live2DVector2 max{
+            Vector2f max{
                 std::numeric_limits<float>::lowest(),
                 std::numeric_limits<float>::lowest()};
             bool has_value = false;
@@ -35,17 +35,17 @@ namespace kpengine::live2d
             return std::isfinite(value) != 0;
         }
 
-        bool IsFinite(const Live2DVector2 value) noexcept
+        bool IsFinite(const Vector2f value) noexcept
         {
-            return IsFinite(value.x) && IsFinite(value.y);
+            return IsFinite(value[0]) && IsFinite(value[1]);
         }
 
-        void Include(Bounds &bounds, const Live2DVector2 position) noexcept
+        void Include(Bounds &bounds, const Vector2f position) noexcept
         {
-            bounds.min.x = std::min(bounds.min.x, position.x);
-            bounds.min.y = std::min(bounds.min.y, position.y);
-            bounds.max.x = std::max(bounds.max.x, position.x);
-            bounds.max.y = std::max(bounds.max.y, position.y);
+            bounds.min[0] = std::min(bounds.min[0], position[0]);
+            bounds.min[1] = std::min(bounds.min[1], position[1]);
+            bounds.max[0] = std::max(bounds.max[0], position[0]);
+            bounds.max[1] = std::max(bounds.max[1], position[1]);
             bounds.has_value = true;
         }
 
@@ -88,8 +88,8 @@ namespace kpengine::live2d
             const std::uint32_t y1 =
                 (kLive2DMaskAtlasHeight * (row + 1u)) / kRegionSubdivision;
 
-            const float extent_x = bounds.max.x - bounds.min.x;
-            const float extent_y = bounds.max.y - bounds.min.y;
+            const float extent_x = bounds.max[0] - bounds.min[0];
+            const float extent_y = bounds.max[1] - bounds.min[1];
             const float scale_u =
                 static_cast<float>(x1 - x0) /
                 static_cast<float>(kLive2DMaskAtlasWidth) / extent_x;
@@ -99,11 +99,11 @@ namespace kpengine::live2d
             const float translate_u =
                 static_cast<float>(x0) /
                     static_cast<float>(kLive2DMaskAtlasWidth) -
-                bounds.min.x * scale_u;
+                bounds.min[0] * scale_u;
             const float translate_v =
                 static_cast<float>(y0) /
                     static_cast<float>(kLive2DMaskAtlasHeight) -
-                bounds.min.y * scale_v;
+                bounds.min[1] * scale_v;
 
             Live2DMaskAtlasRegion output{};
             output.channel = channel;
@@ -247,8 +247,8 @@ namespace kpengine::live2d
                                 std::to_string(working_context.source_context_index));
             }
 
-            const float extent_x = bounds.max.x - bounds.min.x;
-            const float extent_y = bounds.max.y - bounds.min.y;
+            const float extent_x = bounds.max[0] - bounds.min[0];
+            const float extent_y = bounds.max[1] - bounds.min[1];
             if (!IsFinite(extent_x) || !IsFinite(extent_y) || extent_x <= 0.0f ||
                 extent_y <= 0.0f)
             {
@@ -259,10 +259,10 @@ namespace kpengine::live2d
 
             const float margin_x = extent_x * kBoundsMargin;
             const float margin_y = extent_y * kBoundsMargin;
-            bounds.min.x -= margin_x;
-            bounds.min.y -= margin_y;
-            bounds.max.x += margin_x;
-            bounds.max.y += margin_y;
+            bounds.min[0] -= margin_x;
+            bounds.min[1] -= margin_y;
+            bounds.max[0] += margin_x;
+            bounds.max[1] += margin_y;
 
             Live2DMaskAtlasContext context{};
             context.source_context_index = working_context.source_context_index;

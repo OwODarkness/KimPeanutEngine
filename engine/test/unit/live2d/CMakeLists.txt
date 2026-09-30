@@ -23,7 +23,8 @@ add_executable(Live2DModelDataContractTest
 target_include_directories(Live2DModelDataContractTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/render
-    ${CMAKE_SOURCE_DIR}/engine/runtime)
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core)
 
 target_link_libraries(Live2DModelDataContractTest PRIVATE KP::GoogleTest)
 
@@ -32,17 +33,28 @@ gtest_discover_tests(Live2DModelDataContractTest PROPERTIES LABELS "live2d")
 
 add_executable(Live2DEmotionPolicyTest
     live2d_emotion_policy_test.cpp
-    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_emotion_policy.cpp
-    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_emotion_resolver.cpp
-    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime/live2d_emotion_replay.cpp)
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/emotion/live2d_emotion_policy.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/emotion/live2d_emotion_resolver.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/emotion/live2d_emotion_replay.cpp)
 
 target_include_directories(Live2DEmotionPolicyTest PRIVATE
-    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime)
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/emotion
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core)
 
 target_link_libraries(Live2DEmotionPolicyTest PRIVATE KP::GoogleTest)
 
 include(GoogleTest)
 gtest_discover_tests(Live2DEmotionPolicyTest PROPERTIES LABELS "live2d")
+
+add_executable(Live2DEmotionControllerTest
+    live2d_emotion_controller_test.cpp
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/emotion/live2d_emotion_controller.cpp)
+target_include_directories(Live2DEmotionControllerTest PRIVATE
+    ${CMAKE_SOURCE_DIR}/engine/module/live2d/emotion)
+target_link_libraries(Live2DEmotionControllerTest PRIVATE KP::GoogleTest)
+include(GoogleTest)
+gtest_discover_tests(Live2DEmotionControllerTest PROPERTIES LABELS "live2d")
 
 add_executable(Live2DRenderPlannerTest
     live2d_render_planner_test.cpp
@@ -72,7 +84,8 @@ target_include_directories(Live2DMaskPlannerTest PRIVATE
     ${CMAKE_SOURCE_DIR}/engine/module/live2d
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/render
     ${CMAKE_SOURCE_DIR}/engine/module/live2d/runtime
-    ${CMAKE_SOURCE_DIR}/engine/runtime)
+    ${CMAKE_SOURCE_DIR}/engine/runtime
+    ${CMAKE_SOURCE_DIR}/engine/runtime/core)
 target_link_libraries(Live2DMaskPlannerTest PRIVATE KP::GoogleTest)
 include(GoogleTest)
 gtest_discover_tests(Live2DMaskPlannerTest PROPERTIES LABELS "live2d")

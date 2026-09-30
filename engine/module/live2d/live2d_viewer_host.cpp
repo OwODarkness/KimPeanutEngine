@@ -7,84 +7,61 @@
 #include <exception>
 #include <utility>
 
-#include <imgui.h>
-
 #include "asset/asset_manager.h"
 #include "base/color.h"
 #include "config/path.h"
-#include "editor/log/editor_log_component.h"
 #include "editor/settings/editor_settings.h"
-#include "editor/ui/editor_ui.h"
+#include "editor/live2d_viewer_bubble.h"
+#include "editor/live2d_viewer_command_bridge.h"
+#include "editor/live2d_viewer_editor.h"
 #include "engine.h"
 #include "graphics/backend/common/render_backend.h"
 #include "log/logger.h"
 #include "live2d_model_report_command.h"
 #include "live2d_settings.h"
+#include "module/live2d/emotion/live2d_emotion_runtime.h"
 #include "module/live2d/render/live2d_renderer.h"
 #include "module/live2d/runtime/live2d_model_resource.h"
 #include "panel_glyph_product.h"
+#include "render/frame_context.h"
 #include "render/render_capture_service_internal.h"
+#include "runtime/live2d_system.h"
 #include "screenshot/runtime_screenshot_service.h"
 #include "runtime_global_context.h"
-#include "screenshot/screenshot_command_provider.h"
 #include "window/window_system.h"
 
 namespace kpengine::live2d
 {
+    template <typename T>
+    void Live2DViewerHostDeleter<T>::operator()(T *const object) const noexcept
+    {
+        delete object;
+    }
+
+    template <typename T, typename... Args>
+    Live2DViewerHostPtr<T> MakeHostObject(Args &&...args)
+    {
+        return Live2DViewerHostPtr<T>(
+            new T(std::forward<Args>(args)...));
+    }
+
+    template struct Live2DViewerHostDeleter<WindowSystem>;
+    template struct Live2DViewerHostDeleter<graphics::RenderBackend>;
+    template struct Live2DViewerHostDeleter<render::FrameContext>;
+    template struct Live2DViewerHostDeleter<Live2DSystem>;
+    template struct Live2DViewerHostDeleter<Live2DRenderer>;
+    template struct Live2DViewerHostDeleter<editor::Live2DViewerBubble>;
+    template struct Live2DViewerHostDeleter<editor::Live2DViewerEditor>;
+    template struct Live2DViewerHostDeleter<editor::Live2DViewerCommandBridge>;
+    template struct Live2DViewerHostDeleter<Live2DEmotionRuntime>;
+    template struct Live2DViewerHostDeleter<render::RenderCaptureService>;
+    template struct Live2DViewerHostDeleter<runtime::RuntimeScreenshotService>;
+
     namespace
     {
         // Upper bound on how long a --capture waits for its --resize to reach
         // the output target before capturing at whatever extent is current.
         constexpr uint32_t kResizeWaitFrameBudget = 240u;
-        constexpr std::uint32_t kEmotionBubbleMinimumTextWidth =
-            panel::kHalfwidthAdvance * 4u;
-
-        panel::GlyphCell MakeEmotionGlyph(
-            const std::array<std::string_view, 8u> &pattern)
-        {
-            panel::GlyphCell glyph{};
-            glyph.advance = panel::kHalfwidthAdvance;
-            for (std::uint32_t row = 0u; row < pattern.size(); ++row)
-            {
-                for (std::uint32_t column = 0u; column < pattern[row].size(); ++column)
-                {
-                    if (pattern[row][column] != ' ')
-                    {
-                        glyph.SetDot(row * 2u, column, true);
-                        glyph.SetDot(row * 2u + 1u, column, true);
-                    }
-                }
-            }
-            return glyph;
-        }
-
-        panel::GlyphSet MakeEmotionGlyphs()
-        {
-            std::vector<panel::GlyphCell> glyphs(95u);
-            const auto set = [&glyphs](const char character,
-                                       const std::array<std::string_view, 8u> &pattern) {
-                glyphs[static_cast<std::size_t>(character) - 32u] =
-                    MakeEmotionGlyph(pattern);
-            };
-            set('^', {"  **  ", " *  * ", "*    *", "      ",
-                      "      ", "      ", "      ", "      "});
-            set('_', {"      ", "      ", "      ", "      ",
-                      "      ", "      ", " ******", "      "});
-            set('T', {"*******", "*******", "   **  ", "   **  ",
-                      "   **  ", "   **  ", "   **  ", "   **  "});
-            set('>', {"*     ", " **   ", "   ** ", "     *",
-                      "     *", "   ** ", " **   ", "*     "});
-            set('<', {"     *", "   ** ", " **   ", "*     ",
-                      "*     ", " **   ", "   ** ", "     *"});
-            set('o', {"  **** ", " **  **", "**    *", "**    *",
-                      "**    *", " **  **", "  **** ", "      "});
-            set('O', {"  **** ", " **  **", "**    *", "**    *",
-                      "**    *", " **  **", "  **** ", "      "});
-            set('x', {"*    *", " *  * ", "  **  ", "  **  ",
-                      "  **  ", " *  * ", "*    *", "      "});
-            return panel::GlyphSet(32u, std::move(glyphs));
-        }
-
         const char *TerminalStateName(
             const Live2DBehaviorTerminalState state) noexcept
         {
@@ -127,12 +104,6 @@ namespace kpengine::live2d
 
     }
 
-    struct Live2DViewerUiState final
-    {
-        std::unique_ptr<editor::EditorUI> ui;
-        std::unique_ptr<editor::EditorLogComponent> log;
-    };
-
     Live2DViewerHost::~Live2DViewerHost()
     {
         Shutdown();
@@ -152,8 +123,6 @@ namespace kpengine::live2d
                 "Live2D viewer cannot initialize while Scene3D services are present";
             return false;
         }
-
-        emotion_glyphs_ = MakeEmotionGlyphs();
 
         try
         {
@@ -181,7 +150,8 @@ namespace kpengine::live2d
                 return false;
             }
 
-            window_ = WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW);
+            window_ = Live2DViewerHostPtr<WindowSystem>(
+                WindowSystem::CreateWindowSystem(WindowAPIType::WINDOW_API_GLFW).release());
             if (!window_)
             {
                 diagnostic = "Live2D viewer could not create a window system";
@@ -203,7 +173,8 @@ namespace kpengine::live2d
                 HandleCursorEvent(event);
             });
 
-            backend_ = graphics::RenderBackend::CreateGraphicsBackEnd(engine.GetGraphicsAPI());
+            backend_ = Live2DViewerHostPtr<graphics::RenderBackend>(
+                graphics::RenderBackend::CreateGraphicsBackEnd(engine.GetGraphicsAPI()).release());
             if (!backend_)
             {
                 diagnostic = "Live2D viewer could not create its graphics backend";
@@ -217,18 +188,19 @@ namespace kpengine::live2d
             frame_contexts_.reserve(frame_count);
             for (uint32_t index = 0; index < frame_count; ++index)
             {
-                auto frame = std::make_unique<render::FrameContext>();
+                auto frame = MakeHostObject<render::FrameContext>();
                 frame->Initialize(*backend_, 4u * 1024u * 1024u);
                 frame_contexts_.push_back(std::move(frame));
             }
 
-            if (!system_.Initialize())
+            system_ = MakeHostObject<Live2DSystem>();
+            if (!system_->Initialize())
             {
                 diagnostic = "Live2D Cubism framework initialization failed";
                 return false;
             }
             system_initialized_ = true;
-            renderer_ = std::make_unique<Live2DRenderer>(system_, model_asset_);
+            renderer_ = MakeHostObject<Live2DRenderer>(*system_, model_asset_);
             renderer_->SetPresentationTarget(false);
             const std::array<float, 4> window_background_color =
                 ReadWindowBackgroundColor(GetSettingsPath());
@@ -262,29 +234,31 @@ namespace kpengine::live2d
                     model_asset_);
             if (model_resource == nullptr)
             {
-                behavior_replay_.diagnostic =
+                emotion_runtime_ = MakeHostObject<Live2DEmotionRuntime>();
+                std::string replay_diagnostic =
                     "Live2D viewer behavior replay could not read the loaded product";
                 KP_LOG("Live2DViewer", LOG_LEVEL_WARNING, "%s",
-                       behavior_replay_.diagnostic.c_str());
+                       replay_diagnostic.c_str());
             }
             else
             {
+                emotion_runtime_ = MakeHostObject<Live2DEmotionRuntime>();
                 std::string replay_diagnostic;
-                if (!RunLive2DEmotionReplay(model_resource->Product(),
-                                            behavior_replay_, replay_diagnostic))
+                if (!emotion_runtime_->RunReplay(model_resource->Product(), replay_diagnostic))
                 {
-                    behavior_replay_.diagnostic = std::move(replay_diagnostic);
+                    const Live2DEmotionReplayResult &replay = emotion_runtime_->Replay();
                     KP_LOG("Live2DViewer", LOG_LEVEL_WARNING,
                            "Live2D emotion replay unavailable: %s",
-                           behavior_replay_.diagnostic.c_str());
+                           replay.diagnostic.c_str());
                 }
                 else
                 {
+                    const Live2DEmotionReplayResult &replay = emotion_runtime_->Replay();
                     KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
                            "Live2D emotion replay passed: %llu transitions, deterministic=%d",
                            static_cast<unsigned long long>(
-                               behavior_replay_.transition_history.size()),
-                           behavior_replay_.deterministic ? 1 : 0);
+                               replay.transition_history.size()),
+                           replay.deterministic ? 1 : 0);
                 }
             }
 
@@ -318,78 +292,46 @@ namespace kpengine::live2d
                                  error.what();
                     return false;
                 }
-                bubble_glyphs_ = panel::ToGlyphSet(std::move(product));
-                bubble_panel_.SetText(0u, *engine.GetPanelText());
-                bubble_ink_ = bubble_panel_.Rebuild(bubble_glyphs_);
-
-                bubble_ = std::make_unique<BubbleRenderer>();
+                bubble_ = MakeHostObject<editor::Live2DViewerBubble>();
                 // The pipeline's attachment format has to be the one the model's
                 // pass draws into, so it is asked for rather than assumed.
                 if (!bubble_->Initialize(*backend_, renderer_->GetOutputColorFormat(),
-                                         diagnostic))
+                                         diagnostic) ||
+                    !bubble_->SetGlyphs(panel::ToGlyphSet(std::move(product)), diagnostic) ||
+                    !bubble_->SetInitialText(*engine.GetPanelText(), diagnostic))
                 {
                     return false;
                 }
-                if (!bubble_->UploadText(bubble_ink_, diagnostic))
-                {
-                    return false;
-                }
-
-                // A cyber theme rather than paper: a dark panel, a grid that
-                // glows faintly, neon ink, and a hot edge. The three levels are
-                // what make it read -- the darkest is the panel, the middle is
-                // the grid, and only the lit dots carry the colour.
-                //
-                // These are display-space colours; the shader linearises them,
-                // because the target is sRGB and the hardware encodes on store.
-                bubble_appearance_.fill_color = {0.02f, 0.03f, 0.06f, 1.0f};
-                bubble_appearance_.bezel_color = {0.07f, 0.16f, 0.30f, 1.0f};
-                bubble_appearance_.dot_color = {0.10f, 0.95f, 1.0f, 1.0f};
-                bubble_appearance_.outline_color = {1.0f, 0.16f, 0.66f, 1.0f};
-                bubble_appearance_.dot_gap = 0.22f;
-
-                // Off to one side and clear of the character, rather than
-                // centred at the top where it sits on the head and hides the
-                // face -- the one thing the viewer exists to show. Upper left,
-                // where a manga bubble sits when it is leading into a panel. A
-                // bubble is also smaller than it first looks: it is sized to its
-                // text, so a short line wants a short bubble.
-                bubble_placement_.center_x = 0.26f;
-                bubble_placement_.center_y = 0.16f;
-                bubble_placement_.height_fraction = 0.15f;
-                bubble_pop_ = 0.0f;
-                bubble_enabled_ = true;
                 KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
                        "speech bubble enabled from %s", product_path.c_str());
             }
 
-            editor::EditorSettings editor_settings{};
-            editor_settings.log_colors = editor::DefaultLogColors();
+            kpengine::editor::EditorSettings editor_settings{};
+            editor_settings.log_colors = kpengine::editor::DefaultLogColors();
             try
             {
-                editor_settings = editor::ReadEditorSettings(GetSettingsPath());
+                editor_settings = kpengine::editor::ReadEditorSettings(GetSettingsPath());
             }
             catch (const std::exception &error)
             {
                 KP_LOG("Live2DViewer", LOG_LEVEL_WARNING,
                        "viewer log settings unavailable (%s), using defaults", error.what());
             }
-            viewer_ui_ = std::make_shared<Live2DViewerUiState>();
-            viewer_ui_->log = std::make_unique<editor::EditorLogComponent>(
-                runtime::global_runtime_context.log_system_.get(), editor_settings.log_colors,
-                editor::EditorWindowConfig{0.0f, 0.75f, 1.0f, 0.25f, true});
-            viewer_ui_->ui = std::make_unique<editor::EditorUI>();
-            editor::EditorUIInitInfo ui_info{};
+            viewer_editor_ = MakeHostObject<editor::Live2DViewerEditor>();
+            kpengine::editor::EditorUIInitInfo ui_info{};
             ui_info.window = window_->GetNativeHandle();
             ui_info.editor_presentation_bridge = backend_->GetEditorPresentationBridge();
             ui_info.log_system = runtime::global_runtime_context.log_system_.get();
             ui_info.engine = &engine;
-            ui_info.background_color_override = editor::LogColor{
+            ui_info.background_color_override = kpengine::editor::LogColor{
                 window_background_color[0], window_background_color[1],
                 window_background_color[2], window_background_color[3]};
-            viewer_ui_->ui->InitializeViewer(ui_info, [this] { RenderViewerUI(); });
+            if (!viewer_editor_->Initialize(ui_info, editor_settings.log_colors, diagnostic))
+            {
+                return false;
+            }
 
-            render_capture_service_ = std::make_unique<render::RenderCaptureService>(
+            render_capture_service_ = MakeHostObject<render::RenderCaptureService>(
                 backend_->GetRenderTargetReadback(),
                 [this](render::CaptureView view)
                 {
@@ -400,7 +342,7 @@ namespace kpengine::live2d
                     return graphics::RenderTargetHandle{};
                 },
                 [this] { return frame_number_; });
-            screenshot_service_ = std::make_unique<runtime::RuntimeScreenshotService>(
+            screenshot_service_ = MakeHostObject<runtime::RuntimeScreenshotService>(
                 *render_capture_service_);
 
             if (engine.GetStartupResize().has_value())
@@ -416,7 +358,7 @@ namespace kpengine::live2d
                 // the image is taken, or the capture records a moment in the
                 // middle of an animation nobody asked to see.
                 capture_waits_for_bubble_ =
-                    bubble_enabled_ &&
+                    bubble_ != nullptr && bubble_->IsEnabled() &&
                     engine.GetStartupCaptureOverride().has_value();
                 RequestCaptureWhenSettled();
             }
@@ -443,7 +385,7 @@ namespace kpengine::live2d
             return false;
         }
         const auto tick_started = std::chrono::steady_clock::now();
-        system_.Tick(delta_time);
+        system_->Tick(delta_time);
         game_tick_work_ms_ = std::chrono::duration<double, std::milli>(
                                  std::chrono::steady_clock::now() - tick_started)
                                  .count();
@@ -534,22 +476,6 @@ namespace kpengine::live2d
             });
     }
 
-    bool Live2DViewerHost::AdvanceBubblePop(const float delta_time)
-    {
-        // Short enough to read as a pop rather than as a transition, and long
-        // enough that a capture taken at the first frame would catch it partway.
-        constexpr float kPopSeconds = 0.18f;
-        if (bubble_pop_ < 1.0f)
-        {
-            bubble_pop_ += delta_time / kPopSeconds;
-            if (bubble_pop_ > 1.0f)
-            {
-                bubble_pop_ = 1.0f;
-            }
-        }
-        return bubble_pop_ >= 1.0f;
-    }
-
     void Live2DViewerHost::RequestCaptureWhenSettled()
     {
         if (capture_waits_for_resize_ || capture_waits_for_bubble_)
@@ -557,99 +483,6 @@ namespace kpengine::live2d
             return;
         }
         RequestStartupCapture();
-    }
-
-    void Live2DViewerHost::BuildBubbleDraws(const graphics::Extent2D &extent,
-                                            std::vector<render::SubmissionDraw> &out)
-    {
-        if (!bubble_enabled_ || !bubble_ || !renderer_)
-        {
-            return;
-        }
-
-        // Sized to what the panel actually drew rather than to the text's nominal
-        // size, so a bubble around "I" is small and one around a sentence is not.
-        const panel::DotBounds bounds = panel::LitBounds(bubble_ink_);
-        if (bounds.empty)
-        {
-            return;
-        }
-
-        BubbleLayoutRequest request;
-        request.text_width = bounds.right - bounds.left + 1u;
-        request.text_height = bounds.bottom - bounds.top + 1u;
-        if (emotion_bubble_timed_)
-        {
-            // A three-glyph face is deliberately sparse. Reserve one extra
-            // cell so its bubble reads as a speech cue instead of a square.
-            request.text_width =
-                std::max(request.text_width, kEmotionBubbleMinimumTextWidth);
-        }
-        // The tail points at the model, which is the one thing the bubble needs
-        // to know about it. It arrives as a direction and not as a Live2D type:
-        // the renderer publishes where the model was fitted, in the same
-        // normalized space the placement is expressed in.
-        const Live2DRenderer::ModelBounds model = renderer_->GetModelBounds();
-        if (model.valid)
-        {
-            const float model_center_x = (model.min_x + model.max_x) * 0.5f;
-            const float model_center_y = (model.min_y + model.max_y) * 0.5f;
-            request.tail = BubbleTailFromDirection(
-                model_center_x - bubble_placement_.center_x,
-                model_center_y - bubble_placement_.center_y);
-        }
-        else
-        {
-            request.tail = BubbleTail::Down;
-        }
-
-        BubbleLayout layout;
-        if (!BuildBubbleLayout(request, layout))
-        {
-            return;
-        }
-
-        bubble_placement_.progress = bubble_pop_;
-        // Logged once per run: what the bubble's size and place were decided
-        // from. A cross-backend difference in the bubble and not the model can
-        // only come from one of these, so they are worth having in the record.
-        if (!bubble_placement_logged_)
-        {
-            bubble_placement_logged_ = true;
-            KP_LOG("Live2DViewer", LOG_LEVEL_INFO,
-                   "bubble placement: progress %.4f target_aspect %.4f center %.3f,%.3f "
-                   "height_fraction %.3f quad %.4fx%.4f aspect %.4f text %ux%u dots",
-                   bubble_pop_, bubble_placement_.target_aspect,
-                   bubble_placement_.center_x, bubble_placement_.center_y,
-                   bubble_placement_.height_fraction, layout.quad_width,
-                   layout.quad_height, layout.Aspect(), request.text_width,
-                   request.text_height);
-        }
-        // The frame's own extent, which is what the model's target is resized to
-        // and therefore what the bubble is drawn into. Reading the output view
-        // instead gave a square reading on the first frame, and a wrong aspect
-        // does not fail here -- it stretches the bubble by the ratio, which is
-        // how it came out a third too wide.
-        const std::uint32_t width = extent.width;
-        const std::uint32_t height = extent.height;
-        if (width == 0u || height == 0u)
-        {
-            return;
-        }
-        bubble_placement_.target_aspect =
-            static_cast<float>(width) / static_cast<float>(height);
-
-        graphics::Viewport viewport{};
-        viewport.width = static_cast<float>(width);
-        viewport.height = static_cast<float>(height);
-
-        std::string bubble_diagnostic;
-        if (!bubble_->BuildDraws(layout, bubble_placement_, bubble_appearance_, viewport,
-                                 out, bubble_diagnostic))
-        {
-            KP_LOG("Live2DViewer", LOG_LEVEL_WARNING, "bubble draw skipped: %s",
-                   bubble_diagnostic.c_str());
-        }
     }
 
     bool Live2DViewerHost::RecordFrame(std::string &diagnostic)
@@ -746,20 +579,10 @@ namespace kpengine::live2d
         // The pop-in is advanced by the frame, not by the shape, so the bubble's
         // animation is a property of the viewer's clock rather than of its
         // geometry.
-        if (bubble_enabled_)
+        if (bubble_ && bubble_->IsEnabled())
         {
-            const bool settled = AdvanceBubblePop(kViewerDeltaSeconds);
-            if (emotion_bubble_timed_)
-            {
-                emotion_bubble_remaining_ -= kViewerDeltaSeconds;
-                if (emotion_bubble_remaining_ <= 0.0f)
-                {
-                    emotion_bubble_remaining_ = 0.0f;
-                    emotion_bubble_timed_ = false;
-                    bubble_enabled_ = false;
-                }
-            }
-            if (settled && capture_waits_for_bubble_)
+            bubble_->Tick(kViewerDeltaSeconds);
+            if (bubble_->IsPopSettled() && capture_waits_for_bubble_)
             {
                 capture_waits_for_bubble_ = false;
                 RequestCaptureWhenSettled();
@@ -787,7 +610,17 @@ namespace kpengine::live2d
         // re-apply the target's clear and leave an image containing only the
         // bubble -- which validates, renders, and is the wrong picture.
         std::vector<render::SubmissionDraw> bubble_draws;
-        BuildBubbleDraws(extent, bubble_draws);
+        if (bubble_ && renderer_)
+        {
+            const Live2DRenderer::ModelBounds model = renderer_->GetModelBounds();
+            editor::Live2DViewerBubbleModelBounds bounds{};
+            bounds.valid = model.valid;
+            bounds.min_x = model.min_x;
+            bounds.min_y = model.min_y;
+            bounds.max_x = model.max_x;
+            bounds.max_y = model.max_y;
+            bubble_->BuildDraws(extent, bounds, bubble_draws);
+        }
         if (!renderer_->Record(frame, *recorder, kViewerDeltaSeconds, frame_input,
                                advance_frame, reset_parameters, bubble_draws, diagnostic))
         {
@@ -814,12 +647,43 @@ namespace kpengine::live2d
                               std::chrono::steady_clock::now() - frame_started)
                               .count();
         const auto imgui_started = std::chrono::steady_clock::now();
-        if (viewer_ui_ && viewer_ui_->ui && !viewer_ui_->ui->Render())
+        if (viewer_editor_)
         {
-            diagnostic = "Live2D viewer ImGui presentation failed";
-            frame.End();
-            backend_->EndFrame();
-            return false;
+            editor::Live2DViewerEditorActions actions;
+            actions.set_gaze = [this](const editor::Live2DGazeMode mode,
+                                      const Vector2f target) {
+                gaze_mode_ = mode;
+                fixed_gaze_target_ = target;
+            };
+            actions.set_paused = [this](const bool paused) {
+                paused_ = paused;
+                if (!paused_)
+                {
+                    step_requested_ = false;
+                }
+            };
+            actions.request_step = [this] {
+                paused_ = true;
+                step_requested_ = true;
+            };
+            actions.request_reset_parameters = [this] {
+                reset_parameters_requested_ = true;
+            };
+            actions.apply_emotion = [this](const std::string_view preset) {
+                ApplyEmotionPreset(preset);
+            };
+            actions.report_image_rect = [this](const Vector2f minimum,
+                                               const Vector2f size) {
+                viewer_image_min_ = minimum;
+                viewer_image_size_ = size;
+                viewer_image_valid_ = size[0] > 0.0f && size[1] > 0.0f;
+            };
+            if (!viewer_editor_->Render(BuildEditorState(), std::move(actions), diagnostic))
+            {
+                frame.End();
+                backend_->EndFrame();
+                return false;
+            }
         }
         imgui_work_ms_ = std::chrono::duration<double, std::milli>(
                               std::chrono::steady_clock::now() - imgui_started)
@@ -902,93 +766,34 @@ namespace kpengine::live2d
     bool Live2DViewerHost::RegisterHostCommands(
         runtime::command::CommandRegistry &registry, std::string &diagnostic)
     {
-        runtime::command::CommandRegistrationResult registration =
-            RegisterLive2DModelReportCommand(
-                registry,
-                [this](Live2DModelReport &report)
-                {
-                    if (renderer_ == nullptr)
-                    {
-                        return false;
-                    }
-                    report.model_path = loaded_model_path_;
-                    report.features = renderer_->GetFeatureReport();
-                    report.capabilities = renderer_->GetBehaviorCapabilities();
-                    report.behavior_mask = renderer_->GetLastBehaviorMask();
-                    report.update_sequence = renderer_->GetLastFrameSequence();
-                    report.behavior_replay_available = behavior_replay_.available;
-                    report.behavior_replay_passed = behavior_replay_.passed;
-                    report.behavior_replay_deterministic =
-                        behavior_replay_.deterministic;
-                    report.behavior_state = behavior_replay_.final_snapshot.state_id;
-                    report.behavior_transition_sequence =
-                        behavior_replay_.final_snapshot.transition_sequence;
-                    report.behavior_history_count =
-                        behavior_replay_.transition_history.size();
-                    report.behavior_replay_diagnostic = behavior_replay_.diagnostic;
-                    return true;
-                });
-        if (!registration.IsSuccess())
+        editor::Live2DViewerCommandSources sources;
+        sources.model_report = [this](Live2DModelReport &report) {
+            if (renderer_ == nullptr)
+            {
+                return false;
+            }
+            report.model_path = loaded_model_path_;
+            report.features = renderer_->GetFeatureReport();
+            report.capabilities = renderer_->GetBehaviorCapabilities();
+            report.behavior_mask = renderer_->GetLastBehaviorMask();
+            report.update_sequence = renderer_->GetLastFrameSequence();
+            const Live2DEmotionReplayResult &replay = emotion_runtime_->Replay();
+            report.behavior_replay_available = replay.available;
+            report.behavior_replay_passed = replay.passed;
+            report.behavior_replay_deterministic = replay.deterministic;
+            report.behavior_state = replay.final_snapshot.state_id;
+            report.behavior_transition_sequence =
+                replay.final_snapshot.transition_sequence;
+            report.behavior_history_count = replay.transition_history.size();
+            report.behavior_replay_diagnostic = replay.diagnostic;
+            return true;
+        };
+        sources.screenshot_service = [this] { return screenshot_service_.get(); };
+        if (!command_bridge_)
         {
-            diagnostic = registration.diagnostic;
-            return false;
+            command_bridge_ = MakeHostObject<editor::Live2DViewerCommandBridge>();
         }
-        // Holding the token is what keeps the entry installed; the registry
-        // releases it when this host is destroyed.
-        command_registration_ = std::move(registration.registration);
-        runtime::command::CommandRegistrationResult screenshot_registration =
-            runtime::RegisterScreenshotCommands(
-                registry,
-                [this]()
-                {
-                    return screenshot_service_.get();
-                });
-        if (!screenshot_registration.IsSuccess())
-        {
-            diagnostic = screenshot_registration.diagnostic;
-            return false;
-        }
-        screenshot_command_registration_ =
-            std::move(screenshot_registration.registration);
-        return true;
-    }
-
-    void Live2DViewerHost::RenderViewerUI()
-    {
-        ImGuiViewport *const viewport = ImGui::GetMainViewport();
-        const float viewer_width = viewport->WorkSize.x * 0.70f;
-        const float viewer_height = viewport->WorkSize.y * 0.75f;
-        ImGui::SetNextWindowPos(viewport->WorkPos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(ImVec2(viewer_width, viewer_height),
-                                 ImGuiCond_Always);
-        constexpr ImGuiWindowFlags kViewerFlags =
-            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoCollapse;
-        viewer_image_valid_ = false;
-        if (ImGui::Begin("Live2D Viewer", nullptr, kViewerFlags))
-        {
-            const ImVec2 available = ImGui::GetContentRegionAvail();
-            constexpr float kModelAspect = 720.0f / 960.0f;
-            const float image_height = std::min(available.y,
-                                                available.x / kModelAspect);
-            const ImVec2 image_size(image_height * kModelAspect, image_height);
-            const ImVec2 cursor = ImGui::GetCursorPos();
-            ImGui::SetCursorPos(ImVec2(cursor.x + (available.x - image_size.x) * 0.5f,
-                                       cursor.y + (available.y - image_size.y) * 0.5f));
-            const ImVec2 image_min = ImGui::GetCursorScreenPos();
-            viewer_image_min_ = {image_min.x, image_min.y};
-            viewer_image_size_ = {image_size.x, image_size.y};
-            viewer_image_valid_ = image_size.x > 0.0f && image_size.y > 0.0f;
-            viewer_ui_->ui->DrawRenderTarget(renderer_->GetOutputView(), image_size);
-        }
-        ImGui::End();
-
-        if (viewer_ui_ && viewer_ui_->log)
-        {
-            viewer_ui_->log->Render();
-        }
-        RenderControlPanel();
-        RenderProfilerWindow();
+        return command_bridge_->Register(registry, std::move(sources), diagnostic);
     }
 
     void Live2DViewerHost::HandleCursorEvent(const CursorEvent &event) noexcept
@@ -1007,285 +812,90 @@ namespace kpengine::live2d
     {
         Live2DFrameInput input{};
         input.delta_seconds = delta_time;
-        Live2DVector2 target{};
-        if (gaze_mode_ == GazeMode::FixedTarget)
+        Vector2f target{};
+        if (gaze_mode_ == editor::Live2DGazeMode::FixedTarget)
         {
-            target.x = std::clamp(fixed_gaze_target_.x, -1.0f, 1.0f);
-            target.y = std::clamp(fixed_gaze_target_.y, -1.0f, 1.0f);
+            target[0] = std::clamp(fixed_gaze_target_[0], -1.0f, 1.0f);
+            target[1] = std::clamp(fixed_gaze_target_[1], -1.0f, 1.0f);
         }
-        else if (gaze_mode_ == GazeMode::FollowMouse && cursor_position_valid_ &&
-                 viewer_image_valid_ && viewer_image_size_.x > 0.0f &&
-                 viewer_image_size_.y > 0.0f)
+        else if (gaze_mode_ == editor::Live2DGazeMode::FollowMouse &&
+                 cursor_position_valid_ && viewer_image_valid_ &&
+                 viewer_image_size_[0] > 0.0f && viewer_image_size_[1] > 0.0f)
         {
             const float normalized_x =
-                (cursor_position_.x - viewer_image_min_.x) / viewer_image_size_.x;
+                (cursor_position_[0] - viewer_image_min_[0]) / viewer_image_size_[0];
             const float normalized_y =
-                (cursor_position_.y - viewer_image_min_.y) / viewer_image_size_.y;
-            target.x = std::clamp(normalized_x * 2.0f - 1.0f, -1.0f, 1.0f);
-            target.y = std::clamp(1.0f - normalized_y * 2.0f, -1.0f, 1.0f);
+                (cursor_position_[1] - viewer_image_min_[1]) / viewer_image_size_[1];
+            target[0] = std::clamp(normalized_x * 2.0f - 1.0f, -1.0f, 1.0f);
+            target[1] = std::clamp(1.0f - normalized_y * 2.0f, -1.0f, 1.0f);
         }
         input.gaze_target = target;
         last_gaze_target_ = target;
         return input;
     }
 
-    void Live2DViewerHost::RenderControlPanel()
+    editor::Live2DViewerEditorState Live2DViewerHost::BuildEditorState() const
     {
-        ImGuiViewport *const viewport = ImGui::GetMainViewport();
-        const ImVec2 panel_pos(viewport->WorkPos.x + viewport->WorkSize.x * 0.70f,
-                               viewport->WorkPos.y);
-        const ImVec2 panel_size(viewport->WorkSize.x * 0.30f,
-                                viewport->WorkSize.y * 0.43f);
-        ImGui::SetNextWindowPos(panel_pos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(panel_size, ImGuiCond_Always);
-        constexpr ImGuiWindowFlags kPanelFlags =
-            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
-
-        if (ImGui::Begin("Live2D Control Deck", nullptr, kPanelFlags))
+        editor::Live2DViewerEditorState state;
+        state.output_view = renderer_ != nullptr ? renderer_->GetOutputView()
+                                                 : graphics::RenderTargetView{};
+        state.graphics_api = engine_ != nullptr ? engine_->GetGraphicsAPI()
+                                                : GraphicsAPIType::GRAPHICS_API_OPENGL;
+        state.gaze_mode = gaze_mode_;
+        state.fixed_gaze_target = fixed_gaze_target_;
+        state.last_gaze_target = last_gaze_target_;
+        state.paused = paused_;
+        if (emotion_runtime_)
         {
-            ImGui::TextDisabled("RUNTIME DEBUG");
-            ImGui::Separator();
-            RenderDebugControls();
+            state.emotion_status = emotion_runtime_->Status();
+            state.emotion_diagnostic = emotion_runtime_->Diagnostic();
         }
-        ImGui::End();
-
-    }
-
-    void Live2DViewerHost::RenderDebugControls()
-    {
-        static constexpr const char *kGazeLabels[] = {
-            "Neutral", "Follow Mouse", "Fixed Target"};
-        static constexpr const char *kBehaviorLabels[] = {
-            "Blink", "Gaze", "Breath", "Physics", "Pose"};
-        static constexpr std::uint32_t kBehaviorBits[] = {
-            kLive2DBehaviorBlink, kLive2DBehaviorGaze, kLive2DBehaviorBreath,
-            kLive2DBehaviorPhysics, kLive2DBehaviorPose};
-        constexpr std::size_t kBehaviorCount = sizeof(kBehaviorLabels) / sizeof(kBehaviorLabels[0]);
-
-        if (ImGui::BeginTabBar("##live2d_control_tabs"))
+        state.frame_total_ms = frame_total_ms_;
+        state.render_work_ms = render_work_ms_;
+        state.imgui_work_ms = imgui_work_ms_;
+        state.game_tick_work_ms = game_tick_work_ms_;
+        state.renderer_ready = renderer_ != nullptr;
+        if (renderer_ != nullptr)
         {
-            if (ImGui::BeginTabItem("Gaze"))
-            {
-                ImGui::Text("GAZE TARGETING");
-                ImGui::TextDisabled("The runtime smooths this target before applying it.");
-                int gaze_mode = static_cast<int>(gaze_mode_);
-                gaze_mode = std::clamp(gaze_mode, 0, 2);
-                if (ImGui::BeginCombo("Mode", kGazeLabels[gaze_mode]))
-                {
-                    for (int index = 0; index < 3; ++index)
-                    {
-                        const bool selected = gaze_mode == index;
-                        if (ImGui::Selectable(kGazeLabels[index], selected))
-                        {
-                            gaze_mode_ = static_cast<GazeMode>(index);
-                        }
-                        if (selected)
-                        {
-                            ImGui::SetItemDefaultFocus();
-                        }
-                    }
-                    ImGui::EndCombo();
-                }
-                if (gaze_mode_ == GazeMode::FixedTarget)
-                {
-                    float target[2] = {fixed_gaze_target_.x, fixed_gaze_target_.y};
-                    if (ImGui::SliderFloat2("Fixed target", target, -1.0f, 1.0f))
-                    {
-                        fixed_gaze_target_ = {target[0], target[1]};
-                    }
-                }
-                ImGui::Separator();
-                ImGui::TextDisabled("CURRENT TARGET");
-                ImGui::Text("(%+.2f, %+.2f)", last_gaze_target_.x, last_gaze_target_.y);
-                ImGui::EndTabItem();
-            }
-
-            if (ImGui::BeginTabItem("Playback"))
-            {
-                ImGui::Text("PLAYBACK CONTROL");
-                ImGui::TextDisabled("Freeze authored motion while inspecting a pose.");
-                if (paused_)
-                {
-                    if (ImGui::Button("RESUME", ImVec2(-1.0f, 0.0f)))
-                    {
-                        paused_ = false;
-                        step_requested_ = false;
-                    }
-                }
-                else if (ImGui::Button("PAUSE", ImVec2(-1.0f, 0.0f)))
-                {
-                    paused_ = true;
-                }
-                if (ImGui::Button("STEP ONE FRAME", ImVec2(-1.0f, 0.0f)))
-                {
-                    paused_ = true;
-                    step_requested_ = true;
-                }
-                if (ImGui::Button("RESET PARAMETERS", ImVec2(-1.0f, 0.0f)))
-                {
-                    reset_parameters_requested_ = true;
-                }
-                ImGui::Separator();
-                ImGui::Text("State: %s", paused_ ? "PAUSED" : "PLAYING");
-                ImGui::EndTabItem();
-            }
-
-            if (ImGui::BeginTabItem("Telemetry"))
-            {
-                ImGui::Text("RUNTIME TELEMETRY");
-                if (renderer_ == nullptr)
-                {
-                    ImGui::TextDisabled("Live2D runtime is not ready");
-                }
-                else
-                {
-                    const Live2DBehaviorCapabilities capabilities =
-                        renderer_->GetBehaviorCapabilities();
-                    const Live2DRenderFeatureReport &features = renderer_->GetFeatureReport();
-                    const std::uint32_t behavior_mask = renderer_->GetLastBehaviorMask();
-                    ImGui::Text("Update sequence  %llu",
-                                static_cast<unsigned long long>(renderer_->GetLastUpdateSequence()));
-                    ImGui::Text("Snapshot sequence %llu",
-                                static_cast<unsigned long long>(renderer_->GetLastFrameSequence()));
-                    ImGui::Text("Parameters  %llu   Drawables  %u",
-                                static_cast<unsigned long long>(renderer_->GetParameterCount()),
-                                features.drawable_count);
-                    ImGui::Separator();
-                    ImGui::TextDisabled("ACTIVE BEHAVIORS");
-                    for (std::size_t index = 0; index < kBehaviorCount; ++index)
-                    {
-                        const bool active = (behavior_mask & kBehaviorBits[index]) != 0u;
-                        ImGui::Text(active ? "[ ON ]  %s" : "[ -- ]  %s",
-                                   kBehaviorLabels[index]);
-                        if ((index % 2u) == 0u && index + 1u < kBehaviorCount)
-                        {
-                            ImGui::SameLine(150.0f);
-                        }
-                    }
-                    ImGui::Separator();
-                    ImGui::Text("Hit areas  %s", capabilities.has_hit_areas ? "available" : "none");
-                    ImGui::Text("User data   %s", capabilities.has_user_data ? "available" : "none");
-                    ImGui::Text("Secondary   %s",
-                                capabilities.has_secondary_behavior ? "available" : "reimport required");
-                    ImGui::Text("Behavior mask  0x%08X", static_cast<unsigned>(behavior_mask));
-                }
-                ImGui::EndTabItem();
-            }
-
-            if (ImGui::BeginTabItem("Emotion"))
-            {
-                ImGui::Text("EMOTION");
-                ImGui::TextDisabled("Choose a face and body-language preset.");
-                const ImVec2 button_size(-1.0f, 30.0f);
-                if (ImGui::Button("NORMAL", button_size))
-                {
-                    ApplyEmotionPreset("Normal");
-                }
-                if (ImGui::Button("SAD", button_size))
-                {
-                    ApplyEmotionPreset("Sad");
-                }
-                if (ImGui::Button("ANGRY", button_size))
-                {
-                    ApplyEmotionPreset("Angry");
-                }
-                if (ImGui::Button("HAPPY", button_size))
-                {
-                    ApplyEmotionPreset("Happy");
-                }
-                ImGui::Separator();
-                ImGui::Text("Current  %s", emotion_status_.c_str());
-                if (!emotion_diagnostic_.empty())
-                {
-                    ImGui::TextWrapped("%s", emotion_diagnostic_.c_str());
-                }
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
+            state.capabilities = renderer_->GetBehaviorCapabilities();
+            state.features = renderer_->GetFeatureReport();
+            state.behavior_mask = renderer_->GetLastBehaviorMask();
+            state.update_sequence = renderer_->GetLastUpdateSequence();
+            state.frame_sequence = renderer_->GetLastFrameSequence();
+            state.parameter_count = renderer_->GetParameterCount();
+            state.live_gpu_handles = renderer_->GetLiveGpuHandleCount();
         }
-    }
-    void Live2DViewerHost::RenderProfilerWindow()
-    {
-        ImGuiViewport *const viewport = ImGui::GetMainViewport();
-        const ImVec2 profiler_pos(viewport->WorkPos.x + viewport->WorkSize.x * 0.70f,
-                                  viewport->WorkPos.y + viewport->WorkSize.y * 0.44f);
-        const ImVec2 profiler_size(viewport->WorkSize.x * 0.30f,
-                                   viewport->WorkSize.y * 0.31f);
-        ImGui::SetNextWindowPos(profiler_pos, ImGuiCond_Always);
-        ImGui::SetNextWindowSize(profiler_size, ImGuiCond_Always);
-        constexpr ImGuiWindowFlags kProfilerFlags =
-            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoSavedSettings;
-
-        if (ImGui::Begin("Performance Profiler", nullptr, kProfilerFlags))
+        if (backend_ != nullptr)
         {
-            ImGui::TextDisabled("GPU submission and frame timing");
-            ImGui::Separator();
-            const graphics::BackendProfileCounters counters =
-                backend_ != nullptr ? backend_->GetBackendProfileCounters()
-                                    : graphics::BackendProfileCounters{};
-            const graphics::CommandRecorderProfileCounters recorder =
-                backend_ != nullptr && backend_->GetCommandRecorder() != nullptr
-                    ? backend_->GetCommandRecorder()->GetProfileCounters()
-                    : counters.recorder;
-            ImGui::Text("API: %s", engine_ != nullptr &&
-                                       engine_->GetGraphicsAPI() ==
-                                           GraphicsAPIType::GRAPHICS_API_VULKAN
-                                   ? "Vulkan"
-                                   : "OpenGL");
-            ImGui::Separator();
-            ImGui::Text("Frame %.2f ms", frame_total_ms_);
-            ImGui::Text("Render work %.2f ms", render_work_ms_);
-            ImGui::Text("ImGui work %.2f ms", imgui_work_ms_);
-            ImGui::Text("Tick work %.2f ms", game_tick_work_ms_);
-            ImGui::Separator();
-            ImGui::TextDisabled("Live2D / backend");
-            ImGui::Text("Draw calls %llu",
-                        static_cast<unsigned long long>(
-                            recorder.draw_calls_emitted));
-            ImGui::Text("Pipeline binds %llu",
-                        static_cast<unsigned long long>(
-                            recorder.pipeline_bind_emitted));
-            ImGui::Text("Resource binds %llu",
-                        static_cast<unsigned long long>(
-                            recorder.resource_binding_bind_emitted));
-            ImGui::Text("Descriptor updates %llu",
-                        static_cast<unsigned long long>(counters.descriptor_updates));
-            ImGui::Text("Module GPU handles %u",
-                        renderer_ != nullptr ? renderer_->GetLiveGpuHandleCount() : 0u);
-            ImGui::Text("Frame sequence %llu",
-                        static_cast<unsigned long long>(
-                            renderer_ != nullptr ? renderer_->GetLastFrameSequence() : 0u));
-            ImGui::Separator();
-            ImGui::TextDisabled("ImGui");
-            ImGui::Text("Build %.2f ms", viewer_ui_->ui->GetLastImGuiBuildTimeMs());
-            ImGui::Text("Submit %.2f ms", viewer_ui_->ui->GetLastImGuiSubmitTimeMs());
-            ImGui::Text("Total %.2f ms", viewer_ui_->ui->GetLastRenderTimeMs());
+            state.backend_counters = backend_->GetBackendProfileCounters();
+            state.recorder_counters = state.backend_counters.recorder;
+            if (backend_->GetCommandRecorder() != nullptr)
+            {
+                state.recorder_counters = backend_->GetCommandRecorder()->GetProfileCounters();
+            }
         }
-        ImGui::End();
-
+        return state;
     }
 
     void Live2DViewerHost::CleanupGpu() noexcept
     {
-        if (viewer_ui_)
+        if (viewer_editor_)
         {
-            if (viewer_ui_->ui)
-            {
-                viewer_ui_->ui->Close();
-            }
-            viewer_ui_.reset();
+            viewer_editor_->Close();
+            viewer_editor_.reset();
         }
         if (backend_ && backend_initialized_)
         {
             backend_->WaitIdle();
         }
-        screenshot_command_registration_ = {};
-        command_registration_ = {};
+        if (command_bridge_)
+        {
+            command_bridge_->Reset();
+            command_bridge_.reset();
+        }
         screenshot_service_.reset();
         render_capture_service_.reset();
-        for (const std::unique_ptr<render::FrameContext> &frame : frame_contexts_)
+        for (const Live2DViewerHostPtr<render::FrameContext> &frame : frame_contexts_)
         {
             if (frame)
             {
@@ -1355,138 +965,63 @@ namespace kpengine::live2d
     void Live2DViewerHost::Shutdown() noexcept
     {
         CleanupGpu();
-        if (system_initialized_)
+        if (system_initialized_ && system_)
         {
-            system_.Shutdown();
+            system_->Shutdown();
+            system_.reset();
             system_initialized_ = false;
         }
         model_asset_ = {};
         engine_ = nullptr;
     }
 
-    bool Live2DViewerHost::ShowEmotionBubble(const std::string_view text)
+    bool Live2DViewerHost::ShowEmotionBubble(const std::string_view text,
+                                             std::string &diagnostic)
     {
         if (backend_ == nullptr || renderer_ == nullptr)
         {
-            emotion_diagnostic_ = "Emotion bubble needs an initialized viewer";
+            diagnostic = "Emotion bubble needs an initialized viewer";
             return false;
         }
-        std::string diagnostic;
         if (!bubble_)
         {
-            bubble_ = std::make_unique<BubbleRenderer>();
+            bubble_ = MakeHostObject<editor::Live2DViewerBubble>();
             if (!bubble_->Initialize(*backend_, renderer_->GetOutputColorFormat(), diagnostic))
             {
                 bubble_.reset();
-                emotion_diagnostic_ = diagnostic;
                 return false;
             }
-            bubble_appearance_.fill_color = {0.02f, 0.03f, 0.06f, 1.0f};
-            bubble_appearance_.bezel_color = {0.07f, 0.16f, 0.30f, 1.0f};
-            bubble_appearance_.dot_color = {0.10f, 0.95f, 1.0f, 1.0f};
-            bubble_appearance_.outline_color = {1.0f, 0.16f, 0.66f, 1.0f};
-            bubble_appearance_.dot_gap = 0.22f;
-            bubble_placement_.center_x = 0.26f;
-            bubble_placement_.center_y = 0.16f;
-            bubble_placement_.height_fraction = 0.15f;
         }
-
-        bubble_panel_.SetText(0u, text);
-        bubble_ink_ = bubble_panel_.Rebuild(emotion_glyphs_);
-        if (!bubble_->UploadText(bubble_ink_, diagnostic))
-        {
-            emotion_diagnostic_ = diagnostic;
-            return false;
-        }
-        bubble_enabled_ = true;
-        bubble_pop_ = 0.0f;
-        emotion_bubble_remaining_ = 2.5f;
-        emotion_bubble_timed_ = true;
-        return true;
+        return bubble_->ShowEmotion(text, diagnostic);
     }
 
     void Live2DViewerHost::ApplyEmotionPreset(const std::string_view preset)
     {
-        emotion_diagnostic_.clear();
         if (renderer_ == nullptr)
         {
-            emotion_diagnostic_ = "Live2D renderer is not ready";
             return;
         }
 
-        std::string diagnostic;
-        renderer_->ClearPreviewExpression(diagnostic);
-        bool expression_applied = false;
-        if (preset == "Happy")
-        {
-            expression_applied = renderer_->SetPreviewExpression("exp_02", diagnostic) ||
-                                 renderer_->SetPreviewExpression("exp_04", diagnostic);
-        }
-        else if (preset == "Sad")
-        {
-            expression_applied = renderer_->SetPreviewExpression("exp_03", diagnostic) ||
-                                 renderer_->SetPreviewExpression("exp_01", diagnostic);
-        }
-        else if (preset == "Angry")
-        {
-            expression_applied = renderer_->SetPreviewExpression("exp_08", diagnostic) ||
-                                 renderer_->SetPreviewExpression("exp_07", diagnostic);
-        }
-        bool motion_applied = false;
-        const auto try_motion = [&](const std::string_view group,
-                                    const std::uint32_t index) {
-            if (motion_applied)
-            {
-                return;
-            }
-            std::string motion_diagnostic;
-            motion_applied = renderer_->StartPreviewMotion(group, index, 2,
-                                                            motion_diagnostic);
-            if (!motion_applied)
-            {
-                diagnostic = std::move(motion_diagnostic);
-            }
+        Live2DEmotionActions actions;
+        actions.clear_expression = [this](std::string &diagnostic) {
+            renderer_->ClearPreviewExpression(diagnostic);
         };
-        if (preset == "Happy")
+        actions.set_expression = [this](const std::string_view expression,
+                                         std::string &diagnostic) {
+            return renderer_->SetPreviewExpression(expression, diagnostic);
+        };
+        actions.start_motion = [this](const Live2DEmotionMotionCandidate &candidate,
+                                      std::string &diagnostic) {
+            return renderer_->StartPreviewMotion(candidate.group, candidate.index, 2,
+                                                  diagnostic);
+        };
+        actions.show_bubble = [this](const std::string_view text,
+                                     std::string &diagnostic) {
+            return ShowEmotionBubble(text, diagnostic);
+        };
+        if (emotion_runtime_)
         {
-            try_motion("Idle", 1u);
-            try_motion("Idle", 0u);
+            emotion_runtime_->Apply(preset, actions);
         }
-        else if (preset == "Sad")
-        {
-            try_motion("FlickDown", 0u);
-            try_motion("Flick", 0u);
-            try_motion("Idle", 0u);
-        }
-        else if (preset == "Angry")
-        {
-            try_motion("Tap@Body", 0u);
-            try_motion("TapBody", 0u);
-            try_motion("Tap", 0u);
-            try_motion("Flick", 0u);
-            try_motion("Idle", 0u);
-        }
-        else
-        {
-            try_motion("Idle", 0u);
-        }
-
-        if (!expression_applied && !motion_applied)
-        {
-            emotion_diagnostic_ = diagnostic.empty()
-                                      ? "No authored expression or motion matched this preset"
-                                      : diagnostic;
-            return;
-        }
-        emotion_status_ = std::string(preset);
-        if (!expression_applied)
-        {
-            emotion_status_ += " (body motion)";
-        }
-        const std::string_view bubble_text =
-            preset == "Happy" ? "^_^" :
-            preset == "Sad" ? "T_T" :
-            preset == "Angry" ? ">_<" : "o_o";
-        ShowEmotionBubble(bubble_text);
     }
 }
