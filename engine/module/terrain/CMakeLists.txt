@@ -5,7 +5,8 @@ target_include_directories(TerrainCore PUBLIC
 target_link_libraries(TerrainCore PUBLIC Data)
 
 add_library(TerrainGeneration STATIC
-    evaluation/terrain_generation.cpp)
+    evaluation/terrain_generation.cpp
+    evaluation/terrain_hydraulic_erosion.cpp)
 target_include_directories(TerrainGeneration PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(TerrainGeneration

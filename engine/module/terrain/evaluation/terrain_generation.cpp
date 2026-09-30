@@ -4,11 +4,11 @@
 #include <array>
 #include <bit>
 #include <cmath>
-#include <numeric>
 #include <set>
 #include <stdexcept>
 
 #include "math/noise2d.h"
+#include "terrain_hydraulic_erosion.h"
 
 namespace kpengine::terrain
 {
@@ -162,7 +162,7 @@ namespace kpengine::terrain
             HashBytes(hash, value.data(), value.size());
         }
 
-        std::uint64_t HashField(const ScalarField2D &field)
+        std::uint64_t HashTerrainValue(const TerrainValue2D &field)
         {
             std::uint64_t hash = kFnvOffset;
             const auto &domain = field.Domain();
@@ -173,10 +173,25 @@ namespace kpengine::terrain
             HashBytes(hash, &domain.spacing_x_m, sizeof(double));
             HashBytes(hash, &domain.spacing_z_m, sizeof(double));
             HashBytes(hash, &domain.datum_y_m, sizeof(double));
+            const TerrainValueKind kind = field.Kind();
+            HashBytes(hash, &kind, sizeof(kind));
             for (float sample : field.Samples())
             {
                 const auto bits = std::bit_cast<std::uint32_t>(sample);
                 HashBytes(hash, &bits, sizeof(bits));
+            }
+            if (const auto *layered = field.AsLayeredHeightfield())
+            {
+                const std::array<const std::vector<float> *, 5> channels{{
+                    &layered->BedrockElevationMeters(), &layered->SoilThicknessMeters(),
+                    &layered->SandThicknessMeters(), &layered->WaterDepthMeters(),
+                    &layered->SuspendedSedimentKgPerSquareMeter()}};
+                for (const auto *channel : channels)
+                    for (const float sample : *channel)
+                    {
+                        const auto bits = std::bit_cast<std::uint32_t>(sample);
+                        HashBytes(hash, &bits, sizeof(bits));
+                    }
             }
             return hash;
         }
@@ -201,7 +216,7 @@ namespace kpengine::terrain
             for (const auto &[name, field] : inputs)
             {
                 HashString(hash, name);
-                const auto input_hash = HashField(*field);
+                const auto input_hash = HashTerrainValue(*field);
                 HashBytes(hash, &input_hash, sizeof(input_hash));
             }
             return hash;
@@ -215,6 +230,15 @@ namespace kpengine::terrain
             HashBytes(hash, &node.operator_version, sizeof(node.operator_version));
             HashString(hash, node.operator_id);
             return hash;
+        }
+
+        const ScalarField2D &RequireScalarField(const TerrainValue &value,
+                                                const char *input_name)
+        {
+            const ScalarField2D *const field = value ? value->AsScalarField() : nullptr;
+            if (field == nullptr)
+                throw std::invalid_argument(std::string("terrain input is not a scalar field: ") + input_name);
+            return *field;
         }
 
         std::uint32_t MurmurFinalize32(std::uint32_t value)
@@ -1216,14 +1240,16 @@ namespace kpengine::terrain
             {{"slope_radians", PortType::ScalarField2D}},
             [field_from_samples](const OperatorContext &context, const nlohmann::json &,
                                  const OperatorInputs &inputs) {
-                return OperatorOutputs{{"slope_radians", field_from_samples(context, ComputeSlopeRadians(*inputs.at("height")))}};
+                return OperatorOutputs{{"slope_radians", field_from_samples(context,
+                    ComputeSlopeRadians(RequireScalarField(inputs.at("height"), "height")))}};
             }}, diagnostic)) return false;
 
         if (!Register({"terrain.field.curvature", 1, {{"height", PortType::Heightfield}},
             {{"curvature_per_m", PortType::ScalarField2D}},
             [field_from_samples](const OperatorContext &context, const nlohmann::json &,
                                  const OperatorInputs &inputs) {
-                return OperatorOutputs{{"curvature_per_m", field_from_samples(context, ComputeCurvaturePerMeter(*inputs.at("height")))}};
+                return OperatorOutputs{{"curvature_per_m", field_from_samples(context,
+                    ComputeCurvaturePerMeter(RequireScalarField(inputs.at("height"), "height")))}};
             }}, diagnostic)) return false;
 
         if (!Register({"terrain.drainage.accumulation", 1, {{"height", PortType::Heightfield}},
@@ -1233,14 +1259,15 @@ namespace kpengine::terrain
                 const auto policy = p.value("authored_lakes", false) ? DrainageOutletPolicy::AuthoredLakesAndPerimeter : DrainageOutletPolicy::Perimeter;
                 std::vector<std::uint8_t> lakes;
                 if (p.contains("lake_mask")) lakes = p.at("lake_mask").get<std::vector<std::uint8_t>>();
-                const auto routed = RouteDrainage(*inputs.at("height"), policy, lakes);
+                const auto routed = RouteDrainage(
+                    RequireScalarField(inputs.at("height"), "height"), policy, lakes);
                 std::vector<float> samples(routed.accumulation_cells.size());
                 std::transform(routed.accumulation_cells.begin(), routed.accumulation_cells.end(), samples.begin(),
                     [](double value) { return static_cast<float>(value); });
                 return OperatorOutputs{{"accumulation_cells", field_from_samples(context, std::move(samples))}};
             }}, diagnostic)) return false;
 
-        return true;
+        return RegisterTerrainHydraulicOperators(*this, diagnostic);
     }
 
     TerrainEvaluator::TerrainEvaluator(std::shared_ptr<const OperatorRegistry> registry,
@@ -1357,6 +1384,7 @@ namespace kpengine::terrain
                 auto outputs = descriptor->evaluate(context, node.parameters, inputs);
                 if (outputs.size() != descriptor->outputs.size()) throw std::runtime_error("operator returned an invalid output set");
                 NodeResult node_result;
+                node_result.content_hash = kFnvOffset;
                 node_result.minimum_value = std::numeric_limits<float>::infinity();
                 node_result.maximum_value = -std::numeric_limits<float>::infinity();
                 for (const auto &[port, ignored_type] : descriptor->outputs)
@@ -1365,7 +1393,14 @@ namespace kpengine::terrain
                     if (output == outputs.end() || !output->second ||
                         !(output->second->Domain() == recipe.domain))
                         throw std::runtime_error("operator returned an invalid typed output: " + port);
-                    node_result.content_hash ^= HashField(*output->second);
+                    const TerrainValueKind expected_kind = ignored_type == PortType::LayeredHeightfield2D
+                        ? TerrainValueKind::LayeredHeightfield2D
+                        : TerrainValueKind::ScalarField2D;
+                    if (output->second->Kind() != expected_kind)
+                        throw std::runtime_error("operator returned an output with the wrong terrain value kind: " + port);
+                    const auto value_hash = HashTerrainValue(*output->second);
+                    HashString(node_result.content_hash, port);
+                    HashBytes(node_result.content_hash, &value_hash, sizeof(value_hash));
                     for (const float value : output->second->Samples())
                     {
                         node_result.all_values_finite =
@@ -1378,8 +1413,14 @@ namespace kpengine::terrain
                     }
                     node_result.outputs.emplace(port, output->second);
                 }
-                const auto bytes = std::accumulate(node_result.outputs.begin(), node_result.outputs.end(),
-                    std::size_t{0}, [](std::size_t size, const auto &entry) { return size + entry.second->ByteSize(); });
+                std::size_t bytes = 0;
+                std::set<const TerrainValue2D *> counted_outputs;
+                for (const auto &[port, value] : node_result.outputs)
+                {
+                    (void)port;
+                    if (counted_outputs.insert(value.get()).second)
+                        bytes += value->ByteSize();
+                }
                 node_result.output_bytes = bytes;
                 node_result.evaluation_time_ms = std::chrono::duration<double, std::milli>(
                     std::chrono::steady_clock::now() - node_started).count();

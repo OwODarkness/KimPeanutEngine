@@ -15,6 +15,7 @@
 #include "evaluation/terrain_generation.h"
 #include "import/terrain_baker.h"
 #include "render/environment_source.h"
+#include "spatial/aabb.h"
 
 namespace kpengine::terrain
 {
@@ -55,6 +56,7 @@ namespace kpengine::terrain
                                std::uint32_t thermal_iterations = 48);
         void RequestCancel();
         void RequestExecutionControl(int command);
+        void RequestHydraulicComparison();
         void QueueCamera(float yaw_degrees, float pitch_degrees, float distance);
         void RequestBake();
         void ProcessAuthoringCommands();
@@ -64,8 +66,10 @@ namespace kpengine::terrain
                              std::uint32_t thermal_iterations);
         void ApplyCancel();
         void ApplyExecutionControl(int command);
+        void ApplyHydraulicComparison();
         void ApplyBake();
         void UpdateCamera(float yaw_degrees, float pitch_degrees, float distance);
+        bool RecreateSkyDomeActor(std::string &diagnostic);
         bool PublishPreview(const EvaluationResult &result,
                             std::shared_ptr<const ScalarField2D> heightfield,
                             std::string &diagnostic);
@@ -84,7 +88,7 @@ namespace kpengine::terrain
         };
         struct AuthoringCommand
         {
-            enum class Kind : std::uint8_t { Regenerate, Cancel, Control, Camera, Bake };
+            enum class Kind : std::uint8_t { Regenerate, Cancel, Control, HydraulicComparison, Camera, Bake };
             Kind kind = Kind::Cancel;
             std::uint64_t seed = 0;
             float first = 0.0f;
@@ -103,11 +107,15 @@ namespace kpengine::terrain
         std::vector<asset::AssetID> terrain_material_assets_;
         std::vector<asset::AssetID> terrain_texture_assets_;
         gameplay::ActorHandle terrain_actor_;
+        gameplay::ActorHandle sky_dome_actor_;
         gameplay::ActorHandle camera_actor_;
         gameplay::ActorHandle light_actor_;
         asset::AssetID generated_mesh_;
         asset::AssetID preview_material_;
         asset::AssetID environment_texture_;
+        asset::AssetID sky_dome_mesh_;
+        asset::AssetID sky_dome_material_;
+        spatial::AABB sky_dome_bounds_{};
         render::EnvironmentSourceDesc render_environment_source_{};
         render::EnvironmentSourceHandle render_environment_handle_;
         std::shared_ptr<const ScalarField2D> preview_heightfield_;
@@ -122,6 +130,8 @@ namespace kpengine::terrain
         std::uint64_t bake_command_request_id_ = 0;
         std::vector<runtime::command::CommandRegistration> command_registrations_;
         bool bake_in_progress_ = false;
+        bool refresh_sky_dome_on_first_tick_ = true;
+        bool publish_initial_preview_on_first_tick_ = true;
         std::uint64_t revision_ = 0;
         std::mutex progress_mutex_;
         std::map<std::string, NodeResult, std::less<>> progress_nodes_;
@@ -132,10 +142,10 @@ namespace kpengine::terrain
         std::unique_ptr<PreviewAssets> pending_preview_;
         std::vector<asset::AssetID> retired_asset_ids_;
         std::string generation_status_ = "Ready";
-        float camera_target_y_ = 0.0f;
+        float camera_target_y_ = 7.2f;
         float camera_yaw_degrees_ = -90.0f;
         float camera_pitch_degrees_ = -27.0f;
-        float camera_distance_ = 440.0f;
+        float camera_distance_ = 204.3f;
         std::unique_ptr<TerrainEditor> terrain_editor_;
         bool initialized_ = false;
     };

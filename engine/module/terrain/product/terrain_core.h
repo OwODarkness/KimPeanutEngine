@@ -13,6 +13,29 @@
 
 namespace kpengine::terrain
 {
+    class ScalarField2D;
+    class LayeredHeightfield2D;
+    struct GridDomain2D;
+
+    enum class TerrainValueKind : std::uint8_t
+    {
+        ScalarField2D,
+        LayeredHeightfield2D,
+    };
+
+    class TerrainValue2D
+    {
+    public:
+        virtual ~TerrainValue2D() = default;
+        virtual TerrainValueKind Kind() const noexcept = 0;
+        virtual const GridDomain2D &Domain() const noexcept = 0;
+        virtual const std::vector<float> &Samples() const noexcept = 0;
+        virtual float At(std::uint32_t x, std::uint32_t y) const = 0;
+        virtual std::size_t ByteSize() const noexcept = 0;
+        virtual const ScalarField2D *AsScalarField() const noexcept { return nullptr; }
+        virtual const LayeredHeightfield2D *AsLayeredHeightfield() const noexcept { return nullptr; }
+    };
+
     struct GridDomain2D
     {
         std::uint32_t width = 0;
@@ -27,17 +50,19 @@ namespace kpengine::terrain
         bool operator==(const GridDomain2D &) const = default;
     };
 
-    class ScalarField2D final
+    class ScalarField2D final : public TerrainValue2D
     {
     public:
         static std::shared_ptr<const ScalarField2D> Create(
             GridDomain2D domain, std::vector<float> samples,
             std::size_t maximum_samples, std::string &diagnostic);
 
-        const GridDomain2D &Domain() const noexcept { return domain_; }
-        const std::vector<float> &Samples() const noexcept { return samples_; }
-        float At(std::uint32_t x, std::uint32_t y) const;
-        std::size_t ByteSize() const noexcept { return samples_.size() * sizeof(float); }
+        TerrainValueKind Kind() const noexcept override { return TerrainValueKind::ScalarField2D; }
+        const GridDomain2D &Domain() const noexcept override { return domain_; }
+        const std::vector<float> &Samples() const noexcept override { return samples_; }
+        float At(std::uint32_t x, std::uint32_t y) const override;
+        std::size_t ByteSize() const noexcept override { return samples_.size() * sizeof(float); }
+        const ScalarField2D *AsScalarField() const noexcept override { return this; }
 
     private:
         ScalarField2D(GridDomain2D domain, std::vector<float> samples)
@@ -45,6 +70,49 @@ namespace kpengine::terrain
 
         GridDomain2D domain_;
         std::vector<float> samples_;
+    };
+
+    class LayeredHeightfield2D final : public TerrainValue2D
+    {
+    public:
+        static std::shared_ptr<const LayeredHeightfield2D> Create(
+            GridDomain2D domain, std::vector<float> bedrock_elevation_m,
+            std::vector<float> soil_thickness_m, std::vector<float> sand_thickness_m,
+            std::vector<float> water_depth_m, std::vector<float> suspended_sediment_kg_per_m2,
+            std::size_t maximum_samples, std::string &diagnostic);
+
+        TerrainValueKind Kind() const noexcept override { return TerrainValueKind::LayeredHeightfield2D; }
+        const GridDomain2D &Domain() const noexcept override { return domain_; }
+        const std::vector<float> &Samples() const noexcept override { return surface_elevation_m_; }
+        float At(std::uint32_t x, std::uint32_t y) const override;
+        std::size_t ByteSize() const noexcept override;
+        const LayeredHeightfield2D *AsLayeredHeightfield() const noexcept override { return this; }
+
+        const std::vector<float> &BedrockElevationMeters() const noexcept { return bedrock_elevation_m_; }
+        const std::vector<float> &SoilThicknessMeters() const noexcept { return soil_thickness_m_; }
+        const std::vector<float> &SandThicknessMeters() const noexcept { return sand_thickness_m_; }
+        const std::vector<float> &WaterDepthMeters() const noexcept { return water_depth_m_; }
+        const std::vector<float> &SuspendedSedimentKgPerSquareMeter() const noexcept
+        { return suspended_sediment_kg_per_m2_; }
+
+    private:
+        LayeredHeightfield2D(GridDomain2D domain, std::vector<float> bedrock_elevation_m,
+            std::vector<float> soil_thickness_m, std::vector<float> sand_thickness_m,
+            std::vector<float> water_depth_m, std::vector<float> suspended_sediment_kg_per_m2,
+            std::vector<float> surface_elevation_m)
+            : domain_(domain), bedrock_elevation_m_(std::move(bedrock_elevation_m)),
+              soil_thickness_m_(std::move(soil_thickness_m)), sand_thickness_m_(std::move(sand_thickness_m)),
+              water_depth_m_(std::move(water_depth_m)),
+              suspended_sediment_kg_per_m2_(std::move(suspended_sediment_kg_per_m2)),
+              surface_elevation_m_(std::move(surface_elevation_m)) {}
+
+        GridDomain2D domain_;
+        std::vector<float> bedrock_elevation_m_;
+        std::vector<float> soil_thickness_m_;
+        std::vector<float> sand_thickness_m_;
+        std::vector<float> water_depth_m_;
+        std::vector<float> suspended_sediment_kg_per_m2_;
+        std::vector<float> surface_elevation_m_;
     };
 
     enum class DrainageOutletPolicy

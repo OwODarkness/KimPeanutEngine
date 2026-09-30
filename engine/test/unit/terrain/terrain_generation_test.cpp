@@ -1,10 +1,14 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cstdlib>
 #include <fstream>
+#include <iostream>
 #include <limits>
+#include <numeric>
 #include <thread>
 
 #include "evaluation/terrain_generation.h"
@@ -364,6 +368,118 @@ namespace
         result = byte_limited.Evaluate(ConstantRecipe());
         EXPECT_FALSE(result.succeeded);
         EXPECT_NE(result.diagnostic.find("memory budget"), std::string::npos);
+    }
+
+    TEST(TerrainHydrologyTest, ComparesThermalRelaxationAndVirtualPipeOnSameTerrainFixture)
+    {
+        auto registry = MakeRegistry();
+#ifndef KPENGINE_TERRAIN_FIXTURE_DIR
+#define KPENGINE_TERRAIN_FIXTURE_DIR ""
+#endif
+        std::ifstream fixture(std::string(KPENGINE_TERRAIN_FIXTURE_DIR) +
+            "/island_macro_256.terrainrecipe.json");
+        ASSERT_TRUE(fixture.good());
+        TerrainRecipe recipe = TerrainRecipe::FromJson(nlohmann::json::parse(fixture));
+        const GridDomain2D domain = recipe.domain;
+        recipe.nodes.push_back({"thermal", "terrain.erosion.thermal_flux", 1,
+            {{"talus_angle_degrees", 28.0}, {"thermal_rate", 0.2}, {"iterations", 20}},
+            {{"source", {"state", "surface_height_m"}}}});
+        const auto scalar = [&recipe](const char *id, const float value) {
+            recipe.nodes.push_back({id, "terrain.scalar.constant", 1,
+                {{"value", value}}, {}});
+        };
+        scalar("soil", 0.3f);
+        scalar("sand", 0.0f);
+        scalar("water", 0.0f);
+        scalar("suspended", 0.0f);
+        scalar("rain", 0.02f);
+        scalar("erodibility", 0.8f);
+        scalar("hardness", 0.25f);
+        scalar("obstacle", 0.0f);
+        recipe.nodes.push_back({"state", "terrain.state.layered_heightfield", 1,
+            nlohmann::json::object(),
+            {{"bedrock_elevation_m", {"macro_landforms", "height"}},
+             {"soil_thickness_m", {"soil", "value"}},
+             {"sand_thickness_m", {"sand", "value"}},
+             {"water_depth_m", {"water", "value"}},
+             {"suspended_sediment_kg_per_m2", {"suspended", "value"}}}});
+        recipe.nodes.push_back({"hydraulic", "terrain.erosion.hydraulic_pipe", 1,
+            {{"duration_s", 1.0}, {"maximum_timestep_s", 0.05},
+             {"capacity_kg_s_per_m3", 8.0}, {"dissolution_rate_per_s", 0.8},
+             {"deposition_rate_per_s", 1.0}, {"boundary", "open"}},
+            {{"state", {"state", "state"}},
+             {"rain_rate_m_per_s", {"rain", "value"}},
+             {"erodibility_0_1", {"erodibility", "value"}},
+             {"hardness_0_1", {"hardness", "value"}},
+             {"obstacle_0_1", {"obstacle", "value"}}}});
+
+        TerrainEvaluator evaluator(registry);
+        const auto started = std::chrono::steady_clock::now();
+        const auto result = evaluator.Evaluate(recipe);
+        const double total_ms = std::chrono::duration<double, std::milli>(
+            std::chrono::steady_clock::now() - started).count();
+        ASSERT_TRUE(result.succeeded) << result.diagnostic;
+        const auto &before = *result.nodes.at("state").outputs.at("surface_height_m");
+        const auto &thermal = *result.nodes.at("thermal").outputs.at("height");
+        const auto &hydraulic = result.nodes.at("hydraulic");
+        const auto &hydraulic_height = *hydraulic.outputs.at("surface_height_m");
+        const auto &discharge = *hydraulic.outputs.at("discharge_m3_per_s");
+        const auto &exported_water = *hydraulic.outputs.at("water_exported_m3");
+        const auto &water_budget = *hydraulic.outputs.at("water_budget_relative_residual");
+        const auto &solid_budget = *hydraulic.outputs.at("solid_budget_relative_residual");
+
+        const auto rmse = [](const TerrainValue2D &a, const TerrainValue2D &b) {
+            double squared = 0.0;
+            for (std::size_t i = 0; i < a.Samples().size(); ++i)
+            {
+                const double delta = static_cast<double>(a.Samples()[i]) - b.Samples()[i];
+                squared += delta * delta;
+            }
+            return std::sqrt(squared / static_cast<double>(a.Samples().size()));
+        };
+        const double thermal_delta = rmse(before, thermal);
+        const double hydraulic_delta = rmse(before, hydraulic_height);
+        const float peak_discharge = *std::max_element(discharge.Samples().begin(), discharge.Samples().end());
+        const float total_exported_water = std::accumulate(exported_water.Samples().begin(),
+            exported_water.Samples().end(), 0.0f);
+        EXPECT_GT(thermal_delta, 1.0e-4);
+        EXPECT_GT(hydraulic_delta, 1.0e-4);
+        EXPECT_GT(peak_discharge, 0.0f);
+        EXPECT_LE(std::abs(water_budget.Samples().front()), 2.0e-6f);
+        EXPECT_LE(std::abs(solid_budget.Samples().front()), 2.0e-6f);
+        EXPECT_TRUE(hydraulic.outputs.at("state")->AsLayeredHeightfield());
+        EXPECT_EQ(hydraulic.outputs.at("height").get(),
+            hydraulic.outputs.at("surface_height_m").get());
+        EXPECT_NE(hydraulic.content_hash, 0u);
+        char *output_path_buffer = nullptr;
+        std::size_t output_path_length = 0;
+        (void)_dupenv_s(&output_path_buffer, &output_path_length, "KP_TERRAIN_COMPARE_CSV");
+        const std::string output_path = output_path_buffer != nullptr
+            ? output_path_buffer : "";
+        std::free(output_path_buffer);
+        if (!output_path.empty())
+        {
+            std::ofstream output(output_path);
+            ASSERT_TRUE(output) << "could not write terrain comparison CSV: " << output_path;
+            output << "x,z,before_m,thermal_m,hydraulic_m\n";
+            for (std::uint32_t z = 0; z < domain.height; ++z)
+                for (std::uint32_t x = 0; x < domain.width; ++x)
+                {
+                    const std::size_t index = static_cast<std::size_t>(z) * domain.width + x;
+                    output << x << ',' << z << ',' << before.Samples()[index] << ','
+                        << thermal.Samples()[index] << ',' << hydraulic_height.Samples()[index] << '\n';
+                }
+        }
+        std::cout << "Terrain hydrology comparison (Debug): " << domain.width << 'x'
+            << domain.height << " total=" << total_ms
+            << " ms, thermal-node=" << result.nodes.at("thermal").evaluation_time_ms
+            << " ms, hydraulic-node=" << hydraulic.evaluation_time_ms
+            << " ms, thermal-RMSE=" << thermal_delta
+            << " m, hydraulic-RMSE=" << hydraulic_delta
+            << " m, peak-discharge=" << peak_discharge
+            << " m^3/s, exported-water=" << total_exported_water
+            << " m^3, water-budget-relative=" << water_budget.Samples().front()
+            << ", solid-budget-relative=" << solid_budget.Samples().front() << '\n';
     }
 
     TEST(TerrainEvaluationTest, ExecutionControlStepsOneNodeAtATime)

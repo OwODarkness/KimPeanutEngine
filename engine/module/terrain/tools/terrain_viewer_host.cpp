@@ -6,6 +6,7 @@
 #include <cmath>
 #include <fstream>
 #include <limits>
+#include <numbers>
 #include <utility>
 
 #include "asset/asset.h"
@@ -76,6 +77,120 @@ namespace kpengine::terrain
                 : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
             return static_cast<std::uint8_t>(std::lround(
                 std::clamp(srgb, 0.0f, 1.0f) * 255.0f));
+        }
+
+        bool RegisterTerrainSkyDome(const asset::AssetID environment_texture,
+            const std::string &environment_path, asset::AssetID &mesh_id,
+            asset::AssetID &material_id, spatial::AABB &bounds,
+            std::string &diagnostic)
+        {
+            using namespace asset;
+            constexpr std::uint32_t slices = 96;
+            constexpr std::uint32_t stacks = 48;
+            constexpr float radius = 1500.0f;
+            const std::string shader_path =
+                (std::filesystem::path{GetAssetDirectory()} /
+                 "shader/pbr_gbuffer.shader").generic_string();
+            AssetManager &assets = AssetManager::GetInstance();
+            const AssetID shader = assets.LoadSync(shader_path);
+            if (!environment_texture.IsValid() || !shader.IsValid())
+            {
+                diagnostic = "terrain sky dome requires its HDR texture and PBR shader";
+                return false;
+            }
+
+            auto mesh = std::make_shared<MeshResource>();
+            mesh->data = std::make_shared<data::MeshData>();
+            mesh->data->vertices.reserve(static_cast<std::size_t>(slices + 1) *
+                                         (stacks + 1));
+            mesh->data->indices.reserve(static_cast<std::size_t>(slices) * stacks * 6);
+            const float two_pi = 2.0f * std::numbers::pi_v<float>;
+            for (std::uint32_t y = 0; y <= stacks; ++y)
+            {
+                const float v = static_cast<float>(y) / stacks;
+                const float theta = v * std::numbers::pi_v<float>;
+                const float ring = std::sin(theta);
+                for (std::uint32_t x = 0; x <= slices; ++x)
+                {
+                    const float u = static_cast<float>(x) / slices;
+                    const float phi = u * two_pi;
+                    const Vector3f direction{ring * std::cos(phi), std::cos(theta),
+                                             ring * std::sin(phi)};
+                    data::Vertex vertex{};
+                    vertex.position = direction * radius;
+                    vertex.normal = direction * -1.0f;
+                    vertex.tex_coord = {u, v};
+                    mesh->data->vertices.push_back(vertex);
+                }
+            }
+            for (std::uint32_t y = 0; y < stacks; ++y)
+                for (std::uint32_t x = 0; x < slices; ++x)
+                {
+                    const std::uint32_t upper_left = y * (slices + 1) + x;
+                    const std::uint32_t lower_left = upper_left + slices + 1;
+                    const std::uint32_t upper_right = upper_left + 1;
+                    const std::uint32_t lower_right = lower_left + 1;
+                    mesh->data->indices.insert(mesh->data->indices.end(),
+                        {upper_left, lower_left, upper_right,
+                         upper_right, lower_left, lower_right});
+                }
+            const float limit = radius;
+            bounds = {{-limit, -limit, -limit}, {limit, limit, limit}};
+            mesh->data->sections.push_back({0,
+                static_cast<std::uint32_t>(mesh->data->indices.size()), 0, bounds});
+            mesh->local_bounds = bounds;
+            mesh->vertex_count = static_cast<std::uint32_t>(mesh->data->vertices.size());
+            mesh->face_count = static_cast<std::uint32_t>(mesh->data->indices.size() / 3);
+
+            AssetRegisterInfo mesh_info{};
+            mesh_info.resource = mesh;
+            mesh_info.path = "generated://terrain/sky-dome-mesh";
+            mesh_info.name = "Terrain Viewer HDR Sky Dome";
+            mesh_info.type = AssetType::KPAT_Mesh;
+            mesh_id = assets.RegisterAsset(mesh_info);
+            if (!mesh_id.IsValid())
+            {
+                diagnostic = "AssetManager rejected the terrain HDR sky-dome mesh";
+                return false;
+            }
+
+            auto material = std::make_shared<MaterialResource>();
+            material->shader_path = shader_path;
+            material->shader_dependency_index = 0;
+            material->surface.shading_model = MaterialShadingModel::StandardPbr;
+            material->surface.cull_mode = MaterialCullMode::None;
+            material->surface.double_sided = true;
+            material->parameters = {
+                {"base_color", MaterialParameterSourceType::Vector4,
+                 std::array<float, 4>{0.7f, 0.7f, 0.7f, 1.0f}},
+                {"metallic", MaterialParameterSourceType::Scalar, 0.0f},
+                {"roughness", MaterialParameterSourceType::Scalar, 1.0f},
+                {"occlusion", MaterialParameterSourceType::Scalar, 1.0f},
+                {"normal_scale", MaterialParameterSourceType::Scalar, 1.0f}};
+            MaterialParameterSource panorama{};
+            panorama.name = "base_color_texture";
+            panorama.type = MaterialParameterSourceType::Texture;
+            panorama.value = environment_path;
+            panorama.texture_color_space = MaterialTextureColorSpace::Linear;
+            panorama.dependency_index = 1;
+            material->parameters.push_back(std::move(panorama));
+
+            AssetRegisterInfo material_info{};
+            material_info.resource = std::move(material);
+            material_info.path = "generated://terrain/sky-dome-material";
+            material_info.name = "Terrain Viewer HDR Sky Dome";
+            material_info.dependencies = {shader, environment_texture};
+            material_info.type = AssetType::KPAT_Material;
+            material_id = assets.RegisterAsset(material_info);
+            if (!material_id.IsValid())
+            {
+                assets.UnRegisterAsset(mesh_id);
+                mesh_id = {};
+                diagnostic = "AssetManager rejected the terrain HDR sky-dome material";
+                return false;
+            }
+            diagnostic.clear();
+            return true;
         }
 
         bool RegisterTerrainPreviewMaterial(const data::MeshData &mesh,
@@ -261,7 +376,14 @@ namespace kpengine::terrain
                 diagnostic = "terrain fixture did not produce a heightfield";
                 return false;
             }
-            heightfield = node->second.outputs.at("height");
+            const auto height_value = node->second.outputs.at("height");
+            const auto *const scalar_height = height_value->AsScalarField();
+            if (scalar_height == nullptr)
+            {
+                diagnostic = "terrain fixture height output is not a scalar heightfield";
+                return false;
+            }
+            heightfield = std::shared_ptr<const ScalarField2D>(height_value, scalar_height);
             mesh = BuildHeightfieldMesh(*heightfield);
             if (mesh.vertices.empty() || mesh.indices.empty())
             {
@@ -321,6 +443,9 @@ namespace kpengine::terrain
             ->GetEnvironmentSourceSink()->EnqueueCreate(render_environment_source_);
         if (!render_environment_handle_.IsValid())
             return fail("RenderSystem rejected the terrain viewer environment source");
+        if (!RegisterTerrainSkyDome(environment_texture_, environment_path,
+                sky_dome_mesh_, sky_dome_material_, sky_dome_bounds_, diagnostic))
+            return fail("could not prepare the terrain HDR sky dome: " + diagnostic);
 
         data::MeshData mesh_data;
         spatial::AABB bounds;
@@ -380,7 +505,7 @@ namespace kpengine::terrain
         }
 
         preview_material_ = terrain_material_assets_.front();
-        render_roots_ = {generated_mesh_};
+        render_roots_ = {generated_mesh_, sky_dome_mesh_, sky_dome_material_};
         render_roots_.insert(render_roots_.end(), terrain_material_assets_.begin(),
                              terrain_material_assets_.end());
         render_roots_.insert(render_roots_.end(), terrain_texture_assets_.begin(),
@@ -399,17 +524,33 @@ namespace kpengine::terrain
         }
 
         gameplay::CameraActorDesc camera_desc{};
-        camera_desc.transform.position_ = {0.0f, 100.0f, 182.0f};
-        camera_desc.transform.rotator_ = {-27.0f, -90.0f, 0.0f};
-        camera_desc.far_plane = 2000.0f;
+        const float initial_yaw = camera_yaw_degrees_ * 0.01745329251994329577f;
+        const float initial_pitch = camera_pitch_degrees_ * 0.01745329251994329577f;
+        const float initial_horizontal = std::cos(initial_pitch) * camera_distance_;
+        camera_desc.transform.position_ = {
+            -std::cos(initial_yaw) * initial_horizontal,
+            camera_target_y_ - std::sin(initial_pitch) * camera_distance_,
+            -std::sin(initial_yaw) * initial_horizontal};
+        camera_desc.transform.rotator_ = {
+            camera_pitch_degrees_, camera_yaw_degrees_, 0.0f};
+        camera_desc.far_plane = 3000.0f;
         camera_actor_ = gameplay::CreateCameraActor(*world, camera_desc);
+        gameplay::StaticMeshActorDesc sky_dome_desc{};
+        sky_dome_desc.mesh_asset = sky_dome_mesh_;
+        sky_dome_desc.material_asset = sky_dome_material_;
+        sky_dome_desc.material_assets = {sky_dome_material_};
+        sky_dome_desc.transform.position_ = camera_desc.transform.position_;
+        sky_dome_desc.local_bounds = sky_dome_bounds_;
+        sky_dome_desc.casts_shadow = false;
+        sky_dome_actor_ = gameplay::CreateStaticMeshActor(*world, sky_dome_desc);
         gameplay::DirectionalLightActorDesc light_desc{};
         light_desc.direction = {-0.4f, -1.0f, -0.3f};
         light_desc.intensity = 3.0f;
         light_actor_ = gameplay::CreateDirectionalLightActor(*world, light_desc);
-        if (!camera_actor_.IsValid() || !light_actor_.IsValid())
+        if (!camera_actor_.IsValid() || !sky_dome_actor_.IsValid() ||
+            !light_actor_.IsValid())
         {
-            return fail("could not create preview camera or directional light Actor");
+            return fail("could not create preview camera, sky dome, or directional light Actor");
         }
         initialized_ = true;
         return true;
@@ -533,6 +674,51 @@ namespace kpengine::terrain
         command_registrations_.push_back(
             std::move(execution_control_registration.registration));
 
+        CommandDesc hydraulic_comparison{
+            "terrain.run_hydraulic_comparison", "TerrainViewer",
+            "Run the CPU hydraulic erosion node on the current terrain preview",
+            CommandCategory::Gameplay,
+            CommandFlags::AgentAllowed | CommandFlags::MutatesState,
+            {},
+            [this](const CommandCall &, const CommandContext &context)
+            {
+                RequestHydraulicComparison();
+                return CommandResult{CommandStatus::Success,
+                    "Hydraulic terrain comparison queued", context.request_id, {}};
+            }, CommandThread::Game};
+        auto hydraulic_comparison_registration =
+            registry.Register(std::move(hydraulic_comparison));
+        if (!hydraulic_comparison_registration.IsSuccess())
+        {
+            diagnostic = hydraulic_comparison_registration.diagnostic;
+            command_registrations_.clear();
+            return false;
+        }
+        command_registrations_.push_back(
+            std::move(hydraulic_comparison_registration.registration));
+
+        CommandDesc preview_status{
+            "terrain.preview_status", "TerrainViewer",
+            "Read the current terrain generation and preview status",
+            CommandCategory::Gameplay,
+            CommandFlags::AgentAllowed,
+            {},
+            [this](const CommandCall &, const CommandContext &context)
+            {
+                return CommandResult{CommandStatus::Success, generation_status_,
+                    context.request_id, {{"status", generation_status_},
+                                         {"revision", revision_}}};
+            }, CommandThread::Game};
+        auto preview_status_registration = registry.Register(std::move(preview_status));
+        if (!preview_status_registration.IsSuccess())
+        {
+            diagnostic = preview_status_registration.diagnostic;
+            command_registrations_.clear();
+            return false;
+        }
+        command_registrations_.push_back(
+            std::move(preview_status_registration.registration));
+
         CommandDesc bake{
             "terrain.bake", "TerrainViewer",
             "Bake the last committed Terrain preview to native model and material assets",
@@ -575,6 +761,25 @@ namespace kpengine::terrain
         {
             diagnostic = "TerrainViewerHost is not initialized";
             return false;
+        }
+        if (refresh_sky_dome_on_first_tick_)
+        {
+            if (!RecreateSkyDomeActor(diagnostic)) return false;
+            refresh_sky_dome_on_first_tick_ = false;
+        }
+        if (publish_initial_preview_on_first_tick_)
+        {
+            publish_initial_preview_on_first_tick_ = false;
+            std::string publish_diagnostic;
+            if (!last_evaluation_ || !preview_heightfield_ ||
+                !PublishPreview(*last_evaluation_, preview_heightfield_,
+                                publish_diagnostic))
+            {
+                generation_status_ = "Failed to publish the initial terrain preview: " +
+                                     publish_diagnostic;
+                diagnostic = generation_status_;
+                return false;
+            }
         }
         ProcessAuthoringCommands();
         std::map<std::string, NodeResult, std::less<>> progress_snapshot;
@@ -633,6 +838,7 @@ namespace kpengine::terrain
                 return false;
             }
             if (terrain_actor_.IsValid()) (void)world->DestroyActor(terrain_actor_);
+            if (sky_dome_actor_.IsValid()) (void)world->DestroyActor(sky_dome_actor_);
             if (camera_actor_.IsValid()) (void)world->DestroyActor(camera_actor_);
             if (light_actor_.IsValid()) (void)world->DestroyActor(light_actor_);
             world->ReclaimDestroyedActors();
@@ -645,6 +851,7 @@ namespace kpengine::terrain
             if (generated_mesh_.IsValid())
                 asset::AssetManager::GetInstance().UnRegisterAsset(generated_mesh_);
             terrain_actor_ = {};
+            sky_dome_actor_ = {};
             generated_mesh_ = pending_preview_->mesh;
             preview_material_ = pending_preview_->material;
             preview_heightfield_ = pending_preview_->heightfield;
@@ -682,18 +889,27 @@ namespace kpengine::terrain
                 -std::cos(yaw) * horizontal,
                 camera_target_y_ - std::sin(pitch) * camera_distance_,
                 -std::sin(yaw) * horizontal};
-            camera_desc.far_plane = 2000.0f;
+            camera_desc.far_plane = 3000.0f;
             camera_actor_ = gameplay::CreateCameraActor(*world, camera_desc);
+            gameplay::StaticMeshActorDesc sky_dome_desc{};
+            sky_dome_desc.mesh_asset = sky_dome_mesh_;
+            sky_dome_desc.material_asset = sky_dome_material_;
+            sky_dome_desc.material_assets = {sky_dome_material_};
+            sky_dome_desc.transform.position_ = camera_desc.transform.position_;
+            sky_dome_desc.local_bounds = sky_dome_bounds_;
+            sky_dome_desc.casts_shadow = false;
+            sky_dome_actor_ = gameplay::CreateStaticMeshActor(*world, sky_dome_desc);
             gameplay::DirectionalLightActorDesc light_desc{};
             light_desc.direction = {-0.4f, -1.0f, -0.3f};
             light_desc.intensity = 3.0f;
             light_actor_ = gameplay::CreateDirectionalLightActor(*world, light_desc);
-            if (!camera_actor_.IsValid() || !light_actor_.IsValid())
+            if (!camera_actor_.IsValid() || !sky_dome_actor_.IsValid() ||
+                !light_actor_.IsValid())
             {
-                diagnostic = "could not restore preview camera or light after catalog replacement";
+                diagnostic = "could not restore preview camera, sky dome, or light after catalog replacement";
                 return false;
             }
-            render_roots_ = {generated_mesh_};
+            render_roots_ = {generated_mesh_, sky_dome_mesh_, sky_dome_material_};
             render_roots_.insert(render_roots_.end(), terrain_material_assets_.begin(),
                                  terrain_material_assets_.end());
             render_roots_.insert(render_roots_.end(), terrain_texture_assets_.begin(),
@@ -736,7 +952,14 @@ namespace kpengine::terrain
                 continue;
             }
             std::string publish_diagnostic;
-            auto field = node->second.outputs.at("height");
+            const auto height_value = node->second.outputs.at("height");
+            const auto *const scalar_height = height_value->AsScalarField();
+            if (scalar_height == nullptr)
+            {
+                generation_status_ = "Failed: final terrain height output is not scalar";
+                continue;
+            }
+            auto field = std::shared_ptr<const ScalarField2D>(height_value, scalar_height);
             if (!PublishPreview(completed.evaluation, std::move(field), publish_diagnostic))
             {
                 generation_status_ = "Failed: " + publish_diagnostic;
@@ -784,6 +1007,12 @@ namespace kpengine::terrain
         authoring_commands_.push_back(command);
     }
 
+    void TerrainViewerHost::RequestHydraulicComparison()
+    {
+        std::lock_guard lock(authoring_command_mutex_);
+        authoring_commands_.push_back({AuthoringCommand::Kind::HydraulicComparison});
+    }
+
     void TerrainViewerHost::QueueCamera(float yaw_degrees, float pitch_degrees,
                                         float distance)
     {
@@ -821,6 +1050,9 @@ namespace kpengine::terrain
                 break;
             case AuthoringCommand::Kind::Control:
                 ApplyExecutionControl(command.control);
+                break;
+            case AuthoringCommand::Kind::HydraulicComparison:
+                ApplyHydraulicComparison();
                 break;
             case AuthoringCommand::Kind::Camera:
                 UpdateCamera(command.first, command.second, command.third);
@@ -902,6 +1134,87 @@ namespace kpengine::terrain
                 *last_evaluation_, *recipe_, generation_status_);
     }
 
+    void TerrainViewerHost::ApplyHydraulicComparison()
+    {
+        if (pending_preview_ || !generation_executor_ || !execution_control_ || !recipe_ ||
+            generation_status_.starts_with("Generating") ||
+            generation_status_.starts_with("Waiting for render boundary"))
+        {
+            generation_status_ = "Busy: wait for the current terrain update";
+            return;
+        }
+        if (std::any_of(recipe_->nodes.begin(), recipe_->nodes.end(),
+            [](const RecipeNode &node) {
+                return node.operator_id == "terrain.erosion.hydraulic_pipe";
+            }))
+        {
+            generation_status_ = "Hydraulic comparison already applied";
+            return;
+        }
+        if (recipe_->nodes.empty())
+        {
+            generation_status_ = "Failed: terrain recipe is empty";
+            return;
+        }
+
+        TerrainRecipe comparison_recipe = *recipe_;
+        const std::string bedrock_node = comparison_recipe.nodes.back().id;
+        const auto add_scalar = [&comparison_recipe](const char *id, float value) {
+            comparison_recipe.nodes.push_back({id, "terrain.scalar.constant", 1,
+                {{"value", value}}, {}});
+        };
+        add_scalar("comparison_soil", 0.3f);
+        add_scalar("comparison_sand", 0.0f);
+        add_scalar("comparison_water", 0.0f);
+        add_scalar("comparison_sediment", 0.0f);
+        add_scalar("comparison_rain", 0.02f);
+        add_scalar("comparison_erodibility", 0.8f);
+        add_scalar("comparison_hardness", 0.25f);
+        add_scalar("comparison_obstacle", 0.0f);
+        comparison_recipe.nodes.push_back({"comparison_state",
+            "terrain.state.layered_heightfield", 1, nlohmann::json::object(),
+            {{"bedrock_elevation_m", {bedrock_node, "height"}},
+             {"soil_thickness_m", {"comparison_soil", "value"}},
+             {"sand_thickness_m", {"comparison_sand", "value"}},
+             {"water_depth_m", {"comparison_water", "value"}},
+             {"suspended_sediment_kg_per_m2", {"comparison_sediment", "value"}}}});
+        comparison_recipe.nodes.push_back({"hydraulic_comparison",
+            "terrain.erosion.hydraulic_pipe", 1,
+            {{"duration_s", 12.0}, {"maximum_timestep_s", 0.05},
+             {"capacity_kg_s_per_m3", 8.0}, {"dissolution_rate_per_s", 0.8},
+             {"deposition_rate_per_s", 1.0}, {"boundary", "open"}},
+            {{"state", {"comparison_state", "state"}},
+             {"rain_rate_m_per_s", {"comparison_rain", "value"}},
+             {"erodibility_0_1", {"comparison_erodibility", "value"}},
+             {"hardness_0_1", {"comparison_hardness", "value"}},
+             {"obstacle_0_1", {"comparison_obstacle", "value"}}}});
+
+        execution_control_->Resume();
+        ++revision_;
+        {
+            std::lock_guard lock(progress_mutex_);
+            progress_revision_ = revision_;
+            progress_nodes_.clear();
+        }
+        last_evaluation_ = std::make_unique<EvaluationResult>();
+        if (!generation_executor_->Submit(revision_, comparison_recipe, execution_control_,
+                [this, revision = revision_](std::string_view node_id,
+                                             const NodeResult &node_result) {
+                    std::lock_guard lock(progress_mutex_);
+                    if (progress_revision_ == revision)
+                        progress_nodes_[std::string(node_id)] = node_result;
+                }))
+        {
+            generation_status_ = "Busy: terrain evaluation queue is full";
+            return;
+        }
+        recipe_ = std::make_unique<TerrainRecipe>(std::move(comparison_recipe));
+        generation_status_ = "Generating hydraulic erosion comparison";
+        if (terrain_editor_ && last_evaluation_)
+            terrain_editor_->SetEvaluationSnapshot(preview_heightfield_,
+                *last_evaluation_, *recipe_, generation_status_);
+    }
+
     void TerrainViewerHost::ApplyCancel()
     {
         if (!generation_executor_) return;
@@ -976,6 +1289,47 @@ namespace kpengine::terrain
             -std::sin(yaw) * horizontal};
         (void)world->SetActorRootTransform(camera_actor_, position,
             Rotatorf{pitch_degrees, yaw_degrees, 0.0f});
+        if (sky_dome_actor_.IsValid())
+            (void)world->SetActorRootTransform(sky_dome_actor_, position, Rotatorf{});
+    }
+
+    bool TerrainViewerHost::RecreateSkyDomeActor(std::string &diagnostic)
+    {
+        gameplay::GameplayWorld *const world =
+            runtime::global_runtime_context.gameplay_world_.get();
+        if (world == nullptr || !sky_dome_mesh_.IsValid() ||
+            !sky_dome_material_.IsValid())
+        {
+            diagnostic = "sky dome dependencies or GameplayWorld are unavailable";
+            return false;
+        }
+        if (sky_dome_actor_.IsValid())
+        {
+            (void)world->DestroyActor(sky_dome_actor_);
+            world->ReclaimDestroyedActors();
+            sky_dome_actor_ = {};
+        }
+        const float yaw = camera_yaw_degrees_ * 0.01745329251994329577f;
+        const float pitch = camera_pitch_degrees_ * 0.01745329251994329577f;
+        const float horizontal = std::cos(pitch) * camera_distance_;
+        gameplay::StaticMeshActorDesc desc{};
+        desc.mesh_asset = sky_dome_mesh_;
+        desc.material_asset = sky_dome_material_;
+        desc.material_assets = {sky_dome_material_};
+        desc.transform.position_ = {
+            -std::cos(yaw) * horizontal,
+            camera_target_y_ - std::sin(pitch) * camera_distance_,
+            -std::sin(yaw) * horizontal};
+        desc.local_bounds = sky_dome_bounds_;
+        desc.casts_shadow = false;
+        sky_dome_actor_ = gameplay::CreateStaticMeshActor(*world, desc);
+        if (!sky_dome_actor_.IsValid())
+        {
+            diagnostic = "could not refresh the terrain HDR sky-dome renderable";
+            return false;
+        }
+        diagnostic.clear();
+        return true;
     }
 
     bool TerrainViewerHost::PublishPreview(const EvaluationResult &result,
@@ -1026,14 +1380,15 @@ namespace kpengine::terrain
         }
         std::vector<asset::AssetID> material_ids;
         std::vector<asset::AssetID> texture_ids;
-        if (!RegisterTerrainPreviewMaterial(mesh_data, *heightfield,
+        if (!RegisterTerrainPreviewMaterial(*mesh->data, *heightfield,
                 material_ids, texture_ids, diagnostic))
         {
             assets.UnRegisterAsset(mesh_id);
             return false;
         }
         std::uint64_t catalog_serial = 0;
-        std::vector<asset::AssetID> replacement_roots{mesh_id};
+        std::vector<asset::AssetID> replacement_roots{
+            mesh_id, sky_dome_mesh_, sky_dome_material_};
         replacement_roots.insert(replacement_roots.end(), material_ids.begin(), material_ids.end());
         replacement_roots.insert(replacement_roots.end(), texture_ids.begin(), texture_ids.end());
         replacement_roots.push_back(environment_texture_);
@@ -1122,6 +1477,10 @@ namespace kpengine::terrain
             {
                 (void)world.DestroyActor(terrain_actor_);
             }
+            if (sky_dome_actor_.IsValid())
+            {
+                (void)world.DestroyActor(sky_dome_actor_);
+            }
             if (camera_actor_.IsValid())
             {
                 (void)world.DestroyActor(camera_actor_);
@@ -1133,12 +1492,23 @@ namespace kpengine::terrain
             world.ReclaimDestroyedActors();
         }
         terrain_actor_ = {};
+        sky_dome_actor_ = {};
         camera_actor_ = {};
         light_actor_ = {};
         if (generated_mesh_.IsValid())
         {
             asset::AssetManager::GetInstance().UnRegisterAsset(generated_mesh_);
             generated_mesh_ = {};
+        }
+        if (sky_dome_material_.IsValid())
+        {
+            asset::AssetManager::GetInstance().UnRegisterAsset(sky_dome_material_);
+            sky_dome_material_ = {};
+        }
+        if (sky_dome_mesh_.IsValid())
+        {
+            asset::AssetManager::GetInstance().UnRegisterAsset(sky_dome_mesh_);
+            sky_dome_mesh_ = {};
         }
         if (pending_preview_)
         {

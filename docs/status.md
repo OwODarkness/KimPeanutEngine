@@ -14,8 +14,13 @@
   world-normal/material captures, invalid-generation retention, archive-commit
   recovery, and repeated replacement checks pass. TP4 now adds a normalized
   height remap, conservative talus relaxation and iteratively rerouted implicit
-  stream-power incision as PCG postprocess nodes; numerical solver acceptance,
-  hydraulic state/transport and the 2026 method comparison remain open.
+  stream-power incision as PCG postprocess nodes. TP4 now also has the first
+  typed CPU virtual-pipe hydrology operator with water/sediment channels and
+  budget diagnostics. A matched 256² Debug comparison changed terrain under
+  both methods and closed hydraulic water/solid ledgers below 1.3e-10 relative;
+  timestep convergence, broader fixtures and viewer method selection remain
+  open. The 2026 stochastic transport model remains a research candidate, not
+  an adopted implementation.
   Catalog-promotion fault injection and high-count lifecycle stress remain
   open; biomes/scatter, chunking and GPU acceleration remain future work. →
   [plans](terrain/PLANS.md),
@@ -24,7 +29,8 @@
   [TP1 journal](../.spec/journal/2026-09-29-terrain-pcg-TP1.md),
   [TP2 journal](../.spec/journal/2026-09-29-terrain-pcg-TP2.md),
   [TP3 journal](../.spec/journal/2026-09-30-terrain-pcg-TP3.md),
-  [TP4 journal](../.spec/journal/2026-09-30-terrain-pcg-TP4.md)
+  [TP4 journal](../.spec/journal/2026-09-30-terrain-pcg-TP4.md),
+  [hydrology comparison](../.spec/journal/2026-09-30-terrain-pcg-TP4-hydrology.md)
 
 - **R6 interactive path tracing (2026-09-29; active)** — Three matched static
   RelWithDebInfo Vulkan Sponza windows establish 4-SPP/8-bounce total GPU

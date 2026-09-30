@@ -61,6 +61,16 @@ namespace kpengine::terrain
                        ? ImVec2(available.y * aspect, available.y)
                        : ImVec2(available.x, available.x / aspect);
         }
+
+        std::shared_ptr<const ScalarField2D> AsScalarView(const TerrainValue &value)
+        {
+            if (!value) return {};
+            if (const auto *scalar = value->AsScalarField())
+                return std::shared_ptr<const ScalarField2D>(value, scalar);
+            std::string diagnostic;
+            return ScalarField2D::Create(value->Domain(), value->Samples(),
+                value->Samples().size(), diagnostic);
+        }
     }
 
     TerrainEditor::TerrainEditor() = default;
@@ -250,7 +260,7 @@ namespace kpengine::terrain
             {
                 const auto eroded_field = eroded_node->second.outputs.find("height");
                 if (eroded_field != eroded_node->second.outputs.end())
-                    heightfield_ = eroded_field->second;
+                    heightfield_ = AsScalarView(eroded_field->second);
             }
             const auto source = erosion->inputs.find("source");
             if (source != erosion->inputs.end())
@@ -260,7 +270,7 @@ namespace kpengine::terrain
                 {
                     const auto source_field = source_node->second.outputs.find(source->second.port);
                     if (source_field != source_node->second.outputs.end())
-                        pre_erosion_heightfield_ = source_field->second;
+                        pre_erosion_heightfield_ = AsScalarView(source_field->second);
                 }
             }
             if (eroded_node == result.nodes.end() ||
@@ -417,8 +427,12 @@ namespace kpengine::terrain
                         const std::string label = output_name + "##" + node_id;
                         if (ImGui::SmallButton(label.c_str()) && field)
                         {
-                            heightfield_ = field;
-                            selected_field_name_ = node_id + "." + output_name;
+                            auto scalar = AsScalarView(field);
+                            if (scalar)
+                            {
+                                heightfield_ = std::move(scalar);
+                                selected_field_name_ = node_id + "." + output_name;
+                            }
                         }
                     }
                     ImGui::TreePop();

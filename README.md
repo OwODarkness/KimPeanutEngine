@@ -50,6 +50,7 @@ KP Engine 围绕 `Asset → Resource → Render → RHI` 构建清晰的资源�
 - **Asset**：统一管理类型化资产、缓存、依赖关系与 CPU 生命周期，并提供同步和异步加载。
 - **Resource / Import / Cook**：将 Model、Material、Texture 等源资源转换为引擎资产与渲染数据，支持依赖处理、mipmap、格式策略和 content-addressed cooking。
 - **Render**：基于 RenderWorld 与 RenderProxy 组织场景渲染，负责材质、RenderTarget、Pass、SceneColor、阴影及调试捕获。
+- **Terrain PCG**：通过可组合的确定性节点生成高度场、派生地形数据与网格，并支持侵蚀后处理、共享渲染器预览和可烘焙地形资产。
 - **Ray Tracing**：Vulkan 后端提供实验性的实时路径追踪与全局光照；渐进式累积和自适应 SPP 在相机移动与静止时切换采样率。需要支持 Vulkan 光追的 GPU 与驱动；OpenGL 路径继续提供光栅化渲染。
 - **RHI**：通过 API-neutral handles、descriptors 与 `RenderBackend` 抽象 GPU 资源、Pipeline、Command、同步和生命周期，目前支持 Vulkan 与 OpenGL。
 

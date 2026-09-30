@@ -22,8 +22,8 @@
 
 namespace kpengine::terrain
 {
-    enum class PortType : std::uint8_t { ScalarField2D, Heightfield };
-    using TerrainValue = std::shared_ptr<const ScalarField2D>;
+    enum class PortType : std::uint8_t { ScalarField2D, Heightfield, LayeredHeightfield2D };
+    using TerrainValue = std::shared_ptr<const TerrainValue2D>;
     using PortTypes = std::map<std::string, PortType, std::less<>>;
 
     struct OutputRef

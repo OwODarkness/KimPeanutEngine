@@ -80,6 +80,71 @@ namespace kpengine::terrain
         return samples_[static_cast<std::size_t>(y) * domain_.width + x];
     }
 
+    std::shared_ptr<const LayeredHeightfield2D> LayeredHeightfield2D::Create(
+        GridDomain2D domain, std::vector<float> bedrock_elevation_m,
+        std::vector<float> soil_thickness_m, std::vector<float> sand_thickness_m,
+        std::vector<float> water_depth_m, std::vector<float> suspended_sediment_kg_per_m2,
+        std::size_t maximum_samples, std::string &diagnostic)
+    {
+        try
+        {
+            const std::size_t count = domain.SampleCount(maximum_samples);
+            const auto require_channel = [count](const std::vector<float> &samples,
+                                                  const char *name) {
+                if (samples.size() != count)
+                    throw std::invalid_argument(std::string(name) +
+                        " sample count does not match layered heightfield domain");
+            };
+            require_channel(bedrock_elevation_m, "bedrock elevation");
+            require_channel(soil_thickness_m, "soil thickness");
+            require_channel(sand_thickness_m, "sand thickness");
+            require_channel(water_depth_m, "water depth");
+            require_channel(suspended_sediment_kg_per_m2, "suspended sediment");
+
+            std::vector<float> surface(count);
+            for (std::size_t i = 0; i < count; ++i)
+            {
+                const float bedrock = bedrock_elevation_m[i];
+                const float soil = soil_thickness_m[i];
+                const float sand = sand_thickness_m[i];
+                const float water = water_depth_m[i];
+                const float suspended = suspended_sediment_kg_per_m2[i];
+                if (!std::isfinite(bedrock) || !std::isfinite(soil) || !std::isfinite(sand) ||
+                    !std::isfinite(water) || !std::isfinite(suspended))
+                    throw std::invalid_argument("layered heightfield channels must be finite");
+                if (soil < 0.0f || sand < 0.0f || water < 0.0f || suspended < 0.0f)
+                    throw std::invalid_argument("soil, sand, water and suspended sediment must be nonnegative");
+                surface[i] = bedrock + soil + sand;
+                if (!std::isfinite(surface[i]))
+                    throw std::invalid_argument("layered heightfield surface elevation must remain finite");
+            }
+            diagnostic.clear();
+            return std::shared_ptr<const LayeredHeightfield2D>(new LayeredHeightfield2D(
+                domain, std::move(bedrock_elevation_m), std::move(soil_thickness_m),
+                std::move(sand_thickness_m), std::move(water_depth_m),
+                std::move(suspended_sediment_kg_per_m2), std::move(surface)));
+        }
+        catch (const std::exception &error)
+        {
+            diagnostic = error.what();
+            return {};
+        }
+    }
+
+    float LayeredHeightfield2D::At(std::uint32_t x, std::uint32_t y) const
+    {
+        if (x >= domain_.width || y >= domain_.height)
+            throw std::out_of_range("layered heightfield coordinate is outside its domain");
+        return surface_elevation_m_[static_cast<std::size_t>(y) * domain_.width + x];
+    }
+
+    std::size_t LayeredHeightfield2D::ByteSize() const noexcept
+    {
+        return (bedrock_elevation_m_.size() + soil_thickness_m_.size() +
+            sand_thickness_m_.size() + water_depth_m_.size() +
+            suspended_sediment_kg_per_m2_.size() + surface_elevation_m_.size()) * sizeof(float);
+    }
+
     namespace
     {
         double FirstDerivative(const ScalarField2D &field, std::uint32_t x,

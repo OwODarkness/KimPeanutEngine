@@ -46,12 +46,16 @@ local configured widths.
    with routing recomputed as morphology changes. Track bedrock lowering and
    exported sediment separately; do not claim sediment conservation if transport
    and deposition are absent.
-3. **Grid hydraulic prototype:** conservative water and suspended-sediment
-   transport with explicit rain, evaporation and open-boundary budgets. Bound
-   the stable timestep and keep all state buffers distinct per iteration.
-4. Compare those baselines to the 2026 stochastic geomorphological transport
-   method on the same domain and quality tiers. Record morphology, conservation
-   error, resolution sensitivity, memory and bake time before adopting it.
+3. **Grid hydraulic baseline:** a CPU virtual-pipe solver carries bedrock,
+   soil, sand, water and suspended sediment as separate channels. Rain,
+   evaporation and open-boundary export are explicit; each timestep gathers
+   from distinct water/sediment buffers and publishes water/solid budgets.
+   This is the first integrated hydrology model, not a state-of-the-art claim.
+4. Compare the baseline to thermal relaxation on the same layered
+   `island_macro_256` input (256²). Keep
+   the 2026 stochastic geomorphological transport model as the next research
+   comparison; adoption requires a reproduced solver, quality tiers, memory
+   and bake-time measurements.
 
 An optional CPU thermal-flux postprocess is available after the macro
 landform. For each iteration it computes outgoing material flux for all eight
@@ -63,11 +67,19 @@ preserves the CPU-only PCG/RHI boundary. The operator is still a preview
 prototype, not numerical acceptance or GPU execution. The original talus
 relaxation and stream-power operators remain available as separate graph nodes.
 
-Hydraulic transport, numerical contract fixtures, quality comparison and the
-2026 method adoption decision remain subsequent work. A GPU implementation is
-deferred until the common RHI has a compute pipeline/dispatch contract; TP9
-must compare it to this CPU reference without introducing backend dependencies
-into TerrainGeneration.
+The initial virtual-pipe implementation is registered as
+`terrain.erosion.hydraulic_pipe@1`. It consumes a typed immutable layered
+heightfield and rain/erodibility/hardness/obstacle fields, then emits updated
+material channels, flow/discharge, export and budget diagnostics. The matched
+256² Debug comparison confirms water movement, nonzero changes from both
+methods, and water/solid relative residuals below `1.3e-10`. No water reached
+the open boundary during this one-second run. This closes the first operator
+integration and comparison, but does not accept timestep convergence,
+resolution scaling, artist-facing controls, or visual quality.
+
+A GPU implementation remains deferred until the common RHI has a compute
+pipeline/dispatch contract; TP9 must compare it to this CPU reference without
+introducing backend dependencies into TerrainGeneration.
 
 ## Validation and exit criteria
 
@@ -77,9 +89,10 @@ into TerrainGeneration.
 - Talus fixtures include flat, sub-repose plane, above-repose plane and basin;
   no-op cases remain byte-identical, transport is deterministic, and total
   height-volume is conserved within a resolution-derived tolerance.
-- Hydraulic fixtures prove nonnegative water/sediment, explicit source/sink
-  accounting, bounded erosion, finite state, reproducibility and timestep
-  convergence. Stream-power fixtures prove bounded incision and outlet policy.
+- Hydraulic matched fixture proves nonnegative typed state, explicit rain,
+  bounded surface change, finite state, reproducible evaluation and water/solid
+  residuals below `1.3e-10`. Timestep convergence,
+  more boundary fixtures and stream-power acceptance remain open.
 - Compare morphology and cost at 128², 256² and a bounded higher resolution;
   record solver state, units, iterations, peak CPU memory and bake time.
 - Viewer/runtime captures demonstrate that postprocessing runs after base
@@ -107,6 +120,15 @@ is a later TP9 investigation after a deterministic CPU reference is accepted.
   and Mei et al., *Fast Hydraulic Erosion Simulation and Visualization on GPU*
   (2007), are graphics-oriented references. Their GPU implementations do not
   set this CPU evaluator's ownership or synchronization model.
+- The integrated CPU baseline uses the classic virtual-pipe family described
+  by Mei et al. It is chosen for explicit local water/sediment state and a
+  bounded, testable CPU reference, not because it is the newest method.
+- Argudo et al.'s 2026 *Stochastic geomorphological transport for terrain
+  erosion simulation* is the state-of-the-art candidate for a later matched
+  study. The public `geotransport` repository contains its generalized
+  transport reference; its README points to `soillib` for the complete erosion
+  model. That full implementation is CUDA/C++23 and was not ported or
+  independently reproduced in this C++20 CPU milestone.
 - The 2026 stochastic-transport experiment is a comparison candidate only;
   adoption requires reproducible source, budgets and matched measurements.
 
@@ -115,7 +137,8 @@ is a later TP9 investigation after a deterministic CPU reference is accepted.
 - Height remap normalization is domain-global. For chunked or tiled terrain,
   preserve a shared authored range; per-tile auto-normalization would create
   seams and change material thresholds.
-- A height-only product cannot represent water velocity or suspended sediment
-  state. Hydraulic transport needs explicit typed channels before acceptance.
+- Hydraulic timestep convergence, nonuniform/rainfall scenarios, resolution
+  sensitivity, and UI selection/visual comparison remain open. A successful
+  mass ledger alone does not validate realistic channel morphology.
 - Talus transport can converge slowly and may blur fine detail; quality settings
   require measured resolution scaling and artist review.

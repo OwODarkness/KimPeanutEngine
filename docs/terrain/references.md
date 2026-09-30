@@ -117,3 +117,33 @@ derive the units/conservation model, and run matched small fixtures. Compare
 resolution/timestep sensitivity, water/sediment balance, drainage correctness,
 artist control, peak memory and generation latency. Scientific realism cannot
 be accepted from attractive screenshots alone.
+
+### TP4 first hydrology baseline (2026-09-30)
+
+The first integrated operator is a CPU virtual-pipe model, selected as a
+small, explicit-state reference suitable for the C++20 PCG evaluator. It is a
+baseline, not the SOTA selection. On the checked-in 256×256 island fixture
+with 0.3 m initial soil, the matched Debug comparison produced 0.384174 m
+thermal RMSE and 0.029116 m hydraulic RMSE from the same layered input.
+Hydraulic peak discharge was 2.33598 m³/s; no water reached the open boundary
+within the one-second run. Relative water/solid residuals were `1.20e-10` /
+`1.21e-10`. The latest recorded node times were 487.314 ms thermal and
+897.157 ms hydraulic (Debug diagnostics only; not a performance result). This
+confirms local water movement and small surface change, but not realistic
+channels or timestep convergence.
+
+The state-of-the-art candidate remains Argudo et al., *Stochastic
+geomorphological transport for terrain erosion simulation* (ACM Transactions
+on Graphics, 2026), [DOI 10.1145/3811336](https://doi.org/10.1145/3811336).
+The [geotransport reference implementation](https://github.com/erosiv/geotransport)
+documents a generalized stochastic transport kernel and points to
+[`soillib`](https://github.com/erosiv/soillib) for the complete erosion model.
+The inspected soillib repository is CUDA/C++23 and GPU-first. Reproducing it in
+the engine would therefore be a separate method port and validation effort;
+the current CPU operator does not claim to implement that paper.
+
+FastFlow's 2024 work is a relevant next reference for large-grid routing and
+parallel flow simulation, rather than a drop-in sediment erosion model:
+[paper DOI 10.1111/cgf.15243](https://doi.org/10.1111/cgf.15243). The next
+comparison should separate routing quality from erosion law and measure both
+at matched resolutions and timesteps.

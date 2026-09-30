@@ -88,8 +88,11 @@ is not required; the fixed TP2 viewer is now the first shared-renderer preview.
   remap. Thermal flux is optional and bypassed in the default viewer fixture.
   Recipes with the node run it on the generation worker and show pre/post
   heightfields. This is an implementation start, not solver acceptance.
-- [ ] Complete numerical contracts for talus and stream-power incision, then
-  prototype conservative grid hydraulic transport as a versioned operator.
+- [x] Integrate a versioned CPU virtual-pipe hydraulic operator with explicit
+  layered bedrock/soil/sand/water/suspended-sediment state and source/export
+  ledgers. Compare it with thermal flux on the matched 256² island fixture.
+- [ ] Complete broader numerical contracts for talus, stream-power and
+  hydraulic timestep/boundary convergence; add artist-facing method controls.
 - [ ] Run a bounded 2026 stochastic-transport experiment. Compare basin
   morphology, deposits/meanders, conservation error, resolution sensitivity,
   memory and bake time. Record adopt/defer decision; no CUDA dependency by default.
