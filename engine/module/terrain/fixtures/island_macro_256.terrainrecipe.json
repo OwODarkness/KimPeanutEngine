@@ -17,7 +17,7 @@
       "version": 1,
       "parameters": {
         "lattice_size": 4,
-        "octaves": 4,
+        "octaves": 11,
         "persistence": 0.5,
         "lacunarity": 2.0
       },

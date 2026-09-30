@@ -8,7 +8,8 @@ namespace kpengine::terrain
     class HeightmapDebugView final
     {
     public:
-        void RenderContent(const ScalarField2D *heightfield) const;
+        void RenderContent(const ScalarField2D *heightfield,
+                           const ScalarField2D *pre_erosion_heightfield = nullptr) const;
     };
 }
 

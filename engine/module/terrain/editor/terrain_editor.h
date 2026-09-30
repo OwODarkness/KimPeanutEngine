@@ -48,7 +48,8 @@ namespace kpengine::terrain
         bool Initialize(runtime::Engine &engine,
                         std::shared_ptr<const ScalarField2D> heightfield,
                         std::string &diagnostic,
-                        std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float)> regenerate = {},
+                        std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float,
+                                           float, float, std::uint32_t)> regenerate = {},
                         std::function<void()> cancel = {},
                         std::function<void(int)> execution_control = {},
                         std::function<void(float, float, float)> camera_control = {},
@@ -66,6 +67,7 @@ namespace kpengine::terrain
         void ApplyLayout();
 
         std::shared_ptr<const ScalarField2D> heightfield_;
+        std::shared_ptr<const ScalarField2D> pre_erosion_heightfield_;
         std::unique_ptr<editor::EditorUI> ui_;
         std::unique_ptr<editor::EditorLogComponent> log_panel_;
         std::unique_ptr<editor::EditorGpuProfilerComponent> performance_panel_;
@@ -75,7 +77,8 @@ namespace kpengine::terrain
         editor::EditorToolRowModel dock_model_;
         editor::EditorSplitterHandles splitter_handles_;
         HeightmapDebugView heightmap_view_;
-        std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float)> regenerate_;
+        std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float,
+                           float, float, std::uint32_t)> regenerate_;
         std::function<void()> cancel_;
         std::function<void(int)> execution_control_;
         std::function<void(float, float, float)> camera_control_;
@@ -85,9 +88,13 @@ namespace kpengine::terrain
         float camera_distance_ = 440.0f;
         std::uint64_t seed_ = 128;
         std::uint32_t lattice_size_ = 4;
-        std::uint32_t octaves_ = 4;
+        std::uint32_t octaves_ = 11;
         float persistence_ = 0.5f;
         float lacunarity_ = 2.0f;
+        float talus_angle_degrees_ = 30.0f;
+        float thermal_rate_ = 0.25f;
+        std::uint32_t thermal_iterations_ = 48;
+        bool thermal_erosion_enabled_ = false;
         std::string generation_status_ = "Ready";
         std::string generation_diagnostic_;
         std::string selected_field_name_ = "height_scale.height";

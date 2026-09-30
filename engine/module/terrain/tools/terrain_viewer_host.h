@@ -41,14 +41,19 @@ namespace kpengine::terrain
 
     private:
         void RequestRegenerate(std::uint64_t seed, std::uint32_t lattice_size,
-                               std::uint32_t octaves, float persistence, float lacunarity);
+                               std::uint32_t octaves, float persistence, float lacunarity,
+                               float talus_angle_degrees = 30.0f,
+                               float thermal_rate = 0.25f,
+                               std::uint32_t thermal_iterations = 48);
         void RequestCancel();
         void RequestExecutionControl(int command);
         void QueueCamera(float yaw_degrees, float pitch_degrees, float distance);
         void RequestBake();
         void ProcessAuthoringCommands();
         void ApplyRegenerate(std::uint64_t seed, std::uint32_t lattice_size,
-                             std::uint32_t octaves, float persistence, float lacunarity);
+                             std::uint32_t octaves, float persistence, float lacunarity,
+                             float talus_angle_degrees, float thermal_rate,
+                             std::uint32_t thermal_iterations);
         void ApplyCancel();
         void ApplyExecutionControl(int command);
         void ApplyBake();
@@ -78,6 +83,9 @@ namespace kpengine::terrain
             float second = 0.0f;
             float third = 0.0f;
             float fourth = 0.0f;
+            float talus_angle_degrees = 30.0f;
+            float thermal_rate = 0.25f;
+            std::uint32_t thermal_iterations = 48;
             std::uint32_t lattice_size = 4;
             std::uint32_t octaves = 4;
             int control = 0;

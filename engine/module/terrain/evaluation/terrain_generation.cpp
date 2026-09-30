@@ -397,11 +397,11 @@ namespace kpengine::terrain
                 const double persistence = p.value("persistence", 0.5);
                 const double lacunarity = p.value("lacunarity", 2.0);
                 if (context.domain.width != context.domain.height || context.domain.width == 0 ||
-                    lattice_size == 0 || lattice_size > 64 || octaves == 0 || octaves > 8 ||
+                    lattice_size == 0 || lattice_size > 64 || octaves == 0 || octaves > 16 ||
                     !std::isfinite(persistence) || persistence < 0.0 || persistence > 1.0 ||
                     !std::isfinite(lacunarity) || lacunarity < 1.0 || lacunarity > 8.0)
                     throw std::invalid_argument(
-                        "Perlin fBm needs a square domain, lattice size in [1, 64], 1..8 octaves, "
+                        "Perlin fBm needs a square domain, lattice size in [1, 64], 1..16 octaves, "
                         "persistence in [0, 1] and lacunarity in [1, 8]");
 
                 const std::uint32_t seed_hash = MurmurFinalize32(
@@ -1016,6 +1016,107 @@ namespace kpengine::terrain
                 std::transform(heights.begin(), heights.end(), samples.begin(),
                     [](double value) { return static_cast<float>(value); });
                 return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.erosion.thermal_flux", 1,
+            {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double talus_angle_degrees = p.value("talus_angle_degrees", 30.0);
+                const double thermal_rate = p.value("thermal_rate", 0.25);
+                const std::uint32_t iterations = p.value("iterations", 48u);
+                if (!std::isfinite(talus_angle_degrees) || talus_angle_degrees < 0.0 ||
+                    talus_angle_degrees >= 89.0 || !std::isfinite(thermal_rate) ||
+                    thermal_rate <= 0.0 || thermal_rate > 1.0 ||
+                    iterations == 0 || iterations > 512)
+                    throw std::invalid_argument(
+                        "thermal flux needs TalusAngle in [0, 89), ThermalRate in (0, 1], and 1..512 iterations");
+
+                constexpr std::array<std::pair<int, int>, 8> neighbor_offsets{{
+                    {-1, -1}, {0, -1}, {1, -1}, {1, 0},
+                    {1, 1}, {0, 1}, {-1, 1}, {-1, 0}}};
+                constexpr std::array<std::size_t, 8> opposite_directions{{4, 5, 6, 7, 0, 1, 2, 3}};
+                const GridDomain2D &domain = context.domain;
+                std::vector<float> heights = inputs.at("source")->Samples();
+                std::vector<float> next_heights(heights.size());
+                std::vector<std::array<float, 8>> flux(heights.size());
+                std::vector<double> excess(8);
+                const double slope_limit = std::tan(
+                    talus_angle_degrees * 0.01745329251994329577);
+                std::array<double, 8> talus_thresholds{};
+                for (std::size_t direction = 0; direction < neighbor_offsets.size(); ++direction)
+                {
+                    const auto [dx, dy] = neighbor_offsets[direction];
+                    talus_thresholds[direction] = slope_limit * std::hypot(
+                        dx * domain.spacing_x_m, dy * domain.spacing_z_m);
+                }
+                for (std::uint32_t iteration = 0; iteration < iterations; ++iteration)
+                {
+                    if (context.cancelled && context.cancelled->load())
+                        throw std::runtime_error("evaluation cancelled");
+
+                    // Pass one: each cell writes only its own eight outgoing flux slots.
+                    for (std::uint32_t y = 0; y < domain.height; ++y)
+                        for (std::uint32_t x = 0; x < domain.width; ++x)
+                        {
+                            const std::size_t here = static_cast<std::size_t>(y) * domain.width + x;
+                            auto &cell_flux = flux[here];
+                            cell_flux.fill(0.0f);
+                            double total_excess = 0.0;
+                            double maximum_excess = 0.0;
+                            for (std::size_t direction = 0; direction < neighbor_offsets.size(); ++direction)
+                            {
+                                const auto [dx, dy] = neighbor_offsets[direction];
+                                const int nx = static_cast<int>(x) + dx;
+                                const int ny = static_cast<int>(y) + dy;
+                                if (nx < 0 || ny < 0 || nx >= static_cast<int>(domain.width) ||
+                                    ny >= static_cast<int>(domain.height))
+                                {
+                                    excess[direction] = 0.0;
+                                    continue;
+                                }
+                                const std::size_t there = static_cast<std::size_t>(ny) * domain.width +
+                                    static_cast<std::uint32_t>(nx);
+                                const double amount = std::max(0.0,
+                                    static_cast<double>(heights[here]) - heights[there] -
+                                        talus_thresholds[direction]);
+                                excess[direction] = amount;
+                                total_excess += amount;
+                                maximum_excess = std::max(maximum_excess, amount);
+                            }
+                            if (total_excess <= 0.0) continue;
+
+                            // Limit one cell's transport to its steepest excess so the
+                            // gather pass cannot overshoot a local repose threshold.
+                            const double moved = thermal_rate * std::min(total_excess, maximum_excess);
+                            for (std::size_t direction = 0; direction < neighbor_offsets.size(); ++direction)
+                                cell_flux[direction] = static_cast<float>(moved * excess[direction] / total_excess);
+                        }
+
+                    // Pass two: gather neighbor fluxes into a distinct destination field.
+                    for (std::uint32_t y = 0; y < domain.height; ++y)
+                        for (std::uint32_t x = 0; x < domain.width; ++x)
+                        {
+                            const std::size_t here = static_cast<std::size_t>(y) * domain.width + x;
+                            double net_change = 0.0;
+                            for (std::size_t direction = 0; direction < neighbor_offsets.size(); ++direction)
+                            {
+                                const auto [dx, dy] = neighbor_offsets[direction];
+                                const int nx = static_cast<int>(x) + dx;
+                                const int ny = static_cast<int>(y) + dy;
+                                net_change -= flux[here][direction];
+                                if (nx < 0 || ny < 0 || nx >= static_cast<int>(domain.width) ||
+                                    ny >= static_cast<int>(domain.height))
+                                    continue;
+                                const std::size_t there = static_cast<std::size_t>(ny) * domain.width +
+                                    static_cast<std::uint32_t>(nx);
+                                net_change += flux[there][opposite_directions[direction]];
+                            }
+                            next_heights[here] = static_cast<float>(heights[here] + net_change);
+                        }
+                    heights.swap(next_heights);
+                }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(heights))}};
             }}, diagnostic)) return false;
 
         if (!Register({"terrain.erosion.stream_power_incision", 1,

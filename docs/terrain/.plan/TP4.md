@@ -53,11 +53,21 @@ local configured widths.
    method on the same domain and quality tiers. Record morphology, conservation
    error, resolution sensitivity, memory and bake time before adopting it.
 
-The first implementation increment includes the isolated talus node, an
-implicit slope-exponent-one stream-power incision prototype with routing
-recomputed each iteration, and a visibly flattening PCG remap. It is not TP4
-solver acceptance. Hydraulic transport, numerical contract fixtures, quality
-comparison and the 2026 method adoption decision remain subsequent work.
+An optional CPU thermal-flux postprocess is available after the macro
+landform. For each iteration it computes outgoing material flux for all eight
+neighbors, then gathers flux into a distinct height buffer. Recipes that use it
+can expose the angle of repose, transport rate and iteration count, and compare
+input/output heightmaps. The default preview recipe currently bypasses
+erosion, so base landform appearance can be evaluated independently. This
+preserves the CPU-only PCG/RHI boundary. The operator is still a preview
+prototype, not numerical acceptance or GPU execution. The original talus
+relaxation and stream-power operators remain available as separate graph nodes.
+
+Hydraulic transport, numerical contract fixtures, quality comparison and the
+2026 method adoption decision remain subsequent work. A GPU implementation is
+deferred until the common RHI has a compute pipeline/dispatch contract; TP9
+must compare it to this CPU reference without introducing backend dependencies
+into TerrainGeneration.
 
 ## Validation and exit criteria
 

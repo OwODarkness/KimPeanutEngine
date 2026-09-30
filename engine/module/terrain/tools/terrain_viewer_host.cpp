@@ -13,7 +13,9 @@
 #include "asset/level.h"
 #include "asset/material.h"
 #include "asset/mesh.h"
+#include "asset/texture.h"
 #include "config/path.h"
+#include "data/texture_mipmap.h"
 #include "gameplay/factory/camera_actor_factory.h"
 #include "gameplay/factory/directional_light_actor_factory.h"
 #include "gameplay/factory/static_mesh_actor_factory.h"
@@ -29,12 +31,31 @@ namespace kpengine::terrain
 {
     namespace
     {
-        bool RegisterNeutralHeightPreviewMaterial(std::vector<asset::AssetID> &material_ids,
-                                                  std::string &diagnostic)
+        std::uint8_t LinearToSrgbByte(const float linear)
+        {
+            const float srgb = linear <= 0.0031308f
+                ? 12.92f * linear
+                : 1.055f * std::pow(linear, 1.0f / 2.4f) - 0.055f;
+            return static_cast<std::uint8_t>(std::lround(
+                std::clamp(srgb, 0.0f, 1.0f) * 255.0f));
+        }
+
+        bool RegisterTerrainPreviewMaterial(const data::MeshData &mesh,
+                                            const std::uint32_t width,
+                                            const std::uint32_t height,
+                                            std::vector<asset::AssetID> &material_ids,
+                                            std::vector<asset::AssetID> &texture_ids,
+                                            std::string &diagnostic)
         {
             using namespace asset;
             static std::atomic<std::uint64_t> revision{0};
             AssetManager &assets = AssetManager::GetInstance();
+            if (width < 2 || height < 2 ||
+                static_cast<std::uint64_t>(width) * height > mesh.vertices.size())
+            {
+                diagnostic = "terrain preview needs a complete top-surface vertex grid";
+                return false;
+            }
             const std::string shader_path =
                 (std::filesystem::path{GetAssetDirectory()} / "shader/pbr_gbuffer.shader").generic_string();
             const AssetID shader = assets.LoadSync(shader_path);
@@ -44,32 +65,84 @@ namespace kpengine::terrain
                 return false;
             }
 
+            constexpr std::array<float, 3> dirt_color{0.24f, 0.12f, 0.075f};
+            constexpr std::array<float, 3> grass_color{0.11f, 0.22f, 0.04f};
+            auto texture = std::make_shared<TextureResource>();
+            texture->channel_count = 4;
+            texture->data->width = width;
+            texture->data->height = height;
+            texture->data->format = TextureFormat::TEXTURE_FORMAT_RGBA8_SRGB;
+            texture->data->semantic = data::TextureSemantic::Color;
+            texture->data->pixels.resize(static_cast<std::size_t>(width) * height * 4);
+            for (std::uint32_t y = 0; y < height; ++y)
+                for (std::uint32_t x = 0; x < width; ++x)
+                {
+                    const std::size_t vertex_index = static_cast<std::size_t>(y) * width + x;
+                    const float normal_y = std::clamp(mesh.vertices[vertex_index].normal.y_, 0.0f, 1.0f);
+                    const float grass_ratio = std::clamp((normal_y - 0.70f) / 0.28f, 0.0f, 1.0f);
+                    const std::size_t pixel_index = vertex_index * 4;
+                    for (std::size_t channel = 0; channel < 3; ++channel)
+                    {
+                        const float color = dirt_color[channel] * (1.0f - grass_ratio) +
+                            grass_color[channel] * grass_ratio;
+                        texture->data->pixels[pixel_index + channel] = LinearToSrgbByte(color);
+                    }
+                    texture->data->pixels[pixel_index + 3] = 255;
+                }
+            if (!data::GenerateTextureMipChain(*texture->data, texture->data->semantic))
+            {
+                diagnostic = "could not generate mipmaps for the terrain slope-color texture";
+                return false;
+            }
+
+            const std::string suffix = std::to_string(revision.fetch_add(1, std::memory_order_relaxed));
+            const std::string texture_path = "generated://terrain/slope-color-" + suffix;
+            AssetRegisterInfo texture_info{};
+            texture_info.resource = texture;
+            texture_info.path = texture_path;
+            texture_info.name = "Terrain Slope Color";
+            texture_info.type = AssetType::KPAT_Texture;
+            const AssetID texture_id = assets.RegisterAsset(texture_info);
+            if (!texture_id.IsValid())
+            {
+                diagnostic = "AssetManager rejected the generated terrain slope-color texture";
+                return false;
+            }
+
             auto material = std::make_shared<MaterialResource>();
             material->shader_path = shader_path;
             material->shader_dependency_index = 0;
             material->surface.shading_model = MaterialShadingModel::StandardPbr;
             material->parameters = {
                 {"base_color", MaterialParameterSourceType::Vector4,
-                 std::array<float, 4>{0.48f, 0.50f, 0.52f, 1.0f}},
+                 std::array<float, 4>{1.0f, 1.0f, 1.0f, 1.0f}},
                 {"metallic", MaterialParameterSourceType::Scalar, 0.0f},
                 {"roughness", MaterialParameterSourceType::Scalar, 0.95f},
                 {"occlusion", MaterialParameterSourceType::Scalar, 1.0f},
                 {"normal_scale", MaterialParameterSourceType::Scalar, 1.0f}};
+            MaterialParameterSource albedo_texture{};
+            albedo_texture.name = "base_color_texture";
+            albedo_texture.type = MaterialParameterSourceType::Texture;
+            albedo_texture.value = texture_path;
+            albedo_texture.texture_color_space = MaterialTextureColorSpace::Srgb;
+            albedo_texture.dependency_index = 1;
+            material->parameters.push_back(std::move(albedo_texture));
 
             AssetRegisterInfo info{};
             info.resource = std::move(material);
-            info.path = "generated://terrain/height-preview-" +
-                std::to_string(revision.fetch_add(1, std::memory_order_relaxed));
-            info.name = "Terrain Height Preview";
-            info.dependencies = {shader};
+            info.path = "generated://terrain/height-preview-" + suffix;
+            info.name = "Terrain Slope Color Preview";
+            info.dependencies = {shader, texture_id};
             info.type = AssetType::KPAT_Material;
             const AssetID id = assets.RegisterAsset(info);
             if (!id.IsValid())
             {
+                assets.UnRegisterAsset(texture_id);
                 diagnostic = "AssetManager rejected the neutral terrain preview material";
                 return false;
             }
             material_ids = {id};
+            texture_ids = {texture_id};
             diagnostic.clear();
             return true;
         }
@@ -77,7 +150,7 @@ namespace kpengine::terrain
         bool BuildPreview(std::string &diagnostic, data::MeshData &mesh,
                           spatial::AABB &bounds,
                           std::shared_ptr<const ScalarField2D> &heightfield,
-                          TerrainRecipe &recipe)
+                          TerrainRecipe &recipe, EvaluationResult &initial_evaluation)
         {
 #ifndef KPENGINE_TERRAIN_FIXTURE_DIR
 #define KPENGINE_TERRAIN_FIXTURE_DIR ""
@@ -108,16 +181,23 @@ namespace kpengine::terrain
             {
                 return false;
             }
+            TerrainRecipe base_recipe = recipe;
+            const auto thermal = std::find_if(base_recipe.nodes.begin(), base_recipe.nodes.end(),
+                [](const RecipeNode &node) {
+                    return node.operator_id == "terrain.erosion.thermal_flux";
+                });
+            if (thermal != base_recipe.nodes.end())
+                base_recipe.nodes.erase(thermal, base_recipe.nodes.end());
             TerrainEvaluator evaluator(registry);
-            const EvaluationResult result = evaluator.Evaluate(recipe);
-            if (!result.succeeded)
+            initial_evaluation = evaluator.Evaluate(base_recipe);
+            if (!initial_evaluation.succeeded)
             {
-                diagnostic = result.diagnostic;
+                diagnostic = initial_evaluation.diagnostic;
                 return false;
             }
-            const auto node = recipe.nodes.empty() ? result.nodes.end() :
-                result.nodes.find(recipe.nodes.back().id);
-            if (node == result.nodes.end() || node->second.outputs.empty())
+            const auto node = base_recipe.nodes.empty() ? initial_evaluation.nodes.end() :
+                initial_evaluation.nodes.find(base_recipe.nodes.back().id);
+            if (node == initial_evaluation.nodes.end() || node->second.outputs.empty())
             {
                 diagnostic = "terrain fixture did not produce a heightfield";
                 return false;
@@ -174,22 +254,44 @@ namespace kpengine::terrain
         data::MeshData mesh_data;
         spatial::AABB bounds;
         recipe_ = std::make_unique<TerrainRecipe>();
-        if (!BuildPreview(diagnostic, mesh_data, bounds, preview_heightfield_, *recipe_))
+        last_evaluation_ = std::make_unique<EvaluationResult>();
+        if (!BuildPreview(diagnostic, mesh_data, bounds, preview_heightfield_, *recipe_,
+                          *last_evaluation_))
         {
             return false;
         }
         AssignTerrainMaterialSections(mesh_data);
-        if (!RegisterNeutralHeightPreviewMaterial(terrain_material_assets_, diagnostic))
-            return fail("could not prepare neutral terrain height material: " + diagnostic);
+        if (!RegisterTerrainPreviewMaterial(mesh_data, recipe_->domain.width,
+                recipe_->domain.height, terrain_material_assets_, terrain_texture_assets_, diagnostic))
+            return fail("could not prepare terrain slope-color material: " + diagnostic);
         operator_registry_ = std::make_shared<OperatorRegistry>();
         if (!operator_registry_->RegisterBuiltins(diagnostic)) return false;
         generation_executor_ = std::make_unique<GenerationExecutor>(
             operator_registry_, 1, 1, 1);
         execution_control_ = std::make_shared<EvaluationExecutionControl>();
-        TerrainEvaluator initial_evaluator(operator_registry_);
-        last_evaluation_ = std::make_unique<EvaluationResult>(
-            initial_evaluator.Evaluate(*recipe_));
         committed_recipe_ = std::make_unique<TerrainRecipe>(*recipe_);
+        const bool has_thermal_erosion = std::any_of(recipe_->nodes.begin(), recipe_->nodes.end(),
+            [](const RecipeNode &node) {
+                return node.operator_id == "terrain.erosion.thermal_flux";
+            });
+        if (has_thermal_erosion)
+        {
+            revision_ = 1;
+            {
+                std::lock_guard lock(progress_mutex_);
+                progress_revision_ = revision_;
+                progress_nodes_.clear();
+            }
+            if (!generation_executor_->Submit(revision_, *recipe_, execution_control_,
+                    [this, revision = revision_](std::string_view node_id,
+                                                 const NodeResult &node_result) {
+                        std::lock_guard lock(progress_mutex_);
+                        if (progress_revision_ == revision)
+                            progress_nodes_[std::string(node_id)] = node_result;
+                    }))
+                return fail("could not queue initial thermal erosion evaluation");
+            generation_status_ = "Generating thermal erosion preview";
+        }
         auto mesh = std::make_shared<asset::MeshResource>();
         mesh->data = std::make_shared<data::MeshData>(std::move(mesh_data));
         mesh->local_bounds = bounds;
@@ -210,6 +312,8 @@ namespace kpengine::terrain
         render_roots_ = {generated_mesh_};
         render_roots_.insert(render_roots_.end(), terrain_material_assets_.begin(),
                              terrain_material_assets_.end());
+        render_roots_.insert(render_roots_.end(), terrain_texture_assets_.begin(),
+                             terrain_texture_assets_.end());
 
         gameplay::StaticMeshActorDesc terrain_desc{};
         terrain_desc.mesh_asset = generated_mesh_;
@@ -250,8 +354,11 @@ namespace kpengine::terrain
         terrain_editor_ = std::make_unique<TerrainEditor>();
         if (!terrain_editor_->Initialize(engine, preview_heightfield_, diagnostic,
                 [this](std::uint64_t seed, std::uint32_t lattice_size,
-                       std::uint32_t octaves, float persistence, float lacunarity) {
-                    RequestRegenerate(seed, lattice_size, octaves, persistence, lacunarity);
+                       std::uint32_t octaves, float persistence, float lacunarity,
+                       float talus_angle_degrees, float thermal_rate,
+                       std::uint32_t thermal_iterations) {
+                    RequestRegenerate(seed, lattice_size, octaves, persistence, lacunarity,
+                        talus_angle_degrees, thermal_rate, thermal_iterations);
                 },
                 [this] { RequestCancel(); },
                 [this](int command) { RequestExecutionControl(command); },
@@ -263,6 +370,9 @@ namespace kpengine::terrain
             terrain_editor_.reset();
             return false;
         }
+        if (last_evaluation_ && recipe_)
+            terrain_editor_->SetEvaluationSnapshot(preview_heightfield_, *last_evaluation_,
+                                                    *recipe_, "Ready");
         return true;
     }
 
@@ -514,6 +624,8 @@ namespace kpengine::terrain
             render_roots_ = {generated_mesh_};
             render_roots_.insert(render_roots_.end(), terrain_material_assets_.begin(),
                                  terrain_material_assets_.end());
+            render_roots_.insert(render_roots_.end(), terrain_texture_assets_.begin(),
+                                 terrain_texture_assets_.end());
             last_evaluation_ = pending_preview_->evaluation
                 ? std::make_unique<EvaluationResult>(*pending_preview_->evaluation)
                 : nullptr;
@@ -565,7 +677,8 @@ namespace kpengine::terrain
 
     void TerrainViewerHost::RequestRegenerate(std::uint64_t seed,
         std::uint32_t lattice_size, std::uint32_t octaves,
-        float persistence, float lacunarity)
+        float persistence, float lacunarity, float talus_angle_degrees,
+        float thermal_rate, std::uint32_t thermal_iterations)
     {
         std::lock_guard lock(authoring_command_mutex_);
         AuthoringCommand command;
@@ -575,6 +688,9 @@ namespace kpengine::terrain
         command.octaves = octaves;
         command.third = persistence;
         command.fourth = lacunarity;
+        command.talus_angle_degrees = talus_angle_degrees;
+        command.thermal_rate = thermal_rate;
+        command.thermal_iterations = thermal_iterations;
         authoring_commands_.push_back(command);
     }
 
@@ -624,7 +740,8 @@ namespace kpengine::terrain
             {
             case AuthoringCommand::Kind::Regenerate:
                 ApplyRegenerate(command.seed, command.lattice_size, command.octaves,
-                    command.third, command.fourth);
+                    command.third, command.fourth, command.talus_angle_degrees,
+                    command.thermal_rate, command.thermal_iterations);
                 break;
             case AuthoringCommand::Kind::Cancel:
                 ApplyCancel();
@@ -644,7 +761,8 @@ namespace kpengine::terrain
 
     void TerrainViewerHost::ApplyRegenerate(std::uint64_t seed,
         std::uint32_t lattice_size, std::uint32_t octaves,
-        float persistence, float lacunarity)
+        float persistence, float lacunarity, float talus_angle_degrees,
+        float thermal_rate, std::uint32_t thermal_iterations)
     {
         if (pending_preview_)
         {
@@ -652,9 +770,13 @@ namespace kpengine::terrain
             return;
         }
         if (!generation_executor_ || !recipe_ || !execution_control_ ||
-            lattice_size == 0 || lattice_size > 64 || octaves == 0 || octaves > 8 ||
+            lattice_size == 0 || lattice_size > 64 || octaves == 0 || octaves > 16 ||
             !std::isfinite(persistence) || persistence < 0.0f || persistence > 1.0f ||
-            !std::isfinite(lacunarity) || lacunarity < 1.0f || lacunarity > 8.0f)
+            !std::isfinite(lacunarity) || lacunarity < 1.0f || lacunarity > 8.0f ||
+            !std::isfinite(talus_angle_degrees) || talus_angle_degrees < 0.0f ||
+            talus_angle_degrees >= 89.0f || !std::isfinite(thermal_rate) ||
+            thermal_rate <= 0.0f || thermal_rate > 1.0f ||
+            thermal_iterations == 0 || thermal_iterations > 512)
         {
             generation_status_ = "Invalid generation controls";
             return;
@@ -673,6 +795,16 @@ namespace kpengine::terrain
         node->parameters["octaves"] = octaves;
         node->parameters["persistence"] = persistence;
         node->parameters["lacunarity"] = lacunarity;
+        const auto thermal_node = std::find_if(recipe_->nodes.begin(), recipe_->nodes.end(),
+            [](const RecipeNode &candidate) {
+                return candidate.operator_id == "terrain.erosion.thermal_flux";
+            });
+        if (thermal_node != recipe_->nodes.end())
+        {
+            thermal_node->parameters["talus_angle_degrees"] = talus_angle_degrees;
+            thermal_node->parameters["thermal_rate"] = thermal_rate;
+            thermal_node->parameters["iterations"] = thermal_iterations;
+        }
         execution_control_->Resume();
         ++revision_;
         {
@@ -821,7 +953,8 @@ namespace kpengine::terrain
         }
         std::vector<asset::AssetID> material_ids;
         std::vector<asset::AssetID> texture_ids;
-        if (!RegisterNeutralHeightPreviewMaterial(material_ids, diagnostic))
+        if (!RegisterTerrainPreviewMaterial(mesh_data, heightfield->Domain().width,
+                heightfield->Domain().height, material_ids, texture_ids, diagnostic))
         {
             assets.UnRegisterAsset(mesh_id);
             return false;
@@ -829,6 +962,7 @@ namespace kpengine::terrain
         std::uint64_t catalog_serial = 0;
         std::vector<asset::AssetID> replacement_roots{mesh_id};
         replacement_roots.insert(replacement_roots.end(), material_ids.begin(), material_ids.end());
+        replacement_roots.insert(replacement_roots.end(), texture_ids.begin(), texture_ids.end());
         const runtime::RuntimeContext::StartupResult queued =
             runtime::global_runtime_context.QueueRenderAssetsReplacement(
                 replacement_roots, catalog_serial);

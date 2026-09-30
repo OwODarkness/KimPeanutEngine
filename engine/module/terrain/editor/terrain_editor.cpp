@@ -74,7 +74,8 @@ namespace kpengine::terrain
         runtime::Engine &engine,
         std::shared_ptr<const ScalarField2D> heightfield,
         std::string &diagnostic,
-        std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float)> regenerate,
+        std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float,
+                           float, float, std::uint32_t)> regenerate,
         std::function<void()> cancel,
         std::function<void(int)> execution_control,
         std::function<void(float, float, float)> camera_control,
@@ -183,7 +184,8 @@ namespace kpengine::terrain
                 std::make_unique<TerrainEditorDockPanel>(
                     "Heightmap Debug", [this] {
                         std::lock_guard lock(snapshot_mutex_);
-                        heightmap_view_.RenderContent(heightfield_.get());
+                        heightmap_view_.RenderContent(heightfield_.get(),
+                                                      pre_erosion_heightfield_.get());
                     }),
                 true, editor::EditorLayoutSlot::DebugViewer);
             dock_host_->AddPanel(
@@ -231,6 +233,40 @@ namespace kpengine::terrain
             persistence_ = landform->parameters.value("persistence", persistence_);
             lacunarity_ = landform->parameters.value("lacunarity", lacunarity_);
         }
+        const auto erosion = std::find_if(recipe.nodes.begin(), recipe.nodes.end(),
+            [](const RecipeNode &node) {
+                return node.operator_id == "terrain.erosion.thermal_flux";
+            });
+        pre_erosion_heightfield_.reset();
+        thermal_erosion_enabled_ = erosion != recipe.nodes.end();
+        if (erosion != recipe.nodes.end())
+        {
+            talus_angle_degrees_ = erosion->parameters.value(
+                "talus_angle_degrees", talus_angle_degrees_);
+            thermal_rate_ = erosion->parameters.value("thermal_rate", thermal_rate_);
+            thermal_iterations_ = erosion->parameters.value("iterations", thermal_iterations_);
+            const auto eroded_node = result.nodes.find(erosion->id);
+            if (eroded_node != result.nodes.end())
+            {
+                const auto eroded_field = eroded_node->second.outputs.find("height");
+                if (eroded_field != eroded_node->second.outputs.end())
+                    heightfield_ = eroded_field->second;
+            }
+            const auto source = erosion->inputs.find("source");
+            if (source != erosion->inputs.end())
+            {
+                const auto source_node = result.nodes.find(source->second.node);
+                if (source_node != result.nodes.end())
+                {
+                    const auto source_field = source_node->second.outputs.find(source->second.port);
+                    if (source_field != source_node->second.outputs.end())
+                        pre_erosion_heightfield_ = source_field->second;
+                }
+            }
+            if (eroded_node == result.nodes.end() ||
+                !eroded_node->second.outputs.contains("height"))
+                pre_erosion_heightfield_.reset();
+        }
         generation_status_ = std::move(status);
         generation_diagnostic_ = result.diagnostic;
         node_diagnostics_ = result.nodes;
@@ -259,6 +295,7 @@ namespace kpengine::terrain
         profile_bar_.reset();
         log_panel_.reset();
         heightfield_.reset();
+        pre_erosion_heightfield_.reset();
         regenerate_ = {};
         cancel_ = {};
         execution_control_ = {};
@@ -339,11 +376,27 @@ namespace kpengine::terrain
         ImGui::InputScalar("Seed", ImGuiDataType_U64, &seed_);
         ImGui::TextDisabled("Fine detail noise");
         ImGui::InputScalar("Lattice size", ImGuiDataType_U32, &lattice_size_);
-        ImGui::InputScalar("Detail octaves", ImGuiDataType_U32, &octaves_);
+        int detail_octaves = static_cast<int>(octaves_);
+        if (ImGui::SliderInt("Detail octaves", &detail_octaves, 1, 16))
+            octaves_ = static_cast<std::uint32_t>(detail_octaves);
         ImGui::InputFloat("Detail persistence", &persistence_, 0.05f, 0.1f, "%.2f");
         ImGui::InputFloat("Detail lacunarity", &lacunarity_, 0.1f, 0.5f, "%.2f");
+        if (thermal_erosion_enabled_)
+        {
+            ImGui::SeparatorText("Thermal Erosion");
+            ImGui::SliderFloat("Talus Angle", &talus_angle_degrees_, 5.0f, 60.0f, "%.1f deg");
+            ImGui::SliderFloat("Thermal Rate", &thermal_rate_, 0.01f, 1.0f, "%.2f");
+            int iterations = static_cast<int>(thermal_iterations_);
+            if (ImGui::SliderInt("Iteration Count", &iterations, 1, 100))
+                thermal_iterations_ = static_cast<std::uint32_t>(iterations);
+        }
+        else
+        {
+            ImGui::TextDisabled("Thermal erosion disabled for this recipe");
+        }
         if (ImGui::Button("Regenerate") && regenerate_)
-            regenerate_(seed_, lattice_size_, octaves_, persistence_, lacunarity_);
+            regenerate_(seed_, lattice_size_, octaves_, persistence_, lacunarity_,
+                        talus_angle_degrees_, thermal_rate_, thermal_iterations_);
         ImGui::SameLine();
         if (ImGui::Button("Cancel") && cancel_) cancel_();
         if (ImGui::Button("Pause at node") && execution_control_) execution_control_(0);

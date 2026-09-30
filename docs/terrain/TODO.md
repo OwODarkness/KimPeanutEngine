@@ -83,9 +83,11 @@ is not required; the fixed TP2 viewer is now the first shared-renderer preview.
 ## TP4 — rain erosion, fluvial incision and solver selection
 
 - [x] Establish erosion as a postprocess after base heightfield preparation;
-  add versioned talus relaxation and implicit stream-power incision prototypes,
-  plus normalized monotone height remap to the 256² fixture. This is an
-  implementation start, not solver acceptance.
+  add conservative talus relaxation, two-pass eight-neighbor CPU thermal flux,
+  implicit stream-power incision prototypes, and normalized monotone height
+  remap. Thermal flux is optional and bypassed in the default viewer fixture.
+  Recipes with the node run it on the generation worker and show pre/post
+  heightfields. This is an implementation start, not solver acceptance.
 - [ ] Complete numerical contracts for talus and stream-power incision, then
   prototype conservative grid hydraulic transport as a versioned operator.
 - [ ] Run a bounded 2026 stochastic-transport experiment. Compare basin
