@@ -337,10 +337,11 @@ namespace kpengine::terrain
         if (!generation_diagnostic_.empty())
             ImGui::TextWrapped("%s", generation_diagnostic_.c_str());
         ImGui::InputScalar("Seed", ImGuiDataType_U64, &seed_);
+        ImGui::TextDisabled("Fine detail noise");
         ImGui::InputScalar("Lattice size", ImGuiDataType_U32, &lattice_size_);
-        ImGui::InputScalar("FBM octaves", ImGuiDataType_U32, &octaves_);
-        ImGui::InputFloat("Persistence", &persistence_, 0.05f, 0.1f, "%.2f");
-        ImGui::InputFloat("Lacunarity", &lacunarity_, 0.1f, 0.5f, "%.2f");
+        ImGui::InputScalar("Detail octaves", ImGuiDataType_U32, &octaves_);
+        ImGui::InputFloat("Detail persistence", &persistence_, 0.05f, 0.1f, "%.2f");
+        ImGui::InputFloat("Detail lacunarity", &lacunarity_, 0.1f, 0.5f, "%.2f");
         if (ImGui::Button("Regenerate") && regenerate_)
             regenerate_(seed_, lattice_size_, octaves_, persistence_, lacunarity_);
         ImGui::SameLine();

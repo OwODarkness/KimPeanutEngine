@@ -1,9 +1,11 @@
 #include "terrain_core.h"
 
+#include <algorithm>
 #include <cmath>
 #include <limits>
 #include <queue>
 #include <stdexcept>
+#include <utility>
 
 namespace kpengine::terrain
 {
@@ -217,17 +219,55 @@ namespace kpengine::terrain
         }
     }
 
-    data::MeshData BuildHeightfieldMesh(const ScalarField2D &heightfield)
+    data::MeshData BuildHeightfieldMesh(
+        const ScalarField2D &heightfield, const HeightfieldMeshOptions options)
     {
         const auto &domain = heightfield.Domain();
-        if (heightfield.Samples().size() > std::numeric_limits<std::uint32_t>::max())
+        const std::size_t sample_count = heightfield.Samples().size();
+        const std::size_t maximum_u32 = std::numeric_limits<std::uint32_t>::max();
+        if (sample_count > maximum_u32)
             throw std::length_error("heightfield mesh exceeds the 32-bit index range");
-        const std::size_t cell_width = static_cast<std::size_t>(domain.width - 1);
-        const std::size_t cell_height = static_cast<std::size_t>(domain.height - 1);
-        if (cell_height != 0 && cell_width > std::numeric_limits<std::size_t>::max() / cell_height / 6)
+        if (!std::isfinite(options.bottom_height_m) ||
+            std::abs(options.bottom_height_m) > std::numeric_limits<float>::max())
+            throw std::invalid_argument("terrain mesh bottom height must be finite float meters");
+
+        const std::size_t width = domain.width;
+        const std::size_t height = domain.height;
+        const std::size_t cell_count = (width - 1) * (height - 1);
+        if (cell_count > std::numeric_limits<std::size_t>::max() / 6)
             throw std::length_error("heightfield mesh index count overflows size_t");
+        const std::size_t top_index_count = cell_count * 6;
+        const std::size_t perimeter_count = 2 * width + 2 * height - 4;
+        const std::size_t side_sample_count = 2 * width + 2 * height;
+        if (cell_count > (std::numeric_limits<std::size_t>::max() - top_index_count) / 6 ||
+            perimeter_count > (std::numeric_limits<std::size_t>::max() - top_index_count - cell_count * 6) / 6)
+            throw std::length_error("closed terrain mesh index count overflows size_t");
+        const std::size_t total_index_count = top_index_count + cell_count * 6 + perimeter_count * 6;
+        if (total_index_count > maximum_u32)
+            throw std::length_error("closed terrain mesh exceeds the 32-bit section range");
+        if (side_sample_count > (maximum_u32 - sample_count) / 2 ||
+            sample_count > maximum_u32 - sample_count - side_sample_count * 2)
+            throw std::length_error("closed terrain mesh exceeds the 32-bit vertex range");
+
+        const auto minimum_height = std::min_element(
+            heightfield.Samples().begin(), heightfield.Samples().end());
+        const double bottom_y = std::min(options.bottom_height_m,
+            domain.datum_y_m + static_cast<double>(*minimum_height) - 1.0);
+        if (std::abs(bottom_y) > std::numeric_limits<float>::max())
+            throw std::overflow_error("terrain mesh bottom exceeds float meter range");
+
         data::MeshData mesh;
-        mesh.vertices.reserve(heightfield.Samples().size());
+        mesh.vertices.reserve(sample_count * 2 + side_sample_count * 2);
+        mesh.indices.reserve(total_index_count);
+        const auto make_bounds = [&mesh](const std::uint32_t index_start,
+                                         const std::uint32_t index_count) {
+            const float limit = std::numeric_limits<float>::max();
+            spatial::AABB bounds{{limit, limit, limit}, {-limit, -limit, -limit}};
+            for (std::uint32_t i = index_start; i < index_start + index_count; ++i)
+                bounds.ExpandToInclude(mesh.vertices[mesh.indices[i]].position);
+            return bounds;
+        };
+
         for (std::uint32_t y = 0; y < domain.height; ++y)
             for (std::uint32_t x = 0; x < domain.width; ++x)
             {
@@ -250,7 +290,7 @@ namespace kpengine::terrain
                                            static_cast<float>(y) / (domain.height - 1)};
                 mesh.vertices.push_back(vertex);
             }
-        mesh.indices.reserve(cell_width * cell_height * 6);
+        const std::uint32_t top_index_start = 0;
         for (std::uint32_t y = 0; y + 1 < domain.height; ++y)
             for (std::uint32_t x = 0; x + 1 < domain.width; ++x)
             {
@@ -261,6 +301,87 @@ namespace kpengine::terrain
                 mesh.indices.insert(mesh.indices.end(), {top_left, bottom_left, top_right,
                                                          top_right, bottom_left, bottom_right});
             }
+
+        const auto top_index_end = static_cast<std::uint32_t>(mesh.indices.size());
+        mesh.sections.push_back({top_index_start, top_index_end, 0,
+                                 make_bounds(top_index_start, top_index_end)});
+        const std::uint32_t side_index_start = top_index_end;
+        const auto append_side = [&](const std::uint32_t count, const auto &sample_at,
+                                     const Vector3f normal) {
+            const std::uint32_t first_vertex = static_cast<std::uint32_t>(mesh.vertices.size());
+            for (std::uint32_t i = 0; i < count; ++i)
+            {
+                const auto [x, y] = sample_at(i);
+                const double px = domain.origin_x_m + x * domain.spacing_x_m;
+                const double py = domain.datum_y_m + heightfield.At(x, y);
+                const double pz = domain.origin_z_m + y * domain.spacing_z_m;
+                const float u = count > 1 ? static_cast<float>(i) / (count - 1) : 0.0f;
+                data::Vertex top{};
+                top.position = {static_cast<float>(px), static_cast<float>(py), static_cast<float>(pz)};
+                top.normal = normal;
+                top.tex_coord = {u, 1.0f};
+                data::Vertex bottom = top;
+                bottom.position.y_ = static_cast<float>(bottom_y);
+                bottom.tex_coord.y_ = 0.0f;
+                mesh.vertices.push_back(top);
+                mesh.vertices.push_back(bottom);
+            }
+            for (std::uint32_t i = 0; i + 1 < count; ++i)
+            {
+                const std::uint32_t top_a = first_vertex + i * 2;
+                const std::uint32_t bottom_a = top_a + 1;
+                const std::uint32_t top_b = top_a + 2;
+                const std::uint32_t bottom_b = top_a + 3;
+                mesh.indices.insert(mesh.indices.end(), {top_a, bottom_a, top_b,
+                                                         top_b, bottom_a, bottom_b});
+            }
+        };
+        append_side(domain.width, [&domain](const std::uint32_t i) {
+            return std::pair{domain.width - 1 - i, 0u};
+        },
+                    {0.0f, 0.0f, -1.0f});
+        append_side(domain.height, [&domain](const std::uint32_t i) {
+            return std::pair{domain.width - 1, domain.height - 1 - i};
+        }, {1.0f, 0.0f, 0.0f});
+        append_side(domain.width, [&domain](const std::uint32_t i) {
+            return std::pair{i, domain.height - 1};
+        }, {0.0f, 0.0f, 1.0f});
+        append_side(domain.height, [&domain](const std::uint32_t i) {
+            return std::pair{0u, i};
+        }, {-1.0f, 0.0f, 0.0f});
+        const auto side_index_end = static_cast<std::uint32_t>(mesh.indices.size());
+        mesh.sections.push_back({side_index_start, side_index_end - side_index_start, 0,
+                                 make_bounds(side_index_start, side_index_end - side_index_start)});
+
+        const std::uint32_t bottom_vertex_start = static_cast<std::uint32_t>(mesh.vertices.size());
+        for (std::uint32_t y = 0; y < domain.height; ++y)
+            for (std::uint32_t x = 0; x < domain.width; ++x)
+            {
+                data::Vertex vertex{};
+                vertex.position = {
+                    static_cast<float>(domain.origin_x_m + x * domain.spacing_x_m),
+                    static_cast<float>(bottom_y),
+                    static_cast<float>(domain.origin_z_m + y * domain.spacing_z_m)};
+                vertex.normal = {0.0f, -1.0f, 0.0f};
+                vertex.tex_coord = {static_cast<float>(x) / (domain.width - 1),
+                                    static_cast<float>(y) / (domain.height - 1)};
+                mesh.vertices.push_back(vertex);
+            }
+        const std::uint32_t bottom_index_start = static_cast<std::uint32_t>(mesh.indices.size());
+        for (std::uint32_t y = 0; y + 1 < domain.height; ++y)
+            for (std::uint32_t x = 0; x + 1 < domain.width; ++x)
+            {
+                const std::uint32_t top_left = bottom_vertex_start + y * domain.width + x;
+                const std::uint32_t bottom_left = top_left + domain.width;
+                const std::uint32_t top_right = top_left + 1;
+                const std::uint32_t bottom_right = bottom_left + 1;
+                mesh.indices.insert(mesh.indices.end(), {top_left, top_right, bottom_left,
+                                                         top_right, bottom_right, bottom_left});
+            }
+        const auto bottom_index_end = static_cast<std::uint32_t>(mesh.indices.size());
+        mesh.sections.push_back({bottom_index_start, bottom_index_end - bottom_index_start, 0,
+                                 make_bounds(bottom_index_start, bottom_index_end - bottom_index_start)});
+
         return mesh;
     }
 

@@ -435,6 +435,133 @@ namespace kpengine::terrain
                 return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
             }}, diagnostic)) return false;
 
+        if (!Register({"terrain.heightfield.macro_landform", 1,
+            {{"detail", PortType::Heightfield}},
+            {{"height", PortType::Heightfield},
+             {"edge_mask", PortType::ScalarField2D},
+             {"mountain_mask", PortType::ScalarField2D}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double center_x = p.value("center_x_m",
+                    context.domain.origin_x_m + (context.domain.width - 1) * context.domain.spacing_x_m * 0.5);
+                const double center_z = p.value("center_z_m",
+                    context.domain.origin_z_m + (context.domain.height - 1) * context.domain.spacing_z_m * 0.5);
+                const double coast_inner_radius = p.value("coast_inner_radius", 0.65);
+                const double coast_outer_radius = p.value("coast_outer_radius", 1.10);
+                const double coast_warp_amplitude = p.value("coast_warp_amplitude", 0.10);
+                const double coast_warp_frequency = p.value("coast_warp_frequency_per_m", 0.012);
+                const double coast_depth = p.value("coast_depth_m", 130.0);
+                const double base_height = p.value("base_height_m", 24.0);
+                const double landform_amplitude = p.value("landform_amplitude_m", 48.0);
+                const double base_terrain_weight = p.value("base_terrain_weight", 0.55);
+                const double macro_weight = p.value("macro_weight", 0.20);
+                const double mountain_weight = p.value("mountain_weight", 0.25);
+                const double macro_frequency = p.value("macro_frequency_per_m", 0.004);
+                const double mountain_region_frequency = p.value("mountain_region_frequency_per_m", 0.0028);
+                const double mountain_frequency = p.value("mountain_frequency_per_m", 0.006);
+                const std::uint32_t mountain_octaves = p.value("mountain_octaves", 4u);
+                const double nyquist = 0.5 / std::max(context.domain.spacing_x_m,
+                                                     context.domain.spacing_z_m);
+                const std::array<double, 14> numeric_parameters{
+                    center_x, center_z, coast_inner_radius, coast_outer_radius,
+                    coast_warp_amplitude, coast_warp_frequency, coast_depth,
+                    base_height, landform_amplitude, base_terrain_weight, macro_weight,
+                    mountain_weight, macro_frequency, mountain_region_frequency};
+                if (std::any_of(numeric_parameters.begin(), numeric_parameters.end(),
+                                [](double value) { return !std::isfinite(value); }) ||
+                    coast_inner_radius < 0.0 || coast_outer_radius <= coast_inner_radius ||
+                    coast_warp_amplitude < 0.0 || coast_warp_amplitude > 0.5 || coast_warp_frequency <= 0.0 ||
+                    coast_warp_frequency > nyquist || coast_depth < 0.0 || landform_amplitude < 0.0 ||
+                    base_terrain_weight < 0.0 || macro_weight < 0.0 || mountain_weight < 0.0 ||
+                    std::abs(base_terrain_weight + macro_weight + mountain_weight - 1.0) > 1.0e-6 ||
+                    macro_frequency <= 0.0 || macro_frequency > nyquist ||
+                    mountain_region_frequency <= 0.0 || mountain_region_frequency > nyquist ||
+                    mountain_frequency <= 0.0 || mountain_frequency > nyquist ||
+                    mountain_octaves == 0 || mountain_octaves > 8)
+                    throw std::invalid_argument("macro landform parameters are outside their finite, sampled ranges");
+
+                const auto smoothstep = [](const double lower, const double upper, const double value) {
+                    const double t = std::clamp((value - lower) / (upper - lower), 0.0, 1.0);
+                    return t * t * (3.0 - 2.0 * t);
+                };
+                const auto fbm = [&](const double x, const double z, double frequency,
+                                     const std::uint32_t octaves, const double persistence,
+                                     const std::uint64_t seed) {
+                    double sum = 0.0;
+                    double weight = 1.0;
+                    double total_weight = 0.0;
+                    for (std::uint32_t octave = 0; octave < octaves && frequency <= nyquist;
+                         ++octave, frequency *= 2.0, weight *= persistence)
+                    {
+                        sum += math::PerlinNoise2D(x * frequency, z * frequency, seed + octave) * weight;
+                        total_weight += weight;
+                    }
+                    return total_weight > 0.0 ? sum / total_weight : 0.0;
+                };
+                const double half_x = (context.domain.width - 1) * context.domain.spacing_x_m * 0.5;
+                const double half_z = (context.domain.height - 1) * context.domain.spacing_z_m * 0.5;
+                const std::size_t sample_count = context.domain.SampleCount(context.maximum_samples);
+                std::vector<float> heights(sample_count);
+                std::vector<float> edge_masks(sample_count);
+                std::vector<float> mountains(sample_count);
+                const auto &detail = inputs.at("detail")->Samples();
+                for (std::uint32_t y = 0; y < context.domain.height; ++y)
+                {
+                    if ((y & 15u) == 0u && context.cancelled && context.cancelled->load())
+                        throw std::runtime_error("evaluation cancelled");
+                    for (std::uint32_t x = 0; x < context.domain.width; ++x)
+                    {
+                        const std::size_t index = static_cast<std::size_t>(y) * context.domain.width + x;
+                        const double wx = context.domain.origin_x_m + x * context.domain.spacing_x_m;
+                        const double wz = context.domain.origin_z_m + y * context.domain.spacing_z_m;
+                        const double dx = wx - center_x;
+                        const double dz = wz - center_z;
+                        const double radius = std::hypot(dx / half_x, dz / half_z) +
+                            fbm(wx, wz, coast_warp_frequency, 3, 0.5,
+                                context.node_seed + 11) * coast_warp_amplitude;
+                        const double edge_mask = smoothstep(
+                            coast_inner_radius, coast_outer_radius, radius);
+                        const double mountain_region_noise = 0.5 + 0.5 * fbm(
+                            wx, wz, mountain_region_frequency, 3, 0.55,
+                            context.node_seed + 61);
+                        const double mountain_mask = smoothstep(0.60, 0.80,
+                                                               mountain_region_noise);
+                        const double macro_noise = fbm(wx, wz, macro_frequency, 3, 0.5,
+                                                        context.node_seed + 47);
+                        double ridged_noise = 0.0;
+                        double ridge_weight = 1.0;
+                        double ridge_total = 0.0;
+                        double ridge_frequency = mountain_frequency;
+                        for (std::uint32_t octave = 0; octave < mountain_octaves &&
+                             ridge_frequency <= nyquist; ++octave, ridge_frequency *= 2.0,
+                             ridge_weight *= 0.52)
+                        {
+                            const double noise = math::PerlinNoise2D(
+                                wx * ridge_frequency, wz * ridge_frequency,
+                                context.node_seed + 71 + octave);
+                            const double ridge = 1.0 - std::abs(noise);
+                            ridged_noise += ridge * ridge * ridge_weight;
+                            ridge_total += ridge_weight;
+                        }
+                        ridged_noise = ridge_total > 0.0 ? ridged_noise / ridge_total : 0.0;
+                        const double base_terrain = (static_cast<double>(detail[index]) * 2.0 - 1.0) *
+                            (base_terrain_weight * landform_amplitude);
+                        const double macro = macro_noise * (macro_weight * landform_amplitude);
+                        const double mountain = mountain_mask * ridged_noise *
+                            (mountain_weight * landform_amplitude);
+                        const double height = base_height + base_terrain + macro + mountain -
+                            edge_mask * coast_depth;
+                        heights[index] = static_cast<float>(height);
+                        edge_masks[index] = static_cast<float>(edge_mask);
+                        mountains[index] = static_cast<float>(mountain_mask);
+                    }
+                }
+                return OperatorOutputs{
+                    {"height", field_from_samples(context, std::move(heights))},
+                    {"edge_mask", field_from_samples(context, std::move(edge_masks))},
+                    {"mountain_mask", field_from_samples(context, std::move(mountains))}};
+            }}, diagnostic)) return false;
+
         if (!Register({"terrain.heightfield.height_filter", 1,
             {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
             [field_from_samples](const OperatorContext &context, const nlohmann::json &p,

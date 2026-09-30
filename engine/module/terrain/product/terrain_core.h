@@ -67,7 +67,12 @@ namespace kpengine::terrain
     std::shared_ptr<const ScalarField2D> ProjectMeshToHeightfield(
         const data::MeshData &mesh, GridDomain2D domain, float no_hit_elevation_offset_m,
         std::size_t maximum_samples, std::string &diagnostic);
-    data::MeshData BuildHeightfieldMesh(const ScalarField2D &heightfield);
+    struct HeightfieldMeshOptions
+    {
+        double bottom_height_m = -100.0;
+    };
+    data::MeshData BuildHeightfieldMesh(
+        const ScalarField2D &heightfield, HeightfieldMeshOptions options = {});
     DrainageNetwork RouteDrainage(const ScalarField2D &heightfield,
                                   DrainageOutletPolicy policy,
                                   std::span<const std::uint8_t> authored_lake_mask = {});

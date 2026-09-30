@@ -482,14 +482,39 @@ namespace kpengine::terrain
 
     void AssignTerrainMaterialSections(data::MeshData &mesh)
     {
-        if (mesh.indices.empty() || mesh.vertices.empty() || mesh.indices.size() % 3 != 0)
+        if (mesh.indices.empty() || mesh.vertices.empty() || mesh.indices.size() % 3 != 0 ||
+            mesh.indices.size() > std::numeric_limits<std::uint32_t>::max())
             throw std::invalid_argument("Terrain material section needs indexed triangles");
-        spatial::AABB bounds{{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
-                              std::numeric_limits<float>::max()},
-                             {-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max(),
-                              -std::numeric_limits<float>::max()}};
-        for (const data::Vertex &vertex : mesh.vertices) bounds.ExpandToInclude(vertex.position);
-        mesh.sections = {{0u, static_cast<std::uint32_t>(mesh.indices.size()), 0u, bounds}};
+        if (mesh.sections.empty())
+        {
+            spatial::AABB bounds{{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                                  std::numeric_limits<float>::max()},
+                                 {-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max(),
+                                  -std::numeric_limits<float>::max()}};
+            for (const data::Vertex &vertex : mesh.vertices) bounds.ExpandToInclude(vertex.position);
+            mesh.sections.push_back({0u, static_cast<std::uint32_t>(mesh.indices.size()), 0u, bounds});
+            return;
+        }
+        for (data::MeshSection &section : mesh.sections)
+        {
+            if (section.index_start > mesh.indices.size() ||
+                section.index_count > mesh.indices.size() - section.index_start ||
+                section.index_count % 3 != 0)
+                throw std::invalid_argument("Terrain mesh contains an invalid surface section");
+            section.material_index = 0;
+            section.local_bounds = {{std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
+                                     std::numeric_limits<float>::max()},
+                                    {-std::numeric_limits<float>::max(), -std::numeric_limits<float>::max(),
+                                     -std::numeric_limits<float>::max()}};
+            for (std::uint32_t index = section.index_start;
+                 index < section.index_start + section.index_count; ++index)
+            {
+                const std::uint32_t vertex_index = mesh.indices[index];
+                if (vertex_index >= mesh.vertices.size())
+                    throw std::invalid_argument("Terrain mesh section references an invalid vertex");
+                section.local_bounds.ExpandToInclude(mesh.vertices[vertex_index].position);
+            }
+        }
     }
 
     bool RegisterTerrainPreviewMaterials(const TerrainMaterialSettings &settings,

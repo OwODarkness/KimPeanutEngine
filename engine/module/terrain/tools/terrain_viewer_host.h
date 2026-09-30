@@ -14,7 +14,6 @@
 #include "gameplay/actor/actor_types.h"
 #include "evaluation/terrain_generation.h"
 #include "import/terrain_baker.h"
-#include "import/terrain_material_settings.h"
 
 namespace kpengine::terrain
 {
@@ -87,7 +86,6 @@ namespace kpengine::terrain
         std::vector<asset::AssetID> render_roots_;
         std::vector<asset::AssetID> terrain_material_assets_;
         std::vector<asset::AssetID> terrain_texture_assets_;
-        TerrainMaterialSettings terrain_material_settings_;
         gameplay::ActorHandle terrain_actor_;
         gameplay::ActorHandle camera_actor_;
         gameplay::ActorHandle light_actor_;

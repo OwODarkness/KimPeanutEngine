@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <fstream>
 #include <limits>
@@ -22,11 +23,57 @@
 #include "editor/terrain_editor.h"
 #include "evaluation/terrain_generation.h"
 #include "import/terrain_baker.h"
+#include "import/terrain_material_settings.h"
 
 namespace kpengine::terrain
 {
     namespace
     {
+        bool RegisterNeutralHeightPreviewMaterial(std::vector<asset::AssetID> &material_ids,
+                                                  std::string &diagnostic)
+        {
+            using namespace asset;
+            static std::atomic<std::uint64_t> revision{0};
+            AssetManager &assets = AssetManager::GetInstance();
+            const std::string shader_path =
+                (std::filesystem::path{GetAssetDirectory()} / "shader/pbr_gbuffer.shader").generic_string();
+            const AssetID shader = assets.LoadSync(shader_path);
+            if (!shader.IsValid())
+            {
+                diagnostic = "could not load the standard PBR shader for the height-only preview";
+                return false;
+            }
+
+            auto material = std::make_shared<MaterialResource>();
+            material->shader_path = shader_path;
+            material->shader_dependency_index = 0;
+            material->surface.shading_model = MaterialShadingModel::StandardPbr;
+            material->parameters = {
+                {"base_color", MaterialParameterSourceType::Vector4,
+                 std::array<float, 4>{0.48f, 0.50f, 0.52f, 1.0f}},
+                {"metallic", MaterialParameterSourceType::Scalar, 0.0f},
+                {"roughness", MaterialParameterSourceType::Scalar, 0.95f},
+                {"occlusion", MaterialParameterSourceType::Scalar, 1.0f},
+                {"normal_scale", MaterialParameterSourceType::Scalar, 1.0f}};
+
+            AssetRegisterInfo info{};
+            info.resource = std::move(material);
+            info.path = "generated://terrain/height-preview-" +
+                std::to_string(revision.fetch_add(1, std::memory_order_relaxed));
+            info.name = "Terrain Height Preview";
+            info.dependencies = {shader};
+            info.type = AssetType::KPAT_Material;
+            const AssetID id = assets.RegisterAsset(info);
+            if (!id.IsValid())
+            {
+                diagnostic = "AssetManager rejected the neutral terrain preview material";
+                return false;
+            }
+            material_ids = {id};
+            diagnostic.clear();
+            return true;
+        }
+
         bool BuildPreview(std::string &diagnostic, data::MeshData &mesh,
                           spatial::AABB &bounds,
                           std::shared_ptr<const ScalarField2D> &heightfield,
@@ -36,7 +83,7 @@ namespace kpengine::terrain
 #define KPENGINE_TERRAIN_FIXTURE_DIR ""
 #endif
             const std::string path = std::string(KPENGINE_TERRAIN_FIXTURE_DIR) +
-                                     "/random_128.terrainrecipe.json";
+                                     "/island_macro_256.terrainrecipe.json";
             std::ifstream input(path);
             if (!input)
             {
@@ -127,21 +174,13 @@ namespace kpengine::terrain
         data::MeshData mesh_data;
         spatial::AABB bounds;
         recipe_ = std::make_unique<TerrainRecipe>();
-        const std::filesystem::path material_settings_path =
-            std::filesystem::path{GetAssetDirectory()} /
-                "terrain/material/mountain_basin.terrainmaterial.json";
-        if (!LoadTerrainMaterialSettings(material_settings_path, GetAssetDirectory(),
-                                         terrain_material_settings_, diagnostic))
-            return fail("could not load terrain PBR settings: " + diagnostic);
         if (!BuildPreview(diagnostic, mesh_data, bounds, preview_heightfield_, *recipe_))
         {
             return false;
         }
         AssignTerrainMaterialSections(mesh_data);
-        if (!RegisterTerrainPreviewMaterials(terrain_material_settings_, *preview_heightfield_,
-                GetAssetDirectory(),
-                GetContentArchiveDirectory(), terrain_material_assets_, terrain_texture_assets_, diagnostic))
-            return fail("could not prepare terrain PBR materials: " + diagnostic);
+        if (!RegisterNeutralHeightPreviewMaterial(terrain_material_assets_, diagnostic))
+            return fail("could not prepare neutral terrain height material: " + diagnostic);
         operator_registry_ = std::make_shared<OperatorRegistry>();
         if (!operator_registry_->RegisterBuiltins(diagnostic)) return false;
         generation_executor_ = std::make_unique<GenerationExecutor>(
@@ -233,7 +272,7 @@ namespace kpengine::terrain
         using namespace runtime::command;
         CommandDesc regenerate{
             "terrain.regenerate", "TerrainViewer",
-            "Generate and publish a seeded 128x128 terrain preview",
+            "Generate and publish a seeded 256x256 terrain preview",
             CommandCategory::Gameplay,
             CommandFlags::AgentAllowed | CommandFlags::MutatesState,
             {{CommandArgumentDesc{"seed", CommandValueType::UnsignedInteger, true, {}, {}},
@@ -782,8 +821,7 @@ namespace kpengine::terrain
         }
         std::vector<asset::AssetID> material_ids;
         std::vector<asset::AssetID> texture_ids;
-        if (!RegisterTerrainPreviewMaterials(terrain_material_settings_, *heightfield,
-                GetAssetDirectory(), GetContentArchiveDirectory(), material_ids, texture_ids, diagnostic))
+        if (!RegisterNeutralHeightPreviewMaterial(material_ids, diagnostic))
         {
             assets.UnRegisterAsset(mesh_id);
             return false;
