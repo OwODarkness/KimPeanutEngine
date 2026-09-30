@@ -94,3 +94,20 @@ it as further work. Added a deferred roadmap entry; no voxel stage design,
 implementation, algorithm choice or release prerequisite was introduced.
 Initial scope remains heightfield authoring/baking in dedicated terrain mode.
 Documentation only; `git diff --check` passed for this update.
+
+## Follow-up — data-only PCG and Gameplay reuse
+
+User clarified during TP2 work that terrain should use Actor representation
+and reuse Gameplay/Render while PCG deals with data. Inspected current terrain
+CMake, TP2 stage/roadmap, Gameplay static-mesh factory/MeshComponent and world
+ownership contracts. TerrainCore/Generation directly link Data/Math/JSON, not
+Gameplay or Render. Added the explicit split: CPU result evaluation stays
+headless; viewer/runtime adapters register/prepare assets, then create or update
+Gameplay-owned Actors/components feeding existing Render source contracts.
+A minimal preview GameplayWorld is compatible with skipping game Level startup.
+
+Updated terrain PLANS, AGENTS, TP2 stage, TODO and spec; preserved implementation
+and acceptance state from the ongoing TP2 work. No source or CMake edits and no
+messages were sent to the other agent. Generated preview catalog publication
+remains an open integration prerequisite. Documentation checks are reported
+in this chat; builds/runtime checks are unnecessary for this documentation edit.

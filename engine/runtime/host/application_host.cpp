@@ -23,6 +23,8 @@ namespace kpengine::runtime
             return "live2d-viewer";
         case ApplicationMode::PanelViewer:
             return "panel-viewer";
+        case ApplicationMode::TerrainViewer:
+            return "terrain-viewer";
         }
         return "unknown";
     }
@@ -42,6 +44,10 @@ namespace kpengine::runtime
         {
             return ApplicationMode::PanelViewer;
         }
+        if (value == "terrain-viewer")
+        {
+            return ApplicationMode::TerrainViewer;
+        }
         return std::nullopt;
     }
 
@@ -55,6 +61,8 @@ namespace kpengine::runtime
             return 1;
         case ApplicationMode::PanelViewer:
             return 2;
+        case ApplicationMode::TerrainViewer:
+            return 3;
         }
         return InvalidModeIndex();
     }

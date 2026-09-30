@@ -12,10 +12,131 @@
 
 namespace kpengine::terrain
 {
+    void EvaluationExecutionControl::Pause()
+    {
+        std::lock_guard lock(mutex_);
+        paused_ = true;
+        step_tokens_ = 0;
+    }
+
+    void EvaluationExecutionControl::Resume()
+    {
+        {
+            std::lock_guard lock(mutex_);
+            paused_ = false;
+            step_tokens_ = 0;
+        }
+        wake_.notify_all();
+    }
+
+    void EvaluationExecutionControl::Step()
+    {
+        {
+            std::lock_guard lock(mutex_);
+            paused_ = true;
+            ++step_tokens_;
+        }
+        wake_.notify_all();
+    }
+
+    bool EvaluationExecutionControl::IsPaused() const
+    {
+        std::lock_guard lock(mutex_);
+        return paused_;
+    }
+
+    bool EvaluationExecutionControl::WaitForNode(const std::atomic_bool *cancelled)
+    {
+        std::unique_lock lock(mutex_);
+        while (paused_ && step_tokens_ == 0 && !(cancelled && cancelled->load()))
+        {
+            wake_.wait_for(lock, std::chrono::milliseconds(20));
+        }
+        if (cancelled && cancelled->load()) return false;
+        if (paused_ && step_tokens_ > 0) --step_tokens_;
+        return true;
+    }
+
     namespace
     {
         constexpr std::uint64_t kFnvOffset = 14695981039346656037ull;
         constexpr std::uint64_t kFnvPrime = 1099511628211ull;
+
+        struct RemapCurve final
+        {
+            std::vector<std::array<double, 2>> points;
+            std::vector<double> tangents;
+
+            explicit RemapCurve(std::vector<std::array<double, 2>> input)
+                : points(std::move(input)), tangents(points.size())
+            {
+                if (points.size() < 2 || points.size() > 32 ||
+                    std::abs(points.front()[0]) > 1.0e-9 ||
+                    std::abs(points.back()[0] - 1.0) > 1.0e-9)
+                    throw std::invalid_argument("remap curve needs 2..32 points spanning x=0 to x=1");
+                std::vector<double> widths(points.size() - 1);
+                std::vector<double> secants(points.size() - 1);
+                for (std::size_t i = 0; i < points.size(); ++i)
+                {
+                    const auto [x, y] = points[i];
+                    if (!std::isfinite(x) || !std::isfinite(y) || x < 0.0 || x > 1.0 ||
+                        y < 0.0 || y > 1.0 || (i > 0 &&
+                        (x <= points[i - 1][0] || y < points[i - 1][1])))
+                        throw std::invalid_argument("remap curve points must be finite, ordered and monotone in [0, 1]");
+                    if (i > 0)
+                    {
+                        widths[i - 1] = x - points[i - 1][0];
+                        secants[i - 1] = (y - points[i - 1][1]) / widths[i - 1];
+                    }
+                }
+                if (points.size() == 2)
+                {
+                    tangents[0] = tangents[1] = secants[0];
+                    return;
+                }
+                for (std::size_t i = 1; i + 1 < points.size(); ++i)
+                {
+                    const double before = secants[i - 1];
+                    const double after = secants[i];
+                    if (before == 0.0 || after == 0.0)
+                    {
+                        tangents[i] = 0.0;
+                        continue;
+                    }
+                    const double w1 = 2.0 * widths[i] + widths[i - 1];
+                    const double w2 = widths[i] + 2.0 * widths[i - 1];
+                    tangents[i] = (w1 + w2) / (w1 / before + w2 / after);
+                }
+                const auto endpoint_tangent = [](double h0, double h1, double d0, double d1)
+                {
+                    double tangent = ((2.0 * h0 + h1) * d0 - h0 * d1) / (h0 + h1);
+                    if (tangent * d0 <= 0.0) return 0.0;
+                    if (d0 * d1 < 0.0 && std::abs(tangent) > 3.0 * std::abs(d0))
+                        return 3.0 * d0;
+                    return tangent;
+                };
+                tangents.front() = endpoint_tangent(widths[0], widths[1], secants[0], secants[1]);
+                tangents.back() = endpoint_tangent(widths.back(), widths[widths.size() - 2],
+                    secants.back(), secants[secants.size() - 2]);
+            }
+
+            double Evaluate(double x) const
+            {
+                if (x <= points.front()[0]) return points.front()[1];
+                if (x >= points.back()[0]) return points.back()[1];
+                const auto upper = std::upper_bound(points.begin(), points.end(), x,
+                    [](double value, const auto &point) { return value < point[0]; });
+                const std::size_t i = static_cast<std::size_t>(upper - points.begin() - 1);
+                const double h = points[i + 1][0] - points[i][0];
+                const double t = (x - points[i][0]) / h;
+                const double t2 = t * t;
+                const double t3 = t2 * t;
+                return (2.0 * t3 - 3.0 * t2 + 1.0) * points[i][1] +
+                    (t3 - 2.0 * t2 + t) * h * tangents[i] +
+                    (-2.0 * t3 + 3.0 * t2) * points[i + 1][1] +
+                    (t3 - t2) * h * tangents[i + 1];
+            }
+        };
 
         void HashBytes(std::uint64_t &hash, const void *data, std::size_t size)
         {
@@ -350,13 +471,151 @@ namespace kpengine::terrain
             {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
             [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
                                  const OperatorInputs &inputs) {
-                const double in_min = p.at("input_min_m").get<double>(), in_max = p.at("input_max_m").get<double>();
-                const double out_min = p.at("output_min_m").get<double>(), out_max = p.at("output_max_m").get<double>();
-                if (!std::isfinite(in_min) || !std::isfinite(in_max) || !std::isfinite(out_min) || !std::isfinite(out_max) || in_max <= in_min)
-                    throw std::invalid_argument("remap ranges must be finite and input range increasing");
-                auto samples = inputs.at("source")->Samples();
-                for (auto &sample : samples) sample = static_cast<float>(out_min + std::clamp((sample - in_min) / (in_max - in_min), 0.0, 1.0) * (out_max - out_min));
+                const auto &source = *inputs.at("source");
+                auto samples = source.Samples();
+                if (p.contains("curve_points"))
+                {
+                    const RemapCurve curve(p.at("curve_points").get<std::vector<std::array<double, 2>>>());
+                    const auto [minimum, maximum] = std::minmax_element(samples.begin(), samples.end());
+                    const double extent = static_cast<double>(*maximum) - *minimum;
+                    if (extent > 0.0)
+                        for (float &sample : samples)
+                        {
+                            const double normalized = std::clamp((sample - *minimum) / extent, 0.0, 1.0);
+                            sample = static_cast<float>(*minimum + curve.Evaluate(normalized) * extent);
+                        }
+                }
+                else
+                {
+                    const double in_min = p.at("input_min_m").get<double>(), in_max = p.at("input_max_m").get<double>();
+                    const double out_min = p.at("output_min_m").get<double>(), out_max = p.at("output_max_m").get<double>();
+                    if (!std::isfinite(in_min) || !std::isfinite(in_max) || !std::isfinite(out_min) || !std::isfinite(out_max) || in_max <= in_min)
+                        throw std::invalid_argument("remap ranges must be finite and input range increasing");
+                    for (auto &sample : samples)
+                        sample = static_cast<float>(out_min + std::clamp((sample - in_min) / (in_max - in_min), 0.0, 1.0) * (out_max - out_min));
+                }
                 return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.erosion.talus_relax", 1,
+            {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double repose_angle = p.at("repose_angle_radians").get<double>();
+                const double transport_fraction = p.value("transport_fraction", 0.35);
+                const std::uint32_t iterations = p.value("iterations", 24u);
+                if (!std::isfinite(repose_angle) || repose_angle < 0.0 || repose_angle >= 1.5707963267948966 ||
+                    !std::isfinite(transport_fraction) || transport_fraction < 0.0 || transport_fraction > 1.0 ||
+                    iterations == 0 || iterations > 512)
+                    throw std::invalid_argument("talus erosion needs a valid repose angle, transport fraction and 1..512 iterations");
+
+                const GridDomain2D &domain = context.domain;
+                std::vector<double> heights(inputs.at("source")->Samples().begin(),
+                    inputs.at("source")->Samples().end());
+                const double slope_limit = std::tan(repose_angle);
+                const double edge_rate = transport_fraction / 16.0;
+                std::vector<double> delta(heights.size(), 0.0);
+                for (std::uint32_t iteration = 0; iteration < iterations; ++iteration)
+                {
+                    if (context.cancelled && context.cancelled->load())
+                        throw std::runtime_error("evaluation cancelled");
+                    std::fill(delta.begin(), delta.end(), 0.0);
+                    for (std::uint32_t y = 0; y < domain.height; ++y)
+                        for (std::uint32_t x = 0; x < domain.width; ++x)
+                        {
+                            const std::size_t here = static_cast<std::size_t>(y) * domain.width + x;
+                            for (const auto [dx, dy] : std::array<std::pair<int, int>, 4>{{{1,0},{0,1},{1,1},{-1,1}}})
+                            {
+                                const int nx = static_cast<int>(x) + dx;
+                                const int ny = static_cast<int>(y) + dy;
+                                if (nx < 0 || ny < 0 || nx >= static_cast<int>(domain.width) || ny >= static_cast<int>(domain.height))
+                                    continue;
+                                const std::size_t there = static_cast<std::size_t>(ny) * domain.width + static_cast<std::uint32_t>(nx);
+                                const double distance = std::hypot(dx * domain.spacing_x_m, dy * domain.spacing_z_m);
+                                const double difference = heights[here] - heights[there];
+                                const double excess = std::abs(difference) - slope_limit * distance;
+                                if (excess <= 0.0) continue;
+                                const double amount = edge_rate * excess;
+                                if (difference > 0.0)
+                                {
+                                    delta[here] -= amount;
+                                    delta[there] += amount;
+                                }
+                                else
+                                {
+                                    delta[there] -= amount;
+                                    delta[here] += amount;
+                                }
+                            }
+                        }
+                    for (std::size_t i = 0; i < heights.size(); ++i)
+                        heights[i] += delta[i];
+                }
+                std::vector<float> samples(heights.size());
+                std::transform(heights.begin(), heights.end(), samples.begin(),
+                    [](double value) { return static_cast<float>(value); });
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.erosion.stream_power_incision", 1,
+            {{"source", PortType::Heightfield}},
+            {{"height", PortType::Heightfield}, {"incision_m", PortType::ScalarField2D}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double erodibility = p.at("erodibility_m_per_iteration").get<double>();
+                const double area_exponent = p.value("area_exponent", 0.5);
+                const double maximum_incision = p.at("maximum_incision_m_per_iteration").get<double>();
+                const std::uint32_t iterations = p.value("iterations", 8u);
+                if (!std::isfinite(erodibility) || erodibility < 0.0 ||
+                    !std::isfinite(area_exponent) || area_exponent < 0.0 || area_exponent > 1.0 ||
+                    !std::isfinite(maximum_incision) || maximum_incision <= 0.0 ||
+                    iterations == 0 || iterations > 256)
+                    throw std::invalid_argument("stream-power incision needs nonnegative erodibility, area exponent in [0, 1], positive incision cap and 1..256 iterations");
+
+                const GridDomain2D &domain = context.domain;
+                std::vector<float> heights = inputs.at("source")->Samples();
+                std::vector<float> cumulative_incision(heights.size(), 0.0f);
+                for (std::uint32_t iteration = 0; iteration < iterations; ++iteration)
+                {
+                    if (context.cancelled && context.cancelled->load())
+                        throw std::runtime_error("evaluation cancelled");
+                    const auto current = field_from_samples(context, heights);
+                    const DrainageNetwork drainage = RouteDrainage(
+                        *current, DrainageOutletPolicy::Perimeter);
+                    const double cell_count = static_cast<double>(heights.size());
+                    for (auto order = drainage.flood_order.rbegin(); order != drainage.flood_order.rend(); ++order)
+                    {
+                        const std::size_t index = *order;
+                        const std::uint32_t downstream = drainage.downstream[index];
+                        if (downstream == DrainageNetwork::NoDownstream) continue;
+                        const std::uint32_t x = static_cast<std::uint32_t>(index % domain.width);
+                        const std::uint32_t y = static_cast<std::uint32_t>(index / domain.width);
+                        const std::uint32_t next_x = downstream % domain.width;
+                        const std::uint32_t next_y = downstream / domain.width;
+                        const double distance = std::hypot(
+                            static_cast<double>(static_cast<int>(x) - static_cast<int>(next_x)) * domain.spacing_x_m,
+                            static_cast<double>(static_cast<int>(y) - static_cast<int>(next_y)) * domain.spacing_z_m);
+                        const double area_fraction = std::clamp(
+                            drainage.accumulation_cells[index] / cell_count, 0.0, 1.0);
+                        const double downstream_height = heights[downstream];
+                        const double current_height = heights[index];
+                        if (distance <= 0.0 || current_height <= downstream_height) continue;
+
+                        // For slope exponent one, this is the bounded implicit
+                        // update of the local stream-power incision equation.
+                        const double coefficient = erodibility *
+                            std::pow(area_fraction, area_exponent) / distance;
+                        const double solved = (current_height + coefficient * downstream_height) /
+                            (1.0 + coefficient);
+                        const double incision = std::clamp(current_height - solved,
+                            0.0, maximum_incision);
+                        heights[index] = static_cast<float>(current_height - incision);
+                        cumulative_incision[index] += static_cast<float>(incision);
+                    }
+                }
+                return OperatorOutputs{
+                    {"height", field_from_samples(context, std::move(heights))},
+                    {"incision_m", field_from_samples(context, std::move(cumulative_incision))}};
             }}, diagnostic)) return false;
 
         if (!Register({"terrain.heightfield.blend", 1,
@@ -414,9 +673,16 @@ namespace kpengine::terrain
     }
 
     EvaluationResult TerrainEvaluator::Evaluate(const TerrainRecipe &recipe,
-                                                 const std::atomic_bool *cancelled)
+        const std::atomic_bool *cancelled, EvaluationExecutionControl *control,
+        const EvaluationProgressCallback &progress)
     {
         EvaluationResult result;
+        const auto evaluation_started = std::chrono::steady_clock::now();
+        const auto update_elapsed = [&result, evaluation_started]()
+        {
+            result.evaluation_time_ms = std::chrono::duration<double, std::milli>(
+                std::chrono::steady_clock::now() - evaluation_started).count();
+        };
         try
         {
             recipe.domain.SampleCount(options_.maximum_samples);
@@ -475,6 +741,14 @@ namespace kpengine::terrain
                 {
                     result.cancelled = true;
                     result.diagnostic = "evaluation cancelled";
+                    update_elapsed();
+                    return result;
+                }
+                if (control && !control->WaitForNode(cancelled))
+                {
+                    result.cancelled = true;
+                    result.diagnostic = "evaluation cancelled";
+                    update_elapsed();
                     return result;
                 }
                 const auto &node = *nodes.at(id);
@@ -491,14 +765,22 @@ namespace kpengine::terrain
                 {
                     auto reused = cached->second.result;
                     reused.cache_hit = true;
-                    result.nodes.emplace(id, std::move(reused));
+                    reused.evaluation_time_ms = 0.0;
+                    const auto [entry, inserted] = result.nodes.emplace(id, std::move(reused));
+                    if (inserted && progress)
+                    {
+                        try { progress(id, entry->second); } catch (...) {}
+                    }
                     continue;
                 }
                 OperatorContext context{recipe.domain, recipe.seed, options_.maximum_samples,
                                         NodeSeed(recipe, node), cancelled};
+                const auto node_started = std::chrono::steady_clock::now();
                 auto outputs = descriptor->evaluate(context, node.parameters, inputs);
                 if (outputs.size() != descriptor->outputs.size()) throw std::runtime_error("operator returned an invalid output set");
                 NodeResult node_result;
+                node_result.minimum_value = std::numeric_limits<float>::infinity();
+                node_result.maximum_value = -std::numeric_limits<float>::infinity();
                 for (const auto &[port, ignored_type] : descriptor->outputs)
                 {
                     auto output = outputs.find(port);
@@ -506,15 +788,34 @@ namespace kpengine::terrain
                         !(output->second->Domain() == recipe.domain))
                         throw std::runtime_error("operator returned an invalid typed output: " + port);
                     node_result.content_hash ^= HashField(*output->second);
+                    for (const float value : output->second->Samples())
+                    {
+                        node_result.all_values_finite =
+                            node_result.all_values_finite && std::isfinite(value);
+                        if (std::isfinite(value))
+                        {
+                            node_result.minimum_value = std::min(node_result.minimum_value, value);
+                            node_result.maximum_value = std::max(node_result.maximum_value, value);
+                        }
+                    }
                     node_result.outputs.emplace(port, output->second);
                 }
                 const auto bytes = std::accumulate(node_result.outputs.begin(), node_result.outputs.end(),
                     std::size_t{0}, [](std::size_t size, const auto &entry) { return size + entry.second->ByteSize(); });
+                node_result.output_bytes = bytes;
+                node_result.evaluation_time_ms = std::chrono::duration<double, std::milli>(
+                    std::chrono::steady_clock::now() - node_started).count();
+                if (!std::isfinite(node_result.minimum_value)) node_result.minimum_value = 0.0f;
+                if (!std::isfinite(node_result.maximum_value)) node_result.maximum_value = 0.0f;
                 if (bytes > options_.maximum_result_bytes ||
                     retained_result_bytes > options_.maximum_result_bytes - bytes)
                     throw std::length_error("evaluation exceeds configured result memory budget");
                 retained_result_bytes += bytes;
-                result.nodes.emplace(id, node_result);
+                const auto [entry, inserted] = result.nodes.emplace(id, node_result);
+                if (inserted && progress)
+                {
+                    try { progress(id, entry->second); } catch (...) {}
+                }
                 if (options_.maximum_cached_nodes && bytes <= options_.maximum_cache_bytes)
                 {
                     while (!cache_.empty() && (cache_.size() >= options_.maximum_cached_nodes ||
@@ -528,12 +829,14 @@ namespace kpengine::terrain
                 }
             }
             result.succeeded = true;
+            update_elapsed();
             return result;
         }
         catch (const std::exception &error)
         {
             result.cancelled = cancelled && cancelled->load();
             result.diagnostic = error.what();
+            update_elapsed();
             return result;
         }
     }
@@ -562,7 +865,9 @@ namespace kpengine::terrain
         Shutdown();
     }
 
-    bool GenerationExecutor::Submit(std::uint64_t revision, TerrainRecipe recipe)
+    bool GenerationExecutor::Submit(std::uint64_t revision, TerrainRecipe recipe,
+                                    std::shared_ptr<EvaluationExecutionControl> control,
+                                    EvaluationProgressCallback progress)
     {
         std::lock_guard lock(mutex_);
         if (stopping_ || revision < minimum_revision_ || pending_.size() >= pending_capacity_)
@@ -573,7 +878,8 @@ namespace kpengine::terrain
         for (auto &job : pending_) job.cancelled->store(true);
         pending_.clear();
         minimum_revision_ = revision;
-        pending_.push_back({revision, std::move(recipe), std::move(cancelled)});
+        pending_.push_back({revision, std::move(recipe), std::move(cancelled),
+                            std::move(control), std::move(progress)});
         wake_.notify_one();
         return true;
     }
@@ -634,7 +940,8 @@ namespace kpengine::terrain
             }
             GenerationJobResult completed;
             completed.revision = job.revision;
-            completed.evaluation = evaluator.Evaluate(job.recipe, job.cancelled.get());
+            completed.evaluation = evaluator.Evaluate(job.recipe, job.cancelled.get(),
+                                                       job.control.get(), job.progress);
             {
                 std::lock_guard lock(mutex_);
                 std::erase_if(active_, [&job](const auto &active) {

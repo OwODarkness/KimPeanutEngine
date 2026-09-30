@@ -29,6 +29,7 @@ namespace kpengine::graphics
 
         resource_.vbo = vertex_buffer_handle.id;
         resource_.ebo = index_buffer_handle.id;
+        resource_.index_count = static_cast<uint32_t>(data.indices.size());
         resource_.sections = data.sections;
     }
     void OpenglMesh::Destroy(const GraphicsContext &context)

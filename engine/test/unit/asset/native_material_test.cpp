@@ -8,6 +8,7 @@
 
 #include "asset/native_material.h"
 #include "asset/material_loader.h"
+#include "asset/utility.h"
 #include "config/path.h"
 
 namespace
@@ -80,6 +81,26 @@ TEST(NativeMaterialTest, ProducesDeterministicProductsAndReusesEmbeddedImages)
     EXPECT_EQ(roughness->texture_channel, kpengine::asset::MaterialTextureChannel::Green);
     EXPECT_EQ(first.materials[0].material.surface.alpha_mode,
               kpengine::asset::MaterialAlphaMode::Mask);
+}
+
+TEST(NativeMaterialTest, ContentArchiveShaderReferenceResolvesIntoAssetRoot)
+{
+    auto settings = MakeSettings();
+    settings.asset_root = kpengine::GetAssetDirectory();
+    settings.archive_root = kpengine::GetContentArchiveDirectory();
+    const auto converted = kpengine::asset::ConvertImportedMaterials(
+        MakeDocument(), settings);
+
+    ASSERT_FALSE(converted.materials.empty());
+    std::string resolved_shader;
+    const std::string owner = (std::filesystem::path(settings.archive_root) /
+                               "materials/terrain.material").generic_string();
+    EXPECT_TRUE(kpengine::asset::ResolveOwnedAssetPath(
+        owner, converted.materials.front().material.shader_path,
+        kpengine::asset::AssetType::KPAT_ShaderProgram, resolved_shader));
+    EXPECT_EQ(std::filesystem::path(resolved_shader).lexically_normal(),
+              (std::filesystem::path(kpengine::GetAssetDirectory()) /
+               "shader/pbr_gbuffer.shader").lexically_normal());
 }
 
 TEST(NativeMaterialTest, EmitsPortableAndBlockCompressedTextureVariants)

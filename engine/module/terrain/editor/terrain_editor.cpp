@@ -1,12 +1,17 @@
 #include "terrain_editor.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdio>
 #include <exception>
 #include <functional>
 
 #include <imgui.h>
 
 #include "editor/log/editor_log_component.h"
+#include "editor/profile/editor_builtin_metrics.h"
+#include "editor/profile/editor_metric.h"
+#include "editor/profile/editor_profile_bar.h"
 #include "editor/settings/editor_settings.h"
 #include "editor/ui/component/editor_gpu_profiler_component.h"
 #include "editor/ui/component/editor_tool_row_component.h"
@@ -15,6 +20,7 @@
 #include "render/render_system.h"
 #include "runtime/engine.h"
 #include "runtime/runtime_global_context.h"
+#include "runtime/platform/memory_stats_sampler.h"
 #include "runtime/window/window_system.h"
 #include "product/terrain_core.h"
 
@@ -67,7 +73,12 @@ namespace kpengine::terrain
     bool TerrainEditor::Initialize(
         runtime::Engine &engine,
         std::shared_ptr<const ScalarField2D> heightfield,
-        std::string &diagnostic)
+        std::string &diagnostic,
+        std::function<void(std::uint64_t, float, float)> regenerate,
+        std::function<void()> cancel,
+        std::function<void(int)> execution_control,
+        std::function<void(float, float, float)> camera_control,
+        std::function<void()> bake)
     {
         diagnostic.clear();
         runtime::RuntimeContext &context = runtime::global_runtime_context;
@@ -79,6 +90,11 @@ namespace kpengine::terrain
         }
 
         heightfield_ = std::move(heightfield);
+        regenerate_ = std::move(regenerate);
+        cancel_ = std::move(cancel);
+        execution_control_ = std::move(execution_control);
+        camera_control_ = std::move(camera_control);
+        bake_ = std::move(bake);
         editor::EditorUIInitInfo init_info{};
         init_info.window = context.window_system_->GetNativeHandle();
         init_info.editor_presentation_bridge =
@@ -98,6 +114,60 @@ namespace kpengine::terrain
                 std::make_unique<editor::EditorGpuProfilerComponent>(
                     &engine, context.render_system_.get(), ui_.get());
 
+            std::vector<std::unique_ptr<editor::EditorMetric>> profile_metrics;
+            profile_metrics.push_back(std::make_unique<editor::EditorFPSMetric>(
+                [&engine] { return engine.GetFPS(); }));
+            profile_metrics.push_back(std::make_unique<editor::EditorFrameTimeMetric>(
+                [&engine] {
+                    const int fps = engine.GetFPS();
+                    return fps > 0 ? 1000.0f / static_cast<float>(fps) : 0.0f;
+                }));
+            profile_metrics.push_back(std::make_unique<editor::EditorFuncMetric>(
+                "CPU", [render_system = context.render_system_.get()] {
+                    char value[32]{};
+                    std::snprintf(value, sizeof(value), "%.2f ms",
+                        render_system->GetMetrics().profile.cpu_total_ms);
+                    return std::string{value};
+                }));
+            profile_metrics.push_back(std::make_unique<editor::EditorFuncMetric>(
+                "GPU", [render_system = context.render_system_.get()] {
+                    const auto profile = render_system->GetMetrics().profile;
+                    double total = 0.0;
+                    bool measured = false;
+                    for (const auto &pass : profile.passes)
+                    {
+                        if (pass.gpu_time_ms.has_value())
+                        {
+                            total += *pass.gpu_time_ms;
+                            measured = true;
+                        }
+                    }
+                    if (!measured) return std::string{"N/A"};
+                    char value[32]{};
+                    std::snprintf(value, sizeof(value), "%.2f ms", total);
+                    return std::string{value};
+                }));
+            profile_metrics.push_back(std::make_unique<editor::EditorFuncMetric>(
+                "API", [render_system = context.render_system_.get()] {
+                    switch (render_system->GetMetrics().profile.graphics_api)
+                    {
+                    case GraphicsAPIType::GRAPHICS_API_OPENGL: return std::string{"OpenGL"};
+                    case GraphicsAPIType::GRAPHICS_API_VULKAN: return std::string{"Vulkan"};
+                    default: return std::string{"Unknown"};
+                    }
+                }));
+            if (context.memory_sampler_)
+            {
+                profile_metrics.push_back(std::make_unique<editor::EditorMemoryMetric>(
+                    [sampler = context.memory_sampler_.get()] {
+                        const MemoryStats stats = sampler->Sample();
+                        return editor::EditorMemoryMetric::Stats{
+                            stats.process_mb, stats.system_available_mb};
+                    }));
+            }
+            profile_bar_ = std::make_unique<editor::EditorProfileBarComponent>(
+                std::move(profile_metrics));
+
             layout_.ResetToCompactViewerDefault();
             dock_model_.Clear();
             dock_host_ = std::make_unique<editor::EditorToolRowComponent>(
@@ -111,7 +181,10 @@ namespace kpengine::terrain
             dock_host_->AddPanel(
                 "heightmap_debug", "Heightmap Debug",
                 std::make_unique<TerrainEditorDockPanel>(
-                    "Heightmap Debug", [this] { heightmap_view_.RenderContent(heightfield_.get()); }),
+                    "Heightmap Debug", [this] {
+                        std::lock_guard lock(snapshot_mutex_);
+                        heightmap_view_.RenderContent(heightfield_.get());
+                    }),
                 true, editor::EditorLayoutSlot::DebugViewer);
             dock_host_->AddPanel(
                 "terrain_performance", "Performance Profiler",
@@ -128,7 +201,7 @@ namespace kpengine::terrain
                 "terrain_controls", "Terrain Controls",
                 std::make_unique<TerrainEditorDockPanel>(
                     "Terrain Controls", [this] { RenderControlPanel(); }),
-                true, editor::EditorLayoutSlot::ToolRow);
+                true, editor::EditorLayoutSlot::CameraSettings);
         }
         catch (const std::exception &error)
         {
@@ -138,6 +211,25 @@ namespace kpengine::terrain
             return false;
         }
         return true;
+    }
+
+    void TerrainEditor::SetEvaluationSnapshot(
+        std::shared_ptr<const ScalarField2D> heightfield,
+        const EvaluationResult &result, const TerrainRecipe &recipe, std::string status)
+    {
+        std::lock_guard lock(snapshot_mutex_);
+        if (heightfield) heightfield_ = std::move(heightfield);
+        seed_ = recipe.seed;
+        const auto landform = std::find_if(recipe.nodes.begin(), recipe.nodes.end(),
+            [](const RecipeNode &node) { return node.id == "ridged_landform"; });
+        if (landform != recipe.nodes.end())
+        {
+            amplitude_m_ = landform->parameters.value("amplitude_m", amplitude_m_);
+            frequency_per_m_ = landform->parameters.value("frequency_per_m", frequency_per_m_);
+        }
+        generation_status_ = std::move(status);
+        generation_diagnostic_ = result.diagnostic;
+        node_diagnostics_ = result.nodes;
     }
 
     bool TerrainEditor::Render(std::string &diagnostic)
@@ -160,8 +252,14 @@ namespace kpengine::terrain
         }
         dock_host_.reset();
         performance_panel_.reset();
+        profile_bar_.reset();
         log_panel_.reset();
         heightfield_.reset();
+        regenerate_ = {};
+        cancel_ = {};
+        execution_control_ = {};
+        camera_control_ = {};
+        bake_ = {};
     }
 
     void TerrainEditor::RenderPanels()
@@ -172,13 +270,19 @@ namespace kpengine::terrain
             dock_host_->Render();
         }
         splitter_handles_.Render(layout_);
+        if (profile_bar_) profile_bar_->Render();
     }
 
     void TerrainEditor::ApplyLayout()
     {
         const ImGuiViewport *const viewport = ImGui::GetMainViewport();
+        layout_.SetFixedExtentPixels(
+            editor::EditorSplitterId::StatusBar,
+            editor::EditorProfileBarComponent::MeasurePreferredHeightPx());
         layout_.Resolve({viewport->WorkPos.x, viewport->WorkPos.y,
                          viewport->WorkSize.x, viewport->WorkSize.y});
+        if (profile_bar_)
+            profile_bar_->ApplyLayout(layout_.RectOf(editor::EditorLayoutSlot::ProfileBar));
     }
 
     void TerrainEditor::RenderTerrainView()
@@ -197,10 +301,76 @@ namespace kpengine::terrain
                 ImGui::GetCursorPosX() + std::max(0.0f, (available.x - image_size.x) * 0.5f),
                 ImGui::GetCursorPosY() + std::max(0.0f, (available.y - image_size.y) * 0.5f)));
             ui_->DrawRenderTarget(view, image_size);
+            if (ImGui::IsItemHovered())
+            {
+                bool changed = false;
+                const float wheel = ImGui::GetIO().MouseWheel;
+                if (wheel != 0.0f)
+                {
+                    camera_distance_ = std::clamp(camera_distance_ *
+                        std::pow(0.88f, wheel), 20.0f, 4000.0f);
+                    changed = true;
+                }
+                if (ImGui::IsMouseDragging(ImGuiMouseButton_Right))
+                {
+                    const ImVec2 delta = ImGui::GetMouseDragDelta(ImGuiMouseButton_Right);
+                    camera_yaw_degrees_ += delta.x * 0.25f;
+                    camera_pitch_degrees_ = std::clamp(
+                        camera_pitch_degrees_ - delta.y * 0.25f, -85.0f, -5.0f);
+                    ImGui::ResetMouseDragDelta(ImGuiMouseButton_Right);
+                    changed = true;
+                }
+                if (changed && camera_control_)
+                    camera_control_(camera_yaw_degrees_, camera_pitch_degrees_, camera_distance_);
+            }
         }
     }
 
     void TerrainEditor::RenderControlPanel()
     {
+        std::lock_guard lock(snapshot_mutex_);
+        ImGui::Text("Generation: %s", generation_status_.c_str());
+        if (!generation_diagnostic_.empty())
+            ImGui::TextWrapped("%s", generation_diagnostic_.c_str());
+        ImGui::InputScalar("Seed", ImGuiDataType_U64, &seed_);
+        ImGui::InputFloat("Amplitude (m)", &amplitude_m_, 1.0f, 10.0f, "%.2f");
+        ImGui::InputFloat("Frequency (1/m)", &frequency_per_m_, 0.001f, 0.01f, "%.4f");
+        if (ImGui::Button("Regenerate") && regenerate_)
+            regenerate_(seed_, amplitude_m_, frequency_per_m_);
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel") && cancel_) cancel_();
+        if (ImGui::Button("Pause at node") && execution_control_) execution_control_(0);
+        ImGui::SameLine();
+        if (ImGui::Button("Step node") && execution_control_) execution_control_(1);
+        ImGui::SameLine();
+        if (ImGui::Button("Resume") && execution_control_) execution_control_(2);
+        ImGui::SameLine();
+        if (ImGui::Button("Bake Native Asset") && bake_) bake_();
+        if (ImGui::CollapsingHeader("Node diagnostics", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            for (const auto &[node_id, node] : node_diagnostics_)
+            {
+                if (ImGui::TreeNode(node_id.c_str()))
+                {
+                    for (const auto &[output_name, field] : node.outputs)
+                    {
+                        const std::string label = output_name + "##" + node_id;
+                        if (ImGui::SmallButton(label.c_str()) && field)
+                        {
+                            heightfield_ = field;
+                            selected_field_name_ = node_id + "." + output_name;
+                        }
+                    }
+                    ImGui::TreePop();
+                }
+                ImGui::Text("%s: %.3f ms | %zu bytes | [%.3f, %.3f] | %s | %016llx",
+                    node_id.c_str(), node.evaluation_time_ms, node.output_bytes,
+                    static_cast<double>(node.minimum_value),
+                    static_cast<double>(node.maximum_value),
+                    node.all_values_finite ? "finite" : "non-finite",
+                    static_cast<unsigned long long>(node.content_hash));
+            }
+            ImGui::Text("Heightmap selection: %s", selected_field_name_.c_str());
+        }
     }
 }

@@ -256,14 +256,14 @@ namespace kpengine::runtime
                     }
                     if (HasMissingValue(arguments, index))
                     {
-                        return Failure("--mode requires scene3d or live2d-viewer");
+                        return Failure("--mode requires scene3d, live2d-viewer, panel-viewer, or terrain-viewer");
                     }
 
                     const std::string_view value = arguments[++index];
                     const std::optional<ApplicationMode> mode = ParseApplicationMode(value);
                     if (!mode.has_value())
                     {
-                        return Failure("--mode requires scene3d or live2d-viewer (got '" +
+                        return Failure("--mode requires scene3d, live2d-viewer, panel-viewer, or terrain-viewer (got '" +
                                        std::string{value} + "')");
                     }
                     result.options.application_mode = *mode;
@@ -635,6 +635,12 @@ namespace kpengine::runtime
             const ApplicationMode mode = result.options.application_mode;
             const bool live2d_viewer = mode == ApplicationMode::Live2DViewer;
             const bool panel_viewer = mode == ApplicationMode::PanelViewer;
+            const bool terrain_viewer = mode == ApplicationMode::TerrainViewer;
+
+            if (terrain_viewer && result.options.startup_level_override.has_value())
+            {
+                return Failure("--startup-level is not valid in terrain-viewer mode");
+            }
 
             // The capture, resize, and exit options are owned by whichever
             // standalone host is running, not by Live2D. Only the options that

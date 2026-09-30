@@ -324,7 +324,7 @@ namespace kpengine::graphics
         glVertexArrayElementBuffer(pipeline->vao, mesh_resource->ebo);
         glBindVertexArray(pipeline->vao);
         recorded_index_count_ = mesh_resource->sections.empty()
-                                    ? 0u
+                                    ? mesh_resource->index_count
                                     : static_cast<uint32_t>(mesh_resource->sections[0].index_count);
         recorded_first_index_ = mesh_resource->sections.empty()
                                      ? 0u

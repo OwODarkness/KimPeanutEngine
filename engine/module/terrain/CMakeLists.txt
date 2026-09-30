@@ -21,7 +21,15 @@ target_include_directories(TerrainEditor PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}"
     "${CMAKE_SOURCE_DIR}/engine")
 target_link_libraries(TerrainEditor PRIVATE
-    TerrainCore EditorUILib RuntimeLib KP::ImGui)
+    TerrainGeneration TerrainCore EditorUILib RuntimeLib KP::ImGui)
+
+add_library(TerrainBaking STATIC
+    import/terrain_baker.cpp
+    import/terrain_material_settings.cpp)
+target_include_directories(TerrainBaking PUBLIC
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+    "${CMAKE_SOURCE_DIR}/engine")
+target_link_libraries(TerrainBaking PUBLIC TerrainGeneration RuntimeLib AssetImport AssetNative AssetArchive)
 
 add_library(TerrainViewer STATIC
     tools/terrain_viewer_host.cpp)
@@ -30,7 +38,7 @@ target_include_directories(TerrainViewer PUBLIC
     "${CMAKE_SOURCE_DIR}/engine")
 target_compile_definitions(TerrainViewer PRIVATE
     KPENGINE_TERRAIN_FIXTURE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
-target_link_libraries(TerrainViewer PUBLIC TerrainGeneration RuntimeLib TerrainEditor)
+target_link_libraries(TerrainViewer PUBLIC TerrainGeneration RuntimeLib TerrainEditor TerrainBaking)
 target_link_libraries(Terrain INTERFACE TerrainViewer)
 
 add_library(TerrainRegistration OBJECT

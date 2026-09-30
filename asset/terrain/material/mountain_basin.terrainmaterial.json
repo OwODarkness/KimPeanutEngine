@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "texture_tile_size_m": 8.0,
+  "layers": [
+    {
+      "name": "River Water",
+      "id": "river_water",
+      "mask": "height",
+      "height_max": 0.30,
+      "blend_width": 0.045,
+      "base_color": [0.025, 0.20, 0.30, 1.0],
+      "metallic": 0.0,
+      "roughness": 0.055
+    },
+    {
+      "name": "Meadow Grass",
+      "id": "grass",
+      "mask": "height",
+      "height_max": 0.91,
+      "blend_width": 0.12,
+      "base_color": [1.0, 1.0, 1.0, 1.0],
+      "metallic": 0.0,
+      "roughness": 0.84,
+      "albedo": "texture/pbr/whispy-grass-meadow-bl/wispy-grass-meadow_albedo.png",
+      "normal": "texture/pbr/whispy-grass-meadow-bl/wispy-grass-meadow_normal-ogl.png",
+      "occlusion": "texture/pbr/whispy-grass-meadow-bl/wispy-grass-meadow_ao.png",
+      "metallic_map": "texture/pbr/whispy-grass-meadow-bl/wispy-grass-meadow_metallic.png",
+      "roughness_map": "texture/pbr/whispy-grass-meadow-bl/wispy-grass-meadow_roughness.png"
+    },
+    {
+      "name": "Veined Quartz",
+      "id": "glassy",
+      "mask": "height",
+      "height_max": 0.975,
+      "blend_width": 0.05,
+      "base_color": [1.0, 1.0, 1.0, 1.0],
+      "metallic": 0.12,
+      "roughness": 0.3,
+      "albedo": "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_albedo.png",
+      "normal": "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_normal-ogl.png",
+      "occlusion": "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_ao.png",
+      "metallic_map": "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_metallic.png",
+      "roughness_map": "texture/pbr/cloudy-veined-quartz-bl/cloudy-veined-quartz_roughness.png"
+    },
+    {
+      "name": "Ice Field",
+      "id": "ice",
+      "mask": "height",
+      "height_max": 1.0,
+      "blend_width": 0.0,
+      "base_color": [1.0, 1.0, 1.0, 1.0],
+      "metallic": 0.0,
+      "roughness": 0.18,
+      "albedo": "texture/pbr/ice-field-bl/ice_field_albedo.png",
+      "normal": "texture/pbr/ice-field-bl/ice_field_normal-ogl.png",
+      "occlusion": "texture/pbr/ice-field-bl/ice_field_ao.png",
+      "metallic_map": "texture/pbr/ice-field-bl/ice_field_metallic.png",
+      "roughness_map": "texture/pbr/ice-field-bl/ice_field_roughness.png"
+    },
+    {
+      "name": "Steep Mountain Rock",
+      "id": "mountain",
+      "mask": "slope",
+      "slope_min_radians": 0.95,
+      "slope_blend_width_radians": 0.14,
+      "height_min": 0.30,
+      "height_max": 0.88,
+      "height_fade_width": 0.06,
+      "base_color": [1.0, 1.0, 1.0, 1.0],
+      "metallic": 0.0,
+      "roughness": 0.88,
+      "albedo": "texture/pbr/strata-rock1-bl/strata-rock1_albedo.png",
+      "normal": "texture/pbr/strata-rock1-bl/strata-rock1_normal-ogl.png",
+      "occlusion": "texture/pbr/strata-rock1-bl/strata-rock1_ao.png",
+      "metallic_map": "texture/pbr/strata-rock1-bl/strata-rock1_metallic.png",
+      "roughness_map": "texture/pbr/strata-rock1-bl/strata-rock1_roughness.png"
+    }
+  ]
+}

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <fstream>
 #include <limits>
 #include <thread>
 
@@ -89,6 +90,169 @@ namespace
         std::vector<float> samples(15, 0.0f);
         samples[2] = std::numeric_limits<float>::quiet_NaN();
         EXPECT_FALSE(ScalarField2D::Create(FixtureDomain(), std::move(samples), 100, diagnostic));
+    }
+
+    TEST(TerrainDerivedFieldTest, PlaneSlopeUsesWorldSpacingAndCurvatureIsZeroAtEdges)
+    {
+        const GridDomain2D domain{5, 4, -2.0, 7.0, 0.5, 2.0, 0.0};
+        std::vector<float> samples;
+        for (std::uint32_t y = 0; y < domain.height; ++y)
+            for (std::uint32_t x = 0; x < domain.width; ++x)
+                samples.push_back(static_cast<float>(2.0 * (domain.origin_x_m + x * domain.spacing_x_m) -
+                                                     0.25 * (domain.origin_z_m + y * domain.spacing_z_m)));
+        std::string diagnostic;
+        auto field = ScalarField2D::Create(domain, std::move(samples), 100, diagnostic);
+        ASSERT_TRUE(field) << diagnostic;
+        const auto slope = ComputeSlopeRadians(*field);
+        const float expected = static_cast<float>(std::atan(std::hypot(2.0, -0.25)));
+        for (float value : slope) EXPECT_NEAR(value, expected, 1e-6f);
+        for (float value : ComputeCurvaturePerMeter(*field)) EXPECT_NEAR(value, 0.0f, 1e-6f);
+    }
+
+    TEST(TerrainMeshTest, CoarseAndFineSamplingShareWorldPositionsAndGlobalNormals)
+    {
+        const auto make_plane = [](GridDomain2D domain) {
+            std::vector<float> samples;
+            for (std::uint32_t y = 0; y < domain.height; ++y)
+                for (std::uint32_t x = 0; x < domain.width; ++x)
+                    samples.push_back(static_cast<float>(3.0 + 0.5 * (domain.origin_x_m + x * domain.spacing_x_m) -
+                                                         0.25 * (domain.origin_z_m + y * domain.spacing_z_m)));
+            std::string diagnostic;
+            auto result = ScalarField2D::Create(domain, std::move(samples), 100, diagnostic);
+            EXPECT_TRUE(result) << diagnostic;
+            return result;
+        };
+        const auto fine = BuildHeightfieldMesh(*make_plane({5, 5, -2.0, -2.0, 1.0, 1.0, 10.0}));
+        const auto coarse = BuildHeightfieldMesh(*make_plane({3, 3, -2.0, -2.0, 2.0, 2.0, 10.0}));
+        for (std::uint32_t y = 0; y < 3; ++y)
+            for (std::uint32_t x = 0; x < 3; ++x)
+            {
+                const auto &a = fine.vertices[static_cast<std::size_t>(y * 2) * 5 + x * 2];
+                const auto &b = coarse.vertices[static_cast<std::size_t>(y) * 3 + x];
+                EXPECT_EQ(a.position, b.position);
+                EXPECT_EQ(a.normal, b.normal);
+            }
+        EXPECT_EQ(coarse.indices.size(), 24u);
+    }
+
+    TEST(TerrainProjectionTest, VerticalMeshProjectionSamplesTopmostSurfaceAndUsesExplicitFallback)
+    {
+        kpengine::data::MeshData mesh;
+        const auto add = [&mesh](float x, float y, float z) {
+            kpengine::data::Vertex vertex{};
+            vertex.position = kpengine::Vector3f{x, y, z};
+            mesh.vertices.push_back(vertex);
+        };
+        add(0.0f, 0.0f, 0.0f);
+        add(2.0f, 1.0f, 0.0f);
+        add(2.0f, 5.0f, 2.0f);
+        add(0.0f, 4.0f, 2.0f);
+        mesh.indices = {0, 1, 2, 0, 2, 3};
+        const GridDomain2D domain{3, 3, 0.0, 0.0, 1.0, 1.0, 10.0};
+        std::string diagnostic;
+        auto projected = ProjectMeshToHeightfield(mesh, domain, -100.0f, 20, diagnostic);
+        ASSERT_TRUE(projected) << diagnostic;
+        EXPECT_FLOAT_EQ(projected->At(1, 1), -7.5f);
+        EXPECT_FLOAT_EQ(projected->At(2, 2), -5.0f);
+        EXPECT_FLOAT_EQ(BuildHeightfieldMesh(*projected).vertices[8].position.y_, 5.0f);
+        const auto empty = ProjectMeshToHeightfield({}, domain, -100.0f, 20, diagnostic);
+        ASSERT_TRUE(empty) << diagnostic;
+        EXPECT_FLOAT_EQ(empty->At(1, 1), -100.0f);
+    }
+
+    TEST(TerrainDrainageTest, PriorityFloodProducesAcyclicRoutesAndConservesCellAccumulation)
+    {
+        const GridDomain2D domain{7, 6, 0.0, 0.0, 2.0, 0.5, 0.0};
+        std::vector<float> samples(domain.SampleCount(100), 10.0f);
+        for (std::uint32_t y = 1; y + 1 < domain.height; ++y)
+            for (std::uint32_t x = 1; x + 1 < domain.width; ++x)
+                samples[static_cast<std::size_t>(y) * domain.width + x] = 0.0f;
+        std::string diagnostic;
+        auto field = ScalarField2D::Create(domain, std::move(samples), 100, diagnostic);
+        ASSERT_TRUE(field) << diagnostic;
+        const auto routing = RouteDrainage(*field, DrainageOutletPolicy::Perimeter);
+        ASSERT_EQ(routing.flood_order.size(), field->Samples().size());
+        for (std::uint32_t index = 0; index < routing.downstream.size(); ++index)
+        {
+            auto current = index;
+            std::size_t steps = 0;
+            while (routing.downstream[current] != DrainageNetwork::NoDownstream &&
+                   steps <= routing.downstream.size())
+            {
+                current = routing.downstream[current];
+                ++steps;
+            }
+            EXPECT_LT(steps, routing.downstream.size());
+            if (routing.downstream[index] == DrainageNetwork::NoDownstream)
+            {
+                const auto x = index % domain.width;
+                const auto y = index / domain.width;
+                EXPECT_TRUE(x == 0 || y == 0 || x + 1 == domain.width || y + 1 == domain.height);
+            }
+        }
+        EXPECT_FLOAT_EQ(routing.filled_elevation_m[3 * domain.width + 3], 10.0f);
+        double outlet_total = 0.0;
+        for (std::size_t i = 0; i < routing.downstream.size(); ++i)
+            if (routing.downstream[i] == DrainageNetwork::NoDownstream)
+                outlet_total += routing.accumulation_cells[i];
+        EXPECT_DOUBLE_EQ(outlet_total, static_cast<double>(field->Samples().size()));
+
+        std::vector<std::uint8_t> lake_mask(field->Samples().size(), 0);
+        lake_mask[3 * domain.width + 3] = 1;
+        const auto lake_routing = RouteDrainage(*field,
+            DrainageOutletPolicy::AuthoredLakesAndPerimeter, lake_mask);
+        EXPECT_EQ(lake_routing.downstream[3 * domain.width + 3], DrainageNetwork::NoDownstream);
+        EXPECT_THROW(RouteDrainage(*field, DrainageOutletPolicy::AuthoredLakesAndPerimeter, {}),
+                     std::invalid_argument);
+    }
+
+    TEST(TerrainOperatorsTest, RasterResamplesInWorldCoordinatesAndNoiseOperatorsRepeat)
+    {
+        auto registry = MakeRegistry();
+        TerrainEvaluator evaluator(registry);
+        TerrainRecipe recipe;
+        recipe.seed = 41;
+        recipe.domain = {3, 3, 0.0, 0.0, 1.0, 1.0, 0.0};
+        recipe.nodes.push_back({"raster", "terrain.heightfield.raster", 1,
+            {{"width", 2}, {"height", 2}, {"origin_x_m", 0.0}, {"origin_z_m", 0.0},
+             {"spacing_x_m", 2.0}, {"spacing_z_m", 2.0}, {"samples_m", {0.0, 2.0, 4.0, 6.0}}}, {}});
+        recipe.nodes.push_back({"detail", "terrain.heightfield.ridged_detail", 1,
+            {{"amplitude_m", 2.0}, {"frequency_per_m", 0.125}, {"octaves", 4}},
+            {{"source", {"raster", "height"}}}});
+        const auto first = evaluator.Evaluate(recipe);
+        ASSERT_TRUE(first.succeeded) << first.diagnostic;
+        EXPECT_FLOAT_EQ(first.nodes.at("raster").outputs.at("height")->At(1, 1), 3.0f);
+        const auto first_samples = first.nodes.at("detail").outputs.at("height")->Samples();
+        evaluator.ClearCache();
+        const auto second = evaluator.Evaluate(recipe);
+        ASSERT_TRUE(second.succeeded) << second.diagnostic;
+        EXPECT_EQ(first_samples, second.nodes.at("detail").outputs.at("height")->Samples());
+    }
+
+    TEST(TerrainFixturesTest, PlateauMountainBasinAndCoastalPlainHaveExpectedSamples)
+    {
+        const auto load = [](const char *name) {
+            std::ifstream stream(std::string(KPENGINE_TERRAIN_FIXTURE_DIR) + "/" + name);
+            if (!stream) throw std::runtime_error("terrain fixture could not be opened");
+            nlohmann::json json;
+            stream >> json;
+            return TerrainRecipe::FromJson(json);
+        };
+        TerrainEvaluator evaluator(MakeRegistry());
+        auto plateau = evaluator.Evaluate(load("plateau.terrainrecipe.json"));
+        ASSERT_TRUE(plateau.succeeded) << plateau.diagnostic;
+        EXPECT_FLOAT_EQ(plateau.nodes.at("plateau").outputs.at("height")->At(2, 2), 100.0f);
+
+        auto basin = evaluator.Evaluate(load("mountain_basin.terrainrecipe.json"));
+        ASSERT_TRUE(basin.succeeded) << basin.diagnostic;
+        EXPECT_NEAR(basin.nodes.at("mountain_ring").outputs.at("height")->At(4, 4),
+                    120.0 * std::exp(-0.5 * 4.0 / (0.75 * 0.75)), 1e-5);
+        EXPECT_NEAR(basin.nodes.at("mountain_ring").outputs.at("height")->At(2, 4), 120.0f, 1e-4f);
+
+        auto coastal = evaluator.Evaluate(load("coastal_plain.terrainrecipe.json"));
+        ASSERT_TRUE(coastal.succeeded) << coastal.diagnostic;
+        EXPECT_NEAR(coastal.nodes.at("coast_reference").outputs.at("height")->At(2, 2), -4.0f, 1e-6f);
+        EXPECT_TRUE(std::isfinite(coastal.nodes.at("coastal_detail").outputs.at("height")->At(2, 2)));
     }
 
     TEST(TerrainRecipeTest, JsonRoundTripIsCanonicalAndValidatesDomain)
@@ -200,6 +364,53 @@ namespace
         result = byte_limited.Evaluate(ConstantRecipe());
         EXPECT_FALSE(result.succeeded);
         EXPECT_NE(result.diagnostic.find("memory budget"), std::string::npos);
+    }
+
+    TEST(TerrainEvaluationTest, ExecutionControlStepsOneNodeAtATime)
+    {
+        EvaluationExecutionControl control;
+        control.Pause();
+        std::atomic_bool cancelled{false};
+        std::atomic_bool waiting{false};
+        std::atomic_int completed_nodes{0};
+        std::thread worker([&]
+        {
+            waiting.store(true, std::memory_order_release);
+            if (!control.WaitForNode(&cancelled)) return;
+            completed_nodes.store(1, std::memory_order_release);
+            if (!control.WaitForNode(&cancelled)) return;
+            completed_nodes.store(2, std::memory_order_release);
+        });
+
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        while (!waiting.load(std::memory_order_acquire) &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        if (!waiting.load(std::memory_order_acquire))
+        {
+            control.Resume();
+            worker.join();
+            FAIL() << "worker did not reach the paused node boundary";
+            return;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        EXPECT_EQ(completed_nodes.load(std::memory_order_acquire), 0);
+
+        control.Step();
+        while (completed_nodes.load(std::memory_order_acquire) < 1 &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        EXPECT_EQ(completed_nodes.load(std::memory_order_acquire), 1);
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        EXPECT_EQ(completed_nodes.load(std::memory_order_acquire), 1);
+
+        control.Step();
+        while (completed_nodes.load(std::memory_order_acquire) < 2 &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        control.Resume();
+        worker.join();
+        EXPECT_EQ(completed_nodes.load(std::memory_order_acquire), 2);
     }
 
     std::vector<float> EvaluateThroughExecutor(std::size_t worker_count)

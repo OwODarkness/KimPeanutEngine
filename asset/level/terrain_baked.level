@@ -1,0 +1,43 @@
+{
+  "version": 1,
+  "objects": [
+    {
+      "id": "terrain_baked",
+      "name": "Terrain Baked Asset",
+      "kind": "static_mesh",
+      "transform": {
+        "position": [0.0, 0.0, 0.0],
+        "rotation_degrees": [0.0, 0.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "model": "model/terrain/generated/default",
+      "casts_shadow": true
+    },
+    {
+      "id": "terrain_camera",
+      "name": "Terrain Camera",
+      "kind": "camera",
+      "transform": {
+        "position": [0.0, 180.0, 250.0],
+        "rotation_degrees": [-32.0, -90.0, 0.0],
+        "scale": [1.0, 1.0, 1.0]
+      },
+      "projection": "perspective",
+      "near_plane": 0.05,
+      "far_plane": 2000.0,
+      "field_of_view_degrees": 52.0,
+      "enabled": true,
+      "priority": 0
+    },
+    {
+      "id": "terrain_sun",
+      "name": "Terrain Sun",
+      "kind": "directional_light",
+      "direction": [-0.4, -1.0, -0.3],
+      "color": [1.0, 1.0, 1.0],
+      "intensity": 3.0,
+      "enabled": true,
+      "casts_shadow": true
+    }
+  ]
+}

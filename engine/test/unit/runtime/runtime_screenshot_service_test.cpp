@@ -154,4 +154,27 @@ namespace kpengine::runtime
         EXPECT_EQ(result->status, ScreenshotResultStatus::InvalidDimensions);
         EXPECT_EQ(capture_service.request_count, 0u);
     }
+
+    TEST(RuntimeScreenshotServiceTest, ResolvesCurrentCaptureServiceForEachRequest)
+    {
+        FakeCaptureService first_service;
+        FakeCaptureService replacement_service;
+        render::IRenderCaptureService *current_service = &first_service;
+        RuntimeScreenshotService service{[&current_service] { return current_service; }};
+
+        const std::string first_path =
+            "save/screenshots/validation/runtime-screenshot-before-replacement.png";
+        const std::string replacement_path =
+            "save/screenshots/validation/runtime-screenshot-after-replacement.png";
+        RemoveFile(first_path);
+        RemoveFile(replacement_path);
+        EXPECT_TRUE(Request(service, first_path).IsSuccess());
+
+        current_service = &replacement_service;
+        EXPECT_TRUE(Request(service, replacement_path).IsSuccess());
+        EXPECT_EQ(first_service.request_count, 1u);
+        EXPECT_EQ(replacement_service.request_count, 1u);
+        RemoveFile(first_path);
+        RemoveFile(replacement_path);
+    }
 }

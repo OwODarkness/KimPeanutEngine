@@ -1,10 +1,12 @@
 # Terrain PCG roadmap
 
-**Status: TP1 implemented; TP2+ proposed.** Architecture: [PLANS.md](PLANS.md). Research:
+**Status: TP1-TP3 authoring, preview replacement, and native bake implemented; catalog-promotion failure injection and high-count lifecycle stress remain open.** Architecture: [PLANS.md](PLANS.md). Research:
 [references.md](references.md). Execution contract:
 [spec](../../.spec/specs/terrain-pcg-authoring.md). Planning evidence:
 [journal](../../.spec/journal/2026-09-29-terrain-pcg-plan.md).
 TP1 execution evidence: [journal](../../.spec/journal/2026-09-29-terrain-pcg-TP1.md).
+TP2 execution evidence: [journal](../../.spec/journal/2026-09-29-terrain-pcg-TP2.md).
+TP3 execution evidence: [journal](../../.spec/journal/2026-09-30-terrain-pcg-TP3.md).
 
 ## TP0 — scope and integration diagnosis
 
@@ -27,49 +29,65 @@ TP1 execution evidence: [journal](../../.spec/journal/2026-09-29-terrain-pcg-TP1
 - [x] Independently register a scalar offset operator without changing
   evaluator code; confirm only its dependent nodes reevaluate.
 
-## TP2 — controllable landforms and derived fields
+## TP2 — controllable landforms, derived fields and first view mode
 
-- [ ] Implement ridge/valley curves or masks, imported height/mesh projection,
-  domain warp/ridged detail, remapping and blends as separate operators.
-- [ ] Compute slope, curvature and a drainage graph with explicit depression,
-  lake and outlet policies. Treat authored lakes separately from routing pits.
-- [ ] Preserve physical coordinate sampling and shared edge heights/normals;
-  test alternate sample spacing over the same world-space domain.
-- [ ] Provide plateau, mountain basin and coastal plain recipes with expected
-  outputs. Prove drainage paths reach an outlet or declared lake and are acyclic.
+- [x] Implement ridge/valley curves, height-raster resampling, vertical mesh
+  projection, domain warp/ridged detail, remapping and blends.
+- [x] Compute physical-space slope/curvature and deterministic D8 priority-flood
+  drainage, with perimeter/lake outlets and routing-only depression fill.
+- [x] Preserve world-space positions, globally derived mesh normals and UVs;
+  resample raster inputs at the recipe's physical sample locations.
+- [x] Check plateau, mountain-basin and coastal-plain fixture samples. Verify
+  drainage is acyclic and accumulation conserves upstream cell counts.
+- [x] Implement `terrain-viewer` using the shared 3D renderer without gameplay
+  Level instantiation. Runtime prepares generated mesh and material roots
+  through its normal immutable render catalog; Terrain mode uses a docked
+  EditorUI viewer with heightmap, log, and performance panels.
+
+- [x] Reuse a minimal GameplayWorld and ordinary Actor/MeshComponent plus camera
+  and light source contracts for the dedicated preview; no game Level startup.
+  The adapter remains above the headless generation targets. Verify source
+  replacement and teardown as part of TP3; add terrain-specific components only
+  for justified instance behavior.
 
 ## TP3 — authoring workspace, preview and bake vertical slice
 
-- [ ] Define the minimal neutral scene-service composition contract, then
-  register `TerrainViewerHost` and `terrain-viewer` as the first interactive
-  terrain integration. Regression check Scene3D, Live2D and Panel modes.
-- [ ] Bring up a fixed mesh in the dedicated preview scene using the shared 3D
-  renderer. Verify ordinary game Level startup/controllers/editor panels are
-  absent unless explicitly needed; Runtime gains no terrain UI dependency.
-- [ ] Define/review prepared-asset preview commit/rollback, source replacement,
-  stale completion rejection and submitted-resource retirement first.
-- [ ] Add terrain-mode recipe controls, orbit/fly camera, field diagnostics and
+- [x] Define the prepared-asset preview commit boundary, stale completion
+  rejection, prior-preview retention and submitted-resource retirement path.
+- [x] Add terrain-mode recipe controls, orbit/zoom camera, field diagnostics and
   job status; normal Scene3D startup does not construct these authoring services.
-- [ ] Support reproducible fixture replay, operator isolation, solver pause/step,
+- [x] Support reproducible fixture replay, operator isolation, solver pause/step,
   intermediate-field inspection and per-node time/memory/numerical diagnostics
   through snapshots and commands, with a CPU-only evaluation path.
-- [ ] Enable regenerate/cancel/replace without hanging event processing;
-  failed generation preserves the last valid terrain.
-- [ ] Integrate generated-model serialization/publication via Asset import;
+- [x] Enable regenerate/cancel/replace without hanging event processing;
+  cancel retained the prior preview, an invalid generation request left its
+  rendered image byte-identical, and replacements completed on both APIs.
+- [x] Lock the archive database to reject a bake at source commit; confirm its
+  prior source hashes/status remain unchanged and reload that bake afterward.
+- [ ] Inject prepared-catalog promotion failure and verify preview rollback.
+- [x] Integrate generated-model serialization/publication via Asset import;
   produce versioned provenance and native model/material/texture dependencies.
-- [ ] Reload baked products through a fresh normal startup; verify with terrain
-  authoring disabled. Test partial publication failure and prior-bake recovery.
-- [ ] Capture Vulkan validation-enabled Debug and OpenGL raster previews;
-  inspect normals, winding, material, scale, chunk edges, resize and teardown.
+- [x] Reload baked products through a fresh normal Scene3D startup with terrain
+  authoring disabled on Vulkan and OpenGL.
+- [x] Capture Debug Vulkan and OpenGL raster previews; inspect world normals,
+  material, scale, resize and orderly teardown. Chunk-edge checks do not apply
+  until terrain is partitioned into chunks in TP7.
+- [ ] Stress high-count repeated replacement and verify resource retirement;
+  three back-to-back Vulkan swaps plus OpenGL replacement/cancel passed, but no
+  catalog-promotion fault was injected.
 
 **First usable slice:** TP1-TP3, including the dedicated `terrain-viewer` mode
 and native assets loadable by normal gameplay. Scene3D authoring integration
-is not required; a deferred host prerequisite leaves TP3 acceptance open.
+is not required; the fixed TP2 viewer is now the first shared-renderer preview.
 
 ## TP4 — rain erosion, fluvial incision and solver selection
 
-- [ ] Prototype drainage + implicit stream-power incision, conservative
-  grid hydraulic transport, and talus relaxation as versioned operators.
+- [x] Establish erosion as a postprocess after base heightfield preparation;
+  add versioned talus relaxation and implicit stream-power incision prototypes,
+  plus normalized monotone height remap to the 256² fixture. This is an
+  implementation start, not solver acceptance.
+- [ ] Complete numerical contracts for talus and stream-power incision, then
+  prototype conservative grid hydraulic transport as a versioned operator.
 - [ ] Run a bounded 2026 stochastic-transport experiment. Compare basin
   morphology, deposits/meanders, conservation error, resolution sensitivity,
   memory and bake time. Record adopt/defer decision; no CUDA dependency by default.

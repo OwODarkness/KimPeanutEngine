@@ -47,6 +47,10 @@ namespace kpengine::runtime
     class RuntimeScreenshotService
     {
     public:
+        using CaptureServiceResolver =
+            std::function<render::IRenderCaptureService *()>;
+
+        explicit RuntimeScreenshotService(CaptureServiceResolver capture_service_resolver);
         explicit RuntimeScreenshotService(render::IRenderCaptureService &capture_service);
 
         // A non-empty callback receives exactly one final result. This returns
@@ -55,7 +59,7 @@ namespace kpengine::runtime
         bool RequestScreenshot(ScreenshotRequest request, ScreenshotCallback on_completed);
 
     private:
-        render::IRenderCaptureService &capture_service_;
+        CaptureServiceResolver capture_service_resolver_;
     };
 }
 

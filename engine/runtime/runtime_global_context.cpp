@@ -633,9 +633,11 @@ namespace kpengine
                 return {false, "RenderSystem scene promotion failed: " +
                                    render_init_result.diagnostic};
             }
-            if (render::IRenderCaptureService *capture_service = render_system_->GetRenderCaptureService())
+            if (render_system_->GetRenderCaptureService() != nullptr)
             {
-                screenshot_service_ = std::make_shared<RuntimeScreenshotService>(*capture_service);
+                screenshot_service_ = std::make_shared<RuntimeScreenshotService>([this] {
+                    return render_system_ ? render_system_->GetRenderCaptureService() : nullptr;
+                });
                 command::CommandRegistrationResult registration =
                     RegisterScreenshotCommands(*command_registry_, screenshot_service_);
                 if (!registration.IsSuccess())
@@ -739,6 +741,37 @@ namespace kpengine
                 level_instance_->SetErrorMaterialAsset(
                     asset::AssetManager::GetInstance().LoadSync(
                         GetAssetDirectory() + asset::kEngineErrorMaterialAssetPath));
+            }
+            return {true, {}};
+        }
+
+        RuntimeContext::StartupResult RuntimeContext::PrepareRenderAssets(
+            const std::vector<asset::AssetID> &roots)
+        {
+            EnsureSceneServices();
+            const RenderAssetPreparationResult result =
+                RenderAssetPreparer{}.Prepare(roots, graphics_api_type_);
+            if (!result)
+            {
+                return {false, result.diagnostic};
+            }
+            prepared_render_assets_ = result.catalog;
+            return {true, {}};
+        }
+
+        RuntimeContext::StartupResult RuntimeContext::QueueRenderAssetsReplacement(
+            const std::vector<asset::AssetID> &roots, uint64_t &serial)
+        {
+            const StartupResult prepared = PrepareRenderAssets(roots);
+            if (!prepared) return prepared;
+            if (!render_system_)
+            {
+                return {false, "RenderSystem is unavailable for catalog replacement"};
+            }
+            serial = render_system_->QueuePreparedAssetsUpdate(prepared_render_assets_);
+            if (serial == 0)
+            {
+                return {false, "RenderSystem rejected the prepared catalog replacement"};
             }
             return {true, {}};
         }

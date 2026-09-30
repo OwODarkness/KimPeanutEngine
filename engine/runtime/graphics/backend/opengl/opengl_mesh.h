@@ -9,6 +9,7 @@ namespace kpengine::graphics{
     struct OpenglMeshResource{
         GLuint vbo;
         GLuint ebo;
+        uint32_t index_count = 0;
         std::vector<MeshSection> sections;
     };
     class OpenglMesh: public Mesh{

@@ -403,7 +403,7 @@ namespace kpengine::graphics
         Mesh *mesh_object = mesh_manager_->GetMesh(mesh);
         const auto *mesh_resource = mesh_object ? static_cast<const VulkanMeshResource *>(
             mesh_object->GetMeshHandle().native) : nullptr;
-        if (!mesh_resource || mesh_resource->sections.empty())
+        if (!mesh_resource || mesh_resource->index_count == 0)
         {
             reject();
             return;
@@ -419,8 +419,12 @@ namespace kpengine::graphics
         const VkDeviceSize offsets[] = {0};
         vkCmdBindVertexBuffers(command_buffer_, 0, 1, vertex_buffers, offsets);
         vkCmdBindIndexBuffer(command_buffer_, index->buffer, 0, VK_INDEX_TYPE_UINT32);
-        recorded_index_count_ = static_cast<uint32_t>(mesh_resource->sections[0].index_count);
-        recorded_first_index_ = static_cast<uint32_t>(mesh_resource->sections[0].index_start);
+        recorded_index_count_ = mesh_resource->sections.empty()
+                                    ? mesh_resource->index_count
+                                    : static_cast<uint32_t>(mesh_resource->sections[0].index_count);
+        recorded_first_index_ = mesh_resource->sections.empty()
+                                    ? 0u
+                                    : static_cast<uint32_t>(mesh_resource->sections[0].index_start);
         recorded_index_offset_ = 0;
         recorded_index_type_ = IndexElementType::UInt32;
         recorded_geometry_ = false;

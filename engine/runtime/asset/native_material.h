@@ -29,6 +29,7 @@ namespace kpengine::asset
         bool emit_texture_profile_variants{false};
         std::function<void(std::string_view)> texture_progress_callback;
         std::function<bool()> texture_cancellation_query;
+        std::filesystem::path archive_root;
     };
 
     struct NativeImageProduct

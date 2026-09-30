@@ -100,6 +100,10 @@ namespace kpengine::render
         RenderSystemInitResult InitializePresentation(const RenderSystemInitInfo &info);
         RenderSystemInitResult PromoteToScene(
             std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
+        uint64_t QueuePreparedAssetsUpdate(
+            std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
+        uint64_t GetAppliedPreparedAssetsUpdate() const noexcept
+        { return applied_catalog_update_.load(std::memory_order_acquire); }
         // Safe to call repeatedly; the first call retires all owned state.
         void Shutdown();
 
@@ -212,6 +216,10 @@ namespace kpengine::render
                    static_cast<std::size_t>(DebugViewConsumer::Count)> debug_view_demands_{};
         PathTraceSettings requested_path_trace_settings_{};
         std::optional<PathTraceSettings> pending_path_trace_settings_;
+        std::optional<std::pair<uint64_t,
+            std::shared_ptr<const PreparedRenderAssetCatalog>>> pending_catalog_update_;
+        std::atomic<uint64_t> applied_catalog_update_{0};
+        uint64_t next_catalog_update_ = 1;
         std::atomic<bool> requested_profile_window_reset_{false};
         std::atomic<bool> requested_path_trace_dispatch_failure_{false};
     };

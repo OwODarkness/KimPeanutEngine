@@ -364,9 +364,11 @@ namespace kpengine
                                ? application_host_->RegisterHostCommands(registry, diagnostic)
                                : true;
                 });
-            if (application_mode_ == ApplicationMode::Scene3D &&
+            if ((application_mode_ == ApplicationMode::Scene3D ||
+                 application_mode_ == ApplicationMode::TerrainViewer) &&
                 !application_host_->Initialize(*this, host_diagnostic))
             {
+                application_host_->Shutdown();
                 application_host_.reset();
                 throw std::runtime_error("Application host initialization failed: " +
                                          host_diagnostic);
@@ -421,10 +423,14 @@ namespace kpengine
             // Editor setup (pointers into the runtime context, no GPU state) is safe
             // on the main thread; its ImGui UI is built on the render thread by
             // InitEditorUI, where the GL/Vulkan context exists.
+            const bool use_editor = application_mode_ != ApplicationMode::TerrainViewer;
             try
             {
-                editor_->Initialize(this);
-                editor_attached_ = true;
+                if (use_editor)
+                {
+                    editor_->Initialize(this);
+                    editor_attached_ = true;
+                }
                 startup_asset_session_ = asset::AssetManager::GetInstance().BeginLoadObservation();
             }
             catch (const std::exception &error)
@@ -437,7 +443,10 @@ namespace kpengine
                 startup_coordinator_.Fail("Unknown exception attaching startup services");
                 throw;
             }
-            startup_coordinator_.SetAssetSession(*startup_asset_session_);
+            if (startup_asset_session_)
+            {
+                startup_coordinator_.SetAssetSession(*startup_asset_session_);
+            }
 
             // [thread model] Main OS thread = game thread. The render thread is spawned
             // below; it creates the window/context itself (RenderThreadFunc) so the GPU
@@ -527,7 +536,10 @@ namespace kpengine
             const auto asset_loading_started = std::chrono::steady_clock::now();
             try
             {
-                LoadStartupLevel(*startup_asset_session_);
+                if (application_mode_ != ApplicationMode::TerrainViewer)
+                {
+                    LoadStartupLevel(*startup_asset_session_);
+                }
             }
             catch (const std::exception &error)
             {
@@ -564,7 +576,10 @@ namespace kpengine
             RuntimeContext::StartupResult render_asset_result;
             try
             {
-                render_asset_result = global_runtime_context.PrepareRenderAssets();
+                render_asset_result = application_mode_ == ApplicationMode::TerrainViewer
+                                          ? global_runtime_context.PrepareRenderAssets(
+                                                application_host_->GetRenderAssetRoots())
+                                          : global_runtime_context.PrepareRenderAssets();
             }
             catch (const std::exception &error)
             {
@@ -613,7 +628,9 @@ namespace kpengine
             startup_coordinator_.SetPhase(StartupPhase::InstantiatingLevel,
                                           "Instantiating startup level");
             const RuntimeContext::StartupResult startup_result =
-                global_runtime_context.FinalizeGameStartup();
+                application_mode_ == ApplicationMode::TerrainViewer
+                    ? RuntimeContext::StartupResult{true, {}}
+                    : global_runtime_context.FinalizeGameStartup();
             if (!startup_result)
             {
                 startup_coordinator_.Fail(startup_result.diagnostic);
@@ -652,9 +669,12 @@ namespace kpengine
                 }
             }
 
-            startup_coordinator_.SetPhase(StartupPhase::ActivatingEditorWorkspace,
-                                          "Activating editor workspace");
-            editor_->ActivateWorkspace();
+            if (use_editor)
+            {
+                startup_coordinator_.SetPhase(StartupPhase::ActivatingEditorWorkspace,
+                                              "Activating editor workspace");
+                editor_->ActivateWorkspace();
+            }
 
             // Complete all game-thread work that may throw before publishing
             // Commit. Once Commit is visible, the render thread may begin
@@ -664,6 +684,12 @@ namespace kpengine
 
             PublishStartupDecision(StartupDecision::Commit);
             {
+                if (!use_editor)
+                {
+                    std::lock_guard<std::mutex> lock(editor_promotion_mutex_);
+                    editor_promotion_succeeded_ = true;
+                    editor_promotion_finished_ = true;
+                }
                 std::unique_lock<std::mutex> lock(editor_promotion_mutex_);
                 editor_promotion_cv_.wait(lock,
                                           [this]
@@ -968,7 +994,8 @@ namespace kpengine
                 global_runtime_context.command_registry_->PumpGameThread();
             }
 
-            if (application_mode_ == ApplicationMode::Scene3D &&
+            if ((application_mode_ == ApplicationMode::Scene3D ||
+                 application_mode_ == ApplicationMode::TerrainViewer) &&
                 global_runtime_context.gameplay_world_)
             {
                 global_runtime_context.TickGameplay(1.0f / target_fps);
@@ -1098,6 +1125,7 @@ namespace kpengine
             bool render_start_signaled = false;
             bool presentation_ready_signaled = false;
             bool editor_ui_initialized = false;
+            const bool use_editor = application_mode_ != ApplicationMode::TerrainViewer;
             bool startup_committed = false;
             bool loading_frame_presented = false;
             bool context_cleared = false;
@@ -1160,6 +1188,10 @@ namespace kpengine
                                 }
                                 editor_ui_initialized = false;
                             }
+                            if (progress.label == "Releasing renderer" && application_host_)
+                            {
+                                application_host_->ShutdownRenderThread();
+                            }
                         });
                 }
                 catch (...)
@@ -1190,10 +1222,19 @@ namespace kpengine
                 render_start_cv_.notify_all();
             };
 
+            std::string presentation_diagnostic;
             try
             {
                 global_runtime_context.InitializePresentation();
                 global_runtime_context.render_thread_id_ = std::this_thread::get_id();
+                if (application_host_ &&
+                    !application_host_->InitializePresentation(
+                        *this, presentation_diagnostic))
+                {
+                    throw std::runtime_error(
+                        "Application host presentation initialization failed: " +
+                        presentation_diagnostic);
+                }
             }
             catch (const std::exception &error)
             {
@@ -1222,8 +1263,11 @@ namespace kpengine
             {
                 // ImGui must be built and used on the thread that owns the GL/Vulkan
                 // context — that is this thread, so the editor UI lives here.
-                editor_->InitEditorUI();
-                editor_ui_initialized = true;
+                if (use_editor)
+                {
+                    editor_->InitEditorUI();
+                    editor_ui_initialized = true;
+                }
                 startup_coordinator_.SetPhase(StartupPhase::PresentationReady,
                                               "Presentation ready");
                 signal_render_start(true, "");
@@ -1290,7 +1334,10 @@ namespace kpengine
                         }
                         if (!already_finished)
                         {
-                            editor_->PromoteEditorWorkspace();
+                            if (use_editor)
+                            {
+                                editor_->PromoteEditorWorkspace();
+                            }
                             {
                                 std::lock_guard<std::mutex> lock(editor_promotion_mutex_);
                                 editor_promotion_succeeded_ = true;
@@ -1517,6 +1564,9 @@ namespace kpengine
                     // window belongs to the render thread, and this is its frame
                     // boundary, outside any frame bracket.
                     ApplyQueuedWindowResize();
+                    // Standalone viewers do not pass through RenderTick(), so
+                    // flush their in-memory diagnostics from this loop too.
+                    global_runtime_context.log_system_->Tick(1.0f / target_fps);
                     if (!application_host_->RecordFrame(diagnostic))
                     {
                         KP_LOG("EngineLog", LOG_LEVEL_ERROR,
@@ -1631,10 +1681,30 @@ namespace kpengine
             // terminal pass position; this callback supplies the editor's external
             // ImGui recording without creating a Render -> Editor dependency.
             global_runtime_context.window_system_->PollEvents();
-            if (!global_runtime_context.render_system_->ExecuteEditorCompositePass(
-                    [this] { editor_->TickPresentation(); }))
+            if (application_mode_ == ApplicationMode::TerrainViewer)
             {
-                editor_->TickPresentation();
+                std::string diagnostic;
+                bool presentation_succeeded = false;
+                const bool composite_succeeded =
+                    global_runtime_context.render_system_->ExecuteEditorCompositePass(
+                        [this, &presentation_succeeded, &diagnostic]
+                        {
+                            presentation_succeeded = application_host_ != nullptr &&
+                                application_host_->RenderPresentation(diagnostic);
+                        });
+                if (!composite_succeeded || !presentation_succeeded)
+                {
+                    throw std::runtime_error(
+                        "Terrain presentation failed: " + diagnostic);
+                }
+            }
+            else
+            {
+                if (!global_runtime_context.render_system_->ExecuteEditorCompositePass(
+                        [this] { editor_->TickPresentation(); }))
+                {
+                    editor_->TickPresentation();
+                }
             }
             const bool frame_ended = global_runtime_context.render_system_->EndFrame();
             if(global_runtime_context.graphics_api_type_ == GraphicsAPIType::GRAPHICS_API_OPENGL)
@@ -1691,10 +1761,13 @@ namespace kpengine
                 return false;
             }
             global_runtime_context.window_system_->PollEvents();
-            if (!global_runtime_context.render_system_->ExecuteEditorCompositePass(
-                    [this] { editor_->TickPresentation(); }))
+            if (application_mode_ != ApplicationMode::TerrainViewer)
             {
-                editor_->TickPresentation();
+                if (!global_runtime_context.render_system_->ExecuteEditorCompositePass(
+                        [this] { editor_->TickPresentation(); }))
+                {
+                    editor_->TickPresentation();
+                }
             }
             if (!global_runtime_context.render_system_->EndFrame())
             {

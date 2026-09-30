@@ -2,6 +2,7 @@
 #define KPENGINE_TERRAIN_GENERATION_H
 
 #include <atomic>
+#include <chrono>
 #include <cstdint>
 #include <condition_variable>
 #include <deque>
@@ -98,7 +99,30 @@ namespace kpengine::terrain
     {
         std::map<std::string, TerrainValue, std::less<>> outputs;
         std::uint64_t content_hash = 0;
+        double evaluation_time_ms = 0.0;
+        std::size_t output_bytes = 0;
+        float minimum_value = 0.0f;
+        float maximum_value = 0.0f;
+        bool all_values_finite = true;
         bool cache_hit = false;
+    };
+    using EvaluationProgressCallback =
+        std::function<void(std::string_view, const NodeResult &)>;
+
+    class EvaluationExecutionControl final
+    {
+    public:
+        void Pause();
+        void Resume();
+        void Step();
+        bool IsPaused() const;
+        bool WaitForNode(const std::atomic_bool *cancelled);
+
+    private:
+        mutable std::mutex mutex_;
+        std::condition_variable wake_;
+        bool paused_ = false;
+        std::size_t step_tokens_ = 0;
     };
 
     struct EvaluationResult
@@ -106,6 +130,7 @@ namespace kpengine::terrain
         bool succeeded = false;
         bool cancelled = false;
         std::string diagnostic;
+        double evaluation_time_ms = 0.0;
         std::map<std::string, NodeResult, std::less<>> nodes;
     };
 
@@ -115,7 +140,9 @@ namespace kpengine::terrain
         TerrainEvaluator(std::shared_ptr<const OperatorRegistry> registry,
                          EvaluationOptions options = {});
         EvaluationResult Evaluate(const TerrainRecipe &recipe,
-                                  const std::atomic_bool *cancelled = nullptr);
+                                  const std::atomic_bool *cancelled = nullptr,
+                                  EvaluationExecutionControl *control = nullptr,
+                                  const EvaluationProgressCallback &progress = {});
         void ClearCache();
 
     private:
@@ -142,7 +169,9 @@ namespace kpengine::terrain
         GenerationExecutor(const GenerationExecutor &) = delete;
         GenerationExecutor &operator=(const GenerationExecutor &) = delete;
 
-        bool Submit(std::uint64_t revision, TerrainRecipe recipe);
+        bool Submit(std::uint64_t revision, TerrainRecipe recipe,
+                    std::shared_ptr<EvaluationExecutionControl> control = {},
+                    EvaluationProgressCallback progress = {});
         bool TryPop(GenerationJobResult &result);
         void CancelBefore(std::uint64_t revision);
         void Shutdown() noexcept;
@@ -153,6 +182,8 @@ namespace kpengine::terrain
             std::uint64_t revision;
             TerrainRecipe recipe;
             std::shared_ptr<std::atomic_bool> cancelled;
+            std::shared_ptr<EvaluationExecutionControl> control;
+            EvaluationProgressCallback progress;
         };
         void WorkerLoop();
 

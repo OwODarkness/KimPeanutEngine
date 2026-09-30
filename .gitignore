@@ -63,6 +63,9 @@ deprecated/
 !/asset/shader/live2d_color.shader
 !/asset/shader/live2d_color.vert
 !/asset/shader/live2d_color.frag
+!/asset/terrain/
+!/asset/terrain/material/
+!/asset/terrain/material/*.terrainmaterial.json
 !/asset/shader/live2d_mask.shader
 !/asset/shader/live2d_mask.vert
 !/asset/shader/live2d_mask.frag

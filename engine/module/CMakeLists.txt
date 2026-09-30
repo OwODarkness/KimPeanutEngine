@@ -13,6 +13,7 @@ target_link_libraries(Module INTERFACE ModuleBootstrap)
 if(KPENGINE_ENABLE_TERRAIN)
     add_subdirectory(terrain)
     target_link_libraries(Module INTERFACE Terrain)
+    target_sources(Module INTERFACE $<TARGET_OBJECTS:TerrainRegistration>)
 endif()
 
 # Panel owns its host registration callback and runtime host. Its representation

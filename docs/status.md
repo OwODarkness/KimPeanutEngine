@@ -1,15 +1,30 @@
 # Project Status
 
-- **Terrain PCG (2026-09-29; TP1 implemented)** — Added optional CPU-only
-  TerrainCore/TerrainGeneration targets with explicit meter-space rectangular
-  fields, recipe JSON, typed operators, DAG evaluation, a bounded cache and
-  revision-aware worker/result ownership. Eight terrain contracts pass. TP2+
-  remain proposed. The dedicated `terrain-viewer`, generated preview-asset
-  publication, erosion, biomes/scatter and bakes remain unimplemented; shared
-  3D host composition is a TP3 prerequisite. → [plans](terrain/PLANS.md),
+- **Terrain PCG (2026-09-30; TP1-TP3 first bake slice, TP4 erosion prototypes started)** — Added
+  optional headless TerrainCore/TerrainGeneration targets, deterministic
+  heightfield recipes and operators, derived fields, and a shared-renderer
+  `terrain-viewer` with a seeded 256x256 default, seeded controls, field diagnostics, cancellation,
+  per-node controls and performance profiling. Preview catalog replacement
+  uses the existing Gameplay Actor/MeshComponent and RenderSystem path. Native
+  model/material products and recipe provenance load through fresh normal
+  Scene3D startup on Vulkan and OpenGL. Vulkan's sectionless mesh index count
+  and OpenGL's equivalent mesh count both draw the terrain. The viewport uses a
+  black background; capture requests remain valid after catalog replacement.
+  Debug build, 15 Terrain contracts, 7 screenshot-service tests, resize,
+  world-normal/material captures, invalid-generation retention, archive-commit
+  recovery, and repeated replacement checks pass. TP4 now adds a normalized
+  height remap, conservative talus relaxation and iteratively rerouted implicit
+  stream-power incision as PCG postprocess nodes; numerical solver acceptance,
+  hydraulic state/transport and the 2026 method comparison remain open.
+  Catalog-promotion fault injection and high-count lifecycle stress remain
+  open; biomes/scatter, chunking and GPU acceleration remain future work. →
+  [plans](terrain/PLANS.md),
   [roadmap](terrain/TODO.md), [source study](terrain/references.md),
   [spec](../.spec/specs/terrain-pcg-authoring.md),
-  [TP1 journal](../.spec/journal/2026-09-29-terrain-pcg-TP1.md)
+  [TP1 journal](../.spec/journal/2026-09-29-terrain-pcg-TP1.md),
+  [TP2 journal](../.spec/journal/2026-09-29-terrain-pcg-TP2.md),
+  [TP3 journal](../.spec/journal/2026-09-30-terrain-pcg-TP3.md),
+  [TP4 journal](../.spec/journal/2026-09-30-terrain-pcg-TP4.md)
 
 - **R6 interactive path tracing (2026-09-29; active)** — Three matched static
   RelWithDebInfo Vulkan Sponza windows establish 4-SPP/8-bounce total GPU

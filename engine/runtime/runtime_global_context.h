@@ -136,6 +136,10 @@ namespace kpengine
             // Runtime-only startup transaction: freeze the CPU render catalog
             // before the render thread creates any GPU state.
             StartupResult PrepareRenderAssets();
+            StartupResult PrepareRenderAssets(
+                const std::vector<asset::AssetID> &roots);
+            StartupResult QueueRenderAssetsReplacement(
+                const std::vector<asset::AssetID> &roots, uint64_t &serial);
             // Narrow test seam for the game-start controller/possession step.
             // Production leaves this unset and uses GameplayWorld's real
             // controller implementation.

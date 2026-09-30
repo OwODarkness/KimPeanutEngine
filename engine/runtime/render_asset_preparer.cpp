@@ -38,23 +38,41 @@ namespace kpengine::runtime
 
             RenderAssetPreparationResult Run(asset::AssetID level_asset)
             {
+                return Run(level_asset, {});
+            }
+
+            RenderAssetPreparationResult Run(
+                asset::AssetID level_asset,
+                const std::vector<asset::AssetID> &roots)
+            {
                 if (api_type_ != GraphicsAPIType::GRAPHICS_API_VULKAN &&
                     api_type_ != GraphicsAPIType::GRAPHICS_API_OPENGL)
                 {
                     return Failure("render preparation received an unsupported graphics API");
                 }
-                if (!level_asset.IsValid() || level_asset.type != asset::AssetType::KPAT_Level)
+                if (level_asset.IsValid() && level_asset.type != asset::AssetType::KPAT_Level)
                 {
                     return Failure("startup level AssetID is invalid for render preparation");
+                }
+                if (!level_asset.IsValid() && roots.empty())
+                {
+                    return Failure("render preparation requires a Level or at least one asset root");
                 }
                 if (!hooks_.load_sync || !hooks_.get_asset || !hooks_.process_shaders ||
                     !hooks_.process_environment_ibl || !hooks_.processed_shader_count)
                 {
                     return Failure("render preparation services are incomplete");
                 }
-                if (!Visit(level_asset))
+                if (level_asset.IsValid() && !Visit(level_asset))
                 {
                     return Failure(diagnostic_);
+                }
+                for (const asset::AssetID root : roots)
+                {
+                    if (!Visit(root))
+                    {
+                        return Failure(diagnostic_);
+                    }
                 }
                 const render::RenderProfileTextureMetrics level_texture_metrics =
                     texture_metrics_;
@@ -314,6 +332,19 @@ namespace kpengine::runtime
     RenderAssetPreparationResult RenderAssetPreparer::Prepare(asset::AssetID level_asset,
                                                                GraphicsAPIType api_type) const
     {
+        return Prepare(level_asset, {}, api_type);
+    }
+
+    RenderAssetPreparationResult RenderAssetPreparer::Prepare(
+        const std::vector<asset::AssetID> &roots, GraphicsAPIType api_type) const
+    {
+        return Prepare({}, roots, api_type);
+    }
+
+    RenderAssetPreparationResult RenderAssetPreparer::Prepare(
+        asset::AssetID level_asset, const std::vector<asset::AssetID> &roots,
+        GraphicsAPIType api_type) const
+    {
         try
         {
             RenderAssetPreparationHooks hooks = hooks_;
@@ -335,7 +366,7 @@ namespace kpengine::runtime
                 { return pipeline.GetProcessedShaderCount(); };
             }
             PreparationTransaction transaction(std::move(hooks), api_type);
-            return transaction.Run(level_asset);
+            return transaction.Run(level_asset, roots);
         }
         catch (const std::exception &error)
         {

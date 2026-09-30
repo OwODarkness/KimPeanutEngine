@@ -74,6 +74,10 @@ namespace kpengine::asset
         std::string base_color_texture;
         std::string normal_texture;
         std::string metallic_roughness_texture;
+        // Optional separate scalar maps for source sets that are not packed.
+        // When omitted, metallic_roughness_texture retains its glTF channels.
+        std::string metallic_texture;
+        std::string roughness_texture;
         std::string occlusion_texture;
         std::string emissive_texture;
         bool double_sided{false};

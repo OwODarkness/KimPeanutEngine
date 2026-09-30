@@ -97,6 +97,10 @@ namespace kpengine::editor
         // Restores the default tree and clears every resolved rect.
         void ResetToDefault();
 
+        // A compact preview workspace: central view, two right-side docks, and a full-width
+        // bottom dock. Splitters and panel placement still use the regular dock host.
+        void ResetToCompactViewerDefault();
+
         // Resolves every slot against a work area. Safe for a degenerate area: every
         // slot resolves empty rather than producing negative extents.
         void Resolve(const EditorRect &work_area);

@@ -54,8 +54,8 @@ namespace kpengine::render
         data::TextureData fallback{};
         fallback.width = 1;
         fallback.height = 1;
-        fallback.format = TextureFormat::TEXTURE_FORMAT_RGBA16F;
-        fallback.pixels.resize(4 * sizeof(uint16_t), 0);
+        fallback.format = TextureFormat::TEXTURE_FORMAT_RGBA8_UNORM;
+        fallback.pixels = {0, 0, 0, 0xff};
 
         EnvironmentFrameBindings black_fallback{};
         black_fallback.ibl_intensity = 0.25f;

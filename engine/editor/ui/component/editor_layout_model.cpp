@@ -143,6 +143,69 @@ namespace kpengine::editor
 
     }
 
+    void EditorLayoutModel::ResetToCompactViewerDefault()
+    {
+        for (EditorLayoutNode &node : nodes_)
+        {
+            node = EditorLayoutNode{};
+        }
+        node_count_ = 5;
+
+        // Keep the same fixed-height performance strip as the main editor.
+        nodes_[0].axis = EditorLayoutAxis::Vertical;
+        nodes_[0].fixed_pixels = kStatusBarDefaultPixels;
+        nodes_[0].splitter = EditorSplitterId::StatusBar;
+        nodes_[0].first = 1;
+        nodes_[0].second = Leaf(EditorLayoutSlot::ProfileBar);
+
+        // Keep the log in its familiar lower-left area beside the right tool rail.
+        nodes_[1].axis = EditorLayoutAxis::Horizontal;
+        nodes_[1].fraction = 0.70f;
+        nodes_[1].splitter = EditorSplitterId::RightColumn;
+        nodes_[1].min_first = 240.0f;
+        nodes_[1].min_second = 220.0f;
+        nodes_[1].first = 2;
+        nodes_[1].second = 3;
+
+        nodes_[2].axis = EditorLayoutAxis::Vertical;
+        nodes_[2].fraction = 0.80f;
+        nodes_[2].splitter = EditorSplitterId::ToolRow;
+        nodes_[2].min_first = 180.0f;
+        nodes_[2].min_second = 100.0f;
+        nodes_[2].first = Leaf(EditorLayoutSlot::Viewport);
+        nodes_[2].second = Leaf(EditorLayoutSlot::ToolRow);
+
+        // Stack the heightmap, profiler, and controls in the right rail.
+        nodes_[3].axis = EditorLayoutAxis::Vertical;
+        nodes_[3].fraction = 0.34f;
+        nodes_[3].splitter = EditorSplitterId::Debug;
+        nodes_[3].min_first = 100.0f;
+        nodes_[3].min_second = 180.0f;
+        nodes_[3].first = Leaf(EditorLayoutSlot::DebugViewer);
+        nodes_[3].second = 4;
+
+        nodes_[4].axis = EditorLayoutAxis::Vertical;
+        nodes_[4].fraction = 0.56f;
+        nodes_[4].splitter = EditorSplitterId::ToolRow;
+        nodes_[4].min_first = 120.0f;
+        nodes_[4].min_second = 120.0f;
+        nodes_[4].first = Leaf(EditorLayoutSlot::GpuProfiler);
+        nodes_[4].second = Leaf(EditorLayoutSlot::CameraSettings);
+
+        for (EditorRect &rect : rects_)
+        {
+            rect = EditorRect{};
+        }
+        for (EditorRect &rect : node_rects_)
+        {
+            rect = EditorRect{};
+        }
+        for (EditorRect &rect : seams_)
+        {
+            rect = EditorRect{};
+        }
+    }
+
     void EditorLayoutModel::ResolveNode(int node_index, const EditorRect &rect)
     {
         if (node_index < 0 || node_index >= node_count_)

@@ -1,12 +1,13 @@
 # Terrain PCG architecture
 
-**Status: TP1 headless core/evaluator implemented; later stages proposed.** User scope: heightfield terrain,
+**Status: TP1-TP3 authoring, preview replacement, and native bake implemented; TP4 postprocess prototypes started; catalog-promotion failure injection and high-count lifecycle stress remain open.** User scope: heightfield terrain,
 authoring in a dedicated tool, baking into engine assets, extensible operators,
 future processing of other geometry, and rain/hydraulic and wind erosion.
 The roadmap is [TODO.md](TODO.md); source findings and algorithm choices are in
 [references.md](references.md). The execution contract is
 [the terrain spec](../../.spec/specs/terrain-pcg-authoring.md).
-The headless core/evaluator design is [TP1](.plan/TP1.md).
+The stage designs are [TP1](.plan/TP1.md), [TP2](.plan/TP2.md), and
+[TP3](.plan/TP3.md).
 
 ## Decision and boundary
 
@@ -31,7 +32,7 @@ Proposed source/target boundaries, to be created when their consumer lands:
 | `product/` / `TerrainCore` | Domain, fields, mesh values, recipe schema, results | Bounded Core/math utilities; no AssetManager, Editor, Render, RHI |
 | `evaluation/`, `operators/` / `TerrainGeneration` | Typed operator registry, DAG evaluation, solvers, cache, jobs | TerrainCore and CPU job infrastructure |
 | `import/` / `TerrainImport` | Source dependency decoding, native bake, archive publication | TerrainGeneration and Asset import/cook |
-| `tools/` / `TerrainTools` | Authoring session, UI, preview requests, host adapter, commands | Generation, import, Runtime/Render, Editor UI |
+| `tools/` / `TerrainTools` | Authoring session, UI, preview requests, host adapter, commands | Generation, import, Runtime/Gameplay/Render, Editor UI |
 | Future runtime adapter | Specialized terrain residency/LOD when justified | Baked CPU products and value-only Render source contracts |
 
 Normal baked mesh terrain must load with terrain authoring disabled. Asset owns
@@ -41,12 +42,50 @@ Graphics owns GPU objects and retirement. Generation jobs own their temporary
 buffers and publish immutable values. Neither operators nor UI own backend
 buffers or reach into a Vulkan/OpenGL renderer.
 
+## Gameplay representation and renderer reuse
+
+PCG owns algorithms and CPU data: fields, drainage, mesh values and placement
+values. TerrainCore/TerrainGeneration must not depend on Gameplay, Render,
+Graphics or Editor. The viewer/runtime integration adapter consumes a finished
+result, registers its CPU assets through Asset and prepares them for Render,
+then creates or updates Gameplay-owned Actors/components using logical AssetIDs.
+
+```text
+TerrainGeneration -> immutable fields / MeshData / placement values
+  -> Asset registration + Resource/Render preparation
+  -> preview GameplayWorld -> Actor + MeshComponent
+  -> copied Render source descriptions -> RenderSystem -> Graphics/RHI
+```
+
+A terrain instance can be represented as an Actor composition. Initially use
+`CreateStaticMeshActor` and the existing MeshComponent; a multi-chunk terrain
+can use an Actor with multiple mesh components or an adapter-managed Actor group. Add a module-owned
+TerrainComponent/factory only when terrain-specific chunk management, queries,
+editing or collision integration justify it. Gameplay remains unaware of PCG
+algorithms, and the Actor/component never owns GPU objects or runs generation
+inside rendering. The authoring session owns generation jobs and applies
+completed revisions through the integration adapter at the owning thread's
+safe point.
+
+The dedicated terrain mode reuses a minimal GameplayWorld for preview mesh,
+camera and light Actors, plus the shared RenderSystem. It skips ordinary game
+Level instantiation and player-controller setup. Its viewer UI reuses EditorUI's
+ImGui backend and shared dock host for the terrain view, heightmap, performance
+profile, log, and an initially empty controls panel. Mode isolation is isolation
+of composition and session state, not a replacement world or renderer. Runtime
+coordinates ownership and tears down preview Actors and their source tokens
+before Render shutdown. Reusing MeshComponent does not remove the separate
+generated-asset/catalog publication prerequisite.
+
 ## Source-grounded integration constraints
 
 Current code already provides:
 
-- Optional feature registration in
-  [`module_bootstrap.cpp`](../../engine/module/module_bootstrap.cpp).
+- Generic statically linked module contributions through
+  [`module_registration.h`](../../engine/module/module_registration.h): each
+  optional module owns its registration callback; the build composition adds
+  the enabled registration objects, and `module_bootstrap.cpp` only dispatches
+  the registry.
 - A host lifecycle/factory contract in
   [`application_host.h`](../../engine/runtime/host/application_host.h).
 - Custom Asset type and import-provider registries, without terrain cases in
@@ -59,13 +98,15 @@ Current code already provides:
   [`render_source.h`](../../engine/runtime/render/render_source.h),
   [`prepared_render_asset_catalog.h`](../../engine/runtime/render/prepared_render_asset_catalog.h).
 
-There are two prerequisites, not already-landed capabilities. Scene startup
-and camera/Editor work in `engine.cpp` have `ApplicationMode::Scene3D` gates;
-`Scene3DHost` is currently a thin coordinator over RuntimeContext. Adding a
-host enum alone does not give a terrain host a functional 3D scene. Also,
-`RuntimeContext::ReloadStartupLevel` reinstantiates the loaded Level; it does
-not reload disk contents or republish generated geometry into the prepared
-Render catalog. TP3 must design these two bounded seams before live preview.
+The `terrain-viewer` host composes Runtime's existing scene services without
+loading a game Level or promoting the full scene editor workspace. It initializes
+the lightweight Terrain viewer panels through the shared EditorUI presentation
+backend. Runtime prepares explicit host asset roots into the same immutable
+catalog used by Level startup, then follows the normal renderer promotion path.
+`RuntimeContext::ReloadStartupLevel` still
+reinstantiates the loaded Level; it does not reload disk contents or republish
+generated geometry into the prepared Render catalog. TP3 owns transactional
+replacement of generated preview assets.
 
 ## Generation data flow
 
@@ -106,9 +147,10 @@ conversion. Do not infer dimensions from the square root of buffer length.
 Bedrock elevation, loose sediment thickness, erodibility, rainfall, water depth,
 suspended sediment, and velocity are distinct channels with stated units.
 
-Mesh support is incremental. TP2 can sample a imported mesh into a heightfield
-for reference landforms/obstacles, with explicit projection direction and loss
-of overhangs. TP8 adds actual mesh modification. A heightfield hydraulic
+Mesh support is incremental. TP2 vertically projects imported `MeshData` into
+a heightfield by selecting the highest triangle at each X/Z sample; overhangs
+and underside surfaces are lost and no-hit samples use an explicit fallback
+height. TP8 adds actual mesh modification. A heightfield hydraulic
 operator cannot accept an arbitrary mesh just because both are geometry.
 Mesh erosion needs its own adjacency/discretization and transport rules;
 topology-changing cuts need remeshing or a volume representation.
@@ -157,6 +199,26 @@ exposure and authored masks. River features come from drainage topology and
 carving constraints; a water height/color threshold alone does not create a
 river network. Full animated water rendering is a separate feature.
 
+Terrain surface authoring uses a data-driven `TerrainLayerMaterial` profile:
+stable layer IDs reference ordinary PBR texture sets, and layer count is asset
+data rather than a renderer constant. A monotone normalized-height remap is a
+PCG heightfield operation before erosion, derived slopes and mesh conversion;
+it can compress an authored ground band such as 0.2–0.5 into 0.2–0.25. Material
+height bands blend only near their local configured thresholds, and slope
+overlays affect only their configured elevation range, so low-water and grass
+bands remain elevation-driven. The initial viewer/bake reuses the ordinary
+mesh/material Render path. Future masks can add drainage, wetness and authored
+data behind the same profile; a low elevation water material is only a visual
+mask and does not create a river network or animated water body.
+
+Erosion is a postprocess in the generation graph after base terrain
+preparation, not a responsibility of a specific Perlin/noise generator. TP4
+starts with deterministic talus relaxation and an implicit slope-exponent-one
+stream-power incision operator that recomputes D8 routing after each iteration.
+Hydraulic transport needs explicit water/sediment/bedrock state and source/sink
+accounting; the height-only prototypes do not claim those solver contracts are
+complete.
+
 ## Evaluation, determinism and lifetime
 
 - An authoring session owns editable recipes; evaluation receives an immutable
@@ -195,13 +257,12 @@ camera, diagnostics and job lifecycle. Ordinary Scene3D startup must not load
 terrain authoring or execute its generation jobs. Baked output is integrated
 with normal Scene3D only after it works in the dedicated mode.
 
-TP3 first defines the minimal neutral scene-service composition needed to run
-the existing renderer under this host, then brings up `terrain-viewer` with a
-fixed preview mesh before connecting generation and baking. Scene services
-are explicitly selected by the host; do not enable the game Level startup,
-controllers or unrelated editor panels as side effects of rendering a preview.
-If the composition prerequisite is blocked, keep the headless stages progressing
-and viewer acceptance open. A Scene3D terrain panel is not the fallback release.
+TP2 includes `terrain-viewer` as the requested first view mode. It creates a
+minimal GameplayWorld with generated mesh, camera and light Actors, skips game
+Level instantiation and the full Editor workspace, and promotes its generated
+mesh and material through the shared RenderSystem. Terrain viewer mode has a
+small docked UI on the existing EditorUI presentation path. A Scene3D terrain
+panel is not the fallback release.
 
 Debugging must be possible without a complete game scene. Expose a fixed
 recipe/seed/camera fixture, pause and single-step solver iterations, inspect
@@ -217,10 +278,12 @@ mesh/material payloads outside Render, publish a revision at a safe frame
 boundary through a bounded prepared-asset update, replace logical source
 handles, and retire superseded resources through existing Render/Graphics
 owners. Existing source creation alone cannot add a missing catalog asset.
-TP3 must define commit/rollback and cancellation races; the baseline may use
-an explicit synchronization point before optimizing replacement. No direct
-AssetManager access from a terrain render pass, in-place mutation of a
-published MeshResource, or private backend upload shortcut.
+TP3 implements this baseline with a Render frame-boundary update and an
+explicit synchronization point before scene-owned resolver/material teardown.
+Injected catalog-promotion rollback and high-count replacement retirement stress
+remain acceptance work. No direct AssetManager access from a terrain render
+pass, in-place mutation of a published MeshResource, or private backend upload
+shortcut.
 
 ## Authoring and baked products
 

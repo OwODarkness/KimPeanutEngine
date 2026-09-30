@@ -1696,6 +1696,7 @@ namespace kpengine::asset
         NativeMaterialConversionSettings conversion_settings{
             asset_root, request.settings.shader_asset_path, request.settings.texture_settings,
             request.settings.emit_texture_profile_variants};
+        conversion_settings.archive_root = archive_root;
         NativeMaterialCookPlan cook_plan;
         try
         {

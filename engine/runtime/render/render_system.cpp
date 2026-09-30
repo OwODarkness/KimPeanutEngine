@@ -217,12 +217,57 @@ namespace kpengine::render
         return {false, last_diagnostic_};
     }
 
+    uint64_t RenderSystem::QueuePreparedAssetsUpdate(
+        std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets)
+    {
+        if (!prepared_assets) return 0;
+        std::lock_guard lock(request_mutex_);
+        const uint64_t serial = next_catalog_update_++;
+        pending_catalog_update_ = std::make_pair(serial, std::move(prepared_assets));
+        return serial;
+    }
+
     bool RenderSystem::BeginFrame(float delta_time)
     {
         if (lifecycle_state_ != RenderSystemLifecycleState::Ready &&
             lifecycle_state_ != RenderSystemLifecycleState::PresentationReady)
         {
             return false;
+        }
+        std::optional<std::pair<uint64_t,
+            std::shared_ptr<const PreparedRenderAssetCatalog>>> catalog_update;
+        {
+            std::lock_guard lock(request_mutex_);
+            catalog_update = std::exchange(pending_catalog_update_, std::nullopt);
+        }
+        if (catalog_update)
+        {
+            const auto previous_catalog = prepared_assets_;
+            if (lifecycle_state_ == RenderSystemLifecycleState::Ready)
+            {
+                CleanupSceneState();
+                lifecycle_state_ = RenderSystemLifecycleState::PresentationReady;
+            }
+            const RenderSystemInitResult promoted = PromoteToScene(catalog_update->second);
+            if (!promoted)
+            {
+                const std::string replacement_diagnostic = promoted.diagnostic;
+                if (previous_catalog)
+                {
+                    const RenderSystemInitResult restored = PromoteToScene(previous_catalog);
+                    if (!restored)
+                    {
+                        last_diagnostic_ = replacement_diagnostic +
+                            "; previous render catalog could not be restored: " + restored.diagnostic;
+                    }
+                }
+                else
+                {
+                    last_diagnostic_ = replacement_diagnostic;
+                }
+                return false;
+            }
+            applied_catalog_update_.store(catalog_update->first, std::memory_order_release);
         }
         const auto frame_started = std::chrono::steady_clock::now();
         profile_frame_start_ = frame_started;

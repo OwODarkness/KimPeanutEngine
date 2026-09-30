@@ -273,8 +273,15 @@ namespace kpengine::runtime
         }
     }
 
-    RuntimeScreenshotService::RuntimeScreenshotService(render::IRenderCaptureService &capture_service)
-        : capture_service_(capture_service)
+    RuntimeScreenshotService::RuntimeScreenshotService(
+        CaptureServiceResolver capture_service_resolver)
+        : capture_service_resolver_(std::move(capture_service_resolver))
+    {
+    }
+
+    RuntimeScreenshotService::RuntimeScreenshotService(
+        render::IRenderCaptureService &capture_service)
+        : RuntimeScreenshotService([&capture_service] { return &capture_service; })
     {
     }
 
@@ -307,7 +314,15 @@ namespace kpengine::runtime
         }
 
         auto callback = std::make_shared<ScreenshotCallback>(std::move(on_completed));
-        const bool accepted = capture_service_.RequestCapture(
+        render::IRenderCaptureService *const capture_service =
+            capture_service_resolver_ ? capture_service_resolver_() : nullptr;
+        if (capture_service == nullptr)
+        {
+            (*callback)({ScreenshotResultStatus::CaptureUnavailable, {},
+                         "Render capture service is unavailable"});
+            return true;
+        }
+        const bool accepted = capture_service->RequestCapture(
             request.capture,
             [export_request, callback](render::CaptureResult capture_result)
             {

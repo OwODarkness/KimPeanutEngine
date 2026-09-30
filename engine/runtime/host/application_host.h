@@ -9,6 +9,9 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
+
+#include "asset/common.h"
 
 namespace kpengine
 {
@@ -29,6 +32,7 @@ namespace kpengine::runtime
         Scene3D,
         Live2DViewer,
         PanelViewer,
+        TerrainViewer,
     };
 
     const char *ApplicationModeName(ApplicationMode mode) noexcept;
@@ -41,8 +45,23 @@ namespace kpengine::runtime
 
         virtual const char *Name() const noexcept = 0;
         virtual bool Initialize(Engine &engine, std::string &diagnostic) = 0;
+        // Optional UI/presentation setup runs on Runtime's render thread after
+        // the shared window and RenderSystem are ready.
+        virtual bool InitializePresentation(Engine &engine,
+                                            std::string &diagnostic)
+        {
+            (void)engine;
+            (void)diagnostic;
+            return true;
+        }
         virtual bool Tick(float delta_time, std::string &diagnostic) = 0;
         virtual bool RecordFrame(std::string &diagnostic) = 0;
+        // Runs inside Runtime's editor-composite pass when the host supplies UI.
+        virtual bool RenderPresentation(std::string &diagnostic)
+        {
+            (void)diagnostic;
+            return true;
+        }
         virtual bool ShouldClose() const noexcept { return false; }
         // The window this host presents into, when it owns one. A host that
         // presents through Runtime's shared window returns nullptr, and callers
@@ -64,6 +83,8 @@ namespace kpengine::runtime
             (void)diagnostic;
             return true;
         }
+        // Roots for hosts that prepare renderable assets without a game Level.
+        virtual std::vector<asset::AssetID> GetRenderAssetRoots() const { return {}; }
         // GPU/window teardown runs on the render thread. The default host has
         // no render-thread-only resources; Shutdown remains the final owner
         // teardown called after the Engine joins that thread.
@@ -93,7 +114,7 @@ namespace kpengine::runtime
                                                   std::string &diagnostic) const;
 
     private:
-        static constexpr std::size_t kModeCount = 3;
+        static constexpr std::size_t kModeCount = 4;
 
         static std::size_t ModeIndex(ApplicationMode mode) noexcept;
 

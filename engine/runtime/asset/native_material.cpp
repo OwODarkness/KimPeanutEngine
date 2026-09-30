@@ -56,6 +56,45 @@ namespace kpengine::asset
             return stream.str();
         }
 
+        std::string MaterialShaderReference(
+            const NativeMaterialConversionSettings &settings)
+        {
+            const std::string shader_path =
+                NormalizeAssetRelativePath(settings.shader_asset_path);
+            if (settings.archive_root.empty())
+            {
+                return "../../" + shader_path;
+            }
+
+            std::error_code error;
+            const std::filesystem::path asset_root =
+                std::filesystem::absolute(settings.asset_root, error).lexically_normal();
+            if (error)
+            {
+                Fail(NativeMaterialErrorCode::InvalidArgument,
+                     "could not resolve the material Asset root");
+            }
+            const std::filesystem::path archive_root =
+                std::filesystem::absolute(settings.archive_root, error).lexically_normal();
+            if (error)
+            {
+                Fail(NativeMaterialErrorCode::InvalidArgument,
+                     "could not resolve the material archive root");
+            }
+            const std::filesystem::path shader_file =
+                (asset_root / shader_path).lexically_normal();
+            const std::filesystem::path material_folder =
+                (archive_root / "materials").lexically_normal();
+            const std::filesystem::path reference =
+                shader_file.lexically_relative(material_folder);
+            if (reference.empty() || reference.is_absolute())
+            {
+                Fail(NativeMaterialErrorCode::InvalidArgument,
+                     "could not make the material shader reference archive-relative");
+            }
+            return reference.generic_string();
+        }
+
         std::string JsonString(std::string_view value)
         {
             std::string result;
@@ -598,7 +637,8 @@ namespace kpengine::asset
             material_plan.source_material_index = material_index;
             const auto add_texture = [&](const std::string &name, const std::string &reference,
                                          MaterialTextureColorSpace color_space,
-                                         data::TextureSemantic semantic)
+                                         data::TextureSemantic semantic,
+                                         MaterialTextureChannel channel)
             {
                 if (reference.empty()) return;
                 const ImportedImageSource *const image = FindImage(document, reference);
@@ -616,18 +656,29 @@ namespace kpengine::asset
                         {static_cast<std::size_t>(image - document.images.data()), semantic});
                 }
                 material_plan.texture_bindings.push_back(
-                    {name, color_space, ChannelFor(name), iterator->second});
+                    {name, color_space, channel, iterator->second});
             };
             add_texture("base_color_texture", source.base_color_texture,
-                        MaterialTextureColorSpace::Srgb, data::TextureSemantic::Color);
+                        MaterialTextureColorSpace::Srgb, data::TextureSemantic::Color,
+                        MaterialTextureChannel::Rgba);
             add_texture("normal_texture", source.normal_texture,
-                        MaterialTextureColorSpace::Linear, data::TextureSemantic::Normal);
-            add_texture("metallic_texture", source.metallic_roughness_texture,
-                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
-            add_texture("roughness_texture", source.metallic_roughness_texture,
-                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::Normal,
+                        MaterialTextureChannel::Rgba);
+            add_texture("metallic_texture", source.metallic_texture.empty()
+                                                   ? source.metallic_roughness_texture
+                                                   : source.metallic_texture,
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear,
+                        source.metallic_texture.empty() ? MaterialTextureChannel::Blue
+                                                        : MaterialTextureChannel::Red);
+            add_texture("roughness_texture", source.roughness_texture.empty()
+                                                    ? source.metallic_roughness_texture
+                                                    : source.roughness_texture,
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear,
+                        source.roughness_texture.empty() ? MaterialTextureChannel::Green
+                                                         : MaterialTextureChannel::Red);
             add_texture("occlusion_texture", source.occlusion_texture,
-                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear);
+                        MaterialTextureColorSpace::Linear, data::TextureSemantic::PackedLinear,
+                        MaterialTextureChannel::Red);
             plan.materials.push_back(std::move(material_plan));
         }
         return plan;
@@ -729,7 +780,7 @@ namespace kpengine::asset
             ValidateMaterialSource(source);
             MaterialResource material{};
             material.version = kNativeMaterialSchemaVersion;
-            material.shader_path = "../../" + NormalizeAssetRelativePath(settings.shader_asset_path);
+            material.shader_path = MaterialShaderReference(settings);
             material.surface.shading_model = MaterialShadingModel::StandardPbr;
             material.surface.double_sided = source.double_sided;
             material.surface.cull_mode = source.double_sided ? MaterialCullMode::None : MaterialCullMode::Back;
