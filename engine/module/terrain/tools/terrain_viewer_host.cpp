@@ -31,6 +31,44 @@ namespace kpengine::terrain
 {
     namespace
     {
+        std::vector<std::uint8_t> BuildPreviewRiverMask(const ScalarField2D &heightfield)
+        {
+            const GridDomain2D &domain = heightfield.Domain();
+            const std::size_t sample_count = heightfield.Samples().size();
+            const DrainageNetwork drainage = RouteDrainage(
+                heightfield, DrainageOutletPolicy::Perimeter);
+            const double river_threshold = std::max(128.0,
+                static_cast<double>(sample_count) * 0.01);
+            std::vector<std::uint8_t> centerline(sample_count, 0);
+            for (std::size_t index = 0; index < sample_count; ++index)
+                if (heightfield.Samples()[index] > 0.5f &&
+                    drainage.accumulation_cells[index] >= river_threshold)
+                    centerline[index] = 1;
+
+            std::vector<std::uint8_t> river_mask = centerline;
+            for (std::uint32_t y = 0; y < domain.height; ++y)
+                for (std::uint32_t x = 0; x < domain.width; ++x)
+                {
+                    const std::size_t index = static_cast<std::size_t>(y) * domain.width + x;
+                    if (!centerline[index]) continue;
+                    for (int dy = -1; dy <= 1; ++dy)
+                        for (int dx = -1; dx <= 1; ++dx)
+                        {
+                            if (dx != 0 && dy != 0) continue;
+                            const int nx = static_cast<int>(x) + dx;
+                            const int ny = static_cast<int>(y) + dy;
+                            if (nx < 0 || ny < 0 || nx >= static_cast<int>(domain.width) ||
+                                ny >= static_cast<int>(domain.height))
+                                continue;
+                            const std::size_t neighbor = static_cast<std::size_t>(ny) * domain.width +
+                                static_cast<std::uint32_t>(nx);
+                            if (heightfield.Samples()[neighbor] > 0.5f)
+                                river_mask[neighbor] = 1;
+                        }
+                }
+            return river_mask;
+        }
+
         std::uint8_t LinearToSrgbByte(const float linear)
         {
             const float srgb = linear <= 0.0031308f
@@ -41,13 +79,15 @@ namespace kpengine::terrain
         }
 
         bool RegisterTerrainPreviewMaterial(const data::MeshData &mesh,
-                                            const std::uint32_t width,
-                                            const std::uint32_t height,
+                                            const ScalarField2D &heightfield,
                                             std::vector<asset::AssetID> &material_ids,
                                             std::vector<asset::AssetID> &texture_ids,
                                             std::string &diagnostic)
         {
             using namespace asset;
+            const GridDomain2D &domain = heightfield.Domain();
+            const std::uint32_t width = domain.width;
+            const std::uint32_t height = domain.height;
             static std::atomic<std::uint64_t> revision{0};
             AssetManager &assets = AssetManager::GetInstance();
             if (width < 2 || height < 2 ||
@@ -67,6 +107,14 @@ namespace kpengine::terrain
 
             constexpr std::array<float, 3> dirt_color{0.24f, 0.12f, 0.075f};
             constexpr std::array<float, 3> grass_color{0.11f, 0.22f, 0.04f};
+            constexpr std::array<float, 3> river_color{0.0284f, 0.2159f, 0.5271f};
+            constexpr std::array<float, 3> snow_color{0.8070f, 0.8550f, 0.8880f};
+            constexpr float snow_start = 0.94f;
+            constexpr float snow_full = 0.99f;
+            const std::vector<std::uint8_t> river_mask = BuildPreviewRiverMask(heightfield);
+            const auto [minimum_height, maximum_height] = std::minmax_element(
+                heightfield.Samples().begin(), heightfield.Samples().end());
+            const float height_range = *maximum_height - *minimum_height;
             auto texture = std::make_shared<TextureResource>();
             texture->channel_count = 4;
             texture->data->width = width;
@@ -80,11 +128,22 @@ namespace kpengine::terrain
                     const std::size_t vertex_index = static_cast<std::size_t>(y) * width + x;
                     const float normal_y = std::clamp(mesh.vertices[vertex_index].normal.y_, 0.0f, 1.0f);
                     const float grass_ratio = std::clamp((normal_y - 0.70f) / 0.28f, 0.0f, 1.0f);
+                    const float normalized_height = height_range > std::numeric_limits<float>::epsilon()
+                        ? (heightfield.Samples()[vertex_index] - *minimum_height) / height_range
+                        : 0.0f;
+                    const float snow_t = std::clamp(
+                        (normalized_height - snow_start) / (snow_full - snow_start), 0.0f, 1.0f);
+                    const float snow_ratio = snow_t * snow_t * (3.0f - 2.0f * snow_t);
+                    const float water_ratio = river_mask[vertex_index] && snow_ratio < 0.5f ? 1.0f : 0.0f;
                     const std::size_t pixel_index = vertex_index * 4;
                     for (std::size_t channel = 0; channel < 3; ++channel)
                     {
-                        const float color = dirt_color[channel] * (1.0f - grass_ratio) +
+                        const float ground_color = dirt_color[channel] * (1.0f - grass_ratio) +
                             grass_color[channel] * grass_ratio;
+                        const float snowy_color = ground_color * (1.0f - snow_ratio) +
+                            snow_color[channel] * snow_ratio;
+                        const float color = snowy_color * (1.0f - water_ratio) +
+                            river_color[channel] * water_ratio;
                         texture->data->pixels[pixel_index + channel] = LinearToSrgbByte(color);
                     }
                     texture->data->pixels[pixel_index + 3] = 255;
@@ -251,6 +310,18 @@ namespace kpengine::terrain
             return false;
         };
 
+        const std::string environment_path =
+            (std::filesystem::path{GetAssetDirectory()} /
+             "texture/hdr/qwantani_dusk_2_puresky_4k.hdr").string();
+        environment_texture_ = asset::AssetManager::GetInstance().LoadSync(environment_path);
+        if (!environment_texture_.IsValid())
+            return fail("could not load the terrain viewer HDR sky environment");
+        render_environment_source_ = {environment_texture_, 0.25f};
+        render_environment_handle_ = runtime::global_runtime_context.render_system_
+            ->GetEnvironmentSourceSink()->EnqueueCreate(render_environment_source_);
+        if (!render_environment_handle_.IsValid())
+            return fail("RenderSystem rejected the terrain viewer environment source");
+
         data::MeshData mesh_data;
         spatial::AABB bounds;
         recipe_ = std::make_unique<TerrainRecipe>();
@@ -261,8 +332,8 @@ namespace kpengine::terrain
             return false;
         }
         AssignTerrainMaterialSections(mesh_data);
-        if (!RegisterTerrainPreviewMaterial(mesh_data, recipe_->domain.width,
-                recipe_->domain.height, terrain_material_assets_, terrain_texture_assets_, diagnostic))
+        if (!RegisterTerrainPreviewMaterial(mesh_data, *preview_heightfield_,
+                terrain_material_assets_, terrain_texture_assets_, diagnostic))
             return fail("could not prepare terrain slope-color material: " + diagnostic);
         operator_registry_ = std::make_shared<OperatorRegistry>();
         if (!operator_registry_->RegisterBuiltins(diagnostic)) return false;
@@ -314,6 +385,7 @@ namespace kpengine::terrain
                              terrain_material_assets_.end());
         render_roots_.insert(render_roots_.end(), terrain_texture_assets_.begin(),
                              terrain_texture_assets_.end());
+        render_roots_.push_back(environment_texture_);
 
         gameplay::StaticMeshActorDesc terrain_desc{};
         terrain_desc.mesh_asset = generated_mesh_;
@@ -626,6 +698,7 @@ namespace kpengine::terrain
                                  terrain_material_assets_.end());
             render_roots_.insert(render_roots_.end(), terrain_texture_assets_.begin(),
                                  terrain_texture_assets_.end());
+            render_roots_.push_back(environment_texture_);
             last_evaluation_ = pending_preview_->evaluation
                 ? std::make_unique<EvaluationResult>(*pending_preview_->evaluation)
                 : nullptr;
@@ -953,8 +1026,8 @@ namespace kpengine::terrain
         }
         std::vector<asset::AssetID> material_ids;
         std::vector<asset::AssetID> texture_ids;
-        if (!RegisterTerrainPreviewMaterial(mesh_data, heightfield->Domain().width,
-                heightfield->Domain().height, material_ids, texture_ids, diagnostic))
+        if (!RegisterTerrainPreviewMaterial(mesh_data, *heightfield,
+                material_ids, texture_ids, diagnostic))
         {
             assets.UnRegisterAsset(mesh_id);
             return false;
@@ -963,9 +1036,10 @@ namespace kpengine::terrain
         std::vector<asset::AssetID> replacement_roots{mesh_id};
         replacement_roots.insert(replacement_roots.end(), material_ids.begin(), material_ids.end());
         replacement_roots.insert(replacement_roots.end(), texture_ids.begin(), texture_ids.end());
+        replacement_roots.push_back(environment_texture_);
         const runtime::RuntimeContext::StartupResult queued =
             runtime::global_runtime_context.QueueRenderAssetsReplacement(
-                replacement_roots, catalog_serial);
+                replacement_roots, catalog_serial, GetRenderEnvironmentSource());
         if (!queued)
         {
             for (const asset::AssetID id : material_ids) assets.UnRegisterAsset(id);
@@ -1010,6 +1084,13 @@ namespace kpengine::terrain
 
     void TerrainViewerHost::ShutdownRenderThread() noexcept
     {
+        if (render_environment_handle_.IsValid() &&
+            runtime::global_runtime_context.render_system_ != nullptr)
+        {
+            (void)runtime::global_runtime_context.render_system_
+                ->GetEnvironmentSourceSink()->EnqueueDestroy(render_environment_handle_);
+            render_environment_handle_ = {};
+        }
         if (terrain_editor_ != nullptr)
         {
             terrain_editor_->Shutdown();

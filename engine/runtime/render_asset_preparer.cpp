@@ -38,12 +38,13 @@ namespace kpengine::runtime
 
             RenderAssetPreparationResult Run(asset::AssetID level_asset)
             {
-                return Run(level_asset, {});
+                return Run(level_asset, {}, {});
             }
 
             RenderAssetPreparationResult Run(
                 asset::AssetID level_asset,
-                const std::vector<asset::AssetID> &roots)
+                const std::vector<asset::AssetID> &roots,
+                asset::AssetID environment_texture)
             {
                 if (api_type_ != GraphicsAPIType::GRAPHICS_API_VULKAN &&
                     api_type_ != GraphicsAPIType::GRAPHICS_API_OPENGL)
@@ -64,6 +65,10 @@ namespace kpengine::runtime
                     return Failure("render preparation services are incomplete");
                 }
                 if (level_asset.IsValid() && !Visit(level_asset))
+                {
+                    return Failure(diagnostic_);
+                }
+                if (environment_texture.IsValid() && !Visit(environment_texture))
                 {
                     return Failure(diagnostic_);
                 }
@@ -101,7 +106,7 @@ namespace kpengine::runtime
                 build.prepared_shader_count = hooks_.processed_shader_count();
                 build.texture_metrics = level_texture_metrics;
 
-                if (!PrepareEnvironment(level_asset, build))
+                if (!PrepareEnvironment(level_asset, environment_texture, build))
                 {
                     return Failure(diagnostic_);
                 }
@@ -274,22 +279,33 @@ namespace kpengine::runtime
             }
 
             bool PrepareEnvironment(asset::AssetID level_asset,
+                                    asset::AssetID environment_texture,
                                     render::PreparedRenderAssetCatalogBuild &build)
             {
-                const asset::LevelResource *const level =
-                    hooks_.get_asset(level_asset) != nullptr
-                        ? hooks_.get_asset(level_asset)->GetResource<asset::LevelResource>().get()
-                        : nullptr;
-                if (level == nullptr || !level->environment.has_value())
+                asset::AssetID source = environment_texture;
+                if (level_asset.IsValid())
                 {
-                    return true;
+                    const asset::LevelResource *const level =
+                        hooks_.get_asset(level_asset) != nullptr
+                            ? hooks_.get_asset(level_asset)->GetResource<asset::LevelResource>().get()
+                            : nullptr;
+                    if (level != nullptr && level->environment.has_value())
+                    {
+                        source = ResolveDependency(level_asset,
+                            level->environment->texture.dependency_index,
+                            asset::AssetType::KPAT_Texture);
+                        if (!source.IsValid())
+                        {
+                            diagnostic_ = "startup level environment texture dependency is invalid";
+                            return false;
+                        }
+                    }
                 }
-                const asset::AssetID source = ResolveDependency(
-                    level_asset, level->environment->texture.dependency_index,
-                    asset::AssetType::KPAT_Texture);
-                const auto texture = source.IsValid()
-                                          ? hooks_.get_asset(source)->GetResource<asset::TextureResource>()
-                                          : nullptr;
+                if (!source.IsValid()) return true;
+                const asset::Asset *const wrapper = hooks_.get_asset(source);
+                const auto texture = wrapper != nullptr
+                                         ? wrapper->GetResource<asset::TextureResource>()
+                                         : nullptr;
                 if (!source.IsValid() || !texture || !texture->data ||
                     texture->data->format != TextureFormat::TEXTURE_FORMAT_RGBA16F)
                 {
@@ -332,18 +348,19 @@ namespace kpengine::runtime
     RenderAssetPreparationResult RenderAssetPreparer::Prepare(asset::AssetID level_asset,
                                                                GraphicsAPIType api_type) const
     {
-        return Prepare(level_asset, {}, api_type);
+        return Prepare(level_asset, {}, {}, api_type);
     }
 
     RenderAssetPreparationResult RenderAssetPreparer::Prepare(
-        const std::vector<asset::AssetID> &roots, GraphicsAPIType api_type) const
+        const std::vector<asset::AssetID> &roots, GraphicsAPIType api_type,
+        const asset::AssetID environment_texture) const
     {
-        return Prepare({}, roots, api_type);
+        return Prepare({}, roots, environment_texture, api_type);
     }
 
     RenderAssetPreparationResult RenderAssetPreparer::Prepare(
         asset::AssetID level_asset, const std::vector<asset::AssetID> &roots,
-        GraphicsAPIType api_type) const
+        const asset::AssetID environment_texture, GraphicsAPIType api_type) const
     {
         try
         {
@@ -366,7 +383,7 @@ namespace kpengine::runtime
                 { return pipeline.GetProcessedShaderCount(); };
             }
             PreparationTransaction transaction(std::move(hooks), api_type);
-            return transaction.Run(level_asset, roots);
+            return transaction.Run(level_asset, roots, environment_texture);
         }
         catch (const std::exception &error)
         {

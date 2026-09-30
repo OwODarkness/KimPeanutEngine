@@ -14,6 +14,7 @@
 #include "gameplay/actor/actor_types.h"
 #include "evaluation/terrain_generation.h"
 #include "import/terrain_baker.h"
+#include "render/environment_source.h"
 
 namespace kpengine::terrain
 {
@@ -36,6 +37,13 @@ namespace kpengine::terrain
         bool RegisterHostCommands(runtime::command::CommandRegistry &registry,
                                   std::string &diagnostic) override;
         std::vector<asset::AssetID> GetRenderAssetRoots() const override { return render_roots_; }
+        std::optional<render::EnvironmentSourceDesc>
+        GetRenderEnvironmentSource() const override
+        {
+            return render_environment_source_.texture_asset.IsValid()
+                ? std::optional<render::EnvironmentSourceDesc>{render_environment_source_}
+                : std::nullopt;
+        }
         void ShutdownRenderThread() noexcept override;
         void Shutdown() noexcept override;
 
@@ -99,6 +107,9 @@ namespace kpengine::terrain
         gameplay::ActorHandle light_actor_;
         asset::AssetID generated_mesh_;
         asset::AssetID preview_material_;
+        asset::AssetID environment_texture_;
+        render::EnvironmentSourceDesc render_environment_source_{};
+        render::EnvironmentSourceHandle render_environment_handle_;
         std::shared_ptr<const ScalarField2D> preview_heightfield_;
         std::shared_ptr<OperatorRegistry> operator_registry_;
         std::unique_ptr<GenerationExecutor> generation_executor_;

@@ -746,11 +746,13 @@ namespace kpengine
         }
 
         RuntimeContext::StartupResult RuntimeContext::PrepareRenderAssets(
-            const std::vector<asset::AssetID> &roots)
+            const std::vector<asset::AssetID> &roots,
+            const std::optional<render::EnvironmentSourceDesc> &environment)
         {
             EnsureSceneServices();
             const RenderAssetPreparationResult result =
-                RenderAssetPreparer{}.Prepare(roots, graphics_api_type_);
+                RenderAssetPreparer{}.Prepare(roots, graphics_api_type_,
+                    environment.has_value() ? environment->texture_asset : asset::AssetID{});
             if (!result)
             {
                 return {false, result.diagnostic};
@@ -760,9 +762,10 @@ namespace kpengine
         }
 
         RuntimeContext::StartupResult RuntimeContext::QueueRenderAssetsReplacement(
-            const std::vector<asset::AssetID> &roots, uint64_t &serial)
+            const std::vector<asset::AssetID> &roots, uint64_t &serial,
+            const std::optional<render::EnvironmentSourceDesc> &environment)
         {
-            const StartupResult prepared = PrepareRenderAssets(roots);
+            const StartupResult prepared = PrepareRenderAssets(roots, environment);
             if (!prepared) return prepared;
             if (!render_system_)
             {

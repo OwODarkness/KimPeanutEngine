@@ -62,6 +62,16 @@ namespace kpengine::terrain
         constexpr std::uint64_t kFnvOffset = 14695981039346656037ull;
         constexpr std::uint64_t kFnvPrime = 1099511628211ull;
 
+        double SampleTerrainPerlin(const double x, const double z, const std::uint64_t seed)
+        {
+            constexpr double cosine = 0.7986355100472928;
+            constexpr double sine = 0.6018150231520483;
+            const double rotated_x = cosine * x - sine * z;
+            const double rotated_z = sine * x + cosine * z;
+            return 0.5 * (math::PerlinNoise2D(x, z, seed) +
+                          math::PerlinNoise2D(rotated_x, rotated_z, seed));
+        }
+
         struct RemapCurve final
         {
             std::vector<std::array<double, 2>> points;
@@ -424,7 +434,7 @@ namespace kpengine::terrain
                         {
                             const double scaled_x = x * lattice_size * frequency / map_size + offset;
                             const double scaled_y = y * lattice_size * frequency / map_size + offset;
-                            value += amplitude * math::PerlinNoise2D(scaled_x, scaled_y, 0);
+                            value += amplitude * SampleTerrainPerlin(scaled_x, scaled_y, 0);
                             frequency *= lacunarity;
                             amplitude *= persistence;
                         }
@@ -493,7 +503,8 @@ namespace kpengine::terrain
                     for (std::uint32_t octave = 0; octave < octaves && frequency <= nyquist;
                          ++octave, frequency *= 2.0, weight *= persistence)
                     {
-                        sum += math::PerlinNoise2D(x * frequency, z * frequency, seed + octave) * weight;
+                        sum += SampleTerrainPerlin(x * frequency, z * frequency,
+                                                   seed + octave) * weight;
                         total_weight += weight;
                     }
                     return total_weight > 0.0 ? sum / total_weight : 0.0;
@@ -536,7 +547,7 @@ namespace kpengine::terrain
                              ridge_frequency <= nyquist; ++octave, ridge_frequency *= 2.0,
                              ridge_weight *= 0.52)
                         {
-                            const double noise = math::PerlinNoise2D(
+                            const double noise = SampleTerrainPerlin(
                                 wx * ridge_frequency, wz * ridge_frequency,
                                 context.node_seed + 71 + octave);
                             const double ridge = 1.0 - std::abs(noise);
@@ -747,8 +758,9 @@ namespace kpengine::terrain
                         for (std::uint32_t octave = 0; octave < octaves && frequency <= nyquist;
                              ++octave, frequency *= lacunarity, weight *= local_persistence)
                         {
-                            noise_height += math::PerlinNoise2D(wx * frequency, wz * frequency,
-                                                                context.node_seed + octave) * weight;
+                            noise_height += SampleTerrainPerlin(
+                                wx * frequency, wz * frequency,
+                                context.node_seed + octave) * weight;
                             total_weight += weight;
                         }
                         samples[static_cast<std::size_t>(y) * context.domain.width + x] =
@@ -795,8 +807,9 @@ namespace kpengine::terrain
                         for (std::uint32_t octave = 0; octave < octaves && frequency <= nyquist;
                              ++octave, frequency *= lacunarity, weight *= persistence)
                         {
-                            noise_height += math::PerlinNoise2D(wx * frequency, wz * frequency,
-                                                                context.node_seed + octave) * weight;
+                            noise_height += SampleTerrainPerlin(
+                                wx * frequency, wz * frequency,
+                                context.node_seed + octave) * weight;
                             total_weight += weight;
                         }
                         const std::size_t index = static_cast<std::size_t>(y) * context.domain.width + x;
@@ -860,8 +873,10 @@ namespace kpengine::terrain
                         const double wz = context.domain.origin_z_m + y * context.domain.spacing_z_m;
                         const double limit = 0.5 / std::max(context.domain.spacing_x_m, context.domain.spacing_z_m);
                         const double f = std::min(frequency, limit);
-                        const double px = wx + amplitude * math::PerlinNoise2D(wx * f, wz * f, context.node_seed);
-                        const double pz = wz + amplitude * math::PerlinNoise2D(wx * f, wz * f, context.node_seed ^ 0x9e3779b97f4a7c15ull);
+                        const double px = wx + amplitude * SampleTerrainPerlin(
+                            wx * f, wz * f, context.node_seed);
+                        const double pz = wz + amplitude * SampleTerrainPerlin(
+                            wx * f, wz * f, context.node_seed ^ 0x9e3779b97f4a7c15ull);
                         const auto gx = std::clamp((px - context.domain.origin_x_m) / context.domain.spacing_x_m, 0.0, static_cast<double>(context.domain.width - 1));
                         const auto gy = std::clamp((pz - context.domain.origin_z_m) / context.domain.spacing_z_m, 0.0, static_cast<double>(context.domain.height - 1));
                         const auto x0 = static_cast<std::uint32_t>(gx), y0 = static_cast<std::uint32_t>(gy);
@@ -895,7 +910,8 @@ namespace kpengine::terrain
                         double f = frequency;
                         for (std::uint32_t octave = 0; octave < octaves && f <= nyquist; ++octave, f *= 2.0, weight *= 0.5)
                         {
-                            const double n = math::PerlinNoise2D(wx * f, wz * f, context.node_seed + octave);
+                            const double n = SampleTerrainPerlin(
+                                wx * f, wz * f, context.node_seed + octave);
                             detail += (1.0 - std::abs(n)) * weight;
                             total += weight;
                         }

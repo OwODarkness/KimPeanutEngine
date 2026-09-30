@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "asset/common.h"
+#include "render/environment_source.h"
 
 namespace kpengine
 {
@@ -85,6 +86,8 @@ namespace kpengine::runtime
         }
         // Roots for hosts that prepare renderable assets without a game Level.
         virtual std::vector<asset::AssetID> GetRenderAssetRoots() const { return {}; }
+        virtual std::optional<render::EnvironmentSourceDesc>
+        GetRenderEnvironmentSource() const { return std::nullopt; }
         // GPU/window teardown runs on the render thread. The default host has
         // no render-thread-only resources; Shutdown remains the final owner
         // teardown called after the Engine joins that thread.

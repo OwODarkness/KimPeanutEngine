@@ -44,12 +44,13 @@ namespace kpengine::runtime
         RenderAssetPreparationResult Prepare(asset::AssetID level_asset,
                                              GraphicsAPIType api_type) const;
         RenderAssetPreparationResult Prepare(const std::vector<asset::AssetID> &roots,
-                                             GraphicsAPIType api_type) const;
+                                             GraphicsAPIType api_type,
+                                             asset::AssetID environment_texture = {}) const;
 
     private:
         RenderAssetPreparationResult Prepare(
             asset::AssetID level_asset, const std::vector<asset::AssetID> &roots,
-            GraphicsAPIType api_type) const;
+            asset::AssetID environment_texture, GraphicsAPIType api_type) const;
         RenderAssetPreparationHooks hooks_;
     };
 }

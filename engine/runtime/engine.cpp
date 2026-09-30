@@ -578,7 +578,8 @@ namespace kpengine
             {
                 render_asset_result = application_mode_ == ApplicationMode::TerrainViewer
                                           ? global_runtime_context.PrepareRenderAssets(
-                                                application_host_->GetRenderAssetRoots())
+                                                application_host_->GetRenderAssetRoots(),
+                                                application_host_->GetRenderEnvironmentSource())
                                           : global_runtime_context.PrepareRenderAssets();
             }
             catch (const std::exception &error)

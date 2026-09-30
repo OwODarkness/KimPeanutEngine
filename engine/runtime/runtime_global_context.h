@@ -137,9 +137,11 @@ namespace kpengine
             // before the render thread creates any GPU state.
             StartupResult PrepareRenderAssets();
             StartupResult PrepareRenderAssets(
-                const std::vector<asset::AssetID> &roots);
+                const std::vector<asset::AssetID> &roots,
+                const std::optional<render::EnvironmentSourceDesc> &environment = std::nullopt);
             StartupResult QueueRenderAssetsReplacement(
-                const std::vector<asset::AssetID> &roots, uint64_t &serial);
+                const std::vector<asset::AssetID> &roots, uint64_t &serial,
+                const std::optional<render::EnvironmentSourceDesc> &environment = std::nullopt);
             // Narrow test seam for the game-start controller/possession step.
             // Production leaves this unset and uses GameplayWorld's real
             // controller implementation.
