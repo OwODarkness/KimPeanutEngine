@@ -74,7 +74,7 @@ namespace kpengine::terrain
         runtime::Engine &engine,
         std::shared_ptr<const ScalarField2D> heightfield,
         std::string &diagnostic,
-        std::function<void(std::uint64_t, float, float)> regenerate,
+        std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float)> regenerate,
         std::function<void()> cancel,
         std::function<void(int)> execution_control,
         std::function<void(float, float, float)> camera_control,
@@ -221,11 +221,15 @@ namespace kpengine::terrain
         if (heightfield) heightfield_ = std::move(heightfield);
         seed_ = recipe.seed;
         const auto landform = std::find_if(recipe.nodes.begin(), recipe.nodes.end(),
-            [](const RecipeNode &node) { return node.id == "ridged_landform"; });
+            [](const RecipeNode &node) {
+                return node.operator_id == "terrain.heightfield.perlin_fbm";
+            });
         if (landform != recipe.nodes.end())
         {
-            amplitude_m_ = landform->parameters.value("amplitude_m", amplitude_m_);
-            frequency_per_m_ = landform->parameters.value("frequency_per_m", frequency_per_m_);
+            lattice_size_ = landform->parameters.value("lattice_size", lattice_size_);
+            octaves_ = landform->parameters.value("octaves", octaves_);
+            persistence_ = landform->parameters.value("persistence", persistence_);
+            lacunarity_ = landform->parameters.value("lacunarity", lacunarity_);
         }
         generation_status_ = std::move(status);
         generation_diagnostic_ = result.diagnostic;
@@ -333,10 +337,12 @@ namespace kpengine::terrain
         if (!generation_diagnostic_.empty())
             ImGui::TextWrapped("%s", generation_diagnostic_.c_str());
         ImGui::InputScalar("Seed", ImGuiDataType_U64, &seed_);
-        ImGui::InputFloat("Amplitude (m)", &amplitude_m_, 1.0f, 10.0f, "%.2f");
-        ImGui::InputFloat("Frequency (1/m)", &frequency_per_m_, 0.001f, 0.01f, "%.4f");
+        ImGui::InputScalar("Lattice size", ImGuiDataType_U32, &lattice_size_);
+        ImGui::InputScalar("FBM octaves", ImGuiDataType_U32, &octaves_);
+        ImGui::InputFloat("Persistence", &persistence_, 0.05f, 0.1f, "%.2f");
+        ImGui::InputFloat("Lacunarity", &lacunarity_, 0.1f, 0.5f, "%.2f");
         if (ImGui::Button("Regenerate") && regenerate_)
-            regenerate_(seed_, amplitude_m_, frequency_per_m_);
+            regenerate_(seed_, lattice_size_, octaves_, persistence_, lacunarity_);
         ImGui::SameLine();
         if (ImGui::Button("Cancel") && cancel_) cancel_();
         if (ImGui::Button("Pause at node") && execution_control_) execution_control_(0);

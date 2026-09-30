@@ -206,6 +206,25 @@ namespace kpengine::terrain
             HashString(hash, node.operator_id);
             return hash;
         }
+
+        std::uint32_t MurmurFinalize32(std::uint32_t value)
+        {
+            value ^= value >> 16;
+            value *= 0x85ebca6bu;
+            value ^= value >> 13;
+            value *= 0xc2b2ae35u;
+            value ^= value >> 16;
+            return value;
+        }
+
+        std::uint64_t NextTerrainRandom(std::uint64_t &state)
+        {
+            state += 0x9e3779b97f4a7c15ull;
+            std::uint64_t value = state;
+            value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ull;
+            value = (value ^ (value >> 27)) * 0x94d049bb133111ebull;
+            return value ^ (value >> 31);
+        }
     }
 
     nlohmann::json TerrainRecipe::ToJson() const
@@ -370,6 +389,297 @@ namespace kpengine::terrain
                 return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
             }}, diagnostic)) return false;
 
+        if (!Register({"terrain.heightfield.perlin_fbm", 1, {}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &) {
+                const std::uint32_t lattice_size = p.value("lattice_size", 4u);
+                const std::uint32_t octaves = p.value("octaves", 4u);
+                const double persistence = p.value("persistence", 0.5);
+                const double lacunarity = p.value("lacunarity", 2.0);
+                if (context.domain.width != context.domain.height || context.domain.width == 0 ||
+                    lattice_size == 0 || lattice_size > 64 || octaves == 0 || octaves > 8 ||
+                    !std::isfinite(persistence) || persistence < 0.0 || persistence > 1.0 ||
+                    !std::isfinite(lacunarity) || lacunarity < 1.0 || lacunarity > 8.0)
+                    throw std::invalid_argument(
+                        "Perlin fBm needs a square domain, lattice size in [1, 64], 1..8 octaves, "
+                        "persistence in [0, 1] and lacunarity in [1, 8]");
+
+                const std::uint32_t seed_hash = MurmurFinalize32(
+                    static_cast<std::uint32_t>(context.seed));
+                const double random_degrees = static_cast<double>(seed_hash % 100u);
+                const double offset = lattice_size * std::sin(
+                    random_degrees * 3.14159265358979323846 / 180.0);
+                const double map_size = context.domain.width;
+                std::vector<float> samples(context.domain.SampleCount(context.maximum_samples));
+                for (std::uint32_t y = 0; y < context.domain.height; ++y)
+                {
+                    if ((y & 15u) == 0u && context.cancelled && context.cancelled->load())
+                        throw std::runtime_error("evaluation cancelled");
+                    for (std::uint32_t x = 0; x < context.domain.width; ++x)
+                    {
+                        double frequency = 1.0;
+                        double amplitude = 1.0;
+                        double value = 0.0;
+                        for (std::uint32_t octave = 0; octave < octaves; ++octave)
+                        {
+                            const double scaled_x = x * lattice_size * frequency / map_size + offset;
+                            const double scaled_y = y * lattice_size * frequency / map_size + offset;
+                            value += amplitude * math::PerlinNoise2D(scaled_x, scaled_y, 0);
+                            frequency *= lacunarity;
+                            amplitude *= persistence;
+                        }
+                        samples[static_cast<std::size_t>(y) * context.domain.width + x] =
+                            static_cast<float>(0.5 + 0.5 * value);
+                    }
+                }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.height_filter", 1,
+            {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double minimum = p.value("minimum", 0.0);
+                const double maximum = p.value("maximum", 1.0);
+                if (!std::isfinite(minimum) || !std::isfinite(maximum) || maximum < minimum)
+                    throw std::invalid_argument("height filter needs finite ordered bounds");
+                const auto &source = inputs.at("source")->Samples();
+                std::vector<float> samples(source.size());
+                for (std::size_t i = 0; i < source.size(); ++i)
+                {
+                    double height = source[i];
+                    if (height < 0.0) height = std::abs(height);
+                    else if (height < minimum || height > maximum) height *= maximum - minimum;
+                    samples[i] = static_cast<float>(height);
+                }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.erosion.coastal_walk", 1,
+            {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                if (!p.value("enabled", true))
+                    return OperatorOutputs{{"height", inputs.at("source")}};
+                const std::uint32_t erosion_units = p.value("erosion_units_per_edge", 2000u);
+                const std::uint32_t initial_walkers = p.value("initial_walkers", 100u);
+                const double erosion_depth = p.value("erosion_depth", 0.3);
+                if (erosion_units > 1000000u || initial_walkers == 0 || initial_walkers > 4096 ||
+                    !std::isfinite(erosion_depth) || erosion_depth < 0.0 || erosion_depth > 1.0)
+                    throw std::invalid_argument("coastal walk needs bounded erosion units, walkers and depth");
+
+                const auto &source = inputs.at("source")->Samples();
+                const GridDomain2D &domain = context.domain;
+                if (domain.width < 2 || domain.height < 2)
+                    return OperatorOutputs{{"height", inputs.at("source")}};
+                std::vector<float> samples = source;
+                std::uint64_t random_state = context.node_seed;
+                struct Walker { std::uint32_t x; std::uint32_t y; };
+                const auto random_index = [&random_state](std::uint64_t count)
+                { return static_cast<std::uint32_t>(NextTerrainRandom(random_state) % count); };
+                for (std::uint32_t edge = 0; edge < 4; ++edge)
+                {
+                    std::vector<Walker> walkers;
+                    walkers.reserve(initial_walkers);
+                    for (std::uint32_t i = 0; i < initial_walkers; ++i)
+                    {
+                        const std::uint32_t cross_extent = (edge < 2) ? domain.width : domain.height;
+                        const std::int64_t center = static_cast<std::int64_t>(cross_extent / 2);
+                        const std::int64_t half = static_cast<std::int64_t>(cross_extent / 2);
+                        const std::int64_t jitter = static_cast<std::int64_t>(random_index(
+                            static_cast<std::uint64_t>(half * 2 + 1))) - half;
+                        const auto cross = static_cast<std::uint32_t>(std::clamp<std::int64_t>(
+                            center + jitter, 0, cross_extent - 1));
+                        if (edge == 0) walkers.push_back({cross, 0});
+                        else if (edge == 1) walkers.push_back({cross, domain.height - 1});
+                        else if (edge == 2) walkers.push_back({domain.width - 1, cross});
+                        else walkers.push_back({0, cross});
+                    }
+                    for (std::uint32_t step = 0; step < erosion_units && !walkers.empty(); ++step)
+                    {
+                        if ((step & 255u) == 0u && context.cancelled && context.cancelled->load())
+                            throw std::runtime_error("evaluation cancelled");
+                        Walker &walker = walkers.front();
+                        const std::size_t index = static_cast<std::size_t>(walker.y) * domain.width + walker.x;
+                        samples[index] = static_cast<float>(std::clamp(
+                            static_cast<double>(samples[index]) - erosion_depth, 0.0, 1.0));
+                        if (edge < 2)
+                        {
+                            const int direction = random_index(2) == 0 ? -1 : 1;
+                            const int inward = random_index(2) == 0 ? 0 : (edge == 0 ? 1 : -1);
+                            walker.x = static_cast<std::uint32_t>(std::clamp(
+                                static_cast<int>(walker.x) + direction, 0, static_cast<int>(domain.width) - 1));
+                            walker.y = static_cast<std::uint32_t>(std::clamp(
+                                static_cast<int>(walker.y) + inward, 0, static_cast<int>(domain.height) - 1));
+                        }
+                        else
+                        {
+                            const int direction = random_index(2) == 0 ? -1 : 1;
+                            const int inward = random_index(2) == 0 ? 0 : (edge == 2 ? -1 : 1);
+                            walker.y = static_cast<std::uint32_t>(std::clamp(
+                                static_cast<int>(walker.y) + direction, 0, static_cast<int>(domain.height) - 1));
+                            walker.x = static_cast<std::uint32_t>(std::clamp(
+                                static_cast<int>(walker.x) + inward, 0, static_cast<int>(domain.width) - 1));
+                        }
+                        std::rotate(walkers.begin(), walkers.begin() + 1, walkers.end());
+                    }
+                }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.fractal_perlin", 1, {}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &) {
+                const double amplitude = p.at("amplitude_m").get<double>();
+                const double base_frequency = p.at("frequency_per_m").get<double>();
+                const std::uint32_t octaves = p.value("octaves", 6u);
+                const double persistence = p.value("persistence", 0.35);
+                const double lacunarity = p.value("lacunarity", 2.0);
+                struct TerrainArea
+                {
+                    double center_x_m;
+                    double center_z_m;
+                    double radius_m;
+                    double height_offset_m;
+                    double amplitude_scale;
+                    double persistence;
+                };
+                const auto regions = p.value("regions", nlohmann::json::array());
+                const double nyquist = 0.5 / std::max(context.domain.spacing_x_m,
+                                                     context.domain.spacing_z_m);
+                if (!std::isfinite(amplitude) || amplitude < 0.0 ||
+                    !std::isfinite(base_frequency) || base_frequency <= 0.0 || base_frequency > nyquist ||
+                    octaves == 0 || octaves > 12 || !std::isfinite(persistence) ||
+                    persistence < 0.0 || persistence > 1.0 ||
+                    !std::isfinite(lacunarity) || lacunarity < 1.0 || lacunarity > 4.0 ||
+                    !regions.is_array() || regions.size() > 32)
+                    throw std::invalid_argument(
+                        "fractal Perlin needs finite amplitude, a sampled base frequency, 1..12 octaves, "
+                        "persistence in [0, 1], lacunarity in [1, 4] and at most 32 regions");
+
+                std::vector<TerrainArea> areas;
+                areas.reserve(regions.size());
+                for (const auto &region : regions)
+                {
+                    const auto center = region.at("center_xz_m").get<std::array<double, 2>>();
+                    const TerrainArea area{
+                        center[0], center[1], region.at("radius_m").get<double>(),
+                        region.value("height_offset_m", 0.0),
+                        region.value("amplitude_scale", 1.0),
+                        region.value("persistence", persistence)};
+                    if (!std::isfinite(area.center_x_m) || !std::isfinite(area.center_z_m) ||
+                        !std::isfinite(area.radius_m) || area.radius_m <= 0.0 ||
+                        !std::isfinite(area.height_offset_m) ||
+                        !std::isfinite(area.amplitude_scale) || area.amplitude_scale < 0.0 ||
+                        !std::isfinite(area.persistence) || area.persistence < 0.0 ||
+                        area.persistence > 1.0)
+                        throw std::invalid_argument("terrain areas need finite centers, positive radii and valid noise scales");
+                    areas.push_back(area);
+                }
+
+                std::vector<float> samples(context.domain.SampleCount(context.maximum_samples));
+                for (std::uint32_t y = 0; y < context.domain.height; ++y)
+                {
+                    if ((y & 15u) == 0u && context.cancelled && context.cancelled->load())
+                        throw std::runtime_error("evaluation cancelled");
+                    for (std::uint32_t x = 0; x < context.domain.width; ++x)
+                    {
+                        const double wx = context.domain.origin_x_m + x * context.domain.spacing_x_m;
+                        const double wz = context.domain.origin_z_m + y * context.domain.spacing_z_m;
+                        double region_weight = 0.0;
+                        double region_height = 0.0;
+                        double region_amplitude = 0.0;
+                        double region_persistence = 0.0;
+                        for (const TerrainArea &area : areas)
+                        {
+                            const double dx = (wx - area.center_x_m) / area.radius_m;
+                            const double dz = (wz - area.center_z_m) / area.radius_m;
+                            const double edge = std::clamp(1.0 - std::sqrt(dx * dx + dz * dz), 0.0, 1.0);
+                            const double weight_at_area = edge * edge * (3.0 - 2.0 * edge);
+                            region_weight += weight_at_area;
+                            region_height += weight_at_area * area.height_offset_m;
+                            region_amplitude += weight_at_area * area.amplitude_scale;
+                            region_persistence += weight_at_area * area.persistence;
+                        }
+                        double local_height = 0.0;
+                        double local_amplitude = amplitude;
+                        double local_persistence = persistence;
+                        if (region_weight > 0.0)
+                        {
+                            const double blend = std::min(region_weight, 1.0);
+                            local_height = (region_height / region_weight) * blend;
+                            local_amplitude *= 1.0 +
+                                (region_amplitude / region_weight - 1.0) * blend;
+                            local_persistence +=
+                                (region_persistence / region_weight - persistence) * blend;
+                        }
+                        double frequency = base_frequency;
+                        double weight = 1.0;
+                        double total_weight = 0.0;
+                        double noise_height = 0.0;
+                        for (std::uint32_t octave = 0; octave < octaves && frequency <= nyquist;
+                             ++octave, frequency *= lacunarity, weight *= local_persistence)
+                        {
+                            noise_height += math::PerlinNoise2D(wx * frequency, wz * frequency,
+                                                                context.node_seed + octave) * weight;
+                            total_weight += weight;
+                        }
+                        samples[static_cast<std::size_t>(y) * context.domain.width + x] =
+                            static_cast<float>(local_height + local_amplitude * noise_height / total_weight);
+                    }
+                }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.fractal_perlin_detail", 1,
+            {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double amplitude = p.at("amplitude_m").get<double>();
+                const double base_frequency = p.at("frequency_per_m").get<double>();
+                const std::uint32_t octaves = p.value("octaves", 3u);
+                const double persistence = p.value("persistence", 0.5);
+                const double lacunarity = p.value("lacunarity", 2.0);
+                const double nyquist = 0.5 / std::max(context.domain.spacing_x_m,
+                                                     context.domain.spacing_z_m);
+                if (!std::isfinite(amplitude) || amplitude < 0.0 ||
+                    !std::isfinite(base_frequency) || base_frequency <= 0.0 || base_frequency > nyquist ||
+                    octaves == 0 || octaves > 12 || !std::isfinite(persistence) ||
+                    persistence < 0.0 || persistence > 1.0 ||
+                    !std::isfinite(lacunarity) || lacunarity < 1.0 || lacunarity > 4.0)
+                    throw std::invalid_argument(
+                        "Perlin detail needs finite amplitude, a sampled base frequency, 1..12 octaves, "
+                        "persistence in [0, 1] and lacunarity in [1, 4]");
+
+                const auto &source = inputs.at("source")->Samples();
+                std::vector<float> samples(context.domain.SampleCount(context.maximum_samples));
+                for (std::uint32_t y = 0; y < context.domain.height; ++y)
+                {
+                    if ((y & 15u) == 0u && context.cancelled && context.cancelled->load())
+                        throw std::runtime_error("evaluation cancelled");
+                    for (std::uint32_t x = 0; x < context.domain.width; ++x)
+                    {
+                        const double wx = context.domain.origin_x_m + x * context.domain.spacing_x_m;
+                        const double wz = context.domain.origin_z_m + y * context.domain.spacing_z_m;
+                        double frequency = base_frequency;
+                        double weight = 1.0;
+                        double total_weight = 0.0;
+                        double noise_height = 0.0;
+                        for (std::uint32_t octave = 0; octave < octaves && frequency <= nyquist;
+                             ++octave, frequency *= lacunarity, weight *= persistence)
+                        {
+                            noise_height += math::PerlinNoise2D(wx * frequency, wz * frequency,
+                                                                context.node_seed + octave) * weight;
+                            total_weight += weight;
+                        }
+                        const std::size_t index = static_cast<std::size_t>(y) * context.domain.width + x;
+                        samples[index] = static_cast<float>(source[index] +
+                                                            amplitude * noise_height / total_weight);
+                    }
+                }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
         if (!Register({"terrain.heightfield.ridge_curve", 1, {}, {{"height", PortType::Heightfield}},
             [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
                                  const OperatorInputs &) {
@@ -476,14 +786,24 @@ namespace kpengine::terrain
                 if (p.contains("curve_points"))
                 {
                     const RemapCurve curve(p.at("curve_points").get<std::vector<std::array<double, 2>>>());
+                    const bool normalize_input = p.value("normalize_input", true);
                     const auto [minimum, maximum] = std::minmax_element(samples.begin(), samples.end());
                     const double extent = static_cast<double>(*maximum) - *minimum;
-                    if (extent > 0.0)
+                    if (normalize_input)
+                    {
+                        if (extent > 0.0)
+                            for (float &sample : samples)
+                            {
+                                const double normalized = std::clamp((sample - *minimum) / extent, 0.0, 1.0);
+                                sample = static_cast<float>(*minimum + curve.Evaluate(normalized) * extent);
+                            }
+                    }
+                    else
+                    {
                         for (float &sample : samples)
-                        {
-                            const double normalized = std::clamp((sample - *minimum) / extent, 0.0, 1.0);
-                            sample = static_cast<float>(*minimum + curve.Evaluate(normalized) * extent);
-                        }
+                            sample = static_cast<float>(curve.Evaluate(std::clamp(
+                                static_cast<double>(sample), 0.0, 1.0)));
+                    }
                 }
                 else
                 {
@@ -494,6 +814,20 @@ namespace kpengine::terrain
                     for (auto &sample : samples)
                         sample = static_cast<float>(out_min + std::clamp((sample - in_min) / (in_max - in_min), 0.0, 1.0) * (out_max - out_min));
                 }
+                return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
+            }}, diagnostic)) return false;
+
+        if (!Register({"terrain.heightfield.scale", 1,
+            {{"source", PortType::Heightfield}}, {{"height", PortType::Heightfield}},
+            [field_from_samples](const OperatorContext &context, const nlohmann::json &p,
+                                 const OperatorInputs &inputs) {
+                const double scale = p.at("scale").get<double>();
+                const double offset = p.value("offset_m", 0.0);
+                if (!std::isfinite(scale) || scale < 0.0 || !std::isfinite(offset))
+                    throw std::invalid_argument("height scale needs a nonnegative finite scale and finite offset");
+                std::vector<float> samples = inputs.at("source")->Samples();
+                for (float &sample : samples)
+                    sample = static_cast<float>(offset + sample * scale);
                 return OperatorOutputs{{"height", field_from_samples(context, std::move(samples))}};
             }}, diagnostic)) return false;
 

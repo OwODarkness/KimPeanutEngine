@@ -48,7 +48,7 @@ namespace kpengine::terrain
         bool Initialize(runtime::Engine &engine,
                         std::shared_ptr<const ScalarField2D> heightfield,
                         std::string &diagnostic,
-                        std::function<void(std::uint64_t, float, float)> regenerate = {},
+                        std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float)> regenerate = {},
                         std::function<void()> cancel = {},
                         std::function<void(int)> execution_control = {},
                         std::function<void(float, float, float)> camera_control = {},
@@ -75,7 +75,7 @@ namespace kpengine::terrain
         editor::EditorToolRowModel dock_model_;
         editor::EditorSplitterHandles splitter_handles_;
         HeightmapDebugView heightmap_view_;
-        std::function<void(std::uint64_t, float, float)> regenerate_;
+        std::function<void(std::uint64_t, std::uint32_t, std::uint32_t, float, float)> regenerate_;
         std::function<void()> cancel_;
         std::function<void(int)> execution_control_;
         std::function<void(float, float, float)> camera_control_;
@@ -84,11 +84,13 @@ namespace kpengine::terrain
         float camera_pitch_degrees_ = -27.0f;
         float camera_distance_ = 440.0f;
         std::uint64_t seed_ = 128;
-        float amplitude_m_ = 48.0f;
-        float frequency_per_m_ = 0.025f;
+        std::uint32_t lattice_size_ = 4;
+        std::uint32_t octaves_ = 4;
+        float persistence_ = 0.5f;
+        float lacunarity_ = 2.0f;
         std::string generation_status_ = "Ready";
         std::string generation_diagnostic_;
-        std::string selected_field_name_ = "stream_power_incision.height";
+        std::string selected_field_name_ = "height_scale.height";
         std::map<std::string, NodeResult, std::less<>> node_diagnostics_;
         mutable std::mutex snapshot_mutex_;
     };

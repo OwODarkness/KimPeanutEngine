@@ -1,36 +1,63 @@
 {
   "schema_version": 1,
-  "seed": 128,
+  "seed": 312312,
   "domain": {
     "width": 128,
     "height": 128,
-    "origin_x_m": -63.5,
-    "origin_z_m": -63.5,
-    "spacing_x_m": 1.0,
-    "spacing_z_m": 1.0,
+    "origin_x_m": -127.0,
+    "origin_z_m": -127.0,
+    "spacing_x_m": 2.0,
+    "spacing_z_m": 2.0,
     "datum_y_m": 0.0
   },
   "nodes": [
     {
-      "id": "base_height",
-      "operator": "terrain.heightfield.constant",
+      "id": "perlin_fbm",
+      "operator": "terrain.heightfield.perlin_fbm",
       "version": 1,
-      "parameters": { "height_m": 0.0 },
+      "parameters": {
+        "lattice_size": 4,
+        "octaves": 4,
+        "persistence": 0.5,
+        "lacunarity": 2.0
+      },
       "inputs": {}
     },
     {
-      "id": "ridged_landform",
-      "operator": "terrain.heightfield.ridged_detail",
+      "id": "height_filter",
+      "operator": "terrain.heightfield.height_filter",
       "version": 1,
-      "parameters": { "amplitude_m": 48.0, "frequency_per_m": 0.025, "octaves": 5 },
-      "inputs": { "source": { "node": "base_height", "port": "height" } }
+      "parameters": { "minimum": 0.0, "maximum": 1.0 },
+      "inputs": { "source": { "node": "perlin_fbm", "port": "height" } }
     },
     {
-      "id": "terrain_detail",
-      "operator": "terrain.heightfield.domain_warp",
+      "id": "coastal_erosion",
+      "operator": "terrain.erosion.coastal_walk",
       "version": 1,
-      "parameters": { "amplitude_m": 4.0, "frequency_per_m": 0.018 },
-      "inputs": { "source": { "node": "ridged_landform", "port": "height" } }
+      "parameters": {
+        "enabled": false,
+        "erosion_units_per_edge": 2000,
+        "initial_walkers": 100,
+        "erosion_depth": 0.3
+      },
+      "inputs": { "source": { "node": "height_filter", "port": "height" } }
+    },
+    {
+      "id": "height_remap",
+      "operator": "terrain.heightfield.remap",
+      "version": 1,
+      "parameters": {
+        "normalize_input": false,
+        "curve_points": [[0.0, 0.0], [0.2, 0.2], [0.5, 0.25], [1.0, 1.0]]
+      },
+      "inputs": { "source": { "node": "coastal_erosion", "port": "height" } }
+    },
+    {
+      "id": "height_scale",
+      "operator": "terrain.heightfield.scale",
+      "version": 1,
+      "parameters": { "scale": 60.0 },
+      "inputs": { "source": { "node": "height_remap", "port": "height" } }
     }
   ]
 }

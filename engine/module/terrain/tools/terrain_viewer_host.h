@@ -41,15 +41,15 @@ namespace kpengine::terrain
         void Shutdown() noexcept override;
 
     private:
-        void RequestRegenerate(std::uint64_t seed, float amplitude_m,
-                               float frequency_per_m);
+        void RequestRegenerate(std::uint64_t seed, std::uint32_t lattice_size,
+                               std::uint32_t octaves, float persistence, float lacunarity);
         void RequestCancel();
         void RequestExecutionControl(int command);
         void QueueCamera(float yaw_degrees, float pitch_degrees, float distance);
         void RequestBake();
         void ProcessAuthoringCommands();
-        void ApplyRegenerate(std::uint64_t seed, float amplitude_m,
-                             float frequency_per_m);
+        void ApplyRegenerate(std::uint64_t seed, std::uint32_t lattice_size,
+                             std::uint32_t octaves, float persistence, float lacunarity);
         void ApplyCancel();
         void ApplyExecutionControl(int command);
         void ApplyBake();
@@ -78,6 +78,9 @@ namespace kpengine::terrain
             float first = 0.0f;
             float second = 0.0f;
             float third = 0.0f;
+            float fourth = 0.0f;
+            std::uint32_t lattice_size = 4;
+            std::uint32_t octaves = 4;
             int control = 0;
         };
 

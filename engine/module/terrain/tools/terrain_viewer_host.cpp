@@ -36,7 +36,7 @@ namespace kpengine::terrain
 #define KPENGINE_TERRAIN_FIXTURE_DIR ""
 #endif
             const std::string path = std::string(KPENGINE_TERRAIN_FIXTURE_DIR) +
-                                     "/random_256.terrainrecipe.json";
+                                     "/random_128.terrainrecipe.json";
             std::ifstream input(path);
             if (!input)
             {
@@ -68,7 +68,8 @@ namespace kpengine::terrain
                 diagnostic = result.diagnostic;
                 return false;
             }
-            const auto node = result.nodes.find("stream_power_incision");
+            const auto node = recipe.nodes.empty() ? result.nodes.end() :
+                result.nodes.find(recipe.nodes.back().id);
             if (node == result.nodes.end() || node->second.outputs.empty())
             {
                 diagnostic = "terrain fixture did not produce a heightfield";
@@ -209,8 +210,9 @@ namespace kpengine::terrain
         }
         terrain_editor_ = std::make_unique<TerrainEditor>();
         if (!terrain_editor_->Initialize(engine, preview_heightfield_, diagnostic,
-                [this](std::uint64_t seed, float amplitude, float frequency) {
-                    RequestRegenerate(seed, amplitude, frequency);
+                [this](std::uint64_t seed, std::uint32_t lattice_size,
+                       std::uint32_t octaves, float persistence, float lacunarity) {
+                    RequestRegenerate(seed, lattice_size, octaves, persistence, lacunarity);
                 },
                 [this] { RequestCancel(); },
                 [this](int command) { RequestExecutionControl(command); },
@@ -231,23 +233,29 @@ namespace kpengine::terrain
         using namespace runtime::command;
         CommandDesc regenerate{
             "terrain.regenerate", "TerrainViewer",
-            "Generate and publish a seeded 256x256 terrain preview",
+            "Generate and publish a seeded 128x128 terrain preview",
             CommandCategory::Gameplay,
             CommandFlags::AgentAllowed | CommandFlags::MutatesState,
             {{CommandArgumentDesc{"seed", CommandValueType::UnsignedInteger, true, {}, {}},
-              CommandArgumentDesc{"amplitude_m", CommandValueType::Float, true, {}, {}},
-              CommandArgumentDesc{"frequency_per_m", CommandValueType::Float, true, {}, {}}}},
+              CommandArgumentDesc{"lattice_size", CommandValueType::UnsignedInteger, true, {}, {}},
+              CommandArgumentDesc{"octaves", CommandValueType::UnsignedInteger, true, {}, {}},
+              CommandArgumentDesc{"persistence", CommandValueType::Float, true, {}, {}},
+              CommandArgumentDesc{"lacunarity", CommandValueType::Float, true, {}, {}}}},
             [this](const CommandCall &call, const CommandContext &context)
             {
                 const auto seed = std::get<std::uint64_t>(call.arguments.at("seed"));
-                const auto amplitude = std::get<double>(call.arguments.at("amplitude_m"));
-                const auto frequency = std::get<double>(call.arguments.at("frequency_per_m"));
-                RequestRegenerate(seed, static_cast<float>(amplitude),
-                                  static_cast<float>(frequency));
+                const auto lattice_size = std::get<std::uint64_t>(call.arguments.at("lattice_size"));
+                const auto octaves = std::get<std::uint64_t>(call.arguments.at("octaves"));
+                const auto persistence = std::get<double>(call.arguments.at("persistence"));
+                const auto lacunarity = std::get<double>(call.arguments.at("lacunarity"));
+                RequestRegenerate(seed, static_cast<std::uint32_t>(lattice_size),
+                    static_cast<std::uint32_t>(octaves), static_cast<float>(persistence),
+                    static_cast<float>(lacunarity));
                 return CommandResult{CommandStatus::Success,
                     "Terrain regeneration queued", context.request_id,
-                    {{"seed", seed}, {"amplitude_m", amplitude},
-                     {"frequency_per_m", frequency}}};
+                    {{"seed", seed}, {"lattice_size", lattice_size},
+                     {"octaves", octaves}, {"persistence", persistence},
+                     {"lacunarity", lacunarity}}};
             }, CommandThread::Game};
         auto regenerate_registration = registry.Register(std::move(regenerate));
         if (!regenerate_registration.IsSuccess())
@@ -495,10 +503,12 @@ namespace kpengine::terrain
                         completed.evaluation, *recipe_, generation_status_);
                 continue;
             }
-            const auto node = completed.evaluation.nodes.find("stream_power_incision");
-            if (node == completed.evaluation.nodes.end() || node->second.outputs.empty())
+            const auto node = recipe_->nodes.empty() ? completed.evaluation.nodes.end() :
+                completed.evaluation.nodes.find(recipe_->nodes.back().id);
+            if (node == completed.evaluation.nodes.end() ||
+                !node->second.outputs.contains("height"))
             {
-                generation_status_ = "Failed: stream_power_incision output missing";
+                generation_status_ = "Failed: final terrain height output missing";
                 continue;
             }
             std::string publish_diagnostic;
@@ -515,11 +525,18 @@ namespace kpengine::terrain
     }
 
     void TerrainViewerHost::RequestRegenerate(std::uint64_t seed,
-        float amplitude_m, float frequency_per_m)
+        std::uint32_t lattice_size, std::uint32_t octaves,
+        float persistence, float lacunarity)
     {
         std::lock_guard lock(authoring_command_mutex_);
-        authoring_commands_.push_back({AuthoringCommand::Kind::Regenerate,
-            seed, amplitude_m, frequency_per_m});
+        AuthoringCommand command;
+        command.kind = AuthoringCommand::Kind::Regenerate;
+        command.seed = seed;
+        command.lattice_size = lattice_size;
+        command.octaves = octaves;
+        command.third = persistence;
+        command.fourth = lacunarity;
+        authoring_commands_.push_back(command);
     }
 
     void TerrainViewerHost::RequestCancel()
@@ -567,7 +584,8 @@ namespace kpengine::terrain
             switch (command.kind)
             {
             case AuthoringCommand::Kind::Regenerate:
-                ApplyRegenerate(command.seed, command.first, command.second);
+                ApplyRegenerate(command.seed, command.lattice_size, command.octaves,
+                    command.third, command.fourth);
                 break;
             case AuthoringCommand::Kind::Cancel:
                 ApplyCancel();
@@ -586,7 +604,8 @@ namespace kpengine::terrain
     }
 
     void TerrainViewerHost::ApplyRegenerate(std::uint64_t seed,
-        float amplitude_m, float frequency_per_m)
+        std::uint32_t lattice_size, std::uint32_t octaves,
+        float persistence, float lacunarity)
     {
         if (pending_preview_)
         {
@@ -594,22 +613,27 @@ namespace kpengine::terrain
             return;
         }
         if (!generation_executor_ || !recipe_ || !execution_control_ ||
-            !std::isfinite(amplitude_m) || amplitude_m < 0.0f ||
-            !std::isfinite(frequency_per_m) || frequency_per_m <= 0.0f)
+            lattice_size == 0 || lattice_size > 64 || octaves == 0 || octaves > 8 ||
+            !std::isfinite(persistence) || persistence < 0.0f || persistence > 1.0f ||
+            !std::isfinite(lacunarity) || lacunarity < 1.0f || lacunarity > 8.0f)
         {
             generation_status_ = "Invalid generation controls";
             return;
         }
         recipe_->seed = seed;
         const auto node = std::find_if(recipe_->nodes.begin(), recipe_->nodes.end(),
-            [](const RecipeNode &candidate) { return candidate.id == "ridged_landform"; });
+            [](const RecipeNode &candidate) {
+                return candidate.operator_id == "terrain.heightfield.perlin_fbm";
+            });
         if (node == recipe_->nodes.end())
         {
-            generation_status_ = "Recipe is missing ridged_landform";
+            generation_status_ = "Recipe is missing its Perlin fBm node";
             return;
         }
-        node->parameters["amplitude_m"] = amplitude_m;
-        node->parameters["frequency_per_m"] = frequency_per_m;
+        node->parameters["lattice_size"] = lattice_size;
+        node->parameters["octaves"] = octaves;
+        node->parameters["persistence"] = persistence;
+        node->parameters["lacunarity"] = lacunarity;
         execution_control_->Resume();
         ++revision_;
         {
