@@ -1,6 +1,6 @@
 # Conversational Audio Roadmap
 
-**Status: proposed.** Architecture: [PLANS.md](PLANS.md). Baselines:
+**Status: A1 complete; later stages proposed.** Architecture: [PLANS.md](PLANS.md). Baselines:
 [Audio](audio_module.md), [TTS](../tts/tts_module.md). Cross-stage acceptance:
 [spec](../../.spec/specs/conversational-audio.md). Checkboxes describe work
 to do, not completion evidence.
@@ -12,11 +12,13 @@ is accepted; record resolution evidence in those review files.
 
 ## Ordered work
 
-- [ ] **A1 — safe playback core** ([plan](.plan/A1.md),
+- [x] **A1 — safe playback core** ([plan](.plan/A1.md),
   [review](.review/A1.md)). Correct mono/stereo
   mixing and callback lifetime races; bound callback work; expose independent
   speech/music gains and an authoritative played-frame clock. Offline tests
   prove repeated create/play/pause/seek/stop/destroy and clean device shutdown.
+  Twenty-one audio contracts pass and the visible device smoke drains all frames;
+  measurements and the remaining sanitizer limitation are in the journal.
 - [ ] **A2 — conversational TTS transport** ([plan](.plan/A2.md),
   [review](.review/A2.md)). Validate
   HTTP status and media format, propagate decode errors, enforce bounded PCM

@@ -3,6 +3,11 @@ add_executable(
     audio_decode_test.cpp
     )
 
+add_executable(
+    AudioDeviceSmoke
+    audio_device_smoke.cpp
+    )
+
 
 target_link_libraries(
     AudioUnitTest
@@ -10,6 +15,12 @@ target_link_libraries(
     Asset
     Audio
     KP::GoogleTest
+)
+
+target_link_libraries(
+    AudioDeviceSmoke
+    PRIVATE
+    Audio
 )
 
 copy_runtime_dependencies(AudioUnitTest)

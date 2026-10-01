@@ -17,7 +17,8 @@ bool AudioStream::PushFrames(const float* data, uint64_t frames)
     std::lock_guard<std::mutex> lock(mutex_);
 
     const size_t channels = format_.channels;
-    if (!data || channels == 0 || capacity_ == 0 || is_finished.load(std::memory_order_acquire) ||
+    if (!data || channels == 0 || capacity_ == 0 ||
+        state_.load(std::memory_order_acquire) != AudioStreamState::Open ||
         frames > std::numeric_limits<size_t>::max() / channels)
     {
         return false;
@@ -25,6 +26,7 @@ bool AudioStream::PushFrames(const float* data, uint64_t frames)
     const size_t samples = frames * channels;
     if (samples > AvailableSpace())
     {
+        overflow_rejections_.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
 
@@ -90,7 +92,12 @@ uint64_t AudioStream::ReadFramesLocked(float* output, uint64_t requested_frames)
             available_frames);
 
     if (frames_to_read == 0)
+    {
+        if (buffered_samples_ == 0 &&
+            state_.load(std::memory_order_relaxed) == AudioStreamState::ProducerFinished)
+            state_.store(AudioStreamState::Drained, std::memory_order_release);
         return 0;
+    }
 
     const size_t samples_to_read =
         frames_to_read * channels;
@@ -121,18 +128,44 @@ uint64_t AudioStream::ReadFramesLocked(float* output, uint64_t requested_frames)
 
     buffered_samples_ -= samples_to_read;
 
+    if (buffered_samples_ == 0 &&
+        state_.load(std::memory_order_relaxed) == AudioStreamState::ProducerFinished)
+        state_.store(AudioStreamState::Drained, std::memory_order_release);
+
     return frames_to_read;
 }
 
     void AudioStream::Finish()
     {
         std::lock_guard<std::mutex> lock(mutex_);
-        is_finished.store(true, std::memory_order_release);
+        if (state_.load(std::memory_order_relaxed) != AudioStreamState::Open)
+            return;
+        state_.store(buffered_samples_ == 0 ? AudioStreamState::Drained
+                                            : AudioStreamState::ProducerFinished,
+                     std::memory_order_release);
+    }
+
+    void AudioStream::Cancel()
+    {
+        std::lock_guard<std::mutex> lock(mutex_);
+        state_.store(AudioStreamState::Cancelled, std::memory_order_release);
+        buffered_samples_ = 0;
+        read_pos_ = write_pos_;
     }
 
     bool AudioStream::IsFinished() const
     {
-        return is_finished.load(std::memory_order_acquire);
+        return state_.load(std::memory_order_acquire) != AudioStreamState::Open;
+    }
+
+    AudioStreamState AudioStream::GetState() const
+    {
+        return state_.load(std::memory_order_acquire);
+    }
+
+    uint64_t AudioStream::GetOverflowRejectionCount() const
+    {
+        return overflow_rejections_.load(std::memory_order_relaxed);
     }
 
 }

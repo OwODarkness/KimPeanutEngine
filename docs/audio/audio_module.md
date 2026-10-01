@@ -1,8 +1,9 @@
 # Audio Module Design
 
-Future callback safety, speech/music buses, playback clock, and the compact
-player are planned in [Conversational Audio](PLANS.md) and its
-[roadmap](TODO.md). This document describes the current implementation.
+Callback safety, speech/music buses, and the playback clock are implemented in
+A1 of [Conversational Audio](PLANS.md). TTS session integration and the compact
+player remain planned in its [roadmap](TODO.md). This document describes the
+current implementation.
 The [A1 baseline review](.review/A1.md) records the original findings and the
 2026-10-01 repair disposition. The source notes below describe the repaired
 contracts where those differ from the earlier baseline.
@@ -25,26 +26,42 @@ There are two disjoint playback paths with a shared mixer core:
 ### Handles and state — [`audio_types.h`](../../engine/runtime/audio/audio_types.h)
 
 - `AudioHandle` — a `Handle<AudioTag>` from the shared `HandleSystem` (same slot+generation scheme as asset IDs).
-- `AudioState { Stopped, Playing, Paused, Finished }` — the player state machine.
+- `AudioState { Stopped, Playing, Buffering, FadingOut, Paused, Finished,
+  Cancelled }` — the player state machine. Buffering is recoverable starvation;
+  it is distinct from a finished stream.
+- `AudioBus { Speech, Music }` — independent gain and mute controls.
+- `AudioStreamState { Open, ProducerFinished, Cancelled, Drained }` — stream
+  producer and consumer lifecycle.
 - `AudioPlayerType { Buffer, Stream }` — selects which player a system constructs.
 
 ### `AudioPlayer` — [`audio_player.h`](../../engine/runtime/audio/audio_player.h)
 
-The abstract base. Callback reads use a copy contract:
+The abstract base. Callback reads use a bounded block-copy contract:
 
-- **`CopyFrameData(frame, out, capacity, channels)`** — copies one complete interleaved frame into callback-owned storage. No pointer into a clip or stream window escapes its lock/lifetime. A missing frame means silence for this callback block; `IsFinished()` distinguishes terminal drain from a temporary underrun.
-- **`ResolveFrame(new_frame)`** — decides whether `new_frame` is playable; the derived player fills `new_frame` in (e.g. loop-wrap, clamp-to-end).
-- **`SetCurrentFrame(new_frame)`** — the bridge: calls `ResolveFrame`, then **always** writes `current_frame_ = new_frame` regardless of the result. This was a deliberate fix (see [History](#history--bug-log)): for a streaming player the playhead must follow the buffer window even while the source is dry, or the player re-reads the last frame in a loop.
+- **`CopyFrames(first_frame, out, max_frames, channels)`** — copies complete interleaved frames into mixer-owned scratch. No pointer into clip or stream storage escapes its ownership/lifetime. `CopyFrameData` remains as a one-frame compatibility wrapper.
+- Playback commands enter a fixed-capacity per-player mailbox and are applied at a callback boundary. Overflow increments command-rejection telemetry.
+- The played-frame cursor advances only for consumed source frames; temporary stream starvation leaves it in place and reports `Buffering`.
 
-`FillBuffer()` (virtual, default no-op) is called once per active voice per mixer block. Stream refill and frame-copy paths use try-locks, so producer contention yields silence for that block instead of blocking the device callback. `AdvanceFrame`/`SeekFrames`/`SeekSeconds` are the movement API on top of `SetCurrentFrame`.
+`FillBuffer()` is called once per active stream voice per mixer block. Refill and
+frame-copy paths use try-locks, so producer contention yields silence for that
+block instead of blocking the device callback.
 
 ### `BufferAudioPlayer` — [`buffer_audio_player.cpp`](../../engine/runtime/audio/buffer_audio_player.cpp)
 
-Holds an immutable `AudioClip` snapshot through an atomic shared pointer. `CopyFrameData` validates and copies a complete mono or stereo frame. The mixer contract is fixed at 48 kHz; empty, malformed, unsupported-channel, and non-48 kHz clips are rejected by `Play`. `ResolveFrame`: in-range → ready; past the end → wrap on `looping_`, else clamp to the last frame and set `Finished`.
+Holds a retained immutable `AudioClip` owner and publishes its raw pointer to
+the callback. The clip can only be assigned once. `CopyFrames` validates and
+copies complete mono or stereo frames. The mixer input contract is fixed at
+48 kHz; empty, malformed, unsupported-channel, and non-48 kHz clips cannot
+start. Looping wraps within the source frame count; a non-looping end marks the
+player `Finished` after the last consumed frame.
 
 ### `StreamAudioPlayer` — [`stream_audio_player.cpp`](../../engine/runtime/audio/stream_audio_player.cpp)
 
-The streaming player. It keeps a **ring window** over the `AudioStream` FIFO:
+The streaming player keeps a **ring window** over the `AudioStream` FIFO. The
+mixer attempts one refill per block and copies available frames under a
+nonblocking ring lock. Dry streams output silence and remain `Buffering`; after
+producer completion the buffered tail drains once before the player finishes.
+Cancellation clears queued audio and marks the player cancelled. The storage is:
 
 ```
 struct RingBuffer {
@@ -59,7 +76,7 @@ struct RingBuffer {
 
 ### `AudioStream` — [`audio_stream.cpp`](../../engine/runtime/audio/audio_stream.cpp)
 
-A **thread-safe FIFO ring buffer** — the producer/consumer seam. Capacity is `sample_rate * channels * buffer_seconds`, where `buffer_seconds` defaults to **20**. `PushFrames` rejects an invalid, post-finish, or over-capacity write without changing queued samples. The callback uses `TryReadFrames`, which never waits for the producer mutex. `Finish()` serializes with writes; `IsFinished()` is an atomic producer-terminal flag, separate from queued-frame drain.
+A **thread-safe FIFO ring buffer** — the producer/consumer seam. Capacity is `sample_rate * channels * buffer_seconds`, where `buffer_seconds` defaults to **20**. `PushFrames` rejects an invalid, post-finish, or over-capacity write without changing queued samples and counts overflow rejections. The callback uses `TryReadFrames`, which never waits for the producer mutex. `Finish()` serializes with writes; `ProducerFinished` remains distinct from `Drained` while queued frames remain.
 
 ### `AudioStreamDecoder` — [`audio_stream_decoder.cpp`](../../engine/runtime/audio/audio_stream_decoder.cpp)
 
@@ -67,7 +84,17 @@ The incremental decoder. `Feed(data, size)` returns `NeedMoreData`, `DataDecoded
 
 ### `AudioSystem` / `MiniAudioSystem` — [`audio_system.cpp`](../../engine/runtime/audio/audio_system.cpp), [`miniaudio_audio_system.cpp`](../../engine/runtime/audio/miniaudio_audio_system.cpp)
 
-`AudioSystem` is the handle registry: `GetAudioPlayer` returns a `shared_ptr` after generation validation. `DestroyAudioPlayer` retires the generation and player from the published immutable callback snapshot; retired snapshots and players are reclaimed on the control thread after callback readers release them. The active voice count is capped at 64. `MiniAudioSystem` owns an idempotent miniaudio lifecycle (48 kHz stereo, `f32`, 512-frame requested period) and stops/uninitializes the device before its callback target is destroyed. **`Mix` runs on the miniaudio callback thread.**
+`AudioSystem` owns a fixed 64-slot storage array and generation-checked handles.
+`AudioSystemSettings` lets callers lower the voice budget, maximum callback work
+frames, gain-ramp duration, and requested device period count. Values are
+clamped to the preallocated 64-voice/512-frame ceiling. Oversized callback
+blocks process only the configured work limit and leave the remainder silent;
+the clipped frame count is reported. `DestroyAudioPlayer` unpublishes a slot,
+invalidates its generation, then releases its owner after callback readers exit.
+`MiniAudioSystem` owns an idempotent lifecycle (48 kHz stereo, `f32` by
+default), reports actual device format and estimated period-buffer latency,
+and stops/uninitializes before its callback target is destroyed. `Mix` performs
+bounded block mixing with independent Speech/Music and master gain ramps.
 
 ## Data flow
 
@@ -76,7 +103,7 @@ The incremental decoder. `Feed(data, size)` returns `NeedMoreData`, `DataDecoded
 ```
 [bytes] → MiniAudio_AudioLoader::LoadFromMemory → AudioClip → BufferAudioPlayer::SetClip → Play
                                                             ↑
-                                              Mix pulls clip_->pcm directly
+                                      Mix copies bounded blocks with CopyFrames
 ```
 
 ### Streaming path (streaming TTS)
@@ -88,7 +115,7 @@ httplib receiver callback (network thread)
                                                    ↑ (consumer)
 audio callback (miniaudio thread)
     └─ Mix(callback block)
-         └─ StreamAudioPlayer::CopyFrameData / AdvanceFrame
+         └─ StreamAudioPlayer::CopyFrames / cursor commit
               └─ ring window ← AudioStream::TryReadFrames (via one FillBuffer attempt)
 ```
 
@@ -103,7 +130,10 @@ The TTS worker produces into the FIFO. The callback uses nonblocking reads and r
 3. If the buffer is full, **slide** the window: `memmove` the unplayed tail to the front, advance `start_frame`. (This replaces what used to be a reset-from-zero, which is what caused the stutter — see [History](#history--bug-log).)
 4. Read up to `min(max_write, CACHE_SIZE_FRAMES / 4)` frames from the stream into the free tail, increment `filled_frames`.
 
-`ResolveFrame(new_frame)` is used for seeks and initialization. During mixing, `AdvanceFrame` only advances the atomic cursor. A missing frame is a temporary underrun unless the producer has finished and the buffered tail has drained.
+Seek commands are applied at callback boundaries. The cursor advances by the
+number of frames actually copied and consumed. A missing stream frame is a
+temporary underrun unless the producer has finished and the buffered tail has
+drained.
 
 `FillBuffer()` is called once per active stream voice at the start of a mixer block. It tries to acquire the ring mutex; refill then tries the FIFO mutex. A failed try-lock defers refill to the next callback.
 
@@ -112,10 +142,15 @@ The TTS worker produces into the FIFO. The callback uses nonblocking reads and r
 | Structure | Guard | Owner threads |
 |---|---|---|
 | `AudioStream` FIFO | `AudioStream::mutex_` | producer = network/httplib thread, consumer = audio thread |
-| `StreamAudioPlayer` ring window | `buffer_mutex_` | audio thread (Mix), plus `Play()`/`SetStream` from the network thread |
-| `BufferAudioPlayer` clip | atomic `shared_ptr` snapshot | control/TTS thread publishes; callback holds a local copy while reading |
+| `StreamAudioPlayer` ring window | `buffer_mutex_` with callback try-lock | callback copies frames; control thread assigns stream once |
+| `BufferAudioPlayer` clip | retained immutable owner plus atomic raw publication | control thread assigns once; callback copies frames |
+| Voice slot owner | `voices_mutex_` on control path plus callback reader count | create/destroy on control threads; callback reads a stable published pointer |
 
-Lock order is **buffer → stream** for control-side operations. The callback uses try-locks for both structures, performs no logging or I/O, and mixes at most 64 active voices over the requested 512-frame device period.
+Lock order is **buffer → stream** for refill. Callback-side stream operations
+use try-locks; callback code performs no logging, I/O, allocation, or waits.
+Runtime budgets default to 64 active voices and 512 work frames per device
+callback. These are tunable through `AudioSystemSettings` within the storage
+ceiling.
 
 ## History / bug log
 
@@ -146,8 +181,8 @@ device callback no longer retries a dry stream once per output frame.
 
 ## Known smells / next steps
 
-- **Device lifecycle smoke remains unverified.** The device now has idempotent stop/uninit and callback retirement, but this change was not launched through the visible device execution path.
-- **Mixer timing remains unmeasured.** Voice count and requested callback period are bounded, but worst-case callback duration under producer load still needs a measurement.
+- **Sanitizer validation remains unrun.** The create/control/destroy stress contract passes, including handle slot reuse, but no sanitizer build was available in this pass.
+- **Callback timing is host-specific.** The Debug 64-voice x 512-frame offline measurement was 1.819 ms maximum in this run; visible one-voice device smoke observed 0.454 ms. These are measurements, not cross-machine guarantees.
 - **Rate conversion is a fixed input contract for buffered clips.** The loader produces 48 kHz stereo; callers supplying other buffered formats are rejected and need an explicit conversion path.
 - **Window math assumes `at_frame >= start_frame` after the reset check.** `GetReadOffset` computes `frame_index - start_frame` as unsigned; when `frame_index < start_frame` it underflows to a huge value and correctly reports "not in window" → reset. That is intentional, but the subtraction makes the *intent* non-obvious to a future reader.
 

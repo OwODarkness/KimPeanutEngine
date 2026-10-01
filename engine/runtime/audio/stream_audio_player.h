@@ -4,6 +4,7 @@
 #include <memory>
 #include <vector>
 #include <mutex>
+#include <atomic>
 #include "audio_player.h"
 
 namespace kpengine::audio
@@ -16,9 +17,8 @@ public:
     StreamAudioPlayer();
     ~StreamAudioPlayer() override;
 
-    bool CopyFrameData(uint64_t frame, float* out_data,
-                       uint32_t capacity_samples, uint32_t& channels) override;
-    bool AdvanceFrame() override;
+    uint32_t CopyFrames(uint64_t first_frame, float* out_data,
+                        uint32_t max_frames, uint32_t& channels) override;
 
     AudioFormat GetAudioFormat() const override;
 
@@ -36,6 +36,10 @@ public:
 
 protected:
     bool ResolveFrame(uint64_t& new_frame) override;
+    bool CanStartPlayback() const override;
+    bool IsSourceDrained() const override;
+    bool IsStreamingSource() const override { return true; }
+    void OnPlaybackCursorAdvanced(uint32_t frame_count) override;
 
 private:
     // Pull more frames from the stream into the ring buffer so that the
@@ -65,6 +69,9 @@ private:
     };
     
     std::shared_ptr<AudioStream> stream_;
+    std::atomic<AudioStream*> stream_raw_{nullptr};
+    std::atomic<uint64_t> buffered_end_frame_{0};
+    std::atomic<bool> stream_ready_{false};
     RingBuffer ring_buffer_;
     mutable std::mutex buffer_mutex_;
     

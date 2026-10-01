@@ -2,11 +2,16 @@
 #include "runtime/asset/asset_manager.h"
 #include "runtime/audio/audio_system.h"
 #include "runtime/audio/buffer_audio_player.h"
+#include "runtime/audio/stream_audio_player.h"
 #include "runtime/audio/audio_stream.h"
 #include "runtime/audio/audio_stream_decoder.h"
 #include "runtime/audio/miniaudio_audio_system.h"
 
 #include <cstdint>
+#include <array>
+#include <atomic>
+#include <chrono>
+#include <cmath>
 #include <thread>
 #include <vector>
 
@@ -257,6 +262,43 @@ TEST(AudioStreamTest, FinishedStreamRejectsLateProducerWrites)
     EXPECT_TRUE(stream.IsFinished());
 }
 
+TEST(AudioStreamTest, SeparatesProducerFinishFromConsumerDrain)
+{
+    data::AudioFormat format{};
+    format.channels = 1;
+    format.sample_rate = 48000;
+    audio::AudioStream stream(format, 1);
+    const float samples[] = {0.1f, 0.2f, 0.3f};
+    ASSERT_TRUE(stream.PushFrames(samples, 3));
+    stream.Finish();
+    EXPECT_EQ(stream.GetState(), audio::AudioStreamState::ProducerFinished);
+
+    float output[3]{};
+    ASSERT_EQ(stream.ReadFrames(output, 3), 3u);
+    EXPECT_EQ(stream.GetState(), audio::AudioStreamState::Drained);
+    for (size_t i = 0; i < 3; ++i)
+        EXPECT_FLOAT_EQ(output[i], samples[i]);
+}
+
+TEST(AudioStreamTest, ReportsOverflowAndCancellationExplicitly)
+{
+    data::AudioFormat format{};
+    format.channels = 1;
+    format.sample_rate = 2;
+    audio::AudioStream stream(format, 1);
+    const float samples[] = {0.25f, -0.25f};
+    ASSERT_TRUE(stream.PushFrames(samples, 2));
+    EXPECT_FALSE(stream.PushFrames(samples, 1));
+    EXPECT_EQ(stream.GetOverflowRejectionCount(), 1u);
+    EXPECT_EQ(stream.GetState(), audio::AudioStreamState::Open);
+
+    stream.Cancel();
+    EXPECT_EQ(stream.GetState(), audio::AudioStreamState::Cancelled);
+    float output[2]{};
+    EXPECT_EQ(stream.ReadFrames(output, 2), 0u);
+    EXPECT_FALSE(stream.PushFrames(samples, 1));
+}
+
 TEST(AudioMixerTest, UpmixesMonoAndClearsTheWholeOutputBlock)
 {
     audio::MiniAudioSystem system;
@@ -267,17 +309,154 @@ TEST(AudioMixerTest, UpmixesMonoAndClearsTheWholeOutputBlock)
     auto clip = std::make_shared<data::AudioClip>();
     clip->format.channels = 1;
     clip->format.sample_rate = 48000;
-    clip->frame_count = 2;
-    clip->pcm = {0.25f, -0.5f};
+    clip->frame_count = 300;
+    clip->pcm.resize(300);
+    for (size_t frame = 0; frame < clip->pcm.size(); ++frame)
+        clip->pcm[frame] = frame % 2 == 0 ? 0.25f : -0.5f;
     player->SetClip(clip);
     player->Play();
 
-    float output[] = {9.f, 9.f, 9.f, 9.f};
-    system.Mix(output, 2);
-    EXPECT_FLOAT_EQ(output[0], 0.25f);
-    EXPECT_FLOAT_EQ(output[1], 0.25f);
-    EXPECT_FLOAT_EQ(output[2], -0.5f);
-    EXPECT_FLOAT_EQ(output[3], -0.5f);
+    std::vector<float> output(300 * 2, 9.f);
+    system.Mix(output.data(), 300);
+    EXPECT_NEAR(output[299 * 2], -0.5f, 1e-5f);
+    EXPECT_NEAR(output[299 * 2 + 1], -0.5f, 1e-5f);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 300u);
+    EXPECT_EQ(player->GetCurrentState(), audio::AudioState::Finished);
+}
+
+TEST(AudioMixerTest, StereoGainPauseSeekLoopAndEndAreFrameSafe)
+{
+    audio::MiniAudioSystem system;
+    const auto handle = system.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+    auto player = std::dynamic_pointer_cast<audio::BufferAudioPlayer>(system.GetAudioPlayer(handle));
+    ASSERT_NE(player, nullptr);
+
+    auto clip = std::make_shared<data::AudioClip>();
+    clip->format.channels = 2;
+    clip->format.sample_rate = 48000;
+    clip->frame_count = 1024;
+    clip->pcm.reserve(clip->frame_count * 2);
+    for (uint32_t frame = 0; frame < clip->frame_count; ++frame)
+    {
+        clip->pcm.push_back(0.25f);
+        clip->pcm.push_back(-0.5f);
+    }
+    player->SetClip(clip);
+    player->SetVolume(0.5f);
+    player->Play();
+
+    std::array<float, 512 * 2> output{};
+    system.Mix(output.data(), 512);
+    EXPECT_NEAR(output[400 * 2], 0.125f, 1e-5f);
+    EXPECT_NEAR(output[400 * 2 + 1], -0.25f, 1e-5f);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 512u);
+
+    player->Pause();
+    system.Mix(output.data(), 240);
+    EXPECT_EQ(player->GetCurrentState(), audio::AudioState::Paused);
+    const uint64_t paused_cursor = player->GetPlayedFrameCursor();
+    system.Mix(output.data(), 32);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), paused_cursor);
+    EXPECT_FLOAT_EQ(output[0], 0.0f);
+
+    ASSERT_TRUE(player->SeekFrames(5));
+    system.Mix(output.data(), 1);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 5u);
+    player->SetShouldLoop(true);
+    player->Play();
+    system.Mix(output.data(), 1);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 6u);
+    ASSERT_TRUE(player->SeekFrames(1022));
+    system.Mix(output.data(), 1);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 1023u);
+    system.Mix(output.data(), 4);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 3u);
+
+    player->SetShouldLoop(false);
+    ASSERT_TRUE(player->SeekFrames(1022));
+    system.Mix(output.data(), 1);
+    ASSERT_EQ(player->GetPlayedFrameCursor(), 1023u);
+    system.Mix(output.data(), 8);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 1024u);
+    EXPECT_EQ(player->GetCurrentState(), audio::AudioState::Finished);
+    for (size_t sample = 2; sample < 8 * 2; ++sample)
+        EXPECT_FLOAT_EQ(output[sample], 0.0f);
+}
+
+TEST(AudioMixerTest, SpeechMusicAndMasterGainsRampIndependently)
+{
+    audio::MiniAudioSystem system;
+    const auto speech_handle = system.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+    const auto music_handle = system.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+    auto speech = std::dynamic_pointer_cast<audio::BufferAudioPlayer>(system.GetAudioPlayer(speech_handle));
+    auto music = std::dynamic_pointer_cast<audio::BufferAudioPlayer>(system.GetAudioPlayer(music_handle));
+    ASSERT_NE(speech, nullptr);
+    ASSERT_NE(music, nullptr);
+
+    auto clip = std::make_shared<data::AudioClip>();
+    clip->format.channels = 1;
+    clip->format.sample_rate = 48000;
+    clip->frame_count = 512;
+    clip->pcm.assign(clip->frame_count, 0.4f);
+    speech->SetClip(clip);
+    music->SetClip(clip);
+    speech->SetBus(audio::AudioBus::Speech);
+    music->SetBus(audio::AudioBus::Music);
+    music->Play();
+    speech->Play();
+    system.SetBusGain(audio::AudioBus::Speech, 0.5f);
+    system.SetBusMuted(audio::AudioBus::Music, true);
+    system.SetMasterGain(0.5f);
+
+    std::array<float, 300 * 2> output{};
+    system.Mix(output.data(), 300);
+    EXPECT_NEAR(output[299 * 2], 0.1f, 1e-5f);
+    EXPECT_NEAR(output[299 * 2 + 1], 0.1f, 1e-5f);
+    EXPECT_EQ(speech->GetPlayedFrameCursor(), 300u);
+    EXPECT_EQ(music->GetPlayedFrameCursor(), 300u);
+    EXPECT_TRUE(system.IsBusMuted(audio::AudioBus::Music));
+    EXPECT_FLOAT_EQ(system.GetBusGain(audio::AudioBus::Speech), 0.5f);
+    EXPECT_FLOAT_EQ(system.GetMasterGain(), 0.5f);
+}
+
+TEST(AudioMixerTest, DryStreamBuffersThenDrainsEveryFrameOnce)
+{
+    audio::MiniAudioSystem system;
+    const auto handle = system.CreateAudioPlayer(audio::AudioPlayerType::Stream);
+    auto player = std::dynamic_pointer_cast<audio::StreamAudioPlayer>(system.GetAudioPlayer(handle));
+    ASSERT_NE(player, nullptr);
+    data::AudioFormat format{};
+    format.channels = 1;
+    format.sample_rate = 48000;
+    auto stream = std::make_shared<audio::AudioStream>(format, 1);
+    player->SetStream(stream);
+    player->Play();
+
+    std::array<float, 64 * 2> output{};
+    output.fill(1.0f);
+    system.Mix(output.data(), 64);
+    EXPECT_EQ(player->GetCurrentState(), audio::AudioState::Buffering);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 0u);
+    for (float sample : output)
+        EXPECT_FLOAT_EQ(sample, 0.0f);
+
+    std::array<float, 128> frames{};
+    frames.fill(0.25f);
+    ASSERT_TRUE(stream->PushFrames(frames.data(), frames.size()));
+    stream->Finish();
+    system.Mix(output.data(), 64);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 64u);
+    EXPECT_EQ(player->GetCurrentState(), audio::AudioState::Playing);
+    system.Mix(output.data(), 64);
+    EXPECT_EQ(stream->GetState(), audio::AudioStreamState::Drained);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 128u);
+    EXPECT_EQ(player->GetCurrentState(), audio::AudioState::Finished);
+    system.Mix(output.data(), 64);
+    EXPECT_EQ(player->GetPlayedFrameCursor(), 128u);
+
+    const auto telemetry = system.GetTelemetrySnapshot();
+    EXPECT_GE(telemetry.buses[static_cast<size_t>(audio::AudioBus::Speech)].underrun_blocks, 1u);
+    EXPECT_EQ(telemetry.buses[static_cast<size_t>(audio::AudioBus::Speech)].played_frames, 128u);
 }
 
 TEST(AudioSystemTest, RetiresHandlesAndPublishesPlayerSnapshotsDuringMix)
@@ -318,6 +497,159 @@ TEST(AudioSystemTest, LimitsActiveVoicesToTheMixerBudget)
         handles.push_back(handle);
     }
     EXPECT_FALSE(system.CreateAudioPlayer(audio::AudioPlayerType::Buffer).IsValid());
+    for (const auto handle : handles)
+        EXPECT_TRUE(system.DestroyAudioPlayer(handle));
+}
+
+TEST(AudioSystemTest, AppliesConfiguredVoiceAndCallbackBudgets)
+{
+    audio::AudioSystemSettings settings{};
+    settings.max_voices = 2;
+    settings.max_callback_frames = 64;
+    settings.gain_ramp_frames = 0;
+    settings.device_period_count = 2;
+    audio::MiniAudioSystem system(settings);
+    EXPECT_EQ(system.GetSettings().max_voices, 2u);
+    EXPECT_EQ(system.GetSettings().max_callback_frames, 64u);
+    EXPECT_EQ(system.GetSettings().device_period_count, 2u);
+
+    const auto first_handle = system.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+    const auto second_handle = system.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+    EXPECT_TRUE(first_handle.IsValid());
+    EXPECT_TRUE(second_handle.IsValid());
+    EXPECT_FALSE(system.CreateAudioPlayer(audio::AudioPlayerType::Buffer).IsValid());
+    auto first = std::dynamic_pointer_cast<audio::BufferAudioPlayer>(system.GetAudioPlayer(first_handle));
+    ASSERT_NE(first, nullptr);
+
+    auto clip = std::make_shared<data::AudioClip>();
+    clip->format.channels = 1;
+    clip->format.sample_rate = 48000;
+    clip->frame_count = 128;
+    clip->pcm.assign(clip->frame_count, 0.25f);
+    first->SetClip(clip);
+    first->Play();
+
+    std::array<float, 100 * 2> output{};
+    output.fill(9.0f);
+    system.Mix(output.data(), 100);
+    EXPECT_EQ(first->GetPlayedFrameCursor(), 64u);
+    EXPECT_FLOAT_EQ(output[63 * 2], 0.25f);
+    EXPECT_FLOAT_EQ(output[64 * 2], 0.0f);
+    EXPECT_FLOAT_EQ(output.back(), 0.0f);
+    EXPECT_EQ(system.GetTelemetrySnapshot().callback_work_limited_frames, 36u);
+
+    EXPECT_TRUE(system.DestroyAudioPlayer(first_handle));
+    EXPECT_TRUE(system.DestroyAudioPlayer(second_handle));
+}
+
+TEST(AudioSystemTest, ReportsPlaybackCommandQueueRejections)
+{
+    audio::MiniAudioSystem system;
+    const auto handle = system.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+    auto player = system.GetAudioPlayer(handle);
+    ASSERT_NE(player, nullptr);
+    for (uint32_t command = 0; command < 17; ++command)
+        player->SetShouldLoop((command & 1u) != 0);
+
+    std::array<float, 2> output{};
+    system.Mix(output.data(), 1);
+    EXPECT_EQ(system.GetTelemetrySnapshot().control_command_rejections, 1u);
+    EXPECT_TRUE(system.DestroyAudioPlayer(handle));
+}
+
+TEST(AudioSystemTest, ConcurrentCommandsCreateDestroyAndMixStayBounded)
+{
+    audio::MiniAudioSystem system;
+    auto clip = std::make_shared<data::AudioClip>();
+    clip->format.channels = 1;
+    clip->format.sample_rate = 48000;
+    clip->frame_count = 2048;
+    clip->pcm.assign(clip->frame_count, 0.05f);
+
+    std::atomic<bool> running{true};
+    std::atomic<uint32_t> created{0};
+    std::thread mixer([&]
+    {
+        std::array<float, 128> output{};
+        while (running.load(std::memory_order_acquire))
+            system.Mix(output.data(), 64);
+    });
+
+    std::array<std::thread, 4> controllers;
+    for (uint32_t thread_index = 0; thread_index < controllers.size(); ++thread_index)
+    {
+        controllers[thread_index] = std::thread([&, thread_index]
+        {
+            for (uint32_t iteration = 0; iteration < 500; ++iteration)
+            {
+                const auto handle = system.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+                if (!handle.IsValid())
+                    continue;
+                ++created;
+                auto player = std::dynamic_pointer_cast<audio::BufferAudioPlayer>(
+                    system.GetAudioPlayer(handle));
+                if (player)
+                {
+                    player->SetClip(clip);
+                    player->SetBus((thread_index & 1u) == 0 ? audio::AudioBus::Speech
+                                                            : audio::AudioBus::Music);
+                    player->SetVolume((iteration % 10) / 10.0f);
+                    player->SetShouldLoop((iteration & 1u) != 0);
+                    player->Play();
+                    if ((iteration % 3) == 0)
+                        player->Pause();
+                    player->Restart();
+                }
+                EXPECT_TRUE(system.DestroyAudioPlayer(handle));
+                EXPECT_EQ(system.GetAudioPlayer(handle), nullptr);
+            }
+        });
+    }
+    for (auto& controller : controllers)
+        controller.join();
+    running.store(false, std::memory_order_release);
+    mixer.join();
+
+    EXPECT_GT(created.load(), 0u);
+    const auto telemetry = system.GetTelemetrySnapshot();
+    EXPECT_GT(telemetry.callback_count, 0u);
+    EXPECT_GT(telemetry.callback_frames, 0u);
+    EXPECT_GT(telemetry.max_callback_duration_ns, 0u);
+    EXPECT_EQ(telemetry.concurrent_callback_rejections, 0u);
+}
+
+TEST(AudioMixerTest, MeasuresWorstCaseVoiceMixDuration)
+{
+    audio::MiniAudioSystem system;
+    auto clip = std::make_shared<data::AudioClip>();
+    clip->format.channels = 2;
+    clip->format.sample_rate = 48000;
+    clip->frame_count = 4096;
+    clip->pcm.assign(clip->frame_count * 2, 0.001f);
+
+    std::vector<audio::AudioHandle> handles;
+    for (uint32_t voice_index = 0; voice_index < audio::AudioSystem::kMaxVoices; ++voice_index)
+    {
+        const auto handle = system.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
+        ASSERT_TRUE(handle.IsValid());
+        handles.push_back(handle);
+        auto player = std::dynamic_pointer_cast<audio::BufferAudioPlayer>(system.GetAudioPlayer(handle));
+        ASSERT_NE(player, nullptr);
+        player->SetClip(clip);
+        player->Play();
+    }
+
+    std::array<float, audio::AudioSystem::kMaxCallbackFrames * 2> output{};
+    for (uint32_t iteration = 0; iteration < 200; ++iteration)
+        system.Mix(output.data(), audio::AudioSystem::kMaxCallbackFrames);
+    const auto telemetry = system.GetTelemetrySnapshot();
+    EXPECT_EQ(telemetry.callback_count, 200u);
+    EXPECT_EQ(telemetry.callback_frames, 200u * audio::AudioSystem::kMaxCallbackFrames);
+    EXPECT_GT(telemetry.max_callback_duration_ns, 0u);
+    EXPECT_LT(telemetry.max_callback_duration_ns, 100'000'000u);
+    std::cout << "64 voices x 512 frames max callback: "
+              << telemetry.max_callback_duration_ns << " ns\n";
+
     for (const auto handle : handles)
         EXPECT_TRUE(system.DestroyAudioPlayer(handle));
 }

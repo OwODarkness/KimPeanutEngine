@@ -1,6 +1,6 @@
 # Conversational Audio Plan
 
-**Status: proposed, 2026-09-30.** This is the design map for evolving the
+**Status: A1 complete; A2/C1/L2D9/P1 proposed.** This is the design map for evolving the
 existing [Audio](audio_module.md) and [TTS](../tts/tts_module.md) modules into
 a voice-capable chatbot companion with optional Live2D and a compact music
 player. [TODO.md](TODO.md) is the acceptance ledger; [the execution spec](../../.spec/specs/conversational-audio.md)
@@ -33,12 +33,12 @@ making input capture or a particular AI service a foundation dependency.
 
 ## Current state and design pressure
 
-- `engine/runtime/audio` has a 48 kHz stereo miniaudio device, buffered and
-  streaming players, and a shared per-frame mixer. `AudioStream` drops old
-  samples on overflow. The callback reads `players_` while other threads can
-  create/reset players, reads unsynchronized player state, and handles mono
-  input in the stereo branch as if a second sample existed. It also logs and
-  repeatedly attempts a dry stream in the callback. See [baseline](audio_module.md).
+- `engine/runtime/audio` has a 48 kHz stereo miniaudio device, bounded stable
+  voice slots, callback-boundary command mailboxes, block-copy players,
+  independent Speech/Music buses, played-frame telemetry, and explicit stream
+  overflow/drain state. A1 timing and device evidence is in its
+  [journal entry](../../.spec/journal/conversational-audio.md). TTS transport
+  cancellation and the conversation/player layers remain later stages.
 - `engine/module/tts` has one GPT-SoVITS HTTP provider and one serial worker.
   `SyncSynthesize` creates a player and blocks through synthesis. There is no
   turn identifier, cancel/replace operation, bounded task queue, or distinction
@@ -61,7 +61,7 @@ Editor text input ──> application ConversationSession (turn ID, cancel, stat
                          ├─> TTS request(s) -> decoded bounded PCM speech source
                          └─> UI copy of text/state + optional emotion intent
                                                |
-Audio control thread -> callback-safe voice snapshot/commands -> device mixer
+Audio control thread -> stable voice slots / callback-boundary commands -> device mixer
                          ├─ Speech bus -> output + played-frame/envelope telemetry
                          └─ Music bus  -> output (ducked while speech is audible)
                                                |
@@ -74,7 +74,8 @@ bytes/PCM and its network lifetime. The session owns turn cancellation and
 presentation intent. A TTS result should identify a speech stream/job and
 report its state; playback ownership and cleanup should be explicit instead
 of leaking an `AudioPlayer*` across threads. The exact public API is designed
-in A1/A2, with a compatibility adapter for the current example until migrated.
+in A1; `GetAudioPlayer` remains a compatibility access point for the existing
+TTS path until A2 replaces it with the handle-oriented seam.
 The provider interface must never expose GPT-SoVITS types to Audio or Live2D.
 
 ## Timing and interruption rules
@@ -137,8 +138,8 @@ one thin vertical path before broadening providers or adding microphone input.
 - [miniaudio device manual](https://miniaud.io/docs/manual/index.html)
   defines the device callback and forbids device stop/reinitialization inside
   it. This reinforces a control path outside the callback and preallocated
-  callback work; the current callback's logs and shared mutable registry need
-  correction before live use.
+  callback work. A1 now uses stable published voice slots, bounded work, and
+  keeps device stop/reinitialization on the control path.
 - [Live2D Native lip-sync tutorial](https://docs.live2d.com/en/cubism-sdk-tutorials/native-lipsync-from-wav-native/)
   uses RMS to feed model lip-sync values, but its sample does not play sound.
   Here the Audio mixer, rather than a second WAV timer, must supply the value

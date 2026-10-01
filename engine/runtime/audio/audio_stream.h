@@ -6,6 +6,7 @@
 #include <mutex>
 #include <vector>
 #include "data/audio.h"
+#include "audio_types.h"
 
 namespace kpengine::audio
 {
@@ -27,8 +28,11 @@ namespace kpengine::audio
         uint64_t TryReadFrames(float* output, uint64_t frames);
 
         void Finish();
+        void Cancel();
 
         bool IsFinished() const;
+        AudioStreamState GetState() const;
+        uint64_t GetOverflowRejectionCount() const;
 
         data::AudioFormat GetAudioFormat() const  {return format_;}
 
@@ -36,7 +40,8 @@ namespace kpengine::audio
         size_t AvailableSpace() const;
         uint64_t ReadFramesLocked(float* output, uint64_t frames);
     private:
-        std::atomic<bool> is_finished{false};
+        std::atomic<AudioStreamState> state_{AudioStreamState::Open};
+        std::atomic<uint64_t> overflow_rejections_{0};
         data::AudioFormat format_;
         std::vector<float> buffer_;
         size_t write_pos_ = 0;
