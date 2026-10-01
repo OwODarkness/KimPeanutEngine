@@ -363,7 +363,7 @@ namespace kpengine::tts
             format.channels = 1;
             format.sample_rate = 48000;
             auto stream = std::make_shared<audio::AudioStream>(format, kStreamBufferSeconds);
-            audio::AudioStreamDecoder decoder(stream);
+            audio::AudioStreamDecoder decoder(stream, is_cancelled);
             player->SetStream(stream);
             if (job)
             {
@@ -390,8 +390,10 @@ namespace kpengine::tts
                 return true;
             };
             const auto on_finish = [&] {
+                if (is_cancelled())
+                    return;
                 decoder_finished = decoder.Finish();
-                if (decoder_finished && job)
+                if (decoder_finished && job && !is_cancelled())
                 {
                     job->network_finished_at = std::chrono::steady_clock::now();
                     job->network_finished.store(true, std::memory_order_release);

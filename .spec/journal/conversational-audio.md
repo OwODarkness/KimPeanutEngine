@@ -1,6 +1,6 @@
 # Conversational Audio and TTS Risk Repair
 
-- Status: A1 complete; A2 partial
+- Status: A1 complete; A2 implementation complete, deployment revision unpinned
 - Date: 2026-10-01
 - Spec: [conversational audio](../specs/conversational-audio.md)
 - Parent TODO: [Audio roadmap](../../docs/audio/TODO.md)
@@ -70,7 +70,7 @@
   request returned HTTP 400, `application/json`, 40 bytes. The response was not
   saved or played; this direct HTTP probe did not execute the compiled provider.
 
-## Remaining risks and unverified areas
+## Remaining risks at the initial A2 handoff
 
 - Per-job cancellation and replacement are not implemented. Shutdown can stop
   the active httplib request, but a session cannot cancel one request alone.
@@ -86,7 +86,7 @@
 - Server revision is not pinned. The local HTTP response confirms current
   protocol shape but not compatibility with a declared revision.
 
-## Remaining work
+## Remaining work at the initial A2 handoff
 
 - A1 is complete. Add per-job tokens/cancellation and distinguish successful decode from
   audible playback drain.
@@ -100,3 +100,28 @@
   `docs/status.md`.
 - The roadmap remains open until the remaining A1/A2 checks and later C1/L2D9/P1
   stages are completed.
+
+## 2026-10-01 — Standalone Audio Player
+
+- Correction: the first implementation placed Audio in the Scene3D workspace.
+  The user clarified the requested surface is a standalone mode like Live2D and
+  Terrain. That tab and its RuntimeContext-owned AudioSystem were removed.
+- `--mode audio-player` registers an `IApplicationHost` that uses the Runtime
+  presentation without creating the Scene3D editor workspace. The host owns
+  `MiniAudioSystem`; its player UI borrows the instance. Audio remains
+  independent of TTS.
+- The player exposes device start/stop, master/Speech/Music gain and mute,
+  device details, played-frame-derived bus activity, and mixer telemetry. It
+  uses the engine Logger through the `Audio` category; callbacks do not log.
+- The reference image at `save/audio_gui.png` guided the standalone library and
+  player layout. The player now provides track browsing, waveform seeking,
+  playback spectrum, and transport controls without moving device ownership out
+  of Runtime Audio.
+- The host supplies the engine error material as a render-catalog root so it
+  initializes without loading a Scene3D level.
+- Validation: Debug `KimPeanutEngine` build passed; both Audio Player parser
+  and host-registry tests passed. A visible Vulkan launch logged
+  `Application mode: audio-player` and initialized the host and render catalog.
+  The GLFW client capture was visually compared with the reference while the
+  sample track played; the waveform now follows the playhead continuously with
+  a dotted grid, sparse bars, and a trailing orange fade.

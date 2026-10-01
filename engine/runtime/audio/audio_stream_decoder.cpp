@@ -81,7 +81,7 @@ namespace kpengine::audio
                                       stream_->GetAudioFormat().sample_rate;
             }
             const size_t written = output.size() / output_channels;
-            if (written && !stream_->PushFrames(output.data(), written))
+            if (written && !PushFrames(output.data(), written))
                 return false;
             output_frames_ += written;
         }
@@ -113,7 +113,9 @@ namespace kpengine::audio
                 if (!found_fmt)
                     return AudioDecodeResult::InvalidData;
                 data_offset_ = payload;
-                data_size_unknown_ = chunk_size == std::numeric_limits<uint32_t>::max();
+                // GPT-SoVITS streaming WAV headers leave the data length at zero.
+                data_size_unknown_ = chunk_size == 0 ||
+                                     chunk_size == std::numeric_limits<uint32_t>::max();
                 data_bytes_remaining_ = data_size_unknown_ ? 0 : chunk_size;
                 const size_t bytes_per_frame = (wav_format_.bits_per_sample / 8) * wav_format_.channels;
                 if (!data_size_unknown_ && chunk_size % bytes_per_frame != 0)
@@ -214,9 +216,14 @@ namespace kpengine::audio
         }
 
         const size_t output_frames = output.size() / output_format.channels;
-        if (output_frames && !stream_->PushFrames(output.data(), output_frames))
+        if (output_frames && !PushFrames(output.data(), output_frames))
             return AudioDecodeResult::InvalidData;
         output_frames_ += output_frames;
         return output_frames ? AudioDecodeResult::DataDecoded : AudioDecodeResult::NeedMoreData;
+    }
+
+    bool AudioStreamDecoder::PushFrames(const float* frames, uint64_t count)
+    {
+        return stream_->PushFramesWait(frames, count, should_cancel_);
     }
 }

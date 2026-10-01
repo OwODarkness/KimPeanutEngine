@@ -190,34 +190,55 @@ namespace kpengine::tts
         const ScopeExit cleanup([this, job, client] { EndRequest(job, client); });
         std::string json_body = BuildRequest(request);
 
-        httplib::Headers headers;
-
-
-        std::vector<uint8_t> quarantined;
-        auto receiver = [&](const char *data, size_t len)
-        {
+        httplib::Request http_request;
+        http_request.method = "POST";
+        http_request.path = config_.api_path;
+        http_request.body = std::move(json_body);
+        http_request.headers.emplace("Content-Type", "application/json");
+        std::string callback_error;
+        uint64_t received_bytes = 0;
+        http_request.response_handler = [&](const httplib::Response& response) {
             if (is_cancelled())
                 return false;
-            if (len > kMaxResponseBytes - quarantined.size())
+            if (response.status != 200)
+            {
+                callback_error = "TTS server returned HTTP " + std::to_string(response.status);
                 return false;
-            quarantined.insert(quarantined.end(), data, data + len);
-            return true; 
+            }
+            if (!IsSupportedAudioType(response.get_header_value("Content-Type")))
+            {
+                callback_error = "TTS server returned an unsupported Content-Type";
+                return false;
+            }
+            return true;
         };
-
-        auto progress = [&](uint64_t current, uint64_t total)
-        {
-            (void)current;
+        http_request.content_receiver = [&](const char* data, size_t size,
+                                            size_t offset, size_t total) {
+            (void)offset;
             (void)total;
-            return !is_cancelled();
+            if (is_cancelled())
+                return false;
+            if (size > kMaxResponseBytes - received_bytes)
+            {
+                callback_error = "TTS response exceeded the 32 MiB limit";
+                return false;
+            }
+            received_bytes += size;
+            if (!OnData(reinterpret_cast<const uint8_t*>(data), size))
+            {
+                callback_error = "TTS audio consumer rejected the response";
+                return false;
+            }
+            return true;
         };
-        auto response = client->Post(config_.api_path, headers, json_body, "application/json", receiver, progress);
+        auto response = client->send(http_request);
 
         if (is_cancelled())
             return false;
 
         if (!response)
         {
-            OnError(httplib::to_string(response.error()));
+            OnError(callback_error.empty() ? httplib::to_string(response.error()) : callback_error);
             return false;
         }
         if (response->status != 200)
@@ -232,21 +253,10 @@ namespace kpengine::tts
             return false;
         }
 
-        if (quarantined.empty())
+        if (received_bytes == 0)
         {
             OnError("TTS server returned an empty audio response");
             return false;
-        }
-
-        constexpr size_t kDeliveryChunkBytes = 64u * 1024u;
-        for (size_t offset = 0; offset < quarantined.size(); offset += kDeliveryChunkBytes)
-        {
-            const size_t count = std::min(kDeliveryChunkBytes, quarantined.size() - offset);
-            if (!OnData(quarantined.data() + offset, count))
-            {
-                OnError("TTS audio consumer rejected the response");
-                return false;
-            }
         }
         OnFinish();
         return true;

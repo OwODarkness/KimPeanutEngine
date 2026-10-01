@@ -3,6 +3,8 @@
 
 #include <cstdint>
 #include <atomic>
+#include <condition_variable>
+#include <functional>
 #include <mutex>
 #include <vector>
 #include "data/audio.h"
@@ -22,6 +24,9 @@ namespace kpengine::audio
     
         // Reject writes that do not fit; speech is never silently truncated.
         bool PushFrames(const float *data, uint64_t frames);
+        // Producer-thread path: wait for FIFO space without blocking the device callback.
+        bool PushFramesWait(const float* data, uint64_t frames,
+                            const std::function<bool()>& should_cancel = {});
 
         uint64_t  ReadFrames(float *output, uint64_t frames);
         // Non-blocking consumer path used by the device callback.
@@ -38,6 +43,7 @@ namespace kpengine::audio
 
     private:
         size_t AvailableSpace() const;
+        bool PushFramesLocked(const float* data, uint64_t frames);
         uint64_t ReadFramesLocked(float* output, uint64_t frames);
     private:
         std::atomic<AudioStreamState> state_{AudioStreamState::Open};
@@ -49,6 +55,7 @@ namespace kpengine::audio
         size_t capacity_;
         size_t buffered_samples_ = 0;
         mutable std::mutex mutex_;
+        std::condition_variable space_available_;
     };
 } // namespace  kpengine::audio
 

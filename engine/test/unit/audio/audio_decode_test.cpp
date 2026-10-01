@@ -135,6 +135,26 @@ TEST(AudioStreamDecoderTest, AcceptsWavHeaderAndFramesSplitAtEveryByte)
     EXPECT_FLOAT_EQ(output[2], -0.5f);
 }
 
+TEST(AudioStreamDecoderTest, AcceptsStreamingWavWithUnspecifiedDataLength)
+{
+    data::AudioFormat format{};
+    format.channels = 1;
+    format.sample_rate = 48000;
+    auto stream = std::make_shared<audio::AudioStream>(format, 1);
+    audio::AudioStreamDecoder decoder(stream);
+    auto wav = MakeMonoWav({0, 16384, -16384});
+    wav[40] = wav[41] = wav[42] = wav[43] = 0;
+
+    EXPECT_NE(decoder.Feed(wav.data(), wav.size()), audio::AudioDecodeResult::InvalidData);
+    ASSERT_TRUE(decoder.Finish());
+
+    float output[3]{};
+    EXPECT_EQ(stream->ReadFrames(output, 3), 3u);
+    EXPECT_FLOAT_EQ(output[0], 0.0f);
+    EXPECT_FLOAT_EQ(output[1], 0.5f);
+    EXPECT_FLOAT_EQ(output[2], -0.5f);
+}
+
 TEST(AudioStreamDecoderTest, KeepsStereoChannelFramesAlignedAcrossByteSplits)
 {
     data::AudioFormat format{};
@@ -260,6 +280,57 @@ TEST(AudioStreamTest, FinishedStreamRejectsLateProducerWrites)
     stream.Finish();
     EXPECT_FALSE(stream.PushFrames(&sample, 1));
     EXPECT_TRUE(stream.IsFinished());
+}
+
+TEST(AudioStreamTest, ProducerWaitsForSpaceWithoutDroppingFrames)
+{
+    data::AudioFormat format{};
+    format.channels = 1;
+    format.sample_rate = 2;
+    audio::AudioStream stream(format, 1);
+    const float first[] = {0.25f, 0.5f};
+    const float next = 0.75f;
+    ASSERT_TRUE(stream.PushFrames(first, 2));
+
+    std::atomic<bool> pushed = false;
+    std::thread producer([&] {
+        pushed.store(stream.PushFramesWait(&next, 1), std::memory_order_release);
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    EXPECT_FALSE(pushed.load(std::memory_order_acquire));
+
+    float output[2]{};
+    ASSERT_EQ(stream.ReadFrames(output, 1), 1u);
+    EXPECT_FLOAT_EQ(output[0], first[0]);
+    producer.join();
+    ASSERT_TRUE(pushed.load(std::memory_order_acquire));
+
+    ASSERT_EQ(stream.ReadFrames(output, 2), 2u);
+    EXPECT_FLOAT_EQ(output[0], first[1]);
+    EXPECT_FLOAT_EQ(output[1], next);
+}
+
+TEST(AudioStreamTest, WaitingProducerCanBeCancelled)
+{
+    data::AudioFormat format{};
+    format.channels = 1;
+    format.sample_rate = 2;
+    audio::AudioStream stream(format, 1);
+    const float first[] = {0.25f, 0.5f};
+    const float next = 0.75f;
+    ASSERT_TRUE(stream.PushFrames(first, 2));
+    std::atomic<bool> cancelled = false;
+    bool pushed = true;
+    std::thread producer([&] {
+        pushed = stream.PushFramesWait(&next, 1, [&] {
+            return cancelled.load(std::memory_order_acquire);
+        });
+    });
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    cancelled.store(true, std::memory_order_release);
+    producer.join();
+    EXPECT_FALSE(pushed);
+    EXPECT_EQ(stream.GetOverflowRejectionCount(), 0u);
 }
 
 TEST(AudioStreamTest, SeparatesProducerFinishFromConsumerDrain)

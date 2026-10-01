@@ -1,4 +1,5 @@
 #include "audio_stream.h"
+#include <chrono>
 #include <limits>
 
 namespace kpengine::audio
@@ -15,6 +16,35 @@ namespace kpengine::audio
 bool AudioStream::PushFrames(const float* data, uint64_t frames)
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    return PushFramesLocked(data, frames);
+}
+
+bool AudioStream::PushFramesWait(const float* data, uint64_t frames,
+                                 const std::function<bool()>& should_cancel)
+{
+    std::unique_lock<std::mutex> lock(mutex_);
+    const size_t channels = format_.channels;
+    if (!data || channels == 0 || capacity_ == 0 ||
+        frames > std::numeric_limits<size_t>::max() / channels ||
+        frames * channels > capacity_)
+        return false;
+
+    const size_t samples = static_cast<size_t>(frames) * channels;
+    while (samples > AvailableSpace())
+    {
+        if (state_.load(std::memory_order_acquire) != AudioStreamState::Open ||
+            (should_cancel && should_cancel()))
+            return false;
+        space_available_.wait_for(lock, std::chrono::milliseconds(5));
+    }
+    if (state_.load(std::memory_order_acquire) != AudioStreamState::Open ||
+        (should_cancel && should_cancel()))
+        return false;
+    return PushFramesLocked(data, frames);
+}
+
+bool AudioStream::PushFramesLocked(const float* data, uint64_t frames)
+{
 
     const size_t channels = format_.channels;
     if (!data || channels == 0 || capacity_ == 0 ||
@@ -65,7 +95,10 @@ uint64_t AudioStream::ReadFrames(float* output,
                                  uint64_t requested_frames)
 {
     std::lock_guard<std::mutex> lock(mutex_);
-    return ReadFramesLocked(output, requested_frames);
+    const uint64_t read = ReadFramesLocked(output, requested_frames);
+    if (read)
+        space_available_.notify_all();
+    return read;
 }
 
 uint64_t AudioStream::TryReadFrames(float* output, uint64_t requested_frames)
@@ -73,7 +106,8 @@ uint64_t AudioStream::TryReadFrames(float* output, uint64_t requested_frames)
     std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
     if (!lock.owns_lock())
         return 0;
-    return ReadFramesLocked(output, requested_frames);
+    const uint64_t read = ReadFramesLocked(output, requested_frames);
+    return read;
 }
 
 uint64_t AudioStream::ReadFramesLocked(float* output, uint64_t requested_frames)
@@ -143,6 +177,7 @@ uint64_t AudioStream::ReadFramesLocked(float* output, uint64_t requested_frames)
         state_.store(buffered_samples_ == 0 ? AudioStreamState::Drained
                                             : AudioStreamState::ProducerFinished,
                      std::memory_order_release);
+        space_available_.notify_all();
     }
 
     void AudioStream::Cancel()
@@ -151,6 +186,7 @@ uint64_t AudioStream::ReadFramesLocked(float* output, uint64_t requested_frames)
         state_.store(AudioStreamState::Cancelled, std::memory_order_release);
         buffered_samples_ = 0;
         read_pos_ = write_pos_;
+        space_available_.notify_all();
     }
 
     bool AudioStream::IsFinished() const

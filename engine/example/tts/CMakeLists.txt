@@ -11,4 +11,7 @@ PRIVATE
 TTS
 )
 
+add_executable(TTSServiceSmoke tts_service_smoke.cpp)
+target_link_libraries(TTSServiceSmoke PRIVATE TTSExample)
+
 

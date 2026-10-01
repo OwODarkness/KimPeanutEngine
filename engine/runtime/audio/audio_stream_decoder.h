@@ -2,7 +2,9 @@
 #define KPENGINE_RUNTIME_AUDIO_STREAM_DECODER_H
 
 #include <cstdint>
+#include <functional>
 #include <memory>
+#include <utility>
 #include <vector>
 #include "data/audio.h"
 #include "audio_stream.h"
@@ -19,7 +21,9 @@ namespace kpengine::audio
     class AudioStreamDecoder
     {
     public:
-        AudioStreamDecoder(std::shared_ptr<AudioStream> stream) : stream_(stream) {}
+        AudioStreamDecoder(std::shared_ptr<AudioStream> stream,
+                           std::function<bool()> should_cancel = {})
+            : stream_(std::move(stream)), should_cancel_(std::move(should_cancel)) {}
 
         ~AudioStreamDecoder() = default;
 
@@ -32,6 +36,7 @@ namespace kpengine::audio
     private:
         AudioDecodeResult ParseHeader();
         AudioDecodeResult DecodePCM();
+        bool PushFrames(const float* frames, uint64_t count);
 
     protected:
     protected:
@@ -45,6 +50,7 @@ namespace kpengine::audio
         std::vector<float> resample_frames_;
         double resample_position_ = 0.0;
         uint64_t output_frames_ = 0;
+        std::function<bool()> should_cancel_;
     };
 
 }
