@@ -804,6 +804,35 @@ TEST(RenderSystemLifecycleTest, SeparatesPresentationInitializationFromSceneProm
     system.Shutdown();
 }
 
+TEST(RenderSystemLifecycleTest, ReportsFailedCatalogPromotionAndAllowsRetry)
+{
+    const auto probe = std::make_shared<BackendProbe>();
+    InitFixtures fixtures;
+    render::RenderSystem system;
+    const render::RenderSystemInitInfo info = fixtures.Info(
+        [probe](GraphicsAPIType) { return std::make_unique<FakeBackend>(probe); });
+    ASSERT_TRUE(system.Initialize(info));
+
+    probe->fail_render_target_after = static_cast<int>(probe->targets.size());
+    const uint64_t failed_serial =
+        system.QueuePreparedAssetsUpdate(info.prepared_assets);
+    ASSERT_NE(failed_serial, 0u);
+    EXPECT_FALSE(system.BeginFrame(1.0f / 60.0f));
+    const auto failed = system.GetPreparedAssetsUpdateResult(failed_serial);
+    EXPECT_EQ(failed.status, render::PreparedAssetsUpdateStatus::Failed);
+    EXPECT_FALSE(failed.diagnostic.empty());
+
+    probe->fail_render_target_after = -1;
+    const uint64_t retry_serial =
+        system.QueuePreparedAssetsUpdate(info.prepared_assets);
+    ASSERT_NE(retry_serial, 0u);
+    ASSERT_TRUE(system.BeginFrame(1.0f / 60.0f));
+    EXPECT_EQ(system.GetPreparedAssetsUpdateResult(retry_serial).status,
+              render::PreparedAssetsUpdateStatus::Applied);
+    EXPECT_TRUE(system.EndFrame());
+    system.Shutdown();
+}
+
 TEST(RenderSystemLifecycleTest, SelectsViewportDebugTargetAtFrameBoundary)
 {
     const auto probe = std::make_shared<BackendProbe>();

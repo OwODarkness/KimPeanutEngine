@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <string>
@@ -67,6 +68,21 @@ namespace kpengine::render
         explicit operator bool() const { return success; }
     };
 
+    enum class PreparedAssetsUpdateStatus : std::uint8_t
+    {
+        Unknown,
+        Pending,
+        Applied,
+        Failed,
+        Superseded,
+    };
+
+    struct PreparedAssetsUpdateResult
+    {
+        PreparedAssetsUpdateStatus status = PreparedAssetsUpdateStatus::Unknown;
+        std::string diagnostic;
+    };
+
     using RenderBackendFactory =
         std::function<std::unique_ptr<graphics::RenderBackend>(GraphicsAPIType)>;
 
@@ -104,6 +120,7 @@ namespace kpengine::render
             std::shared_ptr<const PreparedRenderAssetCatalog> prepared_assets);
         uint64_t GetAppliedPreparedAssetsUpdate() const noexcept
         { return applied_catalog_update_.load(std::memory_order_acquire); }
+        PreparedAssetsUpdateResult GetPreparedAssetsUpdateResult(uint64_t serial) const;
         // Safe to call repeatedly; the first call retires all owned state.
         void Shutdown();
 
@@ -218,6 +235,7 @@ namespace kpengine::render
         std::optional<PathTraceSettings> pending_path_trace_settings_;
         std::optional<std::pair<uint64_t,
             std::shared_ptr<const PreparedRenderAssetCatalog>>> pending_catalog_update_;
+        std::map<uint64_t, PreparedAssetsUpdateResult> catalog_update_results_;
         std::atomic<uint64_t> applied_catalog_update_{0};
         uint64_t next_catalog_update_ = 1;
         std::atomic<bool> requested_profile_window_reset_{false};

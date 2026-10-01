@@ -1,5 +1,6 @@
 #include "render_system.h"
 
+#include <algorithm>
 #include <atomic>
 #include <stdexcept>
 #include <chrono>
@@ -222,9 +223,34 @@ namespace kpengine::render
     {
         if (!prepared_assets) return 0;
         std::lock_guard lock(request_mutex_);
+        if (pending_catalog_update_)
+        {
+            catalog_update_results_[pending_catalog_update_->first] = {
+                PreparedAssetsUpdateStatus::Superseded,
+                "A newer prepared catalog update replaced this pending update."};
+        }
         const uint64_t serial = next_catalog_update_++;
         pending_catalog_update_ = std::make_pair(serial, std::move(prepared_assets));
+        catalog_update_results_[serial] = {PreparedAssetsUpdateStatus::Pending, {}};
+        while (catalog_update_results_.size() > 128)
+        {
+            const auto completed = std::find_if(catalog_update_results_.begin(),
+                catalog_update_results_.end(), [](const auto &entry) {
+                    return entry.second.status != PreparedAssetsUpdateStatus::Pending;
+                });
+            if (completed == catalog_update_results_.end()) break;
+            catalog_update_results_.erase(completed);
+        }
         return serial;
+    }
+
+    PreparedAssetsUpdateResult RenderSystem::GetPreparedAssetsUpdateResult(
+        const uint64_t serial) const
+    {
+        std::lock_guard lock(request_mutex_);
+        const auto result = catalog_update_results_.find(serial);
+        return result != catalog_update_results_.end()
+            ? result->second : PreparedAssetsUpdateResult{};
     }
 
     bool RenderSystem::BeginFrame(float delta_time)
@@ -265,9 +291,19 @@ namespace kpengine::render
                 {
                     last_diagnostic_ = replacement_diagnostic;
                 }
+                {
+                    std::lock_guard lock(request_mutex_);
+                    catalog_update_results_[catalog_update->first] = {
+                        PreparedAssetsUpdateStatus::Failed, last_diagnostic_};
+                }
                 return false;
             }
             applied_catalog_update_.store(catalog_update->first, std::memory_order_release);
+            {
+                std::lock_guard lock(request_mutex_);
+                catalog_update_results_[catalog_update->first] = {
+                    PreparedAssetsUpdateStatus::Applied, {}};
+            }
         }
         const auto frame_started = std::chrono::steady_clock::now();
         profile_frame_start_ = frame_started;

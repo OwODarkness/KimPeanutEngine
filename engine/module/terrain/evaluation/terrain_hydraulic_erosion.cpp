@@ -45,6 +45,28 @@ namespace kpengine::terrain
         constexpr std::array<Edge, 4> kEdges{{
             {1, 0, 0.0, 0.0}, {-1, 0, 0.0, 0.0},
             {0, 1, 0.0, 0.0}, {0, -1, 0.0, 0.0}}};
+
+        double FirstDerivative(const std::vector<double> &samples,
+                               const GridDomain2D &domain, const std::uint32_t x,
+                               const std::uint32_t y, const bool along_x)
+        {
+            const std::uint32_t length = along_x ? domain.width : domain.height;
+            const std::uint32_t position = along_x ? x : y;
+            const double spacing = along_x ? domain.spacing_x_m : domain.spacing_z_m;
+            const auto sample = [&](const std::uint32_t offset) {
+                const std::uint32_t sx = along_x ? offset : x;
+                const std::uint32_t sy = along_x ? y : offset;
+                return samples[static_cast<std::size_t>(sy) * domain.width + sx];
+            };
+            if (length == 2) return (sample(1) - sample(0)) / spacing;
+            if (position == 0)
+                return (-3.0 * sample(0) + 4.0 * sample(1) - sample(2)) /
+                    (2.0 * spacing);
+            if (position + 1 == length)
+                return (3.0 * sample(position) - 4.0 * sample(position - 1) +
+                    sample(position - 2)) / (2.0 * spacing);
+            return (sample(position + 1) - sample(position - 1)) / (2.0 * spacing);
+        }
     }
 
     bool RegisterTerrainHydraulicOperators(OperatorRegistry &registry,
@@ -76,34 +98,36 @@ namespace kpengine::terrain
                     {"surface_height_m", std::move(surface)}};
             }}, diagnostic)) return false;
 
-        return registry.Register({"terrain.erosion.hydraulic_pipe", 1,
-            {{"state", PortType::LayeredHeightfield2D},
-             {"rain_rate_m_per_s", PortType::ScalarField2D},
-             {"erodibility_0_1", PortType::ScalarField2D},
-             {"hardness_0_1", PortType::ScalarField2D},
-             {"obstacle_0_1", PortType::ScalarField2D}},
-            {{"state", PortType::LayeredHeightfield2D},
-             {"height", PortType::Heightfield},
-             {"surface_height_m", PortType::Heightfield},
-             {"bedrock_elevation_m", PortType::Heightfield},
-             {"soil_thickness_m", PortType::ScalarField2D},
-             {"sand_thickness_m", PortType::ScalarField2D},
-             {"water_depth_m", PortType::ScalarField2D},
-             {"suspended_sediment_kg_per_m2", PortType::ScalarField2D},
-             {"flow_speed_m_per_s", PortType::ScalarField2D},
-             {"discharge_m3_per_s", PortType::ScalarField2D},
-             {"bedrock_eroded_kg_per_m2", PortType::ScalarField2D},
-             {"soil_deposited_m", PortType::ScalarField2D},
-             {"water_exported_m3", PortType::ScalarField2D},
-             {"sediment_exported_kg", PortType::ScalarField2D},
-             {"substep_count", PortType::ScalarField2D},
-             {"simulated_time_s", PortType::ScalarField2D},
-             {"water_budget_residual_m3", PortType::ScalarField2D},
-             {"water_budget_relative_residual", PortType::ScalarField2D},
-             {"solid_budget_residual_kg", PortType::ScalarField2D},
-             {"solid_budget_relative_residual", PortType::ScalarField2D}},
-            [](const OperatorContext &context, const nlohmann::json &p,
-               const OperatorInputs &inputs) {
+        const PortTypes hydraulic_inputs{
+            {"state", PortType::LayeredHeightfield2D},
+            {"rain_rate_m_per_s", PortType::ScalarField2D},
+            {"erodibility_0_1", PortType::ScalarField2D},
+            {"hardness_0_1", PortType::ScalarField2D},
+            {"obstacle_0_1", PortType::ScalarField2D}};
+        const PortTypes hydraulic_outputs_v1{
+            {"state", PortType::LayeredHeightfield2D},
+            {"height", PortType::Heightfield},
+            {"surface_height_m", PortType::Heightfield},
+            {"bedrock_elevation_m", PortType::Heightfield},
+            {"soil_thickness_m", PortType::ScalarField2D},
+            {"sand_thickness_m", PortType::ScalarField2D},
+            {"water_depth_m", PortType::ScalarField2D},
+            {"suspended_sediment_kg_per_m2", PortType::ScalarField2D},
+            {"flow_speed_m_per_s", PortType::ScalarField2D},
+            {"discharge_m3_per_s", PortType::ScalarField2D},
+            {"bedrock_eroded_kg_per_m2", PortType::ScalarField2D},
+            {"soil_deposited_m", PortType::ScalarField2D},
+            {"water_exported_m3", PortType::ScalarField2D},
+            {"sediment_exported_kg", PortType::ScalarField2D},
+            {"substep_count", PortType::ScalarField2D},
+            {"simulated_time_s", PortType::ScalarField2D},
+            {"water_budget_residual_m3", PortType::ScalarField2D},
+            {"water_budget_relative_residual", PortType::ScalarField2D},
+            {"solid_budget_residual_kg", PortType::ScalarField2D},
+            {"solid_budget_relative_residual", PortType::ScalarField2D}};
+        const auto evaluate_hydraulic = [](const OperatorContext &context,
+            const nlohmann::json &p, const OperatorInputs &inputs,
+            const bool compact_diagnostics) -> OperatorOutputs {
                 const auto &state_value = inputs.at("state");
                 const auto *state = state_value ? state_value->AsLayeredHeightfield() : nullptr;
                 if (state == nullptr)
@@ -134,6 +158,8 @@ namespace kpengine::terrain
                 const std::uint32_t maximum_substeps = p.value("maximum_substeps", 4096u);
                 const std::size_t maximum_scratch_bytes = p.value(
                     "maximum_scratch_bytes", std::size_t{512} * 1024u * 1024u);
+                // Includes solver doubles, published fields, layered-state copies and headroom.
+                constexpr std::size_t kPeakWorkingBytesPerSample = 320;
                 const std::string boundary = p.value("boundary", std::string("closed"));
                 if (!std::isfinite(duration) || duration <= 0.0 ||
                     !std::isfinite(maximum_dt) || maximum_dt <= 0.0 ||
@@ -151,7 +177,7 @@ namespace kpengine::terrain
                     !std::isfinite(evaporation_rate) || evaporation_rate < 0.0 ||
                     maximum_substeps == 0 || maximum_substeps > 65536 ||
                     maximum_scratch_bytes == 0 ||
-                    count > maximum_scratch_bytes / 256u ||
+                    count > maximum_scratch_bytes / kPeakWorkingBytesPerSample ||
                     (boundary != "closed" && boundary != "open"))
                     throw std::invalid_argument("hydraulic parameters are outside their finite, nonnegative ranges");
 
@@ -226,16 +252,15 @@ namespace kpengine::terrain
                         rain_volume += rain[i] * dt * cell_area;
                         surface[i] = bedrock[i] + soil[i] + sand[i];
                     }
-                    std::string field_error;
-                    std::vector<float> surface_samples(count);
-                    std::transform(surface.begin(), surface.end(), surface_samples.begin(),
-                        [](double value) { return static_cast<float>(value); });
-                    const auto surface_field = ScalarField2D::Create(domain,
-                        std::move(surface_samples), context.maximum_samples, field_error);
-                    if (!surface_field) throw std::runtime_error(field_error);
-                    const auto slope_radians = ComputeSlopeRadians(*surface_field);
-                    std::transform(slope_radians.begin(), slope_radians.end(), slope.begin(),
-                        [](float value) { return static_cast<double>(value); });
+                    for (std::uint32_t y = 0; y < domain.height; ++y)
+                        for (std::uint32_t x = 0; x < domain.width; ++x)
+                        {
+                            const std::size_t index =
+                                static_cast<std::size_t>(y) * domain.width + x;
+                            const double dx = FirstDerivative(surface, domain, x, y, true);
+                            const double dz = FirstDerivative(surface, domain, x, y, false);
+                            slope[index] = std::atan(std::hypot(dx, dz));
+                        }
 
                     std::fill(speed.begin(), speed.end(), 0.0);
                     std::fill(discharge.begin(), discharge.end(), 0.0);
@@ -259,7 +284,9 @@ namespace kpengine::terrain
                                 const std::size_t target = outside ? source :
                                     static_cast<std::size_t>(ny) * domain.width + static_cast<std::uint32_t>(nx);
                                 const double source_head = surface[source] + water[source];
-                                const double target_head = outside ? domain.datum_y_m : surface[target] + water[target];
+                                // Surface elevations are stored relative to the domain datum;
+                                // the open boundary must use that same local elevation frame.
+                                const double target_head = outside ? 0.0 : surface[target] + water[target];
                                 const double previous = flux[slot];
                                 flux[slot] = std::max(0.0, previous + gravity * pipe_area * dt *
                                     (source_head - target_head) / edge.length_m);
@@ -402,9 +429,7 @@ namespace kpengine::terrain
                 std::vector<float> bedrock_out(count), soil_out(count), sand_out(count), water_out(count),
                     suspended_out(count), surface_out(count), speed_out(count), discharge_out(count),
                     eroded_out(count), deposited_out(count), exported_water_out(count),
-                    exported_sediment_out(count), water_residual_out(count),
-                    water_relative_residual_out(count), solid_residual_out(count),
-                    solid_relative_residual_out(count);
+                    exported_sediment_out(count);
                 for (std::size_t i = 0; i < count; ++i)
                 {
                     bedrock_out[i] = static_cast<float>(bedrock[i]);
@@ -451,21 +476,13 @@ namespace kpengine::terrain
                 if (std::abs(water_relative_residual) > kPublishedBudgetRelativeTolerance ||
                     std::abs(solid_relative_residual) > kPublishedBudgetRelativeTolerance)
                     throw std::runtime_error("published hydraulic state exceeded its relative water or solid budget tolerance");
-                std::fill(water_residual_out.begin(), water_residual_out.end(),
-                    static_cast<float>(water_residual));
-                std::fill(water_relative_residual_out.begin(), water_relative_residual_out.end(),
-                    static_cast<float>(water_relative_residual));
-                std::fill(solid_residual_out.begin(), solid_residual_out.end(),
-                    static_cast<float>(solid_residual));
-                std::fill(solid_relative_residual_out.begin(), solid_relative_residual_out.end(),
-                    static_cast<float>(solid_relative_residual));
                 std::string error;
                 auto output_state = LayeredHeightfield2D::Create(domain,
                     bedrock_out, soil_out, sand_out, water_out, suspended_out,
                     context.maximum_samples, error);
                 if (!output_state) throw std::runtime_error(error);
                 auto surface_field = MakeField(context, std::move(surface_out));
-                return OperatorOutputs{
+                OperatorOutputs outputs{
                     {"state", std::move(output_state)},
                     {"height", surface_field},
                     {"surface_height_m", std::move(surface_field)},
@@ -479,15 +496,55 @@ namespace kpengine::terrain
                     {"bedrock_eroded_kg_per_m2", MakeField(context, std::move(eroded_out))},
                     {"soil_deposited_m", MakeField(context, std::move(deposited_out))},
                     {"water_exported_m3", MakeField(context, std::move(exported_water_out))},
-                    {"sediment_exported_kg", MakeField(context, std::move(exported_sediment_out))},
-                    {"substep_count", MakeField(context,
-                        std::vector<float>(count, static_cast<float>(substep)))},
-                    {"simulated_time_s", MakeField(context,
-                        std::vector<float>(count, static_cast<float>(elapsed)))},
-                    {"water_budget_residual_m3", MakeField(context, std::move(water_residual_out))},
-                    {"water_budget_relative_residual", MakeField(context, std::move(water_relative_residual_out))},
-                    {"solid_budget_residual_kg", MakeField(context, std::move(solid_residual_out))},
-                    {"solid_budget_relative_residual", MakeField(context, std::move(solid_relative_residual_out))}};
-            }}, diagnostic);
+                    {"sediment_exported_kg", MakeField(context, std::move(exported_sediment_out))}};
+                if (compact_diagnostics)
+                {
+                    outputs.scalar_metadata = {
+                        {"substep_count", static_cast<double>(substep)},
+                        {"simulated_time_s", elapsed},
+                        {"water_budget_residual_m3", water_residual},
+                        {"water_budget_relative_residual", water_relative_residual},
+                        {"solid_budget_residual_kg", solid_residual},
+                        {"solid_budget_relative_residual", solid_relative_residual}};
+                }
+                else
+                {
+                    outputs.emplace("substep_count", MakeField(context,
+                        std::vector<float>(count, static_cast<float>(substep))));
+                    outputs.emplace("simulated_time_s", MakeField(context,
+                        std::vector<float>(count, static_cast<float>(elapsed))));
+                    outputs.emplace("water_budget_residual_m3", MakeField(context,
+                        std::vector<float>(count, static_cast<float>(water_residual))));
+                    outputs.emplace("water_budget_relative_residual", MakeField(context,
+                        std::vector<float>(count, static_cast<float>(water_relative_residual))));
+                    outputs.emplace("solid_budget_residual_kg", MakeField(context,
+                        std::vector<float>(count, static_cast<float>(solid_residual))));
+                    outputs.emplace("solid_budget_relative_residual", MakeField(context,
+                        std::vector<float>(count, static_cast<float>(solid_relative_residual))));
+                }
+                return outputs;
+            };
+
+        const auto evaluate_v1 = [evaluate_hydraulic](const OperatorContext &context,
+            const nlohmann::json &parameters, const OperatorInputs &inputs) {
+            return evaluate_hydraulic(context, parameters, inputs, false);
+        };
+        if (!registry.Register({"terrain.erosion.hydraulic_pipe", 1,
+                hydraulic_inputs, hydraulic_outputs_v1, evaluate_v1}, diagnostic))
+            return false;
+
+        PortTypes hydraulic_outputs_v2 = hydraulic_outputs_v1;
+        hydraulic_outputs_v2.erase("substep_count");
+        hydraulic_outputs_v2.erase("simulated_time_s");
+        hydraulic_outputs_v2.erase("water_budget_residual_m3");
+        hydraulic_outputs_v2.erase("water_budget_relative_residual");
+        hydraulic_outputs_v2.erase("solid_budget_residual_kg");
+        hydraulic_outputs_v2.erase("solid_budget_relative_residual");
+        const auto evaluate_v2 = [evaluate_hydraulic](const OperatorContext &context,
+            const nlohmann::json &parameters, const OperatorInputs &inputs) {
+            return evaluate_hydraulic(context, parameters, inputs, true);
+        };
+        return registry.Register({"terrain.erosion.hydraulic_pipe", 2,
+            hydraulic_inputs, std::move(hydraulic_outputs_v2), evaluate_v2}, diagnostic);
     }
 }

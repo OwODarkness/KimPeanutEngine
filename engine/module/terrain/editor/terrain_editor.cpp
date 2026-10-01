@@ -435,6 +435,8 @@ namespace kpengine::terrain
                             }
                         }
                     }
+                    for (const auto &[name, value] : node.scalar_metadata)
+                        ImGui::Text("%s: %.9g", name.c_str(), value);
                     ImGui::TreePop();
                 }
                 ImGui::Text("%s: %.3f ms | %zu bytes | [%.3f, %.3f] | %s | %016llx",

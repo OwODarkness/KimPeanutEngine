@@ -73,18 +73,36 @@ namespace kpengine::terrain
         bool PublishPreview(const EvaluationResult &result,
                             std::shared_ptr<const ScalarField2D> heightfield,
                             std::string &diagnostic);
+        void DiscardPendingPreview();
         void RetirePreviousPreview();
 
         struct PreviewAssets
         {
             asset::AssetID mesh;
-        asset::AssetID material;
-        std::vector<asset::AssetID> materials;
-        std::vector<asset::AssetID> textures;
+            asset::AssetID material;
+            std::vector<asset::AssetID> materials;
+            std::vector<asset::AssetID> textures;
             gameplay::ActorHandle actor;
             uint64_t catalog_serial = 0;
+            spatial::AABB bounds{};
             std::shared_ptr<const ScalarField2D> heightfield;
             std::shared_ptr<EvaluationResult> evaluation;
+        };
+        struct PreviewPublication
+        {
+            enum class State : std::uint8_t { Empty, Pending, Applied, Failed, Retired };
+
+            bool Begin(std::unique_ptr<PreviewAssets> &&preview, std::uint64_t update_serial);
+            bool MarkApplied(std::uint64_t update_serial);
+            bool MarkFailed(std::uint64_t update_serial, std::string reason);
+            std::unique_ptr<PreviewAssets> Retire();
+            void FinishApplied();
+            bool IsPending() const noexcept { return state == State::Pending; }
+
+            State state = State::Empty;
+            std::uint64_t serial = 0;
+            std::string diagnostic;
+            std::unique_ptr<PreviewAssets> assets;
         };
         struct AuthoringCommand
         {
@@ -138,8 +156,7 @@ namespace kpengine::terrain
         std::uint64_t progress_revision_ = 0;
         std::mutex authoring_command_mutex_;
         std::deque<AuthoringCommand> authoring_commands_;
-        std::uint64_t pending_catalog_serial_ = 0;
-        std::unique_ptr<PreviewAssets> pending_preview_;
+        PreviewPublication preview_publication_;
         std::vector<asset::AssetID> retired_asset_ids_;
         std::string generation_status_ = "Ready";
         float camera_target_y_ = 7.2f;

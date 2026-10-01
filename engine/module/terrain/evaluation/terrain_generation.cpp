@@ -1340,6 +1340,19 @@ namespace kpengine::terrain
             if (order.size() != nodes.size()) throw std::invalid_argument("recipe graph contains a cycle");
 
             std::size_t retained_result_bytes = 0;
+            std::set<const TerrainValue2D *> retained_result_values;
+            const auto account_result_values = [&](const NodeResult &node_result) {
+                for (const auto &[port, value] : node_result.outputs)
+                {
+                    (void)port;
+                    if (!value || !retained_result_values.insert(value.get()).second) continue;
+                    const std::size_t bytes = value->ByteSize();
+                    if (bytes > options_.maximum_result_bytes ||
+                        retained_result_bytes > options_.maximum_result_bytes - bytes)
+                        throw std::length_error("evaluation exceeds configured result memory budget");
+                    retained_result_bytes += bytes;
+                }
+            };
             for (const auto &id : order)
             {
                 if (cancelled && cancelled->load())
@@ -1371,6 +1384,7 @@ namespace kpengine::terrain
                     auto reused = cached->second.result;
                     reused.cache_hit = true;
                     reused.evaluation_time_ms = 0.0;
+                    account_result_values(reused);
                     const auto [entry, inserted] = result.nodes.emplace(id, std::move(reused));
                     if (inserted && progress)
                     {
@@ -1413,6 +1427,14 @@ namespace kpengine::terrain
                     }
                     node_result.outputs.emplace(port, output->second);
                 }
+                for (const auto &[name, value] : outputs.scalar_metadata)
+                {
+                    if (name.empty() || !std::isfinite(value))
+                        throw std::runtime_error("operator returned invalid scalar metadata");
+                    HashString(node_result.content_hash, name);
+                    HashBytes(node_result.content_hash, &value, sizeof(value));
+                }
+                node_result.scalar_metadata = std::move(outputs.scalar_metadata);
                 std::size_t bytes = 0;
                 std::set<const TerrainValue2D *> counted_outputs;
                 for (const auto &[port, value] : node_result.outputs)
@@ -1426,10 +1448,7 @@ namespace kpengine::terrain
                     std::chrono::steady_clock::now() - node_started).count();
                 if (!std::isfinite(node_result.minimum_value)) node_result.minimum_value = 0.0f;
                 if (!std::isfinite(node_result.maximum_value)) node_result.maximum_value = 0.0f;
-                if (bytes > options_.maximum_result_bytes ||
-                    retained_result_bytes > options_.maximum_result_bytes - bytes)
-                    throw std::length_error("evaluation exceeds configured result memory budget");
-                retained_result_bytes += bytes;
+                account_result_values(node_result);
                 const auto [entry, inserted] = result.nodes.emplace(id, node_result);
                 if (inserted && progress)
                 {
@@ -1489,13 +1508,14 @@ namespace kpengine::terrain
                                     EvaluationProgressCallback progress)
     {
         std::lock_guard lock(mutex_);
-        if (stopping_ || revision < minimum_revision_ || pending_.size() >= pending_capacity_)
+        if (stopping_ || revision < minimum_revision_)
             return false;
         auto cancelled = std::make_shared<std::atomic_bool>(false);
         for (auto &[active_revision, active] : active_)
             if (active_revision < revision) active->store(true);
         for (auto &job : pending_) job.cancelled->store(true);
         pending_.clear();
+        if (pending_.size() >= pending_capacity_) return false;
         minimum_revision_ = revision;
         pending_.push_back({revision, std::move(recipe), std::move(cancelled),
                             std::move(control), std::move(progress)});

@@ -2,7 +2,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <functional>
 #include <limits>
+#include <numeric>
 #include <queue>
 #include <stdexcept>
 #include <utility>
@@ -244,22 +246,138 @@ namespace kpengine::terrain
                 if (!std::isfinite(vertex.position.x_) || !std::isfinite(vertex.position.y_) ||
                     !std::isfinite(vertex.position.z_))
                     throw std::invalid_argument("mesh projection requires finite vertex positions");
+
+            struct ProjectionTriangle
+            {
+                Vector3f a;
+                Vector3f b;
+                Vector3f c;
+                double min_x;
+                double max_x;
+                double min_z;
+                double max_z;
+                double center_x;
+                double center_z;
+            };
+            struct ProjectionNode
+            {
+                double min_x = 0.0;
+                double max_x = 0.0;
+                double min_z = 0.0;
+                double max_z = 0.0;
+                std::size_t begin = 0;
+                std::size_t end = 0;
+                std::size_t left = std::numeric_limits<std::size_t>::max();
+                std::size_t right = std::numeric_limits<std::size_t>::max();
+            };
+            std::vector<ProjectionTriangle> triangles;
+            triangles.reserve(mesh.indices.size() / 3);
+            for (std::size_t index = 0; index < mesh.indices.size(); index += 3)
+            {
+                const Vector3f &a = mesh.vertices[mesh.indices[index]].position;
+                const Vector3f &b = mesh.vertices[mesh.indices[index + 1]].position;
+                const Vector3f &c = mesh.vertices[mesh.indices[index + 2]].position;
+                const double denominator =
+                    (static_cast<double>(b.z_) - c.z_) * (a.x_ - c.x_) +
+                    (static_cast<double>(c.x_) - b.x_) * (a.z_ - c.z_);
+                if (std::abs(denominator) <= 1e-12) continue;
+                const double min_x = std::min({static_cast<double>(a.x_),
+                    static_cast<double>(b.x_), static_cast<double>(c.x_)});
+                const double max_x = std::max({static_cast<double>(a.x_),
+                    static_cast<double>(b.x_), static_cast<double>(c.x_)});
+                const double min_z = std::min({static_cast<double>(a.z_),
+                    static_cast<double>(b.z_), static_cast<double>(c.z_)});
+                const double max_z = std::max({static_cast<double>(a.z_),
+                    static_cast<double>(b.z_), static_cast<double>(c.z_)});
+                triangles.push_back({a, b, c, min_x, max_x, min_z, max_z,
+                    (min_x + max_x) * 0.5, (min_z + max_z) * 0.5});
+            }
+
+            std::vector<std::size_t> order(triangles.size());
+            std::iota(order.begin(), order.end(), 0);
+            std::vector<ProjectionNode> nodes;
+            if (triangles.size() > nodes.max_size() / 2)
+                throw std::length_error("mesh projection spatial index exceeds addressable size");
+            nodes.reserve(triangles.size() * 2);
+            const auto build_node = [&](auto &&self, const std::size_t begin,
+                                        const std::size_t end) -> std::size_t {
+                ProjectionNode node;
+                node.begin = begin;
+                node.end = end;
+                node.min_x = node.min_z = std::numeric_limits<double>::infinity();
+                node.max_x = node.max_z = -std::numeric_limits<double>::infinity();
+                double min_center_x = std::numeric_limits<double>::infinity();
+                double max_center_x = -std::numeric_limits<double>::infinity();
+                double min_center_z = std::numeric_limits<double>::infinity();
+                double max_center_z = -std::numeric_limits<double>::infinity();
+                for (std::size_t i = begin; i < end; ++i)
+                {
+                    const ProjectionTriangle &triangle = triangles[order[i]];
+                    node.min_x = std::min(node.min_x, triangle.min_x);
+                    node.max_x = std::max(node.max_x, triangle.max_x);
+                    node.min_z = std::min(node.min_z, triangle.min_z);
+                    node.max_z = std::max(node.max_z, triangle.max_z);
+                    min_center_x = std::min(min_center_x, triangle.center_x);
+                    max_center_x = std::max(max_center_x, triangle.center_x);
+                    min_center_z = std::min(min_center_z, triangle.center_z);
+                    max_center_z = std::max(max_center_z, triangle.center_z);
+                }
+                const std::size_t node_index = nodes.size();
+                nodes.push_back(node);
+                constexpr std::size_t kLeafTriangleCount = 8;
+                if (end - begin <= kLeafTriangleCount) return node_index;
+                const bool split_x = max_center_x - min_center_x >=
+                                     max_center_z - min_center_z;
+                const std::size_t middle = begin + (end - begin) / 2;
+                std::nth_element(order.begin() + static_cast<std::ptrdiff_t>(begin),
+                    order.begin() + static_cast<std::ptrdiff_t>(middle),
+                    order.begin() + static_cast<std::ptrdiff_t>(end),
+                    [&](const std::size_t lhs, const std::size_t rhs) {
+                        return split_x ? triangles[lhs].center_x < triangles[rhs].center_x
+                                       : triangles[lhs].center_z < triangles[rhs].center_z;
+                    });
+                nodes[node_index].left = self(self, begin, middle);
+                nodes[node_index].right = self(self, middle, end);
+                return node_index;
+            };
+            if (!triangles.empty()) (void)build_node(build_node, 0, triangles.size());
+
             std::vector<float> heights(count, no_hit_elevation_offset_m);
+            std::vector<std::size_t> traversal;
+            traversal.reserve(64);
             for (std::uint32_t y = 0; y < domain.height; ++y)
                 for (std::uint32_t x = 0; x < domain.width; ++x)
                 {
                     const double px = domain.origin_x_m + x * domain.spacing_x_m;
                     const double pz = domain.origin_z_m + y * domain.spacing_z_m;
                     double highest = -std::numeric_limits<double>::infinity();
-                    for (std::size_t triangle = 0; triangle < mesh.indices.size(); triangle += 3)
+                    traversal.clear();
+                    if (!nodes.empty()) traversal.push_back(0);
+                    while (!traversal.empty())
                     {
-                        const auto &a = mesh.vertices[mesh.indices[triangle]].position;
-                        const auto &b = mesh.vertices[mesh.indices[triangle + 1]].position;
-                        const auto &c = mesh.vertices[mesh.indices[triangle + 2]].position;
+                        const ProjectionNode &node = nodes[traversal.back()];
+                        traversal.pop_back();
+                        if (px < node.min_x - 1e-8 || px > node.max_x + 1e-8 ||
+                            pz < node.min_z - 1e-8 || pz > node.max_z + 1e-8)
+                            continue;
+                        if (node.left != std::numeric_limits<std::size_t>::max())
+                        {
+                            traversal.push_back(node.left);
+                            traversal.push_back(node.right);
+                            continue;
+                        }
+                        for (std::size_t item = node.begin; item < node.end; ++item)
+                        {
+                        const ProjectionTriangle &triangle = triangles[order[item]];
+                        if (px < triangle.min_x - 1e-8 || px > triangle.max_x + 1e-8 ||
+                            pz < triangle.min_z - 1e-8 || pz > triangle.max_z + 1e-8)
+                            continue;
+                        const auto &a = triangle.a;
+                        const auto &b = triangle.b;
+                        const auto &c = triangle.c;
                         const double denominator =
                             (static_cast<double>(b.z_) - c.z_) * (a.x_ - c.x_) +
                             (static_cast<double>(c.x_) - b.x_) * (a.z_ - c.z_);
-                        if (std::abs(denominator) <= 1e-12) continue;
                         const double u = ((static_cast<double>(b.z_) - c.z_) * (px - c.x_) +
                                           (static_cast<double>(c.x_) - b.x_) * (pz - c.z_)) / denominator;
                         const double v = ((static_cast<double>(c.z_) - a.z_) * (px - c.x_) +
@@ -270,6 +388,7 @@ namespace kpengine::terrain
                         if (!std::isfinite(height))
                             throw std::invalid_argument("mesh projection encountered non-finite vertex data");
                         highest = std::max(highest, height);
+                        }
                     }
                     if (std::isfinite(highest))
                         heights[static_cast<std::size_t>(y) * domain.width + x] =

@@ -4,10 +4,12 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <numeric>
 #include <thread>
 
@@ -159,6 +161,17 @@ namespace
         EXPECT_FLOAT_EQ(projected->At(1, 1), -7.5f);
         EXPECT_FLOAT_EQ(projected->At(2, 2), -5.0f);
         EXPECT_FLOAT_EQ(BuildHeightfieldMesh(*projected).vertices[8].position.y_, 5.0f);
+        const std::size_t original_vertex_count = mesh.vertices.size();
+        for (std::size_t i = 0; i < original_vertex_count; ++i)
+        {
+            auto vertex = mesh.vertices[i];
+            vertex.position.y_ += 10.0f;
+            mesh.vertices.push_back(vertex);
+        }
+        mesh.indices.insert(mesh.indices.end(), {4, 5, 6, 4, 6, 7});
+        const auto topmost = ProjectMeshToHeightfield(mesh, domain, -100.0f, 20, diagnostic);
+        ASSERT_TRUE(topmost) << diagnostic;
+        EXPECT_FLOAT_EQ(topmost->At(1, 1), 2.5f);
         const auto empty = ProjectMeshToHeightfield({}, domain, -100.0f, 20, diagnostic);
         ASSERT_TRUE(empty) << diagnostic;
         EXPECT_FLOAT_EQ(empty->At(1, 1), -100.0f);
@@ -370,6 +383,109 @@ namespace
         EXPECT_NE(result.diagnostic.find("memory budget"), std::string::npos);
     }
 
+    TEST(TerrainEvaluationTest, CachedOutputsCountTowardRetainedResultBudget)
+    {
+        auto registry = MakeRegistry();
+        EvaluationOptions options;
+        options.maximum_result_bytes = FixtureDomain().SampleCount(100) * sizeof(float);
+        options.maximum_cache_bytes = options.maximum_result_bytes * 4;
+        TerrainEvaluator evaluator(registry, options);
+        auto recipe = ConstantRecipe();
+        recipe.nodes.front().id = "a_source";
+
+        const auto cached = evaluator.Evaluate(recipe);
+        ASSERT_TRUE(cached.succeeded) << cached.diagnostic;
+        recipe.nodes.push_back({"independent", "terrain.scalar.constant", 1,
+                                {{"value", 3.0f}}, {}});
+
+        const auto over_budget = evaluator.Evaluate(recipe);
+        EXPECT_FALSE(over_budget.succeeded);
+        EXPECT_NE(over_budget.diagnostic.find("memory budget"), std::string::npos);
+        ASSERT_TRUE(over_budget.nodes.contains("a_source"));
+        EXPECT_TRUE(over_budget.nodes.at("a_source").cache_hit);
+    }
+
+    TEST(TerrainHydrologyTest, OpenBoundaryIsInvariantToWorldDatumTranslation)
+    {
+        auto registry = MakeRegistry();
+        std::string diagnostic;
+        ASSERT_TRUE(registry->Register({"test.hydraulic_open_boundary_inputs", 1, {},
+            {{"state", PortType::LayeredHeightfield2D},
+             {"rain", PortType::ScalarField2D},
+             {"erodibility", PortType::ScalarField2D},
+             {"hardness", PortType::ScalarField2D},
+             {"obstacle", PortType::ScalarField2D}},
+            [](const OperatorContext &context, const nlohmann::json &,
+               const OperatorInputs &) {
+                const std::size_t count = context.domain.SampleCount(context.maximum_samples);
+                std::vector<float> bedrock(count, 0.0f), empty(count, 0.0f),
+                    water(count, 0.25f);
+                std::string error;
+                auto state = LayeredHeightfield2D::Create(context.domain, bedrock,
+                    empty, empty, water, empty, context.maximum_samples, error);
+                if (!state) throw std::runtime_error(error);
+                auto field = [&](const float value) {
+                    std::string field_error;
+                    auto result = ScalarField2D::Create(context.domain,
+                        std::vector<float>(count, value), context.maximum_samples,
+                        field_error);
+                    if (!result) throw std::runtime_error(field_error);
+                    return result;
+                };
+                return OperatorOutputs{{"state", std::move(state)},
+                    {"rain", field(0.0f)}, {"erodibility", field(1.0f)},
+                    {"hardness", field(0.0f)}, {"obstacle", field(0.0f)}};
+            }}, diagnostic)) << diagnostic;
+
+        TerrainEvaluator evaluator(registry);
+        const auto evaluate_at_datum = [&](const double datum) {
+            TerrainRecipe recipe;
+            recipe.domain = {3, 3, 0.0, 0.0, 1.0, 1.0, datum};
+            recipe.nodes.push_back({"inputs", "test.hydraulic_open_boundary_inputs", 1,
+                nlohmann::json::object(), {}});
+            recipe.nodes.push_back({"hydraulic", "terrain.erosion.hydraulic_pipe", 1,
+                {{"duration_s", 0.05}, {"maximum_timestep_s", 0.05},
+                 {"capacity_kg_s_per_m3", 0.0}, {"boundary", "open"}},
+                {{"state", {"inputs", "state"}},
+                 {"rain_rate_m_per_s", {"inputs", "rain"}},
+                 {"erodibility_0_1", {"inputs", "erodibility"}},
+                 {"hardness_0_1", {"inputs", "hardness"}},
+                 {"obstacle_0_1", {"inputs", "obstacle"}}}});
+            recipe.nodes.push_back({"hydraulic_compact", "terrain.erosion.hydraulic_pipe", 2,
+                {{"duration_s", 0.05}, {"maximum_timestep_s", 0.05},
+                 {"capacity_kg_s_per_m3", 0.0}, {"boundary", "open"}},
+                {{"state", {"inputs", "state"}},
+                 {"rain_rate_m_per_s", {"inputs", "rain"}},
+                 {"erodibility_0_1", {"inputs", "erodibility"}},
+                 {"hardness_0_1", {"inputs", "hardness"}},
+                 {"obstacle_0_1", {"inputs", "obstacle"}}}});
+            return evaluator.Evaluate(recipe);
+        };
+
+        const auto local = evaluate_at_datum(0.0);
+        const auto translated = evaluate_at_datum(1000.0);
+        ASSERT_TRUE(local.succeeded) << local.diagnostic;
+        ASSERT_TRUE(translated.succeeded) << translated.diagnostic;
+        const auto &local_result = local.nodes.at("hydraulic");
+        const auto &translated_result = translated.nodes.at("hydraulic");
+        const auto &local_export = local_result.outputs.at("water_exported_m3")->Samples();
+        const auto &translated_export =
+            translated_result.outputs.at("water_exported_m3")->Samples();
+        const float local_total = std::accumulate(local_export.begin(), local_export.end(), 0.0f);
+        const float translated_total = std::accumulate(
+            translated_export.begin(), translated_export.end(), 0.0f);
+        EXPECT_GT(local_total, 0.0f);
+        EXPECT_FLOAT_EQ(translated_total, local_total);
+        EXPECT_EQ(translated_result.outputs.at("water_depth_m")->Samples(),
+                  local_result.outputs.at("water_depth_m")->Samples());
+        const auto &compact = translated.nodes.at("hydraulic_compact");
+        EXPECT_FALSE(compact.outputs.contains("substep_count"));
+        EXPECT_TRUE(compact.scalar_metadata.contains("substep_count"));
+        EXPECT_GT(compact.scalar_metadata.at("substep_count"), 0.0);
+        EXPECT_LE(std::abs(compact.scalar_metadata.at("water_budget_relative_residual")),
+                  2.0e-6);
+    }
+
     TEST(TerrainHydrologyTest, ComparesThermalRelaxationAndVirtualPipeOnSameTerrainFixture)
     {
         auto registry = MakeRegistry();
@@ -560,6 +676,69 @@ namespace
         EXPECT_EQ(result.revision, 2u);
         ASSERT_TRUE(result.evaluation.succeeded) << result.evaluation.diagnostic;
         EXPECT_FLOAT_EQ(result.evaluation.nodes.at("source").outputs.at("value")->At(0, 0), 8.0f);
+        executor.Shutdown();
+    }
+
+    TEST(TerrainExecutorTest, NewRevisionReplacesPendingJobBeforeCapacityCheck)
+    {
+        struct Gate
+        {
+            std::mutex mutex;
+            std::condition_variable wake;
+            bool entered = false;
+            bool release = false;
+        };
+        const auto gate = std::make_shared<Gate>();
+        auto registry = MakeRegistry();
+        std::string diagnostic;
+        ASSERT_TRUE(registry->Register({"test.blocking_scalar", 1, {},
+            {{"value", PortType::ScalarField2D}},
+            [gate](const OperatorContext &context, const nlohmann::json &parameters,
+                   const OperatorInputs &) {
+                {
+                    std::unique_lock lock(gate->mutex);
+                    gate->entered = true;
+                    gate->wake.notify_all();
+                    gate->wake.wait_for(lock, std::chrono::seconds(2),
+                        [&] { return gate->release; });
+                }
+                const std::size_t count = context.domain.SampleCount(context.maximum_samples);
+                std::string error;
+                auto field = ScalarField2D::Create(context.domain,
+                    std::vector<float>(count, parameters.at("value").get<float>()),
+                    context.maximum_samples, error);
+                if (!field) throw std::runtime_error(error);
+                return OperatorOutputs{{"value", std::move(field)}};
+            }}, diagnostic)) << diagnostic;
+
+        GenerationExecutor executor(registry, 1, 1, 2);
+        TerrainRecipe blocking = ConstantRecipe(1.0f);
+        blocking.nodes.front().operator_id = "test.blocking_scalar";
+        ASSERT_TRUE(executor.Submit(1, std::move(blocking)));
+        {
+            std::unique_lock lock(gate->mutex);
+            ASSERT_TRUE(gate->wake.wait_for(lock, std::chrono::seconds(2),
+                [&] { return gate->entered; }));
+        }
+        EXPECT_TRUE(executor.Submit(2, ConstantRecipe(2.0f)));
+        const bool accepted_latest = executor.Submit(3, ConstantRecipe(3.0f));
+        {
+            std::lock_guard lock(gate->mutex);
+            gate->release = true;
+        }
+        gate->wake.notify_all();
+        EXPECT_TRUE(accepted_latest);
+
+        GenerationJobResult result;
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+        while ((!executor.TryPop(result) || result.revision != 3) &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        EXPECT_EQ(result.revision, 3u);
+        EXPECT_TRUE(result.evaluation.succeeded) << result.evaluation.diagnostic;
+        if (result.evaluation.succeeded)
+            EXPECT_FLOAT_EQ(result.evaluation.nodes.at("source").outputs.at("value")->At(0, 0),
+                            3.0f);
         executor.Shutdown();
     }
 }

@@ -30,6 +30,53 @@
 
 namespace kpengine::terrain
 {
+    bool TerrainViewerHost::PreviewPublication::Begin(
+        std::unique_ptr<PreviewAssets> &&preview, const std::uint64_t update_serial)
+    {
+        if (!preview || update_serial == 0 || IsPending()) return false;
+        assets = std::move(preview);
+        serial = update_serial;
+        diagnostic.clear();
+        state = State::Pending;
+        return true;
+    }
+
+    bool TerrainViewerHost::PreviewPublication::MarkApplied(
+        const std::uint64_t update_serial)
+    {
+        if (!IsPending() || serial != update_serial) return false;
+        state = State::Applied;
+        return true;
+    }
+
+    bool TerrainViewerHost::PreviewPublication::MarkFailed(
+        const std::uint64_t update_serial, std::string reason)
+    {
+        if (!IsPending() || serial != update_serial) return false;
+        diagnostic = std::move(reason);
+        state = State::Failed;
+        return true;
+    }
+
+    std::unique_ptr<TerrainViewerHost::PreviewAssets>
+    TerrainViewerHost::PreviewPublication::Retire()
+    {
+        state = State::Retired;
+        serial = 0;
+        return std::move(assets);
+    }
+
+    void TerrainViewerHost::PreviewPublication::FinishApplied()
+    {
+        if (state == State::Applied)
+        {
+            state = State::Empty;
+            serial = 0;
+            diagnostic.clear();
+            assets.reset();
+        }
+    }
+
     namespace
     {
         std::vector<std::uint8_t> BuildPreviewRiverMask(const ScalarField2D &heightfield)
@@ -825,16 +872,37 @@ namespace kpengine::terrain
                 bake_command_request_id_ = 0;
             }
         }
-        if (pending_preview_ && pending_catalog_serial_ != 0 &&
-            runtime::global_runtime_context.render_system_ &&
-            runtime::global_runtime_context.render_system_->
-                GetAppliedPreparedAssetsUpdate() >= pending_catalog_serial_)
+        if (preview_publication_.IsPending() &&
+            runtime::global_runtime_context.render_system_)
         {
+            const std::uint64_t serial = preview_publication_.serial;
+            const auto update = runtime::global_runtime_context.render_system_->
+                GetPreparedAssetsUpdateResult(serial);
+            if (update.status == render::PreparedAssetsUpdateStatus::Failed ||
+                update.status == render::PreparedAssetsUpdateStatus::Superseded ||
+                update.status == render::PreparedAssetsUpdateStatus::Unknown)
+            {
+                const std::string failure = update.diagnostic.empty()
+                    ? "catalog update did not reach a terminal applied state"
+                    : update.diagnostic;
+                (void)preview_publication_.MarkFailed(serial, failure);
+                DiscardPendingPreview();
+                generation_status_ = "Preview catalog promotion failed: " + failure;
+                if (terrain_editor_ && last_evaluation_ && recipe_)
+                    terrain_editor_->SetEvaluationSnapshot(preview_heightfield_,
+                        *last_evaluation_, *recipe_, generation_status_);
+            }
+            if (update.status == render::PreparedAssetsUpdateStatus::Applied &&
+                preview_publication_.MarkApplied(serial))
+            {
+            PreviewAssets &pending = *preview_publication_.assets;
             gameplay::GameplayWorld *const world =
                 runtime::global_runtime_context.gameplay_world_.get();
             if (world == nullptr)
             {
                 diagnostic = "GameplayWorld disappeared during terrain preview replacement";
+                (void)preview_publication_.MarkFailed(serial, diagnostic);
+                DiscardPendingPreview();
                 return false;
             }
             if (terrain_actor_.IsValid()) (void)world->DestroyActor(terrain_actor_);
@@ -846,36 +914,27 @@ namespace kpengine::terrain
                 asset::AssetManager::GetInstance().UnRegisterAsset(id);
             for (const asset::AssetID id : terrain_texture_assets_)
                 asset::AssetManager::GetInstance().UnRegisterAsset(id);
-            terrain_material_assets_ = pending_preview_->materials;
-            terrain_texture_assets_ = pending_preview_->textures;
+            terrain_material_assets_ = pending.materials;
+            terrain_texture_assets_ = pending.textures;
             if (generated_mesh_.IsValid())
                 asset::AssetManager::GetInstance().UnRegisterAsset(generated_mesh_);
             terrain_actor_ = {};
             sky_dome_actor_ = {};
-            generated_mesh_ = pending_preview_->mesh;
-            preview_material_ = pending_preview_->material;
-            preview_heightfield_ = pending_preview_->heightfield;
+            generated_mesh_ = pending.mesh;
+            preview_material_ = pending.material;
+            preview_heightfield_ = pending.heightfield;
             committed_recipe_ = std::make_unique<TerrainRecipe>(*recipe_);
             gameplay::StaticMeshActorDesc desc{};
             desc.mesh_asset = generated_mesh_;
             desc.material_asset = preview_material_;
             desc.material_assets = terrain_material_assets_;
-            data::MeshData mesh = BuildHeightfieldMesh(*preview_heightfield_);
-            AssignTerrainMaterialSections(mesh);
-            spatial::AABB bounds{{std::numeric_limits<float>::max(),
-                                   std::numeric_limits<float>::max(),
-                                   std::numeric_limits<float>::max()},
-                                  {-std::numeric_limits<float>::max(),
-                                   -std::numeric_limits<float>::max(),
-                                   -std::numeric_limits<float>::max()}};
-            for (const data::Vertex &vertex : mesh.vertices) bounds.ExpandToInclude(vertex.position);
-            desc.local_bounds = bounds;
+            desc.local_bounds = pending.bounds;
             terrain_actor_ = gameplay::CreateStaticMeshActor(*world, desc);
             if (!terrain_actor_.IsValid())
             {
                 diagnostic = "could not create replacement terrain Actor";
-                pending_preview_.reset();
-                pending_catalog_serial_ = 0;
+                (void)preview_publication_.MarkFailed(serial, diagnostic);
+                DiscardPendingPreview();
                 generation_status_ = "Failed to create preview Actor";
                 return true;
             }
@@ -907,7 +966,10 @@ namespace kpengine::terrain
                 !light_actor_.IsValid())
             {
                 diagnostic = "could not restore preview camera, sky dome, or light after catalog replacement";
-                return false;
+                (void)preview_publication_.MarkFailed(serial, diagnostic);
+                DiscardPendingPreview();
+                generation_status_ = "Failed to restore preview camera, sky dome, or light";
+                return true;
             }
             render_roots_ = {generated_mesh_, sky_dome_mesh_, sky_dome_material_};
             render_roots_.insert(render_roots_.end(), terrain_material_assets_.begin(),
@@ -915,15 +977,15 @@ namespace kpengine::terrain
             render_roots_.insert(render_roots_.end(), terrain_texture_assets_.begin(),
                                  terrain_texture_assets_.end());
             render_roots_.push_back(environment_texture_);
-            last_evaluation_ = pending_preview_->evaluation
-                ? std::make_unique<EvaluationResult>(*pending_preview_->evaluation)
+            last_evaluation_ = pending.evaluation
+                ? std::make_unique<EvaluationResult>(*pending.evaluation)
                 : nullptr;
             if (terrain_editor_ && last_evaluation_)
                 terrain_editor_->SetEvaluationSnapshot(preview_heightfield_,
                     *last_evaluation_, *recipe_, "Ready");
-            pending_preview_.reset();
-            pending_catalog_serial_ = 0;
+            preview_publication_.FinishApplied();
             generation_status_ = "Ready";
+            }
         }
 
         GenerationJobResult completed;
@@ -1069,7 +1131,7 @@ namespace kpengine::terrain
         float persistence, float lacunarity, float talus_angle_degrees,
         float thermal_rate, std::uint32_t thermal_iterations)
     {
-        if (pending_preview_)
+        if (preview_publication_.IsPending())
         {
             generation_status_ = "Busy: waiting for the preview catalog swap";
             return;
@@ -1136,7 +1198,7 @@ namespace kpengine::terrain
 
     void TerrainViewerHost::ApplyHydraulicComparison()
     {
-        if (pending_preview_ || !generation_executor_ || !execution_control_ || !recipe_ ||
+        if (preview_publication_.IsPending() || !generation_executor_ || !execution_control_ || !recipe_ ||
             generation_status_.starts_with("Generating") ||
             generation_status_.starts_with("Waiting for render boundary"))
         {
@@ -1335,6 +1397,11 @@ namespace kpengine::terrain
     bool TerrainViewerHost::PublishPreview(const EvaluationResult &result,
         std::shared_ptr<const ScalarField2D> heightfield, std::string &diagnostic)
     {
+        if (preview_publication_.IsPending())
+        {
+            diagnostic = "a terrain preview catalog update is already pending";
+            return false;
+        }
         if (!heightfield || !runtime::global_runtime_context.render_system_)
         {
             diagnostic = "preview data or RenderSystem is unavailable";
@@ -1403,17 +1470,38 @@ namespace kpengine::terrain
             diagnostic = queued.diagnostic;
             return false;
         }
-        pending_preview_ = std::make_unique<PreviewAssets>();
-        pending_preview_->mesh = mesh_id;
-        pending_preview_->material = material_ids.front();
-        pending_preview_->materials = std::move(material_ids);
-        pending_preview_->textures = std::move(texture_ids);
-        pending_preview_->heightfield = std::move(heightfield);
-        pending_preview_->evaluation = std::make_shared<EvaluationResult>(result);
-        pending_preview_->catalog_serial = catalog_serial;
-        pending_catalog_serial_ = catalog_serial;
+        auto pending = std::make_unique<PreviewAssets>();
+        pending->mesh = mesh_id;
+        pending->material = material_ids.front();
+        pending->materials = std::move(material_ids);
+        pending->textures = std::move(texture_ids);
+        pending->heightfield = std::move(heightfield);
+        pending->evaluation = std::make_shared<EvaluationResult>(result);
+        pending->catalog_serial = catalog_serial;
+        pending->bounds = bounds;
+        if (!preview_publication_.Begin(std::move(pending), catalog_serial))
+        {
+            for (const asset::AssetID id : pending->materials) assets.UnRegisterAsset(id);
+            for (const asset::AssetID id : pending->textures) assets.UnRegisterAsset(id);
+            if (pending->mesh.IsValid()) assets.UnRegisterAsset(pending->mesh);
+            diagnostic = "could not begin terrain preview publication";
+            return false;
+        }
         generation_status_ = "Waiting for render boundary";
         return true;
+    }
+
+    void TerrainViewerHost::DiscardPendingPreview()
+    {
+        std::unique_ptr<PreviewAssets> pending = preview_publication_.Retire();
+        if (!pending) return;
+        asset::AssetManager &assets = asset::AssetManager::GetInstance();
+        for (const asset::AssetID id : pending->materials)
+            assets.UnRegisterAsset(id);
+        for (const asset::AssetID id : pending->textures)
+            assets.UnRegisterAsset(id);
+        if (pending->mesh.IsValid())
+            assets.UnRegisterAsset(pending->mesh);
     }
 
     bool TerrainViewerHost::RecordFrame(std::string &diagnostic)
@@ -1510,16 +1598,7 @@ namespace kpengine::terrain
             asset::AssetManager::GetInstance().UnRegisterAsset(sky_dome_mesh_);
             sky_dome_mesh_ = {};
         }
-        if (pending_preview_)
-        {
-            for (const asset::AssetID id : pending_preview_->materials)
-                asset::AssetManager::GetInstance().UnRegisterAsset(id);
-            for (const asset::AssetID id : pending_preview_->textures)
-                asset::AssetManager::GetInstance().UnRegisterAsset(id);
-            if (pending_preview_->mesh.IsValid())
-                asset::AssetManager::GetInstance().UnRegisterAsset(pending_preview_->mesh);
-            pending_preview_.reset();
-        }
+        DiscardPendingPreview();
         for (const asset::AssetID id : terrain_material_assets_)
             asset::AssetManager::GetInstance().UnRegisterAsset(id);
         for (const asset::AssetID id : terrain_texture_assets_)

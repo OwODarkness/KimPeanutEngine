@@ -82,6 +82,8 @@ is not required; the fixed TP2 viewer is now the first shared-renderer preview.
 
 ## TP4 — rain erosion, fluvial incision and solver selection
 
+Current cross-stage code findings and recommended fixes: [TP4 review](.review/TP4.md).
+
 - [x] Establish erosion as a postprocess after base heightfield preparation;
   add conservative talus relaxation, two-pass eight-neighbor CPU thermal flux,
   implicit stream-power incision prototypes, and normalized monotone height

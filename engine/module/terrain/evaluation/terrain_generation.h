@@ -62,7 +62,11 @@ namespace kpengine::terrain
     };
 
     using OperatorInputs = std::map<std::string, TerrainValue, std::less<>>;
-    using OperatorOutputs = std::map<std::string, TerrainValue, std::less<>>;
+    struct OperatorOutputs : std::map<std::string, TerrainValue, std::less<>>
+    {
+        using std::map<std::string, TerrainValue, std::less<>>::map;
+        std::map<std::string, double, std::less<>> scalar_metadata;
+    };
     using OperatorFunction = std::function<OperatorOutputs(
         const OperatorContext &, const nlohmann::json &, const OperatorInputs &)>;
 
@@ -98,6 +102,7 @@ namespace kpengine::terrain
     struct NodeResult
     {
         std::map<std::string, TerrainValue, std::less<>> outputs;
+        std::map<std::string, double, std::less<>> scalar_metadata;
         std::uint64_t content_hash = 0;
         double evaluation_time_ms = 0.0;
         std::size_t output_bytes = 0;
