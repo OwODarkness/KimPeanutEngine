@@ -38,7 +38,7 @@ namespace kpengine::tts
     struct TTSResult
     {
         bool success = false;
-        int32_t error_code;
+        int32_t error_code = 0;
         audio::AudioHandle player_handle;
         std::string error_message;
     };

@@ -1,11 +1,7 @@
 #include "audio_player.h"
-#include "log/logger.h"
+#include <algorithm>
 namespace kpengine::audio
 {
-    static const char *LogName = "AudioPlayerLog";
-
-
-
     void AudioPlayer::Play()
     {
         state_ = AudioState::Playing;
@@ -15,7 +11,6 @@ namespace kpengine::audio
     {
         current_frame_ = 0;
         state_ = AudioState::Stopped;
-        KP_LOG(LogName, LOG_LEVEL_INFO, "Audio stop play");
     }
 
     void AudioPlayer::Pause()
@@ -37,7 +32,7 @@ namespace kpengine::audio
 
     void AudioPlayer::SetVolume(float volume)
     {
-        volume_ = volume;
+        volume_.store(std::clamp(volume, 0.0f, 1.0f), std::memory_order_relaxed);
     }
 
 

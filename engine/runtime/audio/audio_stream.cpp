@@ -1,52 +1,31 @@
 #include "audio_stream.h"
-#include "log/logger.h"
+#include <limits>
 
 namespace kpengine::audio
 {
     AudioStream::AudioStream(const data::AudioFormat& format, uint32_t buffer_seconds)
-        : format_(format), buffer_seconds_(buffer_seconds)
+        : format_(format), capacity_(0)
     {
-        capacity_ = format.sample_rate * format.channels * buffer_seconds;
-
+        const size_t samples_per_second = static_cast<size_t>(format.sample_rate) * format.channels;
+        if (samples_per_second > 0 && buffer_seconds <= std::numeric_limits<size_t>::max() / samples_per_second)
+            capacity_ = samples_per_second * buffer_seconds;
         buffer_.resize(capacity_);
     }
 
-void AudioStream::PushFrames(const float* data, uint64_t frames)
+bool AudioStream::PushFrames(const float* data, uint64_t frames)
 {
     std::lock_guard<std::mutex> lock(mutex_);
 
     const size_t channels = format_.channels;
-    const size_t samples = frames * channels;
-
-    // If incoming data is larger than the whole buffer,
-    // only keep the newest part.
-    if (samples >= capacity_)
+    if (!data || channels == 0 || capacity_ == 0 || is_finished.load(std::memory_order_acquire) ||
+        frames > std::numeric_limits<size_t>::max() / channels)
     {
-        data += samples - capacity_;
-        write_pos_ = 0;
-        read_pos_ = 0;
-        buffered_samples_ = 0;
-
-        size_t first = capacity_;
-        std::copy(data, data + first, buffer_.begin());
-
-        write_pos_ = 0;
-        buffered_samples_ = capacity_;
-
-        KP_LOG("AudioStream",
-               LOG_LEVEL_WARNING,
-               "Incoming packet larger than ring buffer, old data discarded.");
-
-        return;
+        return false;
     }
-
-    // Make room if necessary by discarding oldest samples.
+    const size_t samples = frames * channels;
     if (samples > AvailableSpace())
     {
-        size_t overflow = samples - AvailableSpace();
-
-        read_pos_ = (read_pos_ + overflow) % capacity_;
-        buffered_samples_ -= overflow;
+        return false;
     }
 
     // Write first segment.
@@ -72,12 +51,7 @@ void AudioStream::PushFrames(const float* data, uint64_t frames)
 
     buffered_samples_ += samples;
 
-    KP_LOG("AudioStream",
-           LOG_LEVEL_DEBUG,
-           "Push %llu frames, buffered=%zu/%zu samples",
-           frames,
-           buffered_samples_,
-           capacity_);
+    return true;
 }
 
     size_t AudioStream::AvailableSpace() const
@@ -85,17 +59,27 @@ void AudioStream::PushFrames(const float* data, uint64_t frames)
         return capacity_ - buffered_samples_;
     }
 
-    size_t AudioStream::AvailableFrames() const
-    {
-        return buffered_samples_ / format_.channels;
-    }
-
 uint64_t AudioStream::ReadFrames(float* output,
                                  uint64_t requested_frames)
 {
     std::lock_guard<std::mutex> lock(mutex_);
+    return ReadFramesLocked(output, requested_frames);
+}
+
+uint64_t AudioStream::TryReadFrames(float* output, uint64_t requested_frames)
+{
+    std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
+    if (!lock.owns_lock())
+        return 0;
+    return ReadFramesLocked(output, requested_frames);
+}
+
+uint64_t AudioStream::ReadFramesLocked(float* output, uint64_t requested_frames)
+{
 
     const size_t channels = format_.channels;
+    if (!output || channels == 0 || capacity_ == 0)
+        return 0;
 
     const size_t available_frames =
         buffered_samples_ / channels;
@@ -137,24 +121,18 @@ uint64_t AudioStream::ReadFrames(float* output,
 
     buffered_samples_ -= samples_to_read;
 
-    KP_LOG("AudioStream",
-           LOG_LEVEL_DEBUG,
-           "Read %zu frames, buffered=%zu/%zu samples",
-           frames_to_read,
-           buffered_samples_,
-           capacity_);
-
     return frames_to_read;
 }
 
     void AudioStream::Finish()
     {
-        is_finished = true;
+        std::lock_guard<std::mutex> lock(mutex_);
+        is_finished.store(true, std::memory_order_release);
     }
 
     bool AudioStream::IsFinished() const
     {
-        return is_finished;
+        return is_finished.load(std::memory_order_acquire);
     }
 
 }

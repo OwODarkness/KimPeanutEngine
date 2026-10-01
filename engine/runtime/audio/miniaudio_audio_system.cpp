@@ -38,10 +38,16 @@ namespace kpengine::audio
 
     bool MiniAudioSystem::Initialize()
     {
+        if (device_initialized_)
+        {
+            return true;
+        }
         ma_device_config config = ma_device_config_init(ma_device_type_playback);
         config.playback.format = ma_format_f32;
         config.playback.channels = 2;
         config.sampleRate = 48000;
+        config.periodSizeInFrames = 512;
+        config.periods = 3;
         config.dataCallback = DataCallback;
         config.pUserData = this;
 
@@ -50,70 +56,76 @@ namespace kpengine::audio
         {
             return false;
         }
-        ma_device_start(&(wrapper_->device));
+        device_initialized_ = true;
+        if (ma_device_start(&(wrapper_->device)) != MA_SUCCESS)
+        {
+            ma_device_uninit(&(wrapper_->device));
+            device_initialized_ = false;
+            return false;
+        }
 
         KP_LOG(LogName, LOG_LEVEL_INFO, "Audio Init succeed");
         return true;
     }
     void MiniAudioSystem::ShutDown()
     {
+        if (!device_initialized_)
+        {
+            return;
+        }
+        // Stop waits for the callback to retire before system-owned players
+        // or the callback target can be destroyed.
+        ma_device_stop(&(wrapper_->device));
+        ma_device_uninit(&(wrapper_->device));
+        device_initialized_ = false;
     }
 
     void MiniAudioSystem::Mix(float *output, uint32_t frame_count)
     {
-        uint32_t out_channels = wrapper_->device.playback.channels;
-        if (out_channels != 2)
-        {
-            KP_LOG(LogName, LOG_LEVEL_WARNING, "channel %d mismatch, desired 2", out_channels);
-            return;
-        }
+        constexpr uint32_t out_channels = 2;
         ClearOutputBuffer(output, frame_count * out_channels);
 
-        for (uint32_t i = 0; i < frame_count; i++)
+        const auto players = GetPlayerSnapshot();
+
+        for (const auto &player_ptr : *players)
         {
-            for (auto &player_ptr : players_)
+            AudioPlayer *player = player_ptr.get();
+            if (!player || !player->IsPlaying())
+                continue;
+
+            // Refill at most once per voice and callback block. A dry stream
+            // outputs silence for the rest of this block and retries next time.
+            player->FillBuffer();
+            const float volume = player->GetVolume();
+            uint64_t frame = player->GetCurrentFrame();
+
+            for (uint32_t i = 0; i < frame_count && player->IsPlaying(); ++i)
             {
-                AudioPlayer *player = player_ptr.get();
-
-                if (!player->IsPlaying())
-                    continue;
-
-
-
-                AudioFormat audio_format = player->GetAudioFormat();
-
-                uint32_t in_channels = audio_format.channels;
-
-                uint64_t frame = player->GetCurrentFrame();
-                uint64_t src = frame * in_channels;
                 uint64_t dst = i * out_channels;
                 uint64_t left = dst;
                 uint64_t right = dst + 1;
 
-                float volume = player->GetVolume();
-
-                const float* data;
-                if(!player->GetFrameData(src, data))
+                float data[2]{};
+                uint32_t in_channels = 0;
+                if(!player->CopyFrameData(frame, data, 2, in_channels))
                 {
-                    // No playable frame yet (e.g. a streaming source waiting
-                    // for more data): ask it to pull more, output silence.
-                    player->FillBuffer();
-                    continue;
+                    if (player->IsFinished())
+                        player->Stop();
+                    break;
                 }
 
-                if (out_channels == 1)
+                if (out_channels == 2 && in_channels == 1)
                 {
-
-                    float res = volume * data[0];
-                    output[left] += res;
-                    output[right] += res;
+                    output[left] += volume * data[0];
+                    output[right] += volume * data[0];
                 }
-                else if (out_channels == 2)
+                else if (out_channels == 2 && in_channels >= 2)
                 {
                     output[left] += volume *  data[0];
                     output[right] += volume *  data[1];
                 }
 
+                ++frame;
                 if (player->AdvanceFrame() == false)
                 {
                     // Only tear the player down when the source is actually
@@ -122,7 +134,7 @@ namespace kpengine::audio
                     {
                         player->Stop();
                     }
-                    continue;
+                    break;
                 }
             }
         }
@@ -130,10 +142,11 @@ namespace kpengine::audio
 
     void MiniAudioSystem::ClearOutputBuffer(float *output, uint32_t size)
     {
-        memset(output, 0, size);
+        memset(output, 0, size * sizeof(float));
     }
 
     MiniAudioSystem::~MiniAudioSystem()
     {
+        ShutDown();
     }
 }

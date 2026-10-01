@@ -34,10 +34,11 @@ Vulkan 路径追踪支持渐进式采样与自适应 SPP：相机移动时使用
   <img src="./resouce/example/main.png" width="49%" alt="KimPeanut Engine 编辑器中的 Sponza 场景" />
   <img src="./resouce/example/loading.png" width="49%" alt="场景资源加载界面" />
 </p>
-
 <p align="center">
-  <img src="./resouce/example/live2d.png" width="49%" alt="Live2D 示例" />
+  <img src="./resouce/example/live2d.png" width="39%" alt="Live2D 示例" />
+      <img src="./resouce/example/terrian.png" width="59%" alt="Terrian PCG 示例" />
 </p>
+
 
 
 
@@ -50,7 +51,6 @@ KP Engine 围绕 `Asset → Resource → Render → RHI` 构建清晰的资源�
 - **Asset**：统一管理类型化资产、缓存、依赖关系与 CPU 生命周期，并提供同步和异步加载。
 - **Resource / Import / Cook**：将 Model、Material、Texture 等源资源转换为引擎资产与渲染数据，支持依赖处理、mipmap、格式策略和 content-addressed cooking。
 - **Render**：基于 RenderWorld 与 RenderProxy 组织场景渲染，负责材质、RenderTarget、Pass、SceneColor、阴影及调试捕获。
-- **Terrain PCG**：通过可组合的确定性节点生成高度场、派生地形数据与网格，并支持侵蚀后处理、共享渲染器预览和可烘焙地形资产。
 - **Ray Tracing**：Vulkan 后端提供实验性的实时路径追踪与全局光照；渐进式累积和自适应 SPP 在相机移动与静止时切换采样率。需要支持 Vulkan 光追的 GPU 与驱动；OpenGL 路径继续提供光栅化渲染。
 - **RHI**：通过 API-neutral handles、descriptors 与 `RenderBackend` 抽象 GPU 资源、Pipeline、Command、同步和生命周期，目前支持 Vulkan 与 OpenGL。
 
@@ -60,7 +60,11 @@ KP Engine 围绕 `Asset → Resource → Render → RHI` 构建清晰的资源�
 - **Command / Agent Interface**：统一的类型化 `CommandRegistry`，供编辑器控制台、Lua、测试、本地自动化和 AI Agent 共用；支持游戏线程调度、结构化结果以及 JSON-lines 本地通信。
 - **Audio**：基础音频播放系统，支持同步、异步、缓冲和流式播放。
 - **Editor**：基于 Dear ImGui 的编辑器与调试工具。
-- **Optional Modules**：包括 Live2D 、TTS
+- **Optional Modules**：
+  - Live2D
+  - TTS：通过 GPT-SoVITS HTTP 接口进行语音合成，支持同步或异步请求，并可将缓冲音频或流式音频交由 Audio 系统播放。
+  - Terrain PCG：通过可组合的确定性节点生成高度场、派生地形数据与网格，并支持侵蚀后处理、共享渲染器预览和可烘焙地形资产。
+
 
 ## 第三方依赖
 

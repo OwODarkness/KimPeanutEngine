@@ -16,13 +16,14 @@ public:
     StreamAudioPlayer();
     ~StreamAudioPlayer() override;
 
-    const std::vector<float>& GetPCM() const override;
-    bool GetFrameData(uint64_t src,
-                      const float*& out_data) const override;
+    bool CopyFrameData(uint64_t frame, float* out_data,
+                       uint32_t capacity_samples, uint32_t& channels) override;
+    bool AdvanceFrame() override;
 
     AudioFormat GetAudioFormat() const override;
 
     void Play() override;
+    void Reset() override;
 
     bool FillBuffer() override;
 
@@ -31,7 +32,7 @@ public:
     bool SeekSeconds(float seconds) override;
 
     void SetStream(std::shared_ptr<AudioStream> stream);
-    AudioStream* GetStream() const;
+    std::shared_ptr<AudioStream> GetStream() const;
 
 protected:
     bool ResolveFrame(uint64_t& new_frame) override;

@@ -2,6 +2,7 @@
 #define KPENGINE_RUNTIME_AUDIO_STREAM_H
 
 #include <cstdint>
+#include <atomic>
 #include <mutex>
 #include <vector>
 #include "data/audio.h"
@@ -18,9 +19,12 @@ namespace kpengine::audio
         // default matches the tuned streaming-TTS behavior.
         AudioStream(const data::AudioFormat& format, uint32_t buffer_seconds = 20);
     
-        void PushFrames(const float *data, uint64_t frames);
+        // Reject writes that do not fit; speech is never silently truncated.
+        bool PushFrames(const float *data, uint64_t frames);
 
         uint64_t  ReadFrames(float *output, uint64_t frames);
+        // Non-blocking consumer path used by the device callback.
+        uint64_t TryReadFrames(float* output, uint64_t frames);
 
         void Finish();
 
@@ -30,17 +34,16 @@ namespace kpengine::audio
 
     private:
         size_t AvailableSpace() const;
-        size_t AvailableFrames() const ;
+        uint64_t ReadFramesLocked(float* output, uint64_t frames);
     private:
-        bool is_finished = false;
+        std::atomic<bool> is_finished{false};
         data::AudioFormat format_;
-        uint32_t buffer_seconds_ = 20;
         std::vector<float> buffer_;
         size_t write_pos_ = 0;
         size_t read_pos_ = 0;
         size_t capacity_;
         size_t buffered_samples_ = 0;
-        std::mutex mutex_;
+        mutable std::mutex mutex_;
     };
 } // namespace  kpengine::audio
 

@@ -1,105 +1,111 @@
 #include "buffer_audio_player.h"
 #include "log/logger.h"
+
+#include <algorithm>
+
 namespace kpengine::audio
 {
-    static const char *LogName = "LogBufferAudioPlayer";
-    BufferAudioPlayer::~BufferAudioPlayer()
+    namespace
     {
+        constexpr const char* LogName = "LogBufferAudioPlayer";
     }
 
-    const std::vector<float> &BufferAudioPlayer::GetPCM() const
-    {
-        if (!clip_)
-        {
-            throw std::runtime_error("GetPCM() called with null clip");
-        }
-        return clip_->pcm;
-    }
+    BufferAudioPlayer::~BufferAudioPlayer() = default;
 
-    bool BufferAudioPlayer::GetFrameData(uint64_t src, const float* & out_data) const
+    bool BufferAudioPlayer::CopyFrameData(uint64_t frame, float* out_data,
+                                          uint32_t capacity_samples, uint32_t& channels)
     {
-        if(!clip_ || clip_->pcm.size() <= src)
-        {
+        const auto clip = GetClip();
+        channels = clip ? clip->format.channels : 0;
+        if (!clip || !out_data || channels == 0 || channels > 2 ||
+            clip->frame_count == 0 || capacity_samples < channels || frame >= clip->frame_count ||
+            frame > clip->pcm.size() / channels || channels > clip->pcm.size() - frame * channels)
             return false;
-        }
-
-        out_data = clip_->pcm.data() + src;
+        std::copy_n(clip->pcm.data() + frame * channels, channels, out_data);
         return true;
     }
 
     void BufferAudioPlayer::SetClip(std::shared_ptr<AudioClip> clip)
     {
-        clip_ = clip;
+        clip_.store(std::move(clip), std::memory_order_release);
     }
 
-    AudioClip *BufferAudioPlayer::GetClip() const
+    std::shared_ptr<AudioClip> BufferAudioPlayer::GetClip() const
     {
-        return clip_.get();
+        return clip_.load(std::memory_order_acquire);
     }
 
     AudioFormat BufferAudioPlayer::GetAudioFormat() const
     {
-        if (!clip_)
-        {
-            return {};
-        }
-        return clip_->format;
+        const auto clip = GetClip();
+        return clip ? clip->format : AudioFormat{};
     }
 
     void BufferAudioPlayer::Play()
     {
-        if (clip_ == nullptr)
+        const auto clip = GetClip();
+        if (!clip || clip->frame_count == 0 || clip->format.channels == 0 ||
+            clip->format.channels > 2 || clip->format.sample_rate != 48000 ||
+            clip->frame_count > clip->pcm.size() / clip->format.channels)
         {
-            KP_LOG(LogName, LOG_LEVEL_WARNING, "Failed to play empty audio");
+            KP_LOG(LogName, LOG_LEVEL_WARNING, "Failed to play invalid or empty audio");
             return;
         }
-        KP_LOG(LogName, LOG_LEVEL_INFO, "ready to play audio, during : %.1lf s, current : %.1f s", clip_->GetDuration(), GetCurrentSecond());
         AudioPlayer::Play();
+    }
+
+    void BufferAudioPlayer::Reset()
+    {
+        AudioPlayer::Reset();
+        clip_.store(nullptr, std::memory_order_release);
     }
 
     float BufferAudioPlayer::GetCurrentSecond() const
     {
-        if (!clip_ || clip_->frame_count == 0)
+        const auto clip = GetClip();
+        if (!clip || clip->frame_count == 0)
             return 0.f;
-        return (float)current_frame_ / clip_->frame_count * clip_->GetDuration();
+        return static_cast<float>(current_frame_) / clip->frame_count * clip->GetDuration();
     }
+
     float BufferAudioPlayer::GetRemainSecond() const
     {
-        if (!clip_ || clip_->frame_count == 0)
+        const auto clip = GetClip();
+        if (!clip || clip->frame_count == 0)
             return 0.f;
-        float duration = clip_->GetDuration();
-        return duration - (float)current_frame_ / clip_->frame_count * duration;
+        const float duration = clip->GetDuration();
+        return duration - static_cast<float>(current_frame_) / clip->frame_count * duration;
     }
 
-    bool BufferAudioPlayer::ResolveFrame(uint64_t &new_frame)
+    bool BufferAudioPlayer::ResolveFrame(uint64_t& new_frame)
     {
-        if (!clip_)
+        const auto clip = GetClip();
+        if (!clip)
+            return false;
+        if (new_frame < clip->frame_count)
+            return true;
+        if (looping_ && clip->frame_count > 0)
         {
+            new_frame %= clip->frame_count;
+            return true;
+        }
+        if (clip->frame_count == 0)
+        {
+            new_frame = 0;
+            state_ = AudioState::Finished;
             return false;
         }
-
-        if (new_frame < clip_->frame_count)
-        {
-            return true;
-        }
-
-        if (looping_)
-        {
-            new_frame = new_frame % clip_->frame_count;
-            return true;
-        }
-
-        new_frame = clip_->frame_count - 1;
+        new_frame = clip->frame_count - 1;
         state_ = AudioState::Finished;
         return true;
     }
 
     bool BufferAudioPlayer::SeekSeconds(float new_seconds)
     {
-        if (!clip_)
+        const auto clip = GetClip();
+        if (!clip || clip->GetDuration() <= 0.f || new_seconds < 0.f)
             return false;
-        float progress = new_seconds / clip_->GetDuration();
-        uint64_t frame_count = clip_->frame_count;
-        return SetCurrentFrame(static_cast<uint64_t>(frame_count * progress));
+        const float progress = new_seconds / clip->GetDuration();
+        return SetCurrentFrame(static_cast<uint64_t>(clip->frame_count * progress));
     }
 }

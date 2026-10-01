@@ -1,9 +1,12 @@
 #include "module/tts/tts_system.h"
+#include "runtime/audio/audio_player.h"
 #include "runtime/audio/miniaudio_audio_system.h"
+#include <chrono>
+#include <thread>
 
 namespace kpengine::example
 {
-    void TTSExample()
+    bool TTSExample(const std::string& reference_audio_path)
     {
         using namespace tts;
 
@@ -14,19 +17,23 @@ namespace kpengine::example
         config.timeout = 180;
 
         std::unique_ptr<TTSSystem> tts = std::make_unique<TTSSystem>();
-        tts->Initialize(TTSProviderType::GPT_SOVITS, config);
+        if (!tts->Initialize(TTSProviderType::GPT_SOVITS, config))
+            return false;
 
         std::string prompt_text(reinterpret_cast<const char *>(u8"極端な管理社会全体主義まゆりがバナナを食べたいと思っても、今日がバナナを食べていい日でなければ食べることは許さ。"));
-        std::string ref_audio_path = "D:\\dataset\\voice\\kurisu\\voice1\\voice1.wav";
         std::string target_text(reinterpret_cast<const char *>(u8"あ、あの…！ ち、違うからね、別に私が言いたくて言ったわけじゃ…！ …でも、その…す、好き…なの。…もう！ 聞こえたでしょ！ 二回は言わないからね、バカ！"));
         audio::MiniAudioSystem audio_sys;
-        audio_sys.Initialize();
+        if (!audio_sys.Initialize())
+        {
+            tts->ShutDown();
+            return false;
+        }
         tts->audio_system = &audio_sys;
 
         TTSRequest request;
         request.prompt_lang = "ja";
         request.prompt_text = prompt_text;
-        request.ref_audio_path = ref_audio_path;
+        request.ref_audio_path = reference_audio_path;
         request.text = target_text;
         request.text_lang = "ja";
         request.streaming = true;
@@ -38,11 +45,22 @@ namespace kpengine::example
         //     player->Play();
         // });
 
-        TTSResult result = tts->SyncSynthesize(request);
-
-        while (1)
+        const TTSResult result = tts->SyncSynthesize(request);
+        if (!result.success)
         {
-            ;
+            tts->ShutDown();
+            return false;
         }
+
+        const auto player = audio_sys.GetAudioPlayer(result.player_handle);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(3);
+        while (player && player->GetCurrentState() != audio::AudioState::Finished &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(10));
+
+        const bool drained = player && player->GetCurrentState() == audio::AudioState::Finished;
+        tts->ShutDown();
+        audio_sys.DestroyAudioPlayer(result.player_handle);
+        return drained;
     }
 }

@@ -1,5 +1,12 @@
 # Audio Module Design
 
+Future callback safety, speech/music buses, playback clock, and the compact
+player are planned in [Conversational Audio](PLANS.md) and its
+[roadmap](TODO.md). This document describes the current implementation.
+The [A1 baseline review](.review/A1.md) records the original findings and the
+2026-10-01 repair disposition. The source notes below describe the repaired
+contracts where those differ from the earlier baseline.
+
 Location: `engine/runtime/audio/` (static lib `Audio`)
 
 The audio module is the engine's playback layer. It owns **who plays** (players), **what feeds them** (a buffered clip or a live stream), and **how samples reach the device** (a miniaudio-backed system whose callback mixes every active player into the output). It is the consumer half of the TTS pipeline — the TTS module (→ [tts_module.md](../tts/tts_module.md)) is the producer that feeds a network stream into this module.
@@ -23,17 +30,17 @@ There are two disjoint playback paths with a shared mixer core:
 
 ### `AudioPlayer` — [`audio_player.h`](../../engine/runtime/audio/audio_player.h)
 
-The abstract base. Two contracts matter:
+The abstract base. Callback reads use a copy contract:
 
-- **`GetFrameData(src, out_data)`** — `src` is a **sample offset** (`frame * channels`), matching the `Mix` loop, which passes `frame * in_channels`. It must return a pointer to `channels` interleaved samples at that offset, or `false` when the frame isn't available yet. `Mix` treats a `false` as "output silence this frame" — it is **not** an end signal.
+- **`CopyFrameData(frame, out, capacity, channels)`** — copies one complete interleaved frame into callback-owned storage. No pointer into a clip or stream window escapes its lock/lifetime. A missing frame means silence for this callback block; `IsFinished()` distinguishes terminal drain from a temporary underrun.
 - **`ResolveFrame(new_frame)`** — decides whether `new_frame` is playable; the derived player fills `new_frame` in (e.g. loop-wrap, clamp-to-end).
 - **`SetCurrentFrame(new_frame)`** — the bridge: calls `ResolveFrame`, then **always** writes `current_frame_ = new_frame` regardless of the result. This was a deliberate fix (see [History](#history--bug-log)): for a streaming player the playhead must follow the buffer window even while the source is dry, or the player re-reads the last frame in a loop.
 
-`FillBuffer()` (virtual, default no-op) is the streaming player's hook: pull more source data in so a currently-unavailable frame can become available. `AdvanceFrame`/`SeekFrames`/`SeekSeconds` are the movement API on top of `SetCurrentFrame`.
+`FillBuffer()` (virtual, default no-op) is called once per active voice per mixer block. Stream refill and frame-copy paths use try-locks, so producer contention yields silence for that block instead of blocking the device callback. `AdvanceFrame`/`SeekFrames`/`SeekSeconds` are the movement API on top of `SetCurrentFrame`.
 
 ### `BufferAudioPlayer` — [`buffer_audio_player.cpp`](../../engine/runtime/audio/buffer_audio_player.cpp)
 
-Holds a whole `AudioClip`. `GetFrameData` is a direct index into `clip_->pcm` (so `src` must be a sample offset). `ResolveFrame`: in-range → ready; past the end → wrap on `looping_`, else clamp to the last frame and set `Finished`. Fully synchronous — no refill, no lock.
+Holds an immutable `AudioClip` snapshot through an atomic shared pointer. `CopyFrameData` validates and copies a complete mono or stereo frame. The mixer contract is fixed at 48 kHz; empty, malformed, unsupported-channel, and non-48 kHz clips are rejected by `Play`. `ResolveFrame`: in-range → ready; past the end → wrap on `looping_`, else clamp to the last frame and set `Finished`.
 
 ### `StreamAudioPlayer` — [`stream_audio_player.cpp`](../../engine/runtime/audio/stream_audio_player.cpp)
 
@@ -52,15 +59,15 @@ struct RingBuffer {
 
 ### `AudioStream` — [`audio_stream.cpp`](../../engine/runtime/audio/audio_stream.cpp)
 
-A **thread-safe FIFO ring buffer** — the producer/consumer seam. Capacity is `sample_rate * channels * buffer_seconds`, where `buffer_seconds` is a constructor parameter defaulting to **20** (a caller's trade-off: large enough to absorb a producer that bursts faster than real-time playback, small enough to bound memory — the TTS path sizes it from the request, see [tts_module.md](../tts/tts_module.md)). `PushFrames` (producer) and `ReadFrames` (consumer) are each a `memcpy`-style wrap around a `vector<float>` guarded by `mutex_`. `PushFrames` drops the oldest samples when full; a packet larger than the whole buffer keeps only its newest tail. `Finish()`/`IsFinished()` mark end-of-stream (a flag, not a buffer condition). **The FIFO is destructive** — `ReadFrames` consumes; a consumer that falls behind loses data, and a dry FIFO returns 0 frames, not a stall.
+A **thread-safe FIFO ring buffer** — the producer/consumer seam. Capacity is `sample_rate * channels * buffer_seconds`, where `buffer_seconds` defaults to **20**. `PushFrames` rejects an invalid, post-finish, or over-capacity write without changing queued samples. The callback uses `TryReadFrames`, which never waits for the producer mutex. `Finish()` serializes with writes; `IsFinished()` is an atomic producer-terminal flag, separate from queued-frame drain.
 
 ### `AudioStreamDecoder` — [`audio_stream_decoder.cpp`](../../engine/runtime/audio/audio_stream_decoder.cpp)
 
-The incremental decoder. `Feed(data, size)` accumulates bytes, parses the RIFF/WAVE header once (chunks scanned, `fmt `/`data` located, header bytes erased), then decodes **16-bit PCM** into `float` and **linearly resamples** from the file's rate to the stream's rate (e.g. 32 kHz → 48 kHz). Only 16-bit PCM is supported; anything else logs an error and refuses. **Important:** the stream rate it targets comes from the `AudioStream` it was constructed with, not from the file.
+The incremental decoder. `Feed(data, size)` returns `NeedMoreData`, `DataDecoded`, or `InvalidData`. It bounds and validates RIFF chunks, reads little-endian fields without unaligned casts, tracks declared data length, retains partial channel frames, and resamples with phase carried across chunks. It accepts PCM16 mono/stereo from 8–192 kHz and explicitly maps channels to the destination stream format.
 
 ### `AudioSystem` / `MiniAudioSystem` — [`audio_system.cpp`](../../engine/runtime/audio/audio_system.cpp), [`miniaudio_audio_system.cpp`](../../engine/runtime/audio/miniaudio_audio_system.cpp)
 
-`AudioSystem` is the handle registry: `CreateAudioPlayer(type)` allocates a handle and constructs the matching player (slots double as the handle→player map); `GetAudioPlayer` validates the generation; `DestroyAudioPlayer` resets the player. `MiniAudioSystem` is the concrete backend: it initializes a `ma_device` (48 kHz stereo, `f32`, playback) and installs `Mix` as the data callback. **`Mix` runs on the miniaudio callback thread** — this is the audio thread everything downstream is measured against.
+`AudioSystem` is the handle registry: `GetAudioPlayer` returns a `shared_ptr` after generation validation. `DestroyAudioPlayer` retires the generation and player from the published immutable callback snapshot; retired snapshots and players are reclaimed on the control thread after callback readers release them. The active voice count is capped at 64. `MiniAudioSystem` owns an idempotent miniaudio lifecycle (48 kHz stereo, `f32`, 512-frame requested period) and stops/uninitializes the device before its callback target is destroyed. **`Mix` runs on the miniaudio callback thread.**
 
 ## Data flow
 
@@ -77,15 +84,15 @@ The incremental decoder. `Feed(data, size)` accumulates bytes, parses the RIFF/W
 ```
 httplib receiver callback (network thread)
     └─ AudioStreamDecoder::Feed(chunk)          # parse header once, then decode+resample
-         └─ AudioStream::PushFrames(samples)    # thread-safe 10 s FIFO
+         └─ AudioStream::PushFrames(samples)    # fixed-capacity FIFO; rejects overflow
                                                    ↑ (consumer)
 audio callback (miniaudio thread)
-    └─ Mix(frame by frame)
-         └─ StreamAudioPlayer::GetFrameData / AdvanceFrame
-              └─ ring window ← AudioStream::ReadFrames  (via Refill/FillBuffer)
+    └─ Mix(callback block)
+         └─ StreamAudioPlayer::CopyFrameData / AdvanceFrame
+              └─ ring window ← AudioStream::TryReadFrames (via one FillBuffer attempt)
 ```
 
-The two threads never touch each other's structures directly — the seam is the `AudioStream` FIFO (`mutex_`), and the player's ring buffer (`buffer_mutex_`) mediates between the playhead and the FIFO.
+The TTS worker produces into the FIFO. The callback uses nonblocking reads and ring-buffer copies; producer contention emits silence for that callback block.
 
 ## The streaming window
 
@@ -96,9 +103,9 @@ The two threads never touch each other's structures directly — the seam is the
 3. If the buffer is full, **slide** the window: `memmove` the unplayed tail to the front, advance `start_frame`. (This replaces what used to be a reset-from-zero, which is what caused the stutter — see [History](#history--bug-log).)
 4. Read up to `min(max_write, CACHE_SIZE_FRAMES / 4)` frames from the stream into the free tail, increment `filled_frames`.
 
-`ResolveFrame(new_frame)` calls `Refill(new_frame)`, then checks `new_frame < start_frame + filled_frames`. If the frame is available → ready. If not, it is a **temporary underrun**: return false and leave the playhead put (Mix outputs silence and retries); only `stream_->IsFinished()` promotes the player to `Finished`.
+`ResolveFrame(new_frame)` is used for seeks and initialization. During mixing, `AdvanceFrame` only advances the atomic cursor. A missing frame is a temporary underrun unless the producer has finished and the buffered tail has drained.
 
-`FillBuffer()` is the same refill driven from `Mix`: it locks `buffer_mutex_`, `Refill(current_frame_)`, and reports whether the playhead is now readable. `Mix` calls it only when `GetFrameData` failed.
+`FillBuffer()` is called once per active stream voice at the start of a mixer block. It tries to acquire the ring mutex; refill then tries the FIFO mutex. A failed try-lock defers refill to the next callback.
 
 ## Threading model
 
@@ -106,9 +113,9 @@ The two threads never touch each other's structures directly — the seam is the
 |---|---|---|
 | `AudioStream` FIFO | `AudioStream::mutex_` | producer = network/httplib thread, consumer = audio thread |
 | `StreamAudioPlayer` ring window | `buffer_mutex_` | audio thread (Mix), plus `Play()`/`SetStream` from the network thread |
-| `BufferAudioPlayer` clip | **none** | set from worker/network thread, read from audio thread — see smells |
+| `BufferAudioPlayer` clip | atomic `shared_ptr` snapshot | control/TTS thread publishes; callback holds a local copy while reading |
 
-Lock order is **buffer → stream** (`Refill` holds `buffer_mutex_`, then locks `AudioStream::mutex_` inside `ReadFrames`); there is no reverse path, so no deadlock. The audio callback is the real-time constraint: `Mix` must never block on disk or network — `FillBuffer`/`ReadFrames` are pure in-memory moves guarded by short-held mutexes.
+Lock order is **buffer → stream** for control-side operations. The callback uses try-locks for both structures, performs no logging or I/O, and mixes at most 64 active voices over the requested 512-frame device period.
 
 ## History / bug log
 
@@ -133,17 +140,15 @@ Lock order is **buffer → stream** (`Refill` holds `buffer_mutex_`, then locks 
 
 ### Incident notes worth keeping
 
-- **FIFO is destructive.** The seam between producer and consumer loses data if the consumer falls behind. The 10 s capacity is the whole protection; if a network burst outpaces playback for >10 s, the head is dropped.
-- **`Mix` never signals "waiting" to the caller.** A dry source is expressed as repeated `GetFrameData` failures — every output frame in a dry stretch locks `buffer_mutex_` and re-attempts `ReadFrames`. Correct, but a hot path when starved (see smells).
+The August startup-stutter fixes above remain part of the playback history. The
+2026-10-01 safety repair adds bounded refill and explicit FIFO rejection; the
+device callback no longer retries a dry stream once per output frame.
 
 ## Known smells / next steps
 
-- **Mono stream → stereo mix reads one sample out of bounds.** In `MiniAudioSystem::Mix`, the stereo branch reads `data[0]` and `data[1]`. For a mono `StreamAudioPlayer` (`channels == 1`), `data[1]` is the *next* frame's sample (and one-past-the-window at the last buffered frame). Audibly it's a sub-sample shift, but at the window boundary it's a heap over-read. The mixer should upmix mono explicitly (`v`, `v`) when `in_channels == 1`.
-- **Buffer path has a data race on `clip_`.** `BufferAudioPlayer::SetClip` runs on the TTS worker/network thread while `GetFrameData` reads `clip_` on the audio thread with no lock. Benign in practice on x86 (pointer-sized store), but formally UB — worth a `std::atomic` or a set-before-play convention enforced at the call site.
-- **`state_`/`current_frame_` are written from non-audio threads.** `Play()` is called from the httplib receiver thread; `Stop()`/`current_frame_ = 0` writes race with the audio thread's reads. `AudioState` is `uint8_t`; an `std::atomic` or a tiny command queue would close it.
-- **Dry-source hot path.** When the stream is empty, `Mix` calls `FillBuffer()` once per output frame — each grabs two mutexes for a no-op read. A "dry since last fill" guard or a periodic (not per-frame) refill would cut the lock churn.
-- **`AudioStreamDecoder` is single-format.** Only 16-bit PCM is accepted; `bits_per_sample != 2` is an error. 24/32-bit and float WAVs would be rejected loudly — fine for GPT-SoVITS today, but the decoder should grow a format switch rather than a hardcoded path.
-- **`ResampleLinear` last-sample edge.** When `idx >= input.size() - 1` it repeats `input.back()`, so the final resampled samples can duplicate the last source sample at the tail. Cosmetically irrelevant here, but a clamped linear interpolator would be exact.
+- **Device lifecycle smoke remains unverified.** The device now has idempotent stop/uninit and callback retirement, but this change was not launched through the visible device execution path.
+- **Mixer timing remains unmeasured.** Voice count and requested callback period are bounded, but worst-case callback duration under producer load still needs a measurement.
+- **Rate conversion is a fixed input contract for buffered clips.** The loader produces 48 kHz stereo; callers supplying other buffered formats are rejected and need an explicit conversion path.
 - **Window math assumes `at_frame >= start_frame` after the reset check.** `GetReadOffset` computes `frame_index - start_frame` as unsigned; when `frame_index < start_frame` it underflows to a huge value and correctly reports "not in window" → reset. That is intentional, but the subtraction makes the *intent* non-obvious to a future reader.
 
 ## Dead code

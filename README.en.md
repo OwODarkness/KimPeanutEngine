@@ -43,7 +43,8 @@ depend on the scene and hardware.
 </p>
 
 <p align="center">
-  <img src="./resouce/example/live2d.png" width="49%" alt="Live2D example" />
+  <img src="./resouce/example/live2d.png" width="39%" alt="Live2D Example" />
+  <img src="./resouce/example/terrian.png" width="59%" alt="Terrain PCG Example" />
 </p>
 
 ## Features
@@ -62,7 +63,9 @@ The main path is `Asset → Resource → Render → RHI`.
 
 - **Runtime**: Provides windowing, input, scripting, gameplay, and core runtime services.
 - **Command**: Runtime owns one `CommandRegistry`; the editor console, Lua, tests, and local automation share typed commands with game-thread queuing, structured results, and controlled local JSON-lines transport.
-- **Audio / TTS**: AudioSystem handles playback; TTS connects to GPT-SoVITS through a provider interface with synchronous/asynchronous and buffered/streaming synthesis.
+- **Audio**: AudioSystem supports synchronous, asynchronous, buffered, and streaming playback.
+- **TTS**: Connects to GPT-SoVITS over HTTP through a provider interface, with synchronous or asynchronous requests and buffered or streaming synthesis delivered to AudioSystem for playback.
+- **Terrain PCG**: Composable deterministic nodes generate heightfields, derived terrain data, and meshes, with erosion post-processing, shared-renderer previews, and bakeable terrain assets.
 - **Editor / optional modules**: Dear ImGui editor support and an optional Live2D import, cook, and runtime product module.
 - **Validation**: Unit or contract coverage for Asset, Graphics, Render, Audio, Script, Gameplay, and Command.
 

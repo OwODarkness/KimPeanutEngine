@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 #include <memory>
+#include <atomic>
 #include <unordered_map>
 #include <functional>
 #include <queue>
@@ -49,11 +50,11 @@ namespace kpengine::tts
         void WorkerLoop();
 
     public:
-        audio::AudioSystem* audio_system;
+        audio::AudioSystem* audio_system = nullptr;
     private:
         std::unique_ptr<ITTSProvider> provider_;
 
-        bool initialized = false;
+        std::atomic<bool> initialized{false};
 
         std::queue<TTSTask> tasks_;
         std::thread worker_;

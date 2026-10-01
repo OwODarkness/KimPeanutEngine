@@ -9,6 +9,12 @@
 
 namespace kpengine::audio
 {
+    enum class AudioDecodeResult
+    {
+        NeedMoreData,
+        DataDecoded,
+        InvalidData
+    };
 
     class AudioStreamDecoder
     {
@@ -17,15 +23,15 @@ namespace kpengine::audio
 
         ~AudioStreamDecoder() = default;
 
-        bool Feed(
+        AudioDecodeResult Feed(
             const uint8_t *data,
             size_t size);
 
-        void Finish();
+        bool Finish();
 
     private:
-        bool ParseHeader();
-        bool DecodePCM();
+        AudioDecodeResult ParseHeader();
+        AudioDecodeResult DecodePCM();
 
     protected:
     protected:
@@ -33,8 +39,12 @@ namespace kpengine::audio
         std::vector<uint8_t> pending_bytes_;
         bool header_parsed_ = false;
         data::AudioFormat wav_format_;
-        size_t data_offset_;
-        size_t sample_total_ = 0;
+        size_t data_offset_ = 0;
+        uint64_t data_bytes_remaining_ = 0;
+        bool data_size_unknown_ = false;
+        std::vector<float> resample_frames_;
+        double resample_position_ = 0.0;
+        uint64_t output_frames_ = 0;
     };
 
 }

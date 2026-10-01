@@ -11,14 +11,15 @@ namespace kpengine::audio
     class BufferAudioPlayer : public  AudioPlayer{
     public:
         ~BufferAudioPlayer();
-        virtual const std::vector<float>& GetPCM() const override;
-        virtual bool GetFrameData(uint64_t src, const float* & out_data) const override;
+        bool CopyFrameData(uint64_t frame, float* out_data,
+                           uint32_t capacity_samples, uint32_t& channels) override;
 
         void SetClip(std::shared_ptr<AudioClip> clip);
-        AudioClip *GetClip() const;
+        std::shared_ptr<AudioClip> GetClip() const;
         AudioFormat GetAudioFormat() const override;
 
         void Play() override;
+        void Reset() override;
 
         float GetCurrentSecond() const override;
         float GetRemainSecond() const override;
@@ -28,7 +29,7 @@ namespace kpengine::audio
         bool ResolveFrame(uint64_t& new_frame) override;
 
     private:
-        std::shared_ptr<AudioClip> clip_;
+        std::atomic<std::shared_ptr<AudioClip>> clip_;
     }; 
 } // namespace kpengine::audio
 

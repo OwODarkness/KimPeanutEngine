@@ -7,31 +7,17 @@
 #include "audio/buffer_audio_player.h"
 #include "audio/stream_audio_player.h"
 #include "audio/audio_stream.h"
-#include <algorithm>
-
 namespace
 {
-    // Size the streaming FIFO from the request text. The server may deliver
-    // audio faster than real-time playback, so the FIFO must hold the whole
-    // lead; under-sizing drops the head of the clip, over-sizing only costs
-    // memory. Heuristic: UTF-8 CJK is ~3 bytes/char at a conservative
-    // ~5 chars/sec of speech -> ~15 bytes/sec, clamped to a sane range.
-    constexpr uint32_t kMinStreamBufferSeconds = 5;
-    constexpr uint32_t kMaxStreamBufferSeconds = 60;
-    constexpr double kStreamBytesPerSecond = 10.0;
-
-    uint32_t EstimateStreamBufferSeconds(const std::string& text)
-    {
-        double seconds = static_cast<double>(text.size()) / kStreamBytesPerSecond;
-        return std::clamp(
-            static_cast<uint32_t>(seconds),
-            kMinStreamBufferSeconds,
-            kMaxStreamBufferSeconds);
-    }
+    constexpr uint32_t kStreamBufferSeconds = 20;
 }
 
 namespace kpengine::tts
 {
+    namespace
+    {
+        constexpr size_t kMaxQueuedTtsTasks = 16;
+    }
     TTSSystem::TTSSystem():
     audio_loader_(std::make_unique<kpengine::asset::MiniAudio_AudioLoader>())
     {
@@ -41,7 +27,7 @@ namespace kpengine::tts
         TTSProviderType type,
         const ServerConfig &config)
     {
-        if (initialized)
+        if (initialized || worker_.joinable())
         {
             return false;
         }
@@ -58,33 +44,73 @@ namespace kpengine::tts
             return false;
         }
 
-        initialized = true;
-        running_ = true;
-        worker_ = std::thread(&TTSSystem::WorkerLoop, this);
-        return provider_->Initialize(config);
+        if (!provider_->Initialize(config))
+        {
+            provider_->ShutDown();
+            provider_.reset();
+            return false;
+        }
+
+        {
+            std::lock_guard lock(mutex_);
+            initialized = true;
+            running_ = true;
+        }
+        try
+        {
+            worker_ = std::thread(&TTSSystem::WorkerLoop, this);
+        }
+        catch (...)
+        {
+            {
+                std::lock_guard lock(mutex_);
+                initialized = false;
+                running_ = false;
+            }
+            provider_->ShutDown();
+            provider_.reset();
+            return false;
+        }
+        return true;
     }
 
     void TTSSystem::ShutDown()
     {
-        if (initialized == false)
-        {
-            return;
-        }
-        initialized = false;
-
         {
             std::lock_guard lock(mutex_);
+            if (!initialized && !worker_.joinable())
+            {
+                return;
+            }
+            initialized = false;
             running_ = false;
         }
-        cv_.notify_one();
+        cv_.notify_all();
+
+        // Ask the provider to interrupt an in-flight request before joining
+        // the worker, otherwise shutdown can wait for the full HTTP timeout.
+        if (provider_)
+        {
+            provider_->ShutDown();
+        }
 
         if (worker_.joinable())
         {
             worker_.join();
         }
-        if (provider_)
+        std::queue<TTSTask> abandoned;
         {
-            provider_->ShutDown();
+            std::lock_guard lock(mutex_);
+            tasks_.swap(abandoned);
+        }
+        while (!abandoned.empty())
+        {
+            TTSResult result;
+            result.error_code = -6;
+            result.error_message = "TTS system shut down before the request started";
+            if (abandoned.front().callback)
+                abandoned.front().callback(result);
+            abandoned.pop();
         }
     }
 
@@ -99,7 +125,7 @@ namespace kpengine::tts
                 cv_.wait(lock, [this]
                          { return !running_ || !tasks_.empty(); });
 
-                if (running_ == false && tasks_.empty())
+                if (running_ == false)
                 {
                     break;
                 }
@@ -108,73 +134,138 @@ namespace kpengine::tts
             }
 
             TTSResult result = SyncSynthesize(task.request);
-            task.callback(result);
+            if (task.callback)
+            {
+                task.callback(result);
+            }
         }
     }
 
     TTSResult TTSSystem::SyncSynthesize(const TTSRequest &request)
     {
         TTSResult result;
+        if (!initialized || !provider_)
+        {
+            result.error_code = -1;
+            result.error_message = "TTS system is not initialized";
+            return result;
+        }
+        if (!audio_system)
+        {
+            result.error_code = -2;
+            result.error_message = "Audio system is not configured";
+            return result;
+        }
+        if (!audio_system->IsInitialized())
+        {
+            result.error_code = -2;
+            result.error_message = "Audio system is not initialized";
+            return result;
+        }
         if (request.streaming)
         {
             audio::AudioHandle audio_handle = audio_system->CreateAudioPlayer(audio::AudioPlayerType::Stream);
-            audio::StreamAudioPlayer* player = dynamic_cast<audio::StreamAudioPlayer *>(audio_system->GetAudioPlayer(audio_handle));
+            auto player = std::dynamic_pointer_cast<audio::StreamAudioPlayer>(audio_system->GetAudioPlayer(audio_handle));
             data::AudioFormat audio_format;
             audio_format.channels = 1;
             audio_format.sample_rate = 48000;
-            uint32_t buffer_seconds = EstimateStreamBufferSeconds(request.text);
             std::shared_ptr<audio::AudioStream> stream =
-                std::make_shared<audio::AudioStream>(audio_format, buffer_seconds);
-            KP_LOG("LogTTSSystem", LOG_LEVEL_DEBUG,
-                   "Streaming FIFO sized to %u seconds for %zu-byte text",
-                   buffer_seconds, request.text.size());
+                std::make_shared<audio::AudioStream>(audio_format, kStreamBufferSeconds);
             audio::AudioStreamDecoder decoder(stream);
+            if (!player)
+            {
+                audio_system->DestroyAudioPlayer(audio_handle);
+                result.error_code = -3;
+                result.error_message = "Failed to create streaming audio player";
+                return result;
+            }
             player->SetStream(stream);
+            bool decoder_finished = false;
            
            
             auto on_data_callback = [&](const uint8_t* data, size_t size) -> bool
             {
-                decoder.Feed(data, size);
+                if (decoder.Feed(data, size) == audio::AudioDecodeResult::InvalidData)
+                {
+                    return false;
+                }
                 player->Play();
                 return true;
             };
 
             auto on_finish_callback = [&](){
-                decoder.Finish();
-                KP_LOG("LogTTSSystem", LOG_LEVEL_DEBUG, "Finish");
+                decoder_finished = decoder.Finish();
             };
 
             auto on_error_callback = [&](const std::string& msg)
             {
-                KP_LOG("LogTTSSystem", LOG_LEVEL_ERROR, msg);
+                result.error_code = -4;
+                result.error_message = msg.substr(0, 512);
             };
 
             bool succeed = provider_->SynthesizeStream(request, on_data_callback, on_finish_callback, on_error_callback);
-            result.success = succeed;
-            result.player_handle = audio_handle;
+            result.success = succeed && decoder_finished;
+            if (succeed && !decoder_finished)
+            {
+                result.error_code = -5;
+                result.error_message = "TTS audio ended with an incomplete or invalid WAV stream";
+            }
+            if (result.success)
+            {
+                result.player_handle = audio_handle;
+            }
+            else
+            {
+                stream->Finish();
+                audio_system->DestroyAudioPlayer(audio_handle);
+            }
             
         }
         else
         {
             audio::AudioHandle audio_handle = audio_system->CreateAudioPlayer(audio::AudioPlayerType::Buffer);
-            audio::BufferAudioPlayer *player = dynamic_cast<audio::BufferAudioPlayer *>(audio_system->GetAudioPlayer(audio_handle));
+            auto player = std::dynamic_pointer_cast<audio::BufferAudioPlayer>(audio_system->GetAudioPlayer(audio_handle));
+            if (!player)
+            {
+                audio_system->DestroyAudioPlayer(audio_handle);
+                result.error_code = -3;
+                result.error_message = "Failed to create buffered audio player";
+                return result;
+            }
             auto on_data_callback = [&](const uint8_t* data, size_t size) -> bool
             {
-                  player->SetClip(audio_loader_->LoadFromMemory(
-                        reinterpret_cast<const char*>(data),
-                        size).data);
-                    player->Play();
+                  auto clip = audio_loader_->LoadFromMemory(
+                        reinterpret_cast<const char*>(data), size).data;
+                  if (!clip || clip->frame_count == 0 || clip->format.channels == 0 ||
+                      clip->format.sample_rate == 0 || clip->pcm.empty())
+                  {
+                      result.error_code = -5;
+                      result.error_message = "TTS returned an invalid or empty audio clip";
+                      return false;
+                  }
+                  player->SetClip(std::move(clip));
+                  player->Play();
                 result.player_handle = audio_handle;
                     return true;
             };
 
             auto on_error_callback = [&](const std::string& msg)
             {
-                KP_LOG("LogTTSSystem", LOG_LEVEL_ERROR, msg);
+                result.error_code = -4;
+                result.error_message = msg.substr(0, 512);
             };
 
             bool succeed = provider_->SynthesizeBuffer(request, on_data_callback, on_error_callback);
-            result.success = succeed;
+            result.success = succeed && result.player_handle.IsValid();
+            if (!result.success)
+            {
+                audio_system->DestroyAudioPlayer(audio_handle);
+                if (result.error_message.empty())
+                {
+                    result.error_code = -4;
+                    result.error_message = "TTS provider returned no playable audio";
+                }
+            }
         }
         return result;
     }
@@ -183,11 +274,26 @@ namespace kpengine::tts
         const TTSRequest &request,
         std::function<void(const TTSResult &)> callback)
     {
+        bool rejected = false;
         {
             std::lock_guard lock(mutex_);
+            if (!callback)
+            {
+                return;
+            }
+            if (!initialized || !running_ || tasks_.size() >= kMaxQueuedTtsTasks)
+                rejected = true;
+            else
+                tasks_.push({request, callback});
+        }
 
-            tasks_.push({request,
-                         std::move(callback)});
+        if (rejected)
+        {
+            TTSResult result;
+            result.error_code = -7;
+            result.error_message = "TTS system is unavailable or its request queue is full";
+            callback(result);
+            return;
         }
 
         cv_.notify_one();
@@ -195,5 +301,6 @@ namespace kpengine::tts
 
     TTSSystem::~TTSSystem()
     {
+        ShutDown();
     }
 }

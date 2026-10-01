@@ -1,5 +1,28 @@
 # TTS Module Design
 
+Cancellable conversational speech and Live2D integration are planned in the
+[Conversational Audio architecture](../audio/PLANS.md) and
+[roadmap](../audio/TODO.md). This document describes the current client.
+The [A2 baseline review](../audio/.review/A2.md) preserves the original
+findings and their 2026-10-01 repair disposition. This page's source walkthrough
+is the earlier baseline where it conflicts with the current contracts below.
+
+## Current safety contract (2026-10-01)
+
+- Initialization starts the worker only after provider initialization succeeds;
+  destruction and repeated shutdown stop the provider before joining the worker.
+- The asynchronous queue is capped at 16 pending requests. Rejected and
+  shutdown-abandoned requests receive a failed result.
+- Synthesis requires an initialized Audio system and returns a valid player
+  handle only for decoded playable audio. Error codes are initialized.
+- The provider quarantines at most 32 MiB until HTTP status and WAV-compatible
+  content type are known, then delivers bounded chunks. Failed responses never
+  reach the decoder. This preserves correctness with the current httplib API,
+  at the cost of delaying playback until the response body is received.
+- WAV parsing is bounded and incremental; malformed sizes, truncated final
+  frames, unsupported formats, and rejected FIFO writes fail the job.
+- Per-job cancellation and audible-drain completion events remain open work.
+
 Location: `engine/module/tts/` (static lib `TTS`, folded into the `Module` INTERFACE target)
 
 The TTS module is the engine's **text-to-speech client** — the producer half of the audio pipeline. It turns a request (text + voice reference) into audible audio by talking to a TTS server, then hands the result to the [audio module](../audio/audio_module.md) for playback. Today the only provider is **GPT-SoVITS over HTTP**, but the provider interface is the seam where any TTS backend (cloud API, local service, offline engine) would slot in.
@@ -32,7 +55,7 @@ The callbacks are `std::function`s: `AudioDataCallback = std::function<bool(cons
 - **`SyncSynthesize(request)`** — blocks until synthesis finishes. It creates an audio player, wires the provider callbacks into the player/decoder, calls the provider, and returns a `TTSResult` carrying the player handle.
 - **`AsyncSynthesize(request, callback)`** — enqueues a `TTSTask` (request + callback) on a queue; a dedicated worker thread (`WorkerLoop`) pops tasks and runs `SyncSynthesize` on each, invoking the callback with the result. The queue is guarded by `mutex_` and signaled by `cv_`.
 
-`TTSSystem` owns a `unique_ptr<ITTSProvider>`, an `IAudioLoader` (for the buffered path), a worker thread, and a public `audio::AudioSystem* audio_system` — **the caller must assign this before synthesizing**; the system does not own or initialize the audio backend (see the example). `ShutDown` flips `running_ = false`, notifies the worker, joins it, then shuts the provider down.
+`TTSSystem` owns a `unique_ptr<ITTSProvider>`, an `IAudioLoader` (for the buffered path), a worker thread, and a non-owning `audio::AudioSystem* audio_system`. The caller initializes and assigns Audio before synthesis. Initialization is transactional, the destructor calls idempotent shutdown, shutdown asks the provider to stop before joining, and the pending queue is bounded.
 
 ### The two synthesis paths
 
@@ -48,7 +71,7 @@ OnData:  decoder.Feed(data, size); player->Play();
 OnFinish: decoder.Finish();
 ```
 
-The FIFO `buffer_seconds` is **sized from the request text** (`EstimateStreamBufferSeconds`): the server may deliver audio faster than real-time playback, so the FIFO must hold the whole lead or the head of the clip gets dropped. The heuristic treats UTF-8 CJK as ~3 bytes/char at ~5 chars/sec of speech (~15 bytes/sec), clamped to **[5, 60] seconds** — over-sizing only costs memory, under-sizing drops audio. Each `OnData` chunk is fed to the decoder **and** starts the player (harmless if already playing — `Play()` is idempotent in `StreamAudioPlayer`). The decoder parses the WAV header out of the first chunk, then pushes resampled samples into the FIFO as they arrive; the audio callback pulls them in real time. **`Play()` per chunk is what lets playback begin as soon as the first chunk is decodable** — this is the correct call pattern for a stream.
+The FIFO has a fixed **20-second** capacity. Overflow returns failure without discarding older speech. The provider currently quarantines the complete response (up to 32 MiB) to validate HTTP status and content type before feeding 64 KiB chunks to the decoder. Each valid chunk starts or continues the player; WAV EOF and playback drain remain distinct states.
 
 **Buffered (`request.streaming == false`)**:
 
@@ -64,8 +87,8 @@ The whole response body is decoded into an `AudioClip` at once via the asset mod
 `GPTSovitsTTS` is the GPT-SoVITS client over `httplib::Client`:
 
 - `BuildRequest` — a JSON body for the server's `/tts` API: `text`, `text_lang`, `ref_audio_path`, `prompt_lang`, `prompt_text`, plus synthesis knobs (`text_split_method: "cut4"`, `batch_size: 1`, `streaming_mode`, `sample_steps: 16`, `overlap_length: 2`, `min_chunk_length: 16`).
-- `SynthesizeBuffer` — one blocking `client_->Post`; the whole body goes to `OnData` once. Errors (connect failure, non-200) go to `OnError` and return `false`.
-- `SynthesizeStream` — `client_->Post` with a content receiver: every HTTP chunk arrives via `OnData`. On a successful response it calls `OnFinish()`. Note the success/failure branches are ordered oddly (success is checked first, then `!response`, then a dead `status != 200` branch that is unreachable because a non-null response with a bad status returns `true` from the first branch) — see smells.
+- `SynthesizeBuffer` — a blocking `client_->Post` with a bounded receiver. It validates HTTP status and content type before delivering the complete body once to `OnData`.
+- `SynthesizeStream` — a bounded receiver quarantines the response because this vendored streaming `Post` overload does not expose headers before body callbacks. It validates status/media type, delivers chunks to `OnData`, propagates consumer abort, and calls `OnFinish` only after successful delivery.
 
 ## Data flow
 
@@ -83,14 +106,11 @@ The server is external and stateful — the voice reference (`ref_audio_path`) a
 
 ## Example — [`engine/example/tts/tts_example.cpp`](../../engine/example/tts/tts_example.cpp)
 
-`TTSExample()` (invoked from `engine/editor/main.cpp` by uncommenting) shows the full wiring: `ServerConfig` (localhost:9880 `/tts`, 180 s timeout), a `MiniAudioSystem` created and initialized **first**, assigned to `tts->audio_system`, then `SyncSynthesize` with a Japanese request (`streaming = true`). The example then blocks in `while(1)` — run it by hand, not from an agent shell.
+`TTSExample(reference_audio_path)` shows the localhost:9880 `/tts` wiring with a caller-supplied server-side voice path. It checks initialization and synthesis results, waits at most three minutes for audible drain, and returns instead of spinning forever.
 
 ## Known smells / next steps
 
-- **`SynthesizeStream` has a dead error branch.** The final `response->status != 200` check is unreachable: the success branch (`if (response) { OnFinish(); return true; }`) already returns true for *any* non-null response, including a 500. Non-200 bodies are therefore treated as success. Fix: check `response && response->status == 200` up front.
-- **`OnData` return value is ignored by the streaming path.** The receiver lambda always returns `true`, so a consumer can't abort mid-stream; the `AudioDataCallback`'s `bool` is only meaningful if the provider honors it.
-- **Buffered path assigns `player_handle` inside the callback; streaming assigns it on the result.** Inconsistent — and if the buffered `OnData` never fires (empty response), the handle is unassigned. Assign on the result path consistently.
-- **`SyncSynthesize` blocks the caller for the full synthesis.** `AsyncSynthesize` is the intended non-blocking route; `Sync` exists for examples and single-shot use. The worker loop serializes all tasks — there is no concurrency limit knob and no per-task cancellation.
-- **No retry / timeouts beyond httplib's.** `config.timeout` (180 s) is applied as connect+read timeout; a stalled stream stalls the caller's worker thread until then. A per-request watchdog is a future hardening step.
+- **`SyncSynthesize` blocks the caller for the full synthesis.** `AsyncSynthesize` is the intended non-blocking route; `Sync` exists for examples and single-shot use. The worker serializes requests and caps the pending queue at 16; per-task cancellation is still open.
+- **Per-job cancellation and audible completion events are not implemented.** Shutdown aborts the active provider request and queue capacity is bounded, but callers cannot replace or cancel one queued/in-flight request independently.
+- **Quarantining delays streaming playback.** The current httplib overload does not surface response headers before the body callback, so playback begins after full response validation rather than as bytes arrive.
 - **`TTSRequest` is server-path-addressed.** `ref_audio_path`/`prompt_text` refer to server-side state; there is no file upload or multipart. Document this at the API boundary so it isn't mistaken for a client-side asset reference.
-- **`total` global in `gpt_sovits_tts.cpp` is dead.** A file-scope `size_t total = 0` is written by the progress lambda and never read; remove it.

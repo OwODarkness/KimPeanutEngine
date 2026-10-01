@@ -14,35 +14,35 @@ namespace kpengine::audio
     {
     }
 
-    const std::vector<float>& StreamAudioPlayer::GetPCM() const
+    bool StreamAudioPlayer::CopyFrameData(uint64_t frame_index, float* out_data,
+                                          uint32_t capacity_samples, uint32_t& channels)
     {
-        std::lock_guard<std::mutex> lock(buffer_mutex_);
-        return ring_buffer_.data;
-    }
+        std::unique_lock<std::mutex> lock(buffer_mutex_, std::try_to_lock);
+        if (!lock.owns_lock())
+            return false;
 
-    bool StreamAudioPlayer::GetFrameData(uint64_t src, const float*& out_data) const
-    {
-        std::lock_guard<std::mutex> lock(buffer_mutex_);
-
-        const int channels = ring_buffer_.channels;
-        if (channels <= 0) {
+        channels = static_cast<uint32_t>(ring_buffer_.channels);
+        if (channels == 0 || channels > 2 || !out_data || capacity_samples < channels) {
             return false;
         }
 
         // `src` is a sample offset (frame * channels), matching the buffer
         // player convention. Translate it back to a frame index first.
-        uint64_t frame_index = src / channels;
         uint64_t offset = ring_buffer_.GetReadOffset(frame_index);
         if (offset == static_cast<uint64_t>(-1)) {
+            if (stream_ && stream_->IsFinished() &&
+                frame_index >= ring_buffer_.start_frame + ring_buffer_.filled_frames)
+                state_.store(AudioState::Finished, std::memory_order_release);
             return false;
         }
 
-        out_data = ring_buffer_.data.data() + offset * channels;
+        std::copy_n(ring_buffer_.data.data() + offset * channels, channels, out_data);
         return true;
     }
 
     AudioFormat StreamAudioPlayer::GetAudioFormat() const
     {
+        std::lock_guard<std::mutex> lock(buffer_mutex_);
         if (!stream_) {
             return {};
         }
@@ -51,12 +51,6 @@ namespace kpengine::audio
 
     void StreamAudioPlayer::Play()
     {
-        if (!stream_) {
-            KP_LOG("LogStreamAudioPlayer", LOG_LEVEL_WARNING,
-                   "player doesn't contain stream source");
-            return;
-        }
-
         if (IsPlaying()) {
             return;
         }
@@ -64,7 +58,14 @@ namespace kpengine::audio
         // Ring Buffer Init
         {
             std::lock_guard<std::mutex> lock(buffer_mutex_);
+            if (!stream_) {
+                KP_LOG("LogStreamAudioPlayer", LOG_LEVEL_WARNING,
+                       "player doesn't contain stream source");
+                return;
+            }
             auto format = stream_->GetAudioFormat();
+            if (format.sample_rate != 48000 || format.channels == 0 || format.channels > 2)
+                return;
             ring_buffer_.channels = format.channels;
             ring_buffer_.capacity_frames = CACHE_SIZE_FRAMES;
             ring_buffer_.data.assign(CACHE_SIZE_FRAMES * format.channels, 0.0f);
@@ -88,26 +89,41 @@ namespace kpengine::audio
                CACHE_SIZE_FRAMES);
     }
 
+    void StreamAudioPlayer::Reset()
+    {
+        AudioPlayer::Reset();
+        std::lock_guard<std::mutex> lock(buffer_mutex_);
+        stream_.reset();
+        ring_buffer_.data.clear();
+        ring_buffer_.channels = 0;
+        ring_buffer_.capacity_frames = 0;
+        ring_buffer_.start_frame = 0;
+        ring_buffer_.filled_frames = 0;
+    }
+
     void StreamAudioPlayer::SetStream(std::shared_ptr<AudioStream> stream)
     {
         if (!stream) {
             return;
         }
+        const auto format = stream->GetAudioFormat();
+        if (format.sample_rate != 48000 || format.channels == 0 || format.channels > 2)
+            return;
         
         std::lock_guard<std::mutex> lock(buffer_mutex_);
         stream_ = stream;
         ring_buffer_.start_frame = 0;
         ring_buffer_.filled_frames = 0;
         
-        auto format = stream->GetAudioFormat();
         ring_buffer_.channels = format.channels;
         ring_buffer_.capacity_frames = CACHE_SIZE_FRAMES;
         ring_buffer_.data.assign(CACHE_SIZE_FRAMES * format.channels, 0.0f);
     }
 
-    AudioStream* StreamAudioPlayer::GetStream() const
+    std::shared_ptr<AudioStream> StreamAudioPlayer::GetStream() const
     {
-        return stream_.get();
+        std::lock_guard<std::mutex> lock(buffer_mutex_);
+        return stream_;
     }
 
     float StreamAudioPlayer::GetCurrentSecond() const
@@ -122,10 +138,10 @@ namespace kpengine::audio
     
     bool StreamAudioPlayer::SeekSeconds(float new_seconds)
     {
-        if (!stream_) return false;
-        
+        const AudioFormat format = GetAudioFormat();
+        if (!format.sample_rate) return false;
         uint64_t target_frame = static_cast<uint64_t>(
-            new_seconds * GetAudioFormat().sample_rate);
+            new_seconds * format.sample_rate);
         
         {
             std::lock_guard<std::mutex> lock(buffer_mutex_);
@@ -178,36 +194,42 @@ namespace kpengine::audio
         }
 
         float* write_ptr = ring_buffer_.GetWritePointer(ring_buffer_.filled_frames);
-        uint64_t read_frames = stream_->ReadFrames(
+        uint64_t read_frames = stream_->TryReadFrames(
             write_ptr,
             std::min(max_write, CACHE_SIZE_FRAMES / 4)
         );
 
         if (read_frames > 0) {
             ring_buffer_.filled_frames += read_frames;
-
-            KP_LOG("LogStreamAudioPlayer", LOG_LEVEL_DEBUG,
-                   "Buffer refilled: +%llu frames, total=%llu, start=%llu",
-                   read_frames, ring_buffer_.filled_frames, ring_buffer_.start_frame);
         }
     }
 
     bool StreamAudioPlayer::FillBuffer()
     {
-        std::lock_guard<std::mutex> lock(buffer_mutex_);
+        std::unique_lock<std::mutex> lock(buffer_mutex_, std::try_to_lock);
+        if (!lock.owns_lock())
+            return false;
         Refill(current_frame_);
+        if (stream_ && stream_->IsFinished() &&
+            ring_buffer_.GetReadOffset(current_frame_) == static_cast<uint64_t>(-1) &&
+            current_frame_ >= ring_buffer_.start_frame + ring_buffer_.filled_frames)
+            state_.store(AudioState::Finished, std::memory_order_release);
         return stream_ &&
                ring_buffer_.GetReadOffset(current_frame_) != static_cast<uint64_t>(-1);
     }
 
+    bool StreamAudioPlayer::AdvanceFrame()
+    {
+        current_frame_.fetch_add(1, std::memory_order_acq_rel);
+        return true;
+    }
+
     bool StreamAudioPlayer::ResolveFrame(uint64_t& new_frame)
     {
-        if (!stream_) {
-            return false;
-        }
-
         {
             std::lock_guard<std::mutex> lock(buffer_mutex_);
+            if (!stream_)
+                return false;
 
             // Top the ring buffer up around the requested frame.
             Refill(new_frame);
@@ -227,4 +249,4 @@ namespace kpengine::audio
         return true;
     }
 
-} 
+}

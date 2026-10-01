@@ -27,7 +27,7 @@ namespace kpengine::example
         audio::MiniAudioSystem audio_sys;
         audio_sys.Initialize();
         auto handle = audio_sys.CreateAudioPlayer(audio::AudioPlayerType::Buffer);
-        audio::BufferAudioPlayer *player = dynamic_cast<audio::BufferAudioPlayer *>(audio_sys.GetAudioPlayer(handle));
+        auto player = std::dynamic_pointer_cast<audio::BufferAudioPlayer>(audio_sys.GetAudioPlayer(handle));
         player->SetShouldLoop(true);
         player->SetClip(clip);
         player->Play();
