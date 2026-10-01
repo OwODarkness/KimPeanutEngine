@@ -256,14 +256,14 @@ namespace kpengine::runtime
                     }
                     if (HasMissingValue(arguments, index))
                     {
-                        return Failure("--mode requires scene3d, live2d-viewer, panel-viewer, or terrain-viewer");
+                        return Failure("--mode requires scene3d, live2d-viewer, panel-viewer, terrain-viewer, or audio-player");
                     }
 
                     const std::string_view value = arguments[++index];
                     const std::optional<ApplicationMode> mode = ParseApplicationMode(value);
                     if (!mode.has_value())
                     {
-                        return Failure("--mode requires scene3d, live2d-viewer, panel-viewer, or terrain-viewer (got '" +
+                        return Failure("--mode requires scene3d, live2d-viewer, panel-viewer, terrain-viewer, or audio-player (got '" +
                                        std::string{value} + "')");
                     }
                     result.options.application_mode = *mode;
@@ -636,10 +636,15 @@ namespace kpengine::runtime
             const bool live2d_viewer = mode == ApplicationMode::Live2DViewer;
             const bool panel_viewer = mode == ApplicationMode::PanelViewer;
             const bool terrain_viewer = mode == ApplicationMode::TerrainViewer;
+            const bool audio_player = mode == ApplicationMode::AudioPlayer;
 
             if (terrain_viewer && result.options.startup_level_override.has_value())
             {
                 return Failure("--startup-level is not valid in terrain-viewer mode");
+            }
+            if (audio_player && result.options.startup_level_override.has_value())
+            {
+                return Failure("--startup-level is not valid in audio-player mode");
             }
 
             // The capture, resize, and exit options are owned by whichever

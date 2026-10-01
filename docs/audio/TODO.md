@@ -37,10 +37,11 @@ is accepted; record resolution evidence in those review files.
   instance frame transaction after authored motion/expression at a defined
   priority. Handle missing lip-sync metadata, pauses, underruns, and character
   changes; verify optional SDK-off builds and both graphics backends.
-- [ ] **P1 — compact music player** ([plan](.plan/P1.md)). Add local-track
-  controls, progress, volume/mute, bounded level display, speech status, and
-  music ducking in Editor. Verify visible layout, keyboard use, audible
-  controls, interruption, and clean shutdown.
+- [ ] **P1 — standalone audio player** ([plan](.plan/P1.md)). Plan a
+  three-pane ImGui player based on the [draft](../../save/audio_gui.png), with local queue,
+  waveform, transport, and a reusable Audio-module playback component.
+  Add separate speech status and music ducking for the integrated demo;
+  verify visible layout, audible controls, interruption, and clean shutdown.
 
 ## End-to-end acceptance
 

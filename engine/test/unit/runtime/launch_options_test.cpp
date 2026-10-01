@@ -560,6 +560,24 @@ TEST(RuntimeLaunchOptionsTest, NamesAndParsesThePanelViewerMode)
               rt::ApplicationModeName(rt::ApplicationMode::PanelViewer));
 }
 
+TEST(RuntimeLaunchOptionsTest, NamesAndParsesTheStandaloneAudioPlayerMode)
+{
+    namespace rt = kpengine::runtime;
+
+    EXPECT_STREQ(rt::ApplicationModeName(rt::ApplicationMode::AudioPlayer),
+                 "audio-player");
+    const auto parsed = rt::ParseApplicationMode("audio-player");
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(*parsed, rt::ApplicationMode::AudioPlayer);
+    EXPECT_EQ(Parse({"--mode", "audio-player"}).options.application_mode,
+              rt::ApplicationMode::AudioPlayer);
+
+    const auto level = Parse({"--mode", "audio-player", "--startup-level",
+                              "level/pbr_showcase.level"});
+    EXPECT_FALSE(level);
+    EXPECT_NE(level.diagnostic.find("--startup-level"), std::string::npos);
+}
+
 TEST(RuntimeLaunchOptionsTest, RejectsUnknownOptions)
 {
     const auto result = Parse({"--startup-leevl", "level/pbr_showcase.level"});
@@ -658,6 +676,21 @@ TEST(ApplicationHostRegistryTest, RegistersAndCreatesOneProviderPerMode)
         },
         diagnostic));
     EXPECT_NE(diagnostic.find("already registered"), std::string::npos);
+}
+
+TEST(ApplicationHostRegistryTest, AudioPlayerHasAnIndependentHostSlot)
+{
+    kpengine::runtime::ApplicationHostRegistry registry;
+    std::string diagnostic;
+    ASSERT_TRUE(registry.Register(
+        kpengine::runtime::ApplicationMode::AudioPlayer,
+        [](kpengine::runtime::Engine &) {
+            return std::make_unique<TestApplicationHost>();
+        },
+        diagnostic)) << diagnostic;
+    EXPECT_TRUE(registry.Contains(kpengine::runtime::ApplicationMode::AudioPlayer));
+    EXPECT_FALSE(registry.Contains(kpengine::runtime::ApplicationMode::TerrainViewer));
+    EXPECT_FALSE(registry.Contains(kpengine::runtime::ApplicationMode::Scene3D));
 }
 
 TEST(Scene3DHostTest, OwnsOnlySceneModeLifecycle)

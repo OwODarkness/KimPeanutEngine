@@ -77,6 +77,11 @@ namespace kpengine
                 return application_mode_ == ApplicationMode::Live2DViewer ||
                        application_mode_ == ApplicationMode::PanelViewer;
             }
+            bool UsesHostPresentation() const noexcept
+            {
+                return application_mode_ == ApplicationMode::TerrainViewer ||
+                       application_mode_ == ApplicationMode::AudioPlayer;
+            }
             bool RegisterApplicationHostProvider(ApplicationMode mode,
                                                  ApplicationHostFactory factory,
                                                  std::string &diagnostic);

@@ -10,6 +10,10 @@ target_include_directories(ModuleBootstrap PUBLIC
 target_link_libraries(ModuleBootstrap PRIVATE RuntimeLib)
 target_link_libraries(Module INTERFACE ModuleBootstrap)
 
+add_subdirectory(audio)
+target_link_libraries(Module INTERFACE AudioPlayerModule)
+target_sources(Module INTERFACE $<TARGET_OBJECTS:AudioPlayerRegistration>)
+
 if(KPENGINE_ENABLE_TERRAIN)
     add_subdirectory(terrain)
     target_link_libraries(Module INTERFACE Terrain)

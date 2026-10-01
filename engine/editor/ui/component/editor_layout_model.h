@@ -101,6 +101,9 @@ namespace kpengine::editor
         // bottom dock. Splitters and panel placement still use the regular dock host.
         void ResetToCompactViewerDefault();
 
+        // Six dock regions arranged as three columns with two rows each.
+        void ResetToThreeColumnTwoRowDefault();
+
         // Resolves every slot against a work area. Safe for a degenerate area: every
         // slot resolves empty rather than producing negative extents.
         void Resolve(const EditorRect &work_area);

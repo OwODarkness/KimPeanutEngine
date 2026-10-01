@@ -34,6 +34,7 @@ namespace kpengine::runtime
         Live2DViewer,
         PanelViewer,
         TerrainViewer,
+        AudioPlayer,
     };
 
     const char *ApplicationModeName(ApplicationMode mode) noexcept;
@@ -117,7 +118,7 @@ namespace kpengine::runtime
                                                   std::string &diagnostic) const;
 
     private:
-        static constexpr std::size_t kModeCount = 4;
+        static constexpr std::size_t kModeCount = 5;
 
         static std::size_t ModeIndex(ApplicationMode mode) noexcept;
 

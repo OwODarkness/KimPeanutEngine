@@ -206,6 +206,69 @@ namespace kpengine::editor
         }
     }
 
+    void EditorLayoutModel::ResetToThreeColumnTwoRowDefault()
+    {
+        for (EditorLayoutNode &node : nodes_)
+        {
+            node = EditorLayoutNode{};
+        }
+        node_count_ = 5;
+
+        // Three columns; each column is split into two dock regions.
+        nodes_[0].axis = EditorLayoutAxis::Horizontal;
+        nodes_[0].fraction = 0.18f;
+        nodes_[0].splitter = EditorSplitterId::LeftColumn;
+        nodes_[0].min_first = 180.0f;
+        nodes_[0].min_second = 400.0f;
+        nodes_[0].first = 1;
+        nodes_[0].second = 2;
+
+        nodes_[1].axis = EditorLayoutAxis::Vertical;
+        nodes_[1].fraction = 0.58f;
+        nodes_[1].splitter = EditorSplitterId::Outliner;
+        nodes_[1].min_first = 120.0f;
+        nodes_[1].min_second = 120.0f;
+        nodes_[1].first = Leaf(EditorLayoutSlot::WorldOutliner);
+        nodes_[1].second = Leaf(EditorLayoutSlot::ActorInspector);
+
+        nodes_[2].axis = EditorLayoutAxis::Horizontal;
+        nodes_[2].fraction = 0.72f;
+        nodes_[2].splitter = EditorSplitterId::RightColumn;
+        nodes_[2].min_first = 300.0f;
+        nodes_[2].min_second = 200.0f;
+        nodes_[2].first = 3;
+        nodes_[2].second = 4;
+
+        nodes_[3].axis = EditorLayoutAxis::Vertical;
+        nodes_[3].fraction = 0.58f;
+        nodes_[3].splitter = EditorSplitterId::ToolRow;
+        nodes_[3].min_first = 160.0f;
+        nodes_[3].min_second = 120.0f;
+        nodes_[3].first = Leaf(EditorLayoutSlot::Viewport);
+        nodes_[3].second = Leaf(EditorLayoutSlot::ToolRow);
+
+        nodes_[4].axis = EditorLayoutAxis::Vertical;
+        nodes_[4].fraction = 0.58f;
+        nodes_[4].splitter = EditorSplitterId::Debug;
+        nodes_[4].min_first = 120.0f;
+        nodes_[4].min_second = 120.0f;
+        nodes_[4].first = Leaf(EditorLayoutSlot::CameraSettings);
+        nodes_[4].second = Leaf(EditorLayoutSlot::DebugViewer);
+
+        for (EditorRect &rect : rects_)
+        {
+            rect = EditorRect{};
+        }
+        for (EditorRect &rect : node_rects_)
+        {
+            rect = EditorRect{};
+        }
+        for (EditorRect &rect : seams_)
+        {
+            rect = EditorRect{};
+        }
+    }
+
     void EditorLayoutModel::ResolveNode(int node_index, const EditorRect &rect)
     {
         if (node_index < 0 || node_index >= node_count_)

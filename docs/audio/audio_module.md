@@ -1,8 +1,8 @@
 # Audio Module Design
 
 Callback safety, speech/music buses, and the playback clock are implemented in
-A1 of [Conversational Audio](PLANS.md). TTS session integration and the compact
-player remain planned in its [roadmap](TODO.md). This document describes the
+A1 of [Conversational Audio](PLANS.md). TTS session integration and the
+media-library player remain planned in its [roadmap](TODO.md). This document describes the
 current implementation.
 The [A1 baseline review](.review/A1.md) records the original findings and the
 2026-10-01 repair disposition. The source notes below describe the repaired
@@ -95,6 +95,15 @@ invalidates its generation, then releases its owner after callback readers exit.
 default), reports actual device format and estimated period-buffer latency,
 and stops/uninitializes before its callback target is destroyed. `Mix` performs
 bounded block mixing with independent Speech/Music and master gain ramps.
+
+The standalone Audio Player is an application host, separate from the Scene3D
+Editor workspace. Its host owns a `MiniAudioSystem` and supplies the Runtime
+error material as a render-catalog root so startup needs no game level. Its
+presentation borrows that instance, starts output only after an explicit user
+action, and displays copied device/mixer telemetry. Audio has no TTS dependency: TTS can submit
+generated streams through Audio's player/stream API, while provider requests,
+cancellation, and synthesis state remain owned by TTS and application
+composition.
 
 ## Data flow
 

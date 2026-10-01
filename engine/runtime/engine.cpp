@@ -364,8 +364,7 @@ namespace kpengine
                                ? application_host_->RegisterHostCommands(registry, diagnostic)
                                : true;
                 });
-            if ((application_mode_ == ApplicationMode::Scene3D ||
-                 application_mode_ == ApplicationMode::TerrainViewer) &&
+            if ((application_mode_ == ApplicationMode::Scene3D || UsesHostPresentation()) &&
                 !application_host_->Initialize(*this, host_diagnostic))
             {
                 application_host_->Shutdown();
@@ -423,7 +422,7 @@ namespace kpengine
             // Editor setup (pointers into the runtime context, no GPU state) is safe
             // on the main thread; its ImGui UI is built on the render thread by
             // InitEditorUI, where the GL/Vulkan context exists.
-            const bool use_editor = application_mode_ != ApplicationMode::TerrainViewer;
+            const bool use_editor = !UsesHostPresentation();
             try
             {
                 if (use_editor)
@@ -536,7 +535,8 @@ namespace kpengine
             const auto asset_loading_started = std::chrono::steady_clock::now();
             try
             {
-                if (application_mode_ != ApplicationMode::TerrainViewer)
+                if (application_mode_ != ApplicationMode::TerrainViewer &&
+                    application_mode_ != ApplicationMode::AudioPlayer)
                 {
                     LoadStartupLevel(*startup_asset_session_);
                 }
@@ -576,7 +576,7 @@ namespace kpengine
             RuntimeContext::StartupResult render_asset_result;
             try
             {
-                render_asset_result = application_mode_ == ApplicationMode::TerrainViewer
+                render_asset_result = UsesHostPresentation()
                                           ? global_runtime_context.PrepareRenderAssets(
                                                 application_host_->GetRenderAssetRoots(),
                                                 application_host_->GetRenderEnvironmentSource())
@@ -629,7 +629,7 @@ namespace kpengine
             startup_coordinator_.SetPhase(StartupPhase::InstantiatingLevel,
                                           "Instantiating startup level");
             const RuntimeContext::StartupResult startup_result =
-                application_mode_ == ApplicationMode::TerrainViewer
+                UsesHostPresentation()
                     ? RuntimeContext::StartupResult{true, {}}
                     : global_runtime_context.FinalizeGameStartup();
             if (!startup_result)
@@ -1126,7 +1126,7 @@ namespace kpengine
             bool render_start_signaled = false;
             bool presentation_ready_signaled = false;
             bool editor_ui_initialized = false;
-            const bool use_editor = application_mode_ != ApplicationMode::TerrainViewer;
+            const bool use_editor = !UsesHostPresentation();
             bool startup_committed = false;
             bool loading_frame_presented = false;
             bool context_cleared = false;
@@ -1682,7 +1682,7 @@ namespace kpengine
             // terminal pass position; this callback supplies the editor's external
             // ImGui recording without creating a Render -> Editor dependency.
             global_runtime_context.window_system_->PollEvents();
-            if (application_mode_ == ApplicationMode::TerrainViewer)
+            if (UsesHostPresentation())
             {
                 std::string diagnostic;
                 bool presentation_succeeded = false;
@@ -1696,7 +1696,10 @@ namespace kpengine
                 if (!composite_succeeded || !presentation_succeeded)
                 {
                     throw std::runtime_error(
-                        "Terrain presentation failed: " + diagnostic);
+                        std::string(application_host_ != nullptr
+                                        ? application_host_->Name()
+                                        : "Application") +
+                        " presentation failed: " + diagnostic);
                 }
             }
             else
@@ -1762,7 +1765,7 @@ namespace kpengine
                 return false;
             }
             global_runtime_context.window_system_->PollEvents();
-            if (application_mode_ != ApplicationMode::TerrainViewer)
+            if (!UsesHostPresentation())
             {
                 if (!global_runtime_context.render_system_->ExecuteEditorCompositePass(
                         [this] { editor_->TickPresentation(); }))

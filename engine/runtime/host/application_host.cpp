@@ -9,7 +9,7 @@ namespace kpengine::runtime
     {
         constexpr std::size_t InvalidModeIndex() noexcept
         {
-            return 3;
+            return 4;
         }
     }
 
@@ -25,6 +25,8 @@ namespace kpengine::runtime
             return "panel-viewer";
         case ApplicationMode::TerrainViewer:
             return "terrain-viewer";
+        case ApplicationMode::AudioPlayer:
+            return "audio-player";
         }
         return "unknown";
     }
@@ -48,6 +50,10 @@ namespace kpengine::runtime
         {
             return ApplicationMode::TerrainViewer;
         }
+        if (value == "audio-player")
+        {
+            return ApplicationMode::AudioPlayer;
+        }
         return std::nullopt;
     }
 
@@ -63,6 +69,8 @@ namespace kpengine::runtime
             return 2;
         case ApplicationMode::TerrainViewer:
             return 3;
+        case ApplicationMode::AudioPlayer:
+            return 4;
         }
         return InvalidModeIndex();
     }

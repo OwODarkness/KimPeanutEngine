@@ -2,7 +2,7 @@
 
 **Status: A1 complete; A2/C1/L2D9/P1 proposed.** This is the design map for evolving the
 existing [Audio](audio_module.md) and [TTS](../tts/tts_module.md) modules into
-a voice-capable chatbot companion with optional Live2D and a compact music
+a voice-capable chatbot companion with optional Live2D and a standalone audio
 player. [TODO.md](TODO.md) is the acceptance ledger; [the execution spec](../../.spec/specs/conversational-audio.md)
 defines the cross-stage contract. No implementation is claimed here.
 Current source risks are recorded in the [Audio A1 review](.review/A1.md) and
@@ -102,18 +102,18 @@ The provider interface must never expose GPT-SoVITS types to Audio or Live2D.
   play/stop/duck avoids clicks. The player shows buffered duration only when
   known; streaming speech is not presented as seekable.
 
-## Small player surface
+## Standalone audio player
 
-The first player is a compact ImGui panel in the existing Editor composition:
-title/source, play or pause, elapsed/total time, seek for seekable files,
-volume, mute, a slim progress bar, and a small live level visual. It uses a
-dark, restrained cyan/violet "cyberspace" theme with clear focus/hover and
-disabled states; it must remain legible at small sizes and HiDPI scales.
-Music is loaded through Asset/Audio's file contract and played on the music
-bus. The level visual reads downsampled, bounded telemetry from that bus, not
-the callback's mutable buffer. Speech state and a voice mute control can sit
-beside it, while the character bubble remains Live2D presentation. P1 defines
-the UI and runtime evidence. No GPU audio object or Render dependency is needed.
+The player is a standalone ImGui mode in the Editor, using the
+[draft layout](../../save/audio_gui.png). The current mode scaffold exposes device and mixer
+diagnostics; [P1](.plan/P1.md) defines the track player, queue, waveform,
+transport, and reusable Audio-module playback component. Asset decodes local
+music, Runtime Audio owns its voice and Music bus, and the component exposes
+copied playback state to ImGui. A future Speech instance uses the same
+component contract without replacing music. The waveform comes from a
+bounded reduction of decoded PCM; a live spectrum waits for real bounded
+telemetry. No GPU audio object or Render dependency is needed. The view must
+also collapse cleanly to a compact width and remain legible at HiDPI scales.
 
 ## Stages and dependencies
 
@@ -123,7 +123,7 @@ the UI and runtime evidence. No GPU audio object or Render dependency is needed.
 | [A2](.plan/A2.md) | Audio + TTS | Bounded speech transport, provider validation, cancellation and telemetry | A1 |
 | [C1](.plan/C1.md) | application composition | Typed turn loop, segmented replies, replaceable response source | A2 |
 | [L2D9](../live2d/.plan/L2D9.md) | Live2D | Speech envelope input in canonical frame update, optional session binding | A2; C1 for end-to-end |
-| [P1](.plan/P1.md) | Editor + Audio | Compact music player, speech status, ducking | A1; C1 for integrated demo |
+| [P1](.plan/P1.md) | Audio module + Editor host | Standalone local player, reusable playback component, speech status, ducking | A1; C1 for integrated demo |
 
 Stage boundaries allow A1/A2 to be tested without the Editor or Cubism SDK.
 The end-to-end gate joins C1, L2D9, and P1 in one visible session. Implement
