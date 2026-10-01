@@ -16,7 +16,7 @@ namespace kpengine::audio
 
     namespace
     {
-        constexpr const char* kLogName = "Miniaudio_AudioSystemLog";
+        constexpr const char* kLogName = "Audio";
 
         void DataCallback(ma_device* device, void* output, const void*, ma_uint32 frame_count)
         {

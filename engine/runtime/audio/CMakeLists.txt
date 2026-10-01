@@ -16,3 +16,5 @@ target_link_libraries(Audio
     PUBLIC Data Base
     PRIVATE Log KP::Miniaudio Math
 )
+
+add_subdirectory(editor)

@@ -143,6 +143,7 @@ namespace kpengine::editor
         void DrawRenderTarget(const graphics::RenderTargetView &view, const ImVec2 &size);
 
         double GetLastRenderTimeMs() const noexcept { return last_render_time_ms_; }
+        ImFont *GetCodeFont() const noexcept { return code_font_; }
         double GetLastImGuiBuildTimeMs() const noexcept
         {
             return last_imgui_build_time_ms_;

@@ -5,7 +5,7 @@ target_include_directories(Window PUBLIC
  ${CMAKE_CURRENT_SOURCE_DIR}/../..
  
  )
-target_link_libraries(Window PUBLIC Core PRIVATE KP::Glfw KP::StbImage KP::Glad user32 gdi32)
+target_link_libraries(Window PUBLIC Core PRIVATE KP::Glfw KP::StbImage KP::Glad user32 gdi32 dwmapi)
 
 # The command adapter is a separate library so Window itself keeps no command
 # dependency; RuntimeLib links both. RuntimeCommand is defined by a sibling

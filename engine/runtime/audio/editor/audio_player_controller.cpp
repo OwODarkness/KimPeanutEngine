@@ -69,9 +69,10 @@ namespace kpengine::audio_player
                              extension) != kSupportedExtensions.end();
         }
 
-        std::array<float, 384> BuildWaveform(const data::AudioClip &clip)
+        std::shared_ptr<const std::vector<float>> BuildWaveform(const data::AudioClip &clip)
         {
-            std::array<float, 384> peaks{};
+            constexpr std::size_t kWaveformSampleCount = 8192;
+            auto peaks = std::make_shared<std::vector<float>>(kWaveformSampleCount, 0.0f);
             const std::uint64_t channels = clip.format.channels;
             if (channels == 0 || clip.frame_count == 0 ||
                 clip.pcm.size() < clip.frame_count * channels)
@@ -79,11 +80,11 @@ namespace kpengine::audio_player
                 return peaks;
             }
 
-            for (std::size_t bin = 0; bin < peaks.size(); ++bin)
+            for (std::size_t bin = 0; bin < peaks->size(); ++bin)
             {
-                const std::uint64_t first = clip.frame_count * bin / peaks.size();
+                const std::uint64_t first = clip.frame_count * bin / peaks->size();
                 const std::uint64_t last = std::max(first + 1,
-                    clip.frame_count * (bin + 1) / peaks.size());
+                    clip.frame_count * (bin + 1) / peaks->size());
                 float peak = 0.0f;
                 for (std::uint64_t frame = first; frame < std::min(last, clip.frame_count); ++frame)
                 {
@@ -93,7 +94,7 @@ namespace kpengine::audio_player
                         peak = std::max(peak, std::abs(sample));
                     }
                 }
-                peaks[bin] = std::clamp(peak, 0.0f, 1.0f);
+                (*peaks)[bin] = std::clamp(peak, 0.0f, 1.0f);
             }
             return peaks;
         }

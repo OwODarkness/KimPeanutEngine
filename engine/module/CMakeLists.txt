@@ -10,8 +10,13 @@ target_include_directories(ModuleBootstrap PUBLIC
 target_link_libraries(ModuleBootstrap PRIVATE RuntimeLib)
 target_link_libraries(Module INTERFACE ModuleBootstrap)
 
-add_subdirectory(audio)
-target_link_libraries(Module INTERFACE AudioPlayerModule)
+add_library(AudioPlayerRegistration OBJECT
+    "${CMAKE_SOURCE_DIR}/engine/runtime/audio/editor/audio_player_registration.cpp")
+target_include_directories(AudioPlayerRegistration PRIVATE
+    "${CMAKE_SOURCE_DIR}/engine/runtime/audio/editor"
+    "${CMAKE_SOURCE_DIR}/engine")
+target_link_libraries(AudioPlayerRegistration PRIVATE AudioPlayerMode ModuleBootstrap)
+target_link_libraries(Module INTERFACE AudioPlayerMode)
 target_sources(Module INTERFACE $<TARGET_OBJECTS:AudioPlayerRegistration>)
 
 if(KPENGINE_ENABLE_TERRAIN)

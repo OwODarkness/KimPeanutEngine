@@ -2,9 +2,11 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <exception>
+#include <filesystem>
 #include <functional>
 #include <string_view>
 #include <utility>
@@ -27,7 +29,9 @@
 #include "editor/ui/component/editor_tool_row_component.h"
 #include "editor/ui/editor_ui.h"
 #include "runtime/audio/miniaudio_audio_system.h"
+#include "runtime/core/config/path.h"
 #include "runtime/engine.h"
+#include "runtime/image_io/image_io.h"
 #include "runtime/runtime_global_context.h"
 #include "runtime/render/render_system.h"
 #include "runtime/window/window_system.h"
@@ -40,6 +44,82 @@ namespace kpengine::audio_player
         constexpr ImVec4 kAmber{1.0f, 0.65f, 0.10f, 1.0f};
         constexpr ImVec4 kMuted{0.39f, 0.60f, 0.69f, 1.0f};
         constexpr ImVec4 kDanger{0.96f, 0.31f, 0.25f, 1.0f};
+        constexpr std::uint32_t kTransportIconSize = 24;
+
+        std::vector<std::uint8_t> LoadTransportIconMask(const std::string_view filename)
+        {
+            const std::filesystem::path path = project_root / "resouce" / "icon" /
+                "audio" / std::string{filename};
+            const image_io::ImageDecodeResult decoded =
+                image_io::DecodeImageFile(path.generic_string());
+            if (!decoded.result.success || !decoded.image.IsValid() ||
+                decoded.image.format != image_io::ImagePixelFormat::Rgba8)
+                return {};
+
+            std::uint32_t min_x = decoded.image.width;
+            std::uint32_t min_y = decoded.image.height;
+            std::uint32_t max_x = 0;
+            std::uint32_t max_y = 0;
+            bool has_opaque_pixel = false;
+            for (std::uint32_t y = 0; y < decoded.image.height; ++y)
+            {
+                for (std::uint32_t x = 0; x < decoded.image.width; ++x)
+                {
+                    const std::size_t pixel =
+                        (static_cast<std::size_t>(y) * decoded.image.width + x) * 4 + 3;
+                    if (decoded.image.pixels[pixel] < 12)
+                        continue;
+                    min_x = std::min(min_x, x);
+                    min_y = std::min(min_y, y);
+                    max_x = std::max(max_x, x);
+                    max_y = std::max(max_y, y);
+                    has_opaque_pixel = true;
+                }
+            }
+            if (!has_opaque_pixel)
+                return {};
+
+            const std::uint32_t source_width = max_x - min_x + 1;
+            const std::uint32_t source_height = max_y - min_y + 1;
+            constexpr float padding = 1.0f;
+            const float scale = std::min(
+                (kTransportIconSize - padding * 2.0f) / static_cast<float>(source_width),
+                (kTransportIconSize - padding * 2.0f) / static_cast<float>(source_height));
+            const auto target_width = std::max(1u, static_cast<std::uint32_t>(
+                std::round(source_width * scale)));
+            const auto target_height = std::max(1u, static_cast<std::uint32_t>(
+                std::round(source_height * scale)));
+            const std::uint32_t target_x = (kTransportIconSize - target_width) / 2;
+            const std::uint32_t target_y = (kTransportIconSize - target_height) / 2;
+            std::vector<std::uint8_t> alpha(kTransportIconSize * kTransportIconSize);
+            for (std::uint32_t y = 0; y < target_height; ++y)
+            {
+                const std::uint32_t source_y = max_y - std::min(
+                    source_height - 1, y * source_height / target_height);
+                for (std::uint32_t x = 0; x < target_width; ++x)
+                {
+                    const std::uint32_t source_x = min_x + std::min(
+                        source_width - 1, x * source_width / target_width);
+                    const std::size_t source_pixel =
+                        (static_cast<std::size_t>(source_y) * decoded.image.width +
+                         source_x) * 4 + 3;
+                    alpha[static_cast<std::size_t>(target_y + y) * kTransportIconSize +
+                          target_x + x] = decoded.image.pixels[source_pixel];
+                }
+            }
+            return alpha;
+        }
+
+        std::array<std::vector<std::uint8_t>, 7> LoadTransportIcons()
+        {
+            return {LoadTransportIconMask("skip-previous.png"),
+                    LoadTransportIconMask("play.png"),
+                    LoadTransportIconMask("pause.png"),
+                    LoadTransportIconMask("skipnext.png"),
+                    LoadTransportIconMask("stop.png"),
+                    LoadTransportIconMask("voice_open.png"),
+                    LoadTransportIconMask("voice_close.png")};
+        }
 
         class AudioPlayerDockPanel final : public editor::EditorWindowComponent
         {
@@ -454,7 +534,9 @@ namespace kpengine::audio_player
         }
 
         void RenderAudioPreview(AudioPlayerController &controller,
-                                const PlaybackView &playback, ImFont *font)
+                                const PlaybackView &playback, ImFont *font,
+                                const std::array<std::vector<std::uint8_t>, 7> &icon_alpha,
+                                float &playback_rate)
         {
             char format[96]{};
             if (playback.track.has_value())
@@ -476,16 +558,32 @@ namespace kpengine::audio_player
                 std::string_view(playback.status) : std::string_view(playback.error);
             state.current_time = playback.position_seconds;
             state.duration = playback.duration_seconds;
-            state.volume = playback.volume;
+            state.volume = playback.muted ? 0.0f : playback.volume;
+            state.playback_rate = playback_rate;
             state.rms = playback.rms;
             state.peak = playback.peak;
             state.height = ImGui::GetContentRegionAvail().y;
-            if (playback.track)
-                state.waveform_samples = playback.track->waveform;
+            if (playback.track && playback.track->waveform)
+                state.waveform_samples = *playback.track->waveform;
+            state.previous_icon = {std::span<const std::uint8_t>{icon_alpha[0]},
+                                   kTransportIconSize, kTransportIconSize};
+            state.play_icon = {std::span<const std::uint8_t>{icon_alpha[1]},
+                               kTransportIconSize, kTransportIconSize};
+            state.pause_icon = {std::span<const std::uint8_t>{icon_alpha[2]},
+                                kTransportIconSize, kTransportIconSize};
+            state.next_icon = {std::span<const std::uint8_t>{icon_alpha[3]},
+                               kTransportIconSize, kTransportIconSize};
+            state.stop_icon = {std::span<const std::uint8_t>{icon_alpha[4]},
+                               kTransportIconSize, kTransportIconSize};
+            state.voice_open_icon = {std::span<const std::uint8_t>{icon_alpha[5]},
+                                     kTransportIconSize, kTransportIconSize};
+            state.voice_close_icon = {std::span<const std::uint8_t>{icon_alpha[6]},
+                                      kTransportIconSize, kTransportIconSize};
             state.spectrum_bins = playback.spectrum;
             state.font = font;
             state.has_clip = playback.track.has_value();
             state.is_playing = playback.state == audio::AudioState::Playing;
+            state.is_muted = playback.muted;
             state.is_error = !playback.error.empty();
             state.can_seek = playback.can_seek;
 
@@ -496,7 +594,14 @@ namespace kpengine::audio_player
             if (actions.next) controller.Next(true, diagnostic);
             if (actions.stop) controller.Stop();
             if (actions.seek_seconds) controller.Seek(*actions.seek_seconds);
-            if (actions.volume) controller.SetVolume(*actions.volume);
+            if (actions.muted) controller.SetMuted(*actions.muted);
+            if (actions.volume)
+            {
+                if (playback.muted && *actions.volume > 0.0f)
+                    controller.SetMuted(false);
+                controller.SetVolume(*actions.volume);
+            }
+            if (actions.playback_rate) playback_rate = *actions.playback_rate;
         }
 
         void RenderInspector(AudioPlayerController &controller,
@@ -620,6 +725,7 @@ namespace kpengine::audio_player
 
         try
         {
+            playback_icon_alpha_ = LoadTransportIcons();
             audio_panel_ = std::make_unique<editor::EditorAudioComponent>(&audio_system);
             ui_ = std::make_unique<editor::EditorUI>();
             layout_.ResetToThreeColumnTwoRowDefault();
@@ -642,7 +748,8 @@ namespace kpengine::audio_player
                 "audio_now_playing", "Now Playing",
                 std::make_unique<AudioPlayerDockPanel>("Now Playing", [this] {
                     RenderAudioPreview(*controller_, controller_->GetPlaybackView(),
-                                       ui_->GetCodeFont());
+                                       ui_->GetCodeFont(), playback_icon_alpha_,
+                                       playback_rate_);
                 }), true, editor::EditorLayoutSlot::Viewport);
             dock_host_->AddPanel(
                 "audio_queue", "Playlist : All",

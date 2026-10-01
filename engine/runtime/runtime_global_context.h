@@ -184,6 +184,7 @@ namespace kpengine
             std::unique_ptr<command::CommandRegistry> command_registry_;
             std::shared_ptr<RuntimeScreenshotService> screenshot_service_;
             command::CommandRegistration screenshot_command_registration_;
+            command::CommandRegistration glfw_window_capture_command_registration_;
             command::CommandRegistration window_command_registration_;
             command::CommandRegistration level_reload_command_registration_;
             command::CommandRegistration path_trace_probe_command_registration_;

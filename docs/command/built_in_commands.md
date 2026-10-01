@@ -9,6 +9,7 @@ below are stable built-ins today.
 | `commands.list` | List registered command names. | [`commands.list`](#commandslist) |
 | `help` | Show help for one command or list names. | [`help`](#help) |
 | `capture.screenshot` | Capture a live final or diagnostic render view and export a PNG. | [`capture.screenshot`](#capturescreenshot) |
+| `capture.glfw_window` | Capture the full composited GLFW client area and export a PNG. | [`capture.glfw_window`](#captureglfw_window) |
 | `window.resize` | Resize the active window's client area. | [`window.resize`](#windowresize) |
 | `actor.list` | List and filter live Gameplay Actors by authored name and generational handle. | [`actor.list`](#actorlist) |
 | `actor.query` | Read one Actor's state and root transform by handle. | [`actor.query`](#actorquery) |
@@ -167,6 +168,26 @@ plane, normals are remapped from `[-1,1]` to `[0,1]`, shadow visibility is
 white for visible and black for occluded, and `spot_shadow_depth` visualizes
 the sampled D32 spotlight map; `point_shadow_depth` visualizes the fixed
 3×2 point-shadow depth atlas.
+
+## `capture.glfw_window`
+
+Captures the complete client area of the active GLFW window, including the
+rendered frame and ImGui overlay, then exports it as a PNG. This is useful for
+reviewing standalone host modes such as Audio Player without selecting a scene
+render target.
+
+| Property | Value |
+|---|---|
+| Provider | `RuntimeScreenshot` |
+| Execution lane | Game; capture completes at the presentation boundary. |
+| Allowed callers | Editor console, Agent, Lua, C++ callers |
+| `path` | Optional string. Explicit paths must end in `.png` and remain below `save/screenshots/validation/`. |
+| `max_dimension` | Optional unsigned integer from 1 to 8192. |
+| Result | `success` with `data.output_path` after the full GLFW client area is captured. |
+
+```text
+capture.glfw_window path="save/screenshots/validation/audio-player.png"
+```
 
 ## `window.resize`
 

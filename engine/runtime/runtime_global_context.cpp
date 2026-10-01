@@ -651,6 +651,21 @@ namespace kpengine
                     screenshot_command_registration_ =
                         std::move(registration.registration);
                 }
+                command::CommandRegistrationResult glfw_capture_registration =
+                    RegisterGLFWWindowCaptureCommand(*command_registry_, [this] {
+                        return screenshot_service_.get();
+                    });
+                if (!glfw_capture_registration.IsSuccess())
+                {
+                    KP_LOG("RuntimeLog", LOG_LEVEL_ERROR,
+                           "Could not register capture.glfw_window: %s",
+                           glfw_capture_registration.diagnostic.c_str());
+                }
+                else
+                {
+                    glfw_window_capture_command_registration_ =
+                        std::move(glfw_capture_registration.registration);
+                }
             }
             return {true, {}};
         }
@@ -1033,6 +1048,7 @@ namespace kpengine
                 command_registry_->Shutdown();
             }
             screenshot_command_registration_ = {};
+            glfw_window_capture_command_registration_ = {};
             level_reload_command_registration_ = {};
             path_trace_probe_command_registration_ = {};
             path_trace_settings_command_registration_ = {};

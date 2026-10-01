@@ -80,6 +80,90 @@ namespace kpengine::runtime
             if (view == "engine_window") return render::CaptureView::EngineWindow;
             return render::CaptureView::SceneColor;
         }
+
+        auto MakeCaptureHandler(ScreenshotServiceResolver service_resolver,
+                                const bool glfw_window_only)
+        {
+            return [service_resolver = std::move(service_resolver), glfw_window_only](
+                       const command::CommandCall &call,
+                       const command::CommandContext &context)
+            {
+                if (!context.complete)
+                {
+                    return command::CommandResult{
+                        command::CommandStatus::Failed,
+                        "Screenshot command requires a deferred Runtime command request",
+                        context.request_id,
+                        {}};
+                }
+
+                ScreenshotRequest request{};
+                const auto path = call.arguments.find("path");
+                if (path != call.arguments.end())
+                {
+                    request.output_path = std::get<std::string>(path->second);
+                }
+                if (glfw_window_only)
+                {
+                    request.capture.view = render::CaptureView::EngineWindow;
+                }
+                else
+                {
+                    const auto view = call.arguments.find("view");
+                    if (view != call.arguments.end())
+                    {
+                        request.capture.view =
+                            ToCaptureView(std::get<std::string>(view->second));
+                    }
+                }
+                const auto max_dimension = call.arguments.find("max_dimension");
+                if (max_dimension != call.arguments.end())
+                {
+                    const uint64_t value = std::get<uint64_t>(max_dimension->second);
+                    if (value == 0 || value > 8192)
+                    {
+                        return command::CommandResult{
+                            command::CommandStatus::InvalidArguments,
+                            "max_dimension must be between 1 and 8192",
+                            context.request_id,
+                            {}};
+                    }
+                    request.max_dimension = static_cast<uint32_t>(value);
+                }
+
+                const command::CommandCompletionSink complete = context.complete;
+                const uint64_t request_id = context.request_id;
+                RuntimeScreenshotService *const screenshot_service = service_resolver();
+                if (screenshot_service == nullptr)
+                {
+                    return command::CommandResult{
+                        command::CommandStatus::Failed,
+                        "Screenshot service is not initialized",
+                        request_id,
+                        {}};
+                }
+                const bool accepted = screenshot_service->RequestScreenshot(
+                    std::move(request),
+                    [complete, request_id](ScreenshotResult result) mutable
+                    {
+                        complete(MakeResult(std::move(result), request_id));
+                    });
+                if (!accepted)
+                {
+                    return command::CommandResult{
+                        command::CommandStatus::Failed,
+                        "Screenshot service rejected the request callback",
+                        request_id,
+                        {}};
+                }
+
+                return command::CommandResult{
+                    command::CommandStatus::Pending,
+                    "Screenshot capture submitted",
+                    request_id,
+                    {{"status", std::string{"pending"}}, {"success", false}}};
+            };
+        }
     }
 
     command::CommandRegistrationResult RegisterScreenshotCommands(
@@ -130,80 +214,35 @@ namespace kpengine::runtime
               command::CommandArgumentDesc{"max_dimension",
                                            command::CommandValueType::UnsignedInteger,
                                            false, {}, {}}}},
-            [screenshot_service_resolver = std::move(screenshot_service_resolver)](
-                const command::CommandCall &call, const command::CommandContext &context)
-            {
-                if (!context.complete)
-                {
-                    return command::CommandResult{
-                        command::CommandStatus::Failed,
-                        "Screenshot command requires a deferred Runtime command request",
-                        context.request_id,
-                        {}};
-                }
-
-                ScreenshotRequest request{};
-                const auto path = call.arguments.find("path");
-                if (path != call.arguments.end())
-                {
-                    request.output_path = std::get<std::string>(path->second);
-                }
-                const auto view = call.arguments.find("view");
-                if (view != call.arguments.end())
-                {
-                    request.capture.view =
-                        ToCaptureView(std::get<std::string>(view->second));
-                }
-                const auto max_dimension = call.arguments.find("max_dimension");
-                if (max_dimension != call.arguments.end())
-                {
-                    const uint64_t value = std::get<uint64_t>(max_dimension->second);
-                    if (value == 0 || value > 8192)
-                    {
-                        return command::CommandResult{
-                            command::CommandStatus::InvalidArguments,
-                            "max_dimension must be between 1 and 8192",
-                            context.request_id,
-                            {}};
-                    }
-                    request.max_dimension = static_cast<uint32_t>(value);
-                }
-
-                const command::CommandCompletionSink complete = context.complete;
-                const uint64_t request_id = context.request_id;
-                RuntimeScreenshotService *const screenshot_service =
-                    screenshot_service_resolver();
-                if (screenshot_service == nullptr)
-                {
-                    return command::CommandResult{
-                        command::CommandStatus::Failed,
-                        "Screenshot service is not initialized",
-                        request_id,
-                        {}};
-                }
-                const bool accepted = screenshot_service->RequestScreenshot(
-                    std::move(request),
-                    [complete, request_id](ScreenshotResult result) mutable
-                    {
-                        complete(MakeResult(std::move(result), request_id));
-                    });
-                if (!accepted)
-                {
-                    return command::CommandResult{
-                        command::CommandStatus::Failed,
-                        "Screenshot service rejected the request callback",
-                        request_id,
-                        {}};
-                }
-
-                return command::CommandResult{
-                    command::CommandStatus::Pending,
-                    "Screenshot capture submitted",
-                    request_id,
-                    {{"status", std::string{"pending"}}, {"success", false}}};
-            },
+            MakeCaptureHandler(std::move(screenshot_service_resolver), false),
             command::CommandThread::Game};
 
+        return registry.Register(std::move(descriptor));
+    }
+
+    command::CommandRegistrationResult RegisterGLFWWindowCaptureCommand(
+        command::CommandRegistry &registry,
+        ScreenshotServiceResolver screenshot_service_resolver)
+    {
+        if (!screenshot_service_resolver)
+        {
+            return {{}, command::CommandRegistrationStatus::InvalidDescriptor,
+                    "GLFW window capture requires a screenshot service resolver"};
+        }
+
+        command::CommandDesc descriptor{
+            "capture.glfw_window",
+            "RuntimeScreenshot",
+            "Capture the full composited GLFW window client area and export a PNG",
+            command::CommandCategory::Render,
+            command::CommandFlags::AgentAllowed | command::CommandFlags::LuaAllowed,
+            {{command::CommandArgumentDesc{"path", command::CommandValueType::String,
+                                           false, {}, {}},
+              command::CommandArgumentDesc{"max_dimension",
+                                           command::CommandValueType::UnsignedInteger,
+                                           false, {}, {}}}},
+            MakeCaptureHandler(std::move(screenshot_service_resolver), true),
+            command::CommandThread::Game};
         return registry.Register(std::move(descriptor));
     }
 }

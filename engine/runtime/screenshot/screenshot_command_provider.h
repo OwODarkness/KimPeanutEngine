@@ -24,6 +24,10 @@ namespace kpengine::runtime
     command::CommandRegistrationResult RegisterScreenshotCommands(
         command::CommandRegistry &registry,
         ScreenshotServiceResolver screenshot_service_resolver);
+
+    command::CommandRegistrationResult RegisterGLFWWindowCaptureCommand(
+        command::CommandRegistry &registry,
+        ScreenshotServiceResolver screenshot_service_resolver);
 }
 
 #endif

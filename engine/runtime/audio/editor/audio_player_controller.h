@@ -1,5 +1,5 @@
-#ifndef KPENGINE_MODULE_AUDIO_AUDIO_PLAYER_CONTROLLER_H
-#define KPENGINE_MODULE_AUDIO_AUDIO_PLAYER_CONTROLLER_H
+#ifndef KPENGINE_RUNTIME_AUDIO_EDITOR_AUDIO_PLAYER_CONTROLLER_H
+#define KPENGINE_RUNTIME_AUDIO_EDITOR_AUDIO_PLAYER_CONTROLLER_H
 
 #include <array>
 #include <cstdint>
@@ -28,7 +28,7 @@ namespace kpengine::audio_player
         std::uint32_t sample_rate = 0;
         std::uint16_t channels = 0;
         bool favorite = false;
-        std::array<float, 384> waveform{};
+        std::shared_ptr<const std::vector<float>> waveform;
     };
 
     struct PlaybackView

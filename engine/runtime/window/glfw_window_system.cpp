@@ -10,6 +10,7 @@
 #if defined(_WIN32)
 #define GLFW_EXPOSE_NATIVE_WIN32
 #include <windows.h>
+#include <dwmapi.h>
 #include <GLFW/glfw3.h>
 #include <GLFW/glfw3native.h>
 #else
@@ -236,32 +237,63 @@ namespace kpengine
         }
 
         HGDIOBJ previous_bitmap = SelectObject(capture_dc, bitmap);
-        POINT client_origin{0, 0};
-        HDC screen_dc = GetDC(nullptr);
-        bool captured = false;
-        if (screen_dc != nullptr && ClientToScreen(native_window, &client_origin))
+        const size_t pixel_count = static_cast<size_t>(width) *
+                                   static_cast<size_t>(height);
+        const UINT print_flags = PW_CLIENTONLY | PW_RENDERFULLCONTENT;
+        bool captured = PrintWindow(native_window, capture_dc, print_flags) != FALSE;
+        if (captured)
         {
-            // OpenGL/Vulkan content is already composited into the visible
-            // client area after present; BitBlt preserves that final image.
-            captured = BitBlt(capture_dc, 0, 0, width, height, screen_dc,
-                              client_origin.x, client_origin.y, SRCCOPY | CAPTUREBLT) != FALSE;
+            const auto *source = static_cast<const uint8_t *>(pixels);
+            captured = false;
+            for (size_t index = 0; index < pixel_count; ++index)
+            {
+                if (source[index * 4] != 0 || source[index * 4 + 1] != 0 ||
+                    source[index * 4 + 2] != 0)
+                {
+                    captured = true;
+                    break;
+                }
+            }
         }
-        if (screen_dc != nullptr)
-        {
-            ReleaseDC(nullptr, screen_dc);
-        }
+
         if (!captured)
         {
-            // This path can still produce a useful image for a covered window
-            // when the native window implementation supports WM_PRINT.
-            const UINT print_flags = PW_CLIENTONLY | PW_RENDERFULLCONTENT;
-            captured = PrintWindow(native_window, capture_dc, print_flags) != FALSE;
+            const HWND previous_foreground = GetForegroundWindow();
+            if (IsIconic(native_window))
+            {
+                ShowWindow(native_window, SW_RESTORE);
+            }
+            SetForegroundWindow(native_window);
+            DwmFlush();
+
+            POINT client_origin{0, 0};
+            HDC screen_dc = GetDC(nullptr);
+            if (GetForegroundWindow() == native_window && screen_dc != nullptr &&
+                ClientToScreen(native_window, &client_origin))
+            {
+                // GPU swapchains are reliably captured from the visible client area.
+                captured = BitBlt(capture_dc, 0, 0, width, height, screen_dc,
+                                  client_origin.x, client_origin.y,
+                                  SRCCOPY | CAPTUREBLT) != FALSE;
+            }
+            if (screen_dc != nullptr)
+            {
+                ReleaseDC(nullptr, screen_dc);
+            }
+            if (previous_foreground != nullptr && previous_foreground != native_window &&
+                IsWindow(previous_foreground))
+            {
+                SetForegroundWindow(previous_foreground);
+            }
+            if (!captured)
+            {
+                result.diagnostic =
+                    "GLFW content could not be rendered by PrintWindow and its window was not visible for capture";
+            }
         }
 
         if (captured)
         {
-            const size_t pixel_count = static_cast<size_t>(width) *
-                                       static_cast<size_t>(height);
             result.width = static_cast<uint32_t>(width);
             result.height = static_cast<uint32_t>(height);
             result.rgba8_pixels.resize(pixel_count * 4);
@@ -276,7 +308,10 @@ namespace kpengine
         }
         else
         {
-            result.diagnostic = "Windows could not capture the engine window client area";
+            if (result.diagnostic.empty())
+            {
+                result.diagnostic = "Windows could not capture the GLFW window client area";
+            }
         }
 
         SelectObject(capture_dc, previous_bitmap);
