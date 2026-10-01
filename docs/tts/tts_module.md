@@ -21,7 +21,15 @@ is the earlier baseline where it conflicts with the current contracts below.
   at the cost of delaying playback until the response body is received.
 - WAV parsing is bounded and incremental; malformed sizes, truncated final
   frames, unsupported formats, and rejected FIFO writes fail the job.
-- Per-job cancellation and audible-drain completion events remain open work.
+- Async jobs carry turn IDs and tokens; callers can cancel queued, generating,
+  buffering, or playing work. Provider cancellation stops only the matching
+  HTTP client, and cancellation checks prevent late bytes from entering audio.
+- Copied lifecycle events separate network completion from audible `Completed`.
+  The latter is emitted only after `AudioPlayer` reaches `Finished`. A monitor
+  thread also reports request-to-first-audio, synthesis duration, drain time,
+  queue occupancy, and Speech bus underruns.
+- `InitializeWithProvider` is a deterministic fake-provider seam. The
+  non-owning Audio system must outlive TTS jobs and TTS shutdown.
 
 Location: `engine/module/tts/` (static lib `TTS`, folded into the `Module` INTERFACE target)
 
@@ -35,16 +43,17 @@ The TTS module is the engine's **text-to-speech client** — the producer half o
 |---|---|
 | `TTSProviderType` | Which backend. Only `GPT_SOVITS` today — the enum exists so a second backend doesn't touch `TTSSystem`. |
 | `ServerConfig` | `host`, `port`, `api_path`, `timeout` (e.g. `127.0.0.1:9880 /tts`, 180 s). |
-| `TTSRequest` | `text`, `text_lang`, `ref_audio_path`, `prompt_text`, `prompt_lang`, `streaming`. The voice reference is a *path on the server's machine*, not a file uploaded by the client. |
-| `TTSResult` | `success`, `error_code`, `error_message`, and — the interesting part — `audio::AudioHandle player_handle`. The system returns the *player* it created, not the bytes; the caller controls playback through the handle. |
+| `TTSRequest` | `turn_id`, `text`, `text_lang`, `ref_audio_path`, `prompt_text`, `prompt_lang`, `streaming`. The voice reference is a *path on the server's machine*, not a file uploaded by the client. |
+| `TTSResult` | `success`, `error_code`, `error_message`, job/turn IDs, and `audio::AudioHandle player_handle`. The system returns the *player* it created, not the bytes; the caller controls playback through the handle. |
 
 ## Interface — [`tts_provider.h`](../../engine/module/tts/tts_provider.h)
 
 `ITTSProvider` is the backend contract:
 
-- `Initialize(ServerConfig)` / `ShutDown()` — set up and tear down the client.
-- `SynthesizeBuffer(request, OnData, OnError)` — one-shot; the whole audio arrives in a single `OnData` call.
-- `SynthesizeStream(request, OnData, OnFinish, OnError)` — incremental; `OnData` fires per received chunk, `OnFinish` at end-of-stream.
+- `Initialize(ServerConfig)` / `ShutDown()` — set up and tear down the provider.
+- `Cancel(job)` — interrupt the HTTP client for the matching request.
+- Synthesis methods receive the job token and cancellation predicate; the data
+  callback can reject audio, and successful stream delivery invokes `OnFinish`.
 
 The callbacks are `std::function`s: `AudioDataCallback = std::function<bool(const uint8_t*, size_t)>`, `ErrorCallback`, `FinishCallback`. The `bool` return on `OnData` lets a consumer abort an in-flight synthesis.
 
@@ -53,9 +62,14 @@ The callbacks are `std::function`s: `AudioDataCallback = std::function<bool(cons
 `TTSSystem` is the facade. Two entry points:
 
 - **`SyncSynthesize(request)`** — blocks until synthesis finishes. It creates an audio player, wires the provider callbacks into the player/decoder, calls the provider, and returns a `TTSResult` carrying the player handle.
-- **`AsyncSynthesize(request, callback)`** — enqueues a `TTSTask` (request + callback) on a queue; a dedicated worker thread (`WorkerLoop`) pops tasks and runs `SyncSynthesize` on each, invoking the callback with the result. The queue is guarded by `mutex_` and signaled by `cv_`.
+- **`AsyncSynthesize(request, callback)`** — returns a `JobToken`, enqueues on
+  the bounded queue, and invokes the callback with the synthesis result.
+  `Cancel(token)` is idempotent after terminal state. `DrainEvents()` returns
+  copied state/network events, and `GetJobTelemetry()` returns active-job
+  diagnostics. The callback can arrive before audible drain; use the `Completed`
+  event for playback completion.
 
-`TTSSystem` owns a `unique_ptr<ITTSProvider>`, an `IAudioLoader` (for the buffered path), a worker thread, and a non-owning `audio::AudioSystem* audio_system`. The caller initializes and assigns Audio before synthesis. Initialization is transactional, the destructor calls idempotent shutdown, shutdown asks the provider to stop before joining, and the pending queue is bounded.
+`TTSSystem` owns a `unique_ptr<ITTSProvider>`, an `IAudioLoader` (for the buffered path), worker and monitor threads, and a non-owning `audio::AudioSystem* audio_system`. The caller assigns an initialized Audio system before synthesis and keeps it alive through TTS shutdown. Initialization is transactional, destruction calls idempotent shutdown, shutdown cancels active work before joining, and the pending queue is bounded.
 
 ### The two synthesis paths
 
@@ -80,14 +94,14 @@ CreateAudioPlayer(Buffer) → BufferAudioPlayer
 OnData:  player->SetClip(audio_loader_->LoadFromMemory(data, size).data); player->Play();
 ```
 
-The whole response body is decoded into an `AudioClip` at once via the asset module's `MiniAudio_AudioLoader::LoadFromMemory`, and the buffered player plays it. Note the buffered `OnData` captures `player_handle` — the streaming path assigns it on `TTSResult`; the buffered path assigns it inside the callback. (Both end up returning a handle, but the streaming one also has `stream_` wired before synthesis.)
+The whole response body is decoded into an `AudioClip` at once via the asset module's `MiniAudio_AudioLoader::LoadFromMemory`, and the buffered player plays it. Both paths return the created handle in `TTSResult`.
 
 ## Provider — [`gpt_sovits_tts.cpp`](../../engine/module/tts/gpt_sovits_tts.cpp)
 
 `GPTSovitsTTS` is the GPT-SoVITS client over `httplib::Client`:
 
 - `BuildRequest` — a JSON body for the server's `/tts` API: `text`, `text_lang`, `ref_audio_path`, `prompt_lang`, `prompt_text`, plus synthesis knobs (`text_split_method: "cut4"`, `batch_size: 1`, `streaming_mode`, `sample_steps: 16`, `overlap_length: 2`, `min_chunk_length: 16`).
-- `SynthesizeBuffer` — a blocking `client_->Post` with a bounded receiver. It validates HTTP status and content type before delivering the complete body once to `OnData`.
+- `SynthesizeBuffer` — a blocking request-local `Client::Post` with a bounded receiver. It validates HTTP status and content type before delivering the complete body once to `OnData`.
 - `SynthesizeStream` — a bounded receiver quarantines the response because this vendored streaming `Post` overload does not expose headers before body callbacks. It validates status/media type, delivers chunks to `OnData`, propagates consumer abort, and calls `OnFinish` only after successful delivery.
 
 ## Data flow
@@ -110,7 +124,7 @@ The server is external and stateful — the voice reference (`ref_audio_path`) a
 
 ## Known smells / next steps
 
-- **`SyncSynthesize` blocks the caller for the full synthesis.** `AsyncSynthesize` is the intended non-blocking route; `Sync` exists for examples and single-shot use. The worker serializes requests and caps the pending queue at 16; per-task cancellation is still open.
-- **Per-job cancellation and audible completion events are not implemented.** Shutdown aborts the active provider request and queue capacity is bounded, but callers cannot replace or cancel one queued/in-flight request independently.
+- **`SyncSynthesize` blocks the caller for the full synthesis.** `AsyncSynthesize` is the intended non-blocking route; `Sync` exists for examples and single-shot use. The worker serializes requests and caps the pending queue at 16.
+- **Broader A2 provider and stress coverage remains open.** Current fake-provider contracts cover cancellation and audible drain; HTTP error/media cases, malformed streams, slow/fast delivery, underrun recovery, late-callback stress, and visible localhost playback remain to be verified.
 - **Quarantining delays streaming playback.** The current httplib overload does not surface response headers before the body callback, so playback begins after full response validation rather than as bytes arrive.
 - **`TTSRequest` is server-path-addressed.** `ref_audio_path`/`prompt_text` refer to server-side state; there is no file upload or multipart. Document this at the API boundary so it isn't mistaken for a client-side asset reference.

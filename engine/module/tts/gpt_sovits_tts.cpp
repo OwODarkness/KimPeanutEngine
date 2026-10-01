@@ -8,6 +8,22 @@ namespace kpengine::tts
 {
     namespace
     {
+        template <typename Callback>
+        class ScopeExit
+        {
+        public:
+            explicit ScopeExit(Callback callback) : callback_(std::move(callback)) {}
+            ~ScopeExit() { callback_(); }
+            ScopeExit(const ScopeExit&) = delete;
+            ScopeExit& operator=(const ScopeExit&) = delete;
+
+        private:
+            Callback callback_;
+        };
+
+        template <typename Callback>
+        ScopeExit(Callback) -> ScopeExit<Callback>;
+
         constexpr size_t kMaxResponseBytes = 32u * 1024u * 1024u;
 
         bool IsSupportedAudioType(std::string content_type)
@@ -31,21 +47,58 @@ namespace kpengine::tts
 
     bool GPTSovitsTTS::Initialize(const ServerConfig &config)
     {
+        if (config.host.empty() || config.port == 0 || config.api_path.empty() || config.timeout == 0)
+            return false;
         config_ = config;
-        client_ = std::make_unique<httplib::Client>(config.host, config.port);
-        client_->set_connection_timeout(config_.timeout);
-        client_->set_read_timeout(config_.timeout);
         initialized_ = true;
         return true;
     }
 
     void GPTSovitsTTS::ShutDown()
     {
-        if (initialized_)
+        std::shared_ptr<httplib::Client> client;
         {
-            client_->stop();
+            std::lock_guard lock(active_mutex_);
+            initialized_ = false;
+            client = active_client_;
         }
-        initialized_ = false;
+        if (client)
+            client->stop();
+    }
+
+    void GPTSovitsTTS::Cancel(JobToken job)
+    {
+        std::shared_ptr<httplib::Client> client;
+        {
+            std::lock_guard lock(active_mutex_);
+            if (active_job_ == job)
+                client = active_client_;
+        }
+        if (client)
+            client->stop();
+    }
+
+    std::shared_ptr<httplib::Client> GPTSovitsTTS::BeginRequest(JobToken job)
+    {
+        std::lock_guard lock(active_mutex_);
+        if (!initialized_ || active_client_)
+            return {};
+        auto client = std::make_shared<httplib::Client>(config_.host, config_.port);
+        client->set_connection_timeout(config_.timeout);
+        client->set_read_timeout(config_.timeout);
+        active_job_ = job;
+        active_client_ = client;
+        return client;
+    }
+
+    void GPTSovitsTTS::EndRequest(JobToken job, const std::shared_ptr<httplib::Client>& client)
+    {
+        std::lock_guard lock(active_mutex_);
+        if (active_job_ == job && active_client_ == client)
+        {
+            active_job_ = {};
+            active_client_.reset();
+        }
     }
 
     std::string GPTSovitsTTS::BuildRequest(const TTSRequest &request) const
@@ -66,19 +119,33 @@ namespace kpengine::tts
         return j.dump();
     }
 
-    bool GPTSovitsTTS::SynthesizeBuffer(const TTSRequest &request, AudioDataCallback OnData, ErrorCallback OnError)
+    bool GPTSovitsTTS::SynthesizeBuffer(JobToken job, const TTSRequest &request,
+                                       AudioDataCallback OnData, ErrorCallback OnError,
+                                       CancellationCheck is_cancelled)
     {
+        auto client = BeginRequest(job);
+        if (!client)
+        {
+            OnError("TTS provider is unavailable or busy");
+            return false;
+        }
+        const ScopeExit cleanup([this, job, client] { EndRequest(job, client); });
         std::string json_body = BuildRequest(request);
         std::vector<uint8_t> body;
         auto receiver = [&](const char* data, size_t size)
         {
+            if (is_cancelled())
+                return false;
             if (size > kMaxResponseBytes - body.size())
                 return false;
             body.insert(body.end(), data, data + size);
             return true;
         };
-        auto response = client_->Post(config_.api_path, httplib::Headers{}, json_body,
+        auto response = client->Post(config_.api_path, httplib::Headers{}, json_body,
                                       "application/json", receiver);
+
+        if (is_cancelled())
+            return false;
 
         if (!response)
         {
@@ -110,8 +177,17 @@ namespace kpengine::tts
         return true;
     }
 
-    bool GPTSovitsTTS::SynthesizeStream(const TTSRequest &request, AudioDataCallback OnData, FinishCallback OnFinish, ErrorCallback OnError)
+    bool GPTSovitsTTS::SynthesizeStream(JobToken job, const TTSRequest &request,
+                                       AudioDataCallback OnData, FinishCallback OnFinish,
+                                       ErrorCallback OnError, CancellationCheck is_cancelled)
     {
+        auto client = BeginRequest(job);
+        if (!client)
+        {
+            OnError("TTS provider is unavailable or busy");
+            return false;
+        }
+        const ScopeExit cleanup([this, job, client] { EndRequest(job, client); });
         std::string json_body = BuildRequest(request);
 
         httplib::Headers headers;
@@ -120,6 +196,8 @@ namespace kpengine::tts
         std::vector<uint8_t> quarantined;
         auto receiver = [&](const char *data, size_t len)
         {
+            if (is_cancelled())
+                return false;
             if (len > kMaxResponseBytes - quarantined.size())
                 return false;
             quarantined.insert(quarantined.end(), data, data + len);
@@ -128,10 +206,14 @@ namespace kpengine::tts
 
         auto progress = [&](uint64_t current, uint64_t total)
         {
-
-            return true;
+            (void)current;
+            (void)total;
+            return !is_cancelled();
         };
-        auto response = client_->Post( config_.api_path, headers, json_body, "application/json", receiver, progress);
+        auto response = client->Post(config_.api_path, headers, json_body, "application/json", receiver, progress);
+
+        if (is_cancelled())
+            return false;
 
         if (!response)
         {

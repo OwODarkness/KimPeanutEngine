@@ -1,4 +1,5 @@
 add_subdirectory(audio)
+add_subdirectory(tts)
 add_subdirectory(asset)
 add_subdirectory(bootstrap)
 add_subdirectory(script)

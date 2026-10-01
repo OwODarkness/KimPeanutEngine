@@ -1,6 +1,6 @@
 # Conversational Audio Roadmap
 
-**Status: A1 complete; later stages proposed.** Architecture: [PLANS.md](PLANS.md). Baselines:
+**Status: A1 complete; A2 in progress.** Architecture: [PLANS.md](PLANS.md). Baselines:
 [Audio](audio_module.md), [TTS](../tts/tts_module.md). Cross-stage acceptance:
 [spec](../../.spec/specs/conversational-audio.md). Checkboxes describe work
 to do, not completion evidence.
@@ -19,12 +19,14 @@ is accepted; record resolution evidence in those review files.
   prove repeated create/play/pause/seek/stop/destroy and clean device shutdown.
   Twenty-one audio contracts pass and the visible device smoke drains all frames;
   measurements and the remaining sanitizer limitation are in the journal.
-- [ ] **A2 — conversational TTS transport** ([plan](.plan/A2.md),
+- [ ] **A2 — conversational TTS transport** (in progress; [plan](.plan/A2.md),
   [review](.review/A2.md)). Validate
   HTTP status and media format, propagate decode errors, enforce bounded PCM
   backpressure, distinguish request/stream/playback terminal states, and make
-  queued and in-flight synthesis cancellable. Tests cover fragmented WAV,
-  malformed/error responses, starvation, overflow, late callbacks, and drain.
+  queued and in-flight synthesis cancellable. Job tokens, per-job HTTP abort,
+  lifecycle events, and audible drain are implemented; two fake-provider
+  cancellation/drain contracts pass. Remaining tests cover malformed/error
+  responses, starvation, overflow, late callbacks, and visible service playback.
 - [ ] **C1 — typed conversation session** ([plan](.plan/C1.md)). Integrate a
   deterministic response source with text streaming and ordered speech
   segments and a small transcript/input/voice-selection surface. Interruption
