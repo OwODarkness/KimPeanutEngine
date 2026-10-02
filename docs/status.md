@@ -7,7 +7,13 @@
   disabled seeking for unknown-duration streams, and separate voice-stop/job-
   cancel intents. RelWithDebInfo engine and TTS builds passed; a visible Vulkan
   real-track capture confirms the composed music preview. A compact TTS
-  consumer and its played-cursor snapshot remain future work. →
+  consumer and its played-cursor snapshot remain future work. The queue has
+  cyan names, white metadata, and an orange outlined selection, verified with
+  six tracks at wide and compact Vulkan widths in RelWithDebInfo. →
+  [playlist evidence](../.spec/journal/2026-10-02-audio-playlist-presentation.md),
+  [accepted Playlists navigation](../.spec/journal/2026-10-02-audio-playlists-navigation.md),
+  [music/play row icons](../.spec/journal/2026-10-02-audio-playlist-icons.md),
+  [Library presentation and validation limits](../.spec/journal/2026-10-02-audio-library-presentation.md),
   [checkpoint](../.spec/journal/2026-10-02-audio-player-panel-theme.md),
   [P1 review](audio/.review/P1.md), [P1 roadmap](audio/TODO.md)
 

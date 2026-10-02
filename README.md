@@ -36,11 +36,13 @@ Vulkan 路径追踪支持渐进式采样与自适应 SPP：相机移动时使用
 </p>
 <p align="center">
   <img src="./resouce/example/live2d.png" width="39%" alt="Live2D 示例" />
-      <img src="./resouce/example/terrian.png" width="59%" alt="Terrian PCG 示例" />
+  <img src="./resouce/example/terrian.png" width="59%" alt="Terrian PCG 示例" />
 </p>
 
 
+### 独立音频播放器
 
+![KimPeanut Engine 独立音频播放器](./resouce/example/audio_player.png)
 
 ## 主要特性
 
@@ -58,7 +60,7 @@ KP Engine 围绕 `Asset → Resource → Render → RHI` 构建清晰的资源�
 
 - **Runtime**：窗口、输入、Gameplay、Lua 脚本及基础运行时服务。
 - **Command / Agent Interface**：统一的类型化 `CommandRegistry`，供编辑器控制台、Lua、测试、本地自动化和 AI Agent 共用；支持游戏线程调度、结构化结果以及 JSON-lines 本地通信。
-- **Audio**：基础音频播放系统，支持同步、异步、缓冲和流式播放。
+- **Audio**：基于 miniaudio 的播放与混音系统，支持同步、异步、缓冲和流式播放，以及独立的语音、音乐和主音量控制。独立播放器支持 WAV、MP3、FLAC 导入与原生音频产品播放，通过播放帧时钟同步波形进度和 SRT、WebVTT、LRC 字幕。详细设计见 [Audio 模块](docs/audio/audio_module.md)。
 - **Editor**：基于 Dear ImGui 的编辑器与调试工具。
 - **Optional Modules**：
   - Live2D
@@ -116,6 +118,7 @@ ctest --test-dir build -C Debug
 - [Asset 模块](docs/asset/asset_module.md)
 - [Command 系统](docs/command/command_system.md)
 - [Gameplay 模块](docs/gameplay/gameplay_module.md)
+- [Audio 模块](docs/audio/audio_module.md)
 - [TTS 模块](docs/tts/tts_module.md)
 - [Live2D 模块](docs/live2d/README.md)
 

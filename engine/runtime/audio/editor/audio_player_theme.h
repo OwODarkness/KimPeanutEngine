@@ -23,6 +23,11 @@ namespace kpengine::audio_player
         static constexpr ImU32 error = IM_COL32(245, 85, 78, 255);
         static constexpr ImU32 ready = IM_COL32(95, 205, 151, 255);
         static constexpr ImU32 selected = IM_COL32(51, 39, 17, 255);
+        static constexpr ImU32 selected_hovered = IM_COL32(70, 49, 18, 255);
+        static constexpr float collection_row_height_em = 2.6f;
+        static constexpr float collection_padding_em = 0.7f;
+        static constexpr float collection_icon_em = 1.2f;
+        static constexpr float library_track_height_em = 1.9f;
 
         static ImVec4 Vec(const ImU32 color)
         {

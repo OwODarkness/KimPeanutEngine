@@ -212,48 +212,55 @@ namespace kpengine::editor
         {
             node = EditorLayoutNode{};
         }
-        node_count_ = 5;
+        node_count_ = 6;
+
+        // Reserve a fixed-height footer so all six docks terminate above the profile bar.
+        nodes_[0].axis = EditorLayoutAxis::Vertical;
+        nodes_[0].fixed_pixels = kStatusBarDefaultPixels;
+        nodes_[0].splitter = EditorSplitterId::StatusBar;
+        nodes_[0].first = 1;
+        nodes_[0].second = Leaf(EditorLayoutSlot::ProfileBar);
 
         // Three columns; each column is split into two dock regions.
-        nodes_[0].axis = EditorLayoutAxis::Horizontal;
-        nodes_[0].fraction = 0.18f;
-        nodes_[0].splitter = EditorSplitterId::LeftColumn;
-        nodes_[0].min_first = 180.0f;
-        nodes_[0].min_second = 400.0f;
-        nodes_[0].first = 1;
-        nodes_[0].second = 2;
+        nodes_[1].axis = EditorLayoutAxis::Horizontal;
+        nodes_[1].fraction = 0.18f;
+        nodes_[1].splitter = EditorSplitterId::LeftColumn;
+        nodes_[1].min_first = 180.0f;
+        nodes_[1].min_second = 400.0f;
+        nodes_[1].first = 2;
+        nodes_[1].second = 3;
 
-        nodes_[1].axis = EditorLayoutAxis::Vertical;
-        nodes_[1].fraction = 0.58f;
-        nodes_[1].splitter = EditorSplitterId::Outliner;
-        nodes_[1].min_first = 120.0f;
-        nodes_[1].min_second = 120.0f;
-        nodes_[1].first = Leaf(EditorLayoutSlot::WorldOutliner);
-        nodes_[1].second = Leaf(EditorLayoutSlot::ActorInspector);
+        nodes_[2].axis = EditorLayoutAxis::Vertical;
+        nodes_[2].fraction = 0.58f;
+        nodes_[2].splitter = EditorSplitterId::Outliner;
+        nodes_[2].min_first = 120.0f;
+        nodes_[2].min_second = 120.0f;
+        nodes_[2].first = Leaf(EditorLayoutSlot::WorldOutliner);
+        nodes_[2].second = Leaf(EditorLayoutSlot::ActorInspector);
 
-        nodes_[2].axis = EditorLayoutAxis::Horizontal;
-        nodes_[2].fraction = 0.72f;
-        nodes_[2].splitter = EditorSplitterId::RightColumn;
-        nodes_[2].min_first = 300.0f;
-        nodes_[2].min_second = 200.0f;
-        nodes_[2].first = 3;
-        nodes_[2].second = 4;
-
-        nodes_[3].axis = EditorLayoutAxis::Vertical;
-        nodes_[3].fraction = 0.58f;
-        nodes_[3].splitter = EditorSplitterId::ToolRow;
-        nodes_[3].min_first = 160.0f;
-        nodes_[3].min_second = 120.0f;
-        nodes_[3].first = Leaf(EditorLayoutSlot::Viewport);
-        nodes_[3].second = Leaf(EditorLayoutSlot::ToolRow);
+        nodes_[3].axis = EditorLayoutAxis::Horizontal;
+        nodes_[3].fraction = 0.72f;
+        nodes_[3].splitter = EditorSplitterId::RightColumn;
+        nodes_[3].min_first = 300.0f;
+        nodes_[3].min_second = 200.0f;
+        nodes_[3].first = 4;
+        nodes_[3].second = 5;
 
         nodes_[4].axis = EditorLayoutAxis::Vertical;
         nodes_[4].fraction = 0.58f;
-        nodes_[4].splitter = EditorSplitterId::Debug;
-        nodes_[4].min_first = 120.0f;
+        nodes_[4].splitter = EditorSplitterId::ToolRow;
+        nodes_[4].min_first = 160.0f;
         nodes_[4].min_second = 120.0f;
-        nodes_[4].first = Leaf(EditorLayoutSlot::CameraSettings);
-        nodes_[4].second = Leaf(EditorLayoutSlot::DebugViewer);
+        nodes_[4].first = Leaf(EditorLayoutSlot::Viewport);
+        nodes_[4].second = Leaf(EditorLayoutSlot::ToolRow);
+
+        nodes_[5].axis = EditorLayoutAxis::Vertical;
+        nodes_[5].fraction = 0.58f;
+        nodes_[5].splitter = EditorSplitterId::Debug;
+        nodes_[5].min_first = 120.0f;
+        nodes_[5].min_second = 120.0f;
+        nodes_[5].first = Leaf(EditorLayoutSlot::CameraSettings);
+        nodes_[5].second = Leaf(EditorLayoutSlot::DebugViewer);
 
         for (EditorRect &rect : rects_)
         {

@@ -671,13 +671,16 @@ namespace kpengine::audio_player
                 .toggle_play_pause = true,
                 .next = true,
                 .stop_voice = true,
+                .toggle_loop = true,
                 .seek = state.can_seek};
             transport.icons = {
                 .previous = state.previous_icon,
                 .play = state.play_icon,
                 .pause = state.pause_icon,
                 .next = state.next_icon,
-                .stop = state.stop_icon};
+                .stop = state.stop_icon,
+                .loop = state.loop_icon};
+            transport.loop_enabled = state.loop_enabled;
             editor::TransportStripStyle transport_style{};
             transport_style.track_background = kBackground;
             transport_style.track_border = kBorder;
@@ -696,6 +699,7 @@ namespace kpengine::audio_player
             actions.toggle_play_pause = transport_actions.toggle_play_pause;
             actions.next = transport_actions.next;
             actions.stop_voice = transport_actions.stop_voice;
+            actions.toggle_loop = transport_actions.toggle_loop;
             actions.cancel_job = transport_actions.cancel_job;
             actions.seek_seconds = transport_actions.seek_seconds;
             if (!narrow)

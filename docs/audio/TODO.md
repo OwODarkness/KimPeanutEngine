@@ -48,8 +48,23 @@ is accepted; record resolution evidence in those review files.
   investigation is recorded in the [2026-10-02 journal](../../.spec/journal/2026-10-02-audio-progress-bar-color.md).
   Library, queue, Info, and Spectrum content now share a scoped Audio Player
   theme; the Editor window chrome keeps its original style. The final visual
-  comparison, narrow-width pass, and real-track check remain open. →
-  [panel checkpoint](../../.spec/journal/2026-10-02-audio-player-panel-theme.md)
+  comparison remains open for the surrounding panels. The queue now uses cyan
+  names, white metadata, and an orange outlined selection; wide/compact Vulkan
+  layouts and six real tracks were checked in RelWithDebInfo. →
+  [playlist evidence](../../.spec/journal/2026-10-02-audio-playlist-presentation.md).
+  The left Playlists collection now has an orange folder row, aligned count,
+  total duration, and working navigation back to All; the user accepted its
+  compact layout. →
+  [navigation evidence](../../.spec/journal/2026-10-02-audio-playlists-navigation.md).
+  Track rows use the supplied music icon and switch to the play icon only
+  while playing; playing/paused and compact Vulkan captures passed. →
+  [icon evidence](../../.spec/journal/2026-10-02-audio-playlist-icons.md),
+  [panel checkpoint](../../.spec/journal/2026-10-02-audio-player-panel-theme.md).
+  Library categories and project rows now share aligned counts, icons, and
+  outlined selections, with paired import actions and optional subtitle
+  controls. Its initial Vulkan capture passed; interaction and compact-width
+  acceptance remain open. →
+  [Library evidence](../../.spec/journal/2026-10-02-audio-library-presentation.md)
 - [ ] **M1 — native music asset and reimport** ([plan](.plan/M1.md),
   [Content discovery review](.review/M1.md)). Extend
   Asset import/archive with an Audio product from a required music source and

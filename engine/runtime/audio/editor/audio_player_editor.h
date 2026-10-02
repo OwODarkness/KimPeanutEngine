@@ -19,6 +19,7 @@ namespace kpengine::audio
 namespace kpengine::editor
 {
     class EditorAudioComponent;
+    class EditorProfileBarComponent;
     class EditorUI;
     class EditorToolRowComponent;
 }
@@ -56,6 +57,7 @@ namespace kpengine::audio_player
 
         std::unique_ptr<editor::EditorUI> ui_;
         std::unique_ptr<editor::EditorAudioComponent> audio_panel_;
+        std::unique_ptr<editor::EditorProfileBarComponent> profile_bar_;
         editor::EditorLayoutModel layout_;
         editor::EditorToolRowModel dock_model_;
         editor::EditorSplitterHandles splitter_handles_;
@@ -66,7 +68,8 @@ namespace kpengine::audio_player
         char subtitle_path_[1024]{};
         char search_[256]{};
         char project_search_[256]{};
-        std::array<std::vector<std::uint8_t>, 7> playback_icon_alpha_{};
+        std::array<std::vector<std::uint8_t>, 8> playback_icon_alpha_{};
+        std::vector<std::uint8_t> music_icon_alpha_;
         int library_filter_ = 0;
         bool show_diagnostics_ = false;
         std::string ui_status_;

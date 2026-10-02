@@ -28,6 +28,7 @@
 #include "editor/settings/editor_settings.h"
 #include "editor/profile/editor_builtin_metrics.h"
 #include "editor/profile/editor_profile_bar.h"
+#include "editor/profile/editor_profile_metrics.h"
 #include "editor/actor/actor_editor_model.h"
 #include "editor/actor/editor_world_outliner_component.h"
 #include "editor/actor/editor_actor_inspector_component.h"
@@ -808,76 +809,11 @@ namespace kpengine::editor
     void EditorUI::BuildProfileBar(runtime::Engine *engine, MemoryStatsSampler *memory_sampler,
                                    render::RenderSystem *render_system)
     {
-        // Bottom status bar. Keep this surface limited to the five live headline
-        // metrics; detailed pass timings and geometry counters live in GPU Profiler.
-        if (!engine || !memory_sampler || !render_system)
+        auto profile_metrics = CreateEditorProfileMetrics(engine, memory_sampler, render_system);
+        if (profile_metrics.empty())
         {
             return;
         }
-
-        std::vector<std::unique_ptr<EditorMetric>> profile_metrics;
-        profile_metrics.push_back(std::make_unique<EditorFPSMetric>(
-            [engine]
-            { return engine->GetFPS(); }));
-        profile_metrics.push_back(std::make_unique<EditorFrameTimeMetric>(
-            [engine]
-            {
-                const int fps = engine->GetFPS();
-                return fps > 0 ? 1000.f / static_cast<float>(fps) : 0.f;
-            }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "CPU",
-            [render_system]
-            {
-                char value[32]{};
-                std::snprintf(value, sizeof(value), "%.2f ms",
-                              render_system->GetMetrics().profile.cpu_total_ms);
-                return std::string{value};
-            }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "GPU",
-            [render_system]
-            {
-                const auto profile = render_system->GetMetrics().profile;
-                double total = 0.0;
-                bool measured = false;
-                for (const auto &pass : profile.passes)
-                {
-                    if (pass.gpu_time_ms.has_value())
-                    {
-                        total += *pass.gpu_time_ms;
-                        measured = true;
-                    }
-                }
-                if (!measured)
-                {
-                    return std::string{"N/A"};
-                }
-                char value[32]{};
-                std::snprintf(value, sizeof(value), "%.2f ms", total);
-                return std::string{value};
-            }));
-        profile_metrics.push_back(std::make_unique<EditorFuncMetric>(
-            "API",
-            [render_system]
-            {
-                switch (render_system->GetMetrics().profile.graphics_api)
-                {
-                case GraphicsAPIType::GRAPHICS_API_OPENGL:
-                    return std::string{"OpenGL"};
-                case GraphicsAPIType::GRAPHICS_API_VULKAN:
-                    return std::string{"Vulkan"};
-                case GraphicsAPIType::GRAPHICS_API_UNKNOW:
-                default:
-                    return std::string{"Unknown"};
-                }
-            }));
-        profile_metrics.push_back(std::make_unique<EditorMemoryMetric>(
-            [memory_sampler]() -> EditorMemoryMetric::Stats
-            {
-                const MemoryStats stats = memory_sampler->Sample();
-                return {stats.process_mb, stats.system_available_mb};
-            }));
         components_.push_back(
             std::make_unique<EditorProfileBarComponent>(std::move(profile_metrics)));
     }

@@ -36,6 +36,7 @@ namespace kpengine::audio_player
         AudioControlIcon pause_icon;
         AudioControlIcon next_icon;
         AudioControlIcon stop_icon;
+        AudioControlIcon loop_icon;
         AudioControlIcon voice_open_icon;
         AudioControlIcon voice_close_icon;
         ImFont *font = nullptr;
@@ -44,6 +45,7 @@ namespace kpengine::audio_player
         bool is_error = false;
         bool can_seek = false;
         bool has_subtitle_track = false;
+        bool loop_enabled = false;
     };
 
     struct AudioPreviewActions
@@ -52,6 +54,7 @@ namespace kpengine::audio_player
         bool toggle_play_pause = false;
         bool next = false;
         bool stop_voice = false;
+        bool toggle_loop = false;
         bool cancel_job = false;
         std::optional<float> seek_seconds;
         std::optional<float> volume;

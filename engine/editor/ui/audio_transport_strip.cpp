@@ -279,7 +279,8 @@ namespace kpengine::editor
             static_cast<int>(state.capabilities.toggle_play_pause) +
             static_cast<int>(state.capabilities.next) +
             static_cast<int>(state.capabilities.stop_voice) +
-            static_cast<int>(state.capabilities.cancel_job);
+            static_cast<int>(state.capabilities.cancel_job) +
+            static_cast<int>(state.capabilities.toggle_loop);
         if (button_count > 0)
         {
             ImGui::Separator();
@@ -299,7 +300,8 @@ namespace kpengine::editor
                 if (!first_button)
                     ImGui::SameLine(0.0f, gap);
                 first_button = false;
-                return DrawButton(id, label, tooltip, icon, style.active_button,
+                return DrawButton(id, label, tooltip, icon,
+                                  highlighted ? style.active_button : style.button_icon,
                                   button_width, style.button_height, highlighted);
             };
 
@@ -320,6 +322,10 @@ namespace kpengine::editor
             actions.cancel_job = draw_capability_button(
                 state.capabilities.cancel_job, "##CancelJob", "[ CANCEL ]", "Cancel job",
                 state.icons.cancel, false);
+            actions.toggle_loop = draw_capability_button(
+                state.capabilities.toggle_loop, "##ToggleLoop", "[ LOOP ]",
+                state.loop_enabled ? "Disable track loop" : "Enable track loop",
+                state.icons.loop, state.loop_enabled);
             ImGui::EndDisabled();
         }
 

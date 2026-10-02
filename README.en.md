@@ -47,6 +47,10 @@ depend on the scene and hardware.
   <img src="./resouce/example/terrian.png" width="59%" alt="Terrain PCG Example" />
 </p>
 
+### Standalone audio player
+
+![KimPeanut Engine standalone audio player](./resouce/example/audio_player.png)
+
 ## Features
 
 The main path is `Asset → Resource → Render → RHI`.
@@ -63,7 +67,7 @@ The main path is `Asset → Resource → Render → RHI`.
 
 - **Runtime**: Provides windowing, input, scripting, gameplay, and core runtime services.
 - **Command**: Runtime owns one `CommandRegistry`; the editor console, Lua, tests, and local automation share typed commands with game-thread queuing, structured results, and controlled local JSON-lines transport.
-- **Audio**: AudioSystem supports synchronous, asynchronous, buffered, and streaming playback.
+- **Audio**: The miniaudio-backed playback and mixer support synchronous, asynchronous, buffered, and streaming playback, with independent speech, music, and master gain controls. The standalone player imports WAV, MP3, and FLAC into native audio products and uses the played-frame clock to synchronize waveform progress and SRT, WebVTT, or LRC subtitles. See the [Audio module](docs/audio/audio_module.md) for the design.
 - **TTS**: Connects to GPT-SoVITS over HTTP through a provider interface, with synchronous or asynchronous requests and buffered or streaming synthesis delivered to AudioSystem for playback.
 - **Terrain PCG**: Composable deterministic nodes generate heightfields, derived terrain data, and meshes, with erosion post-processing, shared-renderer previews, and bakeable terrain assets.
 - **Editor / optional modules**: Dear ImGui editor support and an optional Live2D import, cook, and runtime product module.
@@ -134,6 +138,7 @@ For targeted validation:
 - [Asset module](docs/asset/asset_module.md)
 - [Command system](docs/command/command_system.md)
 - [Gameplay module](docs/gameplay/gameplay_module.md)
+- [Audio module](docs/audio/audio_module.md)
 - [TTS module](docs/tts/tts_module.md)
 - [Live2D module](docs/live2d/README.md)
 

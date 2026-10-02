@@ -46,6 +46,7 @@ namespace kpengine::editor
         bool next = false;
         bool stop_voice = false;
         bool cancel_job = false;
+        bool toggle_loop = false;
         bool seek = false;
     };
 
@@ -57,6 +58,7 @@ namespace kpengine::editor
         EditorControlIcon next;
         EditorControlIcon stop;
         EditorControlIcon cancel;
+        EditorControlIcon loop;
     };
 
     struct TransportStripState
@@ -66,6 +68,7 @@ namespace kpengine::editor
         TransportPlaybackState playback_state = TransportPlaybackState::Idle;
         float elapsed_seconds = 0.0f;
         std::optional<float> duration_seconds;
+        bool loop_enabled = false;
         bool controls_enabled = true;
         TransportStripCapabilities capabilities;
         TransportStripIcons icons;
@@ -80,6 +83,7 @@ namespace kpengine::editor
         ImU32 secondary_text = IM_COL32(133, 160, 169, 255);
         ImU32 total_text = IM_COL32(48, 211, 239, 255);
         ImU32 active_button = IM_COL32(255, 184, 58, 255);
+        ImU32 button_icon = IM_COL32(48, 211, 239, 255);
         bool bloom_played = false;
         bool show_state = true;
         float button_width = 60.0f;
@@ -93,6 +97,7 @@ namespace kpengine::editor
         bool next = false;
         bool stop_voice = false;
         bool cancel_job = false;
+        bool toggle_loop = false;
         std::optional<float> seek_seconds;
     };
 
