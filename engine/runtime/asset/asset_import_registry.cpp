@@ -175,7 +175,9 @@ namespace kpengine::asset
             return descriptor;
         }
 
-        const std::string filename = Lowercase(source_path.filename().generic_string());
+        const std::u8string filename_u8 = source_path.filename().generic_u8string();
+        const std::string filename = Lowercase(std::string{
+            reinterpret_cast<const char *>(filename_u8.data()), filename_u8.size()});
         if (filename.empty())
         {
             diagnostic = "source path has no filename for automatic provider selection";

@@ -118,6 +118,10 @@ source decoding only; the cooker owns semantic filtering, dimension bounds,
 portable format selection, and canonical native serialization. Neither stage
 constructs an `Asset`, opens the runtime manager, or creates a GPU object.
 
+The proposed [M1 native music product](../audio/.plan/M1.md) follows this
+offline import boundary. It adds optional timed-text input and a reimportable
+Audio archive product; Runtime Audio owns bounded playback of that product.
+
 Assimp owns foreign source-format decoding only. The standalone Asset import
 tool/library owns source closure discovery, hash/no-op decisions, native
 serialization, immutable content-addressed products, staging, and short SQLite

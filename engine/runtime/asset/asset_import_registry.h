@@ -5,6 +5,7 @@
 #include <filesystem>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -19,6 +20,13 @@ namespace kpengine::asset
         Material,
         Texture,
         Custom,
+        Audio,
+    };
+
+    struct AudioImportOptions
+    {
+        std::optional<std::filesystem::path> subtitle_path;
+        std::string subtitle_language{"und"};
     };
 
     // This is deliberately independent from AssetRuntime and the archive
@@ -29,6 +37,7 @@ namespace kpengine::asset
         std::filesystem::path asset_root;
         std::filesystem::path archive_root;
         std::filesystem::path source_path;
+        std::optional<AudioImportOptions> audio_options;
     };
 
     class IImportProduct

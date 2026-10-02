@@ -1,6 +1,6 @@
 # Conversational Audio Plan
 
-**Status: A1 complete; A2/C1/L2D9/P1 proposed.** This is the design map for evolving the
+**Status: A1 complete; A2/P1/M1 active; C1/L2D9 proposed.** M1.1 has a validated offline importer and native product; M1.2 archive/reimport and M1.3 bounded playback remain. This is the design map for evolving the
 existing [Audio](audio_module.md) and [TTS](../tts/tts_module.md) modules into
 a voice-capable chatbot companion with optional Live2D and a standalone audio
 player. [TODO.md](TODO.md) is the acceptance ledger; [the execution spec](../../.spec/specs/conversational-audio.md)
@@ -49,9 +49,10 @@ making input capture or a particular AI service a foundation dependency.
   bubble; [L2D9](../live2d/.plan/L2D9.md) is the existing speech-integration
   roadmap slot. The model product already identifies `LipSync` parameter IDs,
   but no audio-driven value enters its canonical frame transaction.
-- There is no chat/response source, voice capture, music library, or player UI
-  in the current engine. The existing TTS example is manual wiring, not an
-  application session.
+- There is no chat/response source, voice capture, or cooked music library.
+  The standalone player has a raw-file session queue and ImGui workspace;
+  it does not import a native Audio product. The existing TTS example is
+  manual wiring, not an application session.
 
 ## Ownership and flow
 
@@ -115,6 +116,23 @@ bounded reduction of decoded PCM; a live spectrum waits for real bounded
 telemetry. No GPU audio object or Render dependency is needed. The view must
 also collapse cleanly to a compact width and remain legible at HiDPI scales.
 
+## Proposed native audio product
+
+The [M1 native music asset plan](.plan/M1.md) defines one versioned Asset
+product from an authored audio source and an explicitly selected optional
+subtitle source. Asset owns the import tool, source/dependency identity,
+archive publication, and reimport. Runtime Audio owns bounded decode,
+playback, and the source-frame clock; the Editor/conversation UI owns subtitle
+display. The existing whole-file `AudioClip` path remains a preview/short-clip
+compatibility path until native music playback is validated. TTS streams do
+not require the music product.
+
+Reference: Godot `master` imports WAV in
+[`editor/import/resource_importer_wav.cpp`](https://github.com/godotengine/godot/blob/master/editor/import/resource_importer_wav.cpp)
+into an `AudioStreamWAV` resource with explicit import options. The useful
+pattern here is source-to-runtime-resource conversion; the optional subtitle
+chunk and played-frame cue contract are KimPeanutEngine design choices.
+
 ## Stages and dependencies
 
 | Stage | Owner | Deliverable | Depends on |
@@ -124,6 +142,7 @@ also collapse cleanly to a compact width and remain legible at HiDPI scales.
 | [C1](.plan/C1.md) | application composition | Typed turn loop, segmented replies, replaceable response source | A2 |
 | [L2D9](../live2d/.plan/L2D9.md) | Live2D | Speech envelope input in canonical frame update, optional session binding | A2; C1 for end-to-end |
 | [P1](.plan/P1.md) | Audio module + Editor host | Standalone local player, reusable playback component, speech status, ducking | A1; C1 for integrated demo |
+| [M1](.plan/M1.md) | Asset + Runtime Audio + Editor | Native music product, optional timed subtitles, reimport, and bounded playback | P1 controls; Asset archive/import foundation |
 
 Stage boundaries allow A1/A2 to be tested without the Editor or Cubism SDK.
 The end-to-end gate joins C1, L2D9, and P1 in one visible session. Implement

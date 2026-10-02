@@ -181,6 +181,16 @@ include(GoogleTest)
 gtest_discover_tests(AssetImportAdapterTest PROPERTIES LABELS "asset")
 
 add_executable(
+    AssetAudioImportTest
+    audio_importer_test.cpp
+)
+
+target_link_libraries(AssetAudioImportTest PRIVATE AssetImport KP::GoogleTest)
+
+include(GoogleTest)
+gtest_discover_tests(AssetAudioImportTest PROPERTIES LABELS "asset")
+
+add_executable(
     AssetExtensionHardeningTest
     asset_extension_hardening_test.cpp
 )

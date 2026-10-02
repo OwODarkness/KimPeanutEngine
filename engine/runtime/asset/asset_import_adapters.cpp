@@ -73,4 +73,30 @@ namespace kpengine::asset
         };
         return registry.Register(std::move(descriptor), diagnostic);
     }
+
+    bool RegisterAudioImportProvider(ImportProviderRegistry &registry,
+                                     std::string &diagnostic)
+    {
+        ImportProviderDescriptor descriptor{};
+        descriptor.id = "audio";
+        descriptor.version = kAudioImporterVersion;
+        descriptor.kind = ImportProviderKind::Audio;
+        descriptor.source_suffixes = {"wav", "mp3", "flac"};
+        descriptor.callback = [](const ImportProviderRequest &request)
+        {
+            AudioImportRequest audio_request{};
+            audio_request.asset_root = request.asset_root;
+            audio_request.source_path = request.source_path;
+            if (request.audio_options.has_value()) audio_request.options = *request.audio_options;
+            CookedAudio cooked = AudioImporter{}.Import(audio_request);
+            PublishCookedAudioProduct(request.archive_root, cooked);
+
+            ImportProviderResult result{};
+            result.status = ImportProviderStatus::Cooked;
+            result.product = std::make_shared<
+                TypedImportProduct<CookedAudio, ImportProviderKind::Audio>>(std::move(cooked));
+            return result;
+        };
+        return registry.Register(std::move(descriptor), diagnostic);
+    }
 }

@@ -11,6 +11,13 @@
 #include <string_view>
 #include <vector>
 
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
+
 #include "asset/asset_import_adapters.h"
 #include "asset/asset_import_registry.h"
 #include "asset/material_promotion.h"
@@ -32,6 +39,12 @@
 
 namespace
 {
+    std::filesystem::path PathFromUtf8(std::string_view value)
+    {
+        return std::filesystem::path{std::u8string{
+            reinterpret_cast<const char8_t *>(value.data()), value.size()}};
+    }
+
     struct CommandLine final
     {
         std::string command;
@@ -43,6 +56,7 @@ namespace
         std::cout
             << "KimPeanutAssetTool\n"
             << "  import|reimport --source <asset-relative-path> [--importer <id>] "
+               "[--subtitle <asset-relative-srt-vtt-or-lrc>] [--subtitle-language <tag>] "
                "[--compression <portable|bc>] [--bc-encoder <reference|rgbcx>] "
                "[--bc-quality <fast|balanced>] [--asset-root <path>] "
                "[--archive-root <path>] [--jobs <count>] "
@@ -88,7 +102,9 @@ namespace
             {
                 throw std::invalid_argument("expected an option followed by a value: " + option);
             }
-            result.options[option.substr(2)] = argv[++index];
+            const std::string name = option.substr(2);
+            if (!result.options.emplace(name, argv[++index]).second)
+                throw std::invalid_argument("duplicate option: " + option);
         }
         return result;
     }
@@ -112,7 +128,7 @@ namespace
     {
         const std::string value = Option(command, "asset-root");
         return value.empty() ? std::filesystem::current_path() / "asset"
-                             : std::filesystem::path{value};
+                             : PathFromUtf8(value);
     }
 
     std::vector<std::byte> ReadBytes(const std::filesystem::path &path)
@@ -568,7 +584,8 @@ namespace
             kpengine::asset::ImportProviderRequest request{};
             request.asset_root = asset_root;
             request.archive_root = stage_archive;
-            request.source_path = Option(command, "source", true);
+            const std::string source_option = Option(command, "source", true);
+            request.source_path = PathFromUtf8(source_option);
             const kpengine::asset::ImportProviderResult provider_result =
                 registry.Execute(request, "live2d", diagnostic);
             if (provider_result.product == nullptr)
@@ -822,6 +839,7 @@ namespace
                     {
                         progress_reporter.Report(progress);
                     }, execution) ||
+                !kpengine::asset::RegisterAudioImportProvider(registry, diagnostic) ||
                 !registry.Seal(diagnostic))
             {
                 throw std::runtime_error("failed to initialize model import providers: " + diagnostic);
@@ -1040,6 +1058,44 @@ namespace
     }
 }
 
+#if defined(_WIN32)
+int wmain(int argc, wchar_t **argv)
+{
+    std::vector<std::string> utf8_storage;
+    std::vector<char *> utf8_arguments;
+    utf8_storage.reserve(static_cast<std::size_t>(argc));
+    utf8_arguments.reserve(static_cast<std::size_t>(argc));
+    for (int index = 0; index < argc; ++index)
+    {
+        const int required = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, argv[index], -1,
+                                                  nullptr, 0, nullptr, nullptr);
+        if (required <= 0)
+        {
+            std::cerr << "command-line argument is not valid Unicode\n";
+            return 2;
+        }
+        std::string converted(static_cast<std::size_t>(required), '\0');
+        if (WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, argv[index], -1,
+                                converted.data(), required, nullptr, nullptr) <= 0)
+        {
+            std::cerr << "failed to convert command-line argument to UTF-8\n";
+            return 2;
+        }
+        converted.pop_back();
+        utf8_storage.push_back(std::move(converted));
+    }
+    for (std::string &argument : utf8_storage) utf8_arguments.push_back(argument.data());
+    try
+    {
+        return Run(ParseArguments(argc, utf8_arguments.data()));
+    }
+    catch (const std::exception &error)
+    {
+        std::cerr << "error: " << error.what() << '\n';
+        return 2;
+    }
+}
+#else
 int main(int argc, char **argv)
 {
     try
@@ -1067,3 +1123,4 @@ int main(int argc, char **argv)
     }
     return 1;
 }
+#endif

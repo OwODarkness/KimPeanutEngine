@@ -1,6 +1,6 @@
 # Conversational Audio Roadmap
 
-**Status: A1 complete; A2 in progress.** Architecture: [PLANS.md](PLANS.md). Baselines:
+**Status: A1 complete; A2 and M1 in progress.** Architecture: [PLANS.md](PLANS.md). Baselines:
 [Audio](audio_module.md), [TTS](../tts/tts_module.md). Cross-stage acceptance:
 [spec](../../.spec/specs/conversational-audio.md). Checkboxes describe work
 to do, not completion evidence.
@@ -42,6 +42,16 @@ is accepted; record resolution evidence in those review files.
   waveform, transport, and a reusable Audio-module playback component.
   Add separate speech status and music ducking for the integrated demo;
   verify visible layout, audible controls, interruption, and clean shutdown.
+- [ ] **M1 — native music asset and reimport** ([plan](.plan/M1.md)). Extend
+  Asset import/archive with an Audio product from a required music source and
+  optional explicit subtitle source. Reimport must track both inputs and cook
+  settings, skip unchanged work, publish atomically, preserve the last Ready
+  product on failure, and report stale/missing/corrupt status. Switch project
+  music to bounded native playback after seeking, clock/cue sync, active-voice
+  lifetime, and long-track memory are verified. M1.1's offline provider, WAV/
+  MP3/FLAC product cooking, UTF-8 SRT/WebVTT/LRC parsing, deterministic `.audio`
+  container, and malformed-input rejection are implemented and validated;
+  archive/reimport and runtime playback remain M1.2–M1.4.
 
 ## End-to-end acceptance
 

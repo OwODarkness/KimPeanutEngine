@@ -4,6 +4,7 @@
 #include <string>
 
 #include "asset_import_registry.h"
+#include "audio_importer.h"
 #include "model_import_service.h"
 #include "texture_importer.h"
 
@@ -22,6 +23,9 @@ namespace kpengine::asset
     bool RegisterTextureImportProvider(ImportProviderRegistry &registry,
                                       TextureCookSettings settings,
                                       std::string &diagnostic);
+
+    bool RegisterAudioImportProvider(ImportProviderRegistry &registry,
+                                     std::string &diagnostic);
 }
 
 #endif

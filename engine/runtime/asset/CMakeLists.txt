@@ -34,6 +34,7 @@ target_link_libraries(AssetContent PUBLIC AssetProduct PRIVATE KP::NlohmannJson)
 
 
 add_library(AssetNative STATIC
+    native_audio.cpp
     native_model.cpp
     native_texture.cpp
 )
@@ -108,6 +109,7 @@ target_include_directories(AssetImportRegistry PUBLIC
 # not running.
 add_library(AssetImport STATIC
     asset_import_adapters.cpp
+    audio_importer.cpp
     native_material.cpp
     material_promotion.cpp
     model_import_service.cpp
@@ -118,7 +120,7 @@ target_include_directories(AssetImport PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../..
 )
 target_link_libraries(AssetImport PUBLIC AssetImportRegistry AssetArchive AssetNative AssetContent Data Base
-    PRIVATE Config ImageIO Log KP::NlohmannJson KP::Assimp AssetForeignDecode KP::Rgbcx)
+    PRIVATE Config ImageIO Log KP::NlohmannJson KP::Assimp AssetForeignDecode KP::Rgbcx KP::Miniaudio)
 if(WIN32)
     target_link_libraries(AssetImport PRIVATE Psapi)
 endif()
