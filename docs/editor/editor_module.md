@@ -1,5 +1,8 @@
 # Editor Module
 
+The architecture/design map is [PLANS.md](PLANS.md). Proposed selective UI
+bloom is specified in [ED5](.plan/ED5.md); it is not implemented behavior.
+
 **Snapshot: 2026-08-26.** The editor is the engine's *core center*: a thin application shell that hosts the runtime engine and owns the tool UI on top of it. Its job is not to render or simulate — those belong to the runtime — but to be the hub that wires the runtime systems to the tooling UI, and to build/draw that UI.
 
 The proposed startup loading presentation is designed in

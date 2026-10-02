@@ -19,6 +19,13 @@ This directory contains durable design knowledge extracted from open-source engi
 
 ## Reference conclusions
 
+- [Selective editor UI bloom](../editor/.plan/ED5.md#reference-study-and-adoption)
+  — public ImGui draw-command extension points and bgfx filtering source,
+  mapped to ordered Editor presentation and common RHI ownership.
+
+- [3DGS rendering and dependency study](../3dgs/references.md) — pinned
+  GraphDeco PLY/CUDA viewer and gkNextEngine SOG/pass source comparison,
+  mapped to an optional KimPeanutEngine Gaussian module.
 - [Terrain PCG source and algorithm study](../terrain/references.md) — Pangolin,
   HTerrain data ownership, modern erosion/wind research, and typed operator
   boundaries for the proposed terrain authoring module.

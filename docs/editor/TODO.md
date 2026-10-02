@@ -1,6 +1,6 @@
 # Editor TODO
 
-**Status: ED1–ED3 implemented; ED4 planned.** Landed editor design is in [editor_module.md](editor_module.md). Parent work remains in the root [status ledger](../status.md).
+**Status: ED1–ED3 implemented; ED4 planned; ED5 proposed (design only).** Architecture and stage designs are mapped in [PLANS.md](PLANS.md); landed editor design is in [editor_module.md](editor_module.md). Parent work remains in the root [status ledger](../status.md).
 
 ## ED — Editor shell and layout
 
@@ -40,6 +40,26 @@
   - [ ] Suppress the visual responsively before it can overlap loading telemetry.
   - [ ] Preserve a presentation-local seam for a later bounded fault/glitch style.
   - [ ] Validate active-loading, narrow-window, and failure states on Vulkan and OpenGL.
+
+## ED5 — Selective editor UI bloom
+
+Canonical design: [ED5](.plan/ED5.md). ImGui core and vendored backend sources
+remain untouched. Editor owns effect policy and UI presentation; Render owns
+the frame schedule, and Graphics owns physical GPU objects and synchronization.
+
+- [ ] **ED5.1 — Contracts and baseline:** freeze color/callback/texture rules,
+  loading-safe frame access, copied markers, and Vulkan/OpenGL baseline captures.
+- [ ] **ED5.2 — RHI UI adapter:** establish zero-emission UI/image/input parity,
+  correct linear presentation, uploads/offsets, and safe resize/teardown.
+- [ ] **ED5.3 — Small bloom slice:** one bounded emission region, half-resolution
+  filtering, ordered halo composition, global disable, and both-API captures.
+- [ ] **ED5.4 — Integration and acceptance:** theme presets, loading wire and
+  selected label, budget/failure behavior, retirement stress, and matched
+  RelWithDebInfo performance evidence.
+
+Acceptance requires readable base UI, explicit emission only, clipped sources,
+later-window occlusion, no accidental scene-image bloom, and loading presentation
+independent of scene readiness. No implementation/runtime result is claimed.
 
 ## Deferred follow-up
 
