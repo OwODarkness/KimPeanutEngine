@@ -747,6 +747,13 @@ namespace kpengine::graphics
             if (RenderTargetDescsShareStorage(it->desc, desc))
             {
                 const RenderTargetHandle handle = it->handle;
+                const uint32_t index = render_target_handles_.Get(handle);
+                if (index >= render_targets_.size())
+                {
+                    return {};
+                }
+                // Reused storage must take this lease's clear and load/store policy.
+                render_targets_[index].desc = desc;
                 transient_reusable_.erase(it);
                 return handle;
             }

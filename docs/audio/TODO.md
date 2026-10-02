@@ -42,6 +42,9 @@ is accepted; record resolution evidence in those review files.
   waveform, transport, and a reusable Audio-module playback component.
   Add separate speech status and music ducking for the integrated demo;
   verify visible layout, audible controls, interruption, and clean shutdown.
+  The played bar is fully orange with bloom, and waveform timeline ticks/labels
+  fade at the visible edges. Background-flash
+  investigation is recorded in the [2026-10-02 journal](../../.spec/journal/2026-10-02-audio-progress-bar-color.md).
 - [ ] **M1 — native music asset and reimport** ([plan](.plan/M1.md)). Extend
   Asset import/archive with an Audio product from a required music source and
   optional explicit subtitle source. Reimport must track both inputs and cook

@@ -70,6 +70,10 @@ namespace kpengine::graphics
         glBindFramebuffer(GL_FRAMEBUFFER, framebuffer);
         glViewport(0, 0, static_cast<GLsizei>(resource.desc.width),
                    static_cast<GLsizei>(resource.desc.height));
+        // Attachment clears cover the whole target, independent of the last UI clip.
+        glScissor(0, 0, static_cast<GLsizei>(resource.desc.width),
+                  static_cast<GLsizei>(resource.desc.height));
+        glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
 
         // One draw buffer per color attachment; depth-only targets draw nothing.
         const uint32_t color_count =
@@ -97,6 +101,10 @@ namespace kpengine::graphics
             IsSrgbTextureFormat(resource.desc.color_attachments[0].format))
         {
             glEnable(GL_FRAMEBUFFER_SRGB);
+        }
+        else
+        {
+            glDisable(GL_FRAMEBUFFER_SRGB);
         }
         for (uint32_t i = 0; i < color_count; ++i)
         {

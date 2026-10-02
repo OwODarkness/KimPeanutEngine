@@ -275,6 +275,20 @@ namespace kpengine::graphics
         return index < targets_.size() ? &targets_[index].desc : nullptr;
     }
 
+    bool VulkanRenderTargetManager::SetTransientLeaseDesc(
+        RenderTargetHandle handle, const RenderTargetDesc &desc)
+    {
+        const uint32_t index = handles_.Get(handle);
+        if (index >= targets_.size() || active_target_ == handle ||
+            !RenderTargetDescsShareStorage(targets_[index].desc, desc))
+        {
+            return false;
+        }
+        // Pool compatibility covers storage; each lease supplies its own load/store policy.
+        targets_[index].desc = desc;
+        return true;
+    }
+
     bool VulkanRenderTargetManager::BeginRendering(VkCommandBuffer command_buffer,
                                                     RenderTargetHandle handle)
     {

@@ -4,8 +4,11 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <cstdint>
 
 #include <imgui.h>
+
+#include "editor/ui/editor_ui_glow.h"
 
 namespace kpengine::audio_player
 {
@@ -16,11 +19,14 @@ namespace kpengine::audio_player
         constexpr ImU32 kCyan = IM_COL32(48, 211, 239, 255);
         constexpr ImU32 kCyanDim = IM_COL32(20, 111, 137, 255);
         constexpr ImU32 kAmber = IM_COL32(255, 184, 58, 255);
+        constexpr ImU32 kProgressOrange = IM_COL32(255, 112, 22, 255);
         constexpr ImU32 kMuted = IM_COL32(133, 160, 169, 255);
         constexpr ImU32 kRed = IM_COL32(245, 85, 78, 255);
         constexpr ImU32 kGreen = IM_COL32(95, 205, 151, 255);
         constexpr ImU32 kSubtitleText = IM_COL32(220, 242, 248, 255);
         constexpr float kPi = 3.14159265358979323846f;
+        constexpr std::uint32_t kWaveformGlowRegion = 0x41555746U;
+        constexpr std::uint32_t kProgressGlowRegion = 0x41555042U;
 
         ImU32 BlendColor(const ImU32 from, const ImU32 to, const float amount)
         {
@@ -36,6 +42,12 @@ namespace kpengine::audio_player
         {
             return (color & 0x00FFFFFFu) |
                 (static_cast<ImU32>(std::clamp(alpha, 0, 255)) << IM_COL32_A_SHIFT);
+        }
+
+        float SmoothFade(const float distance, const float fade_distance)
+        {
+            const float t = std::clamp(distance / fade_distance, 0.0f, 1.0f);
+            return t * t * (3.0f - 2.0f * t);
         }
 
         ImVec2 PointOnCircle(const ImVec2 center, const float angle, const float radius)
@@ -210,21 +222,28 @@ namespace kpengine::audio_player
                 minimum_tick_spacing * visible_duration / plot_width)));
             const int first_tick = static_cast<int>(std::ceil(
                 window_start / static_cast<float>(tick_interval))) * tick_interval;
+            constexpr float kAxisFadeDistance = 40.0f;
             char tick_label[16]{};
             for (int tick = first_tick; static_cast<float>(tick) <= window_end; tick += tick_interval)
             {
                 const float fraction = (static_cast<float>(tick) - window_start) /
                     visible_duration;
                 const float x = plot_left + fraction * plot_width;
-                draw.AddLine({x, plot_top}, {x, axis_y}, IM_COL32(19, 66, 81, 255), 1.0f);
-                draw.AddLine({x, axis_y - 3.0f}, {x, axis_y + 2.0f}, kCyanDim, 1.0f);
+                const float edge_distance = std::min(x - plot_left, plot_right - x);
+                const int tick_alpha = static_cast<int>(std::round(
+                    SmoothFade(edge_distance, kAxisFadeDistance) * 255.0f));
+                draw.AddLine({x, plot_top}, {x, axis_y},
+                             WithAlpha(IM_COL32(19, 66, 81, 255), tick_alpha), 1.0f);
+                draw.AddLine({x, axis_y - 3.0f}, {x, axis_y + 2.0f},
+                             WithAlpha(kCyanDim, tick_alpha), 1.0f);
                 const int minutes = tick / 60;
                 const int seconds = tick % 60;
                 std::snprintf(tick_label, sizeof(tick_label), "%02d:%02d", minutes, seconds);
                 const ImVec2 label_size = ImGui::CalcTextSize(tick_label);
-                const float label_x = std::clamp(x - label_size.x * 0.5f,
-                    origin.x + 2.0f, end.x - label_size.x - 2.0f);
-                draw.AddText({label_x, axis_y + 3.0f}, kMuted, tick_label);
+                const ImVec2 label_position{x - label_size.x * 0.5f, axis_y + 3.0f};
+                draw.PushClipRect({plot_left, axis_y}, {plot_right, end.y}, true);
+                draw.AddText(label_position, WithAlpha(kMuted, tick_alpha), tick_label);
+                draw.PopClipRect();
             }
             draw.AddLine({plot_left, axis_y}, {plot_right, axis_y}, kCyanDim, 1.0f);
 
@@ -238,6 +257,8 @@ namespace kpengine::audio_player
             const std::size_t last_column = static_cast<std::size_t>(
                 std::ceil(window_end / column_duration));
             draw.PushClipRect({plot_left, plot_top}, {plot_right, plot_bottom}, true);
+            editor::BeginEditorGlowRegion(&draw, kWaveformGlowRegion,
+                {plot_left, plot_top}, {plot_right, plot_bottom}, 8.0f);
             for (std::size_t column = first_column; column < last_column; ++column)
             {
                 const float start_time = static_cast<float>(column) * column_duration;
@@ -275,10 +296,11 @@ namespace kpengine::audio_player
                 const ImU32 wave_color = BlendColor(kCyan, kAmber, orange_amount);
                 const ImVec2 wave_top{x, center_y - half};
                 const ImVec2 wave_bottom{x, center_y + half};
-                draw.AddLine(wave_top, wave_bottom, WithAlpha(wave_color, 22), bar_width + 5.0f);
-                draw.AddLine(wave_top, wave_bottom, WithAlpha(wave_color, 48), bar_width + 2.5f);
+                editor::PushEditorGlowEmission(&draw, kWaveformGlowRegion, wave_color, 0.55f);
                 draw.AddLine(wave_top, wave_bottom, wave_color, bar_width);
+                editor::PopEditorGlowEmission(&draw, kWaveformGlowRegion);
             }
+            editor::EndEditorGlowRegion(&draw, kWaveformGlowRegion);
             const float playhead = plot_left + std::clamp(
                 (state.current_time - window_start) / visible_duration, 0.0f, 1.0f) * plot_width;
             draw.AddLine({playhead, plot_top}, {playhead, plot_bottom},
@@ -344,13 +366,15 @@ namespace kpengine::audio_player
             if (progress > 0.0f)
             {
                 const float playhead_x = min.x + bar_width * progress;
-                draw.AddRectFilled(min, {playhead_x, max.y}, kCyan);
-            }
-            if (state.has_clip && state.duration > 0.0f)
-            {
-                const float playhead_x = min.x + bar_width * progress;
+                editor::BeginEditorGlowRegion(&draw, kProgressGlowRegion,
+                    min, {playhead_x, max.y}, 8.0f);
+                editor::PushEditorGlowEmission(&draw, kProgressGlowRegion,
+                                               kProgressOrange, 1.0f);
+                draw.AddRectFilled(min, {playhead_x, max.y}, kProgressOrange);
                 draw.AddLine({playhead_x, min.y - 3.0f},
-                             {playhead_x, max.y + 3.0f}, kAmber, 2.0f);
+                             {playhead_x, max.y + 3.0f}, kProgressOrange, 2.0f);
+                editor::PopEditorGlowEmission(&draw, kProgressGlowRegion);
+                editor::EndEditorGlowRegion(&draw, kProgressGlowRegion);
             }
             if (state.can_seek && ImGui::IsItemActive() &&
                 ImGui::IsMouseDown(ImGuiMouseButton_Left))
@@ -600,7 +624,7 @@ namespace kpengine::audio_player
             const ImVec2 text_max{max.x - 10.0f, max.y - 3.0f};
             draw.PushClipRect(text_min, text_max, true);
             const float wrap_width = std::max(1.0f, text_max.x - text_min.x);
-            const float font_size = ImGui::GetFontSize() * 1.35f;
+            const float font_size = ImGui::GetFontSize() * 1.7f;
             const ImVec2 text_size = ImGui::GetFont()->CalcTextSizeA(
                 font_size, wrap_width, wrap_width, text.data(), text.data() + text.size());
             const ImU32 color = state.subtitle_text.empty() ? kMuted : kSubtitleText;
@@ -671,7 +695,7 @@ namespace kpengine::audio_player
             ImGui::SetCursorScreenPos(scope_origin);
             ImGui::Dummy(ImVec2(scope_width, scope_width));
             ImGui::SameLine(0.0f, gap);
-            constexpr float subtitle_height = 78.0f;
+            constexpr float subtitle_height = 96.0f;
             constexpr float subtitle_gap = 7.0f;
             const float waveform_height = std::max(48.0f, std::min(
                 std::clamp(visual_height * 0.52f, 68.0f, 300.0f),

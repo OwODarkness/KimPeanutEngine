@@ -41,6 +41,7 @@ namespace kpengine::graphics
         bool CanReadback(RenderTargetHandle handle) const;
         bool GetReadbackSource(RenderTargetHandle handle, ReadbackSource &out_source) const;
         const RenderTargetDesc *GetDesc(RenderTargetHandle handle) const;
+        bool SetTransientLeaseDesc(RenderTargetHandle handle, const RenderTargetDesc &desc);
 
         bool BeginRendering(VkCommandBuffer command_buffer, RenderTargetHandle handle);
         void EndRendering(VkCommandBuffer command_buffer);

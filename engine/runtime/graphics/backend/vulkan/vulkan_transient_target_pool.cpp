@@ -41,7 +41,11 @@ namespace kpengine::graphics
             if (RenderTargetDescsShareStorage(it->desc, desc))
             {
                 const RenderTargetHandle handle = it->handle;
-                outstanding_.push_back(*it);
+                if (!targets_->SetTransientLeaseDesc(handle, desc))
+                {
+                    return {};
+                }
+                outstanding_.push_back({handle, desc});
                 reusable_.erase(it);
                 return handle;
             }

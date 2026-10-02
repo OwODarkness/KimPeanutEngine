@@ -1,5 +1,14 @@
 # Project Status
 
+- **Audio player bloom corrections (2026-10-02)** — The played progress bar is
+  fully orange and blooms across its played portion. Waveform time ticks and
+  labels fade near the visible timeline edges. Reused Vulkan/OpenGL
+  targets apply each lease's clear policy, and OpenGL attachment clears reset
+  stale state.
+  Real-music capture sequences show stable backgrounds on both APIs; broader
+  GraphicsSmoke still fails Vulkan descriptor binding 5. →
+  [evidence](../.spec/journal/2026-10-02-audio-progress-bar-color.md)
+
 - **Editor UI bloom (2026-10-02; implementation in progress)** — The working
   tree contains a common Editor RHI adapter, copied explicit emission markers,
   bounded half-resolution filters, ordered halo composition, loading/status and
